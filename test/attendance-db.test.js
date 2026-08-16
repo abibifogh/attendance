@@ -88,9 +88,11 @@ async function setup() {
     'INSERT INTO att_devices (serial, name, token_hash) VALUES (?, ?, ?)',
   ).run('DS-TEST-1', 'Staff entrance', await hashDeviceToken(token, pepper));
 
-  // The migrations seed the property's real twenty-four shifts. These tests
-  // want a two-shift world with known ids, so they start from an empty table
-  // rather than working around whatever the seed happens to contain.
+  // The migrations seed the property's real staff, shifts, rota and eight
+  // months of imported history. These tests want a two-shift, one-cook world
+  // with known ids, so they start from empty tables rather than working around
+  // whatever the seed happens to contain.
+  raw.exec('DELETE FROM att_days; DELETE FROM att_punches; DELETE FROM att_roster;');
   raw.exec('DELETE FROM att_shifts');
   raw.prepare(
     `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes, grace_in_minutes, grace_out_minutes)
@@ -1089,7 +1091,9 @@ test('the seeded property has its staff, its shifts and its punches joined up', 
   const { raw } = freshDb();
 
   assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_staff').get().n, 24);
-  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_shifts').get().n, 24);
+  // 24 from the Hik-Connect shift list, plus 17 the year's rota turned out to
+  // use that the list did not contain.
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_shifts').get().n, 41);
 
   // The transposed prefix is reproduced rather than corrected: the terminal
   // sends what it was given.
