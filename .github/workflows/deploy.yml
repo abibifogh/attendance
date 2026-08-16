@@ -89,18 +89,20 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
 
-      # What the database actually looks like afterwards, in the run summary.
-      # A schema change nobody can see is a schema change nobody trusts.
+      # What the database actually looks like afterwards, in the run summary. A
+      # schema change nobody can see is a schema change nobody trusts.
+      #
+      # Two things learned the hard way. The SQL stays on one line: a YAML
+      # folded block keeps the newline before any line indented further than the
+      # first, so a prettily-aligned query arrives at the shell in pieces and
+      # wrangler is handed half a statement. And the step cannot fail the run —
+      # it reports on a deploy that has already happened, and a cosmetic query
+      # marking a successful publish as red teaches everybody to ignore red.
       - name: What is in the database now
         if: steps.creds.outputs.ready == 'true'
+        continue-on-error: true
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: >
-            d1 execute attendance --remote
-            --command "SELECT (SELECT COUNT(*) FROM users) AS logins,
-                              (SELECT COUNT(*) FROM att_staff) AS staff,
-                              (SELECT COUNT(*) FROM att_shifts) AS shifts,
-                              (SELECT COUNT(*) FROM att_devices) AS terminals,
-                              (SELECT COUNT(*) FROM att_punches) AS punches"
+          command: d1 execute attendance --remote --command "SELECT (SELECT COUNT(*) FROM users) AS logins, (SELECT COUNT(*) FROM att_staff) AS staff, (SELECT COUNT(*) FROM att_shifts) AS shifts, (SELECT COUNT(*) FROM att_devices) AS terminals, (SELECT COUNT(*) FROM att_punches) AS punches"
