@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { day as dayRoute, ingest, resolveDay, staffReport } from '../src/routes/attendance.js';
+import {
+  day as dayRoute, deviceConfig, importShifts, ingest, resolveDay, shiftSuggestions, staffReport,
+} from '../src/routes/attendance.js';
 import { createStaff } from '../src/routes/attendance-setup.js';
 import { hashDeviceToken } from '../src/lib/attendance-ingest.js';
 import { getPepper } from '../src/lib/auth.js';
@@ -343,4 +345,180 @@ test('a public holiday stops the day being an absence', async () => {
 
   assert.equal(report.days[0].status, 'holiday');
   assert.equal(report.days[0].reason_code, 'public_holiday');
+});
+
+// ---------------------------------------------------------------------------
+// Finding the shifts instead of asking for them again
+// ---------------------------------------------------------------------------
+
+test('the terminal’s attendance bands are stored verbatim', async () => {
+  const { raw, db, token } = await setup();
+
+  await deviceConfig(ctx(db, {
+    body: {
+      serial: 'DS-TEST-1',
+      token,
+      config: [
+        {
+          kind: 'attendanceRules',
+          path: '/ISAPI/AccessControl/attendanceStatusRuleCfg?format=json',
+          status: 'ok',
+          raw: {
+            AttendanceStatusRuleCfgList: [
+              { attendanceStatus: 'checkIn', beginTime: '05:00:00', endTime: '10:00:00' },
+              { attendanceStatus: 'checkOut', beginTime: '13:00:00', endTime: '18:00:00' },
+            ],
+          },
+        },
+        { kind: 'attendanceMode', path: '/x', status: 'unsupported', raw: null },
+      ],
+    },
+  }));
+
+  const rows = raw.prepare('SELECT * FROM att_device_config ORDER BY kind').all();
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].kind, 'attendanceMode');
+  assert.equal(rows[0].status, 'unsupported', 'an endpoint that 404s is recorded, not dropped');
+  assert.match(rows[1].raw, /checkIn/);
+});
+
+test('a second sync replaces the first rather than piling up', async () => {
+  const { raw, db, token } = await setup();
+  const send = (endTime) => deviceConfig(ctx(db, {
+    body: {
+      serial: 'DS-TEST-1',
+      token,
+      config: [{
+        kind: 'attendanceRules',
+        status: 'ok',
+        raw: { list: [{ attendanceStatus: 'checkOut', beginTime: '13:00', endTime: endTime }] },
+      }],
+    },
+  }));
+
+  await send('18:00');
+  await send('19:00');
+
+  const rows = raw.prepare('SELECT * FROM att_device_config').all();
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].raw, /19:00/);
+});
+
+test('a wrong token cannot post configuration either', async () => {
+  const { raw, db } = await setup();
+  await assert.rejects(
+    () => deviceConfig(ctx(db, {
+      body: { serial: 'DS-TEST-1', token: 'nope', config: [{ kind: 'x', raw: {} }] },
+    })),
+    /token is not right/i,
+  );
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_device_config').get().n, 0);
+});
+
+test('shifts are suggested from the punches, and confirmed by the bands', async () => {
+  const { raw, db, token } = await setup();
+
+  // Three weeks of a morning shift, for somebody with no shift set up at all.
+  raw.prepare('DELETE FROM att_patterns').run();
+  let serial = 100;
+  for (let d = 1; d <= 21; d++) {
+    const day = `2026-06-${String(d).padStart(2, '0')}`;
+    await send(db, token, [
+      event(`${day}T05:58:00+00:00`, 'checkIn', serial++),
+      event(`${day}T14:02:00+00:00`, 'checkOut', serial++),
+    ]);
+  }
+
+  await deviceConfig(ctx(db, {
+    body: {
+      serial: 'DS-TEST-1',
+      token,
+      config: [{
+        kind: 'attendanceRules',
+        status: 'ok',
+        raw: {
+          list: [
+            { attendanceStatus: 'checkIn', beginTime: '05:00:00', endTime: '10:00:00' },
+            { attendanceStatus: 'checkOut', beginTime: '13:00:00', endTime: '18:00:00' },
+          ],
+        },
+      }],
+    },
+  }));
+
+  // A wide window, because the fixture's punches are on fixed dates rather than
+  // relative to whenever this test happens to run.
+  const data = await (await shiftSuggestions(ctx(db, { query: '?days=800' }))).json();
+
+  assert.equal(data.evidence.daysOfPunches, 21);
+  assert.equal(data.evidence.deviceBands, 2);
+  assert.ok(data.suggestions.length >= 1);
+
+  const morning = data.suggestions[0];
+  // Everybody clocks in at 05:58 for a shift that starts at 06:00. Rounding the
+  // cluster to five minutes recovers the hour they are actually due, which is
+  // the whole reason the punches beat the terminal's own bands.
+  assert.equal(morning.starts_at, '06:00');
+  assert.equal(morning.ends_at, '14:00');
+  assert.equal(morning.confirmedByDevice, true, 'the check-in band brackets it');
+  // And because that is the shift already set up, it is marked rather than
+  // offered again — running the sync twice must not produce a second copy.
+  assert.equal(morning.existing, 'Morning');
+});
+
+test('importing a suggestion creates a shift, and re-importing updates it', async () => {
+  const { raw, db } = await setup();
+
+  const first = await (await importShifts(ctx(db, {
+    body: {
+      shifts: [{
+        name: 'Evening', startsAt: '14:00', endsAt: '22:00', breakMinutes: 30,
+      }],
+    },
+  }))).json();
+  assert.deepEqual(first.applied, [{ name: 'Evening', action: 'added' }]);
+
+  let row = raw.prepare("SELECT * FROM att_shifts WHERE name = 'Evening'").get();
+  assert.equal(row.source, 'device');
+  assert.equal(row.source_ref, '14:00-22:00');
+  assert.equal(row.break_minutes, 30);
+
+  // Somebody then sets the grace period on it by hand.
+  raw.prepare('UPDATE att_shifts SET grace_in_minutes = 15 WHERE id = ?').run(row.id);
+
+  const again = await (await importShifts(ctx(db, {
+    body: { shifts: [{ name: 'Evening shift', startsAt: '14:00', endsAt: '22:00' }] },
+  }))).json();
+  assert.deepEqual(again.applied, [{ name: 'Evening shift', action: 'updated' }]);
+
+  row = raw.prepare('SELECT * FROM att_shifts WHERE id = ?').get(row.id);
+  assert.equal(row.name, 'Evening shift');
+  assert.equal(row.grace_in_minutes, 15, 'a re-sync does not reset policy somebody set here');
+});
+
+test('a shift somebody typed in themselves is left alone by the sync', async () => {
+  const { raw, db } = await setup();
+
+  // The fixture's Morning shift has no source — it was created by hand.
+  const result = await (await importShifts(ctx(db, {
+    body: { shifts: [{ name: 'Morning (from terminal)', startsAt: '06:00', endsAt: '14:00' }] },
+  }))).json();
+
+  assert.equal(result.applied[0].action, 'left alone');
+  assert.equal(result.applied[0].reason, 'set up by hand');
+
+  const row = raw.prepare('SELECT * FROM att_shifts WHERE id = 1').get();
+  assert.equal(row.name, 'Morning', 'untouched');
+});
+
+test('an import with a nonsense time is refused', async () => {
+  const { db } = await setup();
+  await assert.rejects(
+    () => importShifts(ctx(db, { body: { shifts: [{ name: 'X', startsAt: 'noon', endsAt: '22:00' }] } })),
+    /not valid times/i,
+  );
+  await assert.rejects(
+    () => importShifts(ctx(db, { body: { shifts: [{ name: 'X', startsAt: '09:00', endsAt: '09:00' }] } })),
+    /start and end at the same time/i,
+  );
 });

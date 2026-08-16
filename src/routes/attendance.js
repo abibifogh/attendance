@@ -8,6 +8,7 @@ import {
 import {
   deviceForToken, exceptionNotice, ingestPunches, recompute, recomputeTouched,
 } from '../lib/attendance-ingest.js';
+import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from '../lib/device-shifts.js';
 import { getPepper } from '../lib/auth.js';
 import { createNotice } from '../lib/notices.js';
 import { emailExceptions, pingExceptions } from '../lib/notify.js';
@@ -150,6 +151,197 @@ export async function ingest(ctx) {
     // person enrolled on the terminal and never added here.
     unknownEmployees: result.unknownEmployees,
   });
+}
+
+/**
+ * What the terminal says about its own attendance configuration.
+ *
+ * Posted by the poller alongside the punches, under the same device token. The
+ * point is narrow and worth stating: somebody who has already built their
+ * shifts in Hik-Connect should not have to build them again here, and the bands
+ * the device carries are an echo of those shifts.
+ *
+ * Stored verbatim. Nothing is applied automatically — see `shiftSuggestions`.
+ */
+export async function deviceConfig(ctx) {
+  const body = await readJson(ctx.request);
+  const serial = str(body.serial, 'Device serial', { required: true, max: 120 });
+  const token = str(
+    body.token ?? ctx.request.headers.get('X-Device-Token'),
+    'Device token',
+    { required: true, max: 200 },
+  );
+
+  const pepper = await getPepper(ctx.db);
+  const device = await deviceForToken(ctx.db, serial, token, pepper);
+
+  const entries = Array.isArray(body.config) ? body.config.slice(0, 20) : [];
+  if (!entries.length) return json({ ok: true, stored: 0 });
+
+  await ctx.db.batch(entries.map((entry) => ctx.db.prepare(
+    `INSERT INTO att_device_config (device_serial, kind, path, raw, status, fetched_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
+     ON CONFLICT (device_serial, kind) DO UPDATE SET
+       path = excluded.path, raw = excluded.raw,
+       status = excluded.status, fetched_at = excluded.fetched_at`,
+  ).bind(
+    device.serial,
+    str(entry.kind, 'Kind', { required: true, max: 60 }),
+    str(entry.path, 'Path', { max: 200 }),
+    entry.raw == null ? null : String(JSON.stringify(entry.raw)).slice(0, 20000),
+    ['ok', 'unsupported', 'failed'].includes(entry.status) ? entry.status : 'ok',
+  )));
+
+  return json({ ok: true, stored: entries.length });
+}
+
+/**
+ * The shifts this property appears to run, without anybody typing them in.
+ *
+ * Two sources, merged. The terminal's own attendance bands say how many shifts
+ * there are and roughly when; the punches already recorded say precisely when,
+ * because a few hundred people have been clocking in for them. Where both agree
+ * the observed times win and the band is kept as corroboration.
+ *
+ * Nothing is written. A shift decides whether somebody is recorded as late, so
+ * it takes a person pressing a button — but the button is next to a filled-in
+ * form rather than an empty one.
+ */
+export async function shiftSuggestions(ctx) {
+  const timezone = await timezoneOf(ctx.db);
+  const today = todayIn(timezone);
+  const from = addDays(today, -Number(ctx.url.searchParams.get('days') ?? 60));
+
+  const [configRows, punchRows, existing] = await Promise.all([
+    ctx.db.prepare("SELECT * FROM att_device_config WHERE status = 'ok'").all()
+      .catch(() => ({ results: [] })),
+    // Every punch in the window, by person and day. Enough to see the pattern
+    // and small enough not to matter.
+    ctx.db.prepare(
+      `SELECT employee_no, day, MIN(at_local) AS first_at, MAX(at_local) AS last_at, COUNT(*) AS n
+       FROM att_punches WHERE day BETWEEN ?1 AND ?2
+       GROUP BY employee_no, day HAVING n > 1`,
+    ).bind(from, today).all().catch(() => ({ results: [] })),
+    ctx.db.prepare('SELECT * FROM att_shifts').all(),
+  ]);
+
+  // What the device reported, whatever shape it chose to report it in.
+  const rules = [];
+  for (const row of configRows.results ?? []) {
+    if (!row.raw) continue;
+    try {
+      rules.push(...parseStatusRules(JSON.parse(row.raw)));
+    } catch {
+      // A body that is not JSON tells us the endpoint exists and the parse
+      // needs work. Neither is a reason to fail the screen.
+    }
+  }
+
+  const pairs = (punchRows.results ?? []).map((row) => ({
+    in: String(row.first_at).slice(11, 16),
+    out: String(row.last_at).slice(11, 16),
+  }));
+
+  const suggestions = mergeCandidates({
+    fromDevice: shiftsFromRules(rules),
+    fromPunches: inferShifts(pairs, { minSupport: Math.max(3, Math.round(pairs.length / 40)) }),
+  });
+
+  // A suggestion that matches a shift already set up is marked rather than
+  // hidden, so re-running this does not look like it found nothing.
+  const shifts = existing.results ?? [];
+  const withMatches = suggestions.map((s) => ({
+    ...s,
+    existing: shifts.find((x) => x.starts_at === s.starts_at && x.ends_at === s.ends_at)?.name ?? null,
+  }));
+
+  return json({
+    suggestions: withMatches,
+    bands: rules,
+    // Said plainly on the screen, because "no suggestions" has several causes
+    // and only one of them is a fault.
+    evidence: {
+      daysOfPunches: pairs.length,
+      deviceReported: (configRows.results ?? []).length,
+      deviceBands: rules.length,
+      since: from,
+    },
+  });
+}
+
+/**
+ * Turn chosen suggestions into shifts.
+ *
+ * Keyed by the times, so running the sync again after the terminal is
+ * reconfigured updates the shift it created rather than adding a second one
+ * beside it. A shift somebody typed in themselves has no source and is never
+ * touched by this.
+ */
+export async function importShifts(ctx) {
+  const body = await readJson(ctx.request);
+  const wanted = Array.isArray(body.shifts) ? body.shifts.slice(0, 20) : [];
+  if (!wanted.length) throw badRequest('Nothing chosen to import.');
+
+  const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
+  const applied = [];
+
+  for (const entry of wanted) {
+    const name = str(entry.name, 'Name', { required: true, max: 60 });
+    const startsAt = str(entry.startsAt, 'Start', { required: true, max: 8 }).slice(0, 5);
+    const endsAt = str(entry.endsAt, 'End', { required: true, max: 8 }).slice(0, 5);
+    if (toMinutes(startsAt) == null || toMinutes(endsAt) == null) {
+      throw badRequest(`${name}: those are not valid times.`);
+    }
+    if (startsAt === endsAt) throw badRequest(`${name}: a shift cannot start and end at the same time.`);
+
+    const ref = `${startsAt}-${endsAt}`;
+    const existing = await ctx.db.prepare(
+      'SELECT * FROM att_shifts WHERE source_ref = ?1 OR (starts_at = ?2 AND ends_at = ?3)',
+    ).bind(ref, startsAt, endsAt).first();
+
+    if (existing) {
+      // Only the times and the name, and only for a shift this sync created.
+      // Grace periods and day thresholds are policy somebody set here, and a
+      // re-sync must not quietly reset them.
+      if (existing.source === 'device') {
+        await ctx.db.prepare(
+          'UPDATE att_shifts SET name = ?1, starts_at = ?2, ends_at = ?3 WHERE id = ?4',
+        ).bind(name, startsAt, endsAt, existing.id).run();
+        applied.push({ name, action: 'updated' });
+      } else {
+        applied.push({ name: existing.name, action: 'left alone', reason: 'set up by hand' });
+      }
+      continue;
+    }
+
+    await ctx.db.prepare(
+      `INSERT INTO att_shifts
+         (name, starts_at, ends_at, break_minutes, grace_in_minutes, grace_out_minutes,
+          half_day_minutes, full_day_minutes, overtime_after, sort_order, active, source, source_ref)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, 1, 'device', ?10)`,
+    ).bind(
+      name, startsAt, endsAt,
+      int(entry.breakMinutes ?? 0, 'Break', { min: 0, max: 480 }),
+      int(entry.graceIn ?? 5, 'Grace in', { min: 0, max: 120 }),
+      int(entry.graceOut ?? 5, 'Grace out', { min: 0, max: 120 }),
+      int(entry.halfDayMinutes ?? 240, 'Half day', { min: 0, max: 1440 }),
+      int(entry.fullDayMinutes ?? 420, 'Full day', { min: 0, max: 1440 }),
+      int(entry.sortOrder ?? 100, 'Order', { min: 0, max: 9999 }),
+      ref,
+    ).run().catch(async (err) => {
+      if (!String(err).includes('UNIQUE')) throw err;
+      // Two suggestions with the same name — rare, and not worth failing over.
+      await ctx.db.prepare(
+        `INSERT INTO att_shifts (name, starts_at, ends_at, source, source_ref)
+         VALUES (?1, ?2, ?3, 'device', ?4)`,
+      ).bind(`${name} (${startsAt})`, startsAt, endsAt, ref).run();
+    });
+
+    applied.push({ name, action: 'added' });
+  }
+
+  await audit(ctx, 'attendance.shifts_import', null, { applied });
+  return json({ ok: true, applied });
 }
 
 // ---------------------------------------------------------------------------

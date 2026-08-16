@@ -35,6 +35,9 @@ const ROUTES = [
   // itself with a device token instead, and the only thing that token can do is
   // add punches to its own terminal's serial.
   ['POST', '/api/att/ingest', 'public', att.ingest],
+  // The same feed, reporting what the terminal says about its own attendance
+  // configuration. Same token, same one thing it is allowed to do.
+  ['POST', '/api/att/device-config', 'public', att.deviceConfig],
 
   // ------------------------------------------------------------- every day --
   ['GET', '/api/att/bootstrap', 'att_view', att.bootstrap],
@@ -70,6 +73,8 @@ const ROUTES = [
   ['GET', '/api/att/unknown', 'att_setup', attSetup.unknownEmployees],
 
   ['GET', '/api/att/shifts', ['att_setup', 'att_manage'], attSetup.listShifts],
+  ['GET', '/api/att/shift-suggestions', 'att_setup', att.shiftSuggestions],
+  ['POST', '/api/att/shifts/import', 'att_setup', att.importShifts],
   ['POST', '/api/att/shifts', 'att_setup', attSetup.createShift],
   ['PUT', '/api/att/shifts/:id', 'att_setup', attSetup.updateShift],
   ['DELETE', '/api/att/shifts/:id', 'att_setup', attSetup.deleteShift],

@@ -29,7 +29,8 @@ import { pathToFileURL } from 'node:url';
  *      the environment variables below.
  *   3. Try it:      node scripts/hik-poller.mjs --once --verbose
  *   4. Backfill:    node scripts/hik-poller.mjs --from 2026-06-01 --to 2026-08-15
- *   5. Leave it on: node scripts/hik-poller.mjs        (polls every 5 minutes)
+ *   5. Shifts:      node scripts/hik-poller.mjs --shifts --verbose
+ *   6. Leave it on: node scripts/hik-poller.mjs        (polls every 5 minutes)
  *
  *   Configuration, in order of precedence: command line, environment, config file.
  *
@@ -257,6 +258,109 @@ async function fetchEvents(from, to) {
 }
 
 // ---------------------------------------------------------------------------
+// What the terminal knows about its own shifts
+// ---------------------------------------------------------------------------
+
+/**
+ * The endpoints worth asking for attendance configuration.
+ *
+ * A device in automatic attendance mode carries the time bands that decide
+ * whether a tap is a check-in or a check-out, and those bands come down from
+ * wherever the shifts were set up — Hik-Connect, the device menus, iVMS. Reading
+ * them is what saves somebody typing their shifts in twice.
+ *
+ * Every one of these is probed rather than assumed. ISAPI's surface differs
+ * between models and firmware, a 404 here is ordinary rather than a fault, and
+ * the app is built to take whatever shape comes back. Being wrong about an
+ * endpoint should cost a line in the log, not the run.
+ */
+const CONFIG_PROBES = [
+  { kind: 'attendanceMode', path: '/ISAPI/AccessControl/attendanceStatusModeCfg?format=json' },
+  { kind: 'attendanceRules', path: '/ISAPI/AccessControl/attendanceStatusRuleCfg?format=json' },
+  { kind: 'attendanceRuleCaps', path: '/ISAPI/AccessControl/attendanceStatusRuleCfg/capabilities?format=json' },
+  // Some firmware answers the list endpoint above with nothing useful and only
+  // serves one status at a time.
+  ...['checkIn', 'checkOut', 'breakOff', 'breakIn', 'overtimeIn', 'overtimeOut'].map((status) => ({
+    kind: `attendanceRule:${status}`,
+    path: `/ISAPI/AccessControl/attendanceStatusRuleCfg?attendanceStatus=${status}&format=json`,
+  })),
+];
+
+/**
+ * Ask the terminal for each of them, and keep whatever answers.
+ *
+ * Nothing is parsed here. The poller's job is to fetch and forward; deciding
+ * what a band means is the app's, where it can be changed without going back to
+ * every machine running one of these.
+ */
+async function probeConfig() {
+  const found = [];
+
+  for (const probe of CONFIG_PROBES) {
+    try {
+      const response = await isapi(probe.path);
+      if (!response.ok) {
+        debug(`${probe.kind}: ${response.status}`);
+        found.push({ ...probe, status: 'unsupported', raw: null });
+        continue;
+      }
+
+      const text = await response.text();
+      let raw;
+      try {
+        raw = JSON.parse(text);
+      } catch {
+        // XML, or an error page wearing a 200. Forwarded as a string so the app
+        // can show somebody what actually came back.
+        raw = { _text: text.slice(0, 4000) };
+      }
+
+      debug(`${probe.kind}: ok`);
+      found.push({ ...probe, status: 'ok', raw });
+    } catch (err) {
+      debug(`${probe.kind}: ${err.message}`);
+      found.push({ ...probe, status: 'failed', raw: null });
+    }
+  }
+
+  return found;
+}
+
+async function sendConfig(config) {
+  const url = new URL('/api/att/device-config', CONFIG.appUrl);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Device-Token': CONFIG.token },
+    body: JSON.stringify({
+      serial: CONFIG.device,
+      token: CONFIG.token,
+      config: config.map(({ kind, path, raw, status }) => ({ kind, path, raw, status })),
+    }),
+  });
+
+  const text = await response.text();
+  if (!response.ok) throw new Error(`The app answered ${response.status}: ${text.slice(0, 300)}`);
+  return JSON.parse(text);
+}
+
+/** One configuration sync, reported plainly enough to debug a terminal with. */
+async function configPass() {
+  const config = await probeConfig();
+  const ok = config.filter((c) => c.status === 'ok');
+
+  if (!ok.length) {
+    warn('the terminal answered none of the attendance configuration endpoints.');
+    warn('that is normal for a device not in automatic attendance mode — the app will work the '
+      + 'shifts out from the punches instead. Nothing is broken.');
+  } else {
+    log(`${ok.length} of ${config.length} configuration endpoint(s) answered`);
+  }
+
+  await sendConfig(config);
+  return { probed: config.length, answered: ok.length };
+}
+
+// ---------------------------------------------------------------------------
 // The app
 // ---------------------------------------------------------------------------
 
@@ -326,6 +430,9 @@ const debug = (message) => { if (CONFIG.verbose) log(`  ${message}`); };
  * events the app already holds costs nothing — they are deduplicated on arrival
  * by the device's own event serial.
  */
+/** Twelve hours. A shift definition does not change hourly. */
+const CONFIG_INTERVAL_MS = 12 * 60 * 60 * 1000;
+
 async function pass({ from = null, to = null } = {}) {
   const now = new Date();
   const state = readState();
@@ -362,6 +469,27 @@ async function pass({ from = null, to = null } = {}) {
   return { events: events.length, ...result };
 }
 
+/**
+ * Re-read the terminal's shift configuration, but rarely.
+ *
+ * Twice a day is plenty for something that changes when a manager sits down and
+ * rearranges the rota, and it keeps a dozen extra requests off a device whose
+ * real job is recognising faces at the door.
+ */
+async function maybeSyncConfig() {
+  const state = readState();
+  const last = state.lastConfigAt ? Date.parse(state.lastConfigAt) : 0;
+  if (Number.isFinite(last) && Date.now() - last < CONFIG_INTERVAL_MS) return;
+
+  try {
+    const result = await configPass();
+    writeState({ ...readState(), lastConfigAt: new Date().toISOString(), lastConfig: result });
+  } catch (err) {
+    // Never fatal. The punches are the job; the shifts are a convenience.
+    warn(`configuration sync failed: ${err.message}`);
+  }
+}
+
 async function main() {
   if (CONFIG.insecure) {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -391,6 +519,13 @@ async function main() {
     warn(`could not read device info: ${err.message}`);
   }
 
+  // Named --shifts rather than --config, which already means "the config file".
+  if (ARGS.shifts) {
+    const result = await configPass();
+    log(`${result.answered} of ${result.probed} endpoint(s) answered — see Attendance → Setup → Shifts`);
+    return;
+  }
+
   if (ARGS.from || ARGS.to) {
     const from = ARGS.from === true ? null : ARGS.from;
     const to = ARGS.to === true ? null : ARGS.to;
@@ -401,6 +536,7 @@ async function main() {
 
   if (ARGS.once) {
     await pass();
+    await maybeSyncConfig();
     return;
   }
 
@@ -408,6 +544,7 @@ async function main() {
   for (;;) {
     try {
       await pass();
+      await maybeSyncConfig();
     } catch (err) {
       // Never exit on a failed pass. The terminal reboots, the network drops,
       // the app is redeployed — all of them are ordinary, and all of them are

@@ -54,6 +54,53 @@ the scheduled shift automatically and flagging it.
 | **Week** | Names down the side, Monday to Sunday across. Finds the pattern a daily list hides — the person late three Mondays running, the section short every weekend. |
 | **Month** | Days worked, hours, overtime, absences, leave taken and leave left, per person. The sheet that goes to whoever does the wages. Exports as CSV. |
 
+### Your shifts, found rather than typed
+
+If you already built your shifts in Hik-Connect, you should not have to build
+them again here. **Attendance → Setup → Shifts** offers them filled in, with one
+press to accept.
+
+Two sources sit behind that, and neither is authoritative alone:
+
+- **The terminal's attendance bands.** A device in automatic attendance mode
+  carries the time windows it uses to label a tap as a clock-in or a clock-out,
+  and those come down from wherever the shifts were configured. The poller reads
+  them and posts them here. They say *how many* shifts there are and roughly
+  when.
+- **The punches already recorded.** A few hundred people have been clocking in
+  for these shifts. Where they actually arrive, clustered and rounded to five
+  minutes, says *precisely* when — and it needs no API, no key and nobody's
+  permission.
+
+The observed times win where both agree, and the band is shown beside them as
+corroboration. A shift the terminal describes but nobody has worked yet is
+offered too; so is a cluster with no band behind it, which is the normal case
+for a terminal that was never put into automatic mode.
+
+**Nothing is applied on its own.** A shift decides whether somebody is recorded
+as late, and inventing one silently is not a thing to do to a payroll — but the
+button is next to a filled-in form rather than an empty one.
+
+Re-running the sync updates the shift it created last time instead of adding a
+second beside it, and only its name and times: breaks, grace periods and what
+counts as a full day are policy nobody's device knows, so they arrive as
+defaults and are never reset by a later sync. A shift you typed in yourself is
+never touched.
+
+Check it manually any time with:
+
+```bash
+node scripts/hik-poller.mjs --shifts --verbose
+```
+
+which prints which of the terminal's configuration endpoints answered. The
+poller also does this on its own twice a day.
+
+**What this cannot do.** The per-person *rota* — who works which shift on which
+day — is held by Hik-Connect rather than the terminal, and reading it needs the
+HikCentral Connect OpenAPI and a Technology Partner Program key. Set the rota
+here; the shift definitions themselves come across.
+
 ### The rota
 
 Two layers. A **standing weekly pattern** per person, set once — most people
@@ -241,13 +288,15 @@ does cloud attendance — would be a third, and nothing downstream would change.
 
 All under Attendance → Setup:
 
-1. **Shifts** — the two or three your rota actually uses. A shift is a name, a
-   start, an end, and how much lateness you are prepared to overlook.
+1. **Shifts** — check what the sync has already found for you and press to
+   accept, then set the break and grace period on each. Only add one by hand if
+   it is missing.
 2. **Staff** — the employee number must match the terminal exactly. Anybody
    whose punches have already arrived is listed at the top of that screen;
    adding them attaches their history on the spot.
 3. **Public holidays** — *Fill in this year* does the calculable ones.
 4. **Rota** — set each person's usual week; override individual days as they come.
+   This is the one part Hik-Connect cannot hand over.
 5. **Rules** — what a missing punch means, and the leave entitlement.
 
 ---
@@ -300,6 +349,8 @@ src/
     attendance.js     Punches to days, statuses, notes, leave, holidays — pure
     attendance-ingest.js
                       The terminal feed, and keeping derived days in step
+    device-shifts.js  Reading shifts off the terminal, and inferring them from
+                      the punches when it has none to give
     auth.js           PIN and password login, signed session cookies
     permissions.js    Who can reach what
     notices.js        The bell
@@ -356,6 +407,10 @@ before the person exists.
   working days after twelve months' continuous service. A property may be more
   generous, and the figure is a setting. Check your own obligations rather than
   taking a default as compliance.
+- **A suggested shift is a suggestion.** The terminal's bands are the times a
+  tap is *accepted* between, not the hour anybody is due — a 06:00 shift
+  typically accepts clock-ins from 05:00. That is why the punches outrank them,
+  and why nothing is applied without somebody pressing a button.
 - **Eid is not calculated.** Both Eids follow the lunar calendar and are
   confirmed locally days ahead. Filling in a year adds everything else.
 - **Retired, not deleted.** Somebody who leaves keeps their history — set a

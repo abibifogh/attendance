@@ -203,7 +203,10 @@ async function staffTab(reload) {
 // ---------------------------------------------------------------------------
 
 async function shiftsTab(reload) {
-  const { shifts } = await api.attShifts();
+  const [{ shifts }, suggested] = await Promise.all([
+    api.attShifts(),
+    api.attShiftSuggestions().catch(() => null),
+  ]);
 
   const edit = async (existing) => {
     const done = await formDialog({
@@ -260,6 +263,8 @@ async function shiftsTab(reload) {
   };
 
   return h('div',
+    suggestionsCard(suggested, reload),
+
     card('Shifts', {
       note: 'A shift is what "late" is measured against',
       actions: h('button.btn.btn-primary', { onclick: () => edit(null) }, '+ Add a shift'),
@@ -294,9 +299,130 @@ async function shiftsTab(reload) {
       })),
 
     h('p.muted', { style: { fontSize: '.82rem' } },
-      'If you already set shifts up on the terminal or in Hik-Connect, mirror them here. The terminal '
-      + 'decides what it shows the person at the door; these decide what the reports say.'),
+      'The terminal decides what it shows the person at the door; these decide what the reports say. '
+      + 'A shift the sync brought in can be edited freely — only its name and times are refreshed on a '
+      + 're-sync, and a shift you created yourself is never touched by it.'),
   );
+}
+
+/**
+ * The shifts this property appears to run, found rather than typed.
+ *
+ * Two sources behind it. The terminal's own attendance bands — the windows it
+ * uses to label a tap as a clock-in or a clock-out — which come down from
+ * wherever the shifts were set up, Hik-Connect included. And the punches
+ * themselves, which are the better evidence: a few hundred people have been
+ * clocking in for these shifts already, and where they actually arrive says
+ * more than any configured window.
+ *
+ * Nothing is applied on its own. A shift decides whether somebody is recorded
+ * as late, so it takes a press — but the press is next to a filled-in form.
+ */
+function suggestionsCard(data, reload) {
+  if (!data) return null;
+
+  const fresh = data.suggestions.filter((s) => !s.existing);
+  // Pre-ticked, and the set has to agree with the boxes from the first frame —
+  // a form that looks ready and then imports nothing is worse than one that
+  // starts empty.
+  const chosen = new Set(fresh.map((s) => `${s.starts_at}-${s.ends_at}`));
+
+  if (!data.suggestions.length) {
+    return card('Shifts found for you', { note: 'Nothing yet', wide: true },
+      h('p.muted',
+        data.evidence.daysOfPunches
+          ? `${data.evidence.daysOfPunches} days of punches so far — not yet a clear enough pattern to `
+            + 'suggest a shift from. It usually takes a couple of weeks. Add your shifts by hand in the '
+            + 'meantime; the suggestions will stop appearing once they match.'
+          : 'No punches yet, and the terminal has not reported any attendance bands. Once the poller has '
+            + 'been running for a week or two, the shifts your staff actually work will be offered here.'),
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        `The terminal answered ${data.evidence.deviceReported} configuration `
+        + `${data.evidence.deviceReported === 1 ? 'endpoint' : 'endpoints'} with `
+        + `${data.evidence.deviceBands} usable time ${data.evidence.deviceBands === 1 ? 'band' : 'bands'}. `
+        + 'A device that is not in automatic attendance mode reports none, which is normal — the punches '
+        + 'alone are enough.'),
+    );
+  }
+
+  const importChosen = async () => {
+    const wanted = data.suggestions
+      .filter((s) => chosen.has(key(s)))
+      .map((s) => ({
+        name: s.name,
+        startsAt: s.starts_at,
+        endsAt: s.ends_at,
+        breakMinutes: 0,
+        graceIn: 5,
+        graceOut: 5,
+        halfDayMinutes: Math.round((lengthOf(s) / 2) / 30) * 30,
+        fullDayMinutes: Math.round((lengthOf(s) * 0.9) / 30) * 30,
+      }));
+
+    if (!wanted.length) {
+      toast('Tick the ones you want first.', 'bad');
+      return;
+    }
+
+    try {
+      const result = await api.attImportShifts(wanted);
+      const added = result.applied.filter((a) => a.action === 'added').length;
+      const updated = result.applied.filter((a) => a.action === 'updated').length;
+      toast(`${added} added${updated ? `, ${updated} updated` : ''}. Check the break and grace on each.`, 'good');
+      await reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
+  return card('Shifts found for you', {
+    note: 'From the terminal and from the punches already recorded',
+    actions: fresh.length
+      ? h('button.btn.btn-primary', { onclick: importChosen }, 'Add the ticked ones')
+      : h('span.pill.good', 'All of these are already set up'),
+    wide: true,
+  },
+    table([
+      {
+        key: 'pick',
+        label: '',
+        format: (v, r) => (r.existing
+          ? h('span.pill.good', '✓')
+          : h('input', {
+            type: 'checkbox',
+            checked: true,
+            onchange: (e) => (e.target.checked ? chosen.add(key(r)) : chosen.delete(key(r))),
+          })),
+      },
+      { key: 'name', label: 'Shift', format: (v, r) => h('div', h('div', v), r.existing ? h('small.muted', `already set up as "${r.existing}"`) : null) },
+      { key: 'starts_at', label: 'Starts', align: 'right' },
+      { key: 'ends_at', label: 'Ends', align: 'right', format: (v, r) => h('span', v, lengthOf(r) > 0 && toMin(r.ends_at) <= toMin(r.starts_at) ? h('small.muted', ' next day') : null) },
+      { key: 'length', label: 'Length', align: 'right', format: (v, r) => `${fmtNum(lengthOf(r) / 60, 1)} h` },
+      {
+        key: 'support',
+        label: 'Evidence',
+        format: (v, r) => h('div',
+          v ? h('div', `${v} days of punches`) : h('div.muted', 'no punches yet'),
+          r.confirmedByDevice ? h('small.muted', 'confirmed by the terminal') : null),
+      },
+    ], data.suggestions, { empty: 'Nothing found.' }),
+
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
+      'Times come from where people actually clock in and out, rounded to five minutes — which is a '
+      + 'better guess than the terminal\u2019s own windows, because those are the times a tap is '
+      + '*accepted* between rather than the hour anybody is due. Breaks, grace periods and what counts '
+      + 'as a full day are policy: no device knows them, so they arrive as defaults and are worth '
+      + 'checking on each shift after you add it.'),
+  );
+
+  function key(s) { return `${s.starts_at}-${s.ends_at}`; }
+  function toMin(t) { const [hh, mm] = String(t).split(':').map(Number); return hh * 60 + mm; }
+  function lengthOf(s) {
+    const a = toMin(s.starts_at);
+    let b = toMin(s.ends_at);
+    if (b <= a) b += 1440;
+    return b - a;
+  }
 }
 
 // ---------------------------------------------------------------------------
