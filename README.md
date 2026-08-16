@@ -274,18 +274,30 @@ tables exist rather than hoping.
 
 From now on this happens on its own whenever anything is committed to `main`.
 
-### 6. Set the two secrets, then publish once more
+### 6. Set the app's secrets
 
-The Worker exists now, so it can hold secrets. Cloudflare dashboard → **Workers
-& Pages → niceoperation-attendance → Settings → Variables and Secrets**, and add:
+The Worker exists now, so it can hold secrets. Add them the same way you added
+the Cloudflare credentials — repository → **Settings → Secrets and variables →
+Actions → New repository secret**:
 
 | Name | Value |
 |---|---|
-| `SESSION_SECRET` | forty or more random characters. Never needs remembering. |
-| `MANAGER_PIN` | six digits — your way in before any accounts exist, and your way back in if everybody is ever locked out. **Write it down.** |
-| `RESEND_API_KEY` | only if you want the morning email digest |
+| `APP_SESSION_SECRET` | forty or more random characters. Never needs remembering. |
+| `APP_MANAGER_PIN` | six digits — your way in before any accounts exist, and your way back in if everybody is ever locked out. **Write it down.** |
+| `APP_RESEND_API_KEY` | only if you want the morning email digest |
 
-Then run the workflow again from the Actions tab so the Worker picks them up.
+Then **Actions → Set the app's secrets → Run workflow**. It copies them onto the
+Worker and lists the names it set. Run it again any time you change one.
+
+> They go through GitHub rather than being typed into Cloudflare's dashboard for
+> two reasons: that dashboard moves the Variables and Secrets section between
+> versions, and a value typed into a workflow form stays readable in the run
+> afterwards. A repository secret is neither.
+>
+> The Cloudflare route still works if you prefer it — **Workers & Pages →
+> niceoperation-attendance → Settings → Variables and Secrets**, adding each with
+> the **Type** dropdown set to *Secret* rather than *Text*. Drop the `APP_`
+> prefix there: the Worker wants `SESSION_SECRET`, not `APP_SESSION_SECRET`.
 
 **staff.niceoperation.com** should now open. If the address does not work, the
 domain is probably not on this Cloudflare account — add it there first, or
