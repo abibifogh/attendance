@@ -153,6 +153,29 @@ a fixed week has to know rotations exist. Any single day can still be changed on
 the rota itself without disturbing the pattern, and the fill button (**⇢**) puts
 one shift across the fortnight on whichever weekdays you tick.
 
+### The monthly reckoning
+
+A rota says somebody was due twenty-two days; the terminal says they worked
+nineteen and a half. **Leave → The month, day for day** puts those two numbers
+side by side for every person in a month, with the gap between them, and asks a
+manager to decide what happens to it.
+
+Both numbers are computed fresh from the same rules every other screen uses, so
+a shift corrected this morning or a supervisor's ruling from yesterday changes
+them — right up until the month is signed off. Approved leave and public
+holidays are already out of the rostered count, so what is left is a real gap
+rather than somebody's fortnight in July.
+
+Signing off is deliberately two numbers rather than one. The difference is
+arithmetic; what actually comes off somebody's leave is a judgement. The form
+opens with the difference filled in as a default, not a verdict, and the record
+keeps both — because the alternative is a conversation six months later with
+nothing to stand on. A month can also be **let stand**, which costs nothing and
+is still not the same state as one nobody has looked at.
+
+Days charged or given back move the leave balance, and the balances on the same
+screen include every month already signed.
+
 ### Leave
 
 Requests, approvals and balances on one screen, because the question is never

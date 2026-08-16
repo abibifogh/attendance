@@ -54,6 +54,12 @@ export const ROUTES = [
   ['GET', '/api/att/export', 'att_reports', att.exportCsv],
   ['GET', '/api/att/balances', 'att_reports', att.balances],
 
+  // The monthly reckoning. Reading it is a report; signing it off moves
+  // somebody's leave, so it needs the permission that approves leave.
+  ['GET', '/api/att/month-review', 'att_reports', att.monthReview],
+  ['POST', '/api/att/month-review', 'att_manage', att.decideMonth],
+  ['POST', '/api/att/month-review/undo', 'att_manage', att.undoMonth],
+
   // Settling a day is a decision with somebody's name on it, so it sits behind
   // its own permission rather than travelling with the reports.
   ['POST', '/api/att/days/:day/resolve', 'att_manage', att.resolveDay],

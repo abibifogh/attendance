@@ -81,6 +81,9 @@ export const api = {
     ...(from ? { from } : {}), ...(to ? { to } : {}),
   })}`),
   attOverview: (month) => request(`/api/att/overview${month ? `?month=${month}` : ''}`),
+  attMonthReview: (month) => request(`/api/att/month-review?month=${month}`),
+  attDecideMonth: (body) => request('/api/att/month-review', { method: 'POST', body }),
+  attUndoMonth: (body) => request('/api/att/month-review/undo', { method: 'POST', body }),
   attBalances: (asOf) => request(`/api/att/balances${asOf ? `?asOf=${asOf}` : ''}`),
   attExportUrl: (from, to) => `/api/att/export?${new URLSearchParams({
     ...(from ? { from } : {}), ...(to ? { to } : {}),

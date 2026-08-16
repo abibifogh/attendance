@@ -5,7 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 import {
   copyRoster, day as dayRoute, deviceConfig, getRoster, importShifts, ingest,
-  pushEvents, resolveDay, savePattern, shiftSuggestions, staffReport,
+  balances, decideMonth, monthReview, pushEvents, resolveDay, savePattern,
+  shiftSuggestions, staffReport, undoMonth,
 } from '../src/routes/attendance.js';
 import { cleanDepartments, createStaff, listStaff } from '../src/routes/attendance-setup.js';
 import { hashDeviceToken } from '../src/lib/attendance-ingest.js';
@@ -1141,4 +1142,117 @@ test('punches already held are attached to the seeded staff', async () => {
        AND EXISTS (SELECT 1 FROM att_staff s WHERE s.employee_no = att_punches.employee_no)`);
 
   assert.equal(raw.prepare("SELECT staff_id FROM att_punches WHERE dedupe_key = 'x1'").get().staff_id, before.id);
+});
+
+// ---------------------------------------------------------------------------
+// The monthly reckoning
+// ---------------------------------------------------------------------------
+
+/** A month of Mondays-to-Fridays worked, with a few days simply not turned up to. */
+async function marchWorked(db, token, workedDays) {
+  for (const day of workedDays) {
+    await send(db, token, [
+      event(`${day}T06:00:00+00:00`, 'checkIn', `i${day}`),
+      event(`${day}T14:00:00+00:00`, 'checkOut', `o${day}`),
+    ]);
+  }
+}
+
+test('a month shows days rostered against days worked', async () => {
+  const { db, token } = await setup();
+  // Pattern is Monday-Friday mornings. March 2026 has 22 weekdays.
+  await marchWorked(db, token, ['2026-03-02', '2026-03-03', '2026-03-04']);
+
+  const data = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const row = data.rows.find((r) => r.staff.id === 1);
+
+  assert.equal(row.scheduledDays, 22, 'the weekdays the pattern asked for');
+  assert.equal(row.workedDays, 3);
+  assert.equal(row.difference, -19, 'worked minus rostered, negative being short');
+  assert.equal(row.decision, null, 'nobody has looked at it yet');
+  assert.equal(data.reviewed, 0);
+});
+
+test('signing a month off takes the agreed days off the leave balance', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02', '2026-03-03']);
+
+  // Twenty short, but only two are charged. That gap is the whole point: the
+  // figures are arithmetic, what comes off somebody's leave is a judgement.
+  await decideMonth(ctx(db, {
+    body: { staffId: 1, month: '2026-03', decision: 'approved', daysApplied: -2, note: 'agreed' },
+  }));
+
+  const data = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const row = data.rows.find((r) => r.staff.id === 1);
+  assert.equal(row.decision.decision, 'approved');
+  assert.equal(row.decision.daysApplied, -2);
+  assert.equal(row.decision.asSigned.difference, -20, 'what the figures said at the time');
+
+  const bal = await (await balances(ctx(db, { query: '?asOf=2026-03-31' }))).json();
+  const b = bal.rows.find((r) => r.staff.id === 1).balance;
+  assert.equal(b.adjusted, -2);
+  assert.equal(b.available, b.entitlement + b.carryOver - 2, 'the charge moves the entitlement');
+});
+
+test('a month can be let stand without moving anything', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+
+  await decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', decision: 'waived' } }));
+
+  const data = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  assert.equal(data.rows.find((r) => r.staff.id === 1).decision.decision, 'waived');
+
+  const bal = await (await balances(ctx(db, { query: '?asOf=2026-03-31' }))).json();
+  assert.equal(bal.rows.find((r) => r.staff.id === 1).balance.adjusted, 0,
+    'looked at and let go is not the same as unreviewed, but it costs nothing');
+});
+
+test('signing the same month twice corrects it rather than charging again', async () => {
+  const { raw, db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+
+  await decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -3 } }));
+  await decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -1 } }));
+
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_month_review').get().n, 1);
+  const bal = await (await balances(ctx(db, { query: '?asOf=2026-03-31' }))).json();
+  assert.equal(bal.rows.find((r) => r.staff.id === 1).balance.adjusted, -1);
+});
+
+test('reopening a month puts it back to waiting and gives the days back', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+  await decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -4 } }));
+  await undoMonth(ctx(db, { body: { staffId: 1, month: '2026-03' } }));
+
+  const data = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  assert.equal(data.rows.find((r) => r.staff.id === 1).decision, null);
+
+  const bal = await (await balances(ctx(db, { query: '?asOf=2026-03-31' }))).json();
+  assert.equal(bal.rows.find((r) => r.staff.id === 1).balance.adjusted, 0);
+});
+
+test('a month signed off in a different leave year does not move this year', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+  await decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -5 } }));
+
+  // Leave year runs 01-01 to 31-12, so 2027 must not see 2026's charge.
+  const bal = await (await balances(ctx(db, { query: '?asOf=2027-03-31' }))).json();
+  assert.equal(bal.rows.find((r) => r.staff.id === 1).balance.adjusted, 0);
+});
+
+test('a rubbish month is refused', async () => {
+  const { db } = await setup();
+  await assert.rejects(() => monthReview(ctx(db, { query: '?month=March' })), /not a month/i);
+  await assert.rejects(
+    () => decideMonth(ctx(db, { body: { staffId: 1, month: '2026-3' } })),
+    /not a month/i,
+  );
+  await assert.rejects(
+    () => decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: 900 } })),
+    /sensible number/i,
+  );
 });

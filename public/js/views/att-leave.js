@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { can, navigate } from '../app.js';
-import { fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
+import { fmtDay, fmtNum, h, monthOf, mount, shiftMonth, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import { field, formDialog } from './att-shared.js';
 
@@ -11,7 +11,7 @@ import { field, formDialog } from './att-shared.js';
  * much leave has Ama left" on its own — it is "can Ama have next Friday off",
  * and answering it means seeing the balance and the request together.
  */
-export async function renderAttLeave() {
+export async function renderAttLeave(params = {}) {
   const host = h('div');
   // Two different jobs. A planner puts leave in and it waits for somebody;
   // a manager is the somebody. Splitting these is the whole point of the
@@ -20,13 +20,15 @@ export async function renderAttLeave() {
   const requests = can('att_rota');
   const decides = can('att_manage');
 
-  const [leaveData, balanceData, bootstrap] = await Promise.all([
+  const month = params.month || monthOf(todayISO());
+  const [leaveData, balanceData, bootstrap, review] = await Promise.all([
     api.attLeave(),
     can('att_reports') ? api.attBalances() : Promise.resolve({ rows: [] }),
     api.attBootstrap(),
+    can('att_reports') ? api.attMonthReview(month).catch(() => null) : Promise.resolve(null),
   ]);
 
-  const reload = async () => mount(host, await renderAttLeave());
+  const reload = async (next = month) => mount(host, await renderAttLeave({ month: next }));
 
   const leaveKinds = bootstrap.reasons.filter((r) => r.kind === 'leave' && r.active);
   const pending = leaveData.leave.filter((l) => l.status === 'pending');
@@ -159,6 +161,8 @@ export async function renderAttLeave() {
     card('Booked and coming up', { note: `${upcoming.length}`, wide: true },
       table(columns('upcoming'), upcoming, { empty: 'Nobody is booked off.' })),
 
+    monthCard(review, month, decides, reload),
+
     balanceData.rows.length
       ? card('Balances', { note: `As at ${fmtDay(balanceData.asOf)}`, wide: true },
         table([
@@ -212,4 +216,145 @@ export async function renderAttLeave() {
 
 function capitalise(value) {
   return String(value || '').charAt(0).toUpperCase() + String(value || '').slice(1);
+}
+
+/**
+ * The monthly reckoning: days owed against days worked, and what to do about
+ * the gap.
+ *
+ * Both numbers are computed fresh every time this loads, so a shift corrected
+ * this morning or a supervisor's ruling from yesterday shows here immediately —
+ * right up until somebody signs the month off. After that the figures as signed
+ * are kept beside the live ones, because a decision whose basis has quietly
+ * changed underneath it is worse than no decision.
+ *
+ * Signing off is deliberately two numbers, not one. The difference is what the
+ * rota and the terminal say; what actually comes off somebody's leave is a
+ * judgement, and the form opens with the difference filled in rather than
+ * applied — a default, not a verdict.
+ */
+function monthCard(review, month, decides, reload) {
+  if (!review) return null;
+
+  const step = async (n) => reload(shiftMonth(month, n));
+
+  const sign = async (row) => {
+    const short = row.difference < 0;
+    const done = await formDialog({
+      title: `${row.staff.name} — ${monthName(month)}`,
+      submitLabel: 'Record the decision',
+      body: h('div',
+        h('p.muted',
+          `Rostered ${fmtNum(row.scheduledDays, 1)} days, worked ${fmtNum(row.workedDays, 1)} — `
+          + `${short ? 'short by' : 'over by'} ${fmtNum(Math.abs(row.difference), 1)}.`),
+        field('What happens to their leave',
+          h('select', { name: 'decision' },
+            h('option', { value: 'approved' }, short ? 'Charge days to their leave' : 'Give days back'),
+            h('option', { value: 'waived' }, 'Let it stand — nothing comes off'),
+          )),
+        field('Days',
+          h('input', {
+            type: 'number', name: 'daysApplied', step: 0.5, min: -60, max: 60,
+            value: row.difference,
+          }),
+          'Negative takes days off their entitlement, positive gives days back. '
+          + 'Filled in from the difference — change it to whatever was agreed'),
+        field('Note', h('input', { type: 'text', name: 'note', maxlength: 300 })),
+        row.openCount
+          ? h('p.muted', { style: { color: 'var(--warn)' } },
+            `${row.openCount} day${row.openCount === 1 ? '' : 's'} this month still waiting on a `
+            + 'supervisor. Settling those first will change these figures.')
+          : null,
+      ),
+      onSubmit: async (form) => api.attDecideMonth({
+        staffId: row.staff.id,
+        month,
+        decision: form.get('decision'),
+        daysApplied: Number(form.get('daysApplied')) || 0,
+        note: form.get('note') || null,
+      }),
+    });
+    if (done) { toast('Recorded.', 'good'); await reload(); }
+  };
+
+  const undo = async (row) => {
+    if (!window.confirm(`Reopen ${row.staff.name}'s ${monthName(month)}?`)) return;
+    await api.attUndoMonth({ staffId: row.staff.id, month });
+    toast('Reopened.');
+    await reload();
+  };
+
+  const waiting = review.rows.filter((r) => !r.decision).length;
+
+  return card('The month, day for day', {
+    note: waiting
+      ? `${waiting} still to go through`
+      : `all ${review.rows.length} signed off`,
+    wide: true,
+    actions: h('div.btn-row',
+      h('button.btn-sm', { onclick: () => step(-1) }, '‹'),
+      h('input', {
+        type: 'month', value: month,
+        onchange: (e) => e.target.value && reload(e.target.value),
+      }),
+      h('button.btn-sm', {
+        onclick: () => step(1),
+        disabled: month >= monthOf(todayISO()),
+      }, '›'),
+    ),
+  },
+    review.unsettled
+      ? h('p.muted', { style: { color: 'var(--warn)', marginTop: 0 } },
+        `${review.unsettled} day${review.unsettled === 1 ? '' : 's'} this month are still waiting `
+        + 'on a supervisor. Their hours are not settled, so signing off now signs off a guess.')
+      : null,
+
+    table([
+      { key: 'staff', label: 'Name', format: (v) => h('div', h('div', v.name), h('small.muted', v.department || v.employee_no)) },
+      { key: 'scheduledDays', label: 'Rostered', align: 'right', format: (v) => fmtNum(v, 1) },
+      { key: 'workedDays', label: 'Worked', align: 'right', format: (v) => fmtNum(v, 1) },
+      {
+        key: 'difference',
+        label: 'Over / under',
+        align: 'right',
+        format: (v) => (Math.abs(v) < 0.01
+          ? h('span.muted', 'square')
+          : h(`span.pill${v < 0 ? '.bad' : '.good'}`, `${v > 0 ? '+' : ''}${fmtNum(v, 1)}`)),
+      },
+      { key: 'daysAbsent', label: 'Absent', align: 'right', format: (v) => (v ? fmtNum(v, 0) : h('span.muted', '—')) },
+      { key: 'daysLeave', label: 'On leave', align: 'right', format: (v) => (v ? fmtNum(v, 1) : h('span.muted', '—')) },
+      {
+        key: 'decision',
+        label: 'Decision',
+        format: (v) => {
+          if (!v) return h('span.pill.warn', 'waiting');
+          if (v.decision === 'waived') return h('div', h('span.pill', 'let stand'), h('small.muted', ` ${v.by}`));
+          return h('div',
+            h('span.pill.good', `${v.daysApplied > 0 ? '+' : ''}${fmtNum(v.daysApplied, 1)} days`),
+            h('small.muted', ` ${v.by}`));
+        },
+      },
+      {
+        key: 'actions',
+        label: '',
+        format: (v, r) => (decides
+          ? h('div.btn-row', r.decision
+            ? h('button.btn-sm', { onclick: () => undo(r) }, 'Reopen')
+            : h('button.btn-sm.btn-primary', { onclick: () => sign(r) }, 'Sign off'))
+          : null),
+      },
+    ], review.rows, { empty: 'Nobody was rostered or worked in this month.' }),
+
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
+      'Rostered counts the days the rota asked for, with approved leave and public holidays already '
+      + 'taken out — so what is left is a real gap rather than somebody\u2019s fortnight in July. '
+      + 'Signing off moves days on and off the leave balance, and the balances above include '
+      + 'every month already signed.'),
+  );
+}
+
+function monthName(month) {
+  return new Date(`${month}-01T12:00:00Z`).toLocaleDateString('en-GB', {
+    month: 'long', year: 'numeric', timeZone: 'UTC',
+  });
 }

@@ -909,6 +909,7 @@ export function monthsBetween(from, to) {
  */
 export function leaveBalance({
   staff, records = [], requests = [], settings = {}, asOf, reasons = new Map(),
+  adjustments = [],
 }) {
   const yearStart = settings.att_leave_year_starts || '01-01';
   const year = leaveYearOf(asOf, yearStart);
@@ -955,13 +956,28 @@ export function leaveBalance({
     else if (request.status === 'approved' && request.from_day > asOf) booked += request.days;
   }
 
-  const available = entitlement + carryOver;
+  // Signed-off months, in days. Negative is a shortfall charged to the
+  // entitlement; positive is time given back for covering more than was
+  // rostered. Only months inside this leave year count, so signing off last
+  // December cannot move this year's balance.
+  let adjusted = 0;
+  for (const row of adjustments) {
+    const month = String(row.month ?? '');
+    if (!month) continue;
+    // A month belongs to the leave year its first day falls in.
+    if (`${month}-01` < year.start || `${month}-01` > year.end) continue;
+    adjusted += Number(row.days_applied ?? row.daysApplied ?? 0) || 0;
+  }
+  adjusted = Math.round(adjusted * 2) / 2;
+
+  const available = entitlement + carryOver + adjusted;
   return {
     year: year.label,
     from: year.start,
     to: year.end,
     entitlement,
     carryOver,
+    adjusted,
     available,
     taken,
     booked,

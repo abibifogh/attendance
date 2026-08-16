@@ -1365,8 +1365,20 @@ export async function cancelLeave(ctx, id) {
 export async function balances(ctx) {
   const timezone = await timezoneOf(ctx.db);
   const asOf = readDay(ctx.url.searchParams.get('asOf'), todayIn(timezone));
-  const ds = await loadDataset(ctx.db, { from: asOf, to: asOf });
-  const yearByStaff = await yearToDateAll(ctx.db, `${asOf.slice(0, 4)}-01-01`, asOf);
+  const [ds, yearByStaff, signed] = await Promise.all([
+    loadDataset(ctx.db, { from: asOf, to: asOf }),
+    yearToDateAll(ctx.db, `${asOf.slice(0, 4)}-01-01`, asOf),
+    ctx.db.prepare('SELECT staff_id, month, days_applied FROM att_month_review')
+      .all().catch(() => ({ results: [] })),
+  ]);
+
+  // Months already signed off, per person. These move the balance, so a
+  // shortfall charged in March is visible in the figure a manager reads today.
+  const signedBy = new Map();
+  for (const row of signed.results ?? []) {
+    if (!signedBy.has(row.staff_id)) signedBy.set(row.staff_id, []);
+    signedBy.get(row.staff_id).push(row);
+  }
 
   const rows = [];
   for (const staff of ds.staff) {
@@ -1381,6 +1393,7 @@ export async function balances(ctx) {
         settings: ds.settings,
         asOf,
         reasons: ds.reasonBy,
+        adjustments: signedBy.get(staff.id) ?? [],
       }),
     });
   }
@@ -1447,4 +1460,159 @@ export async function dailyTick(db, env, today) {
   }
 
   return { open, absent, escalated: escalated.length };
+}
+
+// ---------------------------------------------------------------------------
+// The monthly reckoning
+// ---------------------------------------------------------------------------
+
+/**
+ * Days owed against days worked, for one month, for everybody.
+ *
+ * The two numbers come from the same rules every other screen uses and are
+ * never stored, so a shift corrected this morning or a supervisor's ruling from
+ * yesterday changes them — right up until somebody signs the month off. What is
+ * stored is only the decision.
+ *
+ * `difference` is worked minus scheduled: negative is short, positive is more
+ * than the rota asked for. Approved leave and public holidays are already out
+ * of the scheduled count by the time it gets here, so what is left is genuinely
+ * unexplained rather than an artefact of somebody's fortnight in July.
+ */
+export async function monthReview(ctx) {
+  const timezone = await timezoneOf(ctx.db);
+  const month = ctx.url.searchParams.get('month') || todayIn(timezone).slice(0, 7);
+  if (!isMonth(month)) throw badRequest('That is not a month like 2026-08.');
+
+  const { from, to } = monthBounds(month);
+  const [ds, decided] = await Promise.all([
+    loadDataset(ctx.db, { from, to }),
+    ctx.db.prepare('SELECT * FROM att_month_review WHERE month = ?').bind(month)
+      .all().catch(() => ({ results: [] })),
+  ]);
+
+  const decidedBy = new Map((decided.results ?? []).map((r) => [r.staff_id, r]));
+  const rows = [];
+
+  for (const staff of ds.staff) {
+    if (!activeOn(staff, to) && !activeOn(staff, from)) continue;
+
+    const days = daysFor(ds, staff.id, from, to);
+    const totals = summarise(days, { shifts: ds.shiftById, reasons: ds.reasonBy });
+    const decision = decidedBy.get(staff.id) ?? null;
+
+    // Somebody with nothing rostered and nothing worked has no month to review,
+    // and a screen listing them is a screen people stop reading.
+    if (!totals.scheduled && !totals.daysWorked && !decision) continue;
+
+    rows.push({
+      staff: {
+        id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department,
+      },
+      scheduledDays: totals.scheduled,
+      workedDays: totals.daysWorked,
+      difference: Math.round((totals.daysWorked - totals.scheduled) * 2) / 2,
+      daysAbsent: totals.daysAbsent,
+      daysLeave: totals.daysLeave,
+      openCount: totals.openCount,
+      decision: decision && {
+        decision: decision.decision,
+        daysApplied: decision.days_applied,
+        note: decision.note,
+        by: decision.decided_by,
+        at: decision.decided_at,
+        // What the figures said when it was signed off, so a later change is
+        // visible rather than silently rewriting the basis of the decision.
+        asSigned: {
+          scheduledDays: decision.scheduled_days,
+          workedDays: decision.worked_days,
+          difference: decision.difference,
+        },
+      },
+    });
+  }
+
+  rows.sort((a, b) => a.staff.name.localeCompare(b.staff.name));
+
+  return json({
+    month,
+    from,
+    to,
+    rows,
+    // Days still waiting on a supervisor anywhere in the month. Signing a month
+    // off over the top of those is signing off a guess.
+    unsettled: rows.reduce((n, r) => n + r.openCount, 0),
+    reviewed: rows.filter((r) => r.decision).length,
+  });
+}
+
+/**
+ * Sign a person's month off.
+ *
+ * `daysApplied` is what actually moves against their leave, signed and chosen
+ * by whoever is deciding — not the raw difference. A manager looking at three
+ * days short may charge one, or none, and the record keeps both what the
+ * figures said and what was decided, because the alternative is a conversation
+ * six months later with nothing to stand on.
+ */
+export async function decideMonth(ctx) {
+  const body = await readJson(ctx.request);
+  const staffId = int(body.staffId, 'Staff', { required: true, min: 1 });
+  const month = str(body.month, 'Month', { required: true, max: 7 });
+  if (!isMonth(month)) throw badRequest('That is not a month like 2026-08.');
+
+  const decision = ['approved', 'waived'].includes(body.decision) ? body.decision : 'approved';
+  const daysApplied = decision === 'waived'
+    ? 0
+    : Math.round(Number(body.daysApplied ?? 0) * 2) / 2;
+
+  if (!Number.isFinite(daysApplied) || Math.abs(daysApplied) > 60) {
+    throw badRequest('That is not a sensible number of days.');
+  }
+
+  const staff = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(staffId).first();
+  if (!staff) throw notFound('No such member of staff.');
+
+  // Recomputed here rather than trusted from the browser: the figures a
+  // decision is recorded against have to be the ones this app stands behind.
+  const { from, to } = monthBounds(month);
+  const ds = await loadDataset(ctx.db, { from, to });
+  const totals = summarise(daysFor(ds, staffId, from, to), {
+    shifts: ds.shiftById, reasons: ds.reasonBy,
+  });
+
+  await ctx.db.prepare(
+    `INSERT INTO att_month_review
+       (staff_id, month, scheduled_days, worked_days, difference,
+        decision, days_applied, note, decided_by, decided_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))
+     ON CONFLICT (staff_id, month) DO UPDATE SET
+       scheduled_days = excluded.scheduled_days, worked_days = excluded.worked_days,
+       difference = excluded.difference, decision = excluded.decision,
+       days_applied = excluded.days_applied, note = excluded.note,
+       decided_by = excluded.decided_by, decided_at = excluded.decided_at`,
+  ).bind(
+    staffId, month,
+    totals.scheduled, totals.daysWorked,
+    Math.round((totals.daysWorked - totals.scheduled) * 2) / 2,
+    decision, daysApplied,
+    str(body.note, 'Note', { max: 300 }),
+    `${ctx.session.user.name} (${ctx.session.user.role})`,
+  ).run();
+
+  await audit(ctx, 'attendance.month_review', staffId, { month, decision, daysApplied });
+  return json({ ok: true, month, daysApplied, decision });
+}
+
+/** Undo a sign-off, so the month goes back to waiting. */
+export async function undoMonth(ctx) {
+  const body = await readJson(ctx.request);
+  const staffId = int(body.staffId, 'Staff', { required: true, min: 1 });
+  const month = str(body.month, 'Month', { required: true, max: 7 });
+  if (!isMonth(month)) throw badRequest('That is not a month like 2026-08.');
+
+  await ctx.db.prepare('DELETE FROM att_month_review WHERE staff_id = ? AND month = ?')
+    .bind(staffId, month).run();
+  await audit(ctx, 'attendance.month_review_undo', staffId, { month });
+  return json({ ok: true });
 }
