@@ -56,9 +56,9 @@ export const ROUTES = [
 
   // The monthly reckoning. Reading it is a report; signing it off moves
   // somebody's leave, so it needs the permission that approves leave.
-  ['GET', '/api/att/month-review', 'att_reports', att.monthReview],
-  ['POST', '/api/att/month-review', 'att_manage', att.decideMonth],
-  ['POST', '/api/att/month-review/undo', 'att_manage', att.undoMonth],
+  ['GET', '/api/att/review', 'att_reports', att.periodReview],
+  ['POST', '/api/att/review', 'att_manage', att.decidePeriod],
+  ['POST', '/api/att/review/undo', 'att_manage', att.undoPeriod],
 
   // Settling a day is a decision with somebody's name on it, so it sits behind
   // its own permission rather than travelling with the reports.

@@ -962,13 +962,15 @@ export function leaveBalance({
   // December cannot move this year's balance.
   let adjusted = 0;
   for (const row of adjustments) {
-    const month = String(row.month ?? '');
-    if (!month) continue;
-    // A month belongs to the leave year its first day falls in.
-    if (`${month}-01` < year.start || `${month}-01` > year.end) continue;
+    // A signed span belongs to the leave year its first day falls in. Keyed on
+    // the start rather than the end so a span crossing New Year lands in one
+    // year rather than being counted, or lost, by both.
+    const start = String(row.from_day ?? row.from ?? (row.month ? `${row.month}-01` : ''));
+    if (!start) continue;
+    if (start < year.start || start > year.end) continue;
     adjusted += Number(row.days_applied ?? row.daysApplied ?? 0) || 0;
   }
-  adjusted = Math.round(adjusted * 2) / 2;
+  adjusted = Math.round(adjusted);
 
   const available = entitlement + carryOver + adjusted;
   return {

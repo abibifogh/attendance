@@ -25,7 +25,7 @@ export async function renderAttLeave(params = {}) {
     api.attLeave(),
     can('att_reports') ? api.attBalances() : Promise.resolve({ rows: [] }),
     api.attBootstrap(),
-    can('att_reports') ? api.attMonthReview(month).catch(() => null) : Promise.resolve(null),
+    can('att_reports') ? api.attReview({ month }).catch(() => null) : Promise.resolve(null),
   ]);
 
   const reload = async (next = month) => mount(host, await renderAttLeave({ month: next }));
@@ -239,13 +239,13 @@ function monthCard(review, month, decides, reload) {
   const step = async (n) => reload(shiftMonth(month, n));
 
   const sign = async (row) => {
-    const done = await signOffDialog(row, month);
+    const done = await signOffDialog(row, { month });
     if (done) { toast('Recorded.', 'good'); await reload(); }
   };
 
   const undo = async (row) => {
     if (!window.confirm(`Reopen ${row.staff.name}'s ${monthLabel(month)}?`)) return;
-    await api.attUndoMonth({ staffId: row.staff.id, month });
+    await api.attUndoReview({ staffId: row.staff.id, month });
     toast('Reopened.');
     await reload();
   };

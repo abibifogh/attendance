@@ -6,7 +6,7 @@ import {
 import { card, emptyState, exportButton, table } from './components.js';
 import { printButton } from '../print.js';
 import {
-  clockCell, field, formDialog, hoursCell, minutesCell, monthLabel, reasonSelect, signOffDialog,
+  clockCell, field, formDialog, hoursCell, minutesCell, reasonSelect, signOffDialog, spanLabel,
   statusPill, totalsLine,
 } from './att-shared.js';
 
@@ -27,19 +27,14 @@ export async function renderAttStaff(params) {
   const anchor = params.day || params.to || todayISO();
   const { from, to } = boundsFor(period, anchor, params);
 
-  // A whole calendar month, and only then: signing off half of one is not a
-  // thing the record can hold.
-  const wholeMonth = from.slice(0, 7) === to.slice(0, 7)
-    && from.endsWith('-01')
-    && to === lastDayOf(from.slice(0, 7))
-    ? from.slice(0, 7)
-    : null;
+  // Whatever is on screen is what can be signed off — a day, a week, a month,
+  // or any range somebody picked. The record holds a span rather than a month,
+  // and refuses two that share a day, so there is nothing left to restrict here.
+  const span = { from, to };
 
   const [data, review] = await Promise.all([
     api.attStaffReport(id, from, to),
-    wholeMonth && can('att_reports')
-      ? api.attMonthReview(wholeMonth, id).catch(() => null)
-      : Promise.resolve(null),
+    can('att_reports') ? api.attReview({ from, to, staffId: id }).catch(() => null) : Promise.resolve(null),
   ]);
   const single = from === to;
 
@@ -173,13 +168,13 @@ export async function renderAttStaff(params) {
    * stops happening.
    */
   const signOff = async () => {
-    const done = await signOffDialog(monthRow, wholeMonth);
-    if (done) { toast('Month signed off.', 'good'); await reload({}); }
+    const done = await signOffDialog(monthRow, span);
+    if (done) { toast('Signed off.', 'good'); await reload({}); }
   };
 
   const reopen = async () => {
-    if (!window.confirm(`Reopen ${data.staff.name}'s ${monthLabel(wholeMonth)}?`)) return;
-    await api.attUndoMonth({ staffId: id, month: wholeMonth });
+    if (!window.confirm(`Reopen ${data.staff.name} — ${spanLabel(span)}?`)) return;
+    await api.attUndoReview({ staffId: id, ...span });
     toast('Reopened.');
     await reload({});
   };
@@ -192,15 +187,17 @@ export async function renderAttStaff(params) {
         monthRow.decision
           ? h('span.pill.good',
             monthRow.decision.decision === 'waived'
-              ? 'month let stand'
-              : `month signed: ${monthRow.decision.daysApplied > 0 ? '+' : ''}${monthRow.decision.daysApplied} days`)
-          : h('span.pill.warn',
-            monthRow.difference
-              ? `${monthRow.difference > 0 ? '+' : ''}${monthRow.difference} over the month`
-              : 'month square'),
+              ? 'let stand'
+              : `signed: ${monthRow.decision.daysApplied > 0 ? '+' : ''}${monthRow.decision.daysApplied} days`)
+          : h(monthRow.overlapping?.length ? 'span.pill.bad' : 'span.pill.warn',
+            monthRow.overlapping?.length
+              ? 'part of this is already signed'
+              : monthRow.difference
+                ? `${monthRow.difference > 0 ? '+' : ''}${monthRow.difference} over ${single ? 'the day' : 'this period'}`
+                : 'square'),
         monthRow.decision
-          ? h('button.btn-sm', { onclick: reopen }, 'Reopen the month')
-          : h('button.btn-sm.btn-primary', { onclick: signOff }, 'Sign off the month'),
+          ? h('button.btn-sm', { onclick: reopen }, 'Reopen')
+          : h('button.btn-sm.btn-primary', { onclick: signOff }, `Sign off ${single ? 'the day' : 'this period'}`),
       )
       : null,
   }, table([
@@ -421,10 +418,4 @@ function suggested(row) {
     return row.late_minutes > 5 ? 'late' : 'present';
   }
   return '';
-}
-
-/** The last day of a 'YYYY-MM', without a calendar library. */
-function lastDayOf(month) {
-  const [y, m] = month.split('-').map(Number);
-  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
 }

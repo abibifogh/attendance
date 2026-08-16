@@ -92,8 +92,8 @@ function looksFlat(pattern) {
  */
 async function signedMonths(db, staffId = null) {
   const rows = await (staffId
-    ? db.prepare('SELECT staff_id, month, days_applied FROM att_month_review WHERE staff_id = ?').bind(staffId)
-    : db.prepare('SELECT staff_id, month, days_applied FROM att_month_review')
+    ? db.prepare('SELECT staff_id, from_day, days_applied FROM att_period_review WHERE staff_id = ?').bind(staffId)
+    : db.prepare('SELECT staff_id, from_day, days_applied FROM att_period_review')
   ).all().catch(() => ({ results: [] }));
 
   const by = new Map();
@@ -1482,42 +1482,65 @@ export async function dailyTick(db, env, today) {
 }
 
 // ---------------------------------------------------------------------------
-// The monthly reckoning
+// The reckoning: a day, a week or a month
 // ---------------------------------------------------------------------------
 
+/** The window being reckoned up, from either a month or an explicit range. */
+function reviewWindow(url, timezone) {
+  const month = url.searchParams.get('month');
+  if (month) {
+    if (!isMonth(month)) throw badRequest('That is not a month like 2026-08.');
+    return { ...monthBounds(month), kind: 'month' };
+  }
+
+  const to = readDay(url.searchParams.get('to'), todayIn(timezone));
+  const from = readDay(url.searchParams.get('from'), to);
+  if (from > to) throw badRequest('The start date is after the end date.');
+  if (diffDays(from, to) > 400) throw badRequest('That is more than a year. Choose a shorter period.');
+  return { from, to, kind: kindOf(from, to) };
+}
+
+/** A label for the span. Only ever a label — every rule below works on dates. */
+function kindOf(from, to) {
+  if (from === to) return 'day';
+  const { from: mFrom, to: mTo } = monthBounds(from.slice(0, 7));
+  if (from === mFrom && to === mTo) return 'month';
+  if (diffDays(from, to) === 6) return 'week';
+  return 'period';
+}
+
 /**
- * Days owed against days worked, for one month, for everybody.
+ * Days owed against days worked, for a span, for everybody in it.
  *
  * The two numbers come from the same rules every other screen uses and are
  * never stored, so a shift corrected this morning or a supervisor's ruling from
- * yesterday changes them — right up until somebody signs the month off. What is
+ * yesterday changes them — right up until somebody signs the span off. What is
  * stored is only the decision.
- *
- * `difference` is worked minus scheduled: negative is short, positive is more
- * than the rota asked for. Approved leave and public holidays are already out
- * of the scheduled count by the time it gets here, so what is left is genuinely
- * unexplained rather than an artefact of somebody's fortnight in July.
  */
-export async function monthReview(ctx) {
+export async function periodReview(ctx) {
   const timezone = await timezoneOf(ctx.db);
-  const month = ctx.url.searchParams.get('month') || todayIn(timezone).slice(0, 7);
-  if (!isMonth(month)) throw badRequest('That is not a month like 2026-08.');
+  const { from, to, kind } = reviewWindow(ctx.url, timezone);
 
   // One person, when a screen is already looking at one person. The whole
-  // property's month is a lot to load to answer a question about a single row.
+  // property is a lot to load to answer a question about a single row.
   const only = ctx.url.searchParams.get('staffId');
   const onlyId = only ? int(only, 'Staff', { min: 1 }) : null;
 
-  const { from, to } = monthBounds(month);
-  const [ds, decided] = await Promise.all([
+  const [ds, signed] = await Promise.all([
     loadDataset(ctx.db, { from, to }),
-    ctx.db.prepare('SELECT * FROM att_month_review WHERE month = ?').bind(month)
-      .all().catch(() => ({ results: [] })),
+    ctx.db.prepare(
+      `SELECT * FROM att_period_review
+        WHERE from_day <= ?2 AND to_day >= ?1
+        ORDER BY from_day`,
+    ).bind(from, to).all().catch(() => ({ results: [] })),
   ]);
 
-  const decidedBy = new Map((decided.results ?? []).map((r) => [r.staff_id, r]));
-  // How long an unrostered day has to be before it counts as one. Six hours by
-  // default: two hours covering a gap is a favour, not a day off in lieu.
+  const signedBy = new Map();
+  for (const row of signed.results ?? []) {
+    if (!signedBy.has(row.staff_id)) signedBy.set(row.staff_id, []);
+    signedBy.get(row.staff_id).push(row);
+  }
+
   const overMinutes = Math.max(0, Number(ds.settings.att_over_minutes) || 360);
   const rows = [];
 
@@ -1527,21 +1550,22 @@ export async function monthReview(ctx) {
 
     const days = daysFor(ds, staff.id, from, to);
     const totals = summarise(days, { shifts: ds.shiftById, reasons: ds.reasonBy });
-    const decision = decidedBy.get(staff.id) ?? null;
+    const overlapping = signedBy.get(staff.id) ?? [];
 
-    // Somebody with nothing rostered and nothing worked has no month to review,
-    // and a screen listing them is a screen people stop reading.
-    if (!onlyId && !totals.scheduled && !totals.daysWorked && !decision) continue;
+    // The one that is this span exactly, as opposed to one that merely touches
+    // it. Only an exact match can be reopened from here.
+    const exact = overlapping.find((r) => r.from_day === from && r.to_day === to) ?? null;
+
+    if (!onlyId && !totals.scheduled && !totals.daysWorked && !overlapping.length) continue;
 
     const oc = overUnder(days, { overMinutes });
     const counted = new Map([
-      ...oc.overs.map((o) => [o.day, { side: 'over', why: o.why }]),
-      ...oc.unders.map((u) => [u.day, { side: 'under', why: u.why }]),
+      ...oc.overs.map((o) => [o.day, 'over']),
+      ...oc.unders.map((u) => [u.day, 'under']),
     ]);
 
-    // Every day behind the four figures, so each of them can be opened rather
-    // than merely believed. Sent once and filtered in the screen: three
-    // near-identical lists down the wire would be the same days three times.
+    // Every day behind the figures, so each of them can be opened rather than
+    // merely believed. Sent once and filtered in the screen.
     const detail = days.map((r) => ({
       day: r.day,
       shift: r.shift_id ? ds.shiftById.get(r.shift_id)?.name ?? null : null,
@@ -1556,8 +1580,7 @@ export async function monthReview(ctx) {
       status: r.status,
       label: labelFor(r, ds.reasonBy),
       resolvedBy: r.resolved_by ?? null,
-      counts: counted.get(r.day)?.side ?? null,
-      why: counted.get(r.day)?.why ?? null,
+      counts: counted.get(r.day) ?? null,
     }));
 
     rows.push({
@@ -1573,58 +1596,71 @@ export async function monthReview(ctx) {
       daysLeave: totals.daysLeave,
       openCount: totals.openCount,
       days: detail,
-      decision: decision && {
-        decision: decision.decision,
-        daysApplied: decision.days_applied,
-        note: decision.note,
-        by: decision.decided_by,
-        at: decision.decided_at,
-        // What the figures said when it was signed off, so a later change is
-        // visible rather than silently rewriting the basis of the decision.
-        asSigned: {
-          scheduledDays: decision.scheduled_days,
-          workedDays: decision.worked_days,
-          difference: decision.difference,
-        },
-      },
+      decision: exact && presentDecision(exact),
+      // Sign-offs that touch this span without being it. These are why a month
+      // may refuse to be signed, so the screen has to be able to name them.
+      overlapping: overlapping
+        .filter((r) => r !== exact)
+        .map((r) => ({ kind: r.kind, from: r.from_day, to: r.to_day, daysApplied: r.days_applied })),
     });
   }
 
   rows.sort((a, b) => a.staff.name.localeCompare(b.staff.name));
 
   return json({
-    month,
     from,
     to,
+    kind,
+    month: kind === 'month' ? from.slice(0, 7) : null,
     rows,
-    // Days still waiting on a supervisor anywhere in the month. Signing a month
-    // off over the top of those is signing off a guess.
     unsettled: rows.reduce((n, r) => n + r.openCount, 0),
     reviewed: rows.filter((r) => r.decision).length,
   });
 }
 
+function presentDecision(row) {
+  return {
+    decision: row.decision,
+    daysApplied: row.days_applied,
+    note: row.note,
+    by: row.decided_by,
+    at: row.decided_at,
+    kind: row.kind,
+    from: row.from_day,
+    to: row.to_day,
+    asSigned: {
+      scheduledDays: row.scheduled_days,
+      workedDays: row.worked_days,
+      difference: row.difference,
+    },
+  };
+}
+
 /**
- * Sign a person's month off.
+ * Sign a span off.
  *
  * `daysApplied` is what actually moves against their leave, signed and chosen
  * by whoever is deciding — not the raw difference. A manager looking at three
  * days short may charge one, or none, and the record keeps both what the
- * figures said and what was decided, because the alternative is a conversation
- * six months later with nothing to stand on.
+ * figures said and what was decided.
  */
-export async function decideMonth(ctx) {
+export async function decidePeriod(ctx) {
   const body = await readJson(ctx.request);
   const staffId = int(body.staffId, 'Staff', { required: true, min: 1 });
-  const month = str(body.month, 'Month', { required: true, max: 7 });
-  if (!isMonth(month)) throw badRequest('That is not a month like 2026-08.');
+
+  const timezone = await timezoneOf(ctx.db);
+  const { from, to, kind } = reviewWindow(
+    new URL(`https://x/?${new URLSearchParams({
+      ...(body.month ? { month: String(body.month) } : {}),
+      ...(body.from ? { from: String(body.from) } : {}),
+      ...(body.to ? { to: String(body.to) } : {}),
+    })}`),
+    timezone,
+  );
 
   const decision = ['approved', 'waived'].includes(body.decision) ? body.decision : 'approved';
-  // Whole days only. The figures behind this are counted as events rather than
-  // measured in hours, so a fractional charge would be inventing a precision
-  // the rule deliberately does not have.
+  // Whole days only, matching the rule that produced the figure.
   const daysApplied = decision === 'waived' ? 0 : Math.round(Number(body.daysApplied ?? 0));
-
   if (!Number.isFinite(daysApplied) || Math.abs(daysApplied) > 60) {
     throw badRequest('That is not a sensible number of days.');
   }
@@ -1632,9 +1668,25 @@ export async function decideMonth(ctx) {
   const staff = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(staffId).first();
   if (!staff) throw notFound('No such member of staff.');
 
+  // No two signed spans for one person may share a day. Charging the same
+  // absence through a week and again through its month is a wrong number that
+  // nothing downstream would ever notice.
+  const clash = await ctx.db.prepare(
+    `SELECT * FROM att_period_review
+      WHERE staff_id = ?1 AND from_day <= ?3 AND to_day >= ?2
+        AND NOT (from_day = ?2 AND to_day = ?3)
+      ORDER BY from_day LIMIT 1`,
+  ).bind(staffId, from, to).first();
+
+  if (clash) {
+    throw badRequest(
+      `${staff.name} already has ${clash.from_day} to ${clash.to_day} signed off, which overlaps `
+      + 'this one. Reopen that first — otherwise the same days would be charged twice.',
+    );
+  }
+
   // Recomputed here rather than trusted from the browser: the figures a
   // decision is recorded against have to be the ones this app stands behind.
-  const { from, to } = monthBounds(month);
   const ds = await loadDataset(ctx.db, { from, to });
   const days = daysFor(ds, staffId, from, to);
   const totals = summarise(days, { shifts: ds.shiftById, reasons: ds.reasonBy });
@@ -1643,37 +1695,46 @@ export async function decideMonth(ctx) {
   });
 
   await ctx.db.prepare(
-    `INSERT INTO att_month_review
-       (staff_id, month, scheduled_days, worked_days, difference,
+    `INSERT INTO att_period_review
+       (staff_id, kind, from_day, to_day, scheduled_days, worked_days, difference,
         decision, days_applied, note, decided_by, decided_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))
-     ON CONFLICT (staff_id, month) DO UPDATE SET
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'))
+     ON CONFLICT (staff_id, from_day, to_day) DO UPDATE SET
+       kind = excluded.kind,
        scheduled_days = excluded.scheduled_days, worked_days = excluded.worked_days,
        difference = excluded.difference, decision = excluded.decision,
        days_applied = excluded.days_applied, note = excluded.note,
        decided_by = excluded.decided_by, decided_at = excluded.decided_at`,
   ).bind(
-    staffId, month,
-    totals.scheduled, totals.daysWorked,
-    oc.difference,
+    staffId, kind, from, to,
+    totals.scheduled, totals.daysWorked, oc.difference,
     decision, daysApplied,
     str(body.note, 'Note', { max: 300 }),
     `${ctx.session.user.name} (${ctx.session.user.role})`,
   ).run();
 
-  await audit(ctx, 'attendance.month_review', staffId, { month, decision, daysApplied });
-  return json({ ok: true, month, daysApplied, decision });
+  await audit(ctx, 'attendance.period_review', staffId, { from, to, kind, decision, daysApplied });
+  return json({ ok: true, from, to, kind, daysApplied, decision });
 }
 
-/** Undo a sign-off, so the month goes back to waiting. */
-export async function undoMonth(ctx) {
+/** Undo a sign-off, so the span goes back to waiting. */
+export async function undoPeriod(ctx) {
   const body = await readJson(ctx.request);
   const staffId = int(body.staffId, 'Staff', { required: true, min: 1 });
-  const month = str(body.month, 'Month', { required: true, max: 7 });
-  if (!isMonth(month)) throw badRequest('That is not a month like 2026-08.');
+  const timezone = await timezoneOf(ctx.db);
+  const { from, to } = reviewWindow(
+    new URL(`https://x/?${new URLSearchParams({
+      ...(body.month ? { month: String(body.month) } : {}),
+      ...(body.from ? { from: String(body.from) } : {}),
+      ...(body.to ? { to: String(body.to) } : {}),
+    })}`),
+    timezone,
+  );
 
-  await ctx.db.prepare('DELETE FROM att_month_review WHERE staff_id = ? AND month = ?')
-    .bind(staffId, month).run();
-  await audit(ctx, 'attendance.month_review_undo', staffId, { month });
+  await ctx.db.prepare(
+    'DELETE FROM att_period_review WHERE staff_id = ? AND from_day = ? AND to_day = ?',
+  ).bind(staffId, from, to).run();
+
+  await audit(ctx, 'attendance.period_review_undo', staffId, { from, to });
   return json({ ok: true });
 }

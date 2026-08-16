@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { fmtNum, h } from '../util.js';
+import { fmtDay, fmtNum, h } from '../util.js';
 
 /**
  * The bits every attendance screen needs.
@@ -165,12 +165,12 @@ export function field(label, control, hint) {
  * verdict. The figures are arithmetic; a manager looking at two days short may
  * charge one, or none, and both halves end up on the record.
  */
-export function signOffDialog(row, month) {
+export function signOffDialog(row, span) {
   const short = row.difference < 0;
   const size = Math.abs(row.difference);
 
   return formDialog({
-    title: `${row.staff.name} — ${monthLabel(month)}`,
+    title: `${row.staff.name} — ${spanLabel(span)}`,
     submitLabel: 'Record the decision',
     body: h('div',
       h('p.muted',
@@ -198,18 +198,40 @@ export function signOffDialog(row, month) {
 
       row.openCount
         ? h('p.muted', { style: { color: 'var(--warn)' } },
-          `${row.openCount} day${row.openCount === 1 ? '' : 's'} this month are still waiting on a `
+          `${row.openCount} day${row.openCount === 1 ? '' : 's'} here are still waiting on a `
           + 'supervisor. Settling those first will change these figures.')
         : null,
+
+      // Signing a month that already contains a signed week would charge the
+      // same days twice. The server refuses it; saying so first is kinder than
+      // an error after somebody has filled the form in.
+      row.overlapping?.length
+        ? h('p.muted', { style: { color: 'var(--bad)' } },
+          `${row.staff.name} already has ${row.overlapping.map((o) => `${o.from} to ${o.to}`).join(', ')} `
+          + 'signed off inside this span. Reopen it first, or the same days would be charged twice.')
+        : null,
     ),
-    onSubmit: async (form) => api.attDecideMonth({
+    onSubmit: async (form) => api.attDecideReview({
       staffId: row.staff.id,
-      month,
+      ...span,
       decision: form.get('decision'),
       daysApplied: Math.round(Number(form.get('daysApplied')) || 0),
       note: form.get('note') || null,
     }),
   });
+}
+
+/**
+ * What to call the span being signed off.
+ *
+ * A month by name, a single day by date, anything else by its two ends. The
+ * label is only ever a label — the dates are what the record keeps and what the
+ * overlap check works on.
+ */
+export function spanLabel(span) {
+  if (span.month) return monthLabel(span.month);
+  if (span.from === span.to) return fmtDay(span.from, { withYear: true });
+  return `${fmtDay(span.from)} to ${fmtDay(span.to, { withYear: true })}`;
 }
 
 export function monthLabel(month) {

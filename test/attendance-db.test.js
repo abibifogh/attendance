@@ -5,8 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 import {
   copyRoster, day as dayRoute, deviceConfig, getRoster, importShifts, ingest,
-  balances, decideMonth, monthReview, pushEvents, resolveDay, savePattern,
-  shiftSuggestions, staffReport, undoMonth,
+  balances, decidePeriod, periodReview, pushEvents, resolveDay, savePattern,
+  shiftSuggestions, staffReport, undoPeriod,
 } from '../src/routes/attendance.js';
 import { cleanDepartments, createStaff, listStaff } from '../src/routes/attendance-setup.js';
 import { hashDeviceToken } from '../src/lib/attendance-ingest.js';
@@ -1163,7 +1163,7 @@ test('a month shows days rostered against days worked', async () => {
   // Pattern is Monday-Friday mornings. March 2026 has 22 weekdays.
   await marchWorked(db, token, ['2026-03-02', '2026-03-03', '2026-03-04']);
 
-  const data = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   const row = data.rows.find((r) => r.staff.id === 1);
 
   assert.equal(row.scheduledDays, 22, 'the weekdays the pattern asked for');
@@ -1186,7 +1186,7 @@ test('an under is a whole shift missed, once somebody has confirmed it', async (
   await resolveDay(ctx(db, { body: { staffId: 1, reason: 'absent' } }), '2026-03-03');
   await resolveDay(ctx(db, { body: { staffId: 1, reason: 'absent' } }), '2026-03-04');
 
-  const data = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   const row = data.rows.find((r) => r.staff.id === 1);
 
   assert.equal(row.underDays, 2, 'the two that were ruled on, not the other seventeen');
@@ -1204,7 +1204,7 @@ test('a short day is never an under, however short', async () => {
   ]);
   await resolveDay(ctx(db, { body: { staffId: 1, reason: 'early_leave' } }), '2026-03-02');
 
-  const data = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   assert.equal(data.rows.find((r) => r.staff.id === 1).underDays, 0,
     'four short days are four conversations, not a day and a half of leave');
 });
@@ -1220,7 +1220,7 @@ test('an extra day counts as an over only past six hours', async () => {
     event('2026-03-08T10:00:00+00:00', 'checkOut', 'f'),
   ]);
 
-  const data = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   const row = data.rows.find((r) => r.staff.id === 1);
 
   assert.equal(row.overDays, 1, 'the nine-hour Saturday, not the two-hour Sunday');
@@ -1236,7 +1236,7 @@ test('the difference is always a whole number', async () => {
     event('2026-03-02T11:00:00+00:00', 'checkOut', 'h'),
   ]);
 
-  const data = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   const row = data.rows.find((r) => r.staff.id === 1);
   assert.equal(row.workedDays % 1, 0.5, 'days worked still counts half days');
   assert.ok(Number.isInteger(row.difference), 'but the over/under never does');
@@ -1248,11 +1248,11 @@ test('signing a month off takes the agreed days off the leave balance', async ()
 
   // Twenty short, but only two are charged. That gap is the whole point: the
   // figures are arithmetic, what comes off somebody's leave is a judgement.
-  await decideMonth(ctx(db, {
+  await decidePeriod(ctx(db, {
     body: { staffId: 1, month: '2026-03', decision: 'approved', daysApplied: -2, note: 'agreed' },
   }));
 
-  const data = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   const row = data.rows.find((r) => r.staff.id === 1);
   assert.equal(row.decision.decision, 'approved');
   assert.equal(row.decision.daysApplied, -2);
@@ -1269,9 +1269,9 @@ test('a month can be let stand without moving anything', async () => {
   const { db, token } = await setup();
   await marchWorked(db, token, ['2026-03-02']);
 
-  await decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', decision: 'waived' } }));
+  await decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-03', decision: 'waived' } }));
 
-  const data = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   assert.equal(data.rows.find((r) => r.staff.id === 1).decision.decision, 'waived');
 
   const bal = await (await balances(ctx(db, { query: '?asOf=2026-03-31' }))).json();
@@ -1283,10 +1283,10 @@ test('signing the same month twice corrects it rather than charging again', asyn
   const { raw, db, token } = await setup();
   await marchWorked(db, token, ['2026-03-02']);
 
-  await decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -3 } }));
-  await decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -1 } }));
+  await decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -3 } }));
+  await decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -1 } }));
 
-  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_month_review').get().n, 1);
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_period_review').get().n, 1);
   const bal = await (await balances(ctx(db, { query: '?asOf=2026-03-31' }))).json();
   assert.equal(bal.rows.find((r) => r.staff.id === 1).balance.adjusted, -1);
 });
@@ -1294,10 +1294,10 @@ test('signing the same month twice corrects it rather than charging again', asyn
 test('reopening a month puts it back to waiting and gives the days back', async () => {
   const { db, token } = await setup();
   await marchWorked(db, token, ['2026-03-02']);
-  await decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -4 } }));
-  await undoMonth(ctx(db, { body: { staffId: 1, month: '2026-03' } }));
+  await decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -4 } }));
+  await undoPeriod(ctx(db, { body: { staffId: 1, month: '2026-03' } }));
 
-  const data = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   assert.equal(data.rows.find((r) => r.staff.id === 1).decision, null);
 
   const bal = await (await balances(ctx(db, { query: '?asOf=2026-03-31' }))).json();
@@ -1307,7 +1307,7 @@ test('reopening a month puts it back to waiting and gives the days back', async 
 test('a month signed off in a different leave year does not move this year', async () => {
   const { db, token } = await setup();
   await marchWorked(db, token, ['2026-03-02']);
-  await decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -5 } }));
+  await decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -5 } }));
 
   // Leave year runs 01-01 to 31-12, so 2027 must not see 2026's charge.
   const bal = await (await balances(ctx(db, { query: '?asOf=2027-03-31' }))).json();
@@ -1316,13 +1316,13 @@ test('a month signed off in a different leave year does not move this year', asy
 
 test('a rubbish month is refused', async () => {
   const { db } = await setup();
-  await assert.rejects(() => monthReview(ctx(db, { query: '?month=March' })), /not a month/i);
+  await assert.rejects(() => periodReview(ctx(db, { query: '?month=March' })), /not a month/i);
   await assert.rejects(
-    () => decideMonth(ctx(db, { body: { staffId: 1, month: '2026-3' } })),
+    () => decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-3' } })),
     /not a month/i,
   );
   await assert.rejects(
-    () => decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: 900 } })),
+    () => decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: 900 } })),
     /sensible number/i,
   );
 });
@@ -1330,7 +1330,7 @@ test('a rubbish month is refused', async () => {
 test('a signed-off month shows on the person’s own report, not just the leave screen', async () => {
   const { db, token } = await setup();
   await marchWorked(db, token, ['2026-03-02', '2026-03-03']);
-  await decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -2 } }));
+  await decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -2 } }));
 
   const report = await (await staffReport(ctx(db, { query: '?from=2026-03-01&to=2026-03-31' }), 1)).json();
 
@@ -1365,10 +1365,10 @@ test('the month review can answer for one person without loading the property', 
   raw.prepare('INSERT INTO att_patterns (staff_id, week, dow, shift_id) VALUES (2, 0, 0, 1)').run();
   await marchWorked(db, token, ['2026-03-02']);
 
-  const all = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const all = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   assert.ok(all.rows.length > 1);
 
-  const one = await (await monthReview(ctx(db, { query: '?month=2026-03&staffId=1' }))).json();
+  const one = await (await periodReview(ctx(db, { query: '?month=2026-03&staffId=1' }))).json();
   assert.equal(one.rows.length, 1);
   assert.equal(one.rows[0].staff.id, 1);
   assert.ok(Array.isArray(one.rows[0].days), 'with the days behind the figures');
@@ -1380,8 +1380,92 @@ test('a person with an empty month is still answerable when asked for by name', 
   // must not, or the button on their own report would have nothing to open.
   raw.exec('DELETE FROM att_patterns');
 
-  const one = await (await monthReview(ctx(db, { query: '?month=2026-03&staffId=1' }))).json();
+  const one = await (await periodReview(ctx(db, { query: '?month=2026-03&staffId=1' }))).json();
   assert.equal(one.rows.length, 1);
   assert.equal(one.rows[0].scheduledDays, 0);
   assert.equal(one.rows[0].difference, 0);
+});
+
+test('a single day can be signed off on its own', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+  await resolveDay(ctx(db, { body: { staffId: 1, reason: 'absent' } }), '2026-03-03');
+
+  const data = await (await periodReview(ctx(db, { query: '?from=2026-03-03&to=2026-03-03&staffId=1' }))).json();
+  assert.equal(data.kind, 'day');
+  assert.equal(data.rows[0].difference, -1);
+
+  await decidePeriod(ctx(db, {
+    body: { staffId: 1, from: '2026-03-03', to: '2026-03-03', daysApplied: -1 },
+  }));
+
+  const after = await (await periodReview(ctx(db, { query: '?from=2026-03-03&to=2026-03-03&staffId=1' }))).json();
+  assert.equal(after.rows[0].decision.kind, 'day');
+  assert.equal(after.rows[0].decision.daysApplied, -1);
+});
+
+test('a week can be signed off on its own', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+
+  const data = await (await periodReview(ctx(db, { query: '?from=2026-03-02&to=2026-03-08&staffId=1' }))).json();
+  assert.equal(data.kind, 'week', 'seven days ending on a Sunday');
+
+  await decidePeriod(ctx(db, {
+    body: { staffId: 1, from: '2026-03-02', to: '2026-03-08', decision: 'waived' },
+  }));
+
+  const bal = await (await balances(ctx(db, { query: '?asOf=2026-03-31' }))).json();
+  assert.equal(bal.rows.find((r) => r.staff.id === 1).balance.adjusted, 0, 'let stand costs nothing');
+});
+
+test('two signed spans may not share a day', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+
+  await decidePeriod(ctx(db, {
+    body: { staffId: 1, from: '2026-03-02', to: '2026-03-08', daysApplied: -1 },
+  }));
+
+  // The month contains that week. Charging both would take two days off for
+  // one absence, and nothing downstream would ever notice.
+  await assert.rejects(
+    () => decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -3 } })),
+    /overlaps/i,
+  );
+
+  // Reopen the week and the month is free.
+  await undoPeriod(ctx(db, { body: { staffId: 1, from: '2026-03-02', to: '2026-03-08' } }));
+  await decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -3 } }));
+
+  const bal = await (await balances(ctx(db, { query: '?asOf=2026-03-31' }))).json();
+  assert.equal(bal.rows.find((r) => r.staff.id === 1).balance.adjusted, -3, 'charged once, not four times');
+});
+
+test('a span that merely touches the one on screen is reported, not hidden', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+  await decidePeriod(ctx(db, {
+    body: { staffId: 1, from: '2026-03-02', to: '2026-03-08', daysApplied: -1 },
+  }));
+
+  const month = await (await periodReview(ctx(db, { query: '?month=2026-03&staffId=1' }))).json();
+  const row = month.rows[0];
+
+  assert.equal(row.decision, null, 'the month itself is not signed');
+  assert.deepEqual(row.overlapping, [
+    { kind: 'week', from: '2026-03-02', to: '2026-03-08', daysApplied: -1 },
+  ], 'but the screen has to be able to say why it cannot be');
+});
+
+test('sign-offs from different spans all reach the leave balance', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+
+  await decidePeriod(ctx(db, { body: { staffId: 1, from: '2026-03-03', to: '2026-03-03', daysApplied: -1 } }));
+  await decidePeriod(ctx(db, { body: { staffId: 1, from: '2026-03-09', to: '2026-03-15', daysApplied: -2 } }));
+  await decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-04', daysApplied: 1 } }));
+
+  const bal = await (await balances(ctx(db, { query: '?asOf=2026-04-30' }))).json();
+  assert.equal(bal.rows.find((r) => r.staff.id === 1).balance.adjusted, -2, 'a day, a week and a month');
 });
