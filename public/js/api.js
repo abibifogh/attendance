@@ -1,0 +1,140 @@
+// Thin fetch wrapper. Every call goes through here so an expired session and a
+// dropped connection are handled in exactly one place rather than in thirty.
+
+class ApiError extends Error {
+  constructor(status, message, detail) {
+    super(message);
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+let onUnauthorized = () => {};
+export function setUnauthorizedHandler(fn) { onUnauthorized = fn; }
+
+async function request(path, { method = 'GET', body, signal } = {}) {
+  let response;
+  try {
+    response = await fetch(path, {
+      method,
+      signal,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: 'same-origin',
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    throw new ApiError(0, 'No connection to the server. Check the signal and try again.');
+  }
+
+  if (response.status === 401) {
+    onUnauthorized();
+    throw new ApiError(401, 'Your session has expired. Sign in again.');
+  }
+
+  const type = response.headers.get('Content-Type') || '';
+  if (!type.includes('application/json')) {
+    if (!response.ok) throw new ApiError(response.status, `Request failed (${response.status})`);
+    return response;
+  }
+
+  const data = await response.json();
+  if (!response.ok) throw new ApiError(response.status, data.error || `Request failed (${response.status})`, data.detail);
+  return data;
+}
+
+export const api = {
+  ApiError,
+  login: (pin) => request('/api/auth/login', { method: 'POST', body: { pin } }),
+  passwordSalt: (email) => request('/api/auth/salt', { method: 'POST', body: { email } }),
+  loginWithKey: (email, passwordKey) =>
+    request('/api/auth/login', { method: 'POST', body: { email, passwordKey } }),
+  changeCredentials: (body) => request('/api/auth/change-credentials', { method: 'POST', body }),
+  logout: () => request('/api/auth/logout', { method: 'POST' }),
+  me: () => request('/api/auth/me'),
+
+  // ------------------------------------------------------------ attendance --
+  attBootstrap: () => request('/api/att/bootstrap'),
+  attDay: (day) => request(`/api/att/day${day ? `?day=${day}` : ''}`),
+  attStaffDay: (id, day) => request(`/api/att/staff/${id}/day${day ? `?day=${day}` : ''}`),
+  attWeek: (from) => request(`/api/att/week${from ? `?from=${from}` : ''}`),
+  attStaffReport: (id, from, to) => request(`/api/att/staff/${id}/report?${new URLSearchParams({
+    ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`),
+  attOverview: (month) => request(`/api/att/overview${month ? `?month=${month}` : ''}`),
+  attBalances: (asOf) => request(`/api/att/balances${asOf ? `?asOf=${asOf}` : ''}`),
+  attExportUrl: (from, to) => `/api/att/export?${new URLSearchParams({
+    ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`,
+
+  attResolve: (day, body) => request(`/api/att/days/${day}/resolve`, { method: 'POST', body }),
+  attUnresolve: (day, body) => request(`/api/att/days/${day}/unresolve`, { method: 'POST', body }),
+  attAddPunch: (body) => request('/api/att/punches', { method: 'POST', body }),
+
+  attRoster: (from, to) => request(`/api/att/roster?${new URLSearchParams({
+    ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`),
+  attSaveRoster: (body) => request('/api/att/roster', { method: 'POST', body }),
+  attSavePattern: (body) => request('/api/att/patterns', { method: 'POST', body }),
+
+  attLeave: (params = {}) => request(`/api/att/leave?${new URLSearchParams(params)}`),
+  attRequestLeave: (body) => request('/api/att/leave', { method: 'POST', body }),
+  attDecideLeave: (id, body) => request(`/api/att/leave/${id}/decide`, { method: 'POST', body }),
+  attCancelLeave: (id) => request(`/api/att/leave/${id}`, { method: 'DELETE' }),
+
+  attStaff: () => request('/api/att/staff'),
+  attCreateStaff: (body) => request('/api/att/staff', { method: 'POST', body }),
+  attUpdateStaff: (id, body) => request(`/api/att/staff/${id}`, { method: 'PUT', body }),
+  attDeleteStaff: (id) => request(`/api/att/staff/${id}`, { method: 'DELETE' }),
+  attUnknown: () => request('/api/att/unknown'),
+
+  attShifts: () => request('/api/att/shifts'),
+  attCreateShift: (body) => request('/api/att/shifts', { method: 'POST', body }),
+  attUpdateShift: (id, body) => request(`/api/att/shifts/${id}`, { method: 'PUT', body }),
+  attDeleteShift: (id) => request(`/api/att/shifts/${id}`, { method: 'DELETE' }),
+
+  attReasons: () => request('/api/att/reasons'),
+  attCreateReason: (body) => request('/api/att/reasons', { method: 'POST', body }),
+  attUpdateReason: (code, body) => request(`/api/att/reasons/${code}`, { method: 'PUT', body }),
+  attDeleteReason: (code) => request(`/api/att/reasons/${code}`, { method: 'DELETE' }),
+
+  attHolidays: (year) => request(`/api/att/holidays${year ? `?year=${year}` : ''}`),
+  attCreateHoliday: (body) => request('/api/att/holidays', { method: 'POST', body }),
+  attGenerateHolidays: (year) => request('/api/att/holidays/generate', { method: 'POST', body: { year } }),
+  attDeleteHoliday: (id) => request(`/api/att/holidays/${id}`, { method: 'DELETE' }),
+
+  attDevices: () => request('/api/att/devices'),
+  attCreateDevice: (body) => request('/api/att/devices', { method: 'POST', body }),
+  attUpdateDevice: (id, body) => request(`/api/att/devices/${id}`, { method: 'PUT', body }),
+  attRotateToken: (id) => request(`/api/att/devices/${id}/token`, { method: 'POST' }),
+  attDeleteDevice: (id) => request(`/api/att/devices/${id}`, { method: 'DELETE' }),
+
+  attUpdateSettings: (body) => request('/api/att/settings', { method: 'PUT', body }),
+  attRecompute: (body) => request('/api/att/recompute', { method: 'POST', body }),
+
+  // -------------------------------------------------------- people and data --
+  users: () => request('/api/users'),
+  createUser: (body) => request('/api/users', { method: 'POST', body }),
+  updateUser: (id, body) => request(`/api/users/${id}`, { method: 'PUT', body }),
+  deleteUser: (id) => request(`/api/users/${id}`, { method: 'DELETE' }),
+
+  pushKey: () => request('/api/push/key'),
+  pushStatus: (endpoint) => request(`/api/push/status${endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ''}`),
+  pushSubscribe: (body) => request('/api/push/subscribe', { method: 'POST', body }),
+  pushUnsubscribe: (body) => request('/api/push/unsubscribe', { method: 'POST', body }),
+  pushTest: (body) => request('/api/push/test', { method: 'POST', body }),
+  removePushDevice: (id) => request(`/api/push/devices/${id}`, { method: 'DELETE' }),
+
+  notifications: () => request('/api/notifications'),
+  updateNotifications: (body) => request('/api/notifications', { method: 'PUT', body }),
+  testNotification: () => request('/api/notifications/test', { method: 'POST' }),
+
+  notices: (limit = 20) => request(`/api/notices?limit=${limit}`),
+  markNoticesSeen: (lastId) => request('/api/notices/seen', { method: 'POST', body: { lastId } }),
+
+  dataSummary: (from, to) => request(`/api/data/summary?${new URLSearchParams({
+    ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`),
+  eraseData: (body) => request('/api/data/erase', { method: 'POST', body }),
+  audit: (limit = 100) => request(`/api/audit?limit=${limit}`),
+};

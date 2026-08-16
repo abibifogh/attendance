@@ -1,0 +1,1278 @@
+/* ---------------------------------------------------------------------------
+   Design tokens. Light is the default palette; dark is layered on top so a
+   kitchen tablet left on auto-brightness stays readable either way.
+--------------------------------------------------------------------------- */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --surface-3: #e8ebf0;
+  --border: #dde1e8;
+  --border-strong: #c6ccd8;
+  --text: #14181f;
+  --text-dim: #5b6472;
+  --text-faint: #8b95a5;
+
+  --accent: #2f6df6;
+  --accent-soft: #e6eeff;
+  --good: #12855b;
+  --good-soft: #e2f5ec;
+  --warn: #b96a06;
+  --warn-soft: #fdf0dd;
+  --bad: #c62f42;
+  --bad-soft: #fdeaec;
+  --info: #6b46d6;
+
+  --c1: #2f6df6; --c2: #12a594; --c3: #d97706; --c4: #8b5cf6;
+  --c5: #e11d48; --c6: #0891b2; --c7: #65a30d; --c8: #db2777;
+
+  --radius: 14px;
+  --radius-sm: 9px;
+  /* Measured from the real header, which grows a second row when the tab
+     bar cannot fit. Everything sticky below it hangs off this. */
+  --topbar-h: 58px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 8px 24px -12px rgba(16, 24, 40, .18);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1117;
+    --surface: #161b23;
+    --surface-2: #1c222c;
+    --surface-3: #252c38;
+    --border: #29313d;
+    --border-strong: #3a4453;
+    --text: #e9edf3;
+    --text-dim: #9aa5b5;
+    --text-faint: #6d7889;
+
+    --accent: #5b8bff;
+    --accent-soft: #1a2542;
+    --good: #34d399;
+    --good-soft: #10291f;
+    --warn: #f0a94c;
+    --warn-soft: #2e2413;
+    --bad: #f87171;
+    --bad-soft: #2e1719;
+    --info: #a78bfa;
+
+    --c1: #5b8bff; --c2: #2dd4bf; --c3: #fbbf24; --c4: #a78bfa;
+    --c5: #fb7185; --c6: #22d3ee; --c7: #a3e635; --c8: #f472b6;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -14px rgba(0, 0, 0, .6);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d1117; --surface: #161b23; --surface-2: #1c222c; --surface-3: #252c38;
+  --border: #29313d; --border-strong: #3a4453;
+  --text: #e9edf3; --text-dim: #9aa5b5; --text-faint: #6d7889;
+  --accent: #5b8bff; --accent-soft: #1a2542;
+  --good: #34d399; --good-soft: #10291f;
+  --warn: #f0a94c; --warn-soft: #2e2413;
+  --bad: #f87171; --bad-soft: #2e1719; --info: #a78bfa;
+  --c1: #5b8bff; --c2: #2dd4bf; --c3: #fbbf24; --c4: #a78bfa;
+  --c5: #fb7185; --c6: #22d3ee; --c7: #a3e635; --c8: #f472b6;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -14px rgba(0, 0, 0, .6);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.015em; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.15rem; }
+h3 { font-size: 1rem; }
+p { margin: 0 0 .6rem; }
+a { color: var(--accent); }
+
+/* --------------------------------------------------------------- layout -- */
+.shell { min-height: 100dvh; display: flex; flex-direction: column; }
+
+.topbar {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: .75rem;
+  padding: .6rem clamp(.75rem, 3vw, 1.5rem);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: saturate(160%) blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: .55rem; font-weight: 700; letter-spacing: -.02em; }
+.brand-mark { font-size: 1.25rem; }
+.brand-sub { color: var(--text-faint); font-weight: 500; font-size: .78rem; display: block; letter-spacing: 0; }
+.topbar-spacer { flex: 1; }
+
+/* ----------------------------------------------------------------- bell --
+   Quiet by design. A count on the button when something is waiting, nothing
+   at all when it is not. */
+.bell { position: relative; font-size: 1rem; }
+.bell.has-unread { color: var(--accent); }
+.bell-badge {
+  position: absolute; top: 1px; right: 1px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: var(--bad); color: #fff;
+  font-size: .65rem; font-weight: 700; line-height: 16px; text-align: center;
+}
+
+.inbox-panel {
+  position: absolute; top: calc(var(--topbar-h, 56px) - 4px); right: clamp(.5rem, 3vw, 1.5rem);
+  z-index: 60; width: min(360px, calc(100vw - 1.5rem));
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 16px 40px rgb(0 0 0 / .18);
+  overflow: hidden;
+}
+.inbox-head {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  padding: .6rem .85rem; border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.inbox-list { max-height: min(60dvh, 460px); overflow-y: auto; }
+.inbox-item {
+  padding: .7rem .85rem; border-bottom: 1px solid var(--border); cursor: pointer;
+  border-left: 3px solid transparent;
+}
+.inbox-item:last-child { border-bottom: 0; }
+.inbox-item:hover { background: var(--surface-2); }
+.inbox-item.unread { border-left-color: var(--accent); background: var(--accent-soft); }
+.inbox-item.unread:hover { background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface)); }
+.inbox-title { font-weight: 650; font-size: .88rem; }
+.inbox-body {
+  color: var(--text-dim); font-size: .8rem; margin-top: .2rem; white-space: pre-line;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.inbox-when { color: var(--text-faint); font-size: .72rem; margin-top: .3rem; }
+.inbox-empty { padding: 1.1rem .85rem; text-align: center; }
+.inbox-empty p { margin: 0; font-size: .82rem; }
+
+/* ------------------------------------------------------------- side nav --
+   Two stores will not fit in one row of tabs, so navigation lives down the
+   side where each section can be named. */
+.body-row { display: flex; flex: 1; min-height: 0; align-items: flex-start; }
+
+.sidebar {
+  position: sticky; top: var(--topbar-h); z-index: 30;
+  flex: 0 0 208px; width: 208px;
+  max-height: calc(100dvh - var(--topbar-h));
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: .8rem .6rem 1.2rem;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  display: grid; gap: .15rem; align-content: start;
+}
+
+.side-group { display: grid; gap: .1rem; margin-bottom: .5rem; }
+
+.side-head {
+  display: flex; align-items: center; justify-content: space-between; gap: .4rem;
+  width: 100%; padding: .4rem .55rem; margin-bottom: .1rem;
+  background: none; border: 0; border-radius: var(--radius-sm);
+  color: var(--text-faint); cursor: pointer;
+  font-size: .7rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+}
+.side-head:hover { background: var(--surface-2); color: var(--text-dim); }
+.side-caret { transition: transform .15s; display: inline-block; transform: rotate(-90deg); }
+.side-head.open .side-caret { transform: rotate(0deg); }
+
+.side-items { display: grid; gap: .1rem; }
+
+.side-link {
+  display: block; padding: .45rem .65rem;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid transparent;
+  font-size: .89rem; font-weight: 550;
+  color: var(--text-dim); text-decoration: none;
+}
+.side-link:hover { background: var(--surface-2); color: var(--text); }
+.side-link.active {
+  background: var(--accent-soft); color: var(--accent);
+  border-left-color: var(--accent); font-weight: 650;
+}
+
+.nav-toggle { display: none; font-size: 1.1rem; }
+.nav-scrim { display: none; }
+
+.main { flex: 1; min-width: 0; max-width: 1320px; margin: 0 auto; padding: clamp(.85rem, 2.5vw, 1.6rem); }
+
+.page-head {
+  display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end;
+  justify-content: space-between; margin-bottom: 1.1rem;
+}
+.page-head .sub { color: var(--text-dim); font-size: .9rem; }
+
+/* ---------------------------------------------------------------- cards -- */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 1rem 1.1rem; margin-bottom: 1rem;
+}
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; margin-bottom: .85rem; }
+.card-head h2, .card-head h3 { display: flex; align-items: center; gap: .5rem; }
+.card-note { color: var(--text-faint); font-size: .8rem; font-weight: 450; }
+
+.grid { display: grid; gap: 1rem; }
+.grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.grid-4 { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+
+/* ---------------------------------------------------------------- stats -- */
+.stat {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: .85rem .95rem;
+}
+.stat-label { font-size: .74rem; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint); font-weight: 650; }
+.stat-value { font-size: 1.7rem; font-weight: 680; letter-spacing: -.03em; margin-top: .15rem; font-variant-numeric: tabular-nums; }
+.stat-value small { font-size: .95rem; font-weight: 550; color: var(--text-dim); margin-left: .15rem; }
+.stat-sub { font-size: .8rem; color: var(--text-dim); margin-top: .2rem; display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+.stat-spark { margin-top: .45rem; }
+
+.delta { font-weight: 640; font-variant-numeric: tabular-nums; font-size: .8rem; }
+.delta.up { color: var(--bad); }
+.delta.down { color: var(--good); }
+.delta.flat { color: var(--text-faint); }
+.delta.good-up { color: var(--good); }
+.delta.bad-down { color: var(--bad); }
+
+/* ---------------------------------------------------------------- pills -- */
+.pill {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .15rem .5rem; border-radius: 999px;
+  font-size: .74rem; font-weight: 620; letter-spacing: .01em;
+  background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border);
+}
+.pill.good { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.pill.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.pill.bad  { background: var(--bad-soft);  color: var(--bad);  border-color: transparent; }
+.pill.info { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+
+/* --------------------------------------------------------------- alerts -- */
+.alert {
+  display: flex; gap: .7rem; align-items: flex-start;
+  padding: .7rem .85rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface-2);
+  margin-bottom: .5rem;
+}
+.alert-icon { font-size: 1rem; line-height: 1.35; }
+.alert-title { font-weight: 640; font-size: .92rem; }
+.alert-detail { font-size: .84rem; color: var(--text-dim); }
+.alert.high { background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 30%, transparent); }
+.alert.warn { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.alert.info { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 25%, transparent); }
+
+/* --------------------------------------------------------------- tables -- */
+.table-wrap { overflow-x: auto; margin: 0 -1.1rem -1rem; padding: 0 1.1rem 1rem; }
+table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+th, td { padding: .5rem .6rem; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-faint); font-weight: 650; position: sticky; top: 0;
+  background: var(--surface); z-index: 1;
+}
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:hover { background: var(--surface-2); }
+tbody tr:last-child td { border-bottom: none; }
+td .muted { color: var(--text-faint); }
+.row-flag-high td:first-child { box-shadow: inset 3px 0 var(--bad); }
+.row-flag-low td:first-child { box-shadow: inset 3px 0 var(--accent); }
+
+/* A banded heading inside the table body, for lists grouped by category. */
+tbody tr.row-group td, tbody tr.row-group:hover td {
+  background: var(--surface-2);
+  padding-top: .55rem; padding-bottom: .45rem;
+}
+.row-group-name {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 700; color: var(--text);
+}
+.row-group-meta { font-size: .75rem; color: var(--text-faint); margin-left: .6rem; }
+
+/* ------------------------------------------------------------- controls -- */
+button, .btn {
+  font: inherit; font-weight: 600; font-size: .88rem;
+  padding: .5rem .9rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text); cursor: pointer; text-decoration: none;
+  display: inline-flex; align-items: center; gap: .4rem; justify-content: center;
+  transition: background .12s ease, border-color .12s ease, transform .06s ease;
+}
+button:hover, .btn:hover { background: var(--surface-2); }
+button:active, .btn:active { transform: translateY(1px); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: color-mix(in srgb, var(--accent) 86%, #000); }
+.btn-ghost { border-color: transparent; background: transparent; color: var(--text-dim); }
+.btn-ghost:hover { background: var(--surface-2); color: var(--text); }
+.btn-danger { border-color: color-mix(in srgb, var(--bad) 45%, transparent); color: var(--bad); background: transparent; }
+.btn-sm { padding: .3rem .6rem; font-size: .8rem; }
+.btn-row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+
+input, select, textarea {
+  font: inherit; font-size: .92rem; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); padding: .5rem .65rem; width: 100%;
+}
+/* Placeholders carry the suggested quantity on the entry screen. They must
+   never be mistakable for a value that has actually been keyed in. */
+input::placeholder {
+  color: var(--text-faint);
+  font-weight: 400;
+  font-style: italic;
+  opacity: .75;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px; border-color: var(--accent);
+}
+label.field { display: block; margin-bottom: .7rem; }
+label.field > span { display: block; font-size: .78rem; font-weight: 620; color: var(--text-dim); margin-bottom: .25rem; }
+.field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; }
+
+.seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
+.seg button { border: none; background: transparent; border-radius: 999px; padding: .32rem .8rem; font-size: .82rem; color: var(--text-dim); }
+.seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+/* Many categories will not fit on one line of a phone, so this variant wraps. */
+.seg.seg-wrap { flex-wrap: wrap; max-width: 100%; }
+.seg-count {
+  margin-left: .35rem; font-size: .72rem; font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+.seg button.active .seg-count { color: var(--text-dim); }
+
+.filter-bar { justify-content: space-between; }
+.inline-check {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .82rem; color: var(--text-dim); white-space: nowrap;
+}
+.inline-check input { width: auto; margin: 0; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
+.toolbar input[type="date"], .toolbar input[type="month"], .toolbar select { width: auto; min-width: 150px; }
+
+/* -------------------------------------------------------------- entry ---- */
+.entry-guests {
+  position: sticky; top: var(--topbar-h); z-index: 30;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: .85rem; margin-bottom: 1rem;
+  box-shadow: var(--shadow);
+}
+.guest-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .7rem; }
+
+.counter { display: flex; align-items: stretch; gap: .35rem; }
+.counter input {
+  text-align: center; font-size: 1.15rem; font-weight: 660;
+  font-variant-numeric: tabular-nums; padding: .45rem .2rem;
+}
+.counter button {
+  flex: 0 0 44px; font-size: 1.25rem; font-weight: 600; padding: 0;
+  background: var(--surface-2); border-color: var(--border);
+}
+
+.cat-block { margin-bottom: 1.1rem; }
+.cat-title {
+  display: flex; align-items: center; gap: .5rem; margin: 0 0 .5rem;
+  font-size: .78rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text-faint); font-weight: 700;
+}
+.cat-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+.item-list { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+.item {
+  display: grid; grid-template-columns: 1fr auto; gap: .5rem .7rem; align-items: center;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: .6rem .7rem;
+}
+.item.filled { border-color: color-mix(in srgb, var(--good) 45%, var(--border)); background: color-mix(in srgb, var(--good-soft) 55%, var(--surface)); }
+.item-name { font-weight: 600; font-size: .95rem; }
+.item-hint { font-size: .76rem; color: var(--text-faint); display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.item-hint button { padding: .1rem .45rem; font-size: .72rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); border-color: transparent; font-weight: 650; }
+.item-input { display: flex; align-items: center; gap: .3rem; }
+.item-input input { width: 82px; text-align: right; font-weight: 640; font-variant-numeric: tabular-nums; }
+.item-input .unit { font-size: .78rem; color: var(--text-faint); width: 34px; }
+.item-input button { flex: 0 0 34px; padding: .35rem 0; font-size: 1rem; }
+
+/* Pinned to the viewport rather than the document so the action bar is always
+   within thumb reach, on any screen width. */
+.entry-footer {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
+  padding: .7rem clamp(.75rem, 3vw, 1.5rem);
+  padding-bottom: calc(.7rem + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+}
+.entry-footer-inner {
+  display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
+  max-width: 1320px; margin: 0 auto; width: 100%;
+}
+.entry-footer button { flex: 1 1 auto; min-width: 92px; }
+.entry-status { font-size: .84rem; color: var(--text-dim); flex: 1 1 100%; min-width: 140px; }
+
+/* Room for the fixed action bar so the last ingredient is never trapped under it. */
+.entry-page { padding-bottom: 132px; }
+
+@media (min-width: 560px) {
+  .entry-footer button { flex: 0 0 auto; }
+  .entry-status { flex: 1 1 auto; }
+  .entry-page { padding-bottom: 84px; }
+}
+
+/* --------------------------------------------------------------- charts -- */
+.chart { width: 100%; overflow-x: auto; }
+.chart svg { display: block; max-width: 100%; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .6rem; font-size: .8rem; color: var(--text-dim); }
+.legend span { display: inline-flex; align-items: center; gap: .35rem; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+.bar-track { background: var(--surface-3); border-radius: 999px; height: 7px; overflow: hidden; min-width: 60px; }
+.bar-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+
+/* --------------------------------------------------------------- login --- */
+.login-wrap { min-height: 100dvh; display: grid; place-items: center; padding: 1.5rem; }
+.login-card { width: 100%; max-width: 380px; text-align: center; }
+.pin-display {
+  font-family: var(--mono); font-size: 1.8rem; letter-spacing: .5rem;
+  height: 3rem; display: grid; place-items: center; margin: .5rem 0 1rem;
+  color: var(--text);
+}
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+.keypad button { height: 58px; font-size: 1.3rem; font-weight: 600; }
+
+/* -------------------------------------------------------------- toasts --- */
+.toasts { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); z-index: 100; display: grid; gap: .4rem; width: min(420px, calc(100vw - 2rem)); }
+/* Lift toasts clear of the entry screen's fixed action bar. */
+body:has(.entry-footer) .toasts { bottom: calc(4.75rem + env(safe-area-inset-bottom)); }
+.toast {
+  padding: .6rem .85rem; border-radius: var(--radius-sm); font-size: .88rem; font-weight: 550;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+  animation: toast-in .18s ease;
+}
+.toast.good { border-color: color-mix(in srgb, var(--good) 45%, transparent); color: var(--good); }
+.toast.bad { border-color: color-mix(in srgb, var(--bad) 45%, transparent); color: var(--bad); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+
+/* ---------------------------------------------------------------- misc --- */
+.boot { min-height: 100dvh; display: grid; place-content: center; text-align: center; color: var(--text-dim); gap: .5rem; }
+/* Set here rather than in the markup, so the housekeeping site never flashes
+   the breakfast icon on the way in. */
+.boot-mark { font-size: 2.5rem; }
+.boot-mark::after { content: '🍳'; }
+:root[data-app="housekeeping"] .boot-mark::after { content: '🛏'; }
+.empty { text-align: center; padding: 2rem 1rem; color: var(--text-faint); }
+.empty h3 { color: var(--text-dim); margin-bottom: .35rem; }
+.muted { color: var(--text-faint); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.nowrap { white-space: nowrap; }
+.hidden { display: none !important; }
+.skeleton { background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: var(--radius-sm); height: 1rem; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* On a phone the sidebar becomes a drawer. Nineteen links down the side would
+   otherwise leave no room for the page they lead to. */
+@media (max-width: 900px) {
+  .nav-toggle { display: inline-flex; }
+  .sidebar {
+    position: fixed; top: var(--topbar-h); bottom: 0; left: 0;
+    width: 250px; flex-basis: 250px; max-height: none;
+    transform: translateX(-100%); transition: transform .18s ease;
+    box-shadow: var(--shadow); z-index: 45;
+  }
+  .shell.nav-open .sidebar { transform: translateX(0); }
+  .shell.nav-open .nav-scrim {
+    display: block; position: fixed; inset: var(--topbar-h) 0 0 0;
+    background: rgba(8, 12, 20, .4); z-index: 40;
+  }
+}
+
+@media (max-width: 720px) {
+  .stat-value { font-size: 1.45rem; }
+  /* The guest counts scroll away with everything else on a phone. Pinned, they
+     ate a third of the screen under an already-tall header, leaving barely
+     enough room for the item list they are supposed to sit above. */
+  .entry-guests { position: static; }
+}
+
+/* The header at phone width.
+   The property name, who is signed in, and four buttons will not fit across
+   390px: the name wrapped to three lines and "Sign out" fell off the edge. The
+   name is the thing that can go — anyone holding the phone knows which hotel
+   they work at, and the buttons are the part that has to stay reachable. */
+@media (max-width: 560px) {
+  .topbar { gap: .35rem; padding-inline: .5rem; }
+  .brand { font-size: .92rem; min-width: 0; }
+  .brand > div {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 34vw;
+  }
+  .brand-sub { display: none; }
+  .topbar .btn-sm { padding-inline: .5rem; }
+}
+
+
+
+/* An everyday item still missing a figure when a submission was attempted. */
+.item.needed {
+  border-color: var(--bad);
+  background: color-mix(in srgb, var(--bad-soft) 60%, var(--surface));
+}
+.item.needed .item-name::after {
+  content: 'needs a figure';
+  display: inline-block;
+  margin-left: .4rem;
+  padding: .05rem .4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bad) 16%, transparent);
+  color: var(--bad);
+  font-weight: 650;
+  font-size: .72rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* A problem with what was typed, shown beside the fields that caused it.
+   Modal dialogs sit above every toast, so form errors must live in the form. */
+.form-error {
+  margin: .6rem 0 0;
+  padding: .6rem .75rem;
+  border-radius: var(--radius-sm);
+  background: var(--bad-soft);
+  border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent);
+  color: var(--bad);
+  font-size: .86rem;
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+/* The toast host is a popover so it shares the top layer with modal dialogs
+   and can never be painted behind one. Strip the browser's default chrome. */
+.toasts[popover] {
+  inset: auto;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  overflow: visible;
+}
+.toasts[popover]:not(:popover-open) { display: none; }
+.toasts[popover]:popover-open { display: grid; }
+body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-inset-bottom)); }
+
+/* ------------------------------------------------------------- the guide -- */
+.guide-layout { display: grid; grid-template-columns: 210px 1fr; gap: 1.4rem; align-items: start; }
+
+.guide-toc {
+  position: sticky; top: calc(var(--topbar-h) + 16px);
+  display: grid; gap: .1rem; align-content: start;
+  padding: .9rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  /* A long guide outgrows the screen; the list scrolls on its own. */
+  max-height: calc(100vh - var(--topbar-h) - 32px); overflow-y: auto; overscroll-behavior: contain;
+}
+.guide-toc a {
+  padding: .35rem .5rem; border-radius: var(--radius-sm);
+  font-size: .84rem; color: var(--text-dim); text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.guide-toc a:hover { background: var(--surface-2); color: var(--text); }
+/* Whichever section is on screen, so the list doubles as a place marker. */
+.guide-toc a.active {
+  background: var(--accent-soft); color: var(--accent);
+  border-left-color: var(--accent); font-weight: 600;
+}
+
+.guide-section { scroll-margin-top: calc(var(--topbar-h) + 16px); }
+.guide-section h2 { margin-bottom: .5rem; }
+.guide-section h3 { font-size: .95rem; color: var(--text-dim); }
+.guide-lead { color: var(--text-dim); font-size: .92rem; margin-bottom: .9rem; }
+
+.guide-steps, .guide-points { margin: 0 0 .4rem; padding-left: 1.15rem; display: grid; gap: .55rem; }
+.guide-steps li, .guide-points li { font-size: .91rem; line-height: 1.55; }
+.guide-steps li::marker { font-weight: 700; color: var(--accent); }
+
+.guide-note {
+  margin-top: .8rem; padding: .6rem .8rem;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: .87rem; line-height: 1.5;
+}
+.guide-note.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+
+.guide-faq details {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: .55rem .75rem; margin-bottom: .45rem; background: var(--surface-2);
+}
+.guide-faq summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
+.guide-faq summary::marker { color: var(--text-faint); }
+.guide-answer { padding-top: .5rem; font-size: .88rem; color: var(--text-dim); line-height: 1.55; }
+.guide-answer p { margin: 0; }
+
+@media (max-width: 820px) {
+  .guide-layout { grid-template-columns: 1fr; }
+  /* Stacked above the guide on a phone, so it must not become its own
+     scrolling box — the whole list should just be there. */
+  .guide-toc { position: static; max-height: none; overflow: visible; }
+}
+
+/* Printing gives you something you can pin up in the kitchen. */
+@media print {
+  .guide-toc { display: none; }
+  .guide-layout { grid-template-columns: 1fr; }
+  .guide-section { border: none; padding: 0 0 .8rem; margin-bottom: .8rem; border-bottom: 1px solid #ddd; }
+  .guide-faq details { border: none; background: none; padding: 0; }
+  .guide-faq details > div { display: block !important; }
+}
+
+/* --------------------------------------------------------------- printing --
+   Reports are saved as PDF through the browser's own print dialog. The charts
+   are SVG, so they come out as vector rather than a screenshot. Everything
+   below is about removing the furniture and making dark mode print sensibly. */
+
+.print-header, .print-footer { display: none; }
+
+@media print {
+  /* Force the light palette: printing a dark theme wastes ink and reads badly.
+     Both explicit-theme selectors are listed so a chosen theme cannot win. */
+  :root,
+  :root[data-theme="dark"],
+  :root[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f4f6f8;
+    --surface-3: #e9edf1;
+    --border: #d4dae1;
+    --border-strong: #b3bcc7;
+    --text: #101418;
+    --text-dim: #4a535e;
+    --text-faint: #6f7884;
+    --accent: #1f5fd0;
+    --accent-soft: #e8f0fd;
+    --good: #0f7048;  --good-soft: #e6f4ed;
+    --warn: #9a5800;  --warn-soft: #fbf0de;
+    --bad:  #b02436;  --bad-soft:  #fbe9eb;
+    --c1: #1f5fd0; --c2: #0d8f80; --c3: #b96604; --c4: #6d43c4;
+    --c5: #c01f42; --c6: #0a7591; --c7: #4f8209; --c8: #b32270;
+    --shadow: none;
+  }
+
+  html, body {
+    background: #fff;
+    font-size: 11pt;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @page { margin: 14mm 12mm; }
+
+  /* Furniture nobody wants on paper. */
+  .topbar, .sidebar, .nav-scrim, .toolbar, .entry-footer, .toasts, .guide-toc,
+  button, .btn, dialog { display: none !important; }
+
+  .main { max-width: none; padding: 0; margin: 0; }
+  .page-head { margin-bottom: .5rem; }
+  .page-head .btn-row, .page-head .seg { display: none !important; }
+
+  .print-header { display: block; margin-bottom: 10mm; }
+  .print-brand {
+    display: flex; align-items: center; gap: .4rem;
+    font-size: 10pt; color: #4a535e; margin-bottom: 2mm;
+  }
+  .print-title { font-size: 20pt; margin: 0; letter-spacing: -.02em; }
+  .print-subtitle { font-size: 11pt; color: #4a535e; margin-top: 1mm; }
+  .print-note { font-size: 9.5pt; color: #4a535e; margin-top: 2mm; font-style: italic; }
+  .print-meta {
+    font-size: 9pt; color: #6f7884; margin-top: 3mm;
+    padding-top: 2mm; border-top: 1px solid #d4dae1;
+  }
+
+  .print-footer {
+    display: block; margin-top: 8mm; padding-top: 3mm;
+    border-top: 1px solid #d4dae1;
+    font-size: 8.5pt; color: #6f7884; line-height: 1.5;
+  }
+
+  /* Keep a card, a chart or a table row from being split across pages. */
+  .card {
+    break-inside: avoid; page-break-inside: avoid;
+    box-shadow: none; border: 1px solid #d4dae1;
+    margin-bottom: 5mm; padding: 4mm 5mm;
+  }
+  .chart, .stat, .alert, tr, .guide-section { break-inside: avoid; page-break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
+
+  /* Grids collapse to something a page can hold. */
+  .grid-4 { grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); gap: 3mm; }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); gap: 3mm; }
+
+  .stat { border: 1px solid #d4dae1; padding: 2.5mm 3mm; }
+  .stat-value { font-size: 14pt; }
+  .stat-label { font-size: 7.5pt; }
+  .stat-sub { font-size: 8pt; }
+
+  table { font-size: 8.5pt; }
+  th, td { padding: 1.4mm 2mm; }
+  thead { display: table-header-group; }   /* repeat headers across pages */
+  .table-wrap { overflow: visible; margin: 0; padding: 0; }
+
+  /* Charts must not be clipped by their scroll container. */
+  .chart { overflow: visible !important; }
+  .chart svg { max-width: 100%; height: auto; }
+
+  a { color: inherit; text-decoration: none; }
+}
+
+/* Plain-language explanations of each report panel. */
+.guide-readings { display: grid; gap: .7rem; }
+.guide-reading {
+  padding: .7rem .85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.guide-reading-name { font-weight: 660; font-size: .92rem; margin-bottom: .25rem; }
+.guide-reading-means { font-size: .87rem; line-height: 1.55; color: var(--text-dim); }
+.guide-reading-action {
+  font-size: .87rem; line-height: 1.55; margin-top: .4rem;
+  padding-top: .4rem; border-top: 1px dashed var(--border-strong);
+}
+.guide-reading-action strong { color: var(--accent); }
+
+/* Two date ranges, side by side, with the second visibly subordinate. */
+.compare-picker {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+  margin-bottom: .9rem;
+}
+.compare-picker > div:last-child {
+  padding-left: 1rem;
+  border-left: 2px dashed var(--border-strong);
+}
+@media (max-width: 700px) {
+  .compare-picker { grid-template-columns: 1fr; }
+  .compare-picker > div:last-child { padding-left: 0; border-left: none; padding-top: .6rem; border-top: 2px dashed var(--border-strong); }
+}
+
+/* ------------------------------------------------------------- maintenance --
+   The issue screen is built for a thumb. Everything here is sized so a
+   technician standing in a corridor can hit it without looking twice. */
+
+
+.mx-search {
+  width: 100%; padding: .55rem .7rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--text); font-size: .92rem;
+}
+
+.mx-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.mx-chip {
+  padding: .5rem .8rem; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); font-size: .88rem; font-weight: 550; cursor: pointer;
+  min-height: 40px;
+}
+.mx-chip:hover { border-color: var(--border-strong); }
+.mx-chip.on {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+
+.mx-grid {
+  display: grid; gap: .5rem; margin-top: .7rem;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+.mx-tile {
+  position: relative;
+  display: flex; flex-direction: column; gap: .15rem; align-items: flex-start;
+  padding: .6rem .7rem; min-height: 62px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--text);
+  text-align: left; cursor: pointer;
+}
+.mx-tile:hover { border-color: var(--border-strong); }
+.mx-tile.on { border-color: var(--accent); background: var(--accent-soft); }
+.mx-tile-name { font-size: .87rem; font-weight: 600; line-height: 1.25; }
+.mx-tile-unit { font-size: .74rem; color: var(--text-faint); }
+.mx-tile-qty {
+  position: absolute; top: .4rem; right: .45rem;
+  min-width: 22px; height: 22px; padding: 0 .3rem;
+  display: grid; place-items: center;
+  border-radius: 999px; background: var(--accent); color: #fff;
+  font-size: .76rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+
+/* The basket follows you down the page: what you are about to record should
+   never be somewhere you have to scroll to find. */
+.mx-basket {
+  position: sticky; bottom: 0; z-index: 25;
+  margin: 1rem -.25rem 0;
+}
+.mx-basket-inner {
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: saturate(160%) blur(10px);
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  box-shadow: 0 -6px 24px -14px rgba(16, 24, 40, .45);
+  padding: .7rem .85rem;
+  display: grid; gap: .6rem;
+}
+.mx-basket-lines { display: grid; gap: .35rem; max-height: 30vh; overflow-y: auto; }
+.mx-line {
+  display: grid; grid-template-columns: 1fr auto auto auto;
+  gap: .5rem; align-items: center; font-size: .88rem;
+}
+.mx-line-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-line-unit { color: var(--text-faint); font-size: .8rem; min-width: 34px; }
+
+.mx-step { display: flex; align-items: center; gap: .25rem; }
+.mx-step button {
+  width: 34px; height: 34px; padding: 0;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--text);
+  font-size: 1.05rem; font-weight: 700; cursor: pointer;
+}
+.mx-step input {
+  width: 62px; text-align: center; padding: .4rem .2rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.mx-basket-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  flex-wrap: wrap;
+}
+.mx-basket-where { font-size: .9rem; }
+.mx-save { min-height: 44px; padding-inline: 1.2rem; }
+
+.mx-recent { display: grid; gap: .3rem; font-size: .86rem; }
+.mx-recent-row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+
+.mx-delivery-line {
+  display: grid; grid-template-columns: minmax(160px, 2fr) 1fr 1fr auto auto;
+  gap: .5rem; align-items: center; margin-bottom: .45rem;
+}
+
+@media (max-width: 720px) {
+  .mx-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .mx-delivery-line { grid-template-columns: 1fr 1fr; }
+  .mx-delivery-line select { grid-column: 1 / -1; }
+  .mx-basket-lines { max-height: 38vh; }
+}
+
+.mx-tile-attrs {
+  font-size: .75rem; color: var(--accent);
+  line-height: 1.2; margin-top: -.05rem;
+}
+
+/* A bar that appears once rows are ticked, so what you are about to remove and
+   the button that removes it are never in different parts of the page. */
+.bulk-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: .6rem;
+  padding: .55rem .8rem; margin-bottom: .6rem;
+  border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  background: var(--accent-soft); color: var(--accent);
+  font-size: .88rem; font-weight: 600;
+}
+
+td.tick, th.tick { width: 34px; padding-right: 0; }
+td.tick input, th.tick input { cursor: pointer; }
+
+/* A row that no longer counts — a revoked link, a stopped schedule. Still
+   there to be read, visibly out of play. */
+.row-muted td { opacity: .55; }
+
+/* ---------------------------------------------------------------- bakery --
+   A page reached through a link, by somebody with no account and usually a
+   floury phone. Nothing on it but the form: no menu, no sign-in, nothing else
+   to reach. Everything is sized for a thumb. */
+
+.alert.good { background: var(--good-soft); border-color: color-mix(in srgb, var(--good) 30%, transparent); }
+
+.bake-page { min-height: 100dvh; background: var(--bg); }
+.bake-head {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .8rem clamp(.75rem, 4vw, 1.5rem);
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.bake-main { max-width: 620px; margin: 0 auto; padding: 1rem clamp(.6rem, 3vw, 1.2rem) 3rem; }
+.bake-broken { max-width: 480px; margin: 0 auto; padding: 3rem 1rem; }
+
+.bake-list { display: grid; gap: .5rem; }
+.bake-row {
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  padding: .6rem .7rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.bake-name { min-width: 0; font-size: .95rem; }
+.bake-qty {
+  width: 84px; text-align: center; font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.bake-foot {
+  display: grid; gap: .6rem; margin-top: 1rem;
+  padding-top: .8rem; border-top: 1px solid var(--border);
+}
+.bake-summary { font-size: .88rem; line-height: 1.5; }
+.bake-send { min-height: 52px; font-size: 1rem; }
+
+@media (max-width: 480px) {
+  .bake-row { flex-wrap: wrap; }
+  .bake-name { flex: 1 1 100%; }
+  .bake-row .mx-step { margin-left: auto; }
+}
+
+/* ------------------------------------------------------- housekeeping -- */
+/* The bed check is used one-handed, walking, on a phone. Every target on it is
+   sized for a thumb rather than a cursor, and the answers a housekeeper has
+   already given stay legible at arm's length. */
+
+.hk-page { padding-bottom: 128px; }
+
+.hk-rooms { display: grid; gap: .8rem; }
+.hk-room { padding: 0; overflow: hidden; }
+
+.hk-room-head {
+  display: flex; align-items: center; gap: .6rem; width: 100%;
+  padding: .85rem 1rem; border: none; background: transparent;
+  text-align: left; border-radius: 0; font-size: 1rem;
+}
+.hk-room-head:hover { background: var(--surface-2); }
+.hk-room-name { display: flex; flex-direction: column; line-height: 1.25; flex: 1; min-width: 0; }
+.hk-room-name small { font-size: .75rem; font-weight: 500; }
+.hk-room-sum { display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; }
+.hk-room-all {
+  font-size: .74rem; font-weight: 650; padding: .25rem .55rem; border-radius: 999px;
+  background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border);
+  white-space: nowrap; cursor: pointer;
+}
+.hk-room-all:hover { border-color: var(--border-strong); color: var(--text); }
+.hk-caret { color: var(--text-faint); transition: transform .15s; transform: rotate(-90deg); }
+.hk-room-head.open .hk-caret { transform: rotate(0deg); }
+
+.hk-beds { border-top: 1px solid var(--border); }
+.hk-bed { padding: .6rem 1rem; border-bottom: 1px solid var(--border); }
+.hk-bed:last-child { border-bottom: none; }
+.hk-bed.answered.free { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+.hk-bed.answered.occupied { background: color-mix(in srgb, var(--accent-soft) 45%, transparent); }
+/* An occupied bed that has not yet answered the name tag question is the one
+   state this screen must not let anybody walk away from. */
+.hk-bed.asking { background: var(--warn-soft); box-shadow: inset 3px 0 var(--warn); }
+
+.hk-bed-main { display: flex; align-items: center; gap: .6rem; }
+.hk-bed-label { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.25; }
+.hk-bed-label small { font-size: .72rem; }
+.hk-note-dot { color: var(--accent); font-size: .8rem; }
+
+.hk-choices { display: flex; gap: .4rem; }
+.hk-choice, .hk-tag {
+  min-height: 44px; min-width: 84px; padding: .4rem .8rem;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text-dim);
+  font-size: .9rem; font-weight: 620;
+}
+.hk-choice:hover, .hk-tag:hover { border-color: var(--border-strong); }
+.hk-choice.free.on { background: var(--surface-3); color: var(--text); border-color: var(--border-strong); }
+.hk-choice.occupied.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.hk-tag.yes.on { background: var(--good); border-color: var(--good); color: #fff; }
+.hk-tag.no.on { background: var(--bad); border-color: var(--bad); color: #fff; }
+
+.hk-note-btn {
+  border: 1px solid var(--border); background: transparent; color: var(--text-faint);
+  min-height: 44px; width: 42px; border-radius: var(--radius-sm); font-size: .95rem;
+}
+.hk-note-btn:hover { color: var(--text); border-color: var(--border-strong); }
+
+.hk-followup {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  margin-top: .5rem; padding-left: .1rem;
+}
+.hk-followup-q { font-size: .88rem; font-weight: 600; color: var(--text-dim); flex: 1; min-width: 150px; }
+
+.hk-note { margin-top: .5rem; }
+.hk-note-input { font-size: .88rem; }
+
+.hk-footer {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
+  padding: .7rem clamp(.75rem, 3vw, 1.5rem);
+  padding-bottom: calc(.7rem + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+}
+.hk-footer-inner {
+  display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
+  max-width: 1320px; margin: 0 auto; width: 100%;
+}
+.hk-footer-text { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 150px; }
+.hk-progress { font-weight: 680; font-variant-numeric: tabular-nums; }
+.hk-status { font-size: .82rem; color: var(--text-dim); }
+.hk-status.good { color: var(--good); }
+.hk-status.bad { color: var(--bad); }
+.hk-status.warn { color: var(--warn); }
+.hk-submit { min-height: 46px; padding-inline: 1.3rem; flex: 0 0 auto; }
+
+.hk-recent { display: flex; flex-wrap: wrap; gap: .4rem; }
+
+@media (max-width: 560px) {
+  .hk-bed-main { flex-wrap: wrap; }
+  .hk-bed-label { flex: 1 1 100%; margin-bottom: .35rem; }
+  .hk-choice, .hk-tag { flex: 1; min-width: 0; }
+  .hk-choices { flex: 1; }
+  .hk-submit { flex: 1 1 100%; }
+}
+
+/* ---- what the findings look like everywhere they are shown ------------- */
+
+.sev-clear      { --hk-sev: var(--good); }
+.sev-untagged   { --hk-sev: var(--bad); }
+.sev-unexpected { --hk-sev: var(--warn); }
+.sev-empty      { --hk-sev: var(--accent); }
+.sev-unchecked  { --hk-sev: var(--surface-3); }
+
+.hk-chips { display: flex; flex-wrap: wrap; gap: .45rem; }
+.hk-chip {
+  display: flex; flex-direction: column; align-items: flex-start; gap: .1rem;
+  padding: .45rem .7rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface);
+  border-left: 4px solid var(--hk-sev, var(--good));
+  font-size: .87rem; font-weight: 600; line-height: 1.2;
+}
+.hk-chip small { font-size: .72rem; color: var(--text-faint); font-weight: 500; }
+.hk-chip:hover { border-color: var(--border-strong); border-left-color: var(--hk-sev, var(--good)); }
+
+.hk-findings { display: grid; gap: .4rem; margin-top: .9rem; }
+.hk-finding {
+  display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline;
+  font-size: .88rem; padding: .4rem .55rem; border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.hk-notes { display: grid; gap: .35rem; font-size: .86rem; }
+.hk-note-row { display: flex; flex-wrap: wrap; gap: .45rem; align-items: baseline; }
+
+/* ---- the room-by-day heatmap ------------------------------------------ */
+/* Rooms down the side, days across. Squares rather than a chart: the useful
+   act is hovering one to find out what happened, and ninety days of them still
+   has to fit on a laptop. */
+
+.hk-heat-wrap { overflow-x: auto; margin: 0 -1.1rem; padding: 0 1.1rem .3rem; }
+.hk-heat {
+  display: grid; grid-template-columns: minmax(96px, max-content) 1fr;
+  gap: 3px; min-width: 420px; align-items: center;
+}
+.hk-heat-corner { min-height: 18px; }
+.hk-heat-days, .hk-heat-cells {
+  /* The column count is per-period, so it is set on the row itself. */
+  display: grid; gap: 3px;
+}
+.hk-heat-day { font-size: .68rem; color: var(--text-faint); white-space: nowrap; overflow: visible; }
+.hk-heat-room { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hk-heat-room-btn {
+  border: none; background: transparent; color: var(--text); padding: .1rem 0;
+  font-size: .82rem; text-align: left; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hk-heat-room-btn:hover { color: var(--accent); text-decoration: underline; }
+.hk-heat-cell {
+  height: 18px; border-radius: 3px;
+  background: var(--hk-sev, var(--good));
+}
+.hk-heat-cell.sev-clear { background: color-mix(in srgb, var(--good) 62%, transparent); }
+.hk-heat-cell.sev-unchecked { background: var(--surface-3); }
+
+.hk-key {
+  width: 10px; height: 10px; border-radius: 3px; display: inline-block;
+  background: var(--hk-sev, var(--good));
+}
+.hk-key.sev-clear { background: color-mix(in srgb, var(--good) 62%, transparent); }
+
+/* ---- the three checks of a day ---------------------------------------- */
+/* Reception open up, housekeeping walk the rooms, reception close. Each is its
+   own report; the picker has to make plain which one you are filling in, and
+   which are already done, without a legend. */
+
+.hk-slots {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem;
+  margin-bottom: 1rem;
+}
+.hk-slot {
+  display: flex; flex-direction: column; align-items: flex-start; gap: .1rem;
+  padding: .6rem .7rem; text-align: left;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text-dim);
+  border-top: 3px solid var(--border);
+}
+.hk-slot:hover { border-color: var(--border-strong); }
+.hk-slot.on {
+  border-color: var(--accent); border-top-color: var(--accent);
+  background: var(--accent-soft); color: var(--text);
+}
+.hk-slot.done { border-top-color: var(--good); }
+.hk-slot-name { font-weight: 680; font-size: .92rem; }
+.hk-slot-by { font-size: .72rem; color: var(--text-faint); }
+.hk-slot-state { font-size: .74rem; color: var(--text-faint); margin-top: .15rem; }
+.hk-slot.done .hk-slot-state { color: var(--good); }
+
+@media (max-width: 560px) {
+  .hk-slots { grid-template-columns: 1fr; gap: .35rem; }
+  .hk-slot { flex-direction: row; align-items: baseline; gap: .5rem; border-top-width: 1px; border-left: 3px solid var(--border); }
+  .hk-slot.done { border-left-color: var(--good); border-top-color: var(--border); }
+  .hk-slot.on { border-left-color: var(--accent); }
+  .hk-slot-state { margin-left: auto; margin-top: 0; }
+}
+
+/* The day's three rounds on a manager's screen, as a strip of cards. */
+.hk-rounds-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .6rem; }
+.hk-round-card {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: .7rem .8rem; background: var(--surface-2);
+  border-left: 3px solid var(--border);
+}
+.hk-round-card.done { border-left-color: var(--good); }
+.hk-round-card.pending { border-left-color: var(--warn); }
+.hk-round-card h4 { font-size: .9rem; font-weight: 680; margin: 0; }
+.hk-round-card .who { font-size: .74rem; color: var(--text-faint); }
+.hk-round-card .figures { font-size: .82rem; color: var(--text-dim); margin-top: .3rem; }
+
+/* ---- the bell ---------------------------------------------------------- */
+/* Submitted checks land here as well as in an inbox, so somebody who lives in
+   the app never has to open email to find out a round came in — and so a mail
+   failure has somewhere to say so. */
+
+.bell-wrap { position: relative; }
+.bell { position: relative; font-size: 1rem; }
+.bell.has-unread { color: var(--text); }
+.bell-count {
+  display: none; position: absolute; top: -2px; right: -2px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: var(--bad); color: #fff;
+  font-size: .65rem; font-weight: 700; line-height: 16px; text-align: center;
+}
+.bell-count.on { display: block; }
+
+.bell-panel {
+  display: none; position: absolute; right: 0; top: calc(100% + .5rem); z-index: 60;
+  width: min(360px, calc(100vw - 1.5rem));
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.bell-panel.open { display: block; }
+.bell-head {
+  padding: .6rem .8rem; border-bottom: 1px solid var(--border);
+  font-size: .85rem; background: var(--surface-2);
+}
+.bell-list { max-height: min(60vh, 460px); overflow-y: auto; overscroll-behavior: contain; padding: .3rem; }
+
+.bell-item {
+  display: flex; gap: .55rem; align-items: flex-start;
+  padding: .55rem .6rem; border-radius: var(--radius-sm);
+  text-decoration: none; color: inherit;
+  border-left: 3px solid transparent;
+}
+.bell-item:hover { background: var(--surface-2); }
+.bell-item.unread { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+.bell-item.level-high { border-left-color: var(--bad); }
+.bell-item.level-warn { border-left-color: var(--warn); }
+.bell-icon { font-size: .95rem; line-height: 1.35; }
+.bell-text { min-width: 0; }
+.bell-title { font-size: .88rem; font-weight: 640; line-height: 1.3; }
+.bell-body { font-size: .8rem; color: var(--text-dim); line-height: 1.35; margin-top: .1rem; }
+.bell-when { font-size: .72rem; color: var(--text-faint); margin-top: .15rem; }
+
+@media print { .bell-wrap { display: none; } }
+
+/* The erase panel's count of what a chosen period holds. Sits between the
+   dates and the button on purpose: it is the last thing read before the one
+   action in this system that cannot be undone. */
+.erase-preview { margin: .9rem 0 0; }
+.erase-preview .alert { margin-bottom: 0; }
+
+/* -------------------------------------------------------------- attendance --
+   Two ideas carry the whole section: four status colours used identically
+   everywhere, and a week grid dense enough to read a fortnight of a hotel's
+   staff without scrolling sideways. */
+
+/* The tint on a row of the day list. Kept to a left edge and a wash rather than
+   a full-strength background — a page where every other row shouts is a page
+   nobody scans. */
+.row-att-red td:first-child   { box-shadow: inset 3px 0 var(--bad); }
+.row-att-amber td:first-child { box-shadow: inset 3px 0 var(--warn); }
+.row-att-green td:first-child { box-shadow: inset 3px 0 var(--good); }
+.row-att-red    { background: color-mix(in srgb, var(--bad-soft) 45%, transparent); }
+.row-att-amber  { background: color-mix(in srgb, var(--warn-soft) 40%, transparent); }
+.row-muted td   { opacity: .62; }
+
+/* One cell of the week grid: a mark, and the hours under it. Square-ish so
+   seven of them plus a name fit across a laptop. */
+.att-cell {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-width: 2.6rem; min-height: 2.4rem; gap: .05rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  text-decoration: none; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.att-cell:hover { border-color: var(--accent); }
+.att-cell-mark  { font-size: .9rem; font-weight: 700; line-height: 1; }
+.att-cell-hours { font-size: .68rem; color: var(--text-faint); line-height: 1; }
+
+.att-cell.att-green { background: var(--good-soft); color: var(--good); border-color: color-mix(in srgb, var(--good) 30%, transparent); }
+.att-cell.att-amber { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.att-cell.att-red   { background: var(--bad-soft);  color: var(--bad);  border-color: color-mix(in srgb, var(--bad) 30%, transparent); }
+.att-cell.att-grey  { background: var(--surface-2); color: var(--text-faint); }
+
+.att-legend {
+  display: flex; flex-wrap: wrap; gap: .8rem; align-items: center;
+  margin-top: .6rem; font-size: .8rem; color: var(--text-dim);
+}
+.att-legend-item { display: inline-flex; align-items: center; gap: .35rem; }
+.att-legend-item .att-cell { min-width: 1.7rem; min-height: 1.7rem; }
+.att-legend-item .att-cell-mark { font-size: .72rem; }
+
+/* The rota grid. A cell following the standing pattern is deliberately faint,
+   and one set by hand is not — "I gave him Thursday off" and "the pattern never
+   had him on Thursday" must not look the same. */
+.rota-table td { padding: .3rem; }
+.rota-cell {
+  min-width: 5.5rem; padding: .3rem .4rem; font-size: .8rem;
+  border-radius: var(--radius-sm);
+}
+.rota-cell.rota-pattern { color: var(--text-faint); background: var(--surface-2); border-style: dashed; }
+.rota-cell.rota-set     { color: var(--text); font-weight: 600; }
+.rota-cell.rota-dirty   { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.rota-weekend { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+.rota-locked {
+  padding: .35rem .4rem; font-size: .78rem; text-align: center;
+  color: var(--text-faint); background: var(--surface-2); border-radius: var(--radius-sm);
+}
+
+/* The unsaved-changes bar sticks to the top of the rota, because filling in a
+   fortnight scrolls it a long way from any button at the bottom. */
+.rota-savebar {
+  position: sticky; top: 0; z-index: 5;
+  background: var(--accent-soft); border: 1px solid var(--accent);
+  border-radius: var(--radius-sm); padding: .5rem .7rem;
+}
+
+.att-rules .card { margin-bottom: 0; }
+
+@media print {
+  .att-cell { border: 1px solid #d4dae1; }
+  .att-legend, .rota-savebar { display: none; }
+}

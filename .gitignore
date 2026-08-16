@@ -1,0 +1,12 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env
+*.log
+.DS_Store
+dist/
+
+# The poller's configuration holds the terminal's admin password and this app's
+# device token. Its state file is local bookkeeping.
+.hik-poller.json
+.hik-poller-state.json

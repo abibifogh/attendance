@@ -1,0 +1,12 @@
+{
+  "host": "http://192.168.1.64",
+  "user": "admin",
+  "password": "the terminal's admin password",
+
+  "appUrl": "https://breakfast.niceoperation.com",
+  "device": "the serial number registered in Attendance → Setup → Terminals",
+  "token": "the token that screen showed you once",
+
+  "pollSeconds": 300,
+  "lookbackMinutes": 120
+}

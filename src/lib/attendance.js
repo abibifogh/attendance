@@ -1,0 +1,1265 @@
+// Attendance: turning taps on a terminal into days, and days into answers.
+//
+// Everything in this file is a pure function over plain rows. Nothing reads the
+// database and nothing writes to it, which is what makes the rules testable —
+// and these rules are the part that has to be right, because they decide
+// whether somebody is paid for Tuesday.
+//
+// The order of the file follows the order of the reasoning: time arithmetic,
+// then which shift a punch belongs to, then what a day was, then what to say
+// about it, then what a month of them adds up to.
+
+import { addDays, diffDays, dow, rangeDays, startOfWeek } from '../util/dates.js';
+
+// A fixed point to count days from, so a punch at 23:50 on Monday and one at
+// 00:10 on Tuesday are eight hundred and something and eight hundred and
+// something-else, and comparing them is subtraction rather than calendar work.
+const ANCHOR = '2000-01-01';
+
+export const STATUSES = [
+  'present', 'late', 'early_leave', 'late_early',
+  'missing_out', 'missing_in', 'absent',
+  'leave', 'holiday', 'rest', 'unscheduled',
+];
+
+/** Statuses that mean the day is waiting on a person to say what happened. */
+const OPEN_STATUSES = new Set(['missing_out', 'missing_in']);
+
+// ---------------------------------------------------------------------------
+// Time
+// ---------------------------------------------------------------------------
+
+/** 'HH:MM' or 'HH:MM:SS' to minutes past midnight. Null on anything else. */
+export function toMinutes(time) {
+  if (typeof time !== 'string') return null;
+  const m = /^(\d{1,2}):(\d{2})/.exec(time.trim());
+  if (!m) return null;
+  const hours = Number(m[1]);
+  const mins = Number(m[2]);
+  if (hours > 47 || mins > 59) return null;
+  return hours * 60 + mins;
+}
+
+/** Minutes past midnight to 'HH:MM', wrapping past midnight rather than showing 25:00. */
+export function toClock(minutes) {
+  if (minutes == null || !Number.isFinite(minutes)) return null;
+  const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/** Absolute minutes since the anchor date, from a local day and a time on it. */
+export function absMinutes(day, time) {
+  const mins = toMinutes(time);
+  if (mins == null) return null;
+  return diffDays(ANCHOR, day) * 1440 + mins;
+}
+
+/** The day and clock time an absolute minute count lands on. */
+export function fromAbs(minutes) {
+  const dayOffset = Math.floor(minutes / 1440);
+  return { day: addDays(ANCHOR, dayOffset), time: toClock(minutes - dayOffset * 1440) };
+}
+
+/**
+ * Hours and minutes, said the way a person would say it.
+ *
+ * Used in the notes staff read, where "1 hr 5 min late" lands and "65 minutes"
+ * makes them do arithmetic about their own morning.
+ */
+export function humanDuration(minutes) {
+  const total = Math.max(0, Math.round(minutes || 0));
+  if (total < 60) return `${total} min`;
+  const hours = Math.floor(total / 60);
+  const mins = total % 60;
+  if (!mins) return `${hours} hr${hours === 1 ? '' : 's'}`;
+  return `${hours} hr${hours === 1 ? '' : 's'} ${mins} min`;
+}
+
+/** Hours to one decimal, for the columns that show a number rather than prose. */
+export function hours(minutes) {
+  return Math.round((Math.max(0, minutes || 0) / 60) * 10) / 10;
+}
+
+// ---------------------------------------------------------------------------
+// Shifts
+// ---------------------------------------------------------------------------
+
+/**
+ * A shift's window on a particular day, in absolute minutes.
+ *
+ * A shift whose end is at or before its start runs into tomorrow — 22:00 to
+ * 06:00 — and the whole of it, both sides of midnight, belongs to the day it
+ * started. Getting this wrong is how a night porter ends up absent every day
+ * and doing a double every night.
+ */
+export function shiftWindow(shift, day) {
+  const start = toMinutes(shift.starts_at);
+  const end = toMinutes(shift.ends_at);
+  if (start == null || end == null) return null;
+
+  const base = diffDays(ANCHOR, day) * 1440;
+  const overnight = end <= start;
+  return {
+    start: base + start,
+    end: base + end + (overnight ? 1440 : 0),
+    overnight,
+    // What the shift is worth before anybody turns up: its length, less the
+    // unpaid break.
+    expected: Math.max(0, (end + (overnight ? 1440 : 0)) - start - (shift.break_minutes || 0)),
+  };
+}
+
+/** True when this shift crosses midnight. */
+export function isOvernight(shift) {
+  const start = toMinutes(shift.starts_at);
+  const end = toMinutes(shift.ends_at);
+  return start != null && end != null && end <= start;
+}
+
+/**
+ * What a person is meant to be working on a given day.
+ *
+ * The rota wins over the pattern, and both can say "nothing" — which is not the
+ * same as saying nothing at all. An explicit rest day is a decision somebody
+ * made and it stops the day being an absence; the absence of any row means the
+ * person simply is not scheduled, which stops it too but for a different reason
+ * and with a different colour.
+ */
+export function scheduleFor(ds, staffId, day) {
+  const rostered = ds.rosterBy.get(`${staffId}|${day}`);
+  if (rostered) {
+    return {
+      shift: rostered.shift_id ? ds.shiftById.get(rostered.shift_id) ?? null : null,
+      source: 'roster',
+      note: rostered.note ?? null,
+      explicit: true,
+    };
+  }
+
+  const pattern = ds.patternBy.get(`${staffId}|${dow(day)}`);
+  if (pattern) {
+    return {
+      shift: pattern.shift_id ? ds.shiftById.get(pattern.shift_id) ?? null : null,
+      source: 'pattern',
+      note: null,
+      explicit: true,
+    };
+  }
+
+  return { shift: null, source: 'none', note: null, explicit: false };
+}
+
+// ---------------------------------------------------------------------------
+// Punches
+// ---------------------------------------------------------------------------
+
+/**
+ * Drop the double taps.
+ *
+ * People tap twice. The face terminal reads a face, the person is not sure it
+ * took, they lean in again, and two events land four seconds apart. Left alone
+ * that is a clock-in and a clock-out with a four-second shift, so anything
+ * inside the gap is folded into the punch before it.
+ *
+ * Expects punches already sorted by time.
+ */
+export function collapsePunches(punches, minGapMinutes = 2) {
+  const out = [];
+  for (const punch of punches) {
+    const previous = out[out.length - 1];
+    if (previous && Math.abs(punch.abs - previous.abs) < minGapMinutes) {
+      // Keep the one that says something. A terminal in attendance mode labels
+      // its events; a bare duplicate does not, and the label is worth more than
+      // the four seconds.
+      if (!previous.direction && punch.direction) out[out.length - 1] = punch;
+      continue;
+    }
+    out.push(punch);
+  }
+  return out;
+}
+
+/**
+ * Which of a day's shifts a punch belongs to.
+ *
+ * A punch is claimed by a window it falls inside, and when two windows overlap
+ * — the tail of last night's shift and the head of this morning's — it goes to
+ * whichever shift starts nearest to it. That is the rule that stops a night
+ * porter clocking out at 06:05 from being recorded as the breakfast cook
+ * arriving five minutes late.
+ */
+export function claimPunch(punch, windows) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const window of windows) {
+    if (punch.abs < window.from || punch.abs > window.to) continue;
+    const distance = Math.min(
+      Math.abs(punch.abs - window.start),
+      Math.abs(punch.abs - window.end),
+    );
+    if (distance < bestDistance) {
+      best = window;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/**
+ * Decide which punch was the arrival and which the departure.
+ *
+ * Three cases, in descending order of how much the device is telling us. A
+ * terminal configured for attendance labels every event and we simply believe
+ * it. One that is not gives us bare times, and the first and last of them are
+ * the arrival and the departure. A single unlabelled punch is the hard case: it
+ * is an arrival or a departure and nothing about it says which, so it is judged
+ * by which end of the shift it is nearer to — somebody who taps once at 07:02
+ * on a 07:00 shift arrived, and somebody who taps once at 16:58 on a shift
+ * ending at 17:00 left.
+ */
+export function pairPunches(punches, window) {
+  if (!punches.length) return { in: null, out: null, ambiguous: false };
+
+  const labelled = punches.filter((p) => p.direction === 'in' || p.direction === 'out');
+  if (labelled.length) {
+    const ins = labelled.filter((p) => p.direction === 'in');
+    const outs = labelled.filter((p) => p.direction === 'out');
+    return {
+      in: ins[0] ?? null,
+      out: outs[outs.length - 1] ?? null,
+      ambiguous: false,
+    };
+  }
+
+  if (punches.length === 1) {
+    const only = punches[0];
+    if (!window) return { in: only, out: null, ambiguous: true };
+    const nearStart = Math.abs(only.abs - window.start) <= Math.abs(only.abs - window.end);
+    return nearStart
+      ? { in: only, out: null, ambiguous: true }
+      : { in: null, out: only, ambiguous: true };
+  }
+
+  return { in: punches[0], out: punches[punches.length - 1], ambiguous: false };
+}
+
+// ---------------------------------------------------------------------------
+// The day
+// ---------------------------------------------------------------------------
+
+/**
+ * What one person's one day was.
+ *
+ * The single most important function here. Everything a report says about
+ * lateness, hours, absence and leave is this, aggregated.
+ *
+ * Precedence is deliberate and worth stating, because most of the arguments a
+ * system like this causes are really arguments about precedence:
+ *
+ *   1. A decision a supervisor recorded. A human who has looked at the case
+ *      outranks every rule below.
+ *   2. Approved leave. Somebody who was granted the day off is not absent, and
+ *      is not late if they happen to walk past the terminal.
+ *   3. A public holiday with no punches.
+ *   4. No shift scheduled — a rest day, or a person not on the rota at all.
+ *   5. The punches, against the shift.
+ *
+ * `policy.missingPunch` decides the one genuinely ambiguous case: a day with an
+ * arrival and no departure. 'incomplete' leaves it open for a human, 'absent'
+ * reproduces what the terminal's own reports do, and 'auto_close' credits the
+ * scheduled end and says so.
+ */
+export function computeDay({
+  staff, day, schedule, punches = [], holiday = null, leave = null,
+  override = null, policy = {},
+}) {
+  const shift = schedule?.shift ?? null;
+  const window = shift ? shiftWindow(shift, day) : null;
+  const scheduled = Boolean(shift);
+
+  const base = {
+    staff_id: staff.id,
+    day,
+    shift_id: shift?.id ?? null,
+    scheduled: scheduled ? 1 : 0,
+    expected_minutes: window?.expected ?? 0,
+    first_in: null,
+    last_out: null,
+    punches: punches.length,
+    worked_minutes: 0,
+    late_minutes: 0,
+    early_minutes: 0,
+    overtime_minutes: 0,
+    status: 'absent',
+    reason_code: 'absent',
+    leave_id: null,
+    resolution: 'settled',
+  };
+
+  // 1. A human already ruled on this day.
+  //
+  // When they supplied the times the terminal never saw, those times are what
+  // the day is worth. The observed punches are still measured and still shown —
+  // a report that hides what the device saw next to what a supervisor decided
+  // is a report nobody can audit — but the hours come from the decision.
+  if (override?.reason_code) {
+    const observed = measure(punches, window, shift);
+    return {
+      ...base,
+      ...observed,
+      ...correctedMeasure(override, window, shift, observed),
+      punches: punches.length,
+      status: override.status || statusForReason(override.reason_code, override.reasonKind),
+      reason_code: override.reason_code,
+      resolution: 'resolved',
+    };
+  }
+
+  // 2. Approved leave.
+  if (leave) {
+    return {
+      ...base,
+      status: 'leave',
+      reason_code: leave.reason_code,
+      leave_id: leave.id,
+      // Leave is what the day was worth, so a person on annual leave shows the
+      // shift's hours rather than nothing. Without this, a fortnight off reads
+      // as a fortnight of zero and every hours total is wrong.
+      expected_minutes: window?.expected ?? 0,
+    };
+  }
+
+  // 3. A public holiday nobody worked.
+  if (holiday && !punches.length) {
+    return { ...base, status: 'holiday', reason_code: 'public_holiday' };
+  }
+
+  // 4. Nothing scheduled. Somebody who turns up anyway is recorded as having
+  //    worked an unscheduled day — that is a favour done on a day off, and it
+  //    should be visible rather than silently discarded.
+  if (!scheduled) {
+    if (!punches.length) {
+      return {
+        ...base,
+        status: 'rest',
+        reason_code: holiday ? 'public_holiday' : 'rest_day',
+      };
+    }
+    const pair = pairPunches(punches, null);
+    const worked = pair.in && pair.out ? Math.max(0, pair.out.abs - pair.in.abs) : 0;
+    return {
+      ...base,
+      first_in: pair.in ? toClock(pair.in.abs) : null,
+      last_out: pair.out ? toClock(pair.out.abs) : null,
+      worked_minutes: worked,
+      overtime_minutes: worked,
+      status: 'unscheduled',
+      reason_code: 'present',
+      resolution: pair.out ? 'settled' : 'open',
+    };
+  }
+
+  // 5. The ordinary case: a shift, and whatever the terminal saw.
+  if (!punches.length) {
+    return { ...base, status: 'absent', reason_code: 'absent' };
+  }
+
+  const pair = pairPunches(punches, window);
+  const measured = measure(punches, window, shift, pair);
+
+  if (pair.in && pair.out) {
+    const late = measured.late_minutes > (shift.grace_in_minutes ?? 0);
+    const early = measured.early_minutes > (shift.grace_out_minutes ?? 0);
+    const status = late && early ? 'late_early' : late ? 'late' : early ? 'early_leave' : 'present';
+    return { ...base, ...measured, status, reason_code: status === 'present' ? 'present' : status };
+  }
+
+  // One half of the day is missing. Which half, and what the property has said
+  // to do about it.
+  const missing = pair.in ? 'missing_out' : 'missing_in';
+  const mode = policy.missingPunch || 'incomplete';
+
+  if (mode === 'absent') {
+    return {
+      ...base, ...measured, worked_minutes: 0, status: missing, reason_code: 'absent',
+    };
+  }
+
+  if (mode === 'auto_close' && pair.in && window) {
+    // Credit the scheduled end, never more. Somebody who forgot to clock out
+    // gets their shift, not the overtime they might have worked, because an
+    // absent punch is not evidence of anything.
+    const closed = Math.min(window.end, Math.max(pair.in.abs, window.end));
+    const worked = Math.max(0, closed - pair.in.abs - (shift.break_minutes || 0));
+    return {
+      ...base,
+      ...measured,
+      last_out: toClock(window.end),
+      worked_minutes: worked,
+      early_minutes: 0,
+      status: missing,
+      reason_code: measured.late_minutes > (shift.grace_in_minutes ?? 0) ? 'late' : 'present',
+      resolution: 'auto',
+    };
+  }
+
+  return {
+    ...base, ...measured, worked_minutes: 0, status: missing, reason_code: 'incomplete', resolution: 'open',
+  };
+}
+
+/**
+ * The arithmetic, separated from the judgement.
+ *
+ * Late and early are measured from the scheduled edges without regard to grace;
+ * grace decides whether anybody is told about it, which is a different
+ * question. Keeping the raw minutes means a property can loosen its grace
+ * period next year without every past report changing its mind.
+ */
+function measure(punches, window, shift, pair = null) {
+  const found = pair ?? pairPunches(punches, window);
+  const out = {
+    first_in: found.in ? toClock(found.in.abs) : null,
+    last_out: found.out ? toClock(found.out.abs) : null,
+    punches: punches.length,
+    worked_minutes: 0,
+    late_minutes: 0,
+    early_minutes: 0,
+    overtime_minutes: 0,
+  };
+  if (!window) return out;
+
+  if (found.in) out.late_minutes = Math.max(0, found.in.abs - window.start);
+  if (found.out) out.early_minutes = Math.max(0, window.end - found.out.abs);
+
+  if (found.in && found.out) {
+    out.worked_minutes = Math.max(0, found.out.abs - found.in.abs - (shift?.break_minutes || 0));
+    const past = found.out.abs - window.end;
+    const threshold = shift?.overtime_after ?? 0;
+    out.overtime_minutes = past > threshold ? past - threshold : 0;
+  }
+  return out;
+}
+
+/**
+ * The hours a supervisor's correction is worth.
+ *
+ * Returns nothing when they only chose a reason — marking a day as sick leave
+ * says nothing about clock times and must not invent any.
+ *
+ * Only the missing half is usually supplied: the terminal saw the arrival and
+ * the supervisor is confirming what time the person left. So whichever side was
+ * not corrected falls back to what was observed, and the day is measured across
+ * the pair.
+ */
+function correctedMeasure(override, window, shift, observed = {}) {
+  const inAt = override.corrected_in ?? null;
+  const outAt = override.corrected_out ?? null;
+  if (!inAt && !outAt) return {};
+  if (!window) return { corrected_in: inAt, corrected_out: outAt };
+
+  const base = Math.floor(window.start / 1440) * 1440;
+  const startClock = inAt ?? observed.first_in ?? null;
+  const outClock = outAt ?? observed.last_out ?? null;
+
+  const startAbs = startClock ? base + toMinutes(startClock) : null;
+  // A time before the shift start belongs to the far side of midnight, which is
+  // ordinary on a night shift.
+  let endAbs = outClock ? base + toMinutes(outClock) : null;
+  if (endAbs != null && endAbs < (startAbs ?? window.start)) endAbs += 1440;
+
+  const out = { corrected_in: inAt, corrected_out: outAt };
+  if (startAbs != null) out.first_in = toClock(startAbs);
+  if (endAbs != null) out.last_out = toClock(endAbs);
+  if (startAbs != null) out.late_minutes = Math.max(0, startAbs - window.start);
+  if (endAbs != null) out.early_minutes = Math.max(0, window.end - endAbs);
+  if (startAbs != null && endAbs != null) {
+    out.worked_minutes = Math.max(0, endAbs - startAbs - (shift?.break_minutes || 0));
+    const past = endAbs - window.end;
+    out.overtime_minutes = past > (shift?.overtime_after ?? 0) ? past - (shift?.overtime_after ?? 0) : 0;
+  }
+  return out;
+}
+
+function statusForReason(code, kind) {
+  if (kind === 'leave') return 'leave';
+  if (kind === 'holiday') return 'holiday';
+  if (kind === 'rest') return 'rest';
+  if (kind === 'absent') return 'absent';
+  return code === 'present' ? 'present' : code;
+}
+
+/** Is this day waiting on somebody? */
+export function isOpen(record) {
+  return record.resolution === 'open' || (record.resolution !== 'resolved' && OPEN_STATUSES.has(record.status));
+}
+
+/**
+ * Green, amber, red or grey.
+ *
+ * Deliberately four and not more. A colour that has to be explained is not
+ * doing its job, and the only three things a manager needs to pick out of a
+ * page of names are "fine", "worth a word" and "deal with this".
+ */
+export function colourFor(record, reasons) {
+  const reason = reasons?.get?.(record.reason_code);
+  if (reason?.colour) return reason.colour;
+  switch (record.status) {
+    case 'present': case 'unscheduled': return 'green';
+    case 'late': case 'early_leave': case 'late_early': return 'amber';
+    case 'missing_in': case 'missing_out': return record.resolution === 'auto' ? 'amber' : 'red';
+    case 'absent': return 'red';
+    default: return 'grey';
+  }
+}
+
+/**
+ * How a day should be labelled on a report.
+ *
+ * The wording follows what the terminal's own reports say, because staff have
+ * been reading those for months and a system that renames everything on day one
+ * spends its first fortnight being explained.
+ */
+export function labelFor(record, reasons) {
+  const reason = reasons?.get?.(record.reason_code);
+  switch (record.status) {
+    case 'present': return 'Present';
+    case 'late': return 'Late';
+    case 'early_leave': return record.early_minutes <= 1 ? 'Left early — minor' : 'Left early';
+    case 'late_early': return 'Late and left early';
+    case 'missing_out':
+      if (record.resolution === 'auto') return 'No clock-out — shift credited';
+      return record.late_minutes > 0 && record.reason_code === 'absent'
+        ? 'Absent (late in, no clock-out)'
+        : record.reason_code === 'absent' ? 'Absent (no clock-out)' : 'No clock-out — to check';
+    case 'missing_in':
+      if (record.resolution === 'auto') return 'No clock-in — shift credited';
+      return record.reason_code === 'absent' ? 'Absent (no clock-in)' : 'No clock-in — to check';
+    case 'absent': return reason?.label ?? 'Absent';
+    case 'leave': return reason?.label ?? 'Leave';
+    case 'holiday': return reason?.label ?? 'Public holiday';
+    case 'rest': return reason?.label ?? 'Rest day';
+    case 'unscheduled': return 'Worked — not scheduled';
+    default: return reason?.label ?? record.status;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// What to say about it
+// ---------------------------------------------------------------------------
+
+/**
+ * The line the staff member reads.
+ *
+ * Written to be handed to somebody who was not in the room when the rule was
+ * explained, which is the situation nearly everybody receiving one of these is
+ * in. So: what the system saw, why it was recorded the way it was, and the one
+ * thing to do differently. Never more than three sentences, and no vocabulary
+ * that only exists inside this app.
+ *
+ * `streak` is how many days in a row this has now happened. It is the only
+ * thing that changes the tone, and it changes it because the third identical
+ * note in a week reads as a system nobody is watching.
+ */
+export function noteFor(record, { shift = null, streak = 0, weekCount = 0, reasons = null } = {}) {
+  const start = shift ? shift.starts_at : null;
+  const end = shift ? shift.ends_at : null;
+  const again = repetition(streak, weekCount);
+
+  switch (record.status) {
+    case 'present': {
+      if (record.overtime_minutes > 15) {
+        return `You clocked in at ${record.first_in} and out at ${record.last_out} — `
+          + `${humanDuration(record.overtime_minutes)} past your ${end} finish. Thank you.`;
+      }
+      return `You clocked in at ${record.first_in} and out at ${record.last_out}. Nothing to deal with.`;
+    }
+
+    case 'late': {
+      const stayed = record.overtime_minutes > 5
+        ? ` You did stay ${humanDuration(record.overtime_minutes)} past the end of your shift.`
+        : '';
+      return `You clocked in at ${record.first_in}, ${humanDuration(record.late_minutes)} after your `
+        + `${start} start.${stayed} Your shift starts at ${start}${again}`;
+    }
+
+    case 'early_leave': {
+      if (record.early_minutes <= 1) {
+        return `You clocked out at ${record.last_out}, a minute before your ${end} finish. `
+          + 'That is close enough to be the clock rather than you — nothing to deal with.';
+      }
+      return `You clocked out at ${record.last_out}, ${humanDuration(record.early_minutes)} before your `
+        + `${end} finish. If you need to leave early, agree it with your supervisor first${again}`;
+    }
+
+    case 'late_early': {
+      return `You clocked in at ${record.first_in} (${humanDuration(record.late_minutes)} late) and out at `
+        + `${record.last_out} (${humanDuration(record.early_minutes)} early). Your shift is ${start} to ${end}${again}`;
+    }
+
+    case 'missing_out': {
+      const lateBit = record.late_minutes > (shift?.grace_in_minutes ?? 5)
+        ? ` You also clocked in ${humanDuration(record.late_minutes)} after your ${start} start.`
+        : '';
+      if (record.resolution === 'auto') {
+        return `You clocked in at ${record.first_in} but never clocked out, so the system has credited you `
+          + `to your ${end} finish.${lateBit} Please always clock out — a credited shift is a guess, not a record.`;
+      }
+      if (record.reason_code === 'absent') {
+        return `You clocked in at ${record.first_in} but never clocked out.${lateBit} `
+          + 'With one of the two taps missing the day is marked absent, so no hours are counted. '
+          + 'Speak to your supervisor, and always clock out before you leave.';
+      }
+      return `You clocked in at ${record.first_in} but there is no clock-out.${lateBit} `
+        + 'The day is being held until your supervisor confirms what time you left. '
+        + 'Always clock out — it is what turns your morning into paid hours.';
+    }
+
+    case 'missing_in': {
+      if (record.resolution === 'auto') {
+        return `There is no clock-in for you, but you clocked out at ${record.last_out}, so the system has `
+          + `credited you from your ${start} start. Please always clock in when you arrive.`;
+      }
+      if (record.reason_code === 'absent') {
+        return `You clocked out at ${record.last_out} but there is no clock-in. `
+          + 'With one of the two taps missing the day is marked absent, so no hours are counted. '
+          + 'Speak to your supervisor, and always clock in when you arrive.';
+      }
+      return `You clocked out at ${record.last_out} but there is no clock-in for you. `
+        + 'The day is being held until your supervisor confirms what time you arrived. '
+        + 'Always clock in when you get here.';
+    }
+
+    case 'absent': {
+      const reason = reasons?.get?.(record.reason_code);
+      if (reason && record.reason_code !== 'absent') {
+        return `Recorded as ${reason.label.toLowerCase()}${record.resolved_note ? ` — ${record.resolved_note}` : ''}. `
+          + `${reason.paid ? 'This is a paid day.' : 'This day is unpaid.'}`;
+      }
+      if (streak >= 3) {
+        return `No clock-in and no clock-out. This is ${ordinal(streak)} day in a row with nothing recorded — `
+          + 'your supervisor needs to hear from you today.';
+      }
+      return 'You did not clock in and did not clock out, so the full shift is marked absent. '
+        + 'If you were at work, speak to your supervisor today so it can be corrected.';
+    }
+
+    case 'leave': {
+      const reason = reasons?.get?.(record.reason_code);
+      return `${reason?.label ?? 'Leave'} — approved. `
+        + `${reason?.paid ? 'Paid.' : 'Unpaid.'}${reason?.deducts_leave ? ' Comes off your annual leave.' : ''}`;
+    }
+
+    case 'holiday':
+      return 'Public holiday. Nothing expected of you.';
+
+    case 'rest':
+      return 'Rest day. Nothing expected of you.';
+
+    case 'unscheduled': {
+      if (!record.last_out) {
+        return `You were not on the rota but clocked in at ${record.first_in}. There is no clock-out, `
+          + 'so your supervisor needs to confirm the hours before they count.';
+      }
+      return `You were not on the rota today but worked ${humanDuration(record.worked_minutes)} `
+        + `(${record.first_in} to ${record.last_out}). It has been recorded as extra time.`;
+    }
+
+    default:
+      return '';
+  }
+}
+
+/** The escalating tail. Blank on a first offence, pointed by the third. */
+function repetition(streak, weekCount) {
+  if (streak >= 3) return `. This is ${ordinal(streak)} day in a row — your supervisor has been notified.`;
+  if (streak === 2) return '. This is the second day running.';
+  if (weekCount >= 2) return `. That is ${weekCount} times this week.`;
+  return '.';
+}
+
+function ordinal(n) {
+  const words = ['', 'the first', 'the second', 'the third', 'the fourth', 'the fifth', 'the sixth'];
+  return words[n] || `the ${n}th`;
+}
+
+// ---------------------------------------------------------------------------
+// Adding days up
+// ---------------------------------------------------------------------------
+
+/**
+ * How much of a day was worked, for the purpose of counting days.
+ *
+ * A number an accountant will use, so the thresholds are explicit rather than
+ * implied: a full day at or above the shift's `full_day_minutes`, half a day at
+ * or above `half_day_minutes`, and nothing below that. A day charged to a
+ * reason that counts as worked — training, working off site — is a whole day
+ * regardless of what the terminal saw, because the terminal was not there.
+ */
+export function dayCredit(record, { shift = null, reason = null } = {}) {
+  if (reason && !reason.counts_as_worked) return 0;
+  if (reason?.counts_as_worked && record.status !== 'present' && !record.worked_minutes) return 1;
+
+  const full = shift?.full_day_minutes ?? 420;
+  const half = shift?.half_day_minutes ?? 240;
+  if (record.worked_minutes >= full) return 1;
+  if (record.worked_minutes >= half) return 0.5;
+  // An auto-closed day was credited to the shift end on purpose; refusing it a
+  // day here would undo the decision the policy just made.
+  if (record.resolution === 'auto' && record.worked_minutes > 0) return 1;
+  return 0;
+}
+
+/**
+ * A period, summed.
+ *
+ * The shape every report leans on — the day report for one person, the week for
+ * a department, the month for payroll. One function so the week cannot disagree
+ * with the sum of its days, which is the classic way a report loses its
+ * audience.
+ */
+export function summarise(records, { shifts = new Map(), reasons = new Map() } = {}) {
+  const totals = {
+    days: records.length,
+    scheduled: 0,
+    daysWorked: 0,
+    daysAbsent: 0,
+    daysLeave: 0,
+    daysHoliday: 0,
+    daysRest: 0,
+    workedMinutes: 0,
+    expectedMinutes: 0,
+    overtimeMinutes: 0,
+    lateCount: 0,
+    lateMinutes: 0,
+    earlyCount: 0,
+    earlyMinutes: 0,
+    absences: 0,
+    openCount: 0,
+    unscheduledCount: 0,
+    leaveDeducted: 0,
+    byReason: new Map(),
+  };
+
+  for (const record of records) {
+    const shift = record.shift_id ? shifts.get(record.shift_id) ?? null : null;
+    const reason = reasons.get(record.reason_code) ?? null;
+
+    if (record.scheduled) totals.scheduled += 1;
+    totals.workedMinutes += record.worked_minutes || 0;
+    totals.overtimeMinutes += record.overtime_minutes || 0;
+    if (record.scheduled || record.status === 'leave') {
+      totals.expectedMinutes += record.expected_minutes || 0;
+    }
+
+    totals.daysWorked += dayCredit(record, { shift, reason });
+
+    if (record.late_minutes > (shift?.grace_in_minutes ?? 5)) {
+      totals.lateCount += 1;
+      totals.lateMinutes += record.late_minutes;
+    }
+    if (record.early_minutes > (shift?.grace_out_minutes ?? 5)) {
+      totals.earlyCount += 1;
+      totals.earlyMinutes += record.early_minutes;
+    }
+
+    switch (reason?.kind ?? kindOf(record.status)) {
+      case 'absent': totals.daysAbsent += 1; totals.absences += 1; break;
+      case 'leave':
+        totals.daysLeave += 1;
+        if (reason?.deducts_leave) totals.leaveDeducted += 1;
+        break;
+      case 'holiday': totals.daysHoliday += 1; break;
+      case 'rest': totals.daysRest += 1; break;
+      default: break;
+    }
+
+    if (record.status === 'unscheduled') totals.unscheduledCount += 1;
+    if (isOpen(record)) totals.openCount += 1;
+
+    const key = record.reason_code || record.status;
+    totals.byReason.set(key, (totals.byReason.get(key) ?? 0) + 1);
+  }
+
+  totals.attendanceRate = totals.scheduled
+    ? Math.round(((totals.scheduled - totals.absences) / totals.scheduled) * 1000) / 10
+    : null;
+  totals.punctualityRate = totals.scheduled
+    ? Math.round(((totals.scheduled - totals.lateCount) / totals.scheduled) * 1000) / 10
+    : null;
+
+  return totals;
+}
+
+function kindOf(status) {
+  switch (status) {
+    case 'absent': case 'missing_in': case 'missing_out': return 'absent';
+    case 'leave': return 'leave';
+    case 'holiday': return 'holiday';
+    case 'rest': return 'rest';
+    default: return 'worked';
+  }
+}
+
+/**
+ * How many days in a row, up to and including this one, have gone the same way.
+ *
+ * Rest days and public holidays do not break a run — somebody absent Friday and
+ * Monday over a weekend off is absent twice running, and telling them it is a
+ * first offence because Sunday intervened is how a rule stops being taken
+ * seriously. Working, or being on approved leave, breaks it.
+ */
+export function streakOf(records, index, predicate) {
+  if (!predicate(records[index])) return 0;
+  let streak = 1;
+  for (let i = index - 1; i >= 0; i--) {
+    const record = records[i];
+    if (predicate(record)) { streak += 1; continue; }
+    if (record.status === 'rest' || record.status === 'holiday') continue;
+    break;
+  }
+  return streak;
+}
+
+/** How many times in this record's week the predicate has held, up to and including it. */
+export function weekCountOf(records, index, predicate) {
+  const week = startOfWeek(records[index].day);
+  let count = 0;
+  for (let i = 0; i <= index; i++) {
+    if (startOfWeek(records[i].day) !== week) continue;
+    if (predicate(records[i])) count += 1;
+  }
+  return count;
+}
+
+// ---------------------------------------------------------------------------
+// Leave
+// ---------------------------------------------------------------------------
+
+/**
+ * The leave year a date falls in.
+ *
+ * Held as 'MM-DD' in settings so a property running April to March is a setting
+ * rather than a code change. The year is named for the calendar year it starts
+ * in, which is what people say out loud.
+ */
+export function leaveYearOf(day, startsAt = '01-01') {
+  const [month, date] = String(startsAt).split('-').map(Number);
+  const year = Number(day.slice(0, 4));
+  const boundary = `${year}-${String(month || 1).padStart(2, '0')}-${String(date || 1).padStart(2, '0')}`;
+  const start = day >= boundary ? boundary : `${year - 1}-${String(month || 1).padStart(2, '0')}-${String(date || 1).padStart(2, '0')}`;
+  const [sy] = start.split('-').map(Number);
+  const end = addDays(`${sy + 1}-${String(month || 1).padStart(2, '0')}-${String(date || 1).padStart(2, '0')}`, -1);
+  return { start, end, label: `${start.slice(0, 4)}` };
+}
+
+/** Whole months of service completed between two dates. */
+export function monthsBetween(from, to) {
+  if (!from || !to || from > to) return 0;
+  const [fy, fm, fd] = from.split('-').map(Number);
+  const [ty, tm, td] = to.split('-').map(Number);
+  let months = (ty - fy) * 12 + (tm - fm);
+  if (td < fd) months -= 1;
+  return Math.max(0, months);
+}
+
+/**
+ * What one person is entitled to this leave year, and what is left of it.
+ *
+ * The default follows the Labour Act 2003 (Act 651): fifteen working days of
+ * paid annual leave after twelve months' continuous service. Both numbers are
+ * settings, because a property may be more generous and several are.
+ *
+ * Somebody who has not yet completed the qualifying service is shown a
+ * pro-rated figure with `qualified: false` rather than a bare zero. A zero is
+ * technically correct on the day and useless to the manager deciding whether to
+ * approve three days in November — what they want to know is what the person is
+ * on course for.
+ */
+export function leaveBalance({
+  staff, records = [], requests = [], settings = {}, asOf, reasons = new Map(),
+}) {
+  const yearStart = settings.att_leave_year_starts || '01-01';
+  const year = leaveYearOf(asOf, yearStart);
+
+  const entitlementDays = Number(staff.leave_days ?? settings.att_leave_days ?? 15);
+  const qualifyMonths = Number(settings.att_leave_qualify_months ?? 12);
+  const carryOver = Number(settings.att_leave_carryover_days ?? 0);
+
+  const service = staff.hired_on ? monthsBetween(staff.hired_on, year.end) : qualifyMonths;
+  const qualified = service >= qualifyMonths;
+
+  // Pro-rata for anybody who joined part way through the year, qualified or
+  // not, rounded to the half day people actually take.
+  //
+  // Counted in days rather than whole months on purpose. Somebody who started
+  // on the first of July has worked half the year, and a month count that only
+  // credits completed months makes it five twelfths — an argument nobody should
+  // have to have with a member of staff over half a day's leave.
+  const partYear = staff.hired_on && staff.hired_on > year.start;
+  const entitlement = partYear
+    ? Math.round((entitlementDays
+      * (diffDays(staff.hired_on, year.end) + 1)
+      / (diffDays(year.start, year.end) + 1)) * 2) / 2
+    : entitlementDays;
+
+  // Taken: days already charged to a leave reason that comes off the balance.
+  let taken = 0;
+  for (const record of records) {
+    if (record.day < year.start || record.day > year.end) continue;
+    const reason = reasons.get(record.reason_code);
+    if (reason?.deducts_leave) taken += 1;
+  }
+
+  // Booked: approved requests whose days have not been charged yet, plus
+  // anything still waiting on a decision. Shown apart from `taken` so a manager
+  // can see the difference between spent and committed.
+  let booked = 0;
+  let pending = 0;
+  for (const request of requests) {
+    const reason = reasons.get(request.reason_code);
+    if (!reason?.deducts_leave) continue;
+    if (request.from_day > year.end || request.to_day < year.start) continue;
+    if (request.status === 'pending') pending += request.days;
+    else if (request.status === 'approved' && request.from_day > asOf) booked += request.days;
+  }
+
+  const available = entitlement + carryOver;
+  return {
+    year: year.label,
+    from: year.start,
+    to: year.end,
+    entitlement,
+    carryOver,
+    available,
+    taken,
+    booked,
+    pending,
+    remaining: Math.round((available - taken - booked) * 2) / 2,
+    qualified,
+    serviceMonths: service,
+    proRated: Boolean(partYear),
+  };
+}
+
+/**
+ * How many days of leave a request actually costs.
+ *
+ * Counted against the rota, not the calendar. A request covering a rest day or
+ * a public holiday does not spend leave on it — nobody was going to be at work
+ * — and a system that charges for those is one staff learn to game by asking
+ * for Friday to Monday.
+ */
+export function leaveDaysIn({ from, to, staffId, ds, halfDay = null }) {
+  let days = 0;
+  for (const day of rangeDays(from, to)) {
+    if (ds.holidayBy.has(day)) continue;
+    const schedule = scheduleFor(ds, staffId, day);
+    if (!schedule.shift) continue;
+    days += 1;
+  }
+  if (halfDay === 'start' || halfDay === 'end') days -= 0.5;
+  else if (halfDay === 'both') days -= 1;
+  return Math.max(0, days);
+}
+
+// ---------------------------------------------------------------------------
+// Public holidays
+// ---------------------------------------------------------------------------
+
+/**
+ * Easter Sunday, by the Gregorian computus (Meeus/Jones/Butcher).
+ *
+ * Here because two of Ghana's public holidays hang off it and typing them in
+ * every year is exactly the kind of chore that gets forgotten until the Friday
+ * everybody is absent.
+ */
+export function easterSunday(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const dayOfMonth = ((h + l - 7 * m + 114) % 31) + 1;
+  return `${year}-${String(month).padStart(2, '0')}-${String(dayOfMonth).padStart(2, '0')}`;
+}
+
+/** The first Friday of a month — how Ghana dates Farmers' Day. */
+export function firstFriday(year, month) {
+  const first = `${year}-${String(month).padStart(2, '0')}-01`;
+  // dow() is Monday-based, so Friday is 4.
+  return addDays(first, (4 - dow(first) + 7) % 7);
+}
+
+/**
+ * Ghana's public holidays for a year, less the two that cannot be calculated.
+ *
+ * Eid al-Fitr and Eid al-Adha follow the lunar calendar and are confirmed
+ * locally a few days ahead, so they are left to be typed in — offering a
+ * computed date for them would be offering a guess that lands in a payroll.
+ */
+export function ghanaHolidays(year) {
+  const easter = easterSunday(year);
+  const list = [
+    { day: `${year}-01-01`, name: "New Year's Day" },
+    { day: `${year}-01-07`, name: 'Constitution Day' },
+    { day: `${year}-03-06`, name: 'Independence Day' },
+    { day: addDays(easter, -2), name: 'Good Friday' },
+    { day: addDays(easter, 1), name: 'Easter Monday' },
+    { day: `${year}-05-01`, name: 'May Day' },
+    { day: `${year}-08-04`, name: "Founders' Day" },
+    { day: `${year}-09-21`, name: 'Kwame Nkrumah Memorial Day' },
+    { day: firstFriday(year, 12), name: "Farmers' Day" },
+    { day: `${year}-12-25`, name: 'Christmas Day' },
+    { day: `${year}-12-26`, name: 'Boxing Day' },
+  ];
+  return withObservedDays(list);
+}
+
+/**
+ * Move weekend holidays to the next working day.
+ *
+ * Ghana observes a public holiday falling on a Saturday or Sunday on the
+ * following Monday. Christmas and Boxing Day are the pair that makes this
+ * fiddly: when both fall at a weekend they cannot both be observed on the same
+ * Monday, so each takes the next free weekday.
+ */
+export function withObservedDays(holidays) {
+  const taken = new Set();
+  const sorted = [...holidays].sort((a, b) => a.day.localeCompare(b.day));
+  return sorted.map((holiday) => {
+    let observed = holiday.day;
+    while (dow(observed) >= 5 || taken.has(observed)) observed = addDays(observed, 1);
+    taken.add(observed);
+    return { ...holiday, observed_on: observed === holiday.day ? null : observed };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The dataset
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything the attendance reports read, indexed once.
+ *
+ * Loaded for a date range rather than wholesale: punches are the one table here
+ * that grows without limit — a hundred staff tapping twice a day is seventy
+ * thousand rows a year — and a report on last week has no business reading them
+ * all.
+ */
+export async function loadDataset(db, { from, to } = {}) {
+  const [staff, shifts, patterns, roster, punches, days, reasons, holidays, leave, settings] = await Promise.all([
+    db.prepare('SELECT * FROM att_staff ORDER BY name').all(),
+    db.prepare('SELECT * FROM att_shifts ORDER BY sort_order, name').all(),
+    db.prepare('SELECT * FROM att_patterns').all(),
+    from
+      ? db.prepare('SELECT * FROM att_roster WHERE day BETWEEN ? AND ?').bind(from, to).all()
+      : db.prepare('SELECT * FROM att_roster').all(),
+    from
+      // A day either side, so an overnight shift can reach the punches that
+      // belong to it on the far side of midnight.
+      ? db.prepare('SELECT * FROM att_punches WHERE day BETWEEN ? AND ? ORDER BY at_utc')
+        .bind(addDays(from, -1), addDays(to, 1)).all()
+      : db.prepare('SELECT * FROM att_punches ORDER BY at_utc').all(),
+    from
+      ? db.prepare('SELECT * FROM att_days WHERE day BETWEEN ? AND ?').bind(from, to).all()
+      : db.prepare('SELECT * FROM att_days').all(),
+    db.prepare('SELECT * FROM att_reasons ORDER BY sort_order, label').all(),
+    db.prepare('SELECT * FROM att_holidays WHERE active = 1').all(),
+    db.prepare("SELECT * FROM att_leave WHERE status IN ('pending','approved')").all(),
+    db.prepare('SELECT key, value FROM settings').all(),
+  ]);
+
+  return makeDataset({
+    staff: staff.results ?? [],
+    shifts: shifts.results ?? [],
+    patterns: patterns.results ?? [],
+    roster: roster.results ?? [],
+    punches: punches.results ?? [],
+    days: days.results ?? [],
+    reasons: reasons.results ?? [],
+    holidays: holidays.results ?? [],
+    leave: leave.results ?? [],
+    settings: settings.results ?? [],
+  });
+}
+
+export function makeDataset(raw) {
+  const settings = Object.fromEntries((raw.settings ?? []).map((r) => [r.key, r.value]));
+  const staff = raw.staff ?? [];
+  const shifts = raw.shifts ?? [];
+
+  const staffById = new Map(staff.map((s) => [s.id, s]));
+  const staffByEmployeeNo = new Map(staff.map((s) => [String(s.employee_no), s]));
+  const shiftById = new Map(shifts.map((s) => [s.id, s]));
+  const reasonBy = new Map((raw.reasons ?? []).map((r) => [r.code, r]));
+
+  const rosterBy = new Map((raw.roster ?? []).map((r) => [`${r.staff_id}|${r.day}`, r]));
+  const patternBy = new Map((raw.patterns ?? []).map((p) => [`${p.staff_id}|${p.dow}`, p]));
+  const holidayBy = new Map((raw.holidays ?? []).map((h) => [h.observed_on || h.day, h]));
+  const dayBy = new Map((raw.days ?? []).map((d) => [`${d.staff_id}|${d.day}`, d]));
+
+  // Punches, per person, pre-converted to absolute minutes and sorted. Every
+  // shift computation below is arithmetic on `abs`, so doing the parsing here
+  // means doing it once rather than once per candidate shift.
+  const punchesByStaff = new Map();
+  for (const punch of raw.punches ?? []) {
+    if (!punch.staff_id) continue;
+    const time = String(punch.at_local).slice(11, 16);
+    const day = String(punch.at_local).slice(0, 10);
+    const entry = { ...punch, abs: absMinutes(day, time) };
+    if (entry.abs == null) continue;
+    if (!punchesByStaff.has(punch.staff_id)) punchesByStaff.set(punch.staff_id, []);
+    punchesByStaff.get(punch.staff_id).push(entry);
+  }
+  for (const list of punchesByStaff.values()) list.sort((a, b) => a.abs - b.abs);
+
+  // Approved leave, expanded to a lookup per person per day. Ranges are short
+  // and few; expanding is cheaper than scanning them for every day of a report.
+  const leaveBy = new Map();
+  const requestsByStaff = new Map();
+  for (const request of raw.leave ?? []) {
+    if (!requestsByStaff.has(request.staff_id)) requestsByStaff.set(request.staff_id, []);
+    requestsByStaff.get(request.staff_id).push(request);
+    if (request.status !== 'approved') continue;
+    for (const day of rangeDays(request.from_day, request.to_day)) {
+      leaveBy.set(`${request.staff_id}|${day}`, request);
+    }
+  }
+
+  return {
+    settings,
+    timezone: settings.timezone || 'UTC',
+    staff,
+    shifts,
+    reasons: raw.reasons ?? [],
+    holidays: raw.holidays ?? [],
+    staffById,
+    staffByEmployeeNo,
+    shiftById,
+    reasonBy,
+    rosterBy,
+    patternBy,
+    holidayBy,
+    dayBy,
+    punchesByStaff,
+    leaveBy,
+    requestsByStaff,
+    policy: {
+      missingPunch: settings.att_missing_punch || 'incomplete',
+      minGap: Number(settings.att_min_gap_minutes ?? 2),
+      windowBefore: Number(settings.att_window_before ?? 180),
+      windowAfter: Number(settings.att_window_after ?? 240),
+      escalateAfter: Number(settings.att_escalate_after ?? 3),
+    },
+  };
+}
+
+/**
+ * Rebuild one person's days across a range, from the punches up.
+ *
+ * This is the function the ingest calls after new punches land and the reports
+ * call when they find a day that was never computed. It is deliberately
+ * idempotent and deliberately whole-range: computing a day in isolation cannot
+ * see that the punch at 00:40 belongs to yesterday's night shift.
+ */
+export function computeRange(ds, staffId, from, to) {
+  const staff = ds.staffById.get(staffId);
+  if (!staff) return [];
+
+  const days = rangeDays(from, to);
+  const punches = collapsePunches(ds.punchesByStaff.get(staffId) ?? [], ds.policy.minGap);
+
+  // Build every candidate window first — including the day before the range, so
+  // a night shift starting on the 31st can claim a punch at 02:00 on the 1st.
+  const windows = [];
+  for (const day of [addDays(from, -1), ...days]) {
+    const schedule = scheduleFor(ds, staffId, day);
+    if (!schedule.shift) continue;
+    const window = shiftWindow(schedule.shift, day);
+    if (!window) continue;
+    windows.push({
+      day,
+      shift: schedule.shift,
+      ...window,
+      from: window.start - ds.policy.windowBefore,
+      to: window.end + ds.policy.windowAfter,
+      punches: [],
+    });
+  }
+
+  // Punches with no window fall back to their own calendar day, which is what
+  // makes an unscheduled day visible instead of silently dropping the evidence
+  // that somebody came in.
+  const loose = new Map();
+  for (const punch of punches) {
+    const claimed = claimPunch(punch, windows);
+    if (claimed) { claimed.punches.push(punch); continue; }
+    const day = String(punch.at_local).slice(0, 10);
+    if (!loose.has(day)) loose.set(day, []);
+    loose.get(day).push(punch);
+  }
+
+  const windowByDay = new Map(windows.map((w) => [w.day, w]));
+  const out = [];
+
+  for (const day of days) {
+    const schedule = scheduleFor(ds, staffId, day);
+    const window = windowByDay.get(day);
+    const existing = ds.dayBy.get(`${staffId}|${day}`);
+
+    const record = computeDay({
+      staff,
+      day,
+      schedule,
+      punches: window ? window.punches : loose.get(day) ?? [],
+      holiday: ds.holidayBy.get(day) ?? null,
+      leave: ds.leaveBy.get(`${staffId}|${day}`) ?? null,
+      // A supervisor's ruling survives recomputation. Punches arriving later
+      // must not quietly overturn a decision somebody signed their name to.
+      override: existing?.resolution === 'resolved'
+        ? {
+          reason_code: existing.reason_code,
+          status: existing.status,
+          reasonKind: ds.reasonBy.get(existing.reason_code)?.kind,
+          corrected_in: existing.corrected_in ?? null,
+          corrected_out: existing.corrected_out ?? null,
+        }
+        : null,
+      policy: ds.policy,
+    });
+
+    out.push({
+      ...record,
+      corrected_in: existing?.corrected_in ?? null,
+      corrected_out: existing?.corrected_out ?? null,
+      resolved_by: existing?.resolved_by ?? null,
+      resolved_at: existing?.resolved_at ?? null,
+      resolved_note: existing?.resolved_note ?? null,
+    });
+  }
+
+  // Notes last, because the tone of one depends on the days before it.
+  const isAbsent = (r) => r && (r.status === 'absent' || r.reason_code === 'absent');
+  const isLate = (r) => r && (r.status === 'late' || r.status === 'late_early');
+
+  return out.map((record, index) => ({
+    ...record,
+    note: noteFor(record, {
+      shift: record.shift_id ? ds.shiftById.get(record.shift_id) : null,
+      streak: isAbsent(record)
+        ? streakOf(out, index, isAbsent)
+        : isLate(record) ? streakOf(out, index, isLate) : 0,
+      weekCount: isLate(record) ? weekCountOf(out, index, isLate) : 0,
+      reasons: ds.reasonBy,
+    }),
+  }));
+}

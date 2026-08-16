@@ -1,0 +1,29 @@
+name = "niceoperation-attendance"
+main = "src/index.js"
+compatibility_date = "2025-05-05"
+
+# The app and its API are one Worker; everything that is not /api/* is served
+# from public/ as a static asset.
+[assets]
+directory = "public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "attendance"
+# Filled in by `npm run db:create` — see the README.
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+# Nothing secret lives here. SESSION_SECRET, MANAGER_PIN and RESEND_API_KEY are
+# Worker secrets, set with `wrangler secret put`.
+
+# Once a day, a little after midnight in Accra. Recomputes the last few days so
+# a punch that arrived late is reflected, and rings the bell once for whatever
+# still needs a person.
+[triggers]
+crons = ["30 0 * * *"]
+
+[[routes]]
+pattern = "staff.niceoperation.com"
+custom_domain = true
