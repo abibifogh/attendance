@@ -307,10 +307,23 @@ export async function ingestPunches(db, { device, events, timezone, source = 'po
     touched.set(staffId, range);
   }
 
+  // Two different questions, and they were briefly given the same answer.
+  //
+  // `last_seen_at` is when we heard from the terminal — our clock, because it
+  // is about whether the thing is alive and reachable.
+  //
+  // `last_event_at` is the terminal's own stamp on the newest punch, because a
+  // column labelled "Last punch" that quietly shows arrival time makes a device
+  // nine weeks behind look perfectly current. That is the one reading that
+  // would have caught the wrong clock at a glance, so it has to be the device's
+  // own, wrong or not.
+  const newest = rows.reduce((max, row) => (max === null || row.at_utc > max ? row.at_utc : max), null);
+
   await db.prepare(
-    "UPDATE att_devices SET last_seen_at = datetime('now')"
-    + `${rows.length ? ", last_event_at = datetime('now')" : ''} WHERE id = ?`,
-  ).bind(device.id).run().catch(() => {});
+    newest
+      ? "UPDATE att_devices SET last_seen_at = datetime('now'), last_event_at = ?2 WHERE id = ?1"
+      : "UPDATE att_devices SET last_seen_at = datetime('now') WHERE id = ?1",
+  ).bind(...(newest ? [device.id, newest] : [device.id])).run().catch(() => {});
 
   return {
     received: events.length,

@@ -846,9 +846,15 @@ function deviceClockCell(offsetSeconds, threshold) {
   const seconds = Math.abs(off);
   if (seconds < threshold) return h('span.pill.good', 'right');
 
+  // The ladder runs all the way to days on purpose. A terminal whose battery
+  // died comes back believing it is years ago, and "1580 hr slow" is a number
+  // nobody can picture — which is the difference between a warning that gets
+  // acted on and one that gets squinted at.
   const amount = seconds < 5400
     ? `${Math.round(seconds / 60)} min`
-    : `${Math.round(seconds / 3600)} hr`;
+    : seconds < 172800
+      ? `${Math.round(seconds / 3600)} hr`
+      : `${Math.round(seconds / 86400)} days`;
 
   return h(seconds >= 900 ? 'span.pill.bad' : 'span.pill.warn', `${amount} ${off > 0 ? 'fast' : 'slow'}`);
 }

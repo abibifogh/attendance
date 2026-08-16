@@ -866,3 +866,50 @@ test('a polled batch never passes judgement on the clock', async () => {
   assert.equal(device.clock_offset_seconds, null, 'a delayed log says nothing about the clock');
   assert.ok(device.last_seen_at, 'though it does prove the terminal is alive');
 });
+
+test('“last punch” is the terminal’s own stamp, not when it reached us', async () => {
+  const { raw, db, token } = await setup();
+
+  // A terminal nine weeks behind, posting live. Recording arrival time here is
+  // what let a badly wrong clock look perfectly current on the Terminals
+  // screen, so the two columns must be able to disagree.
+  const context = pushed(token, notification('1001', '2026-06-11T09:14:00+00:00', 'checkIn', 960));
+  context.db = db;
+  await pushEvents(context, token);
+
+  const device = raw.prepare('SELECT * FROM att_devices WHERE serial = ?').get('DS-TEST-1');
+  assert.equal(device.last_event_at, '2026-06-11 09:14:00', 'the device’s own clock');
+  assert.notEqual(
+    device.last_event_at.slice(0, 10),
+    device.last_seen_at.slice(0, 10),
+    'heard from today, but punched in June — and the screen has to be able to say both',
+  );
+});
+
+test('a fetched batch records the newest punch in it, not the last one listed', async () => {
+  const { raw, db, token } = await setup();
+
+  await send(db, token, [
+    event('2026-06-15T14:03:00+00:00', 'checkOut', 901),
+    event('2026-06-15T05:58:00+00:00', 'checkIn', 900),
+  ]);
+
+  const device = raw.prepare('SELECT * FROM att_devices WHERE serial = ?').get('DS-TEST-1');
+  assert.equal(device.last_event_at, '2026-06-15 14:03:00', 'the afternoon one, listed first');
+});
+
+test('a heartbeat does not pretend to be a punch', async () => {
+  const { raw, db, token } = await setup();
+
+  await send(db, token, [event('2026-06-15T05:58:00+00:00', 'checkIn', 900)]);
+  const after = raw.prepare('SELECT * FROM att_devices WHERE serial = ?').get('DS-TEST-1');
+
+  // A door alarm arrives down the same pipe and carries nobody.
+  const context = pushed(token, { dateTime: '2026-08-16T06:00:00+00:00', eventType: 'videoloss' });
+  context.db = db;
+  await pushEvents(context, token);
+
+  const device = raw.prepare('SELECT * FROM att_devices WHERE serial = ?').get('DS-TEST-1');
+  assert.equal(device.last_event_at, after.last_event_at, 'the last real punch still stands');
+  assert.ok(device.last_seen_at, 'but it counts as having been heard from');
+});
