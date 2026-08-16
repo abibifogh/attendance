@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import {
   fmtDayShort, h, mount, shiftDay, toast, todayISO,
 } from '../util.js';
-import { card, emptyState } from './components.js';
+import { card, emptyState, table } from './components.js';
 import { replaceParams } from '../app.js';
 import { field, formDialog, shiftSelect } from './att-shared.js';
 
@@ -28,7 +28,10 @@ export async function renderAttRota(params) {
   const host = h('div');
   const from = params.from || mondayOf(todayISO());
   const to = params.to || shiftDay(from, 13);
-  const data = await api.attRoster(from, to);
+  const [data, imported] = await Promise.all([
+    api.attRoster(from, to),
+    api.attRotaImport().catch(() => ({ draft: null })),
+  ]);
 
   const reload = async (next = {}) => {
     const merged = { from, to, ...next };
@@ -289,6 +292,7 @@ export async function renderAttRota(params) {
       h('button.btn.btn-primary', { onclick: () => copyWeek(data, reload) }, 'Copy a week →'),
     ),
     saveBar,
+    importCard(imported?.draft ?? null, data.rows.map((r) => r.staff), reload),
     card('Two weeks', { note: `${data.rows.length} people`, wide: true }, grid),
     h('p.muted', { style: { fontSize: '.82rem' } },
       'A day set to Off is a rostered rest day — a decision, and not the same as somebody simply not '
@@ -485,4 +489,166 @@ function mondayOf(day) {
 function isWeekend(day) {
   const dow = new Date(`${day}T12:00:00Z`).getUTCDay();
   return dow === 0 || dow === 6;
+}
+
+/**
+ * Importing a week from the scheduling export.
+ *
+ * Two steps, and the gap between them is the feature. The file is read and
+ * resolved against the staff and shifts this property actually has, and what it
+ * *would* do sits on the screen until somebody agrees. The rota decides who is
+ * late and who is absent, so an import that writes first and reports afterwards
+ * is one nobody dares run a second time.
+ *
+ * Discarding costs nothing, which is what makes trying it safe.
+ */
+function importCard(draft, staff, reload) {
+  const upload = async (text, filename) => {
+    try {
+      await api.attRotaImportPreview({ csv: text, filename });
+      toast('Read. Nothing has been changed yet — check it below.', 'good');
+      await reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
+  const picker = h('input', {
+    type: 'file',
+    accept: '.csv,text/csv',
+    style: { display: 'none' },
+    onchange: async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      await upload(await file.text(), file.name);
+    },
+  });
+
+  if (!draft) {
+    return card('Import a week', {
+      note: 'From the scheduling export',
+      wide: true,
+      actions: h('button.btn.btn-primary', { onclick: () => picker.click() }, 'Choose a CSV file'),
+    },
+      picker,
+      h('p.muted', { style: { marginBottom: 0 } },
+        'Nothing is written when you choose a file. It is read, matched against your staff and '
+        + 'shifts, and held as a draft so you can see exactly what it would do before agreeing '
+        + 'to any of it.'),
+    );
+  }
+
+  const c = draft.counts;
+  const skipped = draft.rows.filter((r) => r.action === 'skip');
+
+  const confirm = async () => {
+    if (!window.confirm(
+      `Write ${c.roster} rostered days for ${c.people} people, ${fmtDayShort(draft.from)} to `
+      + `${fmtDayShort(draft.to)}?\n\nAnything already on those days is replaced.`,
+    )) return;
+    try {
+      const done = await api.attRotaImportConfirm();
+      toast(`${done.applied} days written${done.newShifts ? `, ${done.newShifts} shift added` : ''}.`, 'good');
+      await reload({ from: mondayOf(draft.from), to: shiftDay(mondayOf(draft.from), 13) });
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
+  const discard = async () => {
+    if (!window.confirm('Throw this draft away? Nothing has been written, so nothing is lost.')) return;
+    await api.attRotaImportDiscard();
+    toast('Discarded.');
+    await reload();
+  };
+
+  const nameFor = async (unknown) => {
+    const done = await formDialog({
+      title: `Who is "${unknown}"?`,
+      submitLabel: 'That is them',
+      body: h('div',
+        h('p.muted',
+          'The scheduling system spells some names differently. Say who this is once and it will '
+          + 'be recognised in every import from now on.'),
+        field('This is', h('select', { name: 'staffId', required: true },
+          h('option', { value: '' }, 'Choose…'),
+          staff.map((p) => h('option', { value: p.id }, `${p.name} (${p.employee_no})`)))),
+      ),
+      onSubmit: async (form) => api.attRotaImportName({
+        alias: unknown, staffId: Number(form.get('staffId')),
+      }),
+    });
+    if (done) { toast(`Matched to ${done.matched}.`, 'good'); await reload(); }
+  };
+
+  return card('A week is waiting', {
+    note: `${draft.filename || 'Uploaded file'} — ${fmtDayShort(draft.from)} to ${fmtDayShort(draft.to)}`,
+    wide: true,
+    actions: h('div.btn-row',
+      h('button.btn-sm', { onclick: discard }, 'Discard'),
+      h('button.btn.btn-primary', { onclick: confirm, disabled: !c.roster }, `Confirm ${c.roster} days`),
+    ),
+  },
+    picker,
+
+    h('div.grid.grid-4', { style: { marginBottom: '.8rem' } },
+      stat('Days to write', c.roster, `${c.people} people`),
+      stat('Lines read', c.lines, 'from the file'),
+      stat('New shifts', c.newShifts, c.newShifts ? 'created on confirm' : 'none needed',
+        c.newShifts ? 'var(--warn)' : null),
+      stat('Skipped', c.skipped, c.skipped ? 'see below' : 'nothing', c.skipped ? 'var(--bad)' : null),
+    ),
+
+    h('p.muted', { style: { fontSize: '.85rem' } },
+      'Nothing has been written yet. Confirming replaces whatever is on those days for these '
+      + 'people; every other day, and everybody else, is untouched.'),
+
+    draft.unknownNames.length
+      ? h('div',
+        h('h4', { style: { margin: '.9rem 0 .4rem', fontSize: '.92rem' } },
+          'Names nobody here answers to'),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'These lines are skipped. Say who each one is and they will be matched in this draft '
+          + 'and in every import after it — or leave them, and they stay out.'),
+        h('div.btn-row', { style: { flexWrap: 'wrap' } },
+          draft.unknownNames.map((n) => h('button.btn-sm', { onclick: () => nameFor(n) }, `${n} →`))),
+      )
+      : null,
+
+    skipped.length
+      ? h('details', { style: { marginTop: '.9rem' } },
+        h('summary', { style: { cursor: 'pointer', fontSize: '.88rem' } },
+          `${skipped.length} skipped line${skipped.length === 1 ? '' : 's'}`),
+        table([
+          { key: 'line', label: 'Line', align: 'right' },
+          { key: 'name', label: 'Name' },
+          { key: 'day', label: 'Date', format: (v) => (v ? fmtDayShort(v) : h('span.muted', '—')) },
+          { key: 'problem', label: 'Why', format: (v) => h('small', v) },
+        ], skipped, { empty: 'None.' }))
+      : null,
+
+    h('details', { style: { marginTop: '.6rem' } },
+      h('summary', { style: { cursor: 'pointer', fontSize: '.88rem' } },
+        `All ${c.roster} days this would write`),
+      table([
+        { key: 'day', label: 'Date', format: (v) => fmtDayShort(v) },
+        { key: 'name', label: 'From the file', format: (v) => h('small.muted', v) },
+        {
+          key: 'shiftName',
+          label: 'Shift',
+          format: (v, r) => h('div', h('div', v),
+            r.action === 'new-shift' ? h('small.muted', 'new — created on confirm') : null),
+        },
+        { key: 'startsAt', label: 'Hours', format: (v, r) => h('small', `${v}–${r.endsAt}`) },
+        { key: 'note', label: 'Note', format: (v, r) => h('small.muted', v || r.title || '') },
+      ], draft.rows.filter((r) => r.action !== 'skip'), { empty: 'Nothing.' })),
+  );
+}
+
+function stat(label, value, sub, accent) {
+  return h('div.stat',
+    h('div.stat-label', label),
+    h('div.stat-value', { style: accent ? { color: accent } : null }, String(value)),
+    sub ? h('div.stat-sub', h('span', sub)) : null,
+  );
 }

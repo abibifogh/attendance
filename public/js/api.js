@@ -100,6 +100,12 @@ export const api = {
   attCopyRoster: (body) => request('/api/att/roster/copy', { method: 'POST', body }),
   attSavePattern: (body) => request('/api/att/patterns', { method: 'POST', body }),
 
+  attRotaImport: () => request('/api/att/rota-import'),
+  attRotaImportPreview: (body) => request('/api/att/rota-import', { method: 'POST', body }),
+  attRotaImportName: (body) => request('/api/att/rota-import/name', { method: 'POST', body }),
+  attRotaImportConfirm: () => request('/api/att/rota-import/confirm', { method: 'POST', body: {} }),
+  attRotaImportDiscard: () => request('/api/att/rota-import/discard', { method: 'POST', body: {} }),
+
   attLeave: (params = {}) => request(`/api/att/leave?${new URLSearchParams(params)}`),
   attRequestLeave: (body) => request('/api/att/leave', { method: 'POST', body }),
   attDecideLeave: (id, body) => request(`/api/att/leave/${id}/decide`, { method: 'POST', body }),

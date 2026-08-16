@@ -9,6 +9,7 @@ import {
 } from './lib/http.js';
 import * as att from './routes/attendance.js';
 import * as attSetup from './routes/attendance-setup.js';
+import * as rotaImport from './routes/rota-import.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import { todayIn } from './util/dates.js';
@@ -73,6 +74,14 @@ export const ROUTES = [
   ['POST', '/api/att/roster', 'att_rota', att.saveRoster],
   ['POST', '/api/att/roster/copy', 'att_rota', att.copyRoster],
   ['POST', '/api/att/patterns', 'att_rota', att.savePattern],
+
+  // Importing a week. Reading and drafting is part of building the rota;
+  // so is confirming it, because the draft only ever writes the rota.
+  ['GET', '/api/att/rota-import', 'att_rota', rotaImport.getRotaImport],
+  ['POST', '/api/att/rota-import', 'att_rota', rotaImport.previewRotaImport],
+  ['POST', '/api/att/rota-import/name', 'att_rota', rotaImport.mapImportName],
+  ['POST', '/api/att/rota-import/confirm', 'att_rota', rotaImport.confirmRotaImport],
+  ['POST', '/api/att/rota-import/discard', 'att_rota', rotaImport.discardRotaImport],
 
   ['GET', '/api/att/leave', 'att_view', att.listLeave],
   ['POST', '/api/att/leave', 'att_rota', att.requestLeave],

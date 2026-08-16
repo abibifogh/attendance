@@ -190,6 +190,37 @@ not the breakfast cook arriving four minutes late.
 > label a tap. It does not need to know that Henry is on nights this week. Leave
 > the shifts there if they are already set up, and keep the rota here.
 
+### Importing a week
+
+**Rota → Import a week** takes the CSV the scheduling system exports — employee
+name, position, dates, times, title, note — and holds it as a **draft**. Nothing
+is written when the file is chosen.
+
+The draft says exactly what it would do: how many days for how many people,
+which shifts it would have to create, and every line it could not use and why.
+Confirm applies the lot in one press; discard costs nothing, which is the
+property that makes it safe to try. The rota decides who is late and who is
+absent, so an import that wrote first and reported afterwards would be one
+nobody dared run twice.
+
+Names are matched exactly, then by an alias somebody has confirmed, then by two
+or more words in common — which catches "Angela Asare Ayima" against "Angela
+Ayima Asare" without ever matching two different people. **One shared first name
+is deliberately never enough**: "Emmanuel Twum" and "Emmanuel Ofori Bennie" share
+exactly one, and quietly rostering the wrong Emmanuel is only noticed at payroll.
+Unmatched names are listed once with a "who is this?" button, and the answer is
+remembered — the same export arrives every week, and being asked the same
+question every Monday is how an import stops being used.
+
+Times pick the shift; where several share their hours, the position breaks the
+tie. Hours the property has no shift for are created on confirm, named from the
+line, with break and grace left at the defaults because no rota export knows a
+property's policy.
+
+Two lines for one person on one day keep the later and report the earlier. The
+draft is kept after applying, because "where did Thursday's night shift come
+from" is a question that gets asked.
+
 ### Rotating shifts
 
 A hotel does not run on a fixed week. Set someone's pattern to repeat every two,

@@ -9,6 +9,9 @@ import {
   shiftSuggestions, staffReport, undoPeriod,
 } from '../src/routes/attendance.js';
 import { cleanDepartments, createStaff, listStaff } from '../src/routes/attendance-setup.js';
+import {
+  confirmRotaImport, discardRotaImport, getRotaImport, mapImportName, previewRotaImport,
+} from '../src/routes/rota-import.js';
 import { hashDeviceToken } from '../src/lib/attendance-ingest.js';
 import { getPepper } from '../src/lib/auth.js';
 
@@ -1560,4 +1563,128 @@ test('yesterday is still judged the way it always was', async () => {
   const row = data.rows.find((r) => r.staff.id === 1);
   assert.equal(row.status, 'absent', 'the clock only ever excuses today');
   assert.equal(data.totals.daysAbsent, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Importing a week, as a draft
+// ---------------------------------------------------------------------------
+
+const WEEK = 'Employee Names,Position,Start Date,End Date,Start Time,End Time,Title,Note\n'
+  + '"Henry Aryee","SN Breakfast","Mar 2, 2026","Mar 2, 2026","06:00","14:00","Morning",""\n'
+  + '"Henry Aryee","SN Breakfast","Mar 3, 2026","Mar 3, 2026","06:00","14:00","Morning","Cover"\n'
+  + '"Somebody Else","SN Breakfast","Mar 4, 2026","Mar 4, 2026","06:00","14:00","",""\n'
+  + '"Henry Aryee","SN Breakfast","Mar 5, 2026","Mar 5, 2026","05:30","11:30","Early",""\n';
+
+test('an import lands as a draft and writes nothing', async () => {
+  const { raw, db } = await setup();
+
+  const preview = await (await previewRotaImport(ctx(db, { body: { csv: WEEK, filename: 'week.csv' } }))).json();
+
+  assert.equal(preview.counts.roster, 3);
+  assert.equal(preview.counts.skipped, 1, 'nobody here is called Somebody Else');
+  assert.equal(preview.counts.newShifts, 1, '05:30 is not a shift this property has');
+  assert.equal(preview.from, '2026-03-02');
+  assert.equal(preview.to, '2026-03-05');
+
+  // The whole point: the rota is untouched until somebody says yes.
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_roster').get().n, 0);
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_shifts').get().n, 2);
+  assert.equal(raw.prepare("SELECT status FROM att_roster_import WHERE id = ?").get(preview.id).status, 'draft');
+});
+
+test('the waiting draft can be read back, with the names it could not place', async () => {
+  const { db } = await setup();
+  await previewRotaImport(ctx(db, { body: { csv: WEEK } }));
+
+  const { draft } = await (await getRotaImport(ctx(db))).json();
+  assert.ok(draft);
+  assert.deepEqual(draft.unknownNames, ['Somebody Else'], 'once, not once per line');
+  assert.equal(draft.rows.length, 4);
+});
+
+test('confirming writes the rota and creates the shift it needed', async () => {
+  const { raw, db } = await setup();
+  await previewRotaImport(ctx(db, { body: { csv: WEEK } }));
+
+  const done = await (await confirmRotaImport(ctx(db))).json();
+  assert.equal(done.applied, 3);
+  assert.equal(done.newShifts, 1);
+
+  const roster = raw.prepare('SELECT day, shift_id FROM att_roster ORDER BY day').all();
+  assert.deepEqual(roster.map((r) => r.day), ['2026-03-02', '2026-03-03', '2026-03-05']);
+
+  const made = raw.prepare("SELECT * FROM att_shifts WHERE starts_at = '05:30'").get();
+  assert.ok(made, 'and the shift the file needed now exists');
+  assert.equal(made.break_minutes, 0, 'unguessed, like every other imported shift');
+
+  assert.equal(raw.prepare('SELECT status FROM att_roster_import').get().status, 'applied');
+});
+
+test('discarding leaves no trace on the rota', async () => {
+  const { raw, db } = await setup();
+  await previewRotaImport(ctx(db, { body: { csv: WEEK } }));
+  await discardRotaImport(ctx(db));
+
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_roster').get().n, 0);
+  assert.equal(raw.prepare('SELECT status FROM att_roster_import').get().status, 'discarded');
+  assert.equal((await (await getRotaImport(ctx(db))).json()).draft, null);
+});
+
+test('naming an unknown person fixes the draft and every import after it', async () => {
+  const { raw, db } = await setup();
+  raw.prepare("INSERT INTO att_staff (id, employee_no, name) VALUES (9, '9009', 'Ama Mensah')").run();
+
+  await previewRotaImport(ctx(db, { body: { csv: WEEK } }));
+  await mapImportName(ctx(db, { body: { alias: 'Somebody Else', staffId: 9 } }));
+
+  const { draft } = await (await getRotaImport(ctx(db))).json();
+  assert.deepEqual(draft.unknownNames, [], 'the draft repaired itself');
+  assert.equal(draft.counts.roster, 4);
+
+  // And it is remembered, which is the point — the same file arrives weekly.
+  assert.equal(raw.prepare('SELECT staff_id FROM att_name_alias WHERE alias = ?').get('somebody else').staff_id, 9);
+});
+
+test('a second upload replaces the first rather than queueing behind it', async () => {
+  const { raw, db } = await setup();
+  await previewRotaImport(ctx(db, { body: { csv: WEEK, filename: 'first.csv' } }));
+  await previewRotaImport(ctx(db, { body: { csv: WEEK, filename: 'second.csv' } }));
+
+  const drafts = raw.prepare("SELECT filename FROM att_roster_import WHERE status = 'draft'").all();
+  assert.equal(drafts.length, 1, 'two live drafts is a state "confirm" cannot answer');
+  assert.equal(drafts[0].filename, 'second.csv');
+});
+
+test('confirming replaces what was already on those days', async () => {
+  const { raw, db } = await setup();
+  raw.prepare("INSERT INTO att_roster (staff_id, day, shift_id) VALUES (1, '2026-03-02', 2)").run();
+
+  await previewRotaImport(ctx(db, { body: { csv: WEEK } }));
+  await confirmRotaImport(ctx(db));
+
+  assert.equal(
+    raw.prepare("SELECT shift_id FROM att_roster WHERE staff_id = 1 AND day = '2026-03-02'").get().shift_id,
+    1,
+    'the night shift that was there is replaced by the morning the file asked for',
+  );
+});
+
+test('a file with nothing usable in it is refused rather than half-applied', async () => {
+  const { db } = await setup();
+  await previewRotaImport(ctx(db, {
+    body: {
+      csv: 'Employee Names,Start Date,Start Time,End Time\n'
+        + '"Nobody At All","Mar 2, 2026","06:00","14:00"\n',
+    },
+  }));
+  await assert.rejects(() => confirmRotaImport(ctx(db)), /nothing to apply/i);
+});
+
+test('a file that is not a rota never becomes a draft', async () => {
+  const { raw, db } = await setup();
+  await assert.rejects(
+    () => previewRotaImport(ctx(db, { body: { csv: 'total,amount\n1,2\n' } })),
+    /does not look like a rota/i,
+  );
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_roster_import').get().n, 0);
 });
