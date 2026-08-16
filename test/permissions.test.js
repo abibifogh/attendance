@@ -120,3 +120,47 @@ test('every permission a route asks for is a real one', () => {
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// A planner who may also close the books
+// ---------------------------------------------------------------------------
+
+/** A planner an administrator has additionally trusted with sign-off. */
+const plannerPlus = ['att_view', 'att_rota', 'att_signoff'];
+const reachesWith = (held, method, path) => allows(routeFor(method, path), held);
+
+test('sign-off is its own permission, granted rather than assumed', () => {
+  assert.ok(PERMISSION_KEYS.includes('att_signoff'));
+  assert.equal(held('planner').includes('att_signoff'), false,
+    'a planner does not get it by being a planner');
+  assert.ok(held('manager').includes('att_signoff'), 'but anybody who settles days already has it');
+  assert.ok(held('supervisor').includes('att_signoff'));
+});
+
+test('reports-only still changes nothing', () => {
+  assert.equal(held('viewer').includes('att_signoff'), false,
+    'signing off moves leave, and that role exists to move nothing');
+  assert.equal(reaches('viewer', 'POST', '/api/att/review'), false);
+});
+
+test('a planner given sign-off can close a period', () => {
+  assert.ok(reachesWith(plannerPlus, 'GET', '/api/att/review'));
+  assert.ok(reachesWith(plannerPlus, 'POST', '/api/att/review'));
+  assert.ok(reachesWith(plannerPlus, 'POST', '/api/att/review/undo'));
+  assert.ok(reachesWith(plannerPlus, 'GET', '/api/att/staff/:id/report'),
+    'and reach the screen where the days are corrected');
+});
+
+test('and still cannot see what anybody has left', () => {
+  // The whole point of granting one without the other.
+  assert.equal(reachesWith(plannerPlus, 'GET', '/api/att/balances'), false);
+  assert.equal(reachesWith(plannerPlus, 'GET', '/api/att/overview'), false);
+  assert.equal(reachesWith(plannerPlus, 'GET', '/api/att/export'), false);
+  assert.equal(reachesWith(plannerPlus, 'POST', '/api/att/leave/:id/decide'), false);
+  assert.equal(reachesWith(plannerPlus, 'POST', '/api/att/days/:day/resolve'), false);
+});
+
+test('a planner without sign-off is unchanged', () => {
+  assert.equal(reaches('planner', 'POST', '/api/att/review'), false);
+  assert.equal(reaches('planner', 'GET', '/api/att/staff/:id/report'), false);
+});

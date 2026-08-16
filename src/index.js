@@ -49,16 +49,19 @@ export const ROUTES = [
   ['GET', '/api/att/staff/:id/day', 'att_view', att.staffDay],
 
   ['GET', '/api/att/week', 'att_reports', att.week],
-  ['GET', '/api/att/staff/:id/report', 'att_reports', att.staffReport],
+  // Reachable by whoever signs periods off, because that is where the days are
+  // corrected. The leave balance is stripped from the answer for anybody
+  // without the reports permission — see `staffReport`.
+  ['GET', '/api/att/staff/:id/report', ['att_reports', 'att_signoff'], att.staffReport],
   ['GET', '/api/att/overview', 'att_reports', att.overview],
   ['GET', '/api/att/export', 'att_reports', att.exportCsv],
   ['GET', '/api/att/balances', 'att_reports', att.balances],
 
   // The monthly reckoning. Reading it is a report; signing it off moves
   // somebody's leave, so it needs the permission that approves leave.
-  ['GET', '/api/att/review', 'att_reports', att.periodReview],
-  ['POST', '/api/att/review', 'att_manage', att.decidePeriod],
-  ['POST', '/api/att/review/undo', 'att_manage', att.undoPeriod],
+  ['GET', '/api/att/review', ['att_reports', 'att_signoff'], att.periodReview],
+  ['POST', '/api/att/review', 'att_signoff', att.decidePeriod],
+  ['POST', '/api/att/review/undo', 'att_signoff', att.undoPeriod],
 
   // Settling a day is a decision with somebody's name on it, so it sits behind
   // its own permission rather than travelling with the reports.

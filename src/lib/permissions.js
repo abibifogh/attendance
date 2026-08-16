@@ -26,6 +26,11 @@ export const PERMISSIONS = [
     detail: 'Set the rota and put leave in for people. No approvals, no balances',
   },
   {
+    key: 'att_signoff',
+    label: 'Sign off attendance',
+    detail: 'Close a day, week or month off and move the days. Still no balances',
+  },
+  {
     key: 'att_manage',
     label: 'Rota & decisions',
     detail: 'Set the rota, settle incomplete days, approve leave',
@@ -49,7 +54,8 @@ export const ROLES = [
     key: 'planner',
     label: 'Rota planner',
     detail: 'Builds the rota and puts leave in for people. Cannot approve leave, cannot settle '
-      + 'a missing clock-out, and cannot see how much leave anybody has left.',
+      + 'a missing clock-out, and cannot see how much leave anybody has left. Add '
+      + '"Sign off attendance" to let them close months off as well, still without the balances.',
     defaults: ['att_view', 'att_rota'],
   },
   {
@@ -123,6 +129,10 @@ export function effectivePermissions(user) {
   // so anybody holding the larger permission holds the smaller one. Without
   // this every rota route would have to name both for the rest of time.
   if (list.includes('att_manage') && !list.includes('att_rota')) list.push('att_rota');
+  // Settling a day and approving leave are both larger than closing a period
+  // off, so anybody who can do those can do this. Reports-only does not get it:
+  // that role changes nothing by definition, and signing off moves leave.
+  if (list.includes('att_manage') && !list.includes('att_signoff')) list.push('att_signoff');
   // And anybody who can do anything here needs the screen the rest hangs off.
   if (list.length && !list.includes('att_view') && list.some((p) => p.startsWith('att_'))) {
     list.push('att_view');

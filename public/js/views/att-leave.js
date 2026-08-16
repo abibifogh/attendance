@@ -19,13 +19,17 @@ export async function renderAttLeave(params = {}) {
   // themselves leave".
   const requests = can('att_rota');
   const decides = can('att_manage');
+  // Closing a period off is its own permission, so a rota planner can be given
+  // it without being given the balances alongside.
+  const signs = can('att_signoff');
+  const seesReview = signs || can('att_reports');
 
   const month = params.month || monthOf(todayISO());
   const [leaveData, balanceData, bootstrap, review] = await Promise.all([
     api.attLeave(),
     can('att_reports') ? api.attBalances() : Promise.resolve({ rows: [] }),
     api.attBootstrap(),
-    can('att_reports') ? api.attReview({ month }).catch(() => null) : Promise.resolve(null),
+    seesReview ? api.attReview({ month }).catch(() => null) : Promise.resolve(null),
   ]);
 
   const reload = async (next = month) => mount(host, await renderAttLeave({ month: next }));
@@ -161,7 +165,7 @@ export async function renderAttLeave(params = {}) {
     card('Booked and coming up', { note: `${upcoming.length}`, wide: true },
       table(columns('upcoming'), upcoming, { empty: 'Nobody is booked off.' })),
 
-    monthCard(review, month, decides, reload),
+    monthCard(review, month, signs, reload),
 
     balanceData.rows.length
       ? card('Balances', { note: `As at ${fmtDay(balanceData.asOf)}`, wide: true },
@@ -233,7 +237,7 @@ function capitalise(value) {
  * judgement, and the form opens with the difference filled in rather than
  * applied — a default, not a verdict.
  */
-function monthCard(review, month, decides, reload) {
+function monthCard(review, month, signs, reload) {
   if (!review) return null;
 
   const step = async (n) => reload(shiftMonth(month, n));
@@ -321,7 +325,7 @@ function monthCard(review, month, decides, reload) {
       {
         key: 'actions',
         label: '',
-        format: (v, r) => (decides
+        format: (v, r) => (signs
           ? h('div.btn-row', r.decision
             ? h('button.btn-sm', { onclick: () => undo(r) }, 'Reopen')
             : h('button.btn-sm.btn-primary', { onclick: () => sign(r) }, 'Sign off'))

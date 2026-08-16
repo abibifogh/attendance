@@ -13,6 +13,7 @@ import {
 import { readNotification } from '../lib/push-events.js';
 import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from '../lib/device-shifts.js';
 import { getPepper } from '../lib/auth.js';
+import { allows } from '../lib/permissions.js';
 import { createNotice } from '../lib/notices.js';
 import { emailExceptions, pingExceptions } from '../lib/notify.js';
 import {
@@ -700,15 +701,22 @@ export async function staffReport(ctx, id) {
     to,
     days: records.map((r) => present(ds, r)),
     totals: summarise(records, { shifts: ds.shiftById, reasons: ds.reasonBy }),
-    leave: leaveBalance({
-      staff,
-      records: yearRecords,
-      requests: ds.requestsByStaff.get(staffId) ?? [],
-      settings: ds.settings,
-      asOf: to,
-      reasons: ds.reasonBy,
-      adjustments: (await signedMonths(ctx.db, staffId)).get(staffId) ?? [],
-    }),
+    // Stripped for anybody who can sign a period off but may not see balances.
+    //
+    // Done here rather than in the screen, because the screen is a courtesy and
+    // this is the gate: a planner opening this endpoint directly must not be
+    // handed the number the whole role exists to withhold.
+    leave: allows('att_reports', ctx.session.permissions)
+      ? leaveBalance({
+        staff,
+        records: yearRecords,
+        requests: ds.requestsByStaff.get(staffId) ?? [],
+        settings: ds.settings,
+        asOf: to,
+        reasons: ds.reasonBy,
+        adjustments: (await signedMonths(ctx.db, staffId)).get(staffId) ?? [],
+      })
+      : null,
   });
 }
 

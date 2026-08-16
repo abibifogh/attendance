@@ -321,7 +321,7 @@ screen every morning until everybody learned to ignore all of them.
 
 ## Who can see what
 
-Five permissions, so a supervisor settling this morning's missing clock-outs
+Six permissions, so a supervisor settling this morning's missing clock-outs
 never sees a leave balance:
 
 | Permission | Reaches |
@@ -329,6 +329,7 @@ never sees a leave balance:
 | **Attendance today** | Who clocked in, and what needs dealing with |
 | **Attendance reports** | Days worked, hours, lateness, leave balances, exports |
 | **Rota & leave requests** | Set the rota and put leave in for people. No approvals, no balances |
+| **Sign off attendance** | Close a day, week or month off and move the days. Still no balances |
 | **Rota & decisions** | Set the rota, settle incomplete days, approve leave |
 | **Attendance setup** | Staff, shifts, absence reasons, holidays, terminals, rules |
 
@@ -343,8 +344,19 @@ left. That last one is the point of the role: whoever draws up the rota does not
 need to know who is running out of days, and a rota built around that knowledge
 is a rota built around the wrong thing.
 
+**Sign off attendance** is deliberately separate and is not part of the planner's
+defaults. Tick it for whoever draws up the rota and they can close a day, a week
+or a month off and move the days against people's leave — while still never
+being shown how much leave anybody has left. That is not a screen that hides the
+number: the report endpoint strips the balance out of its answer for anybody
+without the reports permission, because the menu is a courtesy and the API is the
+gate.
+
+Reports-only never gets it. That role exists to change nothing, and signing off
+moves leave.
+
 Holding a larger permission carries the smaller one, so a supervisor or manager
-keeps the rota without anybody having to tick two boxes. The route table is
+keeps the rota and the sign-off without anybody having to tick three boxes. The route table is
 tested against every role, because a permission granted by accident does not
 throw, does not log, and is only noticed once somebody has seen something they
 should not have.

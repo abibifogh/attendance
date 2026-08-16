@@ -1469,3 +1469,24 @@ test('sign-offs from different spans all reach the leave balance', async () => {
   const bal = await (await balances(ctx(db, { query: '?asOf=2026-04-30' }))).json();
   assert.equal(bal.rows.find((r) => r.staff.id === 1).balance.adjusted, -2, 'a day, a week and a month');
 });
+
+test('a report handed to somebody who may not see balances carries none', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+
+  const full = await (await staffReport(ctx(db, { query: '?from=2026-03-01&to=2026-03-31' }), 1)).json();
+  assert.ok(full.leave, 'a manager gets the balance');
+
+  // The same endpoint, asked by somebody holding sign-off and not reports. The
+  // screen hiding it is a courtesy; this is the gate.
+  const planner = ctx(db, { query: '?from=2026-03-01&to=2026-03-31' });
+  planner.session = {
+    user: { id: 2, name: 'Kofi', role: 'planner' },
+    permissions: ['att_view', 'att_rota', 'att_signoff'],
+  };
+
+  const stripped = await (await staffReport(planner, 1)).json();
+  assert.equal(stripped.leave, null, 'and they get none');
+  assert.ok(stripped.days.length, 'but the days they are there to correct are all present');
+  assert.ok(stripped.totals, 'as are the totals');
+});

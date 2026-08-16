@@ -80,6 +80,9 @@ export async function renderAttStaff(params) {
   );
 
   const manages = can('att_manage');
+  // Closing a period off is a separate permission from settling a day, so a
+  // rota planner can be trusted with one and not the other.
+  const signs = can('att_signoff');
 
   /**
    * Put a day right, from the person's own report.
@@ -148,7 +151,7 @@ export async function renderAttStaff(params) {
     tile('Days worked', fmtNum(t.daysWorked, t.daysWorked % 1 ? 1 : 0), `of ${fmtNum(t.scheduled, 0)} rostered`),
     tile('Hours', fmtNum(t.workedMinutes / 60, 1), t.overtimeMinutes ? `${fmtNum(t.overtimeMinutes / 60, 1)} over` : 'on the clock', 'var(--c3)'),
     tile('Absences', fmtNum(t.daysAbsent, 0), t.openCount ? `${t.openCount} still to confirm` : 'unexcused', t.daysAbsent ? 'var(--bad)' : null),
-    tile('Leave left', fmtNum(leave.remaining, 1), `of ${fmtNum(leave.available, 1)} days this year`),
+    leave ? tile('Leave left', fmtNum(leave.remaining, 1), `of ${fmtNum(leave.available, 1)} days this year`) : null,
   );
 
   // A single day gets the treatment the printed slip needs: the note first,
@@ -182,7 +185,7 @@ export async function renderAttStaff(params) {
   const daysTable = card(single ? 'The day' : 'Day by day', {
     note: totalsLine(t),
     wide: true,
-    actions: monthRow && manages
+    actions: monthRow && signs
       ? h('div.btn-row.no-print',
         monthRow.decision
           ? h('span.pill.good',
@@ -267,9 +270,10 @@ export async function renderAttStaff(params) {
     onchange: (e) => leaveCard.classList.toggle('no-print', !e.target.checked),
   });
 
-  const adjusted = Number(leave.adjusted || 0);
+  const adjusted = Number(leave?.adjusted || 0);
 
-  const leaveCard = card('Leave', {
+  // Absent entirely for anybody who may sign a period off but not see balances.
+  const leaveCard = !leave ? null : card('Leave', {
     note: `${leave.year} leave year — ${fmtDay(leave.from)} to ${fmtDay(leave.to)}`,
     actions: h('label.no-print', {
       style: { display: 'inline-flex', alignItems: 'center', gap: '.35rem', fontSize: '.82rem' },
@@ -315,7 +319,7 @@ export async function renderAttStaff(params) {
   );
 
   // Starts hidden on paper, matching the unticked box above it.
-  leaveCard.classList.add('no-print');
+  if (leaveCard) leaveCard.classList.add('no-print');
 
   mount(host,
     h('div.page-head',
