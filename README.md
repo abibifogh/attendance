@@ -226,55 +226,79 @@ reason to ever open this. The two are linked where the same human is both.
 
 ## Setup
 
-### 1. Prerequisites
+All of it happens in a browser. Two tabs — Cloudflare and GitHub — and no
+software on anybody's computer. Pushing to `main` runs the tests, applies any
+database changes and publishes, so looking after it later is the same browser
+and the same two tabs.
 
-A Cloudflare account, Node 18 or newer, and `npx wrangler login`.
+### 1. Create the database
 
-### 2. Create the database
+Cloudflare dashboard → **Storage & Databases → D1 → Create**. Name it
+`attendance`.
 
-```bash
-npm install
-npm run db:create
-```
+Copy the **Database ID** it shows you.
 
-Copy the `database_id` it prints into `wrangler.toml`.
+### 2. Put that ID into the settings file
 
-### 3. Create the tables
+On GitHub, open `wrangler.toml`, press the pencil to edit it, and replace
+`REPLACE_WITH_YOUR_D1_DATABASE_ID` with the ID you just copied. Commit straight
+to `main`.
 
-```bash
-npm run db:migrate
-```
+### 3. Make a Cloudflare API token
 
-Or paste `migrations/console/*.sql` into the D1 console in order. Those are
-comment-free copies for exactly that — the console rejects a paste whose first
-statement is a comment.
+Cloudflare dashboard → **My Profile → API Tokens → Create Token**, starting from
+the **Edit Cloudflare Workers** template. Add **D1 → Edit** to its permissions
+before you save, and include the zone for your domain so it can attach the
+custom address.
 
-### 4. Set the secrets
+Copy the token — it is shown once. You also need your **Account ID**, which is
+on the right of any Workers page in the dashboard.
 
-```bash
-# A long random string. Rotating it signs everybody out.
-npx wrangler secret put SESSION_SECRET
+### 4. Give them to GitHub
 
-# Optional but wise: the emergency way back in if every account is locked out.
-npx wrangler secret put MANAGER_PIN
+Repository → **Settings → Secrets and variables → Actions → New repository
+secret**. Add two:
 
-# Only if you want the morning email digest.
-npx wrangler secret put RESEND_API_KEY
-```
+| Name | Value |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | the token from step 3 |
+| `CLOUDFLARE_ACCOUNT_ID` | your account ID |
 
-### 5. Deploy, and point the domain at it
+### 5. Publish it
 
-```bash
-npm run deploy
-```
+Repository → **Actions → Test & Deploy → Run workflow**.
 
-`wrangler.toml` already claims `staff.niceoperation.com` as a custom domain. The
-zone has to be on the same Cloudflare account; Wrangler creates the DNS record.
+It runs the tests, creates the tables, and publishes. Three or four minutes. The
+run summary at the end prints what ended up in the database, so you can see the
+tables exist rather than hoping.
 
-### 6. Make the first administrator
+From now on this happens on its own whenever anything is committed to `main`.
 
-With no users in the database, sign in with the `MANAGER_PIN` you set above,
-then **Users & data → Add somebody** and create a real administrator account.
+### 6. Set the two secrets, then publish once more
+
+The Worker exists now, so it can hold secrets. Cloudflare dashboard → **Workers
+& Pages → niceoperation-attendance → Settings → Variables and Secrets**, and add:
+
+| Name | Value |
+|---|---|
+| `SESSION_SECRET` | forty or more random characters. Never needs remembering. |
+| `MANAGER_PIN` | six digits — your way in before any accounts exist, and your way back in if everybody is ever locked out. **Write it down.** |
+| `RESEND_API_KEY` | only if you want the morning email digest |
+
+Then run the workflow again from the Actions tab so the Worker picks them up.
+
+**staff.niceoperation.com** should now open. If the address does not work, the
+domain is probably not on this Cloudflare account — add it there first, or
+attach the address by hand under the Worker's **Domains & Routes**.
+
+### 6b. Make your own administrator account
+
+Open the site and sign in with the `MANAGER_PIN` from step 6 — there are no
+accounts yet, so that is the only way in.
+
+**Users & data → People → Add somebody**, role **Administrator**, your email and
+a real password. Sign out, sign back in as yourself, and put the emergency PIN
+in a drawer.
 
 ### 7. The terminal
 
@@ -392,6 +416,9 @@ anybody did. Enough for a payroll run without going back to the screen.
 
 ## Development
 
+Everything above is done in a browser. This is for anybody who would rather work
+locally.
+
 ```bash
 npm install
 npm test
@@ -399,9 +426,16 @@ npm test
 # Local database, entirely separate from production:
 npm run db:migrate:local
 npm run dev
+
+# And, if you prefer publishing from a terminal to letting GitHub do it:
+npx wrangler login
+npm run db:migrate
+npm run deploy
 ```
 
-No frontend build step and no runtime dependencies.
+No frontend build step and no runtime dependencies. `migrations/console/` holds
+comment-free copies of every migration for pasting into the D1 console, which is
+the third way of applying them if both of the above are inconvenient.
 
 ### Layout
 
