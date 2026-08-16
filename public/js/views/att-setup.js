@@ -633,7 +633,7 @@ async function holidaysTab(reload) {
 // ---------------------------------------------------------------------------
 
 async function devicesTab(reload) {
-  const { devices } = await api.attDevices();
+  const { devices, clockThresholdSeconds = 180 } = await api.attDevices();
 
   /**
    * The one screen that has to be got exactly right.
@@ -773,6 +773,11 @@ async function devicesTab(reload) {
           label: 'Last punch',
           format: (v) => (v ? h('small', v.slice(0, 16)) : h('span.muted', 'none yet')),
         },
+        {
+          key: 'clock_offset_seconds',
+          label: 'Its clock',
+          format: (v) => deviceClockCell(v, clockThresholdSeconds),
+        },
         { key: 'punches', label: 'Punches', align: 'right', format: (v) => fmtNum(v, 0) },
         { key: 'has_token', label: 'Token', format: (v) => (v ? h('span.pill.good', 'set') : h('span.pill.bad', 'missing')) },
         {
@@ -822,6 +827,30 @@ async function devicesTab(reload) {
     ),
 
   );
+}
+
+/**
+ * Whether the terminal's own clock can be trusted.
+ *
+ * Measured on every pushed punch, so "not checked yet" is the honest answer
+ * until the first one arrives — and it is worth saying rather than showing a
+ * reassuring tick that has nothing behind it.
+ *
+ * A terminal fetched by a poller can never fill this in: it hands over a log
+ * that may be an hour old, and the delay would read as drift.
+ */
+function deviceClockCell(offsetSeconds, threshold) {
+  if (offsetSeconds == null) return h('span.muted', 'not checked yet');
+
+  const off = Number(offsetSeconds);
+  const seconds = Math.abs(off);
+  if (seconds < threshold) return h('span.pill.good', 'right');
+
+  const amount = seconds < 5400
+    ? `${Math.round(seconds / 60)} min`
+    : `${Math.round(seconds / 3600)} hr`;
+
+  return h(seconds >= 900 ? 'span.pill.bad' : 'span.pill.warn', `${amount} ${off > 0 ? 'fast' : 'slow'}`);
 }
 
 /**

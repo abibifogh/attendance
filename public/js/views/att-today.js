@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { can, navigate, replaceParams } from '../app.js';
 import { fmtDay, fmtNum, h, mount, shiftDay, toast, todayISO } from '../util.js';
-import { card, emptyState, exportButton, table } from './components.js';
+import { alertList, card, emptyState, exportButton, table } from './components.js';
 import { printButton } from '../print.js';
 import {
   clockCell, field, formDialog, hoursCell, minutesCell, reasonSelect, statusPill, totalsLine,
@@ -29,6 +29,7 @@ export async function renderAttToday(params) {
   };
 
   const manages = can('att_manage');
+  const clocks = clockBanner(data.clockWarnings);
   const needing = data.rows.filter((r) => r.open);
   const absent = data.rows.filter((r) => !r.open && r.colour === 'red');
   const flagged = data.rows.filter((r) => !r.open && r.colour === 'amber');
@@ -58,6 +59,7 @@ export async function renderAttToday(params) {
     mount(host,
       h('div.page-head', h('h1', 'Attendance'), h('div.sub', fmtDay(day, { withYear: true }))),
       nav,
+      clocks,
       emptyState(
         'Nobody on the rota for this day',
         can('att_setup')
@@ -163,6 +165,7 @@ export async function renderAttToday(params) {
       h('span.pill', totalsLine(data.totals)),
     ),
     nav,
+    clocks,
 
     h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
       tile('On duty', `${fmtNum(data.totals.scheduled, 0)}`, 'rostered today'),
@@ -182,6 +185,28 @@ export async function renderAttToday(params) {
   );
 
   return host;
+}
+
+/**
+ * A terminal whose clock has wandered, said before anything else on the screen.
+ *
+ * Above the counts on purpose. Every number underneath it was worked out from
+ * times this terminal supplied, so if the clock is wrong they are all wrong,
+ * and reading them first and the warning second is the wrong way round.
+ *
+ * Silent when there is nothing to say — an "all clear" for a fault that is rare
+ * would be one more thing to scroll past every morning, and the whole point of
+ * this screen is that everything on it needs dealing with.
+ */
+function clockBanner(warnings) {
+  if (!warnings?.length) return null;
+
+  return alertList(warnings.map((w) => ({
+    level: Math.abs(w.offsetSeconds) >= 900 ? 'high' : 'warn',
+    title: 'The terminal’s clock is wrong',
+    detail: `${w.note} Fix it on the terminal: set the time zone to GMT+00:00, leave daylight `
+      + 'saving off, and switch time sync to NTP so it corrects itself from now on.',
+  })));
 }
 
 function tile(label, value, sub, accent) {

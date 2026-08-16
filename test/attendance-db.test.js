@@ -794,3 +794,75 @@ test('somebody on leave is counted as on leave, not as unrostered', async () => 
   assert.equal(monday.counts['1'], 0, 'not counted as covering the morning');
   assert.equal(monday.off, 0, 'and not counted as simply off either');
 });
+
+// ---------------------------------------------------------------------------
+// The terminal's own clock
+// ---------------------------------------------------------------------------
+
+/**
+ * Why this is worth testing at all: a wrong clock is the one fault here that
+ * corrupts the record instead of leaving a hole in it. A terminal that stops
+ * reporting is obvious by lunchtime. A terminal eleven minutes fast looks
+ * perfectly healthy and quietly marks half the staff late, and nobody finds out
+ * until somebody disputes a Tuesday that is now unprovable either way.
+ */
+
+test('a pushed punch gives away a terminal running fast', async () => {
+  const { raw, db, token } = await setup();
+
+  // The device believes it is eleven minutes later than it is.
+  const ahead = new Date(Date.now() + 11 * 60 * 1000).toISOString();
+  const context = pushed(token, notification('1001', ahead, 'checkIn', 950));
+  context.db = db;
+  await pushEvents(context, token);
+
+  const device = raw.prepare('SELECT * FROM att_devices WHERE serial = ?').get('DS-TEST-1');
+  assert.ok(
+    device.clock_offset_seconds >= 655 && device.clock_offset_seconds <= 665,
+    `expected about 660 seconds fast, got ${device.clock_offset_seconds}`,
+  );
+  assert.ok(device.clock_checked_at, 'and when it was measured');
+});
+
+test('the morning screen says so, in words and before the numbers', async () => {
+  const { db, token } = await setup();
+
+  const ahead = new Date(Date.now() + 11 * 60 * 1000).toISOString();
+  const context = pushed(token, notification('1001', ahead, 'checkIn', 951));
+  context.db = db;
+  await pushEvents(context, token);
+
+  const data = await (await dayRoute(ctx(db, { query: `?day=${TARGET}` }))).json();
+
+  assert.equal(data.clockWarnings.length, 1);
+  assert.equal(data.clockWarnings[0].device, 'Staff entrance');
+  assert.match(data.clockWarnings[0].note, /11 minutes fast/);
+  assert.match(data.clockWarnings[0].note, /everybody looks later than they were/);
+});
+
+test('a terminal keeping good time is not mentioned', async () => {
+  const { raw, db, token } = await setup();
+
+  const context = pushed(token, notification('1001', new Date().toISOString(), 'checkIn', 952));
+  context.db = db;
+  await pushEvents(context, token);
+
+  const device = raw.prepare('SELECT * FROM att_devices WHERE serial = ?').get('DS-TEST-1');
+  assert.ok(Math.abs(device.clock_offset_seconds) < 5, 'measured, and near enough zero');
+
+  const data = await (await dayRoute(ctx(db, { query: `?day=${TARGET}` }))).json();
+  assert.deepEqual(data.clockWarnings, [], 'nothing to interrupt anybody about');
+});
+
+test('a polled batch never passes judgement on the clock', async () => {
+  const { raw, db, token } = await setup();
+
+  // The whole point: this log is two months old by the time it is fetched, and
+  // reading that as drift would put a red warning on the screen every morning
+  // until somebody learned to ignore all of them.
+  await send(db, token, [event('2026-06-15T05:58:00+00:00', 'checkIn', 900)]);
+
+  const device = raw.prepare('SELECT * FROM att_devices WHERE serial = ?').get('DS-TEST-1');
+  assert.equal(device.clock_offset_seconds, null, 'a delayed log says nothing about the clock');
+  assert.ok(device.last_seen_at, 'though it does prove the terminal is alive');
+});

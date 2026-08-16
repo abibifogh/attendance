@@ -201,6 +201,28 @@ An employee number the terminal sends that nobody here recognises is listed on
 the setup screen with its punch count. The punches are kept, and attach
 themselves the moment the person is added.
 
+### The terminal's clock is checked on every tap
+
+Every punch is stamped by the device, not by this app, so a terminal whose clock
+has wandered does not fail loudly — it quietly rewrites who was late, and nobody
+finds out until somebody disputes a Tuesday that is no longer provable.
+
+A pushing terminal stamps an event and posts it a second or two later, which
+makes the gap between the two readable for free. It is measured on every punch,
+stored against the terminal, and shown as a warning at the top of the morning
+screen — above the counts, because every number underneath was worked out from
+times that terminal supplied. The Terminals screen carries the same reading per
+device: *right*, *11 min fast*, or *not checked yet*.
+
+The threshold is `att_clock_drift_seconds` in `settings`, three minutes by
+default: past anything network delay could explain, well short of a shift's
+grace period. The fix is on the device — time zone GMT+00:00, daylight saving
+off, time sync set to NTP.
+
+A polled terminal never fills this in. The poller hands over a log that may be
+an hour old, and reading that delay as drift would put a red warning on the
+screen every morning until everybody learned to ignore all of them.
+
 ---
 
 ## Who can see what

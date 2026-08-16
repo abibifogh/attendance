@@ -177,6 +177,70 @@ export function normaliseEvent(event, { deviceSerial, timezone = 'UTC', source =
   };
 }
 
+// ---------------------------------------------------------------------------
+// The terminal's own clock
+// ---------------------------------------------------------------------------
+
+/**
+ * How far the device's clock is from ours, in seconds, from a pushed batch.
+ *
+ * Positive means the terminal is running fast. The measurement is free: a
+ * pushing terminal stamps the event and posts it within a second or two, so the
+ * gap between that stamp and the moment the request lands is the drift plus a
+ * little network delay. Nothing extra is asked of the device, which matters,
+ * because the alternative is a config endpoint the firmware may not answer.
+ *
+ * The newest event in the batch is used, not the first. A terminal that has
+ * been off the internet posts its backlog on reconnect, and the oldest of those
+ * would read as an enormous "behind" that says nothing about the clock.
+ *
+ * Only ever called for pushed events — see the migration for why a poller
+ * cannot answer this question.
+ */
+export function clockOffset(events, receivedAt = new Date()) {
+  let newest = null;
+
+  for (const event of events ?? []) {
+    const raw = event?.time ?? event?.at ?? event?.dateTime;
+    if (!raw) continue;
+    const when = new Date(raw);
+    if (Number.isNaN(when.getTime())) continue;
+    if (newest === null || when.getTime() > newest) newest = when.getTime();
+  }
+
+  if (newest === null) return null;
+  return Math.round((newest - receivedAt.getTime()) / 1000);
+}
+
+/**
+ * The drift, said the way somebody standing in a corridor would say it.
+ *
+ * Deliberately names the consequence rather than the number alone. "The clock
+ * is 11 minutes fast" invites a shrug; "everybody looks 11 minutes later than
+ * they were" is the sentence that gets it fixed.
+ */
+export function clockDriftNote(offsetSeconds, deviceName = 'The terminal') {
+  const offset = Number(offsetSeconds) || 0;
+  const seconds = Math.abs(Math.round(offset));
+  const fast = offset > 0;
+
+  const amount = seconds < 90
+    ? `${seconds} seconds`
+    : seconds < 5400
+      ? `${Math.round(seconds / 60)} minutes`
+      : seconds < 172800
+        ? `${round1(seconds / 3600)} hours`
+        : `${Math.round(seconds / 86400)} days`;
+
+  return `${deviceName}’s clock is ${amount} ${fast ? 'fast' : 'slow'}. Arrivals are being written `
+    + `down ${amount} ${fast ? 'later' : 'earlier'} than they happen, so everybody looks `
+    + `${fast ? 'later' : 'earlier'} than they were.`;
+}
+
+function round1(n) {
+  return String(Math.round(n * 10) / 10);
+}
+
 function numberOr(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;

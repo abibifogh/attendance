@@ -6,7 +6,8 @@ import {
   loadDataset, scheduleFor, streakOf, summarise, toMinutes, weekCountOf,
 } from '../lib/attendance.js';
 import {
-  deviceForPushToken, deviceForToken, exceptionNotice, ingestPunches, recompute, recomputeTouched,
+  clockDriftNote, clockOffset, deviceForPushToken, deviceForToken, exceptionNotice,
+  ingestPunches, recompute, recomputeTouched,
 } from '../lib/attendance-ingest.js';
 import { readNotification } from '../lib/push-events.js';
 import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from '../lib/device-shifts.js';
@@ -67,6 +68,41 @@ async function timezoneOf(db) {
   const row = await db.prepare("SELECT value FROM settings WHERE key = 'timezone'")
     .first().catch(() => null);
   return row?.value || 'UTC';
+}
+
+/**
+ * Terminals whose clock has wandered far enough to be worth interrupting
+ * somebody about.
+ *
+ * Measured on every pushed punch and stored on the device row; this only reads
+ * it back. Surfaced on the morning screen rather than buried in setup, because
+ * the person who notices the reports look wrong is not the person who goes
+ * looking at terminal settings — and a wrong clock is one of the few faults
+ * here that corrupts the record silently instead of leaving a gap.
+ */
+async function clockWarnings(db) {
+  const [setting, rows] = await Promise.all([
+    db.prepare("SELECT value FROM settings WHERE key = 'att_clock_drift_seconds'")
+      .first().catch(() => null),
+    db.prepare(
+      `SELECT name, serial, clock_offset_seconds AS offset_seconds, clock_checked_at
+       FROM att_devices WHERE active = 1 AND clock_offset_seconds IS NOT NULL`,
+    ).all().catch(() => ({ results: [] })),
+  ]);
+
+  // Floored, so that a threshold somebody typed as 0 does not turn every
+  // second of network delay into a warning nobody can clear.
+  const threshold = Math.max(30, Number(setting?.value) || 180);
+
+  return (rows.results ?? [])
+    .filter((row) => Math.abs(Number(row.offset_seconds)) >= threshold)
+    .map((row) => ({
+      device: row.name,
+      serial: row.serial,
+      offsetSeconds: Number(row.offset_seconds),
+      checkedAt: row.clock_checked_at,
+      note: clockDriftNote(row.offset_seconds, row.name),
+    }));
 }
 
 /**
@@ -195,6 +231,17 @@ export async function pushEvents(ctx, tokenParam) {
     await ctx.db.prepare("UPDATE att_devices SET last_seen_at = datetime('now') WHERE id = ?")
       .bind(device.id).run().catch(() => {});
     return json({ ok: true, stored: 0, note: 'nothing attendance-related in that' });
+  }
+
+  // Read the device's clock while we have it. The event was stamped by the
+  // terminal a second or two ago, so the gap between that stamp and now is its
+  // drift — measured on every tap, at no cost, and stored rather than acted on.
+  const offset = clockOffset(events);
+  if (offset !== null) {
+    await ctx.db.prepare(
+      `UPDATE att_devices SET clock_offset_seconds = ?1, clock_checked_at = datetime('now')
+       WHERE id = ?2`,
+    ).bind(offset, device.id).run().catch(() => {});
   }
 
   const result = await ingestPunches(ctx.db, {
@@ -460,7 +507,10 @@ export async function day(ctx) {
   const today = todayIn(timezone);
   const target = readDay(ctx.url.searchParams.get('day'), today);
 
-  const ds = await loadDataset(ctx.db, { from: addDays(target, -7), to: addDays(target, 1) });
+  const [ds, clocks] = await Promise.all([
+    loadDataset(ctx.db, { from: addDays(target, -7), to: addDays(target, 1) }),
+    clockWarnings(ctx.db),
+  ]);
   const rows = [];
 
   for (const staff of ds.staff) {
@@ -489,6 +539,7 @@ export async function day(ctx) {
     day: target,
     today,
     totals: summarise(rows, { shifts: ds.shiftById, reasons: ds.reasonBy }),
+    clockWarnings: clocks,
     rows,
   });
 }

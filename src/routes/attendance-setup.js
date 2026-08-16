@@ -503,13 +503,24 @@ export async function deleteHoliday(ctx, id) {
 // ---------------------------------------------------------------------------
 
 export async function listDevices(ctx) {
-  const rows = await ctx.db.prepare(
-    `SELECT d.id, d.serial, d.name, d.location, d.model, d.mode, d.last_seen_at, d.last_event_at,
-            d.active, d.note, d.token_hash IS NOT NULL AS has_token,
-            (SELECT COUNT(*) FROM att_punches p WHERE p.device_serial = d.serial) AS punches
-     FROM att_devices d ORDER BY d.name`,
-  ).all();
-  return json({ devices: (rows.results ?? []).map((d) => ({ ...d, has_token: Boolean(d.has_token) })) });
+  const [rows, setting] = await Promise.all([
+    ctx.db.prepare(
+      `SELECT d.id, d.serial, d.name, d.location, d.model, d.mode, d.last_seen_at, d.last_event_at,
+              d.active, d.note, d.clock_offset_seconds, d.clock_checked_at,
+              d.token_hash IS NOT NULL AS has_token,
+              (SELECT COUNT(*) FROM att_punches p WHERE p.device_serial = d.serial) AS punches
+       FROM att_devices d ORDER BY d.name`,
+    ).all(),
+    ctx.db.prepare("SELECT value FROM settings WHERE key = 'att_clock_drift_seconds'")
+      .first().catch(() => null),
+  ]);
+
+  return json({
+    devices: (rows.results ?? []).map((d) => ({ ...d, has_token: Boolean(d.has_token) })),
+    // Sent rather than repeated in the screen, so "how wrong is too wrong" has
+    // one home and the Terminals screen cannot disagree with the morning one.
+    clockThresholdSeconds: Math.max(30, Number(setting?.value) || 180),
+  });
 }
 
 /**

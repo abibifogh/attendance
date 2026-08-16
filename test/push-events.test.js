@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { flatten, fromXml, listeningHostSettings, readNotification } from '../src/lib/push-events.js';
-import { normaliseEvent } from '../src/lib/attendance-ingest.js';
+import { clockDriftNote, clockOffset, normaliseEvent } from '../src/lib/attendance-ingest.js';
 
 /**
  * What the terminal posts when nobody is asking.
@@ -228,4 +228,71 @@ test('a plain http deployment is described as one', () => {
   const settings = listeningHostSettings({ siteUrl: 'http://192.168.1.5:8787', token: 'x' });
   assert.equal(settings.protocolType, 'HTTP');
   assert.equal(settings.portNo, 80);
+});
+
+// ---------------------------------------------------------------------------
+// Reading the terminal's clock off its own events
+// ---------------------------------------------------------------------------
+
+const AT = (iso) => new Date(iso);
+
+test('a terminal stamping the future is running fast', () => {
+  const offset = clockOffset(
+    [{ time: '2026-06-16T06:11:00Z' }],
+    AT('2026-06-16T06:00:00Z'),
+  );
+  assert.equal(offset, 660);
+});
+
+test('a terminal stamping the past is running slow', () => {
+  const offset = clockOffset(
+    [{ time: '2026-06-16T05:52:30Z' }],
+    AT('2026-06-16T06:00:00Z'),
+  );
+  assert.equal(offset, -450);
+});
+
+test('a backlog posted after an outage is judged on its newest event', () => {
+  // The device was off the internet for three hours and has just posted
+  // everything at once. Reading the oldest of these as the clock would report a
+  // three-hour drift on a terminal that is keeping perfect time.
+  const offset = clockOffset([
+    { time: '2026-06-16T03:00:00Z' },
+    { time: '2026-06-16T04:30:00Z' },
+    { time: '2026-06-16T06:00:02Z' },
+  ], AT('2026-06-16T06:00:00Z'));
+
+  assert.equal(offset, 2, 'the newest event, which is the one just stamped');
+});
+
+test('nothing usable means no opinion, rather than a reading of zero', () => {
+  assert.equal(clockOffset([], AT('2026-06-16T06:00:00Z')), null);
+  assert.equal(clockOffset(undefined, AT('2026-06-16T06:00:00Z')), null);
+  assert.equal(clockOffset([{ employeeNoString: '1001' }], AT('2026-06-16T06:00:00Z')), null);
+  assert.equal(clockOffset([{ time: 'the fourteenth' }], AT('2026-06-16T06:00:00Z')), null);
+});
+
+test('a real notification can be measured without being reshaped first', async () => {
+  const [event] = await readNotification(post(JSON.stringify(JSON_EVENT), 'application/json'));
+  // JSON_EVENT is stamped 06:03:12; the request "arrives" four seconds later.
+  assert.equal(clockOffset([event], AT('2026-06-16T06:03:16Z')), -4);
+});
+
+test('the warning names the consequence, not only the number', () => {
+  const note = clockDriftNote(660, 'Staff entrance');
+  assert.match(note, /Staff entrance’s clock is 11 minutes fast/);
+  assert.match(note, /everybody looks later than they were/);
+
+  const slow = clockDriftNote(-660, 'Staff entrance');
+  assert.match(slow, /11 minutes slow/);
+  assert.match(slow, /everybody looks earlier than they were/);
+});
+
+test('the drift is said in whatever unit reads best', () => {
+  assert.match(clockDriftNote(45), /45 seconds fast/);
+  assert.match(clockDriftNote(200), /3 minutes fast/);
+  assert.match(clockDriftNote(-7200), /2 hours slow/);
+  assert.match(clockDriftNote(9000), /2.5 hours fast/);
+  // A terminal that lost its battery comes back believing it is 2000.
+  assert.match(clockDriftNote(-864000), /10 days slow/);
 });
