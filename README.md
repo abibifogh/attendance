@@ -37,6 +37,18 @@ The only screen most people open, and they open it every morning. What needs a
 decision first, then absences, then lateness, then everybody who simply turned
 up and did their job.
 
+**A shift that has not started is not an absence.** The night porter due at
+22:00 shows as *Not due yet* all day, in grey, and somebody halfway through a
+shift shows as *On shift since 06:02* rather than sitting in "waiting on a
+decision" all afternoon. Both only ever apply to today — every earlier day is
+judged exactly as it always was — and grace is counted in, so nobody due at
+06:00 with five minutes' grace is called late at 06:03.
+
+Without this the morning screen is a page of red about people who are not due
+for another twelve hours, and the one real absence on it goes unread. The same
+clock reaches the stored day, so the absence notice and the run-of-three alarm
+behind it do not go out about somebody whose shift is still ahead of them.
+
 **A missing punch is held, not counted absent.** The terminal marks a day absent
 when either tap is missing, because it has no way to ask anybody. This does: the
 day waits for a supervisor to confirm what time the person left, and the

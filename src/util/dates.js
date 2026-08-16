@@ -39,6 +39,30 @@ export function todayIn(timezone = 'UTC') {
   }
 }
 
+/**
+ * 'YYYY-MM-DD HH:MM' where the property is, right now.
+ *
+ * Used for one thing: knowing whether a shift on today's rota has started. A
+ * date alone cannot answer that, and a UTC clock answers it wrongly anywhere
+ * that is not on UTC.
+ */
+export function nowIn(timezone = 'UTC') {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date()).reduce((acc, part) => {
+      acc[part.type] = part.value;
+      return acc;
+    }, {});
+    const hour = parts.hour === '24' ? '00' : parts.hour;
+    return `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}`;
+  } catch {
+    return new Date().toISOString().slice(0, 16).replace('T', ' ');
+  }
+}
+
 export function addDays(day, n) {
   const d = parse(day);
   d.setUTCDate(d.getUTCDate() + n);

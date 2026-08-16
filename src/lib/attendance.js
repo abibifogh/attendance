@@ -26,6 +26,10 @@ export const STATUSES = [
   'present', 'late', 'early_leave', 'late_early',
   'missing_out', 'missing_in', 'absent',
   'leave', 'holiday', 'rest', 'unscheduled',
+  // Only ever true of today, and only until the clock passes. A shift at 22:00
+  // is not an absence at nine in the morning, and somebody halfway through one
+  // has not forgotten to clock out.
+  'upcoming', 'working',
 ];
 
 /** Statuses that mean the day is waiting on a person to say what happened. */
@@ -390,8 +394,22 @@ export function computeDay({
     };
   }
 
+  // How far through the day it is, when the caller knows. Absent for any day in
+  // the past, which is the whole point: history is settled and only today is
+  // still happening.
+  const nowAbs = Number.isFinite(policy.nowAbs) ? policy.nowAbs : null;
+
   // 5. The ordinary case: a shift, and whatever the terminal saw.
   if (!punches.length) {
+    // A shift that has not started is not an absence. Marking the night porter
+    // absent from midnight until ten at night makes the morning screen a page
+    // of red that means nothing, and the one real absence on it goes unread.
+    //
+    // Grace is included: somebody due at 06:00 with five minutes' grace is not
+    // late at 06:03, so the screen should not say so before 06:05 either.
+    if (nowAbs != null && window && nowAbs < window.start + (shift.grace_in_minutes ?? 0)) {
+      return { ...base, status: 'upcoming', reason_code: null };
+    }
     return { ...base, status: 'absent', reason_code: 'absent' };
   }
 
@@ -403,6 +421,21 @@ export function computeDay({
     const early = measured.early_minutes > (shift.grace_out_minutes ?? 0);
     const status = late && early ? 'late_early' : late ? 'late' : early ? 'early_leave' : 'present';
     return { ...base, ...measured, status, reason_code: status === 'present' ? 'present' : status };
+  }
+
+  // Still at work. A clock-in with no clock-out is only a missing punch once
+  // the shift has finished; before that it is the most ordinary thing on the
+  // screen, and putting it in "waiting on a decision" all afternoon teaches
+  // people that the list is noise.
+  if (pair.in && !pair.out && nowAbs != null && window && nowAbs < window.end) {
+    return {
+      ...base,
+      ...measured,
+      worked_minutes: 0,
+      early_minutes: 0,
+      status: 'working',
+      reason_code: measured.late_minutes > (shift.grace_in_minutes ?? 0) ? 'late' : null,
+    };
   }
 
   // One half of the day is missing. Which half, and what the property has said
@@ -540,6 +573,9 @@ export function colourFor(record, reasons) {
     case 'late': case 'early_leave': case 'late_early': return 'amber';
     case 'missing_in': case 'missing_out': return record.resolution === 'auto' ? 'amber' : 'red';
     case 'absent': return 'red';
+    // Green for somebody at work; grey for a shift that has not come round yet.
+    case 'working': return record.late_minutes > 0 ? 'amber' : 'green';
+    case 'upcoming': return 'grey';
     default: return 'grey';
   }
 }
@@ -555,6 +591,8 @@ export function labelFor(record, reasons) {
   const reason = reasons?.get?.(record.reason_code);
   switch (record.status) {
     case 'present': return 'Present';
+    case 'upcoming': return 'Not due yet';
+    case 'working': return record.first_in ? `On shift since ${record.first_in}` : 'On shift';
     case 'late': return 'Late';
     case 'early_leave': return record.early_minutes <= 1 ? 'Left early — minor' : 'Left early';
     case 'late_early': return 'Late and left early';
@@ -659,6 +697,18 @@ export function noteFor(record, { shift = null, streak = 0, weekCount = 0, reaso
       return `You clocked out at ${record.last_out} but there is no clock-in for you. `
         + 'The day is being held until your supervisor confirms what time you arrived. '
         + 'Always clock in when you get here.';
+    }
+
+    case 'upcoming': {
+      return start
+        ? `Due on shift at ${start}. Nothing to deal with yet.`
+        : 'Due on shift later today. Nothing to deal with yet.';
+    }
+
+    case 'working': {
+      return record.first_in
+        ? `Clocked in at ${record.first_in} and still on shift. Nothing to deal with yet.`
+        : 'On shift now. Nothing to deal with yet.';
     }
 
     case 'absent': {
@@ -796,6 +846,8 @@ export function summarise(records, { shifts = new Map(), reasons = new Map() } =
 
     switch (reason?.kind ?? kindOf(record.status)) {
       case 'absent': totals.daysAbsent += 1; totals.absences += 1; break;
+      // Neither worked nor missed: the day has not finished having its say.
+      case 'upcoming': case 'working': break;
       case 'leave':
         totals.daysLeave += 1;
         if (reason?.deducts_leave) totals.leaveDeducted += 1;
@@ -825,6 +877,8 @@ export function summarise(records, { shifts = new Map(), reasons = new Map() } =
 function kindOf(status) {
   switch (status) {
     case 'absent': case 'missing_in': case 'missing_out': return 'absent';
+    // Their own kind, so a shift still to come is never counted as one missed.
+    case 'upcoming': case 'working': return status;
     case 'leave': return 'leave';
     case 'holiday': return 'holiday';
     case 'rest': return 'rest';
@@ -1179,7 +1233,7 @@ export function withObservedDays(holidays) {
  * thousand rows a year — and a report on last week has no business reading them
  * all.
  */
-export async function loadDataset(db, { from, to } = {}) {
+export async function loadDataset(db, { from, to, now = null } = {}) {
   const [staff, shifts, patterns, roster, punches, days, reasons, holidays, leave, settings] = await Promise.all([
     db.prepare('SELECT * FROM att_staff ORDER BY name').all(),
     db.prepare('SELECT * FROM att_shifts ORDER BY sort_order, name').all(),
@@ -1203,6 +1257,7 @@ export async function loadDataset(db, { from, to } = {}) {
   ]);
 
   return makeDataset({
+    now,
     staff: staff.results ?? [],
     shifts: shifts.results ?? [],
     patterns: patterns.results ?? [],
@@ -1265,6 +1320,10 @@ export function makeDataset(raw) {
     settings,
     timezone: settings.timezone || 'UTC',
     rotationAnchor: settings.att_rotation_anchor || ROTATION_ANCHOR,
+    // 'YYYY-MM-DD HH:MM' in the property's own time, when the caller supplies
+    // one. Its only job is to stop today's later shifts being called absent
+    // before they have begun.
+    now: raw.now ?? null,
     staff,
     shifts,
     reasons: raw.reasons ?? [],
@@ -1304,6 +1363,10 @@ export function computeRange(ds, staffId, from, to) {
 
   const days = rangeDays(from, to);
   const punches = collapsePunches(ds.punchesByStaff.get(staffId) ?? [], ds.policy.minGap);
+
+  // The clock, when the dataset was given one. Only today's shifts can be
+  // ahead of it, so every earlier day computes exactly as it always has.
+  const nowAbs = ds.now ? absMinutes(ds.now.slice(0, 10), ds.now.slice(11, 16)) : null;
 
   // Build every candidate window first — including the day before the range, so
   // a night shift starting on the 31st can claim a punch at 02:00 on the 1st.
@@ -1361,7 +1424,7 @@ export function computeRange(ds, staffId, from, to) {
           corrected_out: existing.corrected_out ?? null,
         }
         : null,
-      policy: ds.policy,
+      policy: { ...ds.policy, nowAbs },
     });
 
     out.push({

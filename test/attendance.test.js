@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  claimPunch, collapsePunches, colourFor, computeDay, computeRange, dayCredit,
+  absMinutes, claimPunch, collapsePunches, colourFor, computeDay, computeRange, dayCredit,
   easterSunday, firstFriday, ghanaHolidays, hours, humanDuration, isOpen, labelFor,
   leaveBalance, leaveDaysIn, leaveYearOf, makeDataset, monthsBetween, noteFor,
   overUnder, pairPunches, rotationWeekOf, scheduleFor, shiftWindow, streakOf, summarise, toClock,
@@ -939,4 +939,72 @@ test('the six-hour bar can be moved', () => {
   const long = [day({ scheduled: 0, worked_minutes: 300, status: 'unscheduled' })];
   assert.equal(overUnder(long).overDays, 0);
   assert.equal(overUnder(long, { overMinutes: 240 }).overDays, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Today, while it is still happening
+// ---------------------------------------------------------------------------
+
+/** The morning shift on 16 June, with the clock stopped at a given time. */
+const atTime = (time, punches = []) => ({
+  staff: STAFF[0],
+  day: '2026-06-16',
+  schedule: { shift: MORNING, source: 'roster', explicit: true },
+  punches,
+  policy: { nowAbs: absMinutes('2026-06-16', time) },
+});
+
+test('a shift that has not started is not an absence', () => {
+  // Due at 06:00. It is four in the morning.
+  const record = computeDay(atTime('04:00'));
+  assert.equal(record.status, 'upcoming');
+  assert.equal(record.reason_code, null);
+  assert.equal(colourFor(record, new Map()), 'grey');
+  assert.equal(labelFor(record, new Map()), 'Not due yet');
+  assert.equal(isOpen(record), false, 'and nothing for anybody to decide');
+});
+
+test('grace is included before anybody is called late', () => {
+  // 06:00 start, five minutes' grace. At 06:03 they are not late yet.
+  assert.equal(computeDay(atTime('06:03')).status, 'upcoming');
+  // At 06:06 the grace is gone and nobody has clocked in.
+  assert.equal(computeDay(atTime('06:06')).status, 'absent');
+});
+
+test('somebody halfway through a shift has not forgotten to clock out', () => {
+  const ds = dataset({ punches: [punch(1, '2026-06-16', '05:58', 'in')] });
+  const record = computeDay(atTime('09:00', ds.punchesByStaff.get(1)));
+
+  assert.equal(record.status, 'working');
+  assert.equal(record.first_in, '05:58');
+  assert.equal(isOpen(record), false, 'not a decision waiting all afternoon');
+  assert.equal(colourFor(record, new Map()), 'green');
+  assert.match(labelFor(record, new Map()), /On shift since 05:58/);
+});
+
+test('once the shift has ended a missing clock-out is a missing clock-out again', () => {
+  const ds = dataset({ punches: [punch(1, '2026-06-16', '05:58', 'in')] });
+  const record = computeDay(atTime('14:30', ds.punchesByStaff.get(1)));
+  assert.equal(record.status, 'missing_out');
+  assert.equal(isOpen(record), true);
+});
+
+test('a day with no clock at all behaves exactly as it always did', () => {
+  // Every historical day comes through here: no `nowAbs`, no new statuses.
+  const record = computeDay({
+    staff: STAFF[0],
+    day: '2026-06-16',
+    schedule: { shift: MORNING, source: 'roster', explicit: true },
+    punches: [],
+  });
+  assert.equal(record.status, 'absent');
+});
+
+test('a shift still to come counts as neither worked nor missed', () => {
+  const totals = summarise([computeDay(atTime('04:00'))], {
+    shifts: new Map([[1, MORNING]]), reasons: new Map(),
+  });
+  assert.equal(totals.scheduled, 1, 'still rostered');
+  assert.equal(totals.daysAbsent, 0);
+  assert.equal(totals.daysWorked, 0);
 });

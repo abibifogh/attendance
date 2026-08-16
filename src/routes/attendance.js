@@ -17,7 +17,7 @@ import { allows } from '../lib/permissions.js';
 import { createNotice } from '../lib/notices.js';
 import { emailExceptions, pingExceptions } from '../lib/notify.js';
 import {
-  addDays, diffDays, dow, isDay, isMonth, monthBounds, rangeDays, startOfWeek, todayIn,
+  addDays, diffDays, dow, isDay, isMonth, monthBounds, nowIn, rangeDays, startOfWeek, todayIn,
 } from '../util/dates.js';
 
 /**
@@ -567,7 +567,13 @@ export async function day(ctx) {
   const target = readDay(ctx.url.searchParams.get('day'), today);
 
   const [ds, clocks] = await Promise.all([
-    loadDataset(ctx.db, { from: addDays(target, -7), to: addDays(target, 1) }),
+    loadDataset(ctx.db, {
+      from: addDays(target, -7),
+      to: addDays(target, 1),
+      // Only today needs the clock, and only to stop a shift that has not
+      // started being called an absence. Any other day is already over.
+      now: target === today ? nowIn(timezone) : null,
+    }),
     clockWarnings(ctx.db),
   ]);
   const rows = [];

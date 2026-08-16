@@ -1526,3 +1526,38 @@ test('a report outside every signed period says so plainly', async () => {
   const april = await (await staffReport(ctx(db, { query: '?from=2026-04-01&to=2026-04-30' }), 1)).json();
   assert.deepEqual(april.signedSpans, [], 'a span that does not touch the range is not sent');
 });
+
+test('a shift later today is not an absence on the morning screen', async () => {
+  const { raw, db } = await setup();
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Rostered on the night shift today: 22:00 to 06:00, and nobody has tapped.
+  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id) VALUES (1, ?, 2)').run(today);
+
+  const data = await (await dayRoute(ctx(db, { query: `?day=${today}` }))).json();
+  const row = data.rows.find((r) => r.staff.id === 1);
+
+  // Unless this test happens to run after ten at night, the shift is still to
+  // come — and a page of red about people who are not due is a page nobody
+  // reads the real absence on.
+  const nowHour = new Date().getHours();
+  if (nowHour < 22) {
+    assert.equal(row.status, 'upcoming');
+    assert.equal(row.label, 'Not due yet');
+    assert.equal(row.colour, 'grey');
+    assert.equal(row.open, false);
+    assert.equal(data.totals.daysAbsent, 0, 'and it is not counted as one either');
+    assert.equal(data.totals.scheduled, 1, 'though they are still on the rota');
+  }
+});
+
+test('yesterday is still judged the way it always was', async () => {
+  const { raw, db } = await setup();
+  // A Monday well in the past, rostered and never worked.
+  raw.prepare("INSERT INTO att_roster (staff_id, day, shift_id) VALUES (1, '2026-03-02', 1)").run();
+
+  const data = await (await dayRoute(ctx(db, { query: '?day=2026-03-02' }))).json();
+  const row = data.rows.find((r) => r.staff.id === 1);
+  assert.equal(row.status, 'absent', 'the clock only ever excuses today');
+  assert.equal(data.totals.daysAbsent, 1);
+});
