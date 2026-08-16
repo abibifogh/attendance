@@ -245,18 +245,33 @@ screen every morning until everybody learned to ignore all of them.
 
 ## Who can see what
 
-Four permissions, so a supervisor settling this morning's missing clock-outs
+Five permissions, so a supervisor settling this morning's missing clock-outs
 never sees a leave balance:
 
 | Permission | Reaches |
 |---|---|
 | **Attendance today** | Who clocked in, and what needs dealing with |
 | **Attendance reports** | Days worked, hours, lateness, leave balances, exports |
+| **Rota & leave requests** | Set the rota and put leave in for people. No approvals, no balances |
 | **Rota & decisions** | Set the rota, settle incomplete days, approve leave |
 | **Attendance setup** | Staff, shifts, absence reasons, holidays, terminals, rules |
 
-Four roles built from them — Supervisor, Manager, Reports only, Administrator —
-and any individual can be adjusted off their role's defaults.
+Five roles built from them — Rota planner, Supervisor, Manager, Reports only,
+Administrator — and any individual can be adjusted off their role's defaults.
+
+**Rota planner** is the narrowest of them: builds next week's rota, sets standing
+patterns and rotations, and puts leave in for people — where it waits for
+somebody else to approve it. They cannot grant leave (including their own),
+cannot settle a missing clock-out, and cannot see how much leave anybody has
+left. That last one is the point of the role: whoever draws up the rota does not
+need to know who is running out of days, and a rota built around that knowledge
+is a rota built around the wrong thing.
+
+Holding a larger permission carries the smaller one, so a supervisor or manager
+keeps the rota without anybody having to tick two boxes. The route table is
+tested against every role, because a permission granted by accident does not
+throw, does not log, and is only noticed once somebody has seen something they
+should not have.
 
 Note that **a login and a member of staff are different things**. Almost nobody
 who clocks in has a login; a room attendant has a face on a terminal and no

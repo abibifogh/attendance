@@ -21,6 +21,11 @@ export const PERMISSIONS = [
     detail: 'Days worked, hours, lateness, leave balances, exports',
   },
   {
+    key: 'att_rota',
+    label: 'Rota & leave requests',
+    detail: 'Set the rota and put leave in for people. No approvals, no balances',
+  },
+  {
     key: 'att_manage',
     label: 'Rota & decisions',
     detail: 'Set the rota, settle incomplete days, approve leave',
@@ -40,6 +45,13 @@ export const PERMISSIONS = [
 export const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
 
 export const ROLES = [
+  {
+    key: 'planner',
+    label: 'Rota planner',
+    detail: 'Builds the rota and puts leave in for people. Cannot approve leave, cannot settle '
+      + 'a missing clock-out, and cannot see how much leave anybody has left.',
+    defaults: ['att_view', 'att_rota'],
+  },
   {
     key: 'supervisor',
     label: 'Supervisor',
@@ -107,6 +119,10 @@ export function effectivePermissions(user) {
   // holder who could not touch it would be looking at a control that refused
   // them.
   if (list.includes('att_setup') && !list.includes('att_manage')) list.push('att_manage');
+  // Deciding leave and settling days is strictly more than building the rota,
+  // so anybody holding the larger permission holds the smaller one. Without
+  // this every rota route would have to name both for the rest of time.
+  if (list.includes('att_manage') && !list.includes('att_rota')) list.push('att_rota');
   // And anybody who can do anything here needs the screen the rest hangs off.
   if (list.length && !list.includes('att_view') && list.some((p) => p.startsWith('att_'))) {
     list.push('att_view');

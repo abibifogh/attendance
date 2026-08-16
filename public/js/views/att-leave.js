@@ -13,7 +13,12 @@ import { field, formDialog } from './att-shared.js';
  */
 export async function renderAttLeave() {
   const host = h('div');
-  const manages = can('att_manage');
+  // Two different jobs. A planner puts leave in and it waits for somebody;
+  // a manager is the somebody. Splitting these is the whole point of the
+  // rota-planner role — otherwise "can add leave" quietly means "can grant
+  // themselves leave".
+  const requests = can('att_rota');
+  const decides = can('att_manage');
 
   const [leaveData, balanceData, bootstrap] = await Promise.all([
     api.attLeave(),
@@ -31,7 +36,7 @@ export async function renderAttLeave() {
   const request = async () => {
     const done = await formDialog({
       title: 'Record leave',
-      submitLabel: manages ? 'Approve and record' : 'Send for approval',
+      submitLabel: decides ? 'Approve and record' : 'Send for approval',
       body: h('div',
         field('Who', h('select', { name: 'staffId', required: true },
           h('option', { value: '' }, 'Choose…'),
@@ -117,13 +122,13 @@ export async function renderAttLeave() {
       key: 'status',
       label: kind === 'pending' ? '' : 'Status',
       format: (v, r) => {
-        if (kind === 'pending' && manages) {
+        if (kind === 'pending' && decides) {
           return h('div.btn-row',
             h('button.btn-sm.btn-primary', { onclick: () => decide(r, 'approved') }, 'Approve'),
             h('button.btn-sm', { onclick: () => decide(r, 'rejected') }, 'Reject'),
           );
         }
-        if (v === 'approved' && manages && r.to_day >= todayISO()) {
+        if (v === 'approved' && decides && r.to_day >= todayISO()) {
           return h('div.btn-row',
             h('span.pill.good', 'Approved'),
             h('button.btn-sm', { onclick: () => cancel(r) }, 'Cancel'),
@@ -140,7 +145,10 @@ export async function renderAttLeave() {
         h('h1', 'Leave'),
         h('div.sub', 'Annual leave, sickness and everything else that keeps somebody off the rota'),
       ),
-      manages ? h('button.btn.btn-primary', { onclick: request }, '+ Record leave') : null,
+      requests
+        ? h('button.btn.btn-primary', { onclick: request },
+          decides ? '+ Record leave' : '+ Request leave')
+        : null,
     ),
 
     pending.length

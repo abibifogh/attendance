@@ -31,7 +31,7 @@ const ROUTES = [
   { path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday },
   { path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek },
   { path: 'att-overview', label: 'Month', permission: 'att_reports', render: renderAttOverview },
-  { path: 'att-rota', label: 'Rota', permission: 'att_manage', render: renderAttRota },
+  { path: 'att-rota', label: 'Rota', permission: 'att_rota', render: renderAttRota },
   { path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave },
   { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },

@@ -22,7 +22,7 @@ import { PIN_TAKEN } from './routes/admin.js';
  * leave balances. `null` means the endpoint is open to anyone signed in, and
  * `'public'` means no session is required at all.
  */
-const ROUTES = [
+export const ROUTES = [
   ['POST', '/api/auth/salt', 'public', passwordSalt],
   ['POST', '/api/auth/login', 'public', login],
   ['POST', '/api/auth/logout', 'public', logout],
@@ -60,24 +60,24 @@ const ROUTES = [
   ['POST', '/api/att/days/:day/unresolve', 'att_manage', att.unresolveDay],
   ['POST', '/api/att/punches', 'att_manage', att.addPunch],
 
-  ['GET', '/api/att/roster', ['att_manage', 'att_reports'], att.getRoster],
-  ['POST', '/api/att/roster', 'att_manage', att.saveRoster],
-  ['POST', '/api/att/roster/copy', 'att_manage', att.copyRoster],
-  ['POST', '/api/att/patterns', 'att_manage', att.savePattern],
+  ['GET', '/api/att/roster', ['att_rota', 'att_reports'], att.getRoster],
+  ['POST', '/api/att/roster', 'att_rota', att.saveRoster],
+  ['POST', '/api/att/roster/copy', 'att_rota', att.copyRoster],
+  ['POST', '/api/att/patterns', 'att_rota', att.savePattern],
 
   ['GET', '/api/att/leave', 'att_view', att.listLeave],
-  ['POST', '/api/att/leave', 'att_manage', att.requestLeave],
+  ['POST', '/api/att/leave', 'att_rota', att.requestLeave],
   ['POST', '/api/att/leave/:id/decide', 'att_manage', att.decideLeave],
   ['DELETE', '/api/att/leave/:id', 'att_manage', att.cancelLeave],
 
   // ----------------------------------------------------------------- setup --
-  ['GET', '/api/att/staff', ['att_setup', 'att_manage'], attSetup.listStaff],
+  ['GET', '/api/att/staff', ['att_setup', 'att_rota'], attSetup.listStaff],
   ['POST', '/api/att/staff', 'att_setup', attSetup.createStaff],
   ['PUT', '/api/att/staff/:id', 'att_setup', attSetup.updateStaff],
   ['DELETE', '/api/att/staff/:id', 'att_setup', attSetup.deleteStaff],
   ['GET', '/api/att/unknown', 'att_setup', attSetup.unknownEmployees],
 
-  ['GET', '/api/att/shifts', ['att_setup', 'att_manage'], attSetup.listShifts],
+  ['GET', '/api/att/shifts', ['att_setup', 'att_rota'], attSetup.listShifts],
   ['GET', '/api/att/shift-suggestions', 'att_setup', att.shiftSuggestions],
   ['POST', '/api/att/shifts/import', 'att_setup', att.importShifts],
   ['POST', '/api/att/shifts', 'att_setup', attSetup.createShift],
