@@ -1,12 +1,12 @@
 import { api } from '../api.js';
 import { can, navigate, replaceParams } from '../app.js';
 import {
-  fmtDay, fmtDayShort, fmtNum, h, mount, shiftDay, todayISO,
+  fmtDay, fmtDayShort, fmtNum, h, mount, shiftDay, toast, todayISO,
 } from '../util.js';
 import { card, emptyState, exportButton, table } from './components.js';
 import { printButton } from '../print.js';
 import {
-  clockCell, hoursCell, minutesCell, statusPill, totalsLine,
+  clockCell, field, formDialog, hoursCell, minutesCell, reasonSelect, statusPill, totalsLine,
 } from './att-shared.js';
 
 /**
@@ -70,6 +70,68 @@ export async function renderAttStaff(params) {
     can('att_reports') ? exportButton(api.attExportUrl(from, to), 'Export') : null,
   );
 
+  const manages = can('att_manage');
+
+  /**
+   * Put a day right, from the person's own report.
+   *
+   * The same decision the morning screen offers, moved to where a discrepancy
+   * is actually noticed: somebody goes through a month before payroll, finds a
+   * Tuesday marked absent that was not, and until now had to remember the date,
+   * go to Today, page back to it and find them in a list of everybody.
+   *
+   * Offered on any day, not only the ones waiting. Changing absent to present
+   * is the whole point of the request, and a day the rules already called
+   * "present" can still be wrong about which shift it was against.
+   */
+  const resolve = async (row) => {
+    const { reasons } = await api.attReasons();
+    const shiftHint = row.shift
+      ? `${row.shift.name}, ${row.shift.starts_at}–${row.shift.ends_at}`
+      : 'No shift rostered for this day';
+
+    const done = await formDialog({
+      title: `${data.staff.name} — ${fmtDay(row.day, { withYear: true })}`,
+      submitLabel: 'Record it',
+      body: h('div',
+        h('p.muted', shiftHint),
+        row.note ? h('p', row.note) : null,
+        h('div.grid.grid-2',
+          field('Clocked in', h('input', { type: 'time', name: 'in', value: row.first_in || '' }),
+            row.first_in ? 'What the terminal saw' : 'The terminal saw nothing'),
+          field('Clocked out', h('input', { type: 'time', name: 'out', value: row.last_out || '' }),
+            row.last_out ? 'What the terminal saw' : 'The terminal saw nothing'),
+        ),
+        field('Record this day as',
+          reasonSelect(reasons, row.reason_code || suggested(row), { name: 'reason', required: true })),
+        field('Note', h('input', {
+          type: 'text', name: 'note', maxlength: 500,
+          placeholder: 'What they told you, or who confirmed it',
+        })),
+        h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+          'Recorded against your name. The punches themselves are never altered — this is a '
+          + 'decision stored beside them, and it can be undone.'),
+      ),
+      onSubmit: async (form) => api.attResolve(row.day, {
+        staffId: data.staff.id,
+        reason: form.get('reason'),
+        in: form.get('in') || null,
+        out: form.get('out') || null,
+        note: form.get('note') || null,
+      }),
+    });
+
+    if (done) { toast('Recorded.', 'good'); await reload({}); }
+  };
+
+  /** Take the ruling off and let the rules decide again. */
+  const unresolve = async (row) => {
+    if (!window.confirm(`Undo the ruling on ${fmtDay(row.day)} and let the punches speak for themselves?`)) return;
+    await api.attUnresolve(row.day, { staffId: data.staff.id });
+    toast('Back to what the terminal saw.');
+    await reload({});
+  };
+
   const t = data.totals;
   const leave = data.leave;
 
@@ -103,6 +165,22 @@ export async function renderAttStaff(params) {
     { key: 'early_minutes', label: 'Early', align: 'right', format: minutesCell },
     { key: 'overtime_minutes', label: 'Over', align: 'right', format: minutesCell },
     { key: 'label', label: 'Status', format: (v, r) => statusPill(r) },
+    {
+      key: 'fix',
+      label: '',
+      // Hidden on paper: a column of buttons on a printed slip is noise.
+      cls: 'no-print',
+      format: (v, r) => (manages
+        ? h('div.btn-row.no-print',
+          h('button.btn-sm', {
+            class: r.open ? 'btn-primary' : '',
+            onclick: () => resolve(r),
+          }, r.open ? 'Settle' : 'Correct'),
+          r.resolution && r.resolution !== 'auto' && r.resolved_by
+            ? h('button.btn-sm', { onclick: () => unresolve(r) }, 'Undo')
+            : null)
+        : null),
+    },
   ], data.days, {
     rowClass: (r) => `row-att-${r.colour}`,
     empty: 'Nothing recorded for this period.',
@@ -124,12 +202,53 @@ export async function renderAttStaff(params) {
           )))))
     : null;
 
-  const leaveCard = card('Leave', { note: `${leave.year} leave year — ${fmtDay(leave.from)} to ${fmtDay(leave.to)}` },
-    h('div.grid.grid-3',
+  // Off the printout unless somebody says otherwise.
+  //
+  // A slip handed to one person is read by whoever is standing next to them,
+  // and how much leave they have left is nobody else's business. It stays on
+  // screen, where the manager who opened it already has the whole record — the
+  // choice is only about what goes on paper.
+  const printLeave = h('input', {
+    type: 'checkbox',
+    checked: false,
+    onchange: (e) => leaveCard.classList.toggle('no-print', !e.target.checked),
+  });
+
+  const adjusted = Number(leave.adjusted || 0);
+
+  const leaveCard = card('Leave', {
+    note: `${leave.year} leave year — ${fmtDay(leave.from)} to ${fmtDay(leave.to)}`,
+    actions: h('label.no-print', {
+      style: { display: 'inline-flex', alignItems: 'center', gap: '.35rem', fontSize: '.82rem' },
+      title: 'Whether this box appears when you save or print this report',
+    }, printLeave, 'Include on the printout'),
+  },
+    h(`div.grid.grid-${adjusted ? 4 : 3}`,
       tile('Entitlement', fmtNum(leave.entitlement, 1), leave.proRated ? 'pro-rata from start date' : 'days a year'),
+      // Only shown when it is not zero: a permanent "0 days adjusted" tile is a
+      // question nobody asked, and the point of this one is that it is unusual.
+      adjusted
+        ? tile(
+          adjusted > 0 ? 'Days given back' : 'Days charged',
+          `${adjusted > 0 ? '+' : ''}${fmtNum(adjusted, 1)}`,
+          adjusted > 0 ? 'for months worked over' : 'for months worked short',
+          adjusted > 0 ? 'var(--good)' : 'var(--bad)',
+        )
+        : null,
       tile('Taken', fmtNum(leave.taken, 1), leave.booked ? `${fmtNum(leave.booked, 1)} more booked` : 'days so far'),
       tile('Remaining', fmtNum(leave.remaining, 1), leave.pending ? `${fmtNum(leave.pending, 1)} awaiting a decision` : 'days', 'var(--good)'),
     ),
+
+    adjusted
+      ? h('p.muted', { style: { fontSize: '.85rem', marginTop: '.6rem', marginBottom: 0 } },
+        adjusted > 0
+          ? `${fmtNum(adjusted, 1)} day${Math.abs(adjusted) === 1 ? '' : 's'} added to this year's `
+            + 'entitlement for months where more was worked than the rota asked for. Signed off on '
+            + 'the Leave screen, month by month.'
+          : `${fmtNum(Math.abs(adjusted), 1)} day${Math.abs(adjusted) === 1 ? '' : 's'} taken off this `
+            + "year's entitlement for months worked short of the rota. Signed off on the Leave "
+            + 'screen, month by month, and reversible there.')
+      : null,
     !leave.qualified
       ? h('p.muted', { style: { fontSize: '.85rem', marginTop: '.6rem', marginBottom: 0 } },
         `${data.staff.name.split(' ')[0]} has ${leave.serviceMonths} months' service. Paid annual leave is `
@@ -141,6 +260,9 @@ export async function renderAttStaff(params) {
         `Includes ${fmtNum(leave.carryOver, 1)} days carried over.`)
       : null,
   );
+
+  // Starts hidden on paper, matching the unticked box above it.
+  leaveCard.classList.add('no-print');
 
   mount(host,
     h('div.page-head',
@@ -228,3 +350,19 @@ function boundsFor(period, anchor, params = {}) {
 const PRINT_FOOTER = 'Clock times come from the attendance terminal. Where a punch was missing, '
   + 'the time shown was supplied by a supervisor and is noted as such. Days worked count a full day '
   + 'at or above the shift\'s full-day threshold and a half day above the half-day threshold.';
+
+/**
+ * What to pre-select when correcting a day.
+ *
+ * Conservative on purpose. A day with an arrival and no departure is almost
+ * always somebody who worked and forgot, so "present" is offered. A day with
+ * nothing at all is offered nothing — that one needs a human to choose, and
+ * pre-picking "absent" would turn the dialog into a rubber stamp for exactly
+ * the decision this screen exists to let somebody reconsider.
+ */
+function suggested(row) {
+  if (row.status === 'missing_out' || row.status === 'missing_in') {
+    return row.late_minutes > 5 ? 'late' : 'present';
+  }
+  return '';
+}

@@ -71,8 +71,10 @@ export function table(columns, rows, {
 
   return h('div.table-wrap',
     h('table',
+      // The header carries the column's class too, so a column hidden on paper
+      // takes its heading with it rather than leaving an empty strip.
       h('thead', h('tr', columns.map((c) =>
-        h(`th${c.align === 'right' ? '.num' : ''}`, c.label)))),
+        h(`th${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, c.label)))),
       h('tbody', groupBy ? groupedBody(rows, groupBy, groupSummary, columns.length, rowEl)
         : rows.map(rowEl)),
     ),

@@ -636,6 +636,11 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 
 @media print { .bell-wrap { display: none; } }
 
+/* Anything the screen wants and the paper does not. Applied by the view rather
+   than fixed here, because whether the leave balance belongs on a printout
+   handed to somebody is a judgement, not a layout rule. */
+@media print { .no-print { display: none !important; } }
+
 /* The erase panel's count of what a chosen period holds. Sits between the
    dates and the button on purpose: it is the last thing read before the one
    action in this system that cannot be undone. */

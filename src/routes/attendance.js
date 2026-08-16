@@ -81,6 +81,28 @@ function looksFlat(pattern) {
   return Object.values(pattern).every((value) => value == null || typeof value !== 'object');
 }
 
+/**
+ * Months already signed off, per person, in days.
+ *
+ * Read wherever a leave balance is worked out, because a shortfall charged in
+ * March has to be in the figure a manager reads in August. Kept in one place so
+ * the person's own report, the balances list and the monthly screen cannot
+ * quietly disagree about how much leave somebody has left.
+ */
+async function signedMonths(db, staffId = null) {
+  const rows = await (staffId
+    ? db.prepare('SELECT staff_id, month, days_applied FROM att_month_review WHERE staff_id = ?').bind(staffId)
+    : db.prepare('SELECT staff_id, month, days_applied FROM att_month_review')
+  ).all().catch(() => ({ results: [] }));
+
+  const by = new Map();
+  for (const row of rows.results ?? []) {
+    if (!by.has(row.staff_id)) by.set(row.staff_id, []);
+    by.get(row.staff_id).push(row);
+  }
+  return by;
+}
+
 async function timezoneOf(db) {
   const row = await db.prepare("SELECT value FROM settings WHERE key = 'timezone'")
     .first().catch(() => null);
@@ -684,6 +706,7 @@ export async function staffReport(ctx, id) {
       settings: ds.settings,
       asOf: to,
       reasons: ds.reasonBy,
+      adjustments: (await signedMonths(ctx.db, staffId)).get(staffId) ?? [],
     }),
   });
 }
@@ -737,8 +760,11 @@ export async function overview(ctx) {
   const from = bounds?.from ?? `${today.slice(0, 7)}-01`;
   const to = bounds?.to ?? today;
 
-  const ds = await loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) });
-  const yearByStaff = await yearToDateAll(ctx.db, `${to.slice(0, 4)}-01-01`, to);
+  const [ds, yearByStaff, signedBy] = await Promise.all([
+    loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) }),
+    yearToDateAll(ctx.db, `${to.slice(0, 4)}-01-01`, to),
+    signedMonths(ctx.db),
+  ]);
   const span = rangeDays(from, to);
   const rows = [];
 
@@ -754,6 +780,7 @@ export async function overview(ctx) {
       totals: summarise(records, { shifts: ds.shiftById, reasons: ds.reasonBy }),
       leave: leaveBalance({
         staff,
+        adjustments: signedBy.get(staff.id) ?? [],
         records: yearRecords,
         requests: ds.requestsByStaff.get(staff.id) ?? [],
         settings: ds.settings,
@@ -1365,20 +1392,11 @@ export async function cancelLeave(ctx, id) {
 export async function balances(ctx) {
   const timezone = await timezoneOf(ctx.db);
   const asOf = readDay(ctx.url.searchParams.get('asOf'), todayIn(timezone));
-  const [ds, yearByStaff, signed] = await Promise.all([
+  const [ds, yearByStaff, signedBy] = await Promise.all([
     loadDataset(ctx.db, { from: asOf, to: asOf }),
     yearToDateAll(ctx.db, `${asOf.slice(0, 4)}-01-01`, asOf),
-    ctx.db.prepare('SELECT staff_id, month, days_applied FROM att_month_review')
-      .all().catch(() => ({ results: [] })),
+    signedMonths(ctx.db),
   ]);
-
-  // Months already signed off, per person. These move the balance, so a
-  // shortfall charged in March is visible in the figure a manager reads today.
-  const signedBy = new Map();
-  for (const row of signed.results ?? []) {
-    if (!signedBy.has(row.staff_id)) signedBy.set(row.staff_id, []);
-    signedBy.get(row.staff_id).push(row);
-  }
 
   const rows = [];
   for (const staff of ds.staff) {

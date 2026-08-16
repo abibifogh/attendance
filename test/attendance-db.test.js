@@ -1256,3 +1256,35 @@ test('a rubbish month is refused', async () => {
     /sensible number/i,
   );
 });
+
+test('a signed-off month shows on the person’s own report, not just the leave screen', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02', '2026-03-03']);
+  await decideMonth(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -2.5 } }));
+
+  const report = await (await staffReport(ctx(db, { query: '?from=2026-03-01&to=2026-03-31' }), 1)).json();
+
+  assert.equal(report.leave.adjusted, -2.5,
+    'the charge has to reach the report somebody is handed, or it is invisible where it matters');
+  assert.equal(report.leave.available, report.leave.entitlement + report.leave.carryOver - 2.5);
+});
+
+test('a day already settled can still be corrected, and the correction undone', async () => {
+  const { raw, db, token } = await setup();
+  // Rostered Monday, nobody clocked in: absent by the rules, nothing waiting.
+  const day = '2026-03-02';
+
+  let report = await (await staffReport(ctx(db, { query: `?from=${day}&to=${day}` }), 1)).json();
+  assert.equal(report.days[0].status, 'absent');
+
+  // Somebody going through the month before payroll knows they were in.
+  await resolveDay(ctx(db, { body: { staffId: 1, reason: 'present', in: '06:00', out: '14:00' } }), day);
+  report = await (await staffReport(ctx(db, { query: `?from=${day}&to=${day}` }), 1)).json();
+  assert.equal(report.days[0].reason_code, 'present', 'absent turned into present');
+  assert.ok(report.days[0].resolved_by, 'with a name against it');
+
+  const stored = raw.prepare('SELECT * FROM att_days WHERE staff_id = 1 AND day = ?').get(day);
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_punches').get().n, 0,
+    'and the punches are untouched, because there never were any');
+  assert.ok(stored.resolution && stored.resolution !== 'open');
+});
