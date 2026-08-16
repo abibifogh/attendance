@@ -366,6 +366,12 @@ function openable(content, onclick) {
  * made of — which is what turns "you were two days short" from a claim into
  * something a person can be shown.
  */
+/** Whether a day already sits inside a signed span for this person. */
+function signedOn(row, dayStr) {
+  if (row.decision) return true;
+  return (row.overlapping ?? []).some((sp) => sp.from <= dayStr && sp.to >= dayStr);
+}
+
 function breakdown(row, month, which) {
   const titles = {
     rostered: 'Days the rota asked for',
@@ -408,6 +414,11 @@ function breakdown(row, month, which) {
           { key: 'minutes', label: 'Hours', align: 'right', format: (v) => (v ? fmtNum(v / 60, 1) : h('span.muted', '—')) },
           { key: 'label', label: 'Status', format: (v) => h('small', v) },
           { key: 'resolvedBy', label: 'Ruled by', format: (v) => (v ? h('small.muted', v) : h('span.muted', '—')) },
+          {
+            key: 'signed',
+            label: '',
+            format: (v, d) => (signedOn(row, d.day) ? h('span.pill.good', '✓ signed') : null),
+          },
         ], days, { empty: 'None.' })
         : h('div.empty', h('p', which === 'under'
           ? 'Nothing counted. Absences that nobody has confirmed do not count here — settle them '

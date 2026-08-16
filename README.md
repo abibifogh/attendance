@@ -71,6 +71,14 @@ another screen to find the same person in a list of twenty-four is how the
 second half stops happening. The header shows where the period stands before it
 is pressed — square, so many over, or already signed — and **Reopen** undoes it.
 
+Days already inside a signed period are marked **✓ signed** in the day-by-day
+table, with who signed it and what was charged on hover. Sign-off is per period
+rather than per day, so without that a settled month looks exactly like one
+nobody has touched and the same fortnight gets gone through twice. Correcting
+such a day is still allowed — errors surface after payroll too — but the dialog
+says plainly that the correction will not move what was already charged, and
+that the period has to be reopened and signed again for that.
+
 **No two signed spans for one person may share a day.** Sign off a week at a day
 short and then the month at three days short, and four days would come off for
 three days of absence — nothing in the arithmetic would notice, and by the time

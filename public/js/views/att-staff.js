@@ -79,6 +79,18 @@ export async function renderAttStaff(params) {
     can('att_reports') ? exportButton(api.attExportUrl(from, to), 'Export') : null,
   );
 
+  /**
+   * Which span, if any, a day has already been signed off under.
+   *
+   * Sign-off is per period rather than per day, so this is the only way a row
+   * can say so. Without it a settled month looks exactly like one nobody has
+   * touched, and the same fortnight gets gone through twice before anybody
+   * notices — or worse, a day is quietly corrected under a decision that was
+   * made on the old figure.
+   */
+  const signedFor = (dayStr) =>
+    (data.signedSpans ?? []).find((sp) => sp.from <= dayStr && sp.to >= dayStr) ?? null;
+
   const manages = can('att_manage');
   // Closing a period off is a separate permission from settling a day, so a
   // rota planner can be trusted with one and not the other.
@@ -123,6 +135,17 @@ export async function renderAttStaff(params) {
         h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
           'Recorded against your name. The punches themselves are never altered — this is a '
           + 'decision stored beside them, and it can be undone.'),
+
+        // Correcting a day inside a signed period does not rewrite the
+        // sign-off: the record keeps the figures as they stood. Which is
+        // exactly why it has to be said — otherwise the correction looks like
+        // it has fixed the charge, and it has not.
+        signedFor(row.day)
+          ? h('p.muted', { style: { color: 'var(--warn)', fontSize: '.85rem', marginBottom: 0 } },
+            `${fmtDay(signedFor(row.day).from)} to ${fmtDay(signedFor(row.day).to)} has already been `
+            + 'signed off. Changing this day will not change what was charged — reopen that period '
+            + 'and sign it again if the figure should move.')
+          : null,
       ),
       onSubmit: async (form) => api.attResolve(row.day, {
         staffId: data.staff.id,
@@ -216,7 +239,22 @@ export async function renderAttStaff(params) {
     { key: 'late_minutes', label: 'Late', align: 'right', format: minutesCell },
     { key: 'early_minutes', label: 'Early', align: 'right', format: minutesCell },
     { key: 'overtime_minutes', label: 'Over', align: 'right', format: minutesCell },
-    { key: 'label', label: 'Status', format: (v, r) => statusPill(r) },
+    {
+      key: 'label',
+      label: 'Status',
+      format: (v, r) => {
+        const span = signedFor(r.day);
+        if (!span) return statusPill(r);
+        return h('div',
+          statusPill(r),
+          h('span.pill.good', {
+            style: { marginLeft: '.35rem' },
+            title: `${span.decision === 'waived' ? 'Let stand' : `${span.daysApplied > 0 ? '+' : ''}${span.daysApplied} days`}`
+              + ` — ${fmtDay(span.from)} to ${fmtDay(span.to)}, by ${span.by}`,
+          }, '✓ signed'),
+        );
+      },
+    },
     {
       key: 'fix',
       label: '',

@@ -1490,3 +1490,39 @@ test('a report handed to somebody who may not see balances carries none', async 
   assert.ok(stripped.days.length, 'but the days they are there to correct are all present');
   assert.ok(stripped.totals, 'as are the totals');
 });
+
+test('a report says which of its days already sit inside a signed period', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02', '2026-03-09']);
+
+  await decidePeriod(ctx(db, {
+    body: { staffId: 1, from: '2026-03-02', to: '2026-03-08', daysApplied: -1, note: 'agreed' },
+  }));
+
+  const report = await (await staffReport(ctx(db, { query: '?from=2026-03-01&to=2026-03-31' }), 1)).json();
+
+  assert.equal(report.signedSpans.length, 1);
+  assert.deepEqual(
+    { from: report.signedSpans[0].from, to: report.signedSpans[0].to, days: report.signedSpans[0].daysApplied },
+    { from: '2026-03-02', to: '2026-03-08', days: -1 },
+    'enough for the screen to mark every day inside it, and say by whom',
+  );
+  assert.ok(report.signedSpans[0].by);
+
+  // Sign-off is per period, so the day rows themselves say nothing — the span
+  // is what the screen matches them against.
+  const inside = report.days.find((d) => d.day === '2026-03-04');
+  const outside = report.days.find((d) => d.day === '2026-03-09');
+  assert.ok(inside && outside);
+  assert.equal(report.signedSpans.some((sp) => sp.from <= inside.day && sp.to >= inside.day), true);
+  assert.equal(report.signedSpans.some((sp) => sp.from <= outside.day && sp.to >= outside.day), false);
+});
+
+test('a report outside every signed period says so plainly', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+  await decidePeriod(ctx(db, { body: { staffId: 1, from: '2026-03-02', to: '2026-03-08', daysApplied: -1 } }));
+
+  const april = await (await staffReport(ctx(db, { query: '?from=2026-04-01&to=2026-04-30' }), 1)).json();
+  assert.deepEqual(april.signedSpans, [], 'a span that does not touch the range is not sent');
+});

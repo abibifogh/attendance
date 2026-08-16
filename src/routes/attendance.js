@@ -695,12 +695,35 @@ export async function staffReport(ctx, id) {
   const yearFrom = `${to.slice(0, 4)}-01-01`;
   const yearRecords = await yearToDate(ctx.db, staffId, yearFrom, to);
 
+  // Periods already signed off that touch this range.
+  //
+  // Sign-off is per span, not per day, so a day cannot carry the fact on its
+  // own row — the spans come back instead and the screen marks the days inside
+  // them. Without this a settled month looks identical to one nobody has
+  // touched, and the same days get gone through twice.
+  const spans = await ctx.db.prepare(
+    `SELECT kind, from_day, to_day, decision, days_applied, decided_by, decided_at, note
+       FROM att_period_review
+      WHERE staff_id = ?1 AND from_day <= ?3 AND to_day >= ?2
+      ORDER BY from_day`,
+  ).bind(staffId, from, to).all().catch(() => ({ results: [] }));
+
   return json({
     staff,
     from,
     to,
     days: records.map((r) => present(ds, r)),
     totals: summarise(records, { shifts: ds.shiftById, reasons: ds.reasonBy }),
+    signedSpans: (spans.results ?? []).map((r) => ({
+      kind: r.kind,
+      from: r.from_day,
+      to: r.to_day,
+      decision: r.decision,
+      daysApplied: r.days_applied,
+      by: r.decided_by,
+      at: r.decided_at,
+      note: r.note,
+    })),
     // Stripped for anybody who can sign a period off but may not see balances.
     //
     // Done here rather than in the screen, because the screen is a courtesy and
