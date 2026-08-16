@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   fmtDay, fmtDayShort, fmtNum, fmtPct, monthOf, shiftDay, shiftMonth, todayISO,
 } from '../public/js/util.js';
+import { pathHasHole } from '../public/js/api.js';
 
 /**
  * The formatting helpers the browser uses, exercised in Node.
@@ -98,4 +99,33 @@ test('stepping a month wraps the year', () => {
 
 test("today is a date the rest of the app can parse", () => {
   assert.match(todayISO(), /^\d{4}-\d{2}-\d{2}$/);
+});
+
+// ---------------------------------------------------------------------------
+// Requests with a hole in them
+// ---------------------------------------------------------------------------
+
+/**
+ * `/api/att/staff/${id}` with an undefined id builds a path that looks entirely
+ * valid, reaches the server, matches the update route, finds nothing, and comes
+ * back as "No such member of staff" — which sends whoever reads it looking in
+ * the wrong place entirely. It happened on the commonest path there is:
+ * pressing "Add this person" against a number the terminal had been sending.
+ */
+
+test('a path with a missing id is recognised as broken', () => {
+  assert.equal(pathHasHole('/api/att/staff/undefined'), true);
+  assert.equal(pathHasHole('/api/att/staff/null'), true);
+  assert.equal(pathHasHole('/api/att/staff/NaN'), true);
+  assert.equal(pathHasHole('/api/att/leave/undefined/decide'), true, 'in the middle, too');
+});
+
+test('a real path is left alone', () => {
+  assert.equal(pathHasHole('/api/att/staff'), false);
+  assert.equal(pathHasHole('/api/att/staff/12'), false);
+  assert.equal(pathHasHole('/api/att/leave/7/decide'), false);
+  assert.equal(pathHasHole('/api/att/day?day=2026-08-16'), false);
+  // Nothing here should trip on a word that merely contains one.
+  assert.equal(pathHasHole('/api/att/undefinedish/4'), false);
+  assert.equal(pathHasHole('/api/att/nullify'), false);
 });

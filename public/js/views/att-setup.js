@@ -64,10 +64,23 @@ export async function renderAttSetup(params) {
 async function staffTab(reload) {
   const [{ staff }, { unknown }] = await Promise.all([api.attStaff(), api.attUnknown()]);
 
+  /**
+   * Add somebody, edit somebody, or add somebody the terminal already knows.
+   *
+   * The third case is why this reads `existing?.id` rather than `existing`. A
+   * row from the "numbers nobody recognises" list arrives here as a *prefill* —
+   * an employee number and nothing else — and it has no id, because there is no
+   * record yet. Deciding add-or-update on whether the object exists sent those
+   * to the update endpoint with an id of `undefined`, which came back as "No
+   * such member of staff" on the commonest path there is: the terminal has been
+   * sending a number for a week, and somebody presses Add this person.
+   */
   const edit = async (existing) => {
+    const isEdit = Boolean(existing?.id);
+
     const done = await formDialog({
-      title: existing ? `Edit ${existing.name}` : 'Add somebody',
-      submitLabel: existing ? 'Save changes' : 'Add them',
+      title: isEdit ? `Edit ${existing.name}` : 'Add somebody',
+      submitLabel: isEdit ? 'Save changes' : 'Add them',
       body: h('div',
         h('div.field-row',
           field('Name', h('input', { type: 'text', name: 'name', required: true, maxlength: 120, value: existing?.name ?? '' })),
@@ -90,7 +103,7 @@ async function staffTab(reload) {
           h('input', { type: 'number', name: 'leaveDays', min: 0, max: 365, step: 0.5, value: existing?.leave_days ?? '' }),
           'Leave blank to use the property default',
         ),
-        existing
+        isEdit
           ? field('Status', h('select', { name: 'active' },
             h('option', { value: 'true', selected: !!existing.active }, 'Active'),
             h('option', { value: 'false', selected: !existing.active }, 'Not active'),
@@ -110,7 +123,7 @@ async function staffTab(reload) {
           note: form.get('note') || null,
           active: form.get('active') !== 'false',
         };
-        return existing ? api.attUpdateStaff(existing.id, payload) : api.attCreateStaff(payload);
+        return isEdit ? api.attUpdateStaff(existing.id, payload) : api.attCreateStaff(payload);
       },
     });
 

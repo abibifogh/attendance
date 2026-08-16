@@ -12,7 +12,26 @@ class ApiError extends Error {
 let onUnauthorized = () => {};
 export function setUnauthorizedHandler(fn) { onUnauthorized = fn; }
 
+/**
+ * A path with a missing id in it, caught here rather than at the far end.
+ *
+ * `/api/att/staff/${id}` with an undefined id builds the perfectly valid-looking
+ * `/api/att/staff/undefined`, which reaches the server, matches the update
+ * route, finds nothing, and comes back as "No such member of staff" — an answer
+ * that sends whoever reads it looking in entirely the wrong place.
+ *
+ * No request is worth making with a hole in it, so it fails at the call site
+ * instead, naming the path so the culprit is obvious.
+ */
+export function pathHasHole(path) {
+  return /\/(undefined|null|NaN)(\/|$)/.test(String(path));
+}
+
 async function request(path, { method = 'GET', body, signal } = {}) {
+  if (pathHasHole(path)) {
+    throw new ApiError(0, `Something is missing from this request (${path}). Reload and try again.`);
+  }
+
   let response;
   try {
     response = await fetch(path, {
