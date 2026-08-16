@@ -5,7 +5,8 @@ import {
   claimPunch, collapsePunches, colourFor, computeDay, computeRange, dayCredit,
   easterSunday, firstFriday, ghanaHolidays, hours, humanDuration, isOpen, labelFor,
   leaveBalance, leaveDaysIn, leaveYearOf, makeDataset, monthsBetween, noteFor,
-  pairPunches, shiftWindow, streakOf, summarise, toClock, toMinutes, withObservedDays,
+  pairPunches, rotationWeekOf, scheduleFor, shiftWindow, streakOf, summarise, toClock,
+  toMinutes, withObservedDays,
 } from '../src/lib/attendance.js';
 import {
   directionOf, localStamp, normaliseEvent, utcStamp,
@@ -754,4 +755,128 @@ test('a night shift correction across midnight is not a negative day', () => {
   const [day] = computeRange(ds, 2, '2026-06-15', '2026-06-15');
   assert.equal(day.worked_minutes, 450);
   assert.equal(day.last_out, '06:00');
+});
+
+// ---------------------------------------------------------------------------
+// Rotating shifts
+// ---------------------------------------------------------------------------
+
+/**
+ * A hotel does not run on a fixed week. A porter is on mornings this week,
+ * afternoons next, nights the week after, and the day off travels with the
+ * cycle. The one-week pattern this app started with forced that person's rota
+ * to be typed out by hand every week forever — which is the job it exists to
+ * remove.
+ */
+
+test('somebody who does not rotate is always in week zero', () => {
+  assert.equal(rotationWeekOf('2026-08-16', 1), 0);
+  assert.equal(rotationWeekOf('2027-02-01', 1), 0);
+  assert.equal(rotationWeekOf('2026-08-16'), 0, 'and one week is the default');
+});
+
+test('a three-week cycle advances one step per week and comes back round', () => {
+  // Mondays, from the anchor.
+  const weeks = ['2024-01-01', '2024-01-08', '2024-01-15', '2024-01-22', '2024-01-29'];
+  assert.deepEqual(weeks.map((d) => rotationWeekOf(d, 3)), [0, 1, 2, 0, 1]);
+});
+
+test('every day of a week is in the same week of the cycle', () => {
+  // Monday 5 January 2026 through the Sunday after it.
+  const week = ['2026-01-05', '2026-01-06', '2026-01-08', '2026-01-10', '2026-01-11'];
+  const answers = week.map((d) => rotationWeekOf(d, 3));
+  assert.equal(new Set(answers).size, 1, 'a cycle turns on Mondays, not mid-week');
+});
+
+test('a date before the anchor still lands on a real week', () => {
+  // Negative remainders would put somebody in week -1, which is no week at all.
+  for (const day of ['2023-12-25', '2020-06-01', '1999-01-01']) {
+    const week = rotationWeekOf(day, 3);
+    assert.ok(week >= 0 && week < 3, `${day} gave ${week}`);
+  }
+});
+
+test('the cycle does not shift when the rota is looked at again', () => {
+  // The whole point of counting from a fixed Monday: the same date must give
+  // the same answer today, next month, and after somebody is added.
+  assert.equal(rotationWeekOf('2026-08-16', 4), rotationWeekOf('2026-08-16', 4));
+  assert.equal(rotationWeekOf('2026-08-16', 4, '2024-01-01'), rotationWeekOf('2026-08-16', 4));
+});
+
+test('moving the anchor moves everybody together', () => {
+  const before = rotationWeekOf('2026-08-17', 3, '2024-01-01');
+  const after = rotationWeekOf('2026-08-17', 3, '2024-01-08');
+  assert.notEqual(before, after, 'the anchor is the lever for a cycle out of step');
+});
+
+test('a rotating pattern puts the same person on a different shift each week', () => {
+  const ds = makeDataset({
+    settings: [{ key: 'timezone', value: 'Africa/Accra' }],
+    staff: [{ id: 1, employee_no: '1001', name: 'Kofi', active: 1, rotation_weeks: 3 }],
+    shifts: [
+      { id: 1, name: 'Morning', starts_at: '06:00', ends_at: '14:00' },
+      { id: 2, name: 'Afternoon', starts_at: '14:00', ends_at: '22:00' },
+      { id: 3, name: 'Night', starts_at: '22:00', ends_at: '06:00' },
+    ],
+    patterns: [
+      { staff_id: 1, week: 0, dow: 0, shift_id: 1 },
+      { staff_id: 1, week: 1, dow: 0, shift_id: 2 },
+      { staff_id: 1, week: 2, dow: 0, shift_id: 3 },
+    ],
+  });
+
+  // Three consecutive Mondays from the anchor.
+  assert.equal(scheduleFor(ds, 1, '2024-01-01').shift.name, 'Morning');
+  assert.equal(scheduleFor(ds, 1, '2024-01-08').shift.name, 'Afternoon');
+  assert.equal(scheduleFor(ds, 1, '2024-01-15').shift.name, 'Night');
+  assert.equal(scheduleFor(ds, 1, '2024-01-22').shift.name, 'Morning', 'and round again');
+});
+
+test('a rest day can move with the rotation too', () => {
+  const ds = makeDataset({
+    settings: [],
+    staff: [{ id: 1, employee_no: '1001', name: 'Ama', active: 1, rotation_weeks: 2 }],
+    shifts: [{ id: 1, name: 'Morning', starts_at: '06:00', ends_at: '14:00' }],
+    patterns: [
+      // Works Wednesday in week one, off in week two.
+      { staff_id: 1, week: 0, dow: 2, shift_id: 1 },
+      { staff_id: 1, week: 1, dow: 2, shift_id: null },
+    ],
+  });
+
+  assert.equal(scheduleFor(ds, 1, '2024-01-03').shift?.name, 'Morning');
+
+  const off = scheduleFor(ds, 1, '2024-01-10');
+  assert.equal(off.shift, null);
+  assert.equal(off.explicit, true, 'a rostered day off, not a gap in the rota');
+});
+
+test('a one-week pattern still works exactly as it did', () => {
+  const ds = makeDataset({
+    settings: [],
+    staff: [{ id: 1, employee_no: '1001', name: 'Yaw', active: 1, rotation_weeks: 1 }],
+    shifts: [{ id: 1, name: 'Morning', starts_at: '06:00', ends_at: '14:00' }],
+    patterns: [{ staff_id: 1, week: 0, dow: 0, shift_id: 1 }],
+  });
+
+  for (const monday of ['2024-01-01', '2024-01-08', '2026-08-17']) {
+    assert.equal(scheduleFor(ds, 1, monday).shift.name, 'Morning', monday);
+  }
+});
+
+test('a day set by hand still beats the rotation', () => {
+  const ds = makeDataset({
+    settings: [],
+    staff: [{ id: 1, employee_no: '1001', name: 'Kofi', active: 1, rotation_weeks: 3 }],
+    shifts: [
+      { id: 1, name: 'Morning', starts_at: '06:00', ends_at: '14:00' },
+      { id: 3, name: 'Night', starts_at: '22:00', ends_at: '06:00' },
+    ],
+    patterns: [{ staff_id: 1, week: 0, dow: 0, shift_id: 1 }],
+    roster: [{ staff_id: 1, day: '2024-01-01', shift_id: 3 }],
+  });
+
+  const schedule = scheduleFor(ds, 1, '2024-01-01');
+  assert.equal(schedule.shift.name, 'Night');
+  assert.equal(schedule.source, 'roster', 'a cover is a decision and outranks the cycle');
 });

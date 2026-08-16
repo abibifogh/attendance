@@ -124,22 +124,52 @@ export async function renderAttRota(params) {
    * overwritten — the leave was a decision, and this is not.
    */
   const fillRow = async (row) => {
+    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    // Every day, because filling the lot is the commonest use and unticking
+    // two is quicker than ticking five.
+    const picked = new Set([0, 1, 2, 3, 4, 5, 6]);
+
     const choice = await formDialog({
-      title: `${row.staff.name} — every day shown`,
-      submitLabel: 'Fill the row',
+      title: `${row.staff.name} — fill the row`,
+      submitLabel: 'Fill those days',
       body: h('div',
         h('p.muted', `${fmtDayShort(data.from)} to ${fmtDayShort(data.to)}. Days already covered by `
           + 'approved leave are left as they are.'),
         field('Put them on', shiftSelect(data.shifts, '', { name: 'shiftId' }),
-          'Leave blank for a rest day every day'),
+          'Leave blank to make the chosen days rest days'),
+        field('On these days', h('div.btn-row', { style: { flexWrap: 'wrap' } },
+          names.map((label, dow) => h('label', {
+            style: {
+              display: 'inline-flex', alignItems: 'center', gap: '.3rem',
+              padding: '.25rem .5rem', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', fontSize: '.85rem',
+            },
+          },
+          h('input', {
+            type: 'checkbox',
+            checked: true,
+            onchange: (e) => (e.target.checked ? picked.add(dow) : picked.delete(dow)),
+          }),
+          label))),
+        'Applies to every one of those weekdays in the fortnight shown'),
       ),
-      onSubmit: async (form) => ({ shiftId: form.get('shiftId') }),
+      onSubmit: async (form) => ({ shiftId: form.get('shiftId'), days: [...picked] }),
     });
     if (!choice) return;
 
+    if (!choice.days.length) {
+      toast('No days ticked, so nothing changed.', 'bad');
+      return;
+    }
+
     const shiftId = choice.shiftId === '' ? null : Number(choice.shiftId);
+    const wanted = new Set(choice.days);
+    let touched = 0;
+
     for (const entry of row.days) {
       if (entry.leave) continue;
+      // Monday-first, to match the tick boxes and the grid.
+      if (!wanted.has((new Date(`${entry.day}T12:00:00Z`).getUTCDay() + 6) % 7)) continue;
       const select = cells.get(`${row.staff.id}|${entry.day}`);
       if (!select) continue;
       select.value = shiftId == null ? '' : String(shiftId);
@@ -147,7 +177,10 @@ export async function renderAttRota(params) {
       pending.set(`${row.staff.id}|${entry.day}`, {
         staffId: row.staff.id, day: entry.day, shiftId,
       });
+      touched += 1;
     }
+
+    if (!touched) toast('Those days are all on approved leave — nothing changed.', 'bad');
     refreshSaveBar();
   };
 
@@ -295,31 +328,72 @@ async function copyWeek(data, reload) {
  */
 async function editPattern(row, shifts, reload) {
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  let weeks = Math.max(1, Number(row.rotationWeeks) || 1);
 
-  const selects = days.map((label, dow) => field(
-    label,
-    shiftSelect(shifts, row.pattern[dow] ?? row.pattern[String(dow)] ?? '', { name: `d${dow}` }),
-  ));
+  const valueAt = (week, dow) => {
+    const forWeek = row.pattern?.[week] ?? row.pattern?.[String(week)] ?? {};
+    return forWeek[dow] ?? forWeek[String(dow)] ?? '';
+  };
+
+  // Rebuilt rather than hidden when the cycle length changes: three weeks of
+  // dropdowns that are secretly still holding a fourth week's answers is how a
+  // rota ends up saying something nobody chose.
+  const weekBlocks = h('div');
+  const drawWeeks = () => {
+    mount(weekBlocks, Array.from({ length: weeks }, (_, week) => h('div',
+      weeks > 1
+        ? h('h4', { style: { margin: '.9rem 0 .3rem', fontSize: '.9rem' } }, `Week ${week + 1}`)
+        : null,
+      h('div.field-row', days.map((label, dow) => field(
+        label,
+        shiftSelect(shifts, valueAt(week, dow), { name: `w${week}d${dow}` }),
+      ))),
+    )));
+  };
+  drawWeeks();
 
   const done = await formDialog({
-    title: `${row.staff.name} — usual week`,
+    title: `${row.staff.name} — usual pattern`,
     submitLabel: 'Save the pattern',
     body: h('div',
-      h('p.muted', 'What this person normally works. Any day can still be changed on the rota itself.'),
-      h('div.field-row', selects),
+      field('Repeats every',
+        h('select', {
+          name: 'rotationWeeks',
+          onchange: (e) => { weeks = Number(e.target.value) || 1; drawWeeks(); },
+        }, [1, 2, 3, 4, 5, 6, 8, 12].map((n) => h('option', {
+          value: n, selected: n === weeks,
+        }, n === 1 ? 'Same every week' : `${n} weeks`))),
+        'Pick the number of weeks before the pattern starts again'),
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'A blank day is a rest day. Any single day can still be changed on the rota itself '
+        + 'without disturbing the pattern.'),
+      weekBlocks,
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'Weeks are counted from a fixed Monday, so week 1 always lands on the same weeks of the '
+        + 'year for everybody. If somebody’s cycle comes out a week out of step, shift their '
+        + 'weeks round by one rather than changing the dates.'),
     ),
     onSubmit: async (form) => {
+      const chosen = Number(form.get('rotationWeeks')) || 1;
       const pattern = {};
-      for (let dow = 0; dow < 7; dow++) {
-        const value = form.get(`d${dow}`);
-        pattern[dow] = value === '' ? null : Number(value);
+      for (let week = 0; week < chosen; week += 1) {
+        pattern[week] = {};
+        for (let dow = 0; dow < 7; dow += 1) {
+          const value = form.get(`w${week}d${dow}`);
+          pattern[week][dow] = value === '' || value == null ? null : Number(value);
+        }
       }
-      return api.attSavePattern({ staffId: row.staff.id, pattern });
+      return api.attSavePattern({ staffId: row.staff.id, rotationWeeks: chosen, pattern });
     },
   });
 
   if (done) {
-    toast(`${row.staff.name}'s usual week saved.`, 'good');
+    toast(
+      weeks > 1
+        ? `${row.staff.name}'s ${weeks}-week rotation saved.`
+        : `${row.staff.name}'s usual week saved.`,
+      'good',
+    );
     await reload();
   }
 }

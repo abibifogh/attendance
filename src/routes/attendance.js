@@ -3,7 +3,7 @@ import {
 } from '../lib/http.js';
 import {
   colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysIn,
-  loadDataset, scheduleFor, streakOf, summarise, toMinutes, weekCountOf,
+  loadDataset, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes, weekCountOf,
 } from '../lib/attendance.js';
 import {
   clockDriftNote, clockOffset, deviceForPushToken, deviceForToken, exceptionNotice,
@@ -62,6 +62,23 @@ function readRange(url, timezone, { days = 31, maxDays = 400 } = {}) {
     throw badRequest(`That is more than ${maxDays} days. Choose a shorter period.`);
   }
   return { from, to, today };
+}
+
+/** [0, 1, … n-1] — the weeks of a rotation. */
+function rangeOf(n) {
+  return Array.from({ length: n }, (_, i) => i);
+}
+
+/**
+ * Is this a plain one-week pattern, or a whole cycle keyed by week?
+ *
+ * The old screen sent `{0: shiftId, 1: shiftId, …}` keyed by weekday. The new
+ * one sends `{0: {0: shiftId, …}, 1: {…}}` keyed by week and then weekday. Both
+ * are accepted: an app that breaks when a saved bookmark posts last month's
+ * shape is an app that has to be updated everywhere at once.
+ */
+function looksFlat(pattern) {
+  return Object.values(pattern).every((value) => value == null || typeof value !== 'object');
 }
 
 async function timezoneOf(db) {
@@ -236,11 +253,29 @@ export async function pushEvents(ctx, tokenParam) {
   // Read the device's clock while we have it. The event was stamped by the
   // terminal a second or two ago, so the gap between that stamp and now is its
   // drift — measured on every tap, at no cost, and stored rather than acted on.
+  // Keep the *best* reading of the day, not the latest one.
+  //
+  // Delay only ever runs one way. A terminal draining a backlog, or posting
+  // over a slow link, sends events that look older than they are — never
+  // newer. So a low reading may be drift or may be delay, but a high one can
+  // only be drift, and the highest reading in a window is the honest estimate.
+  //
+  // Taking the latest reading instead is what put "66 days slow" on a terminal
+  // whose clock was correct to the minute: it had months of stored events to
+  // upload, and each old one overwrote the good reading from the live tap.
+  //
+  // The window resets after twelve hours so a clock that genuinely drifts is
+  // still caught, rather than being masked forever by one good morning.
   const offset = clockOffset(events);
   if (offset !== null) {
     await ctx.db.prepare(
-      `UPDATE att_devices SET clock_offset_seconds = ?1, clock_checked_at = datetime('now')
-       WHERE id = ?2`,
+      `UPDATE att_devices
+          SET clock_offset_seconds = ?1, clock_checked_at = datetime('now')
+        WHERE id = ?2
+          AND (clock_offset_seconds IS NULL
+               OR clock_checked_at IS NULL
+               OR ?1 > clock_offset_seconds
+               OR clock_checked_at < datetime('now', '-12 hours'))`,
     ).bind(offset, device.id).run().catch(() => {});
   }
 
@@ -947,10 +982,19 @@ export async function getRoster(ctx) {
     shifts,
     rows: ds.staff.filter((s) => s.active).map((staff) => ({
       staff: { id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department },
-      pattern: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [
-        d, ds.patternBy.get(`${staff.id}|${d}`)?.shift_id ?? null,
-      ])),
-      hasPattern: [0, 1, 2, 3, 4, 5, 6].some((d) => ds.patternBy.has(`${staff.id}|${d}`)),
+      // The whole cycle, one entry per week, so the dialog can show a rotation
+      // without asking for it a week at a time.
+      rotationWeeks: Math.max(1, Number(staff.rotation_weeks) || 1),
+      pattern: Object.fromEntries(
+        rangeOf(Math.max(1, Number(staff.rotation_weeks) || 1)).map((w) => [
+          w,
+          Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [
+            d, ds.patternBy.get(`${staff.id}|${w}|${d}`)?.shift_id ?? null,
+          ])),
+        ]),
+      ),
+      hasPattern: rangeOf(Math.max(1, Number(staff.rotation_weeks) || 1))
+        .some((w) => [0, 1, 2, 3, 4, 5, 6].some((d) => ds.patternBy.has(`${staff.id}|${w}|${d}`))),
       days: days.map((day) => {
         const schedule = scheduleFor(ds, staff.id, day);
         return {
@@ -1070,7 +1114,9 @@ export async function copyRoster(ctx) {
       if (ds.leaveBy.has(`${staff.id}|${targetDay}`)) { skippedLeave += 1; continue; }
 
       const source = scheduleFor(ds, staff.id, sourceDay);
-      const patternHere = ds.patternBy.get(`${staff.id}|${dow(targetDay)}`);
+      const patternHere = ds.patternBy.get(
+        `${staff.id}|${rotationWeekOf(targetDay, staff.rotation_weeks, ds.rotationAnchor)}|${dow(targetDay)}`,
+      );
       const patternShift = patternHere ? patternHere.shift_id : undefined;
       const wanted = source.shift?.id ?? null;
 
@@ -1122,14 +1168,32 @@ export async function savePattern(ctx) {
   const pattern = body.pattern && typeof body.pattern === 'object' ? body.pattern : null;
   if (!pattern) throw badRequest('A pattern is required.');
 
-  const statements = [ctx.db.prepare('DELETE FROM att_patterns WHERE staff_id = ?').bind(staffId)];
-  for (const dowKey of [0, 1, 2, 3, 4, 5, 6]) {
-    const value = pattern[dowKey] ?? pattern[String(dowKey)];
-    // Undefined means "say nothing about this weekday"; null means a rest day.
-    if (value === undefined) continue;
-    statements.push(ctx.db.prepare(
-      'INSERT INTO att_patterns (staff_id, dow, shift_id) VALUES (?, ?, ?)',
-    ).bind(staffId, dowKey, value == null ? null : int(value, 'Shift', { min: 1 })));
+  // How long the cycle is. One week is somebody who works the same days every
+  // week — the common case, and the shape the old one-week pattern had.
+  const weeks = int(body.rotationWeeks ?? 1, 'Weeks in the cycle', { min: 1, max: 12 });
+
+  // Two shapes accepted, because one of them is what the old screen sent and
+  // history should not have to be rewritten to change a rota: a flat
+  // `{dow: shift}` is read as week zero of a one-week cycle.
+  const byWeek = looksFlat(pattern) ? { 0: pattern } : pattern;
+
+  const statements = [
+    ctx.db.prepare('UPDATE att_staff SET rotation_weeks = ?1 WHERE id = ?2').bind(weeks, staffId),
+    ctx.db.prepare('DELETE FROM att_patterns WHERE staff_id = ?').bind(staffId),
+  ];
+
+  for (let week = 0; week < weeks; week += 1) {
+    const forWeek = byWeek[week] ?? byWeek[String(week)] ?? null;
+    if (!forWeek || typeof forWeek !== 'object') continue;
+
+    for (const dowKey of [0, 1, 2, 3, 4, 5, 6]) {
+      const value = forWeek[dowKey] ?? forWeek[String(dowKey)];
+      // Undefined means "say nothing about this weekday"; null means a rest day.
+      if (value === undefined) continue;
+      statements.push(ctx.db.prepare(
+        'INSERT INTO att_patterns (staff_id, week, dow, shift_id) VALUES (?, ?, ?, ?)',
+      ).bind(staffId, week, dowKey, value == null ? null : int(value, 'Shift', { min: 1 })));
+    }
   }
 
   await ctx.db.batch(statements);
@@ -1138,7 +1202,7 @@ export async function savePattern(ctx) {
   // around today is enough to make the change visible without rebuilding a year.
   const timezone = await timezoneOf(ctx.db);
   const today = todayIn(timezone);
-  await recompute(ctx.db, { staffIds: [staffId], from: addDays(today, -30), to: addDays(today, 30) });
+  await recompute(ctx.db, { staffIds: [staffId], from: addDays(today, -90), to: addDays(today, 90) });
   await audit(ctx, 'attendance.pattern', staffId, pattern);
 
   return json({ ok: true });

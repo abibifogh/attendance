@@ -16,6 +16,12 @@ import { addDays, diffDays, dow, rangeDays, startOfWeek } from '../util/dates.js
 // something-else, and comparing them is subtraction rather than calendar work.
 const ANCHOR = '2000-01-01';
 
+// The Monday every rotation is counted from. Kept here rather than passed
+// around, because a rotation that means something different in two places is
+// not a rotation. Overridable through the `att_rotation_anchor` setting, which
+// is the lever for a cycle that has ended up a week out of step.
+export const ROTATION_ANCHOR = '2024-01-01';
+
 export const STATUSES = [
   'present', 'late', 'early_leave', 'late_early',
   'missing_out', 'missing_in', 'absent',
@@ -125,6 +131,26 @@ export function isOvernight(shift) {
  * person simply is not scheduled, which stops it too but for a different reason
  * and with a different colour.
  */
+/**
+ * Which week of somebody's cycle a date falls in.
+ *
+ * Counted from a fixed Monday rather than from anything about the person, so
+ * the answer for a given date never changes — not when a screen is opened, not
+ * when somebody is added, not when a rotation is lengthened. A rota that
+ * reshuffles itself retrospectively is worse than no rota.
+ *
+ * Somebody on a one-week cycle is always in week zero, which costs nothing and
+ * keeps every caller free of special cases.
+ */
+export function rotationWeekOf(day, rotationWeeks = 1, anchor = ROTATION_ANCHOR) {
+  const weeks = Math.max(1, Math.round(Number(rotationWeeks) || 1));
+  if (weeks === 1) return 0;
+
+  const elapsed = Math.floor(diffDays(startOfWeek(anchor), startOfWeek(day)) / 7);
+  // Remainder, made safe for dates before the anchor.
+  return ((elapsed % weeks) + weeks) % weeks;
+}
+
 export function scheduleFor(ds, staffId, day) {
   const rostered = ds.rosterBy.get(`${staffId}|${day}`);
   if (rostered) {
@@ -136,7 +162,12 @@ export function scheduleFor(ds, staffId, day) {
     };
   }
 
-  const pattern = ds.patternBy.get(`${staffId}|${dow(day)}`);
+  const week = rotationWeekOf(
+    day,
+    ds.staffById?.get(staffId)?.rotation_weeks ?? 1,
+    ds.rotationAnchor ?? ROTATION_ANCHOR,
+  );
+  const pattern = ds.patternBy.get(`${staffId}|${week}|${dow(day)}`);
   if (pattern) {
     return {
       shift: pattern.shift_id ? ds.shiftById.get(pattern.shift_id) ?? null : null,
@@ -1103,7 +1134,9 @@ export function makeDataset(raw) {
   const reasonBy = new Map((raw.reasons ?? []).map((r) => [r.code, r]));
 
   const rosterBy = new Map((raw.roster ?? []).map((r) => [`${r.staff_id}|${r.day}`, r]));
-  const patternBy = new Map((raw.patterns ?? []).map((p) => [`${p.staff_id}|${p.dow}`, p]));
+  // Keyed by week as well as weekday. A person who does not rotate has one
+  // week, numbered zero, and behaves exactly as before.
+  const patternBy = new Map((raw.patterns ?? []).map((p) => [`${p.staff_id}|${p.week ?? 0}|${p.dow}`, p]));
   const holidayBy = new Map((raw.holidays ?? []).map((h) => [h.observed_on || h.day, h]));
   const dayBy = new Map((raw.days ?? []).map((d) => [`${d.staff_id}|${d.day}`, d]));
 
@@ -1138,6 +1171,7 @@ export function makeDataset(raw) {
   return {
     settings,
     timezone: settings.timezone || 'UTC',
+    rotationAnchor: settings.att_rotation_anchor || ROTATION_ANCHOR,
     staff,
     shifts,
     reasons: raw.reasons ?? [],

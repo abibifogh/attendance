@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import {
   copyRoster, day as dayRoute, deviceConfig, getRoster, importShifts, ingest,
-  pushEvents, resolveDay, shiftSuggestions, staffReport,
+  pushEvents, resolveDay, savePattern, shiftSuggestions, staffReport,
 } from '../src/routes/attendance.js';
 import { createStaff } from '../src/routes/attendance-setup.js';
 import { hashDeviceToken } from '../src/lib/attendance-ingest.js';
@@ -912,4 +912,111 @@ test('a heartbeat does not pretend to be a punch', async () => {
   const device = raw.prepare('SELECT * FROM att_devices WHERE serial = ?').get('DS-TEST-1');
   assert.equal(device.last_event_at, after.last_event_at, 'the last real punch still stands');
   assert.ok(device.last_seen_at, 'but it counts as having been heard from');
+});
+
+test('a backlog of old events does not accuse a clock that is right', async () => {
+  const { raw, db, token } = await setup();
+
+  // A live tap first: the terminal's clock is correct to the second.
+  let context = pushed(token, notification('1001', new Date().toISOString(), 'checkIn', 970));
+  context.db = db;
+  await pushEvents(context, token);
+
+  // Then it starts uploading two months of stored history, one POST at a time,
+  // the way these terminals actually drain a backlog. Every one of these is
+  // genuinely old, and none of them says anything about the clock.
+  for (const [i, old] of ['2026-06-08T06:00:00+00:00', '2026-06-09T06:00:00+00:00',
+    '2026-06-10T06:00:00+00:00'].entries()) {
+    context = pushed(token, notification('1001', old, 'checkIn', 980 + i));
+    context.db = db;
+    await pushEvents(context, token);
+  }
+
+  const device = raw.prepare('SELECT * FROM att_devices WHERE serial = ?').get('DS-TEST-1');
+  assert.ok(
+    Math.abs(device.clock_offset_seconds) < 60,
+    `the good reading should survive the backlog, got ${device.clock_offset_seconds}`,
+  );
+
+  const data = await (await dayRoute(ctx(db, { query: `?day=${TARGET}` }))).json();
+  assert.deepEqual(data.clockWarnings, [], 'and nobody is told off for a correct clock');
+});
+
+test('a genuinely wrong clock is still caught on the first reading', async () => {
+  const { db, token } = await setup();
+
+  const behind = new Date(Date.now() - 40 * 60 * 1000).toISOString();
+  const context = pushed(token, notification('1001', behind, 'checkIn', 990));
+  context.db = db;
+  await pushEvents(context, token);
+
+  const data = await (await dayRoute(ctx(db, { query: `?day=${TARGET}` }))).json();
+  assert.equal(data.clockWarnings.length, 1, 'nothing better has been seen, so this stands');
+  assert.match(data.clockWarnings[0].note, /40 minutes slow/);
+});
+
+// ---------------------------------------------------------------------------
+// Rotating shifts, saved and read back
+// ---------------------------------------------------------------------------
+
+test('a three-week rotation is saved and shows through on the rota', async () => {
+  const { raw, db } = await setup();
+
+  await savePattern(ctx(db, {
+    body: {
+      staffId: 1,
+      rotationWeeks: 3,
+      pattern: {
+        0: { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: null, 6: null },
+        1: { 0: 2, 1: 2, 2: 2, 3: 2, 4: 2, 5: null, 6: null },
+        2: { 0: null, 1: 2, 2: 2, 3: 1, 4: 1, 5: 1, 6: null },
+      },
+    },
+  }));
+
+  assert.equal(raw.prepare('SELECT rotation_weeks FROM att_staff WHERE id = 1').get().rotation_weeks, 3);
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_patterns WHERE staff_id = 1').get().n, 21);
+
+  // Three consecutive Mondays, counted from the fixed anchor.
+  const roster = await (await getRoster(ctx(db, { query: '?from=2024-01-01&to=2024-01-21' }))).json();
+  const row = roster.rows.find((r) => r.staff.id === 1);
+  const on = (day) => row.days.find((d) => d.day === day)?.shift_id;
+
+  assert.equal(on('2024-01-01'), 1, 'week one, mornings');
+  assert.equal(on('2024-01-08'), 2, 'week two, afternoons');
+  assert.equal(on('2024-01-15'), null, 'week three, Monday off');
+  assert.equal(row.rotationWeeks, 3, 'and the screen is told the cycle length');
+});
+
+test('shortening a rotation forgets the weeks that no longer exist', async () => {
+  const { raw, db } = await setup();
+
+  await savePattern(ctx(db, {
+    body: { staffId: 1, rotationWeeks: 3, pattern: { 0: { 0: 1 }, 1: { 0: 2 }, 2: { 0: 1 } } },
+  }));
+  await savePattern(ctx(db, {
+    body: { staffId: 1, rotationWeeks: 2, pattern: { 0: { 0: 1 }, 1: { 0: 2 } } },
+  }));
+
+  const weeks = raw.prepare('SELECT DISTINCT week FROM att_patterns WHERE staff_id = 1 ORDER BY week')
+    .all().map((r) => r.week);
+  assert.deepEqual(weeks, [0, 1], 'a third week left behind would silently come back');
+});
+
+test('the old flat pattern shape is still accepted', async () => {
+  const { raw, db } = await setup();
+
+  // What a screen from before rotations existed would post.
+  await savePattern(ctx(db, { body: { staffId: 1, pattern: { 0: 1, 1: 1, 2: null } } }));
+
+  assert.equal(raw.prepare('SELECT rotation_weeks FROM att_staff WHERE id = 1').get().rotation_weeks, 1);
+  // Spread to plain objects: node:sqlite hands back null-prototype rows, and
+  // strict deep-equality counts that as a difference.
+  const rows = raw.prepare('SELECT week, dow, shift_id FROM att_patterns WHERE staff_id = 1 ORDER BY dow')
+    .all().map((r) => ({ ...r }));
+  assert.deepEqual(rows, [
+    { week: 0, dow: 0, shift_id: 1 },
+    { week: 0, dow: 1, shift_id: 1 },
+    { week: 0, dow: 2, shift_id: null },
+  ]);
 });

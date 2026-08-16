@@ -135,6 +135,24 @@ not the breakfast cook arriving four minutes late.
 > label a tap. It does not need to know that Henry is on nights this week. Leave
 > the shifts there if they are already set up, and keep the rota here.
 
+### Rotating shifts
+
+A hotel does not run on a fixed week. Set someone's pattern to repeat every two,
+three or four weeks and give each week of the cycle its own seven days —
+mornings one week, afternoons the next, nights the week after, with the rest day
+travelling with the rotation. Set it once and it plays out for as long as they
+work there.
+
+Cycles are counted from a fixed Monday rather than from when a person was added,
+so the same date always falls in the same week of the cycle no matter when the
+screen is opened. If a rotation ends up a week out of step, move that person's
+weeks round by one rather than touching dates.
+
+**Same every week** is the default and is exactly the old behaviour, so nobody on
+a fixed week has to know rotations exist. Any single day can still be changed on
+the rota itself without disturbing the pattern, and the fill button (**⇢**) puts
+one shift across the fortnight on whichever weekdays you tick.
+
 ### Leave
 
 Requests, approvals and balances on one screen, because the question is never
