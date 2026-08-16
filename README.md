@@ -63,13 +63,20 @@ confirmed, the clock times are supplied where the terminal saw none. It is
 recorded against the person making the decision, the punches are never altered,
 and **Undo** puts the day back to whatever the rules make of it.
 
-When the period on screen is a whole calendar month, the day table also carries
-**Sign off the month** in its header, beside the column of Correct buttons. The
-two belong together: somebody goes through a month putting days right, and then
-has to say what the month came to. Sending them to another screen to find the
-same person in a list of twenty-four is how the second half stops happening. The
-header shows where the month stands before it is pressed — square, so many over,
-or already signed — and **Reopen the month** undoes it.
+Whatever period is on screen can be signed off — a day, a week, a month, or any
+range picked by hand. The day table carries the button in its header, beside the
+column of Correct buttons. The two belong together: somebody goes through a
+period putting days right, and then has to say what it came to. Sending them to
+another screen to find the same person in a list of twenty-four is how the
+second half stops happening. The header shows where the period stands before it
+is pressed — square, so many over, or already signed — and **Reopen** undoes it.
+
+**No two signed spans for one person may share a day.** Sign off a week at a day
+short and then the month at three days short, and four days would come off for
+three days of absence — nothing in the arithmetic would notice, and by the time
+the person did there would be no way to tell which charge was the mistake. So
+the overlapping span is named, by date, and the sign-off refused; reopen it and
+the wider one is free.
 
 It is the same form the leave screen uses, shared rather than copied: it moves
 somebody's leave, and two versions of it would drift.
