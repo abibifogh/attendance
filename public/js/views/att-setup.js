@@ -61,8 +61,52 @@ export async function renderAttSetup(params) {
 // Staff
 // ---------------------------------------------------------------------------
 
+const NEW_DEPARTMENT = '__new__';
+
+/**
+ * Pick a department, or name one that does not exist yet.
+ *
+ * A plain dropdown would be a trap the first time somebody opens a spa, and a
+ * plain text box is what let "Kitchen" and "kitchen" become two departments in
+ * the monthly figures. So: a list, with a way out of it.
+ *
+ * Whatever the person already has is always among the options even if it has
+ * been dropped from the configured list, because editing somebody's start date
+ * must not silently reassign their department.
+ */
+function departmentPicker(departments, current) {
+  const options = [...departments];
+  if (current && !options.some((d) => d.toLowerCase() === current.toLowerCase())) {
+    options.unshift(current);
+  }
+
+  const typed = h('input', {
+    type: 'text',
+    name: 'departmentNew',
+    maxlength: 80,
+    placeholder: 'Name the new department',
+    style: { display: 'none', marginTop: '.4rem' },
+  });
+
+  const select = h('select', {
+    name: 'departmentPick',
+    onchange: (e) => {
+      const adding = e.target.value === NEW_DEPARTMENT;
+      typed.style.display = adding ? '' : 'none';
+      if (adding) typed.focus();
+    },
+  },
+  h('option', { value: '', selected: !current }, 'No department'),
+  options.map((name) => h('option', { value: name, selected: name === current }, name)),
+  h('option', { value: NEW_DEPARTMENT }, '+ New department…'));
+
+  return h('div', select, typed);
+}
+
 async function staffTab(reload) {
-  const [{ staff }, { unknown }] = await Promise.all([api.attStaff(), api.attUnknown()]);
+  const [{ staff, departments = [] }, { unknown }] = await Promise.all([
+    api.attStaff(), api.attUnknown(),
+  ]);
 
   /**
    * Add somebody, edit somebody, or add somebody the terminal already knows.
@@ -91,7 +135,7 @@ async function staffTab(reload) {
           ),
         ),
         h('div.field-row',
-          field('Department', h('input', { type: 'text', name: 'department', maxlength: 80, value: existing?.department ?? '' })),
+          field('Department', departmentPicker(departments, existing?.department ?? '')),
           field('Job title', h('input', { type: 'text', name: 'jobTitle', maxlength: 80, value: existing?.job_title ?? '' })),
         ),
         h('div.field-row',
@@ -115,7 +159,9 @@ async function staffTab(reload) {
         const payload = {
           name: form.get('name'),
           employeeNo: form.get('employeeNo'),
-          department: form.get('department') || null,
+          department: form.get('departmentPick') === NEW_DEPARTMENT
+            ? (form.get('departmentNew') || '').trim() || null
+            : form.get('departmentPick') || null,
           jobTitle: form.get('jobTitle') || null,
           hiredOn: form.get('hiredOn') || null,
           leftOn: form.get('leftOn') || null,
@@ -977,6 +1023,20 @@ async function rulesTab(reload) {
         h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
           'The window decides which shift a punch belongs to. Wide enough for somebody who arrives an '
           + 'hour early, narrow enough that a night shift\'s clock-out is not claimed by the morning.'),
+      ),
+
+      card('Departments', { note: 'One per line', wide: true },
+        h('label.field',
+          h('textarea', {
+            name: 'att_departments',
+            rows: 8,
+            style: { width: '100%', fontFamily: 'inherit', fontSize: '.9rem' },
+          }, s.att_departments ?? '')),
+        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+          'What the dropdown offers when you add somebody. Reports group by department, so this '
+          + 'list is what stops "Kitchen" and "kitchen" being counted as two. Taking one out here '
+          + 'moves nobody — it only stops it being offered, and it keeps appearing for as long as '
+          + 'anybody is still in it.'),
       ),
 
       card('Chasing', {},

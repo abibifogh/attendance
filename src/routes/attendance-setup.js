@@ -45,14 +45,30 @@ function readTime(value, field) {
 // ---------------------------------------------------------------------------
 
 export async function listStaff(ctx) {
-  const rows = await ctx.db.prepare(
-    `SELECT s.*, u.name AS user_name,
-            (SELECT COUNT(*) FROM att_punches p WHERE p.staff_id = s.id) AS punch_count,
-            (SELECT MAX(p.day) FROM att_punches p WHERE p.staff_id = s.id) AS last_seen
-     FROM att_staff s LEFT JOIN users u ON u.id = s.user_id
-     ORDER BY s.active DESC, s.name`,
-  ).all();
-  return json({ staff: rows.results ?? [] });
+  const [rows, setting] = await Promise.all([
+    ctx.db.prepare(
+      `SELECT s.*, u.name AS user_name,
+              (SELECT COUNT(*) FROM att_punches p WHERE p.staff_id = s.id) AS punch_count,
+              (SELECT MAX(p.day) FROM att_punches p WHERE p.staff_id = s.id) AS last_seen
+       FROM att_staff s LEFT JOIN users u ON u.id = s.user_id
+       ORDER BY s.active DESC, s.name`,
+    ).all(),
+    ctx.db.prepare("SELECT value FROM settings WHERE key = 'att_departments'")
+      .first().catch(() => null),
+  ]);
+
+  const staff = rows.results ?? [];
+
+  // The configured list plus anything already in use. Merged here rather than
+  // in the screen so the two can never disagree — and so a department cannot
+  // disappear from the dropdown while somebody is still filed under it, which
+  // would quietly move them to "No department" the next time they were edited.
+  return json({
+    staff,
+    departments: cleanDepartments(
+      [setting?.value ?? '', ...staff.map((s) => s.department ?? '')].join('\n'),
+    ),
+  });
 }
 
 /**
@@ -664,7 +680,33 @@ const SETTINGS = new Map([
   ['att_window_before', (v) => String(int(v, 'Window before', { min: 0, max: 720 }))],
   ['att_window_after', (v) => String(int(v, 'Window after', { min: 0, max: 720 }))],
   ['att_escalate_after', (v) => String(int(v, 'Escalate after', { min: 1, max: 30 }))],
+  ['att_departments', (v) => cleanDepartments(v).join('\n')],
 ]);
+
+/**
+ * One department per line, tidied.
+ *
+ * Deduplicated without regard to case, because "Kitchen" and "kitchen" are the
+ * thing this list exists to prevent — letting both into the list would defeat
+ * the point of having one. The first spelling wins, so whoever typed it decides
+ * how it is capitalised.
+ */
+export function cleanDepartments(value) {
+  const seen = new Set();
+  const out = [];
+
+  for (const line of String(value ?? '').split(/[\n,]/)) {
+    const name = line.trim().replace(/\s+/g, ' ').slice(0, 80);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+    if (out.length >= 60) break;
+  }
+
+  return out;
+}
 
 /**
  * Change the rules, then make the reports agree with them.

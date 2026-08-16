@@ -7,7 +7,7 @@ import {
   copyRoster, day as dayRoute, deviceConfig, getRoster, importShifts, ingest,
   pushEvents, resolveDay, savePattern, shiftSuggestions, staffReport,
 } from '../src/routes/attendance.js';
-import { createStaff } from '../src/routes/attendance-setup.js';
+import { cleanDepartments, createStaff, listStaff } from '../src/routes/attendance-setup.js';
 import { hashDeviceToken } from '../src/lib/attendance-ingest.js';
 import { getPepper } from '../src/lib/auth.js';
 
@@ -1019,4 +1019,58 @@ test('the old flat pattern shape is still accepted', async () => {
     { week: 0, dow: 1, shift_id: 1 },
     { week: 0, dow: 2, shift_id: null },
   ]);
+});
+
+// ---------------------------------------------------------------------------
+// Departments
+// ---------------------------------------------------------------------------
+
+/**
+ * Reports group by department, so a free-text field quietly turns one kitchen
+ * into three over a fortnight of typing — and the person reading the monthly
+ * figures cannot tell that from a real split.
+ */
+
+test('a department list is tidied and deduplicated without regard to case', () => {
+  assert.deepEqual(
+    cleanDepartments('Kitchen\n kitchen \nKITCHEN\nFront Office'),
+    ['Kitchen', 'Front Office'],
+    'the first spelling wins, so whoever typed it decides the capitals',
+  );
+
+  assert.deepEqual(cleanDepartments('Kitchen, Housekeeping\nSecurity'),
+    ['Kitchen', 'Housekeeping', 'Security'], 'commas count as line breaks');
+  assert.deepEqual(cleanDepartments('  Restaurant   &   Bar  '), ['Restaurant & Bar']);
+  assert.deepEqual(cleanDepartments('\n\n  \n'), [], 'blank lines are not departments');
+  assert.deepEqual(cleanDepartments(null), []);
+});
+
+test('the list cannot grow without limit', () => {
+  const many = Array.from({ length: 200 }, (_, i) => `Dept ${i}`).join('\n');
+  assert.equal(cleanDepartments(many).length, 60);
+  assert.equal(cleanDepartments('x'.repeat(500))[0].length, 80);
+});
+
+test('the staff screen is offered the configured list plus whatever is in use', async () => {
+  const { raw, db } = await setup();
+
+  raw.exec("UPDATE settings SET value = 'Front Office\nHousekeeping' WHERE key = 'att_departments'");
+  raw.prepare("UPDATE att_staff SET department = 'Kitchen' WHERE id = 1").run();
+
+  const data = await (await listStaff(ctx(db))).json();
+
+  assert.deepEqual(data.departments, ['Front Office', 'Housekeeping', 'Kitchen']);
+});
+
+test('a department still in use survives being taken off the list', async () => {
+  const { raw, db } = await setup();
+
+  // Somebody removes Kitchen from the configured list while a cook is in it.
+  // Dropping it from the dropdown would move him to "No department" the next
+  // time anybody edited his start date.
+  raw.exec("UPDATE settings SET value = 'Front Office' WHERE key = 'att_departments'");
+  raw.prepare("UPDATE att_staff SET department = 'Kitchen' WHERE id = 1").run();
+
+  const data = await (await listStaff(ctx(db))).json();
+  assert.ok(data.departments.includes('Kitchen'));
 });
