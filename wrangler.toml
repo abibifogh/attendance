@@ -12,7 +12,7 @@ binding = "ASSETS"
 binding = "DB"
 database_name = "attendance"
 # Filled in by `npm run db:create` — see the README.
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "1df34f21-bfc6-43dc-b11a-1a57d7f691b0"
 
 [vars]
 # Nothing secret lives here. SESSION_SECRET, MANAGER_PIN and RESEND_API_KEY are
