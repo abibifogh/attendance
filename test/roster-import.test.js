@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  matchShift, matchStaff, parseCsv, parseRotaCsv, planImport, readDate, readTime, shiftNameFor,
+  matchShift, matchStaff, nearestShifts, parseCsv, parseRotaCsv, planImport, readDate, readTime,
+  shiftNameFor,
 } from '../src/lib/roster-import.js';
 
 /**
@@ -162,10 +163,11 @@ test('a file is planned without anything being written', () => {
 
   assert.equal(plan.from, '2026-08-17');
   assert.equal(plan.to, '2026-08-18');
-  assert.equal(plan.counts.roster, 3);
+  assert.equal(plan.counts.ready, 2);
   assert.equal(plan.counts.people, 2);
   assert.equal(plan.counts.skipped, 1, 'the Emmanuel who is not ours');
-  assert.equal(plan.counts.newShifts, 1, '05:30 is not a shift this property has');
+  assert.equal(plan.counts.undecided, 1, '05:30 is not a shift this property has');
+  assert.equal(plan.counts.willCreate, 0, 'and a plan never proposes creating one on its own');
 });
 
 test('an existing rostered day is counted as a replacement, not a surprise', () => {
@@ -182,8 +184,24 @@ test('two lines for one person on one day keep the later and say so', () => {
     + '"Henry Aryee","SN Housekeeping","Aug 17, 2026","08:00","17:00"\n';
 
   const plan = planImport(parseRotaCsv(twice).rows, context);
-  assert.equal(plan.counts.roster, 1);
+  assert.equal(plan.counts.ready, 1);
   assert.equal(plan.rows[0].action, 'skip');
   assert.match(plan.rows[0].problem, /line 3/);
   assert.equal(plan.rows[1].shiftName, 'Housekeeping main');
+});
+
+test('a set of hours with no shift is ranked against the ones we run', () => {
+  const near = nearestShifts('05:30', '11:30', SHIFTS, { position: 'SN Breakfast' });
+
+  assert.equal(near[0].shift.name, 'Breakfast main', 'half an hour out is not a new shift');
+  assert.equal(near[0].minutes, 30);
+  assert.ok(near[1].minutes > near[0].minutes, 'and the rest are further away');
+});
+
+test('the ranking prefers the right part of the property on a tie', () => {
+  // Craft and Maintenance 1 are both 08:00-17:00, so both are zero minutes
+  // away. The position is what tells them apart.
+  const near = nearestShifts('08:00', '17:00', SHIFTS, { position: 'SN Craft Shop' });
+  assert.equal(near[0].minutes, 0);
+  assert.ok(near.slice(0, 3).some((n) => n.shift.name === 'Craft'));
 });

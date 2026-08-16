@@ -1,6 +1,6 @@
 import { badRequest, int, json, notFound, readJson, str } from '../lib/http.js';
 import { loadDataset, toMinutes } from '../lib/attendance.js';
-import { parseRotaCsv, planImport } from '../lib/roster-import.js';
+import { countsOf, nearestShifts, parseRotaCsv, planImport } from '../lib/roster-import.js';
 
 /**
  * Importing a week's rota from the scheduling export.
@@ -131,7 +131,45 @@ export async function getRotaImport(ctx) {
     problem: r.problem,
   }));
 
-  const usable = list.filter((r) => r.action !== 'skip');
+  const ds = await loadDataset(ctx.db, { from: draft.from_day, to: draft.to_day });
+  const shifts = ds.shifts.filter((s) => s.active);
+
+  // Every distinct set of hours the property has no shift for, asked once
+  // rather than once per line — twenty lines needing the same answer is one
+  // question, and twenty copies of it is a screen nobody finishes.
+  const questions = new Map();
+  for (const r of list) {
+    if (r.action !== 'needs-shift') continue;
+    const key = `${r.startsAt}-${r.endsAt}`;
+    if (!questions.has(key)) {
+      questions.set(key, {
+        key,
+        startsAt: r.startsAt,
+        endsAt: r.endsAt,
+        position: r.position,
+        suggestedName: r.shiftName,
+        lines: 0,
+        days: new Set(),
+        people: new Set(),
+        // What this most likely was meant to be. Almost never "a new shift":
+        // 05:30–11:30 against a property running 05:00–11:30 is somebody
+        // typing half past, and creating a second nearly identical shift
+        // splits the reports between them for ever.
+        nearest: nearestShifts(r.startsAt, r.endsAt, shifts, { position: r.position }).map((n) => ({
+          id: n.shift.id,
+          name: n.shift.name,
+          startsAt: n.shift.starts_at,
+          endsAt: n.shift.ends_at,
+          minutesApart: n.minutes,
+        })),
+      });
+    }
+    const q = questions.get(key);
+    q.lines += 1;
+    if (r.day) q.days.add(r.day);
+    if (r.name) q.people.add(r.name);
+  }
+
   return json({
     draft: {
       id: draft.id,
@@ -140,18 +178,16 @@ export async function getRotaImport(ctx) {
       to: draft.to_day,
       createdBy: draft.created_by,
       createdAt: draft.created_at,
-      counts: {
-        lines: list.length,
-        roster: usable.length,
-        newShifts: new Set(usable.filter((r) => r.action === 'new-shift').map((r) => r.shiftName)).size,
-        skipped: list.filter((r) => r.action === 'skip').length,
-        people: new Set(usable.map((r) => r.staffId)).size,
-      },
+      counts: countsOf(list),
       rows: list,
-      // Names the file used that nobody here answers to, each offered once
-      // rather than once per line — it is one question about one person.
+      // Names the file used that nobody here answers to, each offered once.
       unknownNames: [...new Set(list.filter((r) => r.action === 'skip' && r.staffId == null && r.name)
         .map((r) => r.name))],
+      shiftQuestions: [...questions.values()].map((q) => ({
+        ...q,
+        days: [...q.days].sort(),
+        people: [...q.people].sort(),
+      })),
     },
   });
 }
@@ -193,13 +229,72 @@ export async function mapImportName(ctx) {
         `UPDATE att_roster_import_row
             SET staff_id = ?1, shift_id = ?2, action = ?3, problem = NULL
           WHERE id = ?4`,
-      ).bind(staffId, match?.id ?? null, match ? 'roster' : 'new-shift', r.id);
+      ).bind(staffId, match?.id ?? null, match ? 'roster' : 'needs-shift', r.id);
     });
     if (updates.length) await ctx.db.batch(updates);
   }
 
   await audit(ctx, 'attendance.rota_import_alias', staffId, { alias });
   return json({ ok: true, matched: staff.name });
+}
+
+/**
+ * Decide what a set of hours means, for every line in the draft that uses them.
+ *
+ * Three answers, and none of them is the default:
+ *
+ *   `existing` — these hours were meant to be a shift the property already
+ *   runs. The commonest answer by far, and the one that keeps the reports from
+ *   splitting across two nearly identical shifts.
+ *
+ *   `create` — genuinely a new shift. Recorded as an intention, not carried out:
+ *   the shift appears when the draft is confirmed, so discarding leaves nothing
+ *   behind.
+ *
+ *   `skip` — leave those lines out.
+ */
+export async function resolveImportShift(ctx) {
+  const body = await readJson(ctx.request);
+  const startsAt = str(body.startsAt, 'Start', { required: true, max: 5 });
+  const endsAt = str(body.endsAt, 'End', { required: true, max: 5 });
+  const choice = ['existing', 'create', 'skip'].includes(body.choice) ? body.choice : null;
+  if (!choice) throw badRequest('Say whether to use an existing shift, create one, or leave those lines out.');
+
+  const draft = await ctx.db.prepare(
+    "SELECT * FROM att_roster_import WHERE status = 'draft' ORDER BY id DESC LIMIT 1",
+  ).first().catch(() => null);
+  if (!draft) throw notFound('There is no draft waiting.');
+
+  if (choice === 'existing') {
+    const shiftId = int(body.shiftId, 'Shift', { required: true, min: 1 });
+    const shift = await ctx.db.prepare('SELECT * FROM att_shifts WHERE id = ?').bind(shiftId).first();
+    if (!shift) throw notFound('No such shift.');
+
+    await ctx.db.prepare(
+      `UPDATE att_roster_import_row
+          SET shift_id = ?1, shift_name = ?2, action = 'roster', problem = NULL
+        WHERE import_id = ?3 AND starts_at = ?4 AND ends_at = ?5 AND action = 'needs-shift'`,
+    ).bind(shiftId, shift.name, draft.id, startsAt, endsAt).run();
+  } else if (choice === 'create') {
+    const name = str(body.name, 'Name', { required: true, max: 60 });
+    const clash = await ctx.db.prepare('SELECT 1 FROM att_shifts WHERE name = ?').bind(name).first();
+    if (clash) throw badRequest(`There is already a shift called ${name}. Pick another name.`);
+
+    await ctx.db.prepare(
+      `UPDATE att_roster_import_row
+          SET shift_id = NULL, shift_name = ?1, action = 'create-shift', problem = NULL
+        WHERE import_id = ?2 AND starts_at = ?3 AND ends_at = ?4 AND action = 'needs-shift'`,
+    ).bind(name, draft.id, startsAt, endsAt).run();
+  } else {
+    await ctx.db.prepare(
+      `UPDATE att_roster_import_row
+          SET action = 'skip', problem = 'Left out — no shift chosen for these hours.'
+        WHERE import_id = ?1 AND starts_at = ?2 AND ends_at = ?3 AND action = 'needs-shift'`,
+    ).bind(draft.id, startsAt, endsAt).run();
+  }
+
+  await audit(ctx, 'attendance.rota_import_shift', draft.id, { startsAt, endsAt, choice });
+  return json({ ok: true });
 }
 
 /**
@@ -221,12 +316,27 @@ export async function confirmRotaImport(ctx) {
   ).bind(draft.id).all();
 
   const usable = rows.results ?? [];
+
+  // Nothing is applied while a question is open. Half-applying a week and
+  // leaving the rest to be noticed later is the failure this whole two-step
+  // exists to prevent.
+  const open = usable.filter((r) => r.action === 'needs-shift');
+  if (open.length) {
+    const hours = [...new Set(open.map((r) => `${r.starts_at}–${r.ends_at}`))];
+    throw badRequest(
+      `${open.length} line${open.length === 1 ? ' still needs' : 's still need'} a decision about `
+      + `${hours.join(', ')}. Choose an existing shift, create one, or leave those lines out.`,
+    );
+  }
+
   if (!usable.length) throw badRequest('Every line in that file was skipped, so there is nothing to apply.');
 
-  // 1. The shifts that do not exist yet.
+  // 1. The shifts somebody explicitly asked for. Never anything else: an
+  // import does not invent a shift, and by this point every one of these was
+  // chosen by name on the draft screen.
   const wanted = new Map();
   for (const r of usable) {
-    if (r.shift_id || !r.shift_name) continue;
+    if (r.action !== 'create-shift' || !r.shift_name) continue;
     if (!wanted.has(r.shift_name)) wanted.set(r.shift_name, r);
   }
 

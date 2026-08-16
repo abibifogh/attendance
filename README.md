@@ -213,8 +213,20 @@ remembered — the same export arrives every week, and being asked the same
 question every Monday is how an import stops being used.
 
 Times pick the shift; where several share their hours, the position breaks the
-tie. Hours the property has no shift for are created on confirm, named from the
-line, with break and grace left at the defaults because no rota export knows a
+tie.
+
+**Hours the property has no shift for are a question, not an action.** Nothing
+is created by an import unless somebody asks for it by name. Each set of unknown
+hours is listed once — however many lines use it — with the shifts nearest to it
+ranked by how many minutes apart they are, and three answers: use one of those,
+create a new shift, or leave those lines out. Nothing is applied while a
+question is open.
+
+The default matters here. A line reading 05:30–11:30 against a property that
+runs 05:00–11:30 is somebody typing half past, not a new shift — and a system
+that quietly creates one leaves two nearly identical shifts, splits the reports
+between them, and nobody notices for a month. Where a shift genuinely is new,
+its break and grace start at the defaults, because no rota export knows a
 property's policy.
 
 Two lines for one person on one day keep the later and report the earlier. The

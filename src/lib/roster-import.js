@@ -226,6 +226,49 @@ export function matchShift({ startsAt, endsAt, position }, shifts) {
   return { shift: same[0], how: 'times' };
 }
 
+/**
+ * Existing shifts closest to a set of hours the property has no shift for.
+ *
+ * Offered because the honest answer is almost never "make a new one". A line
+ * reading 05:30–11:30 against a property that runs 05:00–11:30 is a scheduler
+ * typing half past instead of five, not a new shift — and a system that
+ * silently creates one leaves two nearly identical shifts, splits the reports
+ * between them, and nobody notices for a month.
+ *
+ * Ranked by how far the two ends are from each other in minutes, so the
+ * suggestion at the top is the one somebody almost certainly meant. Ranking
+ * only: what to do about it is not this function's decision, and not this
+ * app's.
+ */
+export function nearestShifts(startsAt, endsAt, shifts, { position = '', limit = 4 } = {}) {
+  const start = hhmmToMinutes(startsAt);
+  const end = hhmmToMinutes(endsAt);
+  if (start == null || end == null) return [];
+
+  const hint = words(position);
+
+  return shifts
+    .map((s) => {
+      const a = hhmmToMinutes(s.starts_at);
+      const b = hhmmToMinutes(s.ends_at);
+      if (a == null || b == null) return null;
+      const distance = Math.abs(a - start) + Math.abs(b - end);
+      // A shift in the right part of the property wins a tie, because two
+      // shifts equally far away are told apart by whose job it is.
+      const related = words(s.name).some((w) => hint.includes(w))
+        || words(s.department).some((w) => hint.includes(w));
+      return { shift: s, minutes: distance, related };
+    })
+    .filter(Boolean)
+    .sort((x, y) => x.minutes - y.minutes || (y.related - x.related))
+    .slice(0, limit);
+}
+
+function hhmmToMinutes(value) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(value ?? ''));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
 /** What a shift created for these times should be called. */
 export function shiftNameFor({ position, startsAt, endsAt, title }) {
   const where = String(position ?? '').replace(/^SN\s+/i, '').trim();
@@ -264,7 +307,10 @@ export function planRow(row, { staff, shifts, aliases, rosterBy }) {
     matchedBy: person.how,
     shiftId: found.shift?.id ?? null,
     shiftName: found.shift?.name ?? shiftNameFor(row),
-    action: found.shift ? 'roster' : 'new-shift',
+    // No shift with these hours. Deliberately a question rather than an
+    // action: nothing is created by an import unless somebody says so, and
+    // "make a new shift" is the answer least often right.
+    action: found.shift ? 'roster' : 'needs-shift',
     replaces: existing?.shift_id ?? null,
     problem: null,
   };
@@ -296,14 +342,26 @@ export function planImport(rows, context) {
     rows: planned,
     from: days[0] ?? null,
     to: days[days.length - 1] ?? null,
-    counts: {
-      lines: planned.length,
-      roster: usable.length,
-      newShifts: new Set(usable.filter((r) => r.action === 'new-shift').map((r) => r.shiftName)).size,
-      replacing: usable.filter((r) => r.replaces != null && r.replaces !== r.shiftId).length,
-      unchanged: usable.filter((r) => r.replaces != null && r.replaces === r.shiftId).length,
-      skipped: planned.filter((r) => r.action === 'skip').length,
-      people: new Set(usable.map((r) => r.staffId)).size,
-    },
+    counts: countsOf(planned),
+  };
+}
+
+/** What a screen needs to say before anybody presses anything. */
+export function countsOf(rows) {
+  const usable = rows.filter((r) => r.action !== 'skip');
+  const ready = rows.filter((r) => r.action === 'roster' || r.action === 'create-shift');
+
+  return {
+    lines: rows.length,
+    ready: ready.length,
+    // Lines held back for a decision, and the number of distinct decisions
+    // they represent — twenty lines needing the same answer is one question.
+    undecided: rows.filter((r) => r.action === 'needs-shift').length,
+    questions: new Set(rows.filter((r) => r.action === 'needs-shift')
+      .map((r) => `${r.startsAt}-${r.endsAt}`)).size,
+    willCreate: new Set(rows.filter((r) => r.action === 'create-shift').map((r) => r.shiftName)).size,
+    replacing: ready.filter((r) => r.replaces != null && r.replaces !== r.shiftId).length,
+    skipped: rows.filter((r) => r.action === 'skip').length,
+    people: new Set(usable.map((r) => r.staffId)).size,
   };
 }

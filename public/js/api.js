@@ -103,6 +103,7 @@ export const api = {
   attRotaImport: () => request('/api/att/rota-import'),
   attRotaImportPreview: (body) => request('/api/att/rota-import', { method: 'POST', body }),
   attRotaImportName: (body) => request('/api/att/rota-import/name', { method: 'POST', body }),
+  attRotaImportShift: (body) => request('/api/att/rota-import/shift', { method: 'POST', body }),
   attRotaImportConfirm: () => request('/api/att/rota-import/confirm', { method: 'POST', body: {} }),
   attRotaImportDiscard: () => request('/api/att/rota-import/discard', { method: 'POST', body: {} }),
 

@@ -542,8 +542,12 @@ function importCard(draft, staff, reload) {
   const skipped = draft.rows.filter((r) => r.action === 'skip');
 
   const confirm = async () => {
+    if (c.undecided) {
+      toast('Answer the questions below first — nothing is applied while one is open.', 'bad');
+      return;
+    }
     if (!window.confirm(
-      `Write ${c.roster} rostered days for ${c.people} people, ${fmtDayShort(draft.from)} to `
+      `Write ${c.ready} rostered days for ${c.people} people, ${fmtDayShort(draft.from)} to `
       + `${fmtDayShort(draft.to)}?\n\nAnything already on those days is replaced.`,
     )) return;
     try {
@@ -586,22 +590,31 @@ function importCard(draft, staff, reload) {
     wide: true,
     actions: h('div.btn-row',
       h('button.btn-sm', { onclick: discard }, 'Discard'),
-      h('button.btn.btn-primary', { onclick: confirm, disabled: !c.roster }, `Confirm ${c.roster} days`),
+      h('button.btn.btn-primary', {
+        onclick: confirm,
+        disabled: !c.ready || Boolean(c.undecided),
+        title: c.undecided ? 'There are still questions to answer below' : '',
+      }, c.undecided ? `${c.undecided} to decide first` : `Confirm ${c.ready} days`),
     ),
   },
     picker,
 
     h('div.grid.grid-4', { style: { marginBottom: '.8rem' } },
-      stat('Days to write', c.roster, `${c.people} people`),
-      stat('Lines read', c.lines, 'from the file'),
-      stat('New shifts', c.newShifts, c.newShifts ? 'created on confirm' : 'none needed',
-        c.newShifts ? 'var(--warn)' : null),
-      stat('Skipped', c.skipped, c.skipped ? 'see below' : 'nothing', c.skipped ? 'var(--bad)' : null),
+      stat('Ready to write', c.ready, `${c.people} people`),
+      stat('Need a decision', c.undecided,
+        c.questions ? `${c.questions} question${c.questions === 1 ? '' : 's'} below` : 'none',
+        c.undecided ? 'var(--warn)' : null),
+      stat('Shifts to create', c.willCreate, c.willCreate ? 'because you asked' : 'none',
+        c.willCreate ? 'var(--warn)' : null),
+      stat('Left out', c.skipped, c.skipped ? 'see below' : 'nothing', c.skipped ? 'var(--bad)' : null),
     ),
 
     h('p.muted', { style: { fontSize: '.85rem' } },
-      'Nothing has been written yet. Confirming replaces whatever is on those days for these '
-      + 'people; every other day, and everybody else, is untouched.'),
+      'Nothing has been written yet, and nothing is created unless you ask for it. Confirming '
+      + 'replaces whatever is on those days for these people; every other day, and everybody '
+      + 'else, is untouched.'),
+
+    shiftQuestions(draft, reload),
 
     draft.unknownNames.length
       ? h('div',
@@ -637,11 +650,12 @@ function importCard(draft, staff, reload) {
           key: 'shiftName',
           label: 'Shift',
           format: (v, r) => h('div', h('div', v),
-            r.action === 'new-shift' ? h('small.muted', 'new — created on confirm') : null),
+            r.action === 'create-shift' ? h('small.muted', 'new — created on confirm') : null),
         },
         { key: 'startsAt', label: 'Hours', format: (v, r) => h('small', `${v}–${r.endsAt}`) },
         { key: 'note', label: 'Note', format: (v, r) => h('small.muted', v || r.title || '') },
-      ], draft.rows.filter((r) => r.action !== 'skip'), { empty: 'Nothing.' })),
+      ], draft.rows.filter((r) => r.action === 'roster' || r.action === 'create-shift'),
+        { empty: 'Nothing.' })),
   );
 }
 
@@ -650,5 +664,100 @@ function stat(label, value, sub, accent) {
     h('div.stat-label', label),
     h('div.stat-value', { style: accent ? { color: accent } : null }, String(value)),
     sub ? h('div.stat-sub', h('span', sub)) : null,
+  );
+}
+
+/**
+ * Hours the file used that this property has no shift for.
+ *
+ * Spelled out rather than resolved. The obvious thing to do with 05:30–11:30 on
+ * a property that runs 05:00–11:30 is to fold it into the shift it was meant to
+ * be, and the obvious thing for a system to do is create a second shift half an
+ * hour along — after which the reports are split between two nearly identical
+ * shifts and nobody notices for a month.
+ *
+ * So the nearest shifts are offered in order of how far away they are, creating
+ * one is a deliberate act with a name typed into it, and leaving the lines out
+ * is a first-class answer.
+ */
+function shiftQuestions(draft, reload) {
+  if (!draft.shiftQuestions?.length) return null;
+
+  const decide = async (q) => {
+    const nearest = q.nearest ?? [];
+
+    const done = await formDialog({
+      title: `${q.startsAt}–${q.endsAt} — no shift with these hours`,
+      submitLabel: 'Use this answer',
+      body: h('div',
+        h('p.muted',
+          `${q.lines} line${q.lines === 1 ? '' : 's'} in the file, `
+          + `${q.days.length} day${q.days.length === 1 ? '' : 's'}, `
+          + `for ${q.people.join(', ')}. Filed under ${q.position || 'no position'}.`),
+
+        field('What are these?', h('select', {
+          name: 'choice',
+          onchange: (e) => {
+            const creating = e.target.value === 'create';
+            e.target.closest('form')?.querySelector('[data-new-name]')
+              ?.style.setProperty('display', creating ? '' : 'none');
+          },
+        },
+        ...nearest.map((n) => h('option', { value: `use:${n.id}` },
+          `${n.name} (${n.startsAt}–${n.endsAt})`
+          + (n.minutesApart ? ` — ${n.minutesApart} min different` : ' — same hours'))),
+        h('option', { value: 'create' }, '＋ Create a new shift for these hours'),
+        h('option', { value: 'skip' }, 'Leave these lines out'))),
+
+        h('div', { 'data-new-name': '', style: { display: 'none' } },
+          field('Call it', h('input', {
+            type: 'text', name: 'name', maxlength: 60, value: q.suggestedName || '',
+          }), 'Break and grace start at the defaults — set them on the shift afterwards')),
+
+        h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+          'The nearest shifts are listed first. A few minutes\u2019 difference is usually somebody '
+          + 'typing the wrong time rather than a shift you do not have.'),
+      ),
+      onSubmit: async (form) => {
+        const choice = form.get('choice');
+        if (choice === 'skip') {
+          return api.attRotaImportShift({ startsAt: q.startsAt, endsAt: q.endsAt, choice: 'skip' });
+        }
+        if (choice === 'create') {
+          return api.attRotaImportShift({
+            startsAt: q.startsAt, endsAt: q.endsAt, choice: 'create', name: form.get('name'),
+          });
+        }
+        return api.attRotaImportShift({
+          startsAt: q.startsAt,
+          endsAt: q.endsAt,
+          choice: 'existing',
+          shiftId: Number(String(choice).slice(4)),
+        });
+      },
+    });
+
+    if (done) { toast('Noted.', 'good'); await reload(); }
+  };
+
+  return h('div', { style: { margin: '.9rem 0' } },
+    h('h4', { style: { margin: '0 0 .4rem', fontSize: '.92rem' } },
+      `Hours with no shift — ${draft.shiftQuestions.length} to decide`),
+    h('p.muted', { style: { fontSize: '.85rem' } },
+      'Nothing is created for these unless you say so, and the lines using them stay out of the '
+      + 'rota until each one is answered.'),
+
+    draft.shiftQuestions.map((q) => h('div.alert.warn', { style: { alignItems: 'center' } },
+      h('span.alert-icon', '⚠️'),
+      h('div', { style: { flex: 1 } },
+        h('div.alert-title', `${q.startsAt}–${q.endsAt}`),
+        h('div.alert-detail',
+          `${q.lines} line${q.lines === 1 ? '' : 's'} · ${q.people.join(', ')}`
+          + (q.nearest?.[0]
+            ? ` · closest is ${q.nearest[0].name} (${q.nearest[0].startsAt}–${q.nearest[0].endsAt})`
+            : '')),
+      ),
+      h('button.btn-sm.btn-primary', { onclick: () => decide(q) }, 'Decide'),
+    )),
   );
 }

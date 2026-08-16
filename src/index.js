@@ -80,6 +80,7 @@ export const ROUTES = [
   ['GET', '/api/att/rota-import', 'att_rota', rotaImport.getRotaImport],
   ['POST', '/api/att/rota-import', 'att_rota', rotaImport.previewRotaImport],
   ['POST', '/api/att/rota-import/name', 'att_rota', rotaImport.mapImportName],
+  ['POST', '/api/att/rota-import/shift', 'att_rota', rotaImport.resolveImportShift],
   ['POST', '/api/att/rota-import/confirm', 'att_rota', rotaImport.confirmRotaImport],
   ['POST', '/api/att/rota-import/discard', 'att_rota', rotaImport.discardRotaImport],
 
