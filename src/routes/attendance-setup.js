@@ -44,8 +44,35 @@ function readTime(value, field) {
 // Staff
 // ---------------------------------------------------------------------------
 
+/**
+ * Every department worth offering: the configured list, plus every one already
+ * in use on a person or a shift.
+ *
+ * Assembled here rather than in each screen so the staff form and the shift
+ * form can never offer different lists — and so a department taken off the
+ * configured list cannot disappear from the dropdown while something is still
+ * filed under it, which would silently reassign it the next time that record
+ * was edited for any other reason.
+ */
+export async function departmentOptions(db) {
+  const [setting, staff, shifts] = await Promise.all([
+    db.prepare("SELECT value FROM settings WHERE key = 'att_departments'")
+      .first().catch(() => null),
+    db.prepare('SELECT DISTINCT department FROM att_staff WHERE department IS NOT NULL')
+      .all().catch(() => ({ results: [] })),
+    db.prepare('SELECT DISTINCT department FROM att_shifts WHERE department IS NOT NULL')
+      .all().catch(() => ({ results: [] })),
+  ]);
+
+  return cleanDepartments([
+    setting?.value ?? '',
+    ...(staff.results ?? []).map((r) => r.department),
+    ...(shifts.results ?? []).map((r) => r.department),
+  ].join('\n'));
+}
+
 export async function listStaff(ctx) {
-  const [rows, setting] = await Promise.all([
+  const [rows, departments] = await Promise.all([
     ctx.db.prepare(
       `SELECT s.*, u.name AS user_name,
               (SELECT COUNT(*) FROM att_punches p WHERE p.staff_id = s.id) AS punch_count,
@@ -53,22 +80,10 @@ export async function listStaff(ctx) {
        FROM att_staff s LEFT JOIN users u ON u.id = s.user_id
        ORDER BY s.active DESC, s.name`,
     ).all(),
-    ctx.db.prepare("SELECT value FROM settings WHERE key = 'att_departments'")
-      .first().catch(() => null),
+    departmentOptions(ctx.db),
   ]);
 
-  const staff = rows.results ?? [];
-
-  // The configured list plus anything already in use. Merged here rather than
-  // in the screen so the two can never disagree — and so a department cannot
-  // disappear from the dropdown while somebody is still filed under it, which
-  // would quietly move them to "No department" the next time they were edited.
-  return json({
-    staff,
-    departments: cleanDepartments(
-      [setting?.value ?? '', ...staff.map((s) => s.department ?? '')].join('\n'),
-    ),
-  });
+  return json({ staff: rows.results ?? [], departments });
 }
 
 /**
@@ -215,7 +230,10 @@ export async function unknownEmployees(ctx) {
 
 export async function listShifts(ctx) {
   const rows = await ctx.db.prepare('SELECT * FROM att_shifts ORDER BY sort_order, name').all();
-  return json({ shifts: rows.results ?? [] });
+  return json({
+    shifts: rows.results ?? [],
+    departments: await departmentOptions(ctx.db),
+  });
 }
 
 function shiftFields(body) {
@@ -236,6 +254,7 @@ function shiftFields(body) {
     str(body.colour, 'Colour', { max: 20 }),
     int(body.sortOrder ?? 100, 'Order', { min: 0, max: 9999 }),
     bool(body.active, true) ? 1 : 0,
+    str(body.department, 'Department', { max: 80 }),
   ];
 }
 
@@ -246,8 +265,8 @@ export async function createShift(ctx) {
     row = await ctx.db.prepare(
       `INSERT INTO att_shifts (name, starts_at, ends_at, break_minutes, grace_in_minutes,
                                grace_out_minutes, half_day_minutes, full_day_minutes,
-                               overtime_after, colour, sort_order, active)
-       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) RETURNING id`,
+                               overtime_after, colour, sort_order, active, department)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) RETURNING id`,
     ).bind(...shiftFields(body)).first();
   } catch (err) {
     rethrowConstraint(err, { unique: 'A shift with that name already exists.' });
@@ -276,8 +295,8 @@ export async function updateShift(ctx, id) {
       `UPDATE att_shifts SET name=?1, starts_at=?2, ends_at=?3, break_minutes=?4,
                              grace_in_minutes=?5, grace_out_minutes=?6, half_day_minutes=?7,
                              full_day_minutes=?8, overtime_after=?9, colour=?10,
-                             sort_order=?11, active=?12
-       WHERE id = ?13`,
+                             sort_order=?11, active=?12, department=?13
+       WHERE id = ?14`,
     ).bind(...shiftFields(body), shiftId).run();
   } catch (err) {
     rethrowConstraint(err, { unique: 'A shift with that name already exists.' });

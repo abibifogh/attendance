@@ -262,7 +262,7 @@ async function staffTab(reload) {
 // ---------------------------------------------------------------------------
 
 async function shiftsTab(reload) {
-  const [{ shifts }, suggested] = await Promise.all([
+  const [{ shifts, departments = [] }, suggested] = await Promise.all([
     api.attShifts(),
     api.attShiftSuggestions().catch(() => null),
   ]);
@@ -272,7 +272,11 @@ async function shiftsTab(reload) {
       title: existing ? `Edit ${existing.name}` : 'Add a shift',
       submitLabel: existing ? 'Save changes' : 'Add the shift',
       body: h('div',
-        field('Name', h('input', { type: 'text', name: 'name', required: true, maxlength: 60, value: existing?.name ?? '', placeholder: 'Morning' })),
+        h('div.field-row',
+          field('Name', h('input', { type: 'text', name: 'name', required: true, maxlength: 60, value: existing?.name ?? '', placeholder: 'Morning' })),
+          field('Department', departmentPicker(departments, existing?.department ?? ''),
+            'Groups the shift list and the reports'),
+        ),
         h('div.field-row',
           field('Starts', h('input', { type: 'time', name: 'startsAt', required: true, value: existing?.starts_at ?? '06:00' })),
           field('Ends', h('input', { type: 'time', name: 'endsAt', required: true, value: existing?.ends_at ?? '14:00' }), 'Before the start means it runs overnight'),
@@ -300,6 +304,9 @@ async function shiftsTab(reload) {
       onSubmit: async (form) => {
         const payload = Object.fromEntries(form.entries());
         payload.active = form.get('active') !== 'false';
+        payload.department = form.get('departmentPick') === NEW_DEPARTMENT
+          ? (form.get('departmentNew') || '').trim() || null
+          : form.get('departmentPick') || null;
         return existing ? api.attUpdateShift(existing.id, payload) : api.attCreateShift(payload);
       },
     });
@@ -338,6 +345,11 @@ async function shiftsTab(reload) {
             h('div', `${v} – ${r.ends_at}`),
             r.ends_at <= v ? h('small.muted', 'overnight') : null,
           ),
+        },
+        {
+          key: 'department',
+          label: 'Department',
+          format: (v) => (v ? h('small', v) : h('span.muted', '—')),
         },
         { key: 'break_minutes', label: 'Break', align: 'right', format: (v) => (v ? `${v} min` : h('span.muted', 'none')) },
         { key: 'grace_in_minutes', label: 'Grace in', align: 'right', format: (v) => `${v} min` },

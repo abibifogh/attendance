@@ -98,6 +98,9 @@ async function setup() {
             (2, 'Night',   '22:00', '06:00', 30, 5, 5)`,
   ).run();
 
+  // Same reason as the shifts: the migrations seed the real staff list, and
+  // these tests want one cook with a known id.
+  raw.exec('DELETE FROM att_staff');
   raw.prepare(
     "INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (1, '1001', 'Henry Aryee', '2023-02-01')",
   ).run();
@@ -1077,4 +1080,61 @@ test('a department still in use survives being taken off the list', async () => 
 
   const data = await (await listStaff(ctx(db))).json();
   assert.ok(data.departments.includes('Kitchen'));
+});
+
+test('the seeded property has its staff, its shifts and its punches joined up', async () => {
+  // Not a unit test so much as a check that the seed migrations agree with each
+  // other: employee numbers copied from Hik-Connect, departments shared between
+  // people and shifts, and the nine-hour shifts carrying their lunch hour.
+  const { raw } = freshDb();
+
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_staff').get().n, 24);
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_shifts').get().n, 24);
+
+  // The transposed prefix is reproduced rather than corrected: the terminal
+  // sends what it was given.
+  for (const no of ['BKF001', 'BFK003', 'Adm001', 'CRFT001']) {
+    assert.ok(raw.prepare('SELECT 1 FROM att_staff WHERE employee_no = ?').get(no), no);
+  }
+
+  // The Hik-Connect admin login is a login, not somebody who works a shift.
+  assert.equal(raw.prepare('SELECT 1 FROM att_staff WHERE employee_no = ?').get('1714252473'), undefined);
+
+  // People and shifts speak the same five words, or report grouping fragments.
+  const staffDepts = raw.prepare('SELECT DISTINCT department FROM att_staff').all().map((r) => r.department).sort();
+  const shiftDepts = raw.prepare('SELECT DISTINCT department FROM att_shifts').all().map((r) => r.department).sort();
+  assert.deepEqual(staffDepts, ['F&B', 'Housekeeping', 'Maintenance', 'Reception', 'Security']);
+  assert.deepEqual(shiftDepts, staffDepts);
+
+  // Nine hours means an hour off — and thresholds cut from the eight that
+  // leaves, or a full day would need every last minute of the shift.
+  const nine = raw.prepare(
+    "SELECT * FROM att_shifts WHERE name = 'Housekeeping main'",
+  ).get();
+  assert.equal(nine.break_minutes, 60);
+  assert.equal(nine.full_day_minutes, 420);
+  assert.equal(nine.half_day_minutes, 240);
+
+  // And nothing that is not nine hours was touched.
+  assert.equal(raw.prepare("SELECT break_minutes b FROM att_shifts WHERE name = 'Bistro'").get().b, 0);
+  assert.equal(raw.prepare("SELECT break_minutes b FROM att_shifts WHERE name = 'Security'").get().b, 0);
+});
+
+test('punches already held are attached to the seeded staff', async () => {
+  const { raw } = freshDb();
+  const before = raw.prepare("SELECT id FROM att_staff WHERE employee_no = 'HSK001'").get();
+
+  // A punch that arrived before anybody was set up, under a number the seed
+  // knows. Re-running the claim is what the migration does.
+  raw.prepare(
+    `INSERT INTO att_punches (device_serial, employee_no, at_utc, at_local, day, source, dedupe_key)
+     VALUES ('GR5181125', 'HSK001', '2026-08-01 07:02:00', '2026-08-01 07:02:00', '2026-08-01', 'push', 'x1')`,
+  ).run();
+  raw.exec(`
+    UPDATE att_punches
+       SET staff_id = (SELECT s.id FROM att_staff s WHERE s.employee_no = att_punches.employee_no)
+     WHERE staff_id IS NULL
+       AND EXISTS (SELECT 1 FROM att_staff s WHERE s.employee_no = att_punches.employee_no)`);
+
+  assert.equal(raw.prepare("SELECT staff_id FROM att_punches WHERE dedupe_key = 'x1'").get().staff_id, before.id);
 });
