@@ -63,6 +63,17 @@ confirmed, the clock times are supplied where the terminal saw none. It is
 recorded against the person making the decision, the punches are never altered,
 and **Undo** puts the day back to whatever the rules make of it.
 
+When the period on screen is a whole calendar month, the day table also carries
+**Sign off the month** in its header, beside the column of Correct buttons. The
+two belong together: somebody goes through a month putting days right, and then
+has to say what the month came to. Sending them to another screen to find the
+same person in a list of twenty-four is how the second half stops happening. The
+header shows where the month stands before it is pressed — square, so many over,
+or already signed — and **Reopen the month** undoes it.
+
+It is the same form the leave screen uses, shared rather than copied: it moves
+somebody's leave, and two versions of it would drift.
+
 **The leave box is left off the printout.** A slip handed to one person is read
 by whoever is standing next to them, and how much leave they have left is nobody
 else's business — so it stays on screen and there is a tick box to put it on

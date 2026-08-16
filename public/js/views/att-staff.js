@@ -6,7 +6,8 @@ import {
 import { card, emptyState, exportButton, table } from './components.js';
 import { printButton } from '../print.js';
 import {
-  clockCell, field, formDialog, hoursCell, minutesCell, reasonSelect, statusPill, totalsLine,
+  clockCell, field, formDialog, hoursCell, minutesCell, monthLabel, reasonSelect, signOffDialog,
+  statusPill, totalsLine,
 } from './att-shared.js';
 
 /**
@@ -26,7 +27,20 @@ export async function renderAttStaff(params) {
   const anchor = params.day || params.to || todayISO();
   const { from, to } = boundsFor(period, anchor, params);
 
-  const data = await api.attStaffReport(id, from, to);
+  // A whole calendar month, and only then: signing off half of one is not a
+  // thing the record can hold.
+  const wholeMonth = from.slice(0, 7) === to.slice(0, 7)
+    && from.endsWith('-01')
+    && to === lastDayOf(from.slice(0, 7))
+    ? from.slice(0, 7)
+    : null;
+
+  const [data, review] = await Promise.all([
+    api.attStaffReport(id, from, to),
+    wholeMonth && can('att_reports')
+      ? api.attMonthReview(wholeMonth, id).catch(() => null)
+      : Promise.resolve(null),
+  ]);
   const single = from === to;
 
   const reload = async (next) => {
@@ -148,9 +162,47 @@ export async function renderAttStaff(params) {
     ? singleDayCard(data.days[0], data.staff)
     : null;
 
+  const monthRow = review?.rows?.[0] ?? null;
+
+  /**
+   * Sign this person's month off from the screen the corrections were made on.
+   *
+   * The two belong together: somebody goes through a month putting days right
+   * and then has to say what the month came to. Sending them to another screen
+   * to find the same person in a list of twenty-four is how the second half
+   * stops happening.
+   */
+  const signOff = async () => {
+    const done = await signOffDialog(monthRow, wholeMonth);
+    if (done) { toast('Month signed off.', 'good'); await reload({}); }
+  };
+
+  const reopen = async () => {
+    if (!window.confirm(`Reopen ${data.staff.name}'s ${monthLabel(wholeMonth)}?`)) return;
+    await api.attUndoMonth({ staffId: id, month: wholeMonth });
+    toast('Reopened.');
+    await reload({});
+  };
+
   const daysTable = card(single ? 'The day' : 'Day by day', {
     note: totalsLine(t),
     wide: true,
+    actions: monthRow && manages
+      ? h('div.btn-row.no-print',
+        monthRow.decision
+          ? h('span.pill.good',
+            monthRow.decision.decision === 'waived'
+              ? 'month let stand'
+              : `month signed: ${monthRow.decision.daysApplied > 0 ? '+' : ''}${monthRow.decision.daysApplied} days`)
+          : h('span.pill.warn',
+            monthRow.difference
+              ? `${monthRow.difference > 0 ? '+' : ''}${monthRow.difference} over the month`
+              : 'month square'),
+        monthRow.decision
+          ? h('button.btn-sm', { onclick: reopen }, 'Reopen the month')
+          : h('button.btn-sm.btn-primary', { onclick: signOff }, 'Sign off the month'),
+      )
+      : null,
   }, table([
     {
       key: 'day',
@@ -369,4 +421,10 @@ function suggested(row) {
     return row.late_minutes > 5 ? 'late' : 'present';
   }
   return '';
+}
+
+/** The last day of a 'YYYY-MM', without a calendar library. */
+function lastDayOf(month) {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
 }

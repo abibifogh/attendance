@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { can, navigate } from '../app.js';
 import { fmtDay, fmtNum, h, monthOf, mount, shiftMonth, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
-import { field, formDialog } from './att-shared.js';
+import { field, formDialog, monthLabel, signOffDialog } from './att-shared.js';
 
 /**
  * Leave: who is off, who has asked, and how much everybody has left.
@@ -239,46 +239,12 @@ function monthCard(review, month, decides, reload) {
   const step = async (n) => reload(shiftMonth(month, n));
 
   const sign = async (row) => {
-    const short = row.difference < 0;
-    const done = await formDialog({
-      title: `${row.staff.name} — ${monthName(month)}`,
-      submitLabel: 'Record the decision',
-      body: h('div',
-        h('p.muted',
-          `Rostered ${fmtNum(row.scheduledDays, 1)} days, worked ${fmtNum(row.workedDays, 1)} — `
-          + `${short ? 'short by' : 'over by'} ${fmtNum(Math.abs(row.difference), 1)}.`),
-        field('What happens to their leave',
-          h('select', { name: 'decision' },
-            h('option', { value: 'approved' }, short ? 'Charge days to their leave' : 'Give days back'),
-            h('option', { value: 'waived' }, 'Let it stand — nothing comes off'),
-          )),
-        field('Days',
-          h('input', {
-            type: 'number', name: 'daysApplied', step: 0.5, min: -60, max: 60,
-            value: row.difference,
-          }),
-          'Negative takes days off their entitlement, positive gives days back. '
-          + 'Filled in from the difference — change it to whatever was agreed'),
-        field('Note', h('input', { type: 'text', name: 'note', maxlength: 300 })),
-        row.openCount
-          ? h('p.muted', { style: { color: 'var(--warn)' } },
-            `${row.openCount} day${row.openCount === 1 ? '' : 's'} this month still waiting on a `
-            + 'supervisor. Settling those first will change these figures.')
-          : null,
-      ),
-      onSubmit: async (form) => api.attDecideMonth({
-        staffId: row.staff.id,
-        month,
-        decision: form.get('decision'),
-        daysApplied: Number(form.get('daysApplied')) || 0,
-        note: form.get('note') || null,
-      }),
-    });
+    const done = await signOffDialog(row, month);
     if (done) { toast('Recorded.', 'good'); await reload(); }
   };
 
   const undo = async (row) => {
-    if (!window.confirm(`Reopen ${row.staff.name}'s ${monthName(month)}?`)) return;
+    if (!window.confirm(`Reopen ${row.staff.name}'s ${monthLabel(month)}?`)) return;
     await api.attUndoMonth({ staffId: row.staff.id, month });
     toast('Reopened.');
     await reload();
@@ -387,11 +353,6 @@ function openable(content, onclick) {
   }, content);
 }
 
-function monthName(month) {
-  return new Date(`${month}-01T12:00:00Z`).toLocaleDateString('en-GB', {
-    month: 'long', year: 'numeric', timeZone: 'UTC',
-  });
-}
 
 /**
  * The days behind a figure.
@@ -422,7 +383,7 @@ function breakdown(row, month, which) {
     title: `${row.staff.name} — ${titles[which]}`,
     submitLabel: 'Close',
     body: h('div',
-      h('p.muted', `${monthName(month)} — ${days.length} day${days.length === 1 ? '' : 's'}`),
+      h('p.muted', `${monthLabel(month)} — ${days.length} day${days.length === 1 ? '' : 's'}`),
       which === 'over'
         ? h('p.muted', { style: { fontSize: '.85rem' } },
           'A day the rota did not ask for, where more than six hours were actually worked. '

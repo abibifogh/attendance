@@ -1503,6 +1503,11 @@ export async function monthReview(ctx) {
   const month = ctx.url.searchParams.get('month') || todayIn(timezone).slice(0, 7);
   if (!isMonth(month)) throw badRequest('That is not a month like 2026-08.');
 
+  // One person, when a screen is already looking at one person. The whole
+  // property's month is a lot to load to answer a question about a single row.
+  const only = ctx.url.searchParams.get('staffId');
+  const onlyId = only ? int(only, 'Staff', { min: 1 }) : null;
+
   const { from, to } = monthBounds(month);
   const [ds, decided] = await Promise.all([
     loadDataset(ctx.db, { from, to }),
@@ -1517,6 +1522,7 @@ export async function monthReview(ctx) {
   const rows = [];
 
   for (const staff of ds.staff) {
+    if (onlyId && staff.id !== onlyId) continue;
     if (!activeOn(staff, to) && !activeOn(staff, from)) continue;
 
     const days = daysFor(ds, staff.id, from, to);
@@ -1525,7 +1531,7 @@ export async function monthReview(ctx) {
 
     // Somebody with nothing rostered and nothing worked has no month to review,
     // and a screen listing them is a screen people stop reading.
-    if (!totals.scheduled && !totals.daysWorked && !decision) continue;
+    if (!onlyId && !totals.scheduled && !totals.daysWorked && !decision) continue;
 
     const oc = overUnder(days, { overMinutes });
     const counted = new Map([

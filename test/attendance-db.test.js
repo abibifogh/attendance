@@ -1358,3 +1358,30 @@ test('a day already settled can still be corrected, and the correction undone', 
     'and the punches are untouched, because there never were any');
   assert.ok(stored.resolution && stored.resolution !== 'open');
 });
+
+test('the month review can answer for one person without loading the property', async () => {
+  const { raw, db, token } = await setup();
+  raw.prepare("INSERT INTO att_staff (id, employee_no, name) VALUES (2, '1002', 'Vivian Mensah')").run();
+  raw.prepare('INSERT INTO att_patterns (staff_id, week, dow, shift_id) VALUES (2, 0, 0, 1)').run();
+  await marchWorked(db, token, ['2026-03-02']);
+
+  const all = await (await monthReview(ctx(db, { query: '?month=2026-03' }))).json();
+  assert.ok(all.rows.length > 1);
+
+  const one = await (await monthReview(ctx(db, { query: '?month=2026-03&staffId=1' }))).json();
+  assert.equal(one.rows.length, 1);
+  assert.equal(one.rows[0].staff.id, 1);
+  assert.ok(Array.isArray(one.rows[0].days), 'with the days behind the figures');
+});
+
+test('a person with an empty month is still answerable when asked for by name', async () => {
+  const { raw, db } = await setup();
+  // Nothing rostered, nothing worked. The list skips them; asking directly
+  // must not, or the button on their own report would have nothing to open.
+  raw.exec('DELETE FROM att_patterns');
+
+  const one = await (await monthReview(ctx(db, { query: '?month=2026-03&staffId=1' }))).json();
+  assert.equal(one.rows.length, 1);
+  assert.equal(one.rows[0].scheduledDays, 0);
+  assert.equal(one.rows[0].difference, 0);
+});

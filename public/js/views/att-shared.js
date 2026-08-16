@@ -1,3 +1,4 @@
+import { api } from '../api.js';
 import { fmtNum, h } from '../util.js';
 
 /**
@@ -150,4 +151,69 @@ export function field(label, control, hint) {
     control,
     hint ? h('small.muted', hint) : null,
   );
+}
+
+
+/**
+ * Sign a person's month off, from wherever the question was asked.
+ *
+ * Shared between the leave screen and the person's own report on purpose. It
+ * moves somebody's leave, and two copies of a form that does that would drift —
+ * one of them would keep the whole-day rounding and the other would quietly not.
+ *
+ * Opens with the difference filled in as a default rather than an applied
+ * verdict. The figures are arithmetic; a manager looking at two days short may
+ * charge one, or none, and both halves end up on the record.
+ */
+export function signOffDialog(row, month) {
+  const short = row.difference < 0;
+  const size = Math.abs(row.difference);
+
+  return formDialog({
+    title: `${row.staff.name} — ${monthLabel(month)}`,
+    submitLabel: 'Record the decision',
+    body: h('div',
+      h('p.muted',
+        `Rostered ${fmtNum(row.scheduledDays, 1)} days, worked ${fmtNum(row.workedDays, 1)}. `
+        + (size
+          ? `${row.overDays} extra day${row.overDays === 1 ? '' : 's'} and `
+            + `${row.underDays} whole shift${row.underDays === 1 ? '' : 's'} missed — `
+            + `${short ? 'short by' : 'over by'} ${size}.`
+          : 'Nothing counted either way.')),
+
+      field('What happens to their leave',
+        h('select', { name: 'decision' },
+          h('option', { value: 'approved' }, short ? 'Charge days to their leave' : 'Give days back'),
+          h('option', { value: 'waived', selected: !size }, 'Let it stand — nothing comes off'),
+        )),
+
+      field('Days',
+        h('input', {
+          type: 'number', name: 'daysApplied', step: 1, min: -60, max: 60,
+          value: row.difference,
+        }),
+        'Whole days. Negative takes days off their entitlement, positive gives days back'),
+
+      field('Note', h('input', { type: 'text', name: 'note', maxlength: 300 })),
+
+      row.openCount
+        ? h('p.muted', { style: { color: 'var(--warn)' } },
+          `${row.openCount} day${row.openCount === 1 ? '' : 's'} this month are still waiting on a `
+          + 'supervisor. Settling those first will change these figures.')
+        : null,
+    ),
+    onSubmit: async (form) => api.attDecideMonth({
+      staffId: row.staff.id,
+      month,
+      decision: form.get('decision'),
+      daysApplied: Math.round(Number(form.get('daysApplied')) || 0),
+      note: form.get('note') || null,
+    }),
+  });
+}
+
+export function monthLabel(month) {
+  return new Date(`${month}-01T12:00:00Z`).toLocaleDateString('en-GB', {
+    month: 'long', year: 'numeric', timeZone: 'UTC',
+  });
 }
