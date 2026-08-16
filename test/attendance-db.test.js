@@ -620,7 +620,9 @@ test('a heartbeat still counts as the terminal being alive', async () => {
   assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_punches').get().n, 0);
 
   // Which is the whole point: the Terminals screen can now say it is reachable.
-  const device = raw.prepare('SELECT * FROM att_devices').get();
+  // By serial, not "the first row" — the migrations register the real terminal,
+  // so the fixture's device is no longer the only one in the table.
+  const device = raw.prepare('SELECT * FROM att_devices WHERE serial = ?').get('DS-TEST-1');
   assert.ok(device.last_seen_at, 'heard from, even though it had nothing to report');
 });
 
