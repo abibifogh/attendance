@@ -183,6 +183,24 @@ them — right up until the month is signed off. Approved leave and public
 holidays are already out of the rostered count, so what is left is a real gap
 rather than somebody's fortnight in July.
 
+**Over and under are counted in whole days, never hours.** Subtracting hours
+worked from hours rostered gives a decimal, and a decimal is unusable: nobody is
+charged 1.3 days of leave. It also counts things nobody would count — somebody
+who left twenty minutes early four times has had four slightly short days, which
+is a conversation, not a deduction. So each side is an event with a bar to clear:
+
+- An **over** is a day the rota never asked for, and only where more than six
+  hours were actually worked. Two hours covering a gap is a favour, not a day off
+  in lieu.
+- An **under** is a whole rostered shift missed, and only once somebody has ruled
+  on it. A part-day is never an under at any length, and an absence nobody has
+  confirmed may still be a forgotten tap — charging leave against a maybe is the
+  one mistake here that costs a person real money.
+
+Every figure on the row can be pressed to see the days behind it — rostered,
+worked, over and under each list their days with times, status and who ruled on
+them. A count nobody can open is an assertion.
+
 Signing off is deliberately two numbers rather than one. The difference is
 arithmetic; what actually comes off somebody's leave is a judgement. The form
 opens with the difference filled in as a default, not a verdict, and the record

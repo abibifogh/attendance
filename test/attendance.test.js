@@ -5,7 +5,7 @@ import {
   claimPunch, collapsePunches, colourFor, computeDay, computeRange, dayCredit,
   easterSunday, firstFriday, ghanaHolidays, hours, humanDuration, isOpen, labelFor,
   leaveBalance, leaveDaysIn, leaveYearOf, makeDataset, monthsBetween, noteFor,
-  pairPunches, rotationWeekOf, scheduleFor, shiftWindow, streakOf, summarise, toClock,
+  overUnder, pairPunches, rotationWeekOf, scheduleFor, shiftWindow, streakOf, summarise, toClock,
   toMinutes, withObservedDays,
 } from '../src/lib/attendance.js';
 import {
@@ -879,4 +879,64 @@ test('a day set by hand still beats the rotation', () => {
   const schedule = scheduleFor(ds, 1, '2024-01-01');
   assert.equal(schedule.shift.name, 'Night');
   assert.equal(schedule.source, 'roster', 'a cover is a decision and outranks the cycle');
+});
+
+// ---------------------------------------------------------------------------
+// Over and under, counted in days
+// ---------------------------------------------------------------------------
+
+const day = (o = {}) => ({
+  day: '2026-03-02', scheduled: 1, worked_minutes: 480, status: 'present',
+  reason_code: null, resolved_by: null, resolved_note: null, ...o,
+});
+
+test('an extra day counts only once it is more than six hours', () => {
+  assert.equal(overUnder([day({ scheduled: 0, worked_minutes: 361, status: 'unscheduled' })]).overDays, 1);
+  assert.equal(overUnder([day({ scheduled: 0, worked_minutes: 360, status: 'unscheduled' })]).overDays, 0,
+    'exactly six hours is not more than six hours');
+  assert.equal(overUnder([day({ scheduled: 0, worked_minutes: 120, status: 'unscheduled' })]).overDays, 0,
+    'two hours covering a gap is a favour, not a day off in lieu');
+});
+
+test('an under needs a whole shift missed and somebody to have said so', () => {
+  const missed = { scheduled: 1, worked_minutes: 0, status: 'absent' };
+
+  assert.equal(overUnder([day({ ...missed })]).underDays, 0, 'nobody has confirmed it');
+  assert.equal(overUnder([day({ ...missed, resolved_by: 'Ama' })]).underDays, 1);
+  assert.equal(
+    overUnder([day({ scheduled: 1, worked_minutes: 60, status: 'early_leave', resolved_by: 'Ama' })]).underDays,
+    0,
+    'a part-day is never an under, however short',
+  );
+});
+
+test('leave and rest days are neither over nor under', () => {
+  const result = overUnder([
+    day({ scheduled: 1, worked_minutes: 0, status: 'leave', reason_code: 'annual_leave', resolved_by: 'Ama' }),
+    day({ scheduled: 0, worked_minutes: 0, status: 'rest' }),
+    day({ scheduled: 0, worked_minutes: 0, status: 'unscheduled' }),
+  ]);
+  assert.equal(result.overDays, 0);
+  assert.equal(result.underDays, 0);
+});
+
+test('the difference is whole days and can name every one of them', () => {
+  const result = overUnder([
+    day({ day: '2026-03-07', scheduled: 0, worked_minutes: 540, status: 'unscheduled' }),
+    day({ day: '2026-03-10', scheduled: 1, worked_minutes: 0, status: 'absent', resolved_by: 'Ama' }),
+    day({ day: '2026-03-11', scheduled: 1, worked_minutes: 0, status: 'absent', resolved_by: 'Ama' }),
+    day({ day: '2026-03-12', scheduled: 1, worked_minutes: 250 }),
+  ]);
+
+  assert.equal(result.difference, -1);
+  // `-1 % 1` is -0 in JavaScript, which is not strictly 0. Ask the real question.
+  assert.ok(Number.isInteger(result.difference));
+  assert.deepEqual(result.overs.map((o) => o.day), ['2026-03-07']);
+  assert.deepEqual(result.unders.map((u) => u.day), ['2026-03-10', '2026-03-11']);
+});
+
+test('the six-hour bar can be moved', () => {
+  const long = [day({ scheduled: 0, worked_minutes: 300, status: 'unscheduled' })];
+  assert.equal(overUnder(long).overDays, 0);
+  assert.equal(overUnder(long, { overMinutes: 240 }).overDays, 1);
 });

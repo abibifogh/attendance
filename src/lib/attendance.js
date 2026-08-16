@@ -1011,6 +1011,81 @@ export function leaveDaysIn({ from, to, staffId, ds, halfDay = null }) {
 }
 
 // ---------------------------------------------------------------------------
+// Over and under, counted in days
+// ---------------------------------------------------------------------------
+
+/**
+ * What a month owes, or is owed, in whole days.
+ *
+ * Subtracting hours worked from hours rostered gives a decimal, and a decimal
+ * is unusable here: nobody is charged 1.3 days of leave. Worse, it counts
+ * things nobody would count. Somebody who left twenty minutes early four times
+ * has not worked a day and a half less than they should have — they have had
+ * four slightly short days, which is a conversation, not a deduction.
+ *
+ * So both sides are counted as events rather than measured as quantities, and
+ * each side has a threshold that has to be crossed before it counts at all:
+ *
+ *   An **over** is a day worked that the rota never asked for, and only when
+ *   more than six hours were actually worked on it. Coming in for two hours to
+ *   cover a gap is a favour worth thanking somebody for; it is not a day off in
+ *   lieu, and treating it as a fraction of one is how the balance stops meaning
+ *   anything.
+ *
+ *   An **under** is a whole rostered shift missed, and only once somebody has
+ *   ruled on it. A part-day is not an under at any length. An absence nobody
+ *   has confirmed is not one either — the record may be a forgotten tap, and
+ *   charging leave against a maybe is the one mistake here that costs a person
+ *   real money.
+ *
+ * The difference is therefore always a whole number, and every day behind it
+ * can be named — which is what makes it arguable rather than merely asserted.
+ */
+export function overUnder(records, { overMinutes = 360 } = {}) {
+  const overs = [];
+  const unders = [];
+
+  for (const record of records ?? []) {
+    const worked = Number(record.worked_minutes || 0);
+
+    // An extra day, long enough to be a day.
+    if (!record.scheduled && worked > overMinutes) {
+      overs.push({
+        day: record.day,
+        minutes: worked,
+        why: 'Worked a day the rota did not ask for',
+      });
+      continue;
+    }
+
+    if (!record.scheduled) continue;
+
+    // A whole shift missed. A part-day is never an under, however short.
+    if (worked > 0) continue;
+    if (!ABSENT_STATUSES.has(record.status) && record.reason_code !== 'absent') continue;
+
+    // And only once a person has said so.
+    if (!record.resolved_by) continue;
+
+    unders.push({
+      day: record.day,
+      minutes: 0,
+      why: record.resolved_note || 'Whole shift missed, confirmed',
+    });
+  }
+
+  return {
+    overs,
+    unders,
+    overDays: overs.length,
+    underDays: unders.length,
+    difference: overs.length - unders.length,
+  };
+}
+
+const ABSENT_STATUSES = new Set(['absent']);
+
+// ---------------------------------------------------------------------------
 // Public holidays
 // ---------------------------------------------------------------------------
 

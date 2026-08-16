@@ -190,7 +190,11 @@ export async function renderAttStaff(params) {
       'Times in rows marked as confirmed were supplied by a supervisor where the terminal had no record.')
     : null);
 
-  const notesCard = !single && data.days.some((d) => d.colour !== 'green' && d.colour !== 'grey')
+  // Shown for a single day as well as a range. The big card above already
+  // carries the note, but a person reading a slip looks for the same heading
+  // whatever period it covers, and "it is on this screen but not that one"
+  // is the kind of inconsistency that makes people distrust the whole thing.
+  const notesCard = data.days.some((d) => d.colour === 'amber' || d.colour === 'red')
     ? card('What this means', { wide: true },
       h('div', data.days
         .filter((d) => d.colour === 'amber' || d.colour === 'red')

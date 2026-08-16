@@ -3,7 +3,8 @@ import {
 } from '../lib/http.js';
 import {
   colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysIn,
-  loadDataset, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes, weekCountOf,
+  dayCredit, loadDataset, overUnder, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes,
+  weekCountOf,
 } from '../lib/attendance.js';
 import {
   clockDriftNote, clockOffset, deviceForPushToken, deviceForToken, exceptionNotice,
@@ -1510,6 +1511,9 @@ export async function monthReview(ctx) {
   ]);
 
   const decidedBy = new Map((decided.results ?? []).map((r) => [r.staff_id, r]));
+  // How long an unrostered day has to be before it counts as one. Six hours by
+  // default: two hours covering a gap is a favour, not a day off in lieu.
+  const overMinutes = Math.max(0, Number(ds.settings.att_over_minutes) || 360);
   const rows = [];
 
   for (const staff of ds.staff) {
@@ -1523,16 +1527,46 @@ export async function monthReview(ctx) {
     // and a screen listing them is a screen people stop reading.
     if (!totals.scheduled && !totals.daysWorked && !decision) continue;
 
+    const oc = overUnder(days, { overMinutes });
+    const counted = new Map([
+      ...oc.overs.map((o) => [o.day, { side: 'over', why: o.why }]),
+      ...oc.unders.map((u) => [u.day, { side: 'under', why: u.why }]),
+    ]);
+
+    // Every day behind the four figures, so each of them can be opened rather
+    // than merely believed. Sent once and filtered in the screen: three
+    // near-identical lists down the wire would be the same days three times.
+    const detail = days.map((r) => ({
+      day: r.day,
+      shift: r.shift_id ? ds.shiftById.get(r.shift_id)?.name ?? null : null,
+      scheduled: Boolean(r.scheduled),
+      in: r.first_in,
+      out: r.last_out,
+      minutes: r.worked_minutes,
+      credit: dayCredit(r, {
+        shift: r.shift_id ? ds.shiftById.get(r.shift_id) ?? null : null,
+        reason: r.reason_code ? ds.reasonBy.get(r.reason_code) ?? null : null,
+      }),
+      status: r.status,
+      label: labelFor(r, ds.reasonBy),
+      resolvedBy: r.resolved_by ?? null,
+      counts: counted.get(r.day)?.side ?? null,
+      why: counted.get(r.day)?.why ?? null,
+    }));
+
     rows.push({
       staff: {
         id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department,
       },
       scheduledDays: totals.scheduled,
       workedDays: totals.daysWorked,
-      difference: Math.round((totals.daysWorked - totals.scheduled) * 2) / 2,
+      overDays: oc.overDays,
+      underDays: oc.underDays,
+      difference: oc.difference,
       daysAbsent: totals.daysAbsent,
       daysLeave: totals.daysLeave,
       openCount: totals.openCount,
+      days: detail,
       decision: decision && {
         decision: decision.decision,
         daysApplied: decision.days_applied,
@@ -1580,9 +1614,10 @@ export async function decideMonth(ctx) {
   if (!isMonth(month)) throw badRequest('That is not a month like 2026-08.');
 
   const decision = ['approved', 'waived'].includes(body.decision) ? body.decision : 'approved';
-  const daysApplied = decision === 'waived'
-    ? 0
-    : Math.round(Number(body.daysApplied ?? 0) * 2) / 2;
+  // Whole days only. The figures behind this are counted as events rather than
+  // measured in hours, so a fractional charge would be inventing a precision
+  // the rule deliberately does not have.
+  const daysApplied = decision === 'waived' ? 0 : Math.round(Number(body.daysApplied ?? 0));
 
   if (!Number.isFinite(daysApplied) || Math.abs(daysApplied) > 60) {
     throw badRequest('That is not a sensible number of days.');
@@ -1595,8 +1630,10 @@ export async function decideMonth(ctx) {
   // decision is recorded against have to be the ones this app stands behind.
   const { from, to } = monthBounds(month);
   const ds = await loadDataset(ctx.db, { from, to });
-  const totals = summarise(daysFor(ds, staffId, from, to), {
-    shifts: ds.shiftById, reasons: ds.reasonBy,
+  const days = daysFor(ds, staffId, from, to);
+  const totals = summarise(days, { shifts: ds.shiftById, reasons: ds.reasonBy });
+  const oc = overUnder(days, {
+    overMinutes: Math.max(0, Number(ds.settings.att_over_minutes) || 360),
   });
 
   await ctx.db.prepare(
@@ -1612,7 +1649,7 @@ export async function decideMonth(ctx) {
   ).bind(
     staffId, month,
     totals.scheduled, totals.daysWorked,
-    Math.round((totals.daysWorked - totals.scheduled) * 2) / 2,
+    oc.difference,
     decision, daysApplied,
     str(body.note, 'Note', { max: 300 }),
     `${ctx.session.user.name} (${ctx.session.user.role})`,

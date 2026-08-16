@@ -311,15 +311,33 @@ function monthCard(review, month, decides, reload) {
 
     table([
       { key: 'staff', label: 'Name', format: (v) => h('div', h('div', v.name), h('small.muted', v.department || v.employee_no)) },
-      { key: 'scheduledDays', label: 'Rostered', align: 'right', format: (v) => fmtNum(v, 1) },
-      { key: 'workedDays', label: 'Worked', align: 'right', format: (v) => fmtNum(v, 1) },
+      {
+        key: 'scheduledDays',
+        label: 'Rostered',
+        align: 'right',
+        format: (v, r) => openable(fmtNum(v, 1), () => breakdown(r, month, 'rostered')),
+      },
+      {
+        key: 'workedDays',
+        label: 'Worked',
+        align: 'right',
+        format: (v, r) => openable(fmtNum(v, 1), () => breakdown(r, month, 'worked')),
+      },
       {
         key: 'difference',
         label: 'Over / under',
         align: 'right',
-        format: (v) => (Math.abs(v) < 0.01
-          ? h('span.muted', 'square')
-          : h(`span.pill${v < 0 ? '.bad' : '.good'}`, `${v > 0 ? '+' : ''}${fmtNum(v, 1)}`)),
+        format: (v, r) => {
+          if (!v) {
+            return r.overDays || r.underDays
+              ? openable(h('span.muted', 'square'), () => breakdown(r, month, 'under'))
+              : h('span.muted', 'square');
+          }
+          return openable(
+            h(`span.pill${v < 0 ? '.bad' : '.good'}`, `${v > 0 ? '+' : ''}${v}`),
+            () => breakdown(r, month, v < 0 ? 'under' : 'over'),
+          );
+        },
       },
       { key: 'daysAbsent', label: 'Absent', align: 'right', format: (v) => (v ? fmtNum(v, 0) : h('span.muted', '—')) },
       { key: 'daysLeave', label: 'On leave', align: 'right', format: (v) => (v ? fmtNum(v, 1) : h('span.muted', '—')) },
@@ -346,15 +364,91 @@ function monthCard(review, month, decides, reload) {
     ], review.rows, { empty: 'Nobody was rostered or worked in this month.' }),
 
     h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
-      'Rostered counts the days the rota asked for, with approved leave and public holidays already '
+      'Every figure on a row can be pressed to see the days behind it. Over and under are counted '
+      + 'as whole days, never hours: an extra day counts only past six hours worked, and a shortfall '
+      + 'counts only when a whole shift was missed and somebody ruled on it. '
+      + 'Rostered counts the days the rota asked for, with approved leave and public holidays already '
       + 'taken out — so what is left is a real gap rather than somebody\u2019s fortnight in July. '
       + 'Signing off moves days on and off the leave balance, and the balances above include '
       + 'every month already signed.'),
   );
 }
 
+/** A figure you can press, which is the difference between a number and a claim. */
+function openable(content, onclick) {
+  return h('button.btn-plain', {
+    onclick,
+    title: 'See the days behind this',
+    style: {
+      background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit',
+      color: 'inherit', textDecoration: 'underline', textDecorationStyle: 'dotted',
+      textUnderlineOffset: '3px',
+    },
+  }, content);
+}
+
 function monthName(month) {
   return new Date(`${month}-01T12:00:00Z`).toLocaleDateString('en-GB', {
     month: 'long', year: 'numeric', timeZone: 'UTC',
+  });
+}
+
+/**
+ * The days behind a figure.
+ *
+ * Every number on that row is a count of days, and a count nobody can open is
+ * an assertion. Rostered, worked, over and under each list the days they were
+ * made of — which is what turns "you were two days short" from a claim into
+ * something a person can be shown.
+ */
+function breakdown(row, month, which) {
+  const titles = {
+    rostered: 'Days the rota asked for',
+    worked: 'Days worked',
+    over: 'Extra days that counted',
+    under: 'Whole shifts missed and confirmed',
+  };
+
+  const pick = {
+    rostered: (d) => d.scheduled,
+    worked: (d) => d.credit > 0,
+    over: (d) => d.counts === 'over',
+    under: (d) => d.counts === 'under',
+  }[which];
+
+  const days = (row.days ?? []).filter(pick);
+
+  return formDialog({
+    title: `${row.staff.name} — ${titles[which]}`,
+    submitLabel: 'Close',
+    body: h('div',
+      h('p.muted', `${monthName(month)} — ${days.length} day${days.length === 1 ? '' : 's'}`),
+      which === 'over'
+        ? h('p.muted', { style: { fontSize: '.85rem' } },
+          'A day the rota did not ask for, where more than six hours were actually worked. '
+          + 'Shorter days are not counted: two hours covering a gap is a favour, not a day off '
+          + 'in lieu.')
+        : null,
+      which === 'under'
+        ? h('p.muted', { style: { fontSize: '.85rem' } },
+          'A whole rostered shift missed, and only once somebody has ruled on it. A part-day is '
+          + 'never an under, and an absence nobody has confirmed may yet be a forgotten tap.')
+        : null,
+      days.length
+        ? table([
+          { key: 'day', label: 'Date', format: (v) => fmtDay(v) },
+          { key: 'shift', label: 'Shift', format: (v) => (v ? h('small', v) : h('span.muted', 'not rostered')) },
+          { key: 'in', label: 'In', align: 'right', format: (v) => (v || h('span.muted', '—')) },
+          { key: 'out', label: 'Out', align: 'right', format: (v) => (v || h('span.muted', '—')) },
+          { key: 'minutes', label: 'Hours', align: 'right', format: (v) => (v ? fmtNum(v / 60, 1) : h('span.muted', '—')) },
+          { key: 'label', label: 'Status', format: (v) => h('small', v) },
+          { key: 'resolvedBy', label: 'Ruled by', format: (v) => (v ? h('small.muted', v) : h('span.muted', '—')) },
+        ], days, { empty: 'None.' })
+        : h('div.empty', h('p', which === 'under'
+          ? 'Nothing counted. Absences that nobody has confirmed do not count here — settle them '
+            + 'on the person\u2019s report and they will appear.'
+          : 'Nothing counted.')),
+    ),
+    onSubmit: async () => true,
   });
 }
