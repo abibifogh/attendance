@@ -88,6 +88,10 @@ async function setup() {
     'INSERT INTO att_devices (serial, name, token_hash) VALUES (?, ?, ?)',
   ).run('DS-TEST-1', 'Staff entrance', await hashDeviceToken(token, pepper));
 
+  // The migrations seed the property's real twenty-four shifts. These tests
+  // want a two-shift world with known ids, so they start from an empty table
+  // rather than working around whatever the seed happens to contain.
+  raw.exec('DELETE FROM att_shifts');
   raw.prepare(
     `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes, grace_in_minutes, grace_out_minutes)
      VALUES (1, 'Morning', '06:00', '14:00', 30, 5, 5),
