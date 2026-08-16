@@ -6,8 +6,9 @@ import {
   loadDataset, scheduleFor, streakOf, summarise, toMinutes, weekCountOf,
 } from '../lib/attendance.js';
 import {
-  deviceForToken, exceptionNotice, ingestPunches, recompute, recomputeTouched,
+  deviceForPushToken, deviceForToken, exceptionNotice, ingestPunches, recompute, recomputeTouched,
 } from '../lib/attendance-ingest.js';
+import { readNotification } from '../lib/push-events.js';
 import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from '../lib/device-shifts.js';
 import { getPepper } from '../lib/auth.js';
 import { createNotice } from '../lib/notices.js';
@@ -149,6 +150,67 @@ export async function ingest(ctx) {
     unusable: result.unusable,
     // Told plainly, because it is the one thing that silently loses data: a
     // person enrolled on the terminal and never added here.
+    unknownEmployees: result.unknownEmployees,
+  });
+}
+
+/**
+ * Punches the terminal posts to us, unprompted.
+ *
+ * The mode that needs nothing running on site. The device is given this URL
+ * once, and from then on it makes its own outbound request every time somebody
+ * taps. No computer in a cupboard, nothing to restart after a power cut.
+ *
+ * The token lives in the path because that is all a terminal's listening-host
+ * configuration can carry — there is nowhere to put a header. It identifies the
+ * device and authorises exactly one thing: adding punches under that device's
+ * own serial.
+ *
+ * Always answers 200, even to something it could make no sense of. A device
+ * that gets an error back may disable its listening host and stop reporting
+ * altogether, which would be a far worse outcome than quietly ignoring a
+ * heartbeat we did not want. What was and was not understood goes in the
+ * response body for anybody debugging, and the terminal ignores it.
+ */
+export async function pushEvents(ctx, tokenParam) {
+  const token = str(tokenParam, 'Token', { required: true, max: 200 });
+  const pepper = await getPepper(ctx.db);
+
+  let device;
+  try {
+    device = await deviceForPushToken(ctx.db, token, pepper);
+  } catch {
+    // The one case worth refusing outright: somebody guessing tokens. No
+    // detail, because there is nothing here for them to learn.
+    return json({ ok: false }, { status: 403 });
+  }
+
+  const events = await readNotification(ctx.request);
+  const timezone = await timezoneOf(ctx.db);
+
+  // Heartbeats, door alarms and tamper events come down the same pipe. Nothing
+  // to store, but the device has just proved it is alive and reachable, and the
+  // Terminals screen exists to show exactly that.
+  if (!events.length) {
+    await ctx.db.prepare("UPDATE att_devices SET last_seen_at = datetime('now') WHERE id = ?")
+      .bind(device.id).run().catch(() => {});
+    return json({ ok: true, stored: 0, note: 'nothing attendance-related in that' });
+  }
+
+  const result = await ingestPunches(ctx.db, {
+    device, events, timezone, source: 'push',
+  });
+
+  // The device is waiting on this response and will not wait long. Working out
+  // what the punches mean can happen after it has hung up.
+  const work = recomputeTouched(ctx.db, result.touched);
+  if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(work);
+  else await work;
+
+  return json({
+    ok: true,
+    stored: result.stored,
+    duplicates: result.duplicates,
     unknownEmployees: result.unknownEmployees,
   });
 }

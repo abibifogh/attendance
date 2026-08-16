@@ -635,31 +635,78 @@ async function holidaysTab(reload) {
 async function devicesTab(reload) {
   const { devices } = await api.attDevices();
 
-  const showToken = (serial, token) => formDialog({
-    title: 'The terminal\'s token',
-    submitLabel: 'I have copied it',
-    body: h('div',
-      h('p', 'This is the only time this token is readable. Put it in the poller\'s configuration now.'),
-      h('pre', {
-        style: {
-          background: 'var(--surface-2)', padding: '.8rem', borderRadius: 'var(--radius-sm)',
-          fontSize: '.8rem', overflowX: 'auto', userSelect: 'all',
-        },
-      }, JSON.stringify({ device: serial, token }, null, 2)),
-      h('p.muted', { style: { fontSize: '.82rem' } },
-        'Paste it into .hik-poller.json on the machine that runs the poller. If you lose it, issue a new '
-        + 'one here — the old one stops working the moment you do.'),
-    ),
-    onSubmit: async () => true,
-  });
+  /**
+   * The one screen that has to be got exactly right.
+   *
+   * Shown once, after registering. It carries the token — never readable again
+   * — and, for a pushing terminal, the settings to type into the device's own
+   * web page. Assembling that URL by hand out of three places is where this
+   * goes wrong, so it is assembled here instead.
+   */
+  const block = (text) => h('pre', {
+    style: {
+      background: 'var(--surface-2)', padding: '.8rem', borderRadius: 'var(--radius-sm)',
+      fontSize: '.78rem', overflowX: 'auto', userSelect: 'all',
+      whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+    },
+  }, text);
+
+  const showToken = (result) => {
+    const listening = result.listening ?? {};
+    const rows = [
+      ['Type', 'HTTP'],
+      ['Protocol', listening.protocolType],
+      ['Address type', 'Domain name'],
+      ['Domain name', listening.hostName],
+      ['Port', String(listening.portNo ?? '')],
+      ['URL', listening.urlPath],
+      ['Format', 'JSON'],
+      ['Authentication', 'None'],
+    ];
+
+    return formDialog({
+      title: result.mode === 'poll' ? 'The terminal’s token' : 'Set the terminal up to report here',
+      submitLabel: 'Done',
+      body: result.mode === 'poll'
+        ? h('div',
+          h('p', 'This is the only time this token is readable. Put it into the reader’s '
+            + 'configuration file now.'),
+          block(JSON.stringify({ device: result.serial, token: result.token }, null, 2)))
+        : h('div',
+          h('p', 'On the terminal’s own web page, find ',
+            h('strong', 'Network → Advanced Settings → HTTP Listening'),
+            ' — some firmware puts it under ', h('strong', 'Event'),
+            ' — and enter this:'),
+          h('div.table-scroll',
+            h('table',
+              h('tbody', rows.map(([label, value]) => h('tr',
+                h('td', { style: { width: '38%' } }, label),
+                h('td', h('code', { style: { fontSize: '.82rem', userSelect: 'all' } }, value || '—')),
+              ))))),
+          h('p.muted', { style: { fontSize: '.85rem', marginTop: '.8rem' } },
+            'Some firmware asks for the whole address in a single box instead. If so, use:'),
+          block(listening.url ?? ''),
+          h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+            'That address contains this terminal’s token, so treat it like a password. It is '
+            + 'readable now and never again — if it is lost, press “New token” here and the old '
+            + 'one stops working immediately.'),
+          h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+            'Then press Test on the terminal’s page. This screen will show it as heard from.')),
+      onSubmit: async () => true,
+    });
+  };
 
   const add = async () => {
     const done = await formDialog({
       title: 'Register a terminal',
       submitLabel: 'Register it',
       body: h('div',
+        field('How should it reach us?', h('select', { name: 'mode' },
+          h('option', { value: 'push' }, 'The terminal posts to us — nothing to run on site'),
+          h('option', { value: 'poll' }, 'A reader program on site fetches from it'),
+        ), 'Posting needs no computer in the building. Fetching survives an internet outage.'),
         field('Serial number', h('input', { type: 'text', name: 'serial', required: true, maxlength: 120 }),
-          'Exactly as the device reports it — the poller checks and will warn you if they differ'),
+          'Exactly as the device reports it, under System → Device Information'),
         field('Name', h('input', { type: 'text', name: 'name', required: true, maxlength: 80, placeholder: 'Staff entrance' })),
         h('div.field-row',
           field('Location', h('input', { type: 'text', name: 'location', maxlength: 120 })),
@@ -670,15 +717,18 @@ async function devicesTab(reload) {
     });
 
     if (done) {
-      await showToken(done.serial, done.token);
+      await showToken(done);
       await reload();
     }
   };
 
   const rotate = async (row) => {
-    if (!window.confirm(`Issue a new token for ${row.name}?\n\nThe poller will stop sending until you update its configuration.`)) return;
+    if (!window.confirm(
+      `Issue a new token for ${row.name}?\n\n`
+      + 'The terminal stops reporting until the new one is put into its settings.',
+    )) return;
     const result = await api.attRotateToken(row.id);
-    await showToken(result.serial, result.token);
+    await showToken(result);
     await reload();
   };
 
@@ -707,9 +757,16 @@ async function devicesTab(reload) {
         },
         { key: 'serial', label: 'Serial', format: (v) => h('code', { style: { fontSize: '.78rem' } }, v) },
         {
+          key: 'mode',
+          label: 'Reaches us by',
+          format: (v) => (v === 'poll'
+            ? h('span.pill', 'a reader on site')
+            : h('span.pill.good', 'posting to us')),
+        },
+        {
           key: 'last_seen_at',
           label: 'Last heard from',
-          format: (v) => (v ? staleness(v) : h('span.pill.bad', 'never')),
+          format: (v, r) => (v ? staleness(v, r.mode) : h('span.pill.bad', 'never')),
         },
         {
           key: 'last_event_at',
@@ -731,32 +788,72 @@ async function devicesTab(reload) {
       })),
 
     card('How the punches get here', { wide: true },
-      h('ol', { style: { lineHeight: 1.7, paddingLeft: '1.2rem' } },
-        h('li', 'Register the terminal above and copy the token it shows you.'),
-        h('li', h('span', 'On any always-on machine on the same network as the terminal, copy ',
-          h('code', '.hik-poller.json.example'), ' to ', h('code', '.hik-poller.json'), ' and fill it in.')),
-        h('li', h('span', 'Try it once: ', h('code', 'node scripts/hik-poller.mjs --once --verbose'))),
-        h('li', h('span', 'Backfill your history: ', h('code', 'node scripts/hik-poller.mjs --from 2026-01-01'))),
-        h('li', h('span', 'Then leave it running: ', h('code', 'node scripts/hik-poller.mjs'))),
+      h('p.muted', { style: { marginTop: 0 } },
+        'Two ways, and the difference is whether anything has to run in the building.'),
+
+      h('div.grid.grid-2',
+        h('div',
+          h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'The terminal posts to us'),
+          h('p.muted', { style: { fontSize: '.88rem' } },
+            'Nothing runs on site. Register the terminal above, then type the settings it '
+            + 'shows you into the device\u2019s own web page under Network \u2192 Advanced '
+            + 'Settings \u2192 HTTP Listening. From then on it reports every tap by itself.'),
+          h('p.muted', { style: { fontSize: '.88rem', marginBottom: 0 } },
+            h('strong', 'The catch: '),
+            'it is one attempt per tap. If the internet is down at 07:03, that tap does not '
+            + 'arrive \u2014 it stays in the terminal\u2019s own log, but nothing here will go '
+            + 'and fetch it.')),
+
+        h('div',
+          h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'A reader on site fetches'),
+          h('p.muted', { style: { fontSize: '.88rem' } },
+            'A small program on any always-on computer asks the terminal for its log every '
+            + 'five minutes, over an overlapping window, so an outage costs nothing \u2014 '
+            + 'the next successful run catches up.'),
+          h('p.muted', { style: { fontSize: '.88rem', marginBottom: 0 } },
+            h('strong', 'The catch: '),
+            'something has to be running, and somebody has to notice when it stops.')),
       ),
-      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
-        'The poller reads the terminal over its local network and posts here. It has to run on site '
-        + 'because this app runs in the cloud and cannot reach a device on your LAN — and putting an '
-        + 'access-control terminal on the open internet is not worth the convenience.'),
+
+      h('p.muted', { style: { fontSize: '.85rem', marginTop: '1rem', marginBottom: 0 } },
+        'Both can run at once against the same terminal. Punches are matched on the '
+        + 'device\u2019s own event number, so a tap that arrives twice is stored once \u2014 '
+        + 'which makes belt and braces a real option if the records matter enough.'),
     ),
+
   );
 }
 
-/** How long since the poller last said anything, coloured by whether to worry. */
-function staleness(stamp) {
+/**
+ * How long since the terminal last said anything, coloured by whether to worry.
+ *
+ * What counts as worrying depends on how it reports. A reader on site calls in
+ * every few minutes whether or not anybody has walked past, so an hour of
+ * silence means it has stopped. A terminal that posts only speaks when somebody
+ * taps it, so an hour of silence on a Sunday afternoon means nothing at all —
+ * and showing that as a red warning is how people learn to ignore the red
+ * warnings that matter.
+ */
+function staleness(stamp, mode) {
   const then = new Date(`${stamp.replace(' ', 'T')}Z`);
   const minutes = Math.round((Date.now() - then.getTime()) / 60_000);
   if (!Number.isFinite(minutes)) return h('span.muted', stamp);
+
+  const say = (n) => (n < 60 ? `${n} min ago` : n < 1440 ? `${Math.round(n / 60)} hr ago`
+    : `${Math.round(n / 1440)} days ago`);
+
   if (minutes < 15) return h('span.pill.good', 'just now');
-  if (minutes < 120) return h('span.pill.good', `${minutes} min ago`);
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return h('span.pill.warn', `${hours} hr ago`);
-  return h('span.pill.bad', `${Math.round(hours / 24)} days ago`);
+
+  if (mode === 'poll') {
+    if (minutes < 120) return h('span.pill.good', say(minutes));
+    return h(`span.pill.${minutes < 1440 ? 'warn' : 'bad'}`, say(minutes));
+  }
+
+  // Posting terminals: quiet is only suspicious after a whole day, by which
+  // point somebody has certainly walked past it.
+  if (minutes < 1440) return h('span.pill.good', say(minutes));
+  if (minutes < 2880) return h('span.pill.warn', say(minutes));
+  return h('span.pill.bad', say(minutes));
 }
 
 // ---------------------------------------------------------------------------

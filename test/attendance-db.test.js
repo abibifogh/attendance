@@ -4,7 +4,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  day as dayRoute, deviceConfig, importShifts, ingest, resolveDay, shiftSuggestions, staffReport,
+  day as dayRoute, deviceConfig, importShifts, ingest, pushEvents, resolveDay,
+  shiftSuggestions, staffReport,
 } from '../src/routes/attendance.js';
 import { createStaff } from '../src/routes/attendance-setup.js';
 import { hashDeviceToken } from '../src/lib/attendance-ingest.js';
@@ -521,4 +522,132 @@ test('an import with a nonsense time is refused', async () => {
     () => importShifts(ctx(db, { body: { shifts: [{ name: 'X', startsAt: '09:00', endsAt: '09:00' }] } })),
     /start and end at the same time/i,
   );
+});
+
+// ---------------------------------------------------------------------------
+// The terminal reporting for itself, with nothing running on site
+// ---------------------------------------------------------------------------
+
+/** A request shaped the way the terminal's listening host actually sends one. */
+function pushed(token, payload, contentType = 'application/json') {
+  const url = new URL(`https://staff.example.test/api/att/push/${token}`);
+  return {
+    db: null,
+    env: {},
+    url,
+    session: null,
+    executionContext: null,
+    request: new Request(url, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body: typeof payload === 'string' ? payload : JSON.stringify(payload),
+    }),
+  };
+}
+
+const notification = (employeeNo, time, status, serial) => ({
+  ipAddress: '192.168.1.64',
+  dateTime: time,
+  eventType: 'AccessControllerEvent',
+  deviceID: 'DS-TEST-1',
+  AccessControllerEvent: {
+    majorEventType: 5,
+    subEventType: 75,
+    employeeNoString: employeeNo,
+    name: 'Henry Aryee',
+    attendanceStatus: status,
+    serialNo: serial,
+  },
+});
+
+test('a terminal posting its own events lands a punch', async () => {
+  const { raw, db, token } = await setup();
+
+  const context = pushed(token, notification('1001', '2026-06-15T05:58:00+00:00', 'checkIn', 900));
+  context.db = db;
+  const result = await (await pushEvents(context, token)).json();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.stored, 1);
+
+  const punch = raw.prepare('SELECT * FROM att_punches').get();
+  assert.equal(punch.employee_no, '1001');
+  assert.equal(punch.source, 'push');
+  assert.equal(punch.direction, 'in');
+  assert.equal(punch.device_serial, 'DS-TEST-1');
+});
+
+test('a pushed tap and the same tap polled are stored once', async () => {
+  const { raw, db, token } = await setup();
+
+  const context = pushed(token, notification('1001', '2026-06-15T05:58:00+00:00', 'checkIn', 900));
+  context.db = db;
+  await pushEvents(context, token);
+
+  // The reader then runs a backfill over the same morning.
+  const second = await send(db, token, [event('2026-06-15T05:58:00+00:00', 'checkIn', 900)]);
+
+  assert.equal(second.stored, 0);
+  assert.equal(second.duplicates, 1);
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_punches').get().n, 1);
+});
+
+test('a guessed token is refused and stores nothing', async () => {
+  const { raw, db } = await setup();
+
+  const context = pushed('not-a-real-token', notification('1001', '2026-06-15T05:58:00+00:00', 'checkIn', 1));
+  context.db = db;
+  const response = await pushEvents(context, 'not-a-real-token');
+
+  assert.equal(response.status, 403);
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_punches').get().n, 0);
+});
+
+test('a heartbeat still counts as the terminal being alive', async () => {
+  const { raw, db, token } = await setup();
+
+  const context = pushed(token, {
+    dateTime: '2026-06-15T05:00:00+00:00',
+    eventType: 'videoloss',
+    eventState: 'inactive',
+  });
+  context.db = db;
+  const result = await (await pushEvents(context, token)).json();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.stored, 0);
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_punches').get().n, 0);
+
+  // Which is the whole point: the Terminals screen can now say it is reachable.
+  const device = raw.prepare('SELECT * FROM att_devices').get();
+  assert.ok(device.last_seen_at, 'heard from, even though it had nothing to report');
+});
+
+test('rubbish gets a 200, because an error can switch the terminal off', async () => {
+  const { db, token } = await setup();
+
+  const context = pushed(token, '<html>not an event</html>', 'text/html');
+  context.db = db;
+  const response = await pushEvents(context, token);
+
+  assert.equal(response.status, 200, 'a device that gets an error may disable its listening host');
+});
+
+test('a whole day arrives as separate posts and computes normally', async () => {
+  const { raw, db, token } = await setup();
+
+  for (const [time, status, serial] of [
+    ['2026-06-15T05:58:00+00:00', 'checkIn', 901],
+    ['2026-06-15T14:03:00+00:00', 'checkOut', 902],
+  ]) {
+    const context = pushed(token, notification('1001', time, status, serial));
+    context.db = db;
+    await pushEvents(context, token);
+  }
+
+  const day = raw.prepare('SELECT * FROM att_days WHERE staff_id = 1 AND day = ?').get('2026-06-15');
+  assert.equal(day.status, 'present');
+  assert.equal(day.first_in, '05:58');
+  assert.equal(day.last_out, '14:03');
+  assert.equal(day.worked_minutes, 455);
 });

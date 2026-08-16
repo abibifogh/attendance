@@ -38,6 +38,10 @@ const ROUTES = [
   // The same feed, reporting what the terminal says about its own attendance
   // configuration. Same token, same one thing it is allowed to do.
   ['POST', '/api/att/device-config', 'public', att.deviceConfig],
+  // The terminal posting its own events, with nothing running on site. The
+  // token is in the path because a listening-host configuration has nowhere to
+  // put a header.
+  ['POST', '/api/att/push/:token', 'public', att.pushEvents],
 
   // ------------------------------------------------------------- every day --
   ['GET', '/api/att/bootstrap', 'att_view', att.bootstrap],

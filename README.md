@@ -152,6 +152,28 @@ Eid al-Fitr and Eid al-Adha follow the lunar calendar and are announced locally,
 so they are left for you to type in. A computed guess that lands in a payroll is
 worse than a blank somebody has to fill.
 
+### Two ways in, and neither needs a server
+
+The app is on Cloudflare; the terminal is on your office network with no public
+address. Something has to bridge them, and there are two honest options.
+
+**The terminal posts to us.** Configured once with a URL, it makes its own
+outbound request every time somebody taps. Nothing runs in the building. This is
+the default, and for most properties it is the right answer.
+
+**A reader on site fetches.** A one-file program on any always-on computer asks
+the terminal for its log every few minutes, over overlapping windows, so a
+dropped connection costs nothing.
+
+The difference is what happens during an outage: a push is one attempt, a poll
+retries by design. Both can run at once — punches are matched on the device's
+own event number, so a tap that arrives twice is stored once.
+
+The ingest is source-agnostic underneath: normalised punches with a source tag
+and a dedupe key, and nothing downstream cares who sent them. A Hik-Connect
+cloud adapter, should a partner key ever arrive, would be a third feed into the
+same door.
+
 ### Nobody goes missing
 
 An employee number the terminal sends that nobody here recognises is listed on
@@ -235,54 +257,71 @@ then **Users & data → Add somebody** and create a real administrator account.
 
 ### 7. The terminal
 
-**On the terminal.** Give it a fixed address on your network, set its clock and
-timezone with NTP on, and make sure the account the poller will use can read the
-access-control event log.
+**On the terminal itself.** Give it a fixed address on your network, set its
+clock and time zone with NTP on, and make sure it can reach the internet. Its
+clock is where every time in this system comes from; if it drifts, the reports
+drift with it.
 
-If you configure shifts on the device or in Hik-Connect, its events arrive
-already labelled as clock-ins and clock-outs, which makes this app's job easier.
-It is not required — direction is worked out from the shift when the labels are
-absent — but it is free accuracy if you are doing it anyway.
+**In the app.** Setup → Terminals → *Register a terminal*. Leave the first
+question on **“The terminal posts to us”**. Enter the serial exactly as the
+device reports it under System → Device Information.
 
-**In the app.** Attendance → Setup → Terminals → *Register a terminal*. Enter the
-serial exactly as the device reports it, and copy the token it shows you. That is
-the only time it is readable.
+The app then shows you a small table of settings and a URL. Copy them into the
+terminal's own web page, under **Network → Advanced Settings → HTTP Listening**
+(some firmware puts it under **Event**). Press **Test** there, come back to
+Setup → Terminals, and it should say the terminal was heard from just now.
 
-**On the machine that will run the poller.** Node 18 or newer, and either a
-checkout of this repository or just the one file, `scripts/hik-poller.mjs`, which
-has no dependencies at all.
+That is the whole installation. Nothing runs on site, nothing needs restarting
+after a power cut, and there is no computer for anybody to maintain.
+
+> The URL contains that terminal's token, so treat it like a password. It is
+> readable once, when you register. Lose it and you press *New token*; the old
+> one stops working immediately.
+
+**What this mode costs you.** One attempt per tap. If your internet is down at
+07:03, that tap does not arrive — it stays in the terminal's own log, but
+nothing here will go and fetch it. For most properties that is a fair trade
+against having a machine to look after. If it is not, read on.
+
+#### The other way, if you would rather not lose a tap
+
+A small reader program can run on any always-on computer on the same network and
+ask the terminal for its log every five minutes, over a window that overlaps the
+last one — so an outage costs nothing, because the next successful run catches
+up.
+
+Choose **“A reader program on site fetches from it”** when registering, then on
+that computer:
 
 ```bash
 cp .hik-poller.json.example .hik-poller.json
 # Fill in the terminal's address and password, this app's URL,
 # and the serial and token from the step above.
 
-# Check it can see both ends. Prints the model, firmware and serial.
-node scripts/hik-poller.mjs --once --verbose
-
-# Pull in the history the terminal is already holding.
-node scripts/hik-poller.mjs --from 2026-01-01
-
-# Then leave it running. Polls every five minutes.
-node scripts/hik-poller.mjs
+node scripts/hik-poller.mjs --once --verbose   # check it can see both ends
+node scripts/hik-poller.mjs --from 2026-01-01  # pull in the history
+node scripts/hik-poller.mjs                    # then leave it running
 ```
 
-Keep it alive across reboots however that machine prefers — a systemd unit, Task
-Scheduler, `pm2`. It does not matter if it stops for a while: each pass asks for
-a window that overlaps the last one, so the next successful run picks up whatever
-was missed, and duplicates are discarded on arrival by the device's own event
-serial.
+It has no dependencies — one file and Node 18 or newer. Keep it alive across
+reboots however that machine prefers: a systemd unit, Task Scheduler, `pm2`.
 
-**Why a poller at all.** This app runs on Cloudflare and the terminal sits on a
-private network with no public address, so nothing in the cloud can reach it. The
-alternative is putting an access-control terminal on the open internet, which is
-not worth the convenience for a device family with this one's CVE history.
+**Both at once is allowed**, and is the belt-and-braces option: the terminal
+posts every tap immediately, and the reader sweeps up anything a dropped
+connection lost. Punches are matched on the device's own event number, so a tap
+that arrives twice is stored once.
 
-The ingest endpoint is source-agnostic: it takes a batch of normalised punches
-with a source tag and a dedupe key and does not care who sent them. The ISAPI
-poller is one adapter. The device's own HTTP push is another. A Hik-Connect
-adapter — should you get a Technology Partner Program key and confirm your model
-does cloud attendance — would be a third, and nothing downstream would change.
+#### Bringing in history
+
+Pushing only starts from the moment you configure it. If you want the months the
+terminal is already holding, run the reader once from any laptop on the network:
+
+```bash
+node scripts/hik-poller.mjs --from 2026-01-01
+```
+
+Then close it and never think about it again. A one-off backfill is not a
+machine you have to maintain.
 
 ### 8. Then set the rest up, in this order
 
@@ -351,6 +390,8 @@ src/
                       The terminal feed, and keeping derived days in step
     device-shifts.js  Reading shifts off the terminal, and inferring them from
                       the punches when it has none to give
+    push-events.js    Unwrapping what the terminal posts — JSON, XML or
+                      multipart, all ending as the same punch
     auth.js           PIN and password login, signed session cookies
     permissions.js    Who can reach what
     notices.js        The bell
@@ -362,7 +403,8 @@ src/
 public/               Frontend — plain ES modules, no build step
 migrations/           Database schema (console/ holds paste-able copies)
 scripts/
-  hik-poller.mjs      Reads the terminal over ISAPI, runs on site
+  hik-poller.mjs      Optional: reads the terminal over ISAPI from on site,
+                      for backfilling history or for outage-proof collection
 test/                 Rules, the write path against real SQLite, and the poller
 ```
 
@@ -400,6 +442,19 @@ before the person exists.
 - **The device clock is the source of truth for time.** Set the terminal's
   timezone and turn NTP on. A device that drifts produces punches that are wrong
   here too, and no amount of care at this end will fix it.
+- **A pushed tap is one attempt.** If the internet is down when somebody clocks
+  in, that tap does not arrive. It is still in the terminal's own log, and a
+  one-off run of the reader program will fetch it, but nothing does that on your
+  behalf. Run the reader alongside if a lost tap matters more than a machine to
+  maintain.
+- **Silence means different things in the two modes.** A reader that has not
+  called in for an hour is broken; a pushing terminal that has said nothing for
+  an hour on a Sunday is a terminal nobody has walked past. The Terminals screen
+  colours them differently for exactly that reason.
+- **The push URL is a password.** It carries the terminal's token, which is what
+  authorises punches under that terminal's serial. It is shown once. Anybody who
+  has it can post fabricated attendance, so treat it accordingly — and press
+  *New token* if it ever ends up somewhere it should not be.
 - **Timezone matters.** The `timezone` setting decides which calendar day a punch
   belongs to. Set it before the terminal starts sending, because changing it
   later moves days across boundaries.

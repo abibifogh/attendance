@@ -45,6 +45,31 @@ export async function deviceForToken(db, serial, token, pepper) {
   return device;
 }
 
+/**
+ * Find the device from a token alone.
+ *
+ * The poller can present a serial and a token, because it is a config file
+ * somebody filled in. A terminal posting its own events cannot: its listening
+ * host is one URL and nothing else, so the token in that URL has to identify
+ * the device by itself.
+ *
+ * Compared against every registered terminal rather than looked up by index —
+ * the hash is salted, so there is nothing to index on, and a property has a
+ * handful of doors rather than a million.
+ */
+export async function deviceForPushToken(db, token, pepper) {
+  if (!token) throw forbidden('This feed needs a token.');
+  const hash = await hashDeviceToken(token, pepper);
+
+  const rows = await db.prepare(
+    'SELECT * FROM att_devices WHERE token_hash IS NOT NULL AND active = 1',
+  ).all();
+
+  const device = (rows.results ?? []).find((row) => row.token_hash === hash);
+  if (!device) throw forbidden('That token does not belong to a terminal here.');
+  return device;
+}
+
 // ---------------------------------------------------------------------------
 // Normalising what arrives
 // ---------------------------------------------------------------------------

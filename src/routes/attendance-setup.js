@@ -2,6 +2,7 @@ import {
   badRequest, bool, int, json, notFound, num, readJson, rethrowConstraint, str,
 } from '../lib/http.js';
 import { ghanaHolidays, toMinutes } from '../lib/attendance.js';
+import { listeningHostSettings } from '../lib/push-events.js';
 import { claimOrphans, hashDeviceToken, recompute } from '../lib/attendance-ingest.js';
 import { getPepper } from '../lib/auth.js';
 import { addDays, isDay, todayIn } from '../util/dates.js';
@@ -503,12 +504,26 @@ export async function deleteHoliday(ctx, id) {
 
 export async function listDevices(ctx) {
   const rows = await ctx.db.prepare(
-    `SELECT d.id, d.serial, d.name, d.location, d.model, d.last_seen_at, d.last_event_at,
+    `SELECT d.id, d.serial, d.name, d.location, d.model, d.mode, d.last_seen_at, d.last_event_at,
             d.active, d.note, d.token_hash IS NOT NULL AS has_token,
             (SELECT COUNT(*) FROM att_punches p WHERE p.device_serial = d.serial) AS punches
      FROM att_devices d ORDER BY d.name`,
   ).all();
   return json({ devices: (rows.results ?? []).map((d) => ({ ...d, has_token: Boolean(d.has_token) })) });
+}
+
+/**
+ * Where this app can be reached from outside.
+ *
+ * Preferred from the setting, because that is the address somebody chose; the
+ * request's own origin is the fallback, which is right often enough that a
+ * property who never filled the setting in still gets a working URL rather than
+ * a placeholder they would have to notice and correct.
+ */
+async function siteOrigin(ctx) {
+  const row = await ctx.db.prepare("SELECT value FROM settings WHERE key = 'site_url'")
+    .first().catch(() => null);
+  return row?.value || ctx.url.origin;
 }
 
 /** A token the poller will carry. Shown once, stored only as a hash. */
@@ -520,19 +535,21 @@ function newToken() {
 export async function createDevice(ctx) {
   const body = await readJson(ctx.request);
   const serial = str(body.serial, 'Serial number', { required: true, max: 120 });
+  const mode = body.mode === 'poll' ? 'poll' : 'push';
   const token = newToken();
   const pepper = await getPepper(ctx.db);
 
   let row;
   try {
     row = await ctx.db.prepare(
-      `INSERT INTO att_devices (serial, name, location, model, token_hash, note)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING id`,
+      `INSERT INTO att_devices (serial, name, location, model, mode, token_hash, note)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) RETURNING id`,
     ).bind(
       serial,
       str(body.name, 'Name', { required: true, max: 80 }),
       str(body.location, 'Location', { max: 120 }),
       str(body.model, 'Model', { max: 80 }),
+      mode,
       await hashDeviceToken(token, pepper),
       str(body.note, 'Note', { max: 300 }),
     ).first();
@@ -540,9 +557,17 @@ export async function createDevice(ctx) {
     rethrowConstraint(err, { unique: 'A terminal with that serial number is already registered.' });
   }
 
-  await audit(ctx, 'attendance.device_create', row.id, { serial });
-  // The only time this token is ever readable. Said plainly on the screen too.
-  return json({ ok: true, id: row.id, serial, token });
+  await audit(ctx, 'attendance.device_create', row.id, { serial, mode });
+  // The only time this token is ever readable. Returned with the settings it
+  // has to be typed into, so nobody has to assemble a URL by hand.
+  return json({
+    ok: true,
+    id: row.id,
+    serial,
+    token,
+    mode,
+    listening: listeningHostSettings({ siteUrl: await siteOrigin(ctx), token }),
+  });
 }
 
 export async function rotateToken(ctx, id) {
@@ -555,7 +580,13 @@ export async function rotateToken(ctx, id) {
     .bind(await hashDeviceToken(token, await getPepper(ctx.db)), deviceId).run();
 
   await audit(ctx, 'attendance.device_token', deviceId, { serial: device.serial });
-  return json({ ok: true, serial: device.serial, token });
+  return json({
+    ok: true,
+    serial: device.serial,
+    token,
+    mode: device.mode,
+    listening: listeningHostSettings({ siteUrl: await siteOrigin(ctx), token }),
+  });
 }
 
 export async function updateDevice(ctx, id) {
@@ -565,11 +596,13 @@ export async function updateDevice(ctx, id) {
   if (!device) throw notFound('No such terminal.');
 
   await ctx.db.prepare(
-    'UPDATE att_devices SET name = ?1, location = ?2, model = ?3, active = ?4, note = ?5 WHERE id = ?6',
+    `UPDATE att_devices SET name = ?1, location = ?2, model = ?3, mode = ?4,
+                            active = ?5, note = ?6 WHERE id = ?7`,
   ).bind(
     str(body.name, 'Name', { required: true, max: 80 }),
     str(body.location, 'Location', { max: 120 }),
     str(body.model, 'Model', { max: 80 }),
+    body.mode === 'poll' ? 'poll' : 'push',
     bool(body.active, true) ? 1 : 0,
     str(body.note, 'Note', { max: 300 }),
     deviceId,
