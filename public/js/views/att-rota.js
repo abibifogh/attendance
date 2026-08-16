@@ -88,12 +88,40 @@ export async function renderAttRota(params) {
   const cells = new Map();
 
   const cell = (row, entry) => {
+    const { own, other } = shiftsFor(data.shifts, row.staff.department);
+
+    const opt = (shift) => h('option', {
+      value: shift.id, selected: String(shift.id) === String(entry.shift_id),
+    }, shift.name);
+
+    // Whatever is already on the day is always offered, even when it belongs to
+    // another department. A cover shift somebody arranged last week must not
+    // vanish from the dropdown just because it is out of department — the
+    // select would fall back to its first option and quietly propose undoing it.
+    const outside = entry.shift_id != null
+      && other.find((sh) => String(sh.id) === String(entry.shift_id));
+
+    const expand = other.length
+      ? h('option', { value: EXPAND }, `⋯ other departments (${other.length})`)
+      : null;
+
     const select = h('select.rota-cell', {
       class: entry.explicit ? 'rota-set' : 'rota-pattern',
       title: entry.holiday ? `Public holiday: ${entry.holiday}` : undefined,
       disabled: Boolean(entry.leave),
       onchange: (e) => {
         const value = e.target.value;
+
+        // Not a choice of shift — a request to see the rest of them. Put the
+        // value back where it was so nothing is recorded as changed, and add
+        // the other departments in a group of their own.
+        if (value === EXPAND) {
+          e.target.remove(e.target.selectedIndex);
+          e.target.append(h('optgroup', { label: 'Other departments' }, other.map(opt)));
+          e.target.value = entry.shift_id == null ? '' : String(entry.shift_id);
+          return;
+        }
+
         pending.set(`${row.staff.id}|${entry.day}`, value === 'pattern'
           ? { staffId: row.staff.id, day: entry.day, clear: true }
           : { staffId: row.staff.id, day: entry.day, shiftId: value === '' ? null : Number(value) });
@@ -102,11 +130,11 @@ export async function renderAttRota(params) {
       },
     },
       h('option', { value: '', selected: entry.shift_id == null && entry.explicit }, 'Off'),
-      ...data.shifts.map((s) => h('option', {
-        value: s.id, selected: String(s.id) === String(entry.shift_id),
-      }, s.name)),
+      outside ? opt(outside) : null,
+      own.map(opt),
       // Only offered where an override exists to remove.
       entry.source === 'roster' ? h('option', { value: 'pattern' }, '↺ Use pattern') : null,
+      expand,
     );
 
     if (entry.leave) {
@@ -135,7 +163,7 @@ export async function renderAttRota(params) {
       body: h('div',
         h('p.muted', `${fmtDayShort(data.from)} to ${fmtDayShort(data.to)}. Days already covered by `
           + 'approved leave are left as they are.'),
-        field('Put them on', shiftSelect(data.shifts, '', { name: 'shiftId' }),
+        field('Put them on', scopedShiftSelect(data.shifts, row.staff.department, '', { name: 'shiftId' }),
           'Leave blank to make the chosen days rest days'),
         field('On these days', h('div.btn-row', { style: { flexWrap: 'wrap' } },
           names.map((label, dow) => h('label', {
@@ -346,7 +374,7 @@ async function editPattern(row, shifts, reload) {
         : null,
       h('div.field-row', days.map((label, dow) => field(
         label,
-        shiftSelect(shifts, valueAt(week, dow), { name: `w${week}d${dow}` }),
+        scopedShiftSelect(shifts, row.staff.department, valueAt(week, dow), { name: `w${week}d${dow}` }),
       ))),
     )));
   };
@@ -396,6 +424,57 @@ async function editPattern(row, shifts, reload) {
     );
     await reload();
   }
+}
+
+const EXPAND = '__all__';
+
+/**
+ * The shifts worth putting in front of somebody.
+ *
+ * This property runs twenty-four shifts and nobody works more than a handful of
+ * them. A housekeeper's dropdown offering Bar, Security and three Maintenance
+ * rotas is not neutral — it is where the wrong pick comes from, on a screen
+ * whose whole job is picking quickly across a fortnight of cells.
+ *
+ * So their own department comes first and the rest are one click away rather
+ * than gone: covering another department is a normal thing to need and an
+ * unusual thing to want by accident, which is exactly the shape of a dropdown
+ * that has to be asked for.
+ *
+ * Somebody with no department, or a department with no shifts of its own, gets
+ * everything — a short list is only an improvement while it contains the answer.
+ */
+function shiftsFor(shifts, department) {
+  const active = (shifts ?? []).filter((s) => s.active !== 0);
+  if (!department) return { own: active, other: [] };
+
+  const own = active.filter((s) => (s.department || '') === department);
+  if (!own.length) return { own: active, other: [] };
+
+  return { own, other: active.filter((s) => (s.department || '') !== department) };
+}
+
+/**
+ * A shift dropdown for one person, their own department grouped first.
+ *
+ * A dialog can afford the whole list where a grid cell cannot — there is one of
+ * it, and it is open deliberately — so nothing is hidden here. The grouping is
+ * enough: the five shifts they might actually work sit at the top under their
+ * own department, and the other nineteen are below under theirs.
+ */
+function scopedShiftSelect(shifts, department, selected, props = {}) {
+  const { own, other } = shiftsFor(shifts, department);
+  if (!other.length) return shiftSelect(own, selected, props);
+
+  const opt = (s) => h('option', {
+    value: s.id, selected: String(s.id) === String(selected),
+  }, `${s.name} (${s.starts_at}–${s.ends_at})`);
+
+  return h('select', props,
+    h('option', { value: '' }, '—'),
+    h('optgroup', { label: department }, own.map(opt)),
+    h('optgroup', { label: 'Other departments' }, other.map(opt)),
+  );
 }
 
 function mondayOf(day) {
