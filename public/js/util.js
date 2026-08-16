@@ -49,6 +49,11 @@ export function mount(el, ...children) {
 
 // ------------------------------------------------------------ formatting --
 
+// Built once and reused. Whole numbers are the commonest case by far — every
+// count in every table goes through this — and constructing a formatter per
+// cell is the kind of waste that only shows up on the longest report.
+const intFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 0 });
+
 export function fmtNum(value, places = 2) {
   if (value == null || value === '' || Number.isNaN(Number(value))) return '—';
   if (places === 0) return intFmt.format(Number(value));
