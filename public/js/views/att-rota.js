@@ -9,10 +9,15 @@ import { field, formDialog, shiftSelect } from './att-shared.js';
 /**
  * The rota.
  *
- * Two layers, and the difference between them is the whole design. A standing
- * weekly pattern says what somebody normally works — set once, and most people
- * never need anything else. The grid below overrides it for one specific day,
- * which is what a swap, a cover or a one-off double writes.
+ * The screen somebody opens once a week, so it is built for the way a rota is
+ * actually made: last week, with a few changes. Copying a week is one press;
+ * filling one person's fortnight is one more; and the totals along the bottom
+ * answer the question the grid otherwise hides — is anybody on nights on Sunday.
+ *
+ * Two layers underneath, and the difference between them is the whole design. A
+ * standing weekly pattern says what somebody normally works — set once, and for
+ * a fixed rota that is the end of it. The grid overrides it for one specific
+ * day, which is what a swap, a cover or a one-off double writes.
  *
  * A cell showing a shift in grey is following the pattern; the same cell in
  * black has been set by hand. Without that distinction, "I gave him Thursday
@@ -78,6 +83,10 @@ export async function renderAttRota(params) {
     );
   };
 
+  // Every editable cell, so filling a row can set them in place rather than
+  // redrawing a grid somebody is halfway through editing.
+  const cells = new Map();
+
   const cell = (row, entry) => {
     const select = h('select.rota-cell', {
       class: entry.explicit ? 'rota-set' : 'rota-pattern',
@@ -103,7 +112,43 @@ export async function renderAttRota(params) {
     if (entry.leave) {
       return h('div.rota-locked', { title: 'Approved leave' }, 'Leave');
     }
+    cells.set(`${row.staff.id}|${entry.day}`, select);
     return select;
+  };
+
+  /**
+   * Put one shift across every day on screen for one person.
+   *
+   * The commonest thing anybody does to a fortnight, and eighteen dropdowns
+   * otherwise. Days covered by approved leave are skipped rather than
+   * overwritten — the leave was a decision, and this is not.
+   */
+  const fillRow = async (row) => {
+    const choice = await formDialog({
+      title: `${row.staff.name} — every day shown`,
+      submitLabel: 'Fill the row',
+      body: h('div',
+        h('p.muted', `${fmtDayShort(data.from)} to ${fmtDayShort(data.to)}. Days already covered by `
+          + 'approved leave are left as they are.'),
+        field('Put them on', shiftSelect(data.shifts, '', { name: 'shiftId' }),
+          'Leave blank for a rest day every day'),
+      ),
+      onSubmit: async (form) => ({ shiftId: form.get('shiftId') }),
+    });
+    if (!choice) return;
+
+    const shiftId = choice.shiftId === '' ? null : Number(choice.shiftId);
+    for (const entry of row.days) {
+      if (entry.leave) continue;
+      const select = cells.get(`${row.staff.id}|${entry.day}`);
+      if (!select) continue;
+      select.value = shiftId == null ? '' : String(shiftId);
+      select.classList.add('rota-dirty');
+      pending.set(`${row.staff.id}|${entry.day}`, {
+        staffId: row.staff.id, day: entry.day, shiftId,
+      });
+    }
+    refreshSaveBar();
   };
 
   const grid = h('div.table-wrap',
@@ -117,15 +162,45 @@ export async function renderAttRota(params) {
           h('small.muted', fmtDayShort(day)),
         )),
       )),
+      h('tfoot',
+        // The totals a rota exists to get right. Zero on a day somebody is
+        // needed is the one thing worth shouting about, so it is the only thing
+        // that changes colour.
+        data.shifts.map((shift) => h('tr.rota-total',
+          h('td', h('small', shift.name)),
+          h('td'),
+          ...data.days.map((day) => {
+            const n = data.coverage.find((c) => c.day === day)?.counts?.[shift.id] ?? 0;
+            return h('td', { class: isWeekend(day) ? 'rota-weekend' : '' },
+              h('span', { class: n ? '' : 'rota-gap' }, String(n)));
+          }),
+        )),
+        h('tr.rota-total',
+          h('td', h('small.muted', 'Off / on leave')),
+          h('td'),
+          ...data.days.map((day) => {
+            const c = data.coverage.find((x) => x.day === day);
+            return h('td', { class: isWeekend(day) ? 'rota-weekend' : '' },
+              h('small.muted', `${c?.off ?? 0}${c?.onLeave ? ` · ${c.onLeave}L` : ''}`));
+          }),
+        ),
+      ),
       h('tbody', data.rows.map((row) => h('tr',
         h('td',
           h('div', row.staff.name),
           h('small.muted', row.staff.department || `No. ${row.staff.employee_no}`),
         ),
         h('td',
-          h('button.btn-sm', {
-            onclick: () => editPattern(row, data.shifts, reload),
-          }, row.hasPattern ? 'Edit' : 'Set'),
+          h('div.btn-row',
+            h('button.btn-sm', {
+              title: 'What this person normally works each week',
+              onclick: () => editPattern(row, data.shifts, reload),
+            }, row.hasPattern ? 'Pattern' : 'Set'),
+            h('button.btn-sm', {
+              title: 'Put one shift across every day shown',
+              onclick: () => fillRow(row),
+            }, '⇢'),
+          ),
         ),
         ...row.days.map((entry) => h('td', { class: isWeekend(entry.day) ? 'rota-weekend' : '' }, cell(row, entry))),
       ))),
@@ -149,6 +224,8 @@ export async function renderAttRota(params) {
       h('button.btn-sm', {
         onclick: () => reload({ from: mondayOf(todayISO()), to: shiftDay(mondayOf(todayISO()), 13) }),
       }, 'This fortnight'),
+      h('div', { style: { flex: 1 } }),
+      h('button.btn.btn-primary', { onclick: () => copyWeek(data, reload) }, 'Copy a week →'),
     ),
     saveBar,
     card('Two weeks', { note: `${data.rows.length} people`, wide: true }, grid),
@@ -158,6 +235,55 @@ export async function renderAttRota(params) {
   );
 
   return host;
+}
+
+/**
+ * Copy a week onto the weeks on screen.
+ *
+ * Defaults to the week before the one being viewed, because "same as last week"
+ * is what most weeks are. Leave already approved in the target weeks survives
+ * it, and a day the standing pattern already covers goes back to following the
+ * pattern rather than being pinned — otherwise one press would turn the whole
+ * grid black and the distinction the screen rests on would be gone.
+ */
+async function copyWeek(data, reload) {
+  const target = data.from;
+  const suggested = shiftDay(target, -7);
+
+  const done = await formDialog({
+    title: 'Copy a week',
+    submitLabel: 'Copy it across',
+    body: h('div',
+      h('p.muted', 'Most weeks are last week with two changes. Copy, then fix the two.'),
+      h('div.field-row',
+        field('Copy from the week beginning', h('input', {
+          type: 'date', name: 'from', value: suggested, required: true,
+        })),
+        field('Onto the week beginning', h('input', {
+          type: 'date', name: 'to', value: target, required: true,
+        })),
+      ),
+      field('How many weeks', h('select', { name: 'weeks' },
+        h('option', { value: '1' }, 'One week'),
+        h('option', { value: '2', selected: true }, 'Two weeks — the whole fortnight shown'),
+        h('option', { value: '4' }, 'Four weeks'),
+      )),
+      h('p.muted', { style: { fontSize: '.82rem' } },
+        'Approved leave in the weeks being written to is never overwritten. Anything else '
+        + 'in those weeks is replaced.'),
+    ),
+    onSubmit: async (form) => api.attCopyRoster({
+      from: form.get('from'),
+      to: form.get('to'),
+      weeks: Number(form.get('weeks')),
+    }),
+  });
+
+  if (done) {
+    toast(`${done.copied} day${done.copied === 1 ? '' : 's'} copied`
+      + `${done.skippedLeave ? `, ${done.skippedLeave} left as leave` : ''}.`, 'good');
+    await reload();
+  }
 }
 
 /**

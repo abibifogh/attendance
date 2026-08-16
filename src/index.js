@@ -62,6 +62,7 @@ const ROUTES = [
 
   ['GET', '/api/att/roster', ['att_manage', 'att_reports'], att.getRoster],
   ['POST', '/api/att/roster', 'att_manage', att.saveRoster],
+  ['POST', '/api/att/roster/copy', 'att_manage', att.copyRoster],
   ['POST', '/api/att/patterns', 'att_manage', att.savePattern],
 
   ['GET', '/api/att/leave', 'att_view', att.listLeave],

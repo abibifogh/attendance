@@ -4,8 +4,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  day as dayRoute, deviceConfig, importShifts, ingest, pushEvents, resolveDay,
-  shiftSuggestions, staffReport,
+  copyRoster, day as dayRoute, deviceConfig, getRoster, importShifts, ingest,
+  pushEvents, resolveDay, shiftSuggestions, staffReport,
 } from '../src/routes/attendance.js';
 import { createStaff } from '../src/routes/attendance-setup.js';
 import { hashDeviceToken } from '../src/lib/attendance-ingest.js';
@@ -90,7 +90,8 @@ async function setup() {
 
   raw.prepare(
     `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes, grace_in_minutes, grace_out_minutes)
-     VALUES (1, 'Morning', '06:00', '14:00', 30, 5, 5)`,
+     VALUES (1, 'Morning', '06:00', '14:00', 30, 5, 5),
+            (2, 'Night',   '22:00', '06:00', 30, 5, 5)`,
   ).run();
 
   raw.prepare(
@@ -650,4 +651,144 @@ test('a whole day arrives as separate posts and computes normally', async () => 
   assert.equal(day.first_in, '05:58');
   assert.equal(day.last_out, '14:03');
   assert.equal(day.worked_minutes, 455);
+});
+
+// ---------------------------------------------------------------------------
+// The rota, maintained here
+// ---------------------------------------------------------------------------
+
+/**
+ * Monday 2026-06-08 is the source week; 2026-06-15 the target. The fixture puts
+ * staff 1 on Morning, Monday to Friday, by standing pattern.
+ */
+const SOURCE = '2026-06-08';
+const TARGET = '2026-06-15';
+
+test('copying a week brings the overrides and leaves the pattern alone', async () => {
+  const { raw, db } = await setup();
+
+  // A night shift covered on the Wednesday of the source week.
+  raw.prepare("INSERT INTO att_roster (staff_id, day, shift_id) VALUES (1, '2026-06-10', 2)").run();
+
+  const result = await (await copyRoster(ctx(db, {
+    body: { from: SOURCE, to: TARGET, weeks: 1 },
+  }))).json();
+
+  assert.equal(result.ok, true);
+
+  // The one day that differs from the pattern is written as an override.
+  const wednesday = raw.prepare('SELECT * FROM att_roster WHERE staff_id = 1 AND day = ?')
+    .get('2026-06-17');
+  assert.equal(wednesday.shift_id, 2);
+  assert.equal(wednesday.set_by, 'Ama (manager)');
+
+  // Monday and Tuesday match the standing pattern, so they stay pattern-driven
+  // rather than being pinned — otherwise one press blackens the whole grid.
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_roster WHERE staff_id = 1 AND day IN (?, ?)')
+    .get('2026-06-15', '2026-06-16').n, 0);
+});
+
+test('copying does not overwrite approved leave', async () => {
+  const { raw, db } = await setup();
+
+  raw.prepare("INSERT INTO att_roster (staff_id, day, shift_id) VALUES (1, '2026-06-10', 2)").run();
+  raw.prepare(
+    `INSERT INTO att_leave (staff_id, reason_code, from_day, to_day, days, status)
+     VALUES (1, 'annual_leave', '2026-06-17', '2026-06-17', 1, 'approved')`,
+  ).run();
+
+  const result = await (await copyRoster(ctx(db, {
+    body: { from: SOURCE, to: TARGET, weeks: 1 },
+  }))).json();
+
+  assert.equal(result.skippedLeave, 1);
+  assert.equal(
+    raw.prepare('SELECT COUNT(*) n FROM att_roster WHERE staff_id = 1 AND day = ?').get('2026-06-17').n,
+    0,
+    'the leave day was not given a shift',
+  );
+});
+
+test('copying does not roster somebody before they started', async () => {
+  const { raw, db } = await setup();
+  raw.prepare("INSERT INTO att_roster (staff_id, day, shift_id) VALUES (1, '2026-06-10', 2)").run();
+  raw.prepare("UPDATE att_staff SET hired_on = '2026-06-18' WHERE id = 1").run();
+
+  await copyRoster(ctx(db, { body: { from: SOURCE, to: TARGET, weeks: 1 } }));
+
+  // The target week's days that fall before the start date. The source week's
+  // own rows are fixture and are not what this is about.
+  assert.equal(
+    raw.prepare(
+      "SELECT COUNT(*) n FROM att_roster WHERE staff_id = 1 AND day BETWEEN '2026-06-15' AND '2026-06-17'",
+    ).get().n,
+    0,
+    'no shifts written for days before they started',
+  );
+  // And the days on or after the start date were copied as normal.
+  assert.ok(
+    raw.prepare(
+      "SELECT COUNT(*) n FROM att_days WHERE staff_id = 1 AND day BETWEEN '2026-06-18' AND '2026-06-21'",
+    ).get().n > 0,
+  );
+});
+
+test('copying a week onto itself is refused', async () => {
+  const { db } = await setup();
+  await assert.rejects(
+    () => copyRoster(ctx(db, { body: { from: SOURCE, to: SOURCE } })),
+    /same week/i,
+  );
+});
+
+test('a copied week is reflected in the computed days straight away', async () => {
+  const { raw, db } = await setup();
+  // Nobody works Saturdays by pattern; the source week has one covered.
+  raw.prepare("INSERT INTO att_roster (staff_id, day, shift_id) VALUES (1, '2026-06-13', 1)").run();
+
+  await copyRoster(ctx(db, { body: { from: SOURCE, to: TARGET, weeks: 1 } }));
+
+  const saturday = raw.prepare('SELECT * FROM att_days WHERE staff_id = 1 AND day = ?')
+    .get('2026-06-20');
+  assert.equal(saturday.scheduled, 1, 'the new Saturday shift is already worked out');
+  assert.equal(saturday.status, 'absent', 'rostered and nobody clocked in');
+});
+
+test('the grid reports how many people each shift has each day', async () => {
+  const { raw, db } = await setup();
+
+  // A second person, on nights Monday to Friday.
+  raw.prepare("INSERT INTO att_staff (id, employee_no, name) VALUES (2, '1002', 'Vivian Mensah')").run();
+  for (const d of [0, 1, 2, 3, 4]) {
+    raw.prepare('INSERT INTO att_patterns (staff_id, dow, shift_id) VALUES (2, ?, 2)').run(d);
+  }
+
+  const data = await (await getRoster(ctx(db, { query: `?from=${TARGET}&to=2026-06-21` }))).json();
+
+  const monday = data.coverage.find((c) => c.day === '2026-06-15');
+  assert.equal(monday.counts['1'], 1, 'one on mornings');
+  assert.equal(monday.counts['2'], 1, 'one on nights');
+  assert.equal(monday.off, 0);
+
+  // Sunday: nobody on either shift, which is exactly what the totals exist to
+  // make visible before somebody does not turn up.
+  const sunday = data.coverage.find((c) => c.day === '2026-06-21');
+  assert.equal(sunday.counts['1'], 0);
+  assert.equal(sunday.counts['2'], 0);
+  assert.equal(sunday.off, 2);
+});
+
+test('somebody on leave is counted as on leave, not as unrostered', async () => {
+  const { raw, db } = await setup();
+  raw.prepare(
+    `INSERT INTO att_leave (staff_id, reason_code, from_day, to_day, days, status)
+     VALUES (1, 'annual_leave', '2026-06-15', '2026-06-15', 1, 'approved')`,
+  ).run();
+
+  const data = await (await getRoster(ctx(db, { query: `?from=${TARGET}&to=2026-06-21` }))).json();
+  const monday = data.coverage.find((c) => c.day === '2026-06-15');
+
+  assert.equal(monday.onLeave, 1);
+  assert.equal(monday.counts['1'], 0, 'not counted as covering the morning');
+  assert.equal(monday.off, 0, 'and not counted as simply off either');
 });

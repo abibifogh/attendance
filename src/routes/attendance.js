@@ -14,7 +14,7 @@ import { getPepper } from '../lib/auth.js';
 import { createNotice } from '../lib/notices.js';
 import { emailExceptions, pingExceptions } from '../lib/notify.js';
 import {
-  addDays, diffDays, isDay, isMonth, monthBounds, rangeDays, startOfWeek, todayIn,
+  addDays, diffDays, dow, isDay, isMonth, monthBounds, rangeDays, startOfWeek, todayIn,
 } from '../util/dates.js';
 
 /**
@@ -867,12 +867,33 @@ export async function getRoster(ctx) {
 
   const ds = await loadDataset(ctx.db, { from, to });
   const days = rangeDays(from, to);
+  const shifts = ds.shifts.filter((s) => s.active);
+
+  // How many people each shift has on each day. The number a rota is actually
+  // built to answer — "is anybody on nights on Sunday" — and the one a grid of
+  // dropdowns hides in plain sight until somebody does not turn up.
+  const coverage = days.map((day) => {
+    const counts = Object.fromEntries(shifts.map((shift) => [shift.id, 0]));
+    let off = 0;
+    let onLeave = 0;
+
+    for (const staff of ds.staff) {
+      if (!staff.active) continue;
+      if (ds.leaveBy.has(`${staff.id}|${day}`)) { onLeave += 1; continue; }
+      const shift = scheduleFor(ds, staff.id, day).shift;
+      if (shift && counts[shift.id] != null) counts[shift.id] += 1;
+      else off += 1;
+    }
+
+    return { day, counts, off, onLeave, holiday: ds.holidayBy.get(day)?.name ?? null };
+  });
 
   return json({
     from,
     to,
     days,
-    shifts: ds.shifts.filter((s) => s.active),
+    coverage,
+    shifts,
     rows: ds.staff.filter((s) => s.active).map((staff) => ({
       staff: { id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department },
       pattern: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [
@@ -945,6 +966,97 @@ export async function saveRoster(ctx) {
   await audit(ctx, 'attendance.roster', null, { changes: entries.length });
 
   return json({ ok: true, changed: entries.length });
+}
+
+/**
+ * Copy one week's rota onto another.
+ *
+ * The single action that decides whether maintaining a rota here is a chore or
+ * a habit. Most weeks are last week with two changes, and typing the other
+ * hundred cells again is the reason people go back to a spreadsheet.
+ *
+ * Two rules keep it from being destructive in ways nobody expects:
+ *
+ *  - **Approved leave is never overwritten.** Somebody booked off next Tuesday
+ *    stays booked off, whatever last Tuesday said.
+ *  - **A day that matches the standing pattern anyway is left alone** rather
+ *    than written as an override. Otherwise one press would turn the whole grid
+ *    from "following the pattern" to "set by hand", and the distinction the
+ *    screen is built around would be gone by Wednesday.
+ */
+export async function copyRoster(ctx) {
+  const body = await readJson(ctx.request);
+  const fromWeek = startOfWeek(readDay(body.from));
+  const toWeek = startOfWeek(readDay(body.to));
+  if (fromWeek === toWeek) throw badRequest('That is the same week.');
+
+  const span = Math.max(1, Math.min(int(body.weeks ?? 1, 'Weeks', { min: 1, max: 8 }), 8));
+  const dayCount = span * 7;
+
+  // Both weeks in one load, plus a day either side for the overnight case.
+  const lo = fromWeek < toWeek ? fromWeek : toWeek;
+  const hi = addDays(fromWeek < toWeek ? toWeek : fromWeek, dayCount);
+  const ds = await loadDataset(ctx.db, { from: addDays(lo, -1), to: hi });
+
+  const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
+  const statements = [];
+  const touched = new Map();
+  let copied = 0;
+  let skippedLeave = 0;
+
+  for (const staff of ds.staff) {
+    if (!staff.active) continue;
+
+    for (let offset = 0; offset < dayCount; offset++) {
+      const sourceDay = addDays(fromWeek, offset);
+      const targetDay = addDays(toWeek, offset);
+
+      // Somebody who had not started, or has since left, is not rostered by
+      // copying a week they were never part of.
+      if (staff.hired_on && targetDay < staff.hired_on) continue;
+      if (staff.left_on && targetDay > staff.left_on) continue;
+
+      if (ds.leaveBy.has(`${staff.id}|${targetDay}`)) { skippedLeave += 1; continue; }
+
+      const source = scheduleFor(ds, staff.id, sourceDay);
+      const patternHere = ds.patternBy.get(`${staff.id}|${dow(targetDay)}`);
+      const patternShift = patternHere ? patternHere.shift_id : undefined;
+      const wanted = source.shift?.id ?? null;
+
+      if (patternShift === wanted) {
+        // The pattern already says this. Drop any override so the cell goes
+        // back to being pattern-driven rather than pinned.
+        statements.push(ctx.db.prepare(
+          'DELETE FROM att_roster WHERE staff_id = ? AND day = ?',
+        ).bind(staff.id, targetDay));
+      } else {
+        statements.push(ctx.db.prepare(
+          `INSERT INTO att_roster (staff_id, day, shift_id, set_by, set_at)
+           VALUES (?1, ?2, ?3, ?4, datetime('now'))
+           ON CONFLICT (staff_id, day) DO UPDATE SET
+             shift_id = excluded.shift_id, set_by = excluded.set_by, set_at = excluded.set_at`,
+        ).bind(staff.id, targetDay, wanted, actor));
+        copied += 1;
+      }
+
+      const range = touched.get(staff.id) ?? { from: targetDay, to: targetDay };
+      if (targetDay < range.from) range.from = targetDay;
+      if (targetDay > range.to) range.to = targetDay;
+      touched.set(staff.id, range);
+    }
+  }
+
+  for (let i = 0; i < statements.length; i += 100) {
+    await ctx.db.batch(statements.slice(i, i + 100));
+  }
+  await recomputeTouched(ctx.db, touched);
+  await audit(ctx, 'attendance.roster_copy', null, {
+    from: fromWeek, to: toWeek, weeks: span, copied, skippedLeave,
+  });
+
+  return json({
+    ok: true, from: fromWeek, to: toWeek, weeks: span, copied, skippedLeave,
+  });
 }
 
 /**

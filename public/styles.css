@@ -714,3 +714,16 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   .att-cell { border: 1px solid #d4dae1; }
   .att-legend, .rota-savebar { display: none; }
 }
+
+/* The rota's totals. A shift with nobody on it is the one thing on this page
+   worth shouting about, so it is the only thing that changes colour. */
+.rota-total td {
+  border-top: 1px solid var(--border);
+  padding: .3rem .4rem;
+  font-variant-numeric: tabular-nums;
+  font-size: .8rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+.rota-total td:first-child, .rota-total td:nth-child(2) { text-align: left; }
+.rota-gap { color: var(--bad); font-weight: 700; }

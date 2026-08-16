@@ -75,6 +75,7 @@ export const api = {
     ...(from ? { from } : {}), ...(to ? { to } : {}),
   })}`),
   attSaveRoster: (body) => request('/api/att/roster', { method: 'POST', body }),
+  attCopyRoster: (body) => request('/api/att/roster/copy', { method: 'POST', body }),
   attSavePattern: (body) => request('/api/att/patterns', { method: 'POST', body }),
 
   attLeave: (params = {}) => request(`/api/att/leave?${new URLSearchParams(params)}`),

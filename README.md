@@ -96,16 +96,33 @@ node scripts/hik-poller.mjs --shifts --verbose
 which prints which of the terminal's configuration endpoints answered. The
 poller also does this on its own twice a day.
 
-**What this cannot do.** The per-person *rota* — who works which shift on which
-day — is held by Hik-Connect rather than the terminal, and reading it needs the
-HikCentral Connect OpenAPI and a Technology Partner Program key. Set the rota
-here; the shift definitions themselves come across.
+**The rota is a separate matter.** Who works which shift on which day is not
+readable from the terminal at all — it lives in Hik-Connect's own cloud and
+would need a partner key. It is maintained here instead, which is the right
+place for it anyway: see *The rota* below.
 
-### The rota
+### The rota — maintained here
 
-Two layers. A **standing weekly pattern** per person, set once — most people
-never need anything else. A **per-day override** for swaps, cover and one-off
-doubles.
+This is where the rota lives. Not in Hik-Connect, not in a spreadsheet: the
+reports are built against it, so it belongs where the reports are, and keeping
+it in two places means keeping it wrong in one of them.
+
+Built for the way a rota is actually made — last week, with a few changes:
+
+- **Copy a week.** One press puts a whole fortnight in place. Approved leave in
+  the weeks being written to is never overwritten, and a day the standing
+  pattern already covers goes back to following the pattern rather than being
+  pinned — otherwise one press would turn the entire grid into hand-set
+  overrides and the distinction below would be gone by Wednesday.
+- **Fill a row.** One shift across every day shown for one person, skipping days
+  they are already on leave.
+- **Totals along the bottom.** How many people each shift has each day. A shift
+  with nobody on it shows in red, which is the question a grid of dropdowns
+  otherwise hides until somebody does not turn up on Sunday night.
+
+Two layers underneath. A **standing weekly pattern** per person, set once — for
+a fixed rota that is the end of it. A **per-day override** for swaps, cover and
+one-off doubles.
 
 A cell following the pattern is faint; one set by hand is not. Without that,
 "I gave him Thursday off" and "the pattern never had him working Thursday" look
@@ -113,6 +130,10 @@ identical, and they are not — one of them is a decision somebody made.
 
 Night shifts belong to the day they *start*, so a porter's 06:04 clock-out is
 not the breakfast cook arriving four minutes late.
+
+> **Hik-Connect only needs the shift definitions**, so its terminal knows how to
+> label a tap. It does not need to know that Henry is on nights this week. Leave
+> the shifts there if they are already set up, and keep the rota here.
 
 ### Leave
 
@@ -334,8 +355,9 @@ All under Attendance → Setup:
    whose punches have already arrived is listed at the top of that screen;
    adding them attaches their history on the spot.
 3. **Public holidays** — *Fill in this year* does the calculable ones.
-4. **Rota** — set each person's usual week; override individual days as they come.
-   This is the one part Hik-Connect cannot hand over.
+4. **Rota** — set each person's usual week. From then on, most weeks are
+   *Copy a week* and two corrections. This is where the rota lives from now on;
+   Hik-Connect only needs the shift definitions.
 5. **Rules** — what a missing punch means, and the leave entitlement.
 
 ---
@@ -347,9 +369,11 @@ decision" list. Usually two or three people who forgot to clock out; each takes 
 few seconds. Left undone, those days stay uncounted and the month's hours are
 wrong.
 
-**When the rota changes**, set it before the week starts rather than after.
-"Late" is measured against the shift somebody was rostered on, so a swap recorded
-on Friday makes Monday to Thursday read wrong until it is.
+**Once a week**, open **Rota**, press *Copy a week*, and fix whatever differs.
+Do it before the week starts rather than after: "late" is measured against the
+shift somebody was rostered on, so a swap recorded on Friday makes Monday to
+Thursday read wrong until it is. Glance at the totals along the bottom before
+you close it — a red zero is a shift nobody is covering.
 
 **Monthly, for the wages**, **Month** gives days worked, hours, overtime,
 absences and leave left per person, and exports as CSV.
