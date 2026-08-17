@@ -1576,6 +1576,82 @@ const WEEK = 'Employee Names,Position,Start Date,End Date,Start Time,End Time,Ti
   + '"Somebody Else","SN Breakfast","Mar 4, 2026","Mar 4, 2026","06:00","14:00","",""\n'
   + '"Henry Aryee","SN Breakfast","Mar 5, 2026","Mar 5, 2026","05:30","11:30","Early",""\n';
 
+/**
+ * The same week, printed.
+ *
+ * A rota read off a PDF joins the CSV's path at the first fork and shares
+ * everything after it — the name matching, the shift matching, the draft, the
+ * questions, the confirm. This is the test that says so: a printed schedule
+ * lands as a draft with the same counts, and nothing downstream knows or cares
+ * which kind of file it came from.
+ */
+function printedWeek() {
+  const items = [
+    { x: 200, y: 560, text: 'Mar 2, 2026' },
+    { x: 300, y: 560, text: 'Mar 3, 2026' },
+    { x: 400, y: 560, text: 'Mar 4, 2026' },
+    { x: 30, y: 520, text: 'Henry Aryee' },
+  ];
+
+  const block = (x, hours) => {
+    items.push({ x, y: 520, text: 'Morning', size: 11 });
+    items.push({ x, y: 508, text: hours });
+    items.push({ x, y: 496, text: '8h 0m' });
+    items.push({ x, y: 484, text: 'Somewhere Nice' });
+    items.push({ x, y: 472, text: 'SN Breakfast', size: 8 });
+  };
+
+  block(200, '06:00 - 14:00');
+  block(300, '06:00 - 14:00');
+  // Hours this property has no shift for, which is a question and not a guess.
+  block(400, '05:30 - 11:30');
+
+  const escape = (s) => String(s).replace(/([\\()])/g, '\\$1');
+  const body = items.map((i) =>
+    `BT /F1 ${i.size ?? 10} Tf 1 0 0 1 ${i.x} ${i.y} Tm (${escape(i.text)}) Tj ET`).join('\n');
+
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] '
+      + '/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${body.length} >>\nstream\n${body}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+
+  let out = '%PDF-1.4\n';
+  objects.forEach((o, i) => { out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  out += 'trailer\n<< /Root 1 0 R /Size 6 >>\n%%EOF\n';
+
+  return Buffer.from(out, 'latin1').toString('base64');
+}
+
+test('a printed schedule lands as a draft the same way a CSV does', async () => {
+  const { raw, db } = await setup();
+
+  const preview = await (await previewRotaImport(ctx(db, {
+    body: { pdf: printedWeek(), filename: 'week.pdf' },
+  }))).json();
+
+  assert.equal(preview.counts.ready, 2, 'the two days whose hours are a shift we run');
+  assert.equal(preview.counts.undecided, 1, '05:30 is not a shift this property has');
+  assert.equal(preview.counts.willCreate, 0, 'and a PDF invents a shift no more than a CSV does');
+  assert.equal(preview.from, '2026-03-02');
+  assert.equal(preview.to, '2026-03-04');
+
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_roster').get().n, 0, 'nothing written');
+});
+
+test('a PDF with nothing readable in it is refused, and says what to do', async () => {
+  const { db } = await setup();
+  const empty = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n', 'latin1').toString('base64');
+
+  await assert.rejects(
+    () => previewRotaImport(ctx(db, { body: { pdf: empty, filename: 'photo.pdf' } })),
+    /no pages|only a picture/,
+  );
+});
+
 test('an import lands as a draft and writes nothing', async () => {
   const { raw, db } = await setup();
 

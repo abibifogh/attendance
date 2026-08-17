@@ -203,6 +203,21 @@ not the breakfast cook arriving four minutes late.
 name, position, dates, times, title, note — and holds it as a **draft**. Nothing
 is written when the file is chosen.
 
+It also takes **the printed schedule as a PDF**, which is what most people
+actually have to hand. A PDF says where each word was drawn and nothing about
+what it means, so the grid is recovered from the geometry: the row of dates
+across the top gives the columns, the names down the side give the rows, and
+each cell is read as a block of *title, hours, length, place, job*. Time off
+printed in the same grid has hours of its own and is held back rather than
+rostered. Both kinds of file come out as the same rows and share every step
+after that, so the safety is identical — but the CSV is the surer of the two,
+and a draft read off a PDF is worth checking against the printout.
+
+> **A PDF printed from a phone usually cannot be read at all.** Android draws
+> every letter as an outline, so the file is a picture of a schedule with no
+> text in it. Print it from a computer, or export the CSV. The import says so
+> when it happens rather than reporting an empty week.
+
 The draft says exactly what it would do: how many days for how many people,
 which shifts it would have to create, and every line it could not use and why.
 Confirm applies the lot in one press; discard costs nothing, which is the
@@ -675,6 +690,13 @@ src/
                       the punches when it has none to give
     push-events.js    Unwrapping what the terminal posts — JSON, XML or
                       multipart, all ending as the same punch
+    roster-import.js  Reading a week's rota out of the scheduling CSV, and
+                      saying what each line would do before anything is done
+    roster-pdf.js     The same, off a printed schedule: dates across the top
+                      give the columns, names down the side give the rows
+    pdf-text.js       Every word in a PDF and the point it was drawn at.
+                      Objects, object streams, inflate, text operators — and
+                      nothing else, because a rota is names, dates and times
     auth.js           PIN and password login, signed session cookies
     permissions.js    Who can reach what
     notices.js        The bell

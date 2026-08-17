@@ -550,24 +550,28 @@ function isWeekend(day) {
  * Discarding costs nothing, which is what makes trying it safe.
  */
 function importCard(draft, staff, reload) {
-  const upload = async (text, filename) => {
-    try {
-      await api.attRotaImportPreview({ csv: text, filename });
-      toast('Read. Nothing has been changed yet — check it below.', 'good');
-      await reload();
-    } catch (err) {
-      toast(err.message, 'bad');
-    }
-  };
-
   const picker = h('input', {
     type: 'file',
-    accept: '.csv,text/csv',
+    accept: '.csv,.pdf,text/csv,application/pdf',
     style: { display: 'none' },
     onchange: async (e) => {
       const file = e.target.files?.[0];
+      // Cleared straight away, so choosing the same file twice after fixing
+      // something in it still fires a change.
+      e.target.value = '';
       if (!file) return;
-      await upload(await file.text(), file.name);
+
+      const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+      try {
+        const payload = isPdf
+          ? { pdf: await asBase64(file), filename: file.name }
+          : { csv: await file.text(), filename: file.name };
+        await api.attRotaImportPreview(payload);
+        toast('Read. Nothing has been changed yet — check it below.', 'good');
+        await reload();
+      } catch (err) {
+        toast(err.message, 'bad');
+      }
     },
   });
 
@@ -575,13 +579,18 @@ function importCard(draft, staff, reload) {
     return card('Import a week', {
       note: 'From the scheduling export',
       wide: true,
-      actions: h('button.btn.btn-primary', { onclick: () => picker.click() }, 'Choose a CSV file'),
+      actions: h('button.btn.btn-primary', { onclick: () => picker.click() }, 'Choose a file'),
     },
       picker,
-      h('p.muted', { style: { marginBottom: 0 } },
+      h('p.muted',
         'Nothing is written when you choose a file. It is read, matched against your staff and '
         + 'shifts, and held as a draft so you can see exactly what it would do before agreeing '
         + 'to any of it.'),
+      h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+        'A CSV export or a printed schedule as a PDF. The CSV is the surer of the two — it says '
+        + 'what it means — while a PDF has to be read off the printed grid, so check the draft '
+        + 'against the printout before confirming. A PDF printed from a phone is usually a '
+        + 'picture with no text in it and cannot be read at all; print it from a computer.'),
     );
   }
 
@@ -661,6 +670,22 @@ function importCard(draft, staff, reload) {
       + 'replaces whatever is on those days for these people; every other day, and everybody '
       + 'else, is untouched.'),
 
+    // A CSV states its columns; a printed grid has to be worked out from where
+    // the words sit on the page. It is right far more often than not, and the
+    // one place it can be wrong — a shift read into the day beside it — is
+    // invisible unless somebody is told to look.
+    /\.pdf$/i.test(draft.filename || '')
+      ? h('div.alert.info',
+        h('span.alert-icon', 'ℹ️'),
+        h('div',
+          h('div.alert-title', 'Read off a printed schedule'),
+          h('div.alert-detail',
+            'The dates and hours below were worked out from where things sit on the page. '
+            + 'Check them against the printout before confirming — particularly anybody whose '
+            + 'name wrapped onto two lines.'),
+        ))
+      : null,
+
     shiftQuestions(draft, reload),
 
     draft.unknownNames.length
@@ -704,6 +729,23 @@ function importCard(draft, staff, reload) {
       ], draft.rows.filter((r) => r.action === 'roster' || r.action === 'create-shift'),
         { empty: 'Nothing.' })),
   );
+}
+
+/**
+ * A file as base64, in pieces.
+ *
+ * `String.fromCharCode(...bytes)` on a four-megabyte PDF spreads four million
+ * arguments across the stack and throws — on a big file, which is exactly the
+ * one somebody is trying to upload.
+ */
+async function asBase64(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
 }
 
 function stat(label, value, sub, accent) {

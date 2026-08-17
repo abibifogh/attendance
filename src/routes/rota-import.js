@@ -1,6 +1,8 @@
 import { badRequest, int, json, notFound, readJson, str } from '../lib/http.js';
 import { loadDataset, toMinutes } from '../lib/attendance.js';
 import { countsOf, nearestShifts, parseRotaCsv, planImport } from '../lib/roster-import.js';
+import { extractPdfText } from '../lib/pdf-text.js';
+import { parseRotaPdf } from '../lib/roster-pdf.js';
 
 /**
  * Importing a week's rota from the scheduling export.
@@ -37,11 +39,7 @@ async function aliasMap(db) {
  */
 export async function previewRotaImport(ctx) {
   const body = await readJson(ctx.request);
-  const text = String(body.csv ?? '');
-  if (!text.trim()) throw badRequest('There was nothing in that file.');
-  if (text.length > 2_000_000) throw badRequest('That file is too big — a week at a time, please.');
-
-  const parsed = parseRotaCsv(text);
+  const parsed = await readFile(body);
   if (parsed.problem) throw badRequest(parsed.problem);
   if (!parsed.rows.length) throw badRequest('That file has a heading and no rows.');
 
@@ -91,6 +89,52 @@ export async function previewRotaImport(ctx) {
 
   await audit(ctx, 'attendance.rota_import_draft', created.id, plan.counts);
   return json({ ok: true, id: created.id, ...describe(created.id, plan) });
+}
+
+/**
+ * Whatever was uploaded, as lines of rota.
+ *
+ * Two shapes, one answer. The CSV the scheduling system exports is the better
+ * file by a distance — it says what it means and nothing has to be inferred —
+ * but the thing most people have to hand is the PDF they printed to show
+ * somebody, and refusing it teaches them to keep a spreadsheet on the side.
+ *
+ * Both come out as the same rows, and everything after this point is shared.
+ */
+async function readFile(body) {
+  if (typeof body.pdf === 'string' && body.pdf.trim()) {
+    const bytes = fromBase64(body.pdf);
+    if (!bytes.length) throw badRequest('There was nothing in that file.');
+    if (bytes.length > 8_000_000) throw badRequest('That PDF is too big — a week at a time, please.');
+
+    let text;
+    try {
+      text = await extractPdfText(bytes);
+    } catch (err) {
+      // The extractor's own message says which of the several ways this can go
+      // wrong actually happened, and each has a different fix.
+      throw badRequest(err.message || 'That PDF could not be read.');
+    }
+    return parseRotaPdf(text);
+  }
+
+  const text = String(body.csv ?? '');
+  if (!text.trim()) throw badRequest('There was nothing in that file.');
+  if (text.length > 2_000_000) throw badRequest('That file is too big — a week at a time, please.');
+  return parseRotaCsv(text);
+}
+
+function fromBase64(value) {
+  const clean = String(value).replace(/^data:[^,]*,/, '').replace(/\s/g, '');
+  let binary;
+  try {
+    binary = atob(clean);
+  } catch {
+    throw badRequest('That file did not arrive in one piece. Try uploading it again.');
+  }
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+  return out;
 }
 
 function describe(id, plan) {
