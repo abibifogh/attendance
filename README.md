@@ -404,10 +404,99 @@ screen every morning until everybody learned to ignore all of them.
 
 ---
 
+## People — the records behind the names
+
+Attendance knows somebody as an employee number and a name, because that is all
+a turnstile needs. **People** holds everything else: where they live, who to
+ring if something happens, what they have signed, and the scan of the ID it was
+all checked against.
+
+Two ideas run through it, and everything else follows from them.
+
+**What somebody sends you is a claim; what is in the record is a decision.** A
+self-service form never writes to the record. It lands as a submission with a
+line-by-line difference against what is already there, each line with a tick,
+and somebody accepts it. Same shape as the rota import and for the same reason.
+
+**A signature is worth what you can show about it.** A contract keeps the exact
+words that were signed, a fingerprint of those words, and a sequential log of
+every event — issued, link sent, link opened, document read, signed — each with
+a time, a network address and the device.
+
+### One link, whatever they still owe
+
+**People → open somebody → Send them a link.** It carries their details form,
+any contracts waiting to be signed, or both — one message rather than three,
+which is the difference between a new starter doing all of it and doing half.
+
+The link is `staff.niceoperation.com/i/<token>` and is shown **once**. Only a
+hash of it is stored, so a copy of the database opens nothing and a lost link is
+replaced rather than recovered. It expires (21 days by default), can be
+cancelled, and can carry an optional four-digit code you tell the person out
+loud — worth it for a contract, overkill for a phone number.
+
+There is no account and no password on the other end. The page is one column
+built for a phone at the end of a shift, and it never reads the record back: the
+form starts empty, because a form showing what the property already holds is a
+form that leaks it to whoever is holding the phone.
+
+> **Blank is never a delete.** A question somebody skipped is not a request to
+> erase the answer on file, so blanks never appear in the review at all. This is
+> the single most destructive thing a self-service form can do, and it is the
+> one rule in here with its own test.
+
+### What is held, and who may read it
+
+Personal details, address and GhanaPost GPS, identification (Ghana Card, SSNIT,
+TIN), how they are paid, what a first-aider would need, emergency contacts and
+next of kin, education, previous employment, and scanned documents.
+
+Two permissions. **Employee records** reads the file with the private numbers
+masked — `•••• 4321` rather than blank, so a supervisor can see that a bank
+account is on file without reading it. **Manage employee records** unmasks them,
+edits the file, sends links, accepts submissions and issues contracts. Managers
+get both by default; the rota planner gets neither.
+
+Scans live in the database rather than a separate bucket — one binding, one
+backup. The browser shrinks a photograph before sending it, so a picture of a
+Ghana Card taken on a phone is fine; anything still over the row limit is
+refused with the size in the message rather than truncated.
+
+### Contracts, signed on a phone
+
+A **template** is the words with `{{placeholders}}` in them. Issuing one copies
+the words out and freezes them against a person — editing the template next year
+cannot change what somebody signed last year, which is the property that makes
+templates safe to edit at all. Most placeholders come from the record; a few
+(remuneration, hours, notice, probation) are typed in at the moment of issue.
+
+The employee opens the link, reads the whole document — the signing controls sit
+below the text, so reaching them means scrolling past it — ticks a box saying
+they agree to sign electronically, and signs with a finger or types their full
+name. Then somebody at the property countersigns, because a contract signed by
+one side is an offer.
+
+Recorded at the moment of signing: the name, the drawn mark, the server's
+timestamp, the network address, the device, and the SHA-256 of the exact words
+that were on the screen. That hash is **rechecked every time the contract is
+opened afterwards**. If the stored text no longer produces it, the screen says
+so in red and says not to rely on it — which is precisely the thing a signature
+is supposed to be able to prove.
+
+> Ghana's Electronic Transactions Act 2008 (Act 772) gives an electronic
+> signature the same effect as a written one where it is uniquely linked to the
+> signatory and under their control, and recognises a typed name or a drawn mark
+> as a simple electronic signature. The Labour Act 2003 (Act 651) requires a
+> written contract where somebody is employed for six months or more, and the
+> main terms in writing within two months. The starter template has those
+> particulars in it. **It is a starting point and not legal advice** — have
+> somebody who knows Ghanaian employment law read it before you issue it.
+
 ## Who can see what
 
-Six permissions, so a supervisor settling this morning's missing clock-outs
-never sees a leave balance:
+Eight permissions, so a supervisor settling this morning's missing clock-outs
+never sees a leave balance and whoever draws up the rota never sees anybody's
+bank account:
 
 | Permission | Reaches |
 |---|---|
@@ -417,6 +506,8 @@ never sees a leave balance:
 | **Sign off attendance** | Close a day, week or month off and move the days. Still no balances |
 | **Rota & decisions** | Set the rota, settle incomplete days, approve leave |
 | **Attendance setup** | Staff, shifts, absence reasons, holidays, terminals, rules |
+| **Employee records** | Read personal details, contacts and contracts. Private numbers stay masked |
+| **Manage employee records** | Edit records, send links, accept what people send in, issue and sign contracts |
 
 Five roles built from them — Rota planner, Supervisor, Manager, Reports only,
 Administrator — and any individual can be adjusted off their role's defaults.
@@ -436,6 +527,13 @@ being shown how much leave anybody has left. That is not a screen that hides the
 number: the report endpoint strips the balance out of its answer for anybody
 without the reports permission, because the menu is a courtesy and the API is the
 gate.
+
+**Employee records** splits the same way and for the same reason. The read-only
+half shows that a bank account is on file as `•••• 4321` rather than hiding the
+field, because an empty space has somebody chasing a number that is already
+there. Only *Manage employee records* unmasks it, and only that permission can
+open a scanned ID — reading a photograph of a Ghana Card is reading the number
+on it. Managers hold both by default. The rota planner holds neither.
 
 Reports-only never gets it. That role exists to change nothing, and signing off
 moves leave.
@@ -694,6 +792,10 @@ src/
                       saying what each line would do before anything is done
     roster-pdf.js     The same, off a printed schedule: dates across the top
                       give the columns, names down the side give the rows
+    people.js         What a record is made of, declared once: the office
+                      form, the phone form, the difference between what
+                      somebody sent and what is on file, what is still
+                      missing, and what a supervisor may not read
     pdf-text.js       Every word in a PDF and the point it was drawn at.
                       Objects, object streams, inflate, text operators — and
                       nothing else, because a rota is names, dates and times
@@ -703,7 +805,9 @@ src/
     notify.js         The morning digest: email and push
     push.js           Web Push plumbing (VAPID, payload encryption)
     http.js           JSON responses, input validation
-  routes/             API handlers
+  routes/             API handlers (people.js is the office side of the
+                      records; invite.js is the phone on the end of a link,
+                      and the two share nothing but the database)
   util/dates.js       Day arithmetic
 public/               Frontend — plain ES modules, no build step
 migrations/           Database schema (console/ holds paste-able copies)

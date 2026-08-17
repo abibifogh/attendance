@@ -41,6 +41,16 @@ export const PERMISSIONS = [
     detail: 'Staff, shifts, absence reasons, holidays, terminals, rules',
   },
   {
+    key: 'hr_view',
+    label: 'Employee records',
+    detail: 'Read personal details, contacts and contracts. Sensitive numbers stay masked',
+  },
+  {
+    key: 'hr_manage',
+    label: 'Manage employee records',
+    detail: 'Edit records, send links, accept what people send in, issue and sign contracts',
+  },
+  {
     key: 'users',
     label: 'Users & data',
     detail: 'Manage logins, notifications and erasing data',
@@ -68,8 +78,9 @@ export const ROLES = [
   {
     key: 'manager',
     label: 'Manager',
-    detail: 'Everything a supervisor does, plus the reports, the rota and approving leave.',
-    defaults: ['att_view', 'att_reports', 'att_manage'],
+    detail: 'Everything a supervisor does, plus the reports, the rota, approving leave and the '
+      + 'employee records.',
+    defaults: ['att_view', 'att_reports', 'att_manage', 'hr_view', 'hr_manage'],
   },
   {
     key: 'viewer',
@@ -121,6 +132,14 @@ export function effectivePermissions(user) {
   }
 
   if (user.role === 'admin' && !list.includes('users')) list.push('users');
+  // And the same argument for the employee records: an administrator who could
+  // not open them would be looking at the one screen that can grant them.
+  if (user.role === 'admin') {
+    for (const key of ['hr_view', 'hr_manage']) if (!list.includes(key)) list.push(key);
+  }
+  // Managing records is strictly more than reading them, so holding the larger
+  // permission holds the smaller one and no route has to name both.
+  if (list.includes('hr_manage') && !list.includes('hr_view')) list.push('hr_view');
   // Anybody who can set the property up can obviously run the rota; a setup
   // holder who could not touch it would be looking at a control that refused
   // them.

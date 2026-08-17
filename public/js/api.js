@@ -144,6 +144,34 @@ export const api = {
   attUpdateSettings: (body) => request('/api/att/settings', { method: 'PUT', body }),
   attRecompute: (body) => request('/api/att/recompute', { method: 'POST', body }),
 
+  // ------------------------------------------------------ employee records --
+  hrModel: () => request('/api/hr/model'),
+  hrPeople: () => request('/api/hr/people'),
+  hrPerson: (id) => request(`/api/hr/people/${id}`),
+  hrSavePerson: (id, body) => request(`/api/hr/people/${id}`, { method: 'PUT', body }),
+  hrSaveList: (id, list, rows) => request(`/api/hr/people/${id}/lists/${list}`, { method: 'PUT', body: { rows } }),
+
+  hrAddDocument: (id, body) => request(`/api/hr/people/${id}/documents`, { method: 'POST', body }),
+  hrDocumentUrl: (id) => `/api/hr/documents/${id}`,
+  hrDeleteDocument: (id) => request(`/api/hr/documents/${id}`, { method: 'DELETE' }),
+
+  hrCreateInvite: (id, body) => request(`/api/hr/people/${id}/invites`, { method: 'POST', body }),
+  hrRevokeInvite: (id) => request(`/api/hr/invites/${id}/revoke`, { method: 'POST' }),
+
+  hrSubmissions: () => request('/api/hr/submissions'),
+  hrAcceptSubmission: (id, keys) => request(`/api/hr/submissions/${id}/accept`, { method: 'POST', body: { keys } }),
+  hrRejectSubmission: (id, note) => request(`/api/hr/submissions/${id}/reject`, { method: 'POST', body: { note } }),
+
+  hrTemplates: () => request('/api/hr/templates'),
+  hrCreateTemplate: (body) => request('/api/hr/templates', { method: 'POST', body }),
+  hrUpdateTemplate: (id, body) => request(`/api/hr/templates/${id}`, { method: 'PUT', body }),
+  hrDeleteTemplate: (id) => request(`/api/hr/templates/${id}`, { method: 'DELETE' }),
+
+  hrIssueContract: (id, body) => request(`/api/hr/people/${id}/contracts`, { method: 'POST', body }),
+  hrContract: (id) => request(`/api/hr/contracts/${id}`),
+  hrCountersign: (id, body) => request(`/api/hr/contracts/${id}/countersign`, { method: 'POST', body }),
+  hrVoidContract: (id, note) => request(`/api/hr/contracts/${id}/void`, { method: 'POST', body: { note } }),
+
   // -------------------------------------------------------- people and data --
   users: () => request('/api/users'),
   createUser: (body) => request('/api/users', { method: 'POST', body }),

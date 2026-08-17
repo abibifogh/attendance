@@ -10,6 +10,8 @@ import {
 import * as att from './routes/attendance.js';
 import * as attSetup from './routes/attendance-setup.js';
 import * as rotaImport from './routes/rota-import.js';
+import * as people from './routes/people.js';
+import * as invite from './routes/invite.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import { todayIn } from './util/dates.js';
@@ -122,6 +124,47 @@ export const ROUTES = [
   ['PUT', '/api/att/settings', 'att_setup', attSetup.updateSettings],
   ['POST', '/api/att/recompute', 'att_setup', attSetup.recomputeRange],
 
+  // -------------------------------------------------------------- records --
+  ['GET', '/api/hr/model', 'hr_view', people.peopleModel],
+  ['GET', '/api/hr/people', 'hr_view', people.listPeople],
+  ['GET', '/api/hr/people/:id', 'hr_view', people.getPerson],
+  ['PUT', '/api/hr/people/:id', 'hr_manage', people.savePerson],
+  ['PUT', '/api/hr/people/:id/lists/:list', 'hr_manage', people.saveList],
+
+  ['POST', '/api/hr/people/:id/documents', 'hr_manage', people.addDocument],
+  // Reading a scan of somebody's Ghana Card is reading the number on it, so it
+  // needs the permission that unmasks the number and not the one that hides it.
+  ['GET', '/api/hr/documents/:id', 'hr_manage', people.getDocument],
+  ['DELETE', '/api/hr/documents/:id', 'hr_manage', people.deleteDocument],
+
+  ['POST', '/api/hr/people/:id/invites', 'hr_manage', people.createInvite],
+  ['POST', '/api/hr/invites/:id/revoke', 'hr_manage', people.revokeInvite],
+
+  ['GET', '/api/hr/submissions', 'hr_view', people.listSubmissions],
+  ['POST', '/api/hr/submissions/:id/accept', 'hr_manage', people.acceptSubmission],
+  ['POST', '/api/hr/submissions/:id/reject', 'hr_manage', people.rejectSubmission],
+
+  ['GET', '/api/hr/templates', 'hr_manage', people.listTemplates],
+  ['POST', '/api/hr/templates', 'hr_manage', (ctx) => people.saveTemplate(ctx, null)],
+  ['PUT', '/api/hr/templates/:id', 'hr_manage', people.saveTemplate],
+  ['DELETE', '/api/hr/templates/:id', 'hr_manage', people.deleteTemplate],
+
+  ['POST', '/api/hr/people/:id/contracts', 'hr_manage', people.issueContract],
+  ['GET', '/api/hr/contracts/:id', 'hr_view', people.getContract],
+  ['POST', '/api/hr/contracts/:id/countersign', 'hr_manage', people.countersignContract],
+  ['POST', '/api/hr/contracts/:id/void', 'hr_manage', people.voidContract],
+
+  // ------------------------------------------------- somebody with a link --
+  // No session reaches any of these. The token in the path is the whole of the
+  // caller's authority and it can only ever act on the one person the link was
+  // made for — see the note at the top of routes/invite.js.
+  ['GET', '/api/i/:token', 'public', invite.inviteHead],
+  ['POST', '/api/i/:token/open', 'public', invite.inviteOpen],
+  ['POST', '/api/i/:token/details', 'public', invite.inviteDetails],
+  ['POST', '/api/i/:token/viewed', 'public', invite.inviteViewed],
+  ['POST', '/api/i/:token/sign', 'public', invite.inviteSign],
+  ['POST', '/api/i/:token/decline', 'public', invite.inviteDecline],
+
   // ------------------------------------------------------- people and data --
   ['GET', '/api/users', 'users', admin.listUsers],
   ['POST', '/api/users', 'users', admin.createUser],
@@ -168,6 +211,13 @@ function match(pattern, pathname) {
 export default {
   async fetch(request, env, executionContext) {
     const url = new URL(request.url);
+
+    // The link somebody is sent reads `/i/<token>` — short enough to type off a
+    // screen and to survive being pasted into a message. It is one page, and
+    // the token is read back out of the address by the page itself.
+    if (url.pathname.startsWith('/i/')) {
+      return env.ASSETS.fetch(new Request(new URL('/invite.html', url), request));
+    }
 
     if (!url.pathname.startsWith('/api/')) {
       return env.ASSETS.fetch(request);

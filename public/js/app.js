@@ -10,6 +10,9 @@ import { renderAttRota } from './views/att-rota.js';
 import { renderAttLeave } from './views/att-leave.js';
 import { renderAttSetup } from './views/att-setup.js';
 import { renderAdmin } from './views/admin.js';
+import { renderPeople } from './views/people.js';
+import { renderPerson } from './views/person.js';
+import { renderPeopleTemplates } from './views/people-templates.js';
 import { BRAND } from './brand.js';
 
 export const state = {
@@ -33,10 +36,13 @@ const ROUTES = [
   { path: 'att-overview', label: 'Month', permission: 'att_reports', render: renderAttOverview },
   { path: 'att-rota', label: 'Rota', permission: 'att_rota', render: renderAttRota },
   { path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave },
+  { path: 'people', label: 'People', permission: 'hr_view', render: renderPeople },
   { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
   // Reached by clicking a name rather than from the menu.
   { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, hidden: true },
+  { path: 'person', label: 'Record', permission: 'hr_view', render: renderPerson, hidden: true },
+  { path: 'people-templates', label: 'Templates', permission: 'hr_manage', render: renderPeopleTemplates, hidden: true },
 ];
 
 const root = document.getElementById('app');
@@ -63,7 +69,7 @@ function currentRoute() {
  * they just cleared. So the last resort is the first route they can open.
  */
 function defaultRoute() {
-  const preferred = ['att-today', 'att-overview', 'att-rota', 'att-leave', 'att-setup', 'admin'];
+  const preferred = ['att-today', 'att-overview', 'att-rota', 'att-leave', 'people', 'att-setup', 'admin'];
   const wanted = preferred.find((path) => allowed(ROUTES.find((r) => r.path === path)));
   return wanted ?? ROUTES.find((r) => allowed(r) && !r.hidden)?.path ?? 'att-today';
 }
@@ -96,11 +102,11 @@ export function replaceParams(path, params) {
 // ---------------------------------------------------------------------------
 
 /**
- * Seven screens is few enough for one flat list.
+ * Eight screens is still few enough for one flat list.
  *
  * The other apps in this operation group their navigation because they carry
  * three stores between them. This one does not, and inventing a section
- * heading for a list of six would be furniture for its own sake.
+ * heading for a list of eight would be furniture for its own sake.
  */
 function sidebar() {
   const visible = ROUTES.filter((r) => allowed(r) && !r.hidden);

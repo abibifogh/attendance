@@ -750,3 +750,175 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   font-size: .68rem; font-weight: 700; color: var(--text-faint);
   border-top: 2px solid var(--border);
 }
+
+/* ===========================================================================
+   Employee records
+   ---------------------------------------------------------------------------
+   Two audiences in one stylesheet. The office screens reuse everything above;
+   the page somebody opens on their phone is one column, large targets and no
+   navigation, because it is read once, at the end of a shift, on a bus.
+   ======================================================================== */
+
+.link-button {
+  background: none; border: 0; padding: 0; margin: 0; text-align: left;
+  color: var(--accent); cursor: pointer; font: inherit;
+}
+.link-button:hover { text-decoration: underline; }
+.link-button small { display: block; color: var(--text-faint); }
+
+.chip-row { display: flex; flex-wrap: wrap; gap: .3rem; }
+
+/* A record, read rather than edited. Two columns so a label and its value stay
+   on one line even when the value is long. */
+.detail-list { margin: 0; display: grid; gap: .1rem; }
+.detail-pair {
+  display: grid; grid-template-columns: minmax(8rem, 38%) 1fr;
+  gap: .6rem; padding: .32rem 0; border-bottom: 1px solid var(--border);
+}
+.detail-pair:last-child { border-bottom: 0; }
+.detail-pair dt { color: var(--text-dim); font-size: .84rem; }
+.detail-pair dd { margin: 0; font-size: .9rem; overflow-wrap: anywhere; }
+
+/* What somebody sent in, against what is on file. One row, one decision. */
+.diff { display: grid; gap: .1rem; margin: .6rem 0; }
+.diff-row {
+  display: grid; grid-template-columns: auto 1fr; gap: .6rem; align-items: start;
+  padding: .5rem .6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.diff-row:hover { background: var(--surface-2); }
+.diff-label { font-weight: 600; font-size: .9rem; display: flex; gap: .35rem; align-items: center; }
+.diff-values { font-size: .86rem; display: flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; }
+.diff-old { color: var(--text-faint); text-decoration: line-through; }
+.diff-arrow { color: var(--text-faint); }
+
+/* A small repeating table — emergency contacts, qualifications, past jobs. */
+.list-rows { display: grid; gap: .5rem; margin-bottom: .5rem; }
+.list-row {
+  display: grid; grid-template-columns: 1fr auto; gap: .4rem; align-items: start;
+  padding: .5rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.list-row-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .4rem; }
+.list-row-remove { align-self: center; }
+
+.tickline {
+  display: grid; grid-template-columns: auto 1fr; gap: .55rem; align-items: start;
+  padding: .45rem 0; font-size: .9rem; cursor: pointer;
+}
+.tickline input { margin-top: .15rem; width: 1.15rem; height: 1.15rem; }
+
+.btn-wide { display: block; width: 100%; text-align: center; }
+
+.link-box {
+  width: 100%; font-family: var(--mono); font-size: .8rem; margin: .6rem 0;
+  padding: .6rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--text); resize: vertical;
+}
+.pin-show { font-size: 1.4rem; letter-spacing: .3em; font-weight: 700; }
+
+/* ------------------------------------------------------------ contracts -- */
+
+.contract-view { max-width: 46rem; }
+.contract-body, .contract-text {
+  white-space: pre-wrap; font-family: Georgia, "Times New Roman", serif;
+  font-size: .92rem; line-height: 1.65; margin: 0;
+  max-height: 60vh; overflow-y: auto; padding: .2rem;
+}
+.contract-view .contract-body {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 1rem; background: var(--surface);
+}
+
+.sig-block {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 1rem; margin: 1.2rem 0;
+}
+.sig-slot { border-top: 1px solid var(--border-strong); padding-top: .4rem; }
+.sig-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); }
+.sig-image { max-height: 4.5rem; max-width: 100%; display: block; margin: .2rem 0; }
+/* A typed name is set in a serif italic so it is never mistaken for a drawn
+   mark — what it is matters, and the certificate says which was used. */
+.sig-typed { font-family: Georgia, serif; font-style: italic; font-size: 1.3rem; padding: .5rem 0; }
+.sig-name { font-size: .9rem; font-weight: 600; }
+.sig-when { font-size: .78rem; color: var(--text-dim); }
+
+/* Somewhere to sign with a finger. */
+.sig-wrap { margin: .6rem 0; }
+.sig-pad {
+  width: 100%; height: 160px; display: block; touch-action: none;
+  background: var(--surface); border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+.sig-tools { display: flex; justify-content: space-between; align-items: center; font-size: .8rem; margin-top: .3rem; }
+
+.cert { width: 100%; font-size: .84rem; }
+.cert th {
+  text-align: left; font-weight: 600; color: var(--text-dim);
+  width: 40%; padding: .25rem .5rem .25rem 0; vertical-align: top;
+}
+.cert td { padding: .25rem 0; overflow-wrap: anywhere; }
+
+/* ------------------------------------------------- the page on the phone -- */
+
+.invite-body { background: var(--bg); }
+.invite { padding: 0 0 3rem; }
+.invite-inner { max-width: 34rem; margin: 0 auto; padding: 0 1rem; }
+.invite-head {
+  display: flex; align-items: center; justify-content: center;
+  padding: 1.1rem 0 .9rem; margin-bottom: .9rem;
+}
+.invite-brand { font-weight: 700; letter-spacing: .02em; }
+.invite-back { margin-bottom: .7rem; }
+
+.invite .card { margin-bottom: .8rem; }
+.invite h2 { font-size: 1.15rem; margin: 0 0 .4rem; }
+.invite h3 { font-size: .98rem; margin: 0 0 .5rem; }
+/* Sixteen pixels or more, or iOS zooms the whole page the moment somebody
+   taps a box — which on a form this long is how people lose their place. */
+.invite input, .invite select, .invite textarea { font-size: 1rem; padding: .6rem .7rem; }
+.invite .field { margin-bottom: .7rem; }
+
+.note-from {
+  border-left: 3px solid var(--accent); padding: .4rem .7rem;
+  background: var(--accent-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: .92rem;
+}
+.fineprint { font-size: .78rem; color: var(--text-faint); margin: .7rem 0 0; }
+
+.tasks { display: grid; gap: .6rem; margin-bottom: .9rem; }
+.task {
+  display: grid; grid-template-columns: 2rem 1fr; gap: .7rem; align-items: center;
+  width: 100%; text-align: left; padding: 1rem; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow); color: var(--text);
+}
+.task:hover { border-color: var(--accent); }
+.task-mark {
+  display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%;
+  background: var(--accent-soft); color: var(--accent); font-weight: 700;
+}
+.task-text strong { display: block; font-size: 1rem; }
+.task-text small { color: var(--text-dim); }
+.task.done, .task.refused { cursor: default; opacity: .75; }
+.task.done { border-color: var(--good); }
+.task.done .task-mark { background: var(--good-soft); color: var(--good); }
+.task.refused .task-mark { background: var(--bad-soft); color: var(--bad); }
+
+.pin-input {
+  width: 100%; text-align: center; font-size: 2rem; letter-spacing: .5em;
+  font-family: var(--mono); padding: .7rem; margin: .6rem 0;
+}
+
+.card-done { text-align: center; padding: 2rem 1rem; }
+.done-mark {
+  display: grid; place-items: center; width: 3.4rem; height: 3.4rem; margin: 0 auto .8rem;
+  border-radius: 50%; background: var(--good-soft); color: var(--good); font-size: 1.8rem;
+}
+
+@media print {
+  /* A contract on paper is the contract, the two signatures and the
+     certificate. Everything that only makes sense on a screen goes. */
+  .contract-body, .contract-text { max-height: none; overflow: visible; }
+  .invite-head, .invite-back, .tasks, .sig-tools { display: none; }
+}
