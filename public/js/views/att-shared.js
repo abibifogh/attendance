@@ -64,14 +64,81 @@ export function reasonSelect(reasons, selected, props = {}) {
   );
 }
 
+/**
+ * A shift's hours, written the same way everywhere.
+ *
+ * The `+1` matters. A shift reading 17:30–06:30 is thirteen hours across two
+ * dates, and without the mark it reads as eleven hours backwards — which is the
+ * one thing about a night shift everybody gets wrong on first sight.
+ */
+export function shiftHours(shift) {
+  if (!shift?.starts_at || !shift?.ends_at) return '';
+  const overnight = shift.ends_at <= shift.starts_at;
+  return `${shift.starts_at}–${shift.ends_at}${overnight ? ' +1' : ''}`;
+}
+
+/**
+ * A shift as an option reads.
+ *
+ * Always with its hours. This property runs five shifts called some variation
+ * of Housekeeper and the difference between them is entirely the times, so a
+ * dropdown of bare names asks somebody to remember what the system already
+ * knows.
+ */
+export function shiftLabel(shift) {
+  const hours = shiftHours(shift);
+  return hours ? `${shift.name} · ${hours}` : String(shift.name ?? '');
+}
+
+/** Which department a shift belongs to, with a name for the ones that do not. */
+export const NO_DEPARTMENT = 'No department';
+export const departmentOf = (shift) => (shift?.department || NO_DEPARTMENT);
+
+/** Alphabetical, with the unfiled ones at the bottom where they belong. */
+export function sortDepartments(names) {
+  return [...names].sort((a, b) => {
+    if (a === NO_DEPARTMENT) return 1;
+    if (b === NO_DEPARTMENT) return -1;
+    return a.localeCompare(b);
+  });
+}
+
+/** Shifts in departments, in the order a list of them should appear. */
+export function byDepartment(shifts) {
+  const groups = new Map();
+  for (const shift of shifts ?? []) {
+    const key = departmentOf(shift);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(shift);
+  }
+  return sortDepartments([...groups.keys()]).map((name) => ({ name, shifts: groups.get(name) }));
+}
+
+/**
+ * Shift options, banded by department.
+ *
+ * Twenty-four shifts in one flat list is a scroll and a squint. The same
+ * twenty-four under five headings is five short lists, and the heading tells
+ * you which one to read before you have read any of them.
+ *
+ * A single department is left ungrouped: one heading over the whole list says
+ * nothing and costs a row.
+ */
+export function shiftOptionGroups(shifts, selected, { label = null } = {}) {
+  const groups = byDepartment(shifts);
+  const opt = (s) => h('option', {
+    value: s.id, selected: String(s.id) === String(selected),
+  }, shiftLabel(s));
+
+  if (groups.length <= 1) return (groups[0]?.shifts ?? []).map(opt);
+  return groups.map((g) => h('optgroup', { label: label ? `${label} — ${g.name}` : g.name },
+    g.shifts.map(opt)));
+}
+
 export function shiftSelect(shifts, selected, props = {}) {
   return h('select', props,
     h('option', { value: '' }, '—'),
-    (shifts ?? []).filter((s) => s.active).map((s) =>
-      h('option', {
-        value: s.id,
-        selected: String(s.id) === String(selected),
-      }, `${s.name} (${s.starts_at}–${s.ends_at})`)),
+    shiftOptionGroups((shifts ?? []).filter((s) => s.active), selected),
   );
 }
 

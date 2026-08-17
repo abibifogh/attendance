@@ -5,6 +5,9 @@ import {
   fmtDay, fmtDayShort, fmtNum, fmtPct, monthOf, shiftDay, shiftMonth, todayISO,
 } from '../public/js/util.js';
 import { pathHasHole } from '../public/js/api.js';
+import {
+  byDepartment, shiftHours, shiftLabel, sortDepartments,
+} from '../public/js/views/att-shared.js';
 
 /**
  * The formatting helpers the browser uses, exercised in Node.
@@ -128,4 +131,60 @@ test('a real path is left alone', () => {
   // Nothing here should trip on a word that merely contains one.
   assert.equal(pathHasHole('/api/att/undefinedish/4'), false);
   assert.equal(pathHasHole('/api/att/nullify'), false);
+});
+
+// ---------------------------------------------------------------------------
+// How a shift is written, and how a list of them is ordered
+// ---------------------------------------------------------------------------
+
+/**
+ * This property runs twenty-four shifts, four of them called some variation of
+ * Housekeeper Helper. A dropdown of bare names asks whoever is building the
+ * rota to remember what the system already knows, so the hours travel with the
+ * name everywhere — and the departments band the list so it reads as five short
+ * ones instead of a single long one.
+ */
+
+const shift = (name, starts_at, ends_at, department = null) =>
+  ({ id: name.length, name, starts_at, ends_at, department, active: 1 });
+
+test('a shift carries its hours', () => {
+  assert.equal(shiftHours(shift('Main', '08:00', '17:00')), '08:00–17:00');
+  assert.equal(shiftLabel(shift('Main', '08:00', '17:00')), 'Main · 08:00–17:00');
+});
+
+test('an overnight shift says so', () => {
+  // Thirteen hours across two dates. Without the mark it reads as eleven hours
+  // backwards, which is the one thing about a night shift everybody gets wrong.
+  assert.equal(shiftHours(shift('Watchman', '17:30', '06:30')), '17:30–06:30 +1');
+  // Twenty-four hours round to the same time is still the next day.
+  assert.equal(shiftHours(shift('Odd', '08:00', '08:00')), '08:00–08:00 +1');
+});
+
+test('a shift with no hours is written as its name alone', () => {
+  assert.equal(shiftHours(null), '');
+  assert.equal(shiftHours({ name: 'Broken' }), '');
+  assert.equal(shiftLabel({ name: 'Broken' }), 'Broken');
+});
+
+test('shifts band by department, unfiled ones last', () => {
+  const groups = byDepartment([
+    shift('Bar late', '17:00', '01:00', 'F&B'),
+    shift('Odd job', '09:00', '17:00'),
+    shift('Front desk', '07:00', '15:00', 'Reception'),
+    shift('Bar early', '11:00', '19:00', 'F&B'),
+  ]);
+
+  assert.deepEqual(groups.map((g) => g.name), ['F&B', 'Reception', 'No department']);
+  // Order within a band is the order they arrived, which is the order the
+  // server sorted them: by the hour they start.
+  assert.deepEqual(groups[0].shifts.map((s) => s.name), ['Bar late', 'Bar early']);
+  assert.equal(groups[2].shifts.length, 1, 'the unfiled one is still there, just last');
+});
+
+test('departments sort alphabetically with the unfiled at the bottom', () => {
+  assert.deepEqual(
+    sortDepartments(['No department', 'Security', 'F&B']),
+    ['F&B', 'Security', 'No department'],
+  );
 });

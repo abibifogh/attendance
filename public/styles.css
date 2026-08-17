@@ -696,6 +696,16 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   min-width: 5.5rem; padding: .3rem .4rem; font-size: .8rem;
   border-radius: var(--radius-sm);
 }
+/* The hours of whatever the cell is set to, under the cell. A closed select
+   shows one truncated line and this property runs four shifts called some
+   variation of Housekeeper Helper — the clock is what tells them apart. */
+.rota-cellwrap { display: flex; flex-direction: column; gap: .1rem; }
+.rota-hours {
+  font-size: .68rem; line-height: 1.1; text-align: center;
+  color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+/* Kept in the flow when empty so the rows of a grid stay the same height. */
+.rota-hours-off::before { content: '\00a0'; }
 .rota-cell.rota-pattern { color: var(--text-faint); background: var(--surface-2); border-style: dashed; }
 .rota-cell.rota-set     { color: var(--text); font-weight: 600; }
 .rota-cell.rota-dirty   { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
@@ -732,3 +742,11 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 }
 .rota-total td:first-child, .rota-total td:nth-child(2) { text-align: left; }
 .rota-gap { color: var(--bad); font-weight: 700; }
+/* The department a run of totals belongs to. Twenty-four shifts is five short
+   lists once they are labelled, and one long one until they are. */
+.rota-dept td {
+  text-align: left; padding-top: .5rem;
+  text-transform: uppercase; letter-spacing: .04em;
+  font-size: .68rem; font-weight: 700; color: var(--text-faint);
+  border-top: 2px solid var(--border);
+}

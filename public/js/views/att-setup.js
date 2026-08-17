@@ -346,11 +346,6 @@ async function shiftsTab(reload) {
             r.ends_at <= v ? h('small.muted', 'overnight') : null,
           ),
         },
-        {
-          key: 'department',
-          label: 'Department',
-          format: (v) => (v ? h('small', v) : h('span.muted', '—')),
-        },
         { key: 'break_minutes', label: 'Break', align: 'right', format: (v) => (v ? `${v} min` : h('span.muted', 'none')) },
         { key: 'grace_in_minutes', label: 'Grace in', align: 'right', format: (v) => `${v} min` },
         { key: 'grace_out_minutes', label: 'Grace out', align: 'right', format: (v) => `${v} min` },
@@ -367,6 +362,15 @@ async function shiftsTab(reload) {
       ], shifts, {
         rowClass: (r) => (r.active ? '' : 'row-muted'),
         empty: 'No shifts yet. Add the ones your rota actually uses — usually two or three.',
+        // Banded by department, which is also how the rota offers them. Two
+        // dozen shifts read as one intimidating list and as five ordinary ones,
+        // and the difference is entirely the headings.
+        groupBy: (r) => r.department || null,
+        groupNoun: ['shift', 'shifts'],
+        groupSummary: (group) => {
+          const retired = group.filter((r) => !r.active).length;
+          return retired ? `${retired} retired` : '';
+        },
       })),
 
     h('p.muted', { style: { fontSize: '.82rem' } },

@@ -56,9 +56,14 @@ export function card(title, { note, actions, wide } = {}, ...children) {
  * group, the rows under it in the order they arrived. It stays one table rather
  * than a table per group so the columns still line up down the page, which is
  * the whole point of reading a list of names.
+ *
+ * `groupNoun` is what the band counts. A list of shifts announcing "5 people"
+ * is the sort of small wrongness that makes somebody stop trusting the rest of
+ * the screen.
  */
 export function table(columns, rows, {
   rowClass = null, empty = 'No data yet.', groupBy = null, groupSummary = null,
+  groupNoun = ['person', 'people'],
 } = {}) {
   if (!rows?.length) return h('div.empty', h('p', empty));
 
@@ -75,13 +80,14 @@ export function table(columns, rows, {
       // takes its heading with it rather than leaving an empty strip.
       h('thead', h('tr', columns.map((c) =>
         h(`th${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, c.label)))),
-      h('tbody', groupBy ? groupedBody(rows, groupBy, groupSummary, columns.length, rowEl)
+      h('tbody', groupBy
+        ? groupedBody(rows, groupBy, groupSummary, columns.length, rowEl, groupNoun)
         : rows.map(rowEl)),
     ),
   );
 }
 
-function groupedBody(rows, groupBy, groupSummary, span, rowEl) {
+function groupedBody(rows, groupBy, groupSummary, span, rowEl, noun) {
   const groups = new Map();
   for (const row of rows) {
     const label = groupBy(row) || UNGROUPED;
@@ -94,7 +100,7 @@ function groupedBody(rows, groupBy, groupSummary, span, rowEl) {
     const group = groups.get(label);
     out.push(h('tr.row-group', h('td', { colspan: span },
       h('span.row-group-name', label),
-      h('span.row-group-meta', `${group.length} ${group.length === 1 ? 'person' : 'people'}`),
+      h('span.row-group-meta', `${group.length} ${group.length === 1 ? noun[0] : noun[1]}`),
       groupSummary ? h('span.row-group-meta', groupSummary(group)) : null,
     )));
     out.push(...group.map(rowEl));

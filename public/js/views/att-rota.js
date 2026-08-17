@@ -4,7 +4,9 @@ import {
 } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import { replaceParams } from '../app.js';
-import { field, formDialog, shiftSelect } from './att-shared.js';
+import {
+  byDepartment, field, formDialog, shiftHours, shiftLabel, shiftSelect,
+} from './att-shared.js';
 
 /**
  * The rota.
@@ -90,12 +92,18 @@ export async function renderAttRota(params) {
   // redrawing a grid somebody is halfway through editing.
   const cells = new Map();
 
+  const shiftById = new Map(data.shifts.map((s) => [String(s.id), s]));
+
   const cell = (row, entry) => {
+    if (entry.leave) {
+      return h('div.rota-locked', { title: 'Approved leave' }, 'Leave');
+    }
+
     const { own, other } = shiftsFor(data.shifts, row.staff.department);
 
     const opt = (shift) => h('option', {
       value: shift.id, selected: String(shift.id) === String(entry.shift_id),
-    }, shift.name);
+    }, shiftLabel(shift));
 
     // Whatever is already on the day is always offered, even when it belongs to
     // another department. A cover shift somebody arranged last week must not
@@ -108,19 +116,33 @@ export async function renderAttRota(params) {
       ? h('option', { value: EXPAND }, `⋯ other departments (${other.length})`)
       : null;
 
+    // The hours of whatever is currently chosen, spelled out under the cell.
+    // The dropdown carries them too, but a closed select shows one truncated
+    // line, and the times are the half of it worth reading — "Housekeeper
+    // Helper" is four shifts on this property and only the clock tells them
+    // apart.
+    const hours = h('small.rota-hours');
+    const syncHours = () => {
+      const chosen = shiftById.get(String(select.value));
+      hours.textContent = chosen ? shiftHours(chosen) : '';
+      hours.className = `rota-hours${chosen ? '' : ' rota-hours-off'}`;
+    };
+
     const select = h('select.rota-cell', {
       class: entry.explicit ? 'rota-set' : 'rota-pattern',
       title: entry.holiday ? `Public holiday: ${entry.holiday}` : undefined,
-      disabled: Boolean(entry.leave),
       onchange: (e) => {
         const value = e.target.value;
 
         // Not a choice of shift — a request to see the rest of them. Put the
         // value back where it was so nothing is recorded as changed, and add
-        // the other departments in a group of their own.
+        // the other departments under headings of their own rather than in one
+        // lump of nineteen.
         if (value === EXPAND) {
           e.target.remove(e.target.selectedIndex);
-          e.target.append(h('optgroup', { label: 'Other departments' }, other.map(opt)));
+          for (const group of byDepartment(other)) {
+            e.target.append(h('optgroup', { label: group.name }, group.shifts.map(opt)));
+          }
           e.target.value = entry.shift_id == null ? '' : String(entry.shift_id);
           return;
         }
@@ -129,22 +151,23 @@ export async function renderAttRota(params) {
           ? { staffId: row.staff.id, day: entry.day, clear: true }
           : { staffId: row.staff.id, day: entry.day, shiftId: value === '' ? null : Number(value) });
         e.target.classList.add('rota-dirty');
+        syncHours();
         refreshSaveBar();
       },
     },
       h('option', { value: '', selected: entry.shift_id == null && entry.explicit }, 'Off'),
       outside ? opt(outside) : null,
+      // Their own department needs no heading — it is the whole list until
+      // somebody asks for more.
       own.map(opt),
       // Only offered where an override exists to remove.
       entry.source === 'roster' ? h('option', { value: 'pattern' }, '↺ Use pattern') : null,
       expand,
     );
 
-    if (entry.leave) {
-      return h('div.rota-locked', { title: 'Approved leave' }, 'Leave');
-    }
-    cells.set(`${row.staff.id}|${entry.day}`, select);
-    return select;
+    syncHours();
+    cells.set(`${row.staff.id}|${entry.day}`, { select, syncHours });
+    return h('div.rota-cellwrap', select, hours);
   };
 
   /**
@@ -201,10 +224,21 @@ export async function renderAttRota(params) {
       if (entry.leave) continue;
       // Monday-first, to match the tick boxes and the grid.
       if (!wanted.has((new Date(`${entry.day}T12:00:00Z`).getUTCDay() + 6) % 7)) continue;
-      const select = cells.get(`${row.staff.id}|${entry.day}`);
-      if (!select) continue;
-      select.value = shiftId == null ? '' : String(shiftId);
-      select.classList.add('rota-dirty');
+      const found = cells.get(`${row.staff.id}|${entry.day}`);
+      if (!found) continue;
+
+      // A cell only lists this person's own department until somebody asks for
+      // more, so filling a row with a cover shift from elsewhere would set a
+      // value the dropdown has no option for — which silently falls back to Off
+      // while the change queued underneath says otherwise. Add the option.
+      const chosen = shiftId == null ? null : shiftById.get(String(shiftId));
+      if (chosen && !found.select.querySelector(`option[value="${shiftId}"]`)) {
+        found.select.append(h('option', { value: chosen.id }, shiftLabel(chosen)));
+      }
+
+      found.select.value = shiftId == null ? '' : String(shiftId);
+      found.select.classList.add('rota-dirty');
+      found.syncHours();
       pending.set(`${row.staff.id}|${entry.day}`, {
         staffId: row.staff.id, day: entry.day, shiftId,
       });
@@ -227,18 +261,28 @@ export async function renderAttRota(params) {
         )),
       )),
       h('tfoot',
-        // The totals a rota exists to get right. Zero on a day somebody is
-        // needed is the one thing worth shouting about, so it is the only thing
-        // that changes colour.
-        data.shifts.map((shift) => h('tr.rota-total',
-          h('td', h('small', shift.name)),
-          h('td'),
-          ...data.days.map((day) => {
-            const n = data.coverage.find((c) => c.day === day)?.counts?.[shift.id] ?? 0;
-            return h('td', { class: isWeekend(day) ? 'rota-weekend' : '' },
-              h('span', { class: n ? '' : 'rota-gap' }, String(n)));
-          }),
-        )),
+        // The totals a rota exists to get right, department by department —
+        // "is anybody on Security on Sunday" is the question, and it is not
+        // asked by reading twenty-four unsorted lines. Zero on a day somebody
+        // is needed is the one thing worth shouting about, so it is the only
+        // thing that changes colour.
+        byDepartment(data.shifts.filter((s) => s.active !== 0)).map((group) => [
+          h('tr.rota-total.rota-dept',
+            h('td', { colspan: data.days.length + 2 }, h('small', group.name)),
+          ),
+          ...group.shifts.map((shift) => h('tr.rota-total',
+            h('td',
+              h('small', shift.name),
+              h('small.muted', { style: { marginLeft: '.4rem' } }, shiftHours(shift)),
+            ),
+            h('td'),
+            ...data.days.map((day) => {
+              const n = data.coverage.find((c) => c.day === day)?.counts?.[shift.id] ?? 0;
+              return h('td', { class: isWeekend(day) ? 'rota-weekend' : '' },
+                h('span', { class: n ? '' : 'rota-gap' }, String(n)));
+            }),
+          )),
+        ]),
         h('tr.rota-total',
           h('td', h('small.muted', 'Off / on leave')),
           h('td'),
@@ -472,12 +516,15 @@ function scopedShiftSelect(shifts, department, selected, props = {}) {
 
   const opt = (s) => h('option', {
     value: s.id, selected: String(s.id) === String(selected),
-  }, `${s.name} (${s.starts_at}–${s.ends_at})`);
+  }, shiftLabel(s));
 
   return h('select', props,
     h('option', { value: '' }, '—'),
     h('optgroup', { label: department }, own.map(opt)),
-    h('optgroup', { label: 'Other departments' }, other.map(opt)),
+    // The rest under their own departments rather than one heading reading
+    // "other": nineteen shifts in a lump is the list this grouping exists to
+    // avoid, and putting it behind a heading does not make it shorter.
+    byDepartment(other).map((g) => h('optgroup', { label: g.name }, g.shifts.map(opt))),
   );
 }
 
@@ -642,7 +689,7 @@ function importCard(draft, staff, reload) {
 
     h('details', { style: { marginTop: '.6rem' } },
       h('summary', { style: { cursor: 'pointer', fontSize: '.88rem' } },
-        `All ${c.roster} days this would write`),
+        `All ${c.ready} days this would write`),
       table([
         { key: 'day', label: 'Date', format: (v) => fmtDayShort(v) },
         { key: 'name', label: 'From the file', format: (v) => h('small.muted', v) },
