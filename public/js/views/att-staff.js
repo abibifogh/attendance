@@ -170,11 +170,24 @@ export async function renderAttStaff(params) {
   const t = data.totals;
   const leave = data.leave;
 
+  // The leave figure follows the leave box: on screen always, on paper only if
+  // somebody ticks the box below. A slip handed to one person is read by
+  // whoever is standing next to them.
+  const leaveTile = leave
+    ? tile('Leave left', fmtNum(leave.remaining, 1), `of ${fmtNum(leave.available, 1)} days this year`)
+    : null;
+  if (leaveTile) leaveTile.classList.add('no-print');
+
   const tiles = h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
     tile('Days worked', fmtNum(t.daysWorked, t.daysWorked % 1 ? 1 : 0), `of ${fmtNum(t.scheduled, 0)} rostered`),
-    tile('Hours', fmtNum(t.workedMinutes / 60, 1), t.overtimeMinutes ? `${fmtNum(t.overtimeMinutes / 60, 1)} over` : 'on the clock', 'var(--c3)'),
-    tile('Absences', fmtNum(t.daysAbsent, 0), t.openCount ? `${t.openCount} still to confirm` : 'unexcused', t.daysAbsent ? 'var(--bad)' : null),
-    leave ? tile('Leave left', fmtNum(leave.remaining, 1), `of ${fmtNum(leave.available, 1)} days this year`) : null,
+    tile('Hours', fmtNum(t.workedMinutes / 60, 1), 'on the clock', 'var(--c3)'),
+    // Absences are a count across a period. On one day the status pill and the
+    // note above already say what happened, and "Absences: 1" underneath is the
+    // same fact a third time.
+    single
+      ? null
+      : tile('Absences', fmtNum(t.daysAbsent, 0), t.openCount ? `${t.openCount} still to confirm` : 'unexcused', t.daysAbsent ? 'var(--bad)' : null),
+    leaveTile,
   );
 
   // A single day gets the treatment the printed slip needs: the note first,
@@ -238,7 +251,6 @@ export async function renderAttStaff(params) {
     { key: 'hours', label: 'Hours', align: 'right', format: hoursCell },
     { key: 'late_minutes', label: 'Late', align: 'right', format: minutesCell },
     { key: 'early_minutes', label: 'Early', align: 'right', format: minutesCell },
-    { key: 'overtime_minutes', label: 'Over', align: 'right', format: minutesCell },
     {
       key: 'label',
       label: 'Status',
@@ -305,7 +317,13 @@ export async function renderAttStaff(params) {
   const printLeave = h('input', {
     type: 'checkbox',
     checked: false,
-    onchange: (e) => leaveCard.classList.toggle('no-print', !e.target.checked),
+    onchange: (e) => {
+      // Both, or the tile at the top of the page would go out on paper while
+      // the box explaining it stayed behind — which is the worse of the two to
+      // hand somebody.
+      leaveCard.classList.toggle('no-print', !e.target.checked);
+      leaveTile?.classList.toggle('no-print', !e.target.checked);
+    },
   });
 
   const adjusted = Number(leave?.adjusted || 0);
@@ -406,7 +424,10 @@ function singleDayCard(record, staff) {
       box('Clocked in', clockCell(record.first_in, { missing: record.scheduled })),
       box('Clocked out', clockCell(record.last_out, { missing: record.scheduled })),
       box('Hours worked', hoursCell(record.hours)),
-      box(record.late_minutes ? 'Late by' : 'Overtime', minutesCell(record.late_minutes || record.overtime_minutes)),
+      // Only lateness. Overtime is measured from the shift end with no
+      // threshold behind it, so every evening somebody stays ten minutes reads
+      // as overtime — a number that means nothing here and is asked about.
+      record.late_minutes ? box('Late by', minutesCell(record.late_minutes)) : null,
     ),
     record.resolved_by
       ? h('p.muted', { style: { fontSize: '.85rem', marginTop: '.8rem', marginBottom: 0 } },

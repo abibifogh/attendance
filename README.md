@@ -66,6 +66,12 @@ the scheduled shift automatically and flagging it.
 | **Week** | Names down the side, Monday to Sunday across. Finds the pattern a daily list hides — the person late three Mondays running, the section short every weekend. |
 | **Month** | Days worked, hours, overtime, absences, leave taken and leave left, per person. The sheet that goes to whoever does the wages. Exports as CSV. |
 
+Overtime is not shown anywhere on this report. It is measured from the shift end
+with no threshold behind it, so every evening somebody stays ten minutes past
+reads as overtime — a number that means nothing here and gets asked about. On a
+single day the absences tile goes too: the status and the note above already say
+what happened, and "Absences: 1" underneath is the same fact a third time.
+
 Every row on a person's report carries **Correct** — or **Settle** where the day
 is still waiting — so a discrepancy is fixed where it is noticed. Somebody going
 through a month before payroll finds a Tuesday marked absent that was not, and
@@ -101,10 +107,11 @@ the wider one is free.
 It is the same form the leave screen uses, shared rather than copied: it moves
 somebody's leave, and two versions of it would drift.
 
-**The leave box is left off the printout.** A slip handed to one person is read
-by whoever is standing next to them, and how much leave they have left is nobody
-else's business — so it stays on screen and there is a tick box to put it on
-paper when it belongs there. Where a signed-off month has added or taken days,
+**The leave box is left off the printout**, and so is the *Leave left* tile at
+the top of the page — one tick box governs both, or the figure would go out on
+paper while the box explaining it stayed behind. A slip handed to one person is
+read by whoever is standing next to them, and how much leave they have left is
+nobody else's business. Where a signed-off month has added or taken days,
 that shows as its own tile — *Days charged* or *Days given back* — with a line
 saying which months it came from. A balance that quietly differs from the
 entitlement is the kind of thing people notice on payday.
