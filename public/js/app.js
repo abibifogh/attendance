@@ -13,6 +13,7 @@ import { renderAdmin } from './views/admin.js';
 import { renderPeople } from './views/people.js';
 import { renderPerson } from './views/person.js';
 import { renderPeopleTemplates } from './views/people-templates.js';
+import { renderContract } from './views/contract.js';
 import { BRAND } from './brand.js';
 
 export const state = {
@@ -43,6 +44,7 @@ const ROUTES = [
   { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, hidden: true },
   { path: 'person', label: 'Record', permission: 'hr_view', render: renderPerson, hidden: true },
   { path: 'people-templates', label: 'Templates', permission: 'hr_manage', render: renderPeopleTemplates, hidden: true },
+  { path: 'contract', label: 'Contract', permission: 'hr_view', render: renderContract, hidden: true },
 ];
 
 const root = document.getElementById('app');

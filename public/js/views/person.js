@@ -3,7 +3,8 @@ import { fmtDay, h, mount, toast } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import { navigate, replaceParams } from '../app.js';
 import { field, formDialog } from './att-shared.js';
-import { control, listEditor, signaturePad } from '../fields.js';
+import { control, listEditor } from '../fields.js';
+import { EVENTS, STATUS } from './contract.js';
 
 /**
  * One person's file.
@@ -383,15 +384,6 @@ function toBase64(bytes) {
 // Contracts
 // ---------------------------------------------------------------------------
 
-const STATUS = {
-  draft: ['', 'Not sent'],
-  sent: ['warn', 'Sent, not opened'],
-  opened: ['warn', 'Opened, not signed'],
-  signed: ['good', 'Signed'],
-  declined: ['bad', 'Refused'],
-  void: ['', 'Withdrawn'],
-};
-
 function contractsTab(data, model, reload) {
   const issue = async () => {
     const { rows: templates } = await api.hrTemplates();
@@ -465,7 +457,9 @@ function contractsTab(data, model, reload) {
             key: 'title',
             label: 'Document',
             format: (v, r) => h('div',
-              h('a.link-button', { onclick: () => openContract(r.id, data, reload) }, v),
+              h('button.link-button', {
+                onclick: () => navigate('contract', { id: r.id }),
+              }, v),
               h('small.muted.mono', String(r.body_hash).slice(0, 12)),
             ),
           },
@@ -500,139 +494,6 @@ function contractsTab(data, model, reload) {
     ),
   );
 }
-
-/**
- * A contract, as it was signed, with the evidence under it.
- *
- * The whole point of the screen is the last part. A signature on its own is an
- * assertion; a signature with a timestamp, an address, and the fingerprint of
- * the exact words that were on the screen is something that can be shown to
- * somebody.
- */
-async function openContract(id, data, reload) {
-  const { contract, events } = await api.hrContract(id);
-
-  const countersign = async () => {
-    const pad = signaturePad({ height: 130 });
-    const done = await formDialog({
-      title: 'Countersign for the property',
-      submitLabel: 'Countersign',
-      body: h('div',
-        h('p.muted', 'A contract signed by one side is an offer. This is what makes it an '
-          + 'agreement, and your name goes on it.'),
-        field('Signing as', h('input', {
-          type: 'text', name: 'name', required: true, maxlength: 120,
-        })),
-        pad.element,
-      ),
-      onSubmit: async (form) => api.hrCountersign(id, { name: form.get('name'), ink: pad.read() }),
-    });
-    if (done) { toast('Countersigned.', 'good'); await reload(); }
-  };
-
-  const withdraw = async () => {
-    const done = await formDialog({
-      title: 'Withdraw this document?',
-      submitLabel: 'Withdraw it',
-      body: h('div',
-        h('p.muted', 'It stops working on any link carrying it. A signed contract cannot be '
-          + 'withdrawn — issue a replacement instead and say what it supersedes.'),
-        field('Why', h('input', { type: 'text', name: 'note', maxlength: 300 })),
-      ),
-      onSubmit: async (form) => api.hrVoidContract(id, form.get('note')),
-    });
-    if (done) { toast('Withdrawn.'); await reload(); }
-  };
-
-  await formDialog({
-    title: contract.title,
-    submitLabel: 'Close',
-    body: h('div.contract-view',
-      !contract.intact
-        ? h('div.alert.high',
-          h('span.alert-icon', '⛔'),
-          h('div',
-            h('div.alert-title', 'The words no longer match the signature'),
-            h('div.alert-detail', 'The stored text does not produce the fingerprint recorded '
-              + 'when this was signed. Do not rely on it. Tell whoever looks after the system.'),
-          ))
-        : null,
-
-      h('div.btn-row', { class: 'no-print' },
-        h('button.btn-sm', { onclick: () => window.print() }, 'Print / save as PDF'),
-        contract.status === 'signed' && !contract.employer_at && data.canManage
-          ? h('button.btn-sm.btn-primary', { onclick: countersign }, 'Countersign')
-          : null,
-        contract.status !== 'signed' && contract.status !== 'void' && data.canManage
-          ? h('button.btn-sm', { onclick: withdraw }, 'Withdraw')
-          : null,
-      ),
-
-      h('div.contract-body', contract.body),
-
-      h('div.sig-block',
-        signatureBlock('Signed by', contract.signer_name, contract.signature_ink, contract.signed_at),
-        signatureBlock('For the property', contract.employer_name, contract.employer_ink, contract.employer_at),
-      ),
-
-      h('h4', { style: { marginBottom: '.3rem' } }, 'Certificate of signature'),
-      h('table.cert',
-        certRow('Document', contract.title),
-        certRow('Fingerprint (SHA-256)', h('span.mono', contract.body_hash)),
-        certRow('Matches the words above', contract.intact ? 'Yes' : 'NO — see the warning'),
-        certRow('Signed by', contract.signer_name || '—'),
-        certRow('Signature', contract.signature_ink ? 'Drawn by hand' : 'Typed name'),
-        certRow('When (UTC)', contract.signed_at || '—'),
-        certRow('From', contract.signer_ip || '—'),
-        certRow('Device', h('small', contract.signer_agent || '—')),
-      ),
-
-      h('h4', { style: { margin: '1rem 0 .3rem' } }, 'What happened, in order'),
-      table([
-        { key: 'at_utc', label: 'When (UTC)', format: (v) => h('small.mono', v) },
-        { key: 'kind', label: 'What', format: (v) => EVENTS[v] ?? v },
-        { key: 'detail', label: 'Detail', format: (v) => h('small', v || '') },
-        { key: 'ip', label: 'From', format: (v) => h('small.mono', v || '—') },
-      ], events, { empty: 'Nothing recorded.' }),
-
-      h('p.muted', { style: { fontSize: '.8rem' } },
-        'Ghana’s Electronic Transactions Act 2008 gives an electronic signature the same effect '
-        + 'as a written one where it is uniquely linked to the person and under their control. '
-        + 'What is above is the evidence of that: what they were shown, that they agreed to sign '
-        + 'it electronically, and when and from where.'),
-    ),
-    onSubmit: async () => ({ ok: true }),
-  });
-}
-
-const EVENTS = {
-  contract_issued: 'Issued',
-  link_created: 'Link sent',
-  link_opened: 'Link opened',
-  contract_viewed: 'Document opened',
-  signed: 'Signed',
-  declined: 'Refused',
-  countersigned: 'Countersigned by the property',
-  contract_void: 'Withdrawn',
-  details_sent: 'Details sent in',
-  details_accepted: 'Details accepted',
-  details_rejected: 'Details turned down',
-  link_revoked: 'Link cancelled',
-  link_pin_failed: 'Wrong code entered',
-};
-
-function signatureBlock(label, name, ink, at) {
-  return h('div.sig-slot',
-    h('div.sig-label', label),
-    ink
-      ? h('img.sig-image', { src: ink, alt: `${name || ''} signature` })
-      : h('div.sig-typed', name || ''),
-    h('div.sig-name', name || '—'),
-    h('div.sig-when', at ? `${fmtDay(String(at).slice(0, 10), { withYear: true })}` : 'Not yet'),
-  );
-}
-
-const certRow = (label, value) => h('tr', h('th', label), h('td', value));
 
 // ---------------------------------------------------------------------------
 // Links and history
