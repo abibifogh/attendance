@@ -8,6 +8,7 @@ import { renderAttStaff } from './views/att-staff.js';
 import { renderAttOverview, renderAttWeek } from './views/att-reports.js';
 import { renderAttRota } from './views/att-rota.js';
 import { renderAttLeave } from './views/att-leave.js';
+import { renderAttSignoff } from './views/att-signoff.js';
 import { renderAttSetup } from './views/att-setup.js';
 import { renderAdmin } from './views/admin.js';
 import { renderPeople } from './views/people.js';
@@ -41,6 +42,7 @@ const ROUTES = [
   { path: 'att-overview', label: 'Month', permission: 'att_reports', render: renderAttOverview },
   { path: 'att-rota', label: 'Rota', permission: 'att_rota', render: renderAttRota },
   { path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave },
+  { path: 'signoff', label: 'Sign-off', permission: 'att_signoff', render: renderAttSignoff },
   { path: 'people', label: 'People', permission: 'hr_view', render: renderPeople },
   { path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters },
   { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup },
@@ -79,8 +81,8 @@ function currentRoute() {
  * they just cleared. So the last resort is the first route they can open.
  */
 function defaultRoute() {
-  const preferred = ['att-today', 'att-overview', 'att-rota', 'att-leave', 'people', 'letters',
-    'att-setup', 'admin'];
+  const preferred = ['att-today', 'att-overview', 'att-rota', 'signoff', 'att-leave', 'people',
+    'letters', 'att-setup', 'admin'];
   const wanted = preferred.find((path) => allowed(ROUTES.find((r) => r.path === path)));
   return wanted ?? ROUTES.find((r) => allowed(r) && !r.hidden)?.path ?? 'att-today';
 }
@@ -113,11 +115,11 @@ export function replaceParams(path, params) {
 // ---------------------------------------------------------------------------
 
 /**
- * Nine screens is still few enough for one flat list.
+ * Ten screens is about the limit for one flat list.
  *
  * The other apps in this operation group their navigation because they carry
  * three stores between them. This one does not, and inventing a section
- * heading for a list of nine would be furniture for its own sake.
+ * heading for a list of ten would be furniture for its own sake.
  */
 function sidebar() {
   const visible = ROUTES.filter((r) => allowed(r) && !r.hidden);

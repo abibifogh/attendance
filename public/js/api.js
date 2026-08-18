@@ -84,6 +84,14 @@ export const api = {
   attReview: (params) => request(`/api/att/review?${new URLSearchParams(params)}`),
   attDecideReview: (body) => request('/api/att/review', { method: 'POST', body }),
   attUndoReview: (body) => request('/api/att/review/undo', { method: 'POST', body }),
+  attOutstanding: (params = {}) => request(`/api/att/outstanding?${new URLSearchParams(params)}`),
+  attSignDays: (body) => request('/api/att/sign-days', { method: 'POST', body }),
+  attReopenDays: (body) => request('/api/att/sign-days/undo', { method: 'POST', body }),
+  attQueries: (status) => request(`/api/att/queries${status ? `?status=${status}` : ''}`),
+  attRaiseQuery: (body) => request('/api/att/queries', { method: 'POST', body }),
+  attAnswerQuery: (id, body) => request(`/api/att/queries/${id}/answer`, { method: 'POST', body }),
+  attWithdrawQuery: (id) => request(`/api/att/queries/${id}/withdraw`, { method: 'POST' }),
+
   attBalances: (asOf) => request(`/api/att/balances${asOf ? `?asOf=${asOf}` : ''}`),
   attExportUrl: (from, to) => `/api/att/export?${new URLSearchParams({
     ...(from ? { from } : {}), ...(to ? { to } : {}),

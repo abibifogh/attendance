@@ -116,6 +116,69 @@ that shows as its own tile — *Days charged* or *Days given back* — with a li
 saying which months it came from. A balance that quietly differs from the
 entitlement is the kind of thing people notice on payday.
 
+### Sign-off — settling up as you go
+
+**Sign-off** is the screen whoever builds the rota opens on a Monday. Pick a
+window — yesterday, last week, a fortnight, a month, or two dates by hand —
+and it lists everybody with days in it that nothing has signed off, worst
+first.
+
+**Signing is per day.** A fortnight with three days nobody can explain used to
+be all-or-nothing: sign the lot, or leave eleven settled days waiting on three.
+So the three held up everything and nothing got signed. Now every day carries a
+tick, all ticked by default; untick the awkward ones and they stay on the list
+to be dealt with on their own.
+
+> **The rule about overlaps had to change for that to work.** It was *no two
+> signed spans may share a day*, checked on the raw dates. It is now *no two
+> signed spans may share a day either of them actually signed* — otherwise the
+> three days a month deliberately left out could never be settled by anybody,
+> because the month itself would refuse them. The comparison moved out of SQL
+> and into code for exactly this reason.
+
+**Today is never on the list.** A shift that has not finished cannot be signed
+off, and charging an absence against somebody who is upstairs making a bed is
+the mistake that rule exists to prevent.
+
+#### What is wrong, before you sign it
+
+Each person's card names what the period contains — *2 late, 1 absent, 1 not
+settled* — and separates the ones worth stopping for from the ones worth
+seeing. An unexplained absence, an unsettled day and a whole missed shift are
+blocking; lateness and leaving early are not.
+
+Lateness is read from the rules' own verdict, not from the raw minutes. Grace
+exists precisely so that somebody due at 06:00 who arrives at 06:01 is not
+late, and a screen that flagged them anyway would put a warning beside half the
+property every morning — which is how a list of warnings stops being read.
+
+There are then two answers, not one:
+
+- **Sign off** — and that you knew what was in it is recorded with the
+  sign-off, so a decision taken over a known problem can be told from one where
+  there was nothing to notice.
+- **Ask an admin** — the period goes to a queue with the dates, the figures and
+  your question. Nothing is signed, the days stay on your list, and the bell
+  rings for whoever settles days.
+
+#### The questions queue
+
+Everything anybody has asked, in one place, with the whole conversation on it.
+A question asked in a corridor is one nobody can find again; a question with
+the dates, the figures and the answer on it is a record of a decision.
+
+An administrator can do three genuinely different things:
+
+| | |
+|---|---|
+| **Comment** | Say something and leave it open — a question being worked out is not one that has been dealt with |
+| **Hand it back with a direction** | Tell them what to do. The period stays unsigned, the query goes back to their screen and rings their bell |
+| **Sign it off** | Deal with it here, under the administrator's own name, and the question closes |
+
+Signing the days a question was about answers the question automatically —
+though only when *every* day it asked about has been dealt with. A question
+about five days, three of which were signed, is still a question.
+
 ### Your shifts, found rather than typed
 
 If you already built your shifts in Hik-Connect, you should not have to build
@@ -650,7 +713,7 @@ bank account:
 | **Attendance today** | Who clocked in, and what needs dealing with |
 | **Attendance reports** | Days worked, hours, lateness, leave balances, exports |
 | **Rota & leave requests** | Set the rota and put leave in for people. No approvals, no balances |
-| **Sign off attendance** | Close a day, week or month off and move the days. Still no balances |
+| **Sign off attendance** | Close a day, week, month or any set of days off and move the days. Still no balances |
 | **Rota & decisions** | Set the rota, settle incomplete days, approve leave |
 | **Attendance setup** | Staff, shifts, absence reasons, holidays, terminals, rules |
 | **Employee records** | Read personal details, contacts and contracts. Private numbers stay masked |
@@ -952,6 +1015,8 @@ src/
                       the statute each is built from named beside it
     correspondence.js Letter references, the hash-linked event chain, and
                       whose turn it is to sign
+    signoff.js        What a sign-off actually signed, what is still
+                      outstanding, and what is wrong with a period
     files.js          Holding a file in a database that will not take one
                       whole: splitting it into pieces and putting it back
     pdf-text.js       Every word in a PDF and the point it was drawn at.

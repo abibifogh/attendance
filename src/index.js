@@ -13,6 +13,7 @@ import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
 import * as invite from './routes/invite.js';
 import * as corr from './routes/correspondence.js';
+import * as signoff from './routes/signoff.js';
 import * as sign from './routes/sign.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
@@ -67,6 +68,17 @@ export const ROUTES = [
   ['GET', '/api/att/review', ['att_reports', 'att_signoff'], att.periodReview],
   ['POST', '/api/att/review', 'att_signoff', att.decidePeriod],
   ['POST', '/api/att/review/undo', 'att_signoff', att.undoPeriod],
+
+  // What is still waiting, day by day, and what to do about the awkward ones.
+  ['GET', '/api/att/outstanding', 'att_signoff', signoff.outstanding],
+  ['POST', '/api/att/sign-days', 'att_signoff', signoff.signDays],
+  ['POST', '/api/att/sign-days/undo', 'att_signoff', signoff.reopenDays],
+  // Raising a question is part of signing off; answering one is deciding, and
+  // deciding is what settling a day and approving leave already need.
+  ['GET', '/api/att/queries', ['att_signoff', 'att_manage'], signoff.listQueries],
+  ['POST', '/api/att/queries', 'att_signoff', signoff.raiseQuery],
+  ['POST', '/api/att/queries/:id/answer', 'att_manage', signoff.answerQuery],
+  ['POST', '/api/att/queries/:id/withdraw', 'att_signoff', signoff.withdrawQuery],
 
   // Settling a day is a decision with somebody's name on it, so it sits behind
   // its own permission rather than travelling with the reports.

@@ -973,3 +973,16 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   /* A letter on paper is the letter, the signatures and the record under it. */
   .stamp-image { position: absolute; }
 }
+
+/* A question on a period, and the conversation on it. Read as a thread rather
+   than a table: what was asked and what was answered belong next to each
+   other, in the order they were said. */
+.thread { display: grid; gap: .5rem; margin: .6rem 0; }
+.thread-note {
+  padding: .55rem .7rem; border-radius: var(--radius-sm);
+  background: var(--surface-2); border-left: 3px solid var(--border-strong);
+}
+.thread-head {
+  display: flex; flex-wrap: wrap; gap: .45rem; align-items: baseline;
+  font-size: .82rem; margin-bottom: .15rem;
+}
