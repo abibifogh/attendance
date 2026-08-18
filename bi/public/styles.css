@@ -1,0 +1,266 @@
+/* One stylesheet, no framework. The whole dashboard is nine screens and a
+   handful of shapes, and a build step to save a few kilobytes is a build step
+   that can break at three in the morning. */
+
+:root {
+  color-scheme: light;
+  --plane:        #f9f9f7;
+  --surface:      #fcfcfb;
+  --surface-2:    #f2f1ed;
+  --ink:          #0b0b0b;
+  --ink-2:        #52514e;
+  --muted:        #898781;
+  --grid:         #e1e0d9;
+  --axis:         #c3c2b7;
+  --border:       rgba(11, 11, 11, 0.10);
+
+  /* The categorical slots, in fixed order. A line keeps its colour whatever
+     else is on the screen: colour follows the part of the business, never its
+     position in a sorted list. */
+  --series-1: #2a78d6;  /* blue    */
+  --series-2: #eb6834;  /* orange  */
+  --series-3: #1baf7a;  /* aqua    */
+  --series-4: #eda100;  /* yellow  */
+  --series-5: #e87ba4;  /* magenta */
+  --series-6: #008300;  /* green   */
+  --series-7: #4a3aa7;  /* violet  */
+  --series-8: #e34948;  /* red     */
+
+  --good:     #0ca30c;
+  --warning:  #fab219;
+  --serious:  #ec835a;
+  --critical: #d03b3b;
+  --good-text: #006300;
+
+  --radius: 10px;
+  --sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --plane:     #0d0d0d;
+    --surface:   #1a1a19;
+    --surface-2: #232322;
+    --ink:       #ffffff;
+    --ink-2:     #c3c2b7;
+    --muted:     #898781;
+    --grid:      #2c2c2a;
+    --axis:      #383835;
+    --border:    rgba(255, 255, 255, 0.10);
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+    --good-text: #0ca30c;
+  }
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --plane:     #0d0d0d;
+  --surface:   #1a1a19;
+  --surface-2: #232322;
+  --ink:       #ffffff;
+  --ink-2:     #c3c2b7;
+  --muted:     #898781;
+  --grid:      #2c2c2a;
+  --axis:      #383835;
+  --border:    rgba(255, 255, 255, 0.10);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --good-text: #0ca30c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  background: var(--plane);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { margin: 0 0 .4rem; line-height: 1.25; font-weight: 600; }
+h1 { font-size: 1.3rem; }
+h2 { font-size: 1.05rem; }
+h3 { font-size: .92rem; }
+p  { margin: 0 0 .6rem; }
+a  { color: var(--series-1); }
+
+/* -------------------------------------------------------------- chrome -- */
+
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: .7rem 1.1rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+header.top .brand { font-weight: 650; letter-spacing: -0.01em; }
+header.top .spacer { flex: 1; }
+
+nav.tabs { display: flex; gap: .15rem; overflow-x: auto; padding: 0 .6rem;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  position: sticky; top: 3.1rem; z-index: 19; }
+nav.tabs button {
+  border: 0; background: none; font: inherit; color: var(--ink-2);
+  padding: .55rem .7rem; cursor: pointer; white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+nav.tabs button:hover { color: var(--ink); }
+nav.tabs button[aria-current='page'] { color: var(--ink); border-bottom-color: var(--series-1); font-weight: 600; }
+
+main { padding: 1.1rem; max-width: 1180px; margin: 0 auto; }
+
+/* --------------------------------------------------------------- cards -- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+}
+.card > h2:first-child, .card > h3:first-child { margin-top: 0; }
+.card .sub { color: var(--ink-2); font-size: .86rem; margin: -.2rem 0 .8rem; }
+
+.grid { display: grid; gap: 1rem; }
+.grid.two   { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid.three { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+
+/* ----------------------------------------------------------- stat tile -- */
+
+.tile { background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: .85rem .95rem; }
+.tile .label { color: var(--ink-2); font-size: .82rem; }
+.tile .value { font-size: 1.55rem; font-weight: 650; letter-spacing: -0.02em; margin: .15rem 0 .1rem; }
+.tile .delta { font-size: .82rem; font-weight: 600; display: flex; align-items: center; gap: .25rem; }
+.tile .delta.up   { color: var(--good-text); }
+.tile .delta.down { color: var(--critical); }
+.tile .delta.flat { color: var(--muted); }
+.tile .note { color: var(--muted); font-size: .76rem; margin-top: .35rem; }
+
+/* The one number a screen leads with. Exactly one per view. */
+.hero { font-size: 2.9rem; font-weight: 650; letter-spacing: -0.03em; line-height: 1.05; }
+.hero-note { color: var(--ink-2); font-size: .88rem; }
+
+/* -------------------------------------------------------------- tables -- */
+
+table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.table-wrap { overflow-x: auto; }
+th, td { text-align: left; padding: .45rem .55rem; border-bottom: 1px solid var(--grid); }
+th { color: var(--ink-2); font-weight: 600; font-size: .8rem; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:hover { background: var(--surface-2); }
+tfoot td { font-weight: 650; border-top: 1px solid var(--axis); border-bottom: 0; }
+
+/* ------------------------------------------------------------ findings -- */
+
+.finding { border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); padding: .9rem 1rem; margin-bottom: .7rem;
+  border-left: 3px solid var(--muted); }
+.finding.critical { border-left-color: var(--critical); }
+.finding.warning  { border-left-color: var(--serious); }
+.finding.info     { border-left-color: var(--series-1); }
+.finding.good     { border-left-color: var(--good); }
+.finding h3 { margin-bottom: .3rem; }
+.finding .meta { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center;
+  margin-bottom: .45rem; font-size: .78rem; color: var(--ink-2); }
+.finding .body { color: var(--ink-2); font-size: .9rem; }
+.finding .action { margin-top: .5rem; font-size: .89rem; }
+.finding .action strong { font-weight: 600; }
+.finding .worth { font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; }
+.finding .controls { margin-top: .6rem; display: flex; gap: .35rem; flex-wrap: wrap; }
+
+.pill { display: inline-flex; align-items: center; gap: .3rem;
+  padding: .1rem .45rem; border-radius: 999px; font-size: .74rem;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--ink-2); }
+.pill.critical { color: var(--critical); }
+.pill.warning  { color: var(--serious); }
+.pill.good     { color: var(--good-text); }
+.pill .dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+
+/* ------------------------------------------------------------ controls -- */
+
+button.btn, .btn {
+  font: inherit; font-size: .86rem; padding: .35rem .7rem; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--surface-2); color: var(--ink);
+}
+button.btn:hover { background: var(--grid); }
+button.btn.primary { background: var(--series-1); border-color: transparent; color: #fff; }
+button.btn.primary:hover { filter: brightness(1.08); }
+button.btn:disabled { opacity: .55; cursor: default; }
+
+input, select {
+  font: inherit; font-size: .88rem; padding: .35rem .5rem;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--surface); color: var(--ink);
+}
+label.field { display: block; font-size: .8rem; color: var(--ink-2); margin-bottom: .7rem; }
+label.field input, label.field select { display: block; width: 100%; margin-top: .2rem; }
+
+.rangebar { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+
+.banner { border-radius: var(--radius); padding: .6rem .85rem; font-size: .87rem;
+  margin-bottom: 1rem; border: 1px solid var(--border); background: var(--surface-2); }
+.banner.demo    { border-left: 3px solid var(--warning); }
+.banner.problem { border-left: 3px solid var(--critical); }
+
+.muted { color: var(--muted); }
+.small { font-size: .82rem; }
+.caveats { color: var(--muted); font-size: .8rem; margin-top: .8rem; }
+.caveats li { margin-bottom: .2rem; }
+
+/* -------------------------------------------------------------- charts -- */
+
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .legend { display: flex; flex-wrap: wrap; gap: .8rem; font-size: .8rem;
+  color: var(--ink-2); margin-top: .5rem; }
+.chart .legend span.key { display: inline-flex; align-items: center; gap: .35rem; }
+.chart .legend i { width: .7rem; height: .7rem; border-radius: 3px; display: inline-block; }
+
+.tooltip {
+  position: absolute; pointer-events: none; opacity: 0; transition: opacity .08s;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: .4rem .55rem; font-size: .8rem; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+  white-space: nowrap; z-index: 5; color: var(--ink);
+}
+.tooltip .t-row { display: flex; align-items: center; gap: .4rem; justify-content: space-between; }
+.tooltip .t-row b { font-variant-numeric: tabular-nums; }
+.tooltip i { width: .55rem; height: .55rem; border-radius: 2px; display: inline-block; }
+
+details.tableview { margin-top: .7rem; }
+details.tableview summary { cursor: pointer; font-size: .82rem; color: var(--ink-2); }
+details.tableview[open] summary { margin-bottom: .5rem; }
+
+/* ---------------------------------------------------------------- login -- */
+
+.login { max-width: 380px; margin: 12vh auto; }
+
+@media (max-width: 640px) {
+  main { padding: .8rem; }
+  .hero { font-size: 2.2rem; }
+  /* The header wraps to two rows on a narrow screen, so its height is no
+     longer the constant the tab bar's sticky offset was measured against.
+     Rather than guess at a taller offset, neither sticks: on a phone the
+     screens are read by scrolling, and a bar that covers the first card is
+     worse than one that scrolls away. */
+  header.top, nav.tabs { position: static; }
+}

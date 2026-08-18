@@ -1,0 +1,41 @@
+name = "niceoperation-insight"
+main = "src/index.js"
+compatibility_date = "2025-05-05"
+
+# The dashboard and its API are one Worker; everything that is not /api/* is
+# served from public/ as a static asset.
+[assets]
+directory = "public"
+binding = "ASSETS"
+
+# The warehouse. Nothing in it is a source of truth: every row is derived and
+# every row can be rebuilt by running the loader again.
+[[d1_databases]]
+binding = "DB"
+database_name = "insight"
+database_id = "REPLACE_WITH_YOUR_DATABASE_ID"
+
+# The attendance app's own database, bound a second time, read-only by
+# convention — nothing in this Worker writes to it. Binding it directly is why
+# the attendance connector needs no key, no service account and no network hop.
+# Comment this out until the id is filled in, or the Worker will not deploy.
+[[d1_databases]]
+binding = "ATT_DB"
+database_name = "attendance"
+database_id = "1df34f21-bfc6-43dc-b11a-1a57d7f691b0"
+
+# The breakfast, housekeeping and maintenance app's database. Same arrangement.
+[[d1_databases]]
+binding = "BREAKFAST_DB"
+database_name = "breakfast"
+database_id = "REPLACE_WITH_YOUR_BREAKFAST_DATABASE_ID"
+
+[vars]
+# Nothing secret lives here. SESSION_SECRET, DASHBOARD_PASSWORD,
+# POS_REPORTS_KEY and LAUNDRY_TOKEN are Worker secrets, set with
+# `wrangler secret put`.
+
+# A little after midnight in Accra: yesterday is finished, and the brief is
+# waiting before anybody opens it.
+[triggers]
+crons = ["45 0 * * *"]

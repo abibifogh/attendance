@@ -24,6 +24,21 @@ jobs:
       - name: Run the tests
         run: npm test
 
+  # The reporting layer in bi/ is a separate Worker with its own database, so
+  # it has its own test job and no deploy step here — it is published by hand
+  # once, after its D1 bindings are filled in. Its tests need nothing installed
+  # at all: node:test and node:sqlite are both in Node itself.
+  insight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run the reporting layer's tests
+        working-directory: bi
+        run: node --test "test/**/*.test.js"
+
   deploy:
     # Only the default branch deploys; pull requests stop at the test job.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
