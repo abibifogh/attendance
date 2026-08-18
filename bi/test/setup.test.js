@@ -16,6 +16,20 @@ import { setBinding, disableBinding, bindingEnabled, bindingId } from '../script
 
 const REAL = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
 
+/**
+ * The file as it ships, before anybody has run setup against an account.
+ *
+ * Derived rather than read, because the checked-in wrangler.toml stops being
+ * the shipped one the moment setup rewrites it — which is the entire purpose of
+ * setup. An earlier version of these tests asserted things about the live file
+ * and started failing the instant the tool they were testing did its job. A
+ * test that only passes before the feature is used is not a test of anything.
+ */
+const UNCONFIGURED = ['DB', 'ATT_DB', 'BREAKFAST_DB'].reduce(
+  (config, binding) => setBinding(config, binding, `REPLACE_WITH_YOUR_${binding}_ID`).config,
+  REAL,
+);
+
 test('the shipped config still has the three bindings the setup script expects', () => {
   for (const binding of ['DB', 'ATT_DB', 'BREAKFAST_DB']) {
     assert.notEqual(bindingId(REAL, binding), null, `${binding} is missing from wrangler.toml`);
@@ -25,6 +39,7 @@ test('the shipped config still has the three bindings the setup script expects',
 test('setting one binding leaves the others exactly as they were', () => {
   const before = { ATT_DB: bindingId(REAL, 'ATT_DB'), BREAKFAST_DB: bindingId(REAL, 'BREAKFAST_DB') };
   const { config, changed } = setBinding(REAL, 'DB', 'abc-123');
+  assert.notEqual(bindingId(REAL, 'DB'), 'abc-123', 'the fixture must differ from what we set');
 
   assert.equal(changed, true);
   assert.equal(bindingId(config, 'DB'), 'abc-123');
@@ -71,8 +86,9 @@ test('a binding that is not there is reported rather than silently invented', ()
   assert.equal(setBinding(REAL, 'NOT_A_BINDING', 'x').config, REAL);
 });
 
-test('the shipped id is an obvious placeholder, not somebody else\'s real database', () => {
-  assert.match(bindingId(REAL, 'DB'), /REPLACE/);
+test('a placeholder id is distinguishable from a real one', () => {
+  assert.match(bindingId(UNCONFIGURED, 'DB'), /REPLACE/);
+  assert.doesNotMatch(bindingId(setBinding(UNCONFIGURED, 'DB', 'aaaa-1111').config, 'DB'), /REPLACE/);
 });
 
 /**
@@ -90,11 +106,11 @@ const readyToDeploy = (config) => {
 };
 
 test('the deploy gate is shut before setup has run', () => {
-  assert.equal(readyToDeploy(REAL), false);
+  assert.equal(readyToDeploy(UNCONFIGURED), false);
 });
 
 test('the deploy gate opens once the warehouse has a real id', () => {
-  const wired = setBinding(REAL, 'DB', 'aaaa-1111').config;
+  const wired = setBinding(UNCONFIGURED, 'DB', 'aaaa-1111').config;
   assert.equal(readyToDeploy(wired), true);
 });
 
@@ -102,7 +118,7 @@ test('a commented-out binding elsewhere does not hold the deploy shut', () => {
   // Precisely the state setup leaves behind on a property with no breakfast
   // app: DB real and live, BREAKFAST_DB switched off with its placeholder
   // still in the comment.
-  let config = setBinding(REAL, 'DB', 'aaaa-1111').config;
+  let config = setBinding(UNCONFIGURED, 'DB', 'aaaa-1111').config;
   config = disableBinding(config, 'BREAKFAST_DB').config;
 
   assert.match(config, /REPLACE/, 'the placeholder is still there, inside a comment');
@@ -110,6 +126,18 @@ test('a commented-out binding elsewhere does not hold the deploy shut', () => {
 });
 
 test('the gate stays shut if the warehouse binding is switched off entirely', () => {
-  const off = disableBinding(setBinding(REAL, 'DB', 'aaaa-1111').config, 'DB').config;
+  const off = disableBinding(setBinding(UNCONFIGURED, 'DB', 'aaaa-1111').config, 'DB').config;
   assert.equal(readyToDeploy(off), false);
+});
+
+/**
+ * The checked-in file is still only tested for the things that must hold of it
+ * whatever account it has been pointed at.
+ */
+test('however it is configured, the three bindings are present and readable', () => {
+  for (const binding of ['DB', 'ATT_DB', 'BREAKFAST_DB']) {
+    const id = bindingId(REAL, binding);
+    assert.equal(typeof id, 'string', `${binding} has no database_id at all`);
+    assert.ok(id.length > 0);
+  }
 });
