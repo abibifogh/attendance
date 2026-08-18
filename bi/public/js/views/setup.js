@@ -23,6 +23,12 @@ export async function renderSetup(root) {
         h('button.btn.primary', { onclick: leaveDemo }, 'Switch demonstration mode off'))) : null,
 
     h('div.card',
+      h('h2', 'Databases you have mapped yourself'),
+      h('p.sub', 'A Supabase database is somebody\'s own Postgres, so this app cannot know its tables — you say which table means what, once, and it reads them every night after that. Nothing needs to be in GitHub: this reads the database over its own API.'),
+      sources.sources.filter((s) => s.kind === 'supabase_rest').map((source) => supabaseCard(source)),
+      h('button.btn.primary', { onclick: addSupabase }, 'Add a Supabase database')),
+
+    h('div.card',
       h('h2', 'The four systems'),
       h('p.sub', 'Attendance and the breakfast app are Cloudflare databases in this account, bound straight to this Worker: no key, no network, nothing to expire. The POS and the laundry are read over their own read-only APIs.'),
       sources.sources.map((source) => sourceCard(source))),
@@ -81,6 +87,87 @@ export async function renderSetup(root) {
           }, 'Save address')),
       source.lastError ? h('p.small', { style: { color: 'var(--critical)' } },
         `Last error (${source.lastErrorAt}): ${source.lastError}`) : null);
+  }
+
+  /**
+   * One mapped Supabase database.
+   *
+   * The mapping is edited as JSON. That is a deliberate choice rather than a
+   * missing form: the shape is a list of tables with a handful of column names
+   * each, it is set up once and touched about twice a year, and a form with
+   * every field of every fact on it would be far harder to read than the six
+   * lines of JSON it would produce. What the screen does owe is telling you
+   * exactly what is wrong with what you typed, which it does, before saving.
+   */
+  function supabaseCard(source) {
+    const problems = source.mappingProblems || [];
+    const editor = h('textarea', {
+      rows: 14,
+      spellcheck: false,
+      style: { width: '100%', fontFamily: 'ui-monospace, monospace', fontSize: '.8rem' },
+      value: JSON.stringify({ schema: source.config.schema || 'public', tables: source.config.tables || [] }, null, 2),
+    });
+
+    return h('div.card', { style: { marginBottom: '.7rem' } },
+      h('h3', source.label, ' ',
+        source.check?.ok
+          ? h('span.pill.good', h('span.dot'), '✓ reading')
+          : h('span.pill.warning', h('span.dot'), `! ${source.check?.detail || 'not reading'}`)),
+      h('p.small.muted', source.config.base || 'no address'),
+
+      source.secretSet
+        ? null
+        : h('p.small', { style: { color: 'var(--critical)' } },
+          'Its key is not set. Run ', h('code', `wrangler secret put ${source.secretName}`),
+          ' with the project\'s service-role key, then deploy.'),
+
+      problems.length
+        ? h('div', h('p.small', { style: { color: 'var(--critical)', marginBottom: '.2rem' } }, 'This mapping will not load yet:'),
+          h('ul.caveats', problems.map((p) => h('li', p))))
+        : null,
+
+      h('details.tableview', { open: problems.length > 0 },
+        h('summary', 'Edit the mapping'),
+        h('p.small.muted', 'One entry per table. ',
+          h('code', 'fact'), ' is what it becomes here, ', h('code', 'from'), ' is the table or view, ',
+          h('code', 'day'), ' is the column holding the date, and ', h('code', 'money'),
+          ' must say whether the amounts are ', h('code', '"major"'), ' (12.50) or ', h('code', '"minor"'), ' (1250).'),
+        editor,
+        h('div', { style: { display: 'flex', gap: '.4rem', marginTop: '.5rem' } },
+          h('button.btn.primary', {
+            onclick: async (event) => {
+              let parsed;
+              try { parsed = JSON.parse(editor.value); }
+              catch (err) { alert(`That is not valid JSON: ${err.message}`); return; }
+              event.target.disabled = true;
+              try {
+                await api(`/sources/${source.id}/mapping`, { method: 'POST', body: parsed });
+                state.reload();
+              } catch (err) { alert(err.message); event.target.disabled = false; }
+            },
+          }, 'Save mapping'),
+          h('button.btn', {
+            onclick: async () => {
+              if (!confirm(`Remove ${source.label}? Its rows stay in the warehouse until the next load replaces them.`)) return;
+              try { await api(`/sources/${source.id}/remove`, { method: 'POST' }); state.reload(); }
+              catch (err) { alert(err.message); }
+            },
+          }, 'Remove'))),
+    );
+  }
+
+  async function addSupabase() {
+    const id = prompt('A short name for this database, letters and numbers — it becomes part of its key\'s name.\n\ne.g. rooms');
+    if (!id) return;
+    const label = prompt('What is it, in words?', id) || id;
+    const base = prompt('Its address\n\ne.g. https://abcdefgh.supabase.co');
+    if (!base) return;
+    try {
+      const result = await api('/sources', { method: 'POST', body: { id, label, base } });
+      const added = result.sources.find((s) => s.label === label || s.id === id);
+      alert(`Added. Now set its key:\n\n  wrangler secret put ${added?.secretName ?? 'SUPABASE_KEY_…'}\n\nthen map its tables below.`);
+      state.reload();
+    } catch (err) { alert(err.message); }
   }
 
   async function refresh(event) {

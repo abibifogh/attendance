@@ -7,7 +7,7 @@ import { HttpError } from '../lib/http.js';
  * typo in a URL, an expired key and a business that genuinely had no sales.
  * These are three completely different mornings and the message says which.
  */
-export async function getJson(url, { token, timeoutMs = 20000, tokenScheme = 'Bearer' } = {}) {
+export async function getJson(url, { token, timeoutMs = 20000, tokenScheme = 'Bearer', headers = {} } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response;
@@ -18,6 +18,10 @@ export async function getJson(url, { token, timeoutMs = 20000, tokenScheme = 'Be
       headers: {
         Accept: 'application/json',
         ...(token ? { Authorization: `${tokenScheme} ${token}` } : {}),
+        // Some sources want the key a second way as well — Supabase reads it
+        // from `apikey` to decide which project you are talking to, and from
+        // the bearer to decide what its row-level security lets you see.
+        ...headers,
       },
     });
   } catch (err) {

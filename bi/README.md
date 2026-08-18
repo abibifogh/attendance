@@ -20,6 +20,10 @@ can ask, because asking them means holding two systems' numbers at once:
 This reads all four every night, puts them in one warehouse where a day means
 the same thing in all of them, and answers those questions on a page.
 
+It is also the way in. One sign-in here opens all five systems — click a system
+on the hub and you arrive there already signed in, as yourself, with whatever
+that system says you may do. See [Signing in once](#signing-in-once).
+
 ---
 
 ## The one idea worth knowing
@@ -81,6 +85,21 @@ by the largest line in a hotel's accounts. It says so, on the same screen as
 the totals, every time. A dashboard that quietly omitted it would be worse than
 no dashboard, because it would be believed.
 
+### The hub
+
+The first screen, and for most people the only one here they will ever open: a
+card per system, whether they have been given it, and one click to enter.
+
+Access is granted per person per system. There is no role that quietly carries
+all of them, because *manager* means five different things in five systems, and
+somebody who needs the till does not necessarily get the wage bill. Being able
+to sign in here is itself one of the grants — an account can be a way into the
+other four and see none of the numbers.
+
+A system that cannot hand somebody over says so on its own card, in a sentence,
+and offers a plain link instead. A button that silently drops you on another
+login form is worse than no button.
+
 ### The other screens
 
 **Money** — contribution by line, the whole table, and the days behind it.
@@ -106,6 +125,39 @@ screen they were looking at.
 
 ---
 
+## Signing in once
+
+Somebody signs in here, clicks a system, and arrives there already signed in.
+
+The mechanism is the authorization-code half of OAuth: this app mints thirty-two
+random bytes, stores their hash against that person and that system for ninety
+seconds and one use, and redirects. The far system then calls **back** here,
+server to server, with the code and its own shared secret, and gets the name and
+address. Nothing about who somebody is ever travels in a URL.
+
+Four properties are worth stating, because a simpler version would not be safe:
+
+- **The identity is on the back channel.** A URL ends up in a browser history, a
+  proxy log and a `Referer` header. A single-use code ninety seconds old is
+  worthless in all of them; an email address and a role are not.
+- **Single use is enforced here.** There are four far ends and one of these, and
+  a replay check is only as good as the system that remembered to write one.
+- **Every system has its own secret** and can only redeem codes minted for it. A
+  compromised laundry cannot mint itself a session on the POS.
+- **A consumer never creates accounts.** If this app says `ama@example.com` and
+  nobody with that address exists over there, the answer is no. Otherwise
+  whoever controls this hub could mint themselves an account in every system in
+  the group.
+
+**The attendance app already accepts a hand-off** — `src/lib/sso-consumer.js` in
+the parent repository, and a `/sso` route in its Worker. The other three live in
+their own repositories; [docs/sso.md](docs/sso.md) is the protocol and the
+thirty lines each of them needs, written out for a Cloudflare Worker, a Netlify
+function and an Appwrite function.
+
+Until a system has its handler, its hub card links to it and says it will ask
+for a password. Nothing is broken in the meantime; it is just not yet joined up.
+
 ## How it reads the four systems
 
 Two of them are Cloudflare D1 databases in the same account as this Worker, so
@@ -119,6 +171,7 @@ morning. Nothing in this Worker writes to either of them.
 | `breakfast` | D1 binding `BREAKFAST_DB` | Guests in house, food bought and used, rooms checked |
 | `pos` | HTTPS, `/reports/*`, bearer key | Sales, payments, expenses, till closes |
 | `laundry` | HTTPS, `/api/report`, bearer token | Charged, collected, left owing |
+| *anything on Supabase* | HTTPS, PostgREST, per-source key | Whatever you map it to |
 
 The POS's reporting API is documented in that repository as doc 18 and is
 **switched off by default** — its execute permission is empty. A 503 from it is
@@ -134,6 +187,48 @@ and never spoken of in their own terms again.
 **A connector never throws.** A source that fails comes back with an empty
 bundle and a reason. One system being down costs the dashboard that system's
 figures and nothing else.
+
+### A database on Supabase
+
+Supabase needs nothing in GitHub. GitHub holds code; Supabase holds data, and
+this reads it over the network through the PostgREST API that every Supabase
+project already has. What it needs is the project's address and a key, not a
+repository.
+
+The difference from the four above: they each know their system's schema,
+because that schema is in a repository this code can read. A Supabase database
+is your own Postgres and its tables are whatever you made them — so this
+connector is **declarative**. The mapping lives in the source's configuration
+and no code changes to add one:
+
+```json
+{
+  "schema": "public",
+  "tables": [
+    { "fact": "revenue", "from": "daily_sales", "day": "sale_date",
+      "line": "restaurant", "money": "major",
+      "columns": { "net": "total", "collected": "paid", "orders": "tickets" } },
+    { "fact": "demand", "from": "occupancy", "day": "night",
+      "columns": { "inhouseGuests": "guests_in_house" } }
+  ]
+}
+```
+
+`money` has no default and the mapping is refused without it. `"major"` means
+the column holds cedis like `12.50` and will be multiplied by a hundred;
+`"minor"` means it already holds whole pesewas like `1250` and will be left
+alone. Guessing is how a figure ends up out by two orders of magnitude in a
+direction nobody notices until a bank reconciliation.
+
+Add one under **Setup → Databases you have mapped yourself**. Each gets its own
+key, named after it, so revoking one does not revoke the others:
+
+```bash
+wrangler secret put SUPABASE_KEY_ROOMS    # the project's service-role key
+```
+
+Filters, paging, `where` clauses in PostgREST's own syntax, and what each fact
+will accept are in `src/connectors/supabase.js`.
 
 ### Money
 
@@ -271,7 +366,30 @@ wrangler secret put LAUNDRY_TOKEN        # a laundry staff token
 typed into a web form is a secret in a browser history, a proxy log and a
 database export. The screen takes an address, which is configuration.
 
-### 6. Load it
+### 6. Make yourself an account
+
+Sign in with `DASHBOARD_PASSWORD`, go to **Accounts**, add yourself as an owner
+and set a password. The shared password still works as a way back in, but it
+deliberately cannot be handed over to another system — a password out of a
+config file is not a person, and it should not be able to open a till under
+somebody's name.
+
+Then add everybody else and tick the systems each may reach.
+
+### 7. Join the systems up, one at a time
+
+Give each system its own secret:
+
+```bash
+wrangler secret put SSO_SECRET_ATTENDANCE   # openssl rand -base64 32
+```
+
+Set the same value on that system, add its `/sso` address under **Accounts →
+Where each system lives**, and tick the hand-off. [docs/sso.md](docs/sso.md) has
+the handler each system needs. Do them one at a time; the hub says plainly which
+are joined up and which still ask for a password.
+
+### 8. Load it
 
 Open the app, sign in, go to **Setup**, and press *Load and re-read now*. After
 that it runs itself at 00:45 Accra time every night.
@@ -288,7 +406,7 @@ is safe and is the standard fix for "these numbers look wrong".
 ## Development
 
 ```bash
-npm test        # 51 tests, no network, no fixtures to keep in step
+npm test        # 81 tests, no network, no fixtures to keep in step
 npm run dev     # wrangler dev
 ```
 
@@ -307,7 +425,7 @@ production.
 migrations/          the warehouse: dimensions, facts, findings
 src/
   index.js           the route table, and the nightly cron
-  lib/               http, money, dates, db, auth
+  lib/               http, money, dates, db, auth, sso
   connectors/        one file per source system, plus the registry
   warehouse/
     identity.js      making one person, supplier or item out of several
@@ -317,9 +435,10 @@ src/
     stats.js         the small amount of statistics this app is entitled to
     engine.js        runs the rules, ranks and stores what they find
     rules/           labour, demand, cash, supply, service
-  routes/            the panels behind each screen
+  routes/            the panels behind each screen, plus accounts
   fixtures/demo.js   the invented hotel
-public/              the dashboard: no framework, no build step
+public/              the dashboard and the hub: no framework, no build step
+docs/sso.md          the hand-off protocol, and a handler per platform
 ```
 
 ### Where the logic lives
@@ -360,6 +479,9 @@ label, an honest `impactMonthly` (zero is a fine answer), and enough in
   Anything unrecognised lands in admin deliberately, so an unmapped department
   shows up as an unexplained lump rather than being spread quietly across the
   lines that earn.
+- **The hand-off tells the far system *whether*, never *as what*.** The role
+  travels with it as context; what somebody may do over there is what that
+  system's own database says, as it always was.
 - **This is a separate Worker with its own database.** It reads the attendance
   app; it does not live inside it. A reporting layer that shares a deploy with
   the app people clock in on is a reporting layer that can take attendance down.

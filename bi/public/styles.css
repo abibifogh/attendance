@@ -214,6 +214,12 @@ input, select {
 }
 label.field { display: block; font-size: .8rem; color: var(--ink-2); margin-bottom: .7rem; }
 label.field input, label.field select { display: block; width: 100%; margin-top: .2rem; }
+/* A tickbox and its words are one line, not a stacked field. Without this the
+   box inherits `width: 100%` from the rule above and pushes its own label into
+   the next column. */
+label.check { display: flex; align-items: center; gap: .5rem; font-size: .86rem;
+  color: var(--ink); margin-bottom: .7rem; cursor: pointer; }
+label.check input { width: auto; margin: 0; flex: none; }
 
 .rangebar { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
 

@@ -2,6 +2,7 @@ import * as attendance from './attendance.js';
 import * as breakfast from './breakfast.js';
 import * as snpos from './snpos.js';
 import * as snlaundry from './snlaundry.js';
+import * as supabase from './supabase.js';
 import { emptyBundle } from './bundle.js';
 import { demoPull } from '../fixtures/demo.js';
 import { all } from '../lib/db.js';
@@ -43,7 +44,29 @@ const KINDS = {
     check: snlaundry.check,
     describes: 'Laundry charged, collected and left owing, by day and by shift.',
   },
+  // Any Postgres database on Supabase, read over PostgREST. Unlike the four
+  // above it knows nothing about its source's schema — the mapping from that
+  // schema to this warehouse is configuration, so a database this code has
+  // never seen can be connected without changing this code.
+  supabase_rest: {
+    transport: 'http',
+    // One secret per Supabase source, named after the source, so two projects
+    // never share a key and revoking one does not revoke the other.
+    secretFor: (sourceId) => `SUPABASE_KEY_${String(sourceId).toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`,
+    pull: supabase.pull,
+    check: supabase.check,
+    describes: 'A Postgres database on Supabase, mapped table by table.',
+  },
 };
+
+/** Where a source's key lives on this Worker, fixed or derived from its id. */
+export function secretNameFor(source) {
+  const kind = KINDS[source?.kind];
+  if (!kind) return null;
+  if (kind.secret) return kind.secret;
+  if (kind.secretFor) return kind.secretFor(source.id);
+  return null;
+}
 
 export async function listSources(db) {
   const rows = await all(db, 'SELECT * FROM sources ORDER BY id');
@@ -57,6 +80,7 @@ export async function listSources(db) {
       kind: row.kind,
       transport: kind.transport || 'unknown',
       describes: kind.describes || '',
+      secretName: secretNameFor({ id: row.id, kind: row.kind }),
       config,
       enabled: row.enabled === 1,
       lastOkAt: row.last_ok_at,
@@ -85,7 +109,8 @@ export function readiness(source, env) {
     return { ready: true };
   }
   if (!source.config?.base) return { ready: false, why: 'No address configured' };
-  if (kind.secret && !env?.[kind.secret]) return { ready: false, why: `${kind.secret} has not been set` };
+  const secret = secretNameFor(source);
+  if (secret && !env?.[secret]) return { ready: false, why: `${secret} has not been set` };
   return { ready: true };
 }
 
@@ -113,7 +138,7 @@ export async function pullSource(source, { env, from, to, demo }) {
     const bundle = await kind.pull({
       db: kind.transport === 'binding' ? env[source.config.binding] : null,
       config: source.config,
-      token: kind.secret ? env[kind.secret] : null,
+      token: secretNameFor(source) ? env[secretNameFor(source)] : null,
       from,
       to,
     });
@@ -135,7 +160,8 @@ export async function checkSource(source, env) {
   if (!ready.ready) return { ok: false, detail: ready.why };
   if (!kind.check) return { ok: true, detail: 'Bound and readable' };
   try {
-    return await kind.check({ config: source.config, token: kind.secret ? env[kind.secret] : null });
+    const secret = secretNameFor(source);
+    return await kind.check({ config: source.config, token: secret ? env[secret] : null });
   } catch (err) {
     return { ok: false, detail: String(err?.message ?? err) };
   }

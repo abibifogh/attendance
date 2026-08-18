@@ -1,5 +1,6 @@
 import { all, run, setSetting, groupConfig, first } from '../lib/db.js';
-import { listSources, checkSource } from '../connectors/index.js';
+import { listSources, checkSource, secretNameFor } from '../connectors/index.js';
+import { validateMapping, FACTS } from '../connectors/supabase.js';
 import { runEtl } from '../warehouse/etl.js';
 import { analyse } from '../insight/engine.js';
 import { badRequest, str } from '../lib/http.js';
@@ -11,9 +12,95 @@ export async function sources(env) {
   for (const source of rows) checks.push({ id: source.id, ...(await checkSource(source, env)) });
   const byId = new Map(checks.map((c) => [c.id, c]));
   return {
-    sources: rows.map((s) => ({ ...s, check: byId.get(s.id) || null })),
+    sources: rows.map((s) => ({
+      ...s,
+      check: byId.get(s.id) || null,
+      secretSet: s.secretName ? Boolean(env[s.secretName]) : null,
+      // A mapped source says what is wrong with its mapping before anybody
+      // waits until midnight to find out it loaded nothing.
+      mappingProblems: s.kind === 'supabase_rest' ? validateMapping(s.config) : [],
+    })),
+    // What a Supabase mapping may write into, so the screen can offer it
+    // rather than making somebody read this file.
+    facts: Object.fromEntries(Object.entries(FACTS).map(([fact, spec]) => [fact, {
+      fields: [...(spec.money || []), ...(spec.counts || []), ...(spec.reals || []), ...(spec.text || [])],
+      money: spec.money || [],
+      needsLine: Boolean(spec.needsLine),
+    }])),
     demoMode: (await groupConfig(env.DB)).demoMode,
   };
+}
+
+/**
+ * Add a Supabase database as a source.
+ *
+ * Any number of them: two now, a third when somebody moves another system off
+ * whatever it is on today. The id becomes part of the secret's name, so each
+ * project's key is its own and revoking one does not revoke the others.
+ */
+export async function addSupabaseSource(env, body) {
+  const id = str(body?.id, 'Name', { required: true, max: 40 })
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  if (!id) throw badRequest('That name has no letters or numbers in it');
+  if (await first(env.DB, 'SELECT id FROM sources WHERE id = ?1', id)) {
+    throw badRequest(`There is already a source called ${id}`);
+  }
+
+  const label = str(body?.label, 'Label', { max: 120 }) || id;
+  const base = str(body?.base, 'Address', { required: true, max: 300 });
+  let url;
+  try { url = new URL(base); } catch { throw badRequest('That is not a web address'); }
+  if (url.protocol !== 'https:') throw badRequest('The address must start with https://');
+
+  await run(env.DB, `
+    INSERT INTO sources (id, label, kind, config, enabled)
+    VALUES (?1, ?2, 'supabase_rest', ?3, 1)`,
+    id, label, JSON.stringify({ base: url.origin, schema: 'public', tables: [] }));
+
+  return sources(env);
+}
+
+/** Replace a Supabase source's table mapping, refusing one that cannot work. */
+export async function saveMapping(env, id, body) {
+  const existing = await first(env.DB, 'SELECT * FROM sources WHERE id = ?1', id);
+  if (!existing) throw badRequest('No such source');
+  if (existing.kind !== 'supabase_rest') throw badRequest('That source is not mapped by hand');
+
+  let config = {};
+  try { config = JSON.parse(existing.config || '{}'); } catch { config = {}; }
+  if (body.base !== undefined) {
+    let url;
+    try { url = new URL(String(body.base)); } catch { throw badRequest('That is not a web address'); }
+    if (url.protocol !== 'https:') throw badRequest('The address must start with https://');
+    config.base = url.origin;
+  }
+  if (body.schema !== undefined) config.schema = str(body.schema, 'Schema', { max: 60 }) || 'public';
+  if (body.tables !== undefined) {
+    if (!Array.isArray(body.tables)) throw badRequest('Tables must be a list');
+    config.tables = body.tables;
+  }
+
+  const problems = validateMapping(config);
+  // Saving a half-finished mapping is normal — somebody is building it up a
+  // table at a time. Switching the source *on* with a broken one is not.
+  if (problems.length && existing.enabled) {
+    throw badRequest(`That mapping would not load: ${problems[0]}`);
+  }
+
+  await run(env.DB, 'UPDATE sources SET config = ?2 WHERE id = ?1', id, JSON.stringify(config));
+  return sources(env);
+}
+
+export async function removeSource(env, id) {
+  const existing = await first(env.DB, 'SELECT * FROM sources WHERE id = ?1', id);
+  if (!existing) throw badRequest('No such source');
+  // The four built-in systems are part of the shape of the group and are
+  // switched off rather than deleted; anything added here can go.
+  if (existing.kind !== 'supabase_rest') {
+    throw badRequest(`${existing.label} is one of the group's own systems. Switch it off rather than removing it.`);
+  }
+  await run(env.DB, 'DELETE FROM sources WHERE id = ?1', id);
+  return sources(env);
 }
 
 /**

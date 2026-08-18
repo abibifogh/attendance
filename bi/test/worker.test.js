@@ -5,7 +5,11 @@ import { freshDb } from './helpers.js';
 import worker from '../src/index.js';
 import { runEtl } from '../src/warehouse/etl.js';
 import { analyse } from '../src/insight/engine.js';
-import { createToken, sessionCookie, checkPassword, verifyToken } from '../src/lib/auth.js';
+import {
+  createToken, sessionCookie, checkBootstrapPassword, readToken,
+  getPepper, storedPassword,
+} from '../src/lib/auth.js';
+import { run } from '../src/lib/db.js';
 
 /**
  * The Worker itself, driven the way a browser drives it.
@@ -25,7 +29,12 @@ async function app({ loaded = true } = {}) {
     await runEtl(env, { ...WINDOW, trigger: 'test' });
     await analyse(db, WINDOW);
   }
-  const token = await createToken(env.SESSION_SECRET);
+  // An owner account, so the reports and the setup screens are reachable. The
+  // shared password is a bootstrap route and is tested separately.
+  await run(db, "INSERT INTO accounts (email, name, is_owner, password_hash) VALUES ('owner@nice.test','Owner',1,?1)",
+    await storedPassword({ passwordKey: 'derived', salt: 'AAAAAAAAAAAAAAAAAAAAAA', iterations: 600000 },
+      await getPepper(db)));
+  const token = await createToken(env.SESSION_SECRET, { accountId: 1 });
   const call = (path, { method = 'GET', body, signedIn = true } = {}) => worker.fetch(new Request(
     `https://insight.test${path}`,
     {
@@ -87,27 +96,45 @@ test('nothing but the sign-in endpoints answers without a session', async () => 
 
 test('a forged or expired cookie is not a session', async () => {
   const { env } = await app();
-  assert.equal(await verifyToken(env.SESSION_SECRET, 'not-a-token'), false);
-  assert.equal(await verifyToken(env.SESSION_SECRET, '9999999999.deadbeef'), false);
-  const expired = await createToken(env.SESSION_SECRET, -60);
-  assert.equal(await verifyToken(env.SESSION_SECRET, expired), false);
-  const valid = await createToken(env.SESSION_SECRET);
-  assert.equal(await verifyToken(env.SESSION_SECRET, valid), true);
-  assert.equal(await verifyToken('a different secret', valid), false);
+  assert.equal(await readToken(env.SESSION_SECRET, 'not-a-token'), null);
+  assert.equal(await readToken(env.SESSION_SECRET, '9999999999.deadbeef'), null);
+
+  const expired = await createToken(env.SESSION_SECRET, { accountId: 1, ttl: -60 });
+  assert.equal(await readToken(env.SESSION_SECRET, expired), null);
+
+  const valid = await createToken(env.SESSION_SECRET, { accountId: 1 });
+  assert.equal((await readToken(env.SESSION_SECRET, valid))?.sub, 1);
+  assert.equal(await readToken('a different secret', valid), null,
+    'a token signed with another key is not a session here');
+
+  // The payload is only base64, not encrypted — so a tampered one must fail on
+  // its signature rather than being believed.
+  const [body] = valid.split('.');
+  const forged = `${body}x.${valid.split('.')[1]}`;
+  assert.equal(await readToken(env.SESSION_SECRET, forged), null);
 });
 
-test('the password is checked, and a Worker with none configured refuses everybody', async () => {
-  assert.equal(await checkPassword(SECRETS, 'let me in'), true);
-  assert.equal(await checkPassword(SECRETS, 'let me IN'), false);
-  assert.equal(await checkPassword(SECRETS, ''), false);
-  await assert.rejects(() => checkPassword({ SESSION_SECRET: 'x' }, 'anything'),
+test('the shared password is checked, and a Worker with none configured refuses everybody', async () => {
+  assert.equal(await checkBootstrapPassword(SECRETS, 'let me in'), true);
+  assert.equal(await checkBootstrapPassword(SECRETS, 'let me IN'), false);
+  assert.equal(await checkBootstrapPassword(SECRETS, ''), false);
+  await assert.rejects(() => checkBootstrapPassword({ SESSION_SECRET: 'x' }, 'anything'),
     /DASHBOARD_PASSWORD/, 'a misconfigured Worker must lock, not open');
 });
 
-test('signing in sets a cookie and signing out clears it', async () => {
+test('signing in with an account, and with the shared password', async () => {
   const { call } = await app();
-  const bad = await call('/api/auth/login', { method: 'POST', body: { password: 'wrong' }, signedIn: false });
+
+  const bad = await call('/api/auth/login', { method: 'POST', body: { email: 'owner@nice.test', passwordKey: 'wrong' }, signedIn: false });
   assert.equal(bad.status, 401);
+
+  const account = await call('/api/auth/login', { method: 'POST', body: { email: 'owner@nice.test', passwordKey: 'derived' }, signedIn: false });
+  assert.equal(account.status, 200);
+  assert.match(account.headers.get('Set-Cookie'), /insight_session=.+HttpOnly/);
+  assert.equal((await account.json()).account.email, 'owner@nice.test');
+
+  const wrongPassword = await call('/api/auth/login', { method: 'POST', body: { password: 'wrong' }, signedIn: false });
+  assert.equal(wrongPassword.status, 401);
 
   const good = await call('/api/auth/login', { method: 'POST', body: { password: 'let me in' }, signedIn: false });
   assert.equal(good.status, 200);
@@ -116,6 +143,21 @@ test('signing in sets a cookie and signing out clears it', async () => {
 
   const out = await call('/api/auth/logout', { method: 'POST' });
   assert.match(out.headers.get('Set-Cookie'), /Max-Age=0/);
+});
+
+test('asking for a salt never reveals who has an account', async () => {
+  const { call } = await app();
+  const known = await (await call('/api/auth/salt', { method: 'POST', body: { email: 'owner@nice.test' }, signedIn: false })).json();
+  const unknown = await (await call('/api/auth/salt', { method: 'POST', body: { email: 'nobody@nowhere.test' }, signedIn: false })).json();
+
+  assert.ok(known.salt && known.iterations >= 100_000);
+  assert.ok(unknown.salt && unknown.iterations >= 100_000);
+  assert.equal(typeof unknown.salt, typeof known.salt,
+    'an address with no account must get an answer of the same shape');
+
+  // And the same address must get the same salt twice, or nobody could sign in.
+  const again = await (await call('/api/auth/salt', { method: 'POST', body: { email: 'nobody@nowhere.test' }, signedIn: false })).json();
+  assert.equal(again.salt, unknown.salt);
 });
 
 test('the export is a CSV with one row per day per line', async () => {

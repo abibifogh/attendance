@@ -14,6 +14,7 @@ import * as people from './routes/people.js';
 import * as invite from './routes/invite.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
+import { handleSsoArrival } from './lib/sso-consumer.js';
 import { todayIn } from './util/dates.js';
 import { PIN_TAKEN } from './routes/admin.js';
 
@@ -217,6 +218,13 @@ export default {
     // the token is read back out of the address by the page itself.
     if (url.pathname.startsWith('/i/')) {
       return env.ASSETS.fetch(new Request(new URL('/invite.html', url), request));
+    }
+
+    // Arriving from the group hub with a hand-off code. Not under /api/
+    // because a person follows this link in their address bar, and what comes
+    // back is a redirect and a cookie rather than JSON.
+    if (url.pathname === '/sso') {
+      return handleSsoArrival(request, env, env.DB);
     }
 
     if (!url.pathname.startsWith('/api/')) {
