@@ -154,7 +154,15 @@ export const ROUTES = [
   ['PUT', '/api/hr/people/:id', 'hr_manage', people.savePerson],
   ['PUT', '/api/hr/people/:id/lists/:list', 'hr_manage', people.saveList],
 
+  // What this property asks its people for. Reading it needs only the
+  // permission that reads records; changing what everybody is asked needs the
+  // one that manages them.
+  ['GET', '/api/hr/form', 'hr_view', people.getForm],
+  ['PUT', '/api/hr/form', 'hr_manage', people.saveForm],
+
   ['POST', '/api/hr/people/:id/documents', 'hr_manage', people.addDocument],
+  ['GET', '/api/hr/documents', 'hr_view', people.listWaitingDocuments],
+  ['POST', '/api/hr/documents/:id/decide', 'hr_manage', people.decideDocument],
   // Reading a scan of somebody's Ghana Card is reading the number on it, so it
   // needs the permission that unmasks the number and not the one that hides it.
   ['GET', '/api/hr/documents/:id', 'hr_manage', people.getDocument],
@@ -188,6 +196,10 @@ export const ROUTES = [
   ['GET', '/api/i/:token', 'public', invite.inviteHead],
   ['POST', '/api/i/:token/open', 'public', invite.inviteOpen],
   ['POST', '/api/i/:token/details', 'public', invite.inviteDetails],
+  // The paper they are holding, photographed on the device that is asking for
+  // it. It lands as a claim, exactly like the typed answers beside it.
+  ['POST', '/api/i/:token/files', 'public', invite.inviteFile],
+  ['POST', '/api/i/:token/files/:id/remove', 'public', invite.inviteFileRemove],
   ['POST', '/api/i/:token/viewed', 'public', invite.inviteViewed],
   ['POST', '/api/i/:token/sign', 'public', invite.inviteSign],
   ['POST', '/api/i/:token/decline', 'public', invite.inviteDecline],

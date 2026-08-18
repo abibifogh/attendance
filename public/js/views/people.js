@@ -17,9 +17,12 @@ import { field, formDialog } from './att-shared.js';
  */
 export async function renderPeople() {
   const host = h('div');
-  const [data, pending] = await Promise.all([
+  const [data, pending, files] = await Promise.all([
     api.hrPeople(),
     api.hrSubmissions().catch(() => ({ rows: [] })),
+    // Paper photographed on a phone waits exactly as a filled-in form waits,
+    // and counting only one of them is how the other sits for a fortnight.
+    api.hrWaitingDocuments().catch(() => ({ documents: [] })),
   ]);
 
   const reload = async () => mount(host, await renderPeople());
@@ -43,6 +46,7 @@ export async function renderPeople() {
       ),
       data.canManage
         ? h('div.btn-row',
+          h('button.btn-sm', { onclick: () => navigate('people-form') }, 'What to ask for'),
           h('button.btn-sm', { onclick: () => navigate('people-templates') }, 'Templates'),
         )
         : null,
@@ -54,8 +58,14 @@ export async function renderPeople() {
         withGaps ? 'var(--warn)' : 'var(--good)'),
       tile('Contracts out', unsigned, unsigned ? 'sent, not signed' : 'none waiting',
         unsigned ? 'var(--warn)' : null),
-      tile('Sent in by staff', pending.rows.length, pending.rows.length ? 'waiting for you' : 'nothing new',
-        pending.rows.length ? 'var(--accent)' : null),
+      tile('Sent in by staff',
+        pending.rows.length + files.documents.length,
+        pending.rows.length + files.documents.length
+          ? [pending.rows.length ? `${pending.rows.length} form${pending.rows.length === 1 ? '' : 's'}` : null,
+            files.documents.length ? `${files.documents.length} file${files.documents.length === 1 ? '' : 's'}` : null]
+            .filter(Boolean).join(', ')
+          : 'nothing new',
+        pending.rows.length + files.documents.length ? 'var(--accent)' : null),
     ),
 
     inbox(pending.rows, data.canManage, reload),

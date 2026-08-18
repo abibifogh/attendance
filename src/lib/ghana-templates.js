@@ -897,18 +897,31 @@ For and on behalf of {{property}}`,
  * ignore, and one that never asks for a food handler's certificate leaves a
  * kitchen open to being closed.
  */
+/**
+ * What a personnel file has to contain, and which of it the person themselves
+ * can supply.
+ *
+ * `self` marks a document somebody can photograph and send in from the link on
+ * their phone. It is the paper they are already holding: their own card, their
+ * own certificate, their own photograph. The ones without it are the property's
+ * own documents — a contract, a signed declaration, an acknowledgement of the
+ * handbook — which are produced and signed here and would mean nothing arriving
+ * as a photograph from the person they are meant to bind.
+ */
 export const REQUIRED_DOCUMENTS = [
   {
     code: 'ghana_card',
     label: 'Ghana Card or passport',
     detail: 'Proof of identity and the right to work. The number goes on the SSNIT and tax filings.',
     applies: 'all',
+    self: true,
   },
   {
     code: 'ssnit',
     label: 'SSNIT card or number',
     detail: 'Needed to register the person and remit contributions under Act 766.',
     applies: 'all',
+    self: true,
   },
   {
     code: 'contract',
@@ -923,12 +936,14 @@ export const REQUIRED_DOCUMENTS = [
     label: 'Passport photograph',
     detail: 'For the file, the staff card and the terminal.',
     applies: 'all',
+    self: true,
   },
   {
     code: 'education',
     label: 'Certificates',
     detail: 'WASSCE, a diploma, a trade certificate — whatever the post was filled on.',
     applies: 'all',
+    self: true,
   },
   {
     code: 'reference',
@@ -936,6 +951,7 @@ export const REQUIRED_DOCUMENTS = [
     detail: 'A written reference from a previous employer, or a police report where the '
       + 'post involves cash, keys or guests’ rooms.',
     applies: 'all',
+    self: true,
   },
   {
     code: 'next_of_kin',
@@ -965,6 +981,7 @@ export const REQUIRED_DOCUMENTS = [
       + 'a valid certificate, renewed every year.',
     applies: 'food',
     expires: true,
+    self: true,
   },
   {
     code: 'work_permit',
@@ -972,6 +989,7 @@ export const REQUIRED_DOCUMENTS = [
     detail: 'For a worker who is not a Ghanaian citizen.',
     applies: 'foreign',
     expires: true,
+    self: true,
   },
 ];
 

@@ -986,3 +986,58 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   display: flex; flex-wrap: wrap; gap: .45rem; align-items: baseline;
   font-size: .82rem; margin-bottom: .15rem;
 }
+
+/* --------------------------------------------------------------------------
+   What to ask for
+   --------------------------------------------------------------------------
+   A column of questions with three answers against each. The stripe down the
+   left is the whole reason this is not a page of dropdowns: the value of the
+   screen is reading thirty lines at once and seeing which are insisted on and
+   which are switched off.
+   -------------------------------------------------------------------------- */
+
+.ask-list { display: flex; flex-direction: column; gap: .15rem; }
+
+.ask-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: .5rem .7rem;
+  border-left: 3px solid transparent;
+  border-radius: 6px;
+}
+.ask-row:nth-child(odd) { background: var(--surface-2, rgba(127, 127, 127, .06)); }
+.ask-row[data-ask="require"] { border-left-color: var(--warn); }
+.ask-row[data-ask="skip"] { border-left-color: var(--border); opacity: .62; }
+
+.ask-row > div:first-child { min-width: 12rem; flex: 1 1 16rem; }
+.ask-row small { display: block; }
+
+.seg.seg-sm button { font-size: .78rem; padding: .22rem .55rem; }
+
+/* A question the office insists on. */
+.req { color: var(--bad); font-weight: 700; }
+
+/* --------------------------------------------------------------------------
+   Files sent in from a phone
+   -------------------------------------------------------------------------- */
+
+.file-list { display: flex; flex-direction: column; gap: .4rem; margin: .5rem 0 .7rem; }
+
+.file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .7rem;
+  padding: .5rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.file-row > div:first-child { min-width: 0; }
+.file-row > div:first-child > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

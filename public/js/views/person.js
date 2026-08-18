@@ -297,8 +297,94 @@ function documentsTab(data, reload) {
     await reload();
   };
 
+  /**
+   * Paper this person sent in from their phone, waiting on somebody.
+   *
+   * Above the file rather than beside it, because until it is looked at it is
+   * not part of the file — and a review that sits at the bottom of a list of
+   * twenty held documents is a review nobody does.
+   */
+  const decide = async (doc, decision) => {
+    const done = await formDialog({
+      title: decision === 'accept'
+        ? `Accept: ${doc.title}`
+        : `Send back: ${doc.title}`,
+      submitLabel: decision === 'accept' ? 'Put it on the file' : 'Send it back',
+      body: h('div',
+        h('p.muted', `${doc.filename || doc.title} · ${Math.round(doc.bytes / 1024)} KB, sent `
+          + `${fmtDay(String(doc.uploaded_at).slice(0, 10))}`),
+        h('p', h('a', { href: api.hrDocumentUrl(doc.id), target: '_blank', rel: 'noopener' },
+          'Open it first ↗')),
+        decision === 'accept'
+          ? field('Expires', h('input', { type: 'date', name: 'expiresOn' }),
+            'For a certificate that has to be renewed. Leave blank if it does not')
+          : null,
+        field(decision === 'accept' ? 'Note' : 'Why not', h('input', {
+          type: 'text', name: 'note', maxlength: 400,
+          required: decision !== 'accept',
+          placeholder: decision === 'accept'
+            ? 'Optional'
+            : 'That is the back of the card — please send the front',
+        }), decision === 'accept' ? null : 'They are told what you say, so say what to send'),
+      ),
+      onSubmit: async (form) => api.hrDecideDocument(doc.id, {
+        decision,
+        note: form.get('note') || null,
+        expiresOn: form.get('expiresOn') || null,
+      }),
+    });
+    if (done) { toast(decision === 'accept' ? 'On the file.' : 'Sent back.', 'good'); await reload(); }
+  };
+
+  const waiting = (data.waitingDocuments ?? []).length
+    ? card('Sent in from their phone', {
+      note: `${data.waitingDocuments.length} waiting`,
+      wide: true,
+    }, h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Not on the file yet. Open each one, check it is what it says it is and that it is '
+        + 'this person’s, then accept it or send it back with a reason.'),
+      table([
+        {
+          key: 'title',
+          label: 'Document',
+          format: (v, r) => h('div',
+            data.canManage
+              ? h('a', { href: api.hrDocumentUrl(r.id), target: '_blank', rel: 'noopener' },
+                r.filename || v)
+              : h('span', r.filename || v),
+            h('small.muted', `${v} · ${Math.round(r.bytes / 1024)} KB`)),
+        },
+        {
+          key: 'uploaded_at',
+          label: 'Sent',
+          format: (v) => h('small.muted', fmtDay(String(v).slice(0, 10), { withYear: true })),
+        },
+        {
+          key: 'actions',
+          label: '',
+          format: (v, r) => (data.canManage
+            ? h('div.btn-row',
+              h('button.btn-sm.btn-primary', { onclick: () => decide(r, 'accept') }, 'Accept'),
+              h('button.btn-sm', { onclick: () => decide(r, 'reject') }, 'Send back'))
+            : ''),
+        },
+      ], data.waitingDocuments, { empty: 'None.' })))
+    : null;
+
+  const sentBack = (data.rejectedDocuments ?? []).length
+    ? h('details', { style: { marginTop: '.6rem' } },
+      h('summary', { style: { cursor: 'pointer', fontSize: '.85rem' } },
+        `${data.rejectedDocuments.length} sent back`),
+      h('ul', { style: { fontSize: '.85rem' } }, data.rejectedDocuments.map((d) => h('li',
+        `${d.title} — ${d.note || 'no reason recorded'}`,
+        h('br'),
+        h('small.muted', `${d.decided_by || ''} · ${String(d.decided_at || '').slice(0, 10)}`)))))
+    : null;
+
   return h('div',
     checklist(data),
+    waiting,
 
     card('Documents', {
       note: `${data.documents.length} held`,
@@ -346,6 +432,7 @@ function documentsTab(data, reload) {
         'Scans of an ID, certificates, a reference. Photographs are shrunk in the browser '
         + 'before they are sent, so a picture taken on a phone is fine, and a scanned '
         + 'contract of up to 12 MB is stored whole.'),
+    sentBack,
     ),
   );
 }

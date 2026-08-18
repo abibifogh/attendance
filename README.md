@@ -533,6 +533,74 @@ form that leaks it to whoever is holding the phone.
 > the single most destructive thing a self-service form can do, and it is the
 > one rule in here with its own test.
 
+### Choosing what to ask for
+
+**People → What to ask for.** Every self-serviceable field, every list and every
+document gets one of three answers: **ask for it**, **insist on it**, or **do
+not ask**. A property that pays everybody by mobile money has no use for a bank
+branch; one that has been caught out by an emergency contact nobody filled in
+wants that one refused rather than skipped.
+
+The plan is stored as **only what was changed**, and that is the most important
+decision in it. A plan listing every field would freeze the form at the moment
+somebody pressed Save: a field added to the code next year would be absent from
+it and — under any reading that treats the plan as complete — never asked for
+again. Storing the exceptions means the default is always whatever the code
+currently says. It lives in `settings` under `hr_form`; no setting at all means
+the standard set, which is what every property had before this existed.
+
+Insisting is enforced on the way in as well as on the form, because the form is
+a courtesy and the API is the gate — and checked against the record too, so
+somebody on their second link is not made to retype an address the office has
+had since their first week. A field set to **do not ask** is dropped from a
+submission rather than reported: a payload naming it is not a mistake.
+
+### Photographing the paper
+
+A Ghana Card number typed into a box is a claim. A photograph of the card is
+what SSNIT, the Labour Department and an auditor actually want, and the person
+holding the card has a camera in the same device. Until this, the only route was
+a WhatsApp message and a manager saving it out and uploading it — three steps,
+each of which stops happening.
+
+So the link now carries **Photograph your documents**: the ID, the WASSCE
+certificate, the passport photo, a food handler's certificate for anybody in a
+food department. Which of them are asked for comes from the plan above *and*
+from who the person is — Act 851 applies to whoever handles food, and the record
+already says who that is.
+
+A contract is deliberately not on that list. It is the property's own document,
+signed through the same link, and would mean nothing arriving as a photograph
+from the person it binds.
+
+What arrives is a claim like any other. It does not go on the file: `status` is
+`pending`, it is invisible to the completeness checklist, and it waits on
+**People → the person → Sent in from their phone**, where somebody opens it,
+checks it is what it says it is, and accepts it or sends it back with a reason.
+A photograph of the wrong side of a card — or of somebody else's — is exactly
+what a review catches and a direct upload would not. Each kind holds one waiting
+file per link, because a second photograph is somebody retaking a blurred one
+rather than sending a second card, and the person can withdraw anything until it
+has been looked at.
+
+Images and PDFs only, up to 12 MB, stored in 700 KB pieces because D1 caps a row
+at about two.
+
+### A signature that already exists
+
+Drawing with a finger is fine on a phone and poor with a mouse, and plenty of
+people have a signature — scanned once, used on everything — and no interest in
+inventing a second one that looks nothing like it. So **Upload an image** sits
+beside the signature box everywhere one appears: saving your own signature,
+signing a letter, signing a contract.
+
+It is not pasted in whole. A photograph of a signature is dark ink on a
+grey-white page and would drop onto a letter as a grey rectangle, so the page is
+taken out: anything above a luminance threshold becomes transparent, the result
+is cropped to the ink, and the ink is what gets stored. Luminance rather than
+pure white, because paper under a hotel office light is never white. An image
+with nothing dark enough in it is refused rather than saved as a blank.
+
 #### The address must not move
 
 The token *is* the link. The page reads it back out of the address bar, which

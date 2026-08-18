@@ -5,9 +5,9 @@ import {
 import { getPepper, hashPin } from '../lib/auth.js';
 import { allows } from '../lib/permissions.js';
 import {
-  ASKED_PLACEHOLDERS, FIELDS, LISTS, LIST_MAP, PLACEHOLDERS, SECTIONS,
-  cleanSubmission, diffSubmission, hashBody, maskProfile, missingFor,
-  placeholdersIn, renderTemplate,
+  ASKED_PLACEHOLDERS, ASKS, FIELDS, LISTS, LIST_MAP, PLACEHOLDERS, SECTIONS, SELF_FIELDS,
+  askFor, cleanSubmission, diffSubmission, hashBody, maskProfile, missingFor,
+  placeholdersIn, planFor, renderTemplate,
 } from '../lib/people.js';
 import {
   REQUIRED_DOCUMENTS, STANDARD_TEMPLATES, fileStatus,
@@ -22,7 +22,12 @@ import {
  * anybody holding a link, so the smaller its surface the better.
  */
 
-const actorOf = (ctx) => `${ctx.session.user.name} (${ctx.session.user.role})`;
+// Nobody, when the caller is somebody holding a link rather than a login. The
+// public routes always pass a `by` of their own, and a crash here would be a
+// signed-out caller taking the request down rather than being named.
+const actorOf = (ctx) => (ctx.session?.user
+  ? `${ctx.session.user.name} (${ctx.session.user.role})`
+  : null);
 const canManage = (ctx) => allows('hr_manage', ctx.session.permissions);
 
 async function audit(ctx, action, entity, detail) {
@@ -85,7 +90,10 @@ export async function listPeople(ctx) {
     ctx.db.prepare(
       "SELECT staff_id, COUNT(*) n FROM hr_submission WHERE status = 'pending' GROUP BY staff_id",
     ).all(),
-    ctx.db.prepare('SELECT id, staff_id, kind, expires_on FROM hr_document').all(),
+    // Only what is actually on the file. A photograph somebody sent in an hour
+    // ago and nobody has looked at does not make a record complete — that is
+    // the whole point of it waiting.
+    ctx.db.prepare("SELECT id, staff_id, kind, expires_on FROM hr_document WHERE status = 'filed'").all(),
     ctx.db.prepare("SELECT staff_id, satisfies, status FROM hr_contract WHERE status = 'signed'").all(),
   ]);
 
@@ -165,7 +173,8 @@ export async function getPerson(ctx, id) {
   const [profile, documents, contracts, invites, submissions, events] = await Promise.all([
     ctx.db.prepare('SELECT * FROM hr_profile WHERE staff_id = ?').bind(staffId).first(),
     ctx.db.prepare(
-      `SELECT id, kind, title, filename, mime, bytes, expires_on, uploaded_by, uploaded_at
+      `SELECT id, kind, title, filename, mime, bytes, expires_on, uploaded_by, uploaded_at,
+              status, source, note, decided_by, decided_at
          FROM hr_document WHERE staff_id = ? ORDER BY uploaded_at DESC`,
     ).bind(staffId).all(),
     ctx.db.prepare(
@@ -201,14 +210,21 @@ export async function getPerson(ctx, id) {
     profile: maskProfile(profile, { full }),
     lists,
     missing: missingFor(profile, lists).map((g) => g.label),
-    documents: documents.results ?? [],
+    // Split three ways, because they are three different things. What is on
+    // the file; what somebody has sent in and nobody has looked at yet; and
+    // what was looked at and sent back. Only the first counts as held — a
+    // photograph that arrived an hour ago does not complete a file, which is
+    // the entire point of it waiting.
+    documents: (documents.results ?? []).filter((d) => d.status === 'filed'),
+    waitingDocuments: (documents.results ?? []).filter((d) => d.status === 'pending'),
+    rejectedDocuments: (documents.results ?? []).filter((d) => d.status === 'rejected'),
     contracts: contracts.results ?? [],
     // What ought to be in this particular person's file, and what is. Two of
     // the requirements depend on who they are — a food handler's certificate,
     // a work permit — so the list is worked out per person rather than shown
     // to everybody and ignored by most of them.
     fileStatus: fileStatus(person, profile, {
-      documents: documents.results ?? [],
+      documents: (documents.results ?? []).filter((d) => d.status === 'filed'),
       contracts: contracts.results ?? [],
     }),
     invites: (invites.results ?? []).map((i) => ({
@@ -326,16 +342,20 @@ const CHUNK = 700_000;
 const MAX_DOCUMENT = 12_000_000;
 
 /** Store a file, in as many pieces as it takes, and return its id. */
-async function storeFile(ctx, staffId, { kind, title, filename, mime, bytes, expiresOn }) {
+export async function storeFile(ctx, staffId, {
+  kind, title, filename, mime, bytes, expiresOn,
+  status = 'filed', source = 'office', inviteId = null, note = null, by = null,
+}) {
   const parts = Math.max(1, Math.ceil(bytes.length / CHUNK));
 
   const created = await ctx.db.prepare(
     `INSERT INTO hr_document (staff_id, kind, title, filename, mime, bytes, content, parts,
-                              expires_on, uploaded_by)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) RETURNING id`,
+                              expires_on, uploaded_by, status, source, invite_id, note)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) RETURNING id`,
   ).bind(
     staffId, kind, title, filename, mime, bytes.length,
-    bytes.subarray(0, CHUNK), parts, expiresOn, actorOf(ctx),
+    bytes.subarray(0, CHUNK), parts, expiresOn, by ?? actorOf(ctx),
+    status, source, inviteId, note,
   ).first();
 
   for (let seq = 1; seq < parts; seq += 1) {
@@ -346,6 +366,7 @@ async function storeFile(ctx, staffId, { kind, title, filename, mime, bytes, exp
 
   return created.id;
 }
+
 
 /** Read a file back, in order. */
 async function readFile(db, row) {
@@ -398,6 +419,162 @@ export async function addDocument(ctx, id) {
 
   await audit(ctx, 'people.document_add', staffId, { title: body.title, bytes: bytes.length });
   return json({ ok: true, id: documentId });
+}
+
+/**
+ * What this property asks its people for.
+ *
+ * Returns the whole catalogue alongside the plan rather than only what is
+ * switched on, because this is the screen where somebody switches things on and
+ * a list that hides what it is hiding is not a list anybody can use.
+ */
+export async function getForm(ctx) {
+  const row = await ctx.db.prepare("SELECT value FROM settings WHERE key = 'hr_form'")
+    .first().catch(() => null);
+  const plan = planFor(row?.value);
+
+  return json({
+    plan,
+    asks: ASKS,
+    sections: SECTIONS.map((section) => ({
+      key: section.key,
+      label: section.label,
+      note: section.note ?? null,
+      fields: section.fields.filter((f) => f.self).map((f) => ({
+        key: f.key, label: f.label, hint: f.hint ?? null, ask: askFor(plan, 'fields', f.key),
+      })),
+    })).filter((section) => section.fields.length),
+    lists: LISTS.filter((l) => l.self).map((l) => ({
+      key: l.key, label: l.label, ask: askFor(plan, 'lists', l.key),
+    })),
+    // Only the paper somebody can photograph. A contract is not on this list:
+    // it is the property's own document, signed here, and would mean nothing
+    // arriving as a snapshot from the person it binds.
+    documents: REQUIRED_DOCUMENTS.filter((d) => d.self).map((d) => ({
+      code: d.code,
+      label: d.label,
+      detail: d.detail ?? null,
+      applies: d.applies,
+      ask: askFor(plan, 'documents', d.code),
+    })),
+  });
+}
+
+/**
+ * Save it, keeping only what differs from the standard set.
+ *
+ * The sparseness is the point and is enforced here rather than trusted from the
+ * screen: a plan that wrote down every field would freeze the form at the
+ * moment it was saved, and a field added to the code next year would never be
+ * asked for again by a property that had once pressed Save.
+ */
+export async function saveForm(ctx) {
+  const body = await readJson(ctx.request);
+  const wanted = planFor(body.plan ?? body);
+
+  const known = {
+    fields: new Set(SELF_FIELDS.map((f) => f.key)),
+    lists: new Set(LISTS.filter((l) => l.self).map((l) => l.key)),
+    documents: new Set(REQUIRED_DOCUMENTS.filter((d) => d.self).map((d) => d.code)),
+  };
+
+  const plan = { fields: {}, lists: {}, documents: {} };
+  for (const group of ['fields', 'lists', 'documents']) {
+    for (const [key, value] of Object.entries(wanted[group])) {
+      if (!known[group].has(key)) continue;
+      if (value === 'ask') continue; // The default. Storing it buys nothing.
+      plan[group][key] = value;
+    }
+  }
+
+  const empty = Object.values(plan).every((group) => !Object.keys(group).length);
+  await ctx.db.prepare(
+    `INSERT INTO settings (key, value) VALUES ('hr_form', ?1)
+     ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+  ).bind(empty ? '' : JSON.stringify(plan)).run();
+
+  await audit(ctx, 'people.form', null, {
+    required: Object.values(plan).flatMap((g) => Object.entries(g))
+      .filter(([, v]) => v === 'require').map(([k]) => k),
+    skipped: Object.values(plan).flatMap((g) => Object.entries(g))
+      .filter(([, v]) => v === 'skip').map(([k]) => k),
+  });
+
+  return json({ ok: true, plan });
+}
+
+/** The plan, for the routes that have to apply it rather than display it. */
+export async function currentPlan(db) {
+  const row = await db.prepare("SELECT value FROM settings WHERE key = 'hr_form'")
+    .first().catch(() => null);
+  return planFor(row?.value);
+}
+
+/**
+ * Paper somebody sent in from their phone, waiting to be looked at.
+ *
+ * Beside the details they sent rather than on a screen of its own: they arrive
+ * together, from one link, and reviewing half of what somebody sent is how the
+ * other half sits for a fortnight.
+ */
+export async function listWaitingDocuments(ctx) {
+  const rows = await ctx.db.prepare(
+    `SELECT d.id, d.staff_id, d.kind, d.title, d.filename, d.mime, d.bytes, d.note,
+            d.uploaded_at, d.uploaded_by, d.source, s.name AS staff_name, s.employee_no
+       FROM hr_document d JOIN att_staff s ON s.id = d.staff_id
+      WHERE d.status = 'pending'
+      ORDER BY d.uploaded_at, d.id`,
+  ).bind().all().catch(() => ({ results: [] }));
+
+  return json({ documents: rows.results ?? [] });
+}
+
+/**
+ * Accept a file onto the record, or send it back.
+ *
+ * The same shape as accepting a set of details, and for the same reason: what
+ * somebody sends in is a claim until a colleague has looked at it. A photograph
+ * of the wrong side of a card, or of somebody else's card, is exactly the thing
+ * a review catches and a direct upload would not.
+ */
+export async function decideDocument(ctx, id) {
+  const body = await readJson(ctx.request);
+  const decision = str(body.decision, 'Decision', { required: true, max: 20 });
+  if (!['accept', 'reject'].includes(decision)) {
+    throw badRequest('A file is either accepted onto the record or sent back.');
+  }
+  const note = str(body.note, 'Note', { max: 400 });
+  if (decision === 'reject' && !note) {
+    throw badRequest('Say why, so they know what to send instead.');
+  }
+
+  const row = await ctx.db.prepare('SELECT * FROM hr_document WHERE id = ?').bind(Number(id)).first();
+  if (!row) throw notFound('No such file.');
+  if (row.status !== 'pending') throw badRequest(`That was already ${row.status}.`);
+
+  await ctx.db.prepare(
+    `UPDATE hr_document
+        SET status = ?2, decided_by = ?3, decided_at = datetime('now'),
+            note = COALESCE(?4, note),
+            expires_on = COALESCE(?5, expires_on)
+      WHERE id = ?1`,
+  ).bind(
+    row.id,
+    decision === 'accept' ? 'filed' : 'rejected',
+    actorOf(ctx),
+    note || null,
+    str(body.expiresOn, 'Expiry', { max: 10 }) || null,
+  ).run();
+
+  await logEvent(ctx, {
+    staffId: row.staff_id,
+    inviteId: row.invite_id,
+    kind: decision === 'accept' ? 'file_accepted' : 'file_rejected',
+    detail: row.title,
+  });
+  await audit(ctx, `people.document_${decision}`, row.staff_id, { title: row.title, note });
+
+  return json({ ok: true });
 }
 
 export async function getDocument(ctx, id) {

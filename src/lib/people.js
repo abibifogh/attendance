@@ -133,6 +133,143 @@ export const LISTS = [
 export const LIST_MAP = new Map(LISTS.map((l) => [l.key, l]));
 
 // ---------------------------------------------------------------------------
+// What this property actually asks for
+// ---------------------------------------------------------------------------
+
+/**
+ * Ask for it, insist on it, or do not ask at all.
+ *
+ * Three answers rather than a tick box, because "optional" and "required" are
+ * genuinely different requests and a property that has been caught out by an
+ * emergency contact nobody filled in wants the second one.
+ */
+export const ASKS = [
+  { key: 'ask', label: 'Ask for it', detail: 'Shown on the form. They can leave it blank' },
+  { key: 'require', label: 'Insist on it', detail: 'The form will not send until it is filled in' },
+  { key: 'skip', label: 'Do not ask', detail: 'Left off the form entirely' },
+];
+
+const ASK_KEYS = new Set(ASKS.map((a) => a.key));
+
+/**
+ * The plan, stored as only what somebody changed.
+ *
+ * Sparse on purpose, and it is the most important decision in this file. A
+ * plan that listed every field would freeze the form at the moment it was
+ * saved: a field added to the code next year would be absent from a plan
+ * written this year, and — under any reading that treats the plan as complete —
+ * silently never asked for again. Storing the exceptions means the default is
+ * always whatever the code currently says, and a property only carries the
+ * decisions it actually made.
+ */
+export function planFor(stored) {
+  const raw = typeof stored === 'string' ? safeParse(stored) : stored;
+  const out = { fields: {}, lists: {}, documents: {} };
+  if (!raw || typeof raw !== 'object') return out;
+
+  for (const group of ['fields', 'lists', 'documents']) {
+    const from = raw[group];
+    if (!from || typeof from !== 'object') continue;
+    for (const [key, value] of Object.entries(from)) {
+      if (ASK_KEYS.has(value)) out[group][key] = value;
+    }
+  }
+  return out;
+}
+
+function safeParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // A plan nobody can read is a plan that does not exist. Falling back to
+    // the standard set asks for slightly too much, which is recoverable; the
+    // alternative is a form with nothing on it.
+    return null;
+  }
+}
+
+/** What the plan says about one thing, with the code's own default behind it. */
+export function askFor(plan, group, key, fallback = 'ask') {
+  return plan?.[group]?.[key] ?? fallback;
+}
+
+/**
+ * The form this property asks for, resolved.
+ *
+ * One function, used by the page somebody fills in on their phone and by the
+ * screen an administrator sets it up on, so the second cannot drift from the
+ * first — which is the same argument that made the fields declarative in the
+ * first place.
+ */
+export function formPlan(plan, { documents = [] } = {}) {
+  const sections = SECTIONS.map((section) => ({
+    key: section.key,
+    label: section.label,
+    note: section.note ?? null,
+    fields: section.fields
+      .filter((f) => f.self)
+      .map((f) => ({ ...f, ask: askFor(plan, 'fields', f.key) }))
+      .filter((f) => f.ask !== 'skip'),
+  })).filter((section) => section.fields.length);
+
+  const lists = LISTS
+    .filter((l) => l.self)
+    .map(({ key, label, columns }) => ({
+      key, label, columns, ask: askFor(plan, 'lists', key),
+    }))
+    .filter((l) => l.ask !== 'skip');
+
+  const files = documents
+    .filter((d) => d.self)
+    .map((d) => ({
+      code: d.code,
+      label: d.label,
+      detail: d.detail ?? null,
+      ask: askFor(plan, 'documents', d.code),
+    }))
+    .filter((d) => d.ask !== 'skip');
+
+  return { sections, lists, files };
+}
+
+/**
+ * What a form was insisted on and did not get.
+ *
+ * Checked against the record as well as the submission, not instead of it. The
+ * page never reads anybody's record back — a form showing what the property
+ * already holds is a form that leaks it to whoever is holding the phone — so a
+ * person filling in the second link of their first week would otherwise be made
+ * to retype an address the office already has.
+ */
+export function unanswered(plan, { profile = {}, lists = {}, files = [] } = {}, onFile = {}) {
+  const gaps = [];
+
+  for (const field of SELF_FIELDS) {
+    if (askFor(plan, 'fields', field.key) !== 'require') continue;
+    if (!blank(profile[field.key])) continue;
+    if (!blank(onFile.profile?.[field.key])) continue;
+    gaps.push({ kind: 'field', key: field.key, label: field.label });
+  }
+
+  for (const list of LISTS) {
+    if (!list.self) continue;
+    if (askFor(plan, 'lists', list.key) !== 'require') continue;
+    if (lists[list.key]?.length) continue;
+    if (onFile.lists?.[list.key]?.length) continue;
+    gaps.push({ kind: 'list', key: list.key, label: list.label });
+  }
+
+  for (const file of files) {
+    if (file.ask !== 'require') continue;
+    if (file.attached?.length) continue;
+    if (onFile.documents?.includes(file.code)) continue;
+    gaps.push({ kind: 'file', key: file.code, label: file.label });
+  }
+
+  return gaps;
+}
+
+// ---------------------------------------------------------------------------
 // What is still missing
 // ---------------------------------------------------------------------------
 
@@ -278,9 +415,13 @@ function sameList(a, b) {
  * `job_title` or `hired_on` is not an error to report — it is a field the form
  * never offered, so it is dropped on the way in and the rest is kept.
  */
-export function cleanSubmission(payload) {
+export function cleanSubmission(payload, plan = null) {
   const profile = {};
   for (const field of SELF_FIELDS) {
+    // A field this property does not ask for is dropped exactly as a field
+    // nobody may fill in is dropped. The form not showing it is a courtesy;
+    // this is the gate.
+    if (askFor(plan, 'fields', field.key) === 'skip') continue;
     const value = payload?.profile?.[field.key];
     if (value === undefined) continue;
     profile[field.key] = clean(value).slice(0, field.type === 'textarea' ? 600 : 200);
@@ -289,6 +430,7 @@ export function cleanSubmission(payload) {
   const lists = {};
   for (const list of LISTS) {
     if (!list.self) continue;
+    if (askFor(plan, 'lists', list.key) === 'skip') continue;
     const rows = payload?.lists?.[list.key];
     if (!Array.isArray(rows)) continue;
     lists[list.key] = rows.slice(0, 12).map((row) => {

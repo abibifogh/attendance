@@ -1,6 +1,9 @@
 import { badRequest, forbidden, json, notFound, readJson, str } from '../lib/http.js';
 import { getPepper, hashPin, throttleCheck, throttleFail } from '../lib/auth.js';
-import { LISTS, SECTIONS, cleanSubmission, hashBody } from '../lib/people.js';
+import { cleanSubmission, formPlan, hashBody, unanswered } from '../lib/people.js';
+import { requiredDocumentsFor } from '../lib/ghana-templates.js';
+import { currentPlan, storeFile } from './people.js';
+import { fromBase64 } from '../lib/files.js';
 
 /**
  * The other side of the link: somebody's phone, with no account and no login.
@@ -108,7 +111,10 @@ export async function inviteOpen(ctx, token) {
     }
   }
 
-  const person = await ctx.db.prepare('SELECT id, name FROM att_staff WHERE id = ?')
+  // Department and job title come along because they decide which paper is
+  // asked for — a food handler's certificate is only ever asked of somebody
+  // who handles food. Neither is shown; both are things the person knows.
+  const person = await ctx.db.prepare('SELECT id, name, department, job_title FROM att_staff WHERE id = ?')
     .bind(invite.staff_id).first();
   if (!person) throw notFound('This link points at somebody who is no longer on the system.');
 
@@ -131,6 +137,11 @@ export async function inviteOpen(ctx, token) {
     "SELECT COUNT(*) n FROM hr_submission WHERE invite_id = ? AND status <> 'rejected'",
   ).bind(invite.id).first();
 
+  const form = formPlan(await currentPlan(ctx.db), {
+    documents: requiredDocumentsFor(person, await profileOf(ctx.db, invite.staff_id)),
+  });
+  const attached = await attachmentsOn(ctx.db, invite.id);
+
   return json({
     property: await property(ctx.db),
     name: person.name,
@@ -139,14 +150,23 @@ export async function inviteOpen(ctx, token) {
     detailsSent: Number(sent?.n ?? 0) > 0,
     expiresAt: invite.expires_at,
     // The form, described by the server, so there is exactly one definition of
-    // what is asked for and it is the same one the office screen uses.
-    sections: SECTIONS.map((section) => ({
-      key: section.key,
-      label: section.label,
-      note: section.note ?? null,
-      fields: section.fields.filter((f) => f.self),
-    })).filter((section) => section.fields.length),
-    lists: LISTS.filter((l) => l.self).map(({ key, label, columns }) => ({ key, label, columns })),
+    // what is asked for and it is the same one the office screen uses — now
+    // including whatever the property has decided it does and does not want.
+    sections: form.sections,
+    lists: form.lists,
+    // The paper they are holding. Which of it is asked for depends on the
+    // property's plan and on the person: a food handler's certificate is only
+    // ever asked of somebody who handles food.
+    files: form.files.map((file) => ({
+      ...file,
+      attached: attached.filter((d) => d.kind === file.code).map(present),
+    })),
+    // Anything sent in on this link that does not answer one of the questions
+    // above — a certificate for a document kind since switched off, say. Shown
+    // so it can still be removed rather than becoming invisible and permanent.
+    otherFiles: attached
+      .filter((d) => !form.files.some((f) => f.code === d.kind))
+      .map(present),
     contracts: (contracts.results ?? []).map((c) => ({
       id: c.id,
       title: c.title,
@@ -161,6 +181,171 @@ export async function inviteOpen(ctx, token) {
 }
 
 /**
+ * Only what decides which documents to ask for.
+ *
+ * Not the profile. Nothing on this side of the link ever reads a record back,
+ * and "nationality" is fetched here to answer one question — whether a work
+ * permit belongs on the list — rather than to be shown to anybody.
+ */
+async function profileOf(db, staffId) {
+  const row = await db.prepare('SELECT nationality FROM hr_profile WHERE staff_id = ?')
+    .bind(staffId).first().catch(() => null);
+  return row ?? {};
+}
+
+/**
+ * What the property already holds, as three sets of keys and nothing more.
+ *
+ * Used only to decide whether an insisted-on answer is genuinely missing. It
+ * never leaves the server and never reaches the page: the question is "is this
+ * blank on file", and the answer to that is a yes or a no, not a value.
+ */
+async function onFileFor(db, staffId) {
+  const [profile, contacts, education, employment, documents] = await Promise.all([
+    db.prepare('SELECT * FROM hr_profile WHERE staff_id = ?').bind(staffId).first().catch(() => null),
+    db.prepare('SELECT 1 FROM hr_contact WHERE staff_id = ? LIMIT 1').bind(staffId).all().catch(() => ({ results: [] })),
+    db.prepare('SELECT 1 FROM hr_education WHERE staff_id = ? LIMIT 1').bind(staffId).all().catch(() => ({ results: [] })),
+    db.prepare('SELECT 1 FROM hr_employment WHERE staff_id = ? LIMIT 1').bind(staffId).all().catch(() => ({ results: [] })),
+    db.prepare("SELECT DISTINCT kind FROM hr_document WHERE staff_id = ? AND status = 'filed'").bind(staffId).all().catch(() => ({ results: [] })),
+  ]);
+
+  return {
+    profile: profile ?? {},
+    lists: {
+      contacts: contacts.results ?? [],
+      education: education.results ?? [],
+      employment: employment.results ?? [],
+    },
+    documents: (documents.results ?? []).map((r) => r.kind),
+  };
+}
+
+/** What has already been attached on this link. */
+async function attachmentsOn(db, inviteId) {
+  const rows = await db.prepare(
+    `SELECT id, kind, title, filename, mime, bytes, status, note, uploaded_at
+       FROM hr_document
+      WHERE invite_id = ? AND status <> 'rejected'
+      ORDER BY id`,
+  ).bind(inviteId).all().catch(() => ({ results: [] }));
+  return rows.results ?? [];
+}
+
+/**
+ * One attached file, as the person who sent it may see it.
+ *
+ * Name, size and whether anybody has looked at it yet. Not the file: this page
+ * is opened by whoever is holding the phone, and being able to read back a
+ * photograph of somebody's Ghana Card because you have their link is exactly
+ * the leak the rest of this file is written to avoid.
+ */
+const present = (doc) => ({
+  id: doc.id,
+  filename: doc.filename || doc.title,
+  bytes: doc.bytes,
+  status: doc.status,
+  at: doc.uploaded_at,
+});
+
+/**
+ * Attach a photograph or a scan.
+ *
+ * The paper the person is already holding — their own card, their own
+ * certificate — photographed on the device that is asking for it. Before this,
+ * the only way a file reached a record was somebody sending it by WhatsApp and
+ * a manager saving it out and uploading it: three steps, each of which stops
+ * happening.
+ *
+ * It arrives as a claim, exactly like the typed answers beside it. Nothing goes
+ * on the record until a colleague has looked at it, because a photograph of the
+ * wrong side of a card — or of somebody else's — is precisely what a review
+ * catches and a direct upload would not.
+ */
+export async function inviteFile(ctx, token) {
+  const invite = await inviteFor(ctx, token);
+  if (!invite.wants_details) throw badRequest('This link is not asking for your details.');
+
+  const body = await readJson(ctx.request);
+  const kind = str(body.kind, 'Kind', { required: true, max: 40 });
+
+  const person = await ctx.db.prepare('SELECT id, name, department, job_title FROM att_staff WHERE id = ?')
+    .bind(invite.staff_id).first();
+  const form = formPlan(await currentPlan(ctx.db), {
+    documents: requiredDocumentsFor(person, await profileOf(ctx.db, invite.staff_id)),
+  });
+  const wanted = form.files.find((f) => f.code === kind);
+  // A kind this property is not asking for is refused rather than filed under
+  // "other". The form not offering it is a courtesy; this is the gate.
+  if (!wanted) throw badRequest('That is not something this link is asking for.');
+
+  const bytes = fromBase64(body.content);
+  if (!bytes.length) throw badRequest('There was nothing in that file.');
+  if (bytes.length > MAX_UPLOAD) {
+    throw badRequest(
+      `That file is ${Math.round(bytes.length / 1_000_000)} MB and the limit is `
+      + `${Math.round(MAX_UPLOAD / 1_000_000)} MB. A photograph taken with the camera app is `
+      + 'usually fine; a scan at 200 dpi certainly is.',
+    );
+  }
+
+  const mime = str(body.mime, 'Type', { max: 80, fallback: 'application/octet-stream' });
+  if (!ACCEPTED.some((ok) => mime.startsWith(ok))) {
+    throw badRequest('Send a photograph or a PDF.');
+  }
+
+  // One waiting file per kind per link. Sending a second is somebody replacing
+  // a blurred photograph, not adding a second card, and leaving both would have
+  // the office deciding which of two identical-looking files is the real one.
+  const previous = await ctx.db.prepare(
+    "SELECT id FROM hr_document WHERE invite_id = ? AND kind = ? AND status = 'pending'",
+  ).bind(invite.id, kind).all().catch(() => ({ results: [] }));
+  for (const row of previous.results ?? []) {
+    await ctx.db.prepare('DELETE FROM hr_document WHERE id = ?').bind(row.id).run();
+  }
+
+  const id = await storeFile({ db: ctx.db }, invite.staff_id, {
+    kind,
+    title: wanted.label,
+    filename: str(body.filename, 'File name', { max: 200 }),
+    mime,
+    bytes,
+    expiresOn: null,
+    status: 'pending',
+    source: 'self',
+    inviteId: invite.id,
+    note: str(body.note, 'Note', { max: 400 }),
+    by: `${person?.name ?? 'They'} (from their link)`,
+  });
+
+  await logEvent(ctx, invite, 'file_sent', { detail: `${wanted.label} — ${bytes.length} bytes` });
+
+  return json({ ok: true, id });
+}
+
+/** Take one back off, before anybody has looked at it. */
+export async function inviteFileRemove(ctx, token, id) {
+  const invite = await inviteFor(ctx, token);
+
+  const row = await ctx.db.prepare(
+    'SELECT id, title, status FROM hr_document WHERE id = ? AND invite_id = ?',
+  ).bind(Number(id), invite.id).first();
+  if (!row) throw notFound('That file is not on this link.');
+  // Once it is on the record it belongs to the property, and taking it off is
+  // theirs to do. Saying so is better than a button that silently fails.
+  if (row.status !== 'pending') {
+    throw badRequest('That has already been looked at. Ask the office to remove it.');
+  }
+
+  await ctx.db.prepare('DELETE FROM hr_document WHERE id = ?').bind(row.id).run();
+  await logEvent(ctx, invite, 'file_removed', { detail: row.title });
+  return json({ ok: true });
+}
+
+/** A phone photograph, a scan, or a PDF. Nothing else has any business here. */
+const ACCEPTED = ['image/', 'application/pdf'];
+const MAX_UPLOAD = 12_000_000;
+
+/**
  * Send in a set of details.
  *
  * Stored exactly as it arrived and marked pending. Anything the form did not
@@ -171,12 +356,36 @@ export async function inviteDetails(ctx, token) {
   const invite = await inviteFor(ctx, token);
   if (!invite.wants_details) throw badRequest('This link is not asking for your details.');
 
+  const plan = await currentPlan(ctx.db);
   const body = await readJson(ctx.request);
-  const payload = cleanSubmission(body);
+  const payload = cleanSubmission(body, plan);
 
   const anything = Object.values(payload.profile).some((v) => v !== '')
     || Object.values(payload.lists).some((rows) => rows.length);
   if (!anything) throw badRequest('Nothing was filled in, so nothing was sent.');
+
+  // What the property insisted on and did not get. Checked here as well as on
+  // the form, because the form is a courtesy and this is the gate — and checked
+  // against the record too, so somebody on their second link is not made to
+  // retype an address the office already has.
+  const person = await ctx.db.prepare('SELECT id, name, department, job_title FROM att_staff WHERE id = ?')
+    .bind(invite.staff_id).first();
+  const form = formPlan(plan, {
+    documents: requiredDocumentsFor(person, await profileOf(ctx.db, invite.staff_id)),
+  });
+  const attached = await attachmentsOn(ctx.db, invite.id);
+  const gaps = unanswered(plan, {
+    profile: payload.profile,
+    lists: payload.lists,
+    files: form.files.map((f) => ({ ...f, attached: attached.filter((d) => d.kind === f.code) })),
+  }, await onFileFor(ctx.db, invite.staff_id));
+
+  if (gaps.length) {
+    throw badRequest(
+      `Still needed: ${gaps.map((g) => g.label.toLowerCase()).join(', ')}.`,
+      { missing: gaps },
+    );
+  }
 
   // One live submission per link. Sending again replaces the last one rather
   // than queueing a second, so the office reviews what somebody meant to send

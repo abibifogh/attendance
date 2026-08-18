@@ -100,6 +100,11 @@ export const api = {
   attResolve: (day, body) => request(`/api/att/days/${day}/resolve`, { method: 'POST', body }),
   attUnresolve: (day, body) => request(`/api/att/days/${day}/unresolve`, { method: 'POST', body }),
   attAddPunch: (body) => request('/api/att/punches', { method: 'POST', body }),
+  hrForm: () => request('/api/hr/form'),
+  hrSaveForm: (body) => request('/api/hr/form', { method: 'PUT', body }),
+  hrWaitingDocuments: () => request('/api/hr/documents'),
+  hrDecideDocument: (id, body) => request(`/api/hr/documents/${id}/decide`, { method: 'POST', body }),
+
   attCorrectTimes: (day, body) => request(`/api/att/days/${day}/times`, { method: 'POST', body }),
   attDecideTimeEdit: (id, body) => request(`/api/att/time-edits/${id}/decide`, { method: 'POST', body }),
   attTimeEdits: (params = {}) => request(`/api/att/time-edits?${new URLSearchParams(

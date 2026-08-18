@@ -14,6 +14,7 @@ import { renderAdmin } from './views/admin.js';
 import { renderPeople } from './views/people.js';
 import { renderPerson } from './views/person.js';
 import { renderPeopleTemplates } from './views/people-templates.js';
+import { renderPeopleForm } from './views/people-form.js';
 import { renderContract } from './views/contract.js';
 import { renderLetters } from './views/letters.js';
 import { renderLetter } from './views/letter.js';
@@ -51,6 +52,7 @@ const ROUTES = [
   { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, hidden: true },
   { path: 'person', label: 'Record', permission: 'hr_view', render: renderPerson, hidden: true },
   { path: 'people-templates', label: 'Templates', permission: 'hr_manage', render: renderPeopleTemplates, hidden: true },
+  { path: 'people-form', label: 'What to ask for', permission: 'hr_manage', render: renderPeopleForm, hidden: true },
   { path: 'contract', label: 'Contract', permission: 'hr_view', render: renderContract, hidden: true },
   { path: 'letter', label: 'Letter', permission: 'corr_view', render: renderLetter, hidden: true },
   { path: 'letter-parties', label: 'Address book', permission: 'corr_view', render: renderLetterParties, hidden: true },

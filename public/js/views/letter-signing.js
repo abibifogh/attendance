@@ -60,9 +60,9 @@ export async function renderLetterSigning() {
             + `${me.method === 'password' ? 'password' : 'PIN'} each time.`),
         )
         : h('p.muted', { style: { marginBottom: 0 } },
-          'Draw it once and you will not have to draw it on every letter. It is stored against '
-          + 'your login only — nobody else can see it or use it, not an administrator and not '
-          + 'whoever set this system up.'),
+          'Draw it once, or upload a picture of the signature you already use, and you will not '
+          + 'have to sign every letter by hand. It is stored against your login only — nobody '
+          + 'else can see it or use it, not an administrator and not whoever set this system up.'),
 
       me.method === 'none'
         ? h('div.alert.warn',
@@ -152,8 +152,13 @@ async function saveSignature(me, reload) {
     title: 'Save your signature',
     submitLabel: 'Save it',
     body: h('div',
-      h('p.muted', 'Sign in the box with a finger or a mouse. It is stored against your login '
+      h('p.muted', 'Sign in the box with a finger or a mouse — or press "Upload an image" and '
+        + 'choose a photograph or scan of your usual signature. It is stored against your login '
         + 'and used when you sign a letter.'),
+      h('p.muted', { style: { fontSize: '.82rem' } },
+        'An uploaded picture has the paper taken out of it: anything light enough to be the '
+        + 'page is made transparent and the result is cropped to the ink, so it sits on a '
+        + 'letter rather than covering it with a grey rectangle.'),
 
       h('div.field-row',
         field('Your name, as it should read', h('input', {

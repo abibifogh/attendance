@@ -125,6 +125,25 @@ function draw() {
       go: showDetails,
     });
   }
+  const files = packet.files ?? [];
+  if (files.length) {
+    const held = files.filter((f) => f.attached.length).length;
+    const needed = files.filter((f) => f.ask === 'require' && !f.attached.length).length;
+    tasks.push({
+      key: 'files',
+      title: 'Photograph your documents',
+      // Never "done": somebody can always send one more, and a task that
+      // greys itself out after the first photograph is a task that collects
+      // one photograph.
+      done: false,
+      detail: needed
+        ? `${needed} still needed — your ID, certificates`
+        : held
+          ? `${held} sent. Add more if you have them`
+          : 'Your ID, certificates — taken with the camera',
+      go: showFiles,
+    });
+  }
   for (const contract of packet.contracts) {
     tasks.push({
       key: `c${contract.id}`,
@@ -170,6 +189,133 @@ function draw() {
 }
 
 // ---------------------------------------------------------------------------
+// The paper they are holding
+// ---------------------------------------------------------------------------
+
+/**
+ * Photograph a card or a certificate and send it in.
+ *
+ * The whole point is that the person has the paper in one hand and a camera in
+ * the other. Before this, the only way a certificate reached a file was
+ * somebody sending it by WhatsApp and a manager saving it out and uploading it,
+ * which is three steps and stops happening at the first one.
+ *
+ * `capture="environment"` is not set. A phone that opens the camera straight
+ * away is right for the ID somebody is holding and wrong for the certificate
+ * already in their photo roll, and the file picker offers both.
+ */
+function showFiles() {
+  const draw = () => {
+    const cards = (packet.files ?? []).map((file) => {
+      const list = h('div.file-list');
+
+      const render = () => mount(list, ...(file.attached.length
+        ? file.attached.map((doc) => h('div.file-row',
+          h('div',
+            h('div', doc.filename),
+            h('small.muted', `${Math.max(1, Math.round(doc.bytes / 1024))} KB`
+              + (doc.status === 'pending' ? ' · waiting to be checked' : ' · accepted'))),
+          doc.status === 'pending'
+            ? h('button.btn-sm', { onclick: (e) => remove(file, doc, e.target) }, 'Remove')
+            : null,
+        ))
+        : [h('p.muted', { style: { margin: 0 } }, 'Nothing sent yet.')]));
+
+      const picker = h('input', {
+        type: 'file',
+        accept: 'image/*,application/pdf',
+        style: { display: 'none' },
+        onchange: async (event) => {
+          const chosen = event.target.files?.[0];
+          event.target.value = '';
+          if (!chosen) return;
+          await send(file, chosen, render);
+        },
+      });
+
+      render();
+
+      return h('section.card',
+        h('h3', file.label,
+          file.ask === 'require' && !file.attached.length
+            ? h('span.pill.warn', { style: { marginLeft: '.4rem' } }, 'needed')
+            : null),
+        file.detail ? h('p.muted', file.detail) : null,
+        list,
+        picker,
+        h('button.btn.btn-wide', { onclick: () => picker.click() },
+          file.attached.length ? 'Send another' : 'Take a photo or choose a file'),
+      );
+    });
+
+    mount(root, shell(packet.property,
+      back(),
+      h('div.card',
+        h('h2', 'Your documents'),
+        h('p.muted', 'Photograph each one flat, in good light, with all four corners in the '
+          + 'picture. A PDF is fine too.'),
+      ),
+      ...cards,
+      h('div.card',
+        h('button.btn.btn-primary.btn-wide', { onclick: draw }, 'Done for now'),
+        h('p.fineprint', 'Nothing is added to your file until somebody at the office has looked '
+          + 'at it. You can remove anything you send until then.'),
+      ),
+    ));
+  };
+
+  const send = async (file, chosen, render) => {
+    if (chosen.size > 12_000_000) {
+      toast('That file is too big. Take the photograph with the camera app rather than a scanner.', 'bad');
+      return;
+    }
+    toast('Sending…');
+    try {
+      const out = await call(`/api/i/${encodeURIComponent(token)}/files`, {
+        kind: file.code,
+        filename: chosen.name,
+        mime: chosen.type || 'application/octet-stream',
+        content: await asBase64(chosen),
+      });
+      // One per kind: a second photograph is somebody retaking a blurred one,
+      // and the server treats it that way, so the screen must too.
+      file.attached = [{
+        id: out.id, filename: chosen.name, bytes: chosen.size, status: 'pending',
+      }];
+      render();
+      draw();
+      toast('Sent.', 'good');
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
+  const remove = async (file, doc, button) => {
+    button.disabled = true;
+    try {
+      await call(`/api/i/${encodeURIComponent(token)}/files/${doc.id}/remove`, {});
+      file.attached = file.attached.filter((d) => d.id !== doc.id);
+      draw();
+    } catch (err) {
+      toast(err.message, 'bad');
+      button.disabled = false;
+    }
+  };
+
+  draw();
+}
+
+/** A file as the API takes it. Read in one go — these are photographs, not films. */
+function asBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('That file could not be read.'));
+    reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Their details
 // ---------------------------------------------------------------------------
 
@@ -181,7 +327,8 @@ function showDetails() {
     h('h3', section.label),
     section.note ? h('p.muted', section.note) : null,
     section.fields.map((f) => h('label.field',
-      h('span', f.label),
+      h('span', f.label,
+        f.ask === 'require' ? h('span.req', { title: 'The office needs this' }, ' *') : null),
       control(f, '', { oninput: (e) => { values[f.key] = e.target.value; },
         onchange: (e) => { values[f.key] = e.target.value; } }),
       f.hint ? h('small.muted', f.hint) : null,
@@ -192,7 +339,8 @@ function showDetails() {
     const editor = listEditor(list, [], { labels: LABELS[list.key] ?? {} });
     editors[list.key] = editor;
     return h('section.card',
-      h('h3', list.label),
+      h('h3', list.label,
+        list.ask === 'require' ? h('span.req', { title: 'The office needs this' }, ' *') : null),
       list.key === 'contacts'
         ? h('p.muted', 'Who should we ring if something happens to you at work? '
           + 'Put the person who actually answers their phone first.')
