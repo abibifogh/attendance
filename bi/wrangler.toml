@@ -53,3 +53,15 @@ database_id = "9862ed78-69f0-4dfe-a36f-7fe3bd9020c1"
 # waiting before anybody opens it.
 [triggers]
 crons = ["45 0 * * *"]
+
+# Its own address on the property's domain, the same way the attendance app has
+# one. Cloudflare creates and manages the DNS record itself when this deploys,
+# so there is nothing to add by hand — the zone simply has to be on the same
+# account, which it is.
+#
+# The workers.dev address keeps working alongside this. That is deliberate: if
+# a custom domain ever fails to provision, losing the only way in to the tool
+# that tells you what the group is doing is a bad afternoon.
+[[routes]]
+pattern = "insight.niceoperation.com"
+custom_domain = true

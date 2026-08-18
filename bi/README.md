@@ -413,9 +413,7 @@ those bindings commented out), then `npm run db:migrate`.
 
 ### Where it lives
 
-By default `niceoperation-insight.<your-account>.workers.dev` — the exact address is printed in the **Set up Insight** run, under its *Publish Insight* step. For a proper
-address, add a route block to `bi/wrangler.toml` the way the attendance app has
-one:
+**https://insight.niceoperation.com** — set in `bi/wrangler.toml`:
 
 ```toml
 [[routes]]
@@ -423,8 +421,14 @@ pattern = "insight.niceoperation.com"
 custom_domain = true
 ```
 
-The domain has to be on the same Cloudflare account. Editing that file in
-GitHub's web editor and pushing is enough; the deploy picks it up.
+Cloudflare creates and manages the DNS record itself on deploy; there is
+nothing to add by hand, as long as the zone is on the same account. The
+`workers.dev` address keeps working alongside it, deliberately — if a custom
+domain ever fails to provision, losing the only way in to the tool that tells
+you what the group is doing is a bad afternoon.
+
+To move it, change that one line and push. To drop the `workers.dev` address
+once the domain is settled, add `workers_dev = false` near the top of the file.
 
 ## Development
 
