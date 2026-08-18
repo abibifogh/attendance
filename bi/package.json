@@ -1,0 +1,19 @@
+{
+  "name": "niceoperation-insight",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The group's business intelligence layer: pulls attendance, breakfast, POS and laundry into one warehouse and reads the result",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create insight",
+    "db:migrate": "wrangler d1 migrations apply insight --remote",
+    "db:migrate:local": "wrangler d1 migrations apply insight --local",
+    "test": "node --test \"test/**/*.test.js\"",
+    "setup": "node scripts/setup.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.20.0"
+  }
+}

@@ -1,0 +1,67 @@
+name = "niceoperation-insight"
+main = "src/index.js"
+compatibility_date = "2025-05-05"
+
+# The dashboard and its API are one Worker; everything that is not /api/* is
+# served from public/ as a static asset.
+[assets]
+directory = "public"
+binding = "ASSETS"
+
+# The warehouse. Nothing in it is a source of truth: every row is derived and
+# every row can be rebuilt by running the loader again.
+[[d1_databases]]
+binding = "DB"
+database_name = "insight"
+database_id = "30f1c514-559b-43a4-a323-0c22c776788c"
+
+# The attendance app's own database, bound a second time, read-only by
+# convention — nothing in this Worker writes to it. Binding it directly is why
+# the attendance connector needs no key, no service account and no network hop.
+# Comment this out until the id is filled in, or the Worker will not deploy.
+[[d1_databases]]
+binding = "ATT_DB"
+database_name = "attendance"
+database_id = "1df34f21-bfc6-43dc-b11a-1a57d7f691b0"
+
+# The breakfast, housekeeping and maintenance app's database. Same arrangement.
+[[d1_databases]]
+binding = "BREAKFAST_DB"
+database_name = "breakfast"
+database_id = "9862ed78-69f0-4dfe-a36f-7fe3bd9020c1"
+
+[vars]
+# Nothing secret lives here. Everything below is a Worker secret, set with
+# `wrangler secret put`:
+#
+#   SESSION_SECRET        signs session cookies
+#   DASHBOARD_PASSWORD    the bootstrap password, for making the first account
+#   POS_REPORTS_KEY       reads the POS's reporting API
+#   LAUNDRY_TOKEN         reads the laundry's report
+#   SUPABASE_KEY_<NAME>   one per Supabase database added under Setup
+#
+# And one per system that accepts a hand-off. Generate each separately with
+# `openssl rand -base64 32` — sharing one across systems throws away the
+# property that a compromised system cannot mint sessions on the others.
+#
+#   SSO_SECRET_ATTENDANCE
+#   SSO_SECRET_BREAKFAST
+#   SSO_SECRET_POS
+#   SSO_SECRET_LAUNDRY
+
+# A little after midnight in Accra: yesterday is finished, and the brief is
+# waiting before anybody opens it.
+[triggers]
+crons = ["45 0 * * *"]
+
+# Its own address on the property's domain, the same way the attendance app has
+# one. Cloudflare creates and manages the DNS record itself when this deploys,
+# so there is nothing to add by hand — the zone simply has to be on the same
+# account, which it is.
+#
+# The workers.dev address keeps working alongside this. That is deliberate: if
+# a custom domain ever fails to provision, losing the only way in to the tool
+# that tells you what the group is doing is a bad afternoon.
+[[routes]]
+pattern = "insight.niceoperation.com"
+custom_domain = true

@@ -1083,6 +1083,52 @@ before the person exists.
 
 ---
 
+## The group's numbers, all four systems at once
+
+There is a second application in this repository, in `bi/`, and it is not part
+of the attendance app: it is a separate Worker with its own database that
+*reads* this one.
+
+The group runs four pieces of software — this, the breakfast and housekeeping
+app, the restaurant POS and the laundry — and none of them can see any of the
+others. `bi/` reads all four every night, puts them in one warehouse where a
+day and a cedi mean the same thing in all of them, and answers the questions
+that need two systems at once: whether the wage bill is rising faster than the
+work, which of the guests in house are actually eating in, whether the bed
+checks get missed on exactly the days somebody was absent, and whether the same
+supplier charges the kitchen and the restaurant two different prices.
+
+It reads this app's database directly through a second binding. Nothing in it
+writes here, and it deploys on its own, so a reporting layer can never take
+down the app people clock in on. See [bi/README.md](bi/README.md).
+
+### Arriving here already signed in
+
+That app is also the group's front door. Somebody signs in there, clicks
+**Staff attendance** on its hub, and lands here without typing a password —
+this app's `/sso` route takes the hand-off code, calls the hub back to find out
+who it was for, matches them to a row in `users` by email address, and makes an
+ordinary session exactly as a PIN would.
+
+Three things it deliberately does not do. It does not trust anything in the
+URL: the code carries no identity, and the name and address come back over a
+server-to-server call. It does not create accounts — if the hub names somebody
+with no `users` row here, they are refused, with the address in the message, so
+an administrator can add them. And it does not widen anybody: the role the hub
+sends is ignored, and what somebody may do here is what their own row says.
+
+It is off unless configured. Two secrets switch it on:
+
+```bash
+wrangler secret put INSIGHT_SSO_URL      # https://<insight>/api/sso/redeem
+wrangler secret put INSIGHT_SSO_SECRET   # the same value as SSO_SECRET_ATTENDANCE there
+```
+
+Without them `/sso` says so rather than failing blank, and PIN and password
+sign-in are unaffected either way. The protocol is in
+[bi/docs/sso.md](bi/docs/sso.md); the code is `src/lib/sso-consumer.js`.
+
+
 ## Notes and limits
 
 - **A punch is a fact; a day is an opinion.** See the top of this file. Every
