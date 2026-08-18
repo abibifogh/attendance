@@ -6,8 +6,8 @@ import {
 import { card, emptyState, exportButton, table } from './components.js';
 import { printButton } from '../print.js';
 import {
-  clockCell, field, formDialog, hoursCell, minutesCell, reasonSelect, signOffDialog, spanLabel,
-  statusPill, totalsLine,
+  clockCell, correctTimesDialog, field, formDialog, hoursCell, minutesCell, reasonSelect,
+  signOffDialog, spanLabel, statusPill, totalsLine,
 } from './att-shared.js';
 
 /**
@@ -95,6 +95,16 @@ export async function renderAttStaff(params) {
   // Closing a period off is a separate permission from settling a day, so a
   // rota planner can be trusted with one and not the other.
   const signs = can('att_signoff');
+  // And correcting a clock time is smaller than both. Whoever builds the rota
+  // holds it by default: they are the person who knows what time the kitchen
+  // closed, and a correction that has to be relayed through somebody else is a
+  // correction that does not get made.
+  const fixesTimes = can('att_times');
+
+  const correctTimes = async (row) => {
+    const done = await correctTimesDialog(row, data.staff, { signedSpan: signedFor(row.day) });
+    if (done) { toast('Times corrected. The administrators have been told.', 'good'); await reload({}); }
+  };
 
   /**
    * Put a day right, from the person's own report.
@@ -272,13 +282,25 @@ export async function renderAttStaff(params) {
       label: '',
       // Hidden on paper: a column of buttons on a printed slip is noise.
       cls: 'no-print',
-      format: (v, r) => (manages
+      format: (v, r) => (manages || fixesTimes
         ? h('div.btn-row.no-print',
-          h('button.btn-sm', {
-            class: r.open ? 'btn-primary' : '',
-            onclick: () => resolve(r),
-          }, r.open ? 'Settle' : 'Correct'),
-          r.resolution && r.resolution !== 'auto' && r.resolved_by
+          manages
+            ? h('button.btn-sm', {
+              class: r.open ? 'btn-primary' : '',
+              onclick: () => resolve(r),
+            }, r.open ? 'Settle' : 'Correct')
+            : null,
+          // Offered to a manager as well as a planner. Settling a day asks for
+          // a reason and a status; somebody who only wants to move a clock-out
+          // by two hours should not have to answer either.
+          fixesTimes
+            ? h('button.btn-sm', {
+              class: !manages && r.open ? 'btn-primary' : '',
+              title: 'Change the clock-in or clock-out',
+              onclick: () => correctTimes(r),
+            }, 'Times')
+            : null,
+          manages && r.resolution && r.resolution !== 'auto' && r.resolved_by
             ? h('button.btn-sm', { onclick: () => unresolve(r) }, 'Undo')
             : null)
         : null),
@@ -290,7 +312,8 @@ export async function renderAttStaff(params) {
   data.days.some((d) => d.resolved_by)
     ? h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
       'Times in rows marked as confirmed were supplied by a supervisor where the terminal had no record.')
-    : null);
+    : null,
+  timeEditTrail(data.timeEdits ?? []));
 
   // Shown for a single day as well as a range. The big card above already
   // carries the note, but a person reading a slip looks for the same heading
@@ -481,4 +504,39 @@ function suggested(row) {
     return row.late_minutes > 5 ? 'late' : 'present';
   }
   return '';
+}
+
+/**
+ * What was changed, by whom, and why.
+ *
+ * Printed with the report rather than tucked behind a screen only
+ * administrators can reach. A person handed a slip that says they worked eight
+ * hours is entitled to see, on the same sheet, that somebody moved their
+ * clock-out to make it eight — and the surest way to make an audit trail
+ * meaningless is to keep it somewhere the person it concerns never looks.
+ */
+function timeEditTrail(edits) {
+  if (!edits.length) return null;
+
+  const side = (label, observed, was, now) => {
+    const from = was ?? observed;
+    if (from === now) return null;
+    if (!now) return `${label} ${from} removed — back to what the terminal saw`;
+    if (!from) return `${label} set to ${now}, where the terminal saw nothing`;
+    return `${label} ${from} → ${now}`;
+  };
+
+  return h('div', { style: { marginTop: '1rem' } },
+    h('h3', { style: { fontSize: '.95rem', marginBottom: '.4rem' } }, 'Clock times changed'),
+    h('ul', { style: { fontSize: '.85rem', lineHeight: 1.55, paddingLeft: '1.1rem', margin: 0 } },
+      edits.map((e) => h('li',
+        h('strong', fmtDayShort(e.day)),
+        ' — ',
+        [side('in', e.observed_in, e.was_in, e.now_in), side('out', e.observed_out, e.was_out, e.now_out)]
+          .filter(Boolean).join('; ') || 'no change',
+        h('br'),
+        h('small.muted', `${e.actor}, ${(e.at_utc || '').slice(0, 16).replace('T', ' ')}`
+          + `${e.reason ? ` — ${e.reason}` : ''}`),
+      ))),
+  );
 }

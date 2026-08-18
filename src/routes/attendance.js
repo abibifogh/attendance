@@ -41,6 +41,9 @@ async function audit(ctx, action, entity, detail) {
   ).run().catch(() => {});
 }
 
+/** Who did it, in the form every trail in the app records. */
+const actorOf = (ctx) => `${ctx.session.user.name} (${ctx.session.user.role})`;
+
 function readDay(value, fallback) {
   if (value == null || value === '') return fallback;
   const day = String(value);
@@ -719,11 +722,24 @@ export async function staffReport(ctx, id) {
       ORDER BY from_day`,
   ).bind(staffId, from, to).all().catch(() => ({ results: [] }));
 
+  // Every clock time anybody moved inside this range. Returned with the report
+  // rather than fetched on demand because the whole value of the register is
+  // that it is visible where the figures are read — a trail you have to go
+  // looking for is a trail nobody checks.
+  const edits = await ctx.db.prepare(
+    `SELECT id, day, observed_in, observed_out, was_in, was_out, now_in, now_out,
+            reason, actor, at_utc
+       FROM att_time_edit
+      WHERE staff_id = ?1 AND day BETWEEN ?2 AND ?3
+      ORDER BY day, id`,
+  ).bind(staffId, from, to).all().catch(() => ({ results: [] }));
+
   return json({
     staff,
     from,
     to,
     days: records.map((r) => present(ds, r)),
+    timeEdits: edits.results ?? [],
     totals: summarise(records, { shifts: ds.shiftById, reasons: ds.reasonBy }),
     signedSpans: (spans.results ?? []).map((r) => ({
       kind: r.kind,
@@ -903,6 +919,10 @@ export async function resolveDay(ctx, dayParam) {
   const note = str(body.note, 'Note', { max: 500 });
   if (reason.requires_note && !note) throw badRequest(`"${reason.label}" needs a note saying why.`);
 
+  // Read before the write, because settling a day supplies clock times too and
+  // those belong in the same register as the ones supplied on their own.
+  const before = await timesBefore(ctx, staffId, target);
+
   const status = reason.kind === 'leave' ? 'leave'
     : reason.kind === 'holiday' ? 'holiday'
       : reason.kind === 'rest' ? 'rest'
@@ -933,6 +953,13 @@ export async function resolveDay(ctx, dayParam) {
     reason: reasonCode, in: correctedIn, out: correctedOut, note,
   });
 
+  if (before.wasIn !== correctedIn || before.wasOut !== correctedOut) {
+    await recordTimeEdit(ctx, {
+      staff, day: target, ...before, nowIn: correctedIn, nowOut: correctedOut,
+      reason: note ? `${reason.label} — ${note}` : reason.label,
+    });
+  }
+
   const ds = await loadDataset(ctx.db, { from: addDays(target, -1), to: addDays(target, 1) });
   const [record] = daysFor(ds, staffId, target, target);
   return json({ ok: true, day: present(ds, record) });
@@ -949,6 +976,10 @@ export async function unresolveDay(ctx, dayParam) {
   const body = await readJson(ctx.request);
   const staffId = int(body.staffId, 'Staff', { required: true, min: 1 });
 
+  const staff = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(staffId).first();
+  if (!staff) throw notFound('No such member of staff.');
+  const before = await timesBefore(ctx, staffId, target);
+
   await ctx.db.prepare(
     `UPDATE att_days SET resolution = 'open', resolved_by = NULL, resolved_at = NULL,
                          resolved_note = NULL, corrected_in = NULL, corrected_out = NULL
@@ -958,9 +989,233 @@ export async function unresolveDay(ctx, dayParam) {
   await recompute(ctx.db, { staffIds: [staffId], from: target, to: target });
   await audit(ctx, 'attendance.unresolve', `${staffId}|${target}`, null);
 
+  // Taking a correction off is a change to the clock times as much as putting
+  // one on, and a register that recorded only the additions would show times
+  // still standing that nobody can find on the record.
+  if (before.wasIn || before.wasOut) {
+    await recordTimeEdit(ctx, {
+      staff, day: target, ...before, nowIn: null, nowOut: null,
+      reason: 'The ruling was undone — back to what the terminal saw',
+    });
+  }
+
   const ds = await loadDataset(ctx.db, { from: addDays(target, -1), to: addDays(target, 1) });
   const [record] = daysFor(ds, staffId, target, target);
   return json({ ok: true, day: present(ds, record) });
+}
+
+/**
+ * Putting a clock time right, without ruling on the day.
+ *
+ * The correction whoever builds the rota actually needs to make. They are the
+ * person who knows the kitchen closed at nine, so they are the person who
+ * notices that the terminal read Kofi out at 17:02 — and until this existed
+ * they had to find somebody with the permission that also approves leave and
+ * ask them to type it in. Corrections that need a second person are
+ * corrections that do not get made.
+ *
+ * Three things hold it in place, and all three are the point rather than
+ * decoration.
+ *
+ * The punches are never touched. `att_punches` is what the terminal saw and
+ * stays what the terminal saw; this writes an opinion beside it.
+ *
+ * No reason is asked for and no status is set. Saying "they left at 21:00" is
+ * not the same as saying "this day is present" — the rules work the verdict out
+ * from the corrected times, so the hours, the lateness and the overtime all
+ * follow on their own. Whoever holds the larger permission can still settle the
+ * day outright; this is deliberately the smaller act.
+ *
+ * And every change is written down and the administrators are told. That is
+ * what makes it safe to hand out: not that the edit is restricted, but that it
+ * is impossible to make one quietly.
+ */
+export async function correctTimes(ctx, dayParam) {
+  const target = readDay(dayParam);
+  const body = await readJson(ctx.request);
+  const staffId = int(body.staffId, 'Staff', { required: true, min: 1 });
+  const reason = str(body.reason, 'Reason', { required: true, max: 400 });
+
+  const correctedIn = readClock(body.in, 'Clock-in');
+  const correctedOut = readClock(body.out, 'Clock-out');
+
+  const staff = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(staffId).first();
+  if (!staff) throw notFound('No such member of staff.');
+
+  const before = await timesBefore(ctx, staffId, target);
+  if (before.wasIn === correctedIn && before.wasOut === correctedOut) {
+    throw badRequest('Those are the times already recorded — nothing to change.');
+  }
+
+  // A day nobody has ruled on and nobody has corrected may not exist as a row
+  // yet — an untouched future day, or one the recompute has not reached.
+  await ctx.db.prepare(
+    `INSERT INTO att_days (staff_id, day, corrected_in, corrected_out)
+     VALUES (?1, ?2, ?3, ?4)
+     ON CONFLICT (staff_id, day) DO UPDATE SET
+       corrected_in = excluded.corrected_in,
+       corrected_out = excluded.corrected_out`,
+  ).bind(staffId, target, correctedIn, correctedOut).run();
+
+  await recompute(ctx.db, { staffIds: [staffId], from: target, to: target });
+
+  await recordTimeEdit(ctx, {
+    staff,
+    day: target,
+    ...before,
+    nowIn: correctedIn,
+    nowOut: correctedOut,
+    reason,
+    // Told every time, as asked.
+    always: true,
+  });
+
+  const ds = await loadDataset(ctx.db, { from: addDays(target, -1), to: addDays(target, 1) });
+  const [record] = daysFor(ds, staffId, target, target);
+  return json({ ok: true, day: present(ds, record) });
+}
+
+/**
+ * What the clock said before somebody touched it.
+ *
+ * Two different questions, and the second one is the reason this is not one
+ * line. `was_in`/`was_out` is the correction that stood; `observed_in`/
+ * `observed_out` is what the terminal itself read. The second cannot be taken
+ * from `att_days` once a correction is in place, because a correction rewrites
+ * `first_in` and `last_out` — that is what makes the hours come out right. So
+ * the observation is carried forward from the last entry in the register,
+ * which is exactly why the register stores it.
+ */
+async function timesBefore(ctx, staffId, day) {
+  const load = () => ctx.db.prepare(
+    'SELECT corrected_in, corrected_out, first_in, last_out FROM att_days WHERE staff_id = ? AND day = ?',
+  ).bind(staffId, day).first();
+
+  let existing = await load();
+  // A day nobody has looked at may not have been computed yet — a punch that
+  // arrived while the recompute was failing, or a day whose row was cleared.
+  // Working it out now costs one day for one person, and the alternative is a
+  // register that says the terminal saw nothing when it plainly did.
+  if (!existing) {
+    await recompute(ctx.db, { staffIds: [staffId], from: day, to: day });
+    existing = await load();
+  }
+
+  const wasIn = existing?.corrected_in ?? null;
+  const wasOut = existing?.corrected_out ?? null;
+
+  const previous = (wasIn || wasOut)
+    ? await ctx.db.prepare(
+      `SELECT observed_in, observed_out FROM att_time_edit
+        WHERE staff_id = ? AND day = ? ORDER BY id DESC LIMIT 1`,
+    ).bind(staffId, day).first().catch(() => null)
+    : null;
+
+  return {
+    wasIn,
+    wasOut,
+    observedIn: previous ? previous.observed_in : existing?.first_in ?? null,
+    observedOut: previous ? previous.observed_out : existing?.last_out ?? null,
+  };
+}
+
+/**
+ * Write one change down, and tell the administrators.
+ *
+ * Shared by both routes that can move a clock time, so the trail is the whole
+ * truth rather than the part of it that came through the new door. Settling a
+ * day supplies times too, and a register of time changes that quietly omitted
+ * those would be worse than no register at all.
+ *
+ * Who hears about it differs, and deliberately. A correction made on its own is
+ * announced every time — that is what was asked for, and it is the whole reason
+ * the permission is safe to hand out. Settling a day announces itself only when
+ * the time it supplies contradicts something the terminal actually recorded:
+ * filling in a clock-out the device never saw is the ordinary morning's work,
+ * happens several times a day, and a bell that rang for all of it would be
+ * silenced within the week.
+ */
+async function recordTimeEdit(ctx, {
+  staff, day, observedIn, observedOut, wasIn, wasOut, nowIn, nowOut, reason, always = false,
+}) {
+  await ctx.db.prepare(
+    `INSERT INTO att_time_edit
+       (staff_id, day, observed_in, observed_out, was_in, was_out, now_in, now_out,
+        reason, actor, actor_id, ip)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+  ).bind(
+    staff.id, day, observedIn, observedOut, wasIn, wasOut, nowIn, nowOut,
+    reason || 'No reason given', actorOf(ctx), ctx.session.user.id ?? null,
+    ctx.request.headers.get('CF-Connecting-IP') || null,
+  ).run().catch(() => {});
+
+  await audit(ctx, 'attendance.times', `${staff.id}|${day}`, {
+    was: { in: wasIn, out: wasOut },
+    now: { in: nowIn, out: nowOut },
+    observed: { in: observedIn, out: observedOut },
+    reason,
+  });
+
+  const contradicts = Boolean((nowIn && observedIn && nowIn !== observedIn)
+    || (nowOut && observedOut && nowOut !== observedOut)
+    || (!nowIn && wasIn) || (!nowOut && wasOut));
+  if (!always && !contradicts) return;
+
+  // Addressed to the setup permission because that is the one administrators
+  // hold and managers do not. A notice that reached everybody who can settle a
+  // day would be read by nobody.
+  await createNotice(ctx.db, {
+    kind: 'attendance.times',
+    level: contradicts ? 'warn' : 'info',
+    title: `${staff.name}: clock times changed on ${day}`,
+    body: `${describeChange('In', observedIn, wasIn, nowIn)}. `
+      + `${describeChange('Out', observedOut, wasOut, nowOut)}.${reason ? ` — ${reason}` : ''}`.slice(0, 400),
+    link: `#/att-staff?id=${staff.id}&day=${day}&period=day`,
+    day,
+    actor: actorOf(ctx),
+    audience: 'att_setup',
+  });
+}
+
+/** One line of the trail, in the words somebody reading the bell would use. */
+function describeChange(side, observed, was, now) {
+  const from = was ?? observed;
+  if (!now && from) return `${side} ${from} → back to what the terminal saw`;
+  if (!now) return `${side} unchanged`;
+  if (!from) return `${side} set to ${now} (terminal saw nothing)`;
+  if (from === now) return `${side} unchanged at ${now}`;
+  return `${side} ${from} → ${now}`;
+}
+
+/**
+ * Every clock time anybody has changed.
+ *
+ * The administrator's side of the bell: the notice says one thing happened, and
+ * this says what has been happening. Filterable by person and by date because
+ * the two questions ever asked of it are "what did this person's week look
+ * like before somebody touched it" and "what changed last month".
+ */
+export async function timeEdits(ctx) {
+  const staffId = ctx.url.searchParams.get('staffId');
+  const from = readDay(ctx.url.searchParams.get('from'), null);
+  const to = readDay(ctx.url.searchParams.get('to'), null);
+  const limit = Math.min(Number(ctx.url.searchParams.get('limit')) || 200, 500);
+
+  const where = ['1 = 1'];
+  const binds = [];
+  if (staffId) { where.push(`e.staff_id = ?${binds.length + 1}`); binds.push(Number(staffId)); }
+  if (from) { where.push(`e.day >= ?${binds.length + 1}`); binds.push(from); }
+  if (to) { where.push(`e.day <= ?${binds.length + 1}`); binds.push(to); }
+  binds.push(limit);
+
+  const rows = await ctx.db.prepare(
+    `SELECT e.*, s.name AS staff_name, s.employee_no, s.department
+       FROM att_time_edit e JOIN att_staff s ON s.id = e.staff_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY e.id DESC LIMIT ?${binds.length}`,
+  ).bind(...binds).all();
+
+  return json({ edits: rows.results ?? [] });
 }
 
 function readClock(value, field) {

@@ -27,7 +27,7 @@ const PRESETS = [
   ['lastmonth', 'Last month'],
 ];
 
-const TABS = [['open', 'To sign off'], ['queries', 'Questions']];
+const TABS = [['open', 'To sign off'], ['queries', 'Questions'], ['times', 'Clock changes']];
 
 export async function renderAttSignoff(params) {
   const host = h('div');
@@ -51,7 +51,9 @@ export async function renderAttSignoff(params) {
       ),
     ),
     h('div.toolbar', tabs),
-    tab === 'queries' ? await queriesTab(reload) : await openTab(params, range, reload),
+    tab === 'queries' ? await queriesTab(reload)
+      : tab === 'times' ? await timesTab(range)
+        : await openTab(params, range, reload),
   );
 
   return host;
@@ -421,6 +423,74 @@ async function queriesTab(reload) {
         ], done, { empty: 'None.' }))
       : null,
   );
+}
+
+/**
+ * The register of clock-time changes.
+ *
+ * Whoever builds the rota can put a wrong clock time right on their own, which
+ * is the only way corrections actually get made — the person who knows what
+ * time the kitchen closed is not usually the person who can approve leave. The
+ * price of that is this page: every change, with what stood before it, who made
+ * it and why, in one list somebody can read down.
+ *
+ * Sat beside the sign-off screen rather than buried in setup, because the
+ * question it answers — "has anything on this period been touched?" — is asked
+ * at exactly the moment somebody is about to sign it.
+ */
+async function timesTab(range) {
+  const { edits } = await api.attTimeEdits({ from: range.from, to: range.to, limit: 400 });
+
+  if (!edits.length) {
+    return emptyState('Nothing changed',
+      `No clock time was altered between ${fmtDay(range.from)} and ${fmtDay(range.to)}. `
+      + 'When one is, it appears here with the reason given and stays on the record.');
+  }
+
+  const moved = (observed, was, now) => {
+    const from = was ?? observed;
+    if (from === now) return h('span.muted', 'unchanged');
+    if (!now) return h('span', h('s', from), ' ', h('span.muted', 'removed'));
+    if (!from) return h('span', h('span.muted', '— → '), h('strong', now));
+    return h('span', h('s', from), ' → ', h('strong', now));
+  };
+
+  // Louder where the correction contradicts something the terminal actually
+  // recorded. Filling in a punch the device never saw is the ordinary case;
+  // overwriting one it did see is the row worth stopping on.
+  const contradicts = (e) => (e.now_in && e.observed_in && e.now_in !== e.observed_in)
+    || (e.now_out && e.observed_out && e.now_out !== e.observed_out);
+
+  return card('Clock times changed', {
+    note: `${edits.length} in this period`,
+    wide: true,
+  }, table([
+    {
+      key: 'day',
+      label: 'Day',
+      format: (v, r) => h('div',
+        h('div', fmtDayShort(v)),
+        h('small.muted', r.staff_name)),
+    },
+    { key: 'now_in', label: 'In', align: 'right', format: (v, r) => moved(r.observed_in, r.was_in, r.now_in) },
+    { key: 'now_out', label: 'Out', align: 'right', format: (v, r) => moved(r.observed_out, r.was_out, r.now_out) },
+    {
+      key: 'reason',
+      label: 'Why',
+      format: (v, r) => h('div',
+        h('div', v || h('span.muted', '—')),
+        contradicts(r)
+          ? h('small.pill.warn', 'overwrote what the terminal read')
+          : null),
+    },
+    {
+      key: 'actor',
+      label: 'By',
+      format: (v, r) => h('div',
+        h('div', h('small', v)),
+        h('small.muted', String(r.at_utc || '').slice(0, 16).replace('T', ' '))),
+    },
+  ], edits, { empty: 'None.' }));
 }
 
 function queryCard(q, data, reload) {

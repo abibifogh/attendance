@@ -85,6 +85,13 @@ export const ROUTES = [
   // its own permission rather than travelling with the reports.
   ['POST', '/api/att/days/:day/resolve', 'att_manage', att.resolveDay],
   ['POST', '/api/att/days/:day/unresolve', 'att_manage', att.unresolveDay],
+
+  // Correcting a clock time is deliberately smaller than settling a day: it
+  // says when somebody left, not what the day should be charged to. Whoever
+  // builds the rota is the person who notices, so they get this one on its own
+  // — and every use of it is written down and announced.
+  ['POST', '/api/att/days/:day/times', 'att_times', att.correctTimes],
+  ['GET', '/api/att/time-edits', ['att_setup', 'att_reports', 'att_times'], att.timeEdits],
   ['POST', '/api/att/punches', 'att_manage', att.addPunch],
 
   ['GET', '/api/att/roster', ['att_rota', 'att_reports'], att.getRoster],

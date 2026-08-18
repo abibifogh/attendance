@@ -100,6 +100,10 @@ export const api = {
   attResolve: (day, body) => request(`/api/att/days/${day}/resolve`, { method: 'POST', body }),
   attUnresolve: (day, body) => request(`/api/att/days/${day}/unresolve`, { method: 'POST', body }),
   attAddPunch: (body) => request('/api/att/punches', { method: 'POST', body }),
+  attCorrectTimes: (day, body) => request(`/api/att/days/${day}/times`, { method: 'POST', body }),
+  attTimeEdits: (params = {}) => request(`/api/att/time-edits?${new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== '')),
+  )}`),
 
   attRoster: (from, to) => request(`/api/att/roster?${new URLSearchParams({
     ...(from ? { from } : {}), ...(to ? { to } : {}),

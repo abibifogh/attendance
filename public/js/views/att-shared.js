@@ -222,6 +222,73 @@ export function field(label, control, hint) {
 
 
 /**
+ * Put a clock time right.
+ *
+ * Deliberately not the same form as settling a day, and the difference is the
+ * whole idea. Settling asks "what should this day be charged to" and needs
+ * somebody who can answer that. This asks only "when did they actually arrive
+ * and leave" — the person building the rota knows, and everything else follows
+ * from the answer on its own: the hours, the lateness, the overtime, the
+ * verdict.
+ *
+ * Two things are said on the form rather than in a manual nobody opens: that
+ * the punches themselves are untouched, and that the administrators are told.
+ * Somebody who knows both of those before they type is not going to be
+ * surprised by either afterwards.
+ */
+export function correctTimesDialog(row, staff, { signedSpan = null } = {}) {
+  const observed = (side) => {
+    const was = side === 'in' ? row.corrected_in : row.corrected_out;
+    const seen = side === 'in' ? row.first_in : row.last_out;
+    if (was) return `Corrected to ${was}. ${seen && seen !== was ? `The terminal read ${seen}` : 'The terminal saw nothing'}`;
+    return seen ? `The terminal read ${seen}` : 'The terminal saw nothing';
+  };
+
+  return formDialog({
+    title: `${staff.name} — clock times, ${fmtDay(row.day, { withYear: true })}`,
+    submitLabel: 'Correct the times',
+    body: h('div',
+      h('p.muted', row.shift
+        ? `${row.shift.name}, ${row.shift.starts_at}–${row.shift.ends_at}`
+        : 'No shift rostered for this day'),
+      h('div.grid.grid-2',
+        field('Clocked in',
+          h('input', { type: 'time', name: 'in', value: row.corrected_in || row.first_in || '' }),
+          observed('in')),
+        field('Clocked out',
+          h('input', { type: 'time', name: 'out', value: row.corrected_out || row.last_out || '' }),
+          observed('out')),
+      ),
+      field('Why',
+        h('input', {
+          type: 'text', name: 'reason', maxlength: 400, required: true,
+          placeholder: 'The kitchen closed at 21:00 and he forgot to clock out',
+        }),
+        'Required. It is shown to the administrators and kept on the record'),
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'The punches themselves are never altered — this is recorded beside them, against your '
+        + 'name, and the administrators are told each time. Clearing both boxes puts the day '
+        + 'back to what the terminal saw.'),
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'This does not settle the day or excuse anything. The hours, the lateness and the '
+        + 'overtime are all worked out again from the times you give.'),
+      signedSpan
+        ? h('p.muted', { style: { color: 'var(--warn)', fontSize: '.85rem', marginBottom: 0 } },
+          `${fmtDay(signedSpan.from)} to ${fmtDay(signedSpan.to)} has already been signed off. `
+          + 'Changing the times will not change what was charged — reopen that period and sign '
+          + 'it again if the figure should move.')
+        : null,
+    ),
+    onSubmit: async (form) => api.attCorrectTimes(row.day, {
+      staffId: staff.id,
+      in: form.get('in') || null,
+      out: form.get('out') || null,
+      reason: form.get('reason'),
+    }),
+  });
+}
+
+/**
  * Sign a person's month off, from wherever the question was asked.
  *
  * Shared between the leave screen and the person's own report on purpose. It

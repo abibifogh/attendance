@@ -331,6 +331,21 @@ export function computeDay({
     resolution: 'settled',
   };
 
+  // A clock time somebody put right, without ruling on the day.
+  //
+  // Told apart from a ruling by having no reason attached. The rota planner
+  // saying "they left at 21:00, not 17:02" is a statement about the clock, not
+  // a decision about what the day should be charged to — so the corrected
+  // times go in and the verdict is worked out from them, the same way it would
+  // have been worked out from the punches. Lateness, hours and overtime all
+  // follow on their own, which is the point: a correction that also had to
+  // name a status would make the planner guess at the answer the rules already
+  // know.
+  const correction = override && !override.reason_code
+    && (override.corrected_in || override.corrected_out)
+    ? override
+    : null;
+
   // 1. A human already ruled on this day.
   //
   // When they supplied the times the terminal never saw, those times are what
@@ -373,19 +388,21 @@ export function computeDay({
   //    worked an unscheduled day — that is a favour done on a day off, and it
   //    should be visible rather than silently discarded.
   if (!scheduled) {
-    if (!punches.length) {
+    if (!punches.length && !correction) {
       return {
         ...base,
         status: 'rest',
         reason_code: holiday ? 'public_holiday' : 'rest_day',
       };
     }
-    const pair = pairPunches(punches, null);
+    const pair = correctedPair(pairPunches(punches, null), correction, dayBase(day));
     const worked = pair.in && pair.out ? Math.max(0, pair.out.abs - pair.in.abs) : 0;
     return {
       ...base,
       first_in: pair.in ? toClock(pair.in.abs) : null,
       last_out: pair.out ? toClock(pair.out.abs) : null,
+      corrected_in: correction?.corrected_in ?? null,
+      corrected_out: correction?.corrected_out ?? null,
       worked_minutes: worked,
       overtime_minutes: worked,
       status: 'unscheduled',
@@ -399,8 +416,9 @@ export function computeDay({
   // still happening.
   const nowAbs = Number.isFinite(policy.nowAbs) ? policy.nowAbs : null;
 
-  // 5. The ordinary case: a shift, and whatever the terminal saw.
-  if (!punches.length) {
+  // 5. The ordinary case: a shift, and whatever the terminal saw — with any
+  //    corrected time standing in for the punch it replaces.
+  if (!punches.length && !correction) {
     // A shift that has not started is not an absence. Marking the night porter
     // absent from midnight until ten at night makes the morning screen a page
     // of red that means nothing, and the one real absence on it goes unread.
@@ -413,8 +431,12 @@ export function computeDay({
     return { ...base, status: 'absent', reason_code: 'absent' };
   }
 
-  const pair = pairPunches(punches, window);
+  const pair = correctedPair(pairPunches(punches, window), correction, dayBase(day), window);
   const measured = measure(punches, window, shift, pair);
+  if (correction) {
+    measured.corrected_in = correction.corrected_in ?? null;
+    measured.corrected_out = correction.corrected_out ?? null;
+  }
 
   if (pair.in && pair.out) {
     const late = measured.late_minutes > (shift.grace_in_minutes ?? 0);
@@ -516,6 +538,40 @@ function measure(punches, window, shift, pair = null) {
  * not corrected falls back to what was observed, and the day is measured across
  * the pair.
  */
+/** Minute zero of a calendar day, on the same scale every punch is measured on. */
+function dayBase(day) {
+  return diffDays(ANCHOR, day) * 1440;
+}
+
+/**
+ * The pair of times the day should actually be measured across.
+ *
+ * A correction replaces one side or both; whichever side was not corrected
+ * stays exactly as the terminal read it, because the usual case is a person
+ * whose arrival was recorded perfectly and whose departure was not.
+ *
+ * A corrected departure earlier than the arrival is the far side of midnight,
+ * which is ordinary on a night shift and would otherwise read as a negative
+ * day.
+ */
+function correctedPair(pair, correction, base, window = null) {
+  if (!correction) return pair;
+
+  let inAbs = pair.in?.abs ?? null;
+  let outAbs = pair.out?.abs ?? null;
+  if (correction.corrected_in) inAbs = base + toMinutes(correction.corrected_in);
+  if (correction.corrected_out) {
+    outAbs = base + toMinutes(correction.corrected_out);
+    if (outAbs < (inAbs ?? window?.start ?? outAbs)) outAbs += 1440;
+  }
+
+  return {
+    in: inAbs == null ? null : { ...(pair.in ?? {}), abs: inAbs },
+    out: outAbs == null ? null : { ...(pair.out ?? {}), abs: outAbs },
+    ambiguous: false,
+  };
+}
+
 function correctedMeasure(override, window, shift, observed = {}) {
   const inAt = override.corrected_in ?? null;
   const outAt = override.corrected_out ?? null;
@@ -1415,6 +1471,12 @@ export function computeRange(ds, staffId, from, to) {
       leave: ds.leaveBy.get(`${staffId}|${day}`) ?? null,
       // A supervisor's ruling survives recomputation. Punches arriving later
       // must not quietly overturn a decision somebody signed their name to.
+      //
+      // A corrected clock time survives too, but on its own it carries no
+      // reason and so no ruling: the day is recomputed from the corrected
+      // times rather than frozen at whatever it was called when they were
+      // typed in. That is the difference between "they left at 21:00" and
+      // "this day is present", and only the second one is a decision.
       override: existing?.resolution === 'resolved'
         ? {
           reason_code: existing.reason_code,
@@ -1423,7 +1485,13 @@ export function computeRange(ds, staffId, from, to) {
           corrected_in: existing.corrected_in ?? null,
           corrected_out: existing.corrected_out ?? null,
         }
-        : null,
+        : (existing?.corrected_in || existing?.corrected_out)
+          ? {
+            reason_code: null,
+            corrected_in: existing.corrected_in ?? null,
+            corrected_out: existing.corrected_out ?? null,
+          }
+          : null,
       policy: { ...ds.policy, nowAbs },
     });
 

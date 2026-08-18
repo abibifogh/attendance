@@ -26,6 +26,12 @@ export const PERMISSIONS = [
     detail: 'Set the rota and put leave in for people. No approvals, no balances',
   },
   {
+    key: 'att_times',
+    label: 'Correct clock times',
+    detail: 'Put a wrong or missing clock-in or clock-out right. Every change is recorded '
+      + 'and the administrators are told. Does not settle a day or approve anything',
+  },
+  {
     key: 'att_signoff',
     label: 'Sign off attendance',
     detail: 'Close a day, week or month off and move the days. Still no balances',
@@ -79,10 +85,12 @@ export const ROLES = [
   {
     key: 'planner',
     label: 'Rota planner',
-    detail: 'Builds the rota and puts leave in for people. Cannot approve leave, cannot settle '
-      + 'a missing clock-out, and cannot see how much leave anybody has left. Add '
-      + '"Sign off attendance" to let them close months off as well, still without the balances.',
-    defaults: ['att_view', 'att_rota'],
+    detail: 'Builds the rota, puts leave in for people, and can put a wrong clock time right — '
+      + 'recorded against their name, with the administrators told each time. Cannot approve '
+      + 'leave, cannot settle a missing clock-out, and cannot see how much leave anybody has '
+      + 'left. Add "Sign off attendance" to let them close months off as well, still without '
+      + 'the balances.',
+    defaults: ['att_view', 'att_rota', 'att_times'],
   },
   {
     key: 'supervisor',
@@ -170,6 +178,11 @@ export function effectivePermissions(user) {
   // holder who could not touch it would be looking at a control that refused
   // them.
   if (list.includes('att_setup') && !list.includes('att_manage')) list.push('att_manage');
+  // Settling a day already supplies clock times, so anybody who can do that can
+  // obviously correct one on its own. The narrow permission exists so that
+  // whoever builds the rota can be given the correcting without the deciding —
+  // not so that the deciding can be given without the correcting.
+  if (list.includes('att_manage') && !list.includes('att_times')) list.push('att_times');
   // Deciding leave and settling days is strictly more than building the rota,
   // so anybody holding the larger permission holds the smaller one. Without
   // this every rota route would have to name both for the rest of time.

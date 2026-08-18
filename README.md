@@ -738,6 +738,7 @@ bank account:
 | **Attendance today** | Who clocked in, and what needs dealing with |
 | **Attendance reports** | Days worked, hours, lateness, leave balances, exports |
 | **Rota & leave requests** | Set the rota and put leave in for people. No approvals, no balances |
+| **Correct clock times** | Put a wrong or missing clock-in or clock-out right. Every change recorded, administrators told |
 | **Sign off attendance** | Close a day, week, month or any set of days off and move the days. Still no balances |
 | **Rota & decisions** | Set the rota, settle incomplete days, approve leave |
 | **Attendance setup** | Staff, shifts, absence reasons, holidays, terminals, rules |
@@ -754,9 +755,39 @@ Administrator — and any individual can be adjusted off their role's defaults.
 patterns and rotations, and puts leave in for people — where it waits for
 somebody else to approve it. They cannot grant leave (including their own),
 cannot settle a missing clock-out, and cannot see how much leave anybody has
-left. That last one is the point of the role: whoever draws up the rota does not
-need to know who is running out of days, and a rota built around that knowledge
-is a rota built around the wrong thing.
+left. They *can* put a wrong clock time right — see below — because they are the
+people who notice. That last one is the point of the role: whoever draws up the
+rota does not need to know who is running out of days, and a rota built around
+that knowledge is a rota built around the wrong thing.
+
+**Correct clock times** *is* part of the planner's defaults, and is deliberately
+smaller than settling a day. It answers one question — when did this person
+actually arrive and leave — and nothing else. It cannot choose a reason, cannot
+mark anybody present or absent, and cannot approve a thing; the rules read the
+corrected times and work the verdict out again from them, so the hours, the
+lateness and the overtime all follow on their own.
+
+The reason it exists as its own permission is practical. The person who knows
+the kitchen ran until nine is the person building the rota, not the person who
+approves leave, and a correction that has to be relayed through somebody else is
+a correction that does not get made. What makes it safe to hand out is not that
+it is restricted but that it is impossible to use quietly: every change is
+written to `att_time_edit` with what stood before it, what the terminal itself
+read, who made it, why, and from which address — and the administrators are told
+each time, louder when a correction overwrites a reading the device actually
+took. The register is on the sign-off screen under **Clock changes**, and the
+same trail prints on the bottom of the person's own report, where the person
+whose hours were changed can read it.
+
+Settling a day still supplies clock times too, and those land in the same
+register — a register that recorded corrections made through one door and stayed
+silent about the other would be worse than none. What differs is the bell:
+filling in a clock-out the terminal never saw is the ordinary morning's work and
+is filed without announcement; overwriting one it did see is announced.
+
+The punches themselves are never touched by any of this. `att_punches` is what
+the terminal saw and stays what the terminal saw; a correction is an opinion
+recorded beside it.
 
 **Sign off attendance** is deliberately separate and is not part of the planner's
 defaults. Tick it for whoever draws up the rota and they can close a day, a week

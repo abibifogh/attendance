@@ -4,7 +4,8 @@ import { fmtDay, fmtNum, h, mount, shiftDay, toast, todayISO } from '../util.js'
 import { alertList, card, emptyState, exportButton, table } from './components.js';
 import { printButton } from '../print.js';
 import {
-  clockCell, field, formDialog, hoursCell, minutesCell, reasonSelect, statusPill, totalsLine,
+  clockCell, correctTimesDialog, field, formDialog, hoursCell, minutesCell, reasonSelect,
+  statusPill, totalsLine,
 } from './att-shared.js';
 
 /**
@@ -29,6 +30,9 @@ export async function renderAttToday(params) {
   };
 
   const manages = can('att_manage');
+  // Correcting a clock time is smaller than settling a day, and whoever builds
+  // the rota holds it on its own.
+  const fixesTimes = can('att_times');
   const clocks = clockBanner(data.clockWarnings);
   const needing = data.rows.filter((r) => r.open);
   const absent = data.rows.filter((r) => !r.open && r.colour === 'red');
@@ -117,6 +121,21 @@ export async function renderAttToday(params) {
     await reload();
   };
 
+  /**
+   * Move a clock time without ruling on the day.
+   *
+   * The smaller of the two actions on this screen, and the one most of the
+   * morning's list actually needs: the person was here, the terminal read them
+   * out at the wrong minute, and nothing else about the day is in doubt.
+   */
+  const correctTimes = async (row) => {
+    const done = await correctTimesDialog({ ...row, day }, row.staff);
+    if (done) {
+      toast(`${row.staff.name}: times corrected. The administrators have been told.`, 'good');
+      await reload();
+    }
+  };
+
   const columns = [
     {
       key: 'staff',
@@ -138,16 +157,27 @@ export async function renderAttToday(params) {
     { key: 'label', label: 'Status', format: (v, r) => statusPill(r) },
   ];
 
-  if (manages) {
+  if (manages || fixesTimes) {
     columns.push({
       key: 'resolution',
       label: '',
-      format: (v, r) => (v === 'resolved'
-        ? h('button.btn-sm', { onclick: () => undo(r) }, 'Undo')
-        : h('button.btn-sm', {
-          class: r.open ? 'btn-primary' : '',
-          onclick: () => resolve(r),
-        }, r.open ? 'Confirm' : 'Change')),
+      format: (v, r) => h('div.btn-row',
+        manages
+          ? (v === 'resolved'
+            ? h('button.btn-sm', { onclick: () => undo(r) }, 'Undo')
+            : h('button.btn-sm', {
+              class: r.open ? 'btn-primary' : '',
+              onclick: () => resolve(r),
+            }, r.open ? 'Confirm' : 'Change'))
+          : null,
+        fixesTimes
+          ? h('button.btn-sm', {
+            class: !manages && r.open ? 'btn-primary' : '',
+            title: 'Change the clock-in or clock-out',
+            onclick: () => correctTimes(r),
+          }, 'Times')
+          : null,
+      ),
     });
   }
 

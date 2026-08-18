@@ -35,7 +35,27 @@ const reaches = (role, method, path) => allows(routeFor(method, path), held(role
 
 test('the rota planner exists and holds only what it needs', () => {
   assert.ok(ROLES.some((r) => r.key === 'planner'));
-  assert.deepEqual(defaultPermissions('planner').sort(), ['att_rota', 'att_view']);
+  assert.deepEqual(defaultPermissions('planner').sort(),
+    ['att_rota', 'att_times', 'att_view']);
+});
+
+test('a planner can correct a clock time but not settle the day', () => {
+  // The distinction the whole permission exists for. Saying when somebody left
+  // is not the same as saying what the day should be charged to.
+  assert.ok(reaches('planner', 'POST', '/api/att/days/:day/times'));
+  assert.equal(reaches('planner', 'POST', '/api/att/days/:day/resolve'), false);
+  assert.equal(reaches('planner', 'POST', '/api/att/days/:day/unresolve'), false);
+  assert.equal(reaches('planner', 'POST', '/api/att/punches'), false,
+    'and cannot invent a punch, which would put a fact in the record rather than an opinion');
+});
+
+test('anybody who can settle a day can correct a clock time', () => {
+  // The implication runs one way only: the larger act includes the smaller.
+  for (const role of ['supervisor', 'manager', 'admin']) {
+    assert.ok(reaches(role, 'POST', '/api/att/days/:day/times'), role);
+  }
+  assert.equal(reaches('viewer', 'POST', '/api/att/days/:day/times'), false,
+    'reports-only changes nothing, by definition');
 });
 
 test('a planner can build the rota', () => {
