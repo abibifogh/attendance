@@ -87,7 +87,7 @@ test('departments map to the part of the business, and the unknown lands in admi
 test('a connector with no database bound says so instead of throwing', async () => {
   const bundle = await pullAttendance({ db: null, from: '2026-05-01', to: '2026-05-31' });
   assert.deepEqual(bundle.personDays, []);
-  assert.match(bundle.notes.join(' '), /not bound|No attendance database/i);
+  assert.match(bundle.notes.join(' '), /no HIVE database is bound/i);
 });
 
 test('breakfast turns the guest count into revenue and food into cost', async () => {

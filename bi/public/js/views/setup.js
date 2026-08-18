@@ -30,7 +30,7 @@ export async function renderSetup(root) {
 
     h('div.card',
       h('h2', 'The four systems'),
-      h('p.sub', 'Attendance and the breakfast app are Cloudflare databases in this account, bound straight to this Worker: no key, no network, nothing to expire. The POS and the laundry are read over their own read-only APIs.'),
+      h('p.sub', 'HIVE and the breakfast app are Cloudflare databases in this account, bound straight to this Worker: no key, no network, nothing to expire. The POS and the laundry are read over their own read-only APIs.'),
       sources.sources.map((source) => sourceCard(source))),
 
     h('div.card',

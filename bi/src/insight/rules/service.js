@@ -181,7 +181,7 @@ export const coverageGaps = {
         headline: 'No system in the group records what the rooms earn',
         detail: [
           `Front office and housekeeping cost ${money(roomsLabour + housekeeping)} over this window, and against that there is no room revenue anywhere in the four systems being read.`,
-          'Attendance, breakfast, the POS and the laundry cover people, food, restaurant sales and laundry. None of them is a property management system.',
+          'HIVE, breakfast, the POS and the laundry cover people, food, restaurant sales and laundry. None of them is a property management system.',
           'So every group-level margin on this dashboard is understated by the whole of the rooms business, and the rooms themselves cannot be judged at all.',
         ].join(' '),
         action: 'Record nightly room revenue somewhere this tool can read — even a single figure a day in the breakfast app beside the guest count would close the gap.',

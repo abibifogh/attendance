@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS systems (
 );
 INSERT OR IGNORE INTO systems (id, label, description, sort_order) VALUES
   ('insight',    'Insight',            'The group''s numbers, all four systems at once.',            10),
-  ('attendance', 'Staff attendance',   'Attendance, rota and leave from the terminal at the door.',  20),
+  ('attendance', 'HIVE',              'Attendance, rota, leave, personnel records and letters.',    20),
   ('breakfast',  'Breakfast & rooms',  'Guests, breakfast stock, housekeeping rounds, maintenance.', 30),
   ('pos',        'Restaurant POS',     'Orders, kitchen, shifts and cash.',                          40),
   ('laundry',    'Laundry',            'Guest laundry, from drop-off to collection.',                50);

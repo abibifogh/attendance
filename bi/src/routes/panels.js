@@ -335,7 +335,7 @@ export async function cash(env, query) {
     },
     people,
     daily,
-    note: 'A person is named here only because attendance and the POS agree on who they are. Where the two systems were matched on a name alone rather than an employee number, the row says so.',
+    note: 'A person is named here only because HIVE and the POS agree on who they are. Where the two systems were matched on a name alone rather than an employee number, the row says so.',
   };
 }
 
@@ -434,7 +434,7 @@ export async function service(env, query) {
       fullTeamDays: fullDays.length,
       shortTeamDays: shortDays.length,
     },
-    note: 'Checks come from the housekeeping module; who was on duty comes from the attendance terminal. Neither application can see the other.',
+    note: 'Checks come from the housekeeping module; who was on duty comes from HIVE at the door. Neither application can see the other.',
   };
 }
 
