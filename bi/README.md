@@ -343,8 +343,10 @@ for now. Puts the password on the Worker and **generates the signing key
 itself** — that one never exists in GitHub, in a log or in anybody's password
 manager, only on the Worker.
 
-Then open the Worker's address, sign in with `INSIGHT_DASHBOARD_PASSWORD`, and
-press **Setup → Load and re-read now**. It starts in demonstration mode, so
+Then open the Worker's address — printed at the end of step 1's *Publish
+Insight* step, and again in the Cloudflare dashboard under **Workers & Pages →
+niceoperation-insight** — sign in with `INSIGHT_DASHBOARD_PASSWORD`, and press
+**Setup → Load and re-read now**. It starts in demonstration mode, so
 every screen has something on it before a single real system is connected.
 
 > Step 1 publishes rather than leaving that to the ordinary deploy, because a
@@ -411,7 +413,7 @@ those bindings commented out), then `npm run db:migrate`.
 
 ### Where it lives
 
-By default `niceoperation-insight.<your-subdomain>.workers.dev`. For a proper
+By default `niceoperation-insight.<your-account>.workers.dev` — the exact address is printed in the **Set up Insight** run, under its *Publish Insight* step. For a proper
 address, add a route block to `bi/wrangler.toml` the way the attendance app has
 one:
 
