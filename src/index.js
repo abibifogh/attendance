@@ -259,6 +259,50 @@ export const ROUTES = [
   ['POST', '/api/notices/seen', null, admin.markNoticesSeen],
 ];
 
+/**
+ * Serve one page from the assets, without letting the address move.
+ *
+ * The token in `/i/<token>` is the whole of the link, and the page reads it
+ * back out of the address bar. So the address bar has to still say what the
+ * person was sent — and asking the assets binding for `/invite.html` does not
+ * guarantee that. Static hosting tidies URLs: a request for a `.html` file is
+ * answered with a redirect to the extension-less form, which is a courtesy on
+ * an ordinary site and, here, throws the token away. The browser follows it to
+ * `/invite`, the page loads perfectly, and the first thing it does is look for
+ * a token in an address that no longer has one.
+ *
+ * That failure is worth spelling out because of how it reads from the outside:
+ * the person is told their link will not open, so they ask for another, which
+ * is built correctly, sent correctly, and fails in exactly the same way. There
+ * is nothing wrong with the link at any point.
+ *
+ * So any redirect is followed here instead of being handed on. What comes back
+ * is the page, at the address the person actually opened.
+ */
+async function servePage(env, url, request, path) {
+  const REDIRECTS = new Set([301, 302, 303, 307, 308]);
+  let target = new URL(path, url);
+
+  for (let hop = 0; hop < 4; hop += 1) {
+    const response = await env.ASSETS.fetch(new Request(target, {
+      method: 'GET',
+      headers: request.headers,
+    }));
+    if (!REDIRECTS.has(response.status)) return response;
+
+    const location = response.headers.get('Location');
+    // A redirect with nowhere to go, or one that leaves this site, is not ours
+    // to chase. Hand it back rather than guess.
+    if (!location) return response;
+    const next = new URL(location, target);
+    if (next.origin !== target.origin) return response;
+    target = next;
+  }
+
+  // Four hops and still moving is a misconfiguration, not a page.
+  return new Response('Not found', { status: 404 });
+}
+
 function match(pattern, pathname) {
   const want = pattern.split('/');
   // A trailing slash is the same address. Browsers, messaging apps and people
@@ -285,16 +329,17 @@ export default {
 
     // The link somebody is sent reads `/i/<token>` — short enough to type off a
     // screen and to survive being pasted into a message. It is one page, and
-    // the token is read back out of the address by the page itself.
+    // the token is read back out of the address by the page itself, which is
+    // why the address must not be allowed to change on the way.
     if (url.pathname.startsWith('/i/')) {
-      return env.ASSETS.fetch(new Request(new URL('/invite.html', url), request));
+      return servePage(env, url, request, '/invite.html');
     }
 
     // The same idea for a letter sent out for signature. A separate page from
     // the staff one: this is opened by suppliers, banks and guests, and the
     // less of the system it can reach the better.
     if (url.pathname.startsWith('/s/')) {
-      return env.ASSETS.fetch(new Request(new URL('/sign.html', url), request));
+      return servePage(env, url, request, '/sign.html');
     }
 
     // Arriving from the group hub with a hand-off code. Not under /api/

@@ -533,6 +533,31 @@ form that leaks it to whoever is holding the phone.
 > the single most destructive thing a self-service form can do, and it is the
 > one rule in here with its own test.
 
+#### The address must not move
+
+The token *is* the link. The page reads it back out of the address bar, which
+means anything that changes the address on the way in throws it away — and the
+failure that follows is unusually misleading, because nothing is wrong with the
+link at any point.
+
+Static hosting tidies URLs by habit. A request for `/invite.html` is answered
+with a redirect to `/invite`, which is a courtesy on an ordinary site and fatal
+here: the browser follows it, the page loads perfectly, and the first thing it
+does is look for a token in an address that no longer has one. The person is
+told their link will not open, asks for another, and the replacement is built
+correctly, sent correctly and fails identically.
+
+So `servePage()` in `src/index.js` follows any redirect the assets binding
+returns *internally* and hands back the page, at the address the person
+actually opened. Off-site redirects are not chased and a loop stops after four
+hops. If nothing redirects, nothing changes.
+
+The page has its own half of this. It takes the token from the segment *after*
+`/i/` rather than from the end of the address, so it survives any prefix — and,
+more to the point, an address with no `/i/` in it yields no token at all rather
+than the word `invite`. That distinction is the difference between telling
+somebody their address lost its code and telling them their link expired.
+
 #### The site address, and why it is only ever an origin
 
 Every link the property sends — `/i/<token>` here, `/s/<token>` for a letter

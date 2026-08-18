@@ -121,15 +121,28 @@ test('the page finds the token however many segments are in front of it', async 
   // database holds only a hash of the token, so a link that cannot be opened
   // cannot be reissued either — it has to be made again from scratch, for
   // everybody who was sent one.
-  const { lastSegment } = await import('./helpers/last-segment.js');
+  const { tokenFrom } = await import('./helpers/last-segment.js');
 
   const token = 'a'.repeat(48);
-  assert.equal(lastSegment(`/i/${token}`, 'i'), token);
-  assert.equal(lastSegment(`/i/${token}/`, 'i'), token, 'a trailing slash');
-  assert.equal(lastSegment(`/i/i/${token}`, 'i'), token, 'the doubled path this bug produced');
-  assert.equal(lastSegment(`/app/i/${token}`, 'i'), token, 'or any other prefix');
-  assert.equal(lastSegment('/i/', 'i'), '', 'and the prefix alone is not a token');
-  assert.equal(lastSegment('/i', 'i'), '', 'with or without the slash');
+  assert.equal(tokenFrom(`/i/${token}`, 'i'), token);
+  assert.equal(tokenFrom(`/i/${token}/`, 'i'), token, 'a trailing slash');
+  assert.equal(tokenFrom(`/i/i/${token}`, 'i'), token, 'a doubled path');
+  assert.equal(tokenFrom(`/app/i/${token}`, 'i'), token, 'or any other prefix');
+});
+
+test('an address with no code in it is an address fault, not an expired link', async () => {
+  // The distinction that matters most on this page. Reading the last segment
+  // of `/invite` gives the word "invite", which looks enough like a token to
+  // be asked about — and the person is then told their link has expired, asks
+  // for another, and it fails identically. Nothing was ever wrong with it.
+  const { tokenFrom } = await import('./helpers/last-segment.js');
+
+  assert.equal(tokenFrom('/invite', 'i'), '');
+  assert.equal(tokenFrom('/invite.html', 'i'), '');
+  assert.equal(tokenFrom('/i/', 'i'), '');
+  assert.equal(tokenFrom('/i', 'i'), '');
+  assert.equal(tokenFrom('/sign', 's'), '');
+  assert.equal(tokenFrom(`/s/${'b'.repeat(48)}`, 's'), 'b'.repeat(48));
 });
 
 test('the API answers a token with a trailing slash rather than calling it unknown', async () => {
@@ -149,4 +162,88 @@ test('the page is still served for a link with an extra segment in it', async ()
   const { env } = setup();
   const res = await get(env, `/i/i/${'a'.repeat(48)}`);
   assert.equal(await res.text(), 'ASSET /invite.html');
+});
+
+// ---------------------------------------------------------------------------
+// The address must not move
+// ---------------------------------------------------------------------------
+
+test('the page is served without ever redirecting the browser', async () => {
+  // The one that caused this. The token is the whole of the link and the page
+  // reads it back out of the address bar, so anything that changes the address
+  // on the way in throws it away. Static hosting tidies URLs by habit: a
+  // request for `/invite.html` comes back as a redirect to `/invite`, which is
+  // a courtesy on an ordinary site and fatal here.
+  const { env } = setup();
+  const seen = [];
+  env.ASSETS = {
+    fetch: async (req) => {
+      const { pathname } = new URL(req.url);
+      seen.push(pathname);
+      // Exactly what Cloudflare's asset handling does with an .html request.
+      if (pathname.endsWith('.html')) {
+        return new Response(null, {
+          status: 307,
+          headers: { Location: pathname.replace(/\.html$/, '') },
+        });
+      }
+      return new Response(`PAGE ${pathname}`, { status: 200 });
+    },
+  };
+
+  const token = 'a'.repeat(48);
+  const res = await get(env, `/i/${token}`);
+
+  assert.equal(res.status, 200, 'the browser is handed a page, never a redirect');
+  assert.equal(await res.text(), 'PAGE /invite');
+  assert.deepEqual(seen, ['/invite.html', '/invite'], 'the hop was followed here instead');
+});
+
+test('a letter link is served the same way', async () => {
+  const { env } = setup();
+  env.ASSETS = {
+    fetch: async (req) => {
+      const { pathname } = new URL(req.url);
+      return pathname.endsWith('.html')
+        ? new Response(null, { status: 308, headers: { Location: pathname.replace(/\.html$/, '') } })
+        : new Response(`PAGE ${pathname}`, { status: 200 });
+    },
+  };
+
+  const res = await get(env, `/s/${'b'.repeat(48)}`);
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), 'PAGE /sign');
+});
+
+test('a redirect that goes nowhere, or off the site, is not chased', async () => {
+  const { env } = setup();
+  env.ASSETS = {
+    fetch: async () => new Response(null, {
+      status: 302,
+      headers: { Location: 'https://somewhere.else.test/invite' },
+    }),
+  };
+
+  const res = await get(env, `/i/${'a'.repeat(48)}`);
+  assert.equal(res.status, 302, 'handed back rather than followed off-site');
+});
+
+test('a redirect loop ends rather than hanging', async () => {
+  const { env } = setup();
+  env.ASSETS = {
+    fetch: async (req) => new Response(null, {
+      status: 307,
+      headers: { Location: `${new URL(req.url).pathname}x` },
+    }),
+  };
+
+  const res = await get(env, `/i/${'a'.repeat(48)}`);
+  assert.equal(res.status, 404);
+});
+
+test('a page served straight through is passed on untouched', async () => {
+  const { env } = setup();
+  const res = await get(env, `/i/${'a'.repeat(48)}`);
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), 'ASSET /invite.html', 'no redirect, no change in behaviour');
 });
