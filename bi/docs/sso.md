@@ -4,10 +4,19 @@ Five systems, one sign-in. Somebody signs in to Insight, clicks a system on the
 hub, and arrives there already signed in — as themselves, with whatever that
 system says they may do.
 
-This document is the protocol, and then the thirty lines each system needs to
-accept it. **Attendance already has them** (`src/lib/sso-consumer.js` in this
-repository). The breakfast app, the POS and the laundry live in their own
-repositories, so their handlers are written out below to be pasted in.
+This document is the protocol. **All four systems now implement it**, each in
+its own repository:
+
+| System | Where its handler lives |
+|---|---|
+| Attendance | `src/lib/sso-consumer.js` in this repository |
+| Breakfast | `src/lib/sso-consumer.js` in `abibifogh/stockcheck` |
+| Laundry | `netlify/functions/lib/sso.js` in `abibifogh/snlaundry` |
+| Restaurant POS | `functions/notify/src/sso.js` in `abibifogh/snpos` |
+
+The sketches further down are kept because they are the shortest statement of
+what a consumer has to do. Each real implementation differs from its sketch in
+ways particular to that system, and the repository is what is running.
 
 ---
 
@@ -274,6 +283,13 @@ export async function handler(event) {
   status = 200
 ```
 
+Two things the sketch above gets wrong about the real laundry, and the shipped
+handler gets right. The key is `laundry_token`, not `token` — writing the wrong
+one produces a page that looks like it worked and an app that still asks for a
+PIN. And `JSON.stringify` is not enough to put a value inside a `<script>`: it
+leaves `</script>` intact, and an HTML parser ends the script there whatever
+JavaScript makes of it.
+
 Set `INSIGHT_SSO_URL` and `INSIGHT_SSO_SECRET` under **Site settings →
 Environment variables**.
 
@@ -339,36 +355,52 @@ export default async ({ req, res, log }) => {
 };
 ```
 
-The POS front end already has to finish the exchange:
+Three things the sketch above gets wrong about the real POS, and the shipped
+handler gets right.
 
-```js
-// wherever the app boots
-const params = new URLSearchParams(location.search);
-if (params.has('userId') && params.has('secret')) {
-  await account.createSession(params.get('userId'), params.get('secret'));
-  history.replaceState({}, '', location.pathname);   // drop the secret from the address
-}
-```
+**A user is not a member of staff.** Appwrite has a user for every guest who
+ever scanned a table sticker, so `users.list([Query.equal('email', …)])`
+answering is not the same as somebody being staff. The shipped handler also
+checks team membership — `cooks`, `waiters`, `cashiers`, `managers`, `admins` —
+because a session minted for a customer is one the app bounces on arrival, which
+reads as a broken link rather than as a missing invitation.
+
+**It lands on `#/sso`, not `/`.** The POS's admin app already redeems
+`userId`+`secret` on `#/token`, but that route then asks the arrival to choose a
+password — right for a staff invitation, wrong for somebody who signed in a
+moment ago at the hub. `#/sso` signs them in and opens the app.
+
+**It lives inside the existing `notify` function.** The Appwrite plan allows
+four functions and that project has four, so a fifth was never available.
 
 In `appwrite.json`, give the function `"execute": ["any"]` and a domain, and set
 `INSIGHT_SSO_URL`, `INSIGHT_SSO_SECRET` and `POS_APP_URL` as function variables.
+`any` is required because the person following a hand-off link has no account
+there yet — it lets Appwrite *run* the function for anybody, and nothing more.
 
 ---
 
 ## Setting it up
 
-On Insight, one secret per system:
+One secret per system, **different values**. Sharing one across systems throws
+away the property that a compromised system cannot mint sessions on the others.
 
-```bash
-wrangler secret put SSO_SECRET_ATTENDANCE
-wrangler secret put SSO_SECRET_BREAKFAST
-wrangler secret put SSO_SECRET_POS
-wrangler secret put SSO_SECRET_LAUNDRY
-```
+Two of the four need no hand at all. Attendance and breakfast are Workers on the
+same Cloudflare account as Insight, so **Actions → Set Insight's secrets**
+generates each shared secret and writes it to both ends itself. Nobody reads
+those values, including that workflow's log.
 
-Generate each one with `openssl rand -base64 32`. **Different values.** Sharing
-one across systems throws away the property that a compromised system cannot
-mint sessions on the others.
+The other two are on Appwrite and Netlify, which those credentials do not reach:
+
+| System | On Insight | On the far end |
+|---|---|---|
+| Restaurant POS | repository secret `INSIGHT_SSO_SECRET_POS`, then run the workflow | `INSIGHT_SSO_SECRET` as a variable on the `notify` function |
+| Laundry | repository secret `INSIGHT_SSO_SECRET_LAUNDRY`, then run the workflow | `INSIGHT_SSO_SECRET` under Netlify → Environment variables |
+
+Generate each with `openssl rand -base64 32` and paste the same value into both
+boxes. Until that is done Insight says *"SSO_SECRET_POS is not set"* on the hub,
+which is correct rather than broken: the far end of that hand-off is in another
+repository, so Insight cannot generate it alone.
 
 Then in **Accounts → Where each system lives**, set each system's sign-in
 address (its `/sso`) and switch the hand-off on. The hub says plainly which
