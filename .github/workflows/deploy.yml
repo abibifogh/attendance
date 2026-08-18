@@ -121,3 +121,67 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: d1 execute attendance --remote --command "SELECT (SELECT COUNT(*) FROM users) AS logins, (SELECT COUNT(*) FROM att_staff) AS staff, (SELECT COUNT(*) FROM att_shifts) AS shifts, (SELECT COUNT(*) FROM att_devices) AS terminals, (SELECT COUNT(*) FROM att_punches) AS punches"
+
+  # Publishing the reporting layer, once it has been set up.
+  #
+  # Dormant until two things are true: Cloudflare credentials exist, and
+  # bi/wrangler.toml no longer carries its placeholder database id. Until then
+  # this skips quietly and says why, rather than turning the build red on every
+  # save for a thing nobody has switched on yet.
+  deploy-insight:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: insight
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-insight
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is it set up yet?
+        id: ready
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CF_TOKEN" ] || [ -z "$CF_ACCOUNT" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "### Insight not published — no Cloudflare credentials" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if grep -q 'REPLACE_WITH_YOUR' bi/wrangler.toml; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Insight not published yet"
+              echo ""
+              echo 'bi/wrangler.toml still has a placeholder database id. Run `npm run setup`'
+              echo 'in bi/, commit the change, and this will publish on the next push.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        if: steps.ready.outputs.ready == 'true'
+        with:
+          node-version: 22
+
+      # Migrations before the deploy, so new code never meets an old schema.
+      # Every migration is written to be safe to re-apply.
+      - name: Apply the warehouse's database changes
+        if: steps.ready.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: bi
+          command: d1 migrations apply insight --remote
+
+      - name: Publish Insight
+        if: steps.ready.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: bi
+          command: deploy

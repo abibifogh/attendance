@@ -313,100 +313,87 @@ the tool look as though it were inventing connections.
 
 ## Setup
 
-Six steps, and the first four are the same as any Worker.
-
-### 1. Create the warehouse
+### The short version
 
 ```bash
 cd bi
 npm install
-npm run db:create
-```
+npm run setup                          # creates the database, wires it up, migrates
 
-Put the database id it prints into `wrangler.toml`, under the `DB` binding.
+npx wrangler secret put SESSION_SECRET       # openssl rand -base64 32
+npx wrangler secret put DASHBOARD_PASSWORD   # what you will type the first time
 
-### 2. Bind the two databases it reads
-
-In `wrangler.toml` there are two more `[[d1_databases]]` blocks, `ATT_DB` and
-`BREAKFAST_DB`. Fill in the ids of the attendance and breakfast databases —
-`wrangler d1 list` prints them. If a property does not run the breakfast app,
-delete that block; the app copes, and says on every screen what it is missing.
-
-### 3. Run the migrations
-
-```bash
-npm run db:migrate
-```
-
-### 4. Publish it
-
-```bash
 npm run deploy
 ```
 
-### 5. Set the secrets
+Open the site, sign in with `DASHBOARD_PASSWORD`, and press **Setup → Load and
+re-read now**. It starts in demonstration mode, so every screen has something on
+it before a single real system is connected.
+
+`npm run setup` is safe to run again. It creates a D1 database called `insight`
+if there is not one already, finds the `attendance` and `breakfast` databases on
+your account and binds them, switches off any binding whose database does not
+exist — so a missing app cannot fail the deploy — applies the migrations, and
+then prints what is left for you.
+
+### What is left for you, in the order it is worth doing
+
+Everything below is optional and each step stands on its own. The app works
+after each one and says on screen what it still cannot see.
+
+**Make yourself an account.** Sign in with the shared password, go to
+**Accounts**, add yourself as an owner and set a password. The shared password
+still works as a way back in, but it deliberately cannot be handed over to
+another system — a password out of a config file is not a person.
+
+**Connect the POS and the laundry.**
 
 ```bash
-wrangler secret put SESSION_SECRET       # anything long and random
-wrangler secret put DASHBOARD_PASSWORD   # what you will type to sign in
+npx wrangler secret put POS_REPORTS_KEY   # the POS's own REPORTS_API_KEY
+npx wrangler secret put LAUNDRY_TOKEN     # a laundry staff token
 ```
 
-Both are needed. With neither, the app refuses everybody rather than letting
-everybody in — an app that opens itself when misconfigured is worse than one
-that locks its owner out until they set a password.
+Then put each one's address in under **Setup → The four systems**. The POS's
+reporting API ships switched off — set `"execute": ["any"]` on its notify
+function and deploy it, or it will answer 503 and this will say so.
 
-Optionally, for the two HTTP sources:
+**Leave demonstration mode.** Once one real source is reading, **Setup → Switch
+demonstration mode off**. The invented figures stay until the next load
+overwrites them, so switching it off by accident costs nothing.
 
-```bash
-wrangler secret put POS_REPORTS_KEY      # the POS's REPORTS_API_KEY
-wrangler secret put LAUNDRY_TOKEN        # a laundry staff token
-```
+**Join the systems up for single sign-on**, one at a time. See
+[docs/sso.md](docs/sso.md) — attendance needs only two secrets because its
+handler is already written; the other three need about thirty lines each.
 
-**Keys are never typed into the Setup screen and never will be.** A secret
-typed into a web form is a secret in a browser history, a proxy log and a
-database export. The screen takes an address, which is configuration.
+**Map any Supabase databases** under **Setup → Databases you have mapped
+yourself**.
 
-### 6. Make yourself an account
+### If you would rather do it by hand
 
-Sign in with `DASHBOARD_PASSWORD`, go to **Accounts**, add yourself as an owner
-and set a password. The shared password still works as a way back in, but it
-deliberately cannot be handed over to another system — a password out of a
-config file is not a person, and it should not be able to open a till under
-somebody's name.
+`npm run setup` does exactly this, and nothing else:
 
-Then add everybody else and tick the systems each may reach.
+1. `npx wrangler d1 create insight`, then the printed id into `wrangler.toml`
+   under the `DB` binding.
+2. The ids of the `attendance` and `breakfast` databases (`npx wrangler d1 list`)
+   into the `ATT_DB` and `BREAKFAST_DB` bindings — or comment a binding out if
+   that app does not exist.
+3. `npm run db:migrate`.
 
-### 7. Join the systems up, one at a time
+### Publishing from GitHub
 
-Give each system its own secret:
+Once `bi/wrangler.toml` has real database ids committed, the workflow in
+`.github/workflows/deploy.yml` publishes this on every push to the default
+branch, alongside the attendance app. Until then it skips and says why in the
+build summary, rather than turning the build red for something nobody has
+switched on yet.
 
-```bash
-wrangler secret put SSO_SECRET_ATTENDANCE   # openssl rand -base64 32
-```
-
-Set the same value on that system, add its `/sso` address under **Accounts →
-Where each system lives**, and tick the hand-off. [docs/sso.md](docs/sso.md) has
-the handler each system needs. Do them one at a time; the hub says plainly which
-are joined up and which still ask for a password.
-
-### 8. Load it
-
-Open the app, sign in, go to **Setup**, and press *Load and re-read now*. After
-that it runs itself at 00:45 Accra time every night.
-
-The nightly run reaches **ten days back**, not one. Every one of these four
-systems accepts a late correction — a punch that arrives this morning belongs
-to Tuesday, an invoice is entered on Friday for Monday's delivery — and loading
-only yesterday would freeze all of that at whatever it happened to be at
-midnight. A reload replaces a day rather than adding to it, so running it twice
-is safe and is the standard fix for "these numbers look wrong".
-
----
+Secrets are never in the repository — set them with `wrangler secret put` as
+above. They survive redeploys.
 
 ## Development
 
 ```bash
-npm test        # 81 tests, no network, no fixtures to keep in step
+npm test        # 93 tests, no network, no fixtures to keep in step
 npm run dev     # wrangler dev
 ```
 
@@ -437,6 +424,7 @@ src/
     rules/           labour, demand, cash, supply, service
   routes/            the panels behind each screen, plus accounts
   fixtures/demo.js   the invented hotel
+scripts/setup.mjs    one command instead of four fiddly ones
 public/              the dashboard and the hub: no framework, no build step
 docs/sso.md          the hand-off protocol, and a handler per platform
 ```
