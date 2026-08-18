@@ -1,3 +1,4 @@
+import { originOf } from './site.js';
 import { getVapidKeys, sendPush } from './push.js';
 import { isMissingTable } from './http.js';
 
@@ -163,11 +164,11 @@ export async function pingExceptions(db, { day, open, absent, escalated = [] }) 
     const vapid = await getVapidKeys(db);
     const subject = settings.email_from && settings.email_from.includes('@')
       ? `mailto:${settings.email_from.replace(/^.*<|>.*$/g, '').trim()}`
-      : (settings.site_url || 'https://example.com');
+      : (originOf(settings.site_url) || 'https://example.com');
 
     const message = JSON.stringify({
       ...ping,
-      url: `${settings.site_url || ''}/#/att-today?day=${day}`,
+      url: `${originOf(settings.site_url)}/#/att-today?day=${day}`,
     });
 
     let sent = 0;
@@ -231,7 +232,7 @@ export async function emailExceptions(db, env, { day, open, absent, escalated = 
     const { subject, html } = renderDigest({
       day,
       propertyName: settings.property_name || 'HIVE',
-      siteUrl: settings.site_url,
+      siteUrl: originOf(settings.site_url),
       open,
       absent,
       escalated,

@@ -1,3 +1,4 @@
+import { originOf } from '../lib/site.js';
 import { badRequest, json, readJson, str } from '../lib/http.js';
 import { getVapidKeys, sendPush } from '../lib/push.js';
 
@@ -96,13 +97,13 @@ export async function test(ctx) {
   const message = JSON.stringify({
     title: settings.property_name || 'HIVE',
     body: 'Test alert. This is what you will see when a day needs confirming.',
-    url: `${settings.site_url || ''}/#/att-today`,
+    url: `${originOf(settings.site_url)}/#/att-today`,
   });
 
   const vapid = await getVapidKeys(ctx.db);
   const subject = settings.email_from && settings.email_from.includes('@')
     ? `mailto:${settings.email_from.replace(/^.*<|>.*$/g, '').trim()}`
-    : (settings.site_url || 'https://example.com');
+    : (originOf(settings.site_url) || 'https://example.com');
 
   const result = await sendPush(sub, message, vapid, subject);
 

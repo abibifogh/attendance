@@ -107,6 +107,11 @@ jobs:
       # What the database actually looks like afterwards, in the run summary. A
       # schema change nobody can see is a schema change nobody trusts.
       #
+      # The site address is in there because every link the property sends out
+      # is built on it, and a path left on the end of it breaks all of them at
+      # once in a way that reads to the person holding the link as "this has
+      # expired". It is the address of a public web page — nothing secret.
+      #
       # Two things learned the hard way. The SQL stays on one line: a YAML
       # folded block keeps the newline before any line indented further than the
       # first, so a prettily-aligned query arrives at the shell in pieces and
@@ -120,7 +125,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: d1 execute attendance --remote --command "SELECT (SELECT COUNT(*) FROM users) AS logins, (SELECT COUNT(*) FROM att_staff) AS staff, (SELECT COUNT(*) FROM att_shifts) AS shifts, (SELECT COUNT(*) FROM att_devices) AS terminals, (SELECT COUNT(*) FROM att_punches) AS punches"
+          command: d1 execute attendance --remote --command "SELECT (SELECT COUNT(*) FROM users) AS logins, (SELECT COUNT(*) FROM att_staff) AS staff, (SELECT COUNT(*) FROM att_shifts) AS shifts, (SELECT COUNT(*) FROM att_devices) AS terminals, (SELECT COUNT(*) FROM att_punches) AS punches, (SELECT value FROM settings WHERE key = 'site_url') AS site_url"
 
   # Publishing the reporting layer, once it has been set up.
   #

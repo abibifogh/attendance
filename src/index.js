@@ -261,7 +261,11 @@ export const ROUTES = [
 
 function match(pattern, pathname) {
   const want = pattern.split('/');
-  const got = pathname.split('/');
+  // A trailing slash is the same address. Browsers, messaging apps and people
+  // retyping a link off a screen all add one, and answering "unknown endpoint"
+  // to `/api/i/<token>/` is a 404 that reads like a broken link rather than a
+  // stray character.
+  const got = (pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname).split('/');
   if (want.length !== got.length) return null;
   const params = [];
   for (let i = 0; i < want.length; i++) {

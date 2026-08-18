@@ -1,3 +1,4 @@
+import { originOf } from '../lib/site.js';
 import { badRequest, bool, json, notFound, readJson, str } from '../lib/http.js';
 import {
   getPepper, hashPin, isReservedPin, normaliseEmail, storedPassword,
@@ -308,7 +309,11 @@ export async function getNotifications(ctx) {
     inAppEnabled: settings.notices_enabled !== '0',
     recipients: parseRecipients(settings.att_email_to),
     from: settings.email_from || '',
-    siteUrl: settings.site_url || '',
+    // Shown as the origin it will actually be used as, not as whatever is
+    // stored. A path left in this box is neutralised everywhere it is read,
+    // but a box that keeps displaying it invites somebody to conclude the
+    // setting is fine and go looking for the fault somewhere else.
+    siteUrl: originOf(settings.site_url) || '',
     // The key itself is never returned — only whether one is present.
     providerConfigured: Boolean(ctx.env.RESEND_API_KEY),
     devices: devices.results ?? [],
@@ -352,7 +357,11 @@ export async function updateNotifications(ctx) {
     setting(ctx.db, 'att_email_enabled', emailEnabled),
     setting(ctx.db, 'att_email_to', JSON.stringify(list)),
     setting(ctx.db, 'email_from', from),
-    setting(ctx.db, 'site_url', siteUrl.replace(/\/+$/, '')),
+    // Stored as an origin, not as whatever was in the address bar when
+    // somebody filled the box in. A path left on the end here reappears in the
+    // middle of every link the property sends out, and the person holding the
+    // link is the one who finds out.
+    setting(ctx.db, 'site_url', originOf(siteUrl)),
     setting(ctx.db, 'push_on_exception', pushEnabled),
     setting(ctx.db, 'notices_enabled', inApp),
   ]);

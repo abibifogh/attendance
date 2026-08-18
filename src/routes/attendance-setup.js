@@ -1,3 +1,4 @@
+import { siteOrigin } from '../lib/site.js';
 import {
   badRequest, bool, int, json, notFound, num, readJson, rethrowConstraint, str,
 } from '../lib/http.js';
@@ -566,11 +567,6 @@ export async function listDevices(ctx) {
  * property who never filled the setting in still gets a working URL rather than
  * a placeholder they would have to notice and correct.
  */
-async function siteOrigin(ctx) {
-  const row = await ctx.db.prepare("SELECT value FROM settings WHERE key = 'site_url'")
-    .first().catch(() => null);
-  return row?.value || ctx.url.origin;
-}
 
 /** A token the poller will carry. Shown once, stored only as a hash. */
 function newToken() {
@@ -612,7 +608,7 @@ export async function createDevice(ctx) {
     serial,
     token,
     mode,
-    listening: listeningHostSettings({ siteUrl: await siteOrigin(ctx), token }),
+    listening: listeningHostSettings({ siteUrl: await siteOrigin(ctx.db, ctx.url.origin), token }),
   });
 }
 
@@ -631,7 +627,7 @@ export async function rotateToken(ctx, id) {
     serial: device.serial,
     token,
     mode: device.mode,
-    listening: listeningHostSettings({ siteUrl: await siteOrigin(ctx), token }),
+    listening: listeningHostSettings({ siteUrl: await siteOrigin(ctx.db, ctx.url.origin), token }),
   });
 }
 

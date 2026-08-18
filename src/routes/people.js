@@ -1,3 +1,4 @@
+import { siteOrigin } from '../lib/site.js';
 import {
   badRequest, bool, int, json, notFound, readJson, str,
 } from '../lib/http.js';
@@ -450,11 +451,6 @@ function newToken() {
 const hashInviteToken = (token, pepper) => hashPin(`hr-invite:${token}`, pepper);
 const hashInvitePin = (pin, pepper) => hashPin(`hr-invite-pin:${pin}`, pepper);
 
-async function siteOrigin(ctx) {
-  const row = await ctx.db.prepare("SELECT value FROM settings WHERE key = 'site_url'")
-    .first().catch(() => null);
-  return (row?.value || ctx.url.origin).replace(/\/+$/, '');
-}
 
 /**
  * Make a link for one person.
@@ -522,11 +518,11 @@ export async function createInvite(ctx, id) {
   return json({
     ok: true,
     id: created.id,
-    url: `${await siteOrigin(ctx)}/i/${token}`,
+    url: `${await siteOrigin(ctx.db, ctx.url.origin)}/i/${token}`,
     pin,
     expiresInDays: days,
     // Written out so it can be pasted straight into a message.
-    message: linkMessage(person.name, `${await siteOrigin(ctx)}/i/${token}`, wantsDetails, contractIds.length),
+    message: linkMessage(person.name, `${await siteOrigin(ctx.db, ctx.url.origin)}/i/${token}`, wantsDetails, contractIds.length),
   });
 }
 

@@ -533,6 +533,34 @@ form that leaks it to whoever is holding the phone.
 > the single most destructive thing a self-service form can do, and it is the
 > one rule in here with its own test.
 
+#### The site address, and why it is only ever an origin
+
+Every link the property sends — `/i/<token>` here, `/s/<token>` for a letter
+out for signature, `/#/att-today` in a notification — is this address with a
+path stuck on the end. The address comes from **Users & data → Notifications**,
+which is a text box somebody typed into once, and what gets typed into a box
+like that is whatever was in the address bar at the time.
+
+A path left in it does not fail loudly, which is what makes it worth a section.
+`https://staff.niceoperation.com/i` produces `/i/i/<token>`. That link serves
+the page perfectly, the page runs, and only the API call underneath it lands on
+nothing — so the person holding a link that is minutes old is told it has
+expired, and asks for another one built exactly the same way.
+
+So the setting is reduced to an origin in one place, `src/lib/site.js`, on the
+way in and on the way out: parsed, host kept, everything else discarded, `https`
+assumed when no scheme was typed. The Notifications screen shows the origin
+rather than what is stored, because a box still displaying the path invites
+somebody to decide the setting is fine and go looking elsewhere. And the deploy
+prints it into the run summary next to the row counts, since it is the address
+of a public web page and one glance rules it out.
+
+The two public pages take the token from the **last** segment of the address
+rather than by stripping the prefix off the front. That is deliberate belt and
+braces: links already sent cannot be reissued — only a hash of each one is
+stored — so a fix that only corrected future links would leave every outstanding
+one dead.
+
 ### What is held, and who may read it
 
 Personal details, address and GhanaPost GPS, identification (Ghana Card, SSNIT,

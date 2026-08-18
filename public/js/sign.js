@@ -16,7 +16,36 @@ import { signaturePad } from './fields.js';
  */
 
 const root = document.getElementById('sign');
-const token = decodeURIComponent(location.pathname.replace(/^\/s\//, '').replace(/\/+$/, ''));
+/**
+ * The token, taken as the last thing in the address.
+ *
+ * Not by stripping `/s/` off the front, which was the obvious way and the wrong
+ * one: it assumes the link was built on a bare origin, and the setting the
+ * links are built from is a text box somebody typed their address into once. A
+ * path left in that box puts an extra segment in the middle of every link the
+ * property sends, the page still loads, and the token then arrives carrying a
+ * slash — which matches no route at all, so the person is told their link has
+ * expired when it is minutes old.
+ *
+ * The setting is fixed at the other end too, but links already sent cannot be
+ * shown again and have to keep working. The last segment is the token under
+ * every reading of the address, so that is what this takes.
+ */
+const token = lastSegment(location.pathname, 's');
+
+function lastSegment(pathname, prefix) {
+  const parts = pathname.split('/').filter(Boolean);
+  const last = parts[parts.length - 1] ?? '';
+  // `/s/` on its own carries no token. Without this the prefix reads as one
+  // and the page reports a dead link rather than an incomplete address.
+  const raw = last === prefix ? '' : last;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    // A stray % in a forwarded link is not a reason to show a blank page.
+    return raw;
+  }
+}
 
 let packet = null;
 
@@ -25,7 +54,7 @@ start();
 async function start() {
   if (!token) return fail('This link is not complete. Ask for it to be sent again.');
   try {
-    const head = await call(`/api/s/${token}`, null, 'GET');
+    const head = await call(`/api/s/${encodeURIComponent(token)}`, null, 'GET');
     if (head.done) return alreadyDone(head);
     if (head.needsCode) return askForCode(head);
     await open(null);
@@ -84,7 +113,7 @@ function askForCode(head) {
 }
 
 async function open(code) {
-  packet = await call(`/api/s/${token}/open`, { code });
+  packet = await call(`/api/s/${encodeURIComponent(token)}/open`, { code });
   draw();
 }
 
@@ -128,7 +157,7 @@ function draw() {
     button.disabled = true;
     button.textContent = 'Sending…';
     try {
-      const out = await call(`/api/s/${token}/code`, {});
+      const out = await call(`/api/s/${encodeURIComponent(token)}/code`, {});
       codeSent = true;
       drawOtp();
       toast(`Sent to ${out.sentTo}. It lasts fifteen minutes.`, 'good');
@@ -149,7 +178,7 @@ function draw() {
     button.disabled = true;
     button.textContent = 'Signing…';
     try {
-      await call(`/api/s/${token}/sign`, {
+      await call(`/api/s/${encodeURIComponent(token)}/sign`, {
         name: typed.trim() || packet.you.name,
         ink: pad.read(),
         hash: packet.letter.hash,
@@ -169,7 +198,7 @@ function draw() {
     const why = window.prompt('You do not have to sign. Tell the sender why, if you want to:');
     if (why === null) return;
     try {
-      await call(`/api/s/${token}/decline`, { note: why });
+      await call(`/api/s/${encodeURIComponent(token)}/decline`, { note: why });
       mount(root, shell(packet.property,
         h('div.card.card-done',
           h('div.done-mark', '×'),
@@ -197,9 +226,9 @@ function draw() {
 
     h('div.card',
       packet.letter.source === 'uploaded'
-        ? h('object.scan', { data: `/api/s/${token}/file`, type: 'application/pdf' },
+        ? h('object.scan', { data: `/api/s/${encodeURIComponent(token)}/file`, type: 'application/pdf' },
           h('p.muted', 'Your browser will not show this here. ',
-            h('a', { href: `/api/s/${token}/file`, target: '_blank', rel: 'noopener' },
+            h('a', { href: `/api/s/${encodeURIComponent(token)}/file`, target: '_blank', rel: 'noopener' },
               'Open the document'), '.'))
         : h('pre.contract-text', packet.letter.body || ''),
     ),
@@ -287,8 +316,17 @@ function fail(message) {
     h('div.card',
       h('h2', 'This link will not open'),
       h('p', message),
-      h('p.muted', 'Links are private to one person and stop working after a few weeks. '
-        + 'Ask whoever sent it for a new one.'),
+      // Two different faults, and telling somebody the wrong one sends them to
+      // ask for a new link that will fail in exactly the same way. A server
+      // that does not recognise the address at all is not a link that has run
+      // out; it is a link that arrived wrong, and the address is worth reading
+      // back to whoever sent it.
+      /unknown endpoint/i.test(message)
+        ? h('p.muted', 'The address does not look right to the server. Check it was copied in '
+          + 'full, and send whoever gave it to you the whole line from your address bar — '
+          + `it should read …/${location.pathname.split('/').filter(Boolean)[0] ?? ''}/ and then one long code.`)
+        : h('p.muted', 'Links are private to one person and stop working after a few weeks. '
+          + 'Ask whoever sent it for a new one.'),
     ),
   ));
 }

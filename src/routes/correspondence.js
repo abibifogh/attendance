@@ -1,3 +1,4 @@
+import { siteOrigin } from '../lib/site.js';
 import {
   badRequest, forbidden, int, json, notFound, readJson, str,
 } from '../lib/http.js';
@@ -510,11 +511,6 @@ function newAccessCode() {
 export const hashSignToken = (token, pepper) => hashPin(`corr-sign:${token}`, pepper);
 export const hashAccessCode = (code, pepper) => hashPin(`corr-code:${String(code).toUpperCase()}`, pepper);
 
-async function siteOrigin(ctx) {
-  const row = await ctx.db.prepare("SELECT value FROM settings WHERE key = 'site_url'")
-    .first().catch(() => null);
-  return (row?.value || ctx.url.origin).replace(/\/+$/, '');
-}
 
 /**
  * Send a letter out for signature.
@@ -539,7 +535,7 @@ export async function sendForSignature(ctx, id) {
     min: 1, max: 90, fallback: Number(await setting(ctx.db, 'corr_link_days', 14)),
   });
   const pepper = await getPepper(ctx.db);
-  const origin = await siteOrigin(ctx);
+  const origin = await siteOrigin(ctx.db, ctx.url.origin);
 
   const made = [];
   let seq = Number((await ctx.db.prepare(
