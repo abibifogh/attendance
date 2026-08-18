@@ -15,6 +15,7 @@ import { renderPeople } from './views/people.js';
 import { renderPerson } from './views/person.js';
 import { renderPeopleTemplates } from './views/people-templates.js';
 import { renderPeopleForm } from './views/people-form.js';
+import { renderGuide } from './views/guide.js';
 import { renderContract } from './views/contract.js';
 import { renderLetters } from './views/letters.js';
 import { renderLetter } from './views/letter.js';
@@ -29,6 +30,10 @@ export const state = {
   isRecovery: false,
   permissions: [],
   settings: {},
+  // What the permissions and roles are called, sent with the session so the
+  // guide can name one the reader does not hold.
+  permissionLabels: {},
+  roleLabels: {},
 };
 
 /**
@@ -48,6 +53,10 @@ const ROUTES = [
   { path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters },
   { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
+  // Last in the menu and reachable by everybody. What it contains is filtered
+  // to what the reader actually holds, so it is short for a supervisor and
+  // long for an administrator without either of them being sent elsewhere.
+  { path: 'guide', label: 'Guide', permission: null, render: renderGuide },
   // Reached by clicking a name rather than from the menu.
   { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, hidden: true },
   { path: 'person', label: 'Record', permission: 'hr_view', render: renderPerson, hidden: true },
@@ -300,6 +309,8 @@ window.addEventListener('hashchange', render);
       state.isRecovery = Boolean(me.isRecovery);
       state.permissions = me.permissions || [];
       state.settings = me.settings || {};
+      state.permissionLabels = me.permissionLabels || {};
+      state.roleLabels = me.roleLabels || {};
     }
   } catch { /* fall through to the login screen */ }
 

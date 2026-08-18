@@ -3,7 +3,7 @@ import {
   saltForEmail, sessionCookie, storedPassword, throttleCheck, throttleFail,
   throttleReset, tokenTtl, userForCredentials, userForPin, verifyPasswordKey,
 } from './lib/auth.js';
-import { allows, effectivePermissions } from './lib/permissions.js';
+import { PERMISSIONS, ROLES, allows, effectivePermissions } from './lib/permissions.js';
 import {
   HttpError, badRequest, forbidden, isMissingTable, json, readJson, str, unauthorized,
 } from './lib/http.js';
@@ -577,6 +577,14 @@ async function me(ctx) {
     isRecovery: Boolean(session.user.isRecovery),
     signsInWith: session.user.role === 'admin' ? 'password' : 'pin',
     permissions: session.permissions,
+    // What each one is called. Thirteen short strings sent with the session,
+    // so a screen can name a permission the reader does not hold without
+    // keeping a second copy of the list that drifts the first time one is
+    // renamed. The labels are not secret — they are the words on the Users
+    // screen, and knowing that "Sign off attendance" exists is exactly what
+    // lets somebody ask for it.
+    permissionLabels: Object.fromEntries(PERMISSIONS.map((p) => [p.key, p.label])),
+    roleLabels: Object.fromEntries(ROLES.map((r) => [r.key, r.label])),
     settings: Object.fromEntries((settings.results ?? []).map((r) => [r.key, r.value])),
   });
 }

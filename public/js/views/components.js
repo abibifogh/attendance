@@ -37,8 +37,11 @@ export function alertList(alerts, { empty = 'Nothing needs attention.' } = {}) {
   )));
 }
 
-export function card(title, { note, actions, wide } = {}, ...children) {
-  return h('section.card', { style: wide ? { gridColumn: '1 / -1' } : null },
+export function card(title, { note, actions, wide, id } = {}, ...children) {
+  return h('section.card', {
+    id: id ?? null,
+    style: wide ? { gridColumn: '1 / -1' } : null,
+  },
     (title || note || actions) && h('div.card-head',
       h('h2', title || ''),
       note ? h('span.card-note', note) : null,

@@ -30,6 +30,30 @@ Runs entirely on Cloudflare: a Worker serves both the app and the API, with a D1
 
 ---
 
+## The guide is in the app
+
+**Guide**, last in the menu, open to anybody signed in. It is the handbook, and
+it shows the reader their own job.
+
+One document, filtered — not six, one per role. A property of twenty-four people
+has managers who cover a supervisor's morning and administrators who build the
+rota when the planner is away; six separate guides means five of them go stale
+and the one somebody reads is whichever they were handed on their first day.
+Here every section names the permission it belongs to, and a supervisor opens
+eight sections where an administrator opens eighteen.
+
+What is left out is still **named** at the bottom, with a one-line summary and
+the permission it needs. Hiding a feature is useful; hiding the fact that it
+exists is not — somebody who does not know the sign-off screen exists cannot ask
+to be given it, and goes on doing by hand the thing it was built for.
+
+Content lives in `public/js/guide-content.js` as data: paragraphs, steps, lists,
+tables, notes and warnings, and nothing else. `test/guide.test.js` holds it to
+its own rules — every section names a real permission, every role opens on
+something it can use, every block is a kind the screen can actually draw, and
+every permission somebody can be granted is described somewhere. A handbook is
+the one part of a system nobody notices going wrong.
+
 ## Guides
 
 | | |

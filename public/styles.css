@@ -1041,3 +1041,50 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* --------------------------------------------------------------------------
+   The guide
+   --------------------------------------------------------------------------
+   Read rather than operated, so it gets the one thing the rest of the app does
+   not: a measure. Sixty-eight characters is about as wide as a line can be
+   before the eye loses the start of the next one, and a handbook is the only
+   screen here anybody reads a paragraph of.
+   -------------------------------------------------------------------------- */
+
+.guide-body { line-height: 1.65; }
+.guide-body p,
+.guide-body ul,
+.guide-body ol { max-width: 68ch; }
+.guide-body p { margin: 0 0 .8rem; }
+.guide-body > .alert { max-width: 68ch; margin: .9rem 0; }
+
+.guide-sub {
+  font-size: .95rem;
+  font-weight: 650;
+  margin: 1.4rem 0 .45rem;
+  padding-bottom: .25rem;
+  border-bottom: 1px solid var(--border);
+  max-width: 68ch;
+}
+.guide-body > .guide-sub:first-child { margin-top: 0; }
+
+.guide-steps { padding-left: 1.3rem; }
+.guide-steps li { margin-bottom: .3rem; }
+
+.guide-toc {
+  columns: 2 16rem;
+  column-gap: 2rem;
+  padding-left: 1.2rem;
+  margin: 0;
+}
+.guide-toc li { break-inside: avoid; margin-bottom: .5rem; }
+.guide-toc small { display: block; }
+
+/* On paper the guide is the whole point, so nothing about it is hidden and
+   a section is never split across a page break where it can be helped. */
+@media print {
+  .guide-toc { columns: 2; }
+  .guide-body .alert,
+  .guide-body table { break-inside: avoid; }
+  .guide-sub { break-after: avoid; }
+}
