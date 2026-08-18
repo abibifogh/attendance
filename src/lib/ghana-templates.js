@@ -728,6 +728,164 @@ they change.
 
 Dated {{today}}.${FOOTER}`,
   },
+
+  // -------------------------------------------------------------------------
+  // Correspondence. Rendered with the letter register's own bag of values —
+  // reference, addressee, subject, signatory — and not the personnel one, so
+  // these carry their own template kind and are offered only on that screen.
+  // -------------------------------------------------------------------------
+
+  {
+    code: 'letter_general',
+    name: 'General letter',
+    kind: 'correspondence',
+    detail: 'The house shape for anything that has no template of its own.',
+    body: `{{property}}
+{{property_address}}
+
+Our ref: {{reference}}
+{{today}}
+
+{{recipient}}
+{{organisation}}
+{{recipient_address}}
+
+Dear Sir or Madam,
+
+{{subject}}
+
+{{body}}
+
+Yours faithfully,
+
+
+
+
+{{signatory}}
+{{signatory_title}}
+For and on behalf of {{property}}`,
+  },
+
+  {
+    code: 'letter_demand',
+    name: 'Letter before action — unpaid account',
+    kind: 'correspondence',
+    detail: 'A first written demand, which is what a court will later ask whether you sent.',
+    body: `{{property}}
+{{property_address}}
+
+Our ref: {{reference}}
+Your ref: {{your_reference}}
+{{today}}
+
+{{recipient}}
+{{organisation}}
+{{recipient_address}}
+
+Dear Sir or Madam,
+
+{{subject}}
+
+We write about the amount outstanding on your account with us.
+
+{{body}}
+
+We should be grateful if the balance were settled within fourteen days of the
+date of this letter. If there is a reason for the delay, or if you dispute any
+part of the amount, please tell us in writing within that period and we will
+look into it.
+
+If we have heard nothing by then we shall have no option but to place the
+matter in the hands of our solicitors and to seek recovery of the amount
+together with any costs and interest properly due. We would much rather not,
+and we hope this letter makes that unnecessary.
+
+Yours faithfully,
+
+
+
+
+{{signatory}}
+{{signatory_title}}
+For and on behalf of {{property}}`,
+  },
+
+  {
+    code: 'letter_complaint_reply',
+    name: 'Reply to a guest complaint',
+    kind: 'correspondence',
+    detail: 'Answer it, own what is ours, say what changes. In that order.',
+    body: `{{property}}
+{{property_address}}
+
+Our ref: {{reference}}
+{{today}}
+
+{{recipient}}
+{{recipient_address}}
+
+Dear {{recipient_first}},
+
+{{subject}}
+
+Thank you for writing to us, and I am sorry that your stay was not what it
+should have been. I have looked into what happened.
+
+{{body}}
+
+You were entitled to expect better of us and on this occasion you did not get
+it. I am sorry.
+
+If there is anything further you would like to raise, please write to me
+directly and I will deal with it myself.
+
+Yours sincerely,
+
+
+
+
+{{signatory}}
+{{signatory_title}}
+{{property}}`,
+  },
+
+  {
+    code: 'letter_authority',
+    name: 'Letter to a government department or authority',
+    kind: 'correspondence',
+    detail: 'Formal, referenced, and saying plainly what is being asked for.',
+    body: `{{property}}
+{{property_address}}
+
+Our ref: {{reference}}
+Your ref: {{your_reference}}
+{{today}}
+
+The {{recipient}}
+{{organisation}}
+{{recipient_address}}
+
+Dear Sir or Madam,
+
+{{subject}}
+
+{{body}}
+
+We should be grateful for your response in due course. Should any further
+information or document be required, please contact the undersigned and it
+will be provided without delay.
+
+Thank you for your assistance.
+
+Yours faithfully,
+
+
+
+
+{{signatory}}
+{{signatory_title}}
+For and on behalf of {{property}}`,
+  },
 ];
 
 /**

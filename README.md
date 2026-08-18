@@ -556,9 +556,92 @@ is supposed to be able to prove.
 > particulars in it. **It is a starting point and not legal advice** — have
 > somebody who knows Ghanaian employment law read it before you issue it.
 
+## Letters — the correspondence register
+
+A hotel writes to suppliers, banks, the Labour Department and guests, and in
+most small properties those letters live in a Word folder and a sent-items box.
+Six months later nobody can say what was sent, when, who signed it, or whether
+the reply ever came.
+
+**Letters** answers those four, and puts the fourth first: a reply that is
+overdue is the one thing a register catches that a folder never will.
+
+### A reference, the moment it exists
+
+`SN/FIN/2026/0041`. Four series out of the box — administration, staff,
+suppliers, guests — each counting on its own and restarting in January without
+anybody remembering to. A number is allocated once and **never reused**, so a
+gap in the register is a question worth asking rather than a bug.
+
+Write the letter here from a template, or upload one written in Word. Both are
+ordinary entries from that point; the only difference is where the words live.
+
+### Sending it out for signature
+
+Name the people who have to sign, in the order they sign. Each gets a link and
+a **six-character access code** to be told separately — read out on a call —
+so a forwarded link on its own opens a locked door. Where an email address is
+on file, the signer can have a **six-digit one-time code emailed** at the moment
+of signing, which is what turns *somebody holding this link* into *somebody
+holding this link and reading that mailbox*.
+
+Only the earliest unsigned person's link is live. Anybody further down is told
+plainly that it is not their turn and who is being waited on, because a letter
+counter-signed before it was signed is one nobody can reason about afterwards.
+Somebody copied in for information gets no link at all.
+
+The words are fixed the moment a letter goes out. The hash of them is checked
+before any signature is accepted, and a letter altered in between cannot be
+signed at all.
+
+### Signing for the property
+
+Anybody with **Sign for the property** can sign and apply the company stamp —
+and is asked for their **own password or PIN at the moment they do**, on top of
+the session they already have.
+
+> A stored signature that anybody with an unlocked phone could stamp onto a
+> letter is a forgery machine, and the whole value of holding one is that it is
+> not. A signature belongs to the person, not the property: nobody else can see
+> it, nobody else can apply it, and there is no route in the system that hands
+> one person another person's. That somebody *has* one saved is shown; what it
+> looks like is not.
+
+The **stamp** is the other way round — it belongs to the property, anybody who
+may sign can apply it, and it is printed on paper that leaves the building every
+week. Photograph the rubber stamp on a white sheet; the browser shrinks it.
+
+### The chain
+
+The event log is **hash-linked**. Each row carries the hash of the row before
+it, and its own hash over that plus its own contents. Edit a row or delete one
+and every hash after it stops matching, and the letter says so in red, naming
+the event where the chain broke.
+
+That is not a digital signature and does not claim to be — somebody with the
+database could rewrite the whole chain from scratch. What it stops is the
+realistic version: one inconvenient row quietly altered afterwards. An audit
+trail that can be rewritten without trace is not an audit trail.
+
+Everything is on the chain: drafted, signed for the property, sent for
+signature, opened, wrong access code entered, one-time code emailed, signed,
+refused, dispatched, closed — each with a UTC timestamp, the actor, and the
+network address.
+
+### Who can do what
+
+| Permission | Reaches |
+|---|---|
+| **Letters** | Read the register and what has been sent |
+| **Write letters** | Draft, send for signature, record dispatch, file replies, keep the address book |
+| **Sign for the property** | Sign a letter and apply the stamp — with the signer's own password or PIN each time |
+
+Drafting and signing are separate on purpose: whoever writes a letter is not
+necessarily whoever signs it. Managers get the first two by default.
+
 ## Who can see what
 
-Eight permissions, so a supervisor settling this morning's missing clock-outs
+Eleven permissions, so a supervisor settling this morning's missing clock-outs
 never sees a leave balance and whoever draws up the rota never sees anybody's
 bank account:
 
@@ -572,6 +655,9 @@ bank account:
 | **Attendance setup** | Staff, shifts, absence reasons, holidays, terminals, rules |
 | **Employee records** | Read personal details, contacts and contracts. Private numbers stay masked |
 | **Manage employee records** | Edit records, send links, accept what people send in, issue and sign contracts |
+| **Letters** | Read the correspondence register |
+| **Write letters** | Draft letters, send them for signature, keep the address book |
+| **Sign for the property** | Sign a letter and apply the company stamp |
 
 Five roles built from them — Rota planner, Supervisor, Manager, Reports only,
 Administrator — and any individual can be adjusted off their role's defaults.
@@ -861,9 +947,13 @@ src/
                       somebody sent and what is on file, what is still
                       missing, and what a supervisor may not read
     ghana-templates.js
-                      The standard contracts and acknowledgements, and the
-                      list of what belongs in a personnel file — with the
-                      statute each is built from named beside it
+                      The standard contracts, letters and acknowledgements,
+                      and the list of what belongs in a personnel file — with
+                      the statute each is built from named beside it
+    correspondence.js Letter references, the hash-linked event chain, and
+                      whose turn it is to sign
+    files.js          Holding a file in a database that will not take one
+                      whole: splitting it into pieces and putting it back
     pdf-text.js       Every word in a PDF and the point it was drawn at.
                       Objects, object streams, inflate, text operators — and
                       nothing else, because a rota is names, dates and times
@@ -873,9 +963,12 @@ src/
     notify.js         The morning digest: email and push
     push.js           Web Push plumbing (VAPID, payload encryption)
     http.js           JSON responses, input validation
-  routes/             API handlers (people.js is the office side of the
-                      records; invite.js is the phone on the end of a link,
-                      and the two share nothing but the database)
+  routes/             API handlers. Each feature that reaches outside the
+                      building is split in two: people.js/invite.js for the
+                      staff records, correspondence.js/sign.js for the letter
+                      register. The public half of each shares nothing with
+                      its office half but the database, because it is reached
+                      by anybody holding a link
   util/dates.js       Day arithmetic
 public/               Frontend — plain ES modules, no build step
 migrations/           Database schema (console/ holds paste-able copies)

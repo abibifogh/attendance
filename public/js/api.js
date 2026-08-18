@@ -174,6 +174,33 @@ export const api = {
   hrCountersign: (id, body) => request(`/api/hr/contracts/${id}/countersign`, { method: 'POST', body }),
   hrVoidContract: (id, note) => request(`/api/hr/contracts/${id}/void`, { method: 'POST', body: { note } }),
 
+  // ------------------------------------------------------------- letters --
+  corrModel: () => request('/api/corr/model'),
+  corrLetters: (params = {}) => request(`/api/corr/letters?${new URLSearchParams(params)}`),
+  corrCreateLetter: (body) => request('/api/corr/letters', { method: 'POST', body }),
+  corrLetter: (id) => request(`/api/corr/letters/${id}`),
+  corrUpdateLetter: (id, body) => request(`/api/corr/letters/${id}`, { method: 'PUT', body }),
+  corrAddEnclosure: (id, body) => request(`/api/corr/letters/${id}/enclosures`, { method: 'POST', body }),
+  corrSendForSignature: (id, body) => request(`/api/corr/letters/${id}/send`, { method: 'POST', body }),
+  corrDispatch: (id, body) => request(`/api/corr/letters/${id}/dispatch`, { method: 'POST', body }),
+  corrClose: (id, note) => request(`/api/corr/letters/${id}/close`, { method: 'POST', body: { note } }),
+  corrVoid: (id, note) => request(`/api/corr/letters/${id}/void`, { method: 'POST', body: { note } }),
+  corrSign: (id, body) => request(`/api/corr/letters/${id}/sign`, { method: 'POST', body }),
+  corrRevokeRecipient: (id) => request(`/api/corr/recipients/${id}/revoke`, { method: 'POST' }),
+  corrFileUrl: (id) => `/api/corr/files/${id}`,
+
+  corrParties: () => request('/api/corr/parties'),
+  corrCreateParty: (body) => request('/api/corr/parties', { method: 'POST', body }),
+  corrUpdateParty: (id, body) => request(`/api/corr/parties/${id}`, { method: 'PUT', body }),
+
+  corrMe: () => request('/api/corr/me'),
+  corrSaveMySignature: (body) => request('/api/corr/me/signature', { method: 'PUT', body }),
+  corrDeleteMySignature: () => request('/api/corr/me/signature', { method: 'DELETE' }),
+
+  corrStamps: () => request('/api/corr/stamps'),
+  corrSaveStamp: (body) => request('/api/corr/stamps', { method: 'POST', body }),
+  corrDeleteStamp: (id) => request(`/api/corr/stamps/${id}`, { method: 'DELETE' }),
+
   // -------------------------------------------------------- people and data --
   users: () => request('/api/users'),
   createUser: (body) => request('/api/users', { method: 'POST', body }),

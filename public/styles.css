@@ -946,3 +946,30 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   border-radius: var(--radius-sm); background: var(--surface-2);
 }
 @media print { .scan { height: auto; min-height: 60vh; } }
+
+/* ===========================================================================
+   Letters
+   ======================================================================== */
+
+/* A stamp sits over the corner of a signature, the way a rubber one does on
+   paper — overlapping, not beside, or it reads as a second signature. */
+.stamp-image {
+  position: absolute; right: -.4rem; top: -.6rem;
+  max-height: 4.5rem; max-width: 6rem; opacity: .88; pointer-events: none;
+}
+.stamp-row { display: flex; flex-wrap: wrap; gap: 1rem; }
+.stamp-card {
+  display: grid; gap: .4rem; justify-items: center; text-align: center;
+  padding: .8rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); min-width: 10rem;
+}
+.stamp-card img { max-height: 6rem; max-width: 9rem; }
+
+/* Everybody on a document, and where each of them has got to. */
+.who-else { margin: 0; padding-left: 1.2rem; font-size: .88rem; }
+.who-else li { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+
+@media print {
+  /* A letter on paper is the letter, the signatures and the record under it. */
+  .stamp-image { position: absolute; }
+}

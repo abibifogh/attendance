@@ -665,7 +665,8 @@ export async function saveTemplate(ctx, id) {
   const body = await readJson(ctx.request);
   const name = str(body.name, 'Name', { required: true, max: 120 });
   const text = str(body.body, 'The words', { required: true, max: 60_000 });
-  const kind = ['contract', 'letter', 'policy'].includes(body.kind) ? body.kind : 'contract';
+  const kind = ['contract', 'letter', 'policy', 'correspondence'].includes(body.kind)
+    ? body.kind : 'contract';
 
   if (id) {
     await ctx.db.prepare(

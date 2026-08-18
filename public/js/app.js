@@ -14,6 +14,10 @@ import { renderPeople } from './views/people.js';
 import { renderPerson } from './views/person.js';
 import { renderPeopleTemplates } from './views/people-templates.js';
 import { renderContract } from './views/contract.js';
+import { renderLetters } from './views/letters.js';
+import { renderLetter } from './views/letter.js';
+import { renderLetterParties } from './views/letter-parties.js';
+import { renderLetterSigning } from './views/letter-signing.js';
 import { BRAND } from './brand.js';
 
 export const state = {
@@ -38,6 +42,7 @@ const ROUTES = [
   { path: 'att-rota', label: 'Rota', permission: 'att_rota', render: renderAttRota },
   { path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave },
   { path: 'people', label: 'People', permission: 'hr_view', render: renderPeople },
+  { path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters },
   { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
   // Reached by clicking a name rather than from the menu.
@@ -45,6 +50,9 @@ const ROUTES = [
   { path: 'person', label: 'Record', permission: 'hr_view', render: renderPerson, hidden: true },
   { path: 'people-templates', label: 'Templates', permission: 'hr_manage', render: renderPeopleTemplates, hidden: true },
   { path: 'contract', label: 'Contract', permission: 'hr_view', render: renderContract, hidden: true },
+  { path: 'letter', label: 'Letter', permission: 'corr_view', render: renderLetter, hidden: true },
+  { path: 'letter-parties', label: 'Address book', permission: 'corr_view', render: renderLetterParties, hidden: true },
+  { path: 'letter-signing', label: 'Signature & stamp', permission: 'corr_view', render: renderLetterSigning, hidden: true },
 ];
 
 const root = document.getElementById('app');
@@ -71,7 +79,8 @@ function currentRoute() {
  * they just cleared. So the last resort is the first route they can open.
  */
 function defaultRoute() {
-  const preferred = ['att-today', 'att-overview', 'att-rota', 'att-leave', 'people', 'att-setup', 'admin'];
+  const preferred = ['att-today', 'att-overview', 'att-rota', 'att-leave', 'people', 'letters',
+    'att-setup', 'admin'];
   const wanted = preferred.find((path) => allowed(ROUTES.find((r) => r.path === path)));
   return wanted ?? ROUTES.find((r) => allowed(r) && !r.hidden)?.path ?? 'att-today';
 }
@@ -104,11 +113,11 @@ export function replaceParams(path, params) {
 // ---------------------------------------------------------------------------
 
 /**
- * Eight screens is still few enough for one flat list.
+ * Nine screens is still few enough for one flat list.
  *
  * The other apps in this operation group their navigation because they carry
  * three stores between them. This one does not, and inventing a section
- * heading for a list of eight would be furniture for its own sake.
+ * heading for a list of nine would be furniture for its own sake.
  */
 function sidebar() {
   const visible = ROUTES.filter((r) => allowed(r) && !r.hidden);

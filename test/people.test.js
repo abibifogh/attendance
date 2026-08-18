@@ -8,6 +8,7 @@ import {
 import {
   REQUIRED_DOCUMENTS, STANDARD_TEMPLATES, fileStatus, requiredDocumentsFor,
 } from '../src/lib/ghana-templates.js';
+import { LETTER_PLACEHOLDERS } from '../src/lib/correspondence.js';
 
 /**
  * The rules an employee record runs on.
@@ -208,20 +209,39 @@ test('every list describes a row in a way a person can read', () => {
 // The standard Ghana set
 // ---------------------------------------------------------------------------
 
-test('every placeholder in the standard set is one the renderer knows', () => {
+test('every placeholder in the standard set is one its own renderer knows', () => {
   // The failure this catches is quiet and expensive: an unknown placeholder is
   // left exactly as written, so a contract goes out to be signed with the
   // characters "{{leave_days}}" in the middle of the annual leave clause.
-  const known = new Set(PLACEHOLDERS.map((p) => p.key));
+  //
+  // Two renderers, two bags of values. A personnel document is filled from
+  // somebody's record; a letter is filled from the register — the reference,
+  // the addressee, the subject. A template rendered against the wrong one
+  // produces exactly the failure above, so which set applies is decided by the
+  // template's kind and checked here.
+  const forPersonnel = new Set(PLACEHOLDERS.map((p) => p.key));
+  const forLetters = new Set(LETTER_PLACEHOLDERS.map((p) => p.key));
   const unknown = [];
 
   for (const template of STANDARD_TEMPLATES) {
+    const known = template.kind === 'correspondence' ? forLetters : forPersonnel;
     for (const [, key] of template.body.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/g)) {
-      if (!known.has(key)) unknown.push(`${template.code}: {{${key}}}`);
+      if (!known.has(key)) unknown.push(`${template.code} (${template.kind}): {{${key}}}`);
     }
   }
 
   assert.deepEqual(unknown, []);
+});
+
+test('the two placeholder sets do not quietly disagree about a shared name', () => {
+  // `property` and `today` mean the same thing in both, and must. A key that
+  // existed in both with different meanings would render correctly in one
+  // place and wrongly in the other, which is the worst of the three outcomes.
+  const shared = LETTER_PLACEHOLDERS.filter((l) => PLACEHOLDERS.some((p) => p.key === l.key));
+  for (const key of shared) {
+    const personnel = PLACEHOLDERS.find((p) => p.key === key.key);
+    assert.equal(key.label, personnel.label, `${key.key} means two different things`);
+  }
 });
 
 test('every asked-for placeholder has a lawful fallback, or is plainly optional', () => {
@@ -235,10 +255,25 @@ test('every asked-for placeholder has a lawful fallback, or is plainly optional'
   assert.deepEqual(withoutFallback.sort(), ['effective_date', 'end_date', 'salary']);
 });
 
-test('the standard templates name the statutes they are built from', () => {
+test('every personnel template names the statutes it is built from', () => {
+  // An ordinary letter cites nothing, and should not — a reply to a guest
+  // complaint quoting the Labour Act would be absurd. Everything a member of
+  // staff is asked to sign is a different matter.
   for (const template of STANDARD_TEMPLATES) {
+    if (template.kind === 'correspondence') continue;
     assert.match(template.body, /Act 651|Act 766|Act 851|Act 843|Act 772/,
       `${template.code} cites nothing`);
+  }
+});
+
+test('every letter template leaves room for the letter itself', () => {
+  // A correspondence template is a shape, not a script. One without {{body}}
+  // in it is a form letter nobody can say anything in.
+  for (const template of STANDARD_TEMPLATES) {
+    if (template.kind !== 'correspondence') continue;
+    assert.match(template.body, /\{\{body\}\}/, `${template.code} has nowhere to write`);
+    assert.match(template.body, /\{\{reference\}\}/, `${template.code} quotes no reference`);
+    assert.match(template.body, /\{\{signatory\}\}/, `${template.code} nobody signs`);
   }
 });
 
