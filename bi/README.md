@@ -149,7 +149,7 @@ Four properties are worth stating, because a simpler version would not be safe:
   whoever controls this hub could mint themselves an account in every system in
   the group.
 
-**The attendance app already accepts a hand-off** — `src/lib/sso-consumer.js` in
+**HIVE already accepts a hand-off** — `src/lib/sso-consumer.js` in
 the parent repository, and a `/sso` route in its Worker. The other three live in
 their own repositories; [docs/sso.md](docs/sso.md) is the protocol and the
 thirty lines each of them needs, written out for a Cloudflare Worker, a Netlify
@@ -326,7 +326,7 @@ installed anywhere.
 | `CLOUDFLARE_ACCOUNT_ID` | from the right-hand side of any Cloudflare dashboard page |
 | `INSIGHT_DASHBOARD_PASSWORD` | what you will type the first time you sign in |
 
-Only the last one is new — the first two are what the attendance app already
+Only the last one is new — the first two are what HIVE already
 deploys with, so they may well be there.
 
 ### Then, two buttons
@@ -360,7 +360,7 @@ every screen has something on it before a single real system is connected.
 > not secret; reaching one still needs the API token.
 
 After that, every push to the default branch republishes Insight alongside the
-attendance app, in the ordinary way.
+HIVE, in the ordinary way.
 
 ### What is left, in the order it is worth doing
 
@@ -442,7 +442,7 @@ D1's interface and drive the real handlers — the same approach the attendance
 app takes, for the same reason. Every interesting bug in a warehouse is a bug
 in a query, and a stubbed database cannot have one. The two HTTP connectors are
 driven against a stubbed `fetch` and the two bound ones against real schemas —
-the attendance connector is tested against the attendance app's own migrations,
+the attendance connector is tested against HIVE's own migrations,
 one directory up, so a column renamed over there fails here rather than in
 production.
 

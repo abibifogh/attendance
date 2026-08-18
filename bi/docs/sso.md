@@ -9,7 +9,7 @@ its own repository:
 
 | System | Where its handler lives |
 |---|---|
-| Attendance | `src/lib/sso-consumer.js` in this repository |
+| HIVE (attendance) | `src/lib/sso-consumer.js` in this repository |
 | Breakfast | `src/lib/sso-consumer.js` in `abibifogh/stockcheck` |
 | Laundry | `netlify/functions/lib/sso.js` in `abibifogh/snlaundry` |
 | Restaurant POS | `functions/notify/src/sso.js` in `abibifogh/snpos` |
@@ -385,7 +385,7 @@ there yet — it lets Appwrite *run* the function for anybody, and nothing more.
 One secret per system, **different values**. Sharing one across systems throws
 away the property that a compromised system cannot mint sessions on the others.
 
-Two of the four need no hand at all. Attendance and breakfast are Workers on the
+Two of the four need no hand at all. HIVE and breakfast are Workers on the
 same Cloudflare account as Insight, so **Actions → Set Insight's secrets**
 generates each shared secret and writes it to both ends itself. Nobody reads
 those values, including that workflow's log.
