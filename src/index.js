@@ -17,6 +17,7 @@ import * as signoff from './routes/signoff.js';
 import * as sign from './routes/sign.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
+import { handleSsoArrival } from './lib/sso-consumer.js';
 import { todayIn } from './util/dates.js';
 import { PIN_TAKEN } from './routes/admin.js';
 
@@ -282,6 +283,13 @@ export default {
     // less of the system it can reach the better.
     if (url.pathname.startsWith('/s/')) {
       return env.ASSETS.fetch(new Request(new URL('/sign.html', url), request));
+    }
+
+    // Arriving from the group hub with a hand-off code. Not under /api/
+    // because a person follows this link in their address bar, and what comes
+    // back is a redirect and a cookie rather than JSON.
+    if (url.pathname === '/sso') {
+      return handleSsoArrival(request, env, env.DB);
     }
 
     if (!url.pathname.startsWith('/api/')) {
