@@ -4,14 +4,16 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  acceptSubmission, addDocument, countersignContract, createInvite, getContract,
-  getDocument, getPerson, issueContract, listPeople, listSubmissions,
-  rejectSubmission, revokeInvite, saveList, savePerson, saveTemplate,
+  acceptSubmission, addDocument, countersignContract, createInvite,
+  fileSignedContract, getContract, getDocument, getPerson, issueContract,
+  listPeople, listSubmissions, loadStandardTemplates, rejectSubmission,
+  revokeInvite, saveList, savePerson, saveTemplate,
 } from '../src/routes/people.js';
 import {
   inviteDecline, inviteDetails, inviteHead, inviteOpen, inviteSign, inviteViewed,
 } from '../src/routes/invite.js';
 import { hashBody } from '../src/lib/people.js';
+import { createHash } from 'node:crypto';
 
 /**
  * The whole round trip, against a real database.
@@ -178,13 +180,35 @@ test('a scan goes in and comes back out byte for byte', async () => {
   assert.deepEqual(out, Buffer.from(png, 'base64'));
 });
 
-test('a file too big for the row is refused with the size in the message', async () => {
+test('a scanned contract too big for a single row is stored in pieces', async () => {
+  // D1 holds about two megabytes to a row and a scanned five-page contract is
+  // routinely more. A photograph can be shrunk in the browser; a PDF cannot,
+  // and refusing it sends the contracts back to a filing cabinet.
+  const { raw, db } = await setup();
+  const big = Buffer.alloc(1_800_000);
+  for (let i = 0; i < big.length; i += 1) big[i] = (i * 31) % 251;
+
+  await addDocument(ctx(db, {
+    body: { title: 'Old contract', kind: 'contract', mime: 'application/pdf', content: big.toString('base64') },
+  }), 1);
+
+  const row = raw.prepare('SELECT id, parts, bytes FROM hr_document').get();
+  assert.equal(row.bytes, big.length);
+  assert.equal(row.parts, 3, 'split across three rows');
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM hr_document_part').get().n, 2);
+
+  // And comes back as exactly what went in.
+  const out = Buffer.from(await (await getDocument(ctx(db), row.id)).arrayBuffer());
+  assert.deepEqual(out, big);
+});
+
+test('a file too big even in pieces is refused with the size in the message', async () => {
   const { db } = await setup();
-  const huge = Buffer.alloc(1_500_000, 7).toString('base64');
+  const huge = Buffer.alloc(13_000_000, 7).toString('base64');
 
   await assert.rejects(
     () => addDocument(ctx(db, { body: { title: 'Scan', mime: 'application/pdf', content: huge } }), 1),
-    /KB and the limit is/,
+    /MB and the limit is/,
   );
 });
 
@@ -516,4 +540,127 @@ test('a packet with nothing left in it closes itself', async () => {
   }), link.token);
 
   assert.ok(raw.prepare('SELECT finished_at FROM hr_invite WHERE id = ?').get(link.id).finished_at);
+});
+
+// ---------------------------------------------------------------------------
+// Contracts that were signed on paper
+// ---------------------------------------------------------------------------
+
+const SCAN = Buffer.from('%PDF-1.4\n old signed contract \n%%EOF\n', 'latin1').toString('base64');
+
+test('a contract signed on paper is filed as a contract, not as a stray document', async () => {
+  const { db } = await setup();
+
+  await fileSignedContract(ctx(db, {
+    body: {
+      title: 'Contract of employment (2025)',
+      signedOn: '2025-02-01',
+      signerName: 'Kofi Mensah',
+      employerName: 'Ama Boateng',
+      filename: 'kofi-contract.pdf',
+      mime: 'application/pdf',
+      content: SCAN,
+    },
+  }), 2);
+
+  const data = await read(await getPerson(ctx(db), 2));
+  assert.equal(data.contracts.length, 1);
+
+  const filed = data.contracts[0];
+  assert.equal(filed.status, 'signed');
+  assert.equal(filed.origin, 'paper');
+  assert.equal(filed.signed_at, '2025-02-01');
+  assert.equal(filed.signer_name, 'Kofi Mensah');
+  assert.equal(filed.employer_name, 'Ama Boateng');
+  assert.ok(filed.document_id, 'and the scan is attached to it');
+  assert.ok(filed.filed_by, 'with a note of who filed it, which is a different fact');
+});
+
+test('the fingerprint of a filed scan is of the file itself', async () => {
+  const { db } = await setup();
+  await fileSignedContract(ctx(db, {
+    body: { title: 'Contract', signedOn: '2025-02-01', mime: 'application/pdf', content: SCAN },
+  }), 2);
+
+  const [filed] = (await read(await getPerson(ctx(db), 2))).contracts;
+  const { contract } = await read(await getContract(ctx(db), filed.id));
+
+  const expected = createHash('sha256').update(Buffer.from(SCAN, 'base64')).digest('hex');
+  assert.equal(contract.body_hash, expected, 'so a swapped scan can be told from the filed one');
+});
+
+test('a paper contract cannot be dated in the future', async () => {
+  const { db } = await setup();
+  await assert.rejects(
+    () => fileSignedContract(ctx(db, {
+      body: { title: 'Contract', signedOn: '2099-01-01', mime: 'application/pdf', content: SCAN },
+    }), 2),
+    /in the future/,
+  );
+});
+
+test('filing a paper contract completes the file requirement it answers', async () => {
+  const { db } = await setup();
+
+  const before = (await read(await getPerson(ctx(db), 2))).fileStatus
+    .find((d) => d.code === 'contract');
+  assert.equal(before.state, 'missing');
+
+  await fileSignedContract(ctx(db, {
+    body: { title: 'Contract', signedOn: '2025-02-01', mime: 'application/pdf', content: SCAN },
+  }), 2);
+
+  const after = (await read(await getPerson(ctx(db), 2))).fileStatus
+    .find((d) => d.code === 'contract');
+  assert.equal(after.state, 'held');
+});
+
+// ---------------------------------------------------------------------------
+// The standard set
+// ---------------------------------------------------------------------------
+
+test('the standard templates load once and do not duplicate', async () => {
+  const { raw, db } = await setup();
+
+  const first = await read(await loadStandardTemplates(ctx(db, { body: {} })));
+  assert.ok(first.added >= 8, `only ${first.added} loaded`);
+  assert.equal(first.added, first.total);
+
+  const again = await read(await loadStandardTemplates(ctx(db, { body: {} })));
+  assert.equal(again.added, 0, 'loading twice adds nothing');
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM hr_template').get().n, first.total);
+});
+
+test('a template edited into the property’s own words survives a reload', async () => {
+  const { raw, db } = await setup();
+  await loadStandardTemplates(ctx(db, { body: {} }));
+
+  const row = raw.prepare("SELECT id FROM hr_template WHERE code = 'contract_permanent'").get();
+  await saveTemplate(ctx(db, {
+    body: { name: 'Our contract', body: 'Whatever we decided it should say.' },
+  }), row.id);
+
+  await loadStandardTemplates(ctx(db, { body: {} }));
+  const after = raw.prepare('SELECT name, body FROM hr_template WHERE id = ?').get(row.id);
+  assert.equal(after.name, 'Our contract');
+  assert.equal(after.body, 'Whatever we decided it should say.');
+});
+
+test('a contract issued from a standard template answers its requirement when signed', async () => {
+  const { raw, db } = await setup();
+  await loadStandardTemplates(ctx(db, { body: {} }));
+
+  const handbook = raw.prepare("SELECT id FROM hr_template WHERE code = 'handbook_ack'").get();
+  const issued = await read(await issueContract(ctx(db, { body: { templateId: handbook.id } }), 1));
+
+  const link = await makeLink(db, { wantsDetails: false, contractIds: [issued.id] });
+  const packet = await read(await inviteOpen(phone(db), link.token));
+  await inviteSign(phone(db, {
+    contractId: issued.id, name: 'Angela Asare Ayima', agreed: true,
+    hash: packet.contracts[0].hash,
+  }), link.token);
+
+  const status = (await read(await getPerson(ctx(db), 1))).fileStatus
+    .find((d) => d.code === 'handbook');
+  assert.equal(status.state, 'held');
 });

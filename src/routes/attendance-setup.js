@@ -700,6 +700,12 @@ const SETTINGS = new Map([
   ['att_window_after', (v) => String(int(v, 'Window after', { min: 0, max: 720 }))],
   ['att_escalate_after', (v) => String(int(v, 'Escalate after', { min: 1, max: 30 }))],
   ['att_departments', (v) => cleanDepartments(v).join('\n')],
+  // Who this property is, in its own words. Both go on every contract issued
+  // and on the top of every printed report, so they belong on a screen rather
+  // than in whatever the first migration happened to seed.
+  ['property_name', (v) => str(v, 'Property name', { required: true, max: 120 })],
+  ['property_address', (v) => str(v, 'Property address', { max: 300 })],
+  ['hr_link_days', (v) => String(int(v, 'How long a link lasts', { min: 1, max: 90 }))],
 ]);
 
 /**

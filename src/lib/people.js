@@ -313,7 +313,9 @@ export function cleanSubmission(payload) {
  * "salary of {{salary}}" in something somebody then signs.
  */
 export const PLACEHOLDERS = [
+  // Known for certain, straight out of the record or the settings.
   { key: 'name', label: 'Full name' },
+  { key: 'first_name', label: 'First name' },
   { key: 'employee_no', label: 'Employee number' },
   { key: 'job_title', label: 'Job title' },
   { key: 'department', label: 'Department' },
@@ -321,13 +323,33 @@ export const PLACEHOLDERS = [
   { key: 'address', label: 'Home address' },
   { key: 'id_type', label: 'ID document' },
   { key: 'property', label: 'Property name' },
+  { key: 'property_address', label: 'Property address' },
+  { key: 'leave_days', label: 'Annual leave' },
   { key: 'today', label: 'Today’s date' },
+
   // Typed in when the contract is issued, because they differ per person and
-  // the property is the only one who knows them.
+  // the property is the only one who knows them. Each has a fallback that is
+  // lawful and conservative, so a contract issued in a hurry with the boxes
+  // left empty still says something true.
   { key: 'salary', label: 'Remuneration', ask: true },
-  { key: 'hours', label: 'Hours of work', ask: true, fallback: 'As set out in the rota' },
-  { key: 'probation', label: 'Probation', ask: true, fallback: 'Six months' },
-  { key: 'notice', label: 'Notice period', ask: true, fallback: 'One month' },
+  {
+    key: 'hours',
+    label: 'Hours of work',
+    ask: true,
+    fallback: 'Hours are as set out in the published rota.',
+  },
+  { key: 'workplace', label: 'Place of work', ask: true, fallback: 'At the property.' },
+  { key: 'probation', label: 'Probation', ask: true, fallback: 'six months' },
+  { key: 'notice', label: 'Notice period', ask: true, fallback: 'one month' },
+  { key: 'end_date', label: 'End date (fixed term)', ask: true },
+  { key: 'effective_date', label: 'Effective from', ask: true },
+  {
+    key: 'collective_agreement',
+    label: 'Collective agreement',
+    ask: true,
+    fallback: 'None applies to this employment.',
+  },
+  { key: 'note', label: 'A line of your own', ask: true, fallback: '' },
 ];
 
 export const ASKED_PLACEHOLDERS = PLACEHOLDERS.filter((p) => p.ask);

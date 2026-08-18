@@ -991,6 +991,34 @@ async function rulesTab(reload) {
 
   form.append(
     h('div.grid.grid-2',
+      // Who this property is. It goes on every contract issued and on the head
+      // of every printed report, so it belongs on a screen rather than in
+      // whatever the first migration happened to seed.
+      card('This property', { note: 'Goes on contracts and printouts' },
+        h('label.field',
+          h('span', 'Name'),
+          h('input', {
+            type: 'text', name: 'property_name', maxlength: 120, required: true,
+            value: s.property_name ?? '',
+          }),
+          h('small.muted', 'Exactly as it should read on a contract'),
+        ),
+        h('label.field',
+          h('span', 'Address'),
+          h('textarea', { name: 'property_address', rows: 2, maxlength: 300 },
+            s.property_address ?? ''),
+          h('small.muted', 'Used as the employer\u2019s address on contracts and letters'),
+        ),
+        h('label.field',
+          h('span', 'A link to a member of staff lasts'),
+          h('input', {
+            type: 'number', name: 'hr_link_days', min: 1, max: 90,
+            value: s.hr_link_days ?? 21,
+          }),
+          h('small.muted', 'Days before a details or signing link stops working'),
+        ),
+      ),
+
       card('When a punch is missing', { note: 'The decision that matters most' },
         h('label.field',
           h('span', 'A day with only one of the two taps'),

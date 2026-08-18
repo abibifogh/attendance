@@ -223,7 +223,18 @@ const titleise = (key) => key.replace(/_on$/, '').replace(/_/g, ' ').replace(/^.
 // Documents
 // ---------------------------------------------------------------------------
 
-const KINDS = ['ID document', 'Certificate', 'Reference', 'Photograph', 'Medical', 'Other'];
+/**
+ * What a document can be filed as.
+ *
+ * Taken from the file checklist rather than typed here, because the checklist
+ * ticks off on an exact match. A free-text "kind" and a checklist looking for
+ * `ghana_card` is a screen where nothing ever completes and nobody can see
+ * why — which is worse than having no checklist at all.
+ */
+function kindOptions(data) {
+  const required = (data.fileStatus ?? []).map((r) => ({ value: r.code, label: r.label }));
+  return [...required, { value: 'other', label: 'Something else' }];
+}
 
 function documentsTab(data, reload) {
   const picker = h('input', {
@@ -255,14 +266,16 @@ function documentsTab(data, reload) {
           + (prepared.shrunk ? ', shrunk to fit' : '')),
         h('div.field-row',
           field('What is it', h('select', { name: 'kind' },
-            KINDS.map((k) => h('option', { value: k }, k)))),
+            kindOptions(data).map((k) => h('option', { value: k.value }, k.label))),
+            'Filing it under the right kind is what ticks it off the checklist'),
           field('Call it', h('input', {
             type: 'text', name: 'title', required: true, maxlength: 120,
             value: file.name.replace(/\.[^.]+$/, ''),
           })),
         ),
         field('Expires', h('input', { type: 'date', name: 'expiresOn' }),
-          'For an ID or a permit that runs out. Leave blank if it does not.'),
+          'A food handler’s certificate runs out every year, and so does a permit. '
+          + 'Leave blank for anything that does not.'),
       ),
       onSubmit: async (form) => api.hrAddDocument(data.person.id, {
         kind: form.get('kind'),
@@ -284,13 +297,16 @@ function documentsTab(data, reload) {
     await reload();
   };
 
-  return card('Documents', {
-    note: `${data.documents.length} held`,
-    wide: true,
-    actions: data.canManage
-      ? h('button.btn.btn-primary', { onclick: () => picker.click() }, '+ Add a document')
-      : null,
-  },
+  return h('div',
+    checklist(data),
+
+    card('Documents', {
+      note: `${data.documents.length} held`,
+      wide: true,
+      actions: data.canManage
+        ? h('button.btn.btn-primary', { onclick: () => picker.click() }, '+ Add a document')
+        : null,
+    },
     picker,
     data.documents.length
       ? table([
@@ -301,7 +317,7 @@ function documentsTab(data, reload) {
             data.canManage
               ? h('a', { href: api.hrDocumentUrl(r.id), target: '_blank', rel: 'noopener' }, v)
               : h('span', v),
-            h('small.muted', `${r.kind} · ${Math.round(r.bytes / 1024)} KB`),
+            h('small.muted', `${kindLabel(data, r.kind)} · ${Math.round(r.bytes / 1024)} KB`),
           ),
         },
         {
@@ -328,7 +344,66 @@ function documentsTab(data, reload) {
       ], data.documents, { empty: 'Nothing yet.' })
       : h('p.muted', { style: { marginBottom: 0 } },
         'Scans of an ID, certificates, a reference. Photographs are shrunk in the browser '
-        + 'before they are sent, so a picture taken on a phone is fine.'),
+        + 'before they are sent, so a picture taken on a phone is fine, and a scanned '
+        + 'contract of up to 12 MB is stored whole.'),
+    ),
+  );
+}
+
+const kindLabel = (data, code) =>
+  (data.fileStatus ?? []).find((r) => r.code === code)?.label ?? code;
+
+const CHECK = {
+  held: ['good', '✓', 'On file'],
+  expiring: ['warn', '!', 'Runs out soon'],
+  expired: ['bad', '×', 'Expired'],
+  missing: ['bad', '·', 'Missing'],
+};
+
+/**
+ * What ought to be in this person's file, and what is.
+ *
+ * Worked out per person rather than shown to everybody: two of the
+ * requirements depend on who they are, and a checklist that demands a work
+ * permit from every Ghanaian is a checklist people learn to scroll past.
+ *
+ * An expired certificate counts as missing, because that is what it is worth
+ * to an inspector — and rather less than that to whoever eats the food.
+ */
+function checklist(data) {
+  const rows = data.fileStatus ?? [];
+  if (!rows.length) return null;
+
+  const short = rows.filter((r) => r.state !== 'held').length;
+
+  return card('What this file must contain', {
+    note: short ? `${short} outstanding` : 'complete',
+    wide: true,
+  },
+    h('div.checklist', rows.map((row) => {
+      const [kind, mark, label] = CHECK[row.state] ?? CHECK.missing;
+      return h('div.check-row',
+        h('span', { class: `check-mark check-${kind}` }, mark),
+        h('div',
+          h('div.check-label',
+            row.label,
+            h('span', { class: `pill ${kind}` }, label),
+            row.expiresOn ? h('small.muted', ` until ${fmtDay(row.expiresOn, { withYear: true })}`) : null,
+          ),
+          h('small.muted', row.detail),
+        ),
+        row.documentId
+          ? h('a.btn-sm', {
+            href: api.hrDocumentUrl(row.documentId), target: '_blank', rel: 'noopener',
+          }, 'Open')
+          : null,
+      );
+    })),
+
+    h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+      'A document counts once it is filed under the matching kind. A signed contract, '
+      + 'handbook acknowledgement, data-protection consent or next-of-kin form is ticked off '
+      + 'by the signed copy itself, on paper or on screen.'),
   );
 }
 
@@ -443,14 +518,32 @@ function contractsTab(data, model, reload) {
     if (done) { toast('Issued. Send them a link to sign it.', 'good'); await reload(); }
   };
 
+  const scanPicker = h('input', {
+    type: 'file',
+    accept: 'application/pdf,image/*',
+    style: { display: 'none' },
+    onchange: async (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (file) await fileOnPaper(data, file, reload);
+    },
+  });
+
   return h('div',
     card('Contracts and documents to sign', {
-      note: `${data.contracts.length} issued`,
+      note: `${data.contracts.length} on file`,
       wide: true,
       actions: data.canManage
-        ? h('button.btn.btn-primary', { onclick: issue }, '+ Issue a contract')
+        ? h('div.btn-row',
+          h('button.btn-sm', {
+            title: 'A contract they already signed on paper — scan or photograph it',
+            onclick: () => scanPicker.click(),
+          }, 'File a signed paper contract'),
+          h('button.btn.btn-primary', { onclick: issue }, '+ Issue a contract'),
+        )
         : null,
     },
+      scanPicker,
       data.contracts.length
         ? table([
           {
@@ -466,9 +559,15 @@ function contractsTab(data, model, reload) {
           {
             key: 'status',
             label: 'Where it is up to',
-            format: (v) => {
+            format: (v, r) => {
               const [kind, label] = STATUS[v] ?? ['', v];
-              return h(`span.pill${kind ? `.${kind}` : ''}`, label);
+              return h('div',
+                h(`span.pill${kind ? `.${kind}` : ''}`, label),
+                // Which sort of signature is behind it. The two are not the
+                // same kind of evidence and the screen should never imply
+                // they are.
+                h('small.muted', r.origin === 'paper' ? 'signed on paper' : 'signed on screen'),
+              );
             },
           },
           {
@@ -488,12 +587,89 @@ function contractsTab(data, model, reload) {
           },
         ], data.contracts, { empty: 'None issued.' })
         : h('p.muted', { style: { marginBottom: 0 } },
-          'Ghana’s Labour Act asks for a written contract where somebody is employed for six '
-          + 'months or more. Issue one from a template, send them the link, and they sign it '
-          + 'on their phone.'),
+          'Section 12 of the Labour Act asks for a written contract where somebody is employed '
+          + 'for six months or more. Issue one from a template and they sign it on their phone — '
+          + 'or, for somebody who signed on paper years ago, scan what they signed and file it '
+          + 'here so it counts.'),
     ),
   );
 }
+
+/**
+ * Put a contract that was signed on paper where a contract belongs.
+ *
+ * For everybody already on the books this is the only record of what was
+ * agreed, and until now the only place for it was the general documents pile,
+ * where it sat beside a photocopied ID with nothing saying it was a contract.
+ *
+ * The dialog asks for the date it was signed rather than assuming today,
+ * because the date on the paper is the fact that matters and the date somebody
+ * got round to scanning it is not.
+ */
+async function fileOnPaper(data, file, reload) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (bytes.length > 12_000_000) {
+    toast(`That file is ${Math.round(bytes.length / 1_000_000)} MB. Scan it again at 200 dpi in `
+      + 'black and white — the limit is 12 MB.', 'bad');
+    return;
+  }
+
+  const kinds = kindOptions(data).filter((k) => FILEABLE.has(k.value));
+
+  const done = await formDialog({
+    title: 'File a contract signed on paper',
+    submitLabel: 'File it',
+    body: h('div',
+      h('p.muted', `${file.name} — ${Math.round(bytes.length / 1024)} KB. `
+        + 'It goes in as a signed contract, not as a loose document, so it appears in the list '
+        + 'above and counts towards the file checklist.'),
+
+      h('div.field-row',
+        field('What is it', h('select', { name: 'satisfies' },
+          kinds.map((k) => h('option', { value: k.value }, k.label)))),
+        field('Call it', h('input', {
+          type: 'text', name: 'title', required: true, maxlength: 160,
+          value: file.name.replace(/\.[^.]+$/, '') || 'Contract of employment',
+        })),
+      ),
+
+      h('div.field-row',
+        field('Date it was signed', h('input', {
+          type: 'date', name: 'signedOn', required: true,
+          max: new Date().toISOString().slice(0, 10),
+          value: data.person.hiredOn || '',
+        }), 'The date on the paper, not today'),
+        field('Signed by', h('input', {
+          type: 'text', name: 'signerName', maxlength: 120, value: data.person.name,
+        })),
+        field('For the property', h('input', {
+          type: 'text', name: 'employerName', maxlength: 120,
+          placeholder: 'Who countersigned it',
+        })),
+      ),
+
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'A fingerprint of the scan is kept, so a file swapped later can be told from the one '
+        + 'that was filed. There is no electronic signature behind a paper contract and the '
+        + 'certificate says so plainly.'),
+    ),
+    onSubmit: async (form) => api.hrFileContract(data.person.id, {
+      title: form.get('title'),
+      satisfies: form.get('satisfies'),
+      signedOn: form.get('signedOn'),
+      signerName: form.get('signerName'),
+      employerName: form.get('employerName'),
+      filename: file.name,
+      mime: file.type || 'application/pdf',
+      content: toBase64(bytes),
+    }),
+  });
+
+  if (done) { toast('Filed.', 'good'); await reload(); }
+}
+
+/** The requirements a signed piece of paper can answer. */
+const FILEABLE = new Set(['contract', 'handbook', 'data_consent', 'next_of_kin', 'other']);
 
 // ---------------------------------------------------------------------------
 // Links and history

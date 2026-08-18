@@ -150,6 +150,10 @@ export const ROUTES = [
   ['DELETE', '/api/hr/templates/:id', 'hr_manage', people.deleteTemplate],
 
   ['POST', '/api/hr/people/:id/contracts', 'hr_manage', people.issueContract],
+  // A contract signed on paper years ago, scanned. The commonest case for
+  // anybody already on the books, and until now there was nowhere to put it.
+  ['POST', '/api/hr/people/:id/contracts/file', 'hr_manage', people.fileSignedContract],
+  ['POST', '/api/hr/templates/standard', 'hr_manage', people.loadStandardTemplates],
   ['GET', '/api/hr/contracts/:id', 'hr_view', people.getContract],
   ['POST', '/api/hr/contracts/:id/countersign', 'hr_manage', people.countersignContract],
   ['POST', '/api/hr/contracts/:id/void', 'hr_manage', people.voidContract],

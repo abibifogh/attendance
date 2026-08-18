@@ -546,8 +546,13 @@ export async function bootstrap(ctx) {
     })),
     shifts: ds.shifts,
     reasons: ds.reasons,
+    // Everything the screens read, and nothing else. The property's own name
+    // and address were missing from this list, which is why the header has
+    // been showing the fallback name and why a contract had no employer
+    // address to print.
     settings: Object.fromEntries(
-      Object.entries(ds.settings).filter(([key]) => key.startsWith('att_') || key === 'timezone'),
+      Object.entries(ds.settings).filter(([key]) => key.startsWith('att_')
+        || ['timezone', 'property_name', 'property_address', 'hr_link_days'].includes(key)),
     ),
     open: Number(open?.n ?? 0),
     unknownEmployees: Number(unknown?.n ?? 0),

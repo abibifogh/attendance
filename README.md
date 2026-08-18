@@ -462,6 +462,50 @@ backup. The browser shrinks a photograph before sending it, so a picture of a
 Ghana Card taken on a phone is fine; anything still over the row limit is
 refused with the size in the message rather than truncated.
 
+### The standard set, and what a file must contain
+
+**People → Templates → Load the standard set** puts in ten documents written
+from the statutes that apply to a hotel in Ghana:
+
+| Document | Built from |
+|---|---|
+| Contract of employment — permanent | Act 651 ss.10–13, 17, 20, 33, 57, 63, 65 |
+| Contract of employment — fixed term | The same, ending on its own date |
+| Terms of engagement — casual worker | Act 651 ss.74–77 |
+| Written statement of particulars | Act 651 s.13 — the two-month statement |
+| Confirmation after probation | A letter, because silence is not confirmation |
+| Handbook and house rules | What the contract means when it refers to them |
+| Confidentiality and guest privacy | Stands alone, so it can go to a contractor too |
+| Personal data notice and consent | Data Protection Act 2012 (Act 843) |
+| Health, safety and food hygiene | Act 651 ss.118–119, Public Health Act 2012 (Act 851) |
+| Next of kin declaration | The page nobody reads until the worst day |
+
+They come in as ordinary templates. Edit them into your own words and loading
+the set again never touches them — it only adds what is missing, matched on the
+code each came in under.
+
+> **A starting point, not legal advice.** No Ghanaian lawyer has settled these.
+> They exist so a small hotel starts from something with the statutory
+> particulars in it rather than from an empty box, which is the realistic
+> alternative and a far worse one. Have somebody who knows Ghanaian employment
+> law read them before issuing any of it. A new Labour Bill is expected to
+> replace Act 651 — 14 weeks' maternity leave, paternity and compassionate
+> leave, notice to end a probation, a workplace policy on harassment — and when
+> it passes these need revisiting. Contracts already signed keep their own words
+> and are unaffected.
+
+**Each person's Documents tab carries a checklist** of what ought to be in their
+file, worked out for that person rather than shown to everybody: Ghana Card,
+SSNIT, photograph, certificates, a reference or police report, and the signed
+contract, handbook, data consent and next-of-kin form. Two are conditional —
+a **food handler's health certificate** for anybody in a food department, which
+Act 851 requires to be renewed yearly, and a **work and residence permit** for a
+worker who is not Ghanaian. A blank nationality demands nothing; assuming
+somebody is foreign because a field is empty is the wrong default.
+
+An expired certificate counts as missing, because that is what it is worth to an
+inspector. One inside thirty days of running out is flagged before it does.
+
 ### Contracts, signed on a phone
 
 A **template** is the words with `{{placeholders}}` in them. Issuing one copies
@@ -476,9 +520,29 @@ they agree to sign electronically, and signs with a finger or types their full
 name. Then somebody at the property countersigns, because a contract signed by
 one side is an offer.
 
-Recorded at the moment of signing: the name, the drawn mark, the server's
-timestamp, the network address, the device, and the SHA-256 of the exact words
-that were on the screen. That hash is **rechecked every time the contract is
+#### Contracts that were signed on paper
+
+Everybody already working here signed something years ago, on paper, and for
+most of the staff that is the only record of what was agreed. **File a signed
+paper contract** puts the scan where a contract belongs rather than in the
+general documents pile — same list, same checklist, and it asks for the date on
+the paper rather than assuming today.
+
+What it does not do is pretend the two are the same. There is no electronic
+signature behind a scan and no chain of events, so the certificate for a paper
+contract says what can honestly be said and no more: who signed it, when, who
+filed the scan, and a SHA-256 **of the file**, which proves the scan has not
+been swapped since — and says nothing about the signature on the page, which is
+a question for the paper original.
+
+Scanned contracts are often several megabytes, more than a database row will
+hold, so a file is stored in pieces of 700 KB and reassembled on the way out.
+The ceiling is 12 MB; 200 dpi in black and white is plenty for a contract.
+
+#### What is recorded when somebody signs on screen
+
+The name, the drawn mark, the server's timestamp, the network address, the
+device, and the SHA-256 of the exact words that were on the screen. That hash is **rechecked every time the contract is
 opened afterwards**. If the stored text no longer produces it, the screen says
 so in red and says not to rely on it — which is precisely the thing a signature
 is supposed to be able to prove.
@@ -796,6 +860,10 @@ src/
                       form, the phone form, the difference between what
                       somebody sent and what is on file, what is still
                       missing, and what a supervisor may not read
+    ghana-templates.js
+                      The standard contracts and acknowledgements, and the
+                      list of what belongs in a personnel file — with the
+                      statute each is built from named beside it
     pdf-text.js       Every word in a PDF and the point it was drawn at.
                       Objects, object streams, inflate, text operators — and
                       nothing else, because a rota is names, dates and times

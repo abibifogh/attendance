@@ -168,6 +168,8 @@ export const api = {
   hrDeleteTemplate: (id) => request(`/api/hr/templates/${id}`, { method: 'DELETE' }),
 
   hrIssueContract: (id, body) => request(`/api/hr/people/${id}/contracts`, { method: 'POST', body }),
+  hrFileContract: (id, body) => request(`/api/hr/people/${id}/contracts/file`, { method: 'POST', body }),
+  hrLoadStandardTemplates: () => request('/api/hr/templates/standard', { method: 'POST' }),
   hrContract: (id) => request(`/api/hr/contracts/${id}`),
   hrCountersign: (id, body) => request(`/api/hr/contracts/${id}/countersign`, { method: 'POST', body }),
   hrVoidContract: (id, note) => request(`/api/hr/contracts/${id}/void`, { method: 'POST', body: { note } }),

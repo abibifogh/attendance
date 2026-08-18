@@ -2,9 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  FIELDS, LISTS, SELF_FIELDS, cleanSubmission, diffSubmission, hashBody,
-  mask, maskProfile, missingFor, placeholdersIn, renderTemplate, shortHash,
+  FIELDS, LISTS, PLACEHOLDERS, SELF_FIELDS, cleanSubmission, diffSubmission,
+  hashBody, mask, maskProfile, missingFor, placeholdersIn, renderTemplate, shortHash,
 } from '../src/lib/people.js';
+import {
+  REQUIRED_DOCUMENTS, STANDARD_TEMPLATES, fileStatus, requiredDocumentsFor,
+} from '../src/lib/ghana-templates.js';
 
 /**
  * The rules an employee record runs on.
@@ -199,4 +202,119 @@ test('every list describes a row in a way a person can read', () => {
     const row = Object.fromEntries(list.columns.map((c) => [c, c]));
     assert.ok(list.describe(row).length, `${list.key} describes nothing`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// The standard Ghana set
+// ---------------------------------------------------------------------------
+
+test('every placeholder in the standard set is one the renderer knows', () => {
+  // The failure this catches is quiet and expensive: an unknown placeholder is
+  // left exactly as written, so a contract goes out to be signed with the
+  // characters "{{leave_days}}" in the middle of the annual leave clause.
+  const known = new Set(PLACEHOLDERS.map((p) => p.key));
+  const unknown = [];
+
+  for (const template of STANDARD_TEMPLATES) {
+    for (const [, key] of template.body.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/g)) {
+      if (!known.has(key)) unknown.push(`${template.code}: {{${key}}}`);
+    }
+  }
+
+  assert.deepEqual(unknown, []);
+});
+
+test('every asked-for placeholder has a lawful fallback, or is plainly optional', () => {
+  // A contract issued in a hurry with the boxes left empty must still say
+  // something true. The two without a fallback are the ones where a guess
+  // would be worse than a visible gap.
+  const withoutFallback = PLACEHOLDERS
+    .filter((p) => p.ask && p.fallback === undefined)
+    .map((p) => p.key);
+
+  assert.deepEqual(withoutFallback.sort(), ['effective_date', 'end_date', 'salary']);
+});
+
+test('the standard templates name the statutes they are built from', () => {
+  for (const template of STANDARD_TEMPLATES) {
+    assert.match(template.body, /Act 651|Act 766|Act 851|Act 843|Act 772/,
+      `${template.code} cites nothing`);
+  }
+});
+
+test('every standard template has a unique code and a name', () => {
+  const codes = STANDARD_TEMPLATES.map((t) => t.code);
+  assert.equal(new Set(codes).size, codes.length);
+  for (const t of STANDARD_TEMPLATES) {
+    assert.ok(t.name && t.body && t.kind, `${t.code} is incomplete`);
+  }
+});
+
+test('a template that satisfies a file requirement names a real one', () => {
+  const codes = new Set(REQUIRED_DOCUMENTS.map((d) => d.code));
+  for (const t of STANDARD_TEMPLATES) {
+    if (!t.satisfies) continue;
+    assert.ok(codes.has(t.satisfies), `${t.code} satisfies "${t.satisfies}", which is not a requirement`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// What each person's file must contain
+// ---------------------------------------------------------------------------
+
+test('a food handler is asked for a health certificate and nobody else is', () => {
+  // Public Health Act 2012: anybody handling food must be screened yearly. A
+  // checklist that asked it of the whole property would be one people scroll
+  // past, and one that never asked would leave a kitchen open to being closed.
+  const kitchen = requiredDocumentsFor({ department: 'F&B' }, {}).map((d) => d.code);
+  const desk = requiredDocumentsFor({ department: 'Reception' }, {}).map((d) => d.code);
+
+  assert.ok(kitchen.includes('food_health'));
+  assert.ok(!desk.includes('food_health'));
+});
+
+test('a work permit is asked of a foreign worker and never assumed from a blank', () => {
+  const blank = requiredDocumentsFor({ department: 'Reception' }, {}).map((d) => d.code);
+  const ghanaian = requiredDocumentsFor({ department: 'Reception' }, { nationality: 'Ghanaian' })
+    .map((d) => d.code);
+  const foreign = requiredDocumentsFor({ department: 'Reception' }, { nationality: 'Nigerian' })
+    .map((d) => d.code);
+
+  assert.ok(foreign.includes('work_permit'));
+  assert.ok(!ghanaian.includes('work_permit'));
+  // Treating an unanswered question as "probably foreign" is exactly the wrong
+  // default, and the sort of thing somebody would rightly complain about.
+  assert.ok(!blank.includes('work_permit'), 'a blank nationality demands nothing');
+});
+
+test('an expired certificate counts as missing', () => {
+  const person = { department: 'Kitchen' };
+  const documents = [{ id: 1, kind: 'food_health', expires_on: '2026-01-31' }];
+
+  const status = fileStatus(person, {}, { documents, today: '2026-08-18' });
+  assert.equal(status.find((d) => d.code === 'food_health').state, 'expired');
+});
+
+test('one about to run out is flagged before it does', () => {
+  const documents = [{ id: 1, kind: 'food_health', expires_on: '2026-09-05' }];
+  const status = fileStatus({ department: 'Kitchen' }, {}, { documents, today: '2026-08-18' });
+
+  assert.equal(status.find((d) => d.code === 'food_health').state, 'expiring');
+});
+
+test('a signed contract answers the requirement a document cannot', () => {
+  // Nobody uploads a scan of a handbook acknowledgement they signed on screen.
+  // The signed copy is the evidence, so it ticks the box itself.
+  const contracts = [{ status: 'signed', satisfies: 'handbook' }];
+  const status = fileStatus({ department: 'Reception' }, {}, { documents: [], contracts });
+
+  assert.equal(status.find((d) => d.code === 'handbook').state, 'held');
+  assert.equal(status.find((d) => d.code === 'ghana_card').state, 'missing');
+});
+
+test('a contract still waiting to be signed answers nothing', () => {
+  const contracts = [{ status: 'sent', satisfies: 'contract' }];
+  const status = fileStatus({ department: 'Reception' }, {}, { documents: [], contracts });
+
+  assert.equal(status.find((d) => d.code === 'contract').state, 'missing');
 });

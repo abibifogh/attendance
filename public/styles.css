@@ -922,3 +922,27 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   .contract-body, .contract-text { max-height: none; overflow: visible; }
   .invite-head, .invite-back, .tasks, .sig-tools { display: none; }
 }
+
+/* What a personnel file must contain, and what is in it. A tick, a warning and
+   a gap have to be told apart at arm's length across a desk. */
+.checklist { display: grid; gap: .15rem; margin-bottom: .7rem; }
+.check-row {
+  display: grid; grid-template-columns: 1.6rem 1fr auto; gap: .6rem; align-items: start;
+  padding: .45rem .2rem; border-bottom: 1px solid var(--border);
+}
+.check-row:last-of-type { border-bottom: 0; }
+.check-mark {
+  display: grid; place-items: center; width: 1.5rem; height: 1.5rem;
+  border-radius: 50%; font-weight: 700; font-size: .85rem;
+}
+.check-good { background: var(--good-soft); color: var(--good); }
+.check-warn { background: var(--warn-soft); color: var(--warn); }
+.check-bad  { background: var(--bad-soft);  color: var(--bad); }
+.check-label { display: flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; font-size: .92rem; }
+
+/* A scanned contract, shown where the words would otherwise be. */
+.scan {
+  width: 100%; height: min(70vh, 900px); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--surface-2);
+}
+@media print { .scan { height: auto; min-height: 60vh; } }

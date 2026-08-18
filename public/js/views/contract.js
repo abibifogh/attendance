@@ -90,7 +90,7 @@ export async function renderContract(params) {
     // The one thing on this page worth shouting about. Checked on the server
     // every time the contract is read: the stored words are hashed again and
     // compared with the hash recorded when it was signed.
-    !contract.intact
+    contract.origin !== 'paper' && !contract.intact
       ? h('div.alert.high',
         h('span.alert-icon', '⛔'),
         h('div',
@@ -111,32 +111,71 @@ export async function renderContract(params) {
       : null,
 
     card(null, { wide: true },
-      h('div.contract-body', contract.body),
+      // A paper contract has no words here to show — the scan is the contract.
+      // Embedding it rather than linking it means the thing somebody came to
+      // read is on the screen they landed on.
+      contract.origin === 'paper'
+        ? h('div',
+          h('object.scan', {
+            data: api.hrDocumentUrl(contract.document_id),
+            type: 'application/pdf',
+          },
+          h('p.muted',
+            'Your browser will not show this here. ',
+            h('a', { href: api.hrDocumentUrl(contract.document_id), target: '_blank', rel: 'noopener' },
+              'Open the scan'), '.')),
+          h('p.muted.no-print', { style: { fontSize: '.85rem' } },
+            h('a', { href: api.hrDocumentUrl(contract.document_id), target: '_blank', rel: 'noopener' },
+              'Open the scan in a new tab'),
+            ' to print it — a scanned page prints from its own viewer, not from this one.'),
+        )
+        : h('div.contract-body', contract.body),
 
-      h('div.sig-block',
-        signatureSlot('Signed by the employee', contract.signer_name, contract.signature_ink,
-          contract.signed_at, contract.signature_ink ? 'Drawn by hand' : 'Typed name'),
-        signatureSlot('For the property', contract.employer_name, contract.employer_ink,
-          contract.employer_at, null),
-      ),
+      contract.origin === 'paper'
+        ? h('p.muted', { style: { marginTop: '.8rem' } },
+          'Signed on paper. The signatures are on the scan above.')
+        : h('div.sig-block',
+          signatureSlot('Signed by the employee', contract.signer_name, contract.signature_ink,
+            contract.signed_at, contract.signature_ink ? 'Drawn by hand' : 'Typed name'),
+          signatureSlot('For the property', contract.employer_name, contract.employer_ink,
+            contract.employer_at, null),
+        ),
     ),
 
-    card('Certificate of signature', { wide: true },
-      h('table.cert',
-        row('Document', contract.title),
-        row('Employee', `${contract.staff_name} · ${contract.employee_no}`),
-        row('Fingerprint of the words (SHA-256)', h('span.mono', contract.body_hash)),
-        row('Still matches the words above', contract.intact
-          ? 'Yes — checked just now'
-          : h('strong', 'NO — see the warning above')),
-        row('Signed by', contract.signer_name || '—'),
-        row('How', contract.signature_ink ? 'Drawn by hand on a touchscreen' : 'Full name typed'),
-        row('When (UTC)', contract.signed_at || 'Not signed'),
-        row('From', contract.signer_ip || '—'),
-        row('Device', h('small', contract.signer_agent || '—')),
-        row('Countersigned by', contract.employer_name
-          ? `${contract.employer_name}, ${contract.employer_at} UTC` : 'Not yet'),
-      ),
+    card(contract.origin === 'paper' ? 'How this came to be on file' : 'Certificate of signature',
+      { wide: true },
+      contract.origin === 'paper'
+        // A scan and an electronic signature are not the same evidence, and a
+        // screen that presented them alike would be worse than one that showed
+        // nothing. What can honestly be said about a scan is said, and no more.
+        ? h('table.cert',
+          row('Document', contract.title),
+          row('Employee', `${contract.staff_name} · ${contract.employee_no}`),
+          row('How it was signed', 'On paper. This is a scan of it.'),
+          row('Date on the paper', contract.signed_at || '—'),
+          row('Signed by', contract.signer_name || '—'),
+          row('Countersigned by', contract.employer_name || '—'),
+          row('Scan filed by', `${contract.filed_by || '—'}${contract.filed_at ? `, ${contract.filed_at} UTC` : ''}`),
+          row('Fingerprint of the scan (SHA-256)', h('span.mono', contract.body_hash)),
+          row('What that proves', 'That this file is the one that was filed, and has not been '
+            + 'swapped since. It says nothing about the signature on the page, which is a '
+            + 'question for the paper original.'),
+        )
+        : h('table.cert',
+          row('Document', contract.title),
+          row('Employee', `${contract.staff_name} · ${contract.employee_no}`),
+          row('Fingerprint of the words (SHA-256)', h('span.mono', contract.body_hash)),
+          row('Still matches the words above', contract.intact
+            ? 'Yes — checked just now'
+            : h('strong', 'NO — see the warning above')),
+          row('Signed by', contract.signer_name || '—'),
+          row('How', contract.signature_ink ? 'Drawn by hand on a touchscreen' : 'Full name typed'),
+          row('When (UTC)', contract.signed_at || 'Not signed'),
+          row('From', contract.signer_ip || '—'),
+          row('Device', h('small', contract.signer_agent || '—')),
+          row('Countersigned by', contract.employer_name
+            ? `${contract.employer_name}, ${contract.employer_at} UTC` : 'Not yet'),
+        ),
 
       h('h4', { style: { margin: '1.1rem 0 .3rem' } }, 'What happened, in order'),
       table([
@@ -146,7 +185,7 @@ export async function renderContract(params) {
         { key: 'ip', label: 'From', format: (v) => h('small.mono', v || '—') },
       ], events, { empty: 'Nothing recorded.' }),
 
-      h('p.muted', { style: { fontSize: '.8rem', marginBottom: 0 } },
+      contract.origin === 'paper' ? null : h('p.muted', { style: { fontSize: '.8rem', marginBottom: 0 } },
         'Ghana’s Electronic Transactions Act 2008 gives an electronic signature the same effect '
         + 'as a written one where it is uniquely linked to the person signing and under their '
         + 'control. What is recorded above is the evidence of that: the exact words that were on '
@@ -178,6 +217,7 @@ export const EVENTS = {
   declined: 'Refused',
   countersigned: 'Countersigned by the property',
   contract_void: 'Withdrawn',
+  contract_filed: 'Signed on paper, scan filed',
   details_sent: 'Details sent in',
   details_accepted: 'Details accepted',
   details_rejected: 'Details turned down',
