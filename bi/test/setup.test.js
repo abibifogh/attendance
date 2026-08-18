@@ -74,3 +74,42 @@ test('a binding that is not there is reported rather than silently invented', ()
 test('the shipped id is an obvious placeholder, not somebody else\'s real database', () => {
   assert.match(bindingId(REAL, 'DB'), /REPLACE/);
 });
+
+/**
+ * The question both GitHub workflows ask before doing anything.
+ *
+ * "Is Insight wired up yet?" is *not* "does the word REPLACE appear anywhere in
+ * the file" — setup comments out any binding whose database does not exist and
+ * leaves that binding's placeholder sitting inside the comment. A grep would
+ * therefore keep the deploy dormant for ever on a perfectly finished setup,
+ * which is exactly the sort of thing nobody debugs quickly.
+ */
+const readyToDeploy = (config) => {
+  const id = bindingId(config, 'DB');
+  return bindingEnabled(config, 'DB') && Boolean(id) && !/REPLACE/.test(id);
+};
+
+test('the deploy gate is shut before setup has run', () => {
+  assert.equal(readyToDeploy(REAL), false);
+});
+
+test('the deploy gate opens once the warehouse has a real id', () => {
+  const wired = setBinding(REAL, 'DB', 'aaaa-1111').config;
+  assert.equal(readyToDeploy(wired), true);
+});
+
+test('a commented-out binding elsewhere does not hold the deploy shut', () => {
+  // Precisely the state setup leaves behind on a property with no breakfast
+  // app: DB real and live, BREAKFAST_DB switched off with its placeholder
+  // still in the comment.
+  let config = setBinding(REAL, 'DB', 'aaaa-1111').config;
+  config = disableBinding(config, 'BREAKFAST_DB').config;
+
+  assert.match(config, /REPLACE/, 'the placeholder is still there, inside a comment');
+  assert.equal(readyToDeploy(config), true, 'and it must not matter');
+});
+
+test('the gate stays shut if the warehouse binding is switched off entirely', () => {
+  const off = disableBinding(setBinding(REAL, 'DB', 'aaaa-1111').config, 'DB').config;
+  assert.equal(readyToDeploy(off), false);
+});

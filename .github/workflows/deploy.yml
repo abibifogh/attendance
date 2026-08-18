@@ -138,6 +138,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Is it set up yet?
         id: ready
         env:
@@ -149,17 +153,28 @@ jobs:
             echo "### Insight not published — no Cloudflare credentials" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          if grep -q 'REPLACE_WITH_YOUR' bi/wrangler.toml; then
+          # The gate is whether the *warehouse* binding is live and real. A
+          # grep for the placeholder anywhere in the file is not the same
+          # question: setup comments out any binding whose database does not
+          # exist, and a commented-out placeholder would keep this dormant for
+          # ever. Reuses the module the setup script is tested against.
+          if node -e "
+            import('./bi/scripts/wrangler-config.mjs').then(({ bindingId, bindingEnabled }) => {
+              const config = require('node:fs').readFileSync('bi/wrangler.toml', 'utf8');
+              const id = bindingId(config, 'DB');
+              process.exit(bindingEnabled(config, 'DB') && id && !/REPLACE/.test(id) ? 0 : 1);
+            }).catch(() => process.exit(1));
+          "; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
             echo "ready=false" >> "$GITHUB_OUTPUT"
             {
               echo "### Insight not published yet"
               echo ""
-              echo 'bi/wrangler.toml still has a placeholder database id. Run `npm run setup`'
-              echo 'in bi/, commit the change, and this will publish on the next push.'
+              echo 'Its warehouse database has not been wired up. Run'
+              echo '**Actions → Set up Insight**, and this publishes on the next push.'
             } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
           fi
-          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v4
         if: steps.ready.outputs.ready == 'true'

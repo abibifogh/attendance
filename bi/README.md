@@ -313,87 +313,111 @@ the tool look as though it were inventing connections.
 
 ## Setup
 
-### The short version
+All of it from a browser. Nothing below needs a terminal, a laptop or wrangler
+installed anywhere.
+
+### Once, before anything else
+
+**Settings → Secrets and variables → Actions → New repository secret:**
+
+| Secret | What it is |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | a token with **D1:Edit** and **Workers Scripts:Edit** |
+| `CLOUDFLARE_ACCOUNT_ID` | from the right-hand side of any Cloudflare dashboard page |
+| `INSIGHT_DASHBOARD_PASSWORD` | what you will type the first time you sign in |
+
+Only the last one is new — the first two are what the attendance app already
+deploys with, so they may well be there.
+
+### Then, three buttons
+
+**Actions → Set up Insight → Run workflow.** Creates the D1 database, finds
+the `attendance` and `breakfast` databases on your account, writes their ids
+into `bi/wrangler.toml` and commits that, switches off any binding whose
+database does not exist, and applies the migrations. Safe to run again.
+
+**Actions → Set Insight's secrets → Run workflow.** Puts the password on the
+Worker and **generates the signing key itself** — that one never exists in
+GitHub, in a log or in anybody's password manager, only on the Worker. If you
+give it Insight's address it also generates the shared secret for the
+attendance hand-off and sets it on *both* Workers, which is the whole of
+joining those two up.
+
+**Actions → Test & Deploy → Run workflow** (or push anything to the default
+branch). Publishes it.
+
+Then open the Worker's URL, sign in with `INSIGHT_DASHBOARD_PASSWORD`, and press
+**Setup → Load and re-read now**. It starts in demonstration mode, so every
+screen has something on it before a single real system is connected.
+
+### What is left, in the order it is worth doing
+
+Each stands alone. The app works after every one of them and says on screen
+what it still cannot see.
+
+**Make yourself an account.** **Accounts → Add somebody**, tick owner, set a
+password. The shared password still works as a way back in, but it deliberately
+cannot be handed over to another system — a password out of a config file is
+not a person.
+
+**Connect the POS and the laundry.** Add repository secrets
+`INSIGHT_POS_REPORTS_KEY` and `INSIGHT_LAUNDRY_TOKEN`, run **Set Insight's
+secrets** again, and put each one's address in under **Setup → The four
+systems**. The POS's reporting API ships switched off — it needs
+`"execute": ["any"]` on its notify function and a deploy, or it answers 503 and
+this says so.
+
+**Leave demonstration mode** once one real source is reading. The invented
+figures stay until the next load overwrites them, so doing it by accident costs
+nothing.
+
+**Join the other three up for single sign-on.** Generate a secret for each
+(any password manager will), add it as `INSIGHT_SSO_SECRET_BREAKFAST`,
+`INSIGHT_SSO_SECRET_POS` or `INSIGHT_SSO_SECRET_LAUNDRY`, run **Set Insight's
+secrets**, and give that system the same value plus the handler in
+[docs/sso.md](docs/sso.md). One at a time; the hub says plainly which are joined
+up and which still ask for a password.
+
+**Map any Supabase databases** under **Setup → Databases you have mapped
+yourself**, then add their keys as `INSIGHT_SUPABASE_KEYS` — one `name=key` per
+line — and run **Set Insight's secrets**.
+
+### From a terminal instead
+
+If you would rather:
 
 ```bash
-cd bi
-npm install
-npm run setup                          # creates the database, wires it up, migrates
-
+cd bi && npm install && npm run setup
 npx wrangler secret put SESSION_SECRET       # openssl rand -base64 32
-npx wrangler secret put DASHBOARD_PASSWORD   # what you will type the first time
-
+npx wrangler secret put DASHBOARD_PASSWORD
 npm run deploy
 ```
 
-Open the site, sign in with `DASHBOARD_PASSWORD`, and press **Setup → Load and
-re-read now**. It starts in demonstration mode, so every screen has something on
-it before a single real system is connected.
+`npm run setup` does exactly what the **Set up Insight** workflow does, and is
+equally safe to run twice. By hand it is: `wrangler d1 create insight`, the
+printed id into `wrangler.toml` under the `DB` binding, the ids of the
+`attendance` and `breakfast` databases into `ATT_DB` and `BREAKFAST_DB` (or
+those bindings commented out), then `npm run db:migrate`.
 
-`npm run setup` is safe to run again. It creates a D1 database called `insight`
-if there is not one already, finds the `attendance` and `breakfast` databases on
-your account and binds them, switches off any binding whose database does not
-exist — so a missing app cannot fail the deploy — applies the migrations, and
-then prints what is left for you.
+### Where it lives
 
-### What is left for you, in the order it is worth doing
+By default `niceoperation-insight.<your-subdomain>.workers.dev`. For a proper
+address, add a route block to `bi/wrangler.toml` the way the attendance app has
+one:
 
-Everything below is optional and each step stands on its own. The app works
-after each one and says on screen what it still cannot see.
-
-**Make yourself an account.** Sign in with the shared password, go to
-**Accounts**, add yourself as an owner and set a password. The shared password
-still works as a way back in, but it deliberately cannot be handed over to
-another system — a password out of a config file is not a person.
-
-**Connect the POS and the laundry.**
-
-```bash
-npx wrangler secret put POS_REPORTS_KEY   # the POS's own REPORTS_API_KEY
-npx wrangler secret put LAUNDRY_TOKEN     # a laundry staff token
+```toml
+[[routes]]
+pattern = "insight.niceoperation.com"
+custom_domain = true
 ```
 
-Then put each one's address in under **Setup → The four systems**. The POS's
-reporting API ships switched off — set `"execute": ["any"]` on its notify
-function and deploy it, or it will answer 503 and this will say so.
-
-**Leave demonstration mode.** Once one real source is reading, **Setup → Switch
-demonstration mode off**. The invented figures stay until the next load
-overwrites them, so switching it off by accident costs nothing.
-
-**Join the systems up for single sign-on**, one at a time. See
-[docs/sso.md](docs/sso.md) — attendance needs only two secrets because its
-handler is already written; the other three need about thirty lines each.
-
-**Map any Supabase databases** under **Setup → Databases you have mapped
-yourself**.
-
-### If you would rather do it by hand
-
-`npm run setup` does exactly this, and nothing else:
-
-1. `npx wrangler d1 create insight`, then the printed id into `wrangler.toml`
-   under the `DB` binding.
-2. The ids of the `attendance` and `breakfast` databases (`npx wrangler d1 list`)
-   into the `ATT_DB` and `BREAKFAST_DB` bindings — or comment a binding out if
-   that app does not exist.
-3. `npm run db:migrate`.
-
-### Publishing from GitHub
-
-Once `bi/wrangler.toml` has real database ids committed, the workflow in
-`.github/workflows/deploy.yml` publishes this on every push to the default
-branch, alongside the attendance app. Until then it skips and says why in the
-build summary, rather than turning the build red for something nobody has
-switched on yet.
-
-Secrets are never in the repository — set them with `wrangler secret put` as
-above. They survive redeploys.
+The domain has to be on the same Cloudflare account. Editing that file in
+GitHub's web editor and pushing is enough; the deploy picks it up.
 
 ## Development
 
 ```bash
-npm test        # 93 tests, no network, no fixtures to keep in step
+npm test        # 97 tests, no network, no fixtures to keep in step
 npm run dev     # wrangler dev
 ```
 
@@ -424,7 +448,7 @@ src/
     rules/           labour, demand, cash, supply, service
   routes/            the panels behind each screen, plus accounts
   fixtures/demo.js   the invented hotel
-scripts/setup.mjs    one command instead of four fiddly ones
+scripts/setup.mjs    the terminal version of the Set up Insight workflow
 public/              the dashboard and the hub: no framework, no build step
 docs/sso.md          the hand-off protocol, and a handler per platform
 ```

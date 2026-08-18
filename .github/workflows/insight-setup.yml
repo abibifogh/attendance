@@ -1,0 +1,173 @@
+name: Set up Insight
+
+# Creating the reporting layer's database and wiring it up, from a button.
+#
+# This is the web-only version of `npm run setup`. It creates the D1 database,
+# finds the other databases on the account, writes their ids into
+# bi/wrangler.toml and commits that change — after which the ordinary deploy
+# publishes Insight on every push.
+#
+# Before running it, once:
+#
+#   Settings → Secrets and variables → Actions → New repository secret
+#     CLOUDFLARE_API_TOKEN    a token with D1:Edit and Workers Scripts:Edit
+#     CLOUDFLARE_ACCOUNT_ID   from the Cloudflare dashboard sidebar
+#
+# Then: Actions → Set up Insight → Run workflow.
+#
+# Safe to run again. It creates nothing that already exists, and if the ids are
+# already correct it commits nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to commit the database ids to'
+        required: true
+        default: 'main'
+
+permissions:
+  contents: write
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the credentials are here
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CF_TOKEN" ] || [ -z "$CF_ACCOUNT" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set" \
+              "under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Wrangler comes from the root package, which has a lock file. Every
+      # command below points at bi/wrangler.toml with --config, so there is
+      # nothing to install inside bi/ at all.
+      - run: npm ci
+
+      - name: Create the warehouse, if it is not already there
+        id: create
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eu
+          npx wrangler d1 list --json > /tmp/databases.json || echo '[]' > /tmp/databases.json
+
+          if node -e "
+            const d = require('/tmp/databases.json');
+            process.exit(d.some((x) => x.name === 'insight') ? 0 : 1);
+          "; then
+            echo "- \`insight\` already exists — nothing created" >> "$GITHUB_STEP_SUMMARY"
+          else
+            npx wrangler d1 create insight
+            npx wrangler d1 list --json > /tmp/databases.json
+            echo "- created \`insight\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Write the ids into bi/wrangler.toml
+        id: wire
+        run: |
+          set -eu
+          node - <<'SCRIPT'
+          const { readFileSync, writeFileSync } = require('node:fs');
+          const path = 'bi/wrangler.toml';
+
+          (async () => {
+            const { setBinding, disableBinding, bindingId } =
+              await import('./bi/scripts/wrangler-config.mjs');
+
+            const databases = JSON.parse(readFileSync('/tmp/databases.json', 'utf8'));
+            const idOf = (name) => {
+              const row = databases.find((d) => d.name === name);
+              return row?.uuid ?? row?.database_id ?? null;
+            };
+
+            let config = readFileSync(path, 'utf8');
+            const lines = [];
+
+            const insight = idOf('insight');
+            if (!insight) {
+              console.error('::error::insight was created but its id could not be read back');
+              process.exit(1);
+            }
+            config = setBinding(config, 'DB', insight).config;
+            lines.push(`- \`DB\` → insight`);
+
+            // Both of the databases this reads are optional. A binding pointing
+            // at a database that does not exist fails the whole deploy, and the
+            // app copes with either missing and says so on every screen — so a
+            // property that never installed one is switched off, not blocked.
+            for (const [binding, name] of [['ATT_DB', 'attendance'], ['BREAKFAST_DB', 'breakfast']]) {
+              const id = idOf(name);
+              if (id) {
+                config = setBinding(config, binding, id).config;
+                lines.push(`- \`${binding}\` → ${name}`);
+              } else {
+                config = disableBinding(config, binding).config;
+                lines.push(`- \`${binding}\` switched off — no database called \`${name}\` on this account`);
+              }
+            }
+
+            writeFileSync(path, config);
+            writeFileSync('/tmp/summary.md', lines.join('\n'));
+            console.log(lines.join('\n'));
+          })();
+          SCRIPT
+
+          {
+            echo "### Bindings"
+            cat /tmp/summary.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit it
+        run: |
+          set -eu
+          if git diff --quiet -- bi/wrangler.toml; then
+            echo "- ids were already correct; nothing committed" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bi/wrangler.toml
+          git commit -m "Point Insight at this account's databases
+
+          Written by the Set up Insight workflow. Database ids are not secret —
+          reaching one still needs an API token — so they live in the config
+          file where wrangler expects them."
+          git push origin HEAD:${{ inputs.branch }}
+          echo "- committed to \`${{ inputs.branch }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create the tables
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eu
+          npx wrangler d1 migrations apply insight --remote --config bi/wrangler.toml
+          echo "- migrations applied" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: What is left
+        run: |
+          {
+            echo ""
+            echo "### Next"
+            echo ""
+            echo "1. Add a repository secret \`INSIGHT_DASHBOARD_PASSWORD\` — what you will type the first time you sign in."
+            echo "2. Run **Actions → Set Insight's secrets**. It generates the signing key itself; you do not have to."
+            echo "3. Run **Actions → Test & Deploy**, or push anything to the default branch."
+            echo ""
+            echo "Then open the Worker's URL, sign in, and press **Setup → Load and re-read now**."
+          } >> "$GITHUB_STEP_SUMMARY"
