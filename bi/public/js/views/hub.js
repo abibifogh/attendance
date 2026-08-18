@@ -1,6 +1,7 @@
 import { add, h } from '../util.js';
 import { api } from '../api.js';
 import { banner } from './components.js';
+import { systemMark } from '../glyphs.js';
 import { state } from '../app.js';
 
 /**
@@ -40,12 +41,18 @@ export async function renderHub(root) {
 
   function systemCard(system) {
     const isHere = system.id === 'insight';
-    return h('div.tile', { style: { display: 'flex', flexDirection: 'column', gap: '.5rem' } },
-      h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '.5rem', flexWrap: 'wrap' } },
-        h('h3', { style: { margin: 0 } }, system.label),
-        system.role ? h('span.pill', system.role) : null,
-        !system.granted ? h('span.pill', 'not granted') : null),
-      h('p.small.muted', { style: { margin: 0 } }, system.description || ''),
+    return h('div.tile.syscard',
+      // The mark sits beside the heading and its sentence rather than above
+      // them, so the eye lands on the shape and reads across. A row of icons
+      // stacked over a row of titles is two lists to scan instead of one.
+      h('div.syshead',
+        h('span.sysmark-slot', { 'aria-hidden': 'true' }, systemMark(system.id, system.label)),
+        h('div', { style: { minWidth: 0 } },
+          h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '.5rem', flexWrap: 'wrap' } },
+            h('h3', { style: { margin: 0 } }, system.label),
+            system.role ? h('span.pill', system.role) : null,
+            !system.granted ? h('span.pill', 'not granted') : null),
+          h('p.small.muted', { style: { margin: '.15rem 0 0' } }, system.description || ''))),
 
       // This app is already open, so its card is a link across the tab bar
       // rather than a hand-off — but only for somebody who has actually been

@@ -21,7 +21,7 @@ import { deriveLoginKey } from '../crypto.js';
 
 /** The four sources, in the fixed colours the rest of the app gives them. */
 const SOURCES = [
-  { label: 'Attendance', colour: 'var(--series-1)', what: 'who was here' },
+  { label: 'HIVE', colour: 'var(--series-1)', what: 'who was here' },
   { label: 'Breakfast', colour: 'var(--series-4)', what: 'guests and stock' },
   { label: 'Restaurant', colour: 'var(--series-3)', what: 'sales and cash' },
   { label: 'Laundry', colour: 'var(--series-2)', what: 'charged and collected' },
@@ -44,7 +44,7 @@ function convergence() {
 
   return s('svg', {
     viewBox: `0 0 ${width} ${height}`, class: 'converge', role: 'img',
-    'aria-label': 'Attendance, breakfast, the restaurant and the laundry, four separate systems, flowing together into one.',
+    'aria-label': 'HIVE, breakfast, the restaurant and the laundry, four separate systems, flowing together into one.',
   },
   // The paths first, so the labelled nodes sit on top of them.
   ...SOURCES.map((source, i) => s('path', {
@@ -147,7 +147,7 @@ export function renderLogin(root, me = {}, onSignedIn) {
         message,
 
         h('p.small.muted.signin-foot',
-          'Attendance · Breakfast & rooms · Restaurant POS · Laundry'))),
+          'HIVE · Breakfast & rooms · Restaurant POS · Laundry'))),
 
     h('div.signin-art',
       h('div.art-inner',

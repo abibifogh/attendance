@@ -1198,7 +1198,7 @@ down the app people clock in on. See [bi/README.md](bi/README.md).
 ### Arriving here already signed in
 
 That app is also the group's front door. Somebody signs in there, clicks
-**Staff attendance** on its hub, and lands here without typing a password —
+**HIVE** on its hub, and lands here without typing a password —
 this app's `/sso` route takes the hand-off code, calls the hub back to find out
 who it was for, matches them to a row in `users` by email address, and makes an
 ordinary session exactly as a PIN would.

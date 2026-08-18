@@ -56,7 +56,7 @@ export function lineForDepartment(department) {
 export async function pull({ db, from, to }) {
   const bundle = emptyBundle();
   if (!db) {
-    bundle.notes.push('No attendance database is bound to this Worker.');
+    bundle.notes.push('No HIVE database is bound to this Worker.');
     return bundle;
   }
 
