@@ -1086,8 +1086,7 @@ before the person exists.
 ## The group's numbers, all four systems at once
 
 There is a second application in this repository, in `bi/`, and it is not part
-of the attendance app: it is a separate Worker with its own database that
-*reads* this one.
+of HIVE: it is a separate Worker with its own database that *reads* this one.
 
 The group runs four pieces of software — this, the breakfast and housekeeping
 app, the restaurant POS and the laundry — and none of them can see any of the
@@ -1098,7 +1097,7 @@ work, which of the guests in house are actually eating in, whether the bed
 checks get missed on exactly the days somebody was absent, and whether the same
 supplier charges the kitchen and the restaurant two different prices.
 
-It reads this app's database directly through a second binding. Nothing in it
+It reads HIVE's database directly through a second binding. Nothing in it
 writes here, and it deploys on its own, so a reporting layer can never take
 down the app people clock in on. See [bi/README.md](bi/README.md).
 
