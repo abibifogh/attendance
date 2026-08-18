@@ -120,6 +120,8 @@ export function renderLogin(onSuccess) {
     h('div.card.login-card',
       h('div', { style: { fontSize: '2rem' } }, BRAND.mark),
       h('h1', BRAND.name),
+      h('p.muted', { style: { marginTop: '-.2rem', fontSize: '.82rem', letterSpacing: '.02em' } },
+        BRAND.full),
       h('p.muted', { style: { fontSize: '.88rem', marginBottom: '.9rem' } }, 'Sign in to continue'),
       modeToggle,
       pinPane,

@@ -94,7 +94,7 @@ export async function test(ctx) {
   const settings = Object.fromEntries((settingsRows.results ?? []).map((r) => [r.key, r.value]));
 
   const message = JSON.stringify({
-    title: settings.property_name || 'Attendance',
+    title: settings.property_name || 'HIVE',
     body: 'Test alert. This is what you will see when a day needs confirming.',
     url: `${settings.site_url || ''}/#/att-today`,
   });

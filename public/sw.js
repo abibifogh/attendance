@@ -17,7 +17,7 @@ self.addEventListener('push', (event) => {
     data = { body: event.data ? event.data.text() : '' };
   }
 
-  const title = data.title || 'Attendance';
+  const title = data.title || 'HIVE';
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || 'Some days need confirming.',
     // Same tag each morning, so a second alert replaces the first rather than

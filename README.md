@@ -1,16 +1,41 @@
-# Staff Attendance
+# HIVE
 
-Attendance, rota and leave for a hotel, read from the Hikvision face terminal at
-the staff entrance.
+**Human Information & Verification Engine** — everything a hotel has to know
+about the people who work in it, and everything it has to be able to prove.
 
-The terminal knows one thing, and knows it very well: that a face was recognised
-at 07:03. Everything a manager actually wants is downstream of that — was 07:03
-late, is a missing evening tap an absence or a forgotten one, how many days has
-this person worked this month, and how much leave is left. None of that lives on
-the device. This is the part that turns the one into the other.
+It began as an attendance app. The terminal at the staff entrance knows one
+thing and knows it very well: that a face was recognised at 07:03. Everything a
+manager actually wants is downstream of that — was 07:03 late, is a missing
+evening tap an absence or a forgotten one, how many days has this person worked
+this month, and how much leave is left.
+
+It does considerably more than that now:
+
+| | |
+|---|---|
+| **Attendance** | Punches from the terminal, turned into days, hours, lateness and absence |
+| **Rota** | Standing patterns, rotations, and a week imported from a CSV or a printed schedule |
+| **Leave** | Requests, approvals, entitlement and balances |
+| **Sign-off** | Settling periods a day at a time, and asking somebody when you are not sure |
+| **People** | Personnel records, documents, contracts signed on a phone, and what a file must contain |
+| **Letters** | The correspondence register, signatures asked for and given, and a hash-linked record of both |
 
 Runs entirely on Cloudflare: a Worker serves both the app and the API, with a D1
 (SQLite) database behind it. Served at **staff.niceoperation.com**.
+
+> The repository, the Worker and the address are all still called *attendance*
+> or *staff*. That is deliberate. Renaming them buys nothing anybody can see and
+> costs a re-attached custom domain, a rebound database and a broken deploy —
+> and every signing link already sent out points at the address as it is.
+
+---
+
+## Guides
+
+| | |
+|---|---|
+| **[The HIVE Handbook](https://claude.ai/code/artifact/a92878aa-a0d3-4b70-b23e-9662efb1615f)** | Every screen, every button, and why each behaves the way it does |
+| **[Role guides](https://claude.ai/code/artifact/8a873fa9-cd26-4efc-b1e5-8b78d2c6956f)** | Six short ones — planner, supervisor, manager, wages, administrator, and the staff member with no login. Pick yours and ignore the rest |
 
 ---
 

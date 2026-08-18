@@ -154,7 +154,7 @@ export async function pingExceptions(db, { day, open, absent, escalated = [] }) 
 
     const ping = renderPing({
       day,
-      propertyName: settings.property_name || 'Attendance',
+      propertyName: settings.property_name || 'HIVE',
       open,
       absent,
       escalated,
@@ -230,7 +230,7 @@ export async function emailExceptions(db, env, { day, open, absent, escalated = 
 
     const { subject, html } = renderDigest({
       day,
-      propertyName: settings.property_name || 'Attendance',
+      propertyName: settings.property_name || 'HIVE',
       siteUrl: settings.site_url,
       open,
       absent,

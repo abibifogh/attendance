@@ -145,11 +145,18 @@ function shell(content) {
         title: 'Menu',
         onclick: () => document.querySelector('.shell')?.classList.toggle('nav-open'),
       }, '☰'),
+      // The system's own name, with the property underneath rather than
+      // instead of it. Somebody working here already knows where they work;
+      // which system they are looking at is the thing worth saying.
       h('div.brand',
         h('span.brand-mark', BRAND.mark),
         h('div',
-          state.settings.property_name || BRAND.name,
-          h('span.brand-sub', state.name ? `${state.name} · ${roleLabel(state.role)}` : roleLabel(state.role)),
+          BRAND.name,
+          h('span.brand-sub', [
+            state.settings.property_name,
+            state.name,
+            roleLabel(state.role),
+          ].filter(Boolean).join(' · ')),
         ),
       ),
       h('div.topbar-spacer'),

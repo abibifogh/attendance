@@ -2,7 +2,7 @@
   "name": "niceoperation-attendance",
   "version": "1.0.0",
   "private": true,
-  "description": "Attendance, rota and leave, read from a Hikvision terminal at the staff entrance",
+  "description": "HIVE — Human Information & Verification Engine: attendance, rota, leave, personnel records and correspondence",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",

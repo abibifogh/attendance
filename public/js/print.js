@@ -35,6 +35,9 @@ export function printReport({ title, subtitle, note, footer }) {
     h('div.print-brand',
       h('span', BRAND.mark),
       h('strong', state.settings.property_name || BRAND.name),
+      state.settings.property_name
+        ? h('span', { style: { color: '#6b7280', fontWeight: 400 } }, ` · ${BRAND.name}`)
+        : null,
     ),
     h('h1.print-title', title),
     subtitle ? h('div.print-subtitle', subtitle) : null,
