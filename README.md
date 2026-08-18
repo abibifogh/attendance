@@ -116,6 +116,69 @@ that shows as its own tile — *Days charged* or *Days given back* — with a li
 saying which months it came from. A balance that quietly differs from the
 entitlement is the kind of thing people notice on payday.
 
+### Sign-off — settling up as you go
+
+**Sign-off** is the screen whoever builds the rota opens on a Monday. Pick a
+window — yesterday, last week, a fortnight, a month, or two dates by hand —
+and it lists everybody with days in it that nothing has signed off, worst
+first.
+
+**Signing is per day.** A fortnight with three days nobody can explain used to
+be all-or-nothing: sign the lot, or leave eleven settled days waiting on three.
+So the three held up everything and nothing got signed. Now every day carries a
+tick, all ticked by default; untick the awkward ones and they stay on the list
+to be dealt with on their own.
+
+> **The rule about overlaps had to change for that to work.** It was *no two
+> signed spans may share a day*, checked on the raw dates. It is now *no two
+> signed spans may share a day either of them actually signed* — otherwise the
+> three days a month deliberately left out could never be settled by anybody,
+> because the month itself would refuse them. The comparison moved out of SQL
+> and into code for exactly this reason.
+
+**Today is never on the list.** A shift that has not finished cannot be signed
+off, and charging an absence against somebody who is upstairs making a bed is
+the mistake that rule exists to prevent.
+
+#### What is wrong, before you sign it
+
+Each person's card names what the period contains — *2 late, 1 absent, 1 not
+settled* — and separates the ones worth stopping for from the ones worth
+seeing. An unexplained absence, an unsettled day and a whole missed shift are
+blocking; lateness and leaving early are not.
+
+Lateness is read from the rules' own verdict, not from the raw minutes. Grace
+exists precisely so that somebody due at 06:00 who arrives at 06:01 is not
+late, and a screen that flagged them anyway would put a warning beside half the
+property every morning — which is how a list of warnings stops being read.
+
+There are then two answers, not one:
+
+- **Sign off** — and that you knew what was in it is recorded with the
+  sign-off, so a decision taken over a known problem can be told from one where
+  there was nothing to notice.
+- **Ask an admin** — the period goes to a queue with the dates, the figures and
+  your question. Nothing is signed, the days stay on your list, and the bell
+  rings for whoever settles days.
+
+#### The questions queue
+
+Everything anybody has asked, in one place, with the whole conversation on it.
+A question asked in a corridor is one nobody can find again; a question with
+the dates, the figures and the answer on it is a record of a decision.
+
+An administrator can do three genuinely different things:
+
+| | |
+|---|---|
+| **Comment** | Say something and leave it open — a question being worked out is not one that has been dealt with |
+| **Hand it back with a direction** | Tell them what to do. The period stays unsigned, the query goes back to their screen and rings their bell |
+| **Sign it off** | Deal with it here, under the administrator's own name, and the question closes |
+
+Signing the days a question was about answers the question automatically —
+though only when *every* day it asked about has been dealt with. A question
+about five days, three of which were signed, is still a question.
+
 ### Your shifts, found rather than typed
 
 If you already built your shifts in Hik-Connect, you should not have to build
@@ -462,6 +525,50 @@ backup. The browser shrinks a photograph before sending it, so a picture of a
 Ghana Card taken on a phone is fine; anything still over the row limit is
 refused with the size in the message rather than truncated.
 
+### The standard set, and what a file must contain
+
+**People → Templates → Load the standard set** puts in ten documents written
+from the statutes that apply to a hotel in Ghana:
+
+| Document | Built from |
+|---|---|
+| Contract of employment — permanent | Act 651 ss.10–13, 17, 20, 33, 57, 63, 65 |
+| Contract of employment — fixed term | The same, ending on its own date |
+| Terms of engagement — casual worker | Act 651 ss.74–77 |
+| Written statement of particulars | Act 651 s.13 — the two-month statement |
+| Confirmation after probation | A letter, because silence is not confirmation |
+| Handbook and house rules | What the contract means when it refers to them |
+| Confidentiality and guest privacy | Stands alone, so it can go to a contractor too |
+| Personal data notice and consent | Data Protection Act 2012 (Act 843) |
+| Health, safety and food hygiene | Act 651 ss.118–119, Public Health Act 2012 (Act 851) |
+| Next of kin declaration | The page nobody reads until the worst day |
+
+They come in as ordinary templates. Edit them into your own words and loading
+the set again never touches them — it only adds what is missing, matched on the
+code each came in under.
+
+> **A starting point, not legal advice.** No Ghanaian lawyer has settled these.
+> They exist so a small hotel starts from something with the statutory
+> particulars in it rather than from an empty box, which is the realistic
+> alternative and a far worse one. Have somebody who knows Ghanaian employment
+> law read them before issuing any of it. A new Labour Bill is expected to
+> replace Act 651 — 14 weeks' maternity leave, paternity and compassionate
+> leave, notice to end a probation, a workplace policy on harassment — and when
+> it passes these need revisiting. Contracts already signed keep their own words
+> and are unaffected.
+
+**Each person's Documents tab carries a checklist** of what ought to be in their
+file, worked out for that person rather than shown to everybody: Ghana Card,
+SSNIT, photograph, certificates, a reference or police report, and the signed
+contract, handbook, data consent and next-of-kin form. Two are conditional —
+a **food handler's health certificate** for anybody in a food department, which
+Act 851 requires to be renewed yearly, and a **work and residence permit** for a
+worker who is not Ghanaian. A blank nationality demands nothing; assuming
+somebody is foreign because a field is empty is the wrong default.
+
+An expired certificate counts as missing, because that is what it is worth to an
+inspector. One inside thirty days of running out is flagged before it does.
+
 ### Contracts, signed on a phone
 
 A **template** is the words with `{{placeholders}}` in them. Issuing one copies
@@ -476,9 +583,29 @@ they agree to sign electronically, and signs with a finger or types their full
 name. Then somebody at the property countersigns, because a contract signed by
 one side is an offer.
 
-Recorded at the moment of signing: the name, the drawn mark, the server's
-timestamp, the network address, the device, and the SHA-256 of the exact words
-that were on the screen. That hash is **rechecked every time the contract is
+#### Contracts that were signed on paper
+
+Everybody already working here signed something years ago, on paper, and for
+most of the staff that is the only record of what was agreed. **File a signed
+paper contract** puts the scan where a contract belongs rather than in the
+general documents pile — same list, same checklist, and it asks for the date on
+the paper rather than assuming today.
+
+What it does not do is pretend the two are the same. There is no electronic
+signature behind a scan and no chain of events, so the certificate for a paper
+contract says what can honestly be said and no more: who signed it, when, who
+filed the scan, and a SHA-256 **of the file**, which proves the scan has not
+been swapped since — and says nothing about the signature on the page, which is
+a question for the paper original.
+
+Scanned contracts are often several megabytes, more than a database row will
+hold, so a file is stored in pieces of 700 KB and reassembled on the way out.
+The ceiling is 12 MB; 200 dpi in black and white is plenty for a contract.
+
+#### What is recorded when somebody signs on screen
+
+The name, the drawn mark, the server's timestamp, the network address, the
+device, and the SHA-256 of the exact words that were on the screen. That hash is **rechecked every time the contract is
 opened afterwards**. If the stored text no longer produces it, the screen says
 so in red and says not to rely on it — which is precisely the thing a signature
 is supposed to be able to prove.
@@ -492,9 +619,92 @@ is supposed to be able to prove.
 > particulars in it. **It is a starting point and not legal advice** — have
 > somebody who knows Ghanaian employment law read it before you issue it.
 
+## Letters — the correspondence register
+
+A hotel writes to suppliers, banks, the Labour Department and guests, and in
+most small properties those letters live in a Word folder and a sent-items box.
+Six months later nobody can say what was sent, when, who signed it, or whether
+the reply ever came.
+
+**Letters** answers those four, and puts the fourth first: a reply that is
+overdue is the one thing a register catches that a folder never will.
+
+### A reference, the moment it exists
+
+`SN/FIN/2026/0041`. Four series out of the box — administration, staff,
+suppliers, guests — each counting on its own and restarting in January without
+anybody remembering to. A number is allocated once and **never reused**, so a
+gap in the register is a question worth asking rather than a bug.
+
+Write the letter here from a template, or upload one written in Word. Both are
+ordinary entries from that point; the only difference is where the words live.
+
+### Sending it out for signature
+
+Name the people who have to sign, in the order they sign. Each gets a link and
+a **six-character access code** to be told separately — read out on a call —
+so a forwarded link on its own opens a locked door. Where an email address is
+on file, the signer can have a **six-digit one-time code emailed** at the moment
+of signing, which is what turns *somebody holding this link* into *somebody
+holding this link and reading that mailbox*.
+
+Only the earliest unsigned person's link is live. Anybody further down is told
+plainly that it is not their turn and who is being waited on, because a letter
+counter-signed before it was signed is one nobody can reason about afterwards.
+Somebody copied in for information gets no link at all.
+
+The words are fixed the moment a letter goes out. The hash of them is checked
+before any signature is accepted, and a letter altered in between cannot be
+signed at all.
+
+### Signing for the property
+
+Anybody with **Sign for the property** can sign and apply the company stamp —
+and is asked for their **own password or PIN at the moment they do**, on top of
+the session they already have.
+
+> A stored signature that anybody with an unlocked phone could stamp onto a
+> letter is a forgery machine, and the whole value of holding one is that it is
+> not. A signature belongs to the person, not the property: nobody else can see
+> it, nobody else can apply it, and there is no route in the system that hands
+> one person another person's. That somebody *has* one saved is shown; what it
+> looks like is not.
+
+The **stamp** is the other way round — it belongs to the property, anybody who
+may sign can apply it, and it is printed on paper that leaves the building every
+week. Photograph the rubber stamp on a white sheet; the browser shrinks it.
+
+### The chain
+
+The event log is **hash-linked**. Each row carries the hash of the row before
+it, and its own hash over that plus its own contents. Edit a row or delete one
+and every hash after it stops matching, and the letter says so in red, naming
+the event where the chain broke.
+
+That is not a digital signature and does not claim to be — somebody with the
+database could rewrite the whole chain from scratch. What it stops is the
+realistic version: one inconvenient row quietly altered afterwards. An audit
+trail that can be rewritten without trace is not an audit trail.
+
+Everything is on the chain: drafted, signed for the property, sent for
+signature, opened, wrong access code entered, one-time code emailed, signed,
+refused, dispatched, closed — each with a UTC timestamp, the actor, and the
+network address.
+
+### Who can do what
+
+| Permission | Reaches |
+|---|---|
+| **Letters** | Read the register and what has been sent |
+| **Write letters** | Draft, send for signature, record dispatch, file replies, keep the address book |
+| **Sign for the property** | Sign a letter and apply the stamp — with the signer's own password or PIN each time |
+
+Drafting and signing are separate on purpose: whoever writes a letter is not
+necessarily whoever signs it. Managers get the first two by default.
+
 ## Who can see what
 
-Eight permissions, so a supervisor settling this morning's missing clock-outs
+Eleven permissions, so a supervisor settling this morning's missing clock-outs
 never sees a leave balance and whoever draws up the rota never sees anybody's
 bank account:
 
@@ -503,11 +713,14 @@ bank account:
 | **Attendance today** | Who clocked in, and what needs dealing with |
 | **Attendance reports** | Days worked, hours, lateness, leave balances, exports |
 | **Rota & leave requests** | Set the rota and put leave in for people. No approvals, no balances |
-| **Sign off attendance** | Close a day, week or month off and move the days. Still no balances |
+| **Sign off attendance** | Close a day, week, month or any set of days off and move the days. Still no balances |
 | **Rota & decisions** | Set the rota, settle incomplete days, approve leave |
 | **Attendance setup** | Staff, shifts, absence reasons, holidays, terminals, rules |
 | **Employee records** | Read personal details, contacts and contracts. Private numbers stay masked |
 | **Manage employee records** | Edit records, send links, accept what people send in, issue and sign contracts |
+| **Letters** | Read the correspondence register |
+| **Write letters** | Draft letters, send them for signature, keep the address book |
+| **Sign for the property** | Sign a letter and apply the company stamp |
 
 Five roles built from them — Rota planner, Supervisor, Manager, Reports only,
 Administrator — and any individual can be adjusted off their role's defaults.
@@ -796,6 +1009,16 @@ src/
                       form, the phone form, the difference between what
                       somebody sent and what is on file, what is still
                       missing, and what a supervisor may not read
+    ghana-templates.js
+                      The standard contracts, letters and acknowledgements,
+                      and the list of what belongs in a personnel file — with
+                      the statute each is built from named beside it
+    correspondence.js Letter references, the hash-linked event chain, and
+                      whose turn it is to sign
+    signoff.js        What a sign-off actually signed, what is still
+                      outstanding, and what is wrong with a period
+    files.js          Holding a file in a database that will not take one
+                      whole: splitting it into pieces and putting it back
     pdf-text.js       Every word in a PDF and the point it was drawn at.
                       Objects, object streams, inflate, text operators — and
                       nothing else, because a rota is names, dates and times
@@ -805,9 +1028,12 @@ src/
     notify.js         The morning digest: email and push
     push.js           Web Push plumbing (VAPID, payload encryption)
     http.js           JSON responses, input validation
-  routes/             API handlers (people.js is the office side of the
-                      records; invite.js is the phone on the end of a link,
-                      and the two share nothing but the database)
+  routes/             API handlers. Each feature that reaches outside the
+                      building is split in two: people.js/invite.js for the
+                      staff records, correspondence.js/sign.js for the letter
+                      register. The public half of each shares nothing with
+                      its office half but the database, because it is reached
+                      by anybody holding a link
   util/dates.js       Day arithmetic
 public/               Frontend — plain ES modules, no build step
 migrations/           Database schema (console/ holds paste-able copies)

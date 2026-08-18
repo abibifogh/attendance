@@ -8,6 +8,9 @@ import {
   cleanSubmission, diffSubmission, hashBody, maskProfile, missingFor,
   placeholdersIn, renderTemplate,
 } from '../lib/people.js';
+import {
+  REQUIRED_DOCUMENTS, STANDARD_TEMPLATES, fileStatus,
+} from '../lib/ghana-templates.js';
 
 /**
  * Employee records, from the property's side of the desk.
@@ -68,7 +71,7 @@ export async function peopleModel(ctx) {
  * round the building with.
  */
 export async function listPeople(ctx) {
-  const [staff, profiles, contacts, contracts, pending] = await Promise.all([
+  const [staff, profiles, contacts, contracts, pending, documents, signed] = await Promise.all([
     ctx.db.prepare('SELECT * FROM att_staff ORDER BY active DESC, name').all(),
     ctx.db.prepare('SELECT * FROM hr_profile').all(),
     ctx.db.prepare('SELECT staff_id, COUNT(*) n FROM hr_contact GROUP BY staff_id').all(),
@@ -81,6 +84,8 @@ export async function listPeople(ctx) {
     ctx.db.prepare(
       "SELECT staff_id, COUNT(*) n FROM hr_submission WHERE status = 'pending' GROUP BY staff_id",
     ).all(),
+    ctx.db.prepare('SELECT id, staff_id, kind, expires_on FROM hr_document').all(),
+    ctx.db.prepare("SELECT staff_id, satisfies, status FROM hr_contract WHERE status = 'signed'").all(),
   ]);
 
   const byStaff = (rows) => new Map((rows.results ?? []).map((r) => [r.staff_id, r]));
@@ -91,10 +96,29 @@ export async function listPeople(ctx) {
 
   const full = canManage(ctx);
 
+  const grouped = (rows) => {
+    const map = new Map();
+    for (const row of rows.results ?? []) {
+      if (!map.has(row.staff_id)) map.set(row.staff_id, []);
+      map.get(row.staff_id).push(row);
+    }
+    return map;
+  };
+  const documentBy = grouped(documents);
+  const signedBy = grouped(signed);
+
   const rows = (staff.results ?? []).map((person) => {
     const profile = profileBy.get(person.id) ?? null;
     const gaps = missingFor(profile, { contacts: Array(contactBy.get(person.id)?.n ?? 0).fill(1) });
     const contract = contractBy.get(person.id);
+
+    // A file that is short of a Ghana Card is short of it whether or not
+    // anybody has typed a phone number in, so the checklist and the fields
+    // report into the same list.
+    const file = fileStatus(person, profile, {
+      documents: documentBy.get(person.id) ?? [],
+      contracts: signedBy.get(person.id) ?? [],
+    });
 
     return {
       id: person.id,
@@ -105,7 +129,13 @@ export async function listPeople(ctx) {
       hiredOn: person.hired_on,
       active: Boolean(person.active),
       phone: full ? profile?.personal_phone ?? null : null,
-      missing: gaps.map((g) => g.label),
+      missing: [
+        ...gaps.map((g) => g.label),
+        ...file.filter((d) => d.state === 'missing' || d.state === 'expired')
+          .map((d) => (d.state === 'expired' ? `${d.label} (expired)` : d.label)),
+      ],
+      expiring: file.filter((d) => d.state === 'expiring')
+        .map((d) => ({ label: d.label, on: d.expiresOn })),
       signedContracts: Number(contract?.signed ?? 0),
       waitingContracts: Number(contract?.waiting ?? 0),
       pendingSubmissions: Number(pendingBy.get(person.id)?.n ?? 0),
@@ -138,8 +168,9 @@ export async function getPerson(ctx, id) {
          FROM hr_document WHERE staff_id = ? ORDER BY uploaded_at DESC`,
     ).bind(staffId).all(),
     ctx.db.prepare(
-      `SELECT id, title, status, issued_at, opened_at, signed_at, signer_name, body_hash,
-              employer_name, employer_at, decline_note, created_at
+      `SELECT id, title, status, origin, document_id, satisfies, issued_at, opened_at,
+              signed_at, signer_name, body_hash, employer_name, employer_at, decline_note,
+              filed_by, filed_at, created_at
          FROM hr_contract WHERE staff_id = ? ORDER BY id DESC`,
     ).bind(staffId).all(),
     ctx.db.prepare(
@@ -171,6 +202,14 @@ export async function getPerson(ctx, id) {
     missing: missingFor(profile, lists).map((g) => g.label),
     documents: documents.results ?? [],
     contracts: contracts.results ?? [],
+    // What ought to be in this particular person's file, and what is. Two of
+    // the requirements depend on who they are — a food handler's certificate,
+    // a work permit — so the list is worked out per person rather than shown
+    // to everybody and ignored by most of them.
+    fileStatus: fileStatus(person, profile, {
+      documents: documents.results ?? [],
+      contracts: contracts.results ?? [],
+    }),
     invites: (invites.results ?? []).map((i) => ({
       id: i.id,
       wantsDetails: Boolean(i.wants_details),
@@ -277,10 +316,59 @@ export async function replaceList(db, staffId, list, rows) {
 // Documents
 // ---------------------------------------------------------------------------
 
-// D1 will not hold a row larger than two megabytes. The browser shrinks a
-// photograph before it is sent; this is the backstop, and it refuses with the
-// reason rather than storing something truncated.
-const MAX_DOCUMENT = 1_400_000;
+// A file is stored in pieces, because D1 will not hold a row larger than about
+// two megabytes and a scanned five-page contract is routinely more than that.
+// The first piece stays in the row itself so that small files are unchanged.
+const CHUNK = 700_000;
+// The ceiling on the whole thing. Generous enough for a scanned contract,
+// small enough that one upload cannot fill the database.
+const MAX_DOCUMENT = 12_000_000;
+
+/** Store a file, in as many pieces as it takes, and return its id. */
+async function storeFile(ctx, staffId, { kind, title, filename, mime, bytes, expiresOn }) {
+  const parts = Math.max(1, Math.ceil(bytes.length / CHUNK));
+
+  const created = await ctx.db.prepare(
+    `INSERT INTO hr_document (staff_id, kind, title, filename, mime, bytes, content, parts,
+                              expires_on, uploaded_by)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) RETURNING id`,
+  ).bind(
+    staffId, kind, title, filename, mime, bytes.length,
+    bytes.subarray(0, CHUNK), parts, expiresOn, actorOf(ctx),
+  ).first();
+
+  for (let seq = 1; seq < parts; seq += 1) {
+    await ctx.db.prepare(
+      'INSERT INTO hr_document_part (document_id, seq, content) VALUES (?1, ?2, ?3)',
+    ).bind(created.id, seq, bytes.subarray(seq * CHUNK, (seq + 1) * CHUNK)).run();
+  }
+
+  return created.id;
+}
+
+/** Read a file back, in order. */
+async function readFile(db, row) {
+  const first = row.content instanceof ArrayBuffer ? new Uint8Array(row.content) : row.content;
+  const parts = Number(row.parts ?? 1);
+  if (parts <= 1) return first;
+
+  const chunks = [first];
+  // One query per piece rather than one for all of them: a single row holding
+  // twelve megabytes of blobs is a response nobody should ask a database for.
+  for (let seq = 1; seq < parts; seq += 1) {
+    const part = await db.prepare(
+      'SELECT content FROM hr_document_part WHERE document_id = ? AND seq = ?',
+    ).bind(row.id, seq).first();
+    if (!part) break;
+    chunks.push(part.content instanceof ArrayBuffer ? new Uint8Array(part.content) : part.content);
+  }
+
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) { out.set(chunk, at); at += chunk.length; }
+  return out;
+}
 
 export async function addDocument(ctx, id) {
   const staffId = Number(id);
@@ -292,36 +380,30 @@ export async function addDocument(ctx, id) {
   if (!bytes.length) throw badRequest('There was nothing in that file.');
   if (bytes.length > MAX_DOCUMENT) {
     throw badRequest(
-      `That file is ${Math.round(bytes.length / 1024)} KB and the limit is `
-      + `${Math.round(MAX_DOCUMENT / 1024)} KB. Photograph it again at a smaller size, `
-      + 'or scan it as a JPEG rather than a PDF.',
+      `That file is ${Math.round(bytes.length / 1_000_000)} MB and the limit is `
+      + `${Math.round(MAX_DOCUMENT / 1_000_000)} MB. Scan it again at a lower resolution — `
+      + '200 dpi in black and white is plenty for a contract.',
     );
   }
 
-  await ctx.db.prepare(
-    `INSERT INTO hr_document (staff_id, kind, title, filename, mime, bytes, content, expires_on, uploaded_by)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)`,
-  ).bind(
-    staffId,
-    str(body.kind, 'Kind', { max: 40, fallback: 'other' }),
-    str(body.title, 'Title', { required: true, max: 120 }),
-    str(body.filename, 'File name', { max: 200 }),
-    str(body.mime, 'Type', { max: 80, fallback: 'application/octet-stream' }),
-    bytes.length,
+  const documentId = await storeFile(ctx, staffId, {
+    kind: str(body.kind, 'Kind', { max: 40, fallback: 'other' }),
+    title: str(body.title, 'Title', { required: true, max: 120 }),
+    filename: str(body.filename, 'File name', { max: 200 }),
+    mime: str(body.mime, 'Type', { max: 80, fallback: 'application/octet-stream' }),
     bytes,
-    str(body.expiresOn, 'Expiry', { max: 10 }),
-    actorOf(ctx),
-  ).run();
+    expiresOn: str(body.expiresOn, 'Expiry', { max: 10 }),
+  });
 
   await audit(ctx, 'people.document_add', staffId, { title: body.title, bytes: bytes.length });
-  return json({ ok: true });
+  return json({ ok: true, id: documentId });
 }
 
 export async function getDocument(ctx, id) {
   const row = await ctx.db.prepare('SELECT * FROM hr_document WHERE id = ?').bind(Number(id)).first();
   if (!row) throw notFound('No such document.');
 
-  const content = row.content instanceof ArrayBuffer ? new Uint8Array(row.content) : row.content;
+  const content = await readFile(ctx.db, row);
   return new Response(content, {
     headers: {
       'Content-Type': row.mime || 'application/octet-stream',
@@ -583,7 +665,8 @@ export async function saveTemplate(ctx, id) {
   const body = await readJson(ctx.request);
   const name = str(body.name, 'Name', { required: true, max: 120 });
   const text = str(body.body, 'The words', { required: true, max: 60_000 });
-  const kind = ['contract', 'letter', 'policy'].includes(body.kind) ? body.kind : 'contract';
+  const kind = ['contract', 'letter', 'policy', 'correspondence'].includes(body.kind)
+    ? body.kind : 'contract';
 
   if (id) {
     await ctx.db.prepare(
@@ -633,8 +716,11 @@ export async function issueContract(ctx, id) {
   const source = template?.body ?? str(body.body, 'The words', { required: true, max: 60_000 });
   const profile = await ctx.db.prepare('SELECT * FROM hr_profile WHERE staff_id = ?').bind(staffId).first();
 
+  const leaveDays = Number(person.leave_days ?? await setting(ctx.db, 'att_leave_days', 15)) || 15;
+
   const values = {
     name: person.name,
+    first_name: String(person.name ?? '').trim().split(/\s+/)[0],
     employee_no: person.employee_no,
     job_title: person.job_title,
     department: person.department,
@@ -642,6 +728,11 @@ export async function issueContract(ctx, id) {
     address: [profile?.address_line, profile?.town, profile?.region].filter(Boolean).join(', '),
     id_type: profile?.id_type,
     property: await setting(ctx.db, 'property_name', 'Somewhere Nice'),
+    property_address: await setting(ctx.db, 'property_address', ''),
+    // Never less than the fifteen working days section 20 of Act 651 requires,
+    // whatever the settings happen to say. A contract promising twelve would be
+    // void as to that term and an embarrassment to have issued.
+    leave_days: `${Math.max(15, leaveDays)} working days`,
     today: new Date().toISOString().slice(0, 10),
   };
   for (const asked of ASKED_PLACEHOLDERS) {
@@ -653,12 +744,13 @@ export async function issueContract(ctx, id) {
   const hash = await hashBody(rendered);
 
   const created = await ctx.db.prepare(
-    `INSERT INTO hr_contract (staff_id, template_id, title, body, body_hash, status, fields, issued_by, issued_at)
-     VALUES (?1,?2,?3,?4,?5,'draft',?6,?7,datetime('now')) RETURNING id`,
+    `INSERT INTO hr_contract (staff_id, template_id, title, body, body_hash, status, fields,
+                              satisfies, issued_by, issued_at)
+     VALUES (?1,?2,?3,?4,?5,'draft',?6,?7,?8,datetime('now')) RETURNING id`,
   ).bind(
     staffId, template?.id ?? null,
     str(body.title, 'Title', { max: 160, fallback: template?.name || 'Contract of employment' }),
-    rendered, hash, JSON.stringify(values), actorOf(ctx),
+    rendered, hash, JSON.stringify(values), template?.satisfies ?? null, actorOf(ctx),
   ).first();
 
   await logEvent(ctx, { staffId, contractId: created.id, kind: 'contract_issued', detail: hash.slice(0, 16) });
@@ -742,4 +834,121 @@ export async function voidContract(ctx, id) {
   await logEvent(ctx, { staffId: contract.staff_id, contractId: contract.id, kind: 'contract_void' });
   await audit(ctx, 'people.contract_void', contract.id, null);
   return json({ ok: true });
+}
+
+/**
+ * File a contract that was signed on paper.
+ *
+ * Everybody already working here signed something years ago, on paper, and
+ * those are the contracts that matter most — for most of the staff they are
+ * the only record of what was agreed. This puts the scan where a contract
+ * belongs rather than in the general documents pile, so it appears in the same
+ * list as the electronic ones and satisfies the same requirement.
+ *
+ * What it does not do is pretend the two are the same. There is no electronic
+ * signature here and no chain of events behind it; what is recorded is who
+ * says it was signed, when they say it was signed, and who filed the scan. The
+ * fingerprint is of the file rather than of any text, which still answers the
+ * question worth asking — has this scan been swapped since it was filed.
+ */
+export async function fileSignedContract(ctx, id) {
+  const staffId = Number(id);
+  const person = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(staffId).first();
+  if (!person) throw notFound('No such member of staff.');
+
+  const body = await readJson(ctx.request);
+  const bytes = fromBase64(body.content);
+  if (!bytes.length) throw badRequest('There was no file with that.');
+  if (bytes.length > MAX_DOCUMENT) {
+    throw badRequest(
+      `That file is ${Math.round(bytes.length / 1_000_000)} MB and the limit is `
+      + `${Math.round(MAX_DOCUMENT / 1_000_000)} MB. Scan it again at a lower resolution — `
+      + '200 dpi in black and white is plenty for a contract.',
+    );
+  }
+
+  const signedOn = str(body.signedOn, 'Date signed', { required: true, max: 10 });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(signedOn)) throw badRequest('Give the date it was signed.');
+  if (signedOn > new Date().toISOString().slice(0, 10)) {
+    throw badRequest('That date is in the future. A contract cannot have been signed yet.');
+  }
+
+  const title = str(body.title, 'Title', { max: 160, fallback: 'Contract of employment' });
+  const satisfies = str(body.satisfies, 'Kind', { max: 40, fallback: 'contract' });
+
+  const documentId = await storeFile(ctx, staffId, {
+    kind: satisfies,
+    title,
+    filename: str(body.filename, 'File name', { max: 200 }),
+    mime: str(body.mime, 'Type', { max: 80, fallback: 'application/pdf' }),
+    bytes,
+    expiresOn: str(body.expiresOn, 'Expiry', { max: 10 }),
+  });
+
+  const hash = await hashBytes(bytes);
+
+  const created = await ctx.db.prepare(
+    `INSERT INTO hr_contract
+       (staff_id, title, body, body_hash, status, origin, document_id, satisfies,
+        signed_at, signer_name, employer_name, employer_at, filed_by, filed_at, issued_by, issued_at)
+     VALUES (?1, ?2, '', ?3, 'signed', 'paper', ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now'), ?10, ?6)
+     RETURNING id`,
+  ).bind(
+    staffId, title, hash, documentId, satisfies, signedOn,
+    str(body.signerName, 'Signed by', { max: 120, fallback: person.name }),
+    str(body.employerName, 'For the property', { max: 120 }),
+    str(body.employerName, 'For the property', { max: 120 }) ? signedOn : null,
+    actorOf(ctx),
+  ).first();
+
+  await logEvent(ctx, {
+    staffId, contractId: created.id, kind: 'contract_filed',
+    detail: `Signed on paper ${signedOn}; scan filed · ${hash.slice(0, 16)}`,
+  });
+  await audit(ctx, 'people.contract_filed', created.id, { staffId, signedOn, bytes: bytes.length });
+
+  return json({ ok: true, id: created.id, documentId });
+}
+
+/** The fingerprint of a scan, so a swapped file can be told from the filed one. */
+async function hashBytes(bytes) {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Put the standard set of templates in, without disturbing anything.
+ *
+ * Only the ones this property does not already have, matched on the code they
+ * were loaded under. Somebody who has edited the permanent contract into their
+ * own words keeps their version; somebody who has never loaded the data
+ * protection notice gets it. Loading again after an update to the set adds
+ * what is new and touches nothing else.
+ */
+export async function loadStandardTemplates(ctx) {
+  const existing = await ctx.db.prepare('SELECT code FROM hr_template WHERE code IS NOT NULL').all();
+  const have = new Set((existing.results ?? []).map((r) => r.code));
+
+  let added = 0;
+  for (const template of STANDARD_TEMPLATES) {
+    if (have.has(template.code)) continue;
+
+    // A property that wrote its own before loading these keeps the name it
+    // chose; the standard one comes in under a name that says where it is from.
+    const clash = await ctx.db.prepare('SELECT 1 FROM hr_template WHERE name = ?')
+      .bind(template.name).first();
+
+    await ctx.db.prepare(
+      `INSERT INTO hr_template (name, kind, body, code, satisfies, created_by)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+    ).bind(
+      clash ? `${template.name} (standard)` : template.name,
+      template.kind, template.body, template.code, template.satisfies ?? null,
+      actorOf(ctx),
+    ).run();
+    added += 1;
+  }
+
+  await audit(ctx, 'people.templates_standard', null, { added });
+  return json({ ok: true, added, total: STANDARD_TEMPLATES.length });
 }

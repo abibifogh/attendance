@@ -84,6 +84,14 @@ export const api = {
   attReview: (params) => request(`/api/att/review?${new URLSearchParams(params)}`),
   attDecideReview: (body) => request('/api/att/review', { method: 'POST', body }),
   attUndoReview: (body) => request('/api/att/review/undo', { method: 'POST', body }),
+  attOutstanding: (params = {}) => request(`/api/att/outstanding?${new URLSearchParams(params)}`),
+  attSignDays: (body) => request('/api/att/sign-days', { method: 'POST', body }),
+  attReopenDays: (body) => request('/api/att/sign-days/undo', { method: 'POST', body }),
+  attQueries: (status) => request(`/api/att/queries${status ? `?status=${status}` : ''}`),
+  attRaiseQuery: (body) => request('/api/att/queries', { method: 'POST', body }),
+  attAnswerQuery: (id, body) => request(`/api/att/queries/${id}/answer`, { method: 'POST', body }),
+  attWithdrawQuery: (id) => request(`/api/att/queries/${id}/withdraw`, { method: 'POST' }),
+
   attBalances: (asOf) => request(`/api/att/balances${asOf ? `?asOf=${asOf}` : ''}`),
   attExportUrl: (from, to) => `/api/att/export?${new URLSearchParams({
     ...(from ? { from } : {}), ...(to ? { to } : {}),
@@ -168,9 +176,38 @@ export const api = {
   hrDeleteTemplate: (id) => request(`/api/hr/templates/${id}`, { method: 'DELETE' }),
 
   hrIssueContract: (id, body) => request(`/api/hr/people/${id}/contracts`, { method: 'POST', body }),
+  hrFileContract: (id, body) => request(`/api/hr/people/${id}/contracts/file`, { method: 'POST', body }),
+  hrLoadStandardTemplates: () => request('/api/hr/templates/standard', { method: 'POST' }),
   hrContract: (id) => request(`/api/hr/contracts/${id}`),
   hrCountersign: (id, body) => request(`/api/hr/contracts/${id}/countersign`, { method: 'POST', body }),
   hrVoidContract: (id, note) => request(`/api/hr/contracts/${id}/void`, { method: 'POST', body: { note } }),
+
+  // ------------------------------------------------------------- letters --
+  corrModel: () => request('/api/corr/model'),
+  corrLetters: (params = {}) => request(`/api/corr/letters?${new URLSearchParams(params)}`),
+  corrCreateLetter: (body) => request('/api/corr/letters', { method: 'POST', body }),
+  corrLetter: (id) => request(`/api/corr/letters/${id}`),
+  corrUpdateLetter: (id, body) => request(`/api/corr/letters/${id}`, { method: 'PUT', body }),
+  corrAddEnclosure: (id, body) => request(`/api/corr/letters/${id}/enclosures`, { method: 'POST', body }),
+  corrSendForSignature: (id, body) => request(`/api/corr/letters/${id}/send`, { method: 'POST', body }),
+  corrDispatch: (id, body) => request(`/api/corr/letters/${id}/dispatch`, { method: 'POST', body }),
+  corrClose: (id, note) => request(`/api/corr/letters/${id}/close`, { method: 'POST', body: { note } }),
+  corrVoid: (id, note) => request(`/api/corr/letters/${id}/void`, { method: 'POST', body: { note } }),
+  corrSign: (id, body) => request(`/api/corr/letters/${id}/sign`, { method: 'POST', body }),
+  corrRevokeRecipient: (id) => request(`/api/corr/recipients/${id}/revoke`, { method: 'POST' }),
+  corrFileUrl: (id) => `/api/corr/files/${id}`,
+
+  corrParties: () => request('/api/corr/parties'),
+  corrCreateParty: (body) => request('/api/corr/parties', { method: 'POST', body }),
+  corrUpdateParty: (id, body) => request(`/api/corr/parties/${id}`, { method: 'PUT', body }),
+
+  corrMe: () => request('/api/corr/me'),
+  corrSaveMySignature: (body) => request('/api/corr/me/signature', { method: 'PUT', body }),
+  corrDeleteMySignature: () => request('/api/corr/me/signature', { method: 'DELETE' }),
+
+  corrStamps: () => request('/api/corr/stamps'),
+  corrSaveStamp: (body) => request('/api/corr/stamps', { method: 'POST', body }),
+  corrDeleteStamp: (id) => request(`/api/corr/stamps/${id}`, { method: 'DELETE' }),
 
   // -------------------------------------------------------- people and data --
   users: () => request('/api/users'),

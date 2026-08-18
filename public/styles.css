@@ -922,3 +922,67 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   .contract-body, .contract-text { max-height: none; overflow: visible; }
   .invite-head, .invite-back, .tasks, .sig-tools { display: none; }
 }
+
+/* What a personnel file must contain, and what is in it. A tick, a warning and
+   a gap have to be told apart at arm's length across a desk. */
+.checklist { display: grid; gap: .15rem; margin-bottom: .7rem; }
+.check-row {
+  display: grid; grid-template-columns: 1.6rem 1fr auto; gap: .6rem; align-items: start;
+  padding: .45rem .2rem; border-bottom: 1px solid var(--border);
+}
+.check-row:last-of-type { border-bottom: 0; }
+.check-mark {
+  display: grid; place-items: center; width: 1.5rem; height: 1.5rem;
+  border-radius: 50%; font-weight: 700; font-size: .85rem;
+}
+.check-good { background: var(--good-soft); color: var(--good); }
+.check-warn { background: var(--warn-soft); color: var(--warn); }
+.check-bad  { background: var(--bad-soft);  color: var(--bad); }
+.check-label { display: flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; font-size: .92rem; }
+
+/* A scanned contract, shown where the words would otherwise be. */
+.scan {
+  width: 100%; height: min(70vh, 900px); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--surface-2);
+}
+@media print { .scan { height: auto; min-height: 60vh; } }
+
+/* ===========================================================================
+   Letters
+   ======================================================================== */
+
+/* A stamp sits over the corner of a signature, the way a rubber one does on
+   paper — overlapping, not beside, or it reads as a second signature. */
+.stamp-image {
+  position: absolute; right: -.4rem; top: -.6rem;
+  max-height: 4.5rem; max-width: 6rem; opacity: .88; pointer-events: none;
+}
+.stamp-row { display: flex; flex-wrap: wrap; gap: 1rem; }
+.stamp-card {
+  display: grid; gap: .4rem; justify-items: center; text-align: center;
+  padding: .8rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); min-width: 10rem;
+}
+.stamp-card img { max-height: 6rem; max-width: 9rem; }
+
+/* Everybody on a document, and where each of them has got to. */
+.who-else { margin: 0; padding-left: 1.2rem; font-size: .88rem; }
+.who-else li { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+
+@media print {
+  /* A letter on paper is the letter, the signatures and the record under it. */
+  .stamp-image { position: absolute; }
+}
+
+/* A question on a period, and the conversation on it. Read as a thread rather
+   than a table: what was asked and what was answered belong next to each
+   other, in the order they were said. */
+.thread { display: grid; gap: .5rem; margin: .6rem 0; }
+.thread-note {
+  padding: .55rem .7rem; border-radius: var(--radius-sm);
+  background: var(--surface-2); border-left: 3px solid var(--border-strong);
+}
+.thread-head {
+  display: flex; flex-wrap: wrap; gap: .45rem; align-items: baseline;
+  font-size: .82rem; margin-bottom: .15rem;
+}

@@ -12,6 +12,9 @@ import * as attSetup from './routes/attendance-setup.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
 import * as invite from './routes/invite.js';
+import * as corr from './routes/correspondence.js';
+import * as signoff from './routes/signoff.js';
+import * as sign from './routes/sign.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import { handleSsoArrival } from './lib/sso-consumer.js';
@@ -66,6 +69,17 @@ export const ROUTES = [
   ['GET', '/api/att/review', ['att_reports', 'att_signoff'], att.periodReview],
   ['POST', '/api/att/review', 'att_signoff', att.decidePeriod],
   ['POST', '/api/att/review/undo', 'att_signoff', att.undoPeriod],
+
+  // What is still waiting, day by day, and what to do about the awkward ones.
+  ['GET', '/api/att/outstanding', 'att_signoff', signoff.outstanding],
+  ['POST', '/api/att/sign-days', 'att_signoff', signoff.signDays],
+  ['POST', '/api/att/sign-days/undo', 'att_signoff', signoff.reopenDays],
+  // Raising a question is part of signing off; answering one is deciding, and
+  // deciding is what settling a day and approving leave already need.
+  ['GET', '/api/att/queries', ['att_signoff', 'att_manage'], signoff.listQueries],
+  ['POST', '/api/att/queries', 'att_signoff', signoff.raiseQuery],
+  ['POST', '/api/att/queries/:id/answer', 'att_manage', signoff.answerQuery],
+  ['POST', '/api/att/queries/:id/withdraw', 'att_signoff', signoff.withdrawQuery],
 
   // Settling a day is a decision with somebody's name on it, so it sits behind
   // its own permission rather than travelling with the reports.
@@ -151,6 +165,10 @@ export const ROUTES = [
   ['DELETE', '/api/hr/templates/:id', 'hr_manage', people.deleteTemplate],
 
   ['POST', '/api/hr/people/:id/contracts', 'hr_manage', people.issueContract],
+  // A contract signed on paper years ago, scanned. The commonest case for
+  // anybody already on the books, and until now there was nowhere to put it.
+  ['POST', '/api/hr/people/:id/contracts/file', 'hr_manage', people.fileSignedContract],
+  ['POST', '/api/hr/templates/standard', 'hr_manage', people.loadStandardTemplates],
   ['GET', '/api/hr/contracts/:id', 'hr_view', people.getContract],
   ['POST', '/api/hr/contracts/:id/countersign', 'hr_manage', people.countersignContract],
   ['POST', '/api/hr/contracts/:id/void', 'hr_manage', people.voidContract],
@@ -165,6 +183,46 @@ export const ROUTES = [
   ['POST', '/api/i/:token/viewed', 'public', invite.inviteViewed],
   ['POST', '/api/i/:token/sign', 'public', invite.inviteSign],
   ['POST', '/api/i/:token/decline', 'public', invite.inviteDecline],
+
+  // ------------------------------------------------------------- letters --
+  ['GET', '/api/corr/model', 'corr_view', corr.letterModel],
+  ['GET', '/api/corr/letters', 'corr_view', corr.listLetters],
+  ['POST', '/api/corr/letters', 'corr_write', corr.createLetter],
+  ['GET', '/api/corr/letters/:id', 'corr_view', corr.getLetter],
+  ['PUT', '/api/corr/letters/:id', 'corr_write', corr.updateLetter],
+  ['POST', '/api/corr/letters/:id/enclosures', 'corr_write', corr.addEnclosure],
+  ['POST', '/api/corr/letters/:id/send', 'corr_write', corr.sendForSignature],
+  ['POST', '/api/corr/letters/:id/dispatch', 'corr_write', corr.dispatchLetter],
+  ['POST', '/api/corr/letters/:id/close', 'corr_write', corr.closeLetter],
+  ['POST', '/api/corr/letters/:id/void', 'corr_write', corr.voidLetter],
+  // Signing for the property is its own permission, and the handler asks for
+  // the signer's own password or PIN on top of the session.
+  ['POST', '/api/corr/letters/:id/sign', 'corr_sign', corr.signLetter],
+  ['POST', '/api/corr/recipients/:id/revoke', 'corr_write', corr.revokeRecipient],
+  ['GET', '/api/corr/files/:id', 'corr_view', corr.getFile],
+
+  ['GET', '/api/corr/parties', 'corr_view', corr.listParties],
+  ['POST', '/api/corr/parties', 'corr_write', (ctx) => corr.saveParty(ctx, null)],
+  ['PUT', '/api/corr/parties/:id', 'corr_write', corr.saveParty],
+
+  // Your own signature, and only ever your own — see the note in the handler.
+  ['GET', '/api/corr/me', 'corr_sign', corr.signChallenge],
+  ['PUT', '/api/corr/me/signature', 'corr_sign', corr.saveMySignature],
+  ['DELETE', '/api/corr/me/signature', 'corr_sign', corr.deleteMySignature],
+
+  ['GET', '/api/corr/stamps', 'corr_view', corr.listStamps],
+  ['POST', '/api/corr/stamps', 'corr_sign', corr.saveStamp],
+  ['DELETE', '/api/corr/stamps/:id', 'corr_sign', corr.deleteStamp],
+
+  // --------------------------------------------- somebody asked to sign it --
+  // No session reaches any of these. The token in the path names exactly one
+  // recipient of exactly one letter — see the note at the top of sign.js.
+  ['GET', '/api/s/:token', 'public', sign.signHead],
+  ['POST', '/api/s/:token/open', 'public', sign.signOpen],
+  ['GET', '/api/s/:token/file', 'public', sign.signFile],
+  ['POST', '/api/s/:token/code', 'public', sign.signRequestCode],
+  ['POST', '/api/s/:token/sign', 'public', sign.signDocument],
+  ['POST', '/api/s/:token/decline', 'public', sign.signDecline],
 
   // ------------------------------------------------------- people and data --
   ['GET', '/api/users', 'users', admin.listUsers],
@@ -218,6 +276,13 @@ export default {
     // the token is read back out of the address by the page itself.
     if (url.pathname.startsWith('/i/')) {
       return env.ASSETS.fetch(new Request(new URL('/invite.html', url), request));
+    }
+
+    // The same idea for a letter sent out for signature. A separate page from
+    // the staff one: this is opened by suppliers, banks and guests, and the
+    // less of the system it can reach the better.
+    if (url.pathname.startsWith('/s/')) {
+      return env.ASSETS.fetch(new Request(new URL('/sign.html', url), request));
     }
 
     // Arriving from the group hub with a hand-off code. Not under /api/

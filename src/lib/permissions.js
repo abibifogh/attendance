@@ -51,6 +51,22 @@ export const PERMISSIONS = [
     detail: 'Edit records, send links, accept what people send in, issue and sign contracts',
   },
   {
+    key: 'corr_view',
+    label: 'Letters',
+    detail: 'Read the correspondence register and what has been sent',
+  },
+  {
+    key: 'corr_write',
+    label: 'Write letters',
+    detail: 'Draft letters, send them for signature, file replies, keep the address book',
+  },
+  {
+    key: 'corr_sign',
+    label: 'Sign for the property',
+    detail: 'Sign a letter and apply the company stamp. Requires the signer’s own '
+      + 'password or PIN at the moment of signing',
+  },
+  {
     key: 'users',
     label: 'Users & data',
     detail: 'Manage logins, notifications and erasing data',
@@ -78,9 +94,11 @@ export const ROLES = [
   {
     key: 'manager',
     label: 'Manager',
-    detail: 'Everything a supervisor does, plus the reports, the rota, approving leave and the '
-      + 'employee records.',
-    defaults: ['att_view', 'att_reports', 'att_manage', 'hr_view', 'hr_manage'],
+    detail: 'Everything a supervisor does, plus the reports, the rota, approving leave, the '
+      + 'employee records and the letter register. Add "Sign for the property" to let them '
+      + 'sign and stamp letters.',
+    defaults: ['att_view', 'att_reports', 'att_manage', 'hr_view', 'hr_manage',
+      'corr_view', 'corr_write'],
   },
   {
     key: 'viewer',
@@ -135,11 +153,19 @@ export function effectivePermissions(user) {
   // And the same argument for the employee records: an administrator who could
   // not open them would be looking at the one screen that can grant them.
   if (user.role === 'admin') {
-    for (const key of ['hr_view', 'hr_manage']) if (!list.includes(key)) list.push(key);
+    for (const key of ['hr_view', 'hr_manage', 'corr_view', 'corr_write', 'corr_sign']) {
+      if (!list.includes(key)) list.push(key);
+    }
   }
   // Managing records is strictly more than reading them, so holding the larger
   // permission holds the smaller one and no route has to name both.
   if (list.includes('hr_manage') && !list.includes('hr_view')) list.push('hr_view');
+  // Writing a letter and signing one are separate on purpose — the point of
+  // the split is that whoever drafts is not necessarily whoever signs — but
+  // both of them have to be able to read the register.
+  for (const key of ['corr_write', 'corr_sign']) {
+    if (list.includes(key) && !list.includes('corr_view')) list.push('corr_view');
+  }
   // Anybody who can set the property up can obviously run the rota; a setup
   // holder who could not touch it would be looking at a control that refused
   // them.
