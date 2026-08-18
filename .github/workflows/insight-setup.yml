@@ -4,8 +4,14 @@ name: Set up Insight
 #
 # This is the web-only version of `npm run setup`. It creates the D1 database,
 # finds the other databases on the account, writes their ids into
-# bi/wrangler.toml and commits that change — after which the ordinary deploy
-# publishes Insight on every push.
+# bi/wrangler.toml, commits that, applies the migrations and publishes Insight.
+#
+# It publishes rather than leaving that to the ordinary deploy, because a push
+# made with GITHUB_TOKEN does not start a workflow — GitHub suppresses that to
+# stop a workflow triggering itself for ever. So the commit this makes would sit
+# there doing nothing, and the next step would fail on a Worker that does not
+# exist. Finishing the job here is simpler than the alternative, which is asking
+# for a personal access token purely to make a push look like a person's.
 #
 # Before running it, once:
 #
@@ -159,17 +165,27 @@ jobs:
           npx wrangler d1 migrations apply insight --remote --config bi/wrangler.toml
           echo "- migrations applied" >> "$GITHUB_STEP_SUMMARY"
 
+      # See the note at the top: the commit above cannot start the deploy, so
+      # this finishes the job rather than leaving a half-set-up account behind.
+      - name: Publish Insight
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: bi
+          command: deploy
+
       - name: What is left
         run: |
           {
             echo ""
             echo "### Next"
             echo ""
-            echo "1. **Wait for the deploy.** Committing those ids starts *Test & Deploy* on its own —"
-            echo "   watch it under Actions. A secret cannot be put on a Worker that does not exist yet,"
-            echo "   so this has to finish first."
-            echo "2. Run **Actions → Set Insight's secrets**. It generates the signing key itself;"
-            echo "   you only have to have set \`INSIGHT_DASHBOARD_PASSWORD\` as a repository secret."
+            echo "Insight is published. One step left:"
             echo ""
-            echo "Then open the Worker's URL, sign in, and press **Setup → Load and re-read now**."
+            echo "Run **Actions → Set Insight's secrets**. It generates the signing key itself;"
+            echo "you only have to have set \`INSIGHT_DASHBOARD_PASSWORD\` as a repository secret."
+            echo ""
+            echo "Then open the Worker's address printed in the *Publish Insight* step above,"
+            echo "sign in, and press **Setup → Load and re-read now**."
           } >> "$GITHUB_STEP_SUMMARY"

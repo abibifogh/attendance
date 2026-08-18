@@ -329,34 +329,36 @@ installed anywhere.
 Only the last one is new — the first two are what the attendance app already
 deploys with, so they may well be there.
 
-### Then, in this order
+### Then, two buttons
 
-**1. Actions → Set up Insight → Run workflow.** Creates the D1 database, finds
-the `attendance` and `breakfast` databases on your account, writes their ids
-into `bi/wrangler.toml` and commits that, switches off any binding whose
-database does not exist, and applies the migrations.
+**1. Actions → Set up Insight → Run workflow.** Leave the branch as `main`.
+Creates the D1 database, finds the `attendance` and `breakfast` databases on
+your account, writes their ids into `bi/wrangler.toml` and commits that,
+switches off any binding whose database does not exist, applies the migrations,
+and publishes Insight. The Worker's address is printed in its *Publish Insight*
+step.
 
-**2. Wait for the deploy.** That commit lands on the default branch, which
-starts **Test & Deploy** on its own. Watch it under Actions; it takes about a
-minute. The order matters: a secret cannot be put on a Worker that does not
-exist yet, so this has to finish before the next step.
+**2. Actions → Set Insight's secrets → Run workflow.** Leave both inputs blank
+for now. Puts the password on the Worker and **generates the signing key
+itself** — that one never exists in GitHub, in a log or in anybody's password
+manager, only on the Worker.
 
-**3. Actions → Set Insight's secrets → Run workflow.** Puts the password on the
-Worker and **generates the signing key itself** — that one never exists in
-GitHub, in a log or in anybody's password manager, only on the Worker. Give it
-Insight's address as well and it generates the shared secret for the attendance
-hand-off and sets it on *both* Workers, which is the whole of joining those two
-up.
+Then open the Worker's address, sign in with `INSIGHT_DASHBOARD_PASSWORD`, and
+press **Setup → Load and re-read now**. It starts in demonstration mode, so
+every screen has something on it before a single real system is connected.
 
-Then open the Worker's URL, sign in with `INSIGHT_DASHBOARD_PASSWORD`, and press
-**Setup → Load and re-read now**. It starts in demonstration mode, so every
-screen has something on it before a single real system is connected.
+> Step 1 publishes rather than leaving that to the ordinary deploy, because a
+> push made with `GITHUB_TOKEN` does not start a workflow — GitHub suppresses
+> that so a workflow cannot trigger itself for ever. Its commit would otherwise
+> sit there doing nothing and step 2 would fail on a Worker that does not exist.
+>
+> If step 1 cannot push — a protected default branch will refuse it — run it
+> against a branch instead and merge that, or copy the ids out of the workflow
+> summary into `bi/wrangler.toml` using GitHub's own editor. Database ids are
+> not secret; reaching one still needs the API token.
 
-> If step 1 cannot push — a protected default branch will refuse it — run the
-> workflow against a branch instead and merge that, or edit the three
-> `database_id` lines in `bi/wrangler.toml` in GitHub's own editor. The ids are
-> printed in the workflow's summary either way. Database ids are not secret;
-> reaching one still needs the API token.
+After that, every push to the default branch republishes Insight alongside the
+attendance app, in the ordinary way.
 
 ### What is left, in the order it is worth doing
 
