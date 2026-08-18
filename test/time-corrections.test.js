@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  correctTimes, resolveDay, staffReport, timeEdits, unresolveDay,
+  correctTimes, decideTimeEdit, resolveDay, staffReport, timeEdits, unresolveDay,
 } from '../src/routes/attendance.js';
 import { computeDay } from '../src/lib/attendance.js';
 
@@ -56,10 +56,16 @@ const PLANNER = {
   permissions: ['att_view', 'att_rota', 'att_times'],
 };
 
-/** Settles days and approves leave. */
+/** Settles days and approves leave. Cannot approve a correction. */
 const MANAGER = {
   user: { id: 1, name: 'Ama', role: 'manager' },
   permissions: ['att_view', 'att_reports', 'att_manage', 'att_times'],
+};
+
+/** The only person who can approve a correction. */
+const ADMIN = {
+  user: { id: 3, name: 'Kwame', role: 'admin' },
+  permissions: ['att_view', 'att_reports', 'att_manage', 'att_setup', 'att_times'],
 };
 
 function ctx(db, { body = null, query = '', session = PLANNER } = {}) {
@@ -126,6 +132,15 @@ async function setup() {
 }
 
 const dayOf = (raw, day) => raw.prepare('SELECT * FROM att_days WHERE staff_id = 1 AND day = ?').get(day);
+const requests = (raw) => raw.prepare("SELECT * FROM att_time_edit WHERE status = 'pending' ORDER BY id").all();
+
+/** The planner asks; an administrator answers. The ordinary path. */
+async function ask(db, day, body) {
+  return read(await correctTimes(ctx(db, { body: { staffId: 1, ...body } }), day));
+}
+async function answer(db, id, body) {
+  return read(await decideTimeEdit(ctx(db, { session: ADMIN, body }), String(id)));
+}
 
 // ---------------------------------------------------------------------------
 // The rule
@@ -186,53 +201,137 @@ test('a corrected clock-out on a night shift lands on the far side of midnight',
 // End to end
 // ---------------------------------------------------------------------------
 
-test('the planner puts a wrong clock-out right and the hours follow', async () => {
+test('the planner asks, and nothing moves until somebody answers', async () => {
   const { raw, db } = await setup();
 
-  const before = dayOf(raw, '2026-06-03');
-  assert.equal(before, undefined, 'nothing computed yet');
+  const out = await ask(db, '2026-06-03', { out: '21:00', reason: 'The kitchen ran until nine' });
+  assert.equal(out.pending, true);
+  assert.ok(out.requestId);
 
-  const out = await read(await correctTimes(
-    ctx(db, { body: { staffId: 1, in: null, out: '21:00', reason: 'The kitchen ran until nine' } }),
-    '2026-06-03',
-  ));
+  const row = dayOf(raw, '2026-06-03');
+  assert.equal(row.corrected_out, null, 'the day is untouched while it waits');
+  assert.equal(row.last_out, '17:02', 'and still reads what the terminal read');
 
-  assert.equal(out.ok, true);
-  assert.equal(out.day.last_out, '21:00');
-  assert.equal(out.day.worked_minutes, 720, 'nine until nine');
-  assert.equal(out.day.overtime_minutes, 240);
-  assert.equal(out.day.status, 'present', 'the rules decided that, not the planner');
+  const [waiting] = requests(raw);
+  assert.equal(waiting.now_out, '21:00');
+  assert.equal(waiting.actor, 'Yaa (planner)');
+  assert.equal(waiting.decided_by, null);
+});
+
+test('approving applies the times, and the day settles on the verdict the rules reach', async () => {
+  const { raw, db } = await setup();
+
+  const { requestId } = await ask(db, '2026-06-03', { out: '21:00', reason: 'The kitchen ran until nine' });
+  const done = await answer(db, requestId, { decision: 'approve' });
+  assert.equal(done.decision, 'approve');
 
   const row = dayOf(raw, '2026-06-03');
   assert.equal(row.corrected_out, '21:00');
   assert.equal(row.corrected_in, null, 'the side nobody touched is left alone');
-  assert.notEqual(row.resolution, 'resolved',
-    'a corrected time is not a ruling — the day is still the rules\' to decide');
+  assert.equal(row.last_out, '21:00');
+  assert.equal(row.worked_minutes, 720, 'nine until nine');
+  assert.equal(row.overtime_minutes, 240);
+
+  assert.equal(row.resolution, 'resolved', 'settled automatically, as asked');
+  assert.equal(row.status, 'present', 'and on the verdict the rules reached, not one anybody typed');
+  assert.match(row.resolved_by, /Kwame \(admin\)/);
+  assert.match(row.resolved_by, /Yaa \(planner\)/, 'both names, because two people stand behind it');
+
+  const [edit] = raw.prepare('SELECT * FROM att_time_edit').all();
+  assert.equal(edit.status, 'approved');
+  assert.equal(edit.decided_by, 'Kwame (admin)');
+  assert.ok(edit.decided_at);
+});
+
+test('an approved correction that leaves somebody late is settled as late', async () => {
+  // The point of deriving the verdict rather than asking for one: approving
+  // two clock times must not quietly excuse the day they describe.
+  const { raw, db } = await setup();
+  const { requestId } = await ask(db, '2026-06-03', { in: '10:30', reason: 'He was at the clinic first' });
+  await answer(db, requestId, { decision: 'approve' });
+
+  const row = dayOf(raw, '2026-06-03');
+  assert.equal(row.status, 'late');
+  assert.equal(row.late_minutes, 90);
+  assert.equal(row.resolution, 'resolved');
+});
+
+test('sending it back changes nothing, and has to say why', async () => {
+  const { raw, db } = await setup();
+  const { requestId } = await ask(db, '2026-06-03', { out: '21:00', reason: 'Kitchen ran late' });
+
+  await assert.rejects(
+    () => answer(db, requestId, { decision: 'reject' }),
+    /Say why/,
+  );
+
+  await answer(db, requestId, { decision: 'reject', note: 'That was Kofi on the late shift, not Henry' });
+
+  const row = dayOf(raw, '2026-06-03');
+  assert.equal(row.corrected_out, null);
+  assert.equal(row.last_out, '17:02');
+  assert.notEqual(row.resolution, 'resolved');
+
+  const [edit] = raw.prepare('SELECT * FROM att_time_edit').all();
+  assert.equal(edit.status, 'rejected');
+  assert.match(edit.decision_note, /Kofi/);
+});
+
+test('an answer cannot be given twice', async () => {
+  const { db } = await setup();
+  const { requestId } = await ask(db, '2026-06-03', { out: '21:00', reason: 'Kitchen' });
+  await answer(db, requestId, { decision: 'approve' });
+  await assert.rejects(() => answer(db, requestId, { decision: 'reject', note: 'changed my mind' }),
+    /already approved/);
+});
+
+test("an administrator's own correction applies and settles at once", async () => {
+  // A queue with one name in it teaches everybody to press the button without
+  // reading it.
+  const { raw, db } = await setup();
+
+  const out = await read(await correctTimes(
+    ctx(db, { session: ADMIN, body: { staffId: 1, out: '21:00', reason: 'Kitchen ran late' } }),
+    '2026-06-03',
+  ));
+  assert.equal(out.pending, false);
+  assert.equal(out.day.last_out, '21:00');
+  assert.equal(dayOf(raw, '2026-06-03').resolution, 'resolved');
+  assert.equal(requests(raw).length, 0);
+});
+
+test('a second thought replaces the first rather than joining the queue', async () => {
+  const { raw, db } = await setup();
+  await ask(db, '2026-06-03', { out: '21:00', reason: 'Kitchen' });
+  await ask(db, '2026-06-03', { out: '20:00', reason: 'Sorry — eight, not nine' });
+
+  const waiting = requests(raw);
+  assert.equal(waiting.length, 1, 'two contradictory requests is a question nobody can answer');
+  assert.equal(waiting[0].now_out, '20:00');
+
+  const superseded = raw.prepare("SELECT * FROM att_time_edit WHERE status = 'superseded'").all();
+  assert.equal(superseded.length, 1, 'and the first is kept, not deleted');
 });
 
 test('the punches are never altered', async () => {
   const { raw, db } = await setup();
   const punchesBefore = raw.prepare('SELECT * FROM att_punches ORDER BY id').all();
 
-  await correctTimes(
-    ctx(db, { body: { staffId: 1, in: '08:00', out: '21:00', reason: 'Both wrong' } }),
-    '2026-06-03',
-  );
+  const { requestId } = await ask(db, '2026-06-03', { in: '08:00', out: '21:00', reason: 'Both wrong' });
+  await answer(db, requestId, { decision: 'approve' });
 
   const punchesAfter = raw.prepare('SELECT * FROM att_punches ORDER BY id').all();
   assert.deepEqual(punchesAfter, punchesBefore, 'a punch is a fact');
 });
 
-test('a later punch does not undo a correction', async () => {
+test('a later punch does not undo an approved correction', async () => {
   // The failure this guards against: a night's poller catch-up arrives, the
-  // day is recomputed, and the correction somebody typed in yesterday quietly
+  // day is recomputed, and the correction two people agreed to quietly
   // disappears from the figures.
   const { raw, db } = await setup();
 
-  await correctTimes(
-    ctx(db, { body: { staffId: 1, out: '21:00', reason: 'The kitchen ran until nine' } }),
-    '2026-06-03',
-  );
+  const { requestId } = await ask(db, '2026-06-03', { out: '21:00', reason: 'Kitchen ran until nine' });
+  await answer(db, requestId, { decision: 'approve' });
 
   raw.prepare(
     `INSERT INTO att_punches (staff_id, employee_no, device_serial, at_utc, at_local, day, source, dedupe_key)
@@ -248,17 +347,22 @@ test('a later punch does not undo a correction', async () => {
   assert.equal(row.worked_minutes, 720);
 });
 
-test('clearing both boxes hands the day back to the terminal', async () => {
+test('clearing both boxes hands the day back to the terminal, and reopens it', async () => {
   const { raw, db } = await setup();
 
-  await correctTimes(ctx(db, { body: { staffId: 1, out: '21:00', reason: 'Kitchen ran late' } }), '2026-06-03');
-  await correctTimes(ctx(db, { body: { staffId: 1, reason: 'Wrong person — that was Kofi' } }), '2026-06-03');
+  const first = await ask(db, '2026-06-03', { out: '21:00', reason: 'Kitchen ran late' });
+  await answer(db, first.requestId, { decision: 'approve' });
+  assert.equal(dayOf(raw, '2026-06-03').resolution, 'resolved');
+
+  const second = await ask(db, '2026-06-03', { reason: 'Wrong person — that was Kofi' });
+  await answer(db, second.requestId, { decision: 'approve' });
 
   const row = dayOf(raw, '2026-06-03');
   assert.equal(row.corrected_out, null);
   assert.equal(row.last_out, '17:02', 'back to what the terminal read');
+  assert.notEqual(row.resolution, 'resolved', 'a correction withdrawn is not a day settled');
 
-  const trail = raw.prepare('SELECT * FROM att_time_edit ORDER BY id').all();
+  const trail = raw.prepare("SELECT * FROM att_time_edit WHERE status = 'approved' ORDER BY id").all();
   assert.equal(trail.length, 2);
   assert.equal(trail[1].was_out, '21:00');
   assert.equal(trail[1].now_out, null);
@@ -266,19 +370,40 @@ test('clearing both boxes hands the day back to the terminal', async () => {
     'the observation is carried forward, because att_days no longer holds it');
 });
 
+test("a supervisor's ruling is not overturned by an approved correction", async () => {
+  // The doctrine the whole file rests on. Approving two clock times says when
+  // somebody arrived and left; it does not say a Tuesday was not sick leave.
+  const { raw, db } = await setup();
+
+  await resolveDay(
+    ctx(db, { session: MANAGER, body: { staffId: 1, reason: 'sick_leave', note: 'Clinic note seen' } }),
+    '2026-06-03',
+  );
+  const ruled = dayOf(raw, '2026-06-03');
+  assert.equal(ruled.reason_code, 'sick_leave');
+
+  const { requestId } = await ask(db, '2026-06-03', { out: '21:00', reason: 'He came in later anyway' });
+  await answer(db, requestId, { decision: 'approve' });
+
+  const row = dayOf(raw, '2026-06-03');
+  assert.equal(row.corrected_out, '21:00', 'the times went on');
+  assert.equal(row.reason_code, 'sick_leave', 'and the ruling stayed where the supervisor put it');
+  assert.equal(row.resolved_by, 'Ama (manager)');
+});
+
 test('typing the same times again is refused rather than filed', async () => {
   const { db } = await setup();
-  await correctTimes(ctx(db, { body: { staffId: 1, out: '21:00', reason: 'Kitchen' } }), '2026-06-03');
+  await ask(db, '2026-06-03', { out: '21:00', reason: 'Kitchen' });
   await assert.rejects(
-    () => correctTimes(ctx(db, { body: { staffId: 1, out: '21:00', reason: 'Kitchen' } }), '2026-06-03'),
-    /already recorded/,
+    () => ask(db, '2026-06-03', { out: '21:00', reason: 'Kitchen' }),
+    /already waiting/,
   );
 });
 
 test('a reason is not optional', async () => {
   const { db } = await setup();
   await assert.rejects(
-    () => correctTimes(ctx(db, { body: { staffId: 1, out: '21:00' } }), '2026-06-03'),
+    () => ask(db, '2026-06-03', { out: '21:00' }),
     /Reason/,
   );
 });
@@ -310,31 +435,37 @@ test('every change is written down with who, why and from where', async () => {
   assert.ok(logged, 'and in the audit log the whole app shares');
 });
 
-test('the administrators are told every time, and told louder when a reading was overwritten', async () => {
+test('the administrators are asked every time, and told when it is theirs to answer', async () => {
   const { raw, db } = await setup();
 
-  // Tuesday: no clock-out at all. Filling one in is the everyday case.
-  await correctTimes(
-    ctx(db, { body: { staffId: 1, out: '17:00', reason: 'He forgot to clock out' } }),
-    '2026-06-02',
-  );
-  // Wednesday: the terminal read 17:02 and it was wrong.
-  await correctTimes(
-    ctx(db, { body: { staffId: 1, out: '21:00', reason: 'The kitchen ran until nine' } }),
-    '2026-06-03',
-  );
+  // Tuesday: no clock-out at all. Wednesday: the terminal read 17:02 and was
+  // wrong. Both wait, because both change what somebody is paid.
+  await ask(db, '2026-06-02', { out: '17:00', reason: 'He forgot to clock out' });
+  await ask(db, '2026-06-03', { out: '21:00', reason: 'The kitchen ran until nine' });
 
   const notices = raw.prepare("SELECT * FROM app_notices WHERE kind = 'attendance.times' ORDER BY id").all();
   assert.equal(notices.length, 2, 'told every time, as asked');
   assert.ok(notices.every((n) => n.audience === 'att_setup'),
     'addressed to the permission administrators hold and managers do not');
-
-  assert.equal(notices[0].level, 'info', 'filling in a punch the device never saw');
-  assert.equal(notices[1].level, 'warn', 'overwriting one it did see');
-  assert.match(notices[1].title, /Henry Aryee/);
+  assert.ok(notices.every((n) => n.level === 'high'),
+    'something to do, not something that happened');
+  assert.ok(notices.every((n) => n.link === '#/signoff?tab=times'), 'and it points at the queue');
+  assert.match(notices[1].title, /Approve: Henry Aryee/);
   assert.match(notices[1].body, /17:02 → 21:00/);
   assert.match(notices[1].body, /The kitchen ran until nine/);
-  assert.equal(notices[1].actor, 'Yaa (planner)');
+  assert.match(notices[1].body, /Nothing has changed on the day/);
+});
+
+test('the answer goes back to whoever asked', async () => {
+  const { raw, db } = await setup();
+  const { requestId } = await ask(db, '2026-06-03', { out: '21:00', reason: 'Kitchen ran late' });
+  await answer(db, requestId, { decision: 'reject', note: 'That was Kofi' });
+
+  const notices = raw.prepare("SELECT * FROM app_notices WHERE kind = 'attendance.times' ORDER BY id").all();
+  const last = notices[notices.length - 1];
+  assert.match(last.title, /Sent back/);
+  assert.match(last.body, /That was Kofi/);
+  assert.equal(last.audience, 'att_times', 'reaches everybody who can make a correction');
 });
 
 test('settling a day files its clock times in the same register', async () => {
@@ -379,30 +510,87 @@ test('undoing a ruling is itself a change to the clock times', async () => {
 
 test('the register can be read back, newest first, and narrowed', async () => {
   const { db } = await setup();
-  await correctTimes(ctx(db, { body: { staffId: 1, out: '17:00', reason: 'Forgot' } }), '2026-06-02');
-  await correctTimes(ctx(db, { body: { staffId: 1, out: '21:00', reason: 'Kitchen' } }), '2026-06-03');
+  const a = await ask(db, '2026-06-02', { out: '17:00', reason: 'Forgot' });
+  const b = await ask(db, '2026-06-03', { out: '21:00', reason: 'Kitchen' });
+  await answer(db, a.requestId, { decision: 'approve' });
+  await answer(db, b.requestId, { decision: 'approve' });
 
   const all = await read(await timeEdits(ctx(db, { query: '' })));
   assert.deepEqual(all.edits.map((e) => e.day), ['2026-06-03', '2026-06-02']);
   assert.equal(all.edits[0].staff_name, 'Henry Aryee');
+  assert.equal(all.canApprove, false, 'a planner reads it, and cannot answer it');
 
   const narrowed = await read(await timeEdits(ctx(db, { query: '?from=2026-06-03&to=2026-06-03' })));
   assert.deepEqual(narrowed.edits.map((e) => e.day), ['2026-06-03']);
+});
+
+test('what is waiting is never hidden by the dates on screen', async () => {
+  // A change asked for outside the period somebody happens to be looking at is
+  // still waiting on them. A queue that hides depending on where you are stood
+  // is a queue that grows quietly.
+  const { db } = await setup();
+  await ask(db, '2026-06-02', { out: '17:00', reason: 'Forgot' });
+
+  const far = await read(await timeEdits(ctx(db, {
+    session: ADMIN, query: '?from=2026-07-01&to=2026-07-31',
+  })));
+  assert.equal(far.edits.length, 0);
+  assert.equal(far.pending.length, 1);
+  assert.equal(far.pending[0].day, '2026-06-02');
+  assert.equal(far.canApprove, true);
 });
 
 test("the trail comes back with the person's own report", async () => {
   // Where it matters most: on the sheet handed to the person whose hours were
   // changed, not only on a screen an administrator has to go looking for.
   const { db } = await setup();
-  await correctTimes(ctx(db, { body: { staffId: 1, out: '21:00', reason: 'Kitchen' } }), '2026-06-03');
+  const { requestId } = await ask(db, '2026-06-03', { out: '21:00', reason: 'Kitchen' });
+
+  const waiting = await read(await staffReport(
+    ctx(db, { session: MANAGER, query: '?from=2026-06-01&to=2026-06-03' }),
+    '1',
+  ));
+  assert.equal(waiting.timeEdits.length, 0, 'nothing applied yet');
+  assert.equal(waiting.pendingTimes.length, 1, 'but the day says a change is coming');
+  assert.equal(waiting.pendingTimes[0].day, '2026-06-03');
+  assert.equal(waiting.canApproveTimes, false, 'and a manager cannot answer it');
+
+  await answer(db, requestId, { decision: 'approve' });
 
   const report = await read(await staffReport(
     ctx(db, { session: MANAGER, query: '?from=2026-06-01&to=2026-06-03' }),
     '1',
   ));
-
+  assert.equal(report.pendingTimes.length, 0);
   assert.equal(report.timeEdits.length, 1);
   assert.equal(report.timeEdits[0].now_out, '21:00');
   assert.equal(report.timeEdits[0].observed_out, '17:02');
   assert.equal(report.timeEdits[0].actor, 'Yaa (planner)');
+  assert.equal(report.timeEdits[0].decided_by, 'Kwame (admin)');
+});
+
+// ---------------------------------------------------------------------------
+// Which rows carry a button
+// ---------------------------------------------------------------------------
+
+test('buttons are offered against days with something wrong, and held back otherwise', async () => {
+  // A column of buttons against twenty-eight ordinary days is a column nobody
+  // reads, and the four that matter are lost in it.
+  const { needsAttention } = await import('../public/js/views/att-shared.js');
+
+  assert.equal(needsAttention({ colour: 'red', status: 'absent' }), true, 'absent');
+  assert.equal(needsAttention({ colour: 'amber', status: 'late' }), true, 'late');
+  assert.equal(needsAttention({ colour: 'amber', status: 'early_leave' }), true, 'left early');
+  assert.equal(needsAttention({ colour: 'red', status: 'missing_out', open: true }), true,
+    'and a clock-out the terminal never saw');
+
+  assert.equal(needsAttention({ colour: 'green', status: 'present' }), false, 'an ordinary day');
+  assert.equal(needsAttention({ colour: 'grey', status: 'rest' }), false, 'a rest day');
+  assert.equal(needsAttention({ colour: 'grey', status: 'upcoming' }), false, 'a shift not due yet');
+  assert.equal(needsAttention(null), false);
+
+  // A day already ruled on keeps its buttons, because that is how the ruling
+  // is undone. A decision nobody can reverse is a decision nobody will make.
+  assert.equal(needsAttention({ colour: 'green', status: 'present', resolution: 'resolved' }), true);
+  assert.equal(needsAttention({ colour: 'green', status: 'missing_out', resolution: 'auto' }), true);
 });

@@ -728,7 +728,7 @@ export async function staffReport(ctx, id) {
   // looking for is a trail nobody checks.
   const edits = await ctx.db.prepare(
     `SELECT id, day, observed_in, observed_out, was_in, was_out, now_in, now_out,
-            reason, actor, at_utc
+            reason, actor, at_utc, status, decided_by, decided_at, decision_note
        FROM att_time_edit
       WHERE staff_id = ?1 AND day BETWEEN ?2 AND ?3
       ORDER BY day, id`,
@@ -739,7 +739,13 @@ export async function staffReport(ctx, id) {
     from,
     to,
     days: records.map((r) => present(ds, r)),
-    timeEdits: edits.results ?? [],
+    // Split on purpose. What has happened belongs at the foot of the report;
+    // what is still waiting belongs on the day itself, where somebody about to
+    // sign the period will see it.
+    timeEdits: (edits.results ?? []).filter((e) => e.status !== 'pending'),
+    pendingTimes: (edits.results ?? []).filter((e) => e.status === 'pending'),
+    canFixTimes: allows('att_times', ctx.session.permissions),
+    canApproveTimes: allows('att_setup', ctx.session.permissions),
     totals: summarise(records, { shifts: ds.shiftById, reasons: ds.reasonBy }),
     signedSpans: (spans.results ?? []).map((r) => ({
       kind: r.kind,
@@ -1043,9 +1049,101 @@ export async function correctTimes(ctx, dayParam) {
   if (!staff) throw notFound('No such member of staff.');
 
   const before = await timesBefore(ctx, staffId, target);
-  if (before.wasIn === correctedIn && before.wasOut === correctedOut) {
-    throw badRequest('Those are the times already recorded — nothing to change.');
+  const pending = await pendingFor(ctx, staffId, target);
+
+  // Compared against whatever is currently standing — the pending request if
+  // there is one, otherwise what is on the day. Otherwise somebody who typed
+  // 21:00 twice raises the same request twice and the queue fills with copies.
+  const standingIn = pending ? pending.now_in : before.wasIn;
+  const standingOut = pending ? pending.now_out : before.wasOut;
+  if (standingIn === correctedIn && standingOut === correctedOut) {
+    throw badRequest(pending
+      ? 'That change is already waiting for an administrator.'
+      : 'Those are the times already recorded — nothing to change.');
   }
+
+  // Whoever can approve does not queue behind themselves. A queue with one name
+  // in it teaches everybody to press the button without reading it.
+  const approves = allows('att_setup', ctx.session.permissions);
+
+  // A second thought replaces the first rather than joining it in the queue.
+  // Two contradictory requests on one day is a question nobody can answer.
+  if (pending) {
+    await ctx.db.prepare(
+      `UPDATE att_time_edit SET status = 'superseded', decided_by = ?1,
+                                decided_at = datetime('now')
+        WHERE id = ?2`,
+    ).bind(actorOf(ctx), pending.id).run();
+  }
+
+  const editId = await recordTimeEdit(ctx, {
+    staff,
+    day: target,
+    ...before,
+    nowIn: correctedIn,
+    nowOut: correctedOut,
+    reason,
+    status: approves ? 'approved' : 'pending',
+    // Told every time, as asked — and when it is waiting on them, told as
+    // something to do rather than something that happened.
+    always: true,
+    level: approves ? undefined : 'high',
+  });
+
+  if (!approves) {
+    return json({
+      ok: true,
+      pending: true,
+      requestId: editId,
+      message: 'Sent to an administrator. Nothing has changed on the day yet.',
+    });
+  }
+
+  await applyTimes(ctx, {
+    staff, day: target, correctedIn, correctedOut, note: reason, by: actorOf(ctx),
+  });
+
+  const ds = await loadDataset(ctx.db, { from: addDays(target, -1), to: addDays(target, 1) });
+  const [record] = daysFor(ds, staffId, target, target);
+  return json({ ok: true, pending: false, day: present(ds, record) });
+}
+
+/** The change already waiting on this day, if there is one. */
+async function pendingFor(ctx, staffId, day) {
+  return ctx.db.prepare(
+    `SELECT * FROM att_time_edit
+      WHERE staff_id = ? AND day = ? AND status = 'pending'
+      ORDER BY id DESC LIMIT 1`,
+  ).bind(staffId, day).first().catch(() => null);
+}
+
+/**
+ * Put the times on the day, and close it.
+ *
+ * The order is the argument. The corrected times go on first and the day is
+ * recomputed from them, so the verdict — present, late, absent — is worked out
+ * by the rules rather than chosen by whoever pressed approve. Only then is that
+ * verdict written down as settled.
+ *
+ * Settling it here is deliberate. A day two people have now looked at should
+ * not still be sitting on somebody's list of things to deal with, and the
+ * approval is exactly the second look. It can still be undone: "Undo" on the
+ * day puts it back to what the terminal saw, and that too is recorded.
+ */
+async function applyTimes(ctx, { staff, day, correctedIn, correctedOut, note, by }) {
+  const prior = await ctx.db.prepare(
+    'SELECT status, reason_code, resolution, resolved_note FROM att_days WHERE staff_id = ? AND day = ?',
+  ).bind(staff.id, day).first();
+
+  // A day this feature closed last time, as opposed to one a supervisor ruled
+  // on. The two are told apart by the note, because they must be treated
+  // differently: our own ruling is reopened so the verdict follows the new
+  // times, and somebody else's is left exactly where they put it. A supervisor
+  // who decided a Tuesday was sick leave does not have that overturned by a
+  // clock correction, and the doctrine that a human ruling survives
+  // recomputation would mean nothing if this route quietly ignored it.
+  const ours = prior?.resolution === 'resolved'
+    && String(prior.resolved_note ?? '').startsWith(SETTLED_BY_CORRECTION);
 
   // A day nobody has ruled on and nobody has corrected may not exist as a row
   // yet — an untouched future day, or one the recompute has not reached.
@@ -1055,24 +1153,129 @@ export async function correctTimes(ctx, dayParam) {
      ON CONFLICT (staff_id, day) DO UPDATE SET
        corrected_in = excluded.corrected_in,
        corrected_out = excluded.corrected_out`,
-  ).bind(staffId, target, correctedIn, correctedOut).run();
+  ).bind(staff.id, day, correctedIn, correctedOut).run();
 
-  await recompute(ctx.db, { staffIds: [staffId], from: target, to: target });
+  if (ours) {
+    await ctx.db.prepare(
+      `UPDATE att_days SET resolution = 'settled', resolved_by = NULL, resolved_at = NULL,
+                           resolved_note = NULL
+        WHERE staff_id = ? AND day = ?`,
+    ).bind(staff.id, day).run();
+  }
 
-  await recordTimeEdit(ctx, {
-    staff,
-    day: target,
-    ...before,
-    nowIn: correctedIn,
-    nowOut: correctedOut,
-    reason,
-    // Told every time, as asked.
-    always: true,
+  await recompute(ctx.db, { staffIds: [staff.id], from: day, to: day });
+
+  // Clearing both boxes is a correction withdrawn, not a day settled. There is
+  // nothing to close: the day goes back to what the terminal saw and to
+  // whatever the rules make of it.
+  if (!correctedIn && !correctedOut) return;
+
+  // And somebody else's ruling stands. The times went on — they still decide
+  // the hours — but the verdict stays theirs.
+  if (prior?.resolution === 'resolved' && !ours) return;
+
+  const settled = await ctx.db.prepare(
+    'SELECT status, reason_code FROM att_days WHERE staff_id = ? AND day = ?',
+  ).bind(staff.id, day).first();
+
+  await ctx.db.prepare(
+    `UPDATE att_days
+        SET status = ?3, reason_code = ?4, resolution = 'resolved',
+            resolved_by = ?5, resolved_at = datetime('now'), resolved_note = ?6
+      WHERE staff_id = ?1 AND day = ?2`,
+  ).bind(
+    staff.id, day,
+    settled?.status ?? 'present',
+    settled?.reason_code ?? 'present',
+    by,
+    `${SETTLED_BY_CORRECTION}${note ? `: ${note}` : ''}`.slice(0, 500),
+  ).run();
+
+  await recompute(ctx.db, { staffIds: [staff.id], from: day, to: day });
+}
+
+/**
+ * How a day settled by an approved correction announces itself.
+ *
+ * Read back later to tell our own ruling from a supervisor's, so the second
+ * kind is never overwritten. Changing this string orphans the days already
+ * carrying it — they become somebody else's ruling and stop being reopened.
+ */
+const SETTLED_BY_CORRECTION = 'Clock times corrected';
+
+/**
+ * An administrator's answer to a correction somebody asked for.
+ *
+ * Approving applies the times and closes the day. Sending it back changes
+ * nothing — the day stays exactly as the terminal left it — and says why, so
+ * whoever asked knows what to do instead rather than only that the answer was
+ * no.
+ */
+export async function decideTimeEdit(ctx, idParam) {
+  const id = int(idParam, 'Request', { required: true, min: 1 });
+  const body = await readJson(ctx.request);
+  const decision = str(body.decision, 'Decision', { required: true, max: 20 });
+  if (!['approve', 'reject'].includes(decision)) {
+    throw badRequest('A request is either approved or sent back.');
+  }
+  const note = str(body.note, 'Note', { max: 500 });
+  if (decision === 'reject' && !note) {
+    throw badRequest('Say why, so whoever asked knows what to do instead.');
+  }
+
+  const request = await ctx.db.prepare(
+    'SELECT * FROM att_time_edit WHERE id = ?',
+  ).bind(id).first();
+  if (!request) throw notFound('No such request.');
+  if (request.status !== 'pending') {
+    throw badRequest(`That was already ${request.status} — by ${request.decided_by ?? 'somebody'}.`);
+  }
+
+  const staff = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?')
+    .bind(request.staff_id).first();
+  if (!staff) throw notFound('No such member of staff.');
+
+  await ctx.db.prepare(
+    `UPDATE att_time_edit
+        SET status = ?2, decided_by = ?3, decided_at = datetime('now'), decision_note = ?4
+      WHERE id = ?1`,
+  ).bind(id, decision === 'approve' ? 'approved' : 'rejected', actorOf(ctx), note || null).run();
+
+  if (decision === 'approve') {
+    await applyTimes(ctx, {
+      staff,
+      day: request.day,
+      correctedIn: request.now_in,
+      correctedOut: request.now_out,
+      note: request.reason,
+      by: `${request.actor}, approved by ${actorOf(ctx)}`,
+    });
+  }
+
+  await audit(ctx, `attendance.times.${decision}`, `${request.staff_id}|${request.day}`, {
+    request: id, in: request.now_in, out: request.now_out, note,
   });
 
-  const ds = await loadDataset(ctx.db, { from: addDays(target, -1), to: addDays(target, 1) });
-  const [record] = daysFor(ds, staffId, target, target);
-  return json({ ok: true, day: present(ds, record) });
+  // Back to whoever asked. There is no way to address one person — a notice is
+  // held against a permission so it still reaches somebody promoted tomorrow —
+  // so it goes to everybody who can make a correction, named in the title.
+  await createNotice(ctx.db, {
+    kind: 'attendance.times',
+    level: decision === 'approve' ? 'info' : 'warn',
+    title: decision === 'approve'
+      ? `Approved: ${staff.name}'s clock times on ${request.day}`
+      : `Sent back: ${staff.name}'s clock times on ${request.day}`,
+    body: decision === 'approve'
+      ? `${request.actor} asked, ${actorOf(ctx)} approved. The day has been settled.`
+        + `${note ? ` — ${note}` : ''}`
+      : `${request.actor} asked. ${actorOf(ctx)} sent it back: ${note}`,
+    link: `#/att-staff?id=${staff.id}&day=${request.day}&period=day`,
+    day: request.day,
+    actor: actorOf(ctx),
+    audience: 'att_times',
+  });
+
+  return json({ ok: true, decision });
 }
 
 /**
@@ -1136,18 +1339,25 @@ async function timesBefore(ctx, staffId, day) {
  * silenced within the week.
  */
 async function recordTimeEdit(ctx, {
-  staff, day, observedIn, observedOut, wasIn, wasOut, nowIn, nowOut, reason, always = false,
+  staff, day, observedIn, observedOut, wasIn, wasOut, nowIn, nowOut, reason,
+  always = false, status = 'approved', level = undefined,
 }) {
-  await ctx.db.prepare(
+  const written = await ctx.db.prepare(
     `INSERT INTO att_time_edit
        (staff_id, day, observed_in, observed_out, was_in, was_out, now_in, now_out,
-        reason, actor, actor_id, ip)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+        reason, actor, actor_id, ip, status, decided_by, decided_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+     RETURNING id`,
   ).bind(
     staff.id, day, observedIn, observedOut, wasIn, wasOut, nowIn, nowOut,
     reason || 'No reason given', actorOf(ctx), ctx.session.user.id ?? null,
     ctx.request.headers.get('CF-Connecting-IP') || null,
-  ).run().catch(() => {});
+    status,
+    // An approver's own change is decided the moment it is made, and saying so
+    // keeps the register honest: every applied row names who stood behind it.
+    status === 'approved' ? actorOf(ctx) : null,
+    status === 'approved' ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null,
+  ).first().catch(() => null);
 
   await audit(ctx, 'attendance.times', `${staff.id}|${day}`, {
     was: { in: wasIn, out: wasOut },
@@ -1159,22 +1369,30 @@ async function recordTimeEdit(ctx, {
   const contradicts = Boolean((nowIn && observedIn && nowIn !== observedIn)
     || (nowOut && observedOut && nowOut !== observedOut)
     || (!nowIn && wasIn) || (!nowOut && wasOut));
-  if (!always && !contradicts) return;
+  if (!always && !contradicts) return written?.id ?? null;
 
   // Addressed to the setup permission because that is the one administrators
   // hold and managers do not. A notice that reached everybody who can settle a
   // day would be read by nobody.
+  const waiting = status === 'pending';
   await createNotice(ctx.db, {
     kind: 'attendance.times',
-    level: contradicts ? 'warn' : 'info',
-    title: `${staff.name}: clock times changed on ${day}`,
+    level: level ?? (contradicts ? 'warn' : 'info'),
+    title: waiting
+      ? `Approve: ${staff.name}'s clock times on ${day}`
+      : `${staff.name}: clock times changed on ${day}`,
     body: `${describeChange('In', observedIn, wasIn, nowIn)}. `
-      + `${describeChange('Out', observedOut, wasOut, nowOut)}.${reason ? ` — ${reason}` : ''}`.slice(0, 400),
-    link: `#/att-staff?id=${staff.id}&day=${day}&period=day`,
+      + `${describeChange('Out', observedOut, wasOut, nowOut)}.${reason ? ` — ${reason}` : ''}`
+      + `${waiting ? ' Nothing has changed on the day until you approve it.' : ''}`.slice(0, 400),
+    link: waiting
+      ? '#/signoff?tab=times'
+      : `#/att-staff?id=${staff.id}&day=${day}&period=day`,
     day,
     actor: actorOf(ctx),
     audience: 'att_setup',
   });
+
+  return written?.id ?? null;
 }
 
 /** One line of the trail, in the words somebody reading the bell would use. */
@@ -1215,7 +1433,22 @@ export async function timeEdits(ctx) {
       ORDER BY e.id DESC LIMIT ?${binds.length}`,
   ).bind(...binds).all();
 
-  return json({ edits: rows.results ?? [] });
+  // Waiting requests are never windowed by the dates on screen. A change asked
+  // for on a day outside the period somebody happens to be looking at is still
+  // waiting on them, and a queue that hides depending on where you are stood is
+  // a queue that grows quietly.
+  const waiting = await ctx.db.prepare(
+    `SELECT e.*, s.name AS staff_name, s.employee_no, s.department
+       FROM att_time_edit e JOIN att_staff s ON s.id = e.staff_id
+      WHERE e.status = 'pending'
+      ORDER BY e.id DESC LIMIT 200`,
+  ).bind().all().catch(() => ({ results: [] }));
+
+  return json({
+    edits: (rows.results ?? []).filter((e) => e.status !== 'pending'),
+    pending: waiting.results ?? [],
+    canApprove: allows('att_setup', ctx.session.permissions),
+  });
 }
 
 function readClock(value, field) {

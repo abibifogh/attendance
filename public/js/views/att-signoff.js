@@ -1,8 +1,9 @@
 import { api } from '../api.js';
 import { fmtDay, fmtDayShort, h, mount, shiftDay, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
+import { can } from '../app.js';
 import { navigate, replaceParams } from '../app.js';
-import { field, formDialog } from './att-shared.js';
+import { correctTimesDialog, field, formDialog } from './att-shared.js';
 
 /**
  * What is still waiting to be signed off.
@@ -52,7 +53,7 @@ export async function renderAttSignoff(params) {
     ),
     h('div.toolbar', tabs),
     tab === 'queries' ? await queriesTab(reload)
-      : tab === 'times' ? await timesTab(range)
+      : tab === 'times' ? await timesTab(range, reload)
         : await openTab(params, range, reload),
   );
 
@@ -197,6 +198,22 @@ function personCard(row, data, reload) {
           issue?.label ?? key);
       }))
       : h('span.muted', '—')),
+
+    // Where the wrong time is actually noticed. Somebody going down a week
+    // deciding what to sign is reading exactly the rows a correction belongs
+    // on, and sending them to another screen to make it is how the correction
+    // stops happening.
+    h('td', data.canFixTimes && (day.issues.length || day.pendingTimes)
+      ? (day.pendingTimes
+        ? h('span.pill.warn', {
+          title: `${day.pendingTimes.actor} asked for ${day.pendingTimes.now_in || '—'} → `
+            + `${day.pendingTimes.now_out || '—'}: ${day.pendingTimes.reason ?? ''}`,
+        }, '⏳ waiting')
+        : h('button.btn-sm', {
+          title: 'Change the clock-in or clock-out',
+          onclick: () => fixTimes(row.staff, day, reload),
+        }, 'Times'))
+      : null),
   ));
   refreshCount();
 
@@ -254,6 +271,7 @@ function personCard(row, data, reload) {
               }),
               h('span', 'Day'))),
           h('th', 'Shift'), h('th', 'Clocked'), h('th', 'What happened'), h('th', 'Flags'),
+          h('th', ''),
         )),
         h('tbody', rows))),
 
@@ -270,6 +288,25 @@ function personCard(row, data, reload) {
             + (s.excluded ? ` · ${s.excluded} left out` : ''))))))
       : null,
   );
+}
+
+/**
+ * Correct a clock time from the sign-off list.
+ *
+ * The day arrives here in the sign-off screen's own shape — a shift by name, a
+ * bare `in` and `out` — rather than a full attendance record, which the shared
+ * dialog is written to accept.
+ */
+async function fixTimes(staff, day, reload) {
+  const done = await correctTimesDialog(day, staff, {
+    approves: can('att_setup'),
+    pending: day.pendingTimes,
+  });
+  if (!done) return;
+  toast(done.pending
+    ? 'Sent to an administrator. Nothing has changed on the day yet.'
+    : 'Times corrected and the day settled.', 'good');
+  await reload();
 }
 
 async function sign(row, chosen, reload) {
@@ -438,13 +475,15 @@ async function queriesTab(reload) {
  * question it answers — "has anything on this period been touched?" — is asked
  * at exactly the moment somebody is about to sign it.
  */
-async function timesTab(range) {
-  const { edits } = await api.attTimeEdits({ from: range.from, to: range.to, limit: 400 });
+async function timesTab(range, reload) {
+  const { edits, pending, canApprove } = await api.attTimeEdits({
+    from: range.from, to: range.to, limit: 400,
+  });
 
-  if (!edits.length) {
+  if (!edits.length && !pending.length) {
     return emptyState('Nothing changed',
       `No clock time was altered between ${fmtDay(range.from)} and ${fmtDay(range.to)}. `
-      + 'When one is, it appears here with the reason given and stays on the record.');
+      + 'When somebody asks for one, it waits here until you approve it.');
   }
 
   const moved = (observed, was, now) => {
@@ -461,7 +500,47 @@ async function timesTab(range) {
   const contradicts = (e) => (e.now_in && e.observed_in && e.now_in !== e.observed_in)
     || (e.now_out && e.observed_out && e.now_out !== e.observed_out);
 
-  return card('Clock times changed', {
+  const queue = pending.length
+    ? card('Waiting for you', {
+      note: `${pending.length}`,
+      wide: true,
+    }, h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        canApprove
+          ? 'Nothing on these days has changed. Approving puts the times on and settles the day '
+            + 'on whatever the rules make of them — you are not being asked to choose a status.'
+          : 'These are waiting on an administrator. Until one answers, the days read exactly as '
+            + 'the terminal left them.'),
+      h('div.table-wrap', h('table',
+        h('thead', h('tr',
+          h('th', 'Day'), h('th', 'In'), h('th', 'Out'), h('th', 'Why'), h('th', 'Asked by'),
+          canApprove ? h('th', '') : null,
+        )),
+        h('tbody', pending.map((e) => h('tr',
+          h('td', h('div',
+            h('div', fmtDayShort(e.day)),
+            h('small.muted', e.staff_name))),
+          h('td', moved(e.observed_in, e.was_in, e.now_in)),
+          h('td', moved(e.observed_out, e.was_out, e.now_out)),
+          h('td', h('small', e.reason || '—')),
+          h('td', h('div',
+            h('small', e.actor),
+            h('br'),
+            h('small.muted', String(e.at_utc || '').slice(0, 16).replace('T', ' ')))),
+          canApprove
+            ? h('td', h('div.btn-row',
+              h('button.btn-sm.btn-primary', { onclick: () => decide(e, 'approve', reload) }, 'Approve'),
+              h('button.btn-sm', { onclick: () => decide(e, 'reject', reload) }, 'Send back'),
+            ))
+            : null,
+        ))),
+      )),
+    ))
+    : null;
+
+  if (!edits.length) return h('div', queue);
+
+  return h('div', queue, card('Already applied', {
     note: `${edits.length} in this period`,
     wide: true,
   }, table([
@@ -490,7 +569,62 @@ async function timesTab(range) {
         h('div', h('small', v)),
         h('small.muted', String(r.at_utc || '').slice(0, 16).replace('T', ' '))),
     },
-  ], edits, { empty: 'None.' }));
+    {
+      key: 'status',
+      label: '',
+      format: (v, r) => (v === 'approved'
+        ? h('small.muted', r.decided_by && r.decided_by !== r.actor ? `approved by ${r.decided_by}` : 'applied')
+        : h('span.pill.warn', { title: r.decision_note ?? '' },
+          v === 'rejected' ? 'sent back' : v === 'superseded' ? 'replaced' : v)),
+    },
+  ], edits, { empty: 'None.' })));
+}
+
+/**
+ * Approve a correction, or send it back.
+ *
+ * Sending it back asks for a reason and will not take no answer, because "no"
+ * on its own tells whoever asked nothing about what to do instead — and they
+ * will simply ask again.
+ */
+async function decide(edit, decision, reload) {
+  const done = await formDialog({
+    title: decision === 'approve'
+      ? `Approve: ${edit.staff_name}, ${fmtDay(edit.day, { withYear: true })}`
+      : `Send back: ${edit.staff_name}, ${fmtDay(edit.day, { withYear: true })}`,
+    submitLabel: decision === 'approve' ? 'Approve and settle the day' : 'Send it back',
+    body: h('div',
+      h('p.muted',
+        `${edit.actor} asked for ${edit.now_in || '—'} → ${edit.now_out || '—'}`
+        + `${edit.reason ? `: ${edit.reason}` : ''}`),
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        `The terminal read ${edit.observed_in || 'nothing'} → ${edit.observed_out || 'nothing'}.`),
+
+      field(decision === 'approve' ? 'Anything to add' : 'Why not', h('input', {
+        type: 'text', name: 'note', maxlength: 500,
+        required: decision !== 'approve',
+        placeholder: decision === 'approve'
+          ? 'Optional'
+          : 'That was Kofi on the late shift — check the roster and ask again',
+      }), decision === 'approve'
+        ? 'Kept with the record'
+        : 'Required. Whoever asked needs to know what to do instead'),
+
+      decision === 'approve'
+        ? h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+          'The times go on, the day is worked out again from them, and it is settled on that '
+          + 'verdict under your name. The punches themselves are untouched.')
+        : h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+          'Nothing changes on the day. It stays exactly as the terminal left it, and whoever '
+          + 'asked is told why.'),
+    ),
+    onSubmit: async (form) => api.attDecideTimeEdit(edit.id, {
+      decision,
+      note: form.get('note') || null,
+    }),
+  });
+
+  if (done) { toast(decision === 'approve' ? 'Approved and settled.' : 'Sent back.', 'good'); await reload(); }
 }
 
 function queryCard(q, data, reload) {

@@ -222,6 +222,29 @@ export function field(label, control, hint) {
 
 
 /**
+ * Is there anything about this day worth a button?
+ *
+ * The Settle and Times buttons appear only against days with something wrong
+ * with them — absent, late, left early, or a clock-in or clock-out the terminal
+ * never completed. A column of buttons against twenty-eight ordinary days is a
+ * column nobody reads, and the four that matter are lost in it.
+ *
+ * Decided from the four colours rather than from a list of statuses, so it
+ * cannot drift away from what the rest of the screen is already saying: green
+ * is fine, amber is worth a word, red is deal with this. A day still waiting on
+ * somebody counts however it is coloured.
+ *
+ * Days already ruled on keep their buttons too — that is how a ruling is
+ * undone, and a decision you cannot reverse is a decision nobody wants to make.
+ */
+export function needsAttention(record) {
+  if (!record) return false;
+  if (record.open) return true;
+  if (record.resolution === 'resolved' || record.resolution === 'auto') return true;
+  return record.colour === 'amber' || record.colour === 'red';
+}
+
+/**
  * Put a clock time right.
  *
  * Deliberately not the same form as settling a day, and the difference is the
@@ -236,27 +259,49 @@ export function field(label, control, hint) {
  * Somebody who knows both of those before they type is not going to be
  * surprised by either afterwards.
  */
-export function correctTimesDialog(row, staff, { signedSpan = null } = {}) {
+export function correctTimesDialog(row, staff, {
+  signedSpan = null, approves = false, pending = null,
+} = {}) {
   const observed = (side) => {
     const was = side === 'in' ? row.corrected_in : row.corrected_out;
-    const seen = side === 'in' ? row.first_in : row.last_out;
+    const seen = side === 'in' ? (row.first_in ?? row.in) : (row.last_out ?? row.out);
     if (was) return `Corrected to ${was}. ${seen && seen !== was ? `The terminal read ${seen}` : 'The terminal saw nothing'}`;
     return seen ? `The terminal read ${seen}` : 'The terminal saw nothing';
   };
+  const startValue = (side) => (side === 'in'
+    ? pending?.now_in ?? row.corrected_in ?? row.first_in ?? row.in ?? ''
+    : pending?.now_out ?? row.corrected_out ?? row.last_out ?? row.out ?? '');
+
+  // A shift arrives as an object on the reports and as a bare name on the
+  // sign-off list. Both are worth showing and neither is worth a second dialog.
+  const shiftLine = typeof row.shift === 'string'
+    ? row.shift
+    : row.shift
+      ? `${row.shift.name}, ${row.shift.starts_at}–${row.shift.ends_at}`
+      : 'No shift rostered for this day';
 
   return formDialog({
     title: `${staff.name} — clock times, ${fmtDay(row.day, { withYear: true })}`,
-    submitLabel: 'Correct the times',
+    submitLabel: approves ? 'Correct the times' : 'Send for approval',
     body: h('div',
-      h('p.muted', row.shift
-        ? `${row.shift.name}, ${row.shift.starts_at}–${row.shift.ends_at}`
-        : 'No shift rostered for this day'),
+      h('p.muted', shiftLine),
+
+      pending
+        ? h('div.alert.warn',
+          h('span.alert-icon', '⏳'),
+          h('div',
+            h('div.alert-title', 'A change is already waiting on this day'),
+            h('div.alert-detail',
+              `${pending.actor} asked for ${pending.now_in || '—'} → ${pending.now_out || '—'}`
+              + `${pending.reason ? `: ${pending.reason}` : ''}. Saving replaces it.`),
+          ))
+        : null,
       h('div.grid.grid-2',
         field('Clocked in',
-          h('input', { type: 'time', name: 'in', value: row.corrected_in || row.first_in || '' }),
+          h('input', { type: 'time', name: 'in', value: startValue('in') }),
           observed('in')),
         field('Clocked out',
-          h('input', { type: 'time', name: 'out', value: row.corrected_out || row.last_out || '' }),
+          h('input', { type: 'time', name: 'out', value: startValue('out') }),
           observed('out')),
       ),
       field('Why',
@@ -264,14 +309,23 @@ export function correctTimesDialog(row, staff, { signedSpan = null } = {}) {
           type: 'text', name: 'reason', maxlength: 400, required: true,
           placeholder: 'The kitchen closed at 21:00 and he forgot to clock out',
         }),
-        'Required. It is shown to the administrators and kept on the record'),
+        approves
+          ? 'Required, and kept on the record'
+          : 'Required. An administrator reads this before deciding'),
+
+      approves
+        ? h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+          'Applied straight away, under your name, and the day is settled on whatever the rules '
+          + 'make of the times you give — you are not being asked to choose a status. Clearing '
+          + 'both boxes puts the day back to what the terminal saw and reopens it.')
+        : h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+          'This goes to an administrator. Nothing changes on the day until they approve it, and '
+          + 'when they do, the day is settled on whatever the rules make of the new times. You '
+          + 'can replace what you sent until then.'),
+
       h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
         'The punches themselves are never altered — this is recorded beside them, against your '
-        + 'name, and the administrators are told each time. Clearing both boxes puts the day '
-        + 'back to what the terminal saw.'),
-      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
-        'This does not settle the day or excuse anything. The hours, the lateness and the '
-        + 'overtime are all worked out again from the times you give.'),
+        + 'name, and it stays on the record either way.'),
       signedSpan
         ? h('p.muted', { style: { color: 'var(--warn)', fontSize: '.85rem', marginBottom: 0 } },
           `${fmtDay(signedSpan.from)} to ${fmtDay(signedSpan.to)} has already been signed off. `

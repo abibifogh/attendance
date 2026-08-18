@@ -770,24 +770,59 @@ lateness and the overtime all follow on their own.
 The reason it exists as its own permission is practical. The person who knows
 the kitchen ran until nine is the person building the rota, not the person who
 approves leave, and a correction that has to be relayed through somebody else is
-a correction that does not get made. What makes it safe to hand out is not that
-it is restricted but that it is impossible to use quietly: every change is
-written to `att_time_edit` with what stood before it, what the terminal itself
-read, who made it, why, and from which address — and the administrators are told
-each time, louder when a correction overwrites a reading the device actually
-took. The register is on the sign-off screen under **Clock changes**, and the
-same trail prints on the bottom of the person's own report, where the person
+a correction that does not get made.
+
+**A correction is a request, not a change.** Anybody without *Attendance setup*
+raises one and nothing happens to the day: `att_days` is untouched, the figures
+stay exactly as the terminal left them, and the request waits. That matters most
+on the sign-off screen, where a period could otherwise be closed against a figure
+somebody has already said is wrong — so a day with a change pending says so on
+its own row, on the person's report, and on the sign-off list.
+
+**Approving applies the times and settles the day**, in that order and for a
+reason. The corrected times go on, the day is recomputed from them, and *then*
+the verdict the rules reached is written down as settled under the approver's
+name. The administrator is not asked to type a status; they are approving two
+clock times, and what follows from them is worked out rather than chosen. A day
+two people have now looked at should not still be sitting on somebody's list.
+Sending one back changes nothing at all and requires a reason, because "no" on
+its own tells whoever asked nothing about what to do instead.
+
+Two things are deliberately left alone by an approval. A ruling somebody else
+made — a Tuesday a supervisor decided was sick leave — keeps its reason; the
+times go on and the hours follow, but the verdict stays theirs. And clearing both
+boxes is a correction *withdrawn*, not a day settled: the day goes back to what
+the terminal saw and reopens.
+
+An administrator's own correction applies and settles immediately. A queue with
+one name in it teaches everybody to press the button without reading it.
+
+What makes the permission safe to hand out is not that it is restricted but that
+it is impossible to use quietly: every change is written to `att_time_edit` with
+what stood before it, what the terminal itself read, who made it, why, from which
+address, who answered and what they said. The register is on the sign-off screen
+under **Clock changes** — waiting requests at the top, applied ones below — and
+the same trail prints on the bottom of the person's own report, where the person
 whose hours were changed can read it.
 
 Settling a day still supplies clock times too, and those land in the same
 register — a register that recorded corrections made through one door and stayed
-silent about the other would be worse than none. What differs is the bell:
-filling in a clock-out the terminal never saw is the ordinary morning's work and
-is filed without announcement; overwriting one it did see is announced.
+silent about the other would be worse than none. Those apply immediately: a
+supervisor settling a day is already making the decision an approval would ask
+for.
 
 The punches themselves are never touched by any of this. `att_punches` is what
 the terminal saw and stays what the terminal saw; a correction is an opinion
 recorded beside it.
+
+**Where the buttons appear.** Settle and Times are offered only against days with
+something wrong with them — absent, late, left early, a clock-in or clock-out the
+terminal never completed, or a day already ruled on — and on the sign-off list
+against days carrying an issue. A column of buttons beside twenty-eight ordinary
+days is a column nobody reads, and the four that matter are lost in it. The one
+case this hides is a day that looks perfectly ordinary and is not: the terminal
+read somebody out at 17:02 and the kitchen ran until nine. **Show buttons on
+every day** on the person's report reaches those.
 
 **Sign off attendance** is deliberately separate and is not part of the planner's
 defaults. Tick it for whoever draws up the rota and they can close a day, a week

@@ -429,3 +429,52 @@ test('an answer with nothing in it is refused', async () => {
     /Say something/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// Clock-time changes, on the screen the period is signed from
+// ---------------------------------------------------------------------------
+
+test('a change waiting on a day is shown against it, and never signed over blind', async () => {
+  // Signing a period off while a correction to it is pending would settle
+  // somebody's leave against a figure another person has already said is
+  // wrong. The list has to say so on the row.
+  const { raw, db } = await setup();
+  const { correctTimes } = await import('../src/routes/attendance.js');
+
+  await correctTimes(
+    ctx(db, {
+      session: { ...PLANNER, permissions: [...PLANNER.permissions, 'att_times'] },
+      body: { staffId: 1, out: '18:30', reason: 'The function ran on' },
+    }),
+    '2026-06-03',
+  );
+
+  const out = await read(await outstanding(ctx(db, { query: WEEK })));
+  const days = out.rows[0].days;
+  const wednesday = days.find((d) => d.day === '2026-06-03');
+
+  assert.ok(wednesday.pendingTimes, 'the row carries the waiting change');
+  assert.equal(wednesday.pendingTimes.now_out, '18:30');
+  assert.equal(wednesday.pendingTimes.actor, 'Yaa (planner)');
+  assert.equal(wednesday.out, '14:00', 'and the figures are still what the terminal read');
+
+  assert.ok(days.every((d) => 'corrected_in' in d && 'corrected_out' in d),
+    'every row carries what has already been corrected, so the dialog opens on it');
+
+  // Nothing was applied, so nothing was recomputed away.
+  const row = raw.prepare("SELECT * FROM att_days WHERE staff_id = 1 AND day = '2026-06-03'").get();
+  assert.equal(row.corrected_out, null);
+});
+
+test('the sign-off list says who may correct a time on it', async () => {
+  const { db } = await setup();
+
+  const planner = await read(await outstanding(ctx(db, { query: WEEK })));
+  assert.equal(planner.canFixTimes, false, 'this fixture planner was not given it');
+
+  const allowed = await read(await outstanding(ctx(db, {
+    query: WEEK,
+    session: { ...PLANNER, permissions: [...PLANNER.permissions, 'att_times'] },
+  })));
+  assert.equal(allowed.canFixTimes, true);
+});

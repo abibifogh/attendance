@@ -76,7 +76,7 @@ export async function outstanding(ctx) {
   const onlyDepartment = ctx.url.searchParams.get('department') || '';
   const withIssuesOnly = ctx.url.searchParams.get('issues') === '1';
 
-  const [ds, reviews, queries] = await Promise.all([
+  const [ds, reviews, queries, waiting] = await Promise.all([
     loadDataset(ctx.db, { from, to: limit }),
     ctx.db.prepare(
       'SELECT * FROM att_period_review WHERE from_day <= ?2 AND to_day >= ?1',
@@ -84,6 +84,14 @@ export async function outstanding(ctx) {
     ctx.db.prepare(
       "SELECT * FROM att_query WHERE status IN ('open', 'answered') ORDER BY raised_at",
     ).all().catch(() => ({ results: [] })),
+    // Clock-time changes still waiting on an administrator. Shown against the
+    // day they concern, because a period signed off while a correction to it is
+    // pending is a period signed off against a figure somebody has already said
+    // is wrong.
+    ctx.db.prepare(
+      `SELECT id, staff_id, day, now_in, now_out, reason, actor, at_utc
+         FROM att_time_edit WHERE status = 'pending'`,
+    ).bind().all().catch(() => ({ results: [] })),
   ]);
 
   const reviewsBy = new Map();
@@ -97,6 +105,9 @@ export async function outstanding(ctx) {
     if (!queriesBy.has(row.staff_id)) queriesBy.set(row.staff_id, []);
     queriesBy.get(row.staff_id).push(row);
   }
+
+  const pendingBy = new Map();
+  for (const row of waiting.results ?? []) pendingBy.set(`${row.staff_id}|${row.day}`, row);
 
   const overMinutes = Math.max(0, Number(ds.settings.att_over_minutes) || 360);
   const rows = [];
@@ -132,6 +143,9 @@ export async function outstanding(ctx) {
           scheduled: Boolean(record.scheduled),
           in: record.first_in,
           out: record.last_out,
+          corrected_in: record.corrected_in ?? null,
+          corrected_out: record.corrected_out ?? null,
+          pendingTimes: pendingBy.get(`${staff.id}|${day}`) ?? null,
           minutes: record.worked_minutes,
           status: record.status,
           label: labelFor(record, ds.reasonBy),
@@ -189,6 +203,7 @@ export async function outstanding(ctx) {
     withIssues: rows.filter((r) => r.issues.total).length,
     blocked: rows.filter((r) => r.issues.blocking).length,
     canDecide: allows('att_manage', ctx.session.permissions),
+    canFixTimes: allows('att_times', ctx.session.permissions),
   });
 }
 

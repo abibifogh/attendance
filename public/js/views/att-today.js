@@ -4,8 +4,8 @@ import { fmtDay, fmtNum, h, mount, shiftDay, toast, todayISO } from '../util.js'
 import { alertList, card, emptyState, exportButton, table } from './components.js';
 import { printButton } from '../print.js';
 import {
-  clockCell, correctTimesDialog, field, formDialog, hoursCell, minutesCell, reasonSelect,
-  statusPill, totalsLine,
+  clockCell, correctTimesDialog, field, formDialog, hoursCell, minutesCell, needsAttention,
+  reasonSelect, statusPill, totalsLine,
 } from './att-shared.js';
 
 /**
@@ -129,11 +129,12 @@ export async function renderAttToday(params) {
    * out at the wrong minute, and nothing else about the day is in doubt.
    */
   const correctTimes = async (row) => {
-    const done = await correctTimesDialog({ ...row, day }, row.staff);
-    if (done) {
-      toast(`${row.staff.name}: times corrected. The administrators have been told.`, 'good');
-      await reload();
-    }
+    const done = await correctTimesDialog({ ...row, day }, row.staff, { approves: can('att_setup') });
+    if (!done) return;
+    toast(done.pending
+      ? `${row.staff.name}: sent to an administrator. Nothing has changed on the day yet.`
+      : `${row.staff.name}: times corrected and the day settled.`, 'good');
+    await reload();
   };
 
   const columns = [
@@ -161,7 +162,9 @@ export async function renderAttToday(params) {
     columns.push({
       key: 'resolution',
       label: '',
-      format: (v, r) => h('div.btn-row',
+      // Only against days with something wrong with them. A column of buttons
+      // beside everybody who turned up on time is a column nobody reads.
+      format: (v, r) => (needsAttention(r) ? h('div.btn-row',
         manages
           ? (v === 'resolved'
             ? h('button.btn-sm', { onclick: () => undo(r) }, 'Undo')
@@ -177,7 +180,7 @@ export async function renderAttToday(params) {
             onclick: () => correctTimes(r),
           }, 'Times')
           : null,
-      ),
+      ) : null),
     });
   }
 

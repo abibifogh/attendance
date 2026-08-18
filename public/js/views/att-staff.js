@@ -6,8 +6,8 @@ import {
 import { card, emptyState, exportButton, table } from './components.js';
 import { printButton } from '../print.js';
 import {
-  clockCell, correctTimesDialog, field, formDialog, hoursCell, minutesCell, reasonSelect,
-  signOffDialog, spanLabel, statusPill, totalsLine,
+  clockCell, correctTimesDialog, field, formDialog, hoursCell, minutesCell, needsAttention,
+  reasonSelect, signOffDialog, spanLabel, statusPill, totalsLine,
 } from './att-shared.js';
 
 /**
@@ -39,7 +39,7 @@ export async function renderAttStaff(params) {
   const single = from === to;
 
   const reload = async (next) => {
-    const merged = { id, period, day: anchor, ...next };
+    const merged = { id, period, day: anchor, all: params.all, ...next };
     replaceParams('att-staff', merged);
     mount(host, await renderAttStaff(merged));
   };
@@ -101,10 +101,27 @@ export async function renderAttStaff(params) {
   // correction that does not get made.
   const fixesTimes = can('att_times');
 
+  const pendingOn = (dayStr) => (data.pendingTimes ?? []).find((e) => e.day === dayStr) ?? null;
+
   const correctTimes = async (row) => {
-    const done = await correctTimesDialog(row, data.staff, { signedSpan: signedFor(row.day) });
-    if (done) { toast('Times corrected. The administrators have been told.', 'good'); await reload({}); }
+    const done = await correctTimesDialog(row, data.staff, {
+      signedSpan: signedFor(row.day),
+      approves: data.canApproveTimes,
+      pending: pendingOn(row.day),
+    });
+    if (!done) return;
+    toast(done.pending
+      ? 'Sent to an administrator. Nothing has changed on the day yet.'
+      : 'Times corrected and the day settled.', 'good');
+    await reload({});
   };
+
+  // Every day still shows its status; only the buttons are held back. The
+  // checkbox exists because a day that looks perfectly ordinary can still have
+  // the wrong clock-out on it — the terminal read somebody out at 17:02 and the
+  // kitchen ran until nine — and there would otherwise be no way to reach it.
+  const showAll = params.all === '1';
+  const actionable = (r) => showAll || needsAttention(r) || Boolean(pendingOn(r.day));
 
   /**
    * Put a day right, from the person's own report.
@@ -231,7 +248,17 @@ export async function renderAttStaff(params) {
   const daysTable = card(single ? 'The day' : 'Day by day', {
     note: totalsLine(t),
     wide: true,
-    actions: monthRow && signs
+    actions: h('div.btn-row.no-print',
+      manages || fixesTimes
+        ? h('label.tickline', { style: { padding: 0, fontSize: '.82rem' } },
+          h('input', {
+            type: 'checkbox',
+            checked: showAll,
+            onchange: (e) => reload({ all: e.target.checked ? '1' : '' }),
+          }),
+          h('span', 'Show buttons on every day'))
+        : null,
+      monthRow && signs
       ? h('div.btn-row.no-print',
         monthRow.decision
           ? h('span.pill.good',
@@ -248,7 +275,7 @@ export async function renderAttStaff(params) {
           ? h('button.btn-sm', { onclick: reopen }, 'Reopen')
           : h('button.btn-sm.btn-primary', { onclick: signOff }, `Sign off ${single ? 'the day' : 'this period'}`),
       )
-      : null,
+      : null),
   }, table([
     {
       key: 'day',
@@ -266,9 +293,18 @@ export async function renderAttStaff(params) {
       label: 'Status',
       format: (v, r) => {
         const span = signedFor(r.day);
-        if (!span) return statusPill(r);
+        const waiting = pendingOn(r.day)
+          ? h('span.pill.warn', {
+            style: { marginLeft: '.35rem' },
+            title: `${pendingOn(r.day).actor} asked for `
+              + `${pendingOn(r.day).now_in || '—'} → ${pendingOn(r.day).now_out || '—'}`
+              + `: ${pendingOn(r.day).reason ?? ''}`,
+          }, '⏳ change waiting')
+          : null;
+        if (!span) return h('div', statusPill(r), waiting);
         return h('div',
           statusPill(r),
+          waiting,
           h('span.pill.good', {
             style: { marginLeft: '.35rem' },
             title: `${span.decision === 'waived' ? 'Let stand' : `${span.daysApplied > 0 ? '+' : ''}${span.daysApplied} days`}`
@@ -282,7 +318,7 @@ export async function renderAttStaff(params) {
       label: '',
       // Hidden on paper: a column of buttons on a printed slip is noise.
       cls: 'no-print',
-      format: (v, r) => (manages || fixesTimes
+      format: (v, r) => ((manages || fixesTimes) && actionable(r)
         ? h('div.btn-row.no-print',
           manages
             ? h('button.btn-sm', {
@@ -314,6 +350,20 @@ export async function renderAttStaff(params) {
       'Times in rows marked as confirmed were supplied by a supervisor where the terminal had no record.')
     : null,
   timeEditTrail(data.timeEdits ?? []));
+
+  const pendingCard = (data.pendingTimes ?? []).length
+    ? h('div.alert.warn.no-print', { style: { marginTop: '.8rem' } },
+      h('span.alert-icon', '⏳'),
+      h('div',
+        h('div.alert-title', `${data.pendingTimes.length} clock-time change`
+          + `${data.pendingTimes.length === 1 ? '' : 's'} waiting on an administrator`),
+        h('div.alert-detail', data.pendingTimes.map((e) =>
+          `${fmtDayShort(e.day)}: ${e.now_in || '—'} → ${e.now_out || '—'}, asked by ${e.actor}`)
+          .join(' · ')
+          + '. Nothing on these days has changed yet, so a period signed off now is signed '
+          + 'off on the figures as they stand.'),
+      ))
+    : null;
 
   // Shown for a single day as well as a range. The big card above already
   // carries the note, but a person reading a slip looks for the same heading
@@ -415,6 +465,7 @@ export async function renderAttStaff(params) {
     ),
     nav,
     tiles,
+    pendingCard,
     dayCard,
     daysTable,
     notesCard,
@@ -515,6 +566,12 @@ function suggested(row) {
  * clock-out to make it eight — and the surest way to make an audit trail
  * meaningless is to keep it somewhere the person it concerns never looks.
  */
+const DECISION = {
+  rejected: 'Sent back',
+  superseded: 'Replaced before it was answered',
+  pending: 'Waiting on an administrator',
+};
+
 function timeEditTrail(edits) {
   if (!edits.length) return null;
 
@@ -537,6 +594,12 @@ function timeEditTrail(edits) {
         h('br'),
         h('small.muted', `${e.actor}, ${(e.at_utc || '').slice(0, 16).replace('T', ' ')}`
           + `${e.reason ? ` — ${e.reason}` : ''}`),
+        e.status && e.status !== 'approved'
+          ? h('div', h('small.muted', DECISION[e.status] ?? e.status,
+            e.decision_note ? `: ${e.decision_note}` : ''))
+          : e.decided_by && e.decided_by !== e.actor
+            ? h('div', h('small.muted', `Approved by ${e.decided_by}`))
+            : null,
       ))),
   );
 }
