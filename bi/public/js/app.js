@@ -11,7 +11,7 @@ import { renderFindings } from './views/findings.js';
 import { renderSetup } from './views/setup.js';
 import { renderHub } from './views/hub.js';
 import { renderAccounts } from './views/accounts.js';
-import { deriveLoginKey } from './crypto.js';
+import { renderLogin as renderLoginView } from './views/login.js';
 
 export const state = {
   boot: null,
@@ -69,67 +69,10 @@ async function start() {
 }
 
 function renderLogin(me = {}) {
-  // Before the first account exists there is nobody to sign in *as*, so the
-  // shared password is the only way in. After that it is still accepted — an
-  // owner who has lost their password needs a route back — but the address and
-  // password form is what people see.
-  const useShared = me.hasAccounts === false;
-  const email = h('input', { type: 'email', autocomplete: 'username', autofocus: true });
-  const password = h('input', { type: 'password', autocomplete: 'current-password' });
-  const shared = h('input', { type: 'password', autocomplete: 'current-password', autofocus: useShared });
-  const message = h('p.small', { style: { color: 'var(--critical)' } });
-  const showShared = h('div', { style: { display: useShared ? 'block' : 'none' } });
-
-  const form = h('form', {
-    onsubmit: async (event) => {
-      event.preventDefault();
-      message.textContent = 'Signing in…';
-      try {
-        if (showShared.style.display !== 'none' && shared.value) {
-          await api('/auth/login', { method: 'POST', body: { password: shared.value } });
-        } else {
-          // The password is stretched here and never leaves this page. What
-          // goes to the server is a derived key, using the salt the server
-          // gives back for this address — which it answers for every address,
-          // account or not, so that asking is not a way to list the staff.
-          const salt = await api('/auth/salt', { method: 'POST', body: { email: email.value } });
-          const passwordKey = await deriveLoginKey(password.value, salt.salt, salt.iterations);
-          await api('/auth/login', { method: 'POST', body: { email: email.value, passwordKey } });
-        }
-        state.me = await api('/auth/me');
-        await renderApp();
-      } catch (err) {
-        message.textContent = err.message;
-      }
-    },
-  },
-  useShared ? null : h('label.field', 'Email address', email),
-  useShared ? null : h('label.field', 'Password', password),
-  showShared,
-  h('button.btn.primary', { type: 'submit' }, 'Sign in'));
-
-  mount(showShared, h('label.field', useShared ? 'Password' : 'Shared owner password', shared));
-
-  mount(root, h('div.login',
-    h('div.card',
-      h('h1', 'Insight'),
-      h('p.sub', useShared
-        ? 'Nobody has an account here yet. Sign in with the shared owner password and make one.'
-        : 'One sign-in, for all of the group\'s systems.'),
-      me.configured === false
-        ? h('p.small', { style: { color: 'var(--critical)' } },
-          'This Worker has no DASHBOARD_PASSWORD or SESSION_SECRET set, so it cannot sign anybody in. Set both with wrangler secret put and deploy again.')
-        : null,
-      form,
-      message,
-      useShared ? null : h('p.small.muted',
-        h('a', {
-          href: '#', onclick: (event) => {
-            event.preventDefault();
-            showShared.style.display = showShared.style.display === 'none' ? 'block' : 'none';
-            if (showShared.style.display === 'block') shared.focus();
-          },
-        }, 'Sign in with the shared owner password instead')))));
+  renderLoginView(root, me, async () => {
+    state.me = await api('/auth/me');
+    await renderApp();
+  });
 }
 
 async function renderApp() {

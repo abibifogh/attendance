@@ -258,7 +258,101 @@ details.tableview[open] summary { margin-bottom: .5rem; }
 
 /* ---------------------------------------------------------------- login -- */
 
-.login { max-width: 380px; margin: 12vh auto; }
+/* Two panels: the form on the left, what the tool is on the right. The right
+   one is the first thing anybody sees on an unfamiliar domain, and a picture of
+   the four applications they already use answers "am I in the right place"
+   before they read a word. It folds away entirely on a phone, where the only
+   thing worth the screen is the form. */
+.signin-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  background: var(--plane);
+}
+
+.signin-panel { display: grid; place-items: center; padding: 2rem 1.5rem; }
+
+.signin-card {
+  width: 100%;
+  max-width: 23rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.9rem 1.8rem 1.6rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 12px 32px rgba(0, 0, 0, .06);
+}
+.signin-card h1 { font-size: 1.6rem; letter-spacing: -0.02em; margin: .8rem 0 .35rem; }
+.signin-card .lede { color: var(--ink-2); font-size: .92rem; line-height: 1.5; margin-bottom: 1.4rem; }
+
+.mark-svg { width: 2rem; height: 2rem; display: block; }
+
+form.signin { display: flex; flex-direction: column; gap: .2rem; }
+.signin-card label.field { margin-bottom: .8rem; }
+.signin-card input { padding: .5rem .6rem; font-size: .95rem; }
+button.btn.wide { width: 100%; padding: .55rem; font-size: .95rem; margin-top: .2rem; }
+
+.form-error { color: var(--critical); margin: .6rem 0 0; }
+
+.signin-foot {
+  margin: 1.4rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--grid);
+  font-size: .76rem;
+  letter-spacing: .01em;
+}
+
+/* ------------------------------------------------------------ the artwork -- */
+
+.signin-art {
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: var(--surface-2);
+  border-left: 1px solid var(--border);
+}
+.art-inner { max-width: 30rem; }
+.art-inner .eyebrow {
+  font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: .5rem;
+}
+.art-inner h2 {
+  font-size: clamp(1.35rem, 2.4vw, 1.9rem);
+  line-height: 1.2; letter-spacing: -0.02em; font-weight: 650;
+  white-space: pre-line; margin-bottom: 1.2rem;
+}
+.art-inner p.small { margin-top: 1.1rem; line-height: 1.55; max-width: 28rem; }
+
+.converge { width: 100%; height: auto; display: block; overflow: visible; }
+
+/* The lines draw themselves in, once, on arrival. The diagram is a claim about
+   four things becoming one, and watching it happen states that better than a
+   static picture. Nothing loops — an animation that never settles is a page
+   nobody can read. */
+.converge .flow {
+  stroke-dasharray: 340;
+  stroke-dashoffset: 340;
+  animation: draw .9s ease-out forwards;
+  animation-delay: calc(var(--i) * .12s + .15s);
+}
+.converge .node { opacity: 0; animation: rise .5s ease-out forwards; animation-delay: calc(var(--i) * .12s); }
+.converge .core, .converge .halo { opacity: 0; animation: rise .6s ease-out forwards .75s; }
+
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .converge .flow { stroke-dashoffset: 0; animation: none; }
+  .converge .node, .converge .core, .converge .halo { opacity: 1; animation: none; }
+}
+
+/* On anything narrow the artwork goes; a phone has room for the form and
+   nothing else, and a squeezed diagram is worse than no diagram. */
+@media (max-width: 860px) {
+  .signin-page { grid-template-columns: 1fr; }
+  .signin-art { display: none; }
+  .signin-panel { padding: 3rem 1.2rem; align-items: start; }
+}
 
 @media (max-width: 640px) {
   main { padding: .8rem; }

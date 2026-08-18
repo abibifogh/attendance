@@ -92,9 +92,21 @@ export async function renderAccounts(root) {
             } catch (err) { alert(err.message); event.target.disabled = false; }
           },
         }, 'Save'),
-        system.secretSet ? null : h('p.small.muted',
-          'Set it with ', h('code', `wrangler secret put ${system.secretName}`),
-          ' here, and the same value on ', system.label, '.'));
+        // Two of these three cannot be generated for you: the other end lives
+        // in a different repository on a different platform, and a shared
+        // secret only works if the same value reaches both. So this says how to
+        // do it from a browser rather than from a terminal.
+        system.secretSet ? null : h('div.small.muted', { style: { marginTop: '.4rem' } },
+          system.id === 'attendance'
+            ? h('span',
+              'Generated for you. Run ', h('strong', 'Actions → Set Insight\'s secrets'),
+              ' with this site\'s address in the box, and it makes one and sets it on both Workers.')
+            : h('span',
+              'Make any long random string, then: add it as the repository secret ',
+              h('code', `INSIGHT_${system.secretName}`),
+              ', run ', h('strong', 'Actions → Set Insight\'s secrets'),
+              ', and set the same value on ', system.label,
+              ' along with the handler from ', h('code', 'bi/docs/sso.md'), '.')));
     }
   }
 
