@@ -164,24 +164,43 @@ const ISSUE_PILL = { open: 'bad', absent: 'bad', under: 'bad', over: 'warn', lat
 /**
  * One person, their outstanding days, and the two things that can be done.
  *
- * Every day carries a tick, and they all start on. Signing the whole lot is one
- * press — which is what most weeks are — and leaving one out is one more.
+ * Nothing starts ticked. Signing a period off moves days against somebody's
+ * leave, and a screen that arrives with every day already selected asks for one
+ * press to do that — including for the three days nobody has looked at yet. The
+ * tick is the reading, and it has to be given rather than taken away.
+ *
+ * The header tick still selects the lot in one press, so the ordinary week
+ * where everything is fine costs two presses instead of one. That is the right
+ * trade: the cheap case gets one extra press and the expensive case stops
+ * happening by accident.
  */
 function personCard(row, data, reload) {
-  const chosen = new Set(row.days.map((d) => d.day));
+  const chosen = new Set();
   const countLabel = h('strong');
+  const signButton = h('button.btn.btn-primary', {
+    onclick: () => sign(row, chosen, reload),
+  }, 'Sign off');
 
   const refreshCount = () => {
-    countLabel.textContent = chosen.size === row.days.length
-      ? `all ${row.days.length} days`
-      : `${chosen.size} of ${row.days.length} days`;
+    countLabel.textContent = chosen.size === 0
+      ? 'nothing yet'
+      : chosen.size === row.days.length
+        ? `all ${row.days.length} days`
+        : `${chosen.size} of ${row.days.length} days`;
+
+    // The button says what it would do. "Sign off" against nothing ticked is a
+    // press that can only produce a telling-off.
+    signButton.disabled = chosen.size === 0;
+    signButton.textContent = chosen.size
+      ? `Sign off ${chosen.size} day${chosen.size === 1 ? '' : 's'}`
+      : 'Sign off';
   };
 
   const rows = row.days.map((day) => h('tr',
     h('td',
       h('label.tickline', { style: { padding: 0 } },
         h('input', {
-          type: 'checkbox', checked: true,
+          type: 'checkbox',
           onchange: (e) => {
             if (e.target.checked) chosen.add(day.day); else chosen.delete(day.day);
             refreshCount();
@@ -227,9 +246,7 @@ function personCard(row, data, reload) {
       row.query
         ? h('span.pill.warn', `Asked ${fmtDayShort(String(row.query.raised_at).slice(0, 10))}`)
         : h('button.btn-sm', { onclick: () => raise(row, chosen, reload) }, 'Ask an admin'),
-      h('button.btn.btn-primary', {
-        onclick: () => sign(row, chosen, reload),
-      }, 'Sign off'),
+      signButton,
     ),
   },
     row.issues.list.length
@@ -258,9 +275,9 @@ function personCard(row, data, reload) {
       h('table',
         h('thead', h('tr',
           h('th',
-            h('label.tickline', { style: { padding: 0 } },
+            h('label.tickline', { style: { padding: 0 }, title: 'Tick every day below' },
               h('input', {
-                type: 'checkbox', checked: true,
+                type: 'checkbox',
                 onchange: (e) => {
                   const on = e.target.checked;
                   for (const box of e.target.closest('table').querySelectorAll('tbody input[type=checkbox]')) {
@@ -277,7 +294,8 @@ function personCard(row, data, reload) {
 
     h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
       'Signing ', countLabel,
-      '. Anything unticked stays on this list and can be dealt with on its own later.'),
+      '. Tick the days you have looked at — anything left unticked stays on this list and can '
+      + 'be dealt with on its own later.'),
 
     row.signedSpans.length
       ? h('details', { style: { marginTop: '.6rem' } },

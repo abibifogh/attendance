@@ -175,8 +175,17 @@ first.
 **Signing is per day.** A fortnight with three days nobody can explain used to
 be all-or-nothing: sign the lot, or leave eleven settled days waiting on three.
 So the three held up everything and nothing got signed. Now every day carries a
-tick, all ticked by default; untick the awkward ones and they stay on the list
-to be dealt with on their own.
+tick; tick the ones you have looked at, and the rest stay on the list to be
+dealt with on their own.
+
+**Nothing starts ticked**, and that is deliberate. Signing a period off moves
+days against somebody's leave, so a screen that arrived with everything selected
+would ask for one press to do it — including for the days nobody had read yet.
+The tick is the reading, and it has to be given rather than taken away. The tick
+in the heading still takes the whole list in one press, so the ordinary week
+where everything is fine costs two presses instead of one: the cheap case gets
+one extra press and the expensive case stops happening by accident. The button
+names what it would sign, and is disabled until something is chosen.
 
 > **The rule about overlaps had to change for that to work.** It was *no two
 > signed spans may share a day*, checked on the raw dates. It is now *no two

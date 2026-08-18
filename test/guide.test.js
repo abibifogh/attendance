@@ -135,3 +135,25 @@ test('the guide is reachable by anybody signed in', () => {
   assert.match(app, /path: 'guide'[^}]*permission: null/,
     'a guide behind a permission is a guide the people who most need it cannot open');
 });
+
+// ---------------------------------------------------------------------------
+// Sign-off starts blank
+// ---------------------------------------------------------------------------
+
+test('no day is ticked for sign-off until somebody ticks it', () => {
+  // Signing a period off moves days against somebody's leave. A screen that
+  // arrives with every day already selected asks for one press to do that —
+  // including for the days nobody has looked at yet. The tick is the reading,
+  // and it has to be given rather than taken away.
+  //
+  // Checked in the source because it is a default with no server behind it,
+  // and a default is exactly the kind of thing that gets quietly restored.
+  const source = readFileSync('public/js/views/att-signoff.js', 'utf8');
+
+  assert.match(source, /const chosen = new Set\(\);/,
+    'the set of chosen days starts empty');
+  assert.ok(!/type: 'checkbox', checked: true/.test(source),
+    'and no checkbox on the screen starts ticked');
+  assert.match(source, /signButton\.disabled = chosen\.size === 0/,
+    'with nothing chosen, the button says so rather than producing a telling-off');
+});

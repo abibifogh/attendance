@@ -314,9 +314,14 @@ export const GUIDE = [
       { steps: [
         'Sign-off. Pick a window: yesterday, last 7 days, a fortnight, a month, or dates by hand.',
         'Everybody with unsigned days appears, worst first.',
-        'Untick anything you are not ready to sign.',
+        'Tick the days you have looked at. Nothing is ticked to start with — the tick in the '
+          + 'heading takes the lot.',
         'Sign off — or Ask an admin.',
       ] },
+
+      { p: 'Nothing arrives ticked on purpose. Signing a period off moves days against '
+        + 'somebody’s leave, and a screen that opened with everything selected would ask '
+        + 'for one press to do that — including for the days nobody has looked at yet.' },
 
       { p: 'You do not have to sign a whole week to sign any of it. Sign the eleven clear days '
         + 'and leave the three nobody can explain; they stay on your list and can be dealt with '
