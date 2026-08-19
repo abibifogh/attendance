@@ -264,6 +264,17 @@ is a courtesy, the API is the gate. The one exemption is an administrator
 signing a period *as* the answer to the question about it, which is not slipping
 past the rule but the rule being satisfied.
 
+**The person you just acted on stays where you can see them.** The list is
+ordered worst first, which is right when you open it and wrong the moment you
+do anything: signing somebody's two worst days drops their count, so on the
+refresh they re-sort into the middle of twenty-three cards and the person you
+were halfway through working on is gone from the screen. It reads as *the whole
+card disappeared when I signed two days* — and from where the reader is
+sitting, it did. So whoever was last signed, asked about, reopened or corrected
+is held at the top of their group, outlined, scrolled to, and carrying a line
+saying what just happened and how many of their days are still outstanding.
+Pressing any control means the reader has moved on, and the hold is released.
+
 **Each person's days sort by any heading.** Press *Day*, *Clocked*, *What
 happened* or *Flags* on somebody's table and their days reorder; press the same
 heading again to turn it round. It sorts that person alone, because the table is

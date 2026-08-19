@@ -366,6 +366,12 @@ export const GUIDE = [
         'Sign off — or Ask an admin.',
       ] },
 
+      { note: 'Whoever you last acted on is held at the top until you do something else, '
+        + 'with a line saying what just happened to them and how many of their days are '
+        + 'still outstanding. The list is ordered worst first, so signing somebody’s two '
+        + 'worst days would otherwise drop them into the middle of twenty cards — and the '
+        + 'person you were halfway through would simply be gone from the screen.' },
+
       { sub: 'Putting a person’s days in the order you want them' },
       { p: 'Press any heading on somebody’s table — Day, Clocked, What happened, Flags — and '
         + 'their days sort by it. Press the same one again to turn it round. It sorts that '

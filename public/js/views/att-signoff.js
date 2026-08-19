@@ -29,12 +29,40 @@ const PRESETS = [
 
 const TABS = [['open', 'To sign off'], ['queries', 'Questions'], ['times', 'Clock changes']];
 
+/**
+ * The person just acted on, so the list does not move out from under them.
+ *
+ * The list is ordered worst first, which is right when you open it and wrong
+ * the moment you do anything: signing somebody's two worst days drops their
+ * count, so on the refresh they re-sort into the middle of twenty-three cards
+ * and the person you were halfway through working on is simply gone from the
+ * screen. It reads as "the whole card disappeared when I signed two days" —
+ * and from where the reader is sitting, it did.
+ *
+ * So whoever you last acted on is held at the top until you do something else.
+ * It is not a second sort order; it is one card kept under the eye that was
+ * already on it, with a line saying what just happened to it.
+ */
+let justActed = null;
+
+/** Held for a few minutes only, so coming back to the screen later is clean. */
+const PIN_MS = 10 * 60 * 1000;
+const pinned = () => (justActed && Date.now() - justActed.at < PIN_MS ? justActed : null);
+
+/** Remember who, and what to say on their card. Cleared by any other move. */
+function keepInView(staffId, note) {
+  justActed = { staffId, note, at: Date.now() };
+}
+
 export async function renderAttSignoff(params) {
   const host = h('div');
   const tab = TABS.some(([key]) => key === params.tab) ? params.tab : 'open';
   const range = rangeFor(params);
 
   const reload = async (next = {}) => {
+    // Called with no arguments after an action — keep the pin. Called with
+    // arguments because a control was pressed — the reader has moved on.
+    if (Object.keys(next).length) justActed = null;
     const merged = { ...params, ...next };
     replaceParams('signoff', merged);
     mount(host, await renderAttSignoff(merged));
@@ -117,6 +145,16 @@ async function openTab(params, range, reload) {
     }
   }
 
+  // Whoever was just acted on stays at the top of whichever group they are in
+  // now, rather than re-sorting away under the reader.
+  const pin = pinned();
+  if (pin) {
+    for (const list of Object.values(groups)) {
+      const at = list.findIndex((r) => r.staff.id === pin.staffId);
+      if (at > 0) list.unshift(...list.splice(at, 1));
+    }
+  }
+
   const count = (list) => list.reduce((n, r) => n + r.days.length, 0);
   const toDo = count(groups.working);
 
@@ -173,7 +211,7 @@ async function openTab(params, range, reload) {
       : null,
   );
 
-  return h('div',
+  const view = h('div',
     controls,
 
     // One line where four tiles were. Everything on it is a number somebody
@@ -230,6 +268,15 @@ async function openTab(params, range, reload) {
         'Everything still outstanding is waiting on an answer from somebody else.')
       : null,
   );
+
+  // And brought back under the eye. The card is at the top of its group, but
+  // its group may not be the one that was on screen a moment ago.
+  if (pin) {
+    requestAnimationFrame(() => view.querySelector('.just-acted')
+      ?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+  }
+
+  return view;
 }
 
 const ISSUE_PILL = { open: 'bad', absent: 'bad', under: 'bad', over: 'warn', late: 'warn', early: 'warn', noshift: 'warn' };
@@ -395,7 +442,10 @@ function personCard(row, data, reload, group) {
   draw();
   refreshCount();
 
-  return card(row.staff.name, {
+  const pin = pinned();
+  const mine = pin?.staffId === row.staff.id;
+
+  const built = card(row.staff.name, {
     note: [row.staff.department, `${row.days.length} day${row.days.length === 1 ? '' : 's'}`]
       .filter(Boolean).join(' · '),
     wide: true,
@@ -411,6 +461,15 @@ function personCard(row, data, reload, group) {
       parked ? null : signButton,
     ),
   },
+    // What just happened to this person, said on their card. Without it the
+    // count on the table silently drops by two and the reader is left working
+    // out whether they signed what they meant to.
+    mine
+      ? h('p.just-said', h('span.pill.good', '✓'), ` ${pin.note} — `,
+        h('strong', `${row.days.length} day${row.days.length === 1 ? '' : 's'}`),
+        ' still outstanding for them')
+      : null,
+
     h('div.table-wrap', h('table', head, body)),
 
     row.signedSpans.length
@@ -427,6 +486,9 @@ function personCard(row, data, reload, group) {
           h('button.btn-sm', { onclick: () => reopen(row, s, reload) }, 'Reopen')))))
       : null,
   );
+
+  if (mine) built.classList.add('just-acted');
+  return built;
 }
 
 async function fixTimes(staff, day, reload) {
@@ -438,6 +500,9 @@ async function fixTimes(staff, day, reload) {
   toast(done.pending
     ? 'Sent to an administrator. Nothing has changed on the day yet.'
     : 'Times corrected and the day settled.', 'good');
+  keepInView(staff.id, done.pending
+    ? 'Clock times sent for approval just now'
+    : 'Clock times corrected just now');
   await reload();
 }
 
@@ -522,6 +587,8 @@ async function sign(row, chosen, reload) {
   if (done) {
     toast(`${done.signed} day${done.signed === 1 ? '' : 's'} signed off`
       + `${done.excluded ? `, ${done.excluded} left for later` : ''}.`, 'good');
+    keepInView(row.staff.id,
+      `${done.signed} day${done.signed === 1 ? '' : 's'} signed just now`);
     await reload();
   }
 }
@@ -657,6 +724,7 @@ async function reopen(row, span, reload) {
 
   await api.attUndoReview({ staffId: row.staff.id, from: span.from, to: span.to });
   toast('Reopened. Those days are back on the list.');
+  keepInView(row.staff.id, 'Reopened just now');
   await reload();
 }
 
@@ -713,7 +781,11 @@ async function raise(row, chosen, reload) {
     }),
   });
 
-  if (done) { toast('Sent. It is in the questions tab until somebody answers.', 'good'); await reload(); }
+  if (done) {
+    toast('Sent. It is in the questions tab until somebody answers.', 'good');
+    keepInView(row.staff.id, `Question sent just now about ${days.length} day${days.length === 1 ? '' : 's'}`);
+    await reload();
+  }
 }
 
 // ---------------------------------------------------------------------------

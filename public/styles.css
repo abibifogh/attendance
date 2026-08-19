@@ -1152,6 +1152,24 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   font-size: .9rem;
 }
 
+/* The card you just acted on, held at the top of its group and saying what
+   happened to it. The list is ordered worst first, which is right when you
+   open it and wrong the moment you sign anything — the person drops down the
+   order and reads as having vanished. */
+.card.just-acted {
+  border-color: color-mix(in srgb, var(--good) 55%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--good) 30%, transparent);
+}
+.just-said {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  flex-wrap: wrap;
+  font-size: .86rem;
+  margin: 0 0 .6rem;
+  color: var(--text-dim);
+}
+
 /* Headers that sort. A press on one sorts that person's days by it, a second
    press turns it round. Styled as text rather than as a button: it has to read
    as a column heading first and a control second, or the table starts looking
