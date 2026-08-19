@@ -92,6 +92,14 @@ export const GUIDE = [
       { note: 'Grace is included. Somebody due at 06:00 with five minutes’ grace is not '
         + 'late at 06:03, and the screen does not say so before 06:05 either.' },
 
+      { sub: 'Taking the list with you' },
+      { p: 'Download the ones to deal with gives you the day’s absences, lateness and '
+        + 'unfinished days as a spreadsheet — names, departments, shifts, clock times and what '
+        + 'each one needs — with the ones waiting on a decision at the top. Last 7 days does '
+        + 'the same across the week, for a Monday morning spent on a Friday nobody settled.' },
+      { note: 'It is the screen, not the payroll export: no wages, no rates, no leave balances. '
+        + 'Which is why anybody who can open this screen can download it.' },
+
       { sub: 'Buttons appear where something is wrong' },
       { p: 'Settle and Times show against days with something wrong with them — absent, late, '
         + 'left early, a punch that never completed, or a day already ruled on. A column of '
@@ -323,6 +331,16 @@ export const GUIDE = [
         + 'somebody’s leave, and a screen that opened with everything selected would ask '
         + 'for one press to do that — including for the days nobody has looked at yet.' },
 
+      { sub: 'Clearing the easy ones in one press' },
+      { p: 'The filter above the list has three settings: everybody, only the people with '
+        + 'something wrong, and only the people with nothing wrong. Above the list sits a count '
+        + 'of every day with nothing wrong with it and a single button that signs all of them.' },
+      { p: 'It signs clean days wherever they are, so a person with one unexplained Thursday '
+        + 'still has their other four days cleared and the Thursday stays on the list on its '
+        + 'own. Nothing flagged goes through it, nothing with a clock-time change waiting goes '
+        + 'through it, and nothing is charged against anybody’s leave — a clean day is by '
+        + 'definition neither an extra day nor a missed one. Every one can be reopened.' },
+
       { p: 'You do not have to sign a whole week to sign any of it. Sign the eleven clear days '
         + 'and leave the three nobody can explain; they stay on your list and can be dealt with '
         + 'on their own afterwards.' },
@@ -378,6 +396,11 @@ export const GUIDE = [
           ['Sign it off', 'Done here, under your name. Closes the question.'],
         ],
       } },
+      { p: 'Open their record on the question — and again inside the answer box, where it '
+        + 'opens in its own tab so you do not lose what you have typed — shows the days the '
+        + 'question is about in full: the shifts, the clock times, what the rules made of each '
+        + 'one. A question cannot honestly be answered from a sentence and a chip reading '
+        + '"1 absent".' },
       { p: 'The conversation on a question is append-only. An answer that can be edited '
         + 'afterwards is not an answer anybody can rely on having been given.' },
     ],

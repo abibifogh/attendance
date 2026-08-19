@@ -1101,3 +1101,15 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   border-bottom: 1px solid var(--border);
 }
 .signed-list li:last-child { border-bottom: 0; }
+
+/* One press to clear everything nothing is wrong with. Sits above the list
+   rather than in the toolbar: it acts on all of it, and a button that signs
+   ninety-six days should not look like a filter. */
+.bulk-clear {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  border-left: 3px solid var(--good);
+}

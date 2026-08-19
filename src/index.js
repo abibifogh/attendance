@@ -62,6 +62,11 @@ export const ROUTES = [
   ['GET', '/api/att/staff/:id/report', ['att_reports', 'att_signoff'], att.staffReport],
   ['GET', '/api/att/overview', 'att_reports', att.overview],
   ['GET', '/api/att/export', 'att_reports', att.exportCsv],
+  // The morning list, downloaded. Everything in it is already on the screen
+  // this is offered from, so it needs that screen's permission and not the
+  // reports one — otherwise whoever does the chasing has to ask somebody else
+  // for a copy of what they are looking at.
+  ['GET', '/api/att/export/issues', 'att_view', att.exportIssues],
   ['GET', '/api/att/balances', 'att_reports', att.balances],
 
   // The monthly reckoning. Reading it is a report; signing it off moves

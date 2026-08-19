@@ -107,6 +107,16 @@ somebody actually worked is the more expensive mistake.
 The terminal's own behaviour is still available as a setting, as is crediting
 the scheduled shift automatically and flagging it.
 
+
+**Download the ones to deal with** takes the day's absences, lateness and
+unfinished days as a spreadsheet — names, departments, shifts, clock times, what
+each one needs, and who settled it if anybody has — sorted with the ones waiting
+on a decision first, because most people never sort it themselves. **Last 7 days**
+does the same across the week. Reachable with the permission that opens the
+screen rather than the reports one: everything in the file is already on the
+page, so gating it behind the payroll export would only mean whoever does the
+chasing has to ask somebody else for a copy of what they are looking at.
+
 ### Reports
 
 | Screen | What it answers |
@@ -198,6 +208,18 @@ them from the person going back to deal with them.
 Ticking three days of a fortnight and being handed the fortnight's over/under is
 how eleven days of somebody's leave move by accident, because almost nobody
 edits a number the screen looks confident about.
+
+**Clearing the easy ones** is one press. The filter has three settings —
+everybody, only those with something wrong, only those with nothing wrong — and
+above the list sits a count of every day with nothing wrong with it and a button
+that signs all of them. It works per day, not per person, so somebody with one
+unexplained Thursday still has their other four days cleared and the Thursday
+stays on the list alone. Nothing flagged goes through it, nothing with a
+clock-time change waiting goes through it, and nothing is charged against
+anybody's leave — a clean day is by definition neither an extra day nor a missed
+one. It runs one ordinary sign-off per person rather than through a bulk
+endpoint, so each keeps its own record, its own audit line and its own overlap
+check.
 
 **Undoing one** is *Reopen*, in the "already signed" list under each person on
 the sign-off screen — and on their own record, and on the Leave screen. The days

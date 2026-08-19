@@ -184,3 +184,18 @@ test('a planner without sign-off is unchanged', () => {
   assert.equal(reaches('planner', 'POST', '/api/att/review'), false);
   assert.equal(reaches('planner', 'GET', '/api/att/staff/:id/report'), false);
 });
+
+test('the morning list can be downloaded by whoever clears it', () => {
+  // Everything in that file is already on the screen it is offered from — no
+  // wages, no rates, no leave balances. Gating it behind the reports
+  // permission would only mean the person doing the chasing has to ask
+  // somebody else for a copy of what they are looking at.
+  for (const role of ['supervisor', 'planner', 'manager', 'admin', 'viewer']) {
+    assert.ok(reaches(role, 'GET', '/api/att/export/issues'), role);
+  }
+
+  // The payroll extract stays where it was.
+  assert.equal(reaches('supervisor', 'GET', '/api/att/export'), false);
+  assert.equal(reaches('planner', 'GET', '/api/att/export'), false);
+  assert.ok(reaches('viewer', 'GET', '/api/att/export'));
+});

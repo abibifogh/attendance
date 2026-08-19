@@ -673,3 +673,74 @@ test('an answer is visible to the person who asked, and still to nobody else', a
   })));
   assert.equal(other.rows.length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Clearing everything nothing is wrong with
+// ---------------------------------------------------------------------------
+
+test('the list can be narrowed to people with nothing wrong, and to people with something', async () => {
+  const { raw, db } = await setup();
+  // A second person whose week is clean throughout.
+  raw.prepare("INSERT INTO att_staff (id, employee_no, name, department, hired_on) VALUES (2, '1002', 'Clean Sheet', 'Kitchen', '2020-01-01')").run();
+  for (const day of ['2026-06-01', '2026-06-02']) {
+    raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id) VALUES (2, ?, 1)').run(day);
+    for (const at of [`${day} 06:00:00`, `${day} 14:00:00`]) {
+      raw.prepare(
+        `INSERT INTO att_punches (staff_id, employee_no, device_serial, at_utc, at_local, day, source, dedupe_key)
+         VALUES (2, '1002', 'TEST', ?1, ?1, ?2, 'test', ?3)`,
+      ).run(at, day, `clean-${at}`);
+    }
+  }
+
+  const everybody = await read(await outstanding(ctx(db, { query: WEEK })));
+  assert.deepEqual(everybody.rows.map((r) => r.staff.name).sort(), ['Clean Sheet', 'Henry Aryee']);
+
+  const wrong = await read(await outstanding(ctx(db, { query: `${WEEK}&issues=1` })));
+  assert.deepEqual(wrong.rows.map((r) => r.staff.name), ['Henry Aryee']);
+
+  const clean = await read(await outstanding(ctx(db, { query: `${WEEK}&issues=0` })));
+  assert.deepEqual(clean.rows.map((r) => r.staff.name), ['Clean Sheet'],
+    'the question nobody could ask before: who can I clear without thinking about it');
+});
+
+test('signing every clean day leaves the awkward ones behind', async () => {
+  // What the one-press button does, per person, through the ordinary route.
+  // Henry's week is clean on Monday, Tuesday and Friday; late on Wednesday and
+  // absent on Thursday.
+  const { raw, db } = await setup();
+
+  const before = await read(await outstanding(ctx(db, { query: WEEK })));
+  const cleanDays = before.rows[0].days.filter((d) => !d.issues.length && !d.pendingTimes);
+  assert.deepEqual(cleanDays.map((d) => d.day), ['2026-06-01', '2026-06-02', '2026-06-05']);
+
+  await signDays(ctx(db, {
+    session: MANAGER,
+    body: { staffId: 1, days: cleanDays.map((d) => d.day), daysApplied: 0, note: 'Nothing outstanding on these days' },
+  }));
+
+  const after = await read(await outstanding(ctx(db, { query: WEEK })));
+  assert.deepEqual(after.rows[0].days.map((d) => d.day), ['2026-06-03', '2026-06-04'],
+    'the late day and the absence stay, on their own');
+
+  const review = raw.prepare('SELECT * FROM att_period_review').get();
+  assert.equal(review.days_applied, 0, 'a clean day is neither an extra one nor a missed one');
+  assert.deepEqual(JSON.parse(review.excluded_days), ['2026-06-03', '2026-06-04']);
+});
+
+test('a day with a clock-time change waiting is not a clean day', async () => {
+  // It looks clean today and its figures are about to move, which is exactly
+  // the day a one-press clear must not sweep up.
+  const { db } = await setup();
+  const { correctTimes } = await import('../src/routes/attendance.js');
+
+  await correctTimes(ctx(db, {
+    session: { ...PLANNER, permissions: [...PLANNER.permissions, 'att_times'] },
+    body: { staffId: 1, out: '18:30', reason: 'The function ran on' },
+  }), '2026-06-01');
+
+  const out = await read(await outstanding(ctx(db, { query: WEEK })));
+  const clean = out.rows[0].days.filter((d) => !d.issues.length && !d.pendingTimes);
+  assert.ok(!clean.some((d) => d.day === '2026-06-01'),
+    'Monday has nothing flagged, but somebody has asked for its times to move');
+  assert.deepEqual(clean.map((d) => d.day), ['2026-06-02', '2026-06-05']);
+});

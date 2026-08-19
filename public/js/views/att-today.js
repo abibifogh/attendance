@@ -38,6 +38,8 @@ export async function renderAttToday(params) {
   const absent = data.rows.filter((r) => !r.open && r.colour === 'red');
   const flagged = data.rows.filter((r) => !r.open && r.colour === 'amber');
   const fine = data.rows.filter((r) => !r.open && (r.colour === 'green' || r.colour === 'grey'));
+  // The three groups below, together — which is exactly what the download is.
+  const issues = [...needing, ...absent, ...flagged];
 
   const nav = h('div.toolbar',
     h('button.btn-sm', { onclick: () => reload(shiftDay(day, -1)) }, '‹ Previous day'),
@@ -56,6 +58,27 @@ export async function renderAttToday(params) {
       subtitle: totalsLine(data.totals),
       footer: PRINT_FOOTER,
     }),
+
+    // Just the ones needing somebody, as a file. The full export is the
+    // payroll extract and answers a different question at the wrong length:
+    // whoever is about to walk round the building wants the eight names with
+    // something against them, not the ninety who turned up.
+    //
+    // Offered to anybody who can open this screen. Everything in the file is
+    // already on it.
+    issues.length
+      ? exportButton(api.attIssuesUrl({ day }),
+        `Download the ${issues.length} to deal with`)
+      : null,
+    // And the same thing across the week, for whoever comes back on a Monday
+    // to a Friday nobody settled.
+    issues.length
+      ? h('a.btn.btn-sm', {
+        href: api.attIssuesUrl({ from: shiftDay(day, -6), to: day }),
+        download: '',
+        title: 'Everything with something wrong with it, over the last seven days',
+      }, 'Last 7 days')
+      : null,
     can('att_reports') ? exportButton(api.attExportUrl(day, day), 'Export this day') : null,
   );
 

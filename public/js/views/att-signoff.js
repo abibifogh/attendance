@@ -1,8 +1,7 @@
 import { api } from '../api.js';
 import { fmtDay, fmtDayShort, h, mount, shiftDay, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
-import { can } from '../app.js';
-import { navigate, replaceParams } from '../app.js';
+import { can, navigate, replaceParams } from '../app.js';
 import { correctTimesDialog, field, formDialog, overUnderOf } from './att-shared.js';
 
 /**
@@ -83,13 +82,25 @@ function rangeFor(params) {
 // ---------------------------------------------------------------------------
 
 async function openTab(params, range, reload) {
-  const onlyIssues = params.issues === '1';
   const data = await api.attOutstanding({
     from: range.from,
     to: range.to,
     ...(params.department ? { department: params.department } : {}),
-    ...(onlyIssues ? { issues: '1' } : {}),
+    ...(params.issues === '1' || params.issues === '0' ? { issues: params.issues } : {}),
   });
+
+  /**
+   * Days nobody needs to think about.
+   *
+   * Nothing flagged, and no clock-time change waiting on an administrator —
+   * that second one matters, because a day whose times are about to move is
+   * not a day whose figures are settled, however clean it looks today.
+   */
+  const cleanDays = (row) => row.days.filter((d) => !d.issues.length && !d.pendingTimes);
+  const clearable = data.rows
+    .map((row) => ({ row, days: cleanDays(row) }))
+    .filter((entry) => entry.days.length);
+  const clearableDays = clearable.reduce((n, entry) => n + entry.days.length, 0);
 
   const filters = h('div.toolbar',
     h('div.seg.seg-wrap', PRESETS.map(([key, label]) =>
@@ -117,12 +128,16 @@ async function openTab(params, range, reload) {
       }, d)))
       : null,
 
-    h('label.inline-check',
-      h('input', {
-        type: 'checkbox', checked: onlyIssues,
-        onchange: (e) => reload({ issues: e.target.checked ? '1' : null }),
-      }),
-      h('span', 'Only the ones with something wrong')),
+    // Three answers rather than a tick box. "Only the ones with something
+    // wrong" is what somebody opens on a Monday to see what needs a
+    // conversation; "nothing wrong" is what they open to clear the other
+    // twenty in one press, and that question had no way of being asked.
+    h('div.seg.seg-wrap',
+      [['', 'Everybody'], ['1', 'Something wrong'], ['0', 'Nothing wrong']].map(([value, label]) =>
+        h('button', {
+          class: (params.issues ?? '') === value ? 'active' : '',
+          onclick: () => reload({ issues: value || null }),
+        }, label))),
   );
 
   return h('div',
@@ -137,6 +152,28 @@ async function openTab(params, range, reload) {
     ),
 
     filters,
+
+    // The other half of the "nothing wrong" filter. Twenty-four people with
+    // four clean days each is ninety-six ticks and twenty-four dialogs, which
+    // is why nobody does it and why the list is three weeks long by the time
+    // anybody looks.
+    //
+    // It signs the clean days wherever they are, including a clean Monday
+    // belonging to somebody whose Thursday is an unexplained absence — that
+    // Thursday stays on the list on its own, which is the whole reason
+    // signing is per day.
+    clearable.length
+      ? h('div.card.bulk-clear',
+        h('div',
+          h('strong', `${clearableDays} day${clearableDays === 1 ? '' : 's'} with nothing wrong`),
+          h('div.muted', { style: { fontSize: '.85rem' } },
+            `Across ${clearable.length} ${clearable.length === 1 ? 'person' : 'people'}. `
+            + 'Nothing flagged, nothing waiting on an administrator, nothing against anybody’s '
+            + 'leave.')),
+        h('button.btn.btn-primary', {
+          onclick: (event) => signAllClean(clearable, clearableDays, reload, event.target),
+        }, 'Sign them all off'))
+      : null,
 
     data.rows.length
       ? h('div', data.rows.map((row) => personCard(row, data, reload)))
@@ -417,6 +454,58 @@ async function sign(row, chosen, reload) {
       + `${done.excluded ? `, ${done.excluded} left for later` : ''}.`, 'good');
     await reload();
   }
+}
+
+/**
+ * Sign every day that nothing is wrong with, in one press.
+ *
+ * One request per person rather than a bulk endpoint, deliberately. Each
+ * person gets their own record with their own dates, their own audit line and
+ * their own overlap check — which is what a sign-off is — and a bulk endpoint
+ * would either duplicate all of that or quietly skip some of it.
+ *
+ * It asks once, and the asking says the number. What it must never be is a
+ * button that turns out to have done something slightly different from what
+ * the line above it said, so if any one person fails the rest still go
+ * through and the failures are named.
+ */
+async function signAllClean(clearable, total, reload, button) {
+  const people = clearable.length;
+  if (!window.confirm(
+    `Sign off ${total} day${total === 1 ? '' : 's'} across ${people} `
+    + `${people === 1 ? 'person' : 'people'}?\n\n`
+    + 'Only days with nothing wrong with them. Nothing is charged against anybody’s leave, '
+    + 'and anything flagged or waiting on an administrator stays on the list.\n\n'
+    + 'Each one can be reopened afterwards.',
+  )) return;
+
+  button.disabled = true;
+  button.textContent = 'Signing…';
+
+  let signed = 0;
+  const failed = [];
+  for (const { row, days } of clearable) {
+    try {
+      // Zero rather than the figure for the period: a clean day is by
+      // definition neither an extra day nor a missed one.
+      const out = await api.attSignDays({
+        staffId: row.staff.id,
+        days: days.map((d) => d.day),
+        daysApplied: 0,
+        note: 'Nothing outstanding on these days',
+      });
+      signed += Number(out.signed ?? days.length);
+    } catch (err) {
+      failed.push(`${row.staff.name}: ${err.message}`);
+    }
+  }
+
+  if (failed.length) {
+    toast(`${signed} signed. ${failed.length} could not be: ${failed[0]}`, 'bad');
+  } else {
+    toast(`${signed} day${signed === 1 ? '' : 's'} signed off.`, 'good');
+  }
+  await reload();
 }
 
 /**
@@ -743,6 +832,17 @@ function queryCard(q, data, reload) {
         ? h(`span.pill${forMe ? '.warn' : ''}`, forMe ? 'Asked of you' : `For ${q.addressedName}`)
         : null,
       h(`span.pill.${STATUS_PILL[q.status] ?? ''}`, STATUS_LABEL[q.status] ?? q.status),
+
+      // The way into what the question is actually about. Somebody asked to
+      // look at a period cannot answer it from a sentence and a chip saying
+      // "1 absent" — they need the days, the clock times, the shifts and
+      // whatever else that week did. Opening on the days the question covers,
+      // not on the current month, because the question is about those.
+      h('button.btn-sm', {
+        onclick: () => navigate('att-staff', { id: q.staff.id, from: q.from, to: q.to }),
+        title: 'The days this question is about, in full',
+      }, 'Open their record'),
+
       mine && q.status !== 'resolved'
         ? h('button.btn-sm', {
           onclick: async () => {
@@ -803,6 +903,16 @@ async function answer(q, reload) {
       h('option', { value: 'direction' }, 'Telling them what to do — hand it back'),
       h('option', { value: 'sign' }, 'Signing it off myself, now'),
       h('option', { value: 'close' }, 'Closing it — nothing needed'))),
+
+      // Offered here as well as on the card. This is the moment somebody is
+      // about to charge days against a colleague's leave, and "open the
+      // record" is exactly the thing they should be able to do without
+      // losing what they have typed — so it opens in its own tab.
+      h('p', h('a', {
+        href: `#/att-staff?id=${q.staff.id}&from=${q.from}&to=${q.to}`,
+        target: '_blank',
+        rel: 'noopener',
+      }, `Open ${q.staff.name}'s record for these days ↗`)),
 
       field('What to say', h('textarea', {
         name: 'body', rows: 4, maxlength: 800,

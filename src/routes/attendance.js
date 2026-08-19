@@ -898,6 +898,80 @@ export async function exportCsv(ctx) {
   return csvResponse(`attendance-${from}-to-${to}.csv`, rows);
 }
 
+/**
+ * Just the ones that need somebody, as a file.
+ *
+ * The morning screen's own list, downloaded. A supervisor going round the
+ * building wants the eight names with something wrong against them and not the
+ * ninety who turned up; the full export is the payroll extract and answers a
+ * different question at the wrong length.
+ *
+ * Reachable with the permission that opens the morning screen rather than the
+ * one that opens the reports. There is nothing in here that is not already on
+ * that screen — no wages, no leave balances, no rates — so gating it behind
+ * the reports permission would only mean the person actually doing the chasing
+ * has to ask somebody else for a copy of what they are looking at.
+ *
+ * A day by default, because that is the screen it is offered from, and any
+ * range on request: the same person on a Monday wants everything still
+ * outstanding since Friday, and that is one file rather than three.
+ */
+export async function exportIssues(ctx) {
+  const timezone = await timezoneOf(ctx.db);
+  const single = readDay(ctx.url.searchParams.get('day'), null);
+  const { from, to } = single
+    ? { from: single, to: single }
+    : readRange(ctx.url, timezone, { days: 7, maxDays: 62 });
+
+  const ds = await loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) });
+
+  const rows = [[
+    'Date', 'Needs', 'Employee no', 'Name', 'Department', 'Shift',
+    'Scheduled start', 'Scheduled end', 'Clock in', 'Clock out', 'Hours',
+    'Late (min)', 'Early (min)', 'Status', 'Reason', 'What it means',
+    'Settled by', 'Settled note',
+  ]];
+
+  for (const staff of ds.staff) {
+    for (const record of daysFor(ds, staff.id, from, to)) {
+      if (!activeOn(staff, record.day)) continue;
+
+      // The same three groups the screen shows, decided the same way, so the
+      // file and the page can never disagree about what counts as a problem.
+      const colour = colourFor(record, ds.reasonBy);
+      const needs = isOpen(record)
+        ? 'Waiting on a decision'
+        : colour === 'red' ? 'Absent'
+          : colour === 'amber' ? 'Late or left early' : null;
+      if (!needs) continue;
+
+      const shift = record.shift_id ? ds.shiftById.get(record.shift_id) : null;
+      const reason = ds.reasonBy.get(record.reason_code);
+      rows.push([
+        record.day, needs, staff.employee_no, staff.name, staff.department ?? '',
+        shift?.name ?? '', shift?.starts_at ?? '', shift?.ends_at ?? '',
+        record.first_in ?? '', record.last_out ?? '', hours(record.worked_minutes),
+        record.late_minutes, record.early_minutes,
+        labelFor(record, ds.reasonBy), reason?.label ?? record.reason_code ?? '',
+        record.note ?? '',
+        record.resolved_by ?? '', record.resolved_note ?? '',
+      ]);
+    }
+  }
+
+  // Worst first, then by name, so the file opens on what matters rather than
+  // on whoever happens to be first alphabetically. Sorted here and not left to
+  // the spreadsheet, because most people never sort it.
+  const order = { 'Waiting on a decision': 0, Absent: 1, 'Late or left early': 2 };
+  const body = rows.slice(1).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1
+    : (order[a[1]] - order[b[1]]) || String(a[3]).localeCompare(String(b[3]))));
+
+  return csvResponse(
+    from === to ? `attendance-issues-${from}.csv` : `attendance-issues-${from}-to-${to}.csv`,
+    [rows[0], ...body],
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Settling a day
 // ---------------------------------------------------------------------------

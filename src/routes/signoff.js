@@ -74,7 +74,13 @@ export async function outstanding(ctx) {
   }
 
   const onlyDepartment = ctx.url.searchParams.get('department') || '';
-  const withIssuesOnly = ctx.url.searchParams.get('issues') === '1';
+  // Three answers, not two. "Only the ones with something wrong" is what
+  // somebody opens on a Monday to see what needs a conversation; "only the
+  // clean ones" is what they open to clear the other twenty in one go, and
+  // until now that second question had no way of being asked.
+  const issuesFilter = ctx.url.searchParams.get('issues');
+  const withIssuesOnly = issuesFilter === '1';
+  const cleanOnly = issuesFilter === '0';
 
   const [ds, reviews, queries, waiting] = await Promise.all([
     loadDataset(ctx.db, { from, to: limit }),
@@ -163,6 +169,11 @@ export async function outstanding(ctx) {
 
     const issues = issuesInPeriod(days);
     if (withIssuesOnly && !issues.total) continue;
+    // A person with nothing wrong anywhere in the window. Counted across the
+    // whole of their period rather than per day, because this filter answers
+    // "who can I clear without thinking about it" and one absence on a Tuesday
+    // is exactly the thing that makes somebody worth thinking about.
+    if (cleanOnly && issues.total) continue;
 
     const totals = summarise(records, { shifts: ds.shiftById, reasons: ds.reasonBy });
 

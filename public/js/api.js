@@ -97,6 +97,11 @@ export const api = {
   attExportUrl: (from, to) => `/api/att/export?${new URLSearchParams({
     ...(from ? { from } : {}), ...(to ? { to } : {}),
   })}`,
+  // Just the ones needing somebody. A single day, or a range for a Monday
+  // catch-up.
+  attIssuesUrl: ({ day, from, to } = {}) => `/api/att/export/issues?${new URLSearchParams({
+    ...(day ? { day } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`,
 
   attResolve: (day, body) => request(`/api/att/days/${day}/resolve`, { method: 'POST', body }),
   attUnresolve: (day, body) => request(`/api/att/days/${day}/unresolve`, { method: 'POST', body }),
