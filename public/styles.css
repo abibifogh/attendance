@@ -1102,16 +1102,54 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 }
 .signed-list li:last-child { border-bottom: 0; }
 
-/* One press to clear everything nothing is wrong with. Sits above the list
-   rather than in the toolbar: it acts on all of it, and a button that signs
-   ninety-six days should not look like a filter. */
+/* --------------------------------------------------------------------------
+   Sign-off
+   --------------------------------------------------------------------------
+   One line of controls and one line of counts, then the days. The screen this
+   replaced put four tiles and five controls above the fold and the thing the
+   page exists for below it.
+   -------------------------------------------------------------------------- */
+
+.signoff-bar {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .6rem;
+}
+.signoff-bar select {
+  width: auto;
+  min-width: 10rem;
+  margin: 0;
+}
+.signoff-dates { display: flex; gap: .35rem; }
+.signoff-dates input { width: auto; margin: 0; }
+
+.signoff-counts {
+  font-size: .92rem;
+  margin: 0 0 1rem;
+  display: flex;
+  align-items: center;
+  gap: .1rem;
+  flex-wrap: wrap;
+}
+
+/* One press to clear everything nothing is wrong with. A slim bar rather than
+   a card: it acts on the whole list below it, and it should read as a shortcut
+   past that list rather than as another thing on it. */
 .bulk-clear {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
+  padding: .6rem .9rem;
+  margin: 0 0 .8rem;
+  border: 1px solid var(--border);
   border-left: 3px solid var(--good);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: .9rem;
 }
 
 /* --------------------------------------------------------------------------

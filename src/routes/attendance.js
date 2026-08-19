@@ -3,7 +3,7 @@ import {
 } from '../lib/http.js';
 import {
   colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysIn,
-  dayCredit, dayLedger, loadDataset, overUnder, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes,
+  dayCredit, dayLedger, daysPerWeekFor, loadDataset, overUnder, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes,
   weekCountOf,
 } from '../lib/attendance.js';
 import {
@@ -2169,7 +2169,11 @@ export async function periodReview(ctx) {
 
     if (!onlyId && !totals.scheduled && !totals.daysWorked && !overlapping.length) continue;
 
-    const oc = overUnder(days, { holidays: ds.holidayBy, expected: totals.scheduled > 0 });
+    const oc = overUnder(days, {
+      holidays: ds.holidayBy,
+      expected: totals.scheduled > 0,
+      perWeek: daysPerWeekFor(staff, ds.settings),
+    });
     const counted = new Map([
       ...oc.overs.map((o) => [o.day, 'over']),
       ...oc.unders.map((u) => [u.day, 'under']),
@@ -2189,12 +2193,13 @@ export async function periodReview(ctx) {
         reason: r.reason_code ? ds.reasonBy.get(r.reason_code) ?? null : null,
       }),
       status: r.status,
+      scheduled: Boolean(r.scheduled),
       label: labelFor(r, ds.reasonBy),
       resolvedBy: r.resolved_by ?? null,
       counts: counted.get(r.day) ?? null,
       // The two sides of the ledger, per day, so any subset of them adds up to
       // the same answer as the whole month.
-      ...dayLedger(r, { holidays: ds.holidayBy }),
+      ...dayLedger(r, { holidays: ds.holidayBy, perWeek: daysPerWeekFor(staff, ds.settings) }),
       // `credit` above is the half-a-day-for-a-short-shift figure the reports
       // use, and stays what it was.
       credit: dayCredit(r, {
@@ -2210,6 +2215,7 @@ export async function periodReview(ctx) {
       // The five figures the month is read across, and they reconcile:
       // over/under is worked plus leave, less the working days expected.
       calendarDays: oc.quota,
+      daysPerWeek: daysPerWeekFor(staff, ds.settings),
       scheduledDays: totals.scheduled,
       // Days actually clocked in and out of. Not the credited figure the rest
       // of the app uses — no halves for a short day, no crediting a reason
@@ -2229,7 +2235,9 @@ export async function periodReview(ctx) {
       // Still waiting on a supervisor. It no longer changes the arithmetic —
       // a missed working day counts whether or not anybody has been round to
       // rule on it — but it is what somebody would go and do about the number.
-      unsettledAbsences: detail.filter((d) => !d.owed && d.quota && !d.resolvedBy).length,
+      // Rostered, not delivered, and nobody has said why. The same days the
+      // "missed" list holds, minus the ones somebody has been round to.
+      unsettledAbsences: detail.filter((d) => !d.owed && d.scheduled && !d.resolvedBy).length,
 
       days: detail,
       decision: exact && presentDecision(exact),
@@ -2326,7 +2334,11 @@ export async function decidePeriod(ctx) {
   const ds = await loadDataset(ctx.db, { from, to });
   const days = daysFor(ds, staffId, from, to);
   const totals = summarise(days, { shifts: ds.shiftById, reasons: ds.reasonBy });
-  const oc = overUnder(days, { holidays: ds.holidayBy, expected: totals.scheduled > 0 });
+  const oc = overUnder(days, {
+    holidays: ds.holidayBy,
+    expected: totals.scheduled > 0,
+    perWeek: daysPerWeekFor(ds.staffById.get(staffId), ds.settings),
+  });
 
   await ctx.db.prepare(
     `INSERT INTO att_period_review

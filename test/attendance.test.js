@@ -5,7 +5,7 @@ import {
   absMinutes, claimPunch, collapsePunches, colourFor, computeDay, computeRange, dayCredit,
   easterSunday, firstFriday, ghanaHolidays, hours, humanDuration, isOpen, labelFor,
   leaveBalance, leaveDaysIn, leaveYearOf, makeDataset, monthsBetween, noteFor,
-  overUnder, pairPunches, rotationWeekOf, scheduleFor, shiftWindow, streakOf, summarise, toClock,
+  dayLedger, overUnder, pairPunches, rotationWeekOf, scheduleFor, shiftWindow, streakOf, summarise, toClock,
   toMinutes, withObservedDays,
 } from '../src/lib/attendance.js';
 import {
@@ -891,90 +891,146 @@ const day = (o = {}) => ({
   reason_code: null, resolved_by: null, resolved_note: null, ...o,
 });
 
-// 2026-03-02 is a Monday, 03-07 a Saturday, 03-08 a Sunday.
-test('a working day delivered is square, and one missed is a day down', () => {
-  assert.equal(overUnder([day()]).difference, 0, 'clocked in and out on a Monday');
-  assert.equal(overUnder([day({ first_in: null, last_out: null, status: 'absent' })]).difference, -1);
-  assert.equal(overUnder([day({ status: 'leave', reason_code: 'annual_leave' })]).difference, 0,
-    'a day on leave is a day the property agreed to');
+// A week runs Monday 2026-03-02 to Sunday 03-08.
+const WEEK = ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06',
+  '2026-03-07', '2026-03-08'];
+const away = { first_in: null, last_out: null, status: 'rest' };
+
+/** A week where the named days were worked and the rest were not. */
+const weekWorking = (worked, extra = {}) => WEEK.map((d) => day(
+  worked.includes(d) ? { day: d, ...extra } : { day: d, ...away, ...extra },
+));
+
+test('a week expects five days, whichever five they are', () => {
+  // Five out of seven rather than Monday to Friday. In a hotel the rota runs
+  // across all seven and a Saturday is an ordinary working day for half the
+  // staff; counting only weekdays would leave the night porter permanently
+  // over for doing exactly what was asked.
+  assert.equal(overUnder(weekWorking([])).quota, 5);
+
+  const mondayToFriday = weekWorking(['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06']);
+  assert.equal(overUnder(mondayToFriday).difference, 0);
+
+  const wednesdayToSunday = weekWorking(['2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08']);
+  assert.equal(overUnder(wednesdayToSunday).difference, 0, 'the same week, worked across the weekend');
 });
 
-test('a day nothing was expected of is a day up', () => {
-  assert.equal(overUnder([day({ day: '2026-03-07' })]).difference, 1, 'worked a Saturday');
-  assert.equal(overUnder([day({ day: '2026-03-08', first_in: null, last_out: null, status: 'rest' })]).difference, 0,
-    'and a Sunday off costs nothing either way');
+test('a day short is a day down, and a day extra is a day up', () => {
+  assert.equal(overUnder(weekWorking(['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05'])).difference, -1);
+  assert.equal(overUnder(weekWorking(WEEK)).difference, 2, 'all seven');
+});
+
+test('a day on leave is a day the property agreed to', () => {
+  const week = weekWorking(['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05']);
+  const withLeave = week.map((d) => (d.day === '2026-03-06'
+    ? { ...d, status: 'leave', reason_code: 'annual_leave' }
+    : d));
+  assert.equal(overUnder(withLeave).difference, 0);
 });
 
 test('a tap in with no tap out is not a day worked', () => {
   // It is a day somebody still has to look at, and until they do the day was
   // not delivered. Counting it would credit a shift nobody can show was
   // finished.
-  const half = overUnder([day({ first_in: '09:00', last_out: null, status: 'missing_out' })]);
-  assert.equal(half.difference, -1);
-  assert.match(half.unders[0].why, /never out/);
+  const week = weekWorking(['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05']);
+  const half = week.map((d) => (d.day === '2026-03-06'
+    ? { ...d, first_in: '09:00', last_out: null, status: 'missing_out' }
+    : d));
+  const result = overUnder(half);
+  assert.equal(result.difference, -1);
+  assert.match(result.unders.find((u) => u.day === '2026-03-06').why, /never out/);
 });
 
 test('a short day still counts, because it was clocked in and out of', () => {
-  // Deliberately different from the credited-hours figure the reports use. This
-  // column answers "did they turn up and finish", and half a day's hours is
-  // still a day somebody came to work.
-  assert.equal(overUnder([day({ worked_minutes: 120 })]).difference, 0);
+  // Deliberately different from the credited-hours figure the reports use.
+  // This asks "did they turn up and finish", and half a day's hours is still a
+  // day somebody came to work.
+  const week = weekWorking(['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06'])
+    .map((d) => (d.day === '2026-03-06' ? { ...d, worked_minutes: 120 } : d));
+  assert.equal(overUnder(week).difference, 0);
 });
 
-test('a public holiday is not a working day, and working one is a day up', () => {
+test('a public holiday is a day nobody is expected in, whatever day it falls on', () => {
   const holidays = new Set(['2026-03-04']);
-  assert.equal(
-    overUnder([day({ day: '2026-03-04', first_in: null, last_out: null, status: 'holiday' })], { holidays })
-      .difference,
-    0,
-    'a Wednesday holiday nobody worked',
-  );
-  assert.equal(overUnder([day({ day: '2026-03-04' })], { holidays }).difference, 1,
-    'and a Wednesday holiday somebody did');
-  assert.equal(overUnder([day({ day: '2026-03-04' })]).difference, 0,
-    'the same Wednesday, with no holiday recorded');
+  const four = weekWorking(['2026-03-02', '2026-03-03', '2026-03-05', '2026-03-06']);
+
+  assert.equal(overUnder(four, { holidays }).quota, 4, 'a week with a holiday in it expects four');
+  assert.equal(overUnder(four, { holidays }).difference, 0);
+
+  const sunday = new Set(['2026-03-08']);
+  assert.equal(overUnder(weekWorking([]), { holidays: sunday }).quota, 4,
+    'and it counts wherever in the week it lands');
 });
 
 test('an absence counts whether or not anybody has ruled on it', () => {
   // The rule this replaced only counted a missed day once a supervisor had
   // confirmed it, so a property that had never got round to settling anything
   // read "square" every month — the one thing it was not.
-  const missed = { first_in: null, last_out: null, status: 'absent' };
-  assert.equal(overUnder([day(missed)]).difference, -1, 'nobody has been round to it yet');
-  assert.equal(overUnder([day({ ...missed, resolved_by: 'Ama' })]).difference, -1, 'and once they have');
+  const week = weekWorking(['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05'])
+    .map((d) => (d.day === '2026-03-06' ? { ...d, status: 'absent' } : d));
+  assert.equal(overUnder(week).difference, -1, 'nobody has been round to it');
+
+  const ruled = week.map((d) => (d.day === '2026-03-06' ? { ...d, resolved_by: 'Ama' } : d));
+  assert.equal(overUnder(ruled).difference, -1, 'and once they have');
 });
 
-test('the difference is whole days and can name every one of them', () => {
-  const result = overUnder([
-    day({ day: '2026-03-07' }),                                                        // Saturday worked
-    day({ day: '2026-03-10', first_in: null, last_out: null, status: 'absent' }),      // Tuesday missed
-    day({ day: '2026-03-11', first_in: null, last_out: null, status: 'absent' }),      // Wednesday missed
-    day({ day: '2026-03-12', worked_minutes: 250 }),                                   // Thursday, short
-  ]);
+test('the expectation follows the person, not the calendar', () => {
+  // Some people work six shorter days and some four long ones. Measuring both
+  // against five leaves one permanently over and the other permanently under
+  // for doing exactly what their contract says.
+  const six = weekWorking(WEEK.slice(0, 6));
+  assert.equal(overUnder(six).difference, 1, 'six days against a five-day week');
+  assert.equal(overUnder(six, { perWeek: 6 }).difference, 0, 'and none against a six-day one');
 
-  assert.equal(result.difference, -1);
-  assert.ok(Number.isInteger(result.difference));
-  assert.equal(result.delivered, 2);
-  assert.equal(result.quota, 3);
-  assert.deepEqual(result.overs.map((o) => o.day), ['2026-03-07']);
-  assert.deepEqual(result.unders.map((u) => u.day), ['2026-03-10', '2026-03-11']);
+  const four = weekWorking(WEEK.slice(0, 4));
+  assert.equal(overUnder(four, { perWeek: 4 }).difference, 0);
+  assert.equal(overUnder(four, { perWeek: 4 }).quota, 4);
+});
+
+test('the difference can name every day behind it', () => {
+  const week = weekWorking(['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-07', '2026-03-08']);
+  const result = overUnder(week);
+
+  assert.equal(result.difference, 0, 'five days, two of them at the weekend');
+  assert.equal(result.delivered, 5);
+  assert.equal(result.quota, 5);
+  assert.deepEqual(result.unders.map((u) => u.day), ['2026-03-05', '2026-03-06']);
+  assert.deepEqual(result.overs.map((o) => o.day), []);
 });
 
 test('any subset of the days adds up to the same answer', () => {
   // What makes it safe to sign three days out of a fortnight: each day carries
   // its own side of the ledger, so a part of the period cannot come to
-  // something the whole would not.
-  const month = [
-    day({ day: '2026-03-02' }),
-    day({ day: '2026-03-03', first_in: null, last_out: null, status: 'absent' }),
-    day({ day: '2026-03-07' }),
-    day({ day: '2026-03-08', first_in: null, last_out: null, status: 'rest' }),
-  ];
+  // something the whole would not. The expectation is fractional per day for
+  // exactly this reason — a period figure rounded first and divided afterwards
+  // does not add up, and this is arithmetic that ends in somebody's leave.
+  const week = weekWorking(['2026-03-02', '2026-03-04', '2026-03-07']);
 
-  const whole = overUnder(month).difference;
-  const parts = month.reduce((n, d) => n + overUnder([d]).difference, 0);
-  assert.equal(whole, parts);
-  assert.equal(whole, 0);
+  const whole = overUnder(week);
+  const parts = week.reduce((acc, d) => {
+    const led = dayLedger(d);
+    return { delivered: acc.delivered + led.owed, quota: acc.quota + led.quota };
+  }, { delivered: 0, quota: 0 });
+
+  assert.equal(whole.delivered, parts.delivered);
+  assert.ok(Math.abs(whole.quota - parts.quota) < 0.001,
+    `${whole.quota} against ${parts.quota}`);
+});
+
+test('a month asks nothing of somebody it never rostered', () => {
+  // A new starter whose first week is next week, somebody who has left, a
+  // casual with nothing booked. The week's days are not a debt they owe: they
+  // were never asked. Anything they did work still counts, which is the right
+  // way round.
+  const nothing = weekWorking([]).map((d) => ({ ...d, scheduled: 0 }));
+  assert.equal(overUnder(nothing, { expected: false }).difference, 0);
+  assert.equal(overUnder(nothing).difference, -5, 'and it is a debt when they were');
+
+  const helped = nothing.map((d) => (d.day === '2026-03-04'
+    ? { ...d, first_in: '09:00', last_out: '17:00', status: 'present' }
+    : d));
+  assert.equal(overUnder(helped, { expected: false }).difference, 1,
+    'a day given when nothing was asked is still a day given');
 });
 
 // ---------------------------------------------------------------------------
@@ -1043,21 +1099,4 @@ test('a shift still to come counts as neither worked nor missed', () => {
   assert.equal(totals.scheduled, 1, 'still rostered');
   assert.equal(totals.daysAbsent, 0);
   assert.equal(totals.daysWorked, 0);
-});
-
-test('a month asks nothing of somebody it never rostered', () => {
-  // A new starter whose first week is next week, somebody who has left, a
-  // casual with nothing booked. The month's working days are not a debt they
-  // owe: they were never asked. Anything they did work still counts, which is
-  // the right way round.
-  const nothing = [
-    day({ day: '2026-03-02', scheduled: 0, first_in: null, last_out: null, status: 'rest' }),
-    day({ day: '2026-03-03', scheduled: 0, first_in: null, last_out: null, status: 'rest' }),
-  ];
-  assert.equal(overUnder(nothing, { expected: false }).difference, 0);
-  assert.equal(overUnder(nothing).difference, -2, 'and it is a debt when they were');
-
-  const helped = [...nothing, day({ day: '2026-03-04', scheduled: 0 })];
-  assert.equal(overUnder(helped, { expected: false }).difference, 1,
-    'a day given when nothing was asked is still a day given');
 });

@@ -81,6 +81,19 @@ function rangeFor(params) {
 // What is outstanding
 // ---------------------------------------------------------------------------
 
+/**
+ * What is outstanding, in three lists and as little else as possible.
+ *
+ * The screen this replaced had four tiles, five controls and an alert box on
+ * every card before you reached a single day, and the thing it exists for —
+ * tick some days, sign them — was below the fold. So: one line of controls,
+ * one line of counts, and then the days.
+ *
+ * The grouping is by day rather than by person. Asking about a Thursday nobody
+ * can explain must not put that person's other four days beyond reach, and
+ * parking somebody's whole week because one day of it has a question on it is
+ * the surest way to stop anybody ever asking.
+ */
 async function openTab(params, range, reload) {
   const data = await api.attOutstanding({
     from: range.from,
@@ -89,55 +102,68 @@ async function openTab(params, range, reload) {
     ...(params.issues === '1' || params.issues === '0' ? { issues: params.issues } : {}),
   });
 
-  /**
-   * Days nobody needs to think about.
-   *
-   * Nothing flagged, and no clock-time change waiting on an administrator —
-   * that second one matters, because a day whose times are about to move is
-   * not a day whose figures are settled, however clean it looks today.
-   */
-  const cleanDays = (row) => row.days.filter((d) => !d.issues.length && !d.pendingTimes);
+  /** One person, cut down to a given set of their days. */
+  const slice = (row, days) => ({ ...row, days, unsignedCount: days.length });
 
-  /**
-   * Three lists, not one.
-   *
-   * A period somebody has asked about is not theirs to do anything with until
-   * it is answered, and leaving it among the ones that are is how a list of
-   * four jobs reads as a list of nine. So what has been asked comes out of the
-   * working list — and what has been *answered* comes out the other way, to
-   * the top, because that is a job that has just landed back on somebody and
-   * would otherwise sit unnoticed among the rest.
-   */
-  const answered = data.rows.filter((r) => r.query?.status === 'answered');
-  const asked = data.rows.filter((r) => r.query?.status === 'open');
-  const working = data.rows.filter((r) => !r.query);
+  const groups = { answered: [], working: [], asked: [] };
+  for (const row of data.rows) {
+    const bucket = {
+      answered: row.days.filter((d) => d.query?.status === 'answered'),
+      working: row.days.filter((d) => !d.query),
+      asked: row.days.filter((d) => d.query?.status === 'open'),
+    };
+    for (const key of Object.keys(groups)) {
+      if (bucket[key].length) groups[key].push(slice(row, bucket[key]));
+    }
+  }
 
-  // The bulk clear works on the working list alone. Sweeping up a period
-  // somebody has deliberately asked about would answer their question for
-  // them, in the one direction they were trying to avoid.
-  const clearable = working
-    .map((row) => ({ row, days: cleanDays(row) }))
+  const count = (list) => list.reduce((n, r) => n + r.days.length, 0);
+  const toDo = count(groups.working);
+
+  // Days nothing is wrong with and nothing is waiting on. The bulk clear works
+  // on the working list alone: sweeping up a day somebody deliberately asked
+  // about would answer their question for them.
+  const clearable = groups.working
+    .map((row) => ({ row, days: row.days.filter((d) => !d.issues.length && !d.pendingTimes) }))
     .filter((entry) => entry.days.length);
   const clearableDays = clearable.reduce((n, entry) => n + entry.days.length, 0);
 
-  const filters = h('div.toolbar',
-    h('div.seg.seg-wrap', PRESETS.map(([key, label]) =>
+  const custom = Boolean(params.from || params.to);
+
+  const controls = h('div.signoff-bar',
+    h('div.seg.seg-wrap', [...PRESETS, ['custom', 'Dates…']].map(([key, label]) =>
       h('button', {
-        class: range.preset === key ? 'active' : '',
-        onclick: () => reload({ preset: key, from: null, to: null }),
+        class: (custom ? 'custom' : range.preset) === key ? 'active' : '',
+        onclick: () => (key === 'custom'
+          ? reload({ preset: null, from: range.from, to: range.to })
+          : reload({ preset: key, from: null, to: null })),
       }, label))),
 
-    h('input', {
-      type: 'date', value: range.from, 'aria-label': 'From',
-      onchange: (e) => e.target.value && reload({ from: e.target.value, to: range.to, preset: null }),
-    }),
-    h('input', {
-      type: 'date', value: range.to, 'aria-label': 'To',
-      onchange: (e) => e.target.value && reload({ from: range.from, to: e.target.value, preset: null }),
-    }),
+    // Only in the way when somebody has actually asked for dates by hand.
+    custom
+      ? h('span.signoff-dates',
+        h('input', {
+          type: 'date', value: range.from, 'aria-label': 'From',
+          onchange: (e) => e.target.value && reload({ from: e.target.value, to: range.to, preset: null }),
+        }),
+        h('input', {
+          type: 'date', value: range.to, 'aria-label': 'To',
+          onchange: (e) => e.target.value && reload({ from: range.from, to: e.target.value, preset: null }),
+        }))
+      : null,
+
+    h('div.seg.seg-wrap',
+      [['', 'All'], ['1', 'With issues'], ['0', 'Clean']].map(([value, label]) =>
+        h('button', {
+          class: (params.issues ?? '') === value ? 'active' : '',
+          onclick: () => reload({ issues: value || null }),
+        }, label))),
+
+    h('div', { style: { flex: 1 } }),
 
     data.departments?.length
       ? h('select', {
+        'aria-label': 'Department',
         onchange: (e) => reload({ department: e.target.value || null }),
       },
       h('option', { value: '' }, 'Every department'),
@@ -145,90 +171,52 @@ async function openTab(params, range, reload) {
         value: d, selected: params.department === d,
       }, d)))
       : null,
-
-    // Three answers rather than a tick box. "Only the ones with something
-    // wrong" is what somebody opens on a Monday to see what needs a
-    // conversation; "nothing wrong" is what they open to clear the other
-    // twenty in one press, and that question had no way of being asked.
-    h('div.seg.seg-wrap',
-      [['', 'Everybody'], ['1', 'Something wrong'], ['0', 'Nothing wrong']].map(([value, label]) =>
-        h('button', {
-          class: (params.issues ?? '') === value ? 'active' : '',
-          onclick: () => reload({ issues: value || null }),
-        }, label))),
   );
 
   return h('div',
-    h('div.grid.grid-4',
-      // What there is to do, rather than what is on the page. A count that
-      // includes six periods waiting on somebody else's answer is a count
-      // nobody can plan a morning around.
-      tile('To deal with', working.reduce((n, r) => n + r.unsignedCount, 0),
-        `${working.length} ${working.length === 1 ? 'person' : 'people'}`),
-      tile('With something wrong',
-        working.filter((r) => r.issues.total).length,
-        working.some((r) => r.issues.total) ? 'worth a look' : 'all clean',
-        working.some((r) => r.issues.total) ? 'var(--warn)' : 'var(--good)'),
-      answered.length
-        ? tile('Answered', answered.length, 'back with you', 'var(--good)')
-        : tile('Waiting on an answer', asked.length,
-          asked.length ? 'asked, not yet replied to' : 'nothing asked',
-          asked.length ? 'var(--accent)' : null),
-      tile('Up to', fmtDayShort(data.limit), 'today is never included'),
+    controls,
+
+    // One line where four tiles were. Everything on it is a number somebody
+    // acts on; nothing on it is a number that only describes the page.
+    h('p.signoff-counts',
+      h('strong', `${toDo} day${toDo === 1 ? '' : 's'} to deal with`),
+      groups.working.length
+        ? h('span.muted', ` · ${groups.working.length} ${groups.working.length === 1 ? 'person' : 'people'}`)
+        : null,
+      count(groups.answered)
+        ? h('span.pill.good', { style: { marginLeft: '.5rem' } }, `${count(groups.answered)} answered`)
+        : null,
+      count(groups.asked)
+        ? h('span.pill.warn', { style: { marginLeft: '.35rem' } }, `${count(groups.asked)} waiting`)
+        : null,
+      h('span.muted', { style: { marginLeft: '.5rem' } }, `up to ${fmtDayShort(data.limit)}`),
     ),
 
-    filters,
+    groups.answered.length
+      ? h('div',
+        h('h2.group-head', h('span.pill.good', 'Answered'), ' back with you'),
+        groups.answered.map((row) => personCard(row, data, reload, 'answered')))
+      : null,
 
-    // The other half of the "nothing wrong" filter. Twenty-four people with
-    // four clean days each is ninety-six ticks and twenty-four dialogs, which
-    // is why nobody does it and why the list is three weeks long by the time
-    // anybody looks.
-    //
-    // It signs the clean days wherever they are, including a clean Monday
-    // belonging to somebody whose Thursday is an unexplained absence — that
-    // Thursday stays on the list on its own, which is the whole reason
-    // signing is per day.
     clearable.length
-      ? h('div.card.bulk-clear',
-        h('div',
-          h('strong', `${clearableDays} day${clearableDays === 1 ? '' : 's'} with nothing wrong`),
-          h('div.muted', { style: { fontSize: '.85rem' } },
-            `Across ${clearable.length} ${clearable.length === 1 ? 'person' : 'people'}. `
-            + 'Nothing flagged, nothing waiting on an administrator, nothing against anybody’s '
-            + 'leave.')),
-        h('button.btn.btn-primary', {
+      ? h('div.bulk-clear',
+        h('span', h('strong', `${clearableDays} clean`),
+          h('span.muted', ' — nothing flagged, nothing waiting')),
+        h('button.btn-sm.btn-primary', {
           onclick: (event) => signAllClean(clearable, clearableDays, reload, event.target),
         }, 'Sign them all off'))
       : null,
 
-    // Back on you first: somebody answered, and this is now a job again.
-    answered.length
-      ? h('div',
-        h('h2.group-head', h('span.pill.good', 'Answered'),
-          ` ${answered.length} back with you`),
-        h('p.muted', { style: { fontSize: '.85rem', marginTop: '-.3rem' } },
-          'Somebody has replied. Read what they said, do it, and sign the period off.'),
-        answered.map((row) => personCard(row, data, reload)))
+    groups.working.length
+      ? h('div', groups.working.map((row) => personCard(row, data, reload, 'working')))
       : null,
 
-    working.length
-      ? h('div',
-        answered.length || asked.length
-          ? h('h2.group-head', `${working.length} to deal with`)
-          : null,
-        working.map((row) => personCard(row, data, reload)))
-      : null,
-
-    // Parked, and plainly so. Still on the page — a question nobody can see
-    // the state of is a question people ask twice — but out of the count of
-    // what there is to do.
-    asked.length
-      ? h('details.asked-group', { style: { marginTop: '1rem' } },
+    groups.asked.length
+      ? h('details.asked-group',
         h('summary',
           h('span.pill.warn', 'Waiting on an answer'),
-          ` ${asked.length} ${asked.length === 1 ? 'person' : 'people'} — nothing to do until somebody replies`),
-        h('div', { style: { marginTop: '.6rem' } },
-          asked.map((row) => personCard(row, data, reload))))
+          ` ${count(groups.asked)} day${count(groups.asked) === 1 ? '' : 's'} — nothing to do until somebody replies`),
+        h('div', groups.asked.map((row) => personCard(row, data, reload, 'asked'))))
       : null,
 
     !data.rows.length
@@ -237,59 +225,32 @@ async function openTab(params, range, reload) {
         + 'or there was nothing on it to sign.')
       : null,
 
-    working.length === 0 && data.rows.length
+    data.rows.length && !groups.working.length && !groups.answered.length
       ? emptyState('Nothing left to do',
-        asked.length
-          ? 'Everything still outstanding is waiting on an answer from somebody else.'
-          : 'Everything here has been dealt with.')
+        'Everything still outstanding is waiting on an answer from somebody else.')
       : null,
-
-    h('p.muted', { style: { fontSize: '.82rem' } },
-      'Today is never on this list. A shift that has not finished cannot be signed off, and '
-      + 'charging an absence against somebody who is upstairs making a bed is the mistake that '
-      + 'rule exists to prevent.'),
-  );
-}
-
-function tile(label, value, sub, accent) {
-  return h('div.stat',
-    h('div.stat-label', label),
-    h('div.stat-value', { style: accent ? { color: accent } : null }, String(value)),
-    h('div.stat-sub', h('span', sub)),
   );
 }
 
 const ISSUE_PILL = { open: 'bad', absent: 'bad', under: 'bad', over: 'warn', late: 'warn', early: 'warn', noshift: 'warn' };
 
 /**
- * One person, their outstanding days, and the two things that can be done.
+ * One person and the days of theirs that belong in this group.
  *
- * Nothing starts ticked. Signing a period off moves days against somebody's
- * leave, and a screen that arrives with every day already selected asks for one
- * press to do that — including for the three days nobody has looked at yet. The
- * tick is the reading, and it has to be given rather than taken away.
- *
- * The header tick still selects the lot in one press, so the ordinary week
- * where everything is fine costs two presses instead of one. That is the right
- * trade: the cheap case gets one extra press and the expensive case stops
- * happening by accident.
+ * Stripped back to a heading and a table. The alert box that used to sit above
+ * every card repeated what the flags on the rows already said, one line lower
+ * and in more words, and pushed the days themselves off the screen.
  */
-function personCard(row, data, reload) {
+function personCard(row, data, reload, group) {
   const chosen = new Set();
-  const countLabel = h('strong');
-  const signButton = h('button.btn.btn-primary', {
+  const parked = group === 'asked';
+
+  const signButton = h('button.btn-sm.btn-primary', {
     onclick: () => sign(row, chosen, reload),
+    disabled: true,
   }, 'Sign off');
 
   const refreshCount = () => {
-    countLabel.textContent = chosen.size === 0
-      ? 'nothing yet'
-      : chosen.size === row.days.length
-        ? `all ${row.days.length} days`
-        : `${chosen.size} of ${row.days.length} days`;
-
-    // The button says what it would do. "Sign off" against nothing ticked is a
-    // press that can only produce a telling-off.
     signButton.disabled = chosen.size === 0;
     signButton.textContent = chosen.size
       ? `Sign off ${chosen.size} day${chosen.size === 1 ? '' : 's'}`
@@ -301,15 +262,22 @@ function personCard(row, data, reload) {
       h('label.tickline', { style: { padding: 0 } },
         h('input', {
           type: 'checkbox',
+          disabled: parked,
           onchange: (e) => {
             if (e.target.checked) chosen.add(day.day); else chosen.delete(day.day);
             refreshCount();
           },
         }),
         h('span', fmtDay(day.day)))),
-    h('td', day.shift || h('span.muted', 'no shift')),
-    h('td', h('small.mono', `${day.in || '—'} → ${day.out || '—'}`)),
-    h('td', h('span', day.label)),
+    h('td', h('small.mono', `${day.in || '—'} → ${day.out || '—'}`),
+      day.shift ? h('small.muted', { style: { display: 'block' } }, day.shift) : null),
+    h('td', h('small', day.label),
+      // The question, on the day it is about rather than over the person.
+      day.query
+        ? h('small.muted', { style: { display: 'block' } },
+          `${day.query.status === 'answered' ? 'Answered' : 'Asked'}`
+          + `${day.query.addressedName ? ` of ${day.query.addressedName}` : ''}: ${day.query.reason}`)
+        : null),
     h('td', day.issues.length
       ? h('div.chip-row', day.issues.map((key) => {
         const issue = data.issues.find((i) => i.key === key);
@@ -317,119 +285,75 @@ function personCard(row, data, reload) {
           issue?.label ?? key);
       }))
       : h('span.muted', '—')),
-
-    // Where the wrong time is actually noticed. Somebody going down a week
-    // deciding what to sign is reading exactly the rows a correction belongs
-    // on, and sending them to another screen to make it is how the correction
-    // stops happening.
     h('td', data.canFixTimes && (day.issues.length || day.pendingTimes)
       ? (day.pendingTimes
         ? h('span.pill.warn', {
           title: `${day.pendingTimes.actor} asked for ${day.pendingTimes.now_in || '—'} → `
             + `${day.pendingTimes.now_out || '—'}: ${day.pendingTimes.reason ?? ''}`,
-        }, '⏳ waiting')
+        }, '⏳')
         : h('button.btn-sm', {
           title: 'Change the clock-in or clock-out',
           onclick: () => fixTimes(row.staff, day, reload),
         }, 'Times'))
       : null),
   ));
+
   refreshCount();
 
   return card(row.staff.name, {
-    note: [row.staff.department, `${row.unsignedCount} outstanding`].filter(Boolean).join(' · '),
+    note: [row.staff.department, `${row.days.length} day${row.days.length === 1 ? '' : 's'}`]
+      .filter(Boolean).join(' · '),
     wide: true,
     actions: h('div.btn-row',
-      h('button.btn-sm', {
-        onclick: () => navigate('att-staff', { id: row.staff.id, from: row.first, to: row.last }),
-      }, 'Open their record'),
-      row.query
-        ? h('span.pill.warn', `Asked ${fmtDayShort(String(row.query.raisedAt).slice(0, 10))}`)
-        : h('button.btn-sm', { onclick: () => raise(row, chosen, reload) }, 'Ask an admin'),
-      signButton,
+      h('button.btn-sm.btn-ghost', {
+        onclick: () => navigate('att-staff', {
+          id: row.staff.id, from: row.days[0].day, to: row.days[row.days.length - 1].day,
+        }),
+      }, 'Record'),
+      parked
+        ? h('button.btn-sm', { onclick: () => navigate('signoff', { tab: 'queries' }) }, 'See the question')
+        : h('button.btn-sm', { onclick: () => raise(row, chosen, reload) }, 'Ask'),
+      parked ? null : signButton,
     ),
   },
-    row.issues.list.length
-      ? h(`div.alert.${row.issues.blocking ? 'high' : 'warn'}`,
-        h('span.alert-icon', row.issues.blocking ? '⛔' : '⚠️'),
-        h('div',
-          h('div.alert-title', row.issues.list.map((i) => `${i.count} ${i.label.toLowerCase()}`).join(', ')),
-          h('div.alert-detail', row.issues.blocking
-            ? 'Worth a second look before this is charged against anybody’s leave. Sign it anyway '
-              + 'if you are satisfied, or ask an administrator first.'
-            : 'Worth seeing, not worth holding the period up for.'),
-        ))
-      : null,
-
-    row.query
-      ? h('div.alert.info',
-        h('span.alert-icon', '💬'),
-        h('div',
-          h('div.alert-title', `Asked about ${fmtDayShort(row.query.from)}–${fmtDayShort(row.query.to)}`
-            + `${row.query.addressedName ? `, of ${row.query.addressedName}` : ''}`),
-          h('div.alert-detail', row.query.reason || ''),
-        ),
-        h('button.btn-sm', { onclick: () => navigate('signoff', { tab: 'queries' }) }, 'See it'))
-      : null,
-
     h('div.table-wrap',
       h('table',
         h('thead', h('tr',
           h('th',
-            h('label.tickline', { style: { padding: 0 }, title: 'Tick every day below' },
-              h('input', {
-                type: 'checkbox',
-                onchange: (e) => {
-                  const on = e.target.checked;
-                  for (const box of e.target.closest('table').querySelectorAll('tbody input[type=checkbox]')) {
-                    box.checked = on;
-                    box.dispatchEvent(new Event('change'));
-                  }
-                },
-              }),
-              h('span', 'Day'))),
-          h('th', 'Shift'), h('th', 'Clocked'), h('th', 'What happened'), h('th', 'Flags'),
-          h('th', ''),
+            parked
+              ? h('span', 'Day')
+              : h('label.tickline', { style: { padding: 0 }, title: 'Tick every day below' },
+                h('input', {
+                  type: 'checkbox',
+                  onchange: (e) => {
+                    const on = e.target.checked;
+                    for (const box of e.target.closest('table').querySelectorAll('tbody input[type=checkbox]')) {
+                      box.checked = on;
+                      box.dispatchEvent(new Event('change'));
+                    }
+                  },
+                }),
+                h('span', 'Day'))),
+          h('th', 'Clocked'), h('th', 'What happened'), h('th', 'Flags'), h('th', ''),
         )),
         h('tbody', rows))),
 
-    h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
-      'Signing ', countLabel,
-      '. Tick the days you have looked at — anything left unticked stays on this list and can '
-      + 'be dealt with on its own later.'),
-
-    // Undoing one belongs here, beside the list of what has been signed. It
-    // used to live only on the person's own record and on the Leave screen,
-    // which is not where somebody who has just signed the wrong days goes
-    // looking — and on the record it only appeared when the dates on screen
-    // happened to line up exactly with the period.
     row.signedSpans.length
-      ? h('details', { style: { marginTop: '.6rem' } },
-        h('summary', { style: { cursor: 'pointer', fontSize: '.85rem' } },
+      ? h('details', { style: { marginTop: '.5rem' } },
+        h('summary', { style: { cursor: 'pointer', fontSize: '.82rem' } },
           `${row.signedSpans.length} already signed`),
         h('ul.signed-list', row.signedSpans.map((s) => h('li',
           h('small', `${fmtDayShort(s.from)} – ${fmtDayShort(s.to)} · `,
             s.decision === 'waived'
               ? 'let stand'
-              : `${s.daysApplied > 0 ? '+' : ''}${s.daysApplied ?? 0} day`
-                + `${Math.abs(s.daysApplied ?? 0) === 1 ? '' : 's'} against leave`,
+              : `${s.daysApplied > 0 ? '+' : ''}${s.daysApplied ?? 0} against leave`,
             ` · ${s.by}`,
             s.excluded ? ` · ${s.excluded} left out` : ''),
-          // No extra check: reaching this screen already needs the permission
-          // that undoes a sign-off, and they are the same one for a reason —
-          // whoever may close a period may reopen it.
           h('button.btn-sm', { onclick: () => reopen(row, s, reload) }, 'Reopen')))))
       : null,
   );
 }
 
-/**
- * Correct a clock time from the sign-off list.
- *
- * The day arrives here in the sign-off screen's own shape — a shift by name, a
- * bare `in` and `out` — rather than a full attendance record, which the shared
- * dialog is written to accept.
- */
 async function fixTimes(staff, day, reload) {
   const done = await correctTimesDialog(day, staff, {
     approves: can('att_setup'),
@@ -461,7 +385,10 @@ async function sign(row, chosen, reload) {
    * Each day already arrives marked as an extra day, a missed one, or neither,
    * so the sum is a count rather than a second copy of the rule.
    */
-  const difference = overUnderOf(row.days.filter((d) => chosen.has(d.day)));
+  const ticked = row.days.filter((d) => chosen.has(d.day));
+  // Worked plus leave, less what those days expected of them — the same
+  // arithmetic the month is read on, over the days actually ticked.
+  const difference = overUnderOf(ticked);
 
   const done = await formDialog({
     title: `Sign off ${row.staff.name}`,
@@ -473,12 +400,16 @@ async function sign(row, chosen, reload) {
           ? ` — ${row.days.length - days.length} day(s) left out and still outstanding.`
           : '.')),
 
-      row.issues.blocking
+      // What is wrong with the days actually ticked, rather than with the
+      // person's whole period. Since the list groups by day, a card may hold
+      // three clean days out of a fortnight and warning about the fortnight's
+      // absence would be warning about a day that is not being signed.
+      ticked.some((d) => d.issues.length)
         ? h('div.alert.warn',
           h('span.alert-icon', '⚠️'),
           h('div',
             h('div.alert-title', 'You are signing over something'),
-            h('div.alert-detail', row.issues.list.map((i) => `${i.count} ${i.label.toLowerCase()}`).join(', ')
+            h('div.alert-detail', [...new Set(ticked.flatMap((d) => d.issues))].join(', ')
               + '. That you knew is recorded with the sign-off.'),
           ))
         : null,

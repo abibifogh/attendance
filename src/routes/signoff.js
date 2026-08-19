@@ -6,7 +6,7 @@ import {
   parseDays, unsignedDays,
 } from '../lib/signoff.js';
 import {
-  computeRange, dayCredit, labelFor, loadDataset, overUnder, summarise,
+  computeRange, dayCredit, dayLedger, daysPerWeekFor, labelFor, loadDataset, overUnder, summarise,
 } from '../lib/attendance.js';
 import { addDays, diffDays, isDay, monthBounds, todayIn } from '../util/dates.js';
 
@@ -115,6 +115,23 @@ export async function outstanding(ctx) {
   const pendingBy = new Map();
   for (const row of waiting.results ?? []) pendingBy.set(`${row.staff_id}|${row.day}`, row);
 
+  // Which days each question actually covers. A question names its days, so a
+  // period asked about is those days and not the span they happen to sit in —
+  // otherwise asking about a Thursday takes the Monday either side of it out
+  // of everybody's reach as well.
+  const askedAbout = new Map();
+  for (const q of queries.results ?? []) {
+    const shape = {
+      id: q.id,
+      reason: q.reason,
+      status: q.status,
+      raisedBy: q.raised_by,
+      raisedAt: q.raised_at,
+      addressedName: q.addressed_name ?? null,
+    };
+    for (const day of parseDays(q.days)) askedAbout.set(`${q.staff_id}|${day}`, shape);
+  }
+
   const overMinutes = Math.max(0, Number(ds.settings.att_over_minutes) || 360);
   const rows = [];
 
@@ -128,7 +145,11 @@ export async function outstanding(ctx) {
     const records = computeRange(ds, staff.id, from, limit);
     const byDay = new Map(records.map((r) => [r.day, r]));
 
-    const oc = overUnder(records, { holidays: ds.holidayBy, expected: records.some((r) => r.scheduled) });
+    const oc = overUnder(records, {
+      holidays: ds.holidayBy,
+      expected: records.some((r) => r.scheduled),
+      perWeek: daysPerWeekFor(staff, ds.settings),
+    });
     const counted = new Map([
       ...oc.overs.map((o) => [o.day, 'over']),
       ...oc.unders.map((u) => [u.day, 'under']),
@@ -161,6 +182,16 @@ export async function outstanding(ctx) {
           }),
           counts: counted.get(day) ?? null,
           issues: issuesOnDay(record, { counted: counted.get(day) ?? null }),
+          // The question hanging over this particular day, if any. Per day
+          // rather than per person: asking about a Thursday nobody can explain
+          // does not put that person's other four days beyond reach, and
+          // parking their whole week would be the surest way to stop somebody
+          // ever asking.
+          query: askedAbout.get(`${staff.id}|${day}`) ?? null,
+          ...dayLedger(record, {
+            holidays: ds.holidayBy,
+            perWeek: daysPerWeekFor(staff, ds.settings),
+          }),
         };
       })
       .filter(Boolean);
@@ -220,8 +251,9 @@ export async function outstanding(ctx) {
     canFixTimes: allows('att_times', ctx.session.permissions),
     // Counted here so the tiles can say it without the screen having to work
     // out what it is looking at twice.
-    asked: rows.filter((r) => r.query?.status === 'open').length,
-    answered: rows.filter((r) => r.query?.status === 'answered').length,
+    // Counted in days, because days are what the groups now hold.
+    asked: rows.reduce((n, r) => n + r.days.filter((d) => d.query?.status === 'open').length, 0),
+    answered: rows.reduce((n, r) => n + r.days.filter((d) => d.query?.status === 'answered').length, 0),
   });
 }
 
@@ -284,7 +316,11 @@ export async function signDays(ctx) {
   const included = records.filter((r) => wanted.has(r.day));
 
   const totals = summarise(included, { shifts: ds.shiftById, reasons: ds.reasonBy });
-  const oc = overUnder(included, { holidays: ds.holidayBy, expected: included.some((r) => r.scheduled) });
+  const oc = overUnder(included, {
+    holidays: ds.holidayBy,
+    expected: included.some((r) => r.scheduled),
+    perWeek: daysPerWeekFor(staff, ds.settings),
+  });
 
   const counted = new Map([
     ...oc.overs.map((o) => [o.day, 'over']),

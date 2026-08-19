@@ -1855,3 +1855,52 @@ test('a file that is not a rota never becomes a draft', async () => {
   );
   assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_roster_import').get().n, 0);
 });
+
+test('the expectation can be set for one person', async () => {
+  // Some people work six shorter days and some four long ones. Measuring both
+  // against five leaves one permanently over and the other permanently under
+  // for doing exactly what their contract says.
+  const { raw, db, token } = await setup();
+  await marchWorked(db, token, [
+    '2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06',
+  ]);
+
+  const five = await (await periodReview(ctx(db, { query: '?from=2026-03-02&to=2026-03-08' }))).json();
+  const onFive = five.rows.find((r) => r.staff.id === 1);
+  assert.equal(onFive.calendarDays, 5, 'a week expects five days');
+  assert.equal(onFive.difference, 0);
+  assert.equal(onFive.daysPerWeek, 5);
+
+  raw.prepare('UPDATE att_staff SET days_per_week = 4 WHERE id = 1').run();
+  const four = await (await periodReview(ctx(db, { query: '?from=2026-03-02&to=2026-03-08' }))).json();
+  const onFour = four.rows.find((r) => r.staff.id === 1);
+  assert.equal(onFour.calendarDays, 4);
+  assert.equal(onFour.difference, 1, 'the same five days, against a four-day contract');
+  assert.equal(onFour.daysPerWeek, 4);
+});
+
+test('the property can move the default without touching anybody', async () => {
+  const { raw, db, token } = await setup();
+  await marchWorked(db, token, [
+    '2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07',
+  ]);
+
+  raw.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('att_days_per_week', '6')").run();
+  const data = await (await periodReview(ctx(db, { query: '?from=2026-03-02&to=2026-03-08' }))).json();
+  const row = data.rows.find((r) => r.staff.id === 1);
+  assert.equal(row.calendarDays, 6);
+  assert.equal(row.difference, 0, 'six days worked against a six-day week');
+});
+
+test('a week with a public holiday in it expects one day fewer', async () => {
+  const { raw, db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02', '2026-03-03', '2026-03-05', '2026-03-06']);
+  raw.prepare(
+    "INSERT OR IGNORE INTO att_holidays (day, name) VALUES ('2026-03-04', 'Independence Day')",
+  ).run();
+
+  const data = await (await periodReview(ctx(db, { query: '?from=2026-03-02&to=2026-03-08' }))).json();
+  const row = data.rows.find((r) => r.staff.id === 1);
+  assert.equal(row.calendarDays, 4, 'five, less the holiday');
+  assert.equal(row.difference, 0, 'and four days worked is square');
+});

@@ -524,18 +524,21 @@ test('the charge offered is for the days ticked, not the window they sit in', as
   // is how eleven days of somebody's leave move by accident.
   const { overUnderOf } = await import('../public/js/views/att-shared.js');
 
+  // Each day carries what it delivered and what was expected of it, so any
+  // handful of them comes to the same answer the whole week would.
+  const q = 5 / 7;
   const week = [
-    { day: '2026-06-01', counts: null },
-    { day: '2026-06-02', counts: 'under' },
-    { day: '2026-06-03', counts: 'under' },
-    { day: '2026-06-04', counts: 'over' },
-    { day: '2026-06-05', counts: null },
+    { day: '2026-06-01', owed: 1, quota: q },
+    { day: '2026-06-02', owed: 0, quota: q },
+    { day: '2026-06-03', owed: 0, quota: q },
+    { day: '2026-06-04', owed: 1, quota: q },
+    { day: '2026-06-05', owed: 1, quota: q },
   ];
 
-  assert.equal(overUnderOf(week), -1, 'the whole week');
+  assert.equal(overUnderOf(week), -1, 'three days delivered against three and a half expected');
   assert.equal(overUnderOf(week.filter((d) => d.day === '2026-06-01')), 0,
-    'one clean day charges nothing, whatever the rest of the week did');
-  assert.equal(overUnderOf(week.filter((d) => d.counts === 'under')), -2);
+    'one day delivered, and less than one expected of it');
+  assert.equal(overUnderOf(week.filter((d) => !d.owed)), -1);
   assert.equal(overUnderOf([]), 0);
 });
 
@@ -743,4 +746,52 @@ test('a day with a clock-time change waiting is not a clean day', async () => {
   assert.ok(!clean.some((d) => d.day === '2026-06-01'),
     'Monday has nothing flagged, but somebody has asked for its times to move');
   assert.deepEqual(clean.map((d) => d.day), ['2026-06-02', '2026-06-05']);
+});
+
+test('a question parks the days it names, not the person', async () => {
+  // Asking about a Thursday nobody can explain must not put that person's
+  // other four days beyond reach. Parking somebody's whole week because one
+  // day of it has a question on it is the surest way to stop anybody asking.
+  const { db } = await setup();
+
+  await raiseQuery(ctx(db, {
+    body: { staffId: 1, days: ['2026-06-04'], reason: 'Absent and nobody knows why' },
+  }));
+
+  const out = await read(await outstanding(ctx(db, { query: WEEK })));
+  const days = out.rows[0].days;
+
+  assert.equal(days.length, 5, 'every day is still on the row');
+  const asked = days.filter((d) => d.query);
+  assert.deepEqual(asked.map((d) => d.day), ['2026-06-04'],
+    'and exactly the day the question named carries it');
+  assert.equal(asked[0].query.status, 'open');
+  assert.match(asked[0].query.reason, /nobody knows why/);
+
+  assert.equal(out.asked, 1, 'counted in days, because days are what the groups hold');
+  assert.equal(out.answered, 0);
+});
+
+test('answering a question moves only its days back into play', async () => {
+  const { db } = await setup();
+  const raised = await read(await raiseQuery(ctx(db, {
+    body: { staffId: 1, days: ['2026-06-03', '2026-06-04'], reason: 'Two odd days' },
+  })));
+  await answerQuery(ctx(db, {
+    session: MANAGER,
+    body: { action: 'direction', body: 'Mark Thursday sick and sign the rest.' },
+  }), String(raised.id));
+
+  const out = await read(await outstanding(ctx(db, { query: WEEK })));
+  assert.equal(out.answered, 2);
+  assert.equal(out.asked, 0);
+  assert.deepEqual(
+    out.rows[0].days.filter((d) => d.query?.status === 'answered').map((d) => d.day),
+    ['2026-06-03', '2026-06-04'],
+  );
+  assert.deepEqual(
+    out.rows[0].days.filter((d) => !d.query).map((d) => d.day),
+    ['2026-06-01', '2026-06-02', '2026-06-05'],
+    'and the other three were never held up by it',
+  );
 });

@@ -236,8 +236,12 @@ export function field(label, control, hint) {
  * accident.
  */
 export function overUnderOf(days) {
-  const counted = (mark) => days.filter((d) => d.counts === mark).length;
-  return counted('over') - counted('under');
+  const delivered = days.reduce((n, d) => n + (d.owed ?? 0), 0);
+  const quota = days.reduce((n, d) => n + (d.quota ?? 0), 0);
+  // The expectation is five sevenths of a day at a time, so the sum is
+  // fractional and what gets charged is not. Rounding here rather than showing
+  // somebody a proposal of -1.4 days against their colleague's leave.
+  return Math.round(delivered - quota);
 }
 
 /**

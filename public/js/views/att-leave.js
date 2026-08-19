@@ -427,7 +427,7 @@ function breakdown(row, month, which) {
     // whole reason somebody presses this figure rather than the under one.
     absent: (d) => d.credit === 0 && ['absent', 'missing_in', 'missing_out'].includes(d.status),
     leave: (d) => d.onLeave,
-    calendar: (d) => d.quota,
+    calendar: (d) => d.quota > 0,
   }[which];
 
   const days = (row.days ?? []).filter(pick);

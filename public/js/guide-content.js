@@ -285,16 +285,21 @@ export const GUIDE = [
       { table: {
         head: ['Column', 'What it counts'],
         rows: [
-          ['Calendar', 'The working days the month held — Monday to Friday, less any public holiday falling on one.'],
+          ['Calendar', 'What the month expected: five days out of every seven, less a whole day for each public holiday.'],
           ['Rostered', 'What the rota actually asked of them. There for comparison; it does not enter the arithmetic.'],
           ['Worked', 'Days clocked in and out of. Whole days only — a tap in with no tap out is not a day worked.'],
           ['On leave', 'Days on approved leave.'],
           ['Over / under', 'Worked plus On leave, less Calendar. This is the figure the sign-off proposes.'],
         ],
       } },
-      { p: 'Calendar is the same for everybody on purpose. Whoever is rostered at the weekend '
-        + 'takes their rest days midweek, so over a month the quota comes to the same thing — '
-        + 'and one figure everybody is measured against is a figure everybody can check.' },
+      { p: 'Five out of seven rather than Monday to Friday, because the rota runs across all '
+        + 'seven days and a Saturday is an ordinary working day for half the staff. Counting '
+        + 'only weekdays would leave the night porter permanently over for doing exactly what '
+        + 'was asked of him.' },
+      { p: 'It can be set per person under Setup → Staff — some people work six shorter days '
+        + 'and some four long ones, and measuring both against five leaves one permanently over '
+        + 'and the other permanently under for keeping to their own contract. Blank uses the '
+        + 'property figure under Setup → Rules.' },
       { note: 'Every figure on a row can be pressed to see the days behind it. An absence '
         + 'counts whether or not anybody has settled it — a working day nobody delivered is a '
         + 'working day nobody delivered — and the count beside the over / under says how many '
@@ -374,6 +379,15 @@ export const GUIDE = [
         + 'somebody senior before it becomes a charge against a colleague’s leave. Ask an '
         + 'admin sends the dates, the figures and your question. It is not a failure to use it '
         + '— it is what it is there for.' },
+
+      { sub: 'What the list is grouped into' },
+      { p: 'Three: what has been answered and is back with you, what there is to do, and — '
+        + 'collapsed at the bottom — what is waiting on somebody else. The count at the top is '
+        + 'the middle one, because a number that includes six days waiting on another person’s '
+        + 'answer is not a number you can plan a morning around.' },
+      { note: 'Grouping is by day, not by person. Asking about a Thursday nobody can explain '
+        + 'does not put that person’s other four days beyond reach — they stay on the working '
+        + 'list and only the Thursday is parked.' },
 
       { sub: 'Who you are asking, and who can read it' },
       { p: 'Name the person you are asking. Their bell rings for it and the row carries their '

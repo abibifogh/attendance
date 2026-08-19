@@ -142,10 +142,21 @@ async function staffTab(reload) {
           field('Started', h('input', { type: 'date', name: 'hiredOn', value: existing?.hired_on ?? '' }), 'Leave earns from this date'),
           field('Left', h('input', { type: 'date', name: 'leftOn', value: existing?.left_on ?? '' }), 'They drop off the rota after this'),
         ),
-        field(
-          'Annual leave days',
-          h('input', { type: 'number', name: 'leaveDays', min: 0, max: 365, step: 0.5, value: existing?.leave_days ?? '' }),
-          'Leave blank to use the property default',
+        h('div.field-row',
+          field(
+            'Annual leave days',
+            h('input', { type: 'number', name: 'leaveDays', min: 0, max: 365, step: 0.5, value: existing?.leave_days ?? '' }),
+            'Leave blank to use the property default',
+          ),
+          // What this person's week is worth. It decides what their month's
+          // over-or-under is measured against, so somebody on six shorter days
+          // is not permanently over and somebody on four long ones is not
+          // permanently under for doing exactly what their contract says.
+          field(
+            'Days a week',
+            h('input', { type: 'number', name: 'daysPerWeek', min: 0.5, max: 7, step: 0.5, value: existing?.days_per_week ?? '' }),
+            'What the month expects of them. Blank uses the property default',
+          ),
         ),
         isEdit
           ? field('Status', h('select', { name: 'active' },
@@ -166,6 +177,7 @@ async function staffTab(reload) {
           hiredOn: form.get('hiredOn') || null,
           leftOn: form.get('leftOn') || null,
           leaveDays: form.get('leaveDays') || null,
+          daysPerWeek: form.get('daysPerWeek') || null,
           note: form.get('note') || null,
           active: form.get('active') !== 'false',
         };
@@ -1041,6 +1053,10 @@ async function rulesTab(reload) {
         h('div.field-row',
           h('label.field', h('span', 'Days a year'),
             h('input', { type: 'number', name: 'att_leave_days', min: 0, max: 365, step: 0.5, value: s.att_leave_days ?? 15 })),
+          h('label.field', h('span', 'Working days a week'),
+            h('input', { type: 'number', name: 'att_days_per_week', min: 0.5, max: 7, step: 0.5, value: s.att_days_per_week ?? 5 }),
+            h('small.muted', 'What a month expects of somebody. Five out of seven by default, '
+              + 'and settable per person under Staff')),
           h('label.field', h('span', 'Qualifying service (months)'),
             h('input', { type: 'number', name: 'att_leave_qualify_months', min: 0, max: 60, value: s.att_leave_qualify_months ?? 12 })),
         ),

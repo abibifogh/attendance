@@ -209,6 +209,13 @@ Ticking three days of a fortnight and being handed the fortnight's over/under is
 how eleven days of somebody's leave move by accident, because almost nobody
 edits a number the screen looks confident about.
 
+**The list is three lists**: what has been answered and is back with you, what
+there is to do, and — collapsed at the bottom — what is waiting on somebody
+else. The grouping is **by day, not by person**: asking about a Thursday nobody
+can explain does not put that person's other four days beyond reach, and parking
+somebody's whole week because one day of it carries a question is the surest way
+to stop anybody ever asking.
+
 **Clearing the easy ones** is one press. The filter has three settings —
 everybody, only those with something wrong, only those with nothing wrong — and
 above the list sits a count of every day with nothing wrong with it and a button
@@ -480,16 +487,28 @@ reconcile.
 
 | Column | Counts |
 |---|---|
-| **Calendar** | The working days the month held — Monday to Friday, less any public holiday falling on one |
+| **Calendar** | What the month expected: five days out of every seven, less a whole day for each public holiday |
 | **Rostered** | What the rota asked of them. There for comparison; it does not enter the arithmetic |
 | **Worked** | Days clocked in *and* out of. Whole days only |
 | **On leave** | Days on approved leave |
 | **Over / under** | `Worked + On leave − Calendar`, and what the sign-off proposes |
 
-Calendar is the same figure for everybody, deliberately. Whoever is rostered at
-the weekend takes their rest days midweek, so over a month the quota comes to
-the same thing — and one figure everybody is measured against is a figure
-everybody can check.
+Five out of seven rather than Monday to Friday: the rota runs across all seven
+days and a Saturday is an ordinary working day for half the staff, so counting
+only weekdays would leave the night porter permanently over for doing exactly
+what was asked of him. A public holiday takes a whole day off the expectation
+wherever in the week it falls.
+
+**The week is settable per person**, under Setup → Staff, with a property-wide
+default under Setup → Rules. Some people work six shorter days and some four
+long ones; measuring both against five leaves one permanently over and the other
+permanently under for keeping to their own contract.
+
+The expectation is carried **per day** — five sevenths of a day at a time — which
+is what lets a sign-off cover three days out of a month and still come to the
+same answer the whole month would. It is rounded once, to whole days, at the
+point a period is totalled: leave is charged in whole days, and the five columns
+have to reconcile exactly on screen or nobody believes any of them.
 
 This replaced a narrower rule that counted an extra day only past six hours on
 an unrostered day, and a missed day only once a supervisor had ruled on it. That

@@ -1153,22 +1153,42 @@ export function leaveDaysIn({ from, to, staffId, ds, halfDay = null }) {
  * The difference is therefore always a whole number, and every day behind it
  * can be named — which is what makes it arguable rather than merely asserted.
  */
+/** What the property expects of somebody in a week, where nothing says otherwise. */
+export const DEFAULT_DAYS_PER_WEEK = 5;
+
 /**
- * A working day, for the purpose of what somebody owes or is owed.
+ * What one calendar day is worth as an expectation.
  *
- * Monday to Friday, less public holidays that fall on one. The property runs
- * seven days a week and plenty of people are rostered on a Saturday — but they
- * have their rest days midweek, so the quota over a month comes to the same
- * thing, and one figure everybody is measured against is a figure everybody can
- * check. A holiday on a Saturday takes nothing off it, because it was not a
- * working day to begin with.
+ * Five days out of every seven, not Monday to Friday. The distinction matters
+ * in a hotel, where the rota runs across all seven and a Saturday is an
+ * ordinary working day for half the staff: counting only weekdays would leave
+ * the night porter permanently over and the office permanently square for
+ * doing the same amount of work.
+ *
+ * So every day of the week carries the same fraction of the expectation, and
+ * over a week it comes to five. A public holiday carries none — it is a day
+ * the property does not expect anybody in, whichever day of the week it falls
+ * on.
+ *
+ * Fractional on purpose. Keeping the expectation per day is what lets a
+ * sign-off cover three days out of a month and still come to the same answer
+ * the whole month would; a period figure rounded first and divided afterwards
+ * does not add up, and this is arithmetic that ends in somebody's leave.
  */
+export function dayQuota(day, holidays = null, perWeek = DEFAULT_DAYS_PER_WEEK) {
+  const share = Math.max(0, Number(perWeek) || 0) / 7;
+  const isHoliday = holidays ? Boolean(holidays.has ? holidays.has(day) : holidays[day]) : false;
+  // A public holiday takes a whole day off the expectation, not its seventh of
+  // one: a week with a holiday in it expects four days, not four and a third.
+  // The day still carries its own share, so the arithmetic stays a sum over
+  // days and a single holiday reads as slightly negative on its own — which is
+  // exactly right, since it is a day off that the rest of the week pays for.
+  return isHoliday ? share - 1 : share;
+}
+
+/** Whether this day counts towards the expectation at all. */
 export function isWorkingDay(day, holidays = null) {
-  // `dow` counts from Monday, so Saturday is 5 and Sunday is 6.
-  const weekday = dow(day);
-  if (weekday >= 5) return false;
-  if (!holidays) return true;
-  return !(holidays.has ? holidays.has(day) : holidays[day]);
+  return dayQuota(day, holidays) > 0;
 }
 
 /**
@@ -1180,7 +1200,7 @@ export function isWorkingDay(day, holidays = null) {
  * and keeping it per day is what lets a sign-off cover three days out of a
  * fortnight and still come to the right number.
  */
-export function dayLedger(record, { holidays = null } = {}) {
+export function dayLedger(record, { holidays = null, perWeek = DEFAULT_DAYS_PER_WEEK } = {}) {
   const worked = Boolean(record.first_in && record.last_out);
   const onLeave = record.status === 'leave';
   return {
@@ -1189,10 +1209,18 @@ export function dayLedger(record, { holidays = null } = {}) {
     // things called credit that differ on a five-hour Wednesday is a bug
     // waiting to be written.
     owed: worked || onLeave ? 1 : 0,
-    quota: isWorkingDay(record.day, holidays) ? 1 : 0,
+    quota: dayQuota(record.day, holidays, perWeek),
     worked,
     onLeave,
   };
+}
+
+/** What this person's week is, falling back to the property's answer. */
+export function daysPerWeekFor(staff, settings = {}) {
+  const own = Number(staff?.days_per_week);
+  if (Number.isFinite(own) && own > 0) return own;
+  const property = Number(settings.att_days_per_week);
+  return Number.isFinite(property) && property > 0 ? property : DEFAULT_DAYS_PER_WEEK;
 }
 
 /**
@@ -1212,14 +1240,16 @@ export function dayLedger(record, { holidays = null } = {}) {
  * the times a supervisor supplied where the terminal missed them. A tap in with
  * no tap out is not a day worked; it is a day somebody still has to look at.
  */
-export function overUnder(records, { holidays = null, expected = true } = {}) {
+export function overUnder(records, {
+  holidays = null, expected = true, perWeek = DEFAULT_DAYS_PER_WEEK,
+} = {}) {
   const overs = [];
   const unders = [];
   let delivered = 0;
   let quota = 0;
 
   for (const record of records ?? []) {
-    const led = dayLedger(record, { holidays });
+    const led = dayLedger(record, { holidays, perWeek });
     delivered += led.owed;
     // `expected` is false for somebody the rota did not ask for at all in this
     // period — a new starter whose first week is next week, somebody who has
@@ -1228,26 +1258,44 @@ export function overUnder(records, { holidays = null, expected = true } = {}) {
     // counts, which is the right way round.
     quota += expected ? led.quota : 0;
 
-    // Kept for the screens that list the days behind the figure. An extra day
-    // is one delivered that nothing was expected of; a missed one is the
-    // reverse.
-    if (led.owed && !(expected && led.quota)) {
+    // The two lists behind the figure, and they answer a different question
+    // from the arithmetic above. The sum is days delivered against days
+    // expected, spread evenly across the week; these are the days a person
+    // would point at — worked when nothing was asked, or asked for and not
+    // worked. Listing every quiet Sunday as a "day missed" because it carries
+    // five sevenths of an expectation would be arithmetically consistent and
+    // completely useless to read.
+    if (led.owed && !record.scheduled) {
       overs.push({
         day: record.day,
         minutes: record.worked_minutes || 0,
-        why: led.onLeave ? 'On leave on a day off' : 'Worked a day that was not a working day',
+        why: led.onLeave ? 'On leave on a day off' : 'Worked a day the rota did not ask for',
       });
     }
-    if (!led.owed && led.quota && expected) {
+    if (!led.owed && record.scheduled && expected) {
       unders.push({
         day: record.day,
         minutes: record.worked_minutes || 0,
         why: record.resolved_note || (record.first_in && !record.last_out
           ? 'Clocked in and never out'
-          : 'Nothing recorded on a working day'),
+          : 'Rostered, and nothing recorded'),
       });
     }
   }
+
+  // Rounded once, to whole days, and the difference taken from the rounded
+  // figure. Two reasons. Leave is charged in whole days, so a proposal of
+  // "-1.4 days against their leave" is not a proposal anybody can act on. And
+  // the columns have to reconcile on screen: Worked plus On leave less
+  // Calendar must be exactly what the Over / under column says, or nobody
+  // believes any of the five.
+  //
+  // The cost is that two halves of a period can each round to a whole day and
+  // come to one more or one less than the whole would. That is a day at the
+  // very worst, on a figure a person types over before it charges anything,
+  // and it is a better trade than fractions in front of somebody arguing about
+  // their leave.
+  const expects = Math.round(quota);
 
   return {
     overs,
@@ -1255,8 +1303,8 @@ export function overUnder(records, { holidays = null, expected = true } = {}) {
     overDays: overs.length,
     underDays: unders.length,
     delivered,
-    quota,
-    difference: delivered - quota,
+    quota: expects,
+    difference: delivered - expects,
   };
 }
 

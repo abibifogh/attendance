@@ -72,6 +72,19 @@ export async function departmentOptions(db) {
   ].join('\n'));
 }
 
+/**
+ * How many days a week this person is expected, where it differs.
+ *
+ * Blank means "whatever the property says", which is what almost everybody
+ * will stay. Half days are allowed because a five-and-a-half-day week is a
+ * real contract and rounding it to six would quietly cost somebody
+ * twenty-six days a year.
+ */
+function readDaysPerWeek(value) {
+  if (value == null || value === '') return null;
+  return num(value, 'Days a week', { min: 0.5, max: 7 });
+}
+
 export async function listStaff(ctx) {
   const [rows, departments] = await Promise.all([
     ctx.db.prepare(
@@ -104,14 +117,16 @@ export async function createStaff(ctx) {
   let row;
   try {
     row = await ctx.db.prepare(
-      `INSERT INTO att_staff (employee_no, name, department, job_title, hired_on, leave_days, user_id, note)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) RETURNING id`,
+      `INSERT INTO att_staff (employee_no, name, department, job_title, hired_on, leave_days,
+                              days_per_week, user_id, note)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id`,
     ).bind(
       employeeNo, name,
       str(body.department, 'Department', { max: 80 }),
       str(body.jobTitle, 'Job title', { max: 80 }),
       readDayOrNull(body.hiredOn, 'Start date'),
       body.leaveDays == null || body.leaveDays === '' ? null : num(body.leaveDays, 'Leave days', { min: 0, max: 365 }),
+      readDaysPerWeek(body.daysPerWeek),
       body.userId == null || body.userId === '' ? null : int(body.userId, 'Login', { min: 1 }),
       str(body.note, 'Note', { max: 300 }),
     ).first();
@@ -143,7 +158,7 @@ export async function updateStaff(ctx, id) {
     await ctx.db.prepare(
       `UPDATE att_staff SET employee_no = ?1, name = ?2, department = ?3, job_title = ?4,
                             hired_on = ?5, left_on = ?6, leave_days = ?7, user_id = ?8,
-                            active = ?9, note = ?10
+                            active = ?9, note = ?10, days_per_week = ?12
        WHERE id = ?11`,
     ).bind(
       employeeNo,
@@ -157,6 +172,7 @@ export async function updateStaff(ctx, id) {
       bool(body.active, true) ? 1 : 0,
       str(body.note, 'Note', { max: 300 }),
       staffId,
+      readDaysPerWeek(body.daysPerWeek),
     ).run();
   } catch (err) {
     rethrowConstraint(err, {
@@ -685,6 +701,10 @@ const SETTINGS = new Map([
     return v;
   }],
   ['att_leave_days', (v) => String(num(v, 'Annual leave days', { min: 0, max: 365 }))],
+  // What a working week comes to, for everybody who has no figure of their
+  // own. It sets what the over-or-under is measured against, so it is the one
+  // setting on this screen that changes a number somebody may argue about.
+  ['att_days_per_week', (v) => String(num(v, 'Days a week', { min: 0.5, max: 7 }))],
   ['att_leave_qualify_months', (v) => String(int(v, 'Qualifying months', { min: 0, max: 60 }))],
   ['att_leave_carryover_days', (v) => String(num(v, 'Carry-over days', { min: 0, max: 365 }))],
   ['att_leave_year_starts', (v) => {
