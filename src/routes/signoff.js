@@ -1,5 +1,5 @@
 import { badRequest, int, json, notFound, readJson, str } from '../lib/http.js';
-import { allows } from '../lib/permissions.js';
+import { allows, effectivePermissions } from '../lib/permissions.js';
 import { createNotice } from '../lib/notices.js';
 import {
   ISSUES, describePeriod, effectiveDays, findClash, issuesInPeriod, issuesOnDay,
@@ -391,33 +391,79 @@ export async function raiseQuery(ctx) {
     );
   }
 
+  // Who is being asked. Optional, because "whoever gets to it first" is a
+  // legitimate answer on a small property — but checked when given, so a
+  // question cannot be addressed to somebody who could not answer it.
+  let addressed = null;
+  if (body.addressedTo != null && body.addressedTo !== '') {
+    const wanted = await ctx.db.prepare(
+      'SELECT id, name, role, permissions, active FROM users WHERE id = ? AND active = 1',
+    ).bind(Number(body.addressedTo)).first();
+    if (!wanted || !allows('att_manage', effectivePermissions(wanted))) {
+      throw badRequest('That person cannot answer a question about a period.');
+    }
+    addressed = wanted;
+  }
+
   const created = await ctx.db.prepare(
-    `INSERT INTO att_query (staff_id, from_day, to_day, days, issues, reason, raised_by)
-     VALUES (?1,?2,?3,?4,?5,?6,?7) RETURNING id`,
+    `INSERT INTO att_query (staff_id, from_day, to_day, days, issues, reason, raised_by,
+                            raised_by_id, addressed_to, addressed_name)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) RETURNING id`,
   ).bind(
     staffId, from, to, JSON.stringify(days),
     body.issues ? JSON.stringify(body.issues) : null,
     reason, actorOf(ctx),
+    ctx.session.user.id ?? null,
+    addressed?.id ?? null,
+    addressed?.name ?? null,
   ).first();
 
   await ctx.db.prepare(
     "INSERT INTO att_query_note (query_id, kind, body, author) VALUES (?1, 'comment', ?2, ?3)",
   ).bind(created.id, reason, actorOf(ctx)).run();
 
-  // The bell, to whoever settles days. Addressed to the permission rather than
-  // to a person, so it reaches whoever holds it this week.
+  // The bell. To the person named if there is one — a question addressed to
+  // three people is a question none of them owns — and otherwise to whoever
+  // holds the permission this week.
   await createNotice(ctx.db, {
     kind: 'attendance.query',
     level: 'warn',
-    title: `${staff.name}: a period needs your eye`,
+    title: addressed
+      ? `${staff.name}: ${actorOf(ctx)} has asked you to look`
+      : `${staff.name}: a period needs your eye`,
     body: `${from} to ${to} — ${reason}`.slice(0, 400),
     link: '#/signoff?tab=queries',
     actor: actorOf(ctx),
     audience: 'att_manage',
+    userId: addressed?.id ?? null,
   });
 
   await audit(ctx, 'attendance.query_raise', created.id, { staffId, from, to, days: days.length });
   return json({ ok: true, id: created.id });
+}
+
+/**
+ * Who a question can be addressed to.
+ *
+ * Everybody whose login can actually answer one — the permission that settles
+ * days — worked out from their role's defaults and whatever has been ticked for
+ * them individually, so the list is who can help rather than who happens to be
+ * called a manager.
+ *
+ * Names and nothing else. The person choosing holds the permission to raise a
+ * question and not the one that manages logins, and does not need to be handed
+ * an email address to pick a name off a list.
+ */
+export async function listDeciders(ctx) {
+  const rows = await ctx.db.prepare(
+    'SELECT id, name, role, permissions, active FROM users WHERE active = 1 ORDER BY name',
+  ).all().catch(() => ({ results: [] }));
+
+  const people = (rows.results ?? [])
+    .filter((u) => allows('att_manage', effectivePermissions(u)))
+    .map((u) => ({ id: u.id, name: u.name, role: u.role }));
+
+  return json({ people });
 }
 
 /** Everything waiting on somebody, and everything recently dealt with. */
@@ -435,7 +481,20 @@ export async function listQueries(ctx) {
       LIMIT 200`,
   ).bind(...(where.includes('?1') ? [status] : [])).all().catch(() => ({ results: [] }));
 
-  const list = rows.results ?? [];
+  // A question is a sentence about a colleague, written to be read by one
+  // person: "absent all week and I do not want to charge his leave without
+  // somebody checking". Everybody who could raise one used to be able to read
+  // every one of them, which is not a queue but a noticeboard about people who
+  // never agreed to be on it.
+  //
+  // So: whoever can answer sees all of them — a manager on leave must not take
+  // their questions away with them — and everybody else sees only their own.
+  // Done here rather than on the screen, because the screen is a courtesy.
+  const decides = allows('att_manage', ctx.session.permissions);
+  const meId = ctx.session.user.id ?? null;
+  const meName = actorOf(ctx);
+  const list = (rows.results ?? []).filter((q) => decides
+    || (q.raised_by_id != null ? Number(q.raised_by_id) === Number(meId) : q.raised_by === meName));
   const notes = list.length
     ? await ctx.db.prepare(
       `SELECT * FROM att_query_note WHERE query_id IN (${list.map(() => '?').join(',')}) ORDER BY id`,
@@ -461,12 +520,15 @@ export async function listQueries(ctx) {
       outcome: q.outcome,
       raisedBy: q.raised_by,
       raisedAt: q.raised_at,
+      addressedTo: q.addressed_to ?? null,
+      addressedName: q.addressed_name ?? null,
       closedBy: q.closed_by,
       closedAt: q.closed_at,
       notes: notesBy.get(q.id) ?? [],
     })),
-    canDecide: allows('att_manage', ctx.session.permissions),
-    mine: actorOf(ctx),
+    canDecide: decides,
+    mine: meName,
+    myId: meId,
   });
 }
 

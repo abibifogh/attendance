@@ -187,6 +187,23 @@ where everything is fine costs two presses instead of one: the cheap case gets
 one extra press and the expensive case stops happening by accident. The button
 names what it would sign, and is disabled until something is chosen.
 
+**A day left out is not a day signed.** The record stores the span plus the days
+it deliberately excluded, and every screen that says "signed" subtracts them —
+the outstanding list, and the ✓ on the person's own report. Reading the dates
+alone would mark the three days nobody could explain as settled along with the
+eleven that were, which is the opposite of what leaving them out meant and hides
+them from the person going back to deal with them.
+
+**The charge offered is for the days ticked**, not for the window they sit in.
+Ticking three days of a fortnight and being handed the fortnight's over/under is
+how eleven days of somebody's leave move by accident, because almost nobody
+edits a number the screen looks confident about.
+
+**Undoing one** is *Reopen*, in the "already signed" list under each person on
+the sign-off screen — and on their own record, and on the Leave screen. The days
+go back on the list and whatever was charged stops counting; nothing decided
+about the days themselves is undone.
+
 > **The rule about overlaps had to change for that to work.** It was *no two
 > signed spans may share a day*, checked on the raw dates. It is now *no two
 > signed spans may share a day either of them actually signed* — otherwise the

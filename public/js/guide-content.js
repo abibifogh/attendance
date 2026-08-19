@@ -329,8 +329,24 @@ export const GUIDE = [
 
       { warn: 'When something looks wrong, ask. An unexplained absence is a question for '
         + 'somebody senior before it becomes a charge against a colleague’s leave. Ask an '
-        + 'admin sends the dates, the figures and your question to a queue. It is not a failure '
-        + 'to use it — it is what it is there for.' },
+        + 'admin sends the dates, the figures and your question. It is not a failure to use it '
+        + '— it is what it is there for.' },
+
+      { sub: 'Who you are asking, and who can read it' },
+      { p: 'Name the person you are asking. Their bell rings for it and the row carries their '
+        + 'name, so a queue of six is six questions with owners rather than six nobody has '
+        + 'picked up. Leave it as “anybody who can answer” if it genuinely does not matter.' },
+      { note: 'What you write is read by whoever can answer a question, and by nobody else — '
+        + 'not by other supervisors, not by whoever else builds the rota. You see your own '
+        + 'questions and the answers to them, and none of anybody else’s. It is a sentence '
+        + 'about a colleague, so write it as one.' },
+
+      { sub: 'Undoing one' },
+      { p: 'Open “already signed” under the person on the sign-off list and press Reopen. The '
+        + 'days go back on the list and whatever the sign-off charged against their leave stops '
+        + 'counting. It does not undo anything decided about the days themselves — a Tuesday '
+        + 'ruled sick leave stays sick leave; only the closing of the period is removed. The '
+        + 'same button is on the person’s own record and on the Leave screen.' },
 
       { sub: 'Three things that trip people up' },
       { list: [
@@ -351,6 +367,9 @@ export const GUIDE = [
     permission: 'att_manage',
     lede: 'Sign-off → Questions. What somebody asked rather than signed.',
     blocks: [
+      { p: 'You see every question, whether or not it names you — somebody on leave must not '
+        + 'take theirs with them — and the row says who was asked. Whoever raised it sees their '
+        + 'own and nobody else’s.' },
       { table: {
         head: ['Answer', 'What happens'],
         rows: [

@@ -15,6 +15,7 @@ import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from 
 import { getPepper } from '../lib/auth.js';
 import { allows } from '../lib/permissions.js';
 import { createNotice } from '../lib/notices.js';
+import { parseDays } from '../lib/signoff.js';
 import { emailExceptions, pingExceptions } from '../lib/notify.js';
 import {
   addDays, diffDays, dow, isDay, isMonth, monthBounds, nowIn, rangeDays, startOfWeek, todayIn,
@@ -716,7 +717,8 @@ export async function staffReport(ctx, id) {
   // them. Without this a settled month looks identical to one nobody has
   // touched, and the same days get gone through twice.
   const spans = await ctx.db.prepare(
-    `SELECT kind, from_day, to_day, decision, days_applied, decided_by, decided_at, note
+    `SELECT kind, from_day, to_day, decision, days_applied, decided_by, decided_at, note,
+            excluded_days
        FROM att_period_review
       WHERE staff_id = ?1 AND from_day <= ?3 AND to_day >= ?2
       ORDER BY from_day`,
@@ -756,6 +758,11 @@ export async function staffReport(ctx, id) {
       by: r.decided_by,
       at: r.decided_at,
       note: r.note,
+      // The days inside the span that were deliberately left out. Without
+      // these the screen has no way to tell a day that was signed from a day
+      // that merely sits between two that were, and marks the whole range as
+      // settled — which is the opposite of what leaving it out meant.
+      excluded: parseDays(r.excluded_days),
     })),
     // Stripped for anybody who can sign a period off but may not see balances.
     //

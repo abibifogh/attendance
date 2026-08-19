@@ -88,8 +88,14 @@ export async function renderAttStaff(params) {
    * notices — or worse, a day is quietly corrected under a decision that was
    * made on the old figure.
    */
-  const signedFor = (dayStr) =>
-    (data.signedSpans ?? []).find((sp) => sp.from <= dayStr && sp.to >= dayStr) ?? null;
+  const signedFor = (dayStr) => (data.signedSpans ?? []).find((sp) => sp.from <= dayStr
+    && sp.to >= dayStr
+    // A day the sign-off deliberately left out is not signed, however far
+    // inside the span it sits. Reading the dates alone marks the three days
+    // nobody could explain as settled along with the eleven that were — which
+    // is precisely the opposite of what leaving them out meant, and hides them
+    // from the person going back to deal with them.
+    && !(sp.excluded ?? []).includes(dayStr)) ?? null;
 
   const manages = can('att_manage');
   // Closing a period off is a separate permission from settling a day, so a

@@ -78,6 +78,9 @@ export const ROUTES = [
   // deciding is what settling a day and approving leave already need.
   ['GET', '/api/att/queries', ['att_signoff', 'att_manage'], signoff.listQueries],
   ['POST', '/api/att/queries', 'att_signoff', signoff.raiseQuery],
+  // Who a question can be addressed to. Names only, and only of people who
+  // could actually answer one.
+  ['GET', '/api/att/deciders', 'att_signoff', signoff.listDeciders],
   ['POST', '/api/att/queries/:id/answer', 'att_manage', signoff.answerQuery],
   ['POST', '/api/att/queries/:id/withdraw', 'att_signoff', signoff.withdrawQuery],
 

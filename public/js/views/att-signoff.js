@@ -3,7 +3,7 @@ import { fmtDay, fmtDayShort, h, mount, shiftDay, toast, todayISO } from '../uti
 import { card, emptyState, table } from './components.js';
 import { can } from '../app.js';
 import { navigate, replaceParams } from '../app.js';
-import { correctTimesDialog, field, formDialog } from './att-shared.js';
+import { correctTimesDialog, field, formDialog, overUnderOf } from './att-shared.js';
 
 /**
  * What is still waiting to be signed off.
@@ -297,13 +297,27 @@ function personCard(row, data, reload) {
       '. Tick the days you have looked at — anything left unticked stays on this list and can '
       + 'be dealt with on its own later.'),
 
+    // Undoing one belongs here, beside the list of what has been signed. It
+    // used to live only on the person's own record and on the Leave screen,
+    // which is not where somebody who has just signed the wrong days goes
+    // looking — and on the record it only appeared when the dates on screen
+    // happened to line up exactly with the period.
     row.signedSpans.length
       ? h('details', { style: { marginTop: '.6rem' } },
         h('summary', { style: { cursor: 'pointer', fontSize: '.85rem' } },
           `${row.signedSpans.length} already signed`),
-        h('ul', row.signedSpans.map((s) => h('li',
-          h('small', `${fmtDayShort(s.from)} – ${fmtDayShort(s.to)} · ${s.by}`
-            + (s.excluded ? ` · ${s.excluded} left out` : ''))))))
+        h('ul.signed-list', row.signedSpans.map((s) => h('li',
+          h('small', `${fmtDayShort(s.from)} – ${fmtDayShort(s.to)} · `,
+            s.decision === 'waived'
+              ? 'let stand'
+              : `${s.daysApplied > 0 ? '+' : ''}${s.daysApplied ?? 0} day`
+                + `${Math.abs(s.daysApplied ?? 0) === 1 ? '' : 's'} against leave`,
+            ` · ${s.by}`,
+            s.excluded ? ` · ${s.excluded} left out` : ''),
+          // No extra check: reaching this screen already needs the permission
+          // that undoes a sign-off, and they are the same one for a reason —
+          // whoever may close a period may reopen it.
+          h('button.btn-sm', { onclick: () => reopen(row, s, reload) }, 'Reopen')))))
       : null,
   );
 }
@@ -335,6 +349,19 @@ async function sign(row, chosen, reload) {
 
   const days = [...chosen].sort();
 
+  /**
+   * The over-or-under of the days actually ticked.
+   *
+   * The server works this out again from the record before it writes anything,
+   * so this is only what the box is filled in with — but a box filled in with
+   * the wrong number is what gets signed, because almost nobody changes a
+   * figure the screen appears confident about.
+   *
+   * Each day already arrives marked as an extra day, a missed one, or neither,
+   * so the sum is a count rather than a second copy of the rule.
+   */
+  const difference = overUnderOf(row.days.filter((d) => chosen.has(d.day)));
+
   const done = await formDialog({
     title: `Sign off ${row.staff.name}`,
     submitLabel: `Sign off ${days.length} day${days.length === 1 ? '' : 's'}`,
@@ -359,10 +386,18 @@ async function sign(row, chosen, reload) {
       // is the over-or-under for the period, not a leave balance — how many
       // days somebody has left is a different question and one the planner is
       // deliberately never shown.
+      //
+      // Counted over the ticked days and not the whole window. Ticking three
+      // days of a fortnight and being handed the fortnight's figure is how
+      // somebody loses eleven days of leave to a default nobody read.
       field('Days against their leave', h('input', {
         type: 'number', name: 'daysApplied', step: 1, min: -60, max: 60,
-        value: String(row.difference ?? 0),
-      }), `The figures make it ${row.difference ?? 0}. What actually moves is your call`),
+        value: String(difference),
+      }), difference === (row.difference ?? 0)
+        ? `The figures make it ${difference}. What actually moves is your call`
+        : `The figures make it ${difference} for the ${days.length} day`
+          + `${days.length === 1 ? '' : 's'} you ticked — ${row.difference ?? 0} over the whole `
+          + 'period. What actually moves is your call'),
 
       field('Note', h('input', {
         type: 'text', name: 'note', maxlength: 300,
@@ -384,15 +419,51 @@ async function sign(row, chosen, reload) {
   }
 }
 
+/**
+ * Take a sign-off back off.
+ *
+ * The days return to the list and the days it charged stop counting. What it
+ * does not do is undo anything that was decided about the days themselves — a
+ * ruling on a Tuesday stays a ruling on a Tuesday; only the closing of the
+ * period is removed.
+ */
+async function reopen(row, span, reload) {
+  const moved = span.decision === 'waived' ? 0 : (span.daysApplied ?? 0);
+  if (!window.confirm(
+    `Reopen ${row.staff.name}, ${fmtDay(span.from)} to ${fmtDay(span.to)}?\n\n`
+    + `${moved ? `The ${moved > 0 ? '+' : ''}${moved} day(s) charged against their leave stop counting.` : 'Nothing was charged against their leave.'}\n`
+    + 'The days go back on the list to be signed again. Nothing decided about the '
+    + 'days themselves is undone.',
+  )) return;
+
+  await api.attUndoReview({ staffId: row.staff.id, from: span.from, to: span.to });
+  toast('Reopened. Those days are back on the list.');
+  await reload();
+}
+
 async function raise(row, chosen, reload) {
   const days = chosen.size ? [...chosen].sort() : row.days.map((d) => d.day);
 
+  // Who could actually answer. Fetched when the dialog opens rather than with
+  // the page, because most visits to this screen never raise anything.
+  const { people } = await api.attDeciders().catch(() => ({ people: [] }));
+
   const done = await formDialog({
-    title: `Ask an administrator about ${row.staff.name}`,
+    title: `Ask about ${row.staff.name}`,
     submitLabel: 'Send it',
     body: h('div',
-      h('p.muted', 'It goes to whoever settles days, with the dates and what the figures say. '
-        + 'Nothing is signed off until somebody answers, and the days stay on your list.'),
+      h('p.muted', 'It goes with the dates and what the figures say. Nothing is signed off '
+        + 'until somebody answers, and the days stay on your list.'),
+
+      // Naming somebody is the difference between a question that is answered
+      // and one that three people can see and none of them owns. Still
+      // optional: on a small property "whoever gets to it" is a real answer.
+      people.length
+        ? field('Who are you asking?', h('select', { name: 'addressedTo' },
+          h('option', { value: '' }, 'Anybody who can answer'),
+          people.map((p) => h('option', { value: String(p.id) }, p.name))),
+        'Their bell rings for it. Everybody who can answer still sees it on the list')
+        : null,
 
       h('p', h('strong', `${days.length} day${days.length === 1 ? '' : 's'}: `),
         days.map((d) => fmtDayShort(d)).join(', ')),
@@ -408,11 +479,17 @@ async function raise(row, chosen, reload) {
         placeholder: 'Absent all day Thursday and nobody knows why. I would rather not charge '
           + 'his leave without somebody checking.',
       })),
+
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'What you write here is read by whoever can answer a question, and by nobody else — '
+        + 'not by other supervisors and not by whoever builds the rota. It is a sentence about '
+        + 'a colleague, so write it as one.'),
     ),
     onSubmit: async (form) => api.attRaiseQuery({
       staffId: row.staff.id,
       days,
       reason: form.get('reason'),
+      addressedTo: form.get('addressedTo') || null,
       issues: row.issues.counts,
     }),
   });
@@ -445,9 +522,14 @@ async function queriesTab(reload) {
   const done = data.rows.filter((q) => !['open', 'answered'].includes(q.status));
 
   if (!data.rows.length) {
-    return emptyState('Nothing to answer',
-      'When somebody signing off is unsure about a period, they can send it here rather than '
-      + 'sign it. It arrives with the dates and what the figures said.');
+    return emptyState(
+      data.canDecide ? 'Nothing to answer' : 'You have not asked anything',
+      data.canDecide
+        ? 'When somebody signing off is unsure about a period, they can send it here rather '
+          + 'than sign it. It arrives with the dates and what the figures said.'
+        : 'Questions you raise appear here with the answers to them. You see your own and '
+          + 'nobody else’s — what somebody writes about a colleague is read by whoever can '
+          + 'answer it, and by them alone.');
   }
 
   return h('div',
@@ -648,10 +730,18 @@ async function decide(edit, decision, reload) {
 function queryCard(q, data, reload) {
   const mine = q.raisedBy === data.mine;
 
+  const forMe = q.addressedTo != null && Number(q.addressedTo) === Number(data.myId);
+
   return card(q.staff.name, {
     note: `${fmtDay(q.from, { withYear: true })} – ${fmtDay(q.to, { withYear: true })} · ${q.days.length} day(s)`,
     wide: true,
     actions: h('div.btn-row',
+      // Who was asked, so a queue of six is a queue of six with names on it.
+      // Everybody who can answer still sees all of them — somebody on leave
+      // must not take their questions with them — but whose it is shows.
+      q.addressedName
+        ? h(`span.pill${forMe ? '.warn' : ''}`, forMe ? 'Asked of you' : `For ${q.addressedName}`)
+        : null,
       h(`span.pill.${STATUS_PILL[q.status] ?? ''}`, STATUS_LABEL[q.status] ?? q.status),
       mine && q.status !== 'resolved'
         ? h('button.btn-sm', {

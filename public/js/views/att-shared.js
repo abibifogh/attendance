@@ -222,6 +222,25 @@ export function field(label, control, hint) {
 
 
 /**
+ * The over-or-under of a set of days, counted rather than recalculated.
+ *
+ * Each day arrives from the sign-off list already marked as an extra day
+ * worked, a whole shift missed, or neither — the rule that decides which lives
+ * on the server and is applied there before anything is written. So this is a
+ * count, not a second copy of the rule, and it exists only to fill in the box
+ * with the figure for the days somebody actually ticked.
+ *
+ * That matters more than it sounds. Almost nobody edits a number the screen
+ * appears confident about, so a box showing the whole fortnight's figure
+ * against three ticked days is how eleven days of somebody's leave move by
+ * accident.
+ */
+export function overUnderOf(days) {
+  const counted = (mark) => days.filter((d) => d.counts === mark).length;
+  return counted('over') - counted('under');
+}
+
+/**
  * Is there anything about this day worth a button?
  *
  * The Settle and Times buttons appear only against days with something wrong

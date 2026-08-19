@@ -478,3 +478,198 @@ test('the sign-off list says who may correct a time on it', async () => {
   })));
   assert.equal(allowed.canFixTimes, true);
 });
+
+// ---------------------------------------------------------------------------
+// A day left out is not a day signed
+// ---------------------------------------------------------------------------
+
+test('signing some days of a week leaves the rest genuinely outstanding', async () => {
+  const { raw, db } = await setup();
+  const { staffReport } = await import('../src/routes/attendance.js');
+
+  // Monday and Friday only, with three days in between deliberately left out.
+  await signDays(ctx(db, {
+    session: MANAGER,
+    body: { staffId: 1, days: ['2026-06-01', '2026-06-05'], daysApplied: 0 },
+  }));
+
+  const still = await read(await outstanding(ctx(db, { query: WEEK })));
+  assert.deepEqual(still.rows[0].days.map((d) => d.day),
+    ['2026-06-02', '2026-06-03', '2026-06-04'],
+    'the three left out are still on the list');
+
+  // And the person's own report has to agree with the list. Reading the span's
+  // dates alone would mark all five as settled, which hides exactly the days
+  // somebody left out in order to come back to them.
+  const report = await read(await staffReport(
+    ctx(db, { session: MANAGER, query: '?from=2026-06-01&to=2026-06-05' }), '1',
+  ));
+
+  assert.equal(report.signedSpans.length, 1);
+  assert.deepEqual(report.signedSpans[0].excluded,
+    ['2026-06-02', '2026-06-03', '2026-06-04'],
+    'the report is told which days the sign-off did not cover');
+
+  const signedOn = (day) => report.signedSpans.some((sp) => sp.from <= day && sp.to >= day
+    && !sp.excluded.includes(day));
+  assert.equal(signedOn('2026-06-01'), true);
+  assert.equal(signedOn('2026-06-03'), false, 'a day between two signed days is not signed');
+  assert.equal(signedOn('2026-06-05'), true);
+
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_period_review').get().n, 1);
+});
+
+test('the charge offered is for the days ticked, not the window they sit in', async () => {
+  // Ticking three days of a fortnight and being handed the fortnight's figure
+  // is how eleven days of somebody's leave move by accident.
+  const { overUnderOf } = await import('../public/js/views/att-shared.js');
+
+  const week = [
+    { day: '2026-06-01', counts: null },
+    { day: '2026-06-02', counts: 'under' },
+    { day: '2026-06-03', counts: 'under' },
+    { day: '2026-06-04', counts: 'over' },
+    { day: '2026-06-05', counts: null },
+  ];
+
+  assert.equal(overUnderOf(week), -1, 'the whole week');
+  assert.equal(overUnderOf(week.filter((d) => d.day === '2026-06-01')), 0,
+    'one clean day charges nothing, whatever the rest of the week did');
+  assert.equal(overUnderOf(week.filter((d) => d.counts === 'under')), -2);
+  assert.equal(overUnderOf([]), 0);
+});
+
+// ---------------------------------------------------------------------------
+// Asking a particular person, privately
+// ---------------------------------------------------------------------------
+
+/** A login that exists, so a question can be addressed to it. */
+function withLogins(raw) {
+  raw.exec('DELETE FROM users');
+  raw.prepare(
+    `INSERT INTO users (id, name, email, role, active) VALUES
+       (1, 'Ama', 'ama@example.test', 'manager', 1),
+       (2, 'Yaa', 'yaa@example.test', 'planner', 1),
+       (3, 'Kwame', 'kwame@example.test', 'admin', 1),
+       (4, 'Kofi', 'kofi@example.test', 'viewer', 1)`,
+  ).run();
+}
+
+test('only people who could answer a question can be asked one', async () => {
+  const { raw, db } = await setup();
+  withLogins(raw);
+  const { listDeciders } = await import('../src/routes/signoff.js');
+
+  const { people } = await read(await listDeciders(ctx(db)));
+  const names = people.map((p) => p.name).sort();
+  assert.deepEqual(names, ['Ama', 'Kwame'],
+    'a manager and an administrator settle days; a planner and a reports-only login do not');
+  assert.ok(people.every((p) => !('email' in p)),
+    'and picking a name off a list does not need anybody’s email address');
+});
+
+test('a question can be addressed to somebody, and their bell rings for it', async () => {
+  const { raw, db } = await setup();
+  withLogins(raw);
+
+  await raiseQuery(ctx(db, {
+    body: {
+      staffId: 1,
+      days: ['2026-06-04'],
+      reason: 'Absent all day and nobody knows why',
+      addressedTo: 3,
+    },
+  }));
+
+  const row = raw.prepare('SELECT * FROM att_query').get();
+  assert.equal(row.addressed_to, 3);
+  assert.equal(row.addressed_name, 'Kwame');
+
+  const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'attendance.query'").get();
+  assert.equal(notice.user_id, 3, 'named, so it is not three people’s problem and nobody’s job');
+  assert.match(notice.title, /has asked you to look/);
+});
+
+test('a question cannot be addressed to somebody who could not answer it', async () => {
+  const { raw, db } = await setup();
+  withLogins(raw);
+
+  await assert.rejects(
+    () => raiseQuery(ctx(db, {
+      body: { staffId: 1, days: ['2026-06-04'], reason: 'Why?', addressedTo: 4 },
+    })),
+    /cannot answer a question/,
+  );
+});
+
+test('nobody in particular is still allowed, and reaches whoever holds the permission', async () => {
+  const { raw, db } = await setup();
+  withLogins(raw);
+
+  await raiseQuery(ctx(db, { body: { staffId: 1, days: ['2026-06-04'], reason: 'Why?' } }));
+
+  const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'attendance.query'").get();
+  assert.equal(notice.user_id, null);
+  assert.equal(notice.audience, 'att_manage');
+});
+
+test('a question is read by whoever can answer it, and by nobody else', async () => {
+  // What somebody writes to raise a question is a sentence about a colleague.
+  // Every planner and every supervisor being able to read all of them is not a
+  // queue, it is a noticeboard about people who never agreed to be on it.
+  const { raw, db } = await setup();
+  withLogins(raw);
+
+  await raiseQuery(ctx(db, {
+    session: { user: { id: 2, name: 'Yaa', role: 'planner' }, permissions: ['att_view', 'att_signoff'] },
+    body: { staffId: 1, days: ['2026-06-04'], reason: 'He was at the clinic, I think' },
+  }));
+
+  // Whoever can answer sees it.
+  const boss = await read(await listQueries(ctx(db, { session: MANAGER, query: '?status=all' })));
+  assert.equal(boss.rows.length, 1);
+  assert.equal(boss.canDecide, true);
+
+  // The person who asked sees their own.
+  const mine = await read(await listQueries(ctx(db, {
+    session: { user: { id: 2, name: 'Yaa', role: 'planner' }, permissions: ['att_view', 'att_signoff'] },
+    query: '?status=all',
+  })));
+  assert.equal(mine.rows.length, 1);
+  assert.equal(mine.canDecide, false);
+
+  // A second planner sees nothing of it.
+  const other = await read(await listQueries(ctx(db, {
+    session: { user: { id: 5, name: 'Adjoa', role: 'planner' }, permissions: ['att_view', 'att_signoff'] },
+    query: '?status=all',
+  })));
+  assert.equal(other.rows.length, 0, 'not a noticeboard');
+});
+
+test('an answer is visible to the person who asked, and still to nobody else', async () => {
+  const { raw, db } = await setup();
+  withLogins(raw);
+  const asker = {
+    user: { id: 2, name: 'Yaa', role: 'planner' },
+    permissions: ['att_view', 'att_signoff'],
+  };
+
+  const raised = await read(await raiseQuery(ctx(db, {
+    session: asker,
+    body: { staffId: 1, days: ['2026-06-04'], reason: 'Why was he out?' },
+  })));
+  await answerQuery(ctx(db, {
+    session: MANAGER,
+    body: { action: 'direction', body: 'He was at the clinic — mark it sick leave, then sign it.' },
+  }), String(raised.id));
+
+  const mine = await read(await listQueries(ctx(db, { session: asker, query: '?status=all' })));
+  assert.equal(mine.rows.length, 1);
+  assert.match(mine.rows[0].notes.map((n) => n.body).join(' '), /clinic/);
+
+  const other = await read(await listQueries(ctx(db, {
+    session: { user: { id: 5, name: 'Adjoa', role: 'planner' }, permissions: ['att_view', 'att_signoff'] },
+    query: '?status=all',
+  })));
+  assert.equal(other.rows.length, 0);
+});

@@ -1088,3 +1088,16 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   .guide-body table { break-inside: avoid; }
   .guide-sub { break-after: avoid; }
 }
+
+/* Periods already signed, with the way back off them. */
+.signed-list { list-style: none; padding: 0; margin: .4rem 0 0; }
+.signed-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .8rem;
+  flex-wrap: wrap;
+  padding: .35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.signed-list li:last-child { border-bottom: 0; }
