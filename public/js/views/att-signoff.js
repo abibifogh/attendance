@@ -97,7 +97,25 @@ async function openTab(params, range, reload) {
    * not a day whose figures are settled, however clean it looks today.
    */
   const cleanDays = (row) => row.days.filter((d) => !d.issues.length && !d.pendingTimes);
-  const clearable = data.rows
+
+  /**
+   * Three lists, not one.
+   *
+   * A period somebody has asked about is not theirs to do anything with until
+   * it is answered, and leaving it among the ones that are is how a list of
+   * four jobs reads as a list of nine. So what has been asked comes out of the
+   * working list — and what has been *answered* comes out the other way, to
+   * the top, because that is a job that has just landed back on somebody and
+   * would otherwise sit unnoticed among the rest.
+   */
+  const answered = data.rows.filter((r) => r.query?.status === 'answered');
+  const asked = data.rows.filter((r) => r.query?.status === 'open');
+  const working = data.rows.filter((r) => !r.query);
+
+  // The bulk clear works on the working list alone. Sweeping up a period
+  // somebody has deliberately asked about would answer their question for
+  // them, in the one direction they were trying to avoid.
+  const clearable = working
     .map((row) => ({ row, days: cleanDays(row) }))
     .filter((entry) => entry.days.length);
   const clearableDays = clearable.reduce((n, entry) => n + entry.days.length, 0);
@@ -142,12 +160,20 @@ async function openTab(params, range, reload) {
 
   return h('div',
     h('div.grid.grid-4',
-      tile('Days outstanding', data.total, `${data.rows.length} people`),
-      tile('With something wrong', data.withIssues, data.withIssues ? 'worth a look' : 'all clean',
-        data.withIssues ? 'var(--warn)' : 'var(--good)'),
-      tile('Worth stopping for', data.blocked,
-        data.blocked ? 'absence or unsettled' : 'nothing blocking',
-        data.blocked ? 'var(--bad)' : null),
+      // What there is to do, rather than what is on the page. A count that
+      // includes six periods waiting on somebody else's answer is a count
+      // nobody can plan a morning around.
+      tile('To deal with', working.reduce((n, r) => n + r.unsignedCount, 0),
+        `${working.length} ${working.length === 1 ? 'person' : 'people'}`),
+      tile('With something wrong',
+        working.filter((r) => r.issues.total).length,
+        working.some((r) => r.issues.total) ? 'worth a look' : 'all clean',
+        working.some((r) => r.issues.total) ? 'var(--warn)' : 'var(--good)'),
+      answered.length
+        ? tile('Answered', answered.length, 'back with you', 'var(--good)')
+        : tile('Waiting on an answer', asked.length,
+          asked.length ? 'asked, not yet replied to' : 'nothing asked',
+          asked.length ? 'var(--accent)' : null),
       tile('Up to', fmtDayShort(data.limit), 'today is never included'),
     ),
 
@@ -175,11 +201,48 @@ async function openTab(params, range, reload) {
         }, 'Sign them all off'))
       : null,
 
-    data.rows.length
-      ? h('div', data.rows.map((row) => personCard(row, data, reload)))
-      : emptyState('Nothing outstanding',
+    // Back on you first: somebody answered, and this is now a job again.
+    answered.length
+      ? h('div',
+        h('h2.group-head', h('span.pill.good', 'Answered'),
+          ` ${answered.length} back with you`),
+        h('p.muted', { style: { fontSize: '.85rem', marginTop: '-.3rem' } },
+          'Somebody has replied. Read what they said, do it, and sign the period off.'),
+        answered.map((row) => personCard(row, data, reload)))
+      : null,
+
+    working.length
+      ? h('div',
+        answered.length || asked.length
+          ? h('h2.group-head', `${working.length} to deal with`)
+          : null,
+        working.map((row) => personCard(row, data, reload)))
+      : null,
+
+    // Parked, and plainly so. Still on the page — a question nobody can see
+    // the state of is a question people ask twice — but out of the count of
+    // what there is to do.
+    asked.length
+      ? h('details.asked-group', { style: { marginTop: '1rem' } },
+        h('summary',
+          h('span.pill.warn', 'Waiting on an answer'),
+          ` ${asked.length} ${asked.length === 1 ? 'person' : 'people'} — nothing to do until somebody replies`),
+        h('div', { style: { marginTop: '.6rem' } },
+          asked.map((row) => personCard(row, data, reload))))
+      : null,
+
+    !data.rows.length
+      ? emptyState('Nothing outstanding',
         `Every day between ${fmtDay(data.from)} and ${fmtDay(data.limit)} has been signed off, `
-        + 'or there was nothing on it to sign.'),
+        + 'or there was nothing on it to sign.')
+      : null,
+
+    working.length === 0 && data.rows.length
+      ? emptyState('Nothing left to do',
+        asked.length
+          ? 'Everything still outstanding is waiting on an answer from somebody else.'
+          : 'Everything here has been dealt with.')
+      : null,
 
     h('p.muted', { style: { fontSize: '.82rem' } },
       'Today is never on this list. A shift that has not finished cannot be signed off, and '
@@ -281,7 +344,7 @@ function personCard(row, data, reload) {
         onclick: () => navigate('att-staff', { id: row.staff.id, from: row.first, to: row.last }),
       }, 'Open their record'),
       row.query
-        ? h('span.pill.warn', `Asked ${fmtDayShort(String(row.query.raised_at).slice(0, 10))}`)
+        ? h('span.pill.warn', `Asked ${fmtDayShort(String(row.query.raisedAt).slice(0, 10))}`)
         : h('button.btn-sm', { onclick: () => raise(row, chosen, reload) }, 'Ask an admin'),
       signButton,
     ),
@@ -302,7 +365,8 @@ function personCard(row, data, reload) {
       ? h('div.alert.info',
         h('span.alert-icon', '💬'),
         h('div',
-          h('div.alert-title', `Asked about ${fmtDayShort(row.query.from_day)}–${fmtDayShort(row.query.to_day)}`),
+          h('div.alert-title', `Asked about ${fmtDayShort(row.query.from)}–${fmtDayShort(row.query.to)}`
+            + `${row.query.addressedName ? `, of ${row.query.addressedName}` : ''}`),
           h('div.alert-detail', row.query.reason || ''),
         ),
         h('button.btn-sm', { onclick: () => navigate('signoff', { tab: 'queries' }) }, 'See it'))

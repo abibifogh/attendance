@@ -1113,3 +1113,40 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   flex-wrap: wrap;
   border-left: 3px solid var(--good);
 }
+
+/* --------------------------------------------------------------------------
+   Grouping the sign-off list
+   --------------------------------------------------------------------------
+   Three lists on one page — back with you, to deal with, waiting on somebody
+   else — so the headings have to carry weight without shouting over the cards
+   under them.
+   -------------------------------------------------------------------------- */
+
+.group-head {
+  font-size: .95rem;
+  font-weight: 650;
+  margin: 1.4rem 0 .6rem;
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  flex-wrap: wrap;
+}
+.group-head:first-child { margin-top: 0; }
+
+.asked-group > summary {
+  cursor: pointer;
+  font-size: .9rem;
+  font-weight: 650;
+  padding: .6rem .8rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  flex-wrap: wrap;
+}
+.asked-group > summary::-webkit-details-marker { display: none; }
+.asked-group[open] > summary { margin-bottom: .2rem; }
+/* Parked work reads as parked. */
+.asked-group .card { opacity: .78; }
+.asked-group .card:hover { opacity: 1; }

@@ -190,10 +190,13 @@ export async function outstanding(ctx) {
       workedDays: totals.daysWorked,
       difference: oc.difference,
       summary: describePeriod({ name: staff.name, unsigned: days, issues }),
-      // A question already asked about any of these days, so the screen does
-      // not invite somebody to raise it twice.
-      query: (queriesBy.get(staff.id) ?? []).find((q) => q.from_day <= days[days.length - 1].day
-        && q.to_day >= days[0].day) ?? null,
+      // A question already asked about any of these days. It keeps the screen
+      // from inviting somebody to raise it twice, and — more usefully — takes
+      // the period out of the working list altogether: a period you have asked
+      // about is not yours to do anything with until somebody answers, and
+      // leaving it among the ones that are is how a list of four jobs reads as
+      // a list of nine.
+      query: queryOn(queriesBy.get(staff.id), days),
       signedSpans: mine.map((r) => ({
         from: r.from_day, to: r.to_day, kind: r.kind, by: r.decided_by,
         excluded: parseDays(r.excluded_days).length,
@@ -215,6 +218,10 @@ export async function outstanding(ctx) {
     blocked: rows.filter((r) => r.issues.blocking).length,
     canDecide: allows('att_manage', ctx.session.permissions),
     canFixTimes: allows('att_times', ctx.session.permissions),
+    // Counted here so the tiles can say it without the screen having to work
+    // out what it is looking at twice.
+    asked: rows.filter((r) => r.query?.status === 'open').length,
+    answered: rows.filter((r) => r.query?.status === 'answered').length,
   });
 }
 
@@ -337,6 +344,31 @@ export async function signDays(ctx) {
 }
 
 /** A label for the span. Only ever a label — every rule works on the dates. */
+/**
+ * The question hanging over a set of days, as the list needs it.
+ *
+ * Shaped rather than passed through: the row it comes from carries who raised
+ * it, from which address, and every note id, none of which the list has any
+ * business sending to a browser.
+ */
+function queryOn(queries, days) {
+  const found = (queries ?? []).find((q) => q.from_day <= days[days.length - 1].day
+    && q.to_day >= days[0].day);
+  if (!found) return null;
+
+  return {
+    id: found.id,
+    from: found.from_day,
+    to: found.to_day,
+    days: parseDays(found.days),
+    reason: found.reason,
+    status: found.status,
+    raisedBy: found.raised_by,
+    raisedAt: found.raised_at,
+    addressedName: found.addressed_name ?? null,
+  };
+}
+
 function kindFor(from, to, excludedCount) {
   if (excludedCount) return 'partial';
   if (from === to) return 'day';

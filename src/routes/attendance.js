@@ -2206,6 +2206,24 @@ export async function periodReview(ctx) {
       daysAbsent: totals.daysAbsent,
       daysLeave: totals.daysLeave,
       openCount: totals.openCount,
+
+      // The three reasons the row does not add up, sent so the screen can say
+      // so rather than leaving somebody to work it out from five numbers that
+      // look like they should sum and do not.
+      //
+      // Absences nobody has ruled on are the important one. A missed shift only
+      // counts against somebody once a person has said it was missed — which is
+      // right, because the alternative is docking leave for a day nobody
+      // checked — but it means a month full of unconfirmed absences reads as
+      // "square", and square is the one thing it is not.
+      unsettledAbsences: detail.filter((d) => d.credit === 0 && !d.resolvedBy
+        && ABSENT_ON_A_ROW.has(d.status)).length,
+      // Worked counts a short day as a half, so Worked + Absent + Leave falls
+      // short of Rostered by exactly the halves.
+      partDays: detail.filter((d) => d.credit > 0 && d.credit < 1).length,
+      // And counts a day nobody rostered, so it can also overshoot.
+      unrosteredDays: detail.filter((d) => d.status === 'unscheduled').length,
+
       days: detail,
       decision: exact && presentDecision(exact),
       // Sign-offs that touch this span without being it. These are why a month
@@ -2228,6 +2246,15 @@ export async function periodReview(ctx) {
     reviewed: rows.filter((r) => r.decision).length,
   });
 }
+
+/**
+ * The statuses that read as a missed day on a review row.
+ *
+ * The same set `overUnder` would count against somebody, minus its extra
+ * condition that a human has ruled on it — because the whole point here is to
+ * count the ones nobody has.
+ */
+const ABSENT_ON_A_ROW = new Set(['absent', 'missing_in', 'missing_out']);
 
 function presentDecision(row) {
   return {
