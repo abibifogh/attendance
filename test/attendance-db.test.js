@@ -1170,22 +1170,39 @@ test('a month shows days rostered against days worked', async () => {
   const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   const row = data.rows.find((r) => r.staff.id === 1);
 
+  assert.equal(row.calendarDays, 22, 'the working days March 2026 held');
   assert.equal(row.scheduledDays, 22, 'the weekdays the pattern asked for');
   assert.equal(row.workedDays, 3);
   assert.equal(row.daysAbsent, 19);
 
-  // Nineteen absences, and not one of them counts yet: nobody has confirmed
-  // any of them, and charging leave against a maybe is the one mistake here
-  // that costs somebody real money.
-  assert.equal(row.underDays, 0);
-  assert.equal(row.difference, 0);
+  // Nineteen working days the month expected and did not get. It counts
+  // whether or not anybody has been round to settle them — a property that
+  // has never settled an absence used to read "square" every month, which is
+  // the one thing it was not.
+  assert.equal(row.underDays, 19);
+  assert.equal(row.difference, -19, 'worked 3, on leave 0, against 22 working days');
+  assert.equal(row.unsettledAbsences, 19, 'and every one of them still wants a supervisor');
   assert.equal(row.decision, null, 'nobody has looked at it yet');
   assert.equal(data.reviewed, 0);
 });
 
-test('an under is a whole shift missed, once somebody has confirmed it', async () => {
+test('the columns reconcile: worked plus leave, less the calendar', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02', '2026-03-03', '2026-03-04']);
+
+  const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const row = data.rows.find((r) => r.staff.id === 1);
+
+  assert.equal(row.workedDays + row.daysLeave - row.calendarDays, row.difference,
+    'the arithmetic the screen shows is the arithmetic the sign-off uses');
+});
+
+test('settling an absence explains it rather than removing it', async () => {
   const { db, token } = await setup();
   await marchWorked(db, token, ['2026-03-02']);
+
+  const before = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
+  assert.equal(before.rows.find((r) => r.staff.id === 1).unsettledAbsences, 21);
 
   await resolveDay(ctx(db, { body: { staffId: 1, reason: 'absent' } }), '2026-03-03');
   await resolveDay(ctx(db, { body: { staffId: 1, reason: 'absent' } }), '2026-03-04');
@@ -1193,30 +1210,31 @@ test('an under is a whole shift missed, once somebody has confirmed it', async (
   const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   const row = data.rows.find((r) => r.staff.id === 1);
 
-  assert.equal(row.underDays, 2, 'the two that were ruled on, not the other seventeen');
-  assert.equal(row.difference, -2);
-  assert.deepEqual(row.days.filter((d) => d.counts === 'under').map((d) => d.day),
-    ['2026-03-03', '2026-03-04'], 'and it can say which days');
+  assert.equal(row.underDays, 21, 'a working day nobody delivered is one either way');
+  assert.equal(row.difference, -21);
+  assert.equal(row.unsettledAbsences, 19, 'but two fewer are waiting on somebody');
 });
 
-test('a short day is never an under, however short', async () => {
+test('a short day counts as a day, because it was clocked in and out of', async () => {
   const { db, token } = await setup();
   // In at six, gone by half past seven. An hour and a half of a shift.
   await send(db, token, [
     event('2026-03-02T06:00:00+00:00', 'checkIn', 'a'),
     event('2026-03-02T07:30:00+00:00', 'checkOut', 'b'),
   ]);
-  await resolveDay(ctx(db, { body: { staffId: 1, reason: 'early_leave' } }), '2026-03-02');
 
   const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
-  assert.equal(data.rows.find((r) => r.staff.id === 1).underDays, 0,
-    'four short days are four conversations, not a day and a half of leave');
+  const row = data.rows.find((r) => r.staff.id === 1);
+  assert.equal(row.workedDays, 1,
+    'this column answers "did they turn up and finish", not "how many hours"');
+  assert.ok(row.days.find((d) => d.day === '2026-03-02').credit < 1,
+    'while the credited figure the reports use still calls it half a day');
 });
 
-test('an extra day counts as an over only past six hours', async () => {
+test('a weekend worked is a day up, however long or short', async () => {
   const { db, token } = await setup();
 
-  // Saturday and Sunday are not on the pattern. One long, one short.
+  // Saturday and Sunday are not working days. One long, one short.
   await send(db, token, [
     event('2026-03-07T08:00:00+00:00', 'checkIn', 'c'),
     event('2026-03-07T17:00:00+00:00', 'checkOut', 'd'),
@@ -1227,9 +1245,9 @@ test('an extra day counts as an over only past six hours', async () => {
   const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   const row = data.rows.find((r) => r.staff.id === 1);
 
-  assert.equal(row.overDays, 1, 'the nine-hour Saturday, not the two-hour Sunday');
-  assert.deepEqual(row.days.filter((d) => d.counts === 'over').map((d) => d.day), ['2026-03-07']);
-  assert.equal(row.difference, 1);
+  assert.equal(row.overDays, 2, 'both of them: each was clocked in and out of');
+  assert.deepEqual(row.days.filter((d) => d.counts === 'over').map((d) => d.day),
+    ['2026-03-07', '2026-03-08']);
 });
 
 test('the difference is always a whole number', async () => {
@@ -1242,8 +1260,9 @@ test('the difference is always a whole number', async () => {
 
   const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
   const row = data.rows.find((r) => r.staff.id === 1);
-  assert.equal(row.workedDays % 1, 0.5, 'days worked still counts half days');
-  assert.ok(Number.isInteger(row.difference), 'but the over/under never does');
+  assert.equal(row.creditedDays % 1, 0.5, 'the credited figure still counts half days');
+  assert.equal(row.workedDays % 1, 0, 'the days-worked column does not');
+  assert.ok(Number.isInteger(row.difference), 'and the over/under never does');
 });
 
 test('signing a month off takes the agreed days off the leave balance', async () => {
@@ -1260,8 +1279,8 @@ test('signing a month off takes the agreed days off the leave balance', async ()
   const row = data.rows.find((r) => r.staff.id === 1);
   assert.equal(row.decision.decision, 'approved');
   assert.equal(row.decision.daysApplied, -2);
-  assert.equal(row.decision.asSigned.difference, 0,
-    'no absence had been confirmed, so nothing was owed on paper — the two days are a\n     judgement the manager made anyway, and both halves are on the record');
+  assert.equal(row.decision.asSigned.difference, -20,
+    'twenty working days short on paper, and two charged — the gap is the whole point:\n     the figures are arithmetic, what comes off somebody’s leave is a judgement');
 
   const bal = await (await balances(ctx(db, { query: '?asOf=2026-03-31' }))).json();
   const b = bal.rows.find((r) => r.staff.id === 1).balance;

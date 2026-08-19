@@ -128,7 +128,7 @@ export async function outstanding(ctx) {
     const records = computeRange(ds, staff.id, from, limit);
     const byDay = new Map(records.map((r) => [r.day, r]));
 
-    const oc = overUnder(records, { overMinutes });
+    const oc = overUnder(records, { holidays: ds.holidayBy, expected: records.some((r) => r.scheduled) });
     const counted = new Map([
       ...oc.overs.map((o) => [o.day, 'over']),
       ...oc.unders.map((u) => [u.day, 'under']),
@@ -284,9 +284,7 @@ export async function signDays(ctx) {
   const included = records.filter((r) => wanted.has(r.day));
 
   const totals = summarise(included, { shifts: ds.shiftById, reasons: ds.reasonBy });
-  const oc = overUnder(included, {
-    overMinutes: Math.max(0, Number(ds.settings.att_over_minutes) || 360),
-  });
+  const oc = overUnder(included, { holidays: ds.holidayBy, expected: included.some((r) => r.scheduled) });
 
   const counted = new Map([
     ...oc.overs.map((o) => [o.day, 'over']),

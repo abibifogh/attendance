@@ -887,58 +887,94 @@ test('a day set by hand still beats the rotation', () => {
 
 const day = (o = {}) => ({
   day: '2026-03-02', scheduled: 1, worked_minutes: 480, status: 'present',
+  first_in: '09:00', last_out: '17:00',
   reason_code: null, resolved_by: null, resolved_note: null, ...o,
 });
 
-test('an extra day counts only once it is more than six hours', () => {
-  assert.equal(overUnder([day({ scheduled: 0, worked_minutes: 361, status: 'unscheduled' })]).overDays, 1);
-  assert.equal(overUnder([day({ scheduled: 0, worked_minutes: 360, status: 'unscheduled' })]).overDays, 0,
-    'exactly six hours is not more than six hours');
-  assert.equal(overUnder([day({ scheduled: 0, worked_minutes: 120, status: 'unscheduled' })]).overDays, 0,
-    'two hours covering a gap is a favour, not a day off in lieu');
+// 2026-03-02 is a Monday, 03-07 a Saturday, 03-08 a Sunday.
+test('a working day delivered is square, and one missed is a day down', () => {
+  assert.equal(overUnder([day()]).difference, 0, 'clocked in and out on a Monday');
+  assert.equal(overUnder([day({ first_in: null, last_out: null, status: 'absent' })]).difference, -1);
+  assert.equal(overUnder([day({ status: 'leave', reason_code: 'annual_leave' })]).difference, 0,
+    'a day on leave is a day the property agreed to');
 });
 
-test('an under needs a whole shift missed and somebody to have said so', () => {
-  const missed = { scheduled: 1, worked_minutes: 0, status: 'absent' };
+test('a day nothing was expected of is a day up', () => {
+  assert.equal(overUnder([day({ day: '2026-03-07' })]).difference, 1, 'worked a Saturday');
+  assert.equal(overUnder([day({ day: '2026-03-08', first_in: null, last_out: null, status: 'rest' })]).difference, 0,
+    'and a Sunday off costs nothing either way');
+});
 
-  assert.equal(overUnder([day({ ...missed })]).underDays, 0, 'nobody has confirmed it');
-  assert.equal(overUnder([day({ ...missed, resolved_by: 'Ama' })]).underDays, 1);
+test('a tap in with no tap out is not a day worked', () => {
+  // It is a day somebody still has to look at, and until they do the day was
+  // not delivered. Counting it would credit a shift nobody can show was
+  // finished.
+  const half = overUnder([day({ first_in: '09:00', last_out: null, status: 'missing_out' })]);
+  assert.equal(half.difference, -1);
+  assert.match(half.unders[0].why, /never out/);
+});
+
+test('a short day still counts, because it was clocked in and out of', () => {
+  // Deliberately different from the credited-hours figure the reports use. This
+  // column answers "did they turn up and finish", and half a day's hours is
+  // still a day somebody came to work.
+  assert.equal(overUnder([day({ worked_minutes: 120 })]).difference, 0);
+});
+
+test('a public holiday is not a working day, and working one is a day up', () => {
+  const holidays = new Set(['2026-03-04']);
   assert.equal(
-    overUnder([day({ scheduled: 1, worked_minutes: 60, status: 'early_leave', resolved_by: 'Ama' })]).underDays,
+    overUnder([day({ day: '2026-03-04', first_in: null, last_out: null, status: 'holiday' })], { holidays })
+      .difference,
     0,
-    'a part-day is never an under, however short',
+    'a Wednesday holiday nobody worked',
   );
+  assert.equal(overUnder([day({ day: '2026-03-04' })], { holidays }).difference, 1,
+    'and a Wednesday holiday somebody did');
+  assert.equal(overUnder([day({ day: '2026-03-04' })]).difference, 0,
+    'the same Wednesday, with no holiday recorded');
 });
 
-test('leave and rest days are neither over nor under', () => {
-  const result = overUnder([
-    day({ scheduled: 1, worked_minutes: 0, status: 'leave', reason_code: 'annual_leave', resolved_by: 'Ama' }),
-    day({ scheduled: 0, worked_minutes: 0, status: 'rest' }),
-    day({ scheduled: 0, worked_minutes: 0, status: 'unscheduled' }),
-  ]);
-  assert.equal(result.overDays, 0);
-  assert.equal(result.underDays, 0);
+test('an absence counts whether or not anybody has ruled on it', () => {
+  // The rule this replaced only counted a missed day once a supervisor had
+  // confirmed it, so a property that had never got round to settling anything
+  // read "square" every month — the one thing it was not.
+  const missed = { first_in: null, last_out: null, status: 'absent' };
+  assert.equal(overUnder([day(missed)]).difference, -1, 'nobody has been round to it yet');
+  assert.equal(overUnder([day({ ...missed, resolved_by: 'Ama' })]).difference, -1, 'and once they have');
 });
 
 test('the difference is whole days and can name every one of them', () => {
   const result = overUnder([
-    day({ day: '2026-03-07', scheduled: 0, worked_minutes: 540, status: 'unscheduled' }),
-    day({ day: '2026-03-10', scheduled: 1, worked_minutes: 0, status: 'absent', resolved_by: 'Ama' }),
-    day({ day: '2026-03-11', scheduled: 1, worked_minutes: 0, status: 'absent', resolved_by: 'Ama' }),
-    day({ day: '2026-03-12', scheduled: 1, worked_minutes: 250 }),
+    day({ day: '2026-03-07' }),                                                        // Saturday worked
+    day({ day: '2026-03-10', first_in: null, last_out: null, status: 'absent' }),      // Tuesday missed
+    day({ day: '2026-03-11', first_in: null, last_out: null, status: 'absent' }),      // Wednesday missed
+    day({ day: '2026-03-12', worked_minutes: 250 }),                                   // Thursday, short
   ]);
 
   assert.equal(result.difference, -1);
-  // `-1 % 1` is -0 in JavaScript, which is not strictly 0. Ask the real question.
   assert.ok(Number.isInteger(result.difference));
+  assert.equal(result.delivered, 2);
+  assert.equal(result.quota, 3);
   assert.deepEqual(result.overs.map((o) => o.day), ['2026-03-07']);
   assert.deepEqual(result.unders.map((u) => u.day), ['2026-03-10', '2026-03-11']);
 });
 
-test('the six-hour bar can be moved', () => {
-  const long = [day({ scheduled: 0, worked_minutes: 300, status: 'unscheduled' })];
-  assert.equal(overUnder(long).overDays, 0);
-  assert.equal(overUnder(long, { overMinutes: 240 }).overDays, 1);
+test('any subset of the days adds up to the same answer', () => {
+  // What makes it safe to sign three days out of a fortnight: each day carries
+  // its own side of the ledger, so a part of the period cannot come to
+  // something the whole would not.
+  const month = [
+    day({ day: '2026-03-02' }),
+    day({ day: '2026-03-03', first_in: null, last_out: null, status: 'absent' }),
+    day({ day: '2026-03-07' }),
+    day({ day: '2026-03-08', first_in: null, last_out: null, status: 'rest' }),
+  ];
+
+  const whole = overUnder(month).difference;
+  const parts = month.reduce((n, d) => n + overUnder([d]).difference, 0);
+  assert.equal(whole, parts);
+  assert.equal(whole, 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -1007,4 +1043,21 @@ test('a shift still to come counts as neither worked nor missed', () => {
   assert.equal(totals.scheduled, 1, 'still rostered');
   assert.equal(totals.daysAbsent, 0);
   assert.equal(totals.daysWorked, 0);
+});
+
+test('a month asks nothing of somebody it never rostered', () => {
+  // A new starter whose first week is next week, somebody who has left, a
+  // casual with nothing booked. The month's working days are not a debt they
+  // owe: they were never asked. Anything they did work still counts, which is
+  // the right way round.
+  const nothing = [
+    day({ day: '2026-03-02', scheduled: 0, first_in: null, last_out: null, status: 'rest' }),
+    day({ day: '2026-03-03', scheduled: 0, first_in: null, last_out: null, status: 'rest' }),
+  ];
+  assert.equal(overUnder(nothing, { expected: false }).difference, 0);
+  assert.equal(overUnder(nothing).difference, -2, 'and it is a debt when they were');
+
+  const helped = [...nothing, day({ day: '2026-03-04', scheduled: 0 })];
+  assert.equal(overUnder(helped, { expected: false }).difference, 1,
+    'a day given when nothing was asked is still a day given');
 });

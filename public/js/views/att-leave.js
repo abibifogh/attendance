@@ -282,6 +282,16 @@ function monthCard(review, month, signs, reload) {
     table([
       { key: 'staff', label: 'Name', format: (v) => h('div', h('div', v.name), h('small.muted', v.department || v.employee_no)) },
       {
+        key: 'calendarDays',
+        label: 'Calendar',
+        align: 'right',
+        // The working days the month held: Monday to Friday, less any public
+        // holiday falling on one. The same figure for everybody, which is what
+        // makes it checkable — somebody rostered on Saturdays takes their rest
+        // days midweek, so the quota over a month comes to the same thing.
+        format: (v, r) => openable(fmtNum(v, 0), () => breakdown(r, month, 'calendar')),
+      },
+      {
         key: 'scheduledDays',
         label: 'Rostered',
         align: 'right',
@@ -291,38 +301,31 @@ function monthCard(review, month, signs, reload) {
         key: 'workedDays',
         label: 'Worked',
         align: 'right',
-        // Annotated where it will not reconcile. A short day counts as a half
-        // and a day nobody rostered still counts, so Worked + Absent + Leave
-        // can miss Rostered in either direction — and five numbers that look
-        // like they should add up and do not is how somebody stops believing
-        // the other columns too.
-        format: (v, r) => h('div',
-          openable(fmtNum(v, 1), () => breakdown(r, month, 'worked')),
-          r.partDays || r.unrosteredDays
-            ? h('small.muted', { style: { display: 'block' } },
-              [r.partDays ? `${r.partDays} part` : null,
-                r.unrosteredDays ? `${r.unrosteredDays} unrostered` : null]
-                .filter(Boolean).join(', '))
-            : null),
+        // Days clocked in *and* out of. A tap in with no tap out is not a day
+        // worked; it is a day somebody still has to look at.
+        format: (v, r) => openable(fmtNum(v, 0), () => breakdown(r, month, 'worked')),
+      },
+      {
+        key: 'daysLeave',
+        label: 'On leave',
+        align: 'right',
+        format: (v, r) => (v
+          ? openable(fmtNum(v, 0), () => breakdown(r, month, 'leave'))
+          : h('span.muted', '—')),
       },
       {
         key: 'difference',
         label: 'Over / under',
         align: 'right',
-        // Never "square" while something is unaccounted for. A missed shift
-        // only counts against somebody once a person has ruled on it — right,
-        // because the alternative is docking leave for a day nobody checked —
-        // but a month of unconfirmed absences then reads as square, and square
-        // is the one thing it is not.
+        // Worked plus leave, less the working days expected. One figure, and
+        // the one the sign-off proposes against somebody's leave.
         format: (v, r) => h('div',
           v
             ? openable(
               h(`span.pill${v < 0 ? '.bad' : '.good'}`, `${v > 0 ? '+' : ''}${v}`),
               () => breakdown(r, month, v < 0 ? 'under' : 'over'),
             )
-            : r.overDays || r.underDays
-              ? openable(h('span.muted', 'square'), () => breakdown(r, month, 'under'))
-              : h('span.muted', r.unsettledAbsences ? 'not yet' : 'square'),
+            : h('span.muted', 'square'),
           r.unsettledAbsences
             ? h('div', openable(
               h('small.pill.warn', `${r.unsettledAbsences} to settle`),
@@ -334,19 +337,8 @@ function monthCard(review, month, signs, reload) {
         key: 'daysAbsent',
         label: 'Absent',
         align: 'right',
-        // Pressable, like every other figure on the row. It was the one number
-        // somebody would most want the days behind and the only one that did
-        // not offer them.
         format: (v, r) => (v
           ? openable(fmtNum(v, 0), () => breakdown(r, month, 'absent'))
-          : h('span.muted', '—')),
-      },
-      {
-        key: 'daysLeave',
-        label: 'On leave',
-        align: 'right',
-        format: (v, r) => (v
-          ? openable(fmtNum(v, 1), () => breakdown(r, month, 'leave'))
           : h('span.muted', '—')),
       },
       {
@@ -372,14 +364,16 @@ function monthCard(review, month, signs, reload) {
     ], review.rows, { empty: 'Nobody was rostered or worked in this month.' }),
 
     h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
-      'Every figure on a row can be pressed to see the days behind it. Over and under are counted '
-      + 'as whole days, never hours: an extra day counts only past six hours worked, and a shortfall '
-      + 'counts only when a whole shift was missed '
-      + 'and a supervisor ruled on it — so an absence nobody has settled reads as "not yet" rather '
-      + 'than as a day owed, and the count beside it is how many are waiting. '
-      + 'Rostered is every day the rota asked for, including days that turned out to be leave or a '
-      + 'public holiday. Worked counts a short day as a half and counts a day nobody rostered, so '
-      + 'the columns do not always sum to Rostered; where they cannot, the row says why. '
+      'Every figure on a row can be pressed to see the days behind it. '
+      + 'Over / under is Worked plus On leave, less Calendar — so a row that comes to nothing is '
+      + 'somebody who gave the month exactly what it asked for. '
+      + 'Calendar is the working days the month held: Monday to Friday, less any public holiday '
+      + 'falling on one. It is the same for everybody, because whoever is rostered at the weekend '
+      + 'takes their rest days midweek and the quota comes to the same thing over a month. '
+      + 'Worked counts days clocked in and out of, whole days only — a tap in with no tap out is '
+      + 'not a day worked, it is a day somebody still has to look at, and the count beside the '
+      + 'figure says how many are waiting. Rostered is what the rota asked for and is there for '
+      + 'comparison; it does not enter the arithmetic. '
       + 'Signing off moves days on and off the leave balance, and the balances above include '
       + 'every month already signed.'),
   );
@@ -421,17 +415,19 @@ function breakdown(row, month, which) {
     under: 'Whole shifts missed and confirmed',
     absent: 'Days missed',
     leave: 'Days on leave',
+    calendar: 'Working days in the month',
   };
 
   const pick = {
     rostered: (d) => d.scheduled,
-    worked: (d) => d.credit > 0,
+    worked: (d) => d.worked,
     over: (d) => d.counts === 'over',
     under: (d) => d.counts === 'under',
     // Every missed day, whether or not anybody has ruled on it — which is the
     // whole reason somebody presses this figure rather than the under one.
     absent: (d) => d.credit === 0 && ['absent', 'missing_in', 'missing_out'].includes(d.status),
-    leave: (d) => d.status === 'leave',
+    leave: (d) => d.onLeave,
+    calendar: (d) => d.quota,
   }[which];
 
   const days = (row.days ?? []).filter(pick);
@@ -443,20 +439,25 @@ function breakdown(row, month, which) {
       h('p.muted', `${monthLabel(month)} — ${days.length} day${days.length === 1 ? '' : 's'}`),
       which === 'over'
         ? h('p.muted', { style: { fontSize: '.85rem' } },
-          'A day the rota did not ask for, where more than six hours were actually worked. '
-          + 'Shorter days are not counted: two hours covering a gap is a favour, not a day off '
-          + 'in lieu.')
+          'A day given that nothing was expected of — worked at a weekend, or on a public '
+          + 'holiday, or spent on leave on a day that was not a working day anyway.')
         : null,
       which === 'under'
         ? h('p.muted', { style: { fontSize: '.85rem' } },
-          'A whole rostered shift missed, and only once somebody has ruled on it. A part-day is '
-          + 'never an under, and an absence nobody has confirmed may yet be a forgotten tap.')
+          'A working day the month expected and did not get: nothing recorded at all, or a tap '
+          + 'in with no tap out. Settling one does not remove it — it explains it.')
         : null,
       which === 'absent'
         ? h('p.muted', { style: { fontSize: '.85rem' } },
-          'Every day missed, settled or not. The ones with nobody against them have not been '
-          + 'ruled on yet, so they count here and not against anybody’s leave — settle them '
-          + 'on the person’s own record or from Today, and they will.')
+          'Every day missed, settled or not. A day with nobody against it has not been ruled on '
+          + 'yet — it still counts in the over / under, because a working day nobody delivered '
+          + 'is a working day nobody delivered, but somebody should say what happened.')
+        : null,
+      which === 'calendar'
+        ? h('p.muted', { style: { fontSize: '.85rem' } },
+          'Monday to Friday, less any public holiday falling on one. The same for everybody: '
+          + 'whoever is rostered at the weekend takes their rest days midweek, so over a month '
+          + 'the quota comes to the same thing.')
         : null,
       days.length
         ? table([

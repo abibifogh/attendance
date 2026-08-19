@@ -474,6 +474,41 @@ is still not the same state as one nobody has looked at.
 Days charged or given back move the leave balance, and the balances on the same
 screen include every month already signed.
 
+
+**Over and under is `Worked + On leave − Calendar`**, and the five columns
+reconcile.
+
+| Column | Counts |
+|---|---|
+| **Calendar** | The working days the month held — Monday to Friday, less any public holiday falling on one |
+| **Rostered** | What the rota asked of them. There for comparison; it does not enter the arithmetic |
+| **Worked** | Days clocked in *and* out of. Whole days only |
+| **On leave** | Days on approved leave |
+| **Over / under** | `Worked + On leave − Calendar`, and what the sign-off proposes |
+
+Calendar is the same figure for everybody, deliberately. Whoever is rostered at
+the weekend takes their rest days midweek, so over a month the quota comes to
+the same thing — and one figure everybody is measured against is a figure
+everybody can check.
+
+This replaced a narrower rule that counted an extra day only past six hours on
+an unrostered day, and a missed day only once a supervisor had ruled on it. That
+was defensible and it was also unusable: a property that has never got round to
+settling its absences read "square" every single month, which is the one thing
+it was not. An absence now counts whether or not anybody has settled it — a
+working day nobody delivered is a working day nobody delivered — and the count
+beside the figure says how many are still waiting on somebody to say what
+happened.
+
+Two things it deliberately does not do. A short day counts as a day, because it
+was clocked in and out of and the column answers "did they turn up and finish";
+the credited half-day figure the reports and the export use is untouched. And
+somebody the rota never asked anything of — a starter whose first week is next
+week, somebody who has left — is not shown as owing the month, though days they
+did work still count in their favour.
+
+Every figure on a row opens the days behind it.
+
 ### Leave
 
 Requests, approvals and balances on one screen, because the question is never

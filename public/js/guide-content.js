@@ -277,6 +277,31 @@ export const GUIDE = [
         + 'does not read as a fortnight of zero.' },
       { note: 'Entitlement is set under Setup → Rules and starts at the statutory fifteen '
         + 'working days after a year’s service (Labour Act 2003, s.20).' },
+
+      { sub: 'The month, day for day' },
+      { p: 'Five figures per person, and they reconcile: over / under is Worked plus On leave, '
+        + 'less Calendar. A row that comes to nothing is somebody who gave the month exactly '
+        + 'what it asked for.' },
+      { table: {
+        head: ['Column', 'What it counts'],
+        rows: [
+          ['Calendar', 'The working days the month held — Monday to Friday, less any public holiday falling on one.'],
+          ['Rostered', 'What the rota actually asked of them. There for comparison; it does not enter the arithmetic.'],
+          ['Worked', 'Days clocked in and out of. Whole days only — a tap in with no tap out is not a day worked.'],
+          ['On leave', 'Days on approved leave.'],
+          ['Over / under', 'Worked plus On leave, less Calendar. This is the figure the sign-off proposes.'],
+        ],
+      } },
+      { p: 'Calendar is the same for everybody on purpose. Whoever is rostered at the weekend '
+        + 'takes their rest days midweek, so over a month the quota comes to the same thing — '
+        + 'and one figure everybody is measured against is a figure everybody can check.' },
+      { note: 'Every figure on a row can be pressed to see the days behind it. An absence '
+        + 'counts whether or not anybody has settled it — a working day nobody delivered is a '
+        + 'working day nobody delivered — and the count beside the over / under says how many '
+        + 'are still waiting on a supervisor to say what happened.' },
+      { warn: 'Somebody the rota never asked for anything of — a starter whose first week is '
+        + 'next week, somebody who has left — is not shown as owing the month. Days they did '
+        + 'work still count in their favour.' },
     ],
   },
 

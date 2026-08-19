@@ -3,7 +3,7 @@ import {
 } from '../lib/http.js';
 import {
   colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysIn,
-  dayCredit, loadDataset, overUnder, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes,
+  dayCredit, dayLedger, loadDataset, overUnder, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes,
   weekCountOf,
 } from '../lib/attendance.js';
 import {
@@ -2169,7 +2169,7 @@ export async function periodReview(ctx) {
 
     if (!onlyId && !totals.scheduled && !totals.daysWorked && !overlapping.length) continue;
 
-    const oc = overUnder(days, { overMinutes });
+    const oc = overUnder(days, { holidays: ds.holidayBy, expected: totals.scheduled > 0 });
     const counted = new Map([
       ...oc.overs.map((o) => [o.day, 'over']),
       ...oc.unders.map((u) => [u.day, 'under']),
@@ -2192,37 +2192,44 @@ export async function periodReview(ctx) {
       label: labelFor(r, ds.reasonBy),
       resolvedBy: r.resolved_by ?? null,
       counts: counted.get(r.day) ?? null,
+      // The two sides of the ledger, per day, so any subset of them adds up to
+      // the same answer as the whole month.
+      ...dayLedger(r, { holidays: ds.holidayBy }),
+      // `credit` above is the half-a-day-for-a-short-shift figure the reports
+      // use, and stays what it was.
+      credit: dayCredit(r, {
+        shift: r.shift_id ? ds.shiftById.get(r.shift_id) ?? null : null,
+        reason: r.reason_code ? ds.reasonBy.get(r.reason_code) ?? null : null,
+      }),
     }));
 
     rows.push({
       staff: {
         id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department,
       },
+      // The five figures the month is read across, and they reconcile:
+      // over/under is worked plus leave, less the working days expected.
+      calendarDays: oc.quota,
       scheduledDays: totals.scheduled,
-      workedDays: totals.daysWorked,
+      // Days actually clocked in and out of. Not the credited figure the rest
+      // of the app uses — no halves for a short day, no crediting a reason
+      // that counts as worked — because this column answers "did they turn up
+      // and finish" and nothing else.
+      workedDays: detail.filter((d) => d.worked).length,
+      // Kept under its old name for the reports and the export, which are
+      // about hours delivered rather than days owed.
+      creditedDays: totals.daysWorked,
       overDays: oc.overDays,
       underDays: oc.underDays,
       difference: oc.difference,
       daysAbsent: totals.daysAbsent,
-      daysLeave: totals.daysLeave,
+      daysLeave: detail.filter((d) => d.onLeave).length,
       openCount: totals.openCount,
 
-      // The three reasons the row does not add up, sent so the screen can say
-      // so rather than leaving somebody to work it out from five numbers that
-      // look like they should sum and do not.
-      //
-      // Absences nobody has ruled on are the important one. A missed shift only
-      // counts against somebody once a person has said it was missed — which is
-      // right, because the alternative is docking leave for a day nobody
-      // checked — but it means a month full of unconfirmed absences reads as
-      // "square", and square is the one thing it is not.
-      unsettledAbsences: detail.filter((d) => d.credit === 0 && !d.resolvedBy
-        && ABSENT_ON_A_ROW.has(d.status)).length,
-      // Worked counts a short day as a half, so Worked + Absent + Leave falls
-      // short of Rostered by exactly the halves.
-      partDays: detail.filter((d) => d.credit > 0 && d.credit < 1).length,
-      // And counts a day nobody rostered, so it can also overshoot.
-      unrosteredDays: detail.filter((d) => d.status === 'unscheduled').length,
+      // Still waiting on a supervisor. It no longer changes the arithmetic —
+      // a missed working day counts whether or not anybody has been round to
+      // rule on it — but it is what somebody would go and do about the number.
+      unsettledAbsences: detail.filter((d) => !d.owed && d.quota && !d.resolvedBy).length,
 
       days: detail,
       decision: exact && presentDecision(exact),
@@ -2246,15 +2253,6 @@ export async function periodReview(ctx) {
     reviewed: rows.filter((r) => r.decision).length,
   });
 }
-
-/**
- * The statuses that read as a missed day on a review row.
- *
- * The same set `overUnder` would count against somebody, minus its extra
- * condition that a human has ruled on it — because the whole point here is to
- * count the ones nobody has.
- */
-const ABSENT_ON_A_ROW = new Set(['absent', 'missing_in', 'missing_out']);
 
 function presentDecision(row) {
   return {
@@ -2328,9 +2326,7 @@ export async function decidePeriod(ctx) {
   const ds = await loadDataset(ctx.db, { from, to });
   const days = daysFor(ds, staffId, from, to);
   const totals = summarise(days, { shifts: ds.shiftById, reasons: ds.reasonBy });
-  const oc = overUnder(days, {
-    overMinutes: Math.max(0, Number(ds.settings.att_over_minutes) || 360),
-  });
+  const oc = overUnder(days, { holidays: ds.holidayBy, expected: totals.scheduled > 0 });
 
   await ctx.db.prepare(
     `INSERT INTO att_period_review

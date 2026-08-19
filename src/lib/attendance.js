@@ -1153,37 +1153,100 @@ export function leaveDaysIn({ from, to, staffId, ds, halfDay = null }) {
  * The difference is therefore always a whole number, and every day behind it
  * can be named — which is what makes it arguable rather than merely asserted.
  */
-export function overUnder(records, { overMinutes = 360 } = {}) {
+/**
+ * A working day, for the purpose of what somebody owes or is owed.
+ *
+ * Monday to Friday, less public holidays that fall on one. The property runs
+ * seven days a week and plenty of people are rostered on a Saturday — but they
+ * have their rest days midweek, so the quota over a month comes to the same
+ * thing, and one figure everybody is measured against is a figure everybody can
+ * check. A holiday on a Saturday takes nothing off it, because it was not a
+ * working day to begin with.
+ */
+export function isWorkingDay(day, holidays = null) {
+  // `dow` counts from Monday, so Saturday is 5 and Sunday is 6.
+  const weekday = dow(day);
+  if (weekday >= 5) return false;
+  if (!holidays) return true;
+  return !(holidays.has ? holidays.has(day) : holidays[day]);
+}
+
+/**
+ * What one day is worth on each side of the ledger.
+ *
+ * `credit` is a day the person delivered: one they actually clocked in and out
+ * of, or one they were on leave for. `quota` is a day the property expected of
+ * them. The difference between the two sums is the whole of the over-or-under,
+ * and keeping it per day is what lets a sign-off cover three days out of a
+ * fortnight and still come to the right number.
+ */
+export function dayLedger(record, { holidays = null } = {}) {
+  const worked = Boolean(record.first_in && record.last_out);
+  const onLeave = record.status === 'leave';
+  return {
+    // Named `owed` rather than `credit` on purpose: `credit` already means the
+    // half-a-day-for-a-short-shift figure everywhere else in this file, and two
+    // things called credit that differ on a five-hour Wednesday is a bug
+    // waiting to be written.
+    owed: worked || onLeave ? 1 : 0,
+    quota: isWorkingDay(record.day, holidays) ? 1 : 0,
+    worked,
+    onLeave,
+  };
+}
+
+/**
+ * Days owed, and days owing.
+ *
+ * `worked + on leave − working days in the period`, per day and then summed.
+ *
+ * It replaced a narrower rule that counted an extra day only past six hours on
+ * an unrostered day, and a missed day only once a supervisor had ruled on it.
+ * That was defensible and it was also unusable: a property that has never got
+ * round to settling its absences read "square" every single month, which is
+ * the one thing it was not. This asks a simpler question — how many days did
+ * we get, against how many we expected — and answers it the same way whether
+ * anybody has been round to settle anything.
+ *
+ * A day is worked when there is a clock-in *and* a clock-out, which includes
+ * the times a supervisor supplied where the terminal missed them. A tap in with
+ * no tap out is not a day worked; it is a day somebody still has to look at.
+ */
+export function overUnder(records, { holidays = null, expected = true } = {}) {
   const overs = [];
   const unders = [];
+  let delivered = 0;
+  let quota = 0;
 
   for (const record of records ?? []) {
-    const worked = Number(record.worked_minutes || 0);
+    const led = dayLedger(record, { holidays });
+    delivered += led.owed;
+    // `expected` is false for somebody the rota did not ask for at all in this
+    // period — a new starter whose first week is next week, somebody who has
+    // left, a casual with nothing booked. The month's working days are not a
+    // debt they owe: they were never asked. Anything they *did* work still
+    // counts, which is the right way round.
+    quota += expected ? led.quota : 0;
 
-    // An extra day, long enough to be a day.
-    if (!record.scheduled && worked > overMinutes) {
+    // Kept for the screens that list the days behind the figure. An extra day
+    // is one delivered that nothing was expected of; a missed one is the
+    // reverse.
+    if (led.owed && !(expected && led.quota)) {
       overs.push({
         day: record.day,
-        minutes: worked,
-        why: 'Worked a day the rota did not ask for',
+        minutes: record.worked_minutes || 0,
+        why: led.onLeave ? 'On leave on a day off' : 'Worked a day that was not a working day',
       });
-      continue;
     }
-
-    if (!record.scheduled) continue;
-
-    // A whole shift missed. A part-day is never an under, however short.
-    if (worked > 0) continue;
-    if (!ABSENT_STATUSES.has(record.status) && record.reason_code !== 'absent') continue;
-
-    // And only once a person has said so.
-    if (!record.resolved_by) continue;
-
-    unders.push({
-      day: record.day,
-      minutes: 0,
-      why: record.resolved_note || 'Whole shift missed, confirmed',
-    });
+    if (!led.owed && led.quota && expected) {
+      unders.push({
+        day: record.day,
+        minutes: record.worked_minutes || 0,
+        why: record.resolved_note || (record.first_in && !record.last_out
+          ? 'Clocked in and never out'
+          : 'Nothing recorded on a working day'),
+      });
+    }
   }
 
   return {
@@ -1191,7 +1254,9 @@ export function overUnder(records, { overMinutes = 360 } = {}) {
     unders,
     overDays: overs.length,
     underDays: unders.length,
-    difference: overs.length - unders.length,
+    delivered,
+    quota,
+    difference: delivered - quota,
   };
 }
 
