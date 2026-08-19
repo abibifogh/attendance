@@ -60,7 +60,10 @@ export const ROUTES = [
   // corrected. The leave balance is stripped from the answer for anybody
   // without the reports permission — see `staffReport`.
   ['GET', '/api/att/staff/:id/report', ['att_reports', 'att_signoff'], att.staffReport],
-  ['GET', '/api/att/overview', 'att_reports', att.overview],
+  // The rota planner reads this month before building the next one. What they
+  // must not see — how much leave anybody has left — is taken out of the
+  // answer rather than left to the screen to hide.
+  ['GET', '/api/att/overview', ['att_reports', 'att_rota'], att.overview],
   ['GET', '/api/att/export', 'att_reports', att.exportCsv],
   // The morning list, downloaded. Everything in it is already on the screen
   // this is offered from, so it needs that screen's permission and not the

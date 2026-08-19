@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { navigate, replaceParams } from '../app.js';
+import { can, navigate, replaceParams } from '../app.js';
 import {
   fmtDay, fmtDayShort, fmtNum, h, monthOf, mount, shiftDay, shiftMonth, todayISO,
 } from '../util.js';
@@ -181,7 +181,10 @@ export async function renderAttOverview(params) {
       subtitle: `${data.rows.length} people · ${fmtDay(data.from)} to ${fmtDay(data.to)}`,
       footer: PRINT_FOOTER,
     }),
-    exportButton(api.attExportUrl(data.from, data.to), 'Export month'),
+    // The export carries the balances, so it stays behind the permission that
+    // may see them rather than handing a planner a file with the column the
+    // screen just took out.
+    can('att_reports') ? exportButton(api.attExportUrl(data.from, data.to), 'Export month') : null,
   );
 
   if (!data.rows.length) {
@@ -235,15 +238,22 @@ export async function renderAttOverview(params) {
         { key: 'late', label: 'Late', align: 'right', format: (v, r) => (r.totals.lateCount ? h('span', { style: { color: 'var(--warn)' } }, fmtNum(r.totals.lateCount, 0)) : h('span.muted', '—')) },
         { key: 'absent', label: 'Absent', align: 'right', format: (v, r) => (r.totals.daysAbsent ? h('span', { style: { color: 'var(--bad)' } }, fmtNum(r.totals.daysAbsent, 0)) : h('span.muted', '—')) },
         { key: 'leaveTaken', label: 'Leave taken', align: 'right', format: (v, r) => daysCell(r.totals.daysLeave) },
-        { key: 'leaveLeft', label: 'Leave left', align: 'right', format: (v, r) => h('span', { style: { color: r.leave.remaining <= 0 ? 'var(--bad)' : 'var(--good)' } }, fmtNum(r.leave.remaining, 1)) },
+        // Leave *taken* is what happened this month and belongs to the rota.
+        // Leave *left* is a balance, and whoever builds the rota is
+        // deliberately never shown it — the server does not send it to them,
+        // so there is nothing here to draw.
+        data.showsLeave
+          ? { key: 'leaveLeft', label: 'Leave left', align: 'right', format: (v, r) => h('span', { style: { color: r.leave.remaining <= 0 ? 'var(--bad)' : 'var(--good)' } }, fmtNum(r.leave.remaining, 1)) }
+          : null,
         { key: 'rate', label: 'Attendance', align: 'right', format: (v, r) => (r.totals.attendanceRate == null ? h('span.muted', '—') : `${fmtNum(r.totals.attendanceRate, 0)}%`) },
-      ], data.rows, {
+      ].filter(Boolean), data.rows, {
         groupBy: (r) => r.staff.department,
         empty: 'Nothing recorded.',
       })),
     h('p.muted', { style: { fontSize: '.82rem' } },
       'Days worked counts a full day at or above the shift\'s full-day threshold and a half day above the '
-      + 'half-day threshold, both set per shift in Attendance setup. Leave left is against the current leave year.'),
+      + 'half-day threshold, both set per shift in Attendance setup.'
+      + (data.showsLeave ? ' Leave left is against the current leave year.' : '')),
   );
 
   return host;

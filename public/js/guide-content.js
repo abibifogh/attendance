@@ -317,9 +317,14 @@ export const GUIDE = [
   {
     key: 'reports',
     title: 'Reports and the wages',
-    permission: 'att_reports',
+    permission: ['att_reports', 'att_rota'],
     lede: 'Days worked, hours, lateness, leave — per person, in a form you can hand over.',
     blocks: [
+      { note: 'If you build the rota, the Month tab is open to you — you need to know who was '
+        + 'absent and who is over their hours before you build the next one — but the Leave '
+        + 'left column is not there, and the export is not offered. A rota built around who is '
+        + 'running out of days is a rota built around the wrong thing.' },
+
       { steps: [
         'Month. Choose the month that has just ended.',
         'Check the "to confirm" count is zero. If it is not, the figures are provisional — tell '
@@ -366,9 +371,11 @@ export const GUIDE = [
         + 'for one press to do that — including for the days nobody has looked at yet.' },
 
       { sub: 'Clearing the easy ones in one press' },
-      { p: 'The filter above the list has three settings: everybody, only the people with '
-        + 'something wrong, and only the people with nothing wrong. Above the list sits a count '
-        + 'of every day with nothing wrong with it and a single button that signs all of them.' },
+      { p: 'The filter above the list has three settings — all, with issues, clean — and it '
+        + 'narrows by day rather than by person: somebody with four good days and one '
+        + 'unexplained Thursday shows their four under "clean" and the Thursday under "with '
+        + 'issues". Above the list sits a count of every clean day and one button that signs '
+        + 'all of them.' },
       { p: 'It shows you the list first. Every person, every day, each one tickable, so '
         + 'anything you would rather look at yourself comes back out before anything is '
         + 'signed — a button that signs ninety-six days on one press has to be able to say '

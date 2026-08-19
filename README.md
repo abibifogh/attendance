@@ -1013,7 +1013,12 @@ Administrator — and any individual can be adjusted off their role's defaults.
 
 **Rota planner** is the narrowest of them: builds next week's rota, sets standing
 patterns and rotations, and puts leave in for people — where it waits for
-somebody else to approve it. They cannot grant leave (including their own),
+somebody else to approve it. They also read the **Month** tab, because knowing
+who was absent and who is over their hours is how next week's rota gets built —
+but the *Leave left* column is not on it and the export is not offered them. The
+column is not hidden by the screen: `overview` does not compute a balance for
+anybody without the reports permission, so opening the endpoint directly returns
+rows with nothing where it would have been. They cannot grant leave (including their own),
 cannot settle a missing clock-out, and cannot see how much leave anybody has
 left. They *can* put a wrong clock time right — see below — because they are the
 people who notice. That last one is the point of the role: whoever draws up the

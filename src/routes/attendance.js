@@ -832,10 +832,21 @@ export async function overview(ctx) {
   const from = bounds?.from ?? `${today.slice(0, 7)}-01`;
   const to = bounds?.to ?? today;
 
+  // Whoever builds the rota can read this month — they need to know who has
+  // been absent and who is over their hours before they build the next one —
+  // but not how much leave anybody has left. A rota built around who is
+  // running out of days is a rota built around the wrong thing, and that has
+  // been the point of the role since it existed.
+  //
+  // Stripped here rather than on the screen. The screen hiding a column is a
+  // courtesy; this is the gate, and a planner opening the endpoint directly
+  // must not be handed the number the whole role exists to withhold.
+  const showsLeave = allows('att_reports', ctx.session.permissions);
+
   const [ds, yearByStaff, signedBy] = await Promise.all([
     loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) }),
-    yearToDateAll(ctx.db, `${to.slice(0, 4)}-01-01`, to),
-    signedMonths(ctx.db),
+    showsLeave ? yearToDateAll(ctx.db, `${to.slice(0, 4)}-01-01`, to) : new Map(),
+    showsLeave ? signedMonths(ctx.db) : new Map(),
   ]);
   const span = rangeDays(from, to);
   const rows = [];
@@ -850,20 +861,22 @@ export async function overview(ctx) {
         id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department,
       },
       totals: summarise(records, { shifts: ds.shiftById, reasons: ds.reasonBy }),
-      leave: leaveBalance({
-        staff,
-        adjustments: signedBy.get(staff.id) ?? [],
-        records: yearRecords,
-        requests: ds.requestsByStaff.get(staff.id) ?? [],
-        settings: ds.settings,
-        asOf: to,
-        reasons: ds.reasonBy,
-      }),
+      leave: showsLeave
+        ? leaveBalance({
+          staff,
+          adjustments: signedBy.get(staff.id) ?? [],
+          records: yearRecords,
+          requests: ds.requestsByStaff.get(staff.id) ?? [],
+          settings: ds.settings,
+          asOf: to,
+          reasons: ds.reasonBy,
+        })
+        : null,
     });
   }
 
   rows.sort((a, b) => a.staff.name.localeCompare(b.staff.name));
-  return json({ from, to, month: from.slice(0, 7), rows });
+  return json({ from, to, month: from.slice(0, 7), rows, showsLeave });
 }
 
 /** The same figures, as a file, for whoever wants them in a spreadsheet. */

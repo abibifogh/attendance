@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import {
   copyRoster, day as dayRoute, deviceConfig, getRoster, importShifts, ingest,
-  balances, decidePeriod, periodReview, pushEvents, resolveDay, savePattern,
+  balances, decidePeriod, overview, periodReview, pushEvents, resolveDay, savePattern,
   setCalendar, shiftSuggestions, staffReport, undoPeriod,
 } from '../src/routes/attendance.js';
 import { cleanDepartments, createStaff, listStaff } from '../src/routes/attendance-setup.js';
@@ -64,13 +64,13 @@ const SESSION = {
   permissions: ['att_view', 'att_reports', 'att_manage', 'att_setup'],
 };
 
-function ctx(db, { body = null, query = '' } = {}) {
+function ctx(db, { body = null, query = '', session = SESSION } = {}) {
   const url = new URL(`https://example.test/api/att/x${query}`);
   return {
     db,
     env: {},
     url,
-    session: SESSION,
+    session,
     executionContext: null,
     request: new Request(url, body
       ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
@@ -1979,4 +1979,38 @@ test('a figure nobody could mean is refused', async () => {
     () => setCalendar(ctx(db, { body: { staffId: 1, month: 'March', days: 10 } })),
     /not a month/,
   );
+});
+
+test('the month comes back without the balance for whoever may not see it', async () => {
+  // The rota planner reads this before building the next rota — who was
+  // absent, who is over their hours — but never how much leave anybody has
+  // left. Stripped from the answer rather than hidden by the screen: a planner
+  // opening the endpoint directly must not be handed the number the whole role
+  // exists to withhold.
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02', '2026-03-03']);
+
+  const planner = {
+    user: { id: 9, name: 'Yaa', role: 'planner' },
+    permissions: ['att_view', 'att_rota', 'att_times'],
+  };
+
+  const full = await (await overview(ctx(db, { query: '?month=2026-03' }))).json();
+  assert.equal(full.showsLeave, true);
+  assert.ok(full.rows[0].leave, 'a manager gets the balance');
+  assert.ok(Number.isFinite(full.rows[0].leave.remaining));
+
+  const theirs = await (await overview(ctx(db, { query: '?month=2026-03', session: planner }))).json();
+  assert.equal(theirs.showsLeave, false);
+  assert.equal(theirs.rows[0].leave, null, 'and a planner gets nothing where it would have been');
+
+  // Everything they do need is still there.
+  assert.equal(theirs.rows.length, full.rows.length);
+  assert.equal(theirs.rows[0].totals.daysWorked, full.rows[0].totals.daysWorked);
+  assert.equal(theirs.rows[0].totals.daysAbsent, full.rows[0].totals.daysAbsent);
+  assert.equal(theirs.rows[0].totals.daysLeave, full.rows[0].totals.daysLeave,
+    'including leave taken, which is what happened rather than what is left');
+
+  const asJson = JSON.stringify(theirs);
+  assert.ok(!asJson.includes('remaining'), 'the word does not appear anywhere in the answer');
 });

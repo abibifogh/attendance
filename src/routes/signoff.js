@@ -200,36 +200,43 @@ export async function outstanding(ctx) {
 
     if (!days.length) continue;
 
-    const issues = issuesInPeriod(days);
-    if (withIssuesOnly && !issues.total) continue;
-    // A person with nothing wrong anywhere in the window. Counted across the
-    // whole of their period rather than per day, because this filter answers
-    // "who can I clear without thinking about it" and one absence on a Tuesday
-    // is exactly the thing that makes somebody worth thinking about.
-    if (cleanOnly && issues.total) continue;
+    // Filtered by day, not by person, because everything else on this screen
+    // is. A cook with four clean days and one unexplained Thursday used to
+    // vanish from "clean" entirely — their four good days only ever appeared
+    // under "with issues", beside the one bad one, with a button offering to
+    // sign them. Which is the right offer and completely the wrong place.
+    //
+    // A day waiting on a clock-time change counts as not clean: it looks
+    // settled and its figures are about to move.
+    const clean = (d) => !d.issues.length && !d.pendingTimes;
+    const wanted = withIssuesOnly ? days.filter((d) => !clean(d))
+      : cleanOnly ? days.filter(clean)
+        : days;
+    if (!wanted.length) continue;
+
+    const issues = issuesInPeriod(wanted);
 
     const totals = summarise(records, { shifts: ds.shiftById, reasons: ds.reasonBy });
-
     rows.push({
       staff: {
         id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department,
       },
-      days,
-      unsignedCount: days.length,
-      first: days[0].day,
-      last: days[days.length - 1].day,
+      days: wanted,
+      unsignedCount: wanted.length,
+      first: wanted[0].day,
+      last: wanted[wanted.length - 1].day,
       issues,
       scheduledDays: totals.scheduled,
       workedDays: totals.daysWorked,
       difference: oc.difference,
-      summary: describePeriod({ name: staff.name, unsigned: days, issues }),
+      summary: describePeriod({ name: staff.name, unsigned: wanted, issues }),
       // A question already asked about any of these days. It keeps the screen
       // from inviting somebody to raise it twice, and — more usefully — takes
       // the period out of the working list altogether: a period you have asked
       // about is not yours to do anything with until somebody answers, and
       // leaving it among the ones that are is how a list of four jobs reads as
       // a list of nine.
-      query: queryOn(queriesBy.get(staff.id), days),
+      query: queryOn(queriesBy.get(staff.id), wanted),
       signedSpans: mine.map((r) => ({
         from: r.from_day, to: r.to_day, kind: r.kind, by: r.decided_by,
         excluded: parseDays(r.excluded_days).length,

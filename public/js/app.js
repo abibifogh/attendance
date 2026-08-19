@@ -45,7 +45,10 @@ export const state = {
 const ROUTES = [
   { path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday },
   { path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek },
-  { path: 'att-overview', label: 'Month', permission: 'att_reports', render: renderAttOverview },
+  // The planner reads the month before building the next one. The one thing
+  // they may not see — how much leave anybody has left — comes out of the
+  // answer, not just off the screen.
+  { path: 'att-overview', label: 'Month', permission: ['att_reports', 'att_rota'], render: renderAttOverview },
   { path: 'att-rota', label: 'Rota', permission: 'att_rota', render: renderAttRota },
   { path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave },
   { path: 'signoff', label: 'Sign-off', permission: 'att_signoff', render: renderAttSignoff },
@@ -70,8 +73,18 @@ const ROUTES = [
 
 const root = document.getElementById('app');
 
+/**
+ * Does the signed-in person hold this?
+ *
+ * A list means "any one of these", exactly as the route table on the server
+ * reads it. The two have to agree: a screen the API would answer but the menu
+ * will not show is a screen nobody can reach, and one the menu shows but the
+ * API refuses is worse.
+ */
 export function can(permission) {
-  return !permission || state.permissions.includes(permission);
+  if (!permission) return true;
+  const needed = Array.isArray(permission) ? permission : [permission];
+  return needed.some((p) => state.permissions.includes(p));
 }
 
 function allowed(route) {

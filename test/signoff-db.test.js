@@ -681,9 +681,12 @@ test('an answer is visible to the person who asked, and still to nobody else', a
 // Clearing everything nothing is wrong with
 // ---------------------------------------------------------------------------
 
-test('the list can be narrowed to people with nothing wrong, and to people with something', async () => {
+test('the list narrows by day, not by person', async () => {
+  // A cook with four clean days and one unexplained Thursday used to vanish
+  // from "clean" entirely: their four good days appeared only under "with
+  // issues", beside the one bad one, with a button offering to sign them.
+  // Which is the right offer and completely the wrong place.
   const { raw, db } = await setup();
-  // A second person whose week is clean throughout.
   raw.prepare("INSERT INTO att_staff (id, employee_no, name, department, hired_on) VALUES (2, '1002', 'Clean Sheet', 'Kitchen', '2020-01-01')").run();
   for (const day of ['2026-06-01', '2026-06-02']) {
     raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id) VALUES (2, ?, 1)').run(day);
@@ -695,16 +698,40 @@ test('the list can be narrowed to people with nothing wrong, and to people with 
     }
   }
 
+  // Henry's week: Monday and Tuesday clean, Wednesday late, Thursday absent,
+  // Friday clean.
   const everybody = await read(await outstanding(ctx(db, { query: WEEK })));
   assert.deepEqual(everybody.rows.map((r) => r.staff.name).sort(), ['Clean Sheet', 'Henry Aryee']);
 
   const wrong = await read(await outstanding(ctx(db, { query: `${WEEK}&issues=1` })));
-  assert.deepEqual(wrong.rows.map((r) => r.staff.name), ['Henry Aryee']);
+  assert.deepEqual(wrong.rows.map((r) => r.staff.name), ['Henry Aryee'],
+    'the clean sheet has nothing wrong anywhere, so drops out entirely');
+  assert.deepEqual(wrong.rows[0].days.map((d) => d.day), ['2026-06-03', '2026-06-04'],
+    'and only his two bad days are shown, not his whole week');
 
   const clean = await read(await outstanding(ctx(db, { query: `${WEEK}&issues=0` })));
-  assert.deepEqual(clean.rows.map((r) => r.staff.name), ['Clean Sheet'],
-    'the question nobody could ask before: who can I clear without thinking about it');
+  assert.deepEqual(clean.rows.map((r) => r.staff.name).sort(), ['Clean Sheet', 'Henry Aryee'],
+    'and his three good days are here, where somebody looking to clear things will find them');
+  assert.deepEqual(
+    clean.rows.find((r) => r.staff.name === 'Henry Aryee').days.map((d) => d.day),
+    ['2026-06-01', '2026-06-02', '2026-06-05'],
+  );
 });
+
+test('a day waiting on a clock-time change is not a clean day to the filter either', async () => {
+  const { db } = await setup();
+  const { correctTimes } = await import('../src/routes/attendance.js');
+
+  await correctTimes(ctx(db, {
+    session: { ...PLANNER, permissions: [...PLANNER.permissions, 'att_times'] },
+    body: { staffId: 1, out: '18:30', reason: 'The function ran on' },
+  }), '2026-06-01');
+
+  const clean = await read(await outstanding(ctx(db, { query: `${WEEK}&issues=0` })));
+  assert.deepEqual(clean.rows[0].days.map((d) => d.day), ['2026-06-02', '2026-06-05'],
+    'it looks settled and its figures are about to move');
+});
+
 
 test('signing every clean day leaves the awkward ones behind', async () => {
   // What the one-press button does, per person, through the ordinary route.

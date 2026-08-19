@@ -77,10 +77,20 @@ test('a planner can put leave in but cannot grant it', () => {
 test('a planner cannot see what anybody has left', () => {
   // The whole reason this role exists.
   assert.equal(reaches('planner', 'GET', '/api/att/balances'), false);
-  assert.equal(reaches('planner', 'GET', '/api/att/overview'), false);
   assert.equal(reaches('planner', 'GET', '/api/att/export'), false);
   assert.equal(reaches('planner', 'GET', '/api/att/staff/:id/report'), false);
   assert.equal(reaches('planner', 'GET', '/api/att/week'), false);
+});
+
+test('a planner reads the month, and the month leaves the balance out', () => {
+  // They need to know who was absent and who is over their hours before
+  // building the next rota. What they must not see is taken out of the answer
+  // rather than left to the screen to hide, so the route being reachable is
+  // not the same as the number being readable — see attendance-db for that
+  // half of it.
+  assert.ok(reaches('planner', 'GET', '/api/att/overview'));
+  assert.equal(reaches('planner', 'GET', '/api/att/balances'), false,
+    'and the balances themselves stay where they were');
 });
 
 test('a planner does not settle days or change the setup', () => {
@@ -174,7 +184,6 @@ test('a planner given sign-off can close a period', () => {
 test('and still cannot see what anybody has left', () => {
   // The whole point of granting one without the other.
   assert.equal(reachesWith(plannerPlus, 'GET', '/api/att/balances'), false);
-  assert.equal(reachesWith(plannerPlus, 'GET', '/api/att/overview'), false);
   assert.equal(reachesWith(plannerPlus, 'GET', '/api/att/export'), false);
   assert.equal(reachesWith(plannerPlus, 'POST', '/api/att/leave/:id/decide'), false);
   assert.equal(reachesWith(plannerPlus, 'POST', '/api/att/days/:day/resolve'), false);
