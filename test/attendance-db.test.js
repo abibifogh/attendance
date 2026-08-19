@@ -1288,6 +1288,38 @@ test('signing a month off takes the agreed days off the leave balance', async ()
   assert.equal(b.available, b.entitlement + b.carryOver - 2, 'the charge moves the entitlement');
 });
 
+test('a month cannot be signed off over a question or a waiting clock change', async () => {
+  const { db, raw, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02', '2026-03-03']);
+
+  raw.prepare(
+    `INSERT INTO att_query (staff_id, from_day, to_day, days, reason, raised_by, status)
+     VALUES (1, '2026-03-04', '2026-03-04', ?, 'Nobody knows', 'Yaa (planner)', 'open')`,
+  ).run(JSON.stringify(['2026-03-04']));
+
+  await assert.rejects(
+    decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -2 } })),
+    /waiting on an answer/,
+    'the month covers the day that was asked about',
+  );
+
+  raw.prepare("UPDATE att_query SET status = 'withdrawn'").run();
+  raw.prepare(
+    `INSERT INTO att_time_edit (staff_id, day, now_in, now_out, reason, actor, status)
+     VALUES (1, '2026-03-05', '2026-03-05T08:00:00Z', null, 'Clock was down', 'Yaa', 'pending')`,
+  ).run();
+
+  await assert.rejects(
+    decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -2 } })),
+    /clock-time change is waiting/,
+  );
+
+  // Ruled on either way, and the month goes through.
+  raw.prepare("UPDATE att_time_edit SET status = 'rejected'").run();
+  await decidePeriod(ctx(db, { body: { staffId: 1, month: '2026-03', daysApplied: -2 } }));
+  assert.equal(raw.prepare('SELECT COUNT(*) c FROM att_period_review').get().c, 1);
+});
+
 test('a month can be let stand without moving anything', async () => {
   const { db, token } = await setup();
   await marchWorked(db, token, ['2026-03-02']);

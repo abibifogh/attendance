@@ -278,6 +278,71 @@ export async function outstanding(ctx) {
  * deliberately left out — so it stays outstanding, and can be signed on its
  * own later without the span refusing it.
  */
+/** A handful of dates in a sentence, without turning into a paragraph. */
+function nameDays(days) {
+  const list = [...days].sort();
+  if (list.length <= 3) return list.join(', ');
+  return `${list.slice(0, 3).join(', ')} and ${list.length - 3} more`;
+}
+
+/**
+ * The two reasons a day is not ready to be signed, however clean it looks.
+ *
+ * A question asked about a day is a day somebody has said out loud they do not
+ * understand. Signing it while the answer is still coming settles it against
+ * the very figures that were doubted, and quietly makes the question pointless
+ * — so the day waits until it is answered, or the person asking takes the
+ * question back.
+ *
+ * A clock-time change waiting on an administrator is the same problem wearing
+ * different clothes: somebody has already said the times on that day are
+ * wrong, and the correction, once approved, moves them. Signing first means
+ * signing a figure the app itself expects to change.
+ *
+ * Both are refused here rather than only hidden on the screen, because the
+ * screen is a courtesy and this is the gate. The one exemption is an
+ * administrator signing a period *as* the answer to the question about it —
+ * that is not slipping past the rule, that is the rule being satisfied.
+ */
+export async function refuseUnsettled(ctx, { staff, from, to, wanted }) {
+  const answering = Number(ctx.answeringQuery) || 0;
+
+  const [asked, pending] = await Promise.all([
+    ctx.db.prepare(
+      `SELECT id, days, reason, raised_by, addressed_name FROM att_query
+         WHERE staff_id = ?1 AND status = 'open' AND from_day <= ?3 AND to_day >= ?2`,
+    ).bind(staff.id, from, to).all().catch(() => ({ results: [] })),
+    ctx.db.prepare(
+      `SELECT day FROM att_time_edit
+         WHERE staff_id = ?1 AND status = 'pending' AND day BETWEEN ?2 AND ?3`,
+    ).bind(staff.id, from, to).all().catch(() => ({ results: [] })),
+  ]);
+
+  for (const query of asked.results ?? []) {
+    if (Number(query.id) === answering) continue;
+    const overlap = parseDays(query.days).filter((day) => wanted.has(day));
+    if (!overlap.length) continue;
+
+    const who = query.addressed_name ? ` to ${query.addressed_name}` : '';
+    throw badRequest(
+      `${staff.name}: ${nameDays(overlap)} ${overlap.length === 1 ? 'is' : 'are'} waiting on an `
+      + `answer to a question ${query.raised_by} put${who}. Leave ${overlap.length === 1 ? 'it' : 'them'} `
+      + 'out of this sign-off, or settle the question first.',
+    );
+  }
+
+  const waiting = [...new Set((pending.results ?? []).map((r) => r.day))]
+    .filter((day) => wanted.has(day));
+
+  if (waiting.length) {
+    throw badRequest(
+      `${staff.name}: a clock-time change is waiting on an administrator for `
+      + `${nameDays(waiting)}. Those figures are about to move — sign the day once the `
+      + 'change has been approved or turned down.',
+    );
+  }
+}
+
 export async function signDays(ctx) {
   const body = await readJson(ctx.request);
   const staffId = int(body.staffId, 'Staff', { required: true, min: 1 });
@@ -292,12 +357,15 @@ export async function signDays(ctx) {
 
   const from = chosen[0];
   const to = chosen[chosen.length - 1];
+  const wanted = new Set(chosen);
 
   const timezone = await timezoneOf(ctx.db);
   const today = todayIn(timezone);
   if (to >= today) {
     throw badRequest('A day that has not finished cannot be signed off. Leave today out of it.');
   }
+
+  await refuseUnsettled(ctx, { staff, from, to, wanted });
 
   // No two sign-offs may cover a day either of them actually signed. Compared
   // on the effective sets rather than the raw dates, so a month that left three
@@ -321,7 +389,6 @@ export async function signDays(ctx) {
   // decision is recorded against have to be the ones this app stands behind.
   const ds = await loadDataset(ctx.db, { from, to });
   const records = computeRange(ds, staffId, from, to);
-  const wanted = new Set(chosen);
   const included = records.filter((r) => wanted.has(r.day));
 
   const totals = summarise(included, { shifts: ds.shiftById, reasons: ds.reasonBy });
@@ -634,6 +701,29 @@ export async function listQueries(ctx) {
  *   `sign` — deal with it here. The days are signed off by the person
  *   answering, under their own name, and the query closes with the reason.
  */
+/**
+ * The bell, rung back at whoever asked.
+ *
+ * A question is a person waiting. Until now the answer went out to everybody
+ * who can sign a period off — so the one person who actually wanted it heard
+ * it alongside four colleagues who did not, and had no way of telling that the
+ * notice was theirs. Addressed to the asker by login where the question
+ * recorded one, and only falling back to the permission for questions raised
+ * before that was kept.
+ */
+async function tellTheAsker(ctx, query, { level, title, body }) {
+  await createNotice(ctx.db, {
+    kind: 'attendance.query_answered',
+    level,
+    title,
+    body,
+    link: '#/signoff?tab=queries',
+    actor: actorOf(ctx),
+    audience: 'att_signoff',
+    userId: query.raised_by_id ?? null,
+  });
+}
+
 export async function answerQuery(ctx, id) {
   const queryId = Number(id);
   const body = await readJson(ctx.request);
@@ -658,6 +748,11 @@ export async function answerQuery(ctx, id) {
   }
 
   if (action === 'comment') {
+    await tellTheAsker(ctx, query, {
+      level: 'info',
+      title: `${query.name}: a reply to your question`,
+      body: text.slice(0, 400),
+    });
     return json({ ok: true, status: query.status });
   }
 
@@ -666,14 +761,10 @@ export async function answerQuery(ctx, id) {
       "UPDATE att_query SET status = 'answered', outcome = 'returned' WHERE id = ?",
     ).bind(queryId).run();
 
-    await createNotice(ctx.db, {
-      kind: 'attendance.query_answered',
+    await tellTheAsker(ctx, query, {
       level: 'info',
       title: `${query.name}: your question has been answered`,
       body: text.slice(0, 400),
-      link: '#/signoff?tab=queries',
-      actor: actorOf(ctx),
-      audience: 'att_signoff',
     });
 
     await audit(ctx, 'attendance.query_direction', queryId, null);
@@ -686,6 +777,11 @@ export async function answerQuery(ctx, id) {
     const days = parseDays(query.days);
     const signed = await signDays({
       ...ctx,
+      // Signing a period is one of the three answers a question can have, so
+      // this one question does not stand in the way of it. Named by id, and
+      // set here rather than read off the request, so the exemption cannot be
+      // asked for by a browser.
+      answeringQuery: query.id,
       request: new Request('https://x/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -709,14 +805,10 @@ export async function answerQuery(ctx, id) {
       "INSERT INTO att_query_note (query_id, kind, body, author) VALUES (?1, 'decision', ?2, ?3)",
     ).bind(queryId, `Signed off — ${outcome.daysApplied} day(s) applied.`, actorOf(ctx)).run();
 
-    await createNotice(ctx.db, {
-      kind: 'attendance.query_answered',
+    await tellTheAsker(ctx, query, {
       level: 'good',
       title: `${query.name}: signed off for you`,
       body: `${query.from_day} to ${query.to_day} — ${outcome.daysApplied} day(s) applied.`,
-      link: '#/signoff?tab=queries',
-      actor: actorOf(ctx),
-      audience: 'att_signoff',
     });
 
     await audit(ctx, 'attendance.query_signed', queryId, outcome);
@@ -727,6 +819,12 @@ export async function answerQuery(ctx, id) {
     `UPDATE att_query SET status = 'resolved', outcome = 'no_action',
             closed_by = ?2, closed_at = datetime('now') WHERE id = ?1`,
   ).bind(queryId, actorOf(ctx)).run();
+
+  await tellTheAsker(ctx, query, {
+    level: 'info',
+    title: `${query.name}: your question has been closed`,
+    body: text ? text.slice(0, 400) : 'Closed with no change. The days are yours to sign off.',
+  });
 
   await audit(ctx, 'attendance.query_close', queryId, null);
   return json({ ok: true, status: 'resolved' });

@@ -235,6 +235,30 @@ async function openTab(params, range, reload) {
 const ISSUE_PILL = { open: 'bad', absent: 'bad', under: 'bad', over: 'warn', late: 'warn', early: 'warn', noshift: 'warn' };
 
 /**
+ * How each column of a person's days sorts, and what a day is worth when the
+ * column is empty.
+ *
+ * Sorting is per person, because the table is per person. Whoever is going
+ * down a card wants the two lates together, or the flagged days at the top,
+ * and neither of those is a question about anybody else's week.
+ *
+ * The keys are deliberately dull — a date string, minutes, a count. Nothing
+ * here reads a label off the screen and sorts by it, because "Absent" sorting
+ * before "Late" is alphabetical order pretending to be meaning.
+ */
+const SORTERS = {
+  day: (d) => d.day,
+  // Clocked-in time, with days nobody clocked at all pushed to the end rather
+  // than the beginning. An absence is not "earliest".
+  clocked: (d) => d.in || d.corrected_in || '~',
+  happened: (d) => `${d.status ?? ''}|${d.label ?? ''}`,
+  // Worst first when descending: how many flags, then whether any of them is
+  // one of the serious ones.
+  flags: (d) => `${String(d.issues.length).padStart(2, '0')}|`
+    + `${d.issues.some((k) => ISSUE_PILL[k] === 'bad') ? '1' : '0'}`,
+};
+
+/**
  * One person and the days of theirs that belong in this group.
  *
  * Stripped back to a heading and a table. The alert box that used to sit above
@@ -244,6 +268,18 @@ const ISSUE_PILL = { open: 'bad', absent: 'bad', under: 'bad', over: 'warn', lat
 function personCard(row, data, reload, group) {
   const chosen = new Set();
   const parked = group === 'asked';
+
+  // A day the app will refuse to sign, shown as unpickable rather than
+  // offered and then rejected. A clock-time change waiting on an
+  // administrator moves the very figures a sign-off would be recorded
+  // against, so the tick comes back once the change has been ruled on.
+  const lockedBecause = (day) => (day.pendingTimes
+    ? `A clock-time change is waiting on an administrator: ${day.pendingTimes.actor} asked `
+      + `for ${day.pendingTimes.now_in || '—'} → ${day.pendingTimes.now_out || '—'}. `
+      + 'This day can be signed once that has been approved or turned down.'
+    : day.query?.status === 'open'
+      ? `Waiting on an answer to ${day.query.raisedBy}'s question.`
+      : null);
 
   const signButton = h('button.btn-sm.btn-primary', {
     onclick: () => sign(row, chosen, reload),
@@ -257,47 +293,106 @@ function personCard(row, data, reload, group) {
       : 'Sign off';
   };
 
-  const rows = row.days.map((day) => h('tr',
-    h('td',
-      h('label.tickline', { style: { padding: 0 } },
-        h('input', {
-          type: 'checkbox',
-          disabled: parked,
-          onchange: (e) => {
-            if (e.target.checked) chosen.add(day.day); else chosen.delete(day.day);
-            refreshCount();
-          },
-        }),
-        h('span', fmtDay(day.day)))),
-    h('td', h('small.mono', `${day.in || '—'} → ${day.out || '—'}`),
-      day.shift ? h('small.muted', { style: { display: 'block' } }, day.shift) : null),
-    h('td', h('small', day.label),
-      // The question, on the day it is about rather than over the person.
-      day.query
-        ? h('small.muted', { style: { display: 'block' } },
-          `${day.query.status === 'answered' ? 'Answered' : 'Asked'}`
-          + `${day.query.addressedName ? ` of ${day.query.addressedName}` : ''}: ${day.query.reason}`)
-        : null),
-    h('td', day.issues.length
-      ? h('div.chip-row', day.issues.map((key) => {
-        const issue = data.issues.find((i) => i.key === key);
-        return h(`span.pill.${ISSUE_PILL[key] ?? ''}`, { title: issue?.detail ?? '' },
-          issue?.label ?? key);
-      }))
-      : h('span.muted', '—')),
-    h('td', data.canFixTimes && (day.issues.length || day.pendingTimes)
-      ? (day.pendingTimes
-        ? h('span.pill.warn', {
-          title: `${day.pendingTimes.actor} asked for ${day.pendingTimes.now_in || '—'} → `
-            + `${day.pendingTimes.now_out || '—'}: ${day.pendingTimes.reason ?? ''}`,
-        }, '⏳')
-        : h('button.btn-sm', {
-          title: 'Change the clock-in or clock-out',
-          onclick: () => fixTimes(row.staff, day, reload),
-        }, 'Times'))
-      : null),
-  ));
+  const body = h('tbody');
+  let sortBy = 'day';
+  let descending = false;
 
+  const dayRow = (day) => {
+    const locked = lockedBecause(day);
+    return h('tr', { class: locked ? 'day-locked' : '' },
+      h('td',
+        h('label.tickline', { style: { padding: 0 }, title: locked ?? '' },
+          h('input', {
+            type: 'checkbox',
+            disabled: parked || Boolean(locked),
+            checked: chosen.has(day.day),
+            onchange: (e) => {
+              if (e.target.checked) chosen.add(day.day); else chosen.delete(day.day);
+              refreshCount();
+            },
+          }),
+          h('span', fmtDay(day.day)))),
+      h('td', h('small.mono', `${day.in || '—'} → ${day.out || '—'}`),
+        day.shift ? h('small.muted', { style: { display: 'block' } }, day.shift) : null),
+      h('td', h('small', day.label),
+        // The question, on the day it is about rather than over the person.
+        day.query
+          ? h('small.muted', { style: { display: 'block' } },
+            `${day.query.status === 'answered' ? 'Answered' : 'Asked'}`
+            + `${day.query.addressedName ? ` of ${day.query.addressedName}` : ''}: ${day.query.reason}`)
+          : null),
+      h('td', day.issues.length
+        ? h('div.chip-row', day.issues.map((key) => {
+          const issue = data.issues.find((i) => i.key === key);
+          return h(`span.pill.${ISSUE_PILL[key] ?? ''}`, { title: issue?.detail ?? '' },
+            issue?.label ?? key);
+        }))
+        : h('span.muted', '—')),
+      h('td', data.canFixTimes && (day.issues.length || day.pendingTimes)
+        ? (day.pendingTimes
+          ? h('span.pill.warn', { title: locked }, '⏳')
+          : h('button.btn-sm', {
+            title: 'Change the clock-in or clock-out',
+            onclick: () => fixTimes(row.staff, day, reload),
+          }, 'Times'))
+        : null),
+    );
+  };
+
+  /** A header that sorts. Second press on the same one turns it round. */
+  const sortHead = (key, label, extra = null) => {
+    const on = sortBy === key;
+    const arrow = on ? (descending ? ' ▾' : ' ▴') : '';
+    return h('th', { class: on ? 'sorted' : '' },
+      h('div.th-head',
+        extra,
+        h(`button.th-sort${on ? '' : '.sort-off'}`, {
+          type: 'button',
+          title: `Sort by ${label.toLowerCase()}`,
+          'aria-label': `Sort by ${label.toLowerCase()}`,
+          onclick: () => {
+            if (sortBy === key) descending = !descending;
+            else { sortBy = key; descending = false; }
+            draw();
+          },
+        }, `${label}${arrow}`)));
+  };
+
+  const head = h('thead');
+
+  function draw() {
+    const key = SORTERS[sortBy] ?? SORTERS.day;
+    // Copied before sorting: the array belongs to the response, and the group
+    // above it counts the same days.
+    const days = [...row.days].sort((a, b) => {
+      const left = key(a);
+      const right = key(b);
+      if (left === right) return a.day < b.day ? -1 : 1;
+      return (left < right ? -1 : 1) * (descending ? -1 : 1);
+    });
+    mount(body, days.map(dayRow));
+    mount(head, h('tr',
+      sortHead('day', 'Day', parked
+        ? null
+        : h('input.th-tick', {
+          type: 'checkbox',
+          title: 'Tick every day that can be signed',
+          onchange: (e) => {
+            const on = e.target.checked;
+            for (const box of body.querySelectorAll('input[type=checkbox]:not(:disabled)')) {
+              box.checked = on;
+              box.dispatchEvent(new Event('change'));
+            }
+          },
+        })),
+      sortHead('clocked', 'Clocked'),
+      sortHead('happened', 'What happened'),
+      sortHead('flags', 'Flags'),
+      h('th', ''),
+    ));
+  }
+
+  draw();
   refreshCount();
 
   return card(row.staff.name, {
@@ -316,27 +411,7 @@ function personCard(row, data, reload, group) {
       parked ? null : signButton,
     ),
   },
-    h('div.table-wrap',
-      h('table',
-        h('thead', h('tr',
-          h('th',
-            parked
-              ? h('span', 'Day')
-              : h('label.tickline', { style: { padding: 0 }, title: 'Tick every day below' },
-                h('input', {
-                  type: 'checkbox',
-                  onchange: (e) => {
-                    const on = e.target.checked;
-                    for (const box of e.target.closest('table').querySelectorAll('tbody input[type=checkbox]')) {
-                      box.checked = on;
-                      box.dispatchEvent(new Event('change'));
-                    }
-                  },
-                }),
-                h('span', 'Day'))),
-          h('th', 'Clocked'), h('th', 'What happened'), h('th', 'Flags'), h('th', ''),
-        )),
-        h('tbody', rows))),
+    h('div.table-wrap', h('table', head, body)),
 
     row.signedSpans.length
       ? h('details', { style: { marginTop: '.5rem' } },

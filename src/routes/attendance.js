@@ -15,7 +15,8 @@ import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from 
 import { getPepper } from '../lib/auth.js';
 import { allows } from '../lib/permissions.js';
 import { createNotice } from '../lib/notices.js';
-import { parseDays } from '../lib/signoff.js';
+import { daysBetween, parseDays } from '../lib/signoff.js';
+import { refuseUnsettled } from './signoff.js';
 import { emailExceptions, pingExceptions } from '../lib/notify.js';
 import {
   addDays, diffDays, dow, isDay, isMonth, monthBounds, nowIn, rangeDays, startOfWeek, todayIn,
@@ -2416,6 +2417,15 @@ export async function decidePeriod(ctx) {
       + 'this one. Reopen that first — otherwise the same days would be charged twice.',
     );
   }
+
+  // The same two rules the day-at-a-time screen keeps: a period covering a day
+  // somebody has asked about, or a day whose clock times are waiting on an
+  // administrator, is a period settled against figures that are not settled.
+  // Enforced here as well because this route signs a whole month at once, and a
+  // rule with a way round it is a suggestion.
+  await refuseUnsettled(ctx, {
+    staff, from, to, wanted: new Set(daysBetween(from, to)),
+  });
 
   // Recomputed here rather than trusted from the browser: the figures a
   // decision is recorded against have to be the ones this app stands behind.

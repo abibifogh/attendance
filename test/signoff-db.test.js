@@ -387,11 +387,37 @@ test('an administrator can sign it off there and then', async () => {
   assert.equal((await read(await outstanding(ctx(db, { query: WEEK })))).rows[0].unsignedCount, 4);
 });
 
-test('signing the days a question was about answers the question', async () => {
-  const { db } = await setup();
+test('a day with a question open on it cannot be signed off', async () => {
+  const { db, raw } = await setup();
   await raiseQuery(ctx(db, { body: { staffId: 1, days: ['2026-06-04'], reason: 'Unexplained' } }));
 
-  // The planner works it out themselves and signs it.
+  // The planner tries to settle it themselves while the answer is still coming.
+  await assert.rejects(
+    signDays(ctx(db, { body: { staffId: 1, days: ['2026-06-04'], daysApplied: 1 } })),
+    /waiting on an answer/,
+  );
+
+  // The days either side of it are nobody's business but their own.
+  await signDays(ctx(db, { body: { staffId: 1, days: ['2026-06-03'], daysApplied: 0 } }));
+
+  // Taking the question back frees the day.
+  const [q] = (await read(await listQueries(ctx(db, { session: MANAGER })))).rows;
+  await withdrawQuery(ctx(db, { body: {} }), q.id);
+  await signDays(ctx(db, { body: { staffId: 1, days: ['2026-06-04'], daysApplied: 1 } }));
+
+  assert.equal(raw.prepare('SELECT COUNT(*) c FROM att_period_review').get().c, 2);
+});
+
+test('answering the question hands the day back, and signing it closes the question', async () => {
+  const { db } = await setup();
+  await raiseQuery(ctx(db, { body: { staffId: 1, days: ['2026-06-04'], reason: 'Unexplained' } }));
+  const [q] = (await read(await listQueries(ctx(db, { session: MANAGER })))).rows;
+
+  await answerQuery(ctx(db, {
+    session: MANAGER, body: { action: 'direction', body: 'He was at the bank for me.' },
+  }), q.id);
+
+  // Answered, so the planner can settle it — and doing so closes the question.
   await signDays(ctx(db, { body: { staffId: 1, days: ['2026-06-04'], daysApplied: 1 } }));
 
   const queue = await read(await listQueries(ctx(db, { session: MANAGER })));
@@ -403,11 +429,69 @@ test('signing only part of what was asked about leaves the question open', async
   await raiseQuery(ctx(db, {
     body: { staffId: 1, days: ['2026-06-03', '2026-06-04'], reason: 'Both of these' },
   }));
+  const [q] = (await read(await listQueries(ctx(db, { session: MANAGER })))).rows;
+  await answerQuery(ctx(db, {
+    session: MANAGER, body: { action: 'direction', body: 'Both were errands.' },
+  }), q.id);
 
   await signDays(ctx(db, { body: { staffId: 1, days: ['2026-06-03'], daysApplied: 0 } }));
 
   const queue = await read(await listQueries(ctx(db, { session: MANAGER })));
   assert.equal(queue.rows.length, 1, 'one of the two days is still a question');
+});
+
+test('an administrator can still sign a period off as the answer to it', async () => {
+  const { db, raw } = await setup();
+  await raiseQuery(ctx(db, { body: { staffId: 1, days: ['2026-06-04'], reason: 'Unexplained' } }));
+  const [q] = (await read(await listQueries(ctx(db, { session: MANAGER })))).rows;
+
+  // The one exemption: signing it *is* the answer, so the question it answers
+  // does not stand in its way.
+  await answerQuery(ctx(db, {
+    session: MANAGER, body: { action: 'sign', daysApplied: 1, body: 'Dealt with.' },
+  }), q.id);
+
+  assert.equal((await read(await listQueries(ctx(db, { session: MANAGER })))).rows.length, 0);
+  assert.equal(raw.prepare('SELECT COUNT(*) c FROM att_period_review').get().c, 1);
+});
+
+test('whoever asked is the one told when the answer comes', async () => {
+  const { db, raw } = await setup();
+  await raiseQuery(ctx(db, { body: { staffId: 1, days: ['2026-06-04'], reason: 'Unexplained' } }));
+  const [q] = (await read(await listQueries(ctx(db, { session: MANAGER })))).rows;
+
+  await answerQuery(ctx(db, {
+    session: MANAGER, body: { action: 'direction', body: 'He was at the bank for me.' },
+  }), q.id);
+
+  const notice = raw.prepare(
+    "SELECT * FROM app_notices WHERE kind = 'attendance.query_answered' ORDER BY id DESC",
+  ).get();
+  // Addressed to the planner who asked, by login — not shouted at everybody
+  // who happens to hold the sign-off permission.
+  assert.equal(notice.user_id, PLANNER.user.id);
+  assert.match(notice.body, /bank/);
+});
+
+test('a day whose clock times are waiting on approval cannot be signed off', async () => {
+  const { db, raw } = await setup();
+  raw.prepare(
+    `INSERT INTO att_time_edit (staff_id, day, now_in, now_out, reason, actor, status)
+     VALUES (1, '2026-06-04', '2026-06-04T08:00:00Z', '2026-06-04T17:00:00Z', 'Clock was down', 'Yaa', 'pending')`,
+  ).run();
+
+  await assert.rejects(
+    signDays(ctx(db, { body: { staffId: 1, days: ['2026-06-03', '2026-06-04'], daysApplied: 1 } })),
+    /clock-time change is waiting/,
+  );
+
+  // The other days in the same week are untouched by it.
+  await signDays(ctx(db, { body: { staffId: 1, days: ['2026-06-03'], daysApplied: 0 } }));
+
+  // Once the administrator has ruled on it either way, the day is free.
+  raw.prepare("UPDATE att_time_edit SET status = 'approved'").run();
+  await signDays(ctx(db, { body: { staffId: 1, days: ['2026-06-04'], daysApplied: 1 } }));
+  assert.equal(raw.prepare('SELECT COUNT(*) c FROM att_period_review').get().c, 2);
 });
 
 test('whoever raised it can take it back', async () => {

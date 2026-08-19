@@ -362,9 +362,19 @@ export const GUIDE = [
         'Sign-off. Pick a window: yesterday, last 7 days, a fortnight, a month, or dates by hand.',
         'Everybody with unsigned days appears, worst first.',
         'Tick the days you have looked at. Nothing is ticked to start with — the tick in the '
-          + 'heading takes the lot.',
+          + 'heading takes every day that can be signed.',
         'Sign off — or Ask an admin.',
       ] },
+
+      { sub: 'Putting a person’s days in the order you want them' },
+      { p: 'Press any heading on somebody’s table — Day, Clocked, What happened, Flags — and '
+        + 'their days sort by it. Press the same one again to turn it round. It sorts that '
+        + 'person only, because the table is that person only: the two lates together, or the '
+        + 'flagged days at the top, is a question about their week and nobody else’s.' },
+      { note: 'Flags sorts by how much is wrong rather than alphabetically, so pressing it '
+        + 'twice brings the worst days to the top. Clocked puts days nobody clocked at all at '
+        + 'the end — an absence is not "earliest". Ticks you have already made survive the '
+        + 'sort.' },
 
       { p: 'Nothing arrives ticked on purpose. Signing a period off moves days against '
         + 'somebody’s leave, and a screen that opened with everything selected would ask '
@@ -426,9 +436,12 @@ export const GUIDE = [
         'No two signed periods may share a day. Sign a week a day short and then the month '
           + 'three days short and four days would come off for three days of absence — the '
           + 'overlapping period is named and the sign-off refused.',
-        'Do not sign over a waiting change. A row marked "waiting" still reads what the '
-          + 'terminal recorded, so signing it charges the old figure. Untick that day and sign '
-          + 'the rest.',
+        'A day with a clock-time change waiting on an administrator cannot be ticked. It '
+          + 'still reads what the terminal recorded, and the change is about to move it — so '
+          + 'the tick comes back once the change has been approved or turned down.',
+        'A day you have asked about cannot be signed until the answer comes. That is the '
+          + 'point of asking. Withdraw the question if you have worked it out yourself, and '
+          + 'the day is yours again.',
       ] },
     ],
   },
@@ -455,6 +468,12 @@ export const GUIDE = [
         + 'question is about in full: the shifts, the clock times, what the rules made of each '
         + 'one. A question cannot honestly be answered from a sentence and a chip reading '
         + '"1 absent".' },
+      { p: 'Whichever of the four you press, the bell rings for the person who asked — them '
+        + 'and not every colleague who happens to be able to sign a period off. They are the '
+        + 'one waiting on it.' },
+      { note: 'Until you answer, the days the question is about cannot be signed off by '
+        + 'anybody — including whoever raised it. Signing it off from here is the exception, '
+        + 'because signing it is the answer.' },
       { p: 'The conversation on a question is append-only. An answer that can be edited '
         + 'afterwards is not an answer anybody can rely on having been given.' },
     ],

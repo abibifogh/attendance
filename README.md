@@ -247,6 +247,32 @@ about the days themselves is undone.
 off, and charging an absence against somebody who is upstairs making a bed is
 the mistake that rule exists to prevent.
 
+**Two more days that cannot be ticked**, and both for the same reason — the
+figures are not settled yet:
+
+- **A day somebody has asked a question about.** Asking is somebody saying out
+  loud that they do not understand a day. Signing it while the answer is still
+  coming settles it against the very figures that were doubted and quietly
+  makes the question pointless. The day comes back when the question is
+  answered, or when whoever raised it withdraws it.
+- **A day with a clock-time change waiting on an administrator.** Somebody has
+  already said the times on that day are wrong, and approving the change moves
+  them. Signing first means signing a figure the app itself expects to change.
+
+Both are refused by the API and not merely greyed out on the screen — the menu
+is a courtesy, the API is the gate. The one exemption is an administrator
+signing a period *as* the answer to the question about it, which is not slipping
+past the rule but the rule being satisfied.
+
+**Each person's days sort by any heading.** Press *Day*, *Clocked*, *What
+happened* or *Flags* on somebody's table and their days reorder; press the same
+heading again to turn it round. It sorts that person alone, because the table is
+that person alone. *Flags* sorts by how much is wrong rather than alphabetically
+— "Absent" before "Late" is alphabetical order pretending to be meaning — so
+two presses bring the worst days to the top; *Clocked* pushes days nobody
+clocked at all to the end, an absence not being "earliest". Ticks already made
+survive the sort.
+
 #### What is wrong, before you sign it
 
 Each person's card names what the period contains — *2 late, 1 absent, 1 not
@@ -282,9 +308,14 @@ An administrator can do three genuinely different things:
 | **Hand it back with a direction** | Tell them what to do. The period stays unsigned, the query goes back to their screen and rings their bell |
 | **Sign it off** | Deal with it here, under the administrator's own name, and the question closes |
 
-Signing the days a question was about answers the question automatically —
-though only when *every* day it asked about has been dealt with. A question
-about five days, three of which were signed, is still a question.
+Whichever it is, **the bell rings for the person who asked** — them by name and
+not every colleague who happens to hold the sign-off permission. They are the
+one waiting on it; a notice four people receive is a notice none of them owns.
+
+Once a question has been handed back, signing the days it was about answers it
+automatically — though only when *every* day it asked about has been dealt
+with. A question about five days, three of which were signed, is still a
+question.
 
 ### Your shifts, found rather than typed
 

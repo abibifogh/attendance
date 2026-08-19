@@ -1152,6 +1152,37 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   font-size: .9rem;
 }
 
+/* Headers that sort. A press on one sorts that person's days by it, a second
+   press turns it round. Styled as text rather than as a button: it has to read
+   as a column heading first and a control second, or the table starts looking
+   like a toolbar. */
+th .th-head { display: flex; align-items: center; gap: .5rem; }
+th .th-tick { width: 1.15rem; height: 1.15rem; margin: 0; padding: 0; flex: none; }
+th .th-sort {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: inherit;
+  white-space: nowrap;
+}
+th .th-sort:hover { text-decoration: underline; }
+/* A column that could be sorted but is not says so on hover and not before.
+   Four permanent arrows across a header is four things to read past. */
+th .th-sort.sort-off::after { content: ' ⇅'; opacity: 0; transition: opacity .12s ease; }
+th:hover .th-sort.sort-off::after { opacity: .55; }
+th .th-sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+th.sorted .th-sort { color: var(--text); font-weight: 700; }
+
+/* A day the app will refuse to sign — a clock change is pending on it, or a
+   question is. Dimmed rather than hidden: it still has to be read, it just
+   cannot be ticked. */
+tr.day-locked > td { opacity: .62; }
+tr.day-locked label.tickline { cursor: not-allowed; }
+
 /* --------------------------------------------------------------------------
    Grouping the sign-off list
    --------------------------------------------------------------------------
