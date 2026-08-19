@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   answerQuery, listQueries, outstanding, raiseQuery, reopenDays, signDays, withdrawQuery,
 } from '../src/routes/signoff.js';
+import { parseDays } from '../src/lib/signoff.js';
 
 /**
  * Signing off as the rota planner actually does it, against a real database.
@@ -215,6 +216,23 @@ test('the day a sign-off left out can be signed on its own afterwards', async ()
 
   const out = await read(await outstanding(ctx(db, { query: WEEK })));
   assert.equal(out.rows.length, 0, 'nothing left');
+});
+
+test('pressing sign again after a failure that never answered is safe', async () => {
+  const { db, raw } = await setup();
+  const days = ['2026-06-01', '2026-06-02', '2026-06-04'];
+
+  // A 503 from a proxy, a dropped connection, a laptop lid closed at the wrong
+  // moment: the reader has no way of knowing whether it went through, so they
+  // press it again. The same days must settle to the same one record rather
+  // than being refused for overlapping themselves or charged twice.
+  await signDays(ctx(db, { body: { staffId: 1, days, daysApplied: -1 } }));
+  await signDays(ctx(db, { body: { staffId: 1, days, daysApplied: -1 } }));
+
+  const rows = raw.prepare('SELECT * FROM att_period_review').all();
+  assert.equal(rows.length, 1, 'one record, not two');
+  assert.equal(rows[0].days_applied, -1, 'and one charge against their leave');
+  assert.equal(parseDays(rows[0].excluded_days).length, 1, '3 June stays outstanding');
 });
 
 test('signing a day twice is refused, and the message names the day', async () => {

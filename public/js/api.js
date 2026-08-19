@@ -27,6 +27,38 @@ export function pathHasHole(path) {
   return /\/(undefined|null|NaN)(\/|$)/.test(String(path));
 }
 
+/**
+ * A failure that did not come from this app, said so plainly.
+ *
+ * Every refusal this app makes comes back as JSON with a sentence in it — "a
+ * day that has not finished cannot be signed off", "that overlaps an existing
+ * sign-off". So an error that is *not* JSON did not come from the app at all:
+ * it came from Cloudflare, or a proxy, or whatever else sits between the
+ * browser and the site. "Request failed (503)" told the reader none of that,
+ * and reads like the app rejecting what they did.
+ *
+ * The distinction matters because the two have opposite answers. A refusal
+ * means change something and try again. This means change nothing and try
+ * again.
+ */
+async function notFromTheApp(response) {
+  const gateway = [502, 503, 504].includes(response.status);
+  const where = gateway
+    ? 'The site did not answer'
+    : `Something between your browser and the site returned an error (${response.status})`;
+
+  // Whatever the page said, in case it names the real cause. Tags stripped:
+  // an error page is usually HTML and its words are the only useful part.
+  let said = '';
+  try {
+    said = (await response.text()).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+  } catch { /* a body that cannot be read tells us nothing, which is fine */ }
+
+  return `${where}${gateway ? ` (${response.status})` : ''}. This is the connection or the host `
+    + 'rather than anything you did — the app itself always answers with a reason. Wait a moment '
+    + `and try again.${said ? ` It said: "${said}"` : ''}`;
+}
+
 async function request(path, { method = 'GET', body, signal } = {}) {
   if (pathHasHole(path)) {
     throw new ApiError(0, `Something is missing from this request (${path}). Reload and try again.`);
@@ -53,7 +85,7 @@ async function request(path, { method = 'GET', body, signal } = {}) {
 
   const type = response.headers.get('Content-Type') || '';
   if (!type.includes('application/json')) {
-    if (!response.ok) throw new ApiError(response.status, `Request failed (${response.status})`);
+    if (!response.ok) throw new ApiError(response.status, await notFromTheApp(response), null);
     return response;
   }
 

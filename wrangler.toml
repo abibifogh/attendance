@@ -8,6 +8,13 @@ compatibility_date = "2025-05-05"
 directory = "public"
 binding = "ASSETS"
 
+# Keep the Worker's own logs. Without this an error that happens once, at
+# half past eleven at night, on somebody else's laptop, leaves nothing behind
+# to look at — and the only account of it is a screenshot of a status code.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [[d1_databases]]
 binding = "DB"
 database_name = "attendance"
