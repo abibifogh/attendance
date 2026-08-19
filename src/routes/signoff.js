@@ -6,7 +6,7 @@ import {
   parseDays, unsignedDays,
 } from '../lib/signoff.js';
 import {
-  computeRange, dayCredit, dayLedger, daysPerWeekFor, labelFor, loadDataset, overUnder, summarise,
+  calendarFor, computeRange, dayCredit, dayLedger, daysPerWeekFor, labelFor, loadDataset, overUnder, summarise,
 } from '../lib/attendance.js';
 import { addDays, diffDays, isDay, monthBounds, todayIn } from '../util/dates.js';
 
@@ -149,6 +149,7 @@ export async function outstanding(ctx) {
       holidays: ds.holidayBy,
       expected: records.some((r) => r.scheduled),
       perWeek: daysPerWeekFor(staff, ds.settings),
+      calendar: calendarFor(ds, staff.id),
     });
     const counted = new Map([
       ...oc.overs.map((o) => [o.day, 'over']),
@@ -191,6 +192,7 @@ export async function outstanding(ctx) {
           ...dayLedger(record, {
             holidays: ds.holidayBy,
             perWeek: daysPerWeekFor(staff, ds.settings),
+            calendar: calendarFor(ds, staff.id),
           }),
         };
       })
@@ -320,6 +322,7 @@ export async function signDays(ctx) {
     holidays: ds.holidayBy,
     expected: included.some((r) => r.scheduled),
     perWeek: daysPerWeekFor(staff, ds.settings),
+    calendar: calendarFor(ds, staff.id),
   });
 
   const counted = new Map([

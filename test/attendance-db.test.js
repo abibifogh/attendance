@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   copyRoster, day as dayRoute, deviceConfig, getRoster, importShifts, ingest,
   balances, decidePeriod, periodReview, pushEvents, resolveDay, savePattern,
-  shiftSuggestions, staffReport, undoPeriod,
+  setCalendar, shiftSuggestions, staffReport, undoPeriod,
 } from '../src/routes/attendance.js';
 import { cleanDepartments, createStaff, listStaff } from '../src/routes/attendance-setup.js';
 import {
@@ -1903,4 +1903,80 @@ test('a week with a public holiday in it expects one day fewer', async () => {
   const row = data.rows.find((r) => r.staff.id === 1);
   assert.equal(row.calendarDays, 4, 'five, less the holiday');
   assert.equal(row.difference, 0, 'and four days worked is square');
+});
+
+test('a month can be told what it expected, for one person', async () => {
+  // One number cutting across every month is wrong in a hotel: somebody covers
+  // the season on six days a week and goes back to five in January, a kitchen
+  // closes for a fortnight, a person comes back part-time for three months.
+  const { raw, db, token } = await setup();
+  await marchWorked(db, token, [
+    '2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06',
+    '2026-03-09', '2026-03-10', '2026-03-11', '2026-03-12', '2026-03-13',
+  ]);
+
+  const before = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const wasSet = before.rows.find((r) => r.staff.id === 1);
+  assert.equal(wasSet.calendarDays, 22, 'five in seven across thirty-one days');
+  assert.equal(wasSet.calendarSet.days, null, 'and nobody has said otherwise');
+
+  await setCalendar(ctx(db, { body: { staffId: 1, month: '2026-03', days: 10, note: 'Part-time while recovering' } }));
+
+  const after = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
+  const row = after.rows.find((r) => r.staff.id === 1);
+  assert.equal(row.calendarDays, 10);
+  assert.equal(row.calendarSet.days, 10);
+  assert.equal(row.difference, 0, 'ten days worked against the ten the month asked for');
+});
+
+test('one month set does not touch the next', async () => {
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+  await setCalendar(ctx(db, { body: { staffId: 1, month: '2026-03', days: 10 } }));
+
+  const april = await (await periodReview(ctx(db, { query: '?month=2026-04' }))).json();
+  const row = april.rows.find((r) => r.staff.id === 1);
+  assert.equal(row.calendarDays, 21, 'April is back to the ordinary rule');
+  assert.equal(row.calendarSet.days, null);
+});
+
+test('clearing a month hands it back to the rule rather than setting it to nothing', async () => {
+  const { raw, db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02']);
+
+  await setCalendar(ctx(db, { body: { staffId: 1, month: '2026-03', days: 10 } }));
+  await setCalendar(ctx(db, { body: { staffId: 1, month: '2026-03', days: '' } }));
+
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_calendar').get().n, 0,
+    'no row, rather than a row saying zero — which would be a different statement');
+  const data = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
+  assert.equal(data.rows.find((r) => r.staff.id === 1).calendarDays, 22);
+});
+
+test('a month set by hand still adds up over any part of it', async () => {
+  // The figure is spread across the month's dates, so signing a fortnight of
+  // it comes to what the whole month would over those days.
+  const { db, token } = await setup();
+  await marchWorked(db, token, ['2026-03-02', '2026-03-03']);
+  await setCalendar(ctx(db, { body: { staffId: 1, month: '2026-03', days: 31 } }));
+
+  const whole = await (await periodReview(ctx(db, { query: '?month=2026-03' }))).json();
+  assert.equal(whole.rows.find((r) => r.staff.id === 1).calendarDays, 31,
+    'a month that asked for every one of its days');
+
+  const half = await (await periodReview(ctx(db, { query: '?from=2026-03-01&to=2026-03-10' }))).json();
+  assert.equal(half.rows.find((r) => r.staff.id === 1).calendarDays, 10,
+    'and ten of those days asked for ten');
+});
+
+test('a figure nobody could mean is refused', async () => {
+  const { db } = await setup();
+  await assert.rejects(
+    () => setCalendar(ctx(db, { body: { staffId: 1, month: '2026-03', days: 40 } })),
+    /between none and thirty-one/,
+  );
+  await assert.rejects(
+    () => setCalendar(ctx(db, { body: { staffId: 1, month: 'March', days: 10 } })),
+    /not a month/,
+  );
 });

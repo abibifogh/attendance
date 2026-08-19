@@ -240,6 +240,11 @@ function capitalise(value) {
 function monthCard(review, month, signs, reload) {
   if (!review) return null;
 
+  // Changing what a month expected moves what the sign-off proposes against
+  // somebody's leave, so it belongs with setting the property up rather than
+  // with signing it off.
+  const sets = can('att_setup');
+
   const step = async (n) => reload(shiftMonth(month, n));
 
   const sign = async (row) => {
@@ -285,11 +290,18 @@ function monthCard(review, month, signs, reload) {
         key: 'calendarDays',
         label: 'Calendar',
         align: 'right',
-        // The working days the month held: Monday to Friday, less any public
-        // holiday falling on one. The same figure for everybody, which is what
-        // makes it checkable — somebody rostered on Saturdays takes their rest
-        // days midweek, so the quota over a month comes to the same thing.
-        format: (v, r) => openable(fmtNum(v, 0), () => breakdown(r, month, 'calendar')),
+        // What this month expected of this person. Five days out of every
+        // seven unless somebody has said otherwise for this particular month —
+        // a season covered on six days, a fortnight of closure, three months
+        // part-time after an illness. Pressable either way: to read the days
+        // behind it, or, if you may, to say what the month actually asked.
+        format: (v, r) => h('div',
+          openable(fmtNum(v, 0), () => (sets
+            ? setCalendar(r, month, reload)
+            : breakdown(r, month, 'calendar'))),
+          r.calendarSet?.days != null
+            ? h('small.muted', { style: { display: 'block' } }, 'set by hand')
+            : null),
       },
       {
         key: 'scheduledDays',
@@ -377,6 +389,49 @@ function monthCard(review, month, signs, reload) {
       + 'Signing off moves days on and off the leave balance, and the balances above include '
       + 'every month already signed.'),
   );
+}
+
+/**
+ * Say what a month actually expected of somebody.
+ *
+ * Offered from the figure itself. A settings page somewhere else is a settings
+ * page nobody finds on the morning they need it, and what prompts anybody to
+ * change this is looking at a row and knowing the number is wrong.
+ */
+async function setCalendar(row, month, reload) {
+  const worked = await formDialog({
+    title: `${row.staff.name} — ${monthLabel(month)}`,
+    submitLabel: 'Save',
+    body: h('div',
+      h('p.muted', `The rule makes it ${fmtNum(row.calendarDays, 0)} days — five out of every `
+        + `seven, less public holidays. They were rostered ${fmtNum(row.scheduledDays, 0)} and `
+        + `worked ${fmtNum(row.workedDays, 0)}.`),
+
+      field('Working days this month', h('input', {
+        type: 'number', name: 'days', min: 0, max: 31, step: 0.5,
+        value: row.calendarSet?.days ?? '',
+        placeholder: String(row.calendarDays),
+      }), 'Leave blank to go back to the ordinary rule'),
+
+      field('Why', h('input', {
+        type: 'text', name: 'note', maxlength: 300,
+        placeholder: 'Covered the season on six days',
+      }), 'For whoever reads this month back in March'),
+
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'This month only, and this person only. It changes what the over / under comes to and '
+        + 'what a sign-off would propose against their leave — it does not change anything '
+        + 'already signed.'),
+    ),
+    onSubmit: async (form) => api.attSetCalendar({
+      staffId: row.staff.id,
+      month,
+      days: form.get('days') || null,
+      note: form.get('note') || null,
+    }),
+  });
+
+  if (worked) { toast('Saved.', 'good'); await reload(); }
 }
 
 /** A figure you can press, which is the difference between a number and a claim. */

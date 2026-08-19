@@ -199,3 +199,12 @@ test('the morning list can be downloaded by whoever clears it', () => {
   assert.equal(reaches('planner', 'GET', '/api/att/export'), false);
   assert.ok(reaches('viewer', 'GET', '/api/att/export'));
 });
+
+test('what a month expected is set by whoever sets the property up', () => {
+  // It moves what a sign-off proposes against somebody's leave, so it sits
+  // with setting the property up rather than with signing it off.
+  assert.ok(reaches('admin', 'POST', '/api/att/calendar'));
+  assert.equal(reaches('manager', 'POST', '/api/att/calendar'), false);
+  assert.equal(reaches('supervisor', 'POST', '/api/att/calendar'), false);
+  assert.equal(reaches('planner', 'POST', '/api/att/calendar'), false);
+});

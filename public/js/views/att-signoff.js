@@ -204,7 +204,7 @@ async function openTab(params, range, reload) {
           h('span.muted', ' — nothing flagged, nothing waiting')),
         h('button.btn-sm.btn-primary', {
           onclick: (event) => signAllClean(clearable, clearableDays, reload, event.target),
-        }, 'Sign them all off'))
+        }, 'Review and sign'))
       : null,
 
     groups.working.length
@@ -465,42 +465,102 @@ async function sign(row, chosen, reload) {
  * through and the failures are named.
  */
 async function signAllClean(clearable, total, reload, button) {
-  const people = clearable.length;
-  if (!window.confirm(
-    `Sign off ${total} day${total === 1 ? '' : 's'} across ${people} `
-    + `${people === 1 ? 'person' : 'people'}?\n\n`
-    + 'Only days with nothing wrong with them. Nothing is charged against anybody’s leave, '
-    + 'and anything flagged or waiting on an administrator stays on the list.\n\n'
-    + 'Each one can be reopened afterwards.',
-  )) return;
+  // Shown before it happens, and every line of it can be taken back out. A
+  // button that signs ninety-six days on one press has to be able to say which
+  // ninety-six first — "trust me" is not a confirmation dialog, it is a dialog
+  // people learn to press through.
+  const picked = new Map(clearable.map(({ row, days }) => [row.staff.id, new Set(days.map((d) => d.day))]));
 
-  button.disabled = true;
-  button.textContent = 'Signing…';
+  const countLine = h('strong');
+  const refresh = () => {
+    const days = [...picked.values()].reduce((n, set) => n + set.size, 0);
+    const people = [...picked.values()].filter((set) => set.size).length;
+    countLine.textContent = `${days} day${days === 1 ? '' : 's'} across `
+      + `${people} ${people === 1 ? 'person' : 'people'}`;
+  };
+  refresh();
 
-  let signed = 0;
-  const failed = [];
-  for (const { row, days } of clearable) {
-    try {
-      // Zero rather than the figure for the period: a clean day is by
-      // definition neither an extra day nor a missed one.
-      const out = await api.attSignDays({
-        staffId: row.staff.id,
-        days: days.map((d) => d.day),
-        daysApplied: 0,
-        note: 'Nothing outstanding on these days',
-      });
-      signed += Number(out.signed ?? days.length);
-    } catch (err) {
-      failed.push(`${row.staff.name}: ${err.message}`);
-    }
-  }
+  const rows = clearable.map(({ row, days }) => h('div.clean-person',
+    h('label.tickline',
+      h('input', {
+        type: 'checkbox',
+        checked: true,
+        onchange: (event) => {
+          const set = picked.get(row.staff.id);
+          set.clear();
+          if (event.target.checked) for (const d of days) set.add(d.day);
+          for (const box of event.target.closest('.clean-person').querySelectorAll('.clean-days input')) {
+            box.checked = event.target.checked;
+          }
+          refresh();
+        },
+      }),
+      h('span', h('strong', row.staff.name),
+        h('small.muted', ` · ${row.staff.department || ''}`))),
 
-  if (failed.length) {
-    toast(`${signed} signed. ${failed.length} could not be: ${failed[0]}`, 'bad');
+    h('div.clean-days', days.map((d) => h('label.tickline',
+      h('input', {
+        type: 'checkbox',
+        checked: true,
+        onchange: (event) => {
+          const set = picked.get(row.staff.id);
+          if (event.target.checked) set.add(d.day); else set.delete(d.day);
+          refresh();
+        },
+      }),
+      h('small', fmtDayShort(d.day)),
+      h('small.muted', ` ${d.in || '—'}→${d.out || '—'}`)))),
+  ));
+
+  const done = await formDialog({
+    title: 'Sign off everything clean',
+    submitLabel: 'Sign them off',
+    body: h('div',
+      h('p.muted', 'Every day here has nothing flagged against it, nothing waiting on an '
+        + 'administrator, and nothing to charge against anybody’s leave. Take out anything '
+        + 'you would rather look at yourself.'),
+      h('p', 'Signing ', countLine, '.'),
+      h('div.clean-list', rows),
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'Each person gets their own record, and each can be reopened on its own afterwards.'),
+    ),
+    onSubmit: async () => {
+      const work = clearable
+        .map(({ row }) => ({ row, days: [...(picked.get(row.staff.id) ?? [])].sort() }))
+        .filter((entry) => entry.days.length);
+      if (!work.length) throw new Error('Nothing is ticked, so there is nothing to sign.');
+
+      // One request per person rather than a bulk endpoint: each gets their own
+      // record, their own audit line and their own overlap check, which is what
+      // a sign-off is. If one fails the rest still go through.
+      let signed = 0;
+      const failed = [];
+      for (const { row, days } of work) {
+        try {
+          const out = await api.attSignDays({
+            staffId: row.staff.id,
+            days,
+            daysApplied: 0,
+            note: 'Nothing outstanding on these days',
+          });
+          signed += Number(out.signed ?? days.length);
+        } catch (err) {
+          failed.push(`${row.staff.name}: ${err.message}`);
+        }
+      }
+      if (failed.length && !signed) throw new Error(failed[0]);
+      return { signed, failed };
+    },
+  });
+
+  if (!done) return;
+  if (done.failed?.length) {
+    toast(`${done.signed} signed. ${done.failed.length} could not be: ${done.failed[0]}`, 'bad');
   } else {
-    toast(`${signed} day${signed === 1 ? '' : 's'} signed off.`, 'good');
+    toast(`${done.signed} day${done.signed === 1 ? '' : 's'} signed off.`, 'good');
   }
   await reload();
+  if (button) button.disabled = false;
 }
 
 /**

@@ -83,6 +83,7 @@ export const api = {
   attOverview: (month) => request(`/api/att/overview${month ? `?month=${month}` : ''}`),
   attReview: (params) => request(`/api/att/review?${new URLSearchParams(params)}`),
   attDecideReview: (body) => request('/api/att/review', { method: 'POST', body }),
+  attSetCalendar: (body) => request('/api/att/calendar', { method: 'POST', body }),
   attUndoReview: (body) => request('/api/att/review/undo', { method: 'POST', body }),
   attOutstanding: (params = {}) => request(`/api/att/outstanding?${new URLSearchParams(params)}`),
   attSignDays: (body) => request('/api/att/sign-days', { method: 'POST', body }),

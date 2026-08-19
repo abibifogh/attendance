@@ -74,6 +74,10 @@ export const ROUTES = [
   ['GET', '/api/att/review', ['att_reports', 'att_signoff'], att.periodReview],
   ['POST', '/api/att/review', 'att_signoff', att.decidePeriod],
   ['POST', '/api/att/review/undo', 'att_signoff', att.undoPeriod],
+  // What a particular month expected of a particular person. Setting it moves
+  // what the sign-off proposes against their leave, so it needs the permission
+  // that sets the property up rather than the one that signs.
+  ['POST', '/api/att/calendar', 'att_setup', att.setCalendar],
 
   // What is still waiting, day by day, and what to do about the awkward ones.
   ['GET', '/api/att/outstanding', 'att_signoff', signoff.outstanding],

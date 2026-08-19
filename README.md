@@ -216,7 +216,10 @@ can explain does not put that person's other four days beyond reach, and parking
 somebody's whole week because one day of it carries a question is the surest way
 to stop anybody ever asking.
 
-**Clearing the easy ones** is one press. The filter has three settings —
+**Clearing the easy ones** is one press, and it shows you the list first —
+every person, every day, each tickable, so anything you would rather look at
+yourself comes back out before anything is signed. A button that signs
+ninety-six days has to be able to say which ninety-six. The filter has three settings —
 everybody, only those with something wrong, only those with nothing wrong — and
 above the list sits a count of every day with nothing wrong with it and a button
 that signs all of them. It works per day, not per person, so somebody with one
@@ -499,10 +502,20 @@ only weekdays would leave the night porter permanently over for doing exactly
 what was asked of him. A public holiday takes a whole day off the expectation
 wherever in the week it falls.
 
-**The week is settable per person**, under Setup → Staff, with a property-wide
-default under Setup → Rules. Some people work six shorter days and some four
-long ones; measuring both against five leaves one permanently over and the other
-permanently under for keeping to their own contract.
+**A month can be told what it expected**, per person. Press the Calendar figure
+on somebody's row and type what that month actually asked of them — somebody
+covered the season on six days, a kitchen closed for a fortnight, somebody came
+back part-time for three months. One number cutting across every month is close
+enough for an office and wrong for a hotel, and the month it is wrong for is the
+month nobody notices until leave has already moved. It applies to that person
+and that month alone; clearing it hands the month back to the ordinary rule. The
+figure is spread across the month's dates, so signing a fortnight of it still
+comes to what the whole month would over those days.
+
+The general shape is settable too: a **days-a-week** figure per person under
+Setup → Staff, with a property-wide default under Setup → Rules. Use that for a
+contract that is simply not five days; use the monthly figure for a month that
+was unusual.
 
 The expectation is carried **per day** — five sevenths of a day at a time — which
 is what lets a sign-off cover three days out of a month and still come to the

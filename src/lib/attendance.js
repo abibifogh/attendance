@@ -9,7 +9,7 @@
 // then which shift a punch belongs to, then what a day was, then what to say
 // about it, then what a month of them adds up to.
 
-import { addDays, diffDays, dow, rangeDays, startOfWeek } from '../util/dates.js';
+import { addDays, daysInMonth, diffDays, dow, rangeDays, startOfWeek } from '../util/dates.js';
 
 // A fixed point to count days from, so a punch at 23:50 on Monday and one at
 // 00:10 on Tuesday are eight hundred and something and eight hundred and
@@ -1200,7 +1200,9 @@ export function isWorkingDay(day, holidays = null) {
  * and keeping it per day is what lets a sign-off cover three days out of a
  * fortnight and still come to the right number.
  */
-export function dayLedger(record, { holidays = null, perWeek = DEFAULT_DAYS_PER_WEEK } = {}) {
+export function dayLedger(record, {
+  holidays = null, perWeek = DEFAULT_DAYS_PER_WEEK, calendar = null,
+} = {}) {
   const worked = Boolean(record.first_in && record.last_out);
   const onLeave = record.status === 'leave';
   return {
@@ -1209,13 +1211,24 @@ export function dayLedger(record, { holidays = null, perWeek = DEFAULT_DAYS_PER_
     // things called credit that differ on a five-hour Wednesday is a bug
     // waiting to be written.
     owed: worked || onLeave ? 1 : 0,
-    quota: dayQuota(record.day, holidays, perWeek),
+    // A month somebody has been told what it expected is that, spread evenly
+    // across its days so a part of it still adds up. The five-in-seven rule
+    // only answers for the months nobody has said anything about — which is
+    // almost all of them.
+    quota: calendar
+      ? calendar.share(record.day) ?? dayQuota(record.day, holidays, perWeek)
+      : dayQuota(record.day, holidays, perWeek),
     worked,
     onLeave,
   };
 }
 
 /** What this person's week is, falling back to the property's answer. */
+/** The months this person has been given a figure for, ready to divide. */
+export function calendarFor(ds, staffId) {
+  return monthCalendar(ds?.calendarBy?.get(staffId) ?? new Map(), daysInMonth);
+}
+
 export function daysPerWeekFor(staff, settings = {}) {
   const own = Number(staff?.days_per_week);
   if (Number.isFinite(own) && own > 0) return own;
@@ -1240,8 +1253,37 @@ export function daysPerWeekFor(staff, settings = {}) {
  * the times a supervisor supplied where the terminal missed them. A tap in with
  * no tap out is not a day worked; it is a day somebody still has to look at.
  */
+/**
+ * The months somebody has been given a figure for, ready to divide.
+ *
+ * `set` is a map of `YYYY-MM` to the number of days that month expected. What
+ * comes back knows how to hand one day its share of it, which is what keeps
+ * the arithmetic a sum over days: a month told it expected twenty-four gives
+ * every one of its dates twenty-four thirty-firsts, and any handful of those
+ * dates still comes to what the whole month would.
+ *
+ * A month with a figure of its own ignores public holidays, because whoever
+ * typed the figure has already accounted for them — that is what typing it
+ * means.
+ */
+export function monthCalendar(set, daysInMonth) {
+  const byMonth = set instanceof Map ? set : new Map(Object.entries(set ?? {}));
+  if (!byMonth.size) return null;
+
+  return {
+    has: (month) => byMonth.has(month),
+    total: (month) => byMonth.get(month) ?? null,
+    share(day) {
+      const month = String(day).slice(0, 7);
+      if (!byMonth.has(month)) return null;
+      const held = daysInMonth(month);
+      return held > 0 ? Number(byMonth.get(month)) / held : 0;
+    },
+  };
+}
+
 export function overUnder(records, {
-  holidays = null, expected = true, perWeek = DEFAULT_DAYS_PER_WEEK,
+  holidays = null, expected = true, perWeek = DEFAULT_DAYS_PER_WEEK, calendar = null,
 } = {}) {
   const overs = [];
   const unders = [];
@@ -1249,7 +1291,7 @@ export function overUnder(records, {
   let quota = 0;
 
   for (const record of records ?? []) {
-    const led = dayLedger(record, { holidays, perWeek });
+    const led = dayLedger(record, { holidays, perWeek, calendar });
     delivered += led.owed;
     // `expected` is false for somebody the rota did not ask for at all in this
     // period — a new starter whose first week is next week, somebody who has
@@ -1403,7 +1445,7 @@ export function withObservedDays(holidays) {
  * all.
  */
 export async function loadDataset(db, { from, to, now = null } = {}) {
-  const [staff, shifts, patterns, roster, punches, days, reasons, holidays, leave, settings] = await Promise.all([
+  const [staff, shifts, patterns, roster, punches, days, reasons, holidays, leave, settings, calendars] = await Promise.all([
     db.prepare('SELECT * FROM att_staff ORDER BY name').all(),
     db.prepare('SELECT * FROM att_shifts ORDER BY sort_order, name').all(),
     db.prepare('SELECT * FROM att_patterns').all(),
@@ -1423,6 +1465,10 @@ export async function loadDataset(db, { from, to, now = null } = {}) {
     db.prepare('SELECT * FROM att_holidays WHERE active = 1').all(),
     db.prepare("SELECT * FROM att_leave WHERE status IN ('pending','approved')").all(),
     db.prepare('SELECT key, value FROM settings').all(),
+    // The months somebody has been told what they expected. Tiny — nothing at
+    // all for a property that has never varied one — so it is read whole
+    // rather than windowed.
+    db.prepare('SELECT staff_id, month, days FROM att_calendar').all().catch(() => ({ results: [] })),
   ]);
 
   return makeDataset({
@@ -1437,6 +1483,7 @@ export async function loadDataset(db, { from, to, now = null } = {}) {
     holidays: holidays.results ?? [],
     leave: leave.results ?? [],
     settings: settings.results ?? [],
+    calendars: calendars.results ?? [],
   });
 }
 
@@ -1455,6 +1502,15 @@ export function makeDataset(raw) {
   // week, numbered zero, and behaves exactly as before.
   const patternBy = new Map((raw.patterns ?? []).map((p) => [`${p.staff_id}|${p.week ?? 0}|${p.dow}`, p]));
   const holidayBy = new Map((raw.holidays ?? []).map((h) => [h.observed_on || h.day, h]));
+
+  // Months somebody has been told what they expected, per person. Almost
+  // always empty: the ordinary rule answers for nearly every month, and this
+  // holds only the ones it did not.
+  const calendarBy = new Map();
+  for (const row of raw.calendars ?? []) {
+    if (!calendarBy.has(row.staff_id)) calendarBy.set(row.staff_id, new Map());
+    calendarBy.get(row.staff_id).set(row.month, Number(row.days));
+  }
   const dayBy = new Map((raw.days ?? []).map((d) => [`${d.staff_id}|${d.day}`, d]));
 
   // Punches, per person, pre-converted to absolute minutes and sorted. Every
@@ -1504,6 +1560,7 @@ export function makeDataset(raw) {
     rosterBy,
     patternBy,
     holidayBy,
+    calendarBy,
     dayBy,
     punchesByStaff,
     leaveBy,

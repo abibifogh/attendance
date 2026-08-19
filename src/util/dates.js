@@ -102,6 +102,13 @@ export function monthBounds(month) {
   return { from, to: `${month}-${String(last).padStart(2, '0')}` };
 }
 
+/** How many dates a month holds. */
+export function daysInMonth(month) {
+  const [y, m] = String(month).split('-').map(Number);
+  if (!y || !m) return 0;
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
 export function addMonths(month, n) {
   const [y, m] = month.split('-').map(Number);
   const d = new Date(Date.UTC(y, m - 1 + n, 1));

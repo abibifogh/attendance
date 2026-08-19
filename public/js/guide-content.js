@@ -296,10 +296,14 @@ export const GUIDE = [
         + 'seven days and a Saturday is an ordinary working day for half the staff. Counting '
         + 'only weekdays would leave the night porter permanently over for doing exactly what '
         + 'was asked of him.' },
-      { p: 'It can be set per person under Setup → Staff — some people work six shorter days '
-        + 'and some four long ones, and measuring both against five leaves one permanently over '
-        + 'and the other permanently under for keeping to their own contract. Blank uses the '
-        + 'property figure under Setup → Rules.' },
+      { p: 'Where that is not what a particular month asked of a particular person — somebody '
+        + 'covered the season on six days, a kitchen closed for a fortnight, somebody came back '
+        + 'part-time for three months — press the Calendar figure on their row and say what the '
+        + 'month actually expected. It applies to that month and that person only, and clearing '
+        + 'it hands the month back to the ordinary rule.' },
+      { p: 'The general shape can also be set: a days-a-week figure per person under '
+        + 'Setup → Staff, with a property default under Setup → Rules. Use that for a contract '
+        + 'that is simply not five days; use the monthly figure for a month that was unusual.' },
       { note: 'Every figure on a row can be pressed to see the days behind it. An absence '
         + 'counts whether or not anybody has settled it — a working day nobody delivered is a '
         + 'working day nobody delivered — and the count beside the over / under says how many '
@@ -365,6 +369,10 @@ export const GUIDE = [
       { p: 'The filter above the list has three settings: everybody, only the people with '
         + 'something wrong, and only the people with nothing wrong. Above the list sits a count '
         + 'of every day with nothing wrong with it and a single button that signs all of them.' },
+      { p: 'It shows you the list first. Every person, every day, each one tickable, so '
+        + 'anything you would rather look at yourself comes back out before anything is '
+        + 'signed — a button that signs ninety-six days on one press has to be able to say '
+        + 'which ninety-six.' },
       { p: 'It signs clean days wherever they are, so a person with one unexplained Thursday '
         + 'still has their other four days cleared and the Thursday stays on the list on its '
         + 'own. Nothing flagged goes through it, nothing with a clock-time change waiting goes '

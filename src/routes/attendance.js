@@ -3,7 +3,7 @@ import {
 } from '../lib/http.js';
 import {
   colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysIn,
-  dayCredit, dayLedger, daysPerWeekFor, loadDataset, overUnder, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes,
+  calendarFor, dayCredit, dayLedger, daysPerWeekFor, loadDataset, overUnder, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes,
   weekCountOf,
 } from '../lib/attendance.js';
 import {
@@ -2173,6 +2173,7 @@ export async function periodReview(ctx) {
       holidays: ds.holidayBy,
       expected: totals.scheduled > 0,
       perWeek: daysPerWeekFor(staff, ds.settings),
+      calendar: calendarFor(ds, staff.id),
     });
     const counted = new Map([
       ...oc.overs.map((o) => [o.day, 'over']),
@@ -2199,7 +2200,11 @@ export async function periodReview(ctx) {
       counts: counted.get(r.day) ?? null,
       // The two sides of the ledger, per day, so any subset of them adds up to
       // the same answer as the whole month.
-      ...dayLedger(r, { holidays: ds.holidayBy, perWeek: daysPerWeekFor(staff, ds.settings) }),
+      ...dayLedger(r, {
+        holidays: ds.holidayBy,
+        perWeek: daysPerWeekFor(staff, ds.settings),
+        calendar: calendarFor(ds, staff.id),
+      }),
       // `credit` above is the half-a-day-for-a-short-shift figure the reports
       // use, and stays what it was.
       credit: dayCredit(r, {
@@ -2216,6 +2221,11 @@ export async function periodReview(ctx) {
       // over/under is worked plus leave, less the working days expected.
       calendarDays: oc.quota,
       daysPerWeek: daysPerWeekFor(staff, ds.settings),
+      // Whether somebody typed this month's figure, and what they said about
+      // it. A figure that was set by hand and a figure the rule worked out
+      // look identical on screen otherwise, and only one of them is anybody's
+      // decision.
+      calendarSet: calendarSetFor(ds, staff.id, from, to),
       scheduledDays: totals.scheduled,
       // Days actually clocked in and out of. Not the credited figure the rest
       // of the app uses — no halves for a short day, no crediting a reason
@@ -2260,6 +2270,71 @@ export async function periodReview(ctx) {
     unsettled: rows.reduce((n, r) => n + r.openCount, 0),
     reviewed: rows.filter((r) => r.decision).length,
   });
+}
+
+/**
+ * Tell a month what it expected of somebody.
+ *
+ * One person, one month. Set on the screen the figure is read on, because a
+ * settings page somewhere else is a settings page nobody finds on the morning
+ * they need it — and because the thing that prompts somebody to change it is
+ * looking at a row and knowing the number is wrong.
+ *
+ * Clearing it hands the month back to the ordinary rule rather than storing a
+ * zero, which would be an entirely different statement.
+ */
+export async function setCalendar(ctx) {
+  const body = await readJson(ctx.request);
+  const staffId = int(body.staffId, 'Staff', { required: true, min: 1 });
+  const month = str(body.month, 'Month', { required: true, max: 7 });
+  if (!isMonth(month)) throw badRequest('That is not a month.');
+
+  const staff = await ctx.db.prepare('SELECT id, name FROM att_staff WHERE id = ?')
+    .bind(staffId).first();
+  if (!staff) throw notFound('No such member of staff.');
+
+  const clearing = body.days == null || body.days === '';
+  if (clearing) {
+    await ctx.db.prepare('DELETE FROM att_calendar WHERE staff_id = ? AND month = ?')
+      .bind(staffId, month).run();
+    await audit(ctx, 'attendance.calendar_clear', staffId, { month });
+    return json({ ok: true, days: null });
+  }
+
+  const held = Number(body.days);
+  if (!Number.isFinite(held) || held < 0 || held > 31) {
+    throw badRequest('A month expects somewhere between none and thirty-one days.');
+  }
+
+  await ctx.db.prepare(
+    `INSERT INTO att_calendar (staff_id, month, days, note, set_by)
+     VALUES (?1, ?2, ?3, ?4, ?5)
+     ON CONFLICT (staff_id, month) DO UPDATE SET
+       days = excluded.days, note = excluded.note,
+       set_by = excluded.set_by, set_at = datetime('now')`,
+  ).bind(staffId, month, held, str(body.note, 'Note', { max: 300 }), actorOf(ctx)).run();
+
+  await audit(ctx, 'attendance.calendar_set', staffId, { month, days: held });
+  return json({ ok: true, days: held });
+}
+
+/**
+ * The figure somebody typed for this month, if the period is one month and
+ * they typed one.
+ *
+ * Only offered for a whole month, because that is the unit it is set in. A
+ * report across a fortnight or across two months has no single month's figure
+ * to show or to change, and pretending otherwise would let somebody set
+ * February from a screen showing half of March.
+ */
+function calendarSetFor(ds, staffId, from, to) {
+  const month = from.slice(0, 7);
+  if (to.slice(0, 7) !== month) return null;
+  const bounds = monthBounds(month);
+  if (from !== bounds.from || to !== bounds.to) return null;
+
+  const held = ds.calendarBy?.get(staffId)?.get(month);
+  return { month, days: held == null ? null : Number(held) };
 }
 
 function presentDecision(row) {
@@ -2338,6 +2413,7 @@ export async function decidePeriod(ctx) {
     holidays: ds.holidayBy,
     expected: totals.scheduled > 0,
     perWeek: daysPerWeekFor(ds.staffById.get(staffId), ds.settings),
+    calendar: calendarFor(ds, staffId),
   });
 
   await ctx.db.prepare(
