@@ -73,7 +73,11 @@ export async function renderAttStaff(params) {
         ? fmtDay(from, { withYear: true })
         : `${fmtDay(from, { withYear: true })} to ${fmtDay(to, { withYear: true })}`,
       note: data.staff.department ? `${data.staff.department}${data.staff.job_title ? ` · ${data.staff.job_title}` : ''}` : null,
-      footer: PRINT_FOOTER,
+      // No provenance footer and no second sheet. This one is handed to the
+      // person it is about, and a month of somebody's attendance is a thing
+      // they should be able to hold in one hand.
+      footer: false,
+      onePage: true,
       label: '📄 Save as PDF',
     }),
     can('att_reports') ? exportButton(api.attExportUrl(from, to), 'Export') : null,
@@ -387,6 +391,11 @@ export async function renderAttStaff(params) {
           )))))
     : null;
 
+  // One paragraph per awkward day. Worth every line on screen, and the first
+  // thing to go when the same record has to be one sheet of paper: every line
+  // of it restates the Status column beside it in longer words.
+  notesCard?.classList.add('record-notes');
+
   // Off the printout unless somebody says otherwise.
   //
   // A slip handed to one person is read by whoever is standing next to them,
@@ -542,10 +551,6 @@ function boundsFor(period, anchor, params = {}) {
   }
   return { from: anchor, to: anchor };
 }
-
-const PRINT_FOOTER = 'Clock times come from the attendance terminal. Where a punch was missing, '
-  + 'the time shown was supplied by a supervisor and is noted as such. Days worked count a full day '
-  + 'at or above the shift\'s full-day threshold and a half day above the half-day threshold.';
 
 /**
  * What to pre-select when correcting a day.

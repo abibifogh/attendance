@@ -22,7 +22,7 @@ import { h } from './util.js';
 
 let cleanup = null;
 
-export function printReport({ title, subtitle, note, footer }) {
+export function printReport({ title, subtitle, note, footer, onePage = false }) {
   // A second click while the dialog is open would stack two headers.
   if (cleanup) cleanup();
 
@@ -45,21 +45,29 @@ export function printReport({ title, subtitle, note, footer }) {
     h('div.print-meta', `Prepared ${generated}${state.name ? ` · ${state.name}` : ''}`),
   );
 
-  // The provenance line. Worth carrying on the page because a printed report
-  // outlives the screen it came from, and somebody handed one deserves to know
+  // The provenance line. Worth carrying on most reports because a printed one
+  // outlives the screen it came from, and somebody handed it deserves to know
   // which parts a machine observed and which a person decided.
-  const footerEl = h('div.print-footer', footer
-    || 'Clock times come from the attendance terminal. Where a punch was missing, the time shown '
-      + 'was supplied by a supervisor and is noted as such.');
+  //
+  // `footer: false` leaves it off. A note explaining how the figures were
+  // arrived at earns its space on a report that is read; on a one-page record
+  // handed to the person it is about, it is three lines of small print that
+  // push the last week of their month onto a second sheet.
+  const footerEl = footer === false || footer === null
+    ? null
+    : h('div.print-footer', footer
+      || 'Clock times come from the attendance terminal. Where a punch was missing, the time shown '
+        + 'was supplied by a supervisor and is noted as such.');
 
   document.body.prepend(header);
-  document.body.append(footerEl);
+  if (footerEl) document.body.append(footerEl);
   document.body.classList.add('printing');
+  if (onePage) document.body.classList.add('printing-one-page');
 
   cleanup = () => {
     header.remove();
-    footerEl.remove();
-    document.body.classList.remove('printing');
+    footerEl?.remove();
+    document.body.classList.remove('printing', 'printing-one-page');
     cleanup = null;
   };
 
@@ -77,9 +85,9 @@ export function printReport({ title, subtitle, note, footer }) {
 }
 
 /** The button every report screen carries. */
-export function printButton({ title, subtitle, note, footer, label }) {
+export function printButton({ title, subtitle, note, footer, label, onePage }) {
   return h('button.btn-sm', {
     title: 'Opens your print dialog — choose “Save as PDF” as the destination',
-    onclick: () => printReport({ title, subtitle, note, footer }),
+    onclick: () => printReport({ title, subtitle, note, footer, onePage }),
   }, label || '📄 Save as PDF');
 }

@@ -535,6 +535,13 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   .topbar, .sidebar, .nav-scrim, .toolbar, .toasts,
   button, .btn, dialog { display: none !important; }
 
+  /* The shell is a full-height column on screen, which is right there and
+     wrong on paper: `min-height: 100dvh` makes it exactly one page tall on its
+     own, so the title block above it guarantees a second sheet no matter how
+     little is actually being printed. */
+  .shell { min-height: 0; display: block; }
+  .body-row { display: block; }
+
   .main { max-width: none; padding: 0; margin: 0; }
   .page-head { margin-bottom: .5rem; }
   .page-head .btn-row, .page-head .seg { display: none !important; }
@@ -585,6 +592,57 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   /* Charts must not be clipped by their scroll container. */
 
   a { color: inherit; text-decoration: none; }
+
+  /* ------------------------------------------------------------------------
+     One sheet of paper
+     ------------------------------------------------------------------------
+     A person's own attendance record. It is handed to them, so it has to be
+     one page: a month of somebody's working life stapled together is a
+     document nobody reads past the first sheet.
+
+     Two things made it five. Every row was three lines tall — the date over
+     the weekday, the shift name over its hours — and under the table sat one
+     paragraph per awkward day, each restating the Status column beside it in
+     longer words. So the rows go on one line and the paragraphs go.
+     ------------------------------------------------------------------------ */
+
+  .printing-one-page .record-notes { display: none !important; }
+
+  /* The stacked cells, laid flat. */
+  .printing-one-page tbody td > div > div,
+  .printing-one-page tbody td > div > small { display: inline; }
+  .printing-one-page tbody td > div > small::before { content: ' · '; }
+
+  .printing-one-page { font-size: 9pt; }
+  .printing-one-page .print-header { margin-bottom: 3mm; }
+  .printing-one-page .print-brand { font-size: 8.5pt; margin-bottom: 0.5mm; }
+  .printing-one-page .print-title { font-size: 14pt; }
+  .printing-one-page .print-subtitle { font-size: 9pt; margin-top: 0.5mm; }
+  .printing-one-page .print-note { font-size: 8.5pt; margin-top: 0.5mm; }
+  .printing-one-page .print-meta { font-size: 8pt; margin-top: 1.5mm; padding-top: 1mm; }
+
+  .printing-one-page .card { margin-bottom: 2.5mm; padding: 2mm 2.5mm; }
+  .printing-one-page .card-head { margin-bottom: 1mm; }
+  .printing-one-page .card-head h2 { font-size: 10pt; }
+
+  .printing-one-page .grid-4, .printing-one-page .grid-3, .printing-one-page .grid-2 { gap: 2mm; }
+  .printing-one-page .stat { padding: 1mm 2mm; }
+  .printing-one-page .stat-value { font-size: 11pt; }
+  .printing-one-page .stat-label, .printing-one-page .stat-sub { font-size: 7pt; }
+
+  /* The rows. Line height, not padding, was what made each one 28px tall — a
+     month of them is a whole page of white space. */
+  .printing-one-page table { font-size: 7.4pt; line-height: 1.1; }
+  .printing-one-page th, .printing-one-page td { padding: 0.35mm 1.5mm; }
+  .printing-one-page td small { font-size: 7.2pt; }
+  .printing-one-page tbody tr { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Nothing may hang below the last thing on the page: a trailing margin is
+     enough on its own to start a second sheet holding nothing but margin. */
+  .printing-one-page .card:last-of-type {
+    margin-bottom: 0;
+    break-after: avoid; page-break-after: avoid;
+  }
 }
 
 /* Plain-language explanations of each report panel. */
