@@ -590,7 +590,7 @@ export async function raiseQuery(ctx) {
     actor: actorOf(ctx),
     audience: 'att_manage',
     userId: addressed?.id ?? null,
-  });
+  }, ctx);
 
   await audit(ctx, 'attendance.query_raise', created.id, { staffId, from, to, days: days.length });
   return json({ ok: true, id: created.id });
@@ -721,7 +721,7 @@ async function tellTheAsker(ctx, query, { level, title, body }) {
     actor: actorOf(ctx),
     audience: 'att_signoff',
     userId: query.raised_by_id ?? null,
-  });
+  }, ctx);
 }
 
 export async function answerQuery(ctx, id) {

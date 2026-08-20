@@ -1,4 +1,5 @@
 import { isMissingTable } from './http.js';
+import { emailNotice } from './notify.js';
 
 /**
  * In-app notifications.
@@ -15,10 +16,37 @@ import { isMissingTable } from './http.js';
 
 const LEVELS = new Set(['info', 'warn', 'high']);
 
+/**
+ * Record a notice, and send it on by email.
+ *
+ * The third argument is how the mail gets out: `{ env, executionContext }`,
+ * which every route already has as `ctx`. Optional, because a notice recorded
+ * from somewhere with no `env` — a test, a script — should still ring the bell
+ * rather than fail.
+ *
+ * The mail is fired through `waitUntil` where there is one, so it happens
+ * after the response has gone. Somebody signing a day off must not wait on an
+ * email provider, and must certainly not be refused by one.
+ */
 export async function createNotice(db, {
   kind, level = 'info', title, body, link, day, slot, actor, audience = null, userId = null,
-}) {
+}, ctx = null) {
   if (!kind || !title) return null;
+
+  const post = async () => {
+    if (!ctx?.env) return;
+    const sending = emailNotice(db, ctx.env, {
+      kind, level, title, body, link, actor, audience, userId,
+    }).catch((err) => console.error('notice email failed', err));
+
+    // Handed to the runtime where there is one, so the response goes back
+    // first and the mail happens after. Where there is not — a cron, a script,
+    // a test — it has to be awaited, because nothing else is going to keep the
+    // isolate alive long enough for it to finish.
+    if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(sending);
+    else await sending;
+  };
+
   try {
     const row = await db.prepare(
       `INSERT INTO app_notices (kind, level, title, body, link, day, slot, actor, audience, user_id)
@@ -42,6 +70,7 @@ export async function createNotice(db, {
       // that rings for three people is a bell none of them owns.
       userId == null ? null : Number(userId),
     ).first();
+    await post();
     return row?.id ?? null;
   } catch (err) {
     // A site whose database has not been upgraded yet simply has no bell. That

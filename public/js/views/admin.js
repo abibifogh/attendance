@@ -299,11 +299,12 @@ async function alertsTab(reload) {
     placeholder: 'one address per line',
     value: data.recipients.join('\n'),
   });
-  const from = h('input', { type: 'text', maxlength: 200, value: data.from, placeholder: 'Attendance <attendance@example.com>' });
+  const from = h('input', { type: 'text', maxlength: 200, value: data.from, placeholder: 'HIVE <hive@niceoperation.com>' });
   const siteUrl = h('input', { type: 'url', maxlength: 300, value: data.siteUrl, placeholder: 'https://staff.niceoperation.com' });
   const emailEnabled = h('input', { type: 'checkbox', checked: data.emailEnabled });
   const pushEnabled = h('input', { type: 'checkbox', checked: data.pushEnabled });
   const inAppEnabled = h('input', { type: 'checkbox', checked: data.inAppEnabled });
+  const noticeEmail = h('input', { type: 'checkbox', checked: data.noticeEmail });
 
   const save = async () => {
     try {
@@ -311,6 +312,7 @@ async function alertsTab(reload) {
         emailEnabled: emailEnabled.checked,
         pushEnabled: pushEnabled.checked,
         inAppEnabled: inAppEnabled.checked,
+        noticeEmail: noticeEmail.checked,
         recipients: recipients.value.split('\n').map((s) => s.trim()).filter(Boolean),
         from: from.value.trim(),
         siteUrl: siteUrl.value.trim(),
@@ -339,10 +341,18 @@ async function alertsTab(reload) {
         h('label.inline-check', inAppEnabled, h('span', 'The bell inside the app')),
         h('label.inline-check', pushEnabled, h('span', 'Phone and desktop alerts')),
         h('label.inline-check', emailEnabled, h('span', 'The morning email digest')),
+        h('label.inline-check', noticeEmail,
+          h('span', 'Email every notice as well as ringing the bell')),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'A notice goes only to whoever it names — the person it is addressed to, or whoever holds '
+          + 'the permission it is for, worked out when it is sent rather than from a list somebody '
+          + 'has to keep up to date. Somebody who is not in the app all day is exactly who it is for.'),
         h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
-          'Only two things qualify: days that cannot be settled without somebody deciding, and an '
-          + 'absence that has run long enough to stop being an oversight. An alert for every late '
-          + 'arrival would be a dozen a morning, and everybody would learn to swipe them away.'),
+          'The morning digest is different: one message, and only when there is something to do '
+          + 'about it. Only two things qualify — days that cannot be settled without somebody '
+          + 'deciding, and an absence that has run long enough to stop being an oversight. An alert '
+          + 'for every late arrival would be a dozen a morning, and everybody would learn to swipe '
+          + 'them away.'),
       ),
 
       card('Email', {

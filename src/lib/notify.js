@@ -1,6 +1,7 @@
 import { originOf } from './site.js';
 import { getVapidKeys, sendPush } from './push.js';
 import { isMissingTable } from './http.js';
+import { allows, effectivePermissions } from './permissions.js';
 
 /**
  * What actually gets sent, and to whom.
@@ -243,5 +244,122 @@ export async function emailExceptions(db, env, { day, open, absent, escalated = 
     await write('sent', to.join(', '));
   } catch (err) {
     if (!isMissingTable(err)) await write('failed', null, err.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A notice, by mail as well as by bell
+// ---------------------------------------------------------------------------
+
+const NOTICE_COLOUR = { high: '#b02436', warn: '#9a5800', good: '#0f7048', info: '#1f5fd0' };
+
+/**
+ * Who a notice is actually addressed to, resolved at the moment of sending.
+ *
+ * A notice carries either a person or a permission, and never a list of email
+ * addresses. That is deliberate: a stored list is a second copy of who works
+ * here, and the day somebody is promoted is the day the two stop agreeing.
+ * Resolving it here means a notice for administrators reaches whoever holds
+ * that permission this morning, and stops reaching whoever lost it yesterday.
+ */
+export async function noticeRecipients(db, { audience = null, userId = null }) {
+  const rows = await db.prepare(
+    'SELECT id, name, email, role, permissions, active FROM users WHERE active = 1 AND email IS NOT NULL',
+  ).all().catch(() => ({ results: [] }));
+
+  const people = (rows.results ?? []).filter((u) => isEmail(u.email));
+
+  // A named person is the whole audience. "Somebody should look at this" is
+  // not a plan, and a mail that goes to four people is a mail none of them
+  // owns — the permission is only the fallback for a notice addressed to a
+  // role rather than to a colleague.
+  if (userId != null) {
+    const one = people.find((u) => Number(u.id) === Number(userId));
+    return one ? [one] : [];
+  }
+
+  if (!audience) return people;
+  return people.filter((u) => allows(audience, effectivePermissions(u)));
+}
+
+/** The body. Plain HTML with inline styles: mail clients strip stylesheets. */
+export function renderNotice({ notice, propertyName, siteUrl }) {
+  const colour = NOTICE_COLOUR[notice.level] ?? NOTICE_COLOUR.info;
+  const link = notice.link && siteUrl
+    ? `${siteUrl.replace(/\/$/, '')}/${String(notice.link).replace(/^\/*/, '')}`
+    : null;
+
+  return {
+    subject: notice.title,
+    html: `
+      <div style="background:#f4f6f8;padding:24px">
+        <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:22px 24px">
+          <div style="font:600 12px/1.4 system-ui,sans-serif;color:#6f7884;letter-spacing:.06em;text-transform:uppercase">
+            ${esc(propertyName)}
+          </div>
+          <h1 style="font:650 19px/1.35 system-ui,sans-serif;color:#101418;margin:8px 0 0;
+                     border-left:3px solid ${colour};padding-left:10px">${esc(notice.title)}</h1>
+          ${notice.body
+    ? `<p style="font:15px/1.6 system-ui,sans-serif;color:#4a535e;margin:14px 0 0">${esc(notice.body)}</p>`
+    : ''}
+          ${notice.actor
+    ? `<p style="font:13px/1.5 system-ui,sans-serif;color:#6f7884;margin:12px 0 0">From ${esc(notice.actor)}</p>`
+    : ''}
+          ${link
+    ? `<p style="margin:20px 0 0"><a href="${esc(link)}"
+         style="font:600 14px/1 system-ui,sans-serif;color:#fff;background:#1f5fd0;
+                text-decoration:none;padding:11px 18px;border-radius:8px;display:inline-block">Open it</a></p>`
+    : ''}
+          <p style="font:12px/1.5 system-ui,sans-serif;color:#8b939d;margin:22px 0 0;
+                    border-top:1px solid #e6e9ed;padding-top:12px">
+            You are receiving this because it is addressed to you in ${esc(propertyName)}.
+            Turn these off under Setup &rarr; Notifications.
+          </p>
+        </div>
+      </div>`,
+  };
+}
+
+/**
+ * Send one notice on to whoever it names.
+ *
+ * Silent and harmless when email is not set up, switched off, or addressed to
+ * nobody with an address. Never throws: a notice is a courtesy, and a mail
+ * provider having a bad afternoon must not fail the round that earned it.
+ */
+export async function emailNotice(db, env, notice) {
+  try {
+    const rows = await db.prepare('SELECT key, value FROM settings').all();
+    const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
+
+    if (settings.notice_email === '0') return { sent: 0, reason: 'switched off' };
+    const apiKey = env?.RESEND_API_KEY;
+    const from = (settings.email_from || '').trim();
+    if (!apiKey || !from) return { sent: 0, reason: 'not configured' };
+
+    const people = await noticeRecipients(db, notice);
+    if (!people.length) return { sent: 0, reason: 'nobody to send to' };
+
+    const { subject, html } = renderNotice({
+      notice,
+      propertyName: settings.property_name || 'HIVE',
+      siteUrl: originOf(settings.site_url),
+    });
+
+    const to = people.map((p) => p.email);
+    await sendEmail({ apiKey, from, to, subject, html });
+
+    await db.prepare(
+      'INSERT INTO email_log (kind, day, recipients, status, detail) VALUES (?, ?, ?, ?, ?)',
+    ).bind('notice', null, to.join(', '), 'sent', String(notice.kind).slice(0, 60))
+      .run().catch(() => {});
+
+    return { sent: to.length };
+  } catch (err) {
+    await db.prepare(
+      'INSERT INTO email_log (kind, day, recipients, status, detail) VALUES (?, ?, ?, ?, ?)',
+    ).bind('notice', null, null, 'failed', String(err.message).slice(0, 500))
+      .run().catch(() => {});
+    return { sent: 0, reason: err.message };
   }
 }

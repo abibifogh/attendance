@@ -1368,7 +1368,7 @@ export async function decideTimeEdit(ctx, idParam) {
     day: request.day,
     actor: actorOf(ctx),
     audience: 'att_times',
-  });
+  }, ctx);
 
   return json({ ok: true, decision });
 }
@@ -1485,7 +1485,7 @@ async function recordTimeEdit(ctx, {
     day,
     actor: actorOf(ctx),
     audience: 'att_setup',
-  });
+  }, ctx);
 
   return written?.id ?? null;
 }
@@ -2096,6 +2096,10 @@ export async function dailyTick(db, env, today) {
     const payload = {
       day: yesterday, open, absent, escalated, rows: days,
     };
+    // Bell only, and deliberately. The digest below carries exactly this
+    // information by mail already; sending the notice as well would put two
+    // emails about the same morning in the same inbox, which is how people
+    // learn to ignore both.
     await createNotice(db, notice);
     await Promise.allSettled([
       pingExceptions(db, payload),

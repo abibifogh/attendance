@@ -264,6 +264,21 @@ is a courtesy, the API is the gate. The one exemption is an administrator
 signing a period *as* the answer to the question about it, which is not slipping
 past the rule but the rule being satisfied.
 
+**Every notice goes out by email as well as ringing the bell.** It reaches
+whoever the notice names — the person it is addressed to, or everyone holding
+the permission it is for — resolved at the moment of sending rather than from a
+stored list of addresses. A stored list is a second copy of who works here, and
+the day somebody is promoted is the day the two stop agreeing. The mail is
+fired through `waitUntil`, so a provider having a bad afternoon can never slow
+a sign-off down or fail one; a send that does fail lands in the email log and
+nowhere else. The sender is `hive@niceoperation.com`, and one switch on Setup →
+Notifications turns the whole thing off.
+
+The morning digest is deliberately left as it was: one message, to the typed
+recipient list, and only when there is something to do about it. Emailing its
+notice as well would put two messages about the same morning in the same inbox,
+which is how people learn to ignore both.
+
 **The person you just acted on stays where you can see them.** The list is
 ordered worst first, which is right when you open it and wrong the moment you
 do anything: signing somebody's two worst days drops their count, so on the

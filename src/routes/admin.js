@@ -307,6 +307,8 @@ export async function getNotifications(ctx) {
     emailEnabled: settings.att_email_enabled === '1',
     pushEnabled: settings.push_on_exception !== '0',
     inAppEnabled: settings.notices_enabled !== '0',
+    // Every notice by mail as well as by bell, to whoever the notice names.
+    noticeEmail: settings.notice_email !== '0',
     recipients: parseRecipients(settings.att_email_to),
     from: settings.email_from || '',
     // Shown as the origin it will actually be used as, not as whatever is
@@ -352,6 +354,7 @@ export async function updateNotifications(ctx) {
   const emailEnabled = bool(body.emailEnabled, stored.att_email_enabled === '1') ? '1' : '0';
   const pushEnabled = bool(body.pushEnabled, stored.push_on_exception !== '0') ? '1' : '0';
   const inApp = bool(body.inAppEnabled, stored.notices_enabled !== '0') ? '1' : '0';
+  const noticeEmail = bool(body.noticeEmail, stored.notice_email !== '0') ? '1' : '0';
 
   await ctx.db.batch([
     setting(ctx.db, 'att_email_enabled', emailEnabled),
@@ -364,6 +367,7 @@ export async function updateNotifications(ctx) {
     setting(ctx.db, 'site_url', originOf(siteUrl)),
     setting(ctx.db, 'push_on_exception', pushEnabled),
     setting(ctx.db, 'notices_enabled', inApp),
+    setting(ctx.db, 'notice_email', noticeEmail),
   ]);
 
   await audit(ctx, 'notifications.update', null, {

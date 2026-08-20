@@ -366,6 +366,10 @@ export const GUIDE = [
         'Sign off — or Ask an admin.',
       ] },
 
+      { note: 'Every notice also goes out by email, to whoever it names — the person it is '
+        + 'addressed to, or whoever holds the permission it is for. So a question raised while '
+        + 'you are off the floor reaches you anyway. Setup → Notifications turns it off.' },
+
       { note: 'Whoever you last acted on is held at the top until you do something else, '
         + 'with a line saying what just happened to them and how many of their days are '
         + 'still outstanding. The list is ordered worst first, so signing somebody’s two '
