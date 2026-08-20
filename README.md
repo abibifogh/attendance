@@ -264,6 +264,28 @@ is a courtesy, the API is the gate. The one exemption is an administrator
 signing a period *as* the answer to the question about it, which is not slipping
 past the rule but the rule being satisfied.
 
+#### Making the mail arrive
+
+Deliverability is the sum of a dozen small things, and every one of them is
+free. What the app now does on its own:
+
+- **A named sender.** The property's own name goes in front of the address, so
+  the inbox shows *Somewhere Nice* rather than a bare `hive@niceoperation.com`.
+  A name already written into the setting is left alone, and a comma or a quote
+  in a property name cannot break the header.
+- **A plain-text part on every message.** A message with an HTML part and no
+  text part is one of the things filters weigh most heavily, because almost
+  nothing legitimate is sent that way and a great deal of junk is.
+- **A whole HTML document** — doctype, charset, language — rather than a loose
+  fragment, and a preheader so the inbox shows a real summary beside the
+  subject instead of scraping the property name twice.
+- **A reply-to that reaches a person.** Staff do reply to these, and a reply
+  that vanishes teaches them the mail is not worth reading.
+
+The rest is DNS, and the app cannot do it: **SPF and DKIM** come with verifying
+the domain at the provider, and **DMARC** is a record you add yourself. Without
+DMARC, Gmail and Outlook have nothing to check the first two against.
+
 **Every notice goes out by email as well as ringing the bell.** It reaches
 whoever the notice names — the person it is addressed to, or everyone holding
 the permission it is for — resolved at the moment of sending rather than from a

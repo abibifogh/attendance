@@ -115,10 +115,23 @@ test('recording a notice sends it, from the configured address', async () => {
   assert.equal(mail.sent.length, 1);
   const { url, body } = mail.sent[0];
   assert.equal(url, 'https://api.resend.com/emails');
-  assert.equal(body.from, 'hive@niceoperation.com');
+  // Named, not bare. A From line reading only an address is one of the
+  // plainer marks of mail nobody set up.
+  assert.equal(body.from, '"Staff Attendance" <hive@niceoperation.com>');
   assert.deepEqual(body.to, ['ama@example.test']);
   assert.equal(body.subject, 'Nelson Kumadey: a period needs your eye');
   assert.match(body.html, /nineteen days nobody can explain/);
+
+  // Both parts. A message with HTML and no text is one of the things spam
+  // filters weigh most heavily.
+  assert.ok(body.text, 'a plain-text part was sent');
+  assert.match(body.text, /nineteen days nobody can explain/);
+  assert.ok(!body.text.includes('<'), 'and it is actually plain');
+
+  // A whole document rather than a loose fragment.
+  assert.match(body.html, /^<!doctype html>/);
+  assert.match(body.html, /<meta charset="utf-8">/);
+  assert.match(body.html, /<html lang="en">/);
 
   // The bell still rang, and the send is on the record.
   assert.equal(raw.prepare('SELECT COUNT(*) c FROM app_notices').get().c, 1);
@@ -195,4 +208,45 @@ test('a title with markup in it cannot become markup in the mail', () => {
   assert.ok(!html.includes('<script>'), 'escaped rather than embedded');
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /x &amp; y/);
+});
+
+
+test('the sender carries the property name, and a name already set is left alone', async () => {
+  const { senderWithName } = await import('../src/lib/notify.js');
+
+  assert.equal(senderWithName('hive@niceoperation.com', 'Somewhere Nice'),
+    '"Somewhere Nice" <hive@niceoperation.com>');
+
+  // Somebody who wrote their own name into the setting keeps it.
+  assert.equal(senderWithName('HIVE <hive@niceoperation.com>', 'Somewhere Nice'),
+    'HIVE <hive@niceoperation.com>');
+
+  // A comma in a property name must not become a second recipient.
+  assert.equal(senderWithName('hive@niceoperation.com', 'Somewhere Nice, Accra'),
+    '"Somewhere Nice, Accra" <hive@niceoperation.com>');
+
+  // And a quote in it must not close the quoting early.
+  assert.equal(senderWithName('hive@niceoperation.com', 'The "Nice" Hotel'),
+    '"The Nice Hotel" <hive@niceoperation.com>');
+
+  assert.equal(senderWithName('hive@niceoperation.com', ''), 'hive@niceoperation.com');
+  assert.equal(senderWithName('', 'Somewhere Nice'), '');
+});
+
+test('the plain-text part keeps the words and the links, and drops the markup', async () => {
+  const { asPlainText } = await import('../src/lib/notify.js');
+
+  const text = asPlainText(`
+    <h1>Nelson Kumadey</h1>
+    <p>Nineteen days &amp; nobody can explain them</p>
+    <ul><li>1 July</li><li>2 July</li></ul>
+    <a href="https://staff.niceoperation.com/#/signoff">Open it</a>
+  `);
+
+  assert.match(text, /Nelson Kumadey/);
+  assert.match(text, /Nineteen days & nobody/, 'entities decoded');
+  assert.match(text, /- 1 July/, 'list items survive as a list');
+  assert.match(text, /Open it: https:\/\/staff\.niceoperation\.com/, 'the link is readable');
+  assert.ok(!text.includes('<'), 'no markup left');
+  assert.ok(!/\n{3,}/.test(text), 'no runs of blank lines');
 });

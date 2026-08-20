@@ -1,6 +1,7 @@
 import { originOf } from './site.js';
 import { getVapidKeys, sendPush } from './push.js';
 import { isMissingTable } from './http.js';
+import { labelFor } from './attendance.js';
 import { allows, effectivePermissions } from './permissions.js';
 
 /**
@@ -77,14 +78,106 @@ export function isEmail(value) {
  * Chosen for having an HTTP API — a Worker cannot open an SMTP socket, so
  * anything SMTP-shaped is out regardless of preference.
  */
-export async function sendEmail({ apiKey, from, to, subject, html }) {
+/**
+ * The sender, with a name on it.
+ *
+ * A bare address in the From line is one of the plainer marks of mail nobody
+ * bothered to set up: the inbox shows "hive@niceoperation.com" where every
+ * other message shows who it is from, and a filter reading the same signal
+ * draws the same conclusion. Whatever the property is called goes in front of
+ * it — unless somebody has already written their own name into the setting, in
+ * which case theirs stands.
+ */
+export function senderWithName(from, propertyName) {
+  const address = String(from || '').trim();
+  if (!address) return '';
+  if (address.includes('<')) return address;            // already named
+  const name = String(propertyName || '').trim();
+  if (!name) return address;
+
+  // A quoted display name, so a property called "Somewhere Nice, Accra" cannot
+  // put a comma in a header where a comma separates addresses.
+  return `"${name.replace(/["\\]/g, '')}" <${address}>`;
+}
+
+/**
+ * The same message as plain text.
+ *
+ * Not a nicety. A message with an HTML part and no text part is one of the
+ * things spam filters weigh most heavily, because almost nothing legitimate is
+ * sent that way and a great deal of junk is. It is also what gets read when
+ * somebody's client refuses to load HTML at all.
+ */
+export function asPlainText(html) {
+  return String(html)
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    // The preheader is the line the inbox shows beside the subject. It is a
+    // copy of what follows, so reading it here would print the whole opening
+    // of the message twice.
+    .replace(/<div data-preheader[\s\S]*?<\/div>/gi, '')
+    .replace(/<title[\s\S]*?<\/title>/gi, '')
+    .replace(/<head[\s\S]*?<\/head>/gi, '')
+    .replace(/<a[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_, href, text) => {
+      const label = text.replace(/<[^>]*>/g, '').trim();
+      return label && !href.startsWith('#') ? `${label}: ${href}` : label;
+    })
+    .replace(/<\/(p|div|h1|h2|h3|li|tr)>/gi, '\n')
+    .replace(/<(br|hr)\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '  - ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&rarr;/g, '->')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * A whole HTML document rather than a loose fragment.
+ *
+ * A body with no doctype, no charset and no language is another small mark
+ * against a message. None of these is decisive on its own; deliverability is
+ * the sum of a dozen such things, and every one of them is free.
+ *
+ * The preheader is the grey line the inbox shows after the subject. Left out,
+ * clients scrape whatever text comes first — usually the property name, twice.
+ */
+export function emailDocument({ title, preheader, body }) {
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>${esc(title)}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f8;color:#101418">
+${preheader
+    ? `<div data-preheader style="display:none;max-height:0;overflow:hidden;opacity:0">${esc(preheader)}</div>`
+    : ''}
+${body}
+</body></html>`;
+}
+
+export async function sendEmail({
+  apiKey, from, to, subject, html, text, replyTo = null, headers = null,
+}) {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ from, to, subject, html }),
+    body: JSON.stringify({
+      from,
+      to,
+      subject,
+      html,
+      // Both parts, always. See asPlainText above.
+      text: text || asPlainText(html),
+      ...(replyTo ? { reply_to: replyTo } : {}),
+      ...(headers ? { headers } : {}),
+    }),
   });
 
   if (!response.ok) {
@@ -114,15 +207,26 @@ export function renderDigest({ day, propertyName, siteUrl, open, absent, escalat
        </ul>`
     : '');
 
+  // Named through the app's own labeller. This used to read `r.label`, a
+  // column neither the cron nor the test button ever selected — so every line
+  // of every digest ever sent said "Kofi Mensah — undefined". Reason codes are
+  // not loaded here, so a coded absence reads as "Absent" rather than as the
+  // particular reason; the names and the count are what this email is for.
   const needing = rows.filter((r) => r.resolution === 'open')
-    .map((r) => `${r.name} — ${r.label}`);
+    .map((r) => `${r.name} — ${r.label ?? labelFor(r, null)}`);
   const away = rows.filter((r) => r.status === 'absent').map((r) => r.name);
+
+  const summary = `${open ? `${open} day${open === 1 ? '' : 's'} waiting on a decision`
+    : 'Nothing waiting on a decision'}${absent ? `, ${absent} absent` : ''}.`;
 
   return {
     subject: open
       ? `${propertyName}: ${open} attendance day${open === 1 ? '' : 's'} to confirm`
       : `${propertyName}: ${absent} absent on ${day}`,
-    html: `
+    html: emailDocument({
+      title: `Attendance — ${day}`,
+      preheader: summary,
+      body: `
       <div style="max-width:560px;margin:0 auto;padding:24px;font-family:system-ui,sans-serif">
         <p style="font:12px/1.4 system-ui,sans-serif;color:#6f7884;margin:0 0 4px">${esc(propertyName)}</p>
         <h1 style="font:700 22px/1.3 system-ui,sans-serif;color:#101418;margin:0 0 4px">Attendance — ${esc(day)}</h1>
@@ -146,6 +250,7 @@ export function renderDigest({ day, propertyName, siteUrl, open, absent, escalat
           what happened. Until they do, no hours are counted for it.
         </p>
       </div>`,
+    }),
   };
 }
 
@@ -295,7 +400,14 @@ export async function emailExceptions(db, env, { day, open, absent, escalated = 
       rows,
     });
 
-    await sendEmail({ apiKey, from: settings.email_from, to, subject, html });
+    await sendEmail({
+      apiKey,
+      from: senderWithName(settings.email_from, settings.property_name || 'HIVE'),
+      to,
+      subject,
+      html,
+      replyTo: (settings.email_reply_to || '').trim() || null,
+    });
     await write('sent', to.join(', '));
   } catch (err) {
     if (!isMissingTable(err)) await write('failed', null, err.message);
@@ -346,7 +458,10 @@ export function renderNotice({ notice, propertyName, siteUrl }) {
 
   return {
     subject: notice.title,
-    html: `
+    html: emailDocument({
+      title: notice.title,
+      preheader: notice.body || notice.title,
+      body: `
       <div style="background:#f4f6f8;padding:24px">
         <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:22px 24px">
           <div style="font:600 12px/1.4 system-ui,sans-serif;color:#6f7884;letter-spacing:.06em;text-transform:uppercase">
@@ -372,6 +487,7 @@ export function renderNotice({ notice, propertyName, siteUrl }) {
           </p>
         </div>
       </div>`,
+    }),
   };
 }
 
@@ -402,7 +518,14 @@ export async function emailNotice(db, env, notice) {
     });
 
     const to = people.map((p) => p.email);
-    await sendEmail({ apiKey, from, to, subject, html });
+    await sendEmail({
+      apiKey,
+      from: senderWithName(from, settings.property_name || 'HIVE'),
+      to,
+      subject,
+      html,
+      replyTo: (settings.email_reply_to || '').trim() || null,
+    });
 
     await db.prepare(
       'INSERT INTO email_log (kind, day, recipients, status, detail) VALUES (?, ?, ?, ?, ?)',

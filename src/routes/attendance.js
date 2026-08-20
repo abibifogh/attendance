@@ -2064,7 +2064,8 @@ export async function dailyTick(db, env, today) {
 
   const yesterday = addDays(today, -1);
   const rows = await db.prepare(
-    `SELECT d.status, d.resolution, d.reason_code, s.name
+    `SELECT d.status, d.resolution, d.reason_code, d.first_in,
+            d.late_minutes, d.early_minutes, s.name
      FROM att_days d JOIN att_staff s ON s.id = d.staff_id
      WHERE d.day = ? AND s.active = 1`,
   ).bind(yesterday).all().catch(() => ({ results: [] }));

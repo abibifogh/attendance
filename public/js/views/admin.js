@@ -300,6 +300,7 @@ async function alertsTab(reload) {
     value: data.recipients.join('\n'),
   });
   const from = h('input', { type: 'text', maxlength: 200, value: data.from, placeholder: 'HIVE <hive@niceoperation.com>' });
+  const replyTo = h('input', { type: 'text', maxlength: 200, value: data.replyTo ?? '', placeholder: 'someone@niceoperation.com' });
   const siteUrl = h('input', { type: 'url', maxlength: 300, value: data.siteUrl, placeholder: 'https://staff.niceoperation.com' });
   const emailEnabled = h('input', { type: 'checkbox', checked: data.emailEnabled });
   const pushEnabled = h('input', { type: 'checkbox', checked: data.pushEnabled });
@@ -315,6 +316,7 @@ async function alertsTab(reload) {
         noticeEmail: noticeEmail.checked,
         recipients: recipients.value.split('\n').map((s) => s.trim()).filter(Boolean),
         from: from.value.trim(),
+        replyTo: replyTo.value.trim(),
         siteUrl: siteUrl.value.trim(),
       });
       toast('Saved.', 'good');
@@ -360,7 +362,10 @@ async function alertsTab(reload) {
         actions: h('button.btn-sm', { onclick: test }, 'Send one now'),
       },
         h('label.field', h('span', 'Send to'), recipients),
-        h('label.field', h('span', 'From address'), from),
+        h('label.field', h('span', 'From address'), from,
+          h('small.muted', 'Must be at a domain your email provider has verified')),
+        h('label.field', h('span', 'Reply to'), replyTo,
+          h('small.muted', 'Where a reply lands. Leave empty and replies go to the From address')),
         h('label.field', h('span', 'This site\'s address'), siteUrl,
           h('small.muted', 'Used for the link in the email and the alert')),
         !data.providerConfigured

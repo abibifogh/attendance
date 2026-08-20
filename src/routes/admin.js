@@ -311,6 +311,9 @@ export async function getNotifications(ctx) {
     noticeEmail: settings.notice_email !== '0',
     recipients: parseRecipients(settings.att_email_to),
     from: settings.email_from || '',
+    // Where a reply goes. Staff do reply to these, and a reply that vanishes
+    // into an unread mailbox teaches them the mail is not worth reading.
+    replyTo: settings.email_reply_to || '',
     // Shown as the origin it will actually be used as, not as whatever is
     // stored. A path left in this box is neutralised everywhere it is read,
     // but a box that keeps displaying it invites somebody to conclude the
@@ -339,6 +342,11 @@ export async function updateNotifications(ctx) {
     throw badRequest('The "from" address does not look like an email address');
   }
 
+  const replyTo = str(body.replyTo, 'Reply-to address', { max: 200, fallback: '' }) || '';
+  if (replyTo && !isEmail(replyTo.replace(/^.*<([^>]+)>.*$/, '$1'))) {
+    throw badRequest('The "reply to" address does not look like an email address');
+  }
+
   const siteUrl = str(body.siteUrl, 'Site address', { max: 300, fallback: '' }) || '';
   if (siteUrl && !/^https?:\/\//i.test(siteUrl)) {
     throw badRequest('The site address should start with https://');
@@ -360,6 +368,7 @@ export async function updateNotifications(ctx) {
     setting(ctx.db, 'att_email_enabled', emailEnabled),
     setting(ctx.db, 'att_email_to', JSON.stringify(list)),
     setting(ctx.db, 'email_from', from),
+    setting(ctx.db, 'email_reply_to', replyTo),
     // Stored as an origin, not as whatever was in the address bar when
     // somebody filled the box in. A path left on the end here reappears in the
     // middle of every link the property sends out, and the person holding the
@@ -384,7 +393,8 @@ export async function testNotification(ctx) {
   if (!latest) throw badRequest('There is no attendance recorded yet to send a summary for.');
 
   const rows = await ctx.db.prepare(
-    `SELECT d.status, d.resolution, s.name
+    `SELECT d.status, d.resolution, d.reason_code, d.first_in,
+            d.late_minutes, d.early_minutes, s.name
      FROM att_days d JOIN att_staff s ON s.id = d.staff_id
      WHERE d.day = ? AND s.active = 1`,
   ).bind(latest.day).all();
