@@ -84,3 +84,91 @@ test('a dropped connection is not confused with either', async () => {
     );
   } finally { globalThis.fetch = original; }
 });
+
+// ---------------------------------------------------------------------------
+// Whether the server is answering
+// ---------------------------------------------------------------------------
+
+const { onReachabilityChange, serverReachable } = await import('../public/js/api.js');
+
+/**
+ * Not `navigator.onLine`, which only reports whether the device has a network
+ * interface: it stays true on a phone with two bars and no data, and true when
+ * the site itself is down. The only honest test is whether a request came
+ * back.
+ *
+ * It matters because the app is installable now. It opens from a home screen
+ * whether or not anything can be reached, and a screen that opens is a screen
+ * somebody believes — "nobody absent, all settled" is a reasonable-looking
+ * morning and a dangerous thing to show when the truth is that nothing could
+ * be fetched.
+ */
+
+/** Put reachability back to "answering", whatever an earlier test left it as. */
+async function knownGood() {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response('{}', {
+    status: 200, headers: { 'Content-Type': 'application/json' },
+  });
+  await api.attOutstanding({ from: '2026-06-01', to: '2026-06-07' }).catch(() => {});
+  globalThis.fetch = original;
+}
+
+test('a dropped connection is noticed, and answering again clears it', async () => {
+  await knownGood();
+  const seen = [];
+  const stop = onReachabilityChange((ok) => seen.push(ok));
+  const original = globalThis.fetch;
+
+  try {
+    globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
+    await assert.rejects(api.attOutstanding({ from: '2026-06-01', to: '2026-06-07' }));
+    assert.equal(serverReachable(), false, 'the server stopped answering');
+
+    // Back again.
+    globalThis.fetch = async () => new Response(JSON.stringify({ rows: [] }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    });
+    await api.attOutstanding({ from: '2026-06-01', to: '2026-06-07' });
+    assert.equal(serverReachable(), true);
+  } finally {
+    globalThis.fetch = original;
+    stop();
+  }
+
+  assert.deepEqual(seen, [false, true], 'told once each way, not once per request');
+});
+
+test('a refusal is not a dropped connection', async () => {
+  await knownGood();
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ error: 'Not allowed' }), {
+      status: 403, headers: { 'Content-Type': 'application/json' },
+    });
+    await assert.rejects(api.attOutstanding({ from: '2026-06-01', to: '2026-06-07' }));
+    // Something answered. That it said no is a different matter entirely, and
+    // raising "no connection" over it would send somebody looking at their
+    // signal for a permissions problem.
+    assert.equal(serverReachable(), true);
+  } finally { globalThis.fetch = original; }
+});
+
+test('the same verdict twice does not wake the watchers twice', async () => {
+  await knownGood();
+  let calls = 0;
+  const stop = onReachabilityChange(() => { calls += 1; });
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
+    await assert.rejects(api.attOutstanding({ from: '2026-06-01', to: '2026-06-07' }));
+    await assert.rejects(api.attOutstanding({ from: '2026-06-01', to: '2026-06-07' }));
+    await assert.rejects(api.attOutstanding({ from: '2026-06-01', to: '2026-06-07' }));
+    assert.equal(calls, 1, 'three failures, one change of state');
+  } finally {
+    globalThis.fetch = async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    await api.attOutstanding({ from: '2026-06-01', to: '2026-06-07' }).catch(() => {});
+    globalThis.fetch = original;
+    stop();
+  }
+});

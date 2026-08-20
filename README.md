@@ -275,6 +275,50 @@ digest naming half the property every morning is one nobody reads by Friday.
 What makes the digest send at all is unchanged — a day nobody can settle, or an
 absence. Lateness rides along with it rather than triggering it.
 
+### On a phone
+
+**It installs.** A web app manifest, real PNG icons at 192 and 512 including a
+maskable one, and a service worker registered on every load rather than only
+when somebody turns alerts on — Chrome will not offer to install anything
+without one, and it wants a `fetch` handler on it besides. *My account → Put
+HIVE on this device* holds the browser's own install prompt and offers it where
+somebody went looking for it, rather than as a bar across the top that everyone
+has learned to dismiss. iPhone has no such prompt at all, so there it prints
+the steps instead: Share → Add to Home Screen, which is the half nobody
+guesses.
+
+**What the worker caches, and what it must never cache.** The shell — the page,
+the stylesheet, the scripts — network first, so a deploy is picked up the
+moment there is a signal to pick it up with and the cache is only ever the
+fallback. Nothing under `/api/` is cached at any time. A cached list of who to
+chase is yesterday's list, and somebody acting on yesterday's list is worse off
+than somebody who knows they are offline.
+
+**Which is why there is a bar.** The app now opens from a home screen whether
+or not anything can be reached, and a screen that opens is a screen somebody
+believes: *nobody absent, all settled* is a reasonable-looking morning and a
+dangerous thing to show when the truth is that nothing could be fetched. So a
+failed request raises a line under the header saying so, and a successful one
+clears it. Not `navigator.onLine`, which only reports whether the device has a
+network interface — it stays true on a phone with two bars and no data, and
+true when the site itself is down. Whether the server answers is the question,
+and only a request answers it.
+
+**And it fits the screen.** Figures go two across instead of one per row, which
+was costing a screen and a half of scrolling before the first line of the day.
+A card's heading, its note and its buttons each get their own line rather than
+fighting over one. Every form field is 16px on a phone, because anything
+smaller makes iOS zoom the page in on focus and never zoom back out. Tap
+targets grow wherever the pointer is coarse — a mis-tapped checkbox on the
+sign-off screen signs off the wrong day. And the notch and the home bar are
+accounted for, since `viewport-fit=cover` is what lets the page paint under
+both.
+
+One bug fell out of looking at it: the name cell on three tables put the
+department straight after the name with no line break, so every row read
+*Abdul Hamid IddrisuSecurity*. That was true at every width, not just on a
+phone; it was simply easier to see on one.
+
 #### Making the mail arrive
 
 Deliverability is the sum of a dozen small things, and every one of them is

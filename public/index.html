@@ -9,6 +9,16 @@
   <link rel="stylesheet" href="/styles.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,7 87,28.5 87,71.5 50,93 13,71.5 13,28.5' fill='none' stroke='%23f0a94c' stroke-width='11' stroke-linejoin='round'/></svg>" />
   <link rel="manifest" href="/manifest.webmanifest" />
+
+  <!-- iPhone has no install prompt: it installs through Share → Add to Home
+       Screen, and reads these rather than the manifest. Without them the app
+       opens in a browser view with a screenshot for an icon, which is not
+       what anybody meant by "install". -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="HIVE" />
+  <link rel="apple-touch-icon" href="/icons/hive-192.png" />
 </head>
 <body>
   <div id="app" class="app-loading">

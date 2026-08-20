@@ -13,6 +13,36 @@ let onUnauthorized = () => {};
 export function setUnauthorizedHandler(fn) { onUnauthorized = fn; }
 
 /**
+ * Whether the server is answering.
+ *
+ * Not `navigator.onLine`, which only says whether the device has a network
+ * interface: it stays true on a phone with two bars and no data, and true when
+ * the site itself is down. The only honest test is whether a request came
+ * back, so that is what this tracks.
+ *
+ * It matters more than it used to. The app is installable now, so it opens
+ * from a home screen whether or not anything can be reached — and a screen
+ * that opens is a screen somebody believes. "Nobody absent, all settled" is a
+ * reasonable-looking morning and a dangerous thing to show when the truth is
+ * that nothing could be fetched.
+ */
+let reachable = true;
+const watchers = new Set();
+
+export function serverReachable() { return reachable; }
+
+export function onReachabilityChange(fn) {
+  watchers.add(fn);
+  return () => watchers.delete(fn);
+}
+
+function reachedServer(yes) {
+  if (reachable === yes) return;
+  reachable = yes;
+  for (const fn of watchers) { try { fn(yes); } catch { /* a watcher is a courtesy */ } }
+}
+
+/**
  * A path with a missing id in it, caught here rather than at the far end.
  *
  * `/api/att/staff/${id}` with an undefined id builds the perfectly valid-looking
@@ -75,8 +105,12 @@ async function request(path, { method = 'GET', body, signal } = {}) {
     });
   } catch (err) {
     if (err.name === 'AbortError') throw err;
+    reachedServer(false);
     throw new ApiError(0, 'No connection to the server. Check the signal and try again.');
   }
+
+  // Anything at all came back — even a refusal — so the server is there.
+  reachedServer(true);
 
   if (response.status === 401) {
     onUnauthorized();

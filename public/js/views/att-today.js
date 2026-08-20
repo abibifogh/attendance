@@ -165,10 +165,10 @@ export async function renderAttToday(params) {
       key: 'staff',
       label: 'Name',
       format: (v, r) => h('div',
-        h('a', {
+        h('div', h('a', {
           href: `#/att-staff?id=${v.id}&day=${day}`,
           onclick: (e) => { e.preventDefault(); navigate('att-staff', { id: v.id, day }); },
-        }, v.name),
+        }, v.name)),
         h('small.muted', v.department || `No. ${v.employee_no}`),
       ),
     },

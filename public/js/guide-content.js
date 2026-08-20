@@ -27,6 +27,14 @@ export const GUIDE = [
     permission: null,
     lede: 'What everybody needs, whatever else they do here.',
     blocks: [
+
+      { sub: 'Putting it on your phone' },
+      { p: 'HIVE installs like an app. On Android, open My account and press Install. On an '
+        + 'iPhone, press Share — the square with the arrow coming out of the top — then Add to '
+        + 'Home Screen; Safari is the only browser on iOS that can do it.' },
+      { note: 'Installed, it opens even with no signal — but then it can only show you what it '
+        + 'had already. A line across the top says so whenever the server cannot be reached, and '
+        + 'nothing you change while it is showing has been saved.' },
       { p: 'Open the site, sign in, and you land on the most useful screen you can actually '
         + 'open. What is in the menu is what your permissions reach — if a tab is not there, '
         + 'you do not hold it, and the section list at the bottom of this guide says who does.' },

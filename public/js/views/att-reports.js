@@ -54,10 +54,10 @@ export async function renderAttWeek(params) {
       key: 'staff',
       label: 'Name',
       format: (v) => h('div',
-        h('a', {
+        h('div', h('a', {
           href: `#/att-staff?id=${v.id}`,
           onclick: (e) => { e.preventDefault(); navigate('att-staff', { id: v.id, period: 'week', day: data.from }); },
-        }, v.name),
+        }, v.name)),
         h('small.muted', v.department || `No. ${v.employee_no}`),
       ),
     },
@@ -224,10 +224,10 @@ export async function renderAttOverview(params) {
           key: 'staff',
           label: 'Name',
           format: (v) => h('div',
-            h('a', {
+            h('div', h('a', {
               href: `#/att-staff?id=${v.id}`,
               onclick: (e) => { e.preventDefault(); navigate('att-staff', { id: v.id, period: 'month', day: `${data.month}-15` }); },
-            }, v.name),
+            }, v.name)),
             h('small.muted', v.department || `No. ${v.employee_no}`),
           ),
         },

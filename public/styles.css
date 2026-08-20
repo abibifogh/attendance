@@ -424,6 +424,117 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
      enough room for the item list they are supposed to sit above. */
 }
 
+/* No signal. Loud on purpose: the app opens from a home screen whether or not
+   there is a connection, and a screen that opens is a screen somebody believes.
+   Sits under the header so it is the first thing read on every page. */
+.offline-bar {
+  background: var(--warn-soft);
+  color: var(--warn);
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  padding: .5rem .9rem;
+  font-size: .85rem;
+  line-height: 1.4;
+}
+.offline-bar[hidden] { display: none; }
+
+/* --------------------------------------------------------------------------
+   A phone
+   --------------------------------------------------------------------------
+   Everything here is about the same complaint: the furniture arrived before
+   the content. Four figures stacked one per row, a toolbar five rows deep and
+   a page heading with room to spare put the first actual line of the day a
+   screen and a half down. On a desk that is generous spacing. In a corridor it
+   is scrolling past what you already know to reach what you came for.
+   -------------------------------------------------------------------------- */
+@media (max-width: 620px) {
+  /* Figures two across. Each was taking a fifth of the screen on its own, so
+     a day's four totals cost more height than the list they summarise. */
+  .grid-4, .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-2 { grid-template-columns: minmax(0, 1fr); }
+  .stat { padding: .55rem .7rem; }
+  .stat-value { font-size: 1.3rem; line-height: 1.15; }
+  .stat-label { font-size: .68rem; }
+  .stat-sub { font-size: .74rem; }
+
+  /* Toolbars wrap to fewer rows: smaller text, tighter padding, and no button
+     allowed to grow to the full width and push its neighbour down. */
+  .toolbar { gap: .35rem; margin-bottom: .6rem; }
+  .toolbar button, .toolbar .btn, .btn-row button, .btn-row .btn {
+    font-size: .8rem;
+    padding: .42rem .6rem;
+  }
+  .toolbar input[type="date"], .toolbar select { font-size: .82rem; padding: .38rem .45rem; }
+  .btn-row { gap: .35rem; }
+
+  .page-head { margin-bottom: .6rem; }
+  .page-head h1 { font-size: 1.35rem; }
+  .page-head .sub { font-size: .84rem; }
+
+  .card { padding: .8rem .85rem; }
+  .card-head h2 { font-size: 1rem; }
+  .main { padding: .7rem .6rem 2rem; }
+
+  /* A segmented control keeps wrapping onto a second row rather than becoming
+     a side-scroller. Six presets hidden behind a swipe nobody can see is worse
+     than six presets taking two lines. */
+  .seg.seg-wrap { width: 100%; justify-content: flex-start; }
+  .seg button { padding: .4rem .7rem; }
+
+  /* A card's heading, its note and its buttons were competing for one row: the
+     name broke across two lines while "Sign off" sat in the gap beside it. Each
+     gets its own line, and the buttons go left where the thumb is. */
+  .card-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .4rem;
+  }
+  .card-head h2, .card-head h3 { font-size: 1rem; }
+  .card-head .btn-row { justify-content: flex-start; }
+  .card-note { font-size: .78rem; }
+}
+
+/* Anything a thumb has to hit. 24px is a comfortable target with a mouse and a
+   coin-toss with a thumb, and a mis-tapped checkbox on the sign-off screen
+   signs off the wrong day. */
+@media (pointer: coarse) {
+  input[type="checkbox"], input[type="radio"] { width: 1.35rem; height: 1.35rem; }
+  .tickline input { width: 1.35rem; height: 1.35rem; }
+  .tickline { padding-block: .55rem; }
+  button, .btn { min-height: 2.25rem; }
+  th .th-sort { padding-block: .3rem; }
+}
+
+/* iOS zooms the whole page in when a field smaller than 16px takes focus, and
+   does not zoom back out afterwards. Every screen with a form on it was
+   leaving somebody stranded at 130% with the right-hand column off the edge.
+   16px exactly, and it stops. */
+@media (max-width: 900px) {
+  input, select, textarea { font-size: 16px; }
+}
+
+/* The notch, and the bar at the bottom of a modern phone. `viewport-fit=cover`
+   is already set, which is what lets the page paint under both — and what puts
+   the sign-out button under the camera if nothing accounts for them. */
+@supports (padding: max(0px)) {
+  .topbar {
+    padding-left: max(.75rem, env(safe-area-inset-left));
+    padding-right: max(.75rem, env(safe-area-inset-right));
+  }
+  .main {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(2rem, calc(env(safe-area-inset-bottom) + 1.5rem));
+  }
+  .sidebar { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  .toasts[popover] { bottom: max(1rem, calc(env(safe-area-inset-bottom) + .5rem)); }
+}
+
+@media (max-width: 620px) and (min-resolution: 0dppx) {
+  /* Restated after the safe-area block so the tighter phone padding wins on a
+     phone without a notch as well as one with. */
+  .main { padding-top: .7rem; }
+}
+
 /* The header at phone width.
    The property name, who is signed in, and four buttons will not fit across
    390px: the name wrapped to three lines and "Sign out" fell off the edge. The

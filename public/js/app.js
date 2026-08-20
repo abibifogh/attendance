@@ -1,4 +1,5 @@
-import { api, setUnauthorizedHandler } from './api.js';
+import { api, onReachabilityChange, serverReachable, setUnauthorizedHandler } from './api.js';
+import { registerWorker, watchForInstall } from './install.js';
 import { h, mount } from './util.js';
 import { renderLogin } from './views/login.js';
 import { openAccountDialog } from './views/account.js';
@@ -207,6 +208,15 @@ function shell(content) {
         },
       }, 'Sign out'),
     ),
+    // Said loudly, because the app now opens without a signal and a screen that
+    // opens is a screen somebody believes. "Nobody absent, all settled" is a
+    // reasonable-looking morning and a dangerous lie when the truth is that
+    // nothing could be fetched.
+    h('div.offline-bar', { hidden: serverReachable() },
+      h('strong', 'No connection.'),
+      ' What you are looking at may be out of date, and nothing you change will be saved '
+      + 'until the signal is back.'),
+
     h('div.body-row',
       sidebar(),
       // Tapping the page behind an open drawer closes it, which is what every
@@ -309,9 +319,30 @@ setUnauthorizedHandler(() => {
 
 window.addEventListener('hashchange', render);
 
+// Shown and hidden in place rather than by redrawing the page: losing what
+// somebody had half-filled in because a lift went past is its own small
+// disaster, and the bar is one element.
+onReachabilityChange((ok) => {
+  const bar = document.querySelector('.offline-bar');
+  if (bar) bar.hidden = ok;
+});
+
+// The device losing its network is worth reacting to immediately rather than
+// waiting for the next request to fail — but it is only ever the early
+// warning. Whether the server answers is the question, and only a request
+// answers it.
+window.addEventListener('offline', () => {
+  const bar = document.querySelector('.offline-bar');
+  if (bar) bar.hidden = false;
+});
+window.addEventListener('online', () => { api.me().catch(() => {}); });
+
 (async function boot() {
   const savedTheme = localStorage.getItem('att.theme');
   if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+
+  registerWorker();
+  watchForInstall();
 
   try {
     const me = await api.me();

@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { deriveLoginKey, prepareNewPassword } from '../crypto.js';
 import { h, mount, toast } from '../util.js';
+import { canPrompt, isApple, isInstalled, onInstallChange, promptInstall } from '../install.js';
 import {
   currentSubscription, disablePush, enablePush, needsHomeScreen, pushSupported, testPush,
 } from '../push.js';
@@ -122,6 +123,7 @@ export function openAccountDialog({ role, name, email: myEmail, isRecovery, canA
     h('p.muted', { style: { fontSize: '.85rem', marginTop: '-.4rem' } },
       `Signed in as ${name}`),
     body,
+    installSection(),
     canSeeAlerts ? alertsSection() : null,
   );
 
@@ -129,6 +131,65 @@ export function openAccountDialog({ role, name, email: myEmail, isRecovery, canA
   dialog.addEventListener('close', () => dialog.remove());
   dialog.showModal();
   if (!isRecovery) setTimeout(() => current.focus(), 0);
+
+  /**
+   * Putting it on the phone.
+   *
+   * Here rather than as a bar across the top of the app. A banner offering to
+   * install something is the thing people have learned to dismiss without
+   * reading; My account is where somebody goes when they have decided they
+   * want it.
+   *
+   * Nothing at all once it is installed — an app offering to install itself is
+   * how a reader concludes the thing is confused.
+   */
+  function installSection() {
+    if (isInstalled()) return null;
+
+    const host = h('div', {
+      style: { marginTop: '1.1rem', paddingTop: '.9rem', borderTop: '1px solid var(--border)' },
+    });
+
+    const draw = () => {
+      const apple = isApple();
+
+      mount(host,
+        h('h3', { style: { fontSize: '.95rem', marginBottom: '.35rem' } }, 'Put HIVE on this device'),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'It opens from the home screen like any other app — no address to type, no browser bars, '
+          + 'and it starts even before the signal does.'),
+
+        canPrompt()
+          ? h('button.btn-primary', {
+            onclick: async (event) => {
+              event.target.disabled = true;
+              const outcome = await promptInstall();
+              if (outcome === 'accepted') toast('Installed. Look for HIVE on your home screen.', 'good');
+              else { event.target.disabled = false; draw(); }
+            },
+          }, 'Install')
+          : apple
+            // No prompt exists on an iPhone, and the steps are the only useful
+            // thing the app can offer. Naming the button by its icon because
+            // Apple does not name it in words anywhere on the screen.
+            ? h('div.guide-note', { style: { marginTop: 0, fontSize: '.83rem' } },
+              h('strong', 'On an iPhone or iPad: '),
+              'press Share — the square with the arrow out of the top — then ',
+              h('strong', 'Add to Home Screen'), '. Safari is the only browser on iOS that can do it.')
+            : h('p.muted', { style: { fontSize: '.83rem', marginBottom: 0 } },
+              'Your browser has not offered this yet. In Chrome it is in the ⋮ menu as '
+              + '"Install" or "Add to Home screen"; Firefox on a phone calls it "Install".'),
+      );
+    };
+
+    draw();
+    // The browser can decide the app is installable a moment after this dialog
+    // opened, and a button that never appears is indistinguishable from one
+    // that does not exist.
+    const stop = onInstallChange(draw);
+    dialog.addEventListener('close', stop);
+    return host;
+  }
 
   /**
    * Alerts on this device.
