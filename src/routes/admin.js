@@ -290,7 +290,7 @@ export async function getNotifications(ctx) {
   const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
 
   const [recent, devices, pushLog] = await Promise.all([
-    ctx.db.prepare('SELECT * FROM email_log ORDER BY at DESC LIMIT 20').all()
+    ctx.db.prepare('SELECT * FROM email_log ORDER BY id DESC LIMIT 20').all()
       .catch(() => ({ results: [] })),
     ctx.db.prepare(
       `SELECT p.id, p.label, p.created_at, u.name
@@ -398,7 +398,13 @@ export async function testNotification(ctx) {
     rows: days,
   });
 
-  const result = await ctx.db.prepare('SELECT * FROM email_log ORDER BY at DESC LIMIT 1').first();
+  // By id, not by time. `at` is only accurate to the second, so a test pressed
+  // in the same second as the row before it reports the wrong one — and the
+  // wrong one is usually the older success, which is the single most
+  // misleading answer this button could give.
+  const result = await ctx.db.prepare(
+    'SELECT * FROM email_log ORDER BY id DESC LIMIT 1',
+  ).first();
   return json({ ok: result?.status === 'sent', result });
 }
 

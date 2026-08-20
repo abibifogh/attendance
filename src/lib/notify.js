@@ -20,16 +20,55 @@ import { allows, effectivePermissions } from './permissions.js';
 // Email
 // ---------------------------------------------------------------------------
 
-/** Split a stored recipient list. Commas, semicolons or newlines. */
+/**
+ * Split a stored recipient list.
+ *
+ * It is written as JSON — `["a@b.com","c@d.com"]` — and used to be read by
+ * splitting on commas, which is a different format that happens to look
+ * similar. One address came back as `["a@b.com"]`, brackets and quotes
+ * included, and two came back cut in half down the middle of the comma.
+ *
+ * The provider rejected the lot with a 422 naming the `to` field, which is
+ * exactly right and reads like nonsense to whoever pressed Send: the address
+ * on the screen was perfectly good, and what left the building was not.
+ *
+ * So JSON first, and a plain list of addresses after — because somebody typing
+ * three addresses separated by commas into a box is a reasonable thing to have
+ * happened, and is not worth failing over.
+ */
 export function parseRecipients(value) {
-  return String(value || '')
-    .split(/[,;\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  if (!value) return [];
+  const text = String(value).trim();
+
+  if (text.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return parsed.map((v) => String(v).trim()).filter(Boolean);
+    } catch {
+      // Not valid JSON after all. Fall through and treat it as a plain list
+      // rather than silently sending to nobody.
+    }
+  }
+
+  return text.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
 }
 
+/**
+ * An address that can actually be sent to.
+ *
+ * Deliberately refuses the punctuation that carries structure elsewhere —
+ * brackets, quotes, angle brackets, commas — because the whole point of this
+ * check is to be the thing that notices when a list has been taken apart
+ * wrongly. The old pattern only excluded spaces and stray @s, so
+ * `["a@b.com"]` sailed through it and straight into the provider.
+ */
+const NOT_IN_AN_ADDRESS = '\\s@<>,;:"\'\\\\[\\]()';
+
 export function isEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(value || '').trim());
+  const pattern = new RegExp(
+    `^[^${NOT_IN_AN_ADDRESS}]+@[^${NOT_IN_AN_ADDRESS}]+\\.[^${NOT_IN_AN_ADDRESS}]{2,}$`,
+  );
+  return pattern.test(String(value || '').trim());
 }
 
 /**
@@ -227,8 +266,24 @@ export async function emailExceptions(db, env, { day, open, absent, escalated = 
     const settings = Object.fromEntries((settingsRows.results ?? []).map((r) => [r.key, r.value]));
 
     const apiKey = env?.RESEND_API_KEY;
-    const to = parseRecipients(settings.att_email_to).filter(isEmail);
-    if (!apiKey || !settings.email_from || !to.length) return;
+    const listed = parseRecipients(settings.att_email_to);
+    const to = listed.filter(isEmail);
+
+    // Say why nothing went, rather than returning in silence. The morning
+    // cron can afford to be quiet about an operation that never turned email
+    // on; the Send-a-test button cannot, because it reports the newest line in
+    // this log — and with no new line it cheerfully reports the last one,
+    // which may be a success from a fortnight ago.
+    const missing = !apiKey ? 'no provider key set on this Worker'
+      : !settings.email_from ? 'no "from" address set'
+        : !listed.length ? 'nobody to send to'
+          : !to.length ? `not a usable address: ${listed[0]}`
+            : null;
+
+    if (missing) {
+      await write('skipped', to.join(', ') || null, missing);
+      return;
+    }
 
     const { subject, html } = renderDigest({
       day,
