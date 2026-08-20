@@ -920,6 +920,16 @@ async function timesTab(range, reload) {
             h('small.muted', String(e.at_utc || '').slice(0, 16).replace('T', ' ')))),
           canApprove
             ? h('td', h('div.btn-row',
+              // Before, not after. Approving puts the times on and settles the
+              // day, and the row above says only what somebody typed and what
+              // the terminal read — not what the rest of that week looked
+              // like, whether the shift was even theirs, or whether the same
+              // thing happened on the Tuesday. Opening on the day itself,
+              // because that is the day being ruled on.
+              h('button.btn-sm', {
+                onclick: () => navigate('att-staff', { id: e.staff_id, day: e.day, period: 'day' }),
+                title: 'The day this change is about, in full',
+              }, 'Record'),
               h('button.btn-sm.btn-primary', { onclick: () => decide(e, 'approve', reload) }, 'Approve'),
               h('button.btn-sm', { onclick: () => decide(e, 'reject', reload) }, 'Send back'),
             ))
@@ -990,6 +1000,16 @@ async function decide(edit, decision, reload) {
         + `${edit.reason ? `: ${edit.reason}` : ''}`),
       h('p.muted', { style: { fontSize: '.85rem' } },
         `The terminal read ${edit.observed_in || 'nothing'} → ${edit.observed_out || 'nothing'}.`),
+
+      // Offered here as well as on the row. This is the moment the day is
+      // about to be settled on somebody else's account of it, and looking
+      // first should not cost whoever is deciding the note they have already
+      // typed — so it opens in its own tab.
+      h('p', h('a', {
+        href: `#/att-staff?id=${edit.staff_id}&day=${edit.day}&period=day`,
+        target: '_blank',
+        rel: 'noopener',
+      }, `Open ${edit.staff_name}'s record for ${fmtDay(edit.day)} ↗`)),
 
       field(decision === 'approve' ? 'Anything to add' : 'Why not', h('input', {
         type: 'text', name: 'note', maxlength: 500,

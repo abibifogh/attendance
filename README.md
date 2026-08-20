@@ -1152,6 +1152,14 @@ the terminal saw and reopens.
 An administrator's own correction applies and settles immediately. A queue with
 one name in it teaches everybody to press the button without reading it.
 
+**The day is one press away before the decision, not after it.** A waiting row
+says what somebody typed and what the terminal read, and nothing about whether
+the shift was even that person's, or whether the same thing happened the day
+before. So *Record* sits on every waiting row and again inside the approve box,
+where it opens in its own tab — the moment somebody is about to settle a day on
+another person's account of it is exactly the moment they should be able to look
+at the day, and looking should not cost them the note they have started typing.
+
 What makes the permission safe to hand out is not that it is restricted but that
 it is impossible to use quietly: every change is written to `att_time_edit` with
 what stood before it, what the terminal itself read, who made it, why, from which

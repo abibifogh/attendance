@@ -192,9 +192,15 @@ export const GUIDE = [
       { steps: [
         'Sign-off → Clock changes.',
         'Read the row: what was asked, what the terminal read, who asked and why.',
-        'Open the person’s report if you want the day in context.',
+        'Record opens that day in full — the shift, the punches, what the rules made of it.',
         'Approve — or Send back, saying what they should do instead.',
       ] },
+
+      { note: 'Look before you approve. The row tells you what somebody typed and what the '
+        + 'terminal read, and nothing about whether the shift was even theirs, or whether the '
+        + 'same thing happened on the Tuesday. Record is on every waiting row and again inside '
+        + 'the approve box, where it opens in its own tab so you do not lose the note you have '
+        + 'started typing.' },
 
       { note: 'Approving settles the day. The times go on, the day is worked out again from '
         + 'them, and it closes on that verdict under your name. You are not choosing a status: '
