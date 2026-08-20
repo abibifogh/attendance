@@ -264,6 +264,17 @@ is a courtesy, the API is the gate. The one exemption is an administrator
 signing a period *as* the answer to the question about it, which is not slipping
 past the rule but the rule being satisfied.
 
+The digest carries three lists: **waiting on you** (days nobody has settled,
+each with what the rules made of it), **absent**, and **late** — the latecomers
+worst first, each with how many minutes they owe. The minutes are counted from
+the shift's start rather than from the end of grace: somebody twenty minutes
+late owes twenty minutes, not fifteen. Whether somebody *counts* as late is
+still the rules' own verdict, so a minute inside grace is not on the list; a
+digest naming half the property every morning is one nobody reads by Friday.
+
+What makes the digest send at all is unchanged — a day nobody can settle, or an
+absence. Lateness rides along with it rather than triggering it.
+
 #### Making the mail arrive
 
 Deliverability is the sum of a dozen small things, and every one of them is

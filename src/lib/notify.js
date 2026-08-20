@@ -187,6 +187,21 @@ export async function sendEmail({
   return response.json().catch(() => ({}));
 }
 
+/**
+ * How late, in words somebody reads rather than a number they convert.
+ *
+ * "83 minutes" makes the reader do arithmetic before they can react to it;
+ * "1 hr 23 min" does not. Under an hour it stays in plain minutes, which is
+ * how anybody on a shift would say it.
+ */
+export function lateness(minutes) {
+  const total = Math.max(0, Math.round(Number(minutes) || 0));
+  if (total < 60) return `${total} min late`;
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${hours} hr${rest ? ` ${rest} min` : ''} late`;
+}
+
 const ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
 const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (c) => ESCAPE[c]);
 
@@ -216,8 +231,25 @@ export function renderDigest({ day, propertyName, siteUrl, open, absent, escalat
     .map((r) => `${r.name} — ${r.label ?? labelFor(r, null)}`);
   const away = rows.filter((r) => r.status === 'absent').map((r) => r.name);
 
+  // The rules' own verdict, not the raw minutes. Grace exists precisely so
+  // that somebody due at 06:00 who arrives at 06:01 is not late; counting
+  // those would put half the property in this list every morning, and a list
+  // like that stops being read by the end of the week.
+  //
+  // The minutes themselves are the whole point of the line — "Kofi was late"
+  // is a remark, "Kofi was 47 minutes late" is something a person can act on —
+  // so they are counted from the shift's start rather than from the end of
+  // grace. Somebody who is twenty minutes late owes twenty minutes, not
+  // fifteen.
+  const latecomers = rows
+    .filter((r) => r.status === 'late' || r.status === 'late_early')
+    .map((r) => ({ name: r.name, minutes: Math.max(0, Math.round(Number(r.late_minutes) || 0)) }))
+    .sort((a, b) => b.minutes - a.minutes)
+    .map((r) => `${r.name} — ${lateness(r.minutes)}`);
+
   const summary = `${open ? `${open} day${open === 1 ? '' : 's'} waiting on a decision`
-    : 'Nothing waiting on a decision'}${absent ? `, ${absent} absent` : ''}.`;
+    : 'Nothing waiting on a decision'}${absent ? `, ${absent} absent` : ''}`
+    + `${latecomers.length ? `, ${latecomers.length} late` : ''}.`;
 
   return {
     subject: open
@@ -230,11 +262,10 @@ export function renderDigest({ day, propertyName, siteUrl, open, absent, escalat
       <div style="max-width:560px;margin:0 auto;padding:24px;font-family:system-ui,sans-serif">
         <p style="font:12px/1.4 system-ui,sans-serif;color:#6f7884;margin:0 0 4px">${esc(propertyName)}</p>
         <h1 style="font:700 22px/1.3 system-ui,sans-serif;color:#101418;margin:0 0 4px">Attendance — ${esc(day)}</h1>
-        <p style="font:14px/1.6 system-ui,sans-serif;color:#4a535e;margin:0">
-          ${open ? `${open} day${open === 1 ? '' : 's'} waiting on a decision` : 'Nothing waiting on a decision'}${absent ? `, ${absent} absent` : ''}.
-        </p>
+        <p style="font:14px/1.6 system-ui,sans-serif;color:#4a535e;margin:0">${esc(summary)}</p>
         ${list('Waiting on you', needing)}
         ${list('Absent', away)}
+        ${list('Late', latecomers)}
         ${escalated.length
     ? `<p style="font:600 14px/1.6 system-ui,sans-serif;color:#b02436;margin:18px 0 0">
              On a run of absences: ${esc(escalated.join(', '))}.
