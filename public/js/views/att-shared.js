@@ -131,6 +131,40 @@ export function shiftLabel(shift) {
  */
 export const SHIFT_COLOURS = 8;
 
+/**
+ * Names for the eight, so a choice can be spoken about.
+ *
+ * "Colour 5" is not something anybody says to a colleague. "The red one" is.
+ */
+export const SHIFT_COLOUR_NAMES = [
+  'Blue', 'Teal', 'Amber', 'Violet', 'Red', 'Cyan', 'Green', 'Pink',
+];
+
+/**
+ * Eight swatches to pick from, and the option of letting the app choose.
+ *
+ * A picker rather than a dropdown of numbers, because the whole point of the
+ * setting is what the thing looks like on the rota, and a list reading
+ * "Colour 1 … Colour 8" asks somebody to hold eight guesses in their head.
+ */
+export function shiftColourPicker(existing) {
+  const chosen = String(existing?.colour ?? '');
+  const swatch = (value, label, hint) => h('label.swatch-choice',
+    h('input', {
+      type: 'radio', name: 'colour', value, checked: chosen === value,
+    }),
+    value
+      ? h('span.swatch-dot', { style: { '--shift': `var(--c${value})` } })
+      : h('span.swatch-dot.swatch-auto'),
+    h('span.swatch-label', label, hint ? h('small.muted', hint) : null));
+
+  return h('div.swatch-row',
+    swatch('', 'Chosen for it',
+      existing ? ` (${SHIFT_COLOUR_NAMES[shiftColour(existing) - 1]})` : null),
+    ...SHIFT_COLOUR_NAMES.map((name, i) => swatch(String(i + 1), name)),
+  );
+}
+
 export function shiftColour(shift) {
   if (!shift) return 0;
   const chosen = Number(shift.colour);

@@ -1838,3 +1838,36 @@ tr:hover .pos-add, .pos-add:focus-visible {
 .rota-strain-pop li::marker { color: var(--text-faint); }
 .rota-strain-pop .law { color: var(--text-faint); }
 .rota-strain-pop .more { margin: .45rem 0 0; color: var(--text-faint); }
+
+/* Eight swatches instead of a dropdown reading "Colour 1 … Colour 8". The
+   setting is about what a shift looks like, so the choice should look like
+   what it does. */
+.swatch-row { display: flex; flex-wrap: wrap; gap: .35rem; }
+
+.swatch-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .3rem .5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: .82rem;
+}
+.swatch-choice input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.swatch-choice:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-weight: 650;
+}
+.swatch-choice:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.swatch-dot {
+  width: .85rem; height: .85rem; border-radius: 50%;
+  background: var(--shift, var(--border));
+  flex: none;
+}
+.swatch-auto {
+  background: conic-gradient(var(--c1), var(--c3), var(--c7), var(--c5), var(--c1));
+}
+.swatch-label { display: inline-flex; align-items: baseline; gap: .25rem; }

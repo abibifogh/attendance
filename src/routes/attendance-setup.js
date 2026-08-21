@@ -759,6 +759,23 @@ const SETTINGS = new Map([
   ['property_name', (v) => str(v, 'Property name', { required: true, max: 120 })],
   ['property_address', (v) => str(v, 'Property address', { max: 300 })],
   ['hr_link_days', (v) => String(int(v, 'How long a link lasts', { min: 1, max: 90 }))],
+
+  // What this property considers a sustainable rota. The first four are
+  // Act 651 and are seeded at the statutory figure; a property may tighten
+  // them, and the app cites the section wherever it reports one. The rest are
+  // this trade's rules of thumb and genuinely arguable.
+  //
+  // Nothing here blocks a rota. A hotel has nights when somebody simply has to
+  // cover, and an app that refuses to record what happened gets worked around
+  // on paper.
+  ['wl_dailyRestHours', (v) => String(num(v, 'Rest between shifts', { min: 1, max: 24 }))],
+  ['wl_weeklyRestHours', (v) => String(num(v, 'Unbroken rest each week', { min: 1, max: 96 }))],
+  ['wl_weeklyHours', (v) => String(num(v, 'Hours in a week', { min: 1, max: 90 }))],
+  ['wl_dailyHours', (v) => String(num(v, 'Hours in a day', { min: 1, max: 24 }))],
+  ['wl_consecutiveDays', (v) => String(int(v, 'Days in a row', { min: 1, max: 30 }))],
+  ['wl_nightsPerFortnight', (v) => String(int(v, 'Nights in a fortnight', { min: 1, max: 14 }))],
+  ['wl_flipsPerFortnight', (v) => String(int(v, 'Swaps between nights and days', { min: 1, max: 14 }))],
+  ['wl_weekendsPerMonth', (v) => String(int(v, 'Weekends in a month', { min: 1, max: 5 }))],
 ]);
 
 /**

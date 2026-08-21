@@ -557,6 +557,9 @@ export async function bootstrap(ctx) {
     // address to print.
     settings: Object.fromEntries(
       Object.entries(ds.settings).filter(([key]) => key.startsWith('att_')
+        // What this property considers a sustainable rota. Read on the setup
+        // screen, and by the rota when it marks somebody as overworked.
+        || key.startsWith('wl_')
         || ['timezone', 'property_name', 'property_address', 'hr_link_days'].includes(key)),
     ),
     open: Number(open?.n ?? 0),

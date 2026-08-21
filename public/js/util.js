@@ -18,7 +18,7 @@ export function h(spec, props = null, ...children) {
     if (key === 'class') el.className = `${el.className} ${value}`.trim();
     else if (key === 'html') el.innerHTML = value;
     else if (key === 'dataset') Object.assign(el.dataset, value);
-    else if (key === 'style' && typeof value === 'object') Object.assign(el.style, value);
+    else if (key === 'style' && typeof value === 'object') setStyle(el, value);
     else if (key.startsWith('on') && typeof value === 'function') el.addEventListener(key.slice(2), value);
     else if (key in el && key !== 'list' && typeof value !== 'object') el[key] = value;
     else el.setAttribute(key, value === true ? '' : value);
@@ -26,6 +26,21 @@ export function h(spec, props = null, ...children) {
 
   append(el, children);
   return el;
+}
+
+/**
+ * Styles, including custom properties.
+ *
+ * Object.assign onto a style declaration silently drops anything beginning
+ * with two dashes, which is exactly how every shift swatch in the app came to
+ * be grey: the rule read var(--shift) and nothing ever set it.
+ */
+function setStyle(el, styles) {
+  for (const [key, value] of Object.entries(styles)) {
+    if (value == null) continue;
+    if (key.startsWith('--')) el.style.setProperty(key, String(value));
+    else el.style[key] = value;
+  }
 }
 
 function append(el, children) {

@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { replaceParams } from '../app.js';
 import { fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
-import { SHIFT_COLOURS, field, formDialog, shiftColour } from './att-shared.js';
+import { field, formDialog, shiftColour, shiftColourPicker } from './att-shared.js';
 
 /**
  * Attendance setup.
@@ -20,6 +20,7 @@ const TABS = [
   ['holidays', 'Public holidays'],
   ['devices', 'Terminals'],
   ['rules', 'Rules'],
+  ['workload', 'Workload'],
 ];
 
 export async function renderAttSetup(params) {
@@ -41,6 +42,7 @@ export async function renderAttSetup(params) {
     holidays: holidaysTab,
     devices: devicesTab,
     rules: rulesTab,
+    workload: workloadTab,
   }[tab](reload);
 
   mount(host,
@@ -307,12 +309,9 @@ async function shiftsTab(reload) {
         // twenty-four shifts is not a colouring exercise before the rota
         // becomes readable. This is only for when the automatic one puts two
         // shifts somebody cares about next to each other in the same colour.
-        field('Colour on the rota', h('select', { name: 'colour' },
-          h('option', { value: '', selected: !existing?.colour },
-            `Chosen for it${existing ? ` (${shiftColour(existing)})` : ''}`),
-          ...Array.from({ length: SHIFT_COLOURS }, (unused, i) => h('option', {
-            value: String(i + 1), selected: String(existing?.colour ?? '') === String(i + 1),
-          }, `Colour ${i + 1}`)))),
+        field('Colour on the rota', shiftColourPicker(existing),
+          'One is chosen for every shift already. Pick your own where two that '
+          + 'matter come out too alike'),
 
         existing
           ? field('Status', h('select', { name: 'active' },
@@ -1232,4 +1231,160 @@ async function rulesTab(reload) {
       ? emptyState('Nothing set up yet', 'Start with Staff — everything else hangs off who is on the list.')
       : null,
   );
+}
+
+// ---------------------------------------------------------------------------
+// What counts as too much here
+// ---------------------------------------------------------------------------
+
+/**
+ * The eight figures the rota is measured against.
+ *
+ * Four of them are Act 651 and are seeded at the statutory figure. A property
+ * may tighten one; loosening one is possible too, and the screen says plainly
+ * what that means rather than quietly allowing it. The other four are this
+ * trade's rules of thumb and genuinely arguable — a property running four-on
+ * four-off would say something different about six days in a row, and should
+ * be able to.
+ *
+ * None of it blocks a rota. A hotel has nights when somebody simply has to
+ * cover, and an app that refuses to record what happened gets worked around on
+ * paper, at which point it knows nothing at all.
+ */
+const WORKLOAD_LIMITS = [
+  {
+    key: 'wl_dailyRestHours',
+    label: 'Rest between shifts',
+    unit: 'hours',
+    fallback: 12,
+    law: 'Act 651 s.35',
+    hint: 'Clock-out to the next clock-in',
+  },
+  {
+    key: 'wl_weeklyRestHours',
+    label: 'Unbroken rest each week',
+    unit: 'hours',
+    fallback: 48,
+    law: 'Act 651 s.36',
+    hint: 'One stretch, not two days added together',
+  },
+  {
+    key: 'wl_weeklyHours',
+    label: 'Hours in a week',
+    unit: 'hours',
+    fallback: 40,
+    law: 'Act 651 s.33',
+    hint: 'Before overtime starts',
+  },
+  {
+    key: 'wl_dailyHours',
+    label: 'Hours in a day',
+    unit: 'hours',
+    fallback: 9,
+    law: 'Act 651 ss.33–34',
+    hint: 'Eight, stretching to nine where another day is shorter',
+  },
+  {
+    key: 'wl_consecutiveDays',
+    label: 'Days in a row without one off',
+    unit: 'days',
+    fallback: 6,
+    hint: 'Where hotel practice puts the line',
+  },
+  {
+    key: 'wl_nightsPerFortnight',
+    label: 'Night shifts in a fortnight',
+    unit: 'nights',
+    fallback: 7,
+    hint: 'A shift touching midnight to five counts as a night',
+  },
+  {
+    key: 'wl_flipsPerFortnight',
+    label: 'Swaps between nights and days',
+    unit: 'swaps',
+    fallback: 2,
+    hint: 'The change of rhythm costs more sleep than the hours do',
+  },
+  {
+    key: 'wl_weekendsPerMonth',
+    label: 'Weekends worked in a month',
+    unit: 'weekends',
+    fallback: 3,
+    hint: 'Counted so the same people are not always the ones giving theirs up',
+  },
+];
+
+async function workloadTab(reload) {
+  const data = await api.attBootstrap();
+  const s = data.settings;
+
+  const form = h('form.att-rules');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await api.attUpdateSettings(Object.fromEntries(new FormData(form).entries()));
+      toast('Saved. The rota is measured against these from now on.', 'good');
+      await reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  });
+
+  const row = (limit) => {
+    const current = s[limit.key];
+    const set = current != null && current !== '' && Number(current) !== limit.fallback;
+    return h('label.field',
+      h('span', limit.label,
+        limit.law ? h('small.pill', limit.law) : null,
+        set ? h('small.pill.warn', 'changed') : null),
+      h('input', {
+        type: 'number', name: limit.key, min: 1, step: limit.unit === 'hours' ? 0.5 : 1,
+        value: current ?? limit.fallback,
+      }),
+      h('small.muted', `${limit.unit} · ${limit.hint}. Statutory or usual figure: ${limit.fallback}`),
+    );
+  };
+
+  form.append(
+    card('The law', { note: 'Ghana Labour Act 2003 (Act 651)' },
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Seeded at the figures the Act sets. Tighten one and the app holds you to yours; '
+        + 'loosen one and it stops warning about something the Act does not allow, which is '
+        + 'a decision with your name on it.'),
+      h('div.field-row', WORKLOAD_LIMITS.filter((l) => l.law).map(row)),
+    ),
+
+    card('This property', { note: 'Rules of thumb, and yours to set' },
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'These are not law. They are where hotel practice puts the line, and a property '
+        + 'running four-on four-off would put it somewhere else.'),
+      h('div.field-row', WORKLOAD_LIMITS.filter((l) => !l.law).map(row)),
+    ),
+
+    h('div.btn-row', { style: { justifyContent: 'flex-end' } },
+      h('button.btn-sm', {
+        type: 'button',
+        onclick: async () => {
+          if (!window.confirm('Put every figure back to the statutory or usual one?')) return;
+          try {
+            await api.attUpdateSettings(Object.fromEntries(
+              WORKLOAD_LIMITS.map((l) => [l.key, String(l.fallback)]),
+            ));
+            toast('Back to the defaults.', 'good');
+            await reload();
+          } catch (err) {
+            toast(err.message, 'bad');
+          }
+        },
+      }, 'Back to the defaults'),
+      h('button.btn.btn-primary', { type: 'submit' }, 'Save'),
+    ),
+
+    h('p.muted', { style: { fontSize: '.82rem' } },
+      'Nothing here refuses a rota. A hotel has nights when somebody has to cover, and an app '
+      + 'that will not record what happened gets worked around on paper. It says so, names the '
+      + 'rule, and leaves the decision where it belongs. The Workload screen is where it says it.'),
+  );
+
+  return form;
 }
