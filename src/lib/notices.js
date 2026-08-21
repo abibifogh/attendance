@@ -1,5 +1,5 @@
 import { isMissingTable } from './http.js';
-import { emailNotice } from './notify.js';
+import { emailNotice, pushNotice } from './notify.js';
 
 /**
  * In-app notifications.
@@ -30,25 +30,41 @@ const LEVELS = new Set(['info', 'warn', 'high']);
  */
 export async function createNotice(db, {
   kind, level = 'info', title, body, link, day, slot, actor, audience = null, userId = null,
-  email = true,
+  email = true, push = false,
 }, ctx = null) {
   if (!kind || !title) return null;
 
   const post = async () => {
+    const jobs = [];
+
     // Some events are worth a bell and not worth an inbox. Approving a clock
     // correction is the clearest case: the person who asked for it is sitting
     // in the app watching for it, and a property with twenty corrections a
     // week would be sending twenty emails nobody reads.
-    if (!email || !ctx?.env) return;
-    const sending = emailNotice(db, ctx.env, {
-      kind, level, title, body, link, actor, audience, userId,
-    }).catch((err) => console.error('notice email failed', err));
+    if (email && ctx?.env) {
+      jobs.push(emailNotice(db, ctx.env, {
+        kind, level, title, body, link, actor, audience, userId,
+      }).catch((err) => console.error('notice email failed', err)));
+    }
+
+    // And a very few are worth a buzz in somebody's pocket. Opt in per notice
+    // rather than on by default: a phone that lights up for every clock
+    // correction is a phone whose owner turns notifications off, and then the
+    // two that mattered do not arrive either. Needs no `env` — the push keys
+    // live in the database — so it works from the cron as well as a request.
+    if (push) {
+      jobs.push(pushNotice(db, { kind, title, body, link, day, audience, userId })
+        .catch((err) => console.error('notice push failed', err)));
+    }
+
+    if (!jobs.length) return;
+    const sending = Promise.all(jobs);
 
     // Handed to the runtime where there is one, so the response goes back
-    // first and the mail happens after. Where there is not — a cron, a script,
-    // a test — it has to be awaited, because nothing else is going to keep the
-    // isolate alive long enough for it to finish.
-    if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(sending);
+    // first and the sending happens after. Where there is not — a cron, a
+    // script, a test — it has to be awaited, because nothing else is going to
+    // keep the isolate alive long enough for it to finish.
+    if (ctx?.executionContext?.waitUntil) ctx.executionContext.waitUntil(sending);
     else await sending;
   };
 

@@ -1202,6 +1202,22 @@ async function rulesTab(reload) {
           'Changes the tone of the note the person receives, and rings the bell for anybody who can '
           + 'manage the rota.'),
       ),
+
+      card('What staff see', { note: 'On their own My shifts screen' },
+        h('label.field',
+          h('span', 'How much leave they have left'),
+          h('select', { name: 'att_show_balance' },
+            h('option', { value: '1', selected: (s.att_show_balance ?? '1') !== '0' },
+              'Show it on their screen'),
+            h('option', { value: '0', selected: (s.att_show_balance ?? '1') === '0' },
+              'Keep it off their screen'),
+          )),
+        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+          'It is their own figure, so nothing here is confidential either way. Turn it off while '
+          + 'the balances are still being tidied up after an import: a number in front of somebody '
+          + 'is a number they will ask about, and it should be right before it is published to '
+          + 'everybody. They can still ask for leave with it off.'),
+      ),
     ),
     h('div.btn-row', { style: { marginTop: '1rem' } },
       h('button.btn.btn-primary', { type: 'submit' }, 'Save the rules'),

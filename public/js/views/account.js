@@ -246,9 +246,11 @@ export function openAccountDialog({ role, name, email: myEmail, isRecovery, canA
         h('h3', { style: { fontSize: '.95rem', marginBottom: '.35rem' } }, 'Alerts on this device'),
         h('p.muted', { style: { fontSize: '.85rem' } },
           subscribed
-            ? 'This device is alerted when attendance needs somebody.'
-            : 'Get a notification when days are waiting to be confirmed. Each device has to be turned on '
-              + 'separately — a phone and a computer are two separate permissions.'),
+            ? 'This device is alerted when something needs you.'
+            : 'Get a notification when your rota is published, when your shift has started and '
+              + 'nothing has been recorded, and when days are waiting to be confirmed. Each device '
+              + 'has to be turned on separately: a phone and a computer are two separate '
+              + 'permissions.'),
         needsHomeScreen() && !subscribed
           ? h('div.guide-note.warn', { style: { marginTop: 0, fontSize: '.83rem' } },
             h('strong', 'On an iPhone or iPad: '),

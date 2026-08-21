@@ -32,11 +32,19 @@ database_id = "1df34f21-bfc6-43dc-b11a-1a57d7f691b0"
 #   INSIGHT_SSO_URL      https://<insight>/api/sso/redeem
 #   INSIGHT_SSO_SECRET   the same value as SSO_SECRET_ATTENDANCE on Insight
 
-# Once a day, a little after midnight in Accra. Recomputes the last few days so
-# a punch that arrived late is reflected, and rings the bell once for whatever
-# still needs a person.
+# Two schedules.
+#
+# The first is once a day, a little after midnight in Accra: it recomputes the
+# last few days so a punch that arrived late is reflected, and rings the bell
+# once for whatever still needs a person.
+#
+# The second runs every quarter of an hour and does one small thing — notices a
+# published shift that started, with its own grace allowed for, and nothing
+# recorded against it, and tells that one person. Anything less frequent turns
+# "you are twenty minutes late" into "you were an hour late", which is not
+# something a notification can help with.
 [triggers]
-crons = ["30 0 * * *"]
+crons = ["30 0 * * *", "*/15 * * * *"]
 
 [[routes]]
 pattern = "staff.niceoperation.com"

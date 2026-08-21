@@ -760,6 +760,18 @@ const SETTINGS = new Map([
   ['property_address', (v) => str(v, 'Property address', { max: 300 })],
   ['hr_link_days', (v) => String(int(v, 'How long a link lasts', { min: 1, max: 90 }))],
 
+  // Whether a member of staff sees how much leave they have left on their own
+  // screen. Their own figure, so there is no confidentiality argument either
+  // way — but a balance in front of somebody is a balance they will ask about,
+  // and a property whose figures are still being tidied up after an import may
+  // reasonably want to settle them before publishing them to twenty-four
+  // people. Shown unless somebody turns it off.
+  ['att_show_balance', (v) => (v === '0' || v === 'false' ? '0' : '1')],
+
+  // Whether the app tells somebody their shift has started and nothing has
+  // been recorded against it.
+  ['att_late_nudge', (v) => (v === '0' || v === 'false' ? '0' : '1')],
+
   // What this property considers a sustainable rota. The first four are
   // Act 651 and are seeded at the statutory figure; a property may tighten
   // them, and the app cites the section wherever it reports one. The rest are

@@ -55,6 +55,8 @@ export async function renderAttMe(params = {}) {
       ),
     ),
 
+    countdownCard(data),
+
     h('div.toolbar',
       h('button.btn-sm', { onclick: () => reload({ from: shiftDay(data.from, -28) }) }, '‹'),
       h('strong', `${fmtDayShort(data.from)} – ${fmtDayShort(data.to)}`),
@@ -88,9 +90,74 @@ export async function renderAttMe(params = {}) {
   return host;
 }
 
+/**
+ * How long until the next shift starts.
+ *
+ * Only inside a day, because that is the window where the number changes what
+ * somebody does: "in 3 days" is a calendar and "in 6 hours" is a reason to go
+ * to bed. It ticks, because a countdown that does not tick is a timestamp with
+ * extra steps, and the seconds are what make somebody believe it.
+ */
+function countdownCard(data) {
+  const next = data.next;
+  if (!next?.soon) return null;
+
+  // Counted from the second the answer was made, using the browser's own clock
+  // for the ticking only. The server said how far away it was; nothing here
+  // needs to know what time it is, which is the whole reason it works on a
+  // phone whose clock is wrong.
+  const start = Date.now();
+  const remaining = () => Math.max(0, next.seconds - Math.floor((Date.now() - start) / 1000));
+
+  const big = h('div.countdown-clock');
+  const line = h('div.countdown-sub');
+
+  const draw = () => {
+    const left = remaining();
+    const hh = Math.floor(left / 3600);
+    const mm = Math.floor((left % 3600) / 60);
+    const ss = left % 60;
+
+    big.textContent = left
+      ? `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+      : 'Now';
+    line.textContent = left
+      ? `until ${next.shift.name} on ${fmtDay(next.day)}, ${next.shift.starts_at}`
+      : `${next.shift.name} starts now`;
+  };
+  draw();
+
+  // Stopped the moment the element leaves the page, so browsing to another
+  // week does not leave a timer running against a card nobody is looking at.
+  const tick = setInterval(() => {
+    if (!big.isConnected) { clearInterval(tick); return; }
+    draw();
+  }, 1000);
+
+  const hours = Math.floor(next.seconds / 3600);
+
+  return h('div.countdown', {
+    class: hours < 3 ? 'countdown-close' : '',
+  },
+    h('div',
+      h('div.countdown-label', 'Your next shift'),
+      big,
+      line,
+      next.title ? h('div.countdown-sub', next.title) : null,
+    ),
+    h('div.countdown-shift', { 'data-shift-colour': String(shiftColour(next.shift)) },
+      h('strong', next.shift.name),
+      h('small.muted', `${shiftHours(next.shift)} · ${asHours(shiftMinutes(next.shift))}`),
+      next.shift.department ? h('small.muted', next.shift.department) : null),
+  );
+}
+
 /** What is left, and what is already spoken for. */
 function balanceLine(data) {
-  const b = data.balance ?? {};
+  // The property can turn this off. When it is off the figure is not in the
+  // answer at all, so there is nothing here to hide badly.
+  if (!data.showBalance || !data.balance) return null;
+  const b = data.balance;
   const day = (n) => `${fmtNum(n ?? 0, (n ?? 0) % 1 ? 1 : 0)} day${(n ?? 0) === 1 ? '' : 's'}`;
 
   return h('p.signoff-counts',
@@ -194,9 +261,11 @@ async function askForLeave(data, reload) {
     submitLabel: 'Send it',
     body: h('div',
       h('p.muted', { style: { fontSize: '.85rem' } },
-        `You have ${fmtNum(data.balance?.remaining ?? 0, 1)} days left. Only days you are `
-        + 'rostered on are charged: rest days and public holidays inside the period cost '
-        + 'nothing.'),
+        (data.showBalance && data.balance
+          ? `You have ${fmtNum(data.balance.remaining ?? 0, 1)} days left. `
+          : '')
+        + 'Only days you are rostered on are charged: rest days and public holidays inside '
+        + 'the period cost nothing.'),
       field('Type', h('select', { name: 'reason', required: true },
         h('option', { value: '' }, 'Choose…'),
         data.reasons.map((r) => h('option', { value: r.code }, r.label)))),

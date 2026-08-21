@@ -80,6 +80,9 @@ export const GUIDE = [
       { p: 'Your shifts, and only yours. Four weeks at a time, starting on the Monday of '
         + 'whatever week you are looking at, with the arrows to move a month either way and '
         + 'Today to come back.' },
+      { p: 'When your next shift is less than a day away, a countdown sits at the top and '
+        + 'ticks. Further off than that it is a date rather than a countdown, and the list '
+        + 'says it perfectly well.' },
       { note: 'Only shifts that have been published show here. A blank day where you expected '
         + 'something usually means the rota for it is still being worked out — the day says so '
         + 'when that is why.' },
@@ -120,6 +123,22 @@ export const GUIDE = [
         + 'them finding out by looking at an empty station.' },
       { warn: 'It changes nothing on your record. The terminal still decides what time you '
         + 'arrived, and pressing this is a message rather than an excuse note.' },
+
+      { sub: 'Alerts on your phone' },
+      { p: 'Turn them on under My account, on each device you want them on: a phone and a '
+        + 'computer are two separate permissions, and Apple only allows them at all once the '
+        + 'site has been added to your Home Screen.' },
+      { p: 'Two things reach you that way. Your rota being published, so you hear about next '
+        + 'week when it is decided rather than on the day. And your shift having started with '
+        + 'nothing recorded against you — once, allowing for whatever grace the shift already '
+        + 'has, and never after the first ninety minutes.' },
+      { note: 'That second one is a nudge, not a mark against you. Nothing about it reaches '
+        + 'your record: the terminal decides what happened, as it always does.' },
+
+      { sub: 'How much leave you have left' },
+      { p: 'Shown at the top unless the property has turned it off. With it off you can still '
+        + 'ask for leave in the ordinary way, and your manager still sees the figures — it '
+        + 'simply is not printed on your screen.' },
     ],
   },
 

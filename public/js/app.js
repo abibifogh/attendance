@@ -219,7 +219,11 @@ function shell(content) {
           // Anybody who has to act on an exception is worth alerting; somebody
           // who only reads the month-end report is not, and would come to
           // resent a phone buzzing every morning about it.
-          canAlert: can('att_manage'),
+          // Anybody a notification would actually reach. That is whoever
+          // settles the morning list, and now also anybody on the rota: a
+          // published shift and "your shift started" are the two alerts
+          // written for a phone rather than a desk.
+          canAlert: can('att_manage') || can('att_me'),
         }),
       },
       // The icon is what shows on a phone and the words are what show on a

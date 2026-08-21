@@ -523,6 +523,98 @@ export function renderNotice({ notice, propertyName, siteUrl }) {
 }
 
 /**
+ * Push one notice to the phones of whoever it is addressed to.
+ *
+ * The same audience rule the email uses, so a notice cannot reach one and not
+ * the other by accident: a permission, or one named person, resolved at the
+ * moment of sending rather than stored as a list.
+ *
+ * Never throws, and never delays anything. A push is a courtesy — a phone with
+ * no signal, a browser that has forgotten its subscription, a push service
+ * having an afternoon: none of those may fail the round that earned the notice.
+ * Every outcome goes to `push_log`, which is the only thing to look at when
+ * somebody says they were never told.
+ */
+export async function pushNotice(db, notice) {
+  const log = (status, detail, count = 0) => db.prepare(
+    'INSERT INTO push_log (day, sent, status, detail) VALUES (?, ?, ?, ?)',
+  ).bind(notice.day ?? null, count, status, detail ? String(detail).slice(0, 500) : null)
+    .run()
+    .catch(() => {});
+
+  try {
+    const rows = await db.prepare('SELECT key, value FROM settings').all();
+    const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
+
+    const subs = await db.prepare(
+      `SELECT p.*, u.role, u.permissions, u.active
+         FROM push_subscriptions p JOIN users u ON u.id = p.user_id
+        WHERE u.active = 1`,
+    ).all().catch(() => ({ results: [] }));
+
+    const wanted = (subs.results ?? []).filter((sub) => {
+      // A named person is the whole audience, exactly as the email reads it.
+      if (notice.userId != null) return Number(sub.user_id) === Number(notice.userId);
+      if (!notice.audience) return true;
+      return allows(notice.audience, effectivePermissions(sub));
+    });
+
+    if (!wanted.length) return { sent: 0, reason: 'nobody subscribed' };
+
+    const vapid = await getVapidKeys(db);
+    const subject = settings.email_from && settings.email_from.includes('@')
+      ? `mailto:${settings.email_from.replace(/^.*<|>.*$/g, '').trim()}`
+      : (originOf(settings.site_url) || 'https://example.com');
+
+    const site = originOf(settings.site_url);
+    const message = JSON.stringify({
+      title: notice.title,
+      body: notice.body ? String(notice.body).slice(0, 200) : '',
+      // Where pressing it lands. Without an origin there is nowhere to send
+      // them, and a notification that opens the wrong page is worse than one
+      // that only says its piece.
+      url: site && notice.link ? `${site}/${String(notice.link).replace(/^\/*/, '')}` : site || null,
+      tag: notice.kind ?? 'hive',
+    });
+
+    let sent = 0;
+    const dead = [];
+    const failures = [];
+    for (const sub of wanted) {
+      try {
+        const result = await sendPush(sub, message, vapid, subject);
+        if (result.ok) sent += 1;
+        else if (result.gone) dead.push(sub.id);
+        else failures.push(`${result.status} ${result.detail ?? ''}`.trim());
+      } catch (err) {
+        failures.push(err.message);
+      }
+    }
+
+    if (dead.length) {
+      await db.batch(dead.map((id) => db.prepare(
+        'DELETE FROM push_subscriptions WHERE id = ?',
+      ).bind(id))).catch(() => {});
+    }
+
+    await log(
+      sent ? 'sent' : (failures.length || dead.length) ? 'failed' : 'skipped',
+      [
+        notice.kind,
+        failures.length ? `${failures.length} failed: ${failures[0]}` : null,
+        dead.length ? `${dead.length} expired device(s) removed` : null,
+      ].filter(Boolean).join('; ') || null,
+      sent,
+    );
+
+    return { sent };
+  } catch (err) {
+    await log('failed', `${notice.kind ?? 'notice'}: ${err.message}`);
+    return { sent: 0, reason: err.message };
+  }
+}
+
+/**
  * Send one notice on to whoever it names.
  *
  * Silent and harmless when email is not set up, switched off, or addressed to

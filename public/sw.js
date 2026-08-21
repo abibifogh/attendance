@@ -17,7 +17,7 @@
  * a signal to pick it up with; the cache is only ever the fallback.
  */
 
-const SHELL = 'hive-shell-v1';
+const SHELL = 'hive-shell-v2';
 const SHELL_FILES = ['/', '/index.html', '/styles.css', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
@@ -86,9 +86,11 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'HIVE';
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || 'Some days need confirming.',
-    // Same tag each morning, so a second alert replaces the first rather than
-    // stacking underneath it.
-    tag: data.day ? `att-${data.day}` : 'attendance',
+    // A tag per kind of thing, so a second morning digest replaces the first
+    // rather than stacking underneath it — and a published rota does not
+    // quietly replace somebody's "your shift started" the same way. Two
+    // different messages that overwrite each other are one message lost.
+    tag: data.tag || (data.day ? `att-${data.day}` : 'attendance'),
     renotify: true,
     // No icon is named on purpose: the browser falls back to the site's own,
     // and pointing at a file that does not exist gets you a broken one.

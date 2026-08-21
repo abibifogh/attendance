@@ -7,7 +7,7 @@ import {
 } from '../lib/attendance.js';
 import { createNotice } from '../lib/notices.js';
 import {
-  addDays, diffDays, isDay, startOfWeek, todayIn,
+  addDays, diffDays, isDay, nowIn, startOfWeek, todayIn,
 } from '../util/dates.js';
 
 /** A date, or the fallback. Anything else is a mistake worth naming. */
@@ -71,6 +71,53 @@ async function meOf(ctx) {
   const staff = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(staffId).first();
   if (!staff) throw notFound('The staff record this login points at is gone.');
   return staff;
+}
+
+/**
+ * Seconds between two local wall clocks, as 'YYYY-MM-DD HH:MM'.
+ *
+ * Wall clock on both sides, in the same place, so no offset comes into it.
+ * Ghana does not move its clocks; a property that did would be an hour out
+ * twice a year on one countdown, which is the right amount of wrong for a
+ * number that only exists to say "soon".
+ */
+function secondsBetween(from, to) {
+  const at = (text) => {
+    const [day, clock] = String(text).split(' ');
+    const [y, m, d] = day.split('-').map(Number);
+    const [hh, mm] = (clock || '00:00').split(':').map(Number);
+    return Date.UTC(y, m - 1, d, hh || 0, mm || 0) / 1000;
+  };
+  return at(to) - at(from);
+}
+
+/**
+ * The next shift, and how long until it starts.
+ *
+ * A countdown rather than a date, and only inside a day, because that is the
+ * window in which the number changes what somebody does. "In 3 days" is a
+ * calendar; "in 6 hours" is a reason to go to bed.
+ */
+function countdownTo(days, timezone) {
+  const now = nowIn(timezone);
+  for (const entry of days) {
+    if (!entry.shift?.starts_at) continue;
+    const seconds = secondsBetween(now, `${entry.day} ${entry.shift.starts_at}`);
+    // Already begun, or long finished. A shift that started an hour ago is not
+    // a countdown, and the day itself already says what it is.
+    if (seconds <= 0) continue;
+    return {
+      day: entry.day,
+      title: entry.title ?? null,
+      shift: entry.shift,
+      seconds,
+      // Whether it is close enough to be worth a countdown at all. The screen
+      // decides what to draw; the server decides what "soon" means, so both
+      // halves of the app cannot disagree about it.
+      soon: seconds <= 24 * 3600,
+    };
+  }
+  return null;
 }
 
 /**
@@ -172,21 +219,32 @@ export async function myWeek(ctx) {
     });
   }
 
-  const balance = leaveBalance({
-    staff,
-    records: year.results ?? [],
-    requests: (requests.results ?? []).filter((r) => r.status === 'pending'),
-    settings: ds.settings,
-    asOf: today,
-    reasons: ds.reasonBy,
-  });
+  // Whether the property shows people their own balance. Worked out here and
+  // left out of the answer entirely when it is off, rather than hidden by the
+  // screen: a figure a browser has been sent is a figure anybody who opens the
+  // network tab has read.
+  const showBalance = ds.settings.att_show_balance !== '0';
+  const balance = showBalance
+    ? leaveBalance({
+      staff,
+      records: year.results ?? [],
+      requests: (requests.results ?? []).filter((r) => r.status === 'pending'),
+      settings: ds.settings,
+      asOf: today,
+      reasons: ds.reasonBy,
+    })
+    : null;
 
   return json({
     from,
     to,
     today,
+    // How long until the next one starts. Only ever the next: a list of
+    // countdowns is a list, and the point of this is the one number.
+    next: countdownTo(days, timezone),
     me: { id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department },
     days,
+    showBalance,
     balance,
     leave: (requests.results ?? []).map((r) => ({
       id: r.id,
@@ -388,6 +446,9 @@ export async function tellThemImLate(ctx) {
     day: today,
     actor: staff.name,
     audience: 'att_view',
+    // The whole point of the button. A message that waits for somebody to
+    // open the app arrives after they have already noticed the empty station.
+    push: true,
   }, ctx);
 
   await ctx.db.prepare(

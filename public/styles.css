@@ -1923,3 +1923,57 @@ tr:hover .pos-add, .pos-add:focus-visible {
   .me-day { grid-template-columns: 3.6rem 1fr; }
   .me-was { grid-column: 2; text-align: left; }
 }
+
+/* ---------------------------------------------------- next shift, counting --
+   Only ever shown inside a day of the shift. "In three days" is a calendar;
+   "in six hours" is a reason to go to bed.
+   ---------------------------------------------------------------------- */
+
+.countdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: .9rem 1.1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+/* Under three hours it stops being information and starts being a nudge. */
+.countdown-close { border-left-color: var(--warn); background: var(--warn-soft, var(--surface)); }
+
+.countdown-label {
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-faint);
+}
+.countdown-clock {
+  font-size: 2.1rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.countdown-sub { font-size: .85rem; color: var(--text-dim); }
+
+.countdown-shift {
+  display: grid;
+  gap: .1rem;
+  padding: .5rem .7rem;
+  border-radius: 8px;
+  border-left: 3px solid var(--shift, var(--border));
+  background: color-mix(in srgb, var(--shift, var(--border)) 18%, var(--surface));
+  min-width: 11rem;
+}
+.countdown-shift[data-shift-colour="1"] { --shift: var(--c1); }
+.countdown-shift[data-shift-colour="2"] { --shift: var(--c2); }
+.countdown-shift[data-shift-colour="3"] { --shift: var(--c3); }
+.countdown-shift[data-shift-colour="4"] { --shift: var(--c4); }
+.countdown-shift[data-shift-colour="5"] { --shift: var(--c5); }
+.countdown-shift[data-shift-colour="6"] { --shift: var(--c6); }
+.countdown-shift[data-shift-colour="7"] { --shift: var(--c7); }
+.countdown-shift[data-shift-colour="8"] { --shift: var(--c8); }

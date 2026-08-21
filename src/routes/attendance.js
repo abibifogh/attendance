@@ -1874,6 +1874,10 @@ export async function publishRoster(ctx) {
       // Everybody, or only the people the rota is about. Held as a permission
       // rather than a list, so it still reaches somebody promoted tomorrow.
       audience: told === 'everyone' ? null : 'att_me',
+      // And it buzzes. A published rota is the one thing staff genuinely need
+      // to be interrupted for: it is the difference between planning a week
+      // around a shift and finding out about it on the day.
+      push: true,
     }, ctx);
   }
 

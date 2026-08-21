@@ -10,6 +10,7 @@ import {
 import * as att from './routes/attendance.js';
 import * as suggest from './routes/suggest.js';
 import * as mine from './routes/me.js';
+import { watchShifts } from './lib/shift-watch.js';
 import * as attSetup from './routes/attendance-setup.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
@@ -461,9 +462,26 @@ export default {
       const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'timezone'")
         .first()
         .catch(() => null);
-      const today = todayIn(row?.value || 'UTC');
+      const timezone = row?.value || 'UTC';
 
-      const result = await att.dailyTick(env.DB, env, today);
+      // Two schedules through one handler. The quarter-hourly one only watches
+      // for a shift that started with nothing recorded against it; the daily
+      // one does the recompute and the morning bell. Told apart by the cron
+      // that fired, so adding a third never means guessing from the clock.
+      const nightly = String(event?.cron ?? '').startsWith('30 0');
+
+      const watched = await watchShifts(env.DB, {
+        timezone,
+        ctx: { env, executionContext },
+      }).catch((err) => {
+        console.error('Shift watch failed', err);
+        return { nudged: 0 };
+      });
+      if (watched.nudged) console.log(`Attendance: ${watched.nudged} told their shift has started`);
+
+      if (!nightly) return;
+
+      const result = await att.dailyTick(env.DB, env, todayIn(timezone));
       if (result.open || result.absent) {
         console.log(`Attendance: ${result.open} to confirm, ${result.absent} absent`);
       }
