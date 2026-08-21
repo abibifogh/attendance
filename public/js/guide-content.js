@@ -70,6 +70,61 @@ export const GUIDE = [
 
   // =========================================================================
   {
+    key: 'mine',
+    title: 'My shifts',
+    permission: 'att_me',
+    lede: 'Your own week, your own leave, and telling them you are running late.',
+    blocks: [
+
+      { sub: 'What you see' },
+      { p: 'Your shifts, and only yours. Four weeks at a time, starting on the Monday of '
+        + 'whatever week you are looking at, with the arrows to move a month either way and '
+        + 'Today to come back.' },
+      { note: 'Only shifts that have been published show here. A blank day where you expected '
+        + 'something usually means the rota for it is still being worked out — the day says so '
+        + 'when that is why.' },
+
+      { sub: 'How the days behind you came out' },
+      { p: 'Open "How the days behind me came out" and every past day carries what the app '
+        + 'made of it: on time, late by so many minutes, absent, and the clock times it read. '
+        + 'This is the place to notice a wrong Tuesday while somebody can still remember it, '
+        + 'rather than at the end of the month.' },
+      { p: 'If a day is wrong, say so to your supervisor. Clock times are corrected by somebody '
+        + 'who can be held to it, and the correction is recorded with their name on it.' },
+      { note: 'There is no overtime figure here on purpose. What you are owed is settled when '
+        + 'somebody signs the month off, having looked at the whole of it. A running total on a '
+        + 'phone would be a number to argue about rather than an answer.' },
+
+      { sub: 'Asking for leave' },
+      { steps: [
+        'Press Ask for leave.',
+        'Pick the kind, the first day and the last day.',
+        'Say why. Your manager reads it.',
+      ] },
+      { p: 'Only days you are actually rostered on are charged. A request across a weekend you '
+        + 'were never working costs you nothing for the weekend. The screen tells you what it '
+        + 'came to as soon as you send it.' },
+      { p: 'While it is still waiting you can take it back. Once it has been decided you cannot, '
+        + 'and the answer shows on the request with whatever your manager wrote.' },
+
+      { sub: 'Days you cannot work' },
+      { p: 'This is not leave. Nothing is approved, nothing comes off your balance, and it is '
+        + 'not a promise that you will not be put on. It is the fact whoever builds the rota '
+        + 'needs in front of them before they choose — and they see it in the cell.' },
+      { p: 'A whole day, or a few hours of one. An appointment until nine in the morning and an '
+        + 'evening class are different problems, and only the first one clashes with a '
+        + 'breakfast shift.' },
+
+      { sub: 'Running late' },
+      { p: 'One button. It tells whoever is on the floor before the shift starts, instead of '
+        + 'them finding out by looking at an empty station.' },
+      { warn: 'It changes nothing on your record. The terminal still decides what time you '
+        + 'arrived, and pressing this is a message rather than an excuse note.' },
+    ],
+  },
+
+  // =========================================================================
+  {
     key: 'today',
     title: 'The morning list',
     permission: 'att_view',

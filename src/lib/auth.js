@@ -336,8 +336,17 @@ export async function getSession(request, env, db) {
   let user = null;
   try {
     user = await db.prepare(
-      'SELECT id, name, role, permissions, active FROM users WHERE id = ?',
-    ).bind(payload.uid).first();
+      // staff_id comes along because the whole of what a member of staff may
+      // see is decided by it, and it must come from the session rather than
+      // from anything a browser sends.
+      'SELECT id, name, role, permissions, active, staff_id FROM users WHERE id = ?',
+    ).bind(payload.uid).first().catch(async (err) => {
+      // A database that has not been upgraded yet still signs people in.
+      if (!isMissingTable(err)) throw err;
+      return db.prepare(
+        'SELECT id, name, role, permissions, active FROM users WHERE id = ?',
+      ).bind(payload.uid).first();
+    });
   } catch (err) {
     if (!isMissingTable(err)) throw err;
     return null; // schema not applied yet — force a fresh sign-in

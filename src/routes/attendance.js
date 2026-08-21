@@ -1873,7 +1873,7 @@ export async function publishRoster(ctx) {
       actor,
       // Everybody, or only the people the rota is about. Held as a permission
       // rather than a list, so it still reaches somebody promoted tomorrow.
-      audience: told === 'everyone' ? null : 'att_view',
+      audience: told === 'everyone' ? null : 'att_me',
     }, ctx);
   }
 

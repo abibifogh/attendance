@@ -1871,3 +1871,55 @@ tr:hover .pos-add, .pos-add:focus-visible {
   background: conic-gradient(var(--c1), var(--c3), var(--c7), var(--c5), var(--c1));
 }
 .swatch-label { display: inline-flex; align-items: baseline; gap: .25rem; }
+
+/* --------------------------------------------------------- my shifts --
+   A list, not a grid. A rota grid is the right shape for the person
+   building it, who is comparing twenty-four people. It is the wrong shape
+   for the person on it, who is reading one column on a phone.
+   ---------------------------------------------------------------------- */
+
+.me-list { display: grid; }
+
+.me-day {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr auto;
+  gap: .75rem;
+  align-items: start;
+  padding: .6rem .2rem;
+  border-top: 1px solid var(--border);
+}
+.me-list > .me-day:first-child { border-top: none; }
+.me-day.me-today { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+
+.me-when { display: grid; }
+.me-when strong { font-size: .9rem; }
+.me-what { display: grid; gap: .15rem; min-width: 0; }
+.me-was { text-align: right; font-size: .8rem; }
+
+.me-shift {
+  display: grid;
+  gap: .05rem;
+  padding: .3rem .5rem;
+  border-radius: 6px;
+  border-left: 3px solid var(--shift, var(--border));
+  background: color-mix(in srgb, var(--shift, var(--border)) 16%, var(--surface));
+  justify-self: start;
+  min-width: 11rem;
+}
+.me-title { font-size: .7rem; font-weight: 650; color: var(--text-dim); }
+
+.me-shift[data-shift-colour="1"] { --shift: var(--c1); }
+.me-shift[data-shift-colour="2"] { --shift: var(--c2); }
+.me-shift[data-shift-colour="3"] { --shift: var(--c3); }
+.me-shift[data-shift-colour="4"] { --shift: var(--c4); }
+.me-shift[data-shift-colour="5"] { --shift: var(--c5); }
+.me-shift[data-shift-colour="6"] { --shift: var(--c6); }
+.me-shift[data-shift-colour="7"] { --shift: var(--c7); }
+.me-shift[data-shift-colour="8"] { --shift: var(--c8); }
+
+.me-past > summary { cursor: pointer; font-size: .9rem; font-weight: 650; margin: 1rem 0 .4rem; }
+
+@media (max-width: 620px) {
+  .me-day { grid-template-columns: 3.6rem 1fr; }
+  .me-was { grid-column: 2; text-align: left; }
+}

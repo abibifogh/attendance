@@ -9,6 +9,7 @@ import {
 } from './lib/http.js';
 import * as att from './routes/attendance.js';
 import * as suggest from './routes/suggest.js';
+import * as mine from './routes/me.js';
 import * as attSetup from './routes/attendance-setup.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
@@ -120,6 +121,15 @@ export const ROUTES = [
   // which is why it is not behind the reports permission.
   ['POST', '/api/att/roster/publish', 'att_rota', att.publishRoster],
   ['GET', '/api/att/roster/suggest', 'att_rota', suggest.suggestRoster],
+
+  // A member of staff, looking at their own. Every route resolves who they are
+  // from the session, so none of them takes a staff id and none of them has a
+  // version of "somebody else's" to get wrong.
+  ['GET', '/api/me/week', 'att_me', mine.myWeek],
+  ['POST', '/api/me/leave', 'att_me', mine.askForLeave],
+  ['POST', '/api/me/leave/:id/withdraw', 'att_me', mine.withdrawMyLeave],
+  ['POST', '/api/me/availability', 'att_me', mine.setMyAvailability],
+  ['POST', '/api/me/running-late', 'att_me', mine.tellThemImLate],
   ['POST', '/api/att/availability', 'att_rota', att.setAvailability],
   ['GET', '/api/att/workload', ['att_rota', 'att_reports'], workload.workload],
 

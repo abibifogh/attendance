@@ -9,6 +9,7 @@ import { renderAttStaff } from './views/att-staff.js';
 import { renderAttOverview, renderAttWeek } from './views/att-reports.js';
 import { renderAttRota } from './views/att-rota.js';
 import { renderAttWorkload } from './views/att-workload.js';
+import { renderAttMe } from './views/att-me.js';
 import { renderAttLeave } from './views/att-leave.js';
 import { renderAttSignoff } from './views/att-signoff.js';
 import { renderAttSetup } from './views/att-setup.js';
@@ -45,6 +46,9 @@ export const state = {
  * every morning. Setup last because it is opened twice a year.
  */
 const ROUTES = [
+  // First, and for most people the only one. A member of staff holds this and
+  // nothing else, so it has to be the screen they land on.
+  { path: 'att-me', label: 'My shifts', permission: 'att_me', render: renderAttMe },
   { path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday },
   { path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek },
   // The planner reads the month before building the next one. The one thing

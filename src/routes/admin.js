@@ -96,6 +96,10 @@ function publicUser(row) {
     signsInWith: row.role === 'admin' ? 'password' : 'pin',
     hasPassword: typeof row.password_hash === 'string' && row.password_hash.startsWith('pbkdf2c$'),
     role: row.role,
+    // Which member of staff this login belongs to, for the accounts that are
+    // one. Null for everybody who runs the place rather than appearing on the
+    // rota.
+    staffId: row.staff_id ?? null,
     permissions: effectivePermissions(row),
     customPermissions: row.permissions ? JSON.parse(row.permissions) : null,
     active: Boolean(row.active),
@@ -140,12 +144,36 @@ export async function listUsers(ctx) {
     'SELECT * FROM users ORDER BY active DESC, role, name',
   ).all();
 
+  // Who a staff login could point at. Sent with the list so the screen can
+  // offer names rather than asking somebody to know an id.
+  const staff = await ctx.db.prepare(
+    'SELECT id, name, employee_no, department FROM att_staff WHERE active = 1 ORDER BY name',
+  ).all().catch(() => ({ results: [] }));
+
   return json({
     users: (rows.results ?? []).map(publicUser),
     roles: ROLES,
     permissions: PERMISSIONS,
+    staff: staff.results ?? [],
     recovery: await recoveryStatus(ctx),
   });
+}
+
+/**
+ * Which member of staff a login belongs to.
+ *
+ * Only meaningful for the staff role. Sending it for anybody else is not an
+ * error worth refusing — an administrator switching somebody's role should not
+ * have to clear a field first — it is simply dropped, because a manager has no
+ * staff record and an account pointed at one it should not be would be a way
+ * to read somebody else's week.
+ */
+function readStaffLink(body, role) {
+  if (role !== 'staff') return null;
+  if (body.staffId == null || body.staffId === '') return null;
+  const id = Number(body.staffId);
+  if (!Number.isInteger(id) || id < 1) throw badRequest('That is not a member of staff.');
+  return id;
 }
 
 function readPermissions(body) {
@@ -174,15 +202,22 @@ export async function createUser(ctx) {
 
   try {
     const row = await ctx.db.prepare(
-      `INSERT INTO users (name, pin_hash, email, password_hash, role, permissions, active, note)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?) RETURNING *`,
-    ).bind(name, pinHash, creds.email, passwordHash, role, permissions, note).first();
+      `INSERT INTO users (name, pin_hash, email, password_hash, role, permissions, active, note,
+                          staff_id)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING *`,
+    ).bind(
+      name, pinHash, creds.email, passwordHash, role, permissions, note,
+      readStaffLink(body, role),
+    ).first();
 
     await audit(ctx, 'user.create', row.id, {
       name, role, signIn: creds.isAdmin ? 'password' : 'pin',
     });
     return json({ user: publicUser(row) }, { status: 201 });
   } catch (err) {
+    if (String(err).includes('idx_users_staff')) {
+      throw badRequest('That member of staff already has a login.');
+    }
     if (String(err).includes('UNIQUE')) {
       throw badRequest(creds.isAdmin
         ? 'That email address is already in use by another account.'
@@ -232,11 +267,11 @@ export async function updateUser(ctx, id) {
   try {
     const row = await ctx.db.prepare(
       `UPDATE users SET name = ?, role = ?, permissions = ?, active = ?, note = ?,
-                        pin_hash = ?, email = ?, password_hash = ?
+                        pin_hash = ?, email = ?, password_hash = ?, staff_id = ?
        WHERE id = ? RETURNING *`,
     ).bind(
       name, role, permissions, active ? 1 : 0, note,
-      pinHash, creds.email ?? null, passwordHash, userId,
+      pinHash, creds.email ?? null, passwordHash, readStaffLink(body, role), userId,
     ).first();
 
     await audit(ctx, 'user.update', userId, {
@@ -248,6 +283,9 @@ export async function updateUser(ctx, id) {
     });
     return json({ user: publicUser(row) });
   } catch (err) {
+    if (String(err).includes('idx_users_staff')) {
+      throw badRequest('That member of staff already has a login.');
+    }
     if (String(err).includes('UNIQUE')) {
       throw badRequest(creds.isAdmin
         ? 'That email address is already in use by another account.'

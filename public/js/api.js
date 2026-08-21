@@ -195,6 +195,15 @@ export const api = {
   attWorkload: (params) => request(`/api/att/workload?${new URLSearchParams(params)}`),
   attWorkloadRota: (from, to) => request(`/api/att/workload/rota?${new URLSearchParams({ from, to })}`),
   attSaveRoster: (body) => request('/api/att/roster', { method: 'POST', body }),
+  // A member of staff, looking at their own. None of these takes a staff id:
+  // who you are comes off the session, so there is no version of somebody
+  // else's week to ask for.
+  myWeek: (from) => request(`/api/me/week${from ? `?from=${from}` : ''}`),
+  myAskForLeave: (body) => request('/api/me/leave', { method: 'POST', body }),
+  myWithdrawLeave: (id) => request(`/api/me/leave/${id}/withdraw`, { method: 'POST', body: {} }),
+  mySetAvailability: (body) => request('/api/me/availability', { method: 'POST', body }),
+  myRunningLate: (body) => request('/api/me/running-late', { method: 'POST', body }),
+
   attSuggestRoster: (from, to) => request(`/api/att/roster/suggest?from=${from}&to=${to}`),
   attPublishRoster: (body) => request('/api/att/roster/publish', { method: 'POST', body }),
   attSetAvailability: (body) => request('/api/att/availability', { method: 'POST', body }),

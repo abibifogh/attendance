@@ -1,0 +1,316 @@
+import { api } from '../api.js';
+import { fmtDay, fmtDayShort, fmtNum, h, mount, shiftDay, toast } from '../util.js';
+import { card, emptyState } from './components.js';
+import { asHours, field, formDialog, shiftColour, shiftHours, shiftMinutes } from './att-shared.js';
+
+/**
+ * My shifts.
+ *
+ * The screen a member of staff opens on their phone, in a corridor, to answer
+ * one of four questions: am I in tomorrow, was I marked late on Tuesday, can I
+ * have Friday off, and I am stuck in traffic.
+ *
+ * Built as a list rather than a grid on purpose. A rota grid is the right
+ * shape for the person building it, who is comparing twenty-four people; it is
+ * the wrong shape for the person on it, who is reading one column and is
+ * holding a phone.
+ *
+ * What is deliberately not here: anybody else's shifts, and any overtime
+ * figure. The first is not their business and the second is not settled until
+ * somebody signs the month off — a running total on a phone is a number to
+ * argue about, and the app should not be the one starting the argument.
+ */
+export async function renderAttMe(params = {}) {
+  const host = h('div');
+  const from = params.from || null;
+  const data = await api.myWeek(from).catch((err) => ({ error: err.message }));
+
+  const reload = async (next = {}) => mount(host, await renderAttMe({ ...params, ...next }));
+
+  if (data.error) {
+    mount(host,
+      h('div.page-head', h('h1', 'My shifts')),
+      emptyState('Nothing to show yet', data.error));
+    return host;
+  }
+
+  const upcoming = data.days.filter((d) => d.day >= data.today);
+  const behind = data.days.filter((d) => d.day < data.today).reverse();
+  const next = upcoming.find((d) => d.shift);
+
+  mount(host,
+    h('div.page-head',
+      h('div',
+        h('h1', 'My shifts'),
+        h('div.sub', next
+          ? `Next: ${fmtDay(next.day)}, ${next.shift.name} ${shiftHours(next.shift)}`
+          : 'Nothing on the rota for you in the next four weeks'),
+      ),
+      h('div.btn-row',
+        h('button.btn-sm', { onclick: () => runningLate(reload) }, 'I am running late'),
+        h('button.btn-sm', {
+          onclick: () => editMyAvailability(data, reload),
+        }, 'Days I cannot work'),
+        h('button.btn.btn-primary', { onclick: () => askForLeave(data, reload) }, 'Ask for leave'),
+      ),
+    ),
+
+    h('div.toolbar',
+      h('button.btn-sm', { onclick: () => reload({ from: shiftDay(data.from, -28) }) }, '‹'),
+      h('strong', `${fmtDayShort(data.from)} – ${fmtDayShort(data.to)}`),
+      h('button.btn-sm', { onclick: () => reload({ from: shiftDay(data.from, 28) }) }, '›'),
+      h('button.btn-sm', { onclick: () => reload({ from: null }) }, 'Today'),
+    ),
+
+    balanceLine(data),
+
+    card('Coming up', { note: `${upcoming.filter((d) => d.shift).length} shifts`, wide: true },
+      upcoming.length
+        ? h('div.me-list', upcoming.map((d) => dayRow(d, data)))
+        : h('p.muted', 'Nothing yet.')),
+
+    data.leave.length
+      ? card('My leave', { note: `${data.leave.length}`, wide: true },
+        h('div.me-list', data.leave.map((row) => leaveRow(row, reload))))
+      : null,
+
+    behind.some((d) => d.was)
+      ? h('details.me-past',
+        h('summary', 'How the days behind me came out'),
+        h('div.me-list', behind.filter((d) => d.was).map((d) => dayRow(d, data))))
+      : null,
+
+    h('p.muted', { style: { fontSize: '.82rem' } },
+      'Only shifts that have been published show here. If a day is blank and you expected '
+      + 'something, the rota for it may still be being worked out.'),
+  );
+
+  return host;
+}
+
+/** What is left, and what is already spoken for. */
+function balanceLine(data) {
+  const b = data.balance ?? {};
+  const day = (n) => `${fmtNum(n ?? 0, (n ?? 0) % 1 ? 1 : 0)} day${(n ?? 0) === 1 ? '' : 's'}`;
+
+  return h('p.signoff-counts',
+    h('strong', `${day(b.remaining)} of leave left`),
+    b.taken != null ? h('span.muted', ` · ${day(b.taken)} taken`) : null,
+    b.booked ? h('span.pill', { style: { marginLeft: '.4rem' } }, `${day(b.booked)} booked`) : null,
+    b.pending ? h('span.pill.warn', { style: { marginLeft: '.35rem' } }, `${day(b.pending)} asked for`) : null,
+  );
+}
+
+/** One day, as somebody reads their own week. */
+function dayRow(entry, data) {
+  const when = new Date(`${entry.day}T12:00:00Z`)
+    .toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' });
+
+  const what = entry.leave
+    ? h('span.pill.good', entry.leave)
+    : entry.shift
+      ? h('div.me-shift', { 'data-shift-colour': String(shiftColour(entry.shift)) },
+        entry.title ? h('span.me-title', entry.title) : null,
+        h('strong', entry.shift.name),
+        h('small.muted', `${shiftHours(entry.shift)} · ${asHours(shiftMinutes(entry.shift))}`))
+      : entry.restDay
+        ? h('span.muted', 'Day off')
+        : entry.pending
+          ? h('span.pill.warn', 'Being worked out')
+          : h('span.muted', '—');
+
+  return h('div.me-day', {
+    class: entry.day === data.today ? 'me-today' : '',
+  },
+    h('div.me-when',
+      h('strong', when),
+      h('small.muted', fmtDayShort(entry.day))),
+    h('div.me-what',
+      what,
+      entry.holiday ? h('small.muted', entry.holiday) : null,
+      entry.availability
+        ? h('small.muted', entry.availability.status === 'preferred'
+          ? `★ you asked for this day${entry.availability.from ? ` ${entry.availability.from}–${entry.availability.to}` : ''}`
+          : `✕ you said you cannot work${entry.availability.from ? ` ${entry.availability.from}–${entry.availability.to}` : ' this day'}`)
+        : null),
+    h('div.me-was', entry.was
+      ? h('div',
+        h('span', { class: `pill${entry.was.colour === 'green' ? ' good' : entry.was.colour === 'red' ? ' bad' : entry.was.colour === 'amber' ? ' warn' : ''}` },
+          entry.was.label),
+        entry.was.lateMinutes
+          ? h('small.muted', ` ${entry.was.lateMinutes} min late`)
+          : null,
+        h('div', h('small.muted', `${entry.was.in || '—'} → ${entry.was.out || '—'}`)))
+      : null),
+  );
+}
+
+/** One leave request, and the only thing they can do to it. */
+function leaveRow(row, reload) {
+  const pill = { pending: 'warn', approved: 'good', rejected: 'bad' }[row.status] ?? '';
+  const label = {
+    pending: 'Waiting', approved: 'Approved', rejected: 'Not approved', withdrawn: 'Taken back',
+  }[row.status] ?? row.status;
+
+  return h('div.me-day',
+    h('div.me-when',
+      h('strong', fmtDayShort(row.from)),
+      h('small.muted', row.from === row.to ? '' : `to ${fmtDayShort(row.to)}`)),
+    h('div.me-what',
+      h('strong', row.label),
+      h('small.muted', `${fmtNum(row.days, row.days % 1 ? 1 : 0)} day`
+        + `${row.days === 1 ? '' : 's'}${row.reason ? ` · ${row.reason}` : ''}`),
+      row.note ? h('small.muted', `“${row.note}”`) : null),
+    h('div.me-was',
+      h(`span.pill${pill ? `.${pill}` : ''}`, label),
+      row.status === 'pending'
+        ? h('button.btn-sm', {
+          style: { marginLeft: '.4rem' },
+          onclick: async () => {
+            if (!window.confirm('Take this request back?')) return;
+            try {
+              await api.myWithdrawLeave(row.id);
+              toast('Taken back.');
+              await reload();
+            } catch (err) {
+              toast(err.message, 'bad');
+            }
+          },
+        }, 'Take it back')
+        : null),
+  );
+}
+
+/**
+ * Ask for leave.
+ *
+ * It says what it will cost before it is sent, because the number people
+ * actually want is not the length of the holiday, it is how many days come off
+ * the balance — and rest days inside the span cost nothing.
+ */
+async function askForLeave(data, reload) {
+  const done = await formDialog({
+    title: 'Ask for leave',
+    submitLabel: 'Send it',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        `You have ${fmtNum(data.balance?.remaining ?? 0, 1)} days left. Only days you are `
+        + 'rostered on are charged: rest days and public holidays inside the period cost '
+        + 'nothing.'),
+      field('Type', h('select', { name: 'reason', required: true },
+        h('option', { value: '' }, 'Choose…'),
+        data.reasons.map((r) => h('option', { value: r.code }, r.label)))),
+      h('div.field-row',
+        field('First day', h('input', { type: 'date', name: 'from', required: true, min: data.today })),
+        field('Last day', h('input', { type: 'date', name: 'to', required: true, min: data.today })),
+      ),
+      field('Half day', h('select', { name: 'halfDay' },
+        h('option', { value: '' }, 'No, full days throughout'),
+        h('option', { value: 'start' }, 'Back for the afternoon of the first day'),
+        h('option', { value: 'end' }, 'Off from the afternoon of the last day'),
+        h('option', { value: 'both' }, 'Half day at each end'),
+      )),
+      field('Why', h('input', { type: 'text', name: 'note', maxlength: 500 }),
+        'Your manager sees this'),
+    ),
+    onSubmit: async (form) => api.myAskForLeave({
+      reason: form.get('reason'),
+      from: form.get('from'),
+      to: form.get('to'),
+      halfDay: form.get('halfDay') || null,
+      note: form.get('note') || null,
+    }),
+  });
+
+  if (!done) return;
+  toast(`Sent. ${fmtNum(done.days, done.days % 1 ? 1 : 0)} day`
+    + `${done.days === 1 ? '' : 's'} if it is approved.`, 'good');
+  await reload();
+}
+
+/**
+ * Days I cannot work.
+ *
+ * Not leave, and it says so plainly: nothing is approved and nothing is spent.
+ * It is the fact the planner needs before they pick a shift, put in by the one
+ * person who actually knows it.
+ */
+async function editMyAvailability(data, reload) {
+  const ahead = data.days.filter((d) => d.day >= data.today);
+
+  const done = await formDialog({
+    title: 'Days I cannot work',
+    submitLabel: 'Save',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'This is not leave. Nothing is approved and no days are spent. It shows in the cell '
+        + 'so whoever builds the rota sees it before they put you on something.'),
+      h('div.avail-days', ahead.map((d) => h('label.tickline',
+        h('input', {
+          type: 'checkbox', name: 'day', value: d.day,
+          checked: d.availability?.status === 'unavailable',
+        }),
+        h('span', fmtDayShort(d.day),
+          d.shift ? h('small.muted', ` (on ${d.shift.name})`) : null)))),
+      field('Kind', h('select', { name: 'status' },
+        h('option', { value: 'unavailable' }, 'Cannot work'),
+        h('option', { value: 'preferred' }, 'Would like to work'),
+      )),
+      h('div.field-row',
+        field('From', h('input', { type: 'time', name: 'fromTime' }), 'Leave both blank for the whole day'),
+        field('Until', h('input', { type: 'time', name: 'toTime' })),
+      ),
+      field('Note', h('input', { type: 'text', name: 'note', maxlength: 200 })),
+    ),
+    onSubmit: async (form) => {
+      const days = form.getAll('day');
+      if (!days.length) throw new Error('Tick at least one day.');
+      return api.mySetAvailability({
+        days,
+        status: form.get('status'),
+        note: form.get('note') || null,
+        fromTime: form.get('fromTime') || null,
+        toTime: form.get('toTime') || null,
+      });
+    },
+  });
+
+  if (!done) return;
+  toast(`${done.marked} day${done.marked === 1 ? '' : 's'} marked.`, 'good');
+  await reload();
+}
+
+/**
+ * Stuck in traffic.
+ *
+ * One button, and the thing a hotel wants most out of a phone. It records
+ * nothing against the day — the terminal decides what happened — it just means
+ * whoever is on the floor knows before the shift starts rather than by looking
+ * at an empty station.
+ */
+async function runningLate(reload) {
+  const done = await formDialog({
+    title: 'Tell them I am running late',
+    submitLabel: 'Send it',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'This is a message, not an excuse note. It changes nothing on your record: the '
+        + 'terminal still decides what time you arrived.'),
+      field('About how late', h('select', { name: 'minutes' },
+        [10, 15, 30, 45, 60, 90, 120].map((n) => h('option', {
+          value: String(n), selected: n === 15,
+        }, `${n} minutes`)))),
+      field('Anything to add', h('input', {
+        type: 'text', name: 'note', maxlength: 200, placeholder: 'The Spintex road is at a stop',
+      })),
+    ),
+    onSubmit: async (form) => api.myRunningLate({
+      minutes: Number(form.get('minutes')),
+      note: form.get('note') || null,
+    }),
+  });
+
+  if (!done) return;
+  toast('Sent. They know.', 'good');
+  await reload();
+}

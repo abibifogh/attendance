@@ -175,6 +175,21 @@ function openUserDialog({ existing, data, reload }) {
 
   const roleHint = h('p.muted', { style: { fontSize: '.85rem' } });
 
+  // Which member of staff a staff login belongs to. The whole of what that
+  // account can see is decided by this one field, so it is required for the
+  // role and hidden for every other: a manager has no staff record, and an
+  // account pointed at the wrong one would be reading somebody else's week.
+  const staffSelect = h('select',
+    h('option', { value: '' }, 'Choose…'),
+    (data.staff ?? []).map((p) => h('option', {
+      value: String(p.id), selected: String(existing?.staffId ?? '') === String(p.id),
+    }, `${p.name}${p.department ? ` · ${p.department}` : ''} · No. ${p.employee_no}`)));
+
+  const staffField = h('label.field',
+    h('span', 'Whose shifts they see'),
+    staffSelect,
+    h('small.muted', 'Their own, and nothing else'));
+
   // Permissions default to the role's, and only become a stored override once
   // somebody actually ticks something different.
   let custom = existing?.customPermissions ?? null;
@@ -194,6 +209,7 @@ function openUserDialog({ existing, data, reload }) {
     pinField.style.display = isAdmin ? 'none' : '';
     emailField.style.display = isAdmin ? '' : '';
     passwordField.style.display = isAdmin ? '' : 'none';
+    staffField.style.display = roleSelect.value === 'staff' ? '' : 'none';
   };
 
   roleSelect.addEventListener('change', () => { custom = null; applyRole(); });
@@ -227,6 +243,7 @@ function openUserDialog({ existing, data, reload }) {
       pinField,
       emailField,
       passwordField,
+      staffField,
     ),
     roleHint,
     h('label.field', h('span', 'Note (optional)'), note),
@@ -253,7 +270,15 @@ function openUserDialog({ existing, data, reload }) {
       active: active.value === 'true',
       note: note.value.trim() || null,
       permissions: custom,
+      staffId: roleSelect.value === 'staff' ? (staffSelect.value || null) : null,
     };
+
+    if (roleSelect.value === 'staff' && !payload.staffId) {
+      problem.textContent = 'Say whose shifts this login is for. Without it there is nothing '
+        + 'for them to open.';
+      problem.style.display = '';
+      return;
+    }
 
     try {
       if (roleSelect.value === 'admin') {

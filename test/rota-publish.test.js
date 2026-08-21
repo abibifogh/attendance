@@ -92,7 +92,7 @@ test('a saved cell is a draft, and publishing turns it solid', async () => {
   // And the bell rang for everybody who can see attendance.
   const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'rota.published'").get();
   assert.ok(notice, 'a notice went out');
-  assert.equal(notice.audience, 'att_view');
+  assert.equal(notice.audience, 'att_me');
 });
 
 test('changing a published day makes it a draft again', async () => {
@@ -222,7 +222,7 @@ test('telling everybody and telling the people it is about are different', async
   }));
 
   const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'rota.published'").get();
-  assert.equal(notice.audience, 'att_view');
+  assert.equal(notice.audience, 'att_me');
   assert.match(notice.body, /Easter cover/);
 
   await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-04', shiftId: 1 }] } }));

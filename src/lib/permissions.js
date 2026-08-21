@@ -80,6 +80,13 @@ export const PERMISSIONS = [
       + 'password or PIN at the moment of signing',
   },
   {
+    key: 'att_me',
+    label: 'My shifts',
+    detail: 'Their own published rota, their own attendance, their own leave requests and the '
+      + 'days they cannot work. Nothing about anybody else, and no overtime figure — what '
+      + 'somebody is owed is settled at sign-off, not read off a screen midweek',
+  },
+  {
     key: 'users',
     label: 'Users & data',
     detail: 'Manage logins, notifications and erasing data',
@@ -120,6 +127,14 @@ export const ROLES = [
     label: 'Reports only',
     detail: 'Reads the reports and exports them. Changes nothing — right for whoever does the wages.',
     defaults: ['att_view', 'att_reports'],
+  },
+  {
+    key: 'staff',
+    label: 'Member of staff',
+    detail: 'Sees their own shifts once they are published, their own attendance, and can ask '
+      + 'for leave or say which days they cannot work. Sees nothing about anybody else. Give '
+      + 'the account a PIN and point it at their staff record.',
+    defaults: ['att_me'],
   },
   {
     key: 'admin',
@@ -199,9 +214,11 @@ export function effectivePermissions(user) {
   // that role changes nothing by definition, and signing off moves leave.
   if (list.includes('att_manage') && !list.includes('att_signoff')) list.push('att_signoff');
   // And anybody who can do anything here needs the screen the rest hangs off.
-  if (list.length && !list.includes('att_view') && list.some((p) => p.startsWith('att_'))) {
-    list.push('att_view');
-  }
+  // Except a member of staff: "my shifts" is deliberately the whole of what
+  // they hold, and handing them the property's attendance screen with it would
+  // undo the point of the role.
+  const running = list.filter((p) => p.startsWith('att_') && p !== 'att_me');
+  if (running.length && !list.includes('att_view')) list.push('att_view');
   return list;
 }
 
