@@ -110,6 +110,7 @@ export const ROUTES = [
   ['POST', '/api/att/days/:day/times', 'att_times', att.correctTimes],
   ['GET', '/api/att/time-edits', ['att_setup', 'att_reports', 'att_times'], att.timeEdits],
   ['POST', '/api/att/time-edits/:id/decide', 'att_setup', att.decideTimeEdit],
+  ['POST', '/api/att/time-edits/decide', 'att_setup', att.decideTimeEdits],
   ['POST', '/api/att/punches', 'att_manage', att.addPunch],
 
   ['GET', '/api/att/roster', ['att_rota', 'att_reports'], att.getRoster],

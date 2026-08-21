@@ -180,6 +180,7 @@ export const api = {
 
   attCorrectTimes: (day, body) => request(`/api/att/days/${day}/times`, { method: 'POST', body }),
   attDecideTimeEdit: (id, body) => request(`/api/att/time-edits/${id}/decide`, { method: 'POST', body }),
+  attDecideTimeEdits: (body) => request('/api/att/time-edits/decide', { method: 'POST', body }),
   attTimeEdits: (params = {}) => request(`/api/att/time-edits?${new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== '')),
   )}`),

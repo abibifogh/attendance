@@ -30,11 +30,16 @@ const LEVELS = new Set(['info', 'warn', 'high']);
  */
 export async function createNotice(db, {
   kind, level = 'info', title, body, link, day, slot, actor, audience = null, userId = null,
+  email = true,
 }, ctx = null) {
   if (!kind || !title) return null;
 
   const post = async () => {
-    if (!ctx?.env) return;
+    // Some events are worth a bell and not worth an inbox. Approving a clock
+    // correction is the clearest case: the person who asked for it is sitting
+    // in the app watching for it, and a property with twenty corrections a
+    // week would be sending twenty emails nobody reads.
+    if (!email || !ctx?.env) return;
     const sending = emailNotice(db, ctx.env, {
       kind, level, title, body, link, actor, audience, userId,
     }).catch((err) => console.error('notice email failed', err));

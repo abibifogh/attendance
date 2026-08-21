@@ -1309,6 +1309,57 @@ const SETTLED_BY_CORRECTION = 'Clock times corrected';
 export async function decideTimeEdit(ctx, idParam) {
   const id = int(idParam, 'Request', { required: true, min: 1 });
   const body = await readJson(ctx.request);
+  const { decision, note } = readDecision(body);
+
+  const outcome = await rule(ctx, id, decision, note);
+  await audit(ctx, `attendance.times.${decision}`, `${outcome.staff.id}|${outcome.day}`, {
+    request: id, in: outcome.request.now_in, out: outcome.request.now_out, note,
+  });
+
+  return json({ ok: true, decision });
+}
+
+/**
+ * The same answer, given to a stack of them at once.
+ *
+ * A morning's corrections arrive as fifteen rows that all say the same thing —
+ * the terminal missed the clock-out again — and ruling on them one dialog at a
+ * time is how a queue stops being read at all. Each one is still applied on its
+ * own terms: its own times, its own recomputation, its own audit line. What is
+ * shared is the decision and the note.
+ *
+ * One that cannot be ruled on does not stop the others. It comes back named,
+ * because "twelve of fifteen went through" is only useful with the three.
+ */
+export async function decideTimeEdits(ctx) {
+  const body = await readJson(ctx.request);
+  const { decision, note } = readDecision(body);
+
+  const ids = [...new Set((Array.isArray(body.ids) ? body.ids : [])
+    .map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) throw badRequest('Tick at least one change to rule on.');
+  if (ids.length > 200) throw badRequest('That is more changes than one ruling should carry.');
+
+  const done = [];
+  const failed = [];
+  for (const id of ids) {
+    try {
+      const outcome = await rule(ctx, id, decision, note);
+      done.push({ id, staff: outcome.staff.name, day: outcome.day });
+    } catch (err) {
+      failed.push({ id, why: err.message });
+    }
+  }
+
+  await audit(ctx, `attendance.times.${decision}_many`, null, {
+    decided: done.length, refused: failed.length, note,
+  });
+
+  return json({ ok: true, decision, decided: done, failed });
+}
+
+/** Approved or sent back, with the reason a refusal has to carry. */
+function readDecision(body) {
   const decision = str(body.decision, 'Decision', { required: true, max: 20 });
   if (!['approve', 'reject'].includes(decision)) {
     throw badRequest('A request is either approved or sent back.');
@@ -1317,7 +1368,11 @@ export async function decideTimeEdit(ctx, idParam) {
   if (decision === 'reject' && !note) {
     throw badRequest('Say why, so whoever asked knows what to do instead.');
   }
+  return { decision, note };
+}
 
+/** One request, ruled on. Everything both routes share lives here. */
+async function rule(ctx, id, decision, note) {
   const request = await ctx.db.prepare(
     'SELECT * FROM att_time_edit WHERE id = ?',
   ).bind(id).first();
@@ -1347,13 +1402,14 @@ export async function decideTimeEdit(ctx, idParam) {
     });
   }
 
-  await audit(ctx, `attendance.times.${decision}`, `${request.staff_id}|${request.day}`, {
-    request: id, in: request.now_in, out: request.now_out, note,
-  });
-
   // Back to whoever asked. There is no way to address one person — a notice is
   // held against a permission so it still reaches somebody promoted tomorrow —
   // so it goes to everybody who can make a correction, named in the title.
+  //
+  // An approval rings the bell and stops there. It is the expected answer, it
+  // is visible on the day the moment it lands, and a property correcting a
+  // handful of clock-outs every morning does not need a handful of emails
+  // about it. A refusal still goes out: it asks somebody to do something.
   await createNotice(ctx.db, {
     kind: 'attendance.times',
     level: decision === 'approve' ? 'info' : 'warn',
@@ -1368,10 +1424,12 @@ export async function decideTimeEdit(ctx, idParam) {
     day: request.day,
     actor: actorOf(ctx),
     audience: 'att_times',
+    email: decision !== 'approve',
   }, ctx);
 
-  return json({ ok: true, decision });
+  return { request, staff, day: request.day };
 }
+
 
 /**
  * What the clock said before somebody touched it.

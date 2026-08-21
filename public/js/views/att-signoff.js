@@ -933,23 +933,50 @@ async function timesTab(range, reload) {
   const contradicts = (e) => (e.now_in && e.observed_in && e.now_in !== e.observed_in)
     || (e.now_out && e.observed_out && e.now_out !== e.observed_out);
 
-  const queue = pending.length
-    ? card('Waiting for you', {
-      note: `${pending.length}`,
-      wide: true,
-    }, h('div',
-      h('p.muted', { style: { fontSize: '.85rem' } },
-        canApprove
-          ? 'Nothing on these days has changed. Approving puts the times on and settles the day '
-            + 'on whatever the rules make of them — you are not being asked to choose a status.'
-          : 'These are waiting on an administrator. Until one answers, the days read exactly as '
-            + 'the terminal left them.'),
-      h('div.table-wrap', h('table',
-        h('thead', h('tr',
-          h('th', 'Day'), h('th', 'In'), h('th', 'Out'), h('th', 'Why'), h('th', 'Asked by'),
-          canApprove ? h('th', '') : null,
-        )),
-        h('tbody', pending.map((e) => h('tr',
+  // Ticked rows, for ruling on a stack of them at once. A morning's worth of
+  // missed clock-outs is fifteen rows that all say the same thing, and fifteen
+  // dialogs is how a queue stops being read.
+  const chosen = new Set();
+  const bar = h('div.bulk-clear', { style: { display: 'none' } });
+
+  const refreshBar = () => {
+    bar.style.display = chosen.size ? '' : 'none';
+    mount(bar,
+      h('span', h('strong', `${chosen.size} ticked`),
+        h('span.muted', ' — the same answer to all of them')),
+      h('div.btn-row',
+        h('button.btn-sm.btn-primary', {
+          onclick: () => decideMany([...chosen], 'approve', pending, reload),
+        }, `Approve ${chosen.size}`),
+        h('button.btn-sm', {
+          onclick: () => decideMany([...chosen], 'reject', pending, reload),
+        }, 'Send them back'),
+      ));
+  };
+
+  const tickAll = h('input.th-tick', {
+    type: 'checkbox',
+    title: 'Tick every change waiting',
+    onchange: (event) => {
+      const on = event.target.checked;
+      for (const box of queueBody.querySelectorAll('input[type=checkbox]')) {
+        box.checked = on;
+        box.dispatchEvent(new Event('change'));
+      }
+    },
+  });
+
+  const queueBody = h('tbody', pending.map((e) => h('tr',
+    canApprove
+      ? h('td', h('input', {
+        type: 'checkbox',
+        'aria-label': `${e.staff_name}, ${e.day}`,
+        onchange: (event) => {
+          if (event.target.checked) chosen.add(e.id); else chosen.delete(e.id);
+          refreshBar();
+        },
+      }))
+      : null,
           h('td', h('div',
             h('div', fmtDayShort(e.day)),
             h('small.muted', e.staff_name))),
@@ -976,7 +1003,28 @@ async function timesTab(range, reload) {
               h('button.btn-sm', { onclick: () => decide(e, 'reject', reload) }, 'Send back'),
             ))
             : null,
-        ))),
+  )));
+
+  const queue = pending.length
+    ? card('Waiting for you', {
+      note: `${pending.length}`,
+      wide: true,
+    }, h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        canApprove
+          ? 'Nothing on these days has changed. Approving puts the times on and settles the day '
+            + 'on whatever the rules make of them — you are not being asked to choose a status. '
+            + 'Tick several to answer them together.'
+          : 'These are waiting on an administrator. Until one answers, the days read exactly as '
+            + 'the terminal left them.'),
+      bar,
+      h('div.table-wrap', h('table',
+        h('thead', h('tr',
+          canApprove ? h('th', tickAll) : null,
+          h('th', 'Day'), h('th', 'In'), h('th', 'Out'), h('th', 'Why'), h('th', 'Asked by'),
+          canApprove ? h('th', '') : null,
+        )),
+        queueBody,
       )),
     ))
     : null;
@@ -1030,6 +1078,65 @@ async function timesTab(range, reload) {
  * on its own tells whoever asked nothing about what to do instead — and they
  * will simply ask again.
  */
+/**
+ * The same ruling, given to a stack of changes at once.
+ *
+ * It names what it is about to do before it does it, and each request is still
+ * applied on its own terms behind the scenes. A refusal still has to say why:
+ * "no" on its own tells whoever asked nothing about what to do instead.
+ */
+async function decideMany(ids, decision, pending, reload) {
+  const rows = pending.filter((e) => ids.includes(e.id));
+  const people = [...new Set(rows.map((r) => r.staff_name))];
+
+  const done = await formDialog({
+    title: decision === 'approve'
+      ? `Approve ${ids.length} change${ids.length === 1 ? '' : 's'}`
+      : `Send back ${ids.length} change${ids.length === 1 ? '' : 's'}`,
+    submitLabel: decision === 'approve' ? 'Approve them' : 'Send them back',
+    body: h('div',
+      h('p.muted', `${people.length} ${people.length === 1 ? 'person' : 'people'}: `
+        + `${people.slice(0, 4).join(', ')}${people.length > 4 ? ` and ${people.length - 4} more` : ''}.`),
+
+      h('ul.signed-list', rows.slice(0, 12).map((e) => h('li', h('small',
+        `${fmtDayShort(e.day)} · ${e.staff_name} · ${e.now_in || '—'} → ${e.now_out || '—'}`
+        + `${e.reason ? ` · ${e.reason}` : ''}`)))),
+      rows.length > 12
+        ? h('p.muted', { style: { fontSize: '.82rem' } }, `and ${rows.length - 12} more`)
+        : null,
+
+      field(decision === 'approve' ? 'Anything to add' : 'Why not', h('input', {
+        type: 'text', name: 'note', maxlength: 500, required: decision !== 'approve',
+        placeholder: decision === 'approve'
+          ? 'Optional — kept against every one of them'
+          : 'The terminal was down that morning — raise it against the right shift',
+      }), decision === 'approve'
+        ? 'Kept with each record'
+        : 'Required, and sent with each one'),
+
+      decision === 'approve'
+        ? h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+          'Each day is worked out again from its own times and settled on that verdict under '
+          + 'your name. The punches themselves are untouched.')
+        : h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+          'Nothing changes on any of these days. They stay exactly as the terminal left them.'),
+    ),
+    onSubmit: async (form) => api.attDecideTimeEdits({
+      ids, decision, note: form.get('note') || null,
+    }),
+  });
+
+  if (!done) return;
+  if (done.failed?.length) {
+    toast(`${done.decided.length} done. ${done.failed.length} could not be: ${done.failed[0].why}`, 'bad');
+  } else {
+    toast(decision === 'approve'
+      ? `${done.decided.length} approved and settled.`
+      : `${done.decided.length} sent back.`, 'good');
+  }
+  await reload();
+}
+
 async function decide(edit, decision, reload) {
   const done = await formDialog({
     title: decision === 'approve'
