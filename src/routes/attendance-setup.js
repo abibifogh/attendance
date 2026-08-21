@@ -246,9 +246,19 @@ export async function unknownEmployees(ctx) {
 // ---------------------------------------------------------------------------
 
 export async function listShifts(ctx) {
-  const rows = await ctx.db.prepare('SELECT * FROM att_shifts ORDER BY sort_order, name').all();
+  const rows = await ctx.db.prepare(
+    `SELECT s.*,
+            (SELECT COUNT(*) FROM att_days   d WHERE d.shift_id = s.id) AS used_days,
+            (SELECT COUNT(*) FROM att_roster r WHERE r.shift_id = s.id) AS used_rota
+       FROM att_shifts s ORDER BY s.sort_order, s.name`,
+  ).all();
+
+  // Retired ones come back too — the setup screen is where somebody brings one
+  // back, and it cannot offer what it cannot see. Every other screen filters
+  // on `active`, and now has a straight answer on whether Delete is even
+  // possible rather than having to find out by pressing it.
   return json({
-    shifts: rows.results ?? [],
+    shifts: (rows.results ?? []).map((s) => ({ ...s, deletable: !s.used_days && !s.used_rota })),
     departments: await departmentOptions(ctx.db),
   });
 }
@@ -333,17 +343,44 @@ export async function updateShift(ctx, id) {
   return json({ ok: true, recomputed: touched.days });
 }
 
+/**
+ * Delete a shift, but only one nothing has ever used.
+ *
+ * A shift is not a row in a table, it is what "late" was measured against on
+ * every day anybody ever worked it. Delete it and every one of those days is
+ * left pointing at nothing: the hours stay, the verdicts stay, and the thing
+ * that produced them is gone. Nobody can then answer "late compared to what?",
+ * which is the only question that matters when somebody disputes a deduction.
+ *
+ * So a shift with any history behind it, or any rota in front of it, can only
+ * be retired. Retiring takes it off every list a person picks from and leaves
+ * every record that mentions it exactly as it was.
+ */
 export async function deleteShift(ctx, id) {
   const shiftId = Number(id);
   const used = await ctx.db.prepare(
     'SELECT (SELECT COUNT(*) FROM att_roster WHERE shift_id = ?1) AS rota, '
-    + '(SELECT COUNT(*) FROM att_days WHERE shift_id = ?1) AS days',
-  ).bind(shiftId).first();
+    + '(SELECT COUNT(*) FROM att_days WHERE shift_id = ?1) AS days, '
+    + '(SELECT COUNT(*) FROM att_patterns WHERE shift_id = ?1) AS patterns',
+  ).bind(shiftId).first().catch(() => null);
 
-  if (Number(used?.days ?? 0)) {
+  const days = Number(used?.days ?? 0);
+  const rota = Number(used?.rota ?? 0);
+  const patterns = Number(used?.patterns ?? 0);
+
+  if (days || rota || patterns) {
+    const what = [
+      days ? `${days} day${days === 1 ? '' : 's'} already recorded against it` : null,
+      rota ? `${rota} rostered day${rota === 1 ? '' : 's'}` : null,
+      patterns ? `${patterns} standing pattern${patterns === 1 ? '' : 's'}` : null,
+    ].filter(Boolean);
+
     throw badRequest(
-      'Days have already been recorded against this shift, so deleting it would leave them '
-      + 'pointing at nothing. Switch it off instead — it stops appearing on the rota and the history keeps its meaning.',
+      `This shift has ${what.join(', ')}. Deleting it would leave every one of them pointing at `
+      + 'nothing — the hours would stay and what they were measured against would be gone. '
+      + 'Retire it instead: it comes off every list anybody picks from, and every record that '
+      + 'mentions it keeps its meaning.',
+      { retireInstead: true },
     );
   }
 

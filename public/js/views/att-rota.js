@@ -6,6 +6,7 @@ import { card, emptyState, table } from './components.js';
 import { replaceParams } from '../app.js';
 import {
   byDepartment, field, formDialog, shiftHours, shiftLabel, shiftSelect,
+  shiftColour,
 } from './att-shared.js';
 
 /**
@@ -126,6 +127,14 @@ export async function renderAttRota(params) {
       const chosen = shiftById.get(String(select.value));
       hours.textContent = chosen ? shiftHours(chosen) : '';
       hours.className = `rota-hours${chosen ? '' : ' rota-hours-off'}`;
+      paint(select);
+    };
+
+    const paint = (el) => {
+      const chosen = shiftById.get(String(el.value));
+      // Zero is "no shift", which is the absence of a colour rather than one
+      // of them: a rest day should read as empty, not as a ninth shift.
+      el.dataset.shiftColour = chosen ? String(shiftColour(chosen)) : '0';
     };
 
     const select = h('select.rota-cell', {
@@ -249,6 +258,28 @@ export async function renderAttRota(params) {
     refreshSaveBar();
   };
 
+  // The key. Only the shifts actually on this fortnight's grid, in the order
+  // the grid groups them — a legend listing all twenty-four when six are in
+  // use is a legend nobody reads twice.
+  const onScreen = new Map();
+  for (const row of data.rows ?? []) {
+    for (const entry of row.days ?? []) {
+      const shift = entry.shift_id == null ? null : shiftById.get(String(entry.shift_id));
+      if (shift && !onScreen.has(shift.id)) onScreen.set(shift.id, shift);
+    }
+  }
+
+  const legend = onScreen.size
+    ? h('div.shift-key',
+      byDepartment([...onScreen.values()]).flatMap((group) => group.shifts.map((shift) => h(
+        'span.shift-key-item',
+        { title: `${shift.name}${shift.department ? ` · ${shift.department}` : ''}` },
+        h('span.shift-key-swatch', { style: { '--shift': `var(--c${shiftColour(shift)})` } }),
+        h('span', shift.name),
+        h('span.shift-key-hours', shiftHours(shift)),
+      ))))
+    : null;
+
   const grid = h('div.table-wrap',
     h('table.rota-table',
       h('thead', h('tr',
@@ -337,7 +368,7 @@ export async function renderAttRota(params) {
     ),
     saveBar,
     importCard(imported?.draft ?? null, data.rows.map((r) => r.staff), reload),
-    card('Two weeks', { note: `${data.rows.length} people`, wide: true }, grid),
+    card('Two weeks', { note: `${data.rows.length} people`, wide: true }, legend, grid),
     h('p.muted', { style: { fontSize: '.82rem' } },
       'A day set to Off is a rostered rest day — a decision, and not the same as somebody simply not '
       + 'being on the rota. Days covered by approved leave cannot be edited here; cancel the leave first.'),

@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { replaceParams } from '../app.js';
 import { fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
-import { field, formDialog } from './att-shared.js';
+import { SHIFT_COLOURS, field, formDialog, shiftColour } from './att-shared.js';
 
 /**
  * Attendance setup.
@@ -303,6 +303,17 @@ async function shiftsTab(reload) {
           field('Half day at', h('input', { type: 'number', name: 'halfDayMinutes', min: 0, max: 1440, value: existing?.half_day_minutes ?? 240 }), 'minutes worked'),
           field('Full day at', h('input', { type: 'number', name: 'fullDayMinutes', min: 0, max: 1440, value: existing?.full_day_minutes ?? 420 }), 'minutes worked'),
         ),
+        // Chosen for the shift already, from its id, so a property with
+        // twenty-four shifts is not a colouring exercise before the rota
+        // becomes readable. This is only for when the automatic one puts two
+        // shifts somebody cares about next to each other in the same colour.
+        field('Colour on the rota', h('select', { name: 'colour' },
+          h('option', { value: '', selected: !existing?.colour },
+            `Chosen for it${existing ? ` (${shiftColour(existing)})` : ''}`),
+          ...Array.from({ length: SHIFT_COLOURS }, (unused, i) => h('option', {
+            value: String(i + 1), selected: String(existing?.colour ?? '') === String(i + 1),
+          }, `Colour ${i + 1}`)))),
+
         existing
           ? field('Status', h('select', { name: 'active' },
             h('option', { value: 'true', selected: !!existing.active }, 'In use'),
@@ -316,6 +327,7 @@ async function shiftsTab(reload) {
       onSubmit: async (form) => {
         const payload = Object.fromEntries(form.entries());
         payload.active = form.get('active') !== 'false';
+        payload.colour = form.get('colour') || null;
         payload.department = form.get('departmentPick') === NEW_DEPARTMENT
           ? (form.get('departmentNew') || '').trim() || null
           : form.get('departmentPick') || null;
@@ -330,7 +342,8 @@ async function shiftsTab(reload) {
   };
 
   const remove = async (row) => {
-    if (!window.confirm(`Delete the ${row.name} shift?`)) return;
+    if (!window.confirm(`Delete the ${row.name} shift?\n\n`
+      + 'Nothing has ever used it, so there is nothing to lose.')) return;
     try {
       await api.attDeleteShift(row.id);
       toast('Deleted.');
@@ -339,6 +352,47 @@ async function shiftsTab(reload) {
       toast(err.message, 'bad');
     }
   };
+
+  /**
+   * Retire a shift, or bring one back.
+   *
+   * The ordinary end of a shift's life. It stops being offered anywhere
+   * somebody picks a shift, and every day already measured against it keeps
+   * meaning what it meant.
+   */
+  const retire = async (row, retired) => {
+    const used = Number(row.used_days ?? 0);
+    if (retired && !window.confirm(
+      `Retire the ${row.name} shift?\n\n`
+      + 'It comes off the rota and off every list anybody picks from. '
+      + `${used ? `The ${used} day${used === 1 ? '' : 's'} already recorded against it are untouched.`
+        : 'Nothing already recorded changes.'}\n\n`
+      + 'You can bring it back at any time.',
+    )) return;
+
+    try {
+      await api.attUpdateShift(row.id, {
+        name: row.name,
+        startsAt: row.starts_at,
+        endsAt: row.ends_at,
+        breakMinutes: row.break_minutes,
+        graceInMinutes: row.grace_in_minutes,
+        graceOutMinutes: row.grace_out_minutes,
+        halfDayMinutes: row.half_day_minutes,
+        fullDayMinutes: row.full_day_minutes,
+        overtimeAfter: row.overtime_after,
+        department: row.department || null,
+        active: !retired,
+      });
+      toast(retired ? 'Retired. It is off the rota.' : 'Back in use.', 'good');
+      await reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
+  const inUse = shifts.filter((s) => s.active);
+  const retired = shifts.filter((s) => !s.active);
 
   return h('div',
     suggestionsCard(suggested, reload),
@@ -349,7 +403,13 @@ async function shiftsTab(reload) {
       wide: true,
     },
       table([
-        { key: 'name', label: 'Name', format: (v, r) => h('div', h('div', v), r.active ? null : h('small.muted', 'retired')) },
+        {
+          key: 'name',
+          label: 'Name',
+          format: (v, r) => h('div.shift-key-item',
+            h('span.shift-key-swatch', { style: { '--shift': `var(--c${shiftColour(r)})` } }),
+            h('span', v)),
+        },
         {
           key: 'starts_at',
           label: 'Hours',
@@ -366,24 +426,61 @@ async function shiftsTab(reload) {
         {
           key: 'actions',
           label: '',
+          // Delete only where there is genuinely nothing to lose. Everywhere
+          // else the honest offer is Retire, and offering Delete anyway just
+          // to refuse it afterwards teaches people the buttons are guesses.
           format: (v, r) => h('div.btn-row',
             h('button.btn-sm', { onclick: () => edit(r) }, 'Edit'),
-            h('button.btn-sm', { onclick: () => remove(r) }, 'Delete'),
+            r.active
+              ? h('button.btn-sm', { onclick: () => retire(r, true) }, 'Retire')
+              : h('button.btn-sm', { onclick: () => retire(r, false) }, 'Bring back'),
+            r.deletable
+              ? h('button.btn-sm.btn-danger', { onclick: () => remove(r) }, 'Delete')
+              : null,
           ),
         },
-      ], shifts, {
-        rowClass: (r) => (r.active ? '' : 'row-muted'),
+      ], inUse, {
         empty: 'No shifts yet. Add the ones your rota actually uses — usually two or three.',
         // Banded by department, which is also how the rota offers them. Two
         // dozen shifts read as one intimidating list and as five ordinary ones,
         // and the difference is entirely the headings.
         groupBy: (r) => r.department || null,
         groupNoun: ['shift', 'shifts'],
-        groupSummary: (group) => {
-          const retired = group.filter((r) => !r.active).length;
-          return retired ? `${retired} retired` : '';
-        },
       })),
+
+    // Folded away rather than mixed in. A retired shift is not one of the
+    // property's shifts any more — it is a thing the history refers to — and
+    // leaving it in the list means reading past it every time somebody comes
+    // to change a grace period.
+    retired.length
+      ? card('Retired', {
+        note: `${retired.length} — off the rota, still in the history`,
+        wide: true,
+      },
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'These are offered nowhere: not on the rota, not in a pattern, not when somebody settles '
+          + 'a day. Every day already measured against one still reads exactly as it did.'),
+        table([
+          { key: 'name', label: 'Name' },
+          { key: 'starts_at', label: 'Hours', format: (v, r) => `${v} – ${r.ends_at}` },
+          {
+            key: 'used_days',
+            label: 'Days recorded',
+            align: 'right',
+            format: (v) => (Number(v) ? fmtNum(v, 0) : h('span.muted', 'none')),
+          },
+          {
+            key: 'actions',
+            label: '',
+            format: (v, r) => h('div.btn-row',
+              h('button.btn-sm', { onclick: () => retire(r, false) }, 'Bring back'),
+              r.deletable
+                ? h('button.btn-sm.btn-danger', { onclick: () => remove(r) }, 'Delete')
+                : null,
+            ),
+          },
+        ], retired, { empty: 'None.' }))
+      : null,
 
     h('p.muted', { style: { fontSize: '.82rem' } },
       'The terminal decides what it shows the person at the door; these decide what the reports say. '

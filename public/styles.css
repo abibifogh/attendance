@@ -916,6 +916,65 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .rota-hours-off::before { content: '\00a0'; }
 .rota-cell.rota-pattern { color: var(--text-faint); background: var(--surface-2); border-style: dashed; }
 .rota-cell.rota-set     { color: var(--text); font-weight: 600; }
+
+/* --------------------------------------------------------------------------
+   The rota, in colour
+   --------------------------------------------------------------------------
+   A fortnight of twenty-four people is 336 dropdowns reading "Housekeeper
+   Helper 06:00–14:00". Nobody reads a grid like that; they hunt through it.
+   Colour turns hunting into seeing — the morning band, the afternoon band and
+   the gap where nobody is on are visible from across the screen, before a
+   single word has been read.
+
+   A tint for the cell and a solid edge down its left. The tint has to stay
+   pale enough for black text to sit on it, so the edge is what carries the
+   colour at a glance and the fill is only there to group.
+
+   Eight colours, and the same eight the charts use. Past eight nobody can tell
+   two of them apart, and a colour nobody can name is decoration.
+   -------------------------------------------------------------------------- */
+.rota-cell[data-shift-colour="0"] { border-left-width: 1px; }
+
+.rota-cell[data-shift-colour="1"] { --shift: var(--c1); }
+.rota-cell[data-shift-colour="2"] { --shift: var(--c2); }
+.rota-cell[data-shift-colour="3"] { --shift: var(--c3); }
+.rota-cell[data-shift-colour="4"] { --shift: var(--c4); }
+.rota-cell[data-shift-colour="5"] { --shift: var(--c5); }
+.rota-cell[data-shift-colour="6"] { --shift: var(--c6); }
+.rota-cell[data-shift-colour="7"] { --shift: var(--c7); }
+.rota-cell[data-shift-colour="8"] { --shift: var(--c8); }
+
+.rota-cell[data-shift-colour]:not([data-shift-colour="0"]) {
+  background: color-mix(in srgb, var(--shift) 13%, var(--surface));
+  border-left: 3px solid var(--shift);
+}
+/* A cell following the standing pattern rather than set by hand keeps its
+   colour but says so — the dashes are what tell a planner which days somebody
+   actually decided. */
+.rota-cell.rota-pattern[data-shift-colour]:not([data-shift-colour="0"]) {
+  background: color-mix(in srgb, var(--shift) 7%, var(--surface));
+  border-top-style: dashed;
+  border-right-style: dashed;
+  border-bottom-style: dashed;
+  color: var(--text-dim);
+}
+
+/* What each colour means, above the grid. A key nobody can find is a grid
+   nobody can read. */
+.shift-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem .7rem;
+  margin: 0 0 .7rem;
+  font-size: .8rem;
+}
+.shift-key-item { display: inline-flex; align-items: center; gap: .35rem; }
+.shift-key-swatch {
+  width: .8rem; height: .8rem; border-radius: 3px; flex: none;
+  background: color-mix(in srgb, var(--shift) 26%, var(--surface));
+  border-left: 3px solid var(--shift);
+}
+.shift-key-hours { color: var(--text-faint); }
 .rota-cell.rota-dirty   { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .rota-weekend { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
 .rota-locked {

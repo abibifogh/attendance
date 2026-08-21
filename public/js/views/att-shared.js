@@ -90,6 +90,30 @@ export function shiftLabel(shift) {
   return hours ? `${shift.name} · ${hours}` : String(shift.name ?? '');
 }
 
+/**
+ * Which of eight colours a shift wears, everywhere it appears.
+ *
+ * Chosen for the shift rather than by whoever set it up, so a property with
+ * twenty-four shifts is not a colouring exercise before the rota is readable.
+ * The choice is stable — it comes from the shift's id, which never changes —
+ * so a shift is the same colour tomorrow as it was today, which is the only
+ * property that makes a colour worth learning.
+ *
+ * An administrator can override it, and then theirs stands. Eight is the
+ * ceiling on purpose: past that nobody can tell two of them apart at a glance,
+ * and a colour nobody can name is decoration rather than information.
+ */
+export const SHIFT_COLOURS = 8;
+
+export function shiftColour(shift) {
+  if (!shift) return 0;
+  const chosen = Number(shift.colour);
+  if (Number.isInteger(chosen) && chosen >= 1 && chosen <= SHIFT_COLOURS) return chosen;
+  const id = Number(shift.id);
+  if (!Number.isFinite(id)) return 1;
+  return ((Math.abs(id) - 1) % SHIFT_COLOURS) + 1;
+}
+
 /** Which department a shift belongs to, with a name for the ones that do not. */
 export const NO_DEPARTMENT = 'No department';
 export const departmentOf = (shift) => (shift?.department || NO_DEPARTMENT);
