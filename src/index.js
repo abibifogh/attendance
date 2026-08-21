@@ -14,6 +14,7 @@ import * as people from './routes/people.js';
 import * as invite from './routes/invite.js';
 import * as corr from './routes/correspondence.js';
 import * as signoff from './routes/signoff.js';
+import * as workload from './routes/workload.js';
 import * as sign from './routes/sign.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
@@ -111,6 +112,11 @@ export const ROUTES = [
   ['POST', '/api/att/punches', 'att_manage', att.addPunch],
 
   ['GET', '/api/att/roster', ['att_rota', 'att_reports'], att.getRoster],
+
+  // How the rota is treating people. Whoever builds it needs this most,
+  // which is why it is not behind the reports permission.
+  ['GET', '/api/att/workload', ['att_rota', 'att_reports'], workload.workload],
+  ['GET', '/api/att/workload/rota', ['att_rota', 'att_reports'], workload.rotaWarnings],
   ['POST', '/api/att/roster', 'att_rota', att.saveRoster],
   ['POST', '/api/att/roster/copy', 'att_rota', att.copyRoster],
   ['POST', '/api/att/patterns', 'att_rota', att.savePattern],
