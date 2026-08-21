@@ -8,6 +8,7 @@ import {
   HttpError, badRequest, forbidden, isMissingTable, json, readJson, str, unauthorized,
 } from './lib/http.js';
 import * as att from './routes/attendance.js';
+import * as suggest from './routes/suggest.js';
 import * as attSetup from './routes/attendance-setup.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
@@ -118,6 +119,7 @@ export const ROUTES = [
   // How the rota is treating people. Whoever builds it needs this most,
   // which is why it is not behind the reports permission.
   ['POST', '/api/att/roster/publish', 'att_rota', att.publishRoster],
+  ['GET', '/api/att/roster/suggest', 'att_rota', suggest.suggestRoster],
   ['POST', '/api/att/availability', 'att_rota', att.setAvailability],
   ['GET', '/api/att/workload', ['att_rota', 'att_reports'], workload.workload],
 

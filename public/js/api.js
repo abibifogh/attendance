@@ -195,6 +195,7 @@ export const api = {
   attWorkload: (params) => request(`/api/att/workload?${new URLSearchParams(params)}`),
   attWorkloadRota: (from, to) => request(`/api/att/workload/rota?${new URLSearchParams({ from, to })}`),
   attSaveRoster: (body) => request('/api/att/roster', { method: 'POST', body }),
+  attSuggestRoster: (from, to) => request(`/api/att/roster/suggest?from=${from}&to=${to}`),
   attPublishRoster: (body) => request('/api/att/roster/publish', { method: 'POST', body }),
   attSetAvailability: (body) => request('/api/att/availability', { method: 'POST', body }),
   attCopyRoster: (body) => request('/api/att/roster/copy', { method: 'POST', body }),

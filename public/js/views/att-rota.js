@@ -805,21 +805,24 @@ export async function renderAttRota(params) {
         : null,
     ),
 
-    conflicts || view === 'people'
-      ? h('div.toolbar',
-        conflicts
-          ? h('button.btn-sm', {
-            onclick: () => navigate('att-workload', { from, to }),
-            title: 'People this plan is overworking. The full picture is on Workload',
-          }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`)
-          : null,
-        h('div', { style: { flex: 1 } }),
-        view === 'people'
-          ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week')
-          : null,
-        view === 'people' ? importButton(reload) : null,
-      )
-      : null,
+    h('div.toolbar',
+      conflicts
+        ? h('button.btn-sm', {
+          onclick: () => navigate('att-workload', { from, to }),
+          title: 'People this plan is overworking. The full picture is on Workload',
+        }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`)
+        : null,
+      h('div', { style: { flex: 1 } }),
+      view === 'people'
+        ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week')
+        : null,
+      view === 'people' ? importButton(reload) : null,
+      h('button.btn-sm', {
+        onclick: () => suggest(from, to, reload),
+        title: 'Fill the blanks from what this property usually does. '
+          + 'Nothing is published and nothing you have decided is touched',
+      }, 'Suggest a draft'),
+    ),
 
     saveBar,
     // Only when a draft is actually waiting. The empty pitch that used to sit
@@ -1413,4 +1416,100 @@ function shiftQuestions(draft, reload) {
       h('button.btn-sm.btn-primary', { onclick: () => decide(q) }, 'Decide'),
     )),
   );
+}
+
+/**
+ * A first draft of the blanks, offered before anything is written.
+ *
+ * Two steps on purpose. The server proposes and writes nothing; this shows
+ * what it proposed and what it could not fill; only then does anything reach
+ * the database, and it reaches it through the ordinary Save the grid uses. So
+ * a suggestion arrives dashed, is counted by the Publish button like any other
+ * draft, and reaches a member of staff only once a person has published it.
+ */
+async function suggest(from, to, reload) {
+  let plan;
+  try {
+    plan = await api.attSuggestRoster(from, to);
+  } catch (err) {
+    toast(err.message, 'bad');
+    return;
+  }
+
+  if (!plan.entries.length && !plan.gaps.length) {
+    toast('Nothing to suggest: every day in this window has already been decided.', 'warn');
+    return;
+  }
+
+  // Grouped by person, because that is the unit somebody checks. Twelve rows
+  // reading "Kofi, Early" are one decision about Kofi, not twelve.
+  const byPerson = new Map();
+  for (const entry of plan.entries) {
+    if (!byPerson.has(entry.staff)) byPerson.set(entry.staff, []);
+    byPerson.get(entry.staff).push(entry);
+  }
+  const dropped = new Set();
+
+  const countLine = h('strong');
+  const refresh = () => {
+    const n = plan.entries.filter((e) => !dropped.has(e.staff)).length;
+    countLine.textContent = `${n} shift${n === 1 ? '' : 's'}`;
+  };
+  refresh();
+
+  const done = await formDialog({
+    title: 'A first draft',
+    submitLabel: 'Put them on as drafts',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        `Read from the ${plan.weeksRead} weeks behind this one. It only fills days nothing has `
+        + 'been said about: anything you or a standing pattern already decided is left exactly '
+        + 'as it is, and nobody on leave or marked unavailable is put on anything.'),
+
+      h('p', 'Proposing ', countLine, '. Nothing is published — they arrive dashed, and the '
+        + 'Publish button counts them like any other draft.'),
+
+      byPerson.size
+        ? h('div.clean-list', [...byPerson.entries()].map(([name, rows]) => h('div.clean-person',
+          h('label.tickline',
+            h('input', {
+              type: 'checkbox',
+              checked: true,
+              onchange: (event) => {
+                if (event.target.checked) dropped.delete(name); else dropped.add(name);
+                refresh();
+              },
+            }),
+            h('span', h('strong', name),
+              h('small.muted', ` · ${rows.length} shift${rows.length === 1 ? '' : 's'}`))),
+          h('div.clean-days', rows.map((r) => h('small',
+            `${fmtDayShort(r.day)} ${r.shift}`))),
+          h('small.muted', rows[0].why),
+        )))
+        : null,
+
+      plan.gaps.length
+        ? h('details', { style: { marginTop: '.8rem' } },
+          h('summary', { style: { cursor: 'pointer', fontSize: '.85rem' } },
+            `${plan.gaps.length} it could not fill`),
+          h('ul.finding-list', plan.gaps.map((g) => h('li',
+            h('div',
+              h('div.finding-title', `${fmtDayShort(g.day)} — ${g.shift}, `
+                + `${g.short} short of ${g.wanted}`),
+              h('div.finding-detail', g.why))))))
+        : null,
+    ),
+    onSubmit: async () => {
+      const entries = plan.entries
+        .filter((e) => !dropped.has(e.staff))
+        .map((e) => ({ staffId: e.staffId, day: e.day, shiftId: e.shiftId }));
+      if (!entries.length) throw new Error('Nothing is ticked, so there is nothing to put on.');
+      return api.attSaveRoster({ entries });
+    },
+  });
+
+  if (!done) return;
+  toast(`${done.changed} draft shift${done.changed === 1 ? '' : 's'} added. `
+    + 'Adjust them, then publish when you are happy.', 'good');
+  await reload();
 }
