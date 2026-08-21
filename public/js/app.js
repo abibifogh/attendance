@@ -8,6 +8,7 @@ import { renderAttToday } from './views/att-today.js';
 import { renderAttStaff } from './views/att-staff.js';
 import { renderAttOverview, renderAttWeek } from './views/att-reports.js';
 import { renderAttRota } from './views/att-rota.js';
+import { renderAttWorkload } from './views/att-workload.js';
 import { renderAttLeave } from './views/att-leave.js';
 import { renderAttSignoff } from './views/att-signoff.js';
 import { renderAttSetup } from './views/att-setup.js';
@@ -51,6 +52,8 @@ const ROUTES = [
   // answer, not just off the screen.
   { path: 'att-overview', label: 'Month', permission: ['att_reports', 'att_rota'], render: renderAttOverview },
   { path: 'att-rota', label: 'Rota', permission: 'att_rota', render: renderAttRota },
+  // Beside the rota, because it is read while the rota is being built.
+  { path: 'att-workload', label: 'Workload', permission: ['att_rota', 'att_reports'], render: renderAttWorkload },
   { path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave },
   { path: 'signoff', label: 'Sign-off', permission: 'att_signoff', render: renderAttSignoff },
   { path: 'people', label: 'People', permission: 'hr_view', render: renderPeople },

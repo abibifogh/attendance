@@ -424,6 +424,33 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
      enough room for the item list they are supposed to sit above. */
 }
 
+/* --------------------------------------------------------------------------
+   Workload
+   --------------------------------------------------------------------------
+   A finding is a claim about somebody's fortnight, so it is laid out like one:
+   what is wrong, then the figures behind it, then the rule it breaks. The rule
+   is the quiet part — it is there to be looked up when somebody argues, not
+   read every time.
+   -------------------------------------------------------------------------- */
+.finding-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.finding-list > li { display: flex; gap: .55rem; align-items: flex-start; }
+.finding-list > li > .pill { flex: none; margin-top: .1rem; }
+.finding-title { font-size: .9rem; font-weight: 600; line-height: 1.35; }
+.finding-detail { font-size: .84rem; color: var(--text-dim); line-height: 1.45; }
+.finding-law { color: var(--text-faint); font-variant: small-caps; letter-spacing: .02em; }
+
+.limits-card {
+  margin-top: 1.2rem; padding: .8rem 1rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface);
+}
+.limits-card > summary { cursor: pointer; font-weight: 650; font-size: .92rem; }
+
+/* A person the plan is overworking, marked on the rota grid itself so it is
+   seen while the rota is being changed rather than on a screen somebody has to
+   remember to open afterwards. */
+.rota-strain { border: none; background: none; padding: 0 0 0 .35rem; font-size: .9rem; cursor: help; }
+
 /* No signal. Loud on purpose: the app opens from a home screen whether or not
    there is a connection, and a screen that opens is a screen somebody believes.
    Sits under the header so it is the first thing read on every page. */

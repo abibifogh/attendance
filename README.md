@@ -275,6 +275,49 @@ digest naming half the property every morning is one nobody reads by Friday.
 What makes the digest send at all is unchanged — a day nobody can settle, or an
 absence. Lateness rides along with it rather than triggering it.
 
+### Workload — whether the rota is survivable
+
+The rota screen answers *is anybody on Security on Sunday*. It never answered
+*has Kofi had a day off this fortnight*, and that is the question that ends
+with somebody handing in their notice.
+
+**Workload** reads the plan rather than the record, because the point is to see
+it while it can still be changed, and it reads the fortnight a rota is actually
+built in. Two lists, kept apart because they are two different problems and
+averaging them hides both: who is being worked hardest, and who is being left
+out.
+
+**The floor is the law.** Ghana's Labour Act 2003 (Act 651) sets eight hours a
+day and forty a week (s.33, nine on a day where another is shorter, s.34),
+twelve consecutive hours between working days (s.35), and forty-eight
+consecutive hours in every seven (s.36). Every finding cites its section, and a
+property can tighten any of them. On top of that sit this trade's rules of
+thumb — days in a row, nights, how often somebody is flipped between nights and
+days — which are marked as the property's own rather than the law's.
+
+**Nothing is ever blocked.** A hotel has nights when somebody simply has to
+cover, and an app that refuses to record what happened gets worked around on
+paper, at which point it knows nothing at all. It says so loudly, names the
+rule, and leaves the decision with whoever's name is on it.
+
+**Rest is not automatically a kindness**, so the second list is as long as the
+first: somebody rostered under what the month expected is being paid for days
+nobody scheduled; somebody who never gets a weekend while their department gets
+every other one is being carried by them; and leave nobody takes is a bill
+quietly running up. All three read as "resting" on a screen that only counts
+overwork.
+
+A mark against the name on the rota grid itself carries the same findings, so
+the moment a plan gives somebody eleven days straight is the moment it is still
+a plan.
+
+> **One thing worth knowing about the arithmetic.** The weekly-rest figure
+> measures gaps between actual shifts and then asks which seven-day stretches
+> they touch. Measuring *inside* a rolling window instead clips an ordinary
+> Friday-to-Monday weekend at the boundary — calling 64 hours 34 — and reports
+> a property in breach every week of its life. A warning that cries wolf on a
+> normal rota is the one people switch off.
+
 ### On a phone
 
 **It installs.** A web app manifest, real PNG icons at 192 and 512 including a

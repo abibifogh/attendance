@@ -3,7 +3,7 @@ import {
   fmtDayShort, h, mount, shiftDay, toast, todayISO,
 } from '../util.js';
 import { card, emptyState, table } from './components.js';
-import { replaceParams } from '../app.js';
+import { navigate, replaceParams } from '../app.js';
 import {
   byDepartment, field, formDialog, shiftHours, shiftLabel, shiftSelect,
   shiftColour,
@@ -31,9 +31,15 @@ export async function renderAttRota(params) {
   const host = h('div');
   const from = params.from || mondayOf(todayISO());
   const to = params.to || shiftDay(from, 13);
-  const [data, imported] = await Promise.all([
+  const [data, imported, strain] = await Promise.all([
     api.attRoster(from, to),
     api.attRotaImport().catch(() => ({ draft: null })),
+    // Read beside the rota rather than on a screen somebody has to remember to
+    // open: the moment to notice that a plan gives Kofi eleven days straight
+    // is while it is still a plan. Never allowed to stop the rota loading — a
+    // rota that will not open because an advisory figure failed is a worse
+    // problem than the one it was warning about.
+    api.attWorkloadRota(from, to).catch(() => ({ rows: {} })),
   ]);
 
   const reload = async (next = {}) => {
@@ -94,6 +100,28 @@ export async function renderAttRota(params) {
   const cells = new Map();
 
   const shiftById = new Map(data.shifts.map((s) => [String(s.id), s]));
+
+  /**
+   * A mark against the name of anybody the plan is overworking.
+   *
+   * One character, with the whole reason on hover and in its title so a phone
+   * can reach it by press-and-hold. Deliberately small: the rota's job is
+   * still the rota, and a banner would push the grid off the screen to say
+   * something the Workload tab says properly.
+   */
+  const strainMark = (staffId) => {
+    const found = strain?.rows?.[staffId];
+    if (!found) return null;
+    const lines = found.findings
+      .map((f) => `${f.title}. ${f.detail}${f.law ? ` (${f.law})` : ''}`)
+      .join('\n');
+    return h('button.rota-strain', {
+      type: 'button',
+      title: `${lines}\n\nOpen Workload for the whole picture.`,
+      'aria-label': `${found.count} workload warning${found.count === 1 ? '' : 's'}`,
+      onclick: () => navigate('att-workload', { from, to }),
+    }, found.level === 'high' ? '🔴' : '🟠');
+  };
 
   const cell = (row, entry) => {
     if (entry.leave) {
@@ -326,7 +354,7 @@ export async function renderAttRota(params) {
       ),
       h('tbody', data.rows.map((row) => h('tr',
         h('td',
-          h('div', row.staff.name),
+          h('div', row.staff.name, strainMark(row.staff.id)),
           h('small.muted', row.staff.department || `No. ${row.staff.employee_no}`),
         ),
         h('td',
