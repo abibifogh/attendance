@@ -535,20 +535,59 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   .main { padding-top: .7rem; }
 }
 
+/* Which of a control's two faces is showing. An icon on a phone, words on a
+   desk — and the words are always in the button rather than only in a tooltip,
+   because a finger cannot hover. */
+.only-phone { display: none; }
+@media (max-width: 620px) {
+  .only-phone { display: inline; }
+  .only-desk { display: none !important; }
+}
+
 /* The header at phone width.
-   The property name, who is signed in, and four buttons will not fit across
-   390px: the name wrapped to three lines and "Sign out" fell off the edge. The
-   name is the thing that can go — anyone holding the phone knows which hotel
-   they work at, and the buttons are the part that has to stay reachable. */
-@media (max-width: 560px) {
-  .topbar { gap: .35rem; padding-inline: .5rem; }
-  .brand { font-size: .92rem; min-width: 0; }
+   The property name, who is signed in and five controls will not fit across
+   390px. They were being squeezed to 29 pixels wide and 31 tall — under half a
+   thumb — and at 360px the bar gave up and wrapped onto two rows.
+   Two things had to give: the words on the last two buttons, which become
+   icons, and Sign out, which moves into the drawer. What is left gets the room
+   to be hit. */
+@media (max-width: 620px) {
+  .topbar {
+    gap: .15rem;
+    padding-inline: .4rem;
+    flex-wrap: nowrap;
+  }
+  .brand { font-size: .95rem; min-width: 0; flex: 0 1 auto; overflow: hidden; }
   .brand > div {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 34vw;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .brand-sub { display: none; }
-  .topbar .btn-sm { padding-inline: .5rem; }
+
+  /* 44px square: the size a thumb actually needs, and the size these were
+     nowhere near. Ghost buttons, so four of them in a row still read as one
+     quiet strip rather than four boxes. */
+  .topbar > button {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0;
+    font-size: 1.15rem;
+    flex: 0 0 auto;
+  }
+  .topbar .bell-wrap > button { min-width: 2.75rem; min-height: 2.75rem; padding: 0; }
+  .topbar-account { font-size: 1.2rem; }
 }
+
+/* Who you are and the way out, at the bottom of the drawer. Never shown on a
+   desk, where both live on the header. */
+.side-foot {
+  margin-top: .9rem;
+  padding-top: .8rem;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: .5rem;
+}
+.side-who { font-size: .85rem; font-weight: 600; line-height: 1.3; }
+@media (max-width: 620px) { .side-foot { display: grid; } }
 
 
 

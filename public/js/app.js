@@ -146,6 +146,12 @@ export function replaceParams(path, params) {
  * three stores between them. This one does not, and inventing a section
  * heading for a list of ten would be furniture for its own sake.
  */
+async function signOut() {
+  await api.logout().catch(() => {});
+  resetSession();
+  render();
+}
+
 function sidebar() {
   const visible = ROUTES.filter((r) => allowed(r) && !r.hidden);
   const here = currentRoute()?.path;
@@ -156,6 +162,14 @@ function sidebar() {
       class: here === route.path ? 'side-link active' : 'side-link',
       onclick: () => closeDrawer(),
     }, route.label))),
+
+    // Only ever seen on a phone, where it is not on the header. Last in the
+    // drawer, under everything else, because it is the one thing here nobody
+    // wants to press by accident.
+    h('div.side-foot.only-phone',
+      h('div.side-who', state.name || '', state.name ? h('br') : null,
+        h('small.muted', roleLabel(state.role))),
+      h('button.btn-sm', { onclick: signOut }, 'Sign out')),
   );
 }
 
@@ -187,8 +201,9 @@ function shell(content) {
       h('div.topbar-spacer'),
       noticeBell(),
       h('button.btn-ghost.btn-sm', { title: 'Switch light / dark', onclick: toggleTheme }, '🌗'),
-      h('button.btn-ghost.btn-sm', {
+      h('button.btn-ghost.btn-sm.topbar-account', {
         title: state.role === 'admin' ? 'Change my password' : 'Change my PIN',
+        'aria-label': 'My account',
         onclick: () => openAccountDialog({
           role: state.role,
           name: state.name || 'you',
@@ -199,13 +214,18 @@ function shell(content) {
           // resent a phone buzzing every morning about it.
           canAlert: can('att_manage'),
         }),
-      }, 'My account'),
-      h('button.btn-ghost.btn-sm', {
-        onclick: async () => {
-          await api.logout().catch(() => {});
-          resetSession();
-          render();
-        },
+      },
+      // The icon is what shows on a phone and the words are what show on a
+      // desk. Both are always in the button so the label is never only a
+      // tooltip, which a finger cannot hover over.
+      h('span.only-phone', '👤'),
+      h('span.only-desk', 'My account')),
+
+      // Sign out is in the drawer on a phone. It was the last thing on a row
+      // that had already run out of room, and it is the one button on this bar
+      // that undoes your morning if you hit it by mistake.
+      h('button.btn-ghost.btn-sm.only-desk', {
+        onclick: signOut,
       }, 'Sign out'),
     ),
     // Said loudly, because the app now opens without a signal and a screen that
