@@ -1696,7 +1696,14 @@ export async function getRoster(ctx) {
           // the pattern is the assumption, and publishing is about the days
           // somebody actually decided.
           published: schedule.explicit ? Boolean(rostered?.published) : null,
-          availability: avail ? { status: avail.status, note: avail.note ?? null } : null,
+          availability: avail
+            ? {
+              status: avail.status,
+              note: avail.note ?? null,
+              from: avail.from_time ?? null,
+              to: avail.to_time ?? null,
+            }
+            : null,
           leave: ds.leaveBy.get(`${staff.id}|${day}`)?.reason_code ?? null,
           holiday: ds.holidayBy.get(day)?.name ?? null,
         };
@@ -1797,13 +1804,25 @@ export async function setAvailability(ctx) {
   const status = body.status === 'preferred' ? 'preferred' : 'unavailable';
   const note = str(body.note, 'Note', { max: 200 });
 
+  // A window inside the day, when the problem is an appointment rather than
+  // the whole day. Both empty means the whole day, which stays the common case.
+  const fromTime = readClock(body.fromTime, 'From');
+  const toTime = readClock(body.toTime, 'Until');
+  if ((fromTime && !toTime) || (!fromTime && toTime)) {
+    throw badRequest('Give both times, or neither for the whole day.');
+  }
+  if (fromTime && toTime && toTime <= fromTime) {
+    throw badRequest('The end of the window has to come after its start.');
+  }
+
   await ctx.db.batch(days.map((day) => ctx.db.prepare(
-    `INSERT INTO att_availability (staff_id, day, status, note, set_by)
-     VALUES (?1, ?2, ?3, ?4, ?5)
+    `INSERT INTO att_availability (staff_id, day, status, note, set_by, from_time, to_time)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
      ON CONFLICT (staff_id, day) DO UPDATE SET
        status = excluded.status, note = excluded.note,
-       set_by = excluded.set_by, set_at = datetime('now')`,
-  ).bind(staffId, day, status, note, actor)));
+       set_by = excluded.set_by, set_at = datetime('now'),
+       from_time = excluded.from_time, to_time = excluded.to_time`,
+  ).bind(staffId, day, status, note, actor, fromTime, toTime)));
 
   return json({ ok: true, marked: days.length, status });
 }

@@ -75,7 +75,7 @@ export async function renderAttRota(params) {
       h('div.page-head', h('h1', 'Rota')),
       emptyState(
         'No shifts defined',
-        'A rota needs shifts to put on it. Create them in Attendance setup — a shift is a name, '
+        'A rota needs shifts to put on it. Create them in Attendance setup: a shift is a name, '
         + 'a start and an end, and how much lateness you are prepared to overlook.',
       ),
     );
@@ -191,22 +191,30 @@ export async function renderAttRota(params) {
       paint(select);
     };
 
-    const paint = (el) => {
-      const chosen = shiftById.get(String(el.value));
-      // Zero is "no shift", which is the absence of a colour rather than one
-      // of them: a rest day should read as empty, not as a ninth shift.
-      el.dataset.shiftColour = chosen ? String(shiftColour(chosen)) : '0';
-    };
-
-    // The border is the publication state, exactly as a member of staff will
-    // read it: dashed is still a draft, solid is the version they may plan
-    // their lives around. A pattern day was never individually decided, so it
-    // stays dashed and faint.
-    const select = h('select.rota-cell', {
+    // The wrapper is the card: it carries the colour, the draft or published
+    // border, and the two lines of text. The select inside it stays plain, so
+    // picking a shift still works exactly as before.
+    const wrap = h('div.rota-cellwrap', {
       class: [
         entry.explicit ? 'rota-set' : 'rota-pattern',
         entry.explicit ? (entry.published ? 'rota-published' : 'rota-draft') : '',
       ].filter(Boolean).join(' '),
+    });
+
+    const paint = () => {
+      const chosen = shiftById.get(String(select.value));
+      wrap.dataset.shiftColour = chosen ? String(shiftColour(chosen)) : '0';
+      // The card shows the name and the hours line under it shows the clock,
+      // so the chosen option drops its hours. Every other option keeps them,
+      // because the open list is where two Housekeeper Helpers are told apart.
+      for (const option of select.options) {
+        const shift = shiftById.get(String(option.value));
+        if (!shift) continue;
+        option.textContent = option.selected ? shift.name : shiftLabel(shift);
+      }
+    };
+
+    const select = h('select.rota-cell', {
       title: entry.holiday ? `Public holiday: ${entry.holiday}` : undefined,
       onchange: (e) => {
         const value = e.target.value;
@@ -245,17 +253,25 @@ export async function renderAttRota(params) {
 
     syncHours();
     cells.set(`${row.staff.id}|${entry.day}`, { select, syncHours });
-    return h('div.rota-cellwrap',
-      select,
-      avail
-        ? h('small.rota-avail', {
-          class: avail.status === 'preferred' ? 'rota-avail-pref' : '',
-          title: avail.note
-            ? `${avail.status === 'preferred' ? 'Asked for this day' : 'Cannot work this day'}: ${avail.note}`
-            : (avail.status === 'preferred' ? 'Asked for this day' : 'Cannot work this day'),
-        }, avail.status === 'preferred' ? '★ asked for' : '✕ unavailable')
-        : hours,
-    );
+
+    const availWindow = avail?.from ? ` ${avail.from} to ${avail.to}` : '';
+    // Element.append() writes the string "null" for a null child, unlike the
+    // h() helper, so only real nodes go in.
+    const parts = [select, hours];
+    if (avail) {
+      parts.push(h('small.rota-avail', {
+        class: avail.status === 'preferred' ? 'rota-avail-pref' : '',
+        title: [
+          avail.status === 'preferred' ? 'Asked to work' : 'Cannot work',
+          availWindow || ' this day',
+          avail.note ? `: ${avail.note}` : '',
+        ].join(''),
+      }, avail.status === 'preferred'
+        ? `★ asked${availWindow}`
+        : `✕ off${availWindow}`));
+    }
+    wrap.append(...parts);
+    return wrap;
   };
 
   /**
@@ -272,7 +288,7 @@ export async function renderAttRota(params) {
     const picked = new Set([0, 1, 2, 3, 4, 5, 6]);
 
     const choice = await formDialog({
-      title: `${row.staff.name} — fill the row`,
+      title: `Fill the row for ${row.staff.name}`,
       submitLabel: 'Fill those days',
       body: h('div',
         h('p.muted', `${fmtDayShort(data.from)} to ${fmtDayShort(data.to)}. Days already covered by `
@@ -333,31 +349,9 @@ export async function renderAttRota(params) {
       touched += 1;
     }
 
-    if (!touched) toast('Those days are all on approved leave — nothing changed.', 'bad');
+    if (!touched) toast('Those days are all on approved leave, so nothing changed.', 'bad');
     refreshSaveBar();
   };
-
-  // The key. Only the shifts actually on this fortnight's grid, in the order
-  // the grid groups them — a legend listing all twenty-four when six are in
-  // use is a legend nobody reads twice.
-  const onScreen = new Map();
-  for (const row of data.rows ?? []) {
-    for (const entry of row.days ?? []) {
-      const shift = entry.shift_id == null ? null : shiftById.get(String(entry.shift_id));
-      if (shift && !onScreen.has(shift.id)) onScreen.set(shift.id, shift);
-    }
-  }
-
-  const legend = onScreen.size
-    ? h('div.shift-key',
-      byDepartment([...onScreen.values()]).flatMap((group) => group.shifts.map((shift) => h(
-        'span.shift-key-item',
-        { title: `${shift.name}${shift.department ? ` · ${shift.department}` : ''}` },
-        h('span.shift-key-swatch', { style: { '--shift': `var(--c${shiftColour(shift)})` } }),
-        h('span', shift.name),
-        h('span.shift-key-hours', shiftHours(shift)),
-      ))))
-    : null;
 
   // Which rows this view shows. Filtering is by person — a department, a tag —
   // and never changes what Save or Publish covers: the window is the window.
@@ -386,39 +380,6 @@ export async function renderAttRota(params) {
   const grid = h('div.table-wrap',
     h('table.rota-table',
       h('thead', headRow),
-      h('tfoot',
-        // The totals a rota exists to get right, department by department —
-        // "is anybody on Security on Sunday" is the question, and it is not
-        // asked by reading twenty-four unsorted lines. Zero on a day somebody
-        // is needed is the one thing worth shouting about, so it is the only
-        // thing that changes colour.
-        byDepartment(data.shifts.filter((s) => s.active !== 0)).map((group) => [
-          h('tr.rota-total.rota-dept',
-            h('td', { colspan: data.days.length + 2 }, h('small', group.name)),
-          ),
-          ...group.shifts.map((shift) => h('tr.rota-total',
-            h('td',
-              h('small', shift.name),
-              h('small.muted', { style: { marginLeft: '.4rem' } }, shiftHours(shift)),
-            ),
-            h('td'),
-            ...data.days.map((day) => {
-              const n = data.coverage.find((c) => c.day === day)?.counts?.[shift.id] ?? 0;
-              return h('td', { class: isWeekend(day) ? 'rota-weekend' : '' },
-                h('span', { class: n ? '' : 'rota-gap' }, String(n)));
-            }),
-          )),
-        ]),
-        h('tr.rota-total',
-          h('td', h('small.muted', 'Off / on leave')),
-          h('td'),
-          ...data.days.map((day) => {
-            const c = data.coverage.find((x) => x.day === day);
-            return h('td', { class: isWeekend(day) ? 'rota-weekend' : '' },
-              h('small.muted', `${c?.off ?? 0}${c?.onLeave ? ` · ${c.onLeave}L` : ''}`));
-          }),
-        ),
-      ),
       h('tbody', visible.map((row) => h('tr',
         h('td',
           h('div', row.staff.name, strainMark(row.staff.id)),
@@ -507,14 +468,13 @@ export async function renderAttRota(params) {
       submitLabel: 'Publish',
       body: h('div',
         h('p.muted',
-          `${unpublished} decided day${unpublished === 1 ? '' : 's'} in this window `
-          + 'still dashed. Publishing turns them solid — the version people plan their '
-          + 'lives around.'),
+          `${unpublished} day${unpublished === 1 ? '' : 's'} in this window `
+          + 'still dashed. Publishing turns them solid, which is the version people '
+          + 'plan their week around.'),
         field('Who is told', h('select', { name: 'notify' },
-          h('option', { value: 'yes' }, 'Everybody — ring the bell and send the mail'),
-          h('option', { value: 'no' }, 'Nobody — publish quietly'),
-        ), 'Quietly is for a typo fixed five minutes after the real publication. '
-          + 'Either way the log records which this was.'),
+          h('option', { value: 'yes' }, 'Notify everyone'),
+          h('option', { value: 'no' }, 'Publish quietly'),
+        ), 'Quietly suits a small correction. A moved shift deserves the bell.'),
       ),
       onSubmit: async (form) => api.attPublishRoster({
         from, to, notify: form.get('notify') !== 'no',
@@ -522,7 +482,7 @@ export async function renderAttRota(params) {
     });
     if (done) {
       toast(done.published
-        ? `${done.published} day${done.published === 1 ? '' : 's'} published${done.notified ? ' — everybody told' : ', quietly'}.`
+        ? `${done.published} day${done.published === 1 ? '' : 's'} published${done.notified ? ' and everyone told' : ', quietly'}.`
         : 'Everything here was already published.', 'good');
       await reload();
     }
@@ -538,7 +498,7 @@ export async function renderAttRota(params) {
     h('div.page-head',
       h('div',
         h('h1', 'Rota'),
-        h('div.sub', 'Dashed is a draft; solid has been published. Grey days are already behind you.'),
+        h('div.sub', 'Dashed is a draft, solid is published. Grey days are behind you.'),
       ),
     ),
 
@@ -580,13 +540,14 @@ export async function renderAttRota(params) {
       conflicts
         ? h('button.btn-sm', {
           onclick: () => navigate('att-workload', { from, to }),
-          title: 'People this plan is overworking — the full picture is on Workload',
+          title: 'People this plan is overworking. The full picture is on Workload',
         }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`)
         : null,
       h('div', { style: { flex: 1 } }),
       view === 'people'
-        ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week →')
+        ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week')
         : null,
+      view === 'people' ? importButton(reload) : null,
       h('button.btn.btn-primary', {
         onclick: publish,
         disabled: !unpublished,
@@ -595,7 +556,11 @@ export async function renderAttRota(params) {
     ),
 
     saveBar,
-    view === 'people' ? importCard(imported?.draft ?? null, data.rows.map((r) => r.staff), reload) : null,
+    // Only when a draft is actually waiting. The empty pitch that used to sit
+    // here pushed the rota below the fold to describe a button.
+    view === 'people' && imported?.draft
+      ? importCard(imported.draft, data.rows.map((r) => r.staff), reload)
+      : null,
     card(
       span === 7 ? 'One week' : span === 28 ? 'Four weeks' : 'Two weeks',
       {
@@ -604,12 +569,10 @@ export async function renderAttRota(params) {
           : 'who is on each shift',
         wide: true,
       },
-      legend,
       view === 'people' ? grid : positionsGrid,
     ),
     h('p.muted', { style: { fontSize: '.82rem' } },
-      'A day set to Off is a rostered rest day — a decision, and not the same as somebody simply not '
-      + 'being on the rota. Days covered by approved leave cannot be edited here; cancel the leave first.'),
+      'Off means a rostered rest day. Days on approved leave are locked here; cancel the leave first.'),
   );
 
   return host;
@@ -628,19 +591,19 @@ async function offerRepublish(from, to) {
     submitLabel: 'Publish again',
     body: h('div',
       h('p.muted',
-        'Somebody may already be planning around the old version. Publishing again makes the '
-        + 'change official — or press Cancel to leave it as a draft and publish later.'),
+        'People may be planning around the old version. Publish again to make the change '
+        + 'official, or Cancel to keep it as a draft for now.'),
       field('Who is told', h('select', { name: 'notify' },
-        h('option', { value: 'yes' }, 'Everybody — ring the bell and send the mail'),
-        h('option', { value: 'no' }, 'Nobody — publish quietly'),
-      ), 'Quietly is for a typo. A moved shift deserves the bell.'),
+        h('option', { value: 'yes' }, 'Notify everyone'),
+        h('option', { value: 'no' }, 'Publish quietly'),
+      ), 'Quietly suits a small correction. A moved shift deserves the bell.'),
     ),
     onSubmit: async (form) => api.attPublishRoster({
       from, to, notify: form.get('notify') !== 'no',
     }),
   });
   if (done?.published) {
-    toast(`Republished${done.notified ? ' — everybody told' : ', quietly'}.`, 'good');
+    toast(`Republished${done.notified ? ' and everyone told' : ', quietly'}.`, 'good');
   }
 }
 
@@ -657,29 +620,33 @@ async function editAvailability(row, data, reload) {
     .map((d) => [d.day, d.availability]));
 
   const done = await formDialog({
-    title: `${row.staff.name} — days they cannot work`,
+    title: `When ${row.staff.name} cannot work`,
     submitLabel: 'Save',
     body: h('div',
       h('p.muted', { style: { fontSize: '.85rem' } },
-        'Tick the days. This is not leave — nothing is approved and no entitlement is spent. '
-        + 'The mark shows in the cell, and rostering over it is still possible: some conflicts '
-        + 'are deliberate, and the grid shows them rather than hiding them.'),
+        'This is not leave. Nothing is approved and no days are spent. The mark simply shows '
+        + 'in the cell so you see it before picking a shift.'),
       h('div.avail-days', data.days.map((day) => h('label.tickline',
         h('input', {
           type: 'checkbox', name: 'day', value: day,
           checked: marked.has(day),
         }),
         h('span', fmtDayShort(day),
-          marked.get(day)?.note ? h('small.muted', ` — ${marked.get(day).note}`) : null),
+          marked.get(day)?.note ? h('small.muted', ` (${marked.get(day).note})`) : null),
       ))),
       field('Kind', h('select', { name: 'status' },
         h('option', { value: 'unavailable' }, 'Cannot work'),
         h('option', { value: 'preferred' }, 'Asked to work'),
       )),
+      h('div.field-row',
+        field('From', h('input', { type: 'time', name: 'fromTime' }),
+          'Leave both empty for the whole day'),
+        field('Until', h('input', { type: 'time', name: 'toTime' })),
+      ),
       field('Why', h('input', {
         type: 'text', name: 'note', maxlength: 200,
-        placeholder: 'Daughter’s graduation',
-      }), 'Kept with the mark, shown on hover'),
+        placeholder: 'Clinic until noon',
+      }), 'Shown when you hover the mark'),
     ),
     onSubmit: async (form) => {
       const chosen = form.getAll('day');
@@ -694,6 +661,8 @@ async function editAvailability(row, data, reload) {
           days: chosen,
           status: form.get('status'),
           note: form.get('note') || null,
+          fromTime: form.get('fromTime') || null,
+          toTime: form.get('toTime') || null,
         });
       }
       return { ok: true };
@@ -731,7 +700,7 @@ async function copyWeek(data, reload) {
       ),
       field('How many weeks', h('select', { name: 'weeks' },
         h('option', { value: '1' }, 'One week'),
-        h('option', { value: '2', selected: true }, 'Two weeks — the whole fortnight shown'),
+        h('option', { value: '2', selected: true }, 'Two weeks'),
         h('option', { value: '4' }, 'Four weeks'),
       )),
       h('p.muted', { style: { fontSize: '.82rem' } },
@@ -786,7 +755,7 @@ async function editPattern(row, shifts, reload) {
   drawWeeks();
 
   const done = await formDialog({
-    title: `${row.staff.name} — usual pattern`,
+    title: `${row.staff.name}'s usual pattern`,
     submitLabel: 'Save the pattern',
     body: h('div',
       field('Repeats every',
@@ -906,8 +875,9 @@ function isWeekend(day) {
  *
  * Discarding costs nothing, which is what makes trying it safe.
  */
-function importCard(draft, staff, reload) {
-  const picker = h('input', {
+/** One shared file picker: reads the export, holds it as a draft. */
+function importPicker(reload) {
+  return h('input', {
     type: 'file',
     accept: '.csv,.pdf,text/csv,application/pdf',
     style: { display: 'none' },
@@ -924,39 +894,39 @@ function importCard(draft, staff, reload) {
           ? { pdf: await asBase64(file), filename: file.name }
           : { csv: await file.text(), filename: file.name };
         await api.attRotaImportPreview(payload);
-        toast('Read. Nothing has been changed yet — check it below.', 'good');
+        toast('File read. Check the draft before confirming it.', 'good');
         await reload();
       } catch (err) {
         toast(err.message, 'bad');
       }
     },
   });
+}
 
-  if (!draft) {
-    return card('Import a week', {
-      note: 'From the scheduling export',
-      wide: true,
-      actions: h('button.btn.btn-primary', { onclick: () => picker.click() }, 'Choose a file'),
-    },
-      picker,
-      h('p.muted',
-        'Nothing is written when you choose a file. It is read, matched against your staff and '
-        + 'shifts, and held as a draft so you can see exactly what it would do before agreeing '
-        + 'to any of it.'),
-      h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
-        'A CSV export or a printed schedule as a PDF. The CSV is the surer of the two — it says '
-        + 'what it means — while a PDF has to be read off the printed grid, so check the draft '
-        + 'against the printout before confirming. A PDF printed from a phone is usually a '
-        + 'picture with no text in it and cannot be read at all; print it from a computer.'),
-    );
-  }
+/**
+ * The way in for a CSV or PDF export. A button, not a card: the card version
+ * spent two paragraphs above the rota describing a file picker.
+ */
+function importButton(reload) {
+  const picker = importPicker(reload);
+  return h('span',
+    picker,
+    h('button.btn-sm', {
+      title: 'CSV or PDF from the scheduling export. Nothing is written until you confirm the draft.',
+      onclick: () => picker.click(),
+    }, 'Import'),
+  );
+}
+
+function importCard(draft, staff, reload) {
+  const picker = importPicker(reload);
 
   const c = draft.counts;
   const skipped = draft.rows.filter((r) => r.action === 'skip');
 
   const confirm = async () => {
     if (c.undecided) {
-      toast('Answer the questions below first — nothing is applied while one is open.', 'bad');
+      toast('Answer the questions below first. Nothing is applied while one is open.', 'bad');
       return;
     }
     if (!window.confirm(
@@ -999,7 +969,7 @@ function importCard(draft, staff, reload) {
   };
 
   return card('A week is waiting', {
-    note: `${draft.filename || 'Uploaded file'} — ${fmtDayShort(draft.from)} to ${fmtDayShort(draft.to)}`,
+    note: `${draft.filename || 'Uploaded file'} · ${fmtDayShort(draft.from)} to ${fmtDayShort(draft.to)}`,
     wide: true,
     actions: h('div.btn-row',
       h('button.btn-sm', { onclick: discard }, 'Discard'),
@@ -1038,7 +1008,7 @@ function importCard(draft, staff, reload) {
           h('div.alert-title', 'Read off a printed schedule'),
           h('div.alert-detail',
             'The dates and hours below were worked out from where things sit on the page. '
-            + 'Check them against the printout before confirming — particularly anybody whose '
+            + 'Check them against the printout before confirming, particularly anybody whose '
             + 'name wrapped onto two lines.'),
         ))
       : null,
@@ -1051,7 +1021,7 @@ function importCard(draft, staff, reload) {
           'Names nobody here answers to'),
         h('p.muted', { style: { fontSize: '.85rem' } },
           'These lines are skipped. Say who each one is and they will be matched in this draft '
-          + 'and in every import after it — or leave them, and they stay out.'),
+          + 'and in every import after it. Or leave them, and they stay out.'),
         h('div.btn-row', { style: { flexWrap: 'wrap' } },
           draft.unknownNames.map((n) => h('button.btn-sm', { onclick: () => nameFor(n) }, `${n} →`))),
       )
@@ -1079,7 +1049,7 @@ function importCard(draft, staff, reload) {
           key: 'shiftName',
           label: 'Shift',
           format: (v, r) => h('div', h('div', v),
-            r.action === 'create-shift' ? h('small.muted', 'new — created on confirm') : null),
+            r.action === 'create-shift' ? h('small.muted', 'new, created on confirm') : null),
         },
         { key: 'startsAt', label: 'Hours', format: (v, r) => h('small', `${v}–${r.endsAt}`) },
         { key: 'note', label: 'Note', format: (v, r) => h('small.muted', v || r.title || '') },
@@ -1133,7 +1103,7 @@ function shiftQuestions(draft, reload) {
     const nearest = q.nearest ?? [];
 
     const done = await formDialog({
-      title: `${q.startsAt}–${q.endsAt} — no shift with these hours`,
+      title: `${q.startsAt}–${q.endsAt}: no shift with these hours`,
       submitLabel: 'Use this answer',
       body: h('div',
         h('p.muted',
@@ -1151,14 +1121,14 @@ function shiftQuestions(draft, reload) {
         },
         ...nearest.map((n) => h('option', { value: `use:${n.id}` },
           `${n.name} (${n.startsAt}–${n.endsAt})`
-          + (n.minutesApart ? ` — ${n.minutesApart} min different` : ' — same hours'))),
+          + (n.minutesApart ? ` (${n.minutesApart} min different)` : ' (same hours)'))),
         h('option', { value: 'create' }, '＋ Create a new shift for these hours'),
         h('option', { value: 'skip' }, 'Leave these lines out'))),
 
         h('div', { 'data-new-name': '', style: { display: 'none' } },
           field('Call it', h('input', {
             type: 'text', name: 'name', maxlength: 60, value: q.suggestedName || '',
-          }), 'Break and grace start at the defaults — set them on the shift afterwards')),
+          }), 'Break and grace start at the defaults. Set them on the shift afterwards')),
 
         h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
           'The nearest shifts are listed first. A few minutes\u2019 difference is usually somebody '
@@ -1188,7 +1158,7 @@ function shiftQuestions(draft, reload) {
 
   return h('div', { style: { margin: '.9rem 0' } },
     h('h4', { style: { margin: '0 0 .4rem', fontSize: '.92rem' } },
-      `Hours with no shift — ${draft.shiftQuestions.length} to decide`),
+      `Hours with no shift: ${draft.shiftQuestions.length} to decide`),
     h('p.muted', { style: { fontSize: '.85rem' } },
       'Nothing is created for these unless you say so, and the lines using them stay out of the '
       + 'rota until each one is answered.'),

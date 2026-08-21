@@ -923,26 +923,43 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .att-legend-item .att-cell { min-width: 1.7rem; min-height: 1.7rem; }
 .att-legend-item .att-cell-mark { font-size: .72rem; }
 
-/* The rota grid. A cell following the standing pattern is deliberately faint,
-   and one set by hand is not — "I gave him Thursday off" and "the pattern never
-   had him on Thursday" must not look the same. */
-.rota-table td { padding: .3rem; }
-.rota-cell {
-  min-width: 5.5rem; padding: .3rem .4rem; font-size: .8rem;
-  border-radius: var(--radius-sm);
+/* The rota grid. Each cell is a card in the shift's colour: name on the first
+   line (still a working dropdown), the hours under it. A cell following the
+   standing pattern is faint, and one set by hand is not, because "I gave him
+   Thursday off" and "the pattern never had him on Thursday" must not look the
+   same. */
+.rota-table td { padding: .25rem; vertical-align: top; }
+
+.rota-cellwrap {
+  display: flex; flex-direction: column; gap: .1rem;
+  min-width: 8.5rem;
+  padding: .3rem .45rem .35rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
 }
-/* The hours of whatever the cell is set to, under the cell. A closed select
-   shows one truncated line and this property runs four shifts called some
-   variation of Housekeeper Helper — the clock is what tells them apart. */
-.rota-cellwrap { display: flex; flex-direction: column; gap: .1rem; }
+
+/* The dropdown dissolves into the card: no box of its own, just the shift's
+   name in bold with the browser's own arrow as the hint that it opens. */
+.rota-cell {
+  border: none;
+  background: transparent;
+  padding: 0;
+  width: 100%;
+  font-size: .8rem;
+  font-weight: 650;
+  color: inherit;
+  border-radius: 0;
+}
+.rota-cell:hover { background: transparent; }
+
 .rota-hours {
-  font-size: .68rem; line-height: 1.1; text-align: center;
+  font-size: .7rem; line-height: 1.15;
   color: var(--text-dim); font-variant-numeric: tabular-nums;
 }
 /* Kept in the flow when empty so the rows of a grid stay the same height. */
 .rota-hours-off::before { content: '\00a0'; }
-.rota-cell.rota-pattern { color: var(--text-faint); background: var(--surface-2); border-style: dashed; }
-.rota-cell.rota-set     { color: var(--text); font-weight: 600; }
 
 /* --------------------------------------------------------------------------
    The rota, in colour
@@ -960,31 +977,42 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
    Eight colours, and the same eight the charts use. Past eight nobody can tell
    two of them apart, and a colour nobody can name is decoration.
    -------------------------------------------------------------------------- */
-.rota-cell[data-shift-colour="0"] { border-left-width: 1px; }
+.rota-cellwrap[data-shift-colour="1"] { --shift: var(--c1); }
+.rota-cellwrap[data-shift-colour="2"] { --shift: var(--c2); }
+.rota-cellwrap[data-shift-colour="3"] { --shift: var(--c3); }
+.rota-cellwrap[data-shift-colour="4"] { --shift: var(--c4); }
+.rota-cellwrap[data-shift-colour="5"] { --shift: var(--c5); }
+.rota-cellwrap[data-shift-colour="6"] { --shift: var(--c6); }
+.rota-cellwrap[data-shift-colour="7"] { --shift: var(--c7); }
+.rota-cellwrap[data-shift-colour="8"] { --shift: var(--c8); }
 
-.rota-cell[data-shift-colour="1"] { --shift: var(--c1); }
-.rota-cell[data-shift-colour="2"] { --shift: var(--c2); }
-.rota-cell[data-shift-colour="3"] { --shift: var(--c3); }
-.rota-cell[data-shift-colour="4"] { --shift: var(--c4); }
-.rota-cell[data-shift-colour="5"] { --shift: var(--c5); }
-.rota-cell[data-shift-colour="6"] { --shift: var(--c6); }
-.rota-cell[data-shift-colour="7"] { --shift: var(--c7); }
-.rota-cell[data-shift-colour="8"] { --shift: var(--c8); }
-
-.rota-cell[data-shift-colour]:not([data-shift-colour="0"]) {
-  background: color-mix(in srgb, var(--shift) 13%, var(--surface));
+.rota-cellwrap[data-shift-colour]:not([data-shift-colour="0"]) {
+  background: color-mix(in srgb, var(--shift) 20%, var(--surface));
+  border-color: color-mix(in srgb, var(--shift) 45%, var(--border));
   border-left: 3px solid var(--shift);
 }
-/* A cell following the standing pattern rather than set by hand keeps its
-   colour but says so — the dashes are what tell a planner which days somebody
-   actually decided. */
-.rota-cell.rota-pattern[data-shift-colour]:not([data-shift-colour="0"]) {
-  background: color-mix(in srgb, var(--shift) 7%, var(--surface));
-  border-top-style: dashed;
-  border-right-style: dashed;
-  border-bottom-style: dashed;
-  color: var(--text-dim);
+/* Off days stay quiet so the coloured ones carry the pattern of the week. */
+.rota-cellwrap[data-shift-colour="0"] { background: var(--surface-2); }
+.rota-cellwrap[data-shift-colour="0"] .rota-cell { color: var(--text-faint); font-weight: 500; }
+
+/* A cell following the standing pattern keeps its colour but stays faint and
+   dashed: the pattern is an assumption, not a decision somebody made. */
+.rota-cellwrap.rota-pattern[data-shift-colour]:not([data-shift-colour="0"]) {
+  background: color-mix(in srgb, var(--shift) 9%, var(--surface));
 }
+.rota-cellwrap.rota-pattern { border-style: dashed; border-left-style: dashed; }
+.rota-cellwrap.rota-pattern .rota-cell { color: var(--text-dim); font-weight: 550; }
+
+/* A cell just edited and not yet saved. */
+.rota-cellwrap:has(.rota-dirty) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The three row controls sit in one tight column beside the name and must not
+   stack into a tower when the grid squeezes. */
+.rota-table td:nth-child(2) .btn-row { flex-wrap: nowrap; gap: .25rem; }
+.rota-table td:nth-child(2) .btn-sm { padding: .25rem .45rem; font-size: .75rem; }
 
 /* --------------------------------------------------------------------------
    Draft, published, past
@@ -994,13 +1022,13 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
    plan your life around. Grey days are behind you — nothing there is a plan
    any more, it either happened or it did not.
    -------------------------------------------------------------------------- */
-.rota-cell.rota-set.rota-draft {
+.rota-cellwrap.rota-set.rota-draft {
   border-top-style: dashed;
   border-right-style: dashed;
   border-bottom-style: dashed;
   border-left-style: solid;         /* the colour edge stays readable */
 }
-.rota-cell.rota-set.rota-published { border-style: solid; }
+.rota-cellwrap.rota-set.rota-published { border-style: solid; }
 
 td.rota-past { opacity: .55; }
 td.rota-past .rota-cell { pointer-events: auto; }   /* history can still be corrected */
@@ -1064,7 +1092,6 @@ th.rota-today, td.rota-today {
   border-left: 3px solid var(--shift);
 }
 .shift-key-hours { color: var(--text-faint); }
-.rota-cell.rota-dirty   { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .rota-weekend { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
 .rota-locked {
   padding: .35rem .4rem; font-size: .78rem; text-align: center;
