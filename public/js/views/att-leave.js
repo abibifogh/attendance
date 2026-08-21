@@ -83,14 +83,62 @@ export async function renderAttLeave(params = {}) {
     }
   };
 
-  const decide = async (row, decision) => {
-    try {
-      await api.attDecideLeave(row.id, { decision });
-      toast(decision === 'approved' ? 'Approved.' : 'Rejected.', decision === 'approved' ? 'good' : '');
-      await reload();
-    } catch (err) {
-      toast(err.message, 'bad');
-    }
+  /**
+   * Approving asks one more thing: how much of it comes off the entitlement.
+   *
+   * Somebody asks for the week and is given it, but two of those days were
+   * always going to be their rest days, or the manager decides to carry part of
+   * it. Charging the whole span in that case quietly costs them days they never
+   * took.
+   */
+  const approve = async (row) => {
+    const asked = Number(row.days);
+    const done = await formDialog({
+      title: `Approve ${row.staff_name}'s leave`,
+      submitLabel: 'Approve',
+      body: h('div',
+        h('p', `${fmtDay(row.from_day)} to ${fmtDay(row.to_day)}, `
+          + `${fmtNum(asked, asked % 1 ? 1 : 0)} rostered day${asked === 1 ? '' : 's'}.`),
+        field('Charged against the entitlement',
+          h('input', {
+            type: 'number', name: 'daysCharged', min: 0, max: asked, step: 0.5, value: asked,
+          }),
+          `of ${fmtNum(asked, asked % 1 ? 1 : 0)}`),
+        h('p.muted', { style: { fontSize: '.82rem' } },
+          'Anything you leave out is recorded as an ordinary rest day and costs them nothing.'),
+        field('Note', h('input', { type: 'text', name: 'note', maxlength: 500 })),
+      ),
+      onSubmit: async (form) => api.attDecideLeave(row.id, {
+        decision: 'approved',
+        daysCharged: Number(form.get('daysCharged')),
+        note: form.get('note') || null,
+      }),
+    });
+    if (!done) return;
+    const charged = Number(done.charged ?? asked);
+    toast(charged < asked
+      ? `Approved. ${fmtNum(charged, charged % 1 ? 1 : 0)} of ${fmtNum(asked, asked % 1 ? 1 : 0)} charged.`
+      : 'Approved.', 'good');
+    await reload();
+  };
+
+  const reject = async (row) => {
+    const done = await formDialog({
+      title: `Reject ${row.staff_name}'s leave`,
+      submitLabel: 'Reject',
+      body: h('div',
+        h('p', `${fmtDay(row.from_day)} to ${fmtDay(row.to_day)}.`),
+        field('Why', h('input', { type: 'text', name: 'note', maxlength: 500 }),
+          'They see this'),
+      ),
+      onSubmit: async (form) => api.attDecideLeave(row.id, {
+        decision: 'rejected',
+        note: form.get('note') || null,
+      }),
+    });
+    if (!done) return;
+    toast('Rejected.');
+    await reload();
   };
 
   const cancel = async (row) => {
@@ -130,8 +178,8 @@ export async function renderAttLeave(params = {}) {
       format: (v, r) => {
         if (kind === 'pending' && decides) {
           return h('div.btn-row',
-            h('button.btn-sm.btn-primary', { onclick: () => decide(r, 'approved') }, 'Approve'),
-            h('button.btn-sm', { onclick: () => decide(r, 'rejected') }, 'Reject'),
+            h('button.btn-sm.btn-primary', { onclick: () => approve(r) }, 'Approve'),
+            h('button.btn-sm', { onclick: () => reject(r) }, 'Reject'),
           );
         }
         if (v === 'approved' && decides && r.to_day >= todayISO()) {

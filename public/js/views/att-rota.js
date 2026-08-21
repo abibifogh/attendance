@@ -33,7 +33,7 @@ export async function renderAttRota(params) {
   // One week to plan a busy weekend, a fortnight for the ordinary rhythm,
   // four weeks to see a rotation come round. The span is the window and
   // nothing else changes with it.
-  const span = [7, 14, 28].includes(Number(params.span)) ? Number(params.span) : 14;
+  const span = [7, 14, 28].includes(Number(params.span)) ? Number(params.span) : 7;
   const view = params.view === 'positions' ? 'positions' : 'people';
   const from = mondayOf(params.from || todayISO());
   const to = shiftDay(from, span - 1);

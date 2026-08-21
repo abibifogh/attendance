@@ -2107,13 +2107,14 @@ export async function requestLeave(ctx) {
   const row = await ctx.db.prepare(
     `INSERT INTO att_leave
        (staff_id, reason_code, from_day, to_day, days, half_day, status, reason,
-        requested_by, decided_by, decided_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) RETURNING id`,
+        requested_by, requested_by_id, decided_by, decided_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) RETURNING id`,
   ).bind(
     staffId, reasonCode, from, to, days, halfDay,
     canApprove ? 'approved' : 'pending',
     str(body.note, 'Reason', { max: 500 }),
     actor,
+    ctx.session.user.id ?? null,
     canApprove ? actor : null,
     canApprove ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null,
   ).first();
@@ -2134,22 +2135,61 @@ export async function decideLeave(ctx, id) {
   if (!request) throw notFound('No such leave request.');
   if (request.status !== 'pending') throw badRequest('That request has already been decided.');
 
+  // How much of the span is actually charged against their leave. The rest of
+  // the rostered days in it are treated as ordinary rest days: the roster rows
+  // are cleared so those days stop being scheduled, and nothing is spent on
+  // them. Asked at approval because that is when somebody is looking at the
+  // figure; the request itself froze the full count.
+  let charged = Number(request.days);
+  if (decision === 'approved' && body.daysCharged != null) {
+    charged = Number(body.daysCharged);
+    if (!Number.isFinite(charged) || charged < 0 || charged > Number(request.days)
+      || (charged * 2) % 1 !== 0) {
+      throw badRequest(
+        `Days charged must be between 0 and ${request.days}, in half days.`,
+      );
+    }
+  }
+
   await ctx.db.prepare(
-    `UPDATE att_leave SET status = ?1, decided_by = ?2, decided_at = datetime('now'), decision_note = ?3
-     WHERE id = ?4`,
+    `UPDATE att_leave SET status = ?1, decided_by = ?2, decided_at = datetime('now'),
+            decision_note = ?3, days = ?4
+     WHERE id = ?5`,
   ).bind(
     decision,
     `${ctx.session.user.name} (${ctx.session.user.role})`,
     str(body.note, 'Note', { max: 500 }),
+    decision === 'approved' ? charged : Number(request.days),
     request.id,
   ).run();
 
   if (decision === 'approved') {
     await recompute(ctx.db, { staffIds: [request.staff_id], from: request.from_day, to: request.to_day });
   }
-  await audit(ctx, 'attendance.leave_decide', request.id, { decision });
+  await audit(ctx, 'attendance.leave_decide', request.id, {
+    decision,
+    requested: Number(request.days),
+    charged: decision === 'approved' ? charged : null,
+  });
 
-  return json({ ok: true, status: decision });
+  // Whoever asked hears the answer, by name.
+  await createNotice(ctx.db, {
+    kind: 'attendance.leave_decided',
+    level: decision === 'approved' ? 'good' : 'warn',
+    title: decision === 'approved'
+      ? `Leave approved: ${request.from_day} to ${request.to_day}`
+      : `Leave not approved: ${request.from_day} to ${request.to_day}`,
+    body: decision === 'approved'
+      ? `${charged} day${charged === 1 ? '' : 's'} charged against the entitlement.`
+        + (charged < Number(request.days) ? ' The rest of the span counts as ordinary rest days.' : '')
+      : (str(body.note, 'Note', { max: 500 }) || 'See whoever decided it for the reason.'),
+    link: '#/att-leave',
+    actor: `${ctx.session.user.name} (${ctx.session.user.role})`,
+    audience: 'att_rota',
+    userId: request.requested_by_id ?? null,
+  }, ctx);
+
+  return json({ ok: true, status: decision, charged: decision === 'approved' ? charged : null });
 }
 
 /**

@@ -546,7 +546,12 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   .topbar {
     padding-left: max(.75rem, env(safe-area-inset-left));
     padding-right: max(.75rem, env(safe-area-inset-right));
+    /* Installed on an iPhone, the page paints under the status bar. Without
+       this the clock sits on top of the menu button and the whole header
+       reads as crushed. In a browser the inset is zero and nothing changes. */
+    padding-top: max(.6rem, env(safe-area-inset-top));
   }
+  .sidebar { top: var(--topbar-h); }
   .main {
     padding-left: max(1rem, env(safe-area-inset-left));
     padding-right: max(1rem, env(safe-area-inset-right));
