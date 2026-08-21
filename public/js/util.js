@@ -108,6 +108,13 @@ export function shiftDay(day, n) {
   return d.toISOString().slice(0, 10);
 }
 
+/** Whole days from one date to another. Negative if they are the wrong way round. */
+export function daysApart(from, to) {
+  return Math.round(
+    (new Date(`${to}T12:00:00Z`) - new Date(`${from}T12:00:00Z`)) / 86400000,
+  );
+}
+
 export function monthOf(day) { return String(day).slice(0, 7); }
 
 export function shiftMonth(month, n) {

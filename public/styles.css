@@ -379,6 +379,7 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
   animation: toast-in .18s ease;
 }
+.toast.warn { border-color: color-mix(in srgb, var(--warn) 45%, transparent); color: var(--warn); }
 .toast.good { border-color: color-mix(in srgb, var(--good) 45%, transparent); color: var(--good); }
 .toast.bad { border-color: color-mix(in srgb, var(--bad) 45%, transparent); color: var(--bad); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
@@ -1644,3 +1645,26 @@ tr.day-locked label.tickline { cursor: not-allowed; }
   padding-left: 1.6rem;
 }
 .clean-days .tickline { padding: .1rem 0; }
+
+/* The four things you can do with a question, as four things rather than a
+   dropdown. One of them leaves the days blocked, and a reader has to be able
+   to see that before choosing it, not after. */
+.answer-choices { display: grid; gap: .3rem; margin-bottom: .9rem; }
+
+.answer-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  padding: .5rem .6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  line-height: 1.35;
+}
+.answer-choice:hover { background: var(--surface-2, rgba(127, 127, 127, .07)); }
+.answer-choice input { width: auto; margin: .15rem 0 0; flex: none; }
+.answer-choice small { display: block; }
+.answer-choice:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}

@@ -1,4 +1,4 @@
-import { badRequest, int, json, notFound, readJson, str } from '../lib/http.js';
+import { badRequest, int, isMissingTable, json, notFound, readJson, str } from '../lib/http.js';
 import { allows, effectivePermissions } from '../lib/permissions.js';
 import { createNotice } from '../lib/notices.js';
 import {
@@ -84,9 +84,17 @@ export async function outstanding(ctx) {
 
   const [ds, reviews, queries, waiting] = await Promise.all([
     loadDataset(ctx.db, { from, to: limit }),
+    // Only a database that has not been upgraded yet is forgiven here. Any
+    // other failure has to be heard: an empty answer to this question means
+    // every day anybody has ever signed off comes back onto the list as
+    // outstanding, and a screen that quietly says that is worse than a screen
+    // that says it is broken.
     ctx.db.prepare(
       'SELECT * FROM att_period_review WHERE from_day <= ?2 AND to_day >= ?1',
-    ).bind(from, limit).all().catch(() => ({ results: [] })),
+    ).bind(from, limit).all().catch((err) => {
+      if (isMissingTable(err)) return { results: [] };
+      throw err;
+    }),
     ctx.db.prepare(
       "SELECT * FROM att_query WHERE status IN ('open', 'answered') ORDER BY raised_at",
     ).all().catch(() => ({ results: [] })),

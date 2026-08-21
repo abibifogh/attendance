@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { fmtDay, fmtDayShort, h, mount, shiftDay, toast, todayISO } from '../util.js';
+import { daysApart, fmtDay, fmtDayShort, h, mount, shiftDay, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import { can, navigate, replaceParams } from '../app.js';
 import { correctTimesDialog, field, formDialog, overUnderOf } from './att-shared.js';
@@ -312,6 +312,24 @@ const SORTERS = {
  * every card repeated what the flags on the rows already said, one line lower
  * and in more words, and pushed the days themselves off the screen.
  */
+/**
+ * How much of this person's window is already settled.
+ *
+ * Counted in days and clipped to the window, so it is the same unit as the
+ * table above it. A span that started in May and a window that starts in June
+ * only contributes its June days.
+ */
+function signedDays(row, data) {
+  let n = 0;
+  for (const span of row.signedSpans) {
+    const from = span.from > data.from ? span.from : data.from;
+    const to = span.to < data.limit ? span.to : data.limit;
+    if (from > to) continue;
+    n += Math.max(0, daysApart(from, to) + 1 - (span.excluded ?? 0));
+  }
+  return n;
+}
+
 function personCard(row, data, reload, group) {
   const chosen = new Set();
   const parked = group === 'asked';
@@ -475,7 +493,13 @@ function personCard(row, data, reload, group) {
     row.signedSpans.length
       ? h('details', { style: { marginTop: '.5rem' } },
         h('summary', { style: { cursor: 'pointer', fontSize: '.82rem' } },
-          `${row.signedSpans.length} already signed`),
+          // In days rather than in records, because days are what the table
+          // above is counting. "2 already signed" beside four listed days
+          // reads as though two of those four are done; the number people
+          // actually want is how much of this person's window is settled.
+          `${signedDays(row, data)} day${signedDays(row, data) === 1 ? '' : 's'} in this `
+          + `window already signed off, in ${row.signedSpans.length} `
+          + `record${row.signedSpans.length === 1 ? '' : 's'}`),
         h('ul.signed-list', row.signedSpans.map((s) => h('li',
           h('small', `${fmtDayShort(s.from)} – ${fmtDayShort(s.to)} · `,
             s.decision === 'waived'
@@ -809,7 +833,12 @@ const STATUS_LABEL = {
  */
 async function queriesTab(reload) {
   const data = await api.attQueries('all');
-  const live = data.rows.filter((q) => ['open', 'answered'].includes(q.status));
+  // Three lists, because a question has three lives. Waiting on somebody,
+  // answered and back with whoever asked, and finished. Answered used to sit
+  // in the same list as waiting, so answering one changed a chip and moved
+  // nothing, and the queue read as though nothing had been done.
+  const waiting = data.rows.filter((q) => q.status === 'open');
+  const back = data.rows.filter((q) => q.status === 'answered');
   const done = data.rows.filter((q) => !['open', 'answered'].includes(q.status));
 
   if (!data.rows.length) {
@@ -824,9 +853,22 @@ async function queriesTab(reload) {
   }
 
   return h('div',
-    live.length
-      ? h('div', live.map((q) => queryCard(q, data, reload)))
-      : emptyState('Nothing waiting', 'Everything asked has been dealt with.'),
+    waiting.length
+      ? h('div',
+        h('h2.group-head', h('span.pill.warn', 'Waiting'), ' on an answer'),
+        waiting.map((q) => queryCard(q, data, reload)))
+      : null,
+
+    back.length
+      ? h('div',
+        h('h2.group-head', h('span.pill.good', 'Answered'),
+          ' back with whoever asked — the days can be signed'),
+        back.map((q) => queryCard(q, data, reload)))
+      : null,
+
+    !waiting.length && !back.length
+      ? emptyState('Nothing waiting', 'Everything asked has been dealt with.')
+      : null,
 
     done.length
       ? card('Already dealt with', { note: `${done.length}`, wide: true },
@@ -1075,8 +1117,19 @@ function queryCard(q, data, reload) {
           },
         }, 'Take it back')
         : null,
+      // Answered means the days are unblocked and somebody has to go and sign
+      // them. Sending the reader to exactly those dates, rather than to
+      // whatever window the sign-off tab happened to be left on.
+      q.status === 'answered'
+        ? h('button.btn.btn-primary', {
+          onclick: () => reload({ tab: 'open', from: q.from, to: q.to, preset: null }),
+        }, 'Go and sign it')
+        : null,
+
       data.canDecide
-        ? h('button.btn.btn-primary', { onclick: () => answer(q, reload) }, 'Answer it')
+        ? h(`button.btn${q.status === 'answered' ? '-sm' : '.btn-primary'}`, {
+          onclick: () => answer(q, reload),
+        }, q.status === 'answered' ? 'Say more' : 'Answer it')
         : null,
     ),
   },
@@ -1110,21 +1163,35 @@ function queryCard(q, data, reload) {
  * is the same as dealing with it yourself.
  */
 async function answer(q, reload) {
+  const pick = (value, label, detail, checked = false) => h('label.answer-choice',
+    h('input', {
+      type: 'radio', name: 'action', value, checked, required: true,
+      onchange: (e) => {
+        const box = e.target.closest('form').querySelector('[data-days]');
+        if (box) box.style.display = value === 'sign' ? '' : 'none';
+      },
+    }),
+    h('span', h('strong', label), h('small.muted', detail)));
+
   const done = await formDialog({
     title: `${q.staff.name}, ${fmtDayShort(q.from)}–${fmtDayShort(q.to)}`,
     submitLabel: 'Send',
     body: h('div',
-      field('What are you doing?', h('select', {
-        name: 'action',
-        onchange: (e) => {
-          const box = e.target.closest('form').querySelector('[data-days]');
-          if (box) box.style.display = e.target.value === 'sign' ? '' : 'none';
-        },
-      },
-      h('option', { value: 'comment' }, 'Just saying something — leave it open'),
-      h('option', { value: 'direction' }, 'Telling them what to do — hand it back'),
-      h('option', { value: 'sign' }, 'Signing it off myself, now'),
-      h('option', { value: 'close' }, 'Closing it — nothing needed'))),
+      // Handing it back is what answering a question means, so it is what the
+      // dialog opens on. It used to open on "leave it open", which read as the
+      // gentlest choice and was the only one that changed nothing: the question
+      // stayed in the queue and the days stayed unsignable, however carefully
+      // somebody had written the answer.
+      h('div.answer-choices',
+        pick('direction', 'Answer it and hand it back',
+          ' — they get the answer and can sign the days', true),
+        pick('sign', 'Sign the days off myself, now',
+          ' — closes the question under your name'),
+        pick('close', 'Nothing needed — close it',
+          ' — the days go back to them, unblocked'),
+        pick('comment', 'Add a note and leave it open',
+          ' — the days stay blocked until somebody answers properly'),
+      ),
 
       // Offered here as well as on the card. This is the moment somebody is
       // about to charge days against a colleague's leave, and "open the
@@ -1145,17 +1212,24 @@ async function answer(q, reload) {
         field('Days against their leave', h('input', {
           type: 'number', name: 'daysApplied', step: 1, min: -60, max: 60, value: '0',
         }))),
-
-      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
-        'Handing it back puts it on their screen and rings their bell. Signing it off does it '
-        + 'under your name, and closes the question.'),
     ),
-    onSubmit: async (form) => api.attAnswerQuery(q.id, {
-      action: form.get('action'),
-      body: form.get('body'),
-      daysApplied: Number(form.get('daysApplied') || 0),
-    }),
+    onSubmit: async (form) => {
+      const action = form.get('action');
+      const out = await api.attAnswerQuery(q.id, {
+        action,
+        body: form.get('body'),
+        daysApplied: Number(form.get('daysApplied') || 0),
+      });
+      return { ...out, action };
+    },
   });
 
-  if (done) { toast('Done.', 'good'); await reload(); }
+  if (!done) return;
+  toast({
+    direction: 'Answered. The days are theirs to sign.',
+    sign: 'Signed off, and the question is closed.',
+    close: 'Closed. The days are theirs to sign.',
+    comment: 'Note added. The question is still open, so those days stay blocked.',
+  }[done.action] ?? 'Done.', done.action === 'comment' ? 'warn' : 'good');
+  await reload();
 }
