@@ -29,8 +29,15 @@ import {
  */
 export async function renderAttRota(params) {
   const host = h('div');
-  const from = params.from || mondayOf(todayISO());
-  const to = params.to || shiftDay(from, 13);
+
+  // One week to plan a busy weekend, a fortnight for the ordinary rhythm,
+  // four weeks to see a rotation come round. The span is the window and
+  // nothing else changes with it.
+  const span = [7, 14, 28].includes(Number(params.span)) ? Number(params.span) : 14;
+  const view = params.view === 'positions' ? 'positions' : 'people';
+  const from = mondayOf(params.from || todayISO());
+  const to = shiftDay(from, span - 1);
+
   const [data, imported, strain] = await Promise.all([
     api.attRoster(from, to),
     api.attRotaImport().catch(() => ({ draft: null })),
@@ -43,7 +50,14 @@ export async function renderAttRota(params) {
   ]);
 
   const reload = async (next = {}) => {
-    const merged = { from, to, ...next };
+    const merged = {
+      from,
+      span: String(span),
+      view,
+      department: params.department || null,
+      tag: params.tag || null,
+      ...next,
+    };
     replaceParams('att-rota', merged);
     mount(host, await renderAttRota(merged));
   };
@@ -71,6 +85,12 @@ export async function renderAttRota(params) {
   // Pending edits, held until Save. A request per cell would make filling in a
   // fortnight on a phone a hundred round trips.
   const pending = new Map();
+
+  // Whether any of them touched a day staff had already been promised. If so,
+  // saving is not the end of it: the grid goes dashed where they are looking,
+  // and the honest next step is to offer republication — loudly or quietly,
+  // but asked, not assumed.
+  let editedPublished = false;
   const saveBar = h('div.toolbar.rota-savebar', { style: { display: 'none' } });
 
   const refreshSaveBar = () => {
@@ -86,6 +106,13 @@ export async function renderAttRota(params) {
             await api.attSaveRoster({ entries: [...pending.values()] });
             toast(`${pending.size} change${pending.size === 1 ? '' : 's'} saved.`, 'good');
             pending.clear();
+
+            // A published day was changed, so somewhere a person is planning
+            // around a version that no longer exists. Offer to put that right
+            // now rather than leaving it dashed until somebody remembers.
+            if (editedPublished) {
+              await offerRepublish(from, to);
+            }
             await reload();
           } catch (err) {
             toast(err.message, 'bad');
@@ -128,6 +155,12 @@ export async function renderAttRota(params) {
       return h('div.rota-locked', { title: 'Approved leave' }, 'Leave');
     }
 
+    // "Cannot work this day", said before the dropdown so the planner reads it
+    // before choosing. Rostering over it stays possible — some conflicts are
+    // deliberate — and the mark stays put so the grid shows the conflict
+    // rather than pretending it cannot happen.
+    const avail = entry.availability;
+
     const { own, other } = shiftsFor(data.shifts, row.staff.department);
 
     const opt = (shift) => h('option', {
@@ -165,8 +198,15 @@ export async function renderAttRota(params) {
       el.dataset.shiftColour = chosen ? String(shiftColour(chosen)) : '0';
     };
 
+    // The border is the publication state, exactly as a member of staff will
+    // read it: dashed is still a draft, solid is the version they may plan
+    // their lives around. A pattern day was never individually decided, so it
+    // stays dashed and faint.
     const select = h('select.rota-cell', {
-      class: entry.explicit ? 'rota-set' : 'rota-pattern',
+      class: [
+        entry.explicit ? 'rota-set' : 'rota-pattern',
+        entry.explicit ? (entry.published ? 'rota-published' : 'rota-draft') : '',
+      ].filter(Boolean).join(' '),
       title: entry.holiday ? `Public holiday: ${entry.holiday}` : undefined,
       onchange: (e) => {
         const value = e.target.value;
@@ -184,6 +224,7 @@ export async function renderAttRota(params) {
           return;
         }
 
+        editedPublished = editedPublished || entry.published === true;
         pending.set(`${row.staff.id}|${entry.day}`, value === 'pattern'
           ? { staffId: row.staff.id, day: entry.day, clear: true }
           : { staffId: row.staff.id, day: entry.day, shiftId: value === '' ? null : Number(value) });
@@ -204,7 +245,17 @@ export async function renderAttRota(params) {
 
     syncHours();
     cells.set(`${row.staff.id}|${entry.day}`, { select, syncHours });
-    return h('div.rota-cellwrap', select, hours);
+    return h('div.rota-cellwrap',
+      select,
+      avail
+        ? h('small.rota-avail', {
+          class: avail.status === 'preferred' ? 'rota-avail-pref' : '',
+          title: avail.note
+            ? `${avail.status === 'preferred' ? 'Asked for this day' : 'Cannot work this day'}: ${avail.note}`
+            : (avail.status === 'preferred' ? 'Asked for this day' : 'Cannot work this day'),
+        }, avail.status === 'preferred' ? '★ asked for' : '✕ unavailable')
+        : hours,
+    );
   };
 
   /**
@@ -308,17 +359,33 @@ export async function renderAttRota(params) {
       ))))
     : null;
 
+  // Which rows this view shows. Filtering is by person — a department, a tag —
+  // and never changes what Save or Publish covers: the window is the window.
+  const visible = data.rows.filter((row) => {
+    if (params.department && (row.staff.department || '') !== params.department) return false;
+    if (params.tag && !(row.staff.tags ?? []).includes(params.tag)) return false;
+    return true;
+  });
+
+  const dayClass = (day) => [
+    isWeekend(day) ? 'rota-weekend' : '',
+    day < data.today ? 'rota-past' : '',
+    day === data.today ? 'rota-today' : '',
+  ].filter(Boolean).join(' ');
+
+  const headRow = h('tr',
+    h('th', 'Name'),
+    h('th', 'Pattern'),
+    ...data.days.map((day) => h('th',
+      { class: dayClass(day) },
+      h('div', new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })),
+      h('small.muted', fmtDayShort(day)),
+    )),
+  );
+
   const grid = h('div.table-wrap',
     h('table.rota-table',
-      h('thead', h('tr',
-        h('th', 'Name'),
-        h('th', 'Pattern'),
-        ...data.days.map((day) => h('th',
-          { class: isWeekend(day) ? 'rota-weekend' : '' },
-          h('div', new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })),
-          h('small.muted', fmtDayShort(day)),
-        )),
-      )),
+      h('thead', headRow),
       h('tfoot',
         // The totals a rota exists to get right, department by department —
         // "is anybody on Security on Sunday" is the question, and it is not
@@ -352,10 +419,13 @@ export async function renderAttRota(params) {
           }),
         ),
       ),
-      h('tbody', data.rows.map((row) => h('tr',
+      h('tbody', visible.map((row) => h('tr',
         h('td',
           h('div', row.staff.name, strainMark(row.staff.id)),
           h('small.muted', row.staff.department || `No. ${row.staff.employee_no}`),
+          row.staff.tags?.length
+            ? h('div.rota-tags', row.staff.tags.map((t) => h('span.rota-tag', t)))
+            : null,
         ),
         h('td',
           h('div.btn-row',
@@ -367,42 +437,270 @@ export async function renderAttRota(params) {
               title: 'Put one shift across every day shown',
               onclick: () => fillRow(row),
             }, '⇢'),
+            h('button.btn-sm', {
+              title: 'Days they cannot work, or asked for',
+              onclick: () => editAvailability(row, data, reload),
+            }, '✕'),
           ),
         ),
-        ...row.days.map((entry) => h('td', { class: isWeekend(entry.day) ? 'rota-weekend' : '' }, cell(row, entry))),
+        ...row.days.map((entry) => h('td', { class: dayClass(entry.day) }, cell(row, entry))),
       ))),
     ),
   );
+
+  /**
+   * The same window turned sideways: rows are shifts, cells are who is on
+   * them. The question this view answers is "who is opening on Saturday",
+   * which the people view makes somebody read twenty-four rows for.
+   *
+   * Read-only on purpose, for now: assignment stays where the dropdowns and
+   * the save bar already are, and a second editable surface would be a second
+   * set of half-finished edits.
+   */
+  const positionsGrid = h('div.table-wrap',
+    h('table.rota-table.rota-positions',
+      h('thead', h('tr',
+        h('th', 'Shift'),
+        ...data.days.map((day) => h('th',
+          { class: dayClass(day) },
+          h('div', new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })),
+          h('small.muted', fmtDayShort(day)),
+        )),
+      )),
+      h('tbody', byDepartment(data.shifts.filter((sh) => sh.active !== 0
+        && (!params.department || (sh.department || '') === params.department)))
+        .flatMap((group) => [
+          h('tr.rota-dept', h('td', { colspan: data.days.length + 1 }, h('small', group.name))),
+          ...group.shifts.map((shift) => h('tr',
+            h('td',
+              h('div.shift-key-item',
+                h('span.shift-key-swatch', { style: { '--shift': `var(--c${shiftColour(shift)})` } }),
+                h('span', shift.name)),
+              h('small.muted', shiftHours(shift)),
+            ),
+            ...data.days.map((day) => {
+              const on = visible.filter((row) => {
+                const entry = row.days.find((d) => d.day === day);
+                return entry && !entry.leave && String(entry.shift_id) === String(shift.id);
+              });
+              return h('td', { class: dayClass(day) },
+                on.length
+                  ? h('div.rota-names', on.map((row) => h('small', row.staff.name.split(' ')[0])))
+                  : h('span.rota-gap-soft', '—'));
+            }),
+          )),
+        ])),
+    ),
+  );
+
+  // Days somebody decided and nobody has yet published. Counted over the
+  // whole window, not the filtered rows: Publish covers the window.
+  const unpublished = data.rows.reduce(
+    (n, row) => n + row.days.filter((d) => d.explicit && d.published === false).length, 0,
+  );
+
+  const conflicts = Object.keys(strain?.rows ?? {}).length;
+
+  const publish = async () => {
+    const done = await formDialog({
+      title: `Publish ${fmtDayShort(from)} – ${fmtDayShort(to)}`,
+      submitLabel: 'Publish',
+      body: h('div',
+        h('p.muted',
+          `${unpublished} decided day${unpublished === 1 ? '' : 's'} in this window `
+          + 'still dashed. Publishing turns them solid — the version people plan their '
+          + 'lives around.'),
+        field('Who is told', h('select', { name: 'notify' },
+          h('option', { value: 'yes' }, 'Everybody — ring the bell and send the mail'),
+          h('option', { value: 'no' }, 'Nobody — publish quietly'),
+        ), 'Quietly is for a typo fixed five minutes after the real publication. '
+          + 'Either way the log records which this was.'),
+      ),
+      onSubmit: async (form) => api.attPublishRoster({
+        from, to, notify: form.get('notify') !== 'no',
+      }),
+    });
+    if (done) {
+      toast(done.published
+        ? `${done.published} day${done.published === 1 ? '' : 's'} published${done.notified ? ' — everybody told' : ', quietly'}.`
+        : 'Everything here was already published.', 'good');
+      await reload();
+    }
+  };
+
+  const seg = (options, chosen, onPick) => h('div.seg',
+    options.map(([value, label]) => h('button', {
+      class: String(chosen) === String(value) ? 'active' : '',
+      onclick: () => onPick(value),
+    }, label)));
 
   mount(host,
     h('div.page-head',
       h('div',
         h('h1', 'Rota'),
-        h('div.sub', 'Who is working which shift. Grey follows the standing pattern; black was set by hand.'),
+        h('div.sub', 'Dashed is a draft; solid has been published. Grey days are already behind you.'),
       ),
     ),
+
     h('div.toolbar',
-      h('button.btn-sm', { onclick: () => reload({ from: shiftDay(from, -14), to: shiftDay(to, -14) }) }, '‹ Earlier'),
+      seg([['people', 'People'], ['positions', 'Positions']], view, (v) => reload({ view: v })),
+      seg([['7', 'Week'], ['14', 'Fortnight'], ['28', '4 weeks']], span, (v) => reload({ span: v })),
+      h('button.btn-sm', { onclick: () => reload({ from: shiftDay(from, -span) }) }, '‹'),
+      // The calendar. The browser's own — it opens a month view on press,
+      // which is the picker the request asked for without a second widget to
+      // maintain — and whatever day is chosen snaps to its Monday.
       h('input', {
-        type: 'date', value: from,
-        onchange: (e) => e.target.value && reload({ from: mondayOf(e.target.value), to: shiftDay(mondayOf(e.target.value), 13) }),
+        type: 'date', value: from, 'aria-label': 'Week beginning',
+        onchange: (e) => e.target.value && reload({ from: mondayOf(e.target.value) }),
       }),
-      h('button.btn-sm', { onclick: () => reload({ from: shiftDay(from, 14), to: shiftDay(to, 14) }) }, 'Later ›'),
-      h('button.btn-sm', {
-        onclick: () => reload({ from: mondayOf(todayISO()), to: shiftDay(mondayOf(todayISO()), 13) }),
-      }, 'This fortnight'),
+      h('button.btn-sm', { onclick: () => reload({ from: shiftDay(from, span) }) }, '›'),
+      h('button.btn-sm', { onclick: () => reload({ from: mondayOf(todayISO()) }) }, 'Today'),
+
       h('div', { style: { flex: 1 } }),
-      h('button.btn.btn-primary', { onclick: () => copyWeek(data, reload) }, 'Copy a week →'),
+
+      data.departments?.length
+        ? h('select', {
+          'aria-label': 'Department',
+          onchange: (e) => reload({ department: e.target.value || null }),
+        },
+        h('option', { value: '' }, 'Every department'),
+        data.departments.map((d) => h('option', { value: d, selected: params.department === d }, d)))
+        : null,
+      data.tags?.length
+        ? h('select', {
+          'aria-label': 'Tag',
+          onchange: (e) => reload({ tag: e.target.value || null }),
+        },
+        h('option', { value: '' }, 'Any tag'),
+        data.tags.map((t) => h('option', { value: t, selected: params.tag === t }, t)))
+        : null,
     ),
+
+    h('div.toolbar',
+      conflicts
+        ? h('button.btn-sm', {
+          onclick: () => navigate('att-workload', { from, to }),
+          title: 'People this plan is overworking — the full picture is on Workload',
+        }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`)
+        : null,
+      h('div', { style: { flex: 1 } }),
+      view === 'people'
+        ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week →')
+        : null,
+      h('button.btn.btn-primary', {
+        onclick: publish,
+        disabled: !unpublished,
+        title: unpublished ? '' : 'Nothing here is waiting to be published',
+      }, unpublished ? `Publish [${unpublished}]` : 'Published ✓'),
+    ),
+
     saveBar,
-    importCard(imported?.draft ?? null, data.rows.map((r) => r.staff), reload),
-    card('Two weeks', { note: `${data.rows.length} people`, wide: true }, legend, grid),
+    view === 'people' ? importCard(imported?.draft ?? null, data.rows.map((r) => r.staff), reload) : null,
+    card(
+      span === 7 ? 'One week' : span === 28 ? 'Four weeks' : 'Two weeks',
+      {
+        note: view === 'people'
+          ? `${visible.length}${visible.length !== data.rows.length ? ` of ${data.rows.length}` : ''} people`
+          : 'who is on each shift',
+        wide: true,
+      },
+      legend,
+      view === 'people' ? grid : positionsGrid,
+    ),
     h('p.muted', { style: { fontSize: '.82rem' } },
       'A day set to Off is a rostered rest day — a decision, and not the same as somebody simply not '
       + 'being on the rota. Days covered by approved leave cannot be edited here; cancel the leave first.'),
   );
 
   return host;
+}
+
+/**
+ * A published day was just edited: offer to republish, and ask who is told.
+ *
+ * Asked every time rather than remembered, because "quietly" that becomes a
+ * default is how staff end up planning around a rota that changed under them
+ * with nobody ever choosing that.
+ */
+async function offerRepublish(from, to) {
+  const done = await formDialog({
+    title: 'You changed a published day',
+    submitLabel: 'Publish again',
+    body: h('div',
+      h('p.muted',
+        'Somebody may already be planning around the old version. Publishing again makes the '
+        + 'change official — or press Cancel to leave it as a draft and publish later.'),
+      field('Who is told', h('select', { name: 'notify' },
+        h('option', { value: 'yes' }, 'Everybody — ring the bell and send the mail'),
+        h('option', { value: 'no' }, 'Nobody — publish quietly'),
+      ), 'Quietly is for a typo. A moved shift deserves the bell.'),
+    ),
+    onSubmit: async (form) => api.attPublishRoster({
+      from, to, notify: form.get('notify') !== 'no',
+    }),
+  });
+  if (done?.published) {
+    toast(`Republished${done.notified ? ' — everybody told' : ', quietly'}.`, 'good');
+  }
+}
+
+/**
+ * Days somebody cannot work, or asked for, in the window on screen.
+ *
+ * Not leave: nothing is approved and nothing is spent. It is the fact the
+ * planner needs in front of them before the dropdown, written down where the
+ * rota will actually show it.
+ */
+async function editAvailability(row, data, reload) {
+  const marked = new Map(row.days
+    .filter((d) => d.availability)
+    .map((d) => [d.day, d.availability]));
+
+  const done = await formDialog({
+    title: `${row.staff.name} — days they cannot work`,
+    submitLabel: 'Save',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Tick the days. This is not leave — nothing is approved and no entitlement is spent. '
+        + 'The mark shows in the cell, and rostering over it is still possible: some conflicts '
+        + 'are deliberate, and the grid shows them rather than hiding them.'),
+      h('div.avail-days', data.days.map((day) => h('label.tickline',
+        h('input', {
+          type: 'checkbox', name: 'day', value: day,
+          checked: marked.has(day),
+        }),
+        h('span', fmtDayShort(day),
+          marked.get(day)?.note ? h('small.muted', ` — ${marked.get(day).note}`) : null),
+      ))),
+      field('Kind', h('select', { name: 'status' },
+        h('option', { value: 'unavailable' }, 'Cannot work'),
+        h('option', { value: 'preferred' }, 'Asked to work'),
+      )),
+      field('Why', h('input', {
+        type: 'text', name: 'note', maxlength: 200,
+        placeholder: 'Daughter’s graduation',
+      }), 'Kept with the mark, shown on hover'),
+    ),
+    onSubmit: async (form) => {
+      const chosen = form.getAll('day');
+      const before = [...marked.keys()];
+      const cleared = before.filter((d) => !chosen.includes(d));
+      if (cleared.length) {
+        await api.attSetAvailability({ staffId: row.staff.id, days: cleared, clear: true });
+      }
+      if (chosen.length) {
+        return api.attSetAvailability({
+          staffId: row.staff.id,
+          days: chosen,
+          status: form.get('status'),
+          note: form.get('note') || null,
+        });
+      }
+      return { ok: true };
+    },
+  });
+
+  if (done) { toast('Saved.', 'good'); await reload(); }
 }
 
 /**

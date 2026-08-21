@@ -1546,6 +1546,17 @@ export async function timeEdits(ctx) {
   });
 }
 
+/** Tags off a staff row: a JSON array, or nothing. Never throws. */
+function parseTags(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((t) => String(t).trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 function readClock(value, field) {
   if (value == null || value === '') return null;
   const text = String(value).trim();
@@ -1603,8 +1614,21 @@ export async function getRoster(ctx) {
   const from = startOfWeek(readDay(ctx.url.searchParams.get('from'), todayIn(timezone)));
   const to = readDay(ctx.url.searchParams.get('to'), addDays(from, 13));
   if (diffDays(from, to) > 62) throw badRequest('Choose a shorter period — two months at most.');
+  const today = todayIn(timezone);
 
-  const ds = await loadDataset(ctx.db, { from, to });
+  const [ds, availability] = await Promise.all([
+    loadDataset(ctx.db, { from, to }),
+    // When somebody said they cannot work. Not leave — nothing is approved and
+    // nothing is spent — just a fact the planner should see in the cell before
+    // rostering over it.
+    ctx.db.prepare(
+      'SELECT * FROM att_availability WHERE day BETWEEN ?1 AND ?2',
+    ).bind(from, to).all().catch(() => ({ results: [] })),
+  ]);
+
+  const availabilityBy = new Map(
+    (availability.results ?? []).map((a) => [`${a.staff_id}|${a.day}`, a]),
+  );
   const days = rangeDays(from, to);
   const shifts = ds.shifts.filter((s) => s.active);
 
@@ -1630,11 +1654,22 @@ export async function getRoster(ctx) {
   return json({
     from,
     to,
+    today,
     days,
     coverage,
     shifts,
+    departments: [...new Set(ds.staff.filter((s) => s.active)
+      .map((s) => s.department).filter(Boolean))].sort(),
+    tags: [...new Set(ds.staff.filter((s) => s.active)
+      .flatMap((s) => parseTags(s.tags)))].sort(),
     rows: ds.staff.filter((s) => s.active).map((staff) => ({
-      staff: { id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department },
+      staff: {
+        id: staff.id,
+        name: staff.name,
+        employee_no: staff.employee_no,
+        department: staff.department,
+        tags: parseTags(staff.tags),
+      },
       // The whole cycle, one entry per week, so the dialog can show a rotation
       // without asking for it a week at a time.
       rotationWeeks: Math.max(1, Number(staff.rotation_weeks) || 1),
@@ -1650,17 +1685,127 @@ export async function getRoster(ctx) {
         .some((w) => [0, 1, 2, 3, 4, 5, 6].some((d) => ds.patternBy.has(`${staff.id}|${w}|${d}`))),
       days: days.map((day) => {
         const schedule = scheduleFor(ds, staff.id, day);
+        const rostered = ds.rosterBy.get(`${staff.id}|${day}`);
+        const avail = availabilityBy.get(`${staff.id}|${day}`);
         return {
           day,
           shift_id: schedule.shift?.id ?? null,
           source: schedule.source,
           explicit: schedule.explicit,
+          // A cell from the standing pattern was never published as such —
+          // the pattern is the assumption, and publishing is about the days
+          // somebody actually decided.
+          published: schedule.explicit ? Boolean(rostered?.published) : null,
+          availability: avail ? { status: avail.status, note: avail.note ?? null } : null,
           leave: ds.leaveBy.get(`${staff.id}|${day}`)?.reason_code ?? null,
           holiday: ds.holidayBy.get(day)?.name ?? null,
         };
       }),
     })),
   });
+}
+
+/**
+ * Publish the rota for a window.
+ *
+ * Saving is thinking out loud; publishing is the promise. Every decided day in
+ * the window turns solid, the publication is logged, and the bell rings — for
+ * the people who manage attendance today, and for every member of staff the
+ * moment they have their own way in.
+ */
+export async function publishRoster(ctx) {
+  const body = await readJson(ctx.request);
+  const from = readDay(body.from);
+  const to = readDay(body.to);
+  if (diffDays(from, to) > 62) throw badRequest('Publish two months at most in one go.');
+
+  const counted = await ctx.db.prepare(
+    'SELECT COUNT(*) AS n FROM att_roster WHERE day BETWEEN ?1 AND ?2 AND published = 0',
+  ).bind(from, to).first();
+  const changes = Number(counted?.n ?? 0);
+
+  if (!changes) {
+    return json({ ok: true, published: 0, note: 'Everything in this window was already published.' });
+  }
+
+  const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
+
+  // Loud by default, quiet on request. A corrected typo five minutes after
+  // publishing does not deserve a second bell for the whole property — but
+  // quiet is a choice somebody makes each time, never a setting that silently
+  // becomes the norm, and the log records which it was.
+  const notify = body.notify !== false;
+
+  await ctx.db.batch([
+    ctx.db.prepare(
+      'UPDATE att_roster SET published = 1 WHERE day BETWEEN ?1 AND ?2 AND published = 0',
+    ).bind(from, to),
+    ctx.db.prepare(
+      'INSERT INTO rota_publish (from_day, to_day, changes, actor) VALUES (?1, ?2, ?3, ?4)',
+    ).bind(from, to, changes, notify ? actor : `${actor} — quietly`),
+    ctx.db.prepare(
+      'INSERT INTO audit_log (actor, action, entity, detail) VALUES (?1, ?2, NULL, ?3)',
+    ).bind(actor, 'rota.publish', JSON.stringify({ from, to, changes, notify })),
+  ]);
+
+  if (notify) {
+    await createNotice(ctx.db, {
+      kind: 'rota.published',
+      level: 'info',
+      title: `Rota published: ${from} to ${to}`,
+      body: `${changes} day${changes === 1 ? '' : 's'} confirmed by ${actor}. `
+        + 'What was dashed is now solid.',
+      link: `#/att-rota?from=${from}&to=${to}`,
+      actor,
+      audience: 'att_view',
+    }, ctx);
+  }
+
+  return json({ ok: true, published: changes, from, to, notified: notify });
+}
+
+/**
+ * Mark days somebody cannot work, or take the mark off.
+ *
+ * Not leave. Nothing is approved and no entitlement is spent — it is the
+ * planner writing down "cannot do Thursdays this month" where the rota will
+ * actually show it. Rostering over one stays possible, and the mark stays put:
+ * some conflicts are deliberate, and the grid should show them rather than
+ * pretend they cannot happen.
+ */
+export async function setAvailability(ctx) {
+  const body = await readJson(ctx.request);
+  const staffId = int(body.staffId, 'Staff', { required: true, min: 1 });
+  const days = [...new Set((Array.isArray(body.days) ? body.days : []).map(String))]
+    .filter((d) => readDay(d, null));
+  if (!days.length) throw badRequest('Say which days.');
+  if (days.length > 62) throw badRequest('Two months of days at most in one go.');
+
+  const staff = await ctx.db.prepare('SELECT id, name FROM att_staff WHERE id = ?')
+    .bind(staffId).first();
+  if (!staff) throw notFound('No such member of staff.');
+
+  const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
+
+  if (body.clear) {
+    await ctx.db.batch(days.map((day) => ctx.db.prepare(
+      'DELETE FROM att_availability WHERE staff_id = ? AND day = ?',
+    ).bind(staffId, day)));
+    return json({ ok: true, cleared: days.length });
+  }
+
+  const status = body.status === 'preferred' ? 'preferred' : 'unavailable';
+  const note = str(body.note, 'Note', { max: 200 });
+
+  await ctx.db.batch(days.map((day) => ctx.db.prepare(
+    `INSERT INTO att_availability (staff_id, day, status, note, set_by)
+     VALUES (?1, ?2, ?3, ?4, ?5)
+     ON CONFLICT (staff_id, day) DO UPDATE SET
+       status = excluded.status, note = excluded.note,
+       set_by = excluded.set_by, set_at = datetime('now')`,
+  ).bind(staffId, day, status, note, actor)));
+
+  return json({ ok: true, marked: days.length, status });
 }
 
 /**
@@ -1693,11 +1838,15 @@ export async function saveRoster(ctx) {
         .bind(staffId, day));
     } else {
       statements.push(ctx.db.prepare(
-        `INSERT INTO att_roster (staff_id, day, shift_id, note, set_by, set_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
+        `INSERT INTO att_roster (staff_id, day, shift_id, note, set_by, set_at, published)
+         VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'), 0)
          ON CONFLICT (staff_id, day) DO UPDATE SET
            shift_id = excluded.shift_id, note = excluded.note,
-           set_by = excluded.set_by, set_at = excluded.set_at`,
+           set_by = excluded.set_by, set_at = excluded.set_at,
+           -- A changed day is a draft again, however published it was before.
+           -- Staff plan their lives around the solid ones, so a cell cannot
+           -- change under them while still claiming to be the version they saw.
+           published = 0`,
       ).bind(staffId, day, shiftId, str(entry.note, 'Note', { max: 200 }), actor));
     }
 

@@ -116,6 +116,8 @@ export const ROUTES = [
 
   // How the rota is treating people. Whoever builds it needs this most,
   // which is why it is not behind the reports permission.
+  ['POST', '/api/att/roster/publish', 'att_rota', att.publishRoster],
+  ['POST', '/api/att/availability', 'att_rota', att.setAvailability],
   ['GET', '/api/att/workload', ['att_rota', 'att_reports'], workload.workload],
 
   // Pay. Its own permission, held by nobody by default — a manager holds

@@ -986,6 +986,68 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   color: var(--text-dim);
 }
 
+/* --------------------------------------------------------------------------
+   Draft, published, past
+   --------------------------------------------------------------------------
+   The border is the publication state, read exactly the way a member of staff
+   reads it: dashed is still somebody thinking, solid is the version you may
+   plan your life around. Grey days are behind you — nothing there is a plan
+   any more, it either happened or it did not.
+   -------------------------------------------------------------------------- */
+.rota-cell.rota-set.rota-draft {
+  border-top-style: dashed;
+  border-right-style: dashed;
+  border-bottom-style: dashed;
+  border-left-style: solid;         /* the colour edge stays readable */
+}
+.rota-cell.rota-set.rota-published { border-style: solid; }
+
+td.rota-past { opacity: .55; }
+td.rota-past .rota-cell { pointer-events: auto; }   /* history can still be corrected */
+th.rota-today, td.rota-today {
+  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+}
+
+/* "Cannot work this day", under the dropdown, before the planner chooses.
+   Rostering over it stays possible and the mark stays put: some conflicts are
+   deliberate, and a grid that hides them is lying. */
+.rota-avail {
+  display: block;
+  font-size: .68rem;
+  color: var(--bad);
+  font-weight: 650;
+  white-space: nowrap;
+}
+.rota-avail.rota-avail-pref { color: var(--good); }
+
+/* Tags under the name: the facts a planner filters by that are not a
+   department. */
+.rota-tags { display: flex; gap: .25rem; flex-wrap: wrap; margin-top: .15rem; }
+.rota-tag {
+  font-size: .66rem;
+  padding: .05rem .4rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* The positions view: who is on each shift, first names stacked. */
+.rota-positions td { vertical-align: top; }
+.rota-names { display: flex; flex-direction: column; gap: .05rem; }
+.rota-gap-soft { color: var(--text-faint); }
+
+/* The availability dialog's day list: two columns so a month fits. */
+.avail-days {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0 .8rem;
+  margin-bottom: .6rem;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
 /* What each colour means, above the grid. A key nobody can find is a grid
    nobody can read. */
 .shift-key {

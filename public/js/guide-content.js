@@ -241,6 +241,24 @@ export const GUIDE = [
     permission: 'att_rota',
     lede: 'Who works when. Maintained here, not on the terminal.',
     blocks: [
+
+      { sub: 'Draft, published, past' },
+      { p: 'Dashed borders are a draft — you thinking out loud. Press Publish and they turn '
+        + 'solid: the version people plan their lives around, and everybody with attendance '
+        + 'access is told. Change a published day and it goes dashed again; the app offers to '
+        + 'republish at once, and asks whether to ring the bell or do it quietly. Quietly is for '
+        + 'a typo — a moved shift deserves the bell. Grey days are already behind you.' },
+      { sub: 'Two ways to read it' },
+      { p: 'People view is rows of people — where you assign shifts. Positions view turns the '
+        + 'same window sideways: rows are shifts, cells are who is on them, which answers "who '
+        + 'is opening on Saturday" without reading twenty-four rows. Show a week, a fortnight or '
+        + 'four weeks; filter by department or tag; the date box opens a calendar and snaps to '
+        + 'the Monday.' },
+      { sub: 'When somebody cannot work' },
+      { p: 'The ✕ button on their row marks days they cannot work (or asked to work), with the '
+        + 'reason. Not leave — nothing is approved and no entitlement is spent. The mark shows '
+        + 'in the cell before you choose, and you can still roster over it: some conflicts are '
+        + 'deliberate, and the grid shows them rather than pretending they cannot happen.' },
       { steps: [
         'Rota. You see a fortnight at a time.',
         'Copy a week from the one before — most weeks are last week with two changes.',

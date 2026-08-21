@@ -275,6 +275,34 @@ digest naming half the property every morning is one nobody reads by Friday.
 What makes the digest send at all is unchanged — a day nobody can settle, or an
 absence. Lateness rides along with it rather than triggering it.
 
+### The rota: draft, published, past
+
+Saving and telling people were the same event, which meant a planner could not
+think out loud. Now a saved cell is a **draft** — dashed border — and *Publish*
+turns the window solid, logs who published what and when, and notifies everyone
+with attendance access. Changing a published day makes it a draft again
+(somebody is planning around the old version, and a cell cannot change under
+them while claiming to be the version they saw), and the app immediately offers
+to republish — asking each time whether to notify or go quietly, because a
+quiet that becomes a default is how staff end up planning around a rota nobody
+told them changed. Past days are greyed.
+
+Two views of the same window: **People** (rows are people — where assignment
+happens) and **Positions** (rows are shifts, cells are who is on them — "who is
+opening on Saturday" read directly). One, two or four weeks; a calendar picker
+that snaps to Mondays; department and tag filters; a conflicts chip that counts
+who the plan is overworking and opens Workload.
+
+**Availability** is the fact a planner needs before the dropdown: days somebody
+cannot work (or asked to work), with the reason, shown in the cell. Not leave —
+nothing approved, nothing spent — and rostering over it stays possible, with
+the mark staying put. Some conflicts are deliberate, and a grid that hides them
+is lying.
+
+**Tags** — keyholder, trainee, speaks French — are free-form on the person and
+filterable on the rota, because a fixed vocabulary would be somebody's guess at
+what matters on this property.
+
 ### Workload — whether the rota is survivable
 
 The rota screen answers *is anybody on Security on Sunday*. It never answered
