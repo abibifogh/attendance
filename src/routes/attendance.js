@@ -1687,6 +1687,21 @@ export async function getRoster(ctx) {
   const availabilityBy = new Map(
     (availability.results ?? []).map((a) => [`${a.staff_id}|${a.day}`, a]),
   );
+
+  // What pressing Publish would actually do, counted over the window rather
+  // than over the rows on screen: Publish covers the window, and a count that
+  // moved when somebody changed a department filter would be lying about it.
+  const waiting = await ctx.db.prepare(
+    `SELECT ever_published AS was, COUNT(*) AS n FROM att_roster
+      WHERE day BETWEEN ?1 AND ?2 AND published = 0
+      GROUP BY ever_published`,
+  ).bind(from, to).all().catch(() => ({ results: [] }));
+
+  const publish = { fresh: 0, again: 0 };
+  for (const row of waiting.results ?? []) {
+    if (Number(row.was)) publish.again = Number(row.n);
+    else publish.fresh = Number(row.n);
+  }
   const days = rangeDays(from, to);
   const shifts = ds.shifts.filter((s) => s.active);
 
@@ -1716,6 +1731,7 @@ export async function getRoster(ctx) {
     days,
     coverage,
     shifts,
+    publish,
     departments: [...new Set(ds.staff.filter((s) => s.active)
       .map((s) => s.department).filter(Boolean))].sort(),
     tags: [...new Set(ds.staff.filter((s) => s.active)
@@ -1754,6 +1770,10 @@ export async function getRoster(ctx) {
           // the pattern is the assumption, and publishing is about the days
           // somebody actually decided.
           published: schedule.explicit ? Boolean(rostered?.published) : null,
+          // Told apart so the cell can say whether it is new or a promise
+          // being remade, and so the publish dialog can count the two.
+          everPublished: schedule.explicit ? Boolean(rostered?.ever_published) : null,
+          title: rostered?.title ?? null,
           availability: avail
             ? {
               status: avail.status,
@@ -1784,49 +1804,79 @@ export async function publishRoster(ctx) {
   const to = readDay(body.to);
   if (diffDays(from, to) > 62) throw badRequest('Publish two months at most in one go.');
 
+  // Counted the same way the screen counts them, so the dialog's figures and
+  // what actually happens cannot drift apart.
   const counted = await ctx.db.prepare(
-    'SELECT COUNT(*) AS n FROM att_roster WHERE day BETWEEN ?1 AND ?2 AND published = 0',
-  ).bind(from, to).first();
-  const changes = Number(counted?.n ?? 0);
+    `SELECT ever_published AS was, COUNT(*) AS n FROM att_roster
+      WHERE day BETWEEN ?1 AND ?2 AND published = 0
+      GROUP BY ever_published`,
+  ).bind(from, to).all().catch(() => ({ results: [] }));
+
+  let fresh = 0;
+  let again = 0;
+  for (const row of counted.results ?? []) {
+    if (Number(row.was)) again = Number(row.n);
+    else fresh = Number(row.n);
+  }
+  const changes = fresh + again;
 
   if (!changes) {
-    return json({ ok: true, published: 0, note: 'Everything in this window was already published.' });
+    return json({
+      ok: true, published: 0, fresh: 0, again: 0,
+      note: 'Everything in this window was already published.',
+    });
   }
 
-  const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
+  // Who hears about it. Three answers rather than a yes or no, because the
+  // useful middle one — tell the people it is about, spare everybody else —
+  // is the one a planner reaches for most and the one a boolean cannot say.
+  // Quiet is a choice made each time, never a setting that silently becomes
+  // the norm, and the log records which it was.
+  const told = ['none', 'staff', 'everyone'].includes(body.notify)
+    ? body.notify
+    // An older browser, or the button pressed before a reload. Loud is the
+    // safe reading of a missing answer.
+    : (body.notify === false ? 'none' : 'staff');
 
-  // Loud by default, quiet on request. A corrected typo five minutes after
-  // publishing does not deserve a second bell for the whole property — but
-  // quiet is a choice somebody makes each time, never a setting that silently
-  // becomes the norm, and the log records which it was.
-  const notify = body.notify !== false;
+  const message = str(body.message, 'Message', { max: 500 });
+  const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
 
   await ctx.db.batch([
     ctx.db.prepare(
-      'UPDATE att_roster SET published = 1 WHERE day BETWEEN ?1 AND ?2 AND published = 0',
+      `UPDATE att_roster SET published = 1, ever_published = 1
+        WHERE day BETWEEN ?1 AND ?2 AND published = 0`,
     ).bind(from, to),
     ctx.db.prepare(
       'INSERT INTO rota_publish (from_day, to_day, changes, actor) VALUES (?1, ?2, ?3, ?4)',
-    ).bind(from, to, changes, notify ? actor : `${actor} — quietly`),
+    ).bind(from, to, changes, told === 'none' ? `${actor} — quietly` : actor),
     ctx.db.prepare(
       'INSERT INTO audit_log (actor, action, entity, detail) VALUES (?1, ?2, NULL, ?3)',
-    ).bind(actor, 'rota.publish', JSON.stringify({ from, to, changes, notify })),
+    ).bind(actor, 'rota.publish', JSON.stringify({ from, to, fresh, again, notify: told })),
   ]);
 
-  if (notify) {
+  if (told !== 'none') {
+    const what = [
+      fresh ? `${fresh} new` : null,
+      again ? `${again} changed` : null,
+    ].filter(Boolean).join(' and ');
+
     await createNotice(ctx.db, {
       kind: 'rota.published',
       level: 'info',
       title: `Rota published: ${from} to ${to}`,
-      body: `${changes} day${changes === 1 ? '' : 's'} confirmed by ${actor}. `
-        + 'What was dashed is now solid.',
+      body: `${what} — confirmed by ${actor}. What was dashed is now solid.`
+        + (message ? `\n\n${message}` : ''),
       link: `#/att-rota?from=${from}&to=${to}`,
       actor,
-      audience: 'att_view',
+      // Everybody, or only the people the rota is about. Held as a permission
+      // rather than a list, so it still reaches somebody promoted tomorrow.
+      audience: told === 'everyone' ? null : 'att_view',
     }, ctx);
   }
 
-  return json({ ok: true, published: changes, from, to, notified: notify });
+  return json({
+    ok: true, published: changes, fresh, again, from, to, notified: told,
+  });
 }
 
 /**
@@ -1915,16 +1965,23 @@ export async function saveRoster(ctx) {
         .bind(staffId, day));
     } else {
       statements.push(ctx.db.prepare(
-        `INSERT INTO att_roster (staff_id, day, shift_id, note, set_by, set_at, published)
-         VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'), 0)
+        `INSERT INTO att_roster (staff_id, day, shift_id, note, title, set_by, set_at, published)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), 0)
          ON CONFLICT (staff_id, day) DO UPDATE SET
-           shift_id = excluded.shift_id, note = excluded.note,
+           shift_id = excluded.shift_id, note = excluded.note, title = excluded.title,
            set_by = excluded.set_by, set_at = excluded.set_at,
            -- A changed day is a draft again, however published it was before.
            -- Staff plan their lives around the solid ones, so a cell cannot
            -- change under them while still claiming to be the version they saw.
+           -- ever_published is deliberately left alone: it is what tells a
+           -- new day apart from a promise being remade.
            published = 0`,
-      ).bind(staffId, day, shiftId, str(entry.note, 'Note', { max: 200 }), actor));
+      ).bind(
+        staffId, day, shiftId,
+        str(entry.note, 'Note', { max: 200 }),
+        str(entry.title, 'Title', { max: 60 }),
+        actor,
+      ));
     }
 
     const range = touched.get(staffId) ?? { from: day, to: day };

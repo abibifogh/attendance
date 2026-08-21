@@ -115,11 +115,11 @@ test('publishing quietly skips the bell, and the log says it was quiet', async (
   await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
 
   const done = await (await publishRoster(ctx(db, {
-    body: { from: '2026-06-01', to: '2026-06-14', notify: false },
+    body: { from: '2026-06-01', to: '2026-06-14', notify: 'none' },
   }))).json();
 
   assert.equal(done.published, 1);
-  assert.equal(done.notified, false);
+  assert.equal(done.notified, 'none');
   assert.equal(raw.prepare("SELECT COUNT(*) c FROM app_notices WHERE kind = 'rota.published'").get().c, 0,
     'nobody was told — that was the point');
   // But quiet is on the record, not invisible: whoever reads the log can see
@@ -165,4 +165,73 @@ test('tags travel with the row, and the roster names every tag in use', async ()
   const out = await (await getRoster(ctx(db, { query: WINDOW }))).json();
   assert.deepEqual(out.rows[0].staff.tags, ['keyholder']);
   assert.deepEqual(out.tags, ['keyholder']);
+});
+
+test('a new day and a changed one are counted apart', async () => {
+  const { db } = setup();
+
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
+  await publishRoster(ctx(db, { body: { from: '2026-06-01', to: '2026-06-14' } }));
+
+  // One promise being remade, one nobody has heard about yet.
+  await saveRoster(ctx(db, {
+    body: {
+      entries: [
+        { staffId: 1, day: '2026-06-02', shiftId: 1, note: 'moved' },
+        { staffId: 1, day: '2026-06-03', shiftId: 1 },
+      ],
+    },
+  }));
+
+  const out = await (await getRoster(ctx(db, { query: WINDOW }))).json();
+  assert.deepEqual(out.publish, { fresh: 1, again: 1 });
+
+  const done = await (await publishRoster(ctx(db, {
+    body: { from: '2026-06-01', to: '2026-06-14' },
+  }))).json();
+  assert.equal(done.fresh, 1);
+  assert.equal(done.again, 1);
+  assert.equal(done.published, 2);
+
+  const after = await (await getRoster(ctx(db, { query: WINDOW }))).json();
+  assert.deepEqual(after.publish, { fresh: 0, again: 0 });
+});
+
+test('a day carries an optional title of its own', async () => {
+  const { db } = setup();
+  await saveRoster(ctx(db, {
+    body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1, title: 'Stock take' }] },
+  }));
+
+  const out = await (await getRoster(ctx(db, { query: WINDOW }))).json();
+  const cell = out.rows[0].days.find((d) => d.day === '2026-06-02');
+  assert.equal(cell.title, 'Stock take');
+
+  // Cleared by saving it away again, like any other field on the cell.
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
+  const back = await (await getRoster(ctx(db, { query: WINDOW }))).json();
+  assert.equal(back.rows[0].days.find((d) => d.day === '2026-06-02').title, null);
+});
+
+test('telling everybody and telling the people it is about are different', async () => {
+  const { db, raw } = setup();
+
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
+  await publishRoster(ctx(db, {
+    body: { from: '2026-06-01', to: '2026-06-14', notify: 'staff', message: 'Easter cover.' },
+  }));
+
+  const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'rota.published'").get();
+  assert.equal(notice.audience, 'att_view');
+  assert.match(notice.body, /Easter cover/);
+
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-04', shiftId: 1 }] } }));
+  await publishRoster(ctx(db, {
+    body: { from: '2026-06-01', to: '2026-06-14', notify: 'everyone' },
+  }));
+
+  const all = raw.prepare(
+    "SELECT * FROM app_notices WHERE kind = 'rota.published' ORDER BY id DESC",
+  ).get();
+  assert.equal(all.audience, null, 'everybody means everybody');
 });

@@ -78,6 +78,32 @@ export function shiftHours(shift) {
 }
 
 /**
+ * How long a shift lasts, in minutes, less its unpaid break.
+ *
+ * A shift that ends at or before it starts runs into the next day, which is
+ * the one thing about a night shift everybody gets wrong on first sight.
+ */
+export function shiftMinutes(shift) {
+  if (!shift?.starts_at || !shift?.ends_at) return 0;
+  const at = (clock) => {
+    const [hh, mm] = String(clock).split(':').map(Number);
+    return (Number(hh) || 0) * 60 + (Number(mm) || 0);
+  };
+  const start = at(shift.starts_at);
+  const end = at(shift.ends_at);
+  const span = end > start ? end - start : (24 * 60) - start + end;
+  return Math.max(0, span - (Number(shift.break_minutes) || 0));
+}
+
+/** Those minutes as somebody would say them: 7h, 7h 30m. */
+export function asHours(minutes) {
+  const n = Math.max(0, Math.round(Number(minutes) || 0));
+  const hh = Math.floor(n / 60);
+  const mm = n % 60;
+  return mm ? `${hh}h ${mm}m` : `${hh}h`;
+}
+
+/**
  * A shift as an option reads.
  *
  * Always with its hours. This property runs five shifts called some variation

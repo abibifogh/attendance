@@ -5,8 +5,8 @@ import {
 import { card, emptyState, table } from './components.js';
 import { navigate, replaceParams } from '../app.js';
 import {
-  byDepartment, field, formDialog, shiftHours, shiftLabel, shiftSelect,
-  shiftColour,
+  asHours, byDepartment, field, formDialog, shiftColour, shiftHours, shiftLabel,
+  shiftMinutes, shiftSelect,
 } from './att-shared.js';
 
 /**
@@ -86,11 +86,6 @@ export async function renderAttRota(params) {
   // fortnight on a phone a hundred round trips.
   const pending = new Map();
 
-  // Whether any of them touched a day staff had already been promised. If so,
-  // saving is not the end of it: the grid goes dashed where they are looking,
-  // and the honest next step is to offer republication — loudly or quietly,
-  // but asked, not assumed.
-  let editedPublished = false;
   const saveBar = h('div.toolbar.rota-savebar', { style: { display: 'none' } });
 
   const refreshSaveBar = () => {
@@ -104,15 +99,13 @@ export async function renderAttRota(params) {
         onclick: async () => {
           try {
             await api.attSaveRoster({ entries: [...pending.values()] });
-            toast(`${pending.size} change${pending.size === 1 ? '' : 's'} saved.`, 'good');
+            // Saved is not published. The count on the Publish button at the
+            // top of the page goes up, and one press at the end sends the lot.
+            // Asking after every single edit is how a planner learns to press
+            // through the question without reading it.
+            toast(`${pending.size} change${pending.size === 1 ? '' : 's'} saved. `
+              + 'Publish when you are happy with the week.', 'good');
             pending.clear();
-
-            // A published day was changed, so somewhere a person is planning
-            // around a version that no longer exists. Offer to put that right
-            // now rather than leaving it dashed until somebody remembers.
-            if (editedPublished) {
-              await offerRepublish(from, to);
-            }
             await reload();
           } catch (err) {
             toast(err.message, 'bad');
@@ -139,15 +132,27 @@ export async function renderAttRota(params) {
   const strainMark = (staffId) => {
     const found = strain?.rows?.[staffId];
     if (!found) return null;
-    const lines = found.findings
-      .map((f) => `${f.title}. ${f.detail}${f.law ? ` (${f.law})` : ''}`)
-      .join('\n');
-    return h('button.rota-strain', {
-      type: 'button',
-      title: `${lines}\n\nOpen Workload for the whole picture.`,
-      'aria-label': `${found.count} workload warning${found.count === 1 ? '' : 's'}`,
-      onclick: () => navigate('att-workload', { from, to }),
-    }, found.level === 'high' ? '🔴' : '🟠');
+
+    // Four at most. The mark is meant to be glanced at, and a list of eleven
+    // is a screen of its own — which is what Workload is for.
+    const shown = found.findings.slice(0, 4);
+
+    return h('span.rota-strain-wrap',
+      h('button.rota-strain', {
+        type: 'button',
+        'aria-label': `${found.count} workload warning${found.count === 1 ? '' : 's'}`,
+        onclick: () => navigate('att-workload', { from, to }),
+      }, found.level === 'high' ? '🔴' : '🟠'),
+
+      h('div.rota-strain-pop', { role: 'tooltip' },
+        h('ul', shown.map((f) => h('li',
+          h('strong', f.title),
+          f.detail ? h('div', f.detail) : null,
+          f.law ? h('div.law', f.law) : null))),
+        h('p.more', found.findings.length > shown.length
+          ? `and ${found.findings.length - shown.length} more. Open Workload for the whole picture.`
+          : 'Open Workload for the whole picture.')),
+    );
   };
 
   const cell = (row, entry) => {
@@ -214,6 +219,56 @@ export async function renderAttRota(params) {
       }
     };
 
+    // What this cell would save. Built from whatever is on screen rather than
+    // from the change that triggered it, so setting a title does not undo a
+    // shift picked a moment earlier and vice versa.
+    const stage = (value) => {
+      pending.set(`${row.staff.id}|${entry.day}`, value === 'pattern'
+        ? { staffId: row.staff.id, day: entry.day, clear: true }
+        : {
+          staffId: row.staff.id,
+          day: entry.day,
+          shiftId: value === '' ? null : Number(value),
+          title: entry.title || null,
+        });
+    };
+
+    // An optional name for this one day. The shift says what hours somebody
+    // works; this says what they are doing in them — "Stock take", "Cover for
+    // Ama". Faint and empty until there is one, so a grid of ninety cells does
+    // not read as ninety captions waiting to be written.
+    const titleButton = h('button.rota-title', {
+      type: 'button',
+      title: 'A name for this shift, if it needs one',
+      onclick: async () => {
+        const got = await formDialog({
+          title: `${row.staff.name}, ${fmtDayShort(entry.day)}`,
+          submitLabel: 'Use it',
+          body: h('div',
+            field('Name for this shift', h('input', {
+              type: 'text', name: 'title', maxlength: 60, value: entry.title ?? '',
+              placeholder: 'Stock take',
+            }), 'Optional. Shown on the card and nowhere else'),
+          ),
+          onSubmit: async (form) => ({ title: (form.get('title') || '').trim() }),
+        });
+        if (!got) return;
+        entry.title = got.title || null;
+        syncTitle();
+        stage(select.value);
+        select.classList.add('rota-dirty');
+        refreshSaveBar();
+      },
+    });
+
+    const syncTitle = () => {
+      const chosen = shiftById.get(String(select.value));
+      titleButton.textContent = entry.title || '+ name';
+      titleButton.classList.toggle('rota-title-empty', !entry.title);
+      // A rest day is not doing anything, so there is nothing to call it.
+      titleButton.style.display = chosen ? '' : 'none';
+    };
+
     const select = h('select.rota-cell', {
       title: entry.holiday ? `Public holiday: ${entry.holiday}` : undefined,
       onchange: (e) => {
@@ -232,10 +287,7 @@ export async function renderAttRota(params) {
           return;
         }
 
-        editedPublished = editedPublished || entry.published === true;
-        pending.set(`${row.staff.id}|${entry.day}`, value === 'pattern'
-          ? { staffId: row.staff.id, day: entry.day, clear: true }
-          : { staffId: row.staff.id, day: entry.day, shiftId: value === '' ? null : Number(value) });
+        stage(value);
         e.target.classList.add('rota-dirty');
         syncHours();
         refreshSaveBar();
@@ -252,12 +304,16 @@ export async function renderAttRota(params) {
     );
 
     syncHours();
-    cells.set(`${row.staff.id}|${entry.day}`, { select, syncHours });
+    syncTitle();
+    cells.set(`${row.staff.id}|${entry.day}`, {
+      select,
+      syncHours: () => { syncHours(); syncTitle(); },
+    });
 
     const availWindow = avail?.from ? ` ${avail.from} to ${avail.to}` : '';
     // Element.append() writes the string "null" for a null child, unlike the
     // h() helper, so only real nodes go in.
-    const parts = [select, hours];
+    const parts = [select, hours, titleButton];
     if (avail) {
       parts.push(h('small.rota-avail', {
         class: avail.status === 'preferred' ? 'rota-avail-pref' : '',
@@ -343,8 +399,10 @@ export async function renderAttRota(params) {
       found.select.value = shiftId == null ? '' : String(shiftId);
       found.select.classList.add('rota-dirty');
       found.syncHours();
+      // The title belongs to the day, not to the shift, so filling a row with
+      // a different shift leaves "Stock take" where somebody wrote it.
       pending.set(`${row.staff.id}|${entry.day}`, {
-        staffId: row.staff.id, day: entry.day, shiftId,
+        staffId: row.staff.id, day: entry.day, shiftId, title: entry.title || null,
       });
       touched += 1;
     }
@@ -410,83 +468,293 @@ export async function renderAttRota(params) {
   );
 
   /**
-   * The same window turned sideways: rows are shifts, cells are who is on
-   * them. The question this view answers is "who is opening on Saturday",
-   * which the people view makes somebody read twenty-four rows for.
+   * The same window turned sideways: rows are positions, cells are the shifts
+   * standing on them and who is working each one.
    *
-   * Read-only on purpose, for now: assignment stays where the dropdowns and
-   * the save bar already are, and a second editable surface would be a second
-   * set of half-finished edits.
+   * The question this answers is "who is opening on Saturday", which the
+   * people view makes somebody read twenty-four rows for. Each card carries
+   * the shift, its clock, how long it is and whose it is, and each group says
+   * how many people it uses and how many hours it costs.
+   *
+   * Editable here too. A card opens on whoever is working it and can be handed
+   * to somebody else or emptied; the gap under a shift takes a name. Both go
+   * through the same pending list and the same Save as the people view, so
+   * there is only ever one set of unsaved changes.
    */
+  const positionsBody = h('tbody');
+
+  const staffById = new Map(data.rows.map((row) => [String(row.staff.id), row]));
+
+  /** The cell for one person on one day, wherever the view is looking at it. */
+  const entryOf = (staffId, day) => staffById.get(String(staffId))?.days
+    .find((d) => d.day === day) ?? null;
+
+  /**
+   * Put somebody on a shift, or take them off it, from the position view.
+   *
+   * The staged change is the same shape the dropdowns produce, because it is
+   * the same rota: one person, one day, one shift.
+   */
+  const assign = (staffId, day, shiftId, title = undefined) => {
+    const entry = entryOf(staffId, day);
+    if (!entry) return;
+    entry.shift_id = shiftId;
+    entry.explicit = true;
+    entry.published = false;
+    if (title !== undefined) entry.title = title || null;
+    pending.set(`${staffId}|${day}`, {
+      staffId: Number(staffId), day, shiftId, title: entry.title || null,
+    });
+    drawPositions();
+    refreshSaveBar();
+  };
+
+  /** Everybody who could take a shift on a day, and what stands in the way. */
+  const candidates = (day, exceptStaffId = null) => visible
+    .map((row) => ({ row, entry: entryOf(row.staff.id, day) }))
+    .filter(({ row, entry }) => entry && String(row.staff.id) !== String(exceptStaffId))
+    .map(({ row, entry }) => ({
+      row,
+      entry,
+      blocked: entry.leave
+        ? 'on leave'
+        : entry.availability?.status === 'unavailable'
+          ? `cannot work${entry.availability.from ? ` ${entry.availability.from}–${entry.availability.to}` : ''}`
+          : null,
+      busy: entry.shift_id != null
+        ? shiftById.get(String(entry.shift_id))?.name ?? 'another shift'
+        : null,
+    }));
+
+  /** Hand one card to somebody else, or empty it. */
+  const editCard = async (shift, day, staffId) => {
+    const row = staffById.get(String(staffId));
+    const entry = entryOf(staffId, day);
+    const options = candidates(day, staffId);
+
+    const done = await formDialog({
+      title: `${shift.name}, ${fmtDayShort(day)}`,
+      submitLabel: 'Apply',
+      body: h('div',
+        h('p.muted', `${row.staff.name} is on this. ${shiftHours(shift)}, `
+          + `${asHours(shiftMinutes(shift))}.`),
+        field('Who works it', h('select', { name: 'staffId' },
+          h('option', { value: String(staffId), selected: true }, `${row.staff.name} (as now)`),
+          h('option', { value: '' }, 'Nobody — take this shift off the day'),
+          options.map(({ row: other, blocked, busy }) => h('option', {
+            value: String(other.staff.id), disabled: Boolean(blocked),
+          }, `${other.staff.name}${blocked ? ` — ${blocked}` : busy ? ` — on ${busy}` : ''}`)),
+        ), 'Somebody already on another shift that day is moved onto this one'),
+        field('Name for this shift', h('input', {
+          type: 'text', name: 'title', maxlength: 60, value: entry?.title ?? '',
+          placeholder: 'Optional. Stock take',
+        })),
+      ),
+      onSubmit: async (form) => ({
+        staffId: form.get('staffId'),
+        title: (form.get('title') || '').trim(),
+      }),
+    });
+    if (!done) return;
+
+    if (String(done.staffId) === String(staffId)) {
+      assign(staffId, day, shift.id, done.title);
+      return;
+    }
+    // Off this person either way. A shift handed on is a shift they are not
+    // working, and that is a decision rather than a gap in the pattern.
+    assign(staffId, day, null);
+    if (done.staffId) assign(done.staffId, day, shift.id, done.title);
+  };
+
+  /** Fill a gap: put somebody on this shift on this day. */
+  const addToCell = async (shift, day) => {
+    const options = candidates(day);
+    const free = options.filter((o) => !o.blocked && o.busy == null);
+    const taken = options.filter((o) => !o.blocked && o.busy != null);
+
+    const done = await formDialog({
+      title: `Put somebody on ${shift.name}`,
+      submitLabel: 'Put them on',
+      body: h('div',
+        h('p.muted', `${fmtDayShort(day)}. ${shiftHours(shift)}, ${asHours(shiftMinutes(shift))}.`),
+        field('Who', h('select', { name: 'staffId', required: true },
+          h('option', { value: '' }, 'Choose…'),
+          free.length
+            ? h('optgroup', { label: 'Free that day' },
+              free.map((o) => h('option', { value: String(o.row.staff.id) }, o.row.staff.name)))
+            : null,
+          taken.length
+            ? h('optgroup', { label: 'Already on something' },
+              taken.map((o) => h('option', { value: String(o.row.staff.id) },
+                `${o.row.staff.name} — on ${o.busy}`)))
+            : null,
+        ), 'People on leave or marked unavailable are left out'),
+        field('Name for this shift', h('input', {
+          type: 'text', name: 'title', maxlength: 60, placeholder: 'Optional. Stock take',
+        })),
+      ),
+      onSubmit: async (form) => ({
+        staffId: form.get('staffId'),
+        title: (form.get('title') || '').trim(),
+      }),
+    });
+    if (!done?.staffId) return;
+    assign(done.staffId, day, shift.id, done.title);
+  };
+
+  /** One person's card on one shift on one day. */
+  const shiftCard = (shift, day, row, entry) => h('button.pos-card', {
+    type: 'button',
+    class: entry.published === false ? 'rota-draft' : 'rota-published',
+    'data-shift-colour': String(shiftColour(shift)),
+    title: `${row.staff.name} — ${shift.name}, ${shiftHours(shift)}`,
+    onclick: () => editCard(shift, day, row.staff.id),
+  },
+  entry.title ? h('span.pos-card-title', entry.title) : null,
+  h('span.pos-card-shift', shift.name),
+  h('span.pos-card-clock', `${shiftHours(shift)} · ${asHours(shiftMinutes(shift))}`),
+  h('span.pos-card-who', row.staff.name));
+
+  function drawPositions() {
+    const groups = byDepartment(data.shifts.filter((sh) => sh.active !== 0
+      && (!params.department || (sh.department || '') === params.department)));
+
+    mount(positionsBody, groups.flatMap((group) => {
+      // What this group costs the week: the hours standing on it, and how many
+      // different people it takes to cover them.
+      const people = new Set();
+      let minutes = 0;
+      for (const shift of group.shifts) {
+        for (const day of data.days) {
+          for (const row of visible) {
+            const entry = entryOf(row.staff.id, day);
+            if (!entry || entry.leave) continue;
+            if (String(entry.shift_id) !== String(shift.id)) continue;
+            people.add(row.staff.id);
+            minutes += shiftMinutes(shift);
+          }
+        }
+      }
+
+      return [
+        h('tr.rota-dept', h('td', { colspan: data.days.length + 1 },
+          h('div.pos-group',
+            h('strong', group.name),
+            h('small.muted', `${people.size} ${people.size === 1 ? 'person' : 'people'} · `
+              + `${asHours(minutes)} rostered`)))),
+
+        ...group.shifts.map((shift) => h('tr',
+          h('td.pos-shift',
+            h('div.shift-key-item',
+              h('span.shift-key-swatch', { style: { '--shift': `var(--c${shiftColour(shift)})` } }),
+              h('span', shift.name)),
+            h('small.muted', `${shiftHours(shift)} · ${asHours(shiftMinutes(shift))}`)),
+
+          ...data.days.map((day) => {
+            const on = visible
+              .map((row) => ({ row, entry: entryOf(row.staff.id, day) }))
+              .filter(({ entry }) => entry && !entry.leave
+                && String(entry.shift_id) === String(shift.id));
+
+            return h('td', { class: dayClass(day) },
+              h('div.pos-stack',
+                on.map(({ row, entry }) => shiftCard(shift, day, row, entry)),
+                h('button.pos-add', {
+                  type: 'button',
+                  title: `Put somebody on ${shift.name} on ${fmtDayShort(day)}`,
+                  onclick: () => addToCell(shift, day),
+                }, '+')));
+          }))),
+      ];
+    }));
+  }
+
   const positionsGrid = h('div.table-wrap',
     h('table.rota-table.rota-positions',
       h('thead', h('tr',
-        h('th', 'Shift'),
+        h('th', 'Position'),
         ...data.days.map((day) => h('th',
           { class: dayClass(day) },
           h('div', new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })),
           h('small.muted', fmtDayShort(day)),
         )),
       )),
-      h('tbody', byDepartment(data.shifts.filter((sh) => sh.active !== 0
-        && (!params.department || (sh.department || '') === params.department)))
-        .flatMap((group) => [
-          h('tr.rota-dept', h('td', { colspan: data.days.length + 1 }, h('small', group.name))),
-          ...group.shifts.map((shift) => h('tr',
-            h('td',
-              h('div.shift-key-item',
-                h('span.shift-key-swatch', { style: { '--shift': `var(--c${shiftColour(shift)})` } }),
-                h('span', shift.name)),
-              h('small.muted', shiftHours(shift)),
-            ),
-            ...data.days.map((day) => {
-              const on = visible.filter((row) => {
-                const entry = row.days.find((d) => d.day === day);
-                return entry && !entry.leave && String(entry.shift_id) === String(shift.id);
-              });
-              return h('td', { class: dayClass(day) },
-                on.length
-                  ? h('div.rota-names', on.map((row) => h('small', row.staff.name.split(' ')[0])))
-                  : h('span.rota-gap-soft', '—'));
-            }),
-          )),
-        ])),
+      positionsBody,
     ),
   );
 
-  // Days somebody decided and nobody has yet published. Counted over the
-  // whole window, not the filtered rows: Publish covers the window.
-  const unpublished = data.rows.reduce(
-    (n, row) => n + row.days.filter((d) => d.explicit && d.published === false).length, 0,
-  );
+  if (view === 'positions') drawPositions();
+
+  // What pressing Publish would do, counted by the server over the whole
+  // window rather than over the filtered rows. A count that moved when
+  // somebody picked a department would be lying about what the button does.
+  const fresh = Number(data.publish?.fresh ?? 0);
+  const again = Number(data.publish?.again ?? 0);
+  const unpublished = fresh + again;
 
   const conflicts = Object.keys(strain?.rows ?? {}).length;
 
   const publish = async () => {
+    const tally = (n, label) => h('div.publish-tally',
+      h('strong', String(n)), h('span', label));
+
+    const choice = (value, label, detail, checked = false) => h('label.answer-choice',
+      h('input', { type: 'radio', name: 'notify', value, checked, required: true }),
+      h('span', h('strong', label), detail ? h('small.muted', detail) : null));
+
     const done = await formDialog({
-      title: `Publish ${fmtDayShort(from)} – ${fmtDayShort(to)}`,
+      title: 'Publish the rota',
       submitLabel: 'Publish',
       body: h('div',
-        h('p.muted',
-          `${unpublished} day${unpublished === 1 ? '' : 's'} in this window `
-          + 'still dashed. Publishing turns them solid, which is the version people '
-          + 'plan their week around.'),
-        field('Who is told', h('select', { name: 'notify' },
-          h('option', { value: 'yes' }, 'Notify everyone'),
-          h('option', { value: 'no' }, 'Publish quietly'),
-        ), 'Quietly suits a small correction. A moved shift deserves the bell.'),
+        h('p', 'Shifts in the current timeline:',
+          h('br'),
+          h('strong', `${fmtDayShort(from)} – ${fmtDayShort(to)}`)),
+
+        // The two numbers apart, because they mean different things. New days
+        // are news; changed ones are a promise being remade, and somebody may
+        // already have arranged their week around the version being replaced.
+        h('div.publish-tallies',
+          tally(fresh, fresh === 1 ? 'New shift' : 'New shifts'),
+          tally(again, again === 1 ? 'Changed shift' : 'Changed shifts')),
+
+        h('h3.publish-heading', 'Who is told'),
+        h('div.answer-choices',
+          choice('staff', 'Tell the staff it affects', ' — the usual answer', true),
+          choice('everyone', 'Tell everybody', ' — managers and staff alike'),
+          choice('none', 'Publish quietly', ' — nobody is told; suits a corrected typo'),
+        ),
+
+        field('Anything to say with it', h('textarea', {
+          name: 'message', rows: 3, maxlength: 500,
+          placeholder: 'Optional. Easter cover — the Saturday split is deliberate.',
+        })),
       ),
       onSubmit: async (form) => api.attPublishRoster({
-        from, to, notify: form.get('notify') !== 'no',
+        from, to, notify: form.get('notify'), message: form.get('message') || null,
       }),
     });
-    if (done) {
-      toast(done.published
-        ? `${done.published} day${done.published === 1 ? '' : 's'} published${done.notified ? ' and everyone told' : ', quietly'}.`
-        : 'Everything here was already published.', 'good');
-      await reload();
-    }
+
+    if (!done) return;
+    toast(done.published
+      ? `${done.published} shift${done.published === 1 ? '' : 's'} published`
+        + `${done.notified === 'none' ? ', quietly' : ' and people told'}.`
+      : 'Everything here was already published.', 'good');
+    await reload();
   };
+
+  // Top right of the page, beside the title, and it stays there. A planner
+  // works down the grid and the running count of what is not yet promised is
+  // the one number they need in view the whole time.
+  const publishButton = h('button.btn.btn-primary.rota-publish', {
+    onclick: publish,
+    disabled: !unpublished,
+    title: unpublished
+      ? `${fresh} new, ${again} changed`
+      : 'Nothing here is waiting to be published',
+  }, unpublished
+    ? h('span', 'Publish', h('span.rota-publish-count', String(unpublished)))
+    : 'Published ✓');
 
   const seg = (options, chosen, onPick) => h('div.seg',
     options.map(([value, label]) => h('button', {
@@ -500,6 +768,7 @@ export async function renderAttRota(params) {
         h('h1', 'Rota'),
         h('div.sub', 'Dashed is a draft, solid is published. Grey days are behind you.'),
       ),
+      publishButton,
     ),
 
     h('div.toolbar',
@@ -536,24 +805,21 @@ export async function renderAttRota(params) {
         : null,
     ),
 
-    h('div.toolbar',
-      conflicts
-        ? h('button.btn-sm', {
-          onclick: () => navigate('att-workload', { from, to }),
-          title: 'People this plan is overworking. The full picture is on Workload',
-        }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`)
-        : null,
-      h('div', { style: { flex: 1 } }),
-      view === 'people'
-        ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week')
-        : null,
-      view === 'people' ? importButton(reload) : null,
-      h('button.btn.btn-primary', {
-        onclick: publish,
-        disabled: !unpublished,
-        title: unpublished ? '' : 'Nothing here is waiting to be published',
-      }, unpublished ? `Publish [${unpublished}]` : 'Published ✓'),
-    ),
+    conflicts || view === 'people'
+      ? h('div.toolbar',
+        conflicts
+          ? h('button.btn-sm', {
+            onclick: () => navigate('att-workload', { from, to }),
+            title: 'People this plan is overworking. The full picture is on Workload',
+          }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`)
+          : null,
+        h('div', { style: { flex: 1 } }),
+        view === 'people'
+          ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week')
+          : null,
+        view === 'people' ? importButton(reload) : null,
+      )
+      : null,
 
     saveBar,
     // Only when a draft is actually waiting. The empty pitch that used to sit
@@ -576,35 +842,6 @@ export async function renderAttRota(params) {
   );
 
   return host;
-}
-
-/**
- * A published day was just edited: offer to republish, and ask who is told.
- *
- * Asked every time rather than remembered, because "quietly" that becomes a
- * default is how staff end up planning around a rota that changed under them
- * with nobody ever choosing that.
- */
-async function offerRepublish(from, to) {
-  const done = await formDialog({
-    title: 'You changed a published day',
-    submitLabel: 'Publish again',
-    body: h('div',
-      h('p.muted',
-        'People may be planning around the old version. Publish again to make the change '
-        + 'official, or Cancel to keep it as a draft for now.'),
-      field('Who is told', h('select', { name: 'notify' },
-        h('option', { value: 'yes' }, 'Notify everyone'),
-        h('option', { value: 'no' }, 'Publish quietly'),
-      ), 'Quietly suits a small correction. A moved shift deserves the bell.'),
-    ),
-    onSubmit: async (form) => api.attPublishRoster({
-      from, to, notify: form.get('notify') !== 'no',
-    }),
-  });
-  if (done?.published) {
-    toast(`Republished${done.notified ? ' and everyone told' : ', quietly'}.`, 'good');
-  }
 }
 
 /**

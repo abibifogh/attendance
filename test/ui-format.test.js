@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  fmtDay, fmtDayShort, fmtNum, fmtPct, monthOf, shiftDay, shiftMonth, todayISO,
+  daysApart, fmtDay, fmtDayShort, fmtNum, fmtPct, monthOf, shiftDay, shiftMonth, todayISO,
 } from '../public/js/util.js';
 import { pathHasHole } from '../public/js/api.js';
 import {
-  byDepartment, shiftHours, shiftLabel, sortDepartments,
+  asHours, byDepartment, shiftHours, shiftLabel, shiftMinutes, sortDepartments,
 } from '../public/js/views/att-shared.js';
 
 /**
@@ -187,4 +187,29 @@ test('departments sort alphabetically with the unfiled at the bottom', () => {
     sortDepartments(['No department', 'Security', 'F&B']),
     ['F&B', 'Security', 'No department'],
   );
+});
+
+test('a shift lasts as long as the clock says, less its break', () => {
+  assert.equal(shiftMinutes({ starts_at: '06:00', ends_at: '14:00' }), 480);
+  assert.equal(shiftMinutes({ starts_at: '06:00', ends_at: '14:00', break_minutes: 30 }), 450);
+  // A shift that ends at or before it starts runs into the next day.
+  assert.equal(shiftMinutes({ starts_at: '22:00', ends_at: '06:00' }), 480);
+  assert.equal(shiftMinutes({ starts_at: '20:00', ends_at: '20:00' }), 1440);
+  assert.equal(shiftMinutes(null), 0);
+});
+
+test('hours read the way somebody would say them', () => {
+  assert.equal(asHours(480), '8h');
+  assert.equal(asHours(450), '7h 30m');
+  assert.equal(asHours(0), '0h');
+  assert.equal(asHours(-5), '0h');
+});
+
+test('days apart counts whole days, either way round', () => {
+  assert.equal(daysApart('2026-06-01', '2026-06-05'), 4);
+  assert.equal(daysApart('2026-06-05', '2026-06-05'), 0);
+  assert.equal(daysApart('2026-06-05', '2026-06-01'), -4);
+  // Across a month end, and across the day the clocks would change elsewhere.
+  assert.equal(daysApart('2026-02-27', '2026-03-02'), 3);
+  assert.equal(daysApart('2026-03-28', '2026-03-30'), 2);
 });

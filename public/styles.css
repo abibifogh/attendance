@@ -1668,3 +1668,173 @@ tr.day-locked label.tickline { cursor: not-allowed; }
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
+
+/* --------------------------------------------------------- publishing --
+   The running count of what has been decided and not yet promised. It sits
+   in the page head and stays there while somebody works down the grid,
+   because it is the one number they need in view the whole time.
+   ---------------------------------------------------------------------- */
+
+.rota-publish { display: inline-flex; align-items: center; gap: .5rem; }
+
+.rota-publish-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5rem;
+  padding: 0 .35rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .22);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: .85rem;
+}
+
+.rota-publish:disabled .rota-publish-count { background: rgba(127, 127, 127, .2); }
+
+.publish-tallies {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: .9rem 0 1.2rem;
+}
+
+.publish-tally {
+  display: grid;
+  justify-items: center;
+  gap: .1rem;
+  padding: .8rem .5rem;
+  background: var(--surface-2, rgba(127, 127, 127, .06));
+}
+.publish-tally + .publish-tally { border-left: 1px solid var(--border); }
+.publish-tally strong { font-size: 1.6rem; font-variant-numeric: tabular-nums; line-height: 1; }
+.publish-tally span { font-size: .82rem; color: var(--text-dim); }
+
+.publish-heading { font-size: .95rem; margin: 0 0 .5rem; }
+
+/* A name for one particular shift on one particular day. Faint and almost
+   invisible until there is one, so ninety cells do not read as ninety
+   captions waiting to be written. */
+.rota-title {
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: .68rem;
+  line-height: 1.25;
+  color: var(--text-dim);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rota-title:hover, .rota-title:focus-visible { text-decoration: underline; }
+.rota-title-empty { color: transparent; }
+.rota-cellwrap:hover .rota-title-empty,
+.rota-title-empty:focus-visible { color: var(--text-faint); }
+
+/* ------------------------------------------------------- position view --
+   Rows are positions, cells are the shifts standing on them. A card carries
+   the shift, its clock, how long it is and whose it is, which is what a head
+   of department reads across a row.
+   ---------------------------------------------------------------------- */
+
+.pos-group { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+.pos-shift { min-width: 11rem; }
+.pos-shift small { display: block; }
+
+.pos-stack { display: flex; flex-direction: column; gap: .25rem; min-width: 8.5rem; }
+
+.pos-card {
+  display: grid;
+  gap: .05rem;
+  width: 100%;
+  text-align: left;
+  padding: .35rem .45rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font: inherit;
+  cursor: pointer;
+}
+.pos-card:hover { border-color: var(--accent); }
+.pos-card-title { font-size: .68rem; font-weight: 650; color: var(--text-dim); }
+.pos-card-shift { font-size: .8rem; font-weight: 650; line-height: 1.2; }
+.pos-card-clock { font-size: .68rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.pos-card-who { font-size: .74rem; }
+
+.pos-card[data-shift-colour]:not([data-shift-colour="0"]) {
+  background: color-mix(in srgb, var(--shift) 20%, var(--surface));
+  border-color: color-mix(in srgb, var(--shift) 45%, var(--border));
+  border-left: 3px solid var(--shift);
+}
+.pos-card[data-shift-colour="1"] { --shift: var(--c1); }
+.pos-card[data-shift-colour="2"] { --shift: var(--c2); }
+.pos-card[data-shift-colour="3"] { --shift: var(--c3); }
+.pos-card[data-shift-colour="4"] { --shift: var(--c4); }
+.pos-card[data-shift-colour="5"] { --shift: var(--c5); }
+.pos-card[data-shift-colour="6"] { --shift: var(--c6); }
+.pos-card[data-shift-colour="7"] { --shift: var(--c7); }
+.pos-card[data-shift-colour="8"] { --shift: var(--c8); }
+
+/* Dashed until published, the same promise the people view draws. */
+.pos-card.rota-draft { border-style: dashed; border-left-style: solid; }
+
+/* The gap under a shift. Almost invisible until the row is under a cursor,
+   so a week of empty cells does not read as a week of buttons. */
+.pos-add {
+  border: 1px dashed transparent;
+  border-radius: 6px;
+  background: none;
+  color: transparent;
+  font: inherit;
+  font-size: .8rem;
+  line-height: 1;
+  padding: .2rem;
+  cursor: pointer;
+}
+tr:hover .pos-add, .pos-add:focus-visible {
+  color: var(--text-faint);
+  border-color: var(--border);
+}
+.pos-add:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ------------------------------------------------ the mark beside a name --
+   One character on the rota, with the whole reason under it on hover. The
+   title attribute said the same thing, eventually, in the browser's own time
+   and in a box that cannot be read on a phone.
+   ---------------------------------------------------------------------- */
+
+.rota-strain-wrap { position: relative; display: inline-block; }
+
+.rota-strain-pop {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  top: calc(100% + .3rem);
+  width: max(16rem, 22ch);
+  display: none;
+  padding: .55rem .65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: .78rem;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  font-weight: 450;
+}
+.rota-strain-wrap:hover .rota-strain-pop,
+.rota-strain-wrap:focus-within .rota-strain-pop { display: block; }
+
+.rota-strain-pop ul { margin: 0; padding-left: 1rem; display: grid; gap: .3rem; }
+.rota-strain-pop li::marker { color: var(--text-faint); }
+.rota-strain-pop .law { color: var(--text-faint); }
+.rota-strain-pop .more { margin: .45rem 0 0; color: var(--text-faint); }
