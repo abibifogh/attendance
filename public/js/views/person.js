@@ -1,7 +1,7 @@
 import { api } from '../api.js';
-import { fmtDay, h, mount, toast } from '../util.js';
+import { fmtDay, h, mount, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
-import { navigate, replaceParams } from '../app.js';
+import { can, navigate, replaceParams } from '../app.js';
 import { field, formDialog } from './att-shared.js';
 import { control, listEditor } from '../fields.js';
 import { EVENTS, STATUS } from './contract.js';
@@ -131,6 +131,7 @@ function detailsTab(data, model, reload) {
   };
 
   return h('div.grid.grid-2',
+    payCard(data, reload),
     model.sections.map((section) => card(section.label, {
       note: section.fields.some((f) => f.sensitive) ? 'Private' : null,
       actions: editable
@@ -150,6 +151,119 @@ function detailsTab(data, model, reload) {
       })),
     )),
   );
+}
+
+/**
+ * What this person is paid.
+ *
+ * Only for somebody holding the pay permission, which nobody holds by default
+ * — not even a manager, who holds employee records as a matter of course. What
+ * a colleague earns is a different order of confidence from where they live.
+ *
+ * A rate has a date it starts, and the old ones stay. A rise in June must not
+ * quietly rewrite what January cost.
+ */
+function payCard(data, reload) {
+  if (!can('hr_pay')) return null;
+
+  const host = h('div');
+
+  const draw = async () => {
+    let pay;
+    try {
+      pay = await api.hrStaffPay(data.person.id);
+    } catch (err) {
+      mount(host, card('Pay', { wide: true }, h('p.muted', err.message)));
+      return;
+    }
+
+    const current = pay.rates.find((r) => r.from_day <= todayISO()) ?? null;
+
+    const add = async (existing = null) => {
+      const done = await formDialog({
+        title: existing ? 'Correct a rate' : 'Set a rate',
+        submitLabel: 'Save',
+        body: h('div',
+          h('p.muted', { style: { fontSize: '.85rem' } },
+            existing
+              ? 'Saving over the same start date corrects it. To record a rise, add a new rate '
+                + 'with the day it starts and leave this one where it is.'
+              : 'Give the day it starts from. Everything before that day keeps costing whatever '
+                + 'the rate before it said.'),
+          h('div.field-row',
+            field('Paid', h('select', { name: 'basis' },
+              ...[['monthly', 'Monthly salary'], ['daily', 'Daily rate'], ['hourly', 'Hourly rate']]
+                .map(([v, label]) => h('option', {
+                  value: v, selected: (existing?.basis ?? 'monthly') === v,
+                }, label)))),
+            field('Amount', h('input', {
+              type: 'number', name: 'amount', min: '0', step: '0.01', required: true,
+              value: existing?.amount ?? '',
+            }), pay.currency),
+          ),
+          h('div.field-row',
+            field('From', h('input', {
+              type: 'date', name: 'fromDay', required: true,
+              value: existing?.from_day ?? todayISO(),
+            }), 'the day this rate starts'),
+            field('Note', h('input', {
+              type: 'text', name: 'note', maxlength: 300, value: existing?.note ?? '',
+            }), 'optional — "annual review", "promoted"'),
+          ),
+        ),
+        onSubmit: async (form) => api.hrSetStaffPay(data.person.id, {
+          basis: form.get('basis'),
+          amount: Number(form.get('amount')),
+          fromDay: form.get('fromDay'),
+          note: form.get('note') || null,
+        }),
+      });
+      if (done) { toast('Saved.', 'good'); await draw(); }
+    };
+
+    const remove = async (rate) => {
+      if (!window.confirm(`Remove the rate starting ${fmtDay(rate.from_day)}?\n\n`
+        + 'Only for one entered by mistake. Everything costed at it will be worked out again '
+        + 'at whatever rate came before.')) return;
+      await api.hrRemoveStaffPay(data.person.id, rate.id);
+      toast('Removed.');
+      await draw();
+    };
+
+    const label = { monthly: 'a month', daily: 'a day', hourly: 'an hour' };
+
+    mount(host, card('Pay', {
+      note: 'Private — pay permission only',
+      wide: true,
+      actions: h('button.btn-sm.btn-primary', { onclick: () => add(null) }, '+ Set a rate'),
+    },
+      current
+        ? h('p', h('strong', { style: { fontSize: '1.15rem' } },
+          `${pay.currency} ${Number(current.amount).toLocaleString('en-GB')}`),
+        h('span.muted', ` ${label[current.basis] ?? ''} · since ${fmtDay(current.from_day, { withYear: true })}`))
+        : h('p.muted', 'No rate recorded. Until there is one, this person is left out of every '
+          + 'labour-cost figure rather than counted as costing nothing.'),
+
+      pay.rates.length > 1
+        ? h('details', { style: { marginTop: '.4rem' } },
+          h('summary', { style: { cursor: 'pointer', fontSize: '.85rem' } },
+            `${pay.rates.length} rates on the record`),
+          h('ul.signed-list', pay.rates.map((rate) => h('li',
+            h('small', `${fmtDay(rate.from_day, { withYear: true })} · `,
+              `${pay.currency} ${Number(rate.amount).toLocaleString('en-GB')} `,
+              label[rate.basis] ?? '',
+              rate.note ? ` · ${rate.note}` : '',
+              rate.set_by ? h('span.muted', ` · ${rate.set_by}`) : null),
+            h('div.btn-row',
+              h('button.btn-sm', { onclick: () => add(rate) }, 'Correct'),
+              h('button.btn-sm.btn-danger', { onclick: () => remove(rate) }, 'Remove')),
+          ))))
+        : null,
+    ));
+  };
+
+  draw();
+  return host;
 }
 
 // ---------------------------------------------------------------------------

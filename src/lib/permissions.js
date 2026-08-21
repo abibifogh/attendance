@@ -57,6 +57,13 @@ export const PERMISSIONS = [
     detail: 'Edit records, send links, accept what people send in, issue and sign contracts',
   },
   {
+    key: 'hr_pay',
+    label: 'Pay and labour cost',
+    detail: 'See and set what people are paid, and read the rota in money. Held by nobody by '
+      + 'default: a manager needs contact details and contracts, and what a colleague earns is a '
+      + 'different order of confidence',
+  },
+  {
     key: 'corr_view',
     label: 'Letters',
     detail: 'Read the correspondence register and what has been sent',

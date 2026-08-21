@@ -15,6 +15,7 @@ import * as invite from './routes/invite.js';
 import * as corr from './routes/correspondence.js';
 import * as signoff from './routes/signoff.js';
 import * as workload from './routes/workload.js';
+import * as pay from './routes/pay.js';
 import * as sign from './routes/sign.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
@@ -116,6 +117,14 @@ export const ROUTES = [
   // How the rota is treating people. Whoever builds it needs this most,
   // which is why it is not behind the reports permission.
   ['GET', '/api/att/workload', ['att_rota', 'att_reports'], workload.workload],
+
+  // Pay. Its own permission, held by nobody by default — a manager holds
+  // employee records as a matter of course, and what a colleague earns is a
+  // different order of confidence from where they live.
+  ['GET', '/api/hr/staff/:id/pay', 'hr_pay', pay.staffPay],
+  ['POST', '/api/hr/staff/:id/pay', 'hr_pay', pay.setPay],
+  ['DELETE', '/api/hr/staff/:id/pay/:rateId', 'hr_pay', pay.removePay],
+  ['GET', '/api/att/labour-cost', 'hr_pay', pay.labourCost],
   ['GET', '/api/att/workload/rota', ['att_rota', 'att_reports'], workload.rotaWarnings],
   ['POST', '/api/att/roster', 'att_rota', att.saveRoster],
   ['POST', '/api/att/roster/copy', 'att_rota', att.copyRoster],

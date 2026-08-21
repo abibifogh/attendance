@@ -329,6 +329,51 @@ export const GUIDE = [
   },
 
   {
+    key: 'pay',
+    title: 'Pay and labour cost',
+    permission: 'hr_pay',
+    lede: 'What each person costs, and what the rota costs because of it.',
+    blocks: [
+      { p: 'Set on a person’s record, under People. Three ways to be paid, because a hotel has '
+        + 'three: monthly for salaried staff, daily for casuals engaged under the Labour Act’s '
+        + 'sections 74 to 77, and hourly where hours are what is actually being bought.' },
+
+      { sub: 'A rate has a date' },
+      { p: 'You give a rate the day it starts, and the old one stays on the record. The cost of '
+        + 'a Tuesday in March is worked out at the rate in force on that Tuesday, not at today’s. '
+        + 'Without that, a rise in June quietly rewrites what January cost, and the report you '
+        + 'printed at the time stops agreeing with the app that produced it.' },
+      { note: 'Correcting a mistake is not the same as giving a rise. Re-enter the rate with the '
+        + 'same start date and it replaces what was there; enter it with a new start date and the '
+        + 'app treats everything before it as having genuinely cost the old amount.' },
+
+      { sub: 'Salary is not an hourly rate in disguise' },
+      { p: 'A monthly wage does not go up because somebody worked a sixth day. So cost is shown '
+        + 'in two parts: what the period costs whatever the rota says, and what the rota itself '
+        + 'adds. The second is the only part you can change by moving shifts around — and burying '
+        + 'it inside one total is how a property ends up trying to save money by cutting shifts '
+        + 'that cost nothing.' },
+      { p: 'A casual is the other way round: nothing on a day nobody called them in, and the full '
+        + 'daily rate on a day somebody did. That is where a rota decision shows up in the bank.' },
+
+      { sub: 'Overtime' },
+      { p: 'The Labour Act requires this property to have fixed rates for overtime (s.35); it '
+        + 'does not fix them for you. The app starts at the customary Ghanaian rates — one and a '
+        + 'half ordinarily, double on a public holiday — and they are yours to change under '
+        + 'Setup. They are the property’s rates, not the law’s, and the app says so wherever it '
+        + 'shows them.' },
+      { note: 'A salaried person working a public holiday still costs the property something, '
+        + 'even though their salary does not move. That premium is counted.' },
+
+      { sub: 'Who can see any of this' },
+      { p: 'Its own permission, held by nobody by default except an administrator — not even a '
+        + 'manager, who holds employee records as a matter of course. What a colleague earns is a '
+        + 'different order of confidence from where they live. Grant it to whoever does the '
+        + 'wages, and to nobody else.' },
+    ],
+  },
+
+  {
     key: 'reports',
     title: 'Reports and the wages',
     permission: ['att_reports', 'att_rota'],

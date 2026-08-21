@@ -49,6 +49,22 @@ export function mount(el, ...children) {
 
 // ------------------------------------------------------------ formatting --
 
+/**
+ * Money as somebody would write it down.
+ *
+ * Kept here rather than imported from the costing library: that one runs on
+ * the server and has no business being shipped to a browser, and a copy of it
+ * in `public/` is a copy that drifts. This is the one line of it a screen
+ * needs.
+ */
+export function money(amount, currency = 'GHS') {
+  const n = Number(amount) || 0;
+  return `${currency} ${n.toLocaleString('en-GB', {
+    minimumFractionDigits: n % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 // Built once and reused. Whole numbers are the commonest case by far — every
 // count in every table goes through this — and constructing a formatter per
 // cell is the kind of waste that only shows up on the longest report.
