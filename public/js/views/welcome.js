@@ -95,8 +95,10 @@ export function welcomePanel({ name, role, permissions = [] }) {
       return;
     }
     mount(line, said.text);
-    if (said.go) {
-      mount(actions, h('button.btn-sm.welcome-go', {
+    // No button back to the screen they are already looking at.
+    const here = location.hash.replace(/^#\/?/, '').split('?')[0];
+    if (said.go && said.go.path !== here) {
+      mount(actions, h('button.btn-sm.btn-primary', {
         onclick: () => { panel.remove(); navigate(said.go.path, said.go.params ?? {}); },
       }, said.go.label));
     }
@@ -108,33 +110,14 @@ export function welcomePanel({ name, role, permissions = [] }) {
 /**
  * One line, chosen by what this person is here to do.
  *
- * In the order somebody would want to be told: their own next shift first if
- * they are on the rota, then whatever is waiting on a decision, then the bell.
- * Never more than one thing — a welcome that lists four is a dashboard.
+ * Whoever runs the floor is told what is waiting on a decision, because that
+ * is what they opened the app for. Everybody else is told when their own next
+ * shift is. Managers hold both permissions, so the order matters: the list
+ * first when there is something on it, their own shift when there is not.
+ *
+ * Never more than one thing. A welcome that lists four is a dashboard.
  */
 async function whatIsWaiting({ held }) {
-  if (held('att_me')) {
-    const mine = await api.myWeek().catch(() => null);
-    const next = mine?.next;
-    if (next) {
-      const when = next.seconds < 3600
-        ? 'in under an hour'
-        : next.seconds < 24 * 3600
-          ? `in ${Math.round(next.seconds / 3600)} hours`
-          : `on ${new Intl.DateTimeFormat('en-GB', { weekday: 'long' })
-            .format(new Date(`${next.day}T12:00:00Z`))}`;
-      return {
-        text: h('span', 'Your next shift is ', h('strong', next.shift.name), ' ',
-          h('strong', when), `, at ${next.shift.starts_at}.`),
-        go: { path: 'att-me', label: 'My shifts' },
-      };
-    }
-    return {
-      text: h('span', 'Nothing on your rota just yet.'),
-      go: { path: 'att-me', label: 'My shifts' },
-    };
-  }
-
   if (held('att_view')) {
     const today = await api.attDay(todayISO()).catch(() => null);
     const open = Number(today?.totals?.openCount) || 0;
@@ -146,12 +129,34 @@ async function whatIsWaiting({ held }) {
           open ? h('span', h('strong', String(open)), ' to confirm') : null,
           open && absent ? h('span', ' and ') : null,
           absent ? h('span', h('strong', String(absent)), ' absent') : null,
-          ' this morning.'),
-        go: { path: 'att-today', label: 'The morning list' },
+          ' today.'),
+        go: { path: 'att-today', label: 'Take a look' },
       };
     }
+  }
+
+  if (held('att_me')) {
+    const mine = await api.myWeek().catch(() => null);
+    const next = mine?.next;
+    if (next) {
+      const hours = Math.round(next.seconds / 3600);
+      const when = next.seconds < 3600
+        ? 'in under an hour'
+        : next.seconds < 24 * 3600
+          ? `in ${hours} hour${hours === 1 ? '' : 's'}`
+          : `on ${new Intl.DateTimeFormat('en-GB', { weekday: 'long' })
+            .format(new Date(`${next.day}T12:00:00Z`))}`;
+      return {
+        text: h('span', 'Your next shift is ', h('strong', next.shift.name),
+          ` at ${next.shift.starts_at}, `, h('strong', when), '.'),
+        go: { path: 'att-me', label: 'My shifts' },
+      };
+    }
+  }
+
+  if (held('att_view')) {
     return {
-      text: h('span', 'Everybody is accounted for this morning.'),
+      text: h('span', 'Everybody is accounted for today.'),
       go: { path: 'att-today', label: 'Today' },
     };
   }

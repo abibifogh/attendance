@@ -2,6 +2,7 @@ import { api, onReachabilityChange, serverReachable, setUnauthorizedHandler } fr
 import { registerWorker, watchForInstall } from './install.js';
 import { h, mount } from './util.js';
 import { renderLogin } from './views/login.js';
+import { alreadyWelcomed, markWelcomed, welcomePanel } from './views/welcome.js';
 import { openAccountDialog } from './views/account.js';
 import { noticeBell } from './views/notices.js';
 import { renderAttToday } from './views/att-today.js';
@@ -319,6 +320,16 @@ export async function render() {
 
   try {
     mount(container, await route.render(routeParams()));
+    // The greeting goes above whatever they landed on, once for the session.
+    // Anywhere else and it would be a banner somebody learns to scroll past.
+    if (!alreadyWelcomed()) {
+      markWelcomed();
+      container.prepend(welcomePanel({
+        name: state.name,
+        role: state.role,
+        permissions: state.permissions,
+      }));
+    }
   } catch (err) {
     if (err.status === 401) return; // the unauthorized handler already reset us
     mount(container, h('div.card.empty',

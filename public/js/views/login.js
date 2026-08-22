@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { deriveLoginKey } from '../crypto.js';
-import { h, mount, toast } from '../util.js';
+import { h, mount } from '../util.js';
 import { BRAND, brandMark } from '../brand.js';
 
 /** PIN keypad. Big targets, no keyboard needed, works with gloves on. */
@@ -19,7 +19,6 @@ export function renderLogin(onSuccess) {
     error.textContent = 'Checking…';
     try {
       const result = await api.login(pin);
-      toast(`Welcome, ${result.name}`, 'good');
       onSuccess(result);
     } catch (err) {
       error.textContent = err.message;
@@ -76,7 +75,6 @@ export function renderLogin(onSuccess) {
       const params = await api.passwordSalt(email.value.trim());
       const passwordKey = await deriveLoginKey(password.value, params.salt, params.iterations);
       const result = await api.loginWithKey(email.value.trim(), passwordKey);
-      toast(`Welcome, ${result.name}`, 'good');
       onSuccess(result);
     } catch (err) {
       error.textContent = err.message;

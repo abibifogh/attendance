@@ -2363,3 +2363,54 @@ html { touch-action: manipulation; }
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
+
+/* --------------------------------------------------------------------------
+   The welcome
+   Once per sign-in, above whatever screen somebody landed on, and then gone
+   until the next time. It says the time of day, their name, and the one thing
+   that is actually waiting for them. Everything else in this app is a figure
+   somebody is being held to; this is the one part allowed to be warm.
+-------------------------------------------------------------------------- */
+.welcome {
+  position: relative;
+  display: flex; align-items: flex-start; gap: 1rem;
+  padding: 1.15rem 3.2rem 1.15rem 1.25rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  /* The mark's own amber, thinned to a wash. It reads as warmth on the light
+     ground and as lamplight on the dark one, without either becoming a
+     different colour the app has to explain. */
+  background: linear-gradient(135deg, rgba(240, 169, 76, .18), transparent 58%), var(--surface);
+  box-shadow: var(--shadow);
+  animation: welcome-in .4s ease both;
+}
+.welcome-mark { flex: none; display: flex; margin-top: .55rem; }
+.welcome-body { flex: 1; min-width: 0; }
+.welcome-eyebrow {
+  font-size: .72rem; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--text-faint); font-weight: 600;
+}
+.welcome-hello { font-size: 1.55rem; letter-spacing: -.02em; margin: .1rem 0 .35rem; }
+.welcome-line { color: var(--text-dim); font-size: .96rem; }
+.welcome-line strong { color: var(--text); }
+.welcome-dim { color: var(--text-faint); }
+.welcome-actions:not(:empty) { margin-top: .75rem; }
+/* A full thumb's worth, because the last close button in here was 31px and
+   nobody could hit it. */
+.welcome-close {
+  position: absolute; top: .3rem; right: .3rem;
+  width: 2.75rem; height: 2.75rem;
+  display: grid; place-items: center;
+  border: 0; border-radius: 50%; background: none; cursor: pointer;
+  color: var(--text-faint); font-size: 1rem; line-height: 1;
+}
+.welcome-close:hover { background: var(--surface-2); color: var(--text); }
+@keyframes welcome-in { from { opacity: 0; transform: translateY(-8px); } }
+@media (prefers-reduced-motion: reduce) { .welcome { animation: none; } }
+
+@media (max-width: 640px) {
+  .welcome { padding: .9rem 2.9rem .9rem .9rem; gap: .75rem; }
+  .welcome-hello { font-size: 1.25rem; }
+  .welcome-line { font-size: .9rem; }
+}
