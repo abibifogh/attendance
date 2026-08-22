@@ -367,7 +367,7 @@ export function showSheet({ title, body }) {
       }, '✕'),
     ),
     body,
-    h('div.btn-row', { style: { marginTop: '1rem', justifyContent: 'flex-end' } },
+    h('div.btn-row',
       h('button.btn.btn-primary', { type: 'button', onclick: () => dialog.close() }, 'Close'),
     ),
   );
@@ -409,7 +409,7 @@ export function formDialog({ title, body, submitLabel = 'Save', onSubmit }) {
     form.append(
       body,
       error,
-      h('div.btn-row', { style: { marginTop: '1rem', justifyContent: 'flex-end' } },
+      h('div.btn-row',
         h('button.btn-sm', {
           type: 'button',
           onclick: () => { dialog.close(); resolve(null); },

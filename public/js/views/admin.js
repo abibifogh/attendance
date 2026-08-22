@@ -274,7 +274,7 @@ function openUserDialog({ existing, data, reload }) {
         }, 'Reset to the role\'s defaults')),
     ),
     problem,
-    h('div.btn-row', { style: { marginTop: '1rem', justifyContent: 'flex-end' } },
+    h('div.btn-row',
       h('button', { onclick: () => dialog.close() }, 'Cancel'),
       h('button.btn-primary', { onclick: save }, existing ? 'Save changes' : 'Add person'),
     ),

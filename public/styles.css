@@ -2134,16 +2134,49 @@ html { touch-action: manipulation; }
    the page behind it scrolled instead, which on iOS means they cannot be
    reached at all. */
 .app-dialog {
+  --dlg-x: 1.2rem;
+  --dlg-y: 1.2rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
-  padding: 1.2rem;
+  padding: var(--dlg-y) var(--dlg-x);
   width: 92vw;
   max-width: 560px;
+  /* Two declarations, not one. A browser without dvh throws out a min() that
+     mentions it, and the dialog then has no cap at all: it grows to fit its
+     content and the buttons go off the bottom of the screen with no way to
+     reach them. The plain vh line is the one those browsers keep. */
+  max-height: 90vh;
   max-height: min(90dvh, 90vh);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* The title and the buttons stay put while the middle scrolls.
+   A dialog with forty names to tick in it is taller than a handset, and the
+   thing at the bottom of it is Save. Leaving that at the end of a long scroll
+   is how somebody fills a form in and cannot finish it: they reach the bottom
+   of the list, the dialog stops moving, and the page behind starts scrolling
+   instead. */
+.app-dialog > .dialog-head {
+  position: sticky;
+  top: calc(var(--dlg-y) * -1);
+  z-index: 2;
+  background: var(--surface);
+  margin: calc(var(--dlg-y) * -1) calc(var(--dlg-x) * -1) 0;
+  padding: var(--dlg-y) var(--dlg-x) .55rem;
+}
+.app-dialog > .btn-row:last-child,
+.app-dialog > form > .btn-row:last-child {
+  position: sticky;
+  bottom: calc(var(--dlg-y) * -1);
+  z-index: 2;
+  justify-content: flex-end;
+  background: var(--surface);
+  margin: .9rem calc(var(--dlg-x) * -1) calc(var(--dlg-y) * -1);
+  padding: .7rem var(--dlg-x) var(--dlg-y);
+  border-top: 1px solid var(--border);
 }
 .app-dialog-narrow { max-width: 420px; }
 .app-dialog-wide { max-width: 620px; }
@@ -2158,8 +2191,19 @@ html { touch-action: manipulation; }
     margin: auto auto 0;
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
-    padding: 1rem .9rem max(1.1rem, env(safe-area-inset-bottom));
+    --dlg-x: .9rem;
+    --dlg-y: 1rem;
+    padding: var(--dlg-y) var(--dlg-x);
+    max-height: 92vh;
     max-height: min(92dvh, 92vh);
+  }
+  /* Clear of whatever the phone puts across the bottom of the screen. The
+     inset goes on the pinned bar rather than on the dialog, because the bar
+     is the part that sits against it. */
+  .app-dialog > .btn-row:last-child,
+  .app-dialog > form > .btn-row:last-child {
+    padding-bottom: max(var(--dlg-y), env(safe-area-inset-bottom));
+    margin-bottom: calc(var(--dlg-y) * -1);
   }
   .dialog-close { width: 2.75rem; height: 2.75rem; }
 

@@ -109,6 +109,11 @@ export function openAccountDialog({ role, name, email: myEmail, isRecovery, canA
         h('button.btn-primary', { onclick: save }, usesPassword ? 'Change password' : 'Change PIN'),
       ));
 
+  // What the sections below want to stop doing once this is shut. They are
+  // built as arguments to the call that makes the dialog, so none of them can
+  // reach it: they leave their cleanup here and it is wired up afterwards.
+  const onClose = [];
+
   const dialog = h('dialog.app-dialog.app-dialog-narrow',
     h('div.dialog-head',
       h('h2', 'My account'),
@@ -124,7 +129,10 @@ export function openAccountDialog({ role, name, email: myEmail, isRecovery, canA
   );
 
   document.body.append(dialog);
-  dialog.addEventListener('close', () => dialog.remove());
+  dialog.addEventListener('close', () => {
+    for (const stop of onClose) stop();
+    dialog.remove();
+  });
   dialog.showModal();
   if (!isRecovery) setTimeout(() => current.focus(), 0);
 
@@ -182,8 +190,10 @@ export function openAccountDialog({ role, name, email: myEmail, isRecovery, canA
     // The browser can decide the app is installable a moment after this dialog
     // opened, and a button that never appears is indistinguishable from one
     // that does not exist.
-    const stop = onInstallChange(draw);
-    dialog.addEventListener('close', stop);
+    // Kept until the dialog closes rather than wired to it here: this runs
+    // while the dialog is still being built, so there is nothing yet to
+    // listen on.
+    onClose.push(onInstallChange(draw));
     return host;
   }
 
