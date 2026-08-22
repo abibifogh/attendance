@@ -8,7 +8,7 @@
 import { hashPin } from './auth.js';
 import { badRequest, forbidden } from './http.js';
 import { computeRange, loadDataset } from './attendance.js';
-import { addDays, nowIn } from '../util/dates.js';
+import { addDays } from '../util/dates.js';
 
 // ---------------------------------------------------------------------------
 // Devices and their tokens
@@ -382,16 +382,11 @@ export async function recompute(db, { staffIds = null, from, to }) {
   // One day either side so an overnight shift at the edge of the range sees the
   // punches that belong to it.
   //
-  // The clock goes in too. Without it the stored day for a shift starting at
-  // ten tonight would be written as an absence this morning, and the absence
-  // notice — and the run-of-three alarm behind it — would go out about somebody
-  // who is not due for another twelve hours.
-  const timezone = (await db.prepare("SELECT value FROM settings WHERE key = 'timezone'")
-    .first().catch(() => null))?.value || 'UTC';
-
-  const ds = await loadDataset(db, {
-    from: addDays(from, -1), to: addDays(to, 1), now: nowIn(timezone),
-  });
+  // The dataset brings its own clock, which is what keeps the stored day for a
+  // shift starting at ten tonight from being written as an absence this
+  // morning — and the absence notice, and the run-of-three alarm behind it,
+  // from going out about somebody who is not due for another twelve hours.
+  const ds = await loadDataset(db, { from: addDays(from, -1), to: addDays(to, 1) });
   const ids = staffIds && staffIds.length
     ? staffIds.filter((id) => ds.staffById.has(id))
     : ds.staff.filter((s) => s.active).map((s) => s.id);

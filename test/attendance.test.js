@@ -83,6 +83,9 @@ function dataset(overrides = {}) {
       { key: 'att_leave_days', value: '15' },
       ...(overrides.settings ?? []),
     ],
+    // Left undefined unless a test freezes it, so the ordinary case here is
+    // the ordinary case in the app: the dataset takes its own clock.
+    now: overrides.now,
     patterns: overrides.patterns ?? [],
     roster: overrides.roster ?? [],
     punches: overrides.punches ?? [],
@@ -1054,6 +1057,24 @@ test('a shift that has not started is not an absence', () => {
   assert.equal(colourFor(record, new Map()), 'grey');
   assert.equal(labelFor(record, new Map()), 'Not due yet');
   assert.equal(isOpen(record), false, 'and nothing for anybody to decide');
+});
+
+test('the dataset carries a clock without being handed one', () => {
+  // The bug this is here for: only the Today screen passed a clock, so every
+  // other screen read this morning's later shifts as absences.
+  const ds = dataset();
+  assert.match(ds.now, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+  assert.equal(dataset({ now: null }).now, null, 'and a caller can still take it away');
+});
+
+test('a range reads a shift that has not started yet as upcoming', () => {
+  const ds = dataset({
+    now: '2026-06-16 04:00',
+    roster: [{ staff_id: 1, day: '2026-06-16', shift_id: 1, published: 1 }],
+  });
+  const [record] = computeRange(ds, 1, '2026-06-16', '2026-06-16');
+  assert.equal(record.status, 'upcoming');
+  assert.equal(record.reason_code, null);
 });
 
 test('grace is included before anybody is called late', () => {

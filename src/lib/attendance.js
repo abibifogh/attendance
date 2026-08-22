@@ -9,7 +9,7 @@
 // then which shift a punch belongs to, then what a day was, then what to say
 // about it, then what a month of them adds up to.
 
-import { addDays, daysInMonth, diffDays, dow, rangeDays, startOfWeek } from '../util/dates.js';
+import { addDays, daysInMonth, diffDays, dow, nowIn, rangeDays, startOfWeek } from '../util/dates.js';
 
 // A fixed point to count days from, so a punch at 23:50 on Monday and one at
 // 00:10 on Tuesday are eight hundred and something and eight hundred and
@@ -1444,7 +1444,7 @@ export function withObservedDays(holidays) {
  * thousand rows a year — and a report on last week has no business reading them
  * all.
  */
-export async function loadDataset(db, { from, to, now = null } = {}) {
+export async function loadDataset(db, { from, to, now } = {}) {
   const [staff, shifts, patterns, roster, punches, days, reasons, holidays, leave, settings, calendars] = await Promise.all([
     db.prepare('SELECT * FROM att_staff ORDER BY name').all(),
     db.prepare('SELECT * FROM att_shifts ORDER BY sort_order, name').all(),
@@ -1545,10 +1545,12 @@ export function makeDataset(raw) {
     settings,
     timezone: settings.timezone || 'UTC',
     rotationAnchor: settings.att_rotation_anchor || ROTATION_ANCHOR,
-    // 'YYYY-MM-DD HH:MM' in the property's own time, when the caller supplies
-    // one. Its only job is to stop today's later shifts being called absent
-    // before they have begun.
-    now: raw.now ?? null,
+    // 'YYYY-MM-DD HH:MM' in the property's own time. Its only job is to stop
+    // today's later shifts being read as absences before they have begun, and
+    // that is true on every screen, so it is taken from the clock here rather
+    // than left to each caller to remember. A caller that wants time frozen
+    // still passes its own.
+    now: raw.now === undefined ? nowIn(settings.timezone || 'UTC') : raw.now,
     staff,
     shifts,
     reasons: raw.reasons ?? [],
