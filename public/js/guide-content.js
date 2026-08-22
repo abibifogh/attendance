@@ -698,6 +698,24 @@ export const GUIDE = [
         + 'history is one nobody can be held to. Reopening a month takes back the payslips and '
         + 'exactly the advance deductions the payroll recorded, and nothing else.' },
 
+      { sub: 'The payslip' },
+      { p: 'One page, always. It is drawn at A4 and everything on it shrinks together until it '
+        + 'fits, so somebody with a dozen allowances and two advances running gets smaller type '
+        + 'rather than a second sheet that will be separated from the first and lost.' },
+      { steps: [
+        'Press any row in the month for that person\u2019s payslip.',
+        'Print or save as PDF from the bar at the top.',
+        'Or press "All N payslips" on the month itself, which lays out everybody, one page each, '
+          + 'ready for the printer.',
+      ] },
+      { p: 'It is headed by the company: the logo, the name, the registered name if it differs, '
+        + 'the address, a telephone number, the TIN and the employer\u2019s SSNIT number. Set '
+        + 'those under Setup, then Company. Anything left blank there is simply left off the '
+        + 'page rather than printed as an empty label.' },
+      { note: 'Earnings on the left, deductions on the right, the net in the band between them, '
+        + 'and the working underneath: how the bonus came out and which tax band each part of '
+        + 'the pay fell in. Somebody who wants to check the figure can.' },
+
       { sub: 'What the app works out' },
       { list: [
         'SSNIT: 5.5% from the worker and 13% from the property, on basic salary, and the '
@@ -1111,6 +1129,7 @@ export const GUIDE = [
       { table: {
         head: ['Tab', 'What lives there'],
         rows: [
+          ['Company', 'Who the employer is: name, logo, address, telephone, TIN, SSNIT number'],
           ['Staff', 'People, and the employee number that must match the terminal exactly'],
           ['Shifts', 'What "late" is measured against. Banded by department'],
           ['Absence reasons', 'What each kind of absence costs'],
@@ -1120,6 +1139,17 @@ export const GUIDE = [
           ['Workload', 'What counts as too much here — four from the law, four your own'],
         ],
       } },
+
+      { sub: 'Who the employer is' },
+      { p: 'The first tab, and the one everything printed depends on. The name and address head '
+        + 'every contract and letter; the logo, the registered name, the telephone number, the '
+        + 'TIN and the SSNIT employer number head every payslip.' },
+      { p: 'Both numbers earn their place. Somebody querying a deduction at a SSNIT branch is '
+        + 'asked for the employer number, and the answer should be on the paper in their hand '
+        + 'rather than a telephone call away.' },
+      { note: 'The logo is best as a PNG with a transparent background. It is shrunk to about '
+        + '600 pixels across on the way in, which is more than a payslip can show. Without one '
+        + 'a payslip is headed by the name alone.' },
 
       { sub: 'Several shifts, one job' },
       { p: 'A shift is what lateness is measured against, so a breakfast that finishes at two, '
@@ -1133,9 +1163,9 @@ export const GUIDE = [
       { p: 'Nothing about the shifts themselves changes: the hours, the grace and every day '
         + 'already recorded against them stay exactly as they were. Only the rota groups them. '
         + 'Ticking them again and choosing "Its own position" undoes it.' },
-      { warn: 'Set the property’s name and address first. They head every contract and '
-        + 'every letter, and until they are set the letters go out with a placeholder where the '
-        + 'employer’s name should be.' },
+      { warn: 'Set the company\u2019s name and address first, under Company. They head every '
+        + 'contract, letter and payslip, and until they are set those go out with a placeholder '
+        + 'where the employer\u2019s name should be.' },
       { sub: 'The terminal’s clock' },
       { p: 'Checked on every tap. A device running eleven minutes fast turns an on-time arrival '
         + 'into lateness for everybody, every day, and nobody notices for a month — so the '

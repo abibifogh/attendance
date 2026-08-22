@@ -560,6 +560,10 @@ export async function bootstrap(ctx) {
         // What this property considers a sustainable rota. Read on the setup
         // screen, and by the rota when it marks somebody as overworked.
         || key.startsWith('wl_')
+        // Who the employer is. Every one of these prints on a payslip and on
+        // the head of a report, so they travel with the bootstrap rather than
+        // being fetched again by each screen that needs them.
+        || key.startsWith('company_')
         || ['timezone', 'property_name', 'property_address', 'hr_link_days'].includes(key)),
     ),
     open: Number(open?.n ?? 0),

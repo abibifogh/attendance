@@ -6,6 +6,7 @@ import { ghanaHolidays, toMinutes } from '../lib/attendance.js';
 import { listeningHostSettings } from '../lib/push-events.js';
 import { claimOrphans, hashDeviceToken, recompute } from '../lib/attendance-ingest.js';
 import { getPepper } from '../lib/auth.js';
+import { asBytes, fromBase64 } from '../lib/files.js';
 import { addDays, isDay, todayIn } from '../util/dates.js';
 
 /**
@@ -769,6 +770,18 @@ export async function deleteDevice(ctx, id) {
 // Rules
 // ---------------------------------------------------------------------------
 
+/**
+ * The settings that may be emptied as well as filled in.
+ *
+ * Everywhere else a blank field means the form did not carry that setting, and
+ * saving one screen would wipe another. These are optional particulars on one
+ * screen, and there has to be a way to take one back off a payslip.
+ */
+const CLEARABLE = new Set([
+  'property_address', 'company_legal_name', 'company_phone', 'company_email',
+  'company_website', 'company_tin', 'company_ssnit',
+]);
+
 const SETTINGS = new Map([
   ['att_missing_punch', (v) => {
     if (!['incomplete', 'absent', 'auto_close'].includes(v)) {
@@ -797,6 +810,18 @@ const SETTINGS = new Map([
   // than in whatever the first migration happened to seed.
   ['property_name', (v) => str(v, 'Property name', { required: true, max: 120 })],
   ['property_address', (v) => str(v, 'Property address', { max: 300 })],
+
+  // The rest of what a payslip has to carry. The trading name above is what
+  // everybody calls the place; the registered name is what is on the
+  // certificate, and the two are often not the same. Both numbers are quoted
+  // back at the property by whoever is checking a deduction, so a slip that
+  // does not carry them sends people to the office to ask.
+  ['company_legal_name', (v) => str(v, 'Registered name', { max: 160, fallback: '' })],
+  ['company_phone', (v) => str(v, 'Telephone', { max: 60, fallback: '' })],
+  ['company_email', (v) => str(v, 'Email', { max: 120, fallback: '' })],
+  ['company_website', (v) => str(v, 'Website', { max: 120, fallback: '' })],
+  ['company_tin', (v) => str(v, 'TIN', { max: 40, fallback: '' })],
+  ['company_ssnit', (v) => str(v, 'SSNIT employer number', { max: 40, fallback: '' })],
   ['hr_link_days', (v) => String(int(v, 'How long a link lasts', { min: 1, max: 90 }))],
 
   // Whether a member of staff sees how much leave they have left on their own
@@ -923,6 +948,17 @@ export async function updateSettings(ctx) {
   for (const [key, validate] of SETTINGS) {
     const short = key.replace(/^att_/, '');
     const value = body[key] ?? body[short];
+    // Blank usually means "not on this form", so it is skipped. For the
+    // handful of particulars that are genuinely optional, blank means blank:
+    // a property that types a website in and then stops having one has to be
+    // able to take it off the payslip again.
+    if (value === '' && CLEARABLE.has(key)) {
+      statements.push(ctx.db.prepare(
+        "INSERT INTO settings (key, value) VALUES (?1, '') ON CONFLICT(key) DO UPDATE SET value = ''",
+      ).bind(key));
+      changed.push(key);
+      continue;
+    }
     if (value == null || value === '') continue;
     statements.push(ctx.db.prepare(
       'INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2',
@@ -959,4 +995,92 @@ export async function recomputeRange(ctx) {
   const result = await recompute(ctx.db, { from, to });
   await audit(ctx, 'attendance.recompute', null, { from, to, days: result.days });
   return json({ ok: true, from, to, ...result });
+}
+
+// ---------------------------------------------------------------------------
+// The company logo
+// ---------------------------------------------------------------------------
+
+/** Rather more than a logo ever is, and small enough not to matter. */
+const LOGO_LIMIT = 600_000;
+
+/**
+ * Put the property's mark on file.
+ *
+ * One image, one row, replaced rather than versioned. Nothing here needs a
+ * history: a property changes its logo once a decade, and a payslip printed
+ * last March is a piece of paper somebody already has.
+ */
+export async function setCompanyLogo(ctx) {
+  const body = await readJson(ctx.request);
+
+  const mime = str(body.mime, 'File type', { max: 80 }) || 'image/png';
+  if (!mime.startsWith('image/')) {
+    throw badRequest('A logo has to be a picture. A PNG with a transparent background '
+      + 'sits best on a payslip.');
+  }
+
+  let bytes;
+  try {
+    bytes = fromBase64(body.content);
+  } catch {
+    throw badRequest('That picture did not arrive in one piece. Try again.');
+  }
+  if (!bytes.length) throw badRequest('There was nothing in that picture.');
+  if (bytes.length > LOGO_LIMIT) {
+    throw badRequest(`That picture is ${Math.round(bytes.length / 1000)} KB and the limit is `
+      + `${Math.round(LOGO_LIMIT / 1000)} KB. Export it about 600 pixels across.`);
+  }
+
+  const stamp = new Date().toISOString();
+  await ctx.db.batch([
+    ctx.db.prepare(
+      `INSERT INTO company_logo (id, mime, bytes, content, uploaded_by)
+       VALUES (1, ?1, ?2, ?3, ?4)
+       ON CONFLICT (id) DO UPDATE SET
+         mime = ?1, bytes = ?2, content = ?3, uploaded_by = ?4,
+         uploaded_at = datetime('now')`,
+    ).bind(mime, bytes.length, bytes, `${ctx.session.user.name} (${ctx.session.user.role})`),
+    // The stamp is what a browser holding yesterday's logo asks against.
+    ctx.db.prepare(
+      "INSERT INTO settings (key, value) VALUES ('company_logo_at', ?1) "
+      + 'ON CONFLICT (key) DO UPDATE SET value = ?1',
+    ).bind(stamp),
+  ]);
+
+  await audit(ctx, 'company.logo', null, { bytes: bytes.length, mime });
+  return json({ ok: true, at: stamp, bytes: bytes.length });
+}
+
+/** Take it off again. Payslips fall back to the name alone. */
+export async function removeCompanyLogo(ctx) {
+  await ctx.db.batch([
+    ctx.db.prepare('DELETE FROM company_logo WHERE id = 1'),
+    ctx.db.prepare("INSERT INTO settings (key, value) VALUES ('company_logo_at', '') "
+      + "ON CONFLICT (key) DO UPDATE SET value = ''"),
+  ]);
+  await audit(ctx, 'company.logo_remove', null, {});
+  return json({ ok: true });
+}
+
+/**
+ * The picture itself.
+ *
+ * Readable by anybody signed in, because it heads a payslip and a report and
+ * neither is worth a permission of its own. It is the mark the property prints
+ * on paper that leaves the building.
+ */
+export async function companyLogo(ctx) {
+  const row = await ctx.db.prepare('SELECT mime, content FROM company_logo WHERE id = 1')
+    .first().catch(() => null);
+  if (!row) throw notFound('No logo has been uploaded.');
+
+  return new Response(asBytes(row.content), {
+    headers: {
+      'Content-Type': row.mime || 'image/png',
+      // The address carries the stamp it was uploaded at, so a year is safe
+      // and a new logo appears at once.
+      'Cache-Control': 'private, max-age=31536000, immutable',
+    },
+  });
 }

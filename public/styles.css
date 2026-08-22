@@ -2847,19 +2847,137 @@ html { touch-action: manipulation; }
   .compose-bar-end { margin-left: 0; }
 }
 
-/* Printing a letter: the page and nothing else. */
+/* Printing a letter or a payslip: the page and nothing else. */
 @media print {
   .compose-bar, .compose-page-no, .compose-safe, .preview-bar { display: none !important; }
   .preview-shade { position: static; background: none; padding: 0; overflow: visible; }
-  .preview-pages, .paper-stack { gap: 0; }
+  .preview-pages, .paper-stack { gap: 0; padding: 0; }
+  .preview-wrap { gap: 0; max-width: none; }
   .paper-scale, .paper-scale-inner { width: auto !important; height: auto !important; transform: none !important; position: static !important; }
-  .paper-page {
+  .paper-page, .slip-page {
     box-shadow: none;
     width: 210mm !important; height: 297mm !important;
     page-break-after: always; break-after: page;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
+  /* The rest of the app is still in the document behind the overlay, and it
+     would otherwise print as a first page nobody asked for. */
+  body:has(.preview-shade) > *:not(.preview-shade) { display: none !important; }
+  /* The last page must not push a blank sheet out of the printer. */
+  .preview-pages > *:last-child,
+  .preview-pages > *:last-child .paper-page,
+  .preview-pages > *:last-child .slip-page { page-break-after: auto; break-after: auto; }
 }
+
+/* ===================================================================== */
+/* The payslip: one sheet of A4, and everything on it sized off one figure
+   that shrinks until it fits. Nothing here is in px except the page, so a
+   slip with eleven allowances comes out smaller rather than longer. */
+.slip-page {
+  position: relative;
+  flex: none;
+  background: #fff;
+  color: #14181f;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+/* Nothing a real payroll produces gets here. When something does, the page
+   grows rather than losing a line off the bottom. */
+.slip-page.is-overlong { height: auto !important; min-height: 1123px; }
+.slip-page.is-overlong .slip-fit { height: auto; overflow: visible; min-height: 1123px; }
+.slip-fit {
+  --slip-fit: 1;
+  font-size: calc(var(--slip-fit) * 11.5px);
+  line-height: 1.45;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  height: 100%;
+  padding: 3.6em 3.4em;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5em;
+}
+
+/* Who paid them */
+.slip-company { display: flex; align-items: flex-start; gap: 1.4em; }
+.slip-logo { max-height: 5.4em; max-width: 14em; object-fit: contain; flex: none; }
+.slip-company-words { min-width: 0; }
+.slip-company-name { font-size: 1.55em; font-weight: 700; letter-spacing: -.01em; line-height: 1.15; }
+.slip-company-legal { font-size: .92em; color: #5b6472; font-style: italic; }
+.slip-company-line { font-size: .92em; color: #4b5563; }
+
+/* Payslip · March 2026 · Draft */
+.slip-banner {
+  display: flex; align-items: baseline; gap: .9em;
+  border-top: 2px solid #14181f; border-bottom: 1px solid #d5d9e0;
+  padding: .5em 0;
+}
+.slip-banner-what { font-size: 1.15em; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+.slip-banner-when { font-size: 1.05em; color: #4b5563; margin-left: auto; }
+.slip-stamp {
+  border: 1px solid #b9812a; color: #8a5d12; background: #fdf6e8;
+  border-radius: 999px; padding: .1em .7em;
+  font-size: .78em; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+}
+.slip-stamp.is-final { border-color: #1f7a4d; color: #14603a; background: #eaf7f0; }
+
+/* Name, department, number */
+.slip-who { display: grid; grid-template-columns: repeat(4, 1fr); gap: .9em; }
+.slip-who-label {
+  font-size: .74em; letter-spacing: .09em; text-transform: uppercase; color: #6b7280;
+}
+.slip-who-value { font-size: 1.02em; font-weight: 600; }
+
+/* Earnings and deductions */
+.slip-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5em 2.4em; }
+.slip-col { min-width: 0; }
+.slip-col-head {
+  margin: 0 0 .35em;
+  font-size: .78em; font-weight: 700; letter-spacing: .11em; text-transform: uppercase;
+  color: #6b7280; border-bottom: 1px solid #d5d9e0; padding-bottom: .25em;
+}
+.slip-page .slip-table { width: 100%; border-collapse: collapse; font-size: 1em; }
+.slip-page .slip-table td { padding: .22em 0; vertical-align: top; border: 0; }
+.slip-page .slip-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.slip-page .slip-table small { display: block; font-size: .8em; color: #6b7280; }
+.slip-page .slip-table tr.slip-sum td { border-top: 1px solid #14181f; padding-top: .3em; }
+
+/* The figure everybody looks at first */
+.slip-netband {
+  display: flex; align-items: baseline; gap: 1em;
+  background: #14181f; color: #fff;
+  border-radius: .35em; padding: .6em 1.1em;
+}
+.slip-netband-label {
+  font-size: .82em; letter-spacing: .14em; text-transform: uppercase; opacity: .8;
+}
+.slip-netband-value {
+  margin-left: auto; font-size: 1.7em; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+
+.slip-working { font-size: .9em; }
+.slip-note { margin: 0 0 .4em; font-size: .92em; color: #4b5563; }
+
+/* What it cost, and the sentence at the bottom */
+.slip-foot { margin-top: auto; border-top: 1px solid #d5d9e0; padding-top: .6em; }
+.slip-cost {
+  display: flex; gap: 1.6em; flex-wrap: wrap;
+  font-size: .92em; font-variant-numeric: tabular-nums;
+}
+.slip-small { margin: .45em 0 0; font-size: .82em; color: #6b7280; }
+
+/* The company tab: four cards, two by two, so the logo does not sit alone on
+   a row of its own. */
+.company-grid { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+@media (min-width: 1100px) { .company-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* The logo, on the setup screen */
+.logo-shows {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2, #f3f4f6); border-radius: var(--radius);
+  padding: 1rem; margin-bottom: .6rem;
+}
+.logo-preview { max-height: 90px; max-width: 100%; object-fit: contain; }
 /* The letter on its own page in the register: the paper, centred, with room
    around it so it reads as a document rather than as part of the screen. */
 .letter-paper { display: flex; justify-content: center; padding: .4rem 0; }

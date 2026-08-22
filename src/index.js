@@ -248,6 +248,12 @@ export const ROUTES = [
   ['PUT', '/api/att/settings', 'att_setup', attSetup.updateSettings],
   ['POST', '/api/att/recompute', 'att_setup', attSetup.recomputeRange],
 
+  // The property's mark. Set by whoever sets the property up, and read by
+  // anybody signed in, because it heads their own payslip.
+  ['POST', '/api/att/company/logo', 'att_setup', attSetup.setCompanyLogo],
+  ['DELETE', '/api/att/company/logo', 'att_setup', attSetup.removeCompanyLogo],
+  ['GET', '/api/company/logo', 'att_me', attSetup.companyLogo],
+
   // -------------------------------------------------------------- records --
   ['GET', '/api/hr/model', 'hr_view', people.peopleModel],
   ['GET', '/api/hr/people', 'hr_view', people.listPeople],
@@ -715,8 +721,13 @@ async function me(ctx) {
   const session = await getSession(ctx.request, ctx.env, ctx.db);
   if (!session) return json({ authenticated: false });
 
+  // Who the property is, sent with the session because the header shows the
+  // name on every screen and a payslip prints the rest of it. Nine short
+  // strings and a timestamp: cheaper than a second request from every screen
+  // that heads a piece of paper.
   const settings = await ctx.db.prepare(
-    "SELECT key, value FROM settings WHERE key IN ('property_name','timezone')",
+    "SELECT key, value FROM settings WHERE key = 'timezone' OR key = 'property_name' "
+    + "OR key = 'property_address' OR key LIKE 'company_%'",
   ).all();
 
   return json({

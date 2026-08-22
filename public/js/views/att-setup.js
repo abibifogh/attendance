@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { replaceParams } from '../app.js';
-import { fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
+import { confirmAction, fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import {
   byPosition, field, formDialog, shiftColour, shiftColourPicker,
@@ -16,6 +16,7 @@ import {
  */
 
 const TABS = [
+  ['company', 'Company'],
   ['staff', 'Staff'],
   ['shifts', 'Shifts'],
   ['reasons', 'Absence reasons'],
@@ -39,6 +40,7 @@ export async function renderAttSetup(params) {
     h('button', { class: tab === key ? 'active' : '', onclick: () => reload(key) }, label)));
 
   const body = await {
+    company: companyTab,
     staff: staffTab,
     shifts: shiftsTab,
     reasons: reasonsTab,
@@ -61,6 +63,173 @@ export async function renderAttSetup(params) {
   );
 
   return host;
+}
+
+// ---------------------------------------------------------------------------
+// The company
+// ---------------------------------------------------------------------------
+
+/**
+ * Who the employer is, on paper.
+ *
+ * A payslip is the one thing this app prints that somebody carries out of the
+ * building and shows to a bank, a landlord or SSNIT. It has to say which
+ * company paid them, where that company is, and how to reach it. None of that
+ * was anywhere in here, so a slip came out with a name and nothing else.
+ *
+ * The two numbers earn their place for the same reason. Somebody querying a
+ * deduction at a SSNIT branch is asked for the employer number, and the answer
+ * should be on the paper in their hand rather than a phone call away.
+ */
+async function companyTab(reload) {
+  const data = await api.attBootstrap();
+  const s = data.settings;
+
+  const form = h('form.att-rules');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await api.attUpdateSettings(Object.fromEntries(new FormData(form).entries()));
+      toast('Saved.', 'good');
+      await reload('company');
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  });
+
+  const text = (name, label, value, hint, extra = {}) => h('label.field',
+    h('span', label),
+    h('input', { type: 'text', name, maxlength: 160, value: value ?? '', ...extra }),
+    hint ? h('small.muted', hint) : null);
+
+  form.append(
+    h('div.grid.company-grid',
+      card('Name and address', { note: 'The head of every payslip, contract and letter' },
+        text('property_name', 'Name', s.property_name, 'What everybody calls the place',
+          { required: true, maxlength: 120 }),
+        text('company_legal_name', 'Registered name', s.company_legal_name,
+          'Only if the certificate says something different. Left blank, the name above is used'),
+        h('label.field',
+          h('span', 'Address'),
+          h('textarea', { name: 'property_address', rows: 3, maxlength: 300 },
+            s.property_address ?? ''),
+          h('small.muted', 'One line to a line, the way it should print')),
+      ),
+
+      card('How to reach it', { note: 'Printed small, under the address' },
+        text('company_phone', 'Telephone', s.company_phone, 'The office number somebody rings '
+          + 'about a figure they do not recognise', { maxlength: 60, inputmode: 'tel' }),
+        text('company_email', 'Email', s.company_email, '', { maxlength: 120 }),
+        text('company_website', 'Website', s.company_website, '', { maxlength: 120 }),
+      ),
+
+      card('Numbers', { note: 'Quoted back at you by whoever is checking a deduction' },
+        text('company_tin', 'TIN', s.company_tin,
+          'The Taxpayer Identification Number the GRA issued', { maxlength: 40 }),
+        text('company_ssnit', 'SSNIT employer number', s.company_ssnit,
+          'What a member of staff is asked for at a SSNIT branch', { maxlength: 40 }),
+      ),
+
+      logoCard(s, reload),
+    ),
+
+    h('div.btn-row', { style: { marginTop: '.8rem' } },
+      h('button.btn.btn-primary', { type: 'submit' }, 'Save')),
+  );
+
+  return form;
+}
+
+/**
+ * The logo.
+ *
+ * Its own card and its own request, because it is bytes rather than a setting
+ * and because it should not be able to fail a save of the address.
+ */
+function logoCard(s, reload) {
+  const has = Boolean(s.company_logo_at);
+  const picker = h('input', {
+    type: 'file', accept: 'image/png,image/jpeg,image/webp', style: { display: 'none' },
+  });
+  const status = h('span.muted', { style: { fontSize: '.85rem' } }, '');
+
+  picker.addEventListener('change', async () => {
+    const file = picker.files?.[0];
+    picker.value = '';
+    if (!file) return;
+    try {
+      status.textContent = 'Reading it\u2026';
+      const picked = await readLogo(file);
+      await api.attSetLogo(picked);
+      toast('Logo saved.', 'good');
+      await reload('company');
+    } catch (err) {
+      status.textContent = '';
+      toast(err.message, 'bad');
+    }
+  });
+
+  return card('Logo', { note: has ? 'On every payslip' : 'Not set' },
+    has
+      ? h('div.logo-shows',
+        h('img.logo-preview', {
+          src: `/api/company/logo?v=${encodeURIComponent(s.company_logo_at)}`,
+          alt: `${s.property_name || 'The property'} logo`,
+        }))
+      : h('p.muted', { style: { fontSize: '.85rem' } },
+        'Without one a payslip is headed by the name alone, which is fine and looks '
+        + 'plainer than it needs to.'),
+
+    h('p.muted', { style: { fontSize: '.85rem' } },
+      'A PNG with a transparent background sits best. It is shrunk to about 600 pixels '
+      + 'across on the way in, which is more than a payslip can show.'),
+
+    h('div.btn-row',
+      h('button.btn-sm', { type: 'button', onclick: () => picker.click() },
+        has ? 'Replace it' : 'Upload one'),
+      has
+        ? h('button.btn-sm', {
+          type: 'button',
+          onclick: async () => {
+            if (!confirmAction('Take the logo off? Payslips go back to the name alone.')) return;
+            try {
+              await api.attRemoveLogo();
+              toast('Taken off.', 'good');
+              await reload('company');
+            } catch (err) {
+              toast(err.message, 'bad');
+            }
+          },
+        }, 'Take it off')
+        : null,
+      picker, status));
+}
+
+/** Read a logo, shrink it, and keep its transparency. */
+async function readLogo(file) {
+  const LIMIT = 600_000;
+  if (!file.type.startsWith('image/')) throw new Error('A logo has to be a picture.');
+
+  const bitmap = await createImageBitmap(file);
+  // 600 across covers the biggest a payslip prints it at three hundred dots to
+  // the inch, and keeps the file small enough to travel with every slip.
+  const scale = Math.min(1, 600 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+  // PNG first, because a logo on a transparent background put on a white one
+  // grows a grey box the moment it is turned into a JPEG.
+  const tries = [['image/png', undefined], ['image/jpeg', 0.9], ['image/jpeg', 0.75]];
+  for (const [mime, quality] of tries) {
+    const url = canvas.toDataURL(mime, quality);
+    const bytes = Math.round((url.length - url.indexOf(',') - 1) * 0.75);
+    if (bytes <= LIMIT) {
+      return { content: url.split(',')[1], mime, bytes };
+    }
+  }
+  throw new Error('That picture is too large even after shrinking. Export it 600 pixels across.');
 }
 
 // ---------------------------------------------------------------------------
@@ -1324,21 +1493,7 @@ async function rulesTab(reload) {
       // Who this property is. It goes on every contract issued and on the head
       // of every printed report, so it belongs on a screen rather than in
       // whatever the first migration happened to seed.
-      card('This property', { note: 'Goes on contracts and printouts' },
-        h('label.field',
-          h('span', 'Name'),
-          h('input', {
-            type: 'text', name: 'property_name', maxlength: 120, required: true,
-            value: s.property_name ?? '',
-          }),
-          h('small.muted', 'Exactly as it should read on a contract'),
-        ),
-        h('label.field',
-          h('span', 'Address'),
-          h('textarea', { name: 'property_address', rows: 2, maxlength: 300 },
-            s.property_address ?? ''),
-          h('small.muted', 'Used as the employer\u2019s address on contracts and letters'),
-        ),
+      card('Links', { note: 'How long a link to a member of staff lasts' },
         h('label.field',
           h('span', 'A link to a member of staff lasts'),
           h('input', {
@@ -1347,6 +1502,9 @@ async function rulesTab(reload) {
           }),
           h('small.muted', 'Days before a details or signing link stops working'),
         ),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'The property\u2019s own name, address and logo moved to the Company tab, '
+          + 'where the rest of what goes on a payslip is set.'),
       ),
 
       card('When a punch is missing', { note: 'The decision that matters most' },

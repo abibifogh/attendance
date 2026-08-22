@@ -7,6 +7,7 @@ import { field, formDialog, showSheet } from './att-shared.js';
 import { replaceParams } from '../app.js';
 import { printReport } from '../print.js';
 import { niceMonth } from './att-advances.js';
+import { companyOf, payslipPage, showPayslips } from './payslip.js';
 
 /**
  * The payroll.
@@ -98,10 +99,12 @@ export async function renderAttPayroll(params) {
         note: closed ? 'closed' : 'a draft — it moves when anything behind it moves',
         actions: h('div.btn-row',
           h('button.btn-sm', { onclick: () => printReport({
-            title: `Payroll — ${niceMonth(month)}`,
+            title: `Payroll, ${niceMonth(month)}`,
             subtitle: data.property || '',
             note: `${data.rates.label}. ${closed ? 'Closed' : 'Draft'}.`,
-          }) }, 'Print'),
+          }) }, 'Print this table'),
+          h('button.btn-sm', { onclick: () => openAllSlips(data, month) },
+            `All ${data.lines.length} payslips`),
           closed
             ? null
             : h('button.btn.btn-primary', {
@@ -177,115 +180,28 @@ export async function renderAttPayroll(params) {
 // --------------------------------------------------------------------------
 
 /**
- * One payslip, with its working.
+ * One payslip, as the page it will be printed on.
  *
- * Earnings, then what came off, then what it cost the property — in that order
- * because that is the order the questions come in. The bonus carries its own
- * little ledger: what each scheme paid, what was docked and why, and what
- * grossing it up cost, since a person told "your bonus was 400" and handed a
- * payslip saying 421.05 deserves the sentence that connects them.
+ * The paper itself is in payslip.js, because a slip is drawn the same whether
+ * it is opened from here or printed twenty-four at a time.
  */
-function openSlip(line, data, month, reload) {
-  const cash = (n) => money(n, data.currency);
-  const b = line.bonus;
+function openSlip(line, data, month) {
+  const page = payslipPage({ line, data, month: { key: month, nice: niceMonth(month) } });
+  showPayslips([page], {
+    title: line.staff.name,
+    subtitle: `${niceMonth(month)} · ${data.status === 'final' ? 'closed' : 'draft'}`,
+  });
+}
 
-  const rows = (title, list) => h('div.slip-block',
-    h('h3.slip-head', title),
-    h('table.slip-table', h('tbody', list.filter(Boolean).map(([label, value, note]) => h('tr',
-      h('td', label, note ? h('small.muted', ` ${note}`) : null),
-      h('td.num', value))))));
-
-  showSheet({
-    title: `${line.staff.name} — ${niceMonth(month)}`,
-    body: h('div.slip',
-      h('div.slip-top',
-        h('div',
-          h('div.slip-name', line.staff.name),
-          h('div.muted', [line.staff.department, line.staff.employeeNo ? `No. ${line.staff.employeeNo}` : null]
-            .filter(Boolean).join(' · '))),
-        h('div.slip-net',
-          h('small.muted', 'Net pay'),
-          h('div.slip-net-value', cash(line.net)))),
-
-      rows('Earnings', [
-        ['Basic salary', cash(line.basic)],
-        ...line.allowances.map((a) => [a.name, cash(a.amount), a.taxable ? null : '(not taxed)']),
-        b.gross ? ['Bonus', cash(b.gross), `(${cash(b.net)} in hand, grossed up)`] : null,
-        ['Gross pay', h('strong', cash(line.gross))],
-      ]),
-
-      b.earned || b.docked
-        ? h('div.slip-block',
-          h('h3.slip-head', 'How the bonus came out'),
-          h('table.slip-table', h('tbody',
-            ...b.schemes.map((s) => h('tr',
-              h('td', s.name, h('small.muted', ` ${cash(s.award)} at ${fmtNum(s.score, 0)}%`)),
-              h('td.num', cash(s.amount)))),
-            b.docked
-              ? h('tr.slip-off',
-                h('td', 'Less deductions for misconduct'),
-                h('td.num', `− ${cash(b.docked)}`))
-              : null,
-            b.notTaken
-              ? h('tr',
-                h('td', h('small.muted', 'More was docked than the bonus could carry')),
-                h('td.num', h('small.muted', cash(b.notTaken))))
-              : null,
-            h('tr.slip-sum',
-              h('td', h('strong', 'Bonus in hand')),
-              h('td.num', h('strong', cash(b.net)))),
-            h('tr',
-              h('td', 'Grossed up so the tax on it is the property’s',
-                h('small.muted', b.atFinalRate
-                  ? ` ${fmtNum(data.rates.bonusFinalRate * 100, 0)}% final rate`
-                  : ' at the graduated rates')),
-              h('td.num', cash(b.gross))))))
-        : null,
-
-      rows('Taken off', [
-        line.ssnit.qualifies
-          ? [`SSNIT (${fmtNum(data.rates.ssnitEmployee * 100, 1)}% of basic)`, `− ${cash(line.ssnit.employee)}`]
-          : ['SSNIT', h('span.muted', 'does not apply')],
-        ['PAYE', `− ${cash(line.paye.total)}`,
-          b.gross ? `(${cash(line.paye.onSalary)} on pay, ${cash(line.paye.onBonus)} on the bonus)` : null],
-        ...line.loans.map((l) => ['Salary advance', `− ${cash(l.amount)}`,
-          l.left ? `(${cash(l.left)} was left)` : null]),
-        ['Net pay', h('strong', cash(line.net))],
-      ]),
-
-      h('details.slip-working',
-        h('summary', 'How the tax was worked out'),
-        h('p.muted', { style: { fontSize: '.85rem' } },
-          `Chargeable income is ${cash(line.chargeable)}: gross pay less the SSNIT contribution`
-          + (b.atGraduated ? ', with the part of the bonus above the year’s 15% ceiling added' : '')
-          + `. ${data.rates.label}.`),
-        h('table.slip-table', h('tbody',
-          ...line.paye.steps.map((step) => h('tr',
-            h('td', `${cash(step.amount)} at ${fmtNum(step.rate * 100, step.rate * 100 % 1 ? 1 : 0)}%`),
-            h('td.num', cash(step.tax)))),
-          b.finalTax
-            ? h('tr',
-              h('td', `Bonus of ${cash(b.atFinalRate)} at `
-                + `${fmtNum(data.rates.bonusFinalRate * 100, 0)}% (final tax)`),
-              h('td.num', cash(b.finalTax)))
-            : null,
-          h('tr.slip-sum',
-            h('td', h('strong', 'PAYE')),
-            h('td.num', h('strong', cash(line.paye.total))))))),
-
-      rows('What it costs the property', [
-        ['Gross pay', cash(line.gross)],
-        line.ssnit.qualifies
-          ? [`Employer SSNIT (${fmtNum(data.rates.ssnitEmployer * 100, 0)}% of basic)`, cash(line.ssnit.employer)]
-          : null,
-        ['Cost to company', h('strong', cash(line.employerCost))],
-      ]),
-
-      h('p.muted', { style: { fontSize: '.8rem' } },
-        data.status === 'final'
-          ? 'This month is closed, so this payslip is a record and will not change.'
-          : 'This month is still open, so these figures move if anything behind them moves.'),
-    ),
+/** Everybody's, one page each, ready for the printer. */
+function openAllSlips(data, month) {
+  const company = companyOf();
+  const pages = data.lines.map((line) => payslipPage({
+    line, data, month: { key: month, nice: niceMonth(month) }, company,
+  }));
+  showPayslips(pages, {
+    title: `${data.lines.length} payslips`,
+    subtitle: `${niceMonth(month)} · one page each`,
   });
 }
 

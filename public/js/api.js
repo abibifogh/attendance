@@ -293,6 +293,8 @@ export const api = {
   attDeleteDevice: (id) => request(`/api/att/devices/${id}`, { method: 'DELETE' }),
 
   attUpdateSettings: (body) => request('/api/att/settings', { method: 'PUT', body }),
+  attSetLogo: (body) => request('/api/att/company/logo', { method: 'POST', body }),
+  attRemoveLogo: () => request('/api/att/company/logo', { method: 'DELETE' }),
   attRecompute: (body) => request('/api/att/recompute', { method: 'POST', body }),
 
   // ------------------------------------------------------ employee records --
