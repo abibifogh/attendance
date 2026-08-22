@@ -6,7 +6,7 @@ import {
   progressOf, referenceFor, salutationFor, verifyChain,
 } from '../src/lib/correspondence.js';
 import {
-  CHUNK, joinChunks, partsFor, sha256Hex, sizeOf, splitIntoChunks,
+  CHUNK, asBytes, joinChunks, partsFor, sha256Hex, sizeOf, splitIntoChunks,
 } from '../src/lib/files.js';
 
 /**
@@ -233,4 +233,41 @@ test('a fingerprint is stable and 64 characters', async () => {
   assert.equal(a.length, 64);
   assert.equal(a, await sha256Hex('Dear Sir or Madam'));
   assert.notEqual(a, await sha256Hex('Dear Sir or Madam.'));
+});
+
+// ---------------------------------------------------------------------------
+// What a driver hands back
+// ---------------------------------------------------------------------------
+
+/**
+ * Every stored file in this app went through `asBytes`, and for a long time it
+ * quietly refused the one shape production actually uses.
+ *
+ * D1's documentation says a BLOB comes back as an ArrayBuffer. It comes back
+ * as a plain array of numbers. Refusing that returned an empty body with the
+ * right content type, which a browser draws as a broken image and never
+ * explains, and every test passed because `node:sqlite` hands back a
+ * Uint8Array like a reasonable person.
+ */
+test('bytes come back whatever shape the driver used', () => {
+  const want = Uint8Array.from([137, 80, 78, 71, 0, 255]);
+
+  assert.deepEqual(asBytes(want), want, 'a Uint8Array');
+  assert.deepEqual(asBytes(want.buffer.slice(0)), want, 'an ArrayBuffer');
+  // What D1 actually gives you, and the one that was being dropped.
+  assert.deepEqual(asBytes([137, 80, 78, 71, 0, 255]), want, 'an array of numbers');
+  // A Buffer is already a Uint8Array, so it comes back as itself; what
+  // matters is the bytes, not which subclass carried them.
+  assert.deepEqual([...asBytes(Buffer.from(want))], [...want], 'a Node Buffer');
+
+  assert.equal(asBytes(null), null);
+  assert.equal(asBytes(undefined), null);
+  assert.equal(asBytes('not bytes'), null);
+});
+
+test('a file split and rejoined survives the D1 shape', () => {
+  const bytes = Uint8Array.from({ length: CHUNK + 1234 }, (_, i) => i % 256);
+  // Stored, then read back the way D1 reads it back.
+  const asD1 = splitIntoChunks(bytes).map((chunk) => [...chunk]);
+  assert.deepEqual(joinChunks(asD1), bytes);
 });

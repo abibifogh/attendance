@@ -38,11 +38,29 @@ export function joinChunks(chunks) {
   return out;
 }
 
-/** A database driver may hand back either; the rest of the code should not care. */
+/**
+ * Bytes, out of whatever shape the driver felt like handing back.
+ *
+ * THIS IS NOT DEFENSIVENESS, IT IS A BUG THAT COST US EVERY STORED FILE. D1's
+ * own documentation says a BLOB column comes back as an ArrayBuffer. It does
+ * not: it comes back as a plain array of numbers, and has done for years
+ * (cloudflare/workers-sdk#8642). Returning null for that shape meant every
+ * file this app keeps — a logo, a letterhead, a scanned contract, a receipt —
+ * was served as an empty body with the right content type, which a browser
+ * draws as a broken image and never explains.
+ *
+ * It passed every test, because `node:sqlite` hands back a Uint8Array like a
+ * reasonable person. The lesson is in the list below rather than in a comment
+ * anywhere else: accept all four, and never trust one driver's shape.
+ */
 export function asBytes(value) {
   if (value == null) return null;
   if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  // Any other view over a buffer — a Buffer under Node, a DataView.
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  // What D1 actually gives you.
+  if (Array.isArray(value)) return Uint8Array.from(value);
   return null;
 }
 
