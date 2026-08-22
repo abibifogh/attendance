@@ -2678,3 +2678,193 @@ html { touch-action: manipulation; }
   .pay-table td:nth-child(n+4):nth-child(-n+8) { display: none; }
   .slip-net-value { font-size: 1.35rem; }
 }
+
+/* --------------------------------------------------------------------------
+   A letter, as the page it will be
+   One renderer draws this in the composer, the preview, the register and the
+   page a supplier opens. Everything inside is laid out against a fixed A4 at
+   96 dots to the inch; zoom is a transform on the outside, so what is on
+   screen is what comes out of the printer.
+-------------------------------------------------------------------------- */
+.paper-stack { display: grid; gap: 1.2rem; justify-items: center; }
+.paper-page {
+  position: relative;
+  background: #fff;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  color: #111;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .08), 0 18px 46px -22px rgba(16, 24, 40, .45);
+  overflow: hidden;
+}
+.paper-scale { position: relative; overflow: hidden; }
+.paper-scale-inner { transform-origin: top left; position: absolute; top: 0; left: 0; }
+
+.paper-block {
+  position: absolute;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+.paper-block p { margin: 0 0 .55em; }
+.paper-block p:last-child { margin-bottom: 0; }
+.paper-block ul, .paper-block ol { margin: 0 0 .55em; padding-left: 1.4em; }
+.paper-block h1, .paper-block h2, .paper-block h3 { margin: 0 0 .4em; font-size: 1.15em; }
+
+/* The signature area is drawn rather than stored as a block: it is not
+   something anybody may move after a letter has been signed. */
+.paper-signatures {
+  position: absolute; left: 10%; right: 10%; bottom: 12%;
+  display: flex; gap: 3rem; flex-wrap: wrap; align-items: flex-end;
+}
+.paper-sign { position: relative; min-width: 12rem; }
+.paper-ink { display: block; max-height: 68px; max-width: 220px; }
+.paper-ink-space { height: 42px; }
+.paper-stamp { position: absolute; right: -1.5rem; bottom: 1rem; max-height: 96px; opacity: .85; }
+.paper-sign-rule { border-top: 1px solid #333; margin-top: .2rem; }
+.paper-sign-name { font-size: 10pt; font-weight: 600; margin-top: .2rem; }
+.paper-sign-title, .paper-sign-when { font-size: 9pt; color: #555; }
+
+/* --------------------------------------------------------------------------
+   Writing a letter
+   The page is the screen. A bar of type controls above it, the property's own
+   paper below, and the words where they will actually print.
+-------------------------------------------------------------------------- */
+.compose-bar {
+  position: sticky; top: var(--topbar-h); z-index: 5;
+  display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
+  padding: .5rem .6rem; margin-bottom: 1rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.compose-bar-group { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+.compose-bar-end { margin-left: auto; }
+.compose-ref { font-variant-numeric: tabular-nums; }
+.compose-status { font-size: .8rem; color: var(--text-faint); min-width: 4rem; text-align: right; }
+/* Width stated, because the app's base rule stretches a select to its
+   container and a toolbar of full-width selects is not a toolbar. */
+.compose-face, .compose-pt, .compose-line {
+  width: auto; flex: 0 0 auto; padding: .25rem .4rem; font-size: .82rem;
+}
+.compose-face { min-width: 6rem; }
+.compose-pt { min-width: 4.6rem; }
+.compose-line { min-width: 5.5rem; }
+.compose-bar-group > .btn-sm { flex: 0 0 auto; }
+.compose-align.on { background: var(--accent-soft); border-color: var(--accent); }
+.compose-align { padding-left: .5rem; padding-right: .5rem; }
+
+/* The four alignment buttons, drawn as the lines they produce. */
+.compose-align-mark { display: flex; flex-direction: column; gap: 2px; width: 15px; }
+.compose-align-mark i { display: block; height: 2px; border-radius: 1px; background: currentColor; }
+.compose-align-mark i:nth-child(1) { width: 100%; }
+.compose-align-mark i:nth-child(2) { width: 64%; }
+.compose-align-mark i:nth-child(3) { width: 100%; }
+.compose-align-mark i:nth-child(4) { width: 78%; }
+.compose-align-mark[data-align='center'] { align-items: center; }
+.compose-align-mark[data-align='right'] { align-items: flex-end; }
+.compose-align-mark[data-align='justify'] i { width: 100%; }
+
+.compose-canvas { display: grid; gap: 1.4rem; justify-items: center; }
+.compose-sheet { display: grid; gap: .3rem; justify-items: center; }
+.compose-page-no { font-size: .75rem; color: var(--text-faint); }
+
+/* The safe area of the letterhead, so nobody has to guess where the crest
+   ends. Drawn only while editing — it is not part of the letter. */
+.compose-safe {
+  position: absolute; pointer-events: none;
+  border: 1px dashed rgba(47, 109, 246, .5);
+  border-radius: 2px;
+}
+
+/* A block being written in. The outline appears on hover and stays while it
+   is selected, so the page reads as a letter until somebody reaches for it. */
+.paper-live { outline: 1px solid transparent; cursor: text; }
+.paper-live:hover { outline-color: rgba(47, 109, 246, .35); }
+.paper-live.paper-on, .paper-live:focus { outline: 1.5px solid var(--accent); outline-offset: 2px; }
+.paper-live:focus { box-shadow: 0 0 0 4px rgba(47, 109, 246, .08); }
+
+.compose-grip, .compose-size {
+  position: absolute; display: none;
+  width: 18px; height: 18px; border-radius: 4px;
+  background: var(--accent); color: #fff;
+  font-size: 11px; line-height: 18px; text-align: center;
+  user-select: none; touch-action: none;
+}
+.compose-grip { left: -22px; top: 0; cursor: grab; }
+.compose-size { right: -22px; bottom: 0; cursor: ew-resize; }
+.compose-size::after { content: '↔'; }
+.paper-live.paper-on .compose-grip, .paper-live.paper-on .compose-size,
+.paper-live:focus .compose-grip, .paper-live:focus .compose-size { display: block; }
+.compose-moving { cursor: grabbing; }
+
+/* Choosing the paper. */
+.head-choices { display: flex; gap: .6rem; flex-wrap: wrap; }
+.head-choice {
+  position: relative; width: 8rem; padding: .3rem;
+  display: grid; gap: .25rem; justify-items: center;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.head-choice.on { border-color: var(--accent); background: var(--accent-soft); }
+.head-choice img, .head-blank {
+  width: 100%; aspect-ratio: 210 / 297; object-fit: cover;
+  background: #fff; border: 1px solid var(--border); border-radius: 2px;
+}
+.head-choice small { font-size: .75rem; }
+.head-edit {
+  position: absolute; top: .2rem; right: .2rem;
+  width: 1.4rem; height: 1.4rem; line-height: 1.4rem; text-align: center;
+  border-radius: 50%; background: var(--surface-2); font-size: .8rem;
+}
+.head-preview { position: relative; max-width: 22rem; margin: 0 auto; }
+.head-preview img { width: 100%; display: block; border: 1px solid var(--border); }
+.head-safe { position: absolute; border: 1px dashed var(--accent); background: rgba(47,109,246,.06); }
+.head-handle {
+  position: absolute; width: 16px; height: 16px; margin: -8px;
+  border-radius: 50%; background: var(--accent); touch-action: none; cursor: grab;
+}
+.head-handle[data-edge="top"] { top: 0; left: 50%; }
+.head-handle[data-edge="bottom"] { bottom: -8px; left: 50%; margin-bottom: 0; }
+.head-handle[data-edge="left"] { left: 0; top: 50%; }
+.head-handle[data-edge="right"] { right: -8px; top: 50%; margin-right: 0; }
+
+/* The preview: the letter, at size, over everything else. */
+.preview-shade {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(9, 12, 18, .72);
+  overflow: auto; padding: 1rem;
+}
+.preview-wrap { max-width: 950px; margin: 0 auto; display: grid; gap: 1rem; }
+.preview-bar {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
+  padding: .6rem .8rem; border-radius: var(--radius);
+  background: var(--surface); box-shadow: var(--shadow);
+}
+.preview-bar .btn-row { margin-left: auto; }
+.preview-pages { display: grid; gap: 1rem; justify-items: center; padding-bottom: 2rem; }
+
+@media (max-width: 640px) {
+  .compose-bar { position: static; }
+  .compose-bar-end { margin-left: 0; }
+}
+
+/* Printing a letter: the page and nothing else. */
+@media print {
+  .compose-bar, .compose-page-no, .compose-safe, .preview-bar { display: none !important; }
+  .preview-shade { position: static; background: none; padding: 0; overflow: visible; }
+  .preview-pages, .paper-stack { gap: 0; }
+  .paper-scale, .paper-scale-inner { width: auto !important; height: auto !important; transform: none !important; position: static !important; }
+  .paper-page {
+    box-shadow: none;
+    width: 210mm !important; height: 297mm !important;
+    page-break-after: always; break-after: page;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+}
+/* The letter on its own page in the register: the paper, centred, with room
+   around it so it reads as a document rather than as part of the screen. */
+.letter-paper { display: flex; justify-content: center; padding: .4rem 0; }
+/* The letter on the page a supplier opens: the same paper, sized to whatever
+   they are holding. */
+.sign-paper { display: flex; justify-content: center; }
+/* A letter laid out on headed paper wants the room A4 wants. */
+.invite.on-paper .invite-inner { max-width: 56rem; }

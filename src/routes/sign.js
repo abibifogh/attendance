@@ -3,6 +3,7 @@ import { getPepper, hashPin, throttleCheck, throttleFail } from '../lib/auth.js'
 import { sendEmail } from '../lib/notify.js';
 import { sha256Hex } from '../lib/files.js';
 import { currentSigner } from '../lib/correspondence.js';
+import { normaliseLayout } from '../lib/paper.js';
 import { appendEvent, hashAccessCode, hashSignToken } from './correspondence.js';
 
 /**
@@ -138,6 +139,11 @@ export async function signOpen(ctx, token) {
     ? await ctx.db.prepare('SELECT label, image FROM corr_stamp WHERE id = ?').bind(letter.stamp_id).first()
     : null;
 
+  const letterhead = letter.letterhead_id
+    ? await ctx.db.prepare('SELECT * FROM corr_letterhead WHERE id = ?')
+      .bind(letter.letterhead_id).first().catch(() => null)
+    : null;
+
   return json({
     property: await property(ctx.db),
     you: { name: recipient.name, role: recipient.role, status: recipient.status },
@@ -149,6 +155,21 @@ export async function signOpen(ctx, token) {
       subject: letter.subject,
       source: letter.source,
       body: letter.body,
+      // The letter as it was laid out, so the person signing sees the same
+      // page the property printed rather than a plain-text rendering of it.
+      // The words were cleaned when they were saved; nothing here trusts
+      // them a second time, but nothing here has to clean them either.
+      layout: normaliseLayout(letter.layout),
+      letterhead: letterhead
+        ? {
+          image: `/api/s/${encodeURIComponent(token)}/letterhead`,
+          margins: {
+            top: letterhead.margin_top, right: letterhead.margin_right,
+            bottom: letterhead.margin_bottom, left: letterhead.margin_left,
+          },
+          laterPages: Boolean(letterhead.later_pages),
+        }
+        : null,
       hash: letter.body_hash,
       fileId: letter.file_id,
       signedBy: letter.signed_by,
@@ -171,33 +192,66 @@ function maskEmail(address) {
   return `${user.slice(0, 1)}${'•'.repeat(Math.max(2, user.length - 1))}@${host}`;
 }
 
+/**
+ * The letterhead behind the letter, for whoever holds this token.
+ *
+ * Reachable only through the token, like everything else on this page: the
+ * paper is not secret, but a public URL for it would be one more thing to
+ * think about and there is nothing to gain from having one.
+ */
+export async function signLetterhead(ctx, token) {
+  const { letter } = await recipientFor(ctx, token);
+  const missing = 'There is no letterhead on this letter.';
+  if (!letter.letterhead_id) throw notFound(missing);
+
+  const row = await ctx.db.prepare(
+    'SELECT f.* FROM corr_letterhead h JOIN corr_file f ON f.id = h.file_id WHERE h.id = ?',
+  ).bind(letter.letterhead_id).first();
+  if (!row) throw notFound(missing);
+
+  return new Response(await wholeFile(ctx.db, row), {
+    headers: {
+      'Content-Type': row.mime || 'image/jpeg',
+      // The same paper on every page of every letter this recipient opens.
+      'Cache-Control': 'private, max-age=3600',
+    },
+  });
+}
+
 /** The letter itself, for a recipient who was sent one as a file. */
 export async function signFile(ctx, token) {
   const { letter } = await recipientFor(ctx, token);
-  if (!letter.file_id) throw notFound('There is no file on this letter.');
+  const missing = 'There is no file on this letter.';
+  if (!letter.file_id) throw notFound(missing);
 
   const row = await ctx.db.prepare('SELECT * FROM corr_file WHERE id = ?').bind(letter.file_id).first();
-  if (!row) throw notFound('There is no file on this letter.');
+  if (!row) throw notFound(missing);
 
-  const chunks = [row.content];
-  for (let seq = 1; seq < Number(row.parts ?? 1); seq += 1) {
-    const part = await ctx.db.prepare('SELECT content FROM corr_file_part WHERE file_id = ? AND seq = ?')
-      .bind(row.id, seq).first();
-    if (part) chunks.push(part.content);
-  }
-
-  const total = chunks.reduce((n, c) => n + (c?.length ?? 0), 0);
-  const out = new Uint8Array(total);
-  let at = 0;
-  for (const chunk of chunks) { if (chunk) { out.set(chunk, at); at += chunk.length; } }
-
-  return new Response(out, {
+  return new Response(await wholeFile(ctx.db, row), {
     headers: {
       'Content-Type': row.mime || 'application/pdf',
       'Content-Disposition': 'inline',
       'Cache-Control': 'private, no-store',
     },
   });
+}
+
+/** Put a stored file back together out of its 700 KB rows. */
+async function wholeFile(db, row) {
+  const chunks = [row.content];
+  for (let seq = 1; seq < Number(row.parts ?? 1); seq += 1) {
+    const part = await db.prepare('SELECT content FROM corr_file_part WHERE file_id = ? AND seq = ?')
+      .bind(row.id, seq).first();
+    if (!part) break;
+    chunks.push(part.content);
+  }
+
+  const bytes = chunks.filter(Boolean)
+    .map((c) => (c instanceof ArrayBuffer ? new Uint8Array(c) : c));
+  const out = new Uint8Array(bytes.reduce((n, b) => n + b.length, 0));
+  let at = 0;
+  for (const part of bytes) { out.set(part, at); at += part.length; }
+  return out;
 }
 
 /**

@@ -632,10 +632,10 @@ export const GUIDE = [
       { p: 'Set the year’s allowances opens one form with everybody on it. Tick who qualifies, '
         + 'type what they get, and there is a box at the top to give everybody ticked the same '
         + 'figure at once. Press it once and the year is set.' },
-      { p: 'The starting balance is separate from the allowance, and it is what somebody '
-        + 'actually has to spend. Less than the allowance where part of the year has already '
-        + 'been claimed on paper; more where something unused was carried over from last year. '
-        + 'Leave it blank and it is simply the allowance.' },
+      { p: 'The starting balance is what somebody actually has to spend: this year’s allowance '
+        + 'plus anything carried forward from the previous period. Leave it blank where there '
+        + 'is nothing to carry. Fill it in where there is — or where part of the year has '
+        + 'already been claimed on paper, in which case it is less than the allowance.' },
       { note: 'Unticking somebody takes the year off them and leaves their claims alone. What '
         + 'was paid does not stop being true because the arrangement ended.' },
 
@@ -1011,17 +1011,68 @@ export const GUIDE = [
     permission: 'corr_view',
     lede: 'The correspondence register: what went out, to whom, and what came back.',
     blocks: [
-      { p: 'Every letter gets a reference the moment it exists — SN/FIN/2026/0041 — and never '
+      { p: 'Every letter gets a reference the moment it exists, SN/FIN/2026/0041, and never '
         + 'reuses one. Set a reply-due date and the register chases you about it; that first '
         + 'red tile is the whole reason the register exists.' },
-      { sub: 'Sending one out for signature' },
+
+      { sub: 'Your letterhead' },
+      { p: 'Upload the same headed paper you already print on. A photograph of a printed sheet '
+        + 'works, though a scan or the artwork itself looks better. The page is A4 and the '
+        + 'image is stretched to fill it, so give it a full page rather than a cropped strip.' },
       { steps: [
-        'Draft it, or start from a template.',
+        'Open any letter and press Choose a letterhead.',
+        'Upload one, name it, and say whether new letters should start on it.',
+        'Press Set the safe area and drag the four edges in until the dashed rectangle clears '
+          + 'your logo and your footer.',
+      ] },
+      { p: 'That dashed rectangle is the safe area, and it shows while you write. Nothing '
+        + 'outside it is meant to carry words, so a block dragged out there will print over the '
+        + 'letterhead itself. If your headed paper is only used for the first page, leave '
+        + '"Use the same paper for second and later pages" unticked and page two comes out '
+        + 'plain.' },
+
+      { sub: 'Writing one' },
+      { p: 'Open the page and the letter appears on the letterhead exactly as it will print. '
+        + 'Reference, date, address, subject, body and the sign-off each sit in their own block, '
+        + 'so you can move any of them without disturbing the rest.' },
+      { table: {
+        head: ['To do this', 'How'],
+        rows: [
+          ['Type', 'Click into a block and write. It saves itself every few seconds'],
+          ['Move a block', 'Drag the small handle at its top left corner'],
+          ['Make it wider or narrower', 'Drag the handle at its bottom right corner'],
+          ['Change the typeface or size', 'Select the block, then use the toolbar'],
+          ['Bold, italic, underline, bullets', 'Select the words first, then the toolbar'],
+          ['Line spacing and alignment', 'Applies to the whole selected block'],
+          ['Add somewhere else to write', '+ Text puts a new block on the page'],
+          ['A second page', '+ Page, then drag blocks onto it'],
+        ],
+      } },
+      { note: 'Preview shows the finished pages at their real proportions with nothing to drag. '
+        + 'Print or save as PDF from there gives you the same thing on paper.' },
+
+      { sub: 'Who signs it' },
+      { p: 'Done asks one question, and the answer decides what happens next.' },
+      { table: {
+        head: ['Answer', 'What follows'],
+        rows: [
+          ['I sign it for the property', 'Your own signature, after you confirm it is you'],
+          ['Send it out for signature', 'A link for each person who has to sign it back'],
+          ['Both', 'You sign first, and it goes out only if you did'],
+          ['Neither yet', 'It stays a draft and nothing is sent'],
+        ],
+      } },
+      { steps: [
         'Send for signature, and list the signers in the order they should sign.',
         'Copy each link and send it to that person.',
-        'Give each of them their six-character access code separately — on a call, not in the '
-          + 'same message.',
+        'Give each of them their six-character access code separately, on a call rather than '
+          + 'in the same message.',
       ] },
+      { p: 'Whoever opens the link sees the letter on your letterhead, laid out the way you '
+        + 'left it, not a bare wall of text.' },
+      { warn: 'Once a letter leaves draft the layout is fixed. Signatures are counted against '
+        + 'the words that were on the page at the time, so a page that could still be rearranged '
+        + 'afterwards would make the signature worthless.' },
       { note: 'Every letter carries a hash-linked record of everything that happened to it, so '
         + 'a page altered after the fact breaks the chain and the register says where.' },
     ],

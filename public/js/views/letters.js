@@ -219,10 +219,11 @@ async function compose(data, reload) {
       field('Attach a letter written elsewhere', picker,
         h('span', { 'data-file-note': '' }, '')),
 
-      field('Or write it here', h('textarea', {
-        name: 'body', rows: 12, maxlength: 40000,
-        placeholder: 'Dear Sir or Madam,\n\n…\n\nYours faithfully,',
-      })),
+      field('How it opens', h('textarea', {
+        name: 'body', rows: 5, maxlength: 40000,
+        placeholder: 'Dear Sir or Madam,',
+      }), 'Optional. The next screen is the letter itself, on the property’s paper, and this '
+        + 'is only what it starts with'),
 
       model.templates.length
         ? field('From a template', h('select', { name: 'templateId' },
@@ -254,7 +255,9 @@ async function compose(data, reload) {
 
   if (done) {
     toast(`Created as ${done.reference}.`, 'good');
-    navigate('letter', { id: done.id });
+    // Straight to the page it will be. A letter written here is laid out here;
+    // one that arrived as a file has nothing to lay out.
+    navigate(file ? 'letter' : 'letter-compose', { id: done.id });
     await reload();
   }
 }

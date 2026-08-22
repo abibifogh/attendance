@@ -5,11 +5,12 @@ import { DatabaseSync } from 'node:sqlite';
 
 import {
   addEnclosure, closeLetter, createLetter, dispatchLetter, getFile, getLetter,
-  listLetters, listStamps, revokeRecipient, saveMySignature, saveParty,
+  letterheadImage, listLetterheads, listLetters, listStamps, removeLetterhead,
+  revokeRecipient, saveLetterhead, saveMySignature, saveParty,
   saveStamp, sendForSignature, signChallenge, signLetter, updateLetter, voidLetter,
 } from '../src/routes/correspondence.js';
 import {
-  signDecline, signDocument, signHead, signOpen,
+  signDecline, signDocument, signHead, signLetterhead, signOpen,
 } from '../src/routes/sign.js';
 import { verifyChain } from '../src/lib/correspondence.js';
 import { getPepper, hashPin } from '../src/lib/auth.js';
@@ -567,4 +568,161 @@ test('dispatch records how it went and when', async () => {
   assert.equal(sent.sent_via, 'courier');
   assert.ok(sent.sent_at);
   assert.match(events.find((e) => e.kind === 'dispatched').detail, /courier/);
+});
+
+// ---------------------------------------------------------------------------
+// The letterhead and the layout
+// ---------------------------------------------------------------------------
+
+/** A one-pixel PNG, which is all the routes care about. */
+const PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+async function addHead(db, extra = {}) {
+  return read(await saveLetterhead(ctx(db, {
+    body: {
+      name: 'Somewhere Nice headed',
+      content: PIXEL,
+      mime: 'image/png',
+      filename: 'head.png',
+      makeDefault: true,
+      ...extra,
+    },
+  })));
+}
+
+test('a letterhead is a picture, and new letters start on the default one', async () => {
+  const { db } = await setup();
+  const added = await addHead(db);
+  assert.ok(added.id);
+
+  const { letterheads, defaultId } = await read(await listLetterheads(ctx(db)));
+  assert.equal(letterheads.length, 1);
+  assert.equal(defaultId, added.id);
+  assert.deepEqual(letterheads[0].margins, { top: 22, right: 10, bottom: 14, left: 10 });
+
+  const letter = await draft(db);
+  const { letter: full } = await read(await getLetter(ctx(db), letter.id));
+  assert.equal(full.letterhead.id, added.id, 'picked up without anybody choosing it');
+  assert.ok(full.layout.blocks.length, 'and opened with something to edit rather than blank');
+
+  const image = await letterheadImage(ctx(db), added.id);
+  assert.equal(image.headers.get('Content-Type'), 'image/png');
+});
+
+test('a PDF is refused, because the composer draws the page itself', async () => {
+  const { db } = await setup();
+  await assert.rejects(
+    saveLetterhead(ctx(db, {
+      body: { name: 'Scanned', content: PIXEL, mime: 'application/pdf', filename: 'head.pdf' },
+    })),
+    /picture/,
+  );
+});
+
+test('margins that meet in the middle leave nowhere to write', async () => {
+  const { db } = await setup();
+  await assert.rejects(
+    saveLetterhead(ctx(db, {
+      body: {
+        name: 'All margin', content: PIXEL, mime: 'image/png',
+        margins: { top: 45, bottom: 45, left: 5, right: 5 },
+      },
+    })),
+    /no room/,
+  );
+
+  // Right up to the line is allowed: 40 and 40 still leaves a fifth of the page.
+  const fine = await read(await saveLetterhead(ctx(db, {
+    body: {
+      name: 'Tight', content: PIXEL, mime: 'image/png',
+      margins: { top: 40, bottom: 40, left: 5, right: 5 },
+    },
+  })));
+  assert.ok(fine.id);
+});
+
+test('the safe area can be moved later without touching the picture', async () => {
+  const { db } = await setup();
+  const added = await addHead(db);
+  await saveLetterhead(ctx(db, {
+    body: { name: 'Somewhere Nice headed', margins: { top: 30, right: 12, bottom: 18, left: 12 } },
+  }), added.id);
+
+  const { letterheads } = await read(await listLetterheads(ctx(db)));
+  assert.deepEqual(letterheads[0].margins, { top: 30, right: 12, bottom: 18, left: 12 });
+});
+
+test('a letterhead taken out of use stops being offered', async () => {
+  const { db } = await setup();
+  const added = await addHead(db);
+  await removeLetterhead(ctx(db), added.id);
+  const { letterheads } = await read(await listLetterheads(ctx(db)));
+  assert.equal(letterheads.length, 0);
+});
+
+test('the layout is saved, and the words are read back out of it', async () => {
+  const { db } = await setup();
+  await addHead(db);
+  const letter = await draft(db);
+
+  await updateLetter(ctx(db, {
+    body: {
+      subject: 'Outstanding invoice 4471',
+      layout: {
+        blocks: [
+          { id: 'a', role: 'body', page: 1, x: 10, y: 45, w: 80, html: '<p>We write again about invoice 4471.</p>' },
+          { id: 'b', role: 'sign', page: 1, x: 10, y: 78, w: 40, html: '<p>Yours faithfully</p>' },
+        ],
+      },
+    },
+  }), letter.id);
+
+  const { letter: full } = await read(await getLetter(ctx(db), letter.id));
+  assert.equal(full.layout.blocks.length, 2);
+  assert.match(full.body, /invoice 4471/);
+  assert.doesNotMatch(full.body, /<p>/, 'stored as words, not as markup');
+});
+
+test('the layout is fixed once the letter has left draft', async () => {
+  const { db } = await setup();
+  await saveMySignature(ctx(db, {
+    body: { ...PIN, displayName: 'Ama Boateng', jobTitle: 'Manager', ink: 'data:image/png;base64,AAA' },
+  }));
+  const letter = await draft(db);
+  await signLetter(ctx(db, { body: PIN }), letter.id);
+
+  await assert.rejects(
+    updateLetter(ctx(db, {
+      body: { subject: 'Outstanding invoice 4471', layout: { blocks: [] } },
+    }), letter.id),
+    /fixed/,
+  );
+});
+
+test('whoever signs sees the same page the property laid out', async () => {
+  const { db } = await setup();
+  await addHead(db);
+  const letter = await draft(db);
+  const out = await sendOut(db, letter.id, [{ name: 'Kwame Mensah', code: false }]);
+  const token = tokenOf(out.recipients[0]);
+
+  const opened = await read(await signOpen(outside(db, {}), token));
+  assert.ok(opened.letter.layout.blocks.length, 'the blocks, not a wall of plain text');
+  assert.equal(opened.letter.letterhead.image, `/api/s/${token}/letterhead`);
+  assert.deepEqual(opened.letter.letterhead.margins, { top: 22, right: 10, bottom: 14, left: 10 });
+
+  const paper = await signLetterhead(outside(db, {}), token);
+  assert.equal(paper.headers.get('Content-Type'), 'image/png');
+  assert.ok((await paper.arrayBuffer()).byteLength > 0, 'and the paper itself comes back');
+});
+
+test('a letter on no letterhead has none to fetch', async () => {
+  const { db } = await setup();
+  const letter = await draft(db);
+  const out = await sendOut(db, letter.id, [{ name: 'Kwame Mensah', code: false }]);
+  const token = tokenOf(out.recipients[0]);
+
+  const opened = await read(await signOpen(outside(db, {}), token));
+  assert.equal(opened.letter.letterhead, null);
+  await assert.rejects(signLetterhead(outside(db, {}), token), /no letterhead/);
 });

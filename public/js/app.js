@@ -29,6 +29,7 @@ import { renderGuide } from './views/guide.js';
 import { renderContract } from './views/contract.js';
 import { renderLetters } from './views/letters.js';
 import { renderLetter } from './views/letter.js';
+import { renderLetterCompose } from './views/letter-compose.js';
 import { renderLetterParties } from './views/letter-parties.js';
 import { renderLetterSigning } from './views/letter-signing.js';
 import { BRAND, brandMark } from './brand.js';
@@ -93,6 +94,8 @@ const ROUTES = [
   { path: 'people-form', label: 'What to ask for', permission: 'hr_manage', render: renderPeopleForm, hidden: true },
   { path: 'contract', label: 'Contract', permission: 'hr_view', render: renderContract, hidden: true },
   { path: 'letter', label: 'Letter', permission: 'corr_view', render: renderLetter, hidden: true },
+  // Writing one. Its own screen rather than a dialog: the page is the point.
+  { path: 'letter-compose', label: 'Write', permission: 'corr_write', render: renderLetterCompose, hidden: true },
   { path: 'letter-parties', label: 'Address book', permission: 'corr_view', render: renderLetterParties, hidden: true },
   { path: 'letter-signing', label: 'Signature & stamp', permission: 'corr_view', render: renderLetterSigning, hidden: true },
 ];

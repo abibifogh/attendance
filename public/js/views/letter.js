@@ -1,11 +1,12 @@
 import { api } from '../api.js';
 import { fmtDay, h, mount, toast } from '../util.js';
 import { card, emptyState, table } from './components.js';
-import { can, navigate } from '../app.js';
+import { can, navigate, replaceParams } from '../app.js';
 import { field, formDialog } from './att-shared.js';
 import { signaturePad } from '../fields.js';
 import { printButton } from '../print.js';
 import { asBase64 } from './letters.js';
+import { paper } from './letter-paper.js';
 import { confirmItIsYou } from './letter-signing.js';
 
 /**
@@ -48,6 +49,27 @@ export async function renderLetter(params) {
   const { letter, recipients, events, chain, progress } = data;
   const model = await api.corrModel();
   const reload = async () => mount(host, await renderLetter({ id }));
+
+  // The composer ends by asking how the letter is signed and sends the answer
+  // here, because this is where both of those actions already live with the
+  // re-authentication and the recipient list they need. Opened once, then the
+  // answer is taken out of the address so a refresh does not ask again.
+  const then = ['self', 'invite', 'both'].includes(params.then) ? params.then : null;
+  if (then) {
+    replaceParams('letter', { id });
+    queueMicrotask(async () => {
+      if (then === 'self' || then === 'both') {
+        const signed = await signIt(data, reload);
+        // Both means one after the other, and only if the first happened.
+        if (then === 'both' && signed) {
+          const fresh = await api.corrLetter(id);
+          await sendOut({ ...fresh, canWrite: data.canWrite, canSign: data.canSign }, model, reload);
+        }
+        return;
+      }
+      await sendOut(data, model, reload);
+    });
+  }
 
   const status = model.statuses[letter.status] ?? { label: letter.status, colour: 'grey' };
 
@@ -126,7 +148,16 @@ export async function renderLetter(params) {
           h('p.muted.no-print', { style: { fontSize: '.85rem' } },
             h('a', { href: api.corrFileUrl(letter.file_id), target: '_blank', rel: 'noopener' },
               'Open it in a new tab'), ' to print it.'))
-        : h('div.contract-body', letter.body || ''),
+        : letter.layout?.blocks?.length
+          // As the page it will be, rather than as a wall of text. The same
+          // renderer the composer and the signing page use, so what is filed
+          // here is provably what was signed there.
+          ? h('div.letter-paper', paper({
+            ...letter,
+            stamp: data.stamp?.image ?? null,
+            signedRecipients: recipients.filter((r) => r.signedAt),
+          }, { scale: 0.86 }))
+          : h('div.contract-body', letter.body || ''),
 
       letter.signed_at || recipients.some((r) => r.signedAt)
         ? h('div.sig-block',
@@ -281,6 +312,11 @@ function actions(data, model, reload) {
     out.push(h('button.btn-sm', { onclick: () => enclose(data, reload) }, 'Add an enclosure'));
     out.push(h('button.btn-sm', { onclick: () => finish(data, reload) }, 'Close'));
   }
+  if (canWrite && letter.status === 'draft' && letter.source !== 'uploaded') {
+    out.unshift(h('button.btn-sm', {
+      onclick: () => navigate('letter-compose', { id: letter.id }),
+    }, 'Open the page'));
+  }
   if (canWrite && letter.status === 'draft') {
     out.push(h('button.btn-sm', { onclick: () => withdraw(data, reload) }, 'Withdraw'));
   }
@@ -344,6 +380,9 @@ async function signIt(data, reload) {
   });
 
   if (done) { toast('Signed.', 'good'); await reload(); }
+  // Said out loud so "both" knows whether the second half should happen: a
+  // letter nobody signed should not then be sent out as if somebody had.
+  return Boolean(done);
 }
 
 /** Turn what was typed into something the server can check. */

@@ -1,5 +1,39 @@
 import { h, mount, toast } from './util.js';
 import { signaturePad } from './fields.js';
+import { PAGE_W, paper } from './views/letter-paper.js';
+
+/**
+ * Fit a page of A4 into whatever is in front of somebody.
+ *
+ * Measured off the box it will sit in rather than off the window, because the
+ * card it goes in is narrower than the window and a page drawn to the window
+ * hangs out over both edges of it.
+ */
+const paperScale = (box) => {
+  const room = (box?.clientWidth || Math.min(window.innerWidth, 900)) - 8;
+  return Math.min(1, Math.max(0.2, Math.round((room / PAGE_W) * 1000) / 1000));
+};
+
+/**
+ * Draw the letter, and draw it again when the box it is in settles.
+ *
+ * The first draw happens before any of this is in the document, so there is
+ * nothing to measure yet and the page comes out full size. Watching the box is
+ * cheaper than guessing at it, and it covers a phone being turned sideways.
+ */
+function paperInto(letter) {
+  const box = h('div.sign-paper');
+  const draw = () => {
+    const scale = paperScale(box);
+    if (box.dataset.scale === String(scale)) return;
+    box.dataset.scale = String(scale);
+    mount(box, paper(letter, { scale }));
+  };
+  draw();
+  if (typeof ResizeObserver === 'function') new ResizeObserver(draw).observe(box);
+  else window.addEventListener('resize', draw);
+  return box;
+}
 
 /**
  * Somebody outside the property, opening a link to sign a letter.
@@ -216,6 +250,10 @@ function draw() {
 
   const readOnly = packet.you.role === 'copy';
 
+  // A form reads best narrow and a letter reads best at the width it was
+  // written on, so the shell widens for one and not the other.
+  root.classList.toggle('on-paper', Boolean(packet.letter.layout?.blocks?.length));
+
   mount(root, shell(packet.property,
     h('div.card',
       h('h2', packet.letter.subject),
@@ -234,7 +272,19 @@ function draw() {
           h('p.muted', 'Your browser will not show this here. ',
             h('a', { href: `/api/s/${encodeURIComponent(token)}/file`, target: '_blank', rel: 'noopener' },
               'Open the document'), '.'))
-        : h('pre.contract-text', packet.letter.body || ''),
+        // The letter as the property laid it out, on its own paper, drawn by
+        // the same renderer the composer used. Somebody asked to put their
+        // name to a document should be looking at the document.
+        : packet.letter.layout?.blocks?.length
+          ? paperInto({
+            ...packet.letter,
+            signature_ink: packet.letter.signatureInk,
+            signed_by: packet.letter.signedBy,
+            signed_title: packet.letter.signedTitle,
+            signed_at: packet.letter.signedAt,
+            stamp: packet.letter.stamp,
+          })
+          : h('pre.contract-text', packet.letter.body || ''),
     ),
 
     packet.letter.signatureInk

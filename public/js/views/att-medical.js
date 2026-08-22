@@ -247,7 +247,7 @@ function personRows(person, { cash, reload }) {
       // column showing only one of them invites the wrong question.
       s.carriedIn
         ? h('small.muted', s.carriedIn > 0
-          ? ` ${cash(s.allowance)} + ${cash(s.carriedIn)} carried over`
+          ? ` ${cash(s.allowance)} + ${cash(s.carriedIn)} carried forward`
           : ` of ${cash(s.allowance)}`)
         : null)
     : h('span.muted', 'none set')),
@@ -343,10 +343,10 @@ async function setAllowances(data, reload) {
     submitLabel: 'Save them',
     body: h('div',
       h('p.muted', { style: { fontSize: '.85rem' } },
-        'Tick everybody who qualifies this year and say what they get. Leave the starting '
-        + 'balance blank where it is simply the allowance. Fill it in where it is not: less '
-        + 'if part of this year has already been claimed on paper, more if something unused '
-        + 'was carried over from last year.'),
+        `Tick everybody who qualifies and say what their allowance for ${data.year} is. The `
+        + 'starting balance is that allowance plus anything carried forward from the previous '
+        + 'period. Leave it blank where there is nothing to carry, and fill it in where there '
+        + 'is, or where part of the year has already been claimed on paper.'),
 
       h('div.med-everyone',
         field('Give everybody ticked the same', everyone),
@@ -367,7 +367,8 @@ async function setAllowances(data, reload) {
 
       h('div.table-wrap.med-set-wrap', h('table.med-set',
         h('thead', h('tr',
-          h('th', 'Qualifies'), h('th', ''), h('th.num', 'Allowance'), h('th.num', 'Starting balance'),
+          h('th', 'Qualifies'), h('th', ''),
+          h('th.num', `${data.year} allowance`), h('th.num', 'Starting balance'),
         )),
         h('tbody', rows)))),
     onSubmit: async () => {

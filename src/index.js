@@ -322,6 +322,15 @@ export const ROUTES = [
   ['POST', '/api/corr/recipients/:id/revoke', 'corr_write', corr.revokeRecipient],
   ['GET', '/api/corr/files/:id', 'corr_view', corr.getFile],
 
+  // ------------------------------------------------------------ letterheads --
+  // The printed paper the property already has, uploaded once and laid on
+  // under every letter written here.
+  ['GET', '/api/corr/letterheads', 'corr_view', corr.listLetterheads],
+  ['POST', '/api/corr/letterheads', 'corr_write', (ctx) => corr.saveLetterhead(ctx, null)],
+  ['PUT', '/api/corr/letterheads/:id', 'corr_write', corr.saveLetterhead],
+  ['DELETE', '/api/corr/letterheads/:id', 'corr_write', corr.removeLetterhead],
+  ['GET', '/api/corr/letterheads/:id/image', 'corr_view', corr.letterheadImage],
+
   ['GET', '/api/corr/parties', 'corr_view', corr.listParties],
   ['POST', '/api/corr/parties', 'corr_write', (ctx) => corr.saveParty(ctx, null)],
   ['PUT', '/api/corr/parties/:id', 'corr_write', corr.saveParty],
@@ -341,6 +350,7 @@ export const ROUTES = [
   ['GET', '/api/s/:token', 'public', sign.signHead],
   ['POST', '/api/s/:token/open', 'public', sign.signOpen],
   ['GET', '/api/s/:token/file', 'public', sign.signFile],
+  ['GET', '/api/s/:token/letterhead', 'public', sign.signLetterhead],
   ['POST', '/api/s/:token/code', 'public', sign.signRequestCode],
   ['POST', '/api/s/:token/sign', 'public', sign.signDocument],
   ['POST', '/api/s/:token/decline', 'public', sign.signDecline],

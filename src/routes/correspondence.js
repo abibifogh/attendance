@@ -14,6 +14,7 @@ import {
   progressOf, referenceFor, salutationFor, verifyChain,
 } from '../lib/correspondence.js';
 import { renderTemplate } from '../lib/people.js';
+import { normaliseLayout, starterLayout, textOf } from '../lib/paper.js';
 
 /**
  * The letter register, from the office side.
@@ -131,6 +132,149 @@ export async function getFile(ctx, id) {
       'Content-Type': row.mime || 'application/octet-stream',
       'Content-Disposition': `inline; filename="${String(row.filename || row.title).replace(/["\\]/g, '')}"`,
       'Cache-Control': 'private, no-store',
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Letterheads
+// ---------------------------------------------------------------------------
+
+/**
+ * The printed paper the property already has.
+ *
+ * Uploaded once as a picture of the page — the crest at the top, the address
+ * along the bottom — and every letter is then laid out on top of it. The safe
+ * area is where words may go, and it is part of the letterhead rather than of
+ * each letter: it is a fact about the paper, and nobody should have to
+ * rediscover it every time they write.
+ */
+export async function listLetterheads(ctx) {
+  const rows = await ctx.db.prepare(
+    `SELECT h.*, f.mime, f.bytes FROM corr_letterhead h
+       JOIN corr_file f ON f.id = h.file_id
+      WHERE h.active = 1 ORDER BY h.name`,
+  ).all().catch(() => ({ results: [] }));
+
+  const preferred = (await ctx.db.prepare(
+    "SELECT value FROM settings WHERE key = 'corr_default_letterhead'",
+  ).first().catch(() => null))?.value;
+
+  return json({
+    letterheads: (rows.results ?? []).map((row) => shapeLetterhead(row)),
+    defaultId: Number(preferred) || null,
+  });
+}
+
+const shapeLetterhead = (row) => ({
+  id: row.id,
+  name: row.name,
+  mime: row.mime,
+  bytes: row.bytes,
+  margins: {
+    top: row.margin_top, right: row.margin_right,
+    bottom: row.margin_bottom, left: row.margin_left,
+  },
+  laterPages: Boolean(row.later_pages),
+  image: `/api/corr/letterheads/${row.id}/image`,
+});
+
+/** Add one, or change the safe area on one already there. */
+export async function saveLetterhead(ctx, idParam = null) {
+  const body = await readJson(ctx.request);
+  const id = idParam ? Number(idParam) : null;
+  const name = str(body.name, 'Name', { required: !id, max: 80 });
+
+  const margins = {
+    top: marginOf(body.margins?.top, 22),
+    right: marginOf(body.margins?.right, 10),
+    bottom: marginOf(body.margins?.bottom, 14),
+    left: marginOf(body.margins?.left, 10),
+  };
+  // A fifth of the page, at least, or there is nowhere to write. The clamp
+  // above stops any one edge running away; this stops two of them meeting in
+  // the middle.
+  if (margins.top + margins.bottom > 80 || margins.left + margins.right > 80) {
+    throw badRequest('Those margins leave no room for a letter.');
+  }
+
+  if (id) {
+    const found = await ctx.db.prepare('SELECT * FROM corr_letterhead WHERE id = ?').bind(id).first();
+    if (!found) throw notFound('No such letterhead.');
+    await ctx.db.prepare(
+      `UPDATE corr_letterhead
+          SET name = ?2, margin_top = ?3, margin_right = ?4, margin_bottom = ?5,
+              margin_left = ?6, later_pages = ?7
+        WHERE id = ?1`,
+    ).bind(id, name || found.name, margins.top, margins.right, margins.bottom, margins.left,
+      body.laterPages ? 1 : 0).run();
+    await audit(ctx, 'corr.letterhead_edit', id, { name: name || found.name });
+    return json({ ok: true, id });
+  }
+
+  const bytes = bytesFrom(body, 'letterhead');
+  const mime = str(body.mime, 'File type', { max: 80 }) || 'image/jpeg';
+  // A picture, not a PDF. The composer draws the page and needs something it
+  // can put behind text; a PDF would need a reader to rasterise it, and every
+  // property already has the letterhead as an image or can photograph one.
+  if (!mime.startsWith('image/')) {
+    throw badRequest('A letterhead has to be a picture, a PNG or a JPEG of the page. '
+      + 'Export one page of the letterhead as an image and upload that.');
+  }
+
+  const fileId = await storeFile(ctx.db, {
+    title: `Letterhead: ${name}`,
+    filename: str(body.filename, 'File name', { max: 120 }) || 'letterhead',
+    mime,
+    bytes,
+    actor: actorOf(ctx),
+  });
+
+  const made = await ctx.db.prepare(
+    `INSERT INTO corr_letterhead (name, file_id, margin_top, margin_right, margin_bottom,
+                                  margin_left, later_pages, uploaded_by)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8) RETURNING id`,
+  ).bind(name, fileId, margins.top, margins.right, margins.bottom, margins.left,
+    body.laterPages ? 1 : 0, actorOf(ctx)).first();
+
+  if (body.makeDefault) {
+    await ctx.db.prepare(
+      "INSERT INTO settings (key, value) VALUES ('corr_default_letterhead', ?1) "
+      + 'ON CONFLICT (key) DO UPDATE SET value = ?1',
+    ).bind(String(made.id)).run();
+  }
+
+  await audit(ctx, 'corr.letterhead_add', made.id, { name, bytes: bytes.length });
+  return json({ ok: true, id: made.id, name });
+}
+
+const marginOf = (value, fallback) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(45, Math.max(0, Math.round(n * 10) / 10));
+};
+
+/** Take one out of use. Letters already written on it keep it. */
+export async function removeLetterhead(ctx, idParam) {
+  const id = Number(idParam);
+  await ctx.db.prepare('UPDATE corr_letterhead SET active = 0 WHERE id = ?').bind(id).run();
+  await audit(ctx, 'corr.letterhead_remove', id, {});
+  return json({ ok: true });
+}
+
+/** The picture itself. */
+export async function letterheadImage(ctx, idParam) {
+  const row = await ctx.db.prepare(
+    `SELECT f.* FROM corr_letterhead h JOIN corr_file f ON f.id = h.file_id WHERE h.id = ?`,
+  ).bind(Number(idParam)).first();
+  if (!row) throw notFound('No such letterhead.');
+
+  return new Response(await readStoredFile(ctx.db, row), {
+    headers: {
+      'Content-Type': row.mime || 'image/jpeg',
+      // Safe to hold on to: the picture behind every letter, and it never
+      // changes without becoming a different letterhead.
+      'Cache-Control': 'private, max-age=86400',
     },
   });
 }
@@ -255,11 +399,34 @@ export async function createLetter(ctx) {
     if (!text.trim()) throw badRequest('A letter needs either some words or a file.');
   }
 
+  // Which paper it is on, and a first layout to open in the composer. Nobody
+  // should start at a blank page: everybody writing a letter here writes the
+  // same six things in the same six places.
+  const letterheadId = body.letterheadId !== undefined
+    ? (Number(body.letterheadId) || null)
+    : Number((await ctx.db.prepare(
+      "SELECT value FROM settings WHERE key = 'corr_default_letterhead'",
+    ).first().catch(() => null))?.value) || null;
+
+  const layout = source === 'composed'
+    ? starterLayout({
+      reference,
+      date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+      to: party?.name ?? str(body.addressedTo, 'Addressed to', { max: 200 }) ?? '',
+      address: party?.address ?? str(body.address, 'Address', { max: 400 }) ?? '',
+      subject: str(body.subject, 'Subject', { max: 200 }) ?? '',
+      body: text,
+      signer: str(body.signatory, 'Signatory', { max: 120 }) ?? '',
+      title: str(body.signatoryTitle, 'Job title', { max: 120 }) ?? '',
+    })
+    : null;
+
   const created = await ctx.db.prepare(
     `INSERT INTO corr_letter
        (reference, series, direction, subject, source, body, body_hash, template_id, file_id,
-        party_id, addressed_to, address, status, response_due, replies_to, created_by)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16) RETURNING id`,
+        party_id, addressed_to, address, status, response_due, replies_to, created_by,
+        letterhead_id, layout)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18) RETURNING id`,
   ).bind(
     reference, series, direction,
     str(body.subject, 'Subject', { required: true, max: 200 }),
@@ -273,6 +440,8 @@ export async function createLetter(ctx) {
     str(body.responseDue, 'Response due', { max: 10 }),
     body.repliesTo ? Number(body.repliesTo) : null,
     actorOf(ctx),
+    letterheadId,
+    layout ? JSON.stringify(layout) : null,
   ).first();
 
   await appendEvent(ctx.db, created.id, {
@@ -318,9 +487,18 @@ export async function getLetter(ctx, id) {
 
   const chain = await verifyChain(events.results ?? []);
 
+  const letterhead = letter.letterhead_id
+    ? await ctx.db.prepare(
+      `SELECT h.*, f.mime, f.bytes FROM corr_letterhead h JOIN corr_file f ON f.id = h.file_id
+        WHERE h.id = ?`,
+    ).bind(letter.letterhead_id).first().catch(() => null)
+    : null;
+
   return json({
     letter: {
       ...letter,
+      layout: normaliseLayout(letter.layout),
+      letterhead: letterhead ? shapeLetterhead(letterhead) : null,
       // Recomputed on every read rather than trusted. If the stored words no
       // longer produce the hash taken when they were signed, they have been
       // changed since — which is the one thing a signature is meant to catch.
@@ -359,11 +537,24 @@ export async function updateLetter(ctx, id) {
       + 'Withdraw it and draft a replacement, saying what it supersedes.');
   }
 
-  const text = body.body === undefined ? letter.body : str(body.body, 'The letter', { max: 40_000 });
+  if (body.layout !== undefined && letter.status !== 'draft') {
+    throw badRequest('The layout is fixed once a letter has gone out for signature.');
+  }
+
+  // A composed letter carries its layout, and `body` is the same words as
+  // plain text. Both are stored: the layout is what is printed, and the text
+  // is what is searched, emailed and hashed. Deriving the text here rather
+  // than trusting the screen is what keeps them from drifting apart.
+  const layout = body.layout === undefined ? null : normaliseLayout(body.layout);
+  const text = layout
+    ? layout.blocks.filter((b) => b.role === 'body' || b.role === 'text')
+      .map((b) => textOf(b.html)).filter(Boolean).join('\n\n')
+    : (body.body === undefined ? letter.body : str(body.body, 'The letter', { max: 40_000 }));
 
   await ctx.db.prepare(
     `UPDATE corr_letter SET subject = ?2, body = ?3, body_hash = ?4, addressed_to = ?5,
-            address = ?6, response_due = ?7, updated_at = datetime('now')
+            address = ?6, response_due = ?7, layout = ?8, letterhead_id = ?9,
+            updated_at = datetime('now')
       WHERE id = ?1`,
   ).bind(
     letterId,
@@ -372,6 +563,10 @@ export async function updateLetter(ctx, id) {
     str(body.addressedTo, 'Addressed to', { max: 200, fallback: letter.addressed_to }),
     str(body.address, 'Address', { max: 400, fallback: letter.address }),
     body.responseDue === undefined ? letter.response_due : str(body.responseDue, 'Response due', { max: 10 }),
+    layout ? JSON.stringify(layout) : letter.layout,
+    body.letterheadId === undefined
+      ? letter.letterhead_id
+      : (Number(body.letterheadId) || null),
   ).run();
 
   await appendEvent(ctx.db, letterId, {

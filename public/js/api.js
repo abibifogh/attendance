@@ -339,6 +339,11 @@ export const api = {
   corrSign: (id, body) => request(`/api/corr/letters/${id}/sign`, { method: 'POST', body }),
   corrRevokeRecipient: (id) => request(`/api/corr/recipients/${id}/revoke`, { method: 'POST' }),
   corrFileUrl: (id) => `/api/corr/files/${id}`,
+  corrLetterheads: () => request('/api/corr/letterheads'),
+  corrAddLetterhead: (body) => request('/api/corr/letterheads', { method: 'POST', body }),
+  corrSaveLetterhead: (id, body) => request(`/api/corr/letterheads/${id}`, { method: 'PUT', body }),
+  corrRemoveLetterhead: (id) => request(`/api/corr/letterheads/${id}`, { method: 'DELETE' }),
+  corrLetterheadUrl: (id) => `/api/corr/letterheads/${id}/image`,
 
   corrParties: () => request('/api/corr/parties'),
   corrCreateParty: (body) => request('/api/corr/parties', { method: 'POST', body }),

@@ -71,15 +71,15 @@ export async function renderAttMyMedical(params) {
               h('span', `${cash(s.spent)} claimed and approved`),
               s.waiting ? h('span', `${cash(s.waiting)} waiting`) : h('span', '')))),
 
-        s.carriedIn
-          ? h('p.muted', { style: { fontSize: '.85rem' } },
-            `Your allowance for ${year} is ${cash(s.allowance)}, and you started the year with `
-            + `${cash(s.opening)}. `
-            + (s.carriedIn > 0
-              ? `The extra ${cash(s.carriedIn)} was carried over from last year.`
-              : `${cash(Math.abs(s.carriedIn))} of it had already been claimed before the app `
-                + 'was keeping the record.'))
-          : null,
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          `You started ${year} with ${cash(s.opening)}: your allowance for ${year} of `
+          + `${cash(s.allowance)}`
+          + (s.carriedIn > 0
+            ? `, plus ${cash(s.carriedIn)} carried forward from the previous period.`
+            : s.carriedIn < 0
+              ? `, less ${cash(Math.abs(s.carriedIn))} already claimed before the app was `
+                + 'keeping the record.'
+              : '.')),
 
         s.ifAllApproved < 0
           ? h('div.alert.warn',
