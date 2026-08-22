@@ -235,21 +235,15 @@ export function shiftSelect(shifts, selected, props = {}) {
 export function formDialog({ title, body, submitLabel = 'Save', onSubmit }) {
   return new Promise((resolve) => {
     const form = h('form', { method: 'dialog' });
-    const dialog = h('dialog', {
-      style: {
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius)',
-        background: 'var(--surface)',
-        color: 'var(--text)',
-        maxWidth: '560px',
-        width: '92vw',
-        padding: '1.2rem',
-      },
-    },
-      h('div.card-head',
+    // Styled by class rather than inline, so the phone rules can win. An
+    // inline width beats any stylesheet, which is how a dialog ended up 92% of
+    // a handset with its buttons off the bottom.
+    const dialog = h('dialog.app-dialog',
+      h('div.dialog-head',
         h('h2', title),
-        h('button.btn-sm.btn-ghost', {
+        h('button.dialog-close', {
           type: 'button',
+          'aria-label': 'Close',
           onclick: () => { dialog.close(); resolve(null); },
         }, '✕'),
       ),

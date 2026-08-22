@@ -221,20 +221,12 @@ function openUserDialog({ existing, data, reload }) {
 
   const problem = h('p.form-error', { style: { display: 'none' } });
 
-  const dialog = h('dialog', {
-    style: {
-      border: '1px solid var(--border)',
-      borderRadius: 'var(--radius)',
-      background: 'var(--surface)',
-      color: 'var(--text)',
-      maxWidth: '620px',
-      width: '92vw',
-      padding: '1.2rem',
-    },
-  },
-    h('div.card-head',
+  const dialog = h('dialog.app-dialog.app-dialog-wide',
+    h('div.dialog-head',
       h('h2', existing ? `Edit ${existing.name}` : 'Add a person'),
-      h('button.btn-sm.btn-ghost', { onclick: () => dialog.close() }, '✕'),
+      h('button.dialog-close', {
+        'aria-label': 'Close', onclick: () => dialog.close(),
+      }, '✕'),
     ),
     h('div.field-row',
       h('label.field', h('span', 'Name'), name),

@@ -1977,3 +1977,119 @@ tr:hover .pos-add, .pos-add:focus-visible {
 .countdown-shift[data-shift-colour="6"] { --shift: var(--c6); }
 .countdown-shift[data-shift-colour="7"] { --shift: var(--c7); }
 .countdown-shift[data-shift-colour="8"] { --shift: var(--c8); }
+
+/* ============================================================== on a phone ==
+   Three things this app got wrong on a handset, each of which made it feel
+   unfinished rather than merely awkward.
+   ========================================================================= */
+
+/* 1. Double-tapping anything zoomed the page in, and then would not zoom back
+      out. That is the browser waiting 300ms on every tap to see whether a
+      second one is coming; telling it we have no double-tap gesture removes
+      both the delay and the accidental zoom. Pinch-to-zoom is untouched, which
+      matters: taking that away from somebody who needs it is not a fix. */
+html { touch-action: manipulation; }
+
+/* 2. The notifications panel is a dropdown hung off the bell. On a desk that
+      is right; on a handset the bell is near the right edge and a 360px panel
+      hangs off the left of the screen with half of it unreachable. Below the
+      fold it stops being a dropdown and becomes a sheet across the width of
+      the page, which is what a phone wants from a list anyway. */
+@media (max-width: 620px) {
+  .bell-panel {
+    position: fixed;
+    left: .5rem;
+    right: .5rem;
+    top: calc(var(--topbar-h, 3.4rem) + env(safe-area-inset-top, 0px) + .3rem);
+    width: auto;
+  }
+  .bell-list { max-height: min(70vh, 32rem); }
+  .bell-item { padding: .7rem .65rem; }
+  .bell-title { font-size: .92rem; }
+}
+
+/* 3. A dialog's heading is not a card's heading, and it was being given a
+      card's phone treatment: the title on one line, the close button stretched
+      to the full width of the dialog underneath it and 31 pixels tall. A
+      dialog head keeps its two parts side by side at every width, and the
+      close is a square a thumb can find. */
+.dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-bottom: .85rem;
+}
+.dialog-head h2, .dialog-head h3 {
+  font-size: 1.05rem;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.dialog-close {
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.dialog-close:hover { background: var(--border); color: var(--text); }
+.dialog-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Every dialog in the app, styled by class rather than inline. An inline width
+   beats any stylesheet, which is how a dialog ended up at 92% of a handset
+   with its buttons off the bottom of the screen and no way to scroll to them:
+   the page behind it scrolled instead, which on iOS means they cannot be
+   reached at all. */
+.app-dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 1.2rem;
+  width: 92vw;
+  max-width: 560px;
+  max-height: min(90dvh, 90vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.app-dialog-narrow { max-width: 420px; }
+.app-dialog-wide { max-width: 620px; }
+
+/* On a handset it stops pretending to be a window and becomes a sheet: full
+   width, along the bottom where the thumb already is, and clear of whatever
+   the phone puts across the bottom of the screen. */
+@media (max-width: 620px) {
+  .app-dialog, .app-dialog-narrow, .app-dialog-wide {
+    width: 100%;
+    max-width: 100%;
+    margin: auto auto 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    padding: 1rem .9rem max(1.1rem, env(safe-area-inset-bottom));
+    max-height: min(92dvh, 92vh);
+  }
+  .dialog-close { width: 2.75rem; height: 2.75rem; }
+
+  /* Two fields to a row is right on a desk and cramped on a handset: a
+     150px minimum means a 390px screen puts "Name" and "Department" side by
+     side with neither of them readable. One at a time. */
+  .field-row { grid-template-columns: minmax(0, 1fr); gap: .55rem; }
+
+  /* The buttons at the foot of a dialog, big enough to hit and in the order a
+     thumb reaches them. */
+  .app-dialog .btn-row { gap: .5rem; }
+  .app-dialog .btn-row button, .app-dialog .btn-row .btn { min-height: 2.6rem; }
+}
+
+@media (pointer: coarse) {
+  .dialog-close { width: 2.75rem; height: 2.75rem; }
+}

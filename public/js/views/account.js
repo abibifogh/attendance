@@ -109,16 +109,12 @@ export function openAccountDialog({ role, name, email: myEmail, isRecovery, canA
         h('button.btn-primary', { onclick: save }, usesPassword ? 'Change password' : 'Change PIN'),
       ));
 
-  const dialog = h('dialog', {
-    style: {
-      border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-      background: 'var(--surface)', color: 'var(--text)',
-      maxWidth: '420px', width: '92vw', padding: '1.2rem',
-    },
-  },
-    h('div.card-head',
+  const dialog = h('dialog.app-dialog.app-dialog-narrow',
+    h('div.dialog-head',
       h('h2', 'My account'),
-      h('button.btn-sm.btn-ghost', { onclick: () => dialog.close() }, '✕'),
+      h('button.dialog-close', {
+        'aria-label': 'Close', onclick: () => dialog.close(),
+      }, '✕'),
     ),
     h('p.muted', { style: { fontSize: '.85rem', marginTop: '-.4rem' } },
       `Signed in as ${name}`),
