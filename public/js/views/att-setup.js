@@ -1583,6 +1583,34 @@ async function rulesTab(reload) {
           + 'manage the rota.'),
       ),
 
+      card('What the terminal tells them', { note: 'On their own phone' },
+        h('label.field',
+          h('span', 'When they clock in and out'),
+          h('select', { name: 'att_clock_push' },
+            h('option', { value: '1', selected: (s.att_clock_push ?? '1') !== '0' },
+              'Send them the time it recorded'),
+            h('option', { value: '0', selected: (s.att_clock_push ?? '1') === '0' },
+              'Say nothing'),
+          )),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'The terminal beeps and shows a name, which does not say what time went down or '
+          + 'whether it counts as late. This does, on the phone of the person who tapped and '
+          + 'nobody else, at the moment it happens.'),
+
+        h('label.field',
+          h('span', 'When a shift has started and nothing has been recorded'),
+          h('select', { name: 'att_late_nudge' },
+            h('option', { value: '1', selected: (s.att_late_nudge ?? '1') !== '0' },
+              'Chase them every half hour until they clock in'),
+            h('option', { value: '0', selected: (s.att_late_nudge ?? '1') === '0' },
+              'Say nothing'),
+          )),
+        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+          'It waits out the grace the shift already allows, stops the moment a clock-in is '
+          + 'recorded, and stops on its own when the shift has ended. Both of these need '
+          + 'notifications turned on in the browser on their phone.'),
+      ),
+
       card('What staff see', { note: 'On My shifts and My report' },
         h('label.field',
           h('span', 'How much leave they have left'),

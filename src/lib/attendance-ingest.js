@@ -289,9 +289,25 @@ export async function ingestPunches(db, { device, events, timezone, source = 'po
     row.major, row.minor, row.door, row.verify_mode, row.source, row.dedupe_key, row.raw,
   ));
 
+  // The high-water mark before the batch, so the rows that turn out to be new
+  // can be named rather than merely counted. "Three were stored" is enough to
+  // report to a poller; it is not enough to tell one person their clock-in
+  // landed, and re-notifying somebody every time an overlapping window
+  // re-offers the same punch is exactly the failure that gets notifications
+  // turned off.
+  const highest = await lastPunchId(db, device.serial);
   const before = await countPunches(db, device.serial);
   if (statements.length) await db.batch(statements);
   const after = await countPunches(db, device.serial);
+
+  const fresh = statements.length
+    ? (await db.prepare(
+      `SELECT id, staff_id, employee_no, day, at_local, at_utc, direction
+         FROM att_punches
+        WHERE device_serial = ?1 AND id > ?2
+        ORDER BY at_local`,
+    ).bind(device.serial, highest).all().catch(() => ({ results: [] }))).results ?? []
+    : [];
 
   // Which people and which days now need recomputing. A punch for somebody the
   // roster has never heard of is kept but touches nobody's days until they are
@@ -332,6 +348,9 @@ export async function ingestPunches(db, { device, events, timezone, source = 'po
     unusable: skipped,
     unknownEmployees: [...unknown],
     touched,
+    // The rows this call actually put in, in the order they happened. A punch
+    // the batch re-offered is not here.
+    fresh,
   };
 }
 
@@ -339,6 +358,12 @@ async function countPunches(db, serial) {
   const row = await db.prepare('SELECT COUNT(*) AS n FROM att_punches WHERE device_serial = ?')
     .bind(serial).first();
   return Number(row?.n ?? 0);
+}
+
+async function lastPunchId(db, serial) {
+  const row = await db.prepare('SELECT MAX(id) AS m FROM att_punches WHERE device_serial = ?')
+    .bind(serial).first().catch(() => null);
+  return Number(row?.m ?? 0);
 }
 
 /**

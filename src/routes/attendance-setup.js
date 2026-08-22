@@ -836,6 +836,10 @@ const SETTINGS = new Map([
   // been recorded against it.
   ['att_late_nudge', (v) => (v === '0' || v === 'false' ? '0' : '1')],
 
+  // Whether somebody's own phone tells them their clock-in and clock-out
+  // landed, and at what time. To them and nobody else.
+  ['att_clock_push', (v) => (v === '0' || v === 'false' ? '0' : '1')],
+
   // Whether a public holiday counts towards what a member of staff reads on
   // their own monthly report. A property that pays for them wants them in the
   // figure; one that treats them as ordinary rest days does not, and a day

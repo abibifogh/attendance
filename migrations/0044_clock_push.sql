@@ -1,0 +1,13 @@
+-- Telling somebody their own clock-in landed.
+--
+-- The terminal beeps and shows a name, and that is the whole of the feedback a
+-- member of staff gets today. It is not enough. A beep does not say what time
+-- was recorded, it does not say whether that counts as late, and it does not
+-- reach the person who is now sure they tapped and is arguing about it three
+-- weeks later at sign-off. A notification on their own phone, at the moment it
+-- happens, ends all three arguments before they start.
+--
+-- On by default. This is the one alert that is unambiguously about the person
+-- receiving it, twice a day, at a moment when they are already looking at a
+-- clock. A property that finds it fussy can turn it off.
+INSERT OR IGNORE INTO settings (key, value) VALUES ('att_clock_push', '1');

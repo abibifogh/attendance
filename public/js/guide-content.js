@@ -178,14 +178,26 @@ export const GUIDE = [
       { p: 'Turn them on under My account, on each device you want them on: a phone and a '
         + 'computer are two separate permissions, and Apple only allows them at all once the '
         + 'site has been added to your Home Screen.' },
-      { p: 'Two things reach you that way. Your rota being published, so you hear about next '
-        + 'week when it is decided rather than on the day. And your shift having started with '
-        + 'nothing recorded against you, which repeats every half hour until you clock in — one '
-        + 'alert at twenty past six is one alert somebody asleep does not hear.' },
-      { p: 'It waits out whatever grace the shift already allows, it stops the moment you clock '
-        + 'in, and it stops on its own when the shift you were down for has ended.' },
-      { note: 'That second one is a nudge, not a mark against you. Nothing about it reaches '
-        + 'your record: the terminal decides what happened, as it always does.' },
+      { table: {
+        head: ['What reaches you', 'When'],
+        rows: [
+          ['Clocked in at 06:20', 'The moment the terminal records your arrival'],
+          ['Clocked out at 14:05', 'And your departure, with the hours it recorded'],
+          ['Your rota for next week', 'When it is published, rather than on the day'],
+          ['Your shift started and nothing is recorded', 'Every half hour until you clock in'],
+        ],
+      } },
+      { p: 'The clock-in and clock-out messages say the time that went down and whether it '
+        + 'counts as early or late. The terminal beeps and shows your name; it does not tell '
+        + 'you any of that, and it does not give you anything to look at three weeks later when '
+        + 'a Tuesday is being argued about. This does, on your own phone, at the moment it '
+        + 'happens. It goes to you and to nobody else.' },
+      { p: 'The last one waits out whatever grace the shift already allows, stops the moment '
+        + 'you clock in, and stops on its own when the shift you were down for has ended.' },
+      { note: 'That last one is a nudge, not a mark against you. Nothing about it reaches your '
+        + 'record: the terminal decides what happened, as it always does.' },
+      { note: 'A tap in the middle of a shift, going for lunch and coming back, does not buzz. '
+        + 'Only the first arrival and the last departure of the day do.' },
 
       { sub: 'Your birthday' },
       { p: 'You will hear from the app on the day. Whether anybody else says anything is up to '
@@ -1145,7 +1157,7 @@ export const GUIDE = [
           ['Absence reasons', 'What each kind of absence costs'],
           ['Public holidays', 'Generated per year, then edited'],
           ['Terminals', 'The device, its token, and its clock'],
-          ['Rules', 'The property’s name and address, leave entitlement, grace, how long links last'],
+          ['Rules', 'Leave entitlement, grace, chasing, and what the terminal tells staff'],
           ['Workload', 'What counts as too much here — four from the law, four your own'],
         ],
       } },

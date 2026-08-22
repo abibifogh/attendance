@@ -15,6 +15,7 @@ import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from 
 import { getPepper } from '../lib/auth.js';
 import { allows } from '../lib/permissions.js';
 import { createNotice } from '../lib/notices.js';
+import { notifyClockings } from '../lib/clock-alerts.js';
 import { daysBetween, parseDays } from '../lib/signoff.js';
 import { refuseUnsettled } from './signoff.js';
 import { emailExceptions, pingExceptions } from '../lib/notify.js';
@@ -219,8 +220,12 @@ export async function ingest(ctx) {
   });
 
   // Recomputing is the expensive half and the poller does not need to wait for
-  // it — the punches are safely stored either way.
-  const work = recomputeTouched(ctx.db, result.touched);
+  // it — the punches are safely stored either way. Telling people their own
+  // clock-in landed comes after, because what a punch means is what the
+  // recompute just decided.
+  const work = recomputeTouched(ctx.db, result.touched)
+    .then(() => notifyClockings(ctx.db, { punches: result.fresh, timezone }))
+    .catch((err) => console.error('clock alerts failed', err));
   if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(work);
   else await work;
 
@@ -313,8 +318,11 @@ export async function pushEvents(ctx, tokenParam) {
   });
 
   // The device is waiting on this response and will not wait long. Working out
-  // what the punches mean can happen after it has hung up.
-  const work = recomputeTouched(ctx.db, result.touched);
+  // what the punches mean, and telling the person it was about, can both
+  // happen after it has hung up.
+  const work = recomputeTouched(ctx.db, result.touched)
+    .then(() => notifyClockings(ctx.db, { punches: result.fresh, timezone }))
+    .catch((err) => console.error('clock alerts failed', err));
   if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(work);
   else await work;
 
