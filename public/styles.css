@@ -436,8 +436,14 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
    as a note about what just happened. */
 .toasts {
   position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
-  z-index: 100; display: grid; gap: .4rem; justify-items: center;
+  z-index: 100; display: grid; gap: .4rem;
+  /* Both axes said out loud. A grid stretches its items by default, and a
+     stretched toast in a host that has somehow been given the height of the
+     screen is a black bar down the middle of a phone. */
+  justify-items: center; align-items: end; align-content: end;
   width: min(420px, calc(100vw - 2rem));
+  height: fit-content;
+  max-height: calc(100dvh - 2rem);
 }
 /* Lift toasts clear of the entry screen's fixed action bar. */
 /* Its own dark ground rather than the page's surface. On a handset a white
@@ -446,6 +452,9 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
    is reporting on. The tone is a dot, so the words stay legible. */
 .toast {
   display: flex; align-items: flex-start; gap: .5rem;
+  /* Its own line of defence. Whatever the host ends up being, a message is
+     the height of its words: this is what stops it becoming a bar. */
+  align-self: end; height: fit-content;
   max-width: 100%;
   padding: .5rem .95rem; border-radius: 999px;
   font-size: .88rem; font-weight: 500; line-height: 1.35;
@@ -745,10 +754,18 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 /* The toast host is a popover so it shares the top layer with modal dialogs
    and can never be painted behind one. Strip the browser's default chrome. */
 .toasts[popover] {
+  /* The shorthand and then each edge again. A popover is in the top layer and
+     the browser's own sheet pins it to all four edges; at least one engine
+     keeps the top edge through the shorthand alone, and a host pinned top and
+     bottom is a host the height of the screen. */
   inset: auto;
+  top: auto;
+  right: auto;
   bottom: 1rem;
   left: 50%;
   transform: translateX(-50%);
+  height: fit-content;
+  max-height: calc(100dvh - 2rem);
   margin: 0;
   padding: 0;
   border: none;
@@ -756,7 +773,12 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   overflow: visible;
 }
 .toasts[popover]:not(:popover-open) { display: none; }
-.toasts[popover]:popover-open { display: grid; justify-items: center; }
+.toasts[popover]:popover-open {
+  display: grid;
+  justify-items: center;
+  align-items: end;
+  align-content: end;
+}
 
 /* --------------------------------------------------------------- printing --
    Reports are saved as PDF through the browser's own print dialog. The charts
