@@ -6,7 +6,8 @@ import {
 } from '../public/js/util.js';
 import { pathHasHole } from '../public/js/api.js';
 import {
-  asHours, byDepartment, byPosition, shiftHours, shiftLabel, shiftMinutes, sortDepartments,
+  asHours, byDepartment, byPosition, earliestFirst, shiftHours, shiftLabel, shiftMinutes,
+  sortDepartments,
 } from '../public/js/views/att-shared.js';
 
 /**
@@ -231,4 +232,25 @@ test('a position stacks its shifts earliest first', () => {
     ['Housekeeping early', 'Housekeeping late']);
   assert.equal(groups[0].grouped, true, 'two shifts under one name is a grouping');
   assert.equal(groups[2].grouped, false, 'and one on its own is not');
+});
+
+test('everything that stacks shifts stacks them by the clock', () => {
+  const one = shift('Bistro shift 1', '11:00', '19:00');
+  const two = shift('Bistro shift 2', '13:45', '22:00');
+
+  // The cards in a day's cell come out of the people list, so without this
+  // they stack in whatever order the names happen to be in — which is how an
+  // 13:45 ended up sitting above an 11:00.
+  assert.deepEqual([two, one].sort(earliestFirst).map((s) => s.name),
+    ['Bistro shift 1', 'Bistro shift 2']);
+
+  // A missing shift sorts first rather than throwing, because a cell can hold
+  // an entry whose shift has since been retired.
+  assert.equal(earliestFirst(undefined, one) < 0, true);
+
+  // Same start, so the name settles it and the order never wobbles between
+  // one drawing of the page and the next.
+  const early = shift('Alpha', '06:00', '14:00');
+  const late = shift('Beta', '06:00', '15:00');
+  assert.deepEqual([late, early].sort(earliestFirst).map((s) => s.name), ['Alpha', 'Beta']);
 });

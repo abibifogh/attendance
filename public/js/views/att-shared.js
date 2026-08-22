@@ -208,6 +208,19 @@ export function byDepartment(shifts) {
  * the position view. Where nobody has, a shift is its own position, which is
  * the truth for most of them.
  */
+/**
+ * Earliest start at the top.
+ *
+ * A rota is read as the shape of a day — who opens, who follows, who closes —
+ * so anything that stacks shifts stacks them this way: the position rows, the
+ * shifts inside one position, and the cards in a day's cell. Ties fall back to
+ * the name, so the order is the same every time the page is drawn.
+ */
+export const earliestFirst = (a, b) => (
+  String(a?.starts_at ?? '').localeCompare(String(b?.starts_at ?? ''))
+  || String(a?.name ?? '').localeCompare(String(b?.name ?? ''))
+);
+
 export function byPosition(shifts) {
   const groups = new Map();
   for (const shift of shifts ?? []) {
@@ -229,21 +242,15 @@ export function byPosition(shifts) {
     groups.get(key).shifts.push(shift);
   }
 
-  // Within a position, earliest start at the top: a group is read as the shape
-  // of a day — who opens, who follows, who closes — and any other order makes
-  // somebody check three clocks to work out which is which.
-  const byStart = (a, b) => String(a.starts_at ?? '').localeCompare(String(b.starts_at ?? ''))
-    || String(a.name ?? '').localeCompare(String(b.name ?? ''));
-
   return [...groups.values()]
     .map((group) => ({
       ...group,
-      shifts: [...group.shifts].sort(byStart),
+      shifts: [...group.shifts].sort(earliestFirst),
       grouped: group.grouped && group.shifts.length > 1,
     }))
     // And the positions themselves in the same order, by the earliest shift in
     // each, so the whole column reads down the day.
-    .sort((a, b) => byStart(a.shifts[0] ?? {}, b.shifts[0] ?? {}));
+    .sort((a, b) => earliestFirst(a.shifts[0] ?? {}, b.shifts[0] ?? {}));
 }
 
 /**

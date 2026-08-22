@@ -5,8 +5,8 @@ import {
 import { card, emptyState, table } from './components.js';
 import { navigate, replaceParams } from '../app.js';
 import {
-  asHours, byDepartment, byPosition, field, formDialog, shiftColour, shiftHours, shiftLabel,
-  shiftMinutes, shiftSelect,
+  asHours, byDepartment, byPosition, earliestFirst, field, formDialog, shiftColour, shiftHours,
+  shiftLabel, shiftMinutes, shiftSelect,
 } from './att-shared.js';
 
 /**
@@ -688,7 +688,14 @@ export async function renderAttRota(params) {
             const ids = new Set(position.shifts.map((sh) => String(sh.id)));
             const on = visible
               .map((row) => ({ row, entry: entryOf(row.staff.id, day) }))
-              .filter(({ entry }) => entry && !entry.leave && ids.has(String(entry.shift_id)));
+              .filter(({ entry }) => entry && !entry.leave && ids.has(String(entry.shift_id)))
+              // By the clock rather than by whoever happens to be higher up the
+              // people list: a cell holding an 11:00 and a 13:45 should read
+              // down the day like everything else on this screen.
+              .sort((x, y) => earliestFirst(
+                shiftById.get(String(x.entry.shift_id)),
+                shiftById.get(String(y.entry.shift_id)),
+              ) || x.row.staff.name.localeCompare(y.row.staff.name));
 
             return h('td', { class: dayClass(day) },
               h('div.pos-stack',
