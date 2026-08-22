@@ -172,9 +172,10 @@ export const PAYE_COLUMNS = [
   { key: 'totalCash', label: 'Total cash emoluments', money: true },
   { key: 'ssf', label: 'SSF employee', money: true },
   { key: 'relief', label: 'Tax relief', money: true },
+  { key: 'excessBonus', label: 'Excess bonus', money: true },
   { key: 'chargeable', label: 'Chargeable income', money: true },
   { key: 'tax', label: 'Tax on income', money: true },
-  { key: 'bonus', label: 'Bonus paid', money: true },
+  { key: 'bonus', label: 'Bonus at 5%', money: true },
   { key: 'bonusTax', label: 'Tax on bonus', money: true },
   { key: 'total', label: 'Total PAYE', money: true },
 ];
@@ -198,10 +199,19 @@ export function payeSchedule({ lines = [], people = new Map() }) {
       ssf: round2(line.ssnit?.employee ?? 0),
       // Reliefs live on a certificate the GRA issues, not in a payroll.
       relief: null,
+      // The part of the bonus past the 15% ceiling. It is not a separate tax:
+      // it is income, and it is already inside the chargeable figure beside
+      // it. Shown because a return where the chargeable income is larger than
+      // the salary and nothing on the page says why is a return that gets
+      // queried.
+      excessBonus: round2(line.bonus?.atGraduated ?? 0),
       chargeable: round2(line.chargeable ?? 0),
-      tax: round2(line.paye?.onSalary ?? 0),
-      bonus: round2(line.bonus?.gross ?? 0),
-      bonusTax: round2(line.paye?.onBonus ?? 0),
+      // Everything on the graduated bands: the salary and the excess bonus
+      // together, because that is one calculation and splitting it would
+      // report a figure the tax table never produced.
+      tax: round2((line.paye?.total ?? 0) - (line.paye?.finalOnBonus ?? 0)),
+      bonus: round2(line.bonus?.atFinalRate ?? 0),
+      bonusTax: round2(line.paye?.finalOnBonus ?? 0),
       total: round2(line.paye?.total ?? 0),
     };
   });
@@ -214,6 +224,7 @@ export function payeSchedule({ lines = [], people = new Map() }) {
       allowances: add('allowances'),
       totalCash: add('totalCash'),
       ssf: add('ssf'),
+      excessBonus: add('excessBonus'),
       chargeable: add('chargeable'),
       tax: add('tax'),
       bonus: add('bonus'),

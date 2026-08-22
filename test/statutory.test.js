@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { RATES, ratesFrom } from '../src/lib/tax.js';
+import { RATES, ratesFrom, round2 } from '../src/lib/tax.js';
 import { computeLine, totalsOf } from '../src/lib/payroll.js';
 import { TIERS, journalFor, payeSchedule, tierSplit, tiersFrom } from '../src/lib/statutory.js';
 
@@ -201,4 +201,68 @@ test('a bonus is its own two columns on the schedule', () => {
 test('the published rates are still the published rates', () => {
   assert.equal(RATES.ssnitEmployee + RATES.ssnitEmployer, 0.185);
   assert.equal(TIERS.tier1 + TIERS.tier2, 0.185);
+});
+
+
+test('a bonus past the 15% ceiling is split on the schedule', () => {
+  // 15% of 24,000 of annual basic is 3,600, so a bonus larger than that has an
+  // excess: the first 3,600 at the 5% final rate, the rest added to income and
+  // taxed on the graduated bands like any other pay.
+  const lines = [computeLine({
+    staff: { id: 1, name: 'Ama Boateng' },
+    basic: 2000,
+    ssnit: true,
+    schemes: [{ id: 1, name: 'Year end', amount: 5000, score: 100 }],
+    rates,
+  })];
+  const [row] = payeSchedule({ lines }).rows;
+
+  assert.equal(row.bonus, 3600, 'the ceiling, at the final rate');
+  assert.equal(row.bonusTax, 180, '5% of 3,600');
+  assert.ok(row.excessBonus > 0, 'and the rest is excess');
+
+  // The excess is income, so it is inside the chargeable figure rather than
+  // beside it. Salary chargeable is 2,000 less 110 of SSNIT.
+  assert.equal(row.chargeable, round2(1890 + row.excessBonus));
+
+  // The whole row reconciles down the page, which is what a return is for:
+  // everything paid, less the part taxed separately, less the contribution,
+  // is what the graduated bands were applied to.
+  assert.equal(row.totalCash, round2(row.basic + row.allowances + row.bonus + row.excessBonus));
+  assert.equal(row.chargeable, round2(row.totalCash - row.bonus - row.ssf));
+  assert.equal(row.total, round2(row.tax + row.bonusTax));
+});
+
+test('a bonus inside the ceiling has no excess at all', () => {
+  const lines = [computeLine({
+    staff: { id: 1, name: 'Ama Boateng' },
+    basic: 2000,
+    ssnit: true,
+    schemes: [{ id: 1, name: 'Service', amount: 500, score: 100 }],
+    rates,
+  })];
+  const [row] = payeSchedule({ lines }).rows;
+
+  assert.equal(row.excessBonus, 0);
+  assert.equal(row.bonusTax, round2(row.bonus * 0.05));
+  // Nothing of the bonus reached the graduated bands, so chargeable income is
+  // the salary less the contribution and nothing else.
+  assert.equal(row.chargeable, 1890);
+});
+
+test('the schedule totals the excess with everything else', () => {
+  const lines = [
+    computeLine({
+      staff: { id: 1, name: 'Ama Boateng' },
+      basic: 2000,
+      ssnit: true,
+      schemes: [{ id: 1, name: 'Year end', amount: 5000, score: 100 }],
+      rates,
+    }),
+    computeLine({ staff: { id: 2, name: 'Kofi Mensah' }, basic: 1200, ssnit: true, rates }),
+  ];
+  const { rows, totals } = payeSchedule({ lines });
+
+  assert.equal(totals.excessBonus, round2(rows[0].excessBonus + rows[1].excessBonus));
+  assert.equal(totals.total, round2(totals.tax + totals.bonusTax));
 });

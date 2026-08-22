@@ -98,6 +98,11 @@ export function returnsSheet(data, niceMonth) {
         `Every employee, what they earned, what came off and what tax that came to, in `
         + `${data.currency}. Tax relief is left empty because it is claimed on a certificate `
         + 'the GRA issues to the person, not something a payroll knows.'),
+      h('p.muted',
+        'A bonus is taxed at 5% as a final tax up to 15% of annual basic salary. Anything past '
+        + 'that ceiling is the excess bonus: it is income rather than a separate tax, so it is '
+        + 'already inside the chargeable income beside it and the graduated bands were applied '
+        + 'to the two together.'),
       h('div.table-wrap',
         h('table.returns-table.returns-paye',
           h('thead', h('tr', columns.map((c) => h(c.money ? 'th.num' : 'th', c.label)))),

@@ -700,7 +700,14 @@ export const GUIDE = [
           + 'Untick "taxable" for a genuine reimbursement.',
         'New scheme: what a bonus scheme is worth at a hundred per cent, and who is under it. '
           + 'Somebody can be under several or under none.',
+        'Put the scheme under a department. The list groups on it, and each department folds '
+          + 'away so scoring one is not a scroll past the other five.',
       ] },
+      { note: 'A scheme with no department covers the whole property and sits under General. '
+        + 'Those are scored once: whether the year was a good one is the same answer for '
+        + 'everybody it covers, so it is asked once and everybody under it gets it. A scheme '
+        + 'that belongs to a department is still scored person by person, because different '
+        + 'people did different amounts of the thing it is about.' },
       { note: 'What a scheme is worth is a net figure — what the person actually receives. The '
         + 'tax on it is worked out at payroll and carried by the property, which is what '
         + '"grossing up" on the payslip means.' },
@@ -768,7 +775,14 @@ export const GUIDE = [
           + 'trustee, on separate forms to separate people.',
         'The PAYE schedule is the GRA\u2019s own columns in the GRA\u2019s own order, so it '
           + 'reads straight across into the return.',
+        'A bonus is split on it. The part inside the 15% ceiling sits under Bonus at 5% with '
+          + 'its own tax beside it; anything past the ceiling is the excess bonus, which is '
+          + 'income rather than a separate tax and is already inside the chargeable income '
+          + 'next to it.',
       ] },
+      { note: 'The row reconciles across: total cash emoluments, less the bonus taxed at 5%, '
+        + 'less the SSF contribution and any relief, is the chargeable income. Tax on that '
+        + 'plus the tax on the bonus is the total PAYE.' },
       { warn: 'The schedule lists anybody whose TIN or SSNIT number is missing from their '
         + 'record, by name, because the return cannot be filed without them and a count does '
         + 'not tell you whose record to open. Tax relief is left empty: it is claimed on a '

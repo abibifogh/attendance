@@ -4,7 +4,7 @@ import {
 } from '../util.js';
 import { card, emptyState } from './components.js';
 import {
-  GENERAL, field, formDialog, schemesByDepartment, showSheet,
+  GENERAL, field, formDialog, schemeDepartment, schemesByDepartment, showSheet,
 } from './att-shared.js';
 import { replaceParams } from '../app.js';
 import { printReport } from '../print.js';
@@ -411,6 +411,100 @@ function openAllSlips(data, month) {
 // The schemes
 // --------------------------------------------------------------------------
 
+/**
+ * A scheme for one department: a score against each name under it.
+ *
+ * Different people did different amounts of the thing the scheme is about, so
+ * each of them gets their own figure.
+ */
+function perPersonScores(scheme, data, scored, closed, cash) {
+  const rows = scheme.staffIds.map((staffId) => {
+    const person = data.staff.find((s) => s.id === staffId);
+    const now = scheme.scores.find((x) => x.staffId === staffId)?.score ?? 0;
+    const out = h('span.muted', cash(scheme.amount * (now / 100)));
+
+    const input = h('input.pay-score', {
+      type: 'number', min: '0', max: '100', step: '1', value: now,
+      disabled: closed,
+      'aria-label': `${person?.name ?? 'Somebody'} on ${scheme.name}`,
+      oninput: (e) => {
+        const value = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+        scored.set(`${scheme.id}|${staffId}`, value);
+        out.textContent = cash(scheme.amount * (value / 100));
+      },
+    });
+
+    return h('tr',
+      h('td', person?.name ?? `Staff ${staffId}`),
+      h('td.num', input, h('span.muted', '%')),
+      h('td.num', out));
+  });
+
+  return rows.length
+    ? h('table.pay-scores', h('tbody', rows))
+    : h('p.muted', { style: { fontSize: '.85rem' } }, 'Nobody is under this one yet.');
+}
+
+/**
+ * A General scheme: one score, and everybody under it gets it.
+ *
+ * A scheme with no department is about the property rather than about a
+ * person. Whether the year was a good one, whether the place got through its
+ * inspection: the answer is the same for everybody it covers, so it is asked
+ * once and applied to all of them.
+ *
+ * Where the stored scores already differ, the box opens empty and says so.
+ * Guessing which of them was meant, or quietly flattening them to the first
+ * one, would change what somebody is paid without anybody deciding to.
+ */
+function sharedScore(scheme, data, scored, closed, cash) {
+  const ids = scheme.staffIds;
+  if (!ids.length) {
+    return h('p.muted', { style: { fontSize: '.85rem' } }, 'Nobody is under this one yet.');
+  }
+
+  const scores = ids.map((id) => scheme.scores.find((x) => x.staffId === id)?.score ?? 0);
+  const same = scores.every((n) => n === scores[0]);
+  const now = same ? scores[0] : null;
+
+  const out = h('strong', cash(scheme.amount * ((now ?? 0) / 100)));
+  const each = h('span.muted', now === null ? 'once they all agree' : 'each, to all of them');
+
+  const input = h('input.pay-score', {
+    type: 'number', min: '0', max: '100', step: '1',
+    value: now === null ? '' : now,
+    placeholder: now === null ? '—' : '',
+    disabled: closed,
+    'aria-label': `Everybody on ${scheme.name}`,
+    oninput: (e) => {
+      const value = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+      for (const id of ids) scored.set(`${scheme.id}|${id}`, value);
+      out.textContent = cash(scheme.amount * (value / 100));
+      each.textContent = 'each, to all of them';
+    },
+  });
+
+  const names = ids
+    .map((id) => String(data.staff.find((s) => s.id === id)?.name ?? '').trim().split(/\s+/)[0])
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+
+  return h('div.pay-shared',
+    h('div.pay-shared-set',
+      h('label', 'Everybody on it scores'),
+      input,
+      h('span.muted', '%'),
+      out,
+      each),
+    now === null
+      ? h('p.pay-shared-mixed',
+        'The scores on this one are not all the same at the moment. Typing a figure here sets '
+        + 'it for everybody; leaving it alone changes nothing.')
+      : null,
+    h('p.muted.pay-shared-who',
+      `${ids.length} ${ids.length === 1 ? 'person' : 'people'}: ${names.join(', ')}`));
+}
+
 function schemesCard(data, month, closed, reload, cash) {
   const scored = new Map();
 
@@ -433,27 +527,14 @@ function schemesCard(data, month, closed, reload, cash) {
       h('span', group.name),
       h('small.muted', `${group.schemes.length} scheme${group.schemes.length === 1 ? '' : 's'}`)),
     group.schemes.map((scheme) => {
-      const rows = scheme.staffIds.map((staffId) => {
-        const person = data.staff.find((s) => s.id === staffId);
-        const now = scheme.scores.find((x) => x.staffId === staffId)?.score ?? 0;
-        const out = h('span.muted', cash(scheme.amount * (now / 100)));
+      // A scheme that covers the whole property is scored once. It is not
+      // twenty people who happen to agree; it is one figure about the
+      // property, and typing it twenty times is twenty chances to differ.
+      const everybody = schemeDepartment(scheme) === GENERAL;
 
-        const input = h('input.pay-score', {
-          type: 'number', min: '0', max: '100', step: '1', value: now,
-          disabled: closed,
-          'aria-label': `${person?.name ?? 'Somebody'} on ${scheme.name}`,
-          oninput: (e) => {
-            const value = Math.max(0, Math.min(100, Number(e.target.value) || 0));
-            scored.set(`${scheme.id}|${staffId}`, value);
-            out.textContent = cash(scheme.amount * (value / 100));
-          },
-        });
-
-        return h('tr',
-          h('td', person?.name ?? `Staff ${staffId}`),
-          h('td.num', input, h('span.muted', '%')),
-          h('td.num', out));
-      });
+      const body = everybody
+        ? sharedScore(scheme, data, scored, closed, cash)
+        : perPersonScores(scheme, data, scored, closed, cash);
 
       return h('div.pay-scheme',
         h('div.pay-scheme-head',
@@ -473,10 +554,7 @@ function schemesCard(data, month, closed, reload, cash) {
                 await reload();
               },
             }, '✕'))),
-
-        rows.length
-          ? h('table.pay-scores', h('tbody', rows))
-          : h('p.muted', { style: { fontSize: '.85rem' } }, 'Nobody is under this one yet.'));
+        body);
     })))
     : null,
 

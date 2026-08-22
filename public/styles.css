@@ -2721,6 +2721,17 @@ html { touch-action: manipulation; }
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: .8rem; flex-wrap: wrap; margin-bottom: .4rem;
 }
+/* A General scheme is one figure about the property, not twenty about people,
+   so it gets one box rather than a table with the same number down it. */
+.pay-shared { display: grid; gap: .4rem; }
+.pay-shared-set { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .92rem; }
+.pay-shared-set label { font-weight: 600; }
+.pay-shared-set strong { font-variant-numeric: tabular-nums; }
+.pay-shared-mixed {
+  margin: 0; font-size: .85rem; color: var(--warn, #b45309);
+}
+.pay-shared-who { margin: 0; font-size: .82rem; }
+
 .pay-scores { width: 100%; font-size: .9rem; }
 .pay-scores td { padding: .25rem .3rem; border-top: 1px solid var(--border); }
 
@@ -3045,10 +3056,10 @@ html { touch-action: manipulation; }
      column to one letter and stacks the heading down the page. */
   overflow-wrap: break-word;
 }
-.returns-paye th:nth-child(1) { width: 4.5%; }
-.returns-paye th:nth-child(2) { width: 13%; }
+.returns-paye th:nth-child(1) { width: 3.5%; }
+.returns-paye th:nth-child(2) { width: 11%; }
 .returns-paye th:nth-child(3),
-.returns-paye th:nth-child(4) { width: 8.5%; }
+.returns-paye th:nth-child(4) { width: 7.5%; }
 
 .returns-tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; }
 .returns-tier {
@@ -3088,9 +3099,9 @@ html { touch-action: manipulation; }
      corner, and the wide schedule shrinks rather than being cut off. */
   .returns-sheet { box-shadow: none; border-radius: 0; padding: 0; }
   /* Fourteen columns on a landscape sheet. */
-  .returns-paye { min-width: 0; width: 100%; font-size: 7.5pt; }
-  .returns-paye th { font-size: 7pt; }
-  .returns-paye th, .returns-paye td { padding: 1mm 1.5mm; }
+  .returns-paye { min-width: 0; width: 100%; font-size: 7pt; }
+  .returns-paye th { font-size: 6.5pt; }
+  .returns-paye th, .returns-paye td { padding: .8mm 1mm; }
   .returns-block { break-inside: avoid; }
   /* The last page must not push a blank sheet out of the printer. */
   .preview-pages > *:last-child,
