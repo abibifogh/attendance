@@ -1,7 +1,10 @@
 import { api } from '../api.js';
+import { navigate } from '../app.js';
 import { fmtDay, fmtDayShort, fmtNum, h, mount, shiftDay, toast } from '../util.js';
 import { card, emptyState } from './components.js';
-import { asHours, field, formDialog, shiftColour, shiftHours, shiftMinutes } from './att-shared.js';
+import {
+  asHours, field, formDialog, shiftColour, shiftHours, shiftMinutes, showSheet,
+} from './att-shared.js';
 
 /**
  * My shifts.
@@ -35,8 +38,17 @@ export async function renderAttMe(params = {}) {
   }
 
   const upcoming = data.days.filter((d) => d.day >= data.today);
-  const behind = data.days.filter((d) => d.day < data.today).reverse();
+  const behind = data.days.filter((d) => d.day < data.today && d.was).reverse();
   const next = upcoming.find((d) => d.shift);
+
+  // A week at a time. Four weeks of days on a phone is a page nobody reaches
+  // the bottom of, and the question this screen answers is almost always about
+  // this week. The rest is one press away and does not have to be scrolled
+  // past to get anywhere.
+  const thisWeek = upcoming.slice(0, 7);
+  const laterOn = upcoming.slice(7);
+  const lastWeek = behind.slice(0, 7);
+  const earlier = behind.slice(7);
 
   mount(host,
     h('div.page-head',
@@ -66,20 +78,40 @@ export async function renderAttMe(params = {}) {
 
     balanceLine(data),
 
-    card('Coming up', { note: `${upcoming.filter((d) => d.shift).length} shifts`, wide: true },
-      upcoming.length
-        ? h('div.me-list', upcoming.map((d) => dayRow(d, data)))
-        : h('p.muted', 'Nothing yet.')),
+    card('Coming up', {
+      note: `${thisWeek.filter((d) => d.shift).length} shift`
+        + `${thisWeek.filter((d) => d.shift).length === 1 ? '' : 's'} this week`,
+      wide: true,
+    },
+    thisWeek.length
+      ? h('div.me-list', thisWeek.map((d) => dayRow(d, data)))
+      : h('p.muted', 'Nothing yet.'),
+    seeMore(laterOn, data, {
+      label: `See the next ${laterOn.length} day${laterOn.length === 1 ? '' : 's'}`,
+      title: 'The rest of the four weeks',
+      empty: 'Nothing further ahead has been published yet.',
+    })),
 
     data.leave.length
       ? card('My leave', { note: `${data.leave.length}`, wide: true },
         h('div.me-list', data.leave.map((row) => leaveRow(row, reload))))
       : null,
 
-    behind.some((d) => d.was)
-      ? h('details.me-past',
-        h('summary', 'How the days behind me came out'),
-        h('div.me-list', behind.filter((d) => d.was).map((d) => dayRow(d, data))))
+    lastWeek.length
+      ? card('How the days behind me came out', {
+        note: 'the last seven',
+        wide: true,
+        actions: h('button.btn-sm', {
+          onclick: () => navigate('att-my-report'),
+          title: 'Your month, in figures',
+        }, 'My report'),
+      },
+      h('div.me-list', lastWeek.map((d) => dayRow(d, data))),
+      seeMore(earlier, data, {
+        label: `See ${earlier.length} more day${earlier.length === 1 ? '' : 's'}`,
+        title: 'Earlier in this window',
+        empty: 'Nothing earlier in this window.',
+      }))
       : null,
 
     h('p.muted', { style: { fontSize: '.82rem' } },
@@ -88,6 +120,28 @@ export async function renderAttMe(params = {}) {
   );
 
   return host;
+}
+
+/**
+ * The rest of the list, behind one press.
+ *
+ * A dialog rather than an expanding section: on a phone, unfolding thirty
+ * more rows in place pushes everything the reader was looking at off the
+ * screen and leaves them somewhere in the middle of a page they did not ask
+ * for. A sheet opens over the top and closes back to where they were.
+ */
+function seeMore(rows, data, { label, title, empty }) {
+  if (!rows.length) return null;
+
+  return h('div', { style: { marginTop: '.6rem' } },
+    h('button.btn-sm.me-more', {
+      onclick: () => showSheet({
+        title,
+        body: rows.length
+          ? h('div.me-list', rows.map((d) => dayRow(d, data)))
+          : h('p.muted', empty),
+      }),
+    }, label));
 }
 
 /**

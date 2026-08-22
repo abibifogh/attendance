@@ -199,6 +199,7 @@ export const api = {
   // who you are comes off the session, so there is no version of somebody
   // else's week to ask for.
   myWeek: (from) => request(`/api/me/week${from ? `?from=${from}` : ''}`),
+  myReport: (month) => request(`/api/me/report${month ? `?month=${month}` : ''}`),
   myAskForLeave: (body) => request('/api/me/leave', { method: 'POST', body }),
   myWithdrawLeave: (id) => request(`/api/me/leave/${id}/withdraw`, { method: 'POST', body: {} }),
   mySetAvailability: (body) => request('/api/me/availability', { method: 'POST', body }),

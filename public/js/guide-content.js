@@ -98,6 +98,14 @@ export const GUIDE = [
         + 'somebody signs the month off, having looked at the whole of it. A running total on a '
         + 'phone would be a number to argue about rather than an answer.' },
 
+      { sub: 'My report' },
+      { p: 'Your month, in figures: days worked, hours, how often you were late and by how '
+        + 'much, what you were absent for, and what leave it cost you. Pick a different month '
+        + 'with the arrows. The day-by-day list underneath is where to look when one of the '
+        + 'numbers surprises you.' },
+      { note: 'A month nobody has signed off can still change — a corrected clock time moves '
+        + 'the figures with it. The screen says which kind of month you are looking at.' },
+
       { sub: 'Asking for leave' },
       { steps: [
         'Press Ask for leave.',

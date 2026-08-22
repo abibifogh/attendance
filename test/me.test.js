@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  askForLeave, myWeek, setMyAvailability, tellThemImLate, withdrawMyLeave,
+  askForLeave, myReport, myWeek, setMyAvailability, tellThemImLate, withdrawMyLeave,
 } from '../src/routes/me.js';
 import { publishRoster, saveRoster } from '../src/routes/attendance.js';
 import { effectivePermissions } from '../src/lib/permissions.js';
@@ -229,4 +229,93 @@ test('no overtime figure reaches the screen', async () => {
   const out = await week(db);
   const text = JSON.stringify(out);
   assert.ok(!/overtime/i.test(text), 'what somebody is owed is settled at sign-off');
+});
+
+test('my report counts the late arrivals and what they cost in minutes', async () => {
+  const { db, raw } = setup();
+  // Three rostered days: one on time, one forty minutes late, one nobody
+  // turned up to.
+  for (const [d, punches] of [
+    ['2026-06-01', [['06:00', 'in'], ['14:00', 'out']]],
+    ['2026-06-02', [['06:40', 'in'], ['14:00', 'out']]],
+    ['2026-06-03', []],
+  ]) {
+    raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
+      .run(d);
+    for (const [at, dir] of punches) {
+      raw.prepare(
+        `INSERT INTO att_punches (device_serial, employee_no, staff_id, at_utc, at_local, day,
+                                  direction, dedupe_key)
+         VALUES ('D1', '1', 1, ?, ?, ?, ?, ?)`,
+      ).run(`${d} ${at}:00`, `${d} ${at}:00`, d, dir, `${d}-${at}-${dir}`);
+    }
+  }
+
+  const url = new URL('https://x/api/me/report?month=2026-06');
+  const out = await (await myReport({ ...ctx(db, KOFI), url })).json();
+
+  assert.equal(out.totals.scheduled, 3);
+  assert.equal(out.totals.lateCount, 1);
+  assert.equal(out.totals.lateMinutes, 40);
+  assert.equal(out.totals.daysAbsent, 1);
+  assert.equal(out.days.length, 3, 'every day with something on it');
+});
+
+test('my report reads the month asked for, and only mine', async () => {
+  const { db, raw } = setup();
+  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
+    .run('2026-06-01');
+  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (2, ?, 1, 1)')
+    .run('2026-06-01');
+  for (const [at, dir] of [['06:00', 'in'], ['14:00', 'out']]) {
+    raw.prepare(
+      `INSERT INTO att_punches (device_serial, employee_no, staff_id, at_utc, at_local, day,
+                                direction, dedupe_key)
+       VALUES ('D1', '1', 1, ?, ?, '2026-06-01', ?, ?)`,
+    ).run(`2026-06-01 ${at}:00`, `2026-06-01 ${at}:00`, dir, `a-${at}`);
+  }
+
+  const withMonth = {
+    ...ctx(db, KOFI),
+    url: new URL('https://x/api/me/report?month=2026-06'),
+  };
+  const out = await (await myReport(withMonth)).json();
+
+  assert.equal(out.month, '2026-06');
+  assert.equal(out.me.id, 1);
+  assert.equal(out.totals.scheduled, 1);
+  assert.equal(out.totals.workedMinutes, 480);
+  assert.equal(out.days.length, 1);
+  assert.equal(out.days[0].day, '2026-06-01');
+  assert.ok(!/overtime/i.test(JSON.stringify(out)), 'settled at sign-off, not read off a screen');
+});
+
+test('a month nobody has closed says so, and a closed one names who', async () => {
+  const { db, raw } = setup();
+  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
+    .run('2026-06-01');
+
+  const url = new URL('https://x/api/me/report?month=2026-06');
+  let out = await (await myReport({ ...ctx(db, KOFI), url })).json();
+  assert.deepEqual(out.signed, []);
+
+  raw.prepare(
+    `INSERT INTO att_period_review
+       (staff_id, kind, from_day, to_day, scheduled_days, worked_days, difference,
+        decision, days_applied, decided_by)
+     VALUES (1, 'month', '2026-06-01', '2026-06-30', 1, 1, 0, 'approved', -1, 'Ama (manager)')`,
+  ).run();
+
+  out = await (await myReport({ ...ctx(db, KOFI), url })).json();
+  assert.equal(out.signed.length, 1);
+  assert.match(out.signed[0].by, /Ama/);
+  assert.equal(out.signed[0].daysApplied, -1);
+});
+
+test('a month that has not started yet says so rather than counting absences', async () => {
+  const { db } = setup();
+  const url = new URL('https://x/api/me/report?month=2099-01');
+  const out = await (await myReport({ ...ctx(db, KOFI), url })).json();
+  assert.equal(out.future, true);
+  assert.equal(out.totals, null);
 });

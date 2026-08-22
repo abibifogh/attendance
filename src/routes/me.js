@@ -3,11 +3,11 @@ import {
 } from '../lib/http.js';
 import {
   colourFor, computeRange, labelFor, leaveBalance, leaveDaysIn, loadDataset, scheduleFor,
-  toMinutes,
+  summarise, toMinutes,
 } from '../lib/attendance.js';
 import { createNotice } from '../lib/notices.js';
 import {
-  addDays, diffDays, isDay, nowIn, startOfWeek, todayIn,
+  addDays, diffDays, isDay, isMonth, monthBounds, monthOf, nowIn, startOfWeek, todayIn,
 } from '../util/dates.js';
 
 /** A date, or the fallback. Anything else is a mistake worth naming. */
@@ -262,6 +262,109 @@ export async function myWeek(ctx) {
       .map((r) => ({ code: r.code, label: r.label })),
   });
 }
+
+/**
+ * My month.
+ *
+ * The figures somebody actually asks about at the end of a month: how many
+ * days they worked, how many hours that came to, how often they were late and
+ * by how long, what they were absent for, and what leave it cost them. Their
+ * own, for a month they choose, with the day-by-day underneath it.
+ *
+ * Still no overtime figure, and for the same reason as everywhere else on this
+ * side of the app: what somebody is owed is settled at sign-off by a person
+ * who looked at the month. A number here that turned out to differ from the
+ * one on their payslip would be worse than no number at all.
+ *
+ * It says plainly whether the month has been signed off, because that is the
+ * difference between "this is what happened" and "this is what happened so
+ * far, and it can still change".
+ */
+export async function myReport(ctx) {
+  const staff = await meOf(ctx);
+  const timezone = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'timezone'")
+    .first())?.value || 'UTC';
+  const today = todayIn(timezone);
+
+  const asked = ctx.url.searchParams.get('month');
+  const month = isMonth(asked) ? asked : monthOf(today);
+  const { from, to: monthEnd } = monthBounds(month);
+  // Never past today: a month in progress is a month in progress, and counting
+  // days that have not happened as absences would be a lie with somebody's
+  // name on it.
+  const to = monthEnd > today ? today : monthEnd;
+  if (from > today) {
+    return json({
+      month, from, to: monthEnd, future: true, me: person(staff), days: [], totals: null,
+    });
+  }
+
+  const [ds, signed] = await Promise.all([
+    loadDataset(ctx.db, { from, to }),
+    ctx.db.prepare(
+      `SELECT from_day, to_day, decided_by, decided_at, days_applied, decision
+         FROM att_period_review
+        WHERE staff_id = ?1 AND from_day <= ?3 AND to_day >= ?2
+        ORDER BY from_day`,
+    ).bind(staff.id, from, to).all().catch(() => ({ results: [] })),
+  ]);
+
+  const records = computeRange(ds, staff.id, from, to);
+  const totals = summarise(records, { shifts: ds.shiftById, reasons: ds.reasonBy });
+
+  return json({
+    month,
+    from,
+    to,
+    monthEnd,
+    today,
+    me: person(staff),
+    // Only what a person should read about their own month. `summarise`
+    // carries more than this; the rest of it is the property's business.
+    totals: {
+      scheduled: totals.scheduled,
+      daysWorked: totals.daysWorked,
+      daysAbsent: totals.daysAbsent,
+      daysLeave: totals.daysLeave,
+      daysHoliday: totals.daysHoliday,
+      daysRest: totals.daysRest,
+      workedMinutes: totals.workedMinutes,
+      lateCount: totals.lateCount,
+      lateMinutes: totals.lateMinutes,
+      earlyCount: totals.earlyCount,
+      earlyMinutes: totals.earlyMinutes,
+      leaveDeducted: totals.leaveDeducted,
+      byReason: [...totals.byReason.entries()]
+        .map(([code, n]) => ({
+          code, label: ds.reasonBy.get(code)?.label ?? code, days: n,
+        }))
+        .sort((a, b) => b.days - a.days),
+    },
+    // Whether anybody has closed any of it off. A signed month is settled;
+    // an unsigned one is what the terminal has said so far.
+    signed: (signed.results ?? []).map((r) => ({
+      from: r.from_day, to: r.to_day, by: r.decided_by, at: r.decided_at,
+      daysApplied: r.days_applied, decision: r.decision,
+    })),
+    days: records
+      .filter((r) => r.scheduled || Number(r.worked_minutes) || r.status === 'leave')
+      .map((r) => ({
+        day: r.day,
+        shift: r.shift_id ? ds.shiftById.get(r.shift_id)?.name ?? null : null,
+        label: labelFor(r, ds.reasonBy),
+        colour: colourFor(r, ds.reasonBy),
+        in: r.corrected_in ?? r.first_in ?? null,
+        out: r.corrected_out ?? r.last_out ?? null,
+        minutes: Number(r.worked_minutes) || 0,
+        lateMinutes: Number(r.late_minutes) || 0,
+        earlyMinutes: Number(r.early_minutes) || 0,
+      })),
+  });
+}
+
+const person = (staff) => ({
+  id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department,
+});
 
 /**
  * Ask for leave.

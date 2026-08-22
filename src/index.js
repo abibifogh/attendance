@@ -127,6 +127,7 @@ export const ROUTES = [
   // from the session, so none of them takes a staff id and none of them has a
   // version of "somebody else's" to get wrong.
   ['GET', '/api/me/week', 'att_me', mine.myWeek],
+  ['GET', '/api/me/report', 'att_me', mine.myReport],
   ['POST', '/api/me/leave', 'att_me', mine.askForLeave],
   ['POST', '/api/me/leave/:id/withdraw', 'att_me', mine.withdrawMyLeave],
   ['POST', '/api/me/availability', 'att_me', mine.setMyAvailability],

@@ -227,6 +227,33 @@ export function shiftSelect(shifts, selected, props = {}) {
 }
 
 /**
+ * A sheet with something to read in it, and one way out.
+ *
+ * Not a form. `formDialog` would give this a Cancel and a submit that both do
+ * the same thing, and two buttons meaning "close" is how a reader learns not
+ * to read the buttons.
+ */
+export function showSheet({ title, body }) {
+  const dialog = h('dialog.app-dialog',
+    h('div.dialog-head',
+      h('h2', title),
+      h('button.dialog-close', {
+        type: 'button', 'aria-label': 'Close', onclick: () => dialog.close(),
+      }, '✕'),
+    ),
+    body,
+    h('div.btn-row', { style: { marginTop: '1rem', justifyContent: 'flex-end' } },
+      h('button.btn.btn-primary', { type: 'button', onclick: () => dialog.close() }, 'Close'),
+    ),
+  );
+
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  return dialog;
+}
+
+/**
  * A modal that returns what was filled in, or null if it was dismissed.
  *
  * Uses a real <dialog>, so Escape closes it and the browser handles the focus

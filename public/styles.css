@@ -2093,3 +2093,45 @@ html { touch-action: manipulation; }
 @media (pointer: coarse) {
   .dialog-close { width: 2.75rem; height: 2.75rem; }
 }
+
+/* "See the next 21 days" — a quiet full-width press under a list, rather than
+   a button competing with the card's own actions for the corner. */
+.me-more {
+  width: 100%;
+  justify-content: center;
+  color: var(--accent);
+  border-style: dashed;
+}
+
+/* ------------------------------------------------------------- my report --
+   A summary somebody came for, then the days they turn to when one of the
+   numbers surprises them.
+   ---------------------------------------------------------------------- */
+
+/* A figure with an opinion. The tone is on the value, not the whole tile: a
+   card washed in red for two late arrivals reads as an accusation. */
+.stat-good .stat-value { color: var(--good); }
+.stat-warn .stat-value { color: var(--warn); }
+.stat-bad .stat-value { color: var(--bad); }
+
+.report-lines { list-style: none; margin: 0; padding: 0; display: grid; }
+.report-lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+  padding: .45rem 0;
+  border-top: 1px solid var(--border);
+  font-size: .9rem;
+}
+.report-lines li:first-child { border-top: none; }
+.report-lines strong { font-variant-numeric: tabular-nums; }
+
+/* A column that folds away on a handset, and the line it folds into. A member
+   of staff reading their own month on a phone should not have to swipe a table
+   sideways to find out what time they clocked in. */
+.on-phone { display: none; }
+@media (max-width: 620px) {
+  .off-phone { display: none; }
+  .on-phone { display: block; }
+}
