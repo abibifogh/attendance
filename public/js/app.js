@@ -14,6 +14,8 @@ import { renderAttMe } from './views/att-me.js';
 import { renderAttMyReport } from './views/att-my-report.js';
 import { renderAttMyAdvance } from './views/att-my-advance.js';
 import { renderAttAdvances } from './views/att-advances.js';
+import { renderAttMyMedical } from './views/att-my-medical.js';
+import { renderAttMedical } from './views/att-medical.js';
 import { renderAttLeave } from './views/att-leave.js';
 import { renderAttSignoff } from './views/att-signoff.js';
 import { renderAttSetup } from './views/att-setup.js';
@@ -59,6 +61,7 @@ const ROUTES = [
   // Money going the other way. Beside their own report because that is where
   // somebody looks when they are working out what they will be paid.
   { path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance },
+  { path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical },
   { path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday },
   { path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek },
   // The planner reads the month before building the next one. The one thing
@@ -73,6 +76,7 @@ const ROUTES = [
   { path: 'people', label: 'People', permission: 'hr_view', render: renderPeople },
   // Its own permission, the same one as what anybody earns.
   { path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances },
+  { path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical },
   { path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters },
   { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },

@@ -369,7 +369,7 @@ export async function storeFile(ctx, staffId, {
 
 
 /** Read a file back, in order. */
-async function readFile(db, row) {
+export async function readFile(db, row) {
   const first = row.content instanceof ArrayBuffer ? new Uint8Array(row.content) : row.content;
   const parts = Number(row.parts ?? 1);
   if (parts <= 1) return first;

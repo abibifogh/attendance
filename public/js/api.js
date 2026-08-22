@@ -207,6 +207,9 @@ export const api = {
   mySetAvailability: (body) => request('/api/me/availability', { method: 'POST', body }),
   myRunningLate: (body) => request('/api/me/running-late', { method: 'POST', body }),
   myAdvances: () => request('/api/me/advances'),
+  myMedical: (year) => request(`/api/me/medical${year ? `?year=${year}` : ''}`),
+  myMedicalClaim: (body) => request('/api/me/medical', { method: 'POST', body }),
+  myWithdrawClaim: (id) => request(`/api/me/medical/${id}/withdraw`, { method: 'POST', body: {} }),
   myAskForAdvance: (body) => request('/api/me/advances', { method: 'POST', body }),
   myWithdrawAdvance: (id) => request(`/api/me/advances/${id}/withdraw`, { method: 'POST', body: {} }),
 
@@ -219,6 +222,12 @@ export const api = {
   advanceAdjust: (id, body) => request(`/api/advances/${id}`, { method: 'PATCH', body }),
   advanceEntry: (id, body) => request(`/api/advances/${id}/entry`, { method: 'POST', body }),
   advanceRemoveEntry: (id, entryId) => request(`/api/advances/${id}/entry/${entryId}`, { method: 'DELETE' }),
+
+  // ------------------------------------------------------------- medical --
+  medical: (year) => request(`/api/medical${year ? `?year=${year}` : ''}`),
+  medicalSetAllowances: (body) => request('/api/medical/allowances', { method: 'POST', body }),
+  medicalDecide: (id, body) => request(`/api/medical/claims/${id}/decide`, { method: 'POST', body }),
+  medicalReceiptUrl: (id) => `/api/medical/receipt/${id}`,
 
   attBirthdays: () => request('/api/att/birthdays'),
   attBirthdayCard: (body) => request('/api/att/birthdays/card', { method: 'POST', body }),

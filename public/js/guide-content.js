@@ -109,6 +109,17 @@ export const GUIDE = [
         + 'figures are entered by a person, and a mistake is far easier to settle while '
         + 'everybody can still remember the payday it happened on.' },
 
+      { sub: 'My claims' },
+      { p: 'If the property gives you a medical allowance, My claims shows how much of this '
+        + 'year’s is left and what happened to everything you have sent in.' },
+      { p: 'Make a claim takes the bills one at a time: how much, what it was for, when, and a '
+        + 'photograph taken on the phone in your hand. The pictures are made smaller before '
+        + 'they are sent, so a camera photograph is fine. Ten bills at most on one claim — send '
+        + 'the rest as a second one.' },
+      { note: 'Nothing comes off your allowance until somebody approves it, and a claim can be '
+        + 'approved for less than you asked if part of it is not covered. Either way you are '
+        + 'told, with the reason. While it is still waiting you can take it back.' },
+
       { sub: 'My report' },
       { p: 'Your month, in figures: days worked, hours, how often you were late and by how '
         + 'much, what you were absent for, and what leave it cost you. Pick a different month '
@@ -574,6 +585,44 @@ export const GUIDE = [
         + 'whoever runs the wages still has to take the deduction. The two are kept apart on '
         + 'purpose: an app that assumed the money moved would be writing fiction into a ledger '
         + 'people are held to.' },
+    ],
+  },
+
+  {
+    key: 'medical',
+    title: 'Medical claims',
+    permission: 'hr_pay',
+    lede: 'The year’s allowance for each person, and the bills claimed against it.',
+    blocks: [
+      { sub: 'Setting the year' },
+      { p: 'Set the year’s allowances opens one form with everybody on it. Tick who qualifies, '
+        + 'type what they get, and there is a box at the top to give everybody ticked the same '
+        + 'figure at once. Press it once and the year is set.' },
+      { p: 'The starting balance is separate from the allowance, and it matters in the first '
+        + 'year. If somebody has already claimed two hundred on paper before any of this '
+        + 'existed, put what was actually left. Their screen and yours then agree with the '
+        + 'drawer of receipts, which is the whole point.' },
+      { note: 'Unticking somebody takes the year off them and leaves their claims alone. What '
+        + 'was paid does not stop being true because the arrangement ended.' },
+
+      { sub: 'Deciding a claim' },
+      { p: 'A claim arrives with its bills — up to ten of them, each with an amount, what it '
+        + 'was for and usually a photograph you can open. The person’s remaining balance is '
+        + 'shown beside it, because a claim on its own is a number to say yes to and a claim '
+        + 'beside a balance is a decision.' },
+      { list: [
+        'Approve the whole thing, or type a smaller figure where part of it is not covered. '
+          + 'Both numbers are kept and the person is told which is which.',
+        'Approving more than is left in somebody’s allowance takes a deliberate tick. The '
+          + 'property can decide to cover it; the app will not do it quietly.',
+        'Turning one down asks for a line saying why, and they get it.',
+      ] },
+      { warn: 'A bill with no picture is marked as such. It can still be approved — somebody '
+        + 'may have brought the paper one to the office — but you are taking it on trust and '
+        + 'the screen says so rather than letting it look like evidence.' },
+
+      { note: 'Nothing here pays anybody. It records what was agreed and what is left; the '
+        + 'money still goes out the way it always did.' },
     ],
   },
 

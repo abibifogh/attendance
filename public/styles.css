@@ -2499,3 +2499,72 @@ html { touch-action: manipulation; }
      card, and repeating it in a fourth column pushes the month off a handset. */
   .adv-schedule td:nth-child(4) { display: none; }
 }
+
+/* --------------------------------------------------------------------------
+   Medical claims
+   The office side is a decision queue over a table of balances; the staff side
+   is one bar and a list of bills.
+-------------------------------------------------------------------------- */
+.med-tiles { margin-bottom: 1rem; }
+.med-table { width: 100%; }
+
+.med-claim { border-top: 1px solid var(--border); padding: .7rem 0; }
+.med-claim:first-child { border-top: 0; padding-top: 0; }
+.med-claim-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: .8rem; flex-wrap: wrap;
+}
+.med-standing {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  font-size: .88rem; color: var(--text-dim); margin: .3rem 0 .4rem;
+}
+
+.med-receipts { list-style: none; margin: .3rem 0 0; padding: 0; }
+.med-receipts li {
+  display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  padding: .35rem 0; border-top: 1px dashed var(--border); font-size: .9rem;
+}
+.med-receipts li > div { min-width: 0; }
+/* The right-hand side is two words and a button; it should never be the thing
+   that wraps. */
+.med-receipts li > :last-child { flex: none; white-space: nowrap; }
+.med-receipts li:first-child { border-top: 0; }
+
+/* How much of one allowance is gone. One ratio against one limit, so a meter
+   rather than a figure — and it only takes a colour once it is nearly out. */
+.med-meter { min-width: 7rem; }
+.med-track { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.med-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+.med-fill-low { background: var(--warn); }
+.med-fill-out { background: var(--bad); }
+
+/* Setting the year, everybody in one form. */
+.med-everyone { display: flex; align-items: flex-end; gap: .5rem; margin-bottom: .6rem; }
+.med-everyone .field { margin-bottom: 0; }
+.med-set-wrap { max-height: 22rem; overflow-y: auto; }
+.med-set { width: 100%; }
+.med-set td { padding: .3rem .35rem; }
+.med-amount { width: 7rem; text-align: right; }
+
+/* One bill on a claim. */
+.med-lines { display: grid; gap: .5rem; }
+.med-line {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: .5rem .55rem; display: grid; gap: .4rem;
+}
+.med-line-main { display: grid; grid-template-columns: 7rem 1fr 9.5rem; gap: .4rem; }
+.med-line-file { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.med-line-file small { flex: 1; min-width: 6rem; }
+.med-line-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .6rem; margin-top: .6rem;
+}
+.med-total { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 640px) {
+  .med-table th:nth-child(n+3), .med-table td:nth-child(n+3) { display: none; }
+  .med-line-main { grid-template-columns: 1fr 1fr; }
+  .med-line-main input:nth-child(2) { grid-column: 1 / -1; }
+  .med-set-wrap { max-height: 16rem; }
+  .med-amount { width: 5.5rem; }
+}

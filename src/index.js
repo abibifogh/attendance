@@ -21,6 +21,7 @@ import * as signoff from './routes/signoff.js';
 import * as workload from './routes/workload.js';
 import * as pay from './routes/pay.js';
 import * as advance from './routes/advances.js';
+import * as medical from './routes/medical.js';
 import * as sign from './routes/sign.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
@@ -143,6 +144,9 @@ export const ROUTES = [
   ['GET', '/api/me/advances', 'att_me', advance.myAdvances],
   ['POST', '/api/me/advances', 'att_me', advance.askForAdvance],
   ['POST', '/api/me/advances/:id/withdraw', 'att_me', advance.withdrawMyAdvance],
+  ['GET', '/api/me/medical', 'att_me', medical.myMedical],
+  ['POST', '/api/me/medical', 'att_me', medical.claim],
+  ['POST', '/api/me/medical/:id/withdraw', 'att_me', medical.withdrawClaim],
   ['POST', '/api/att/availability', 'att_rota', att.setAvailability],
   ['GET', '/api/att/workload', ['att_rota', 'att_reports'], workload.workload],
 
@@ -165,6 +169,16 @@ export const ROUTES = [
   ['PATCH', '/api/advances/:id', 'hr_pay', advance.adjustAdvance],
   ['POST', '/api/advances/:id/entry', 'hr_pay', advance.addEntry],
   ['DELETE', '/api/advances/:id/entry/:entryId', 'hr_pay', advance.removeEntry],
+
+  // ----------------------------------------------------- medical claims --
+  // A list of somebody's hospital bills says more about them than any other
+  // screen here, so it sits behind the same permission as the wages.
+  ['GET', '/api/medical', 'hr_pay', medical.medical],
+  ['POST', '/api/medical/allowances', 'hr_pay', medical.setAllowances],
+  ['POST', '/api/medical/claims/:id/decide', 'hr_pay', medical.decideClaim],
+  // Readable by whoever decides the claim and by whoever handed the bill in.
+  // The check is on the receipt itself — see `receipt`.
+  ['GET', '/api/medical/receipt/:id', ['hr_pay', 'att_me'], medical.receipt],
   ['GET', '/api/att/workload/rota', ['att_rota', 'att_reports'], workload.rotaWarnings],
   ['POST', '/api/att/roster', 'att_rota', att.saveRoster],
   ['POST', '/api/att/roster/copy', 'att_rota', att.copyRoster],
