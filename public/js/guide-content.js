@@ -661,6 +661,67 @@ export const GUIDE = [
   },
 
   {
+    key: 'payroll',
+    title: 'Payroll',
+    permission: 'hr_pay',
+    lede: 'The month worked out under Ghana’s tax law, and a payslip for each person.',
+    blocks: [
+      { p: 'Everything the app already knows — what somebody is paid, what they scored on '
+        + 'their bonus schemes, what came off for misconduct, what they are repaying — comes '
+        + 'together once a month and turns into a payslip.' },
+
+      { sub: 'Setting it up, once' },
+      { steps: [
+        'Set pay and allowances: tick everybody the payroll covers, give their monthly basic, '
+          + 'and untick SSNIT for anybody the scheme does not cover.',
+        'Allowances are a line each, because a payslip has to say what the money was for. '
+          + 'Untick "taxable" for a genuine reimbursement.',
+        'New scheme: what a bonus scheme is worth at a hundred per cent, and who is under it. '
+          + 'Somebody can be under several or under none.',
+      ] },
+      { note: 'What a scheme is worth is a net figure — what the person actually receives. The '
+        + 'tax on it is worked out at payroll and carried by the property, which is what '
+        + '"grossing up" on the payslip means.' },
+
+      { sub: 'Every month' },
+      { steps: [
+        'Score each person on each scheme. Half the score is half the money.',
+        'Take money off a bonus where there has been misconduct, with the reason. It is a net '
+          + 'figure, it comes off the bonus and never off the salary, and the person is told '
+          + 'the day it is entered rather than on payday.',
+        'Read the month down the table. Press any row for the payslip behind it.',
+        'Close the month. Every payslip is written down as it stands and the advance '
+          + 'deductions are recorded against the balances they came off.',
+      ] },
+      { warn: 'A closed month does not recompute. Give somebody a rise in November and '
+        + 'October’s payslip is untouched, which is the point — a payroll that rewrites '
+        + 'history is one nobody can be held to. Reopening a month takes back the payslips and '
+        + 'exactly the advance deductions the payroll recorded, and nothing else.' },
+
+      { sub: 'What the app works out' },
+      { list: [
+        'SSNIT: 5.5% from the worker and 13% from the property, on basic salary, and the '
+          + 'worker’s half comes off before tax.',
+        'PAYE on the GRA’s graduated monthly bands, on gross pay less that contribution. The '
+          + 'payslip shows how much fell in each band.',
+        'Bonus at 5% as a final tax up to 15% of annual basic salary, with anything above that '
+          + 'added to income at the graduated rates. The 15% is annual, so earlier months this '
+          + 'year are counted first.',
+        'Salary advances come off after tax — it is the person’s own money going back, so it '
+          + 'changes nothing about the tax or what they cost.',
+        'Cost to the property: gross pay plus the employer’s SSNIT.',
+      ] },
+      { p: 'All of those figures are under Setup → Tax and SSNIT, including the band table '
+        + 'itself. They change with the budget, and the table used is printed on every payslip '
+        + 'so a slip can be checked against the figures it was worked out on.' },
+      { warn: 'What is not in here: the overtime tax for qualifying junior staff, personal '
+        + 'reliefs claimed on a tax credit certificate, and tier-three voluntary contributions. '
+        + 'Each is a rule about one person’s circumstances, and guessing at them would put a '
+        + 'wrong figure on a payslip somebody is held to.' },
+    ],
+  },
+
+  {
     key: 'reports',
     title: 'Reports and the wages',
     permission: ['att_reports', 'att_rota'],

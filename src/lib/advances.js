@@ -67,7 +67,7 @@ export const PURPOSES = [
   {
     key: 'other',
     label: 'Something else',
-    cap: 1000,
+    cap: 800,
     months: 1,
     paper: null,
   },
@@ -250,6 +250,24 @@ export function scheduleFor(advance, entries = [], { asOfMonth = null } = {}) {
   }
 
   return out;
+}
+
+/**
+ * What is due off one advance in a given month, and nothing where it is not.
+ *
+ * The one place this is worked out, because two screens ask it — the
+ * month-end close and the payroll — and they must never disagree. A month
+ * already answered is not due again, and the last instalment is whatever is
+ * left rather than a full one.
+ */
+export function dueThisMonth(advance, entries = [], month) {
+  if (!isOpen(advance)) return 0;
+  if ((advance.start_month || '9999-99') > month) return 0;
+  if (entries.some((e) => e.month === month && ['repayment', 'skipped'].includes(e.kind))) return 0;
+
+  const balance = balanceOf(advance, entries);
+  if (balance <= 0) return 0;
+  return round2(Math.min(round2(advance.monthly), balance));
 }
 
 /** When the last instalment falls, or nothing where there is nothing to project. */

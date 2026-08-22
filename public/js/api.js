@@ -230,6 +230,18 @@ export const api = {
   medicalDecide: (id, body) => request(`/api/medical/claims/${id}/decide`, { method: 'POST', body }),
   medicalReceiptUrl: (id) => `/api/medical/receipt/${id}`,
 
+  // ------------------------------------------------------------- payroll --
+  payroll: (month) => request(`/api/payroll${month ? `?month=${month}` : ''}`),
+  payslip: (staffId, month) => request(`/api/payroll/slip/${staffId}${month ? `?month=${month}` : ''}`),
+  payrollProfiles: (body) => request('/api/payroll/profiles', { method: 'POST', body }),
+  payrollScheme: (body) => request('/api/payroll/schemes', { method: 'POST', body }),
+  payrollRemoveScheme: (id) => request(`/api/payroll/schemes/${id}`, { method: 'DELETE' }),
+  payrollScores: (body) => request('/api/payroll/scores', { method: 'POST', body }),
+  payrollPenalty: (body) => request('/api/payroll/penalties', { method: 'POST', body }),
+  payrollRemovePenalty: (id) => request(`/api/payroll/penalties/${id}`, { method: 'DELETE' }),
+  payrollClose: (body) => request('/api/payroll/close', { method: 'POST', body }),
+  payrollReopen: (body) => request('/api/payroll/reopen', { method: 'POST', body }),
+
   attBirthdays: () => request('/api/att/birthdays'),
   attBirthdayCard: (body) => request('/api/att/birthdays/card', { method: 'POST', body }),
   attSuggestRoster: (from, to) => request(`/api/att/roster/suggest?from=${from}&to=${to}`),

@@ -16,6 +16,7 @@ import { renderAttMyAdvance } from './views/att-my-advance.js';
 import { renderAttAdvances } from './views/att-advances.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
 import { renderAttMedical } from './views/att-medical.js';
+import { renderAttPayroll } from './views/att-payroll.js';
 import { renderAttLeave } from './views/att-leave.js';
 import { renderAttSignoff } from './views/att-signoff.js';
 import { renderAttSetup } from './views/att-setup.js';
@@ -77,6 +78,7 @@ const ROUTES = [
   // Its own permission, the same one as what anybody earns.
   { path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances },
   { path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical },
+  { path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayroll },
   { path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters },
   { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },

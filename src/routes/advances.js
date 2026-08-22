@@ -4,8 +4,9 @@ import {
 import { createNotice } from '../lib/notices.js';
 import { readFile, storeFile } from './people.js';
 import {
-  PURPOSES, balanceOf, checkRequest, finishesOn, firstMonthFor, instalmentFor, isMonthEnd,
-  isOpen, monthsLeft, purposeOf, purposesFor, repaidOf, round2, scheduleFor, summarise,
+  PURPOSES, balanceOf, checkRequest, dueThisMonth, finishesOn, firstMonthFor, instalmentFor,
+  isMonthEnd, isOpen, monthsLeft, purposeOf, purposesFor, repaidOf, round2, scheduleFor,
+  summarise,
 } from '../lib/advances.js';
 import { addMonths, isDay, isMonth, monthOf, todayIn } from '../util/dates.js';
 
@@ -155,7 +156,8 @@ export async function advances(ctx) {
       advanceId: advance.id,
       staff: staffById.get(advance.staff_id)?.name ?? 'Somebody',
       staffId: advance.staff_id,
-      expected: Math.min(round2(advance.monthly), balance),
+      // The same rule the payroll uses, from the same place.
+      expected: dueThisMonth(advance, entries, month) || Math.min(round2(advance.monthly), balance),
       balance,
       recorded: already
         ? { id: already.id, kind: already.kind, amount: round2(already.amount) }

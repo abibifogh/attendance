@@ -142,9 +142,9 @@ test('two advances at once are two agreements and one deduction', () => {
 
 test('what may be asked for narrows as the amount goes up', () => {
   assert.deepEqual(purposesFor({ amount: 800 }).map((p) => p.key),
-    ['school_fees', 'rent', 'other']);
-  assert.deepEqual(purposesFor({ amount: 1500 }).map((p) => p.key), ['school_fees', 'rent'],
-    'over a thousand it has to be one of the named reasons');
+    ['school_fees', 'rent', 'other'], 'eight hundred is still the small one');
+  assert.deepEqual(purposesFor({ amount: 900 }).map((p) => p.key), ['school_fees', 'rent'],
+    'over eight hundred it has to be one of the named reasons');
   assert.deepEqual(purposesFor({ hasOpen: true, amount: 500 }).map((p) => p.key), ['other']);
   assert.deepEqual(purposesFor({ hasOpen: true, amount: 1500 }).map((p) => p.key), [],
     'and there is nothing at all somebody can ask for on top of a running advance');
@@ -297,9 +297,10 @@ test('school fees and rent stop at five thousand, and something else at one', as
     /Rent goes up to 5000/,
   );
   await assert.rejects(
-    () => askForAdvance(ctx(db, KOFI, { body: { purpose: 'other', amount: 1500 } })),
+    () => askForAdvance(ctx(db, KOFI, { body: { purpose: 'other', amount: 900 } })),
     /has to be for school fees or rent/,
   );
+  await askForAdvance(ctx(db, KOFI, { body: { purpose: 'other', amount: 800 } }));
 });
 
 test('the paper is the point of naming the reason', async () => {

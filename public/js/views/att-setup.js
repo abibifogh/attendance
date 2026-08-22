@@ -23,6 +23,7 @@ const TABS = [
   ['devices', 'Terminals'],
   ['rules', 'Rules'],
   ['workload', 'Workload'],
+  ['tax', 'Tax and SSNIT'],
 ];
 
 export async function renderAttSetup(params) {
@@ -45,6 +46,7 @@ export async function renderAttSetup(params) {
     devices: devicesTab,
     rules: rulesTab,
     workload: workloadTab,
+    tax: taxTab,
   }[tab](reload);
 
   mount(host,
@@ -1572,6 +1574,150 @@ const WORKLOAD_LIMITS = [
     hint: 'The fewest anybody should get. Set it to 0 if Sundays are like any other day here',
   },
 ];
+
+/**
+ * The figures the payroll is worked out on.
+ *
+ * They are the Ghana Revenue Authority's and SSNIT's, not the property's, and
+ * they change with the budget. They live here rather than in the code because
+ * the alternative is a payroll that is wrong every January until somebody
+ * ships a new version of the app.
+ *
+ * The band table is the tax itself, so it is edited as a table rather than as
+ * a line of JSON: a comma in the wrong place would be a wrong figure on every
+ * payslip in the property.
+ */
+async function taxTab(reload) {
+  const data = await api.attBootstrap();
+  const s = data.settings;
+
+  let bands;
+  try {
+    bands = JSON.parse(s.pay_bands ?? '[]');
+  } catch {
+    bands = [];
+  }
+  if (!bands.length) {
+    bands = [
+      { width: 490, rate: 0 }, { width: 110, rate: 0.05 }, { width: 130, rate: 0.1 },
+      { width: 3166.67, rate: 0.175 }, { width: 16000, rate: 0.25 },
+      { width: 30520, rate: 0.3 }, { width: null, rate: 0.35 },
+    ];
+  }
+
+  const rows = [];
+  const list = h('tbody');
+
+  const draw = () => {
+    mount(list, rows.map((row, i) => h('tr',
+      h('td.muted', i === 0 ? 'First' : (row.width.value === '' ? 'Everything above' : 'Then the next')),
+      h('td.num', row.width),
+      h('td.num', row.rate, h('span.muted', ' %')),
+      h('td.num', h('button.btn-ghost.btn-sm', {
+        type: 'button',
+        'aria-label': 'Take this band off',
+        onclick: () => { rows.splice(i, 1); draw(); },
+      }, '✕')))));
+  };
+
+  const addRow = (band = { width: '', rate: 0 }) => {
+    rows.push({
+      width: h('input.med-amount', {
+        type: 'number', step: '0.01', min: '0',
+        value: band.width == null ? '' : band.width,
+        placeholder: 'the rest',
+        'aria-label': 'How much of the income this band covers',
+        onchange: draw,
+      }),
+      rate: h('input.pay-score', {
+        type: 'number', step: '0.5', min: '0', max: '100',
+        value: Math.round(Number(band.rate) * 1000) / 10,
+        'aria-label': 'The rate for this band',
+      }),
+    });
+  };
+
+  for (const band of bands) addRow(band);
+  draw();
+
+  const form = h('form.att-rules');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      const table = rows.map((row) => ({
+        width: row.width.value === '' ? null : Number(row.width.value),
+        rate: (Number(row.rate.value) || 0) / 100,
+      }));
+      await api.attUpdateSettings({
+        ...Object.fromEntries(new FormData(form).entries()),
+        pay_bands: JSON.stringify(table),
+      });
+      toast('Saved. Payrolls from now on use these figures.', 'good');
+      await reload('tax');
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  });
+
+  const percent = (key, label, value, hint) => h('label.field',
+    h('span', label),
+    h('input', {
+      type: 'number', name: key, step: '0.1', min: '0', max: '50',
+      value: Math.round(Number(value) * 1000) / 10,
+    }),
+    h('small.muted', hint));
+
+  form.append(
+    card('The graduated bands', { note: 'Income Tax Act 2015 (Act 896)' },
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Monthly chargeable income, band by band, exactly as the GRA publishes them: so much '
+        + 'at nothing, then the next so much at five per cent, and so on. The last band has no '
+        + 'width — everything above it is taxed at that rate.'),
+      h('label.field',
+        h('span', 'What to call this table'),
+        h('input', {
+          type: 'text', name: 'pay_bands_label', maxlength: 80,
+          value: s.pay_bands_label ?? 'GRA monthly bands',
+        }),
+        h('small.muted', 'Printed on every payslip, so a slip can be checked against the '
+          + 'table it was worked out on')),
+      h('div.table-wrap', h('table.med-set',
+        h('thead', h('tr',
+          h('th', ''), h('th.num', 'How much'), h('th.num', 'At'), h('th', ''),
+        )),
+        list)),
+      h('button.btn-sm', {
+        type: 'button',
+        style: { marginTop: '.5rem' },
+        onclick: () => { addRow(); draw(); },
+      }, 'Add a band')),
+
+    card('SSNIT', { note: 'National Pensions Act 2008 (Act 766)' },
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Both halves are worked out on basic salary alone, and the worker’s half comes off '
+        + 'before tax. Somebody the scheme does not cover is ticked out of it on the payroll '
+        + 'screen rather than here.'),
+      h('div.field-row',
+        percent('pay_ssnit_employee', 'From the worker', s.pay_ssnit_employee ?? 0.055,
+          'per cent of basic'),
+        percent('pay_ssnit_employer', 'From the property', s.pay_ssnit_employer ?? 0.13,
+          'per cent of basic'))),
+
+    card('Bonus', { note: 'Act 896, the 5% final tax' },
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Bonus up to a share of annual basic salary is taxed at a flat rate as a final tax, and '
+        + 'anything above that joins employment income at the graduated rates. The share is '
+        + 'annual, so what has already been paid this year is counted first.'),
+      h('div.field-row',
+        percent('pay_bonus_rate', 'The flat rate', s.pay_bonus_rate ?? 0.05, 'per cent'),
+        percent('pay_bonus_share', 'Up to this share of annual basic', s.pay_bonus_share ?? 0.15,
+          'per cent of a year’s basic salary'))),
+
+    h('div.btn-row', h('button.btn.btn-primary', { type: 'submit' }, 'Save the figures')),
+  );
+
+  return form;
+}
 
 async function workloadTab(reload) {
   const data = await api.attBootstrap();

@@ -22,6 +22,7 @@ import * as workload from './routes/workload.js';
 import * as pay from './routes/pay.js';
 import * as advance from './routes/advances.js';
 import * as medical from './routes/medical.js';
+import * as payroll from './routes/payroll.js';
 import * as sign from './routes/sign.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
@@ -182,6 +183,18 @@ export const ROUTES = [
   // Readable by whoever decides the claim and by whoever handed the bill in.
   // The check is on the receipt itself — see `receipt`.
   ['GET', '/api/medical/receipt/:id', ['hr_pay', 'att_me'], medical.receipt],
+
+  // ----------------------------------------------------------- payroll --
+  ['GET', '/api/payroll', 'hr_pay', payroll.payroll],
+  ['GET', '/api/payroll/slip/:id', 'hr_pay', payroll.payslip],
+  ['POST', '/api/payroll/profiles', 'hr_pay', payroll.setProfiles],
+  ['POST', '/api/payroll/schemes', 'hr_pay', payroll.saveScheme],
+  ['DELETE', '/api/payroll/schemes/:id', 'hr_pay', payroll.removeScheme],
+  ['POST', '/api/payroll/scores', 'hr_pay', payroll.setScores],
+  ['POST', '/api/payroll/penalties', 'hr_pay', payroll.addPenalty],
+  ['DELETE', '/api/payroll/penalties/:id', 'hr_pay', payroll.removePenalty],
+  ['POST', '/api/payroll/close', 'hr_pay', payroll.closeRun],
+  ['POST', '/api/payroll/reopen', 'hr_pay', payroll.reopenRun],
   ['GET', '/api/att/workload/rota', ['att_rota', 'att_reports'], workload.rotaWarnings],
   ['POST', '/api/att/roster', 'att_rota', att.saveRoster],
   ['POST', '/api/att/roster/copy', 'att_rota', att.copyRoster],

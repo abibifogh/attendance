@@ -223,13 +223,11 @@ async function ask(data, reload, cash) {
         disabled: off,
         title: off && data.hasOpen && p.key !== 'other'
           ? 'You are still paying one back'
-          : off ? `Up to ${cash(p.cap)}` : '',
+          : off ? `Not for an amount this size` : '',
         onclick: () => { chosen = p.key; draw(); },
       },
       h('strong', p.label),
-      h('small', p.key === 'other'
-        ? `up to ${cash(p.cap)} · back next month`
-        : `up to ${cash(p.cap)} · over ${p.months} months`));
+      h('small', p.months === 1 ? 'back out of your next pay' : `over ${p.months} months`));
     }));
 
     // If what they typed rules out what they picked, move them rather than
@@ -250,14 +248,26 @@ async function ask(data, reload, cash) {
         paperStatus)
       : null);
 
+    // What it would cost them a month, or — the moment they go past a ceiling
+    // — which ceiling and what it is. Said here rather than printed under
+    // every choice, so the form reads as three options and not as three rules.
+    const overSmall = other && asking > other.cap;
+    note.classList.toggle('adv-note-over', Boolean(now && asking > now.cap) || (!now && overSmall));
+
     note.textContent = !now
-      ? 'Nothing can be asked for at that amount.'
-      : asking > 0
-        ? `${cash(Math.ceil((asking / now.months) * 100) / 100)} would come off your pay `
-          + (now.months === 1 ? 'next month.' : `each month for ${now.months} months.`)
-        : now.months === 1
-          ? 'Paid back out of your next pay.'
-          : `Paid back over ${now.months} months.`;
+      ? `Nothing can be asked for at ${cash(asking)}.`
+      : asking > now.cap
+        ? `${now.label} goes up to ${cash(now.cap)}.`
+        : asking > 0
+          ? `${cash(Math.ceil((asking / now.months) * 100) / 100)} would come off your pay `
+            + (now.months === 1 ? 'next month.' : `each month for ${now.months} months.`)
+          : now.months === 1
+            ? 'Paid back out of your next pay.'
+            : `Paid back over ${now.months} months.`;
+
+    if (now && asking <= now.cap && overSmall && now.key !== 'other') {
+      note.textContent += ` Anything over ${cash(other.cap)} has to be for school fees or rent.`;
+    }
     return undefined;
   };
 
@@ -284,7 +294,7 @@ async function ask(data, reload, cash) {
       h('p.muted', { style: { fontSize: '.85rem' } },
         data.hasOpen
           ? 'You are still paying one back, so the only thing you can ask for now is something '
-            + `else, up to ${cash(other?.cap ?? 1000)} and back out of your next pay.`
+            + 'else, out of your next pay.'
           : 'This is a request, not an agreement. Somebody will decide, and you will be told '
             + 'either way. Nothing comes off your pay unless it is agreed.'),
       h('p.muted', { style: { fontSize: '.85rem', marginBottom: '.2rem' } }, 'What it is for'),

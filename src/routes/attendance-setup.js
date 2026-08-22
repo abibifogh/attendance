@@ -837,7 +837,50 @@ const SETTINGS = new Map([
   // Zero here means the property does not count Sundays, which is a real
   // answer rather than an empty box.
   ['wl_sundaysOffPerMonth', (v) => String(int(v, 'Sundays off in a month', { min: 0, max: 5 }))],
+
+  // The tax figures. Data rather than code, because they change with the
+  // budget and an app whose tax table only a developer can change is an app
+  // that is wrong for the first three months of every year.
+  ['pay_ssnit_employee', (v) => String(num(v, 'Worker SSNIT', { min: 0, max: 0.5 }))],
+  ['pay_ssnit_employer', (v) => String(num(v, 'Employer SSNIT', { min: 0, max: 0.5 }))],
+  ['pay_bonus_rate', (v) => String(num(v, 'Bonus rate', { min: 0, max: 0.5 }))],
+  ['pay_bonus_share', (v) => String(num(v, 'Share of basic at the bonus rate', { min: 0, max: 1 }))],
+  ['pay_bands_label', (v) => str(v, 'What the bands are called', { max: 80 }) ?? ''],
+  ['pay_bands', (v) => readBands(v)],
 ]);
+
+/**
+ * A band table, checked before it is stored.
+ *
+ * Everything else in this list is one number. This is the tax itself, and a
+ * table somebody has half-typed would put a wrong figure on every payslip in
+ * the property — so it is parsed, checked and refused rather than trusted.
+ */
+function readBands(value) {
+  let parsed;
+  try {
+    parsed = typeof value === 'string' ? JSON.parse(value) : value;
+  } catch {
+    throw badRequest('The tax bands are not readable. Each band needs a width and a rate.');
+  }
+  if (!Array.isArray(parsed) || !parsed.length) {
+    throw badRequest('There has to be at least one tax band.');
+  }
+
+  const bands = parsed.map((band, i) => {
+    const rate = num(band.rate, `Band ${i + 1} rate`, { required: true, min: 0, max: 1 });
+    const last = i === parsed.length - 1;
+    // Only the last band runs to infinity. A width missing in the middle would
+    // silently swallow every band under it.
+    if (band.width == null || band.width === '') {
+      if (!last) throw badRequest(`Band ${i + 1} needs a width. Only the last one can be open.`);
+      return { width: null, rate };
+    }
+    return { width: num(band.width, `Band ${i + 1}`, { min: 0.01, max: 10_000_000 }), rate };
+  });
+
+  return JSON.stringify(bands);
+}
 
 /**
  * One department per line, tidied.

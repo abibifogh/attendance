@@ -2622,3 +2622,59 @@ html { touch-action: manipulation; }
 .adv-purpose.on { border-color: var(--accent); background: var(--accent-soft); }
 .adv-purpose:disabled { opacity: .45; cursor: not-allowed; }
 .adv-paper { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: .7rem; }
+/* The line under the amount, when what it says is a refusal rather than a
+   working out. */
+.adv-note-over { color: var(--warn); font-weight: 550; }
+
+/* --------------------------------------------------------------------------
+   Payroll
+   A month is a table of people and a payslip behind each row. The payslip is
+   the part that gets printed, handed over and argued about, so it is built to
+   be read rather than to match the screen it came from.
+-------------------------------------------------------------------------- */
+.pay-tiles { margin-bottom: 1rem; }
+.pay-table { width: 100%; }
+.pay-row { cursor: pointer; }
+.pay-row:hover > td { background: var(--surface-2); }
+.pay-row:focus-visible > td:first-child { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pay-total > td { border-top: 2px solid var(--border-strong); font-variant-numeric: tabular-nums; }
+.pay-score { width: 4.5rem; text-align: right; }
+
+.pay-scheme {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: .6rem .7rem; margin-bottom: .6rem;
+}
+.pay-scheme-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: .8rem; flex-wrap: wrap; margin-bottom: .4rem;
+}
+.pay-scores { width: 100%; font-size: .9rem; }
+.pay-scores td { padding: .25rem .3rem; border-top: 1px solid var(--border); }
+
+/* The payslip. */
+.slip { display: grid; gap: .9rem; }
+.slip-top {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border); padding-bottom: .7rem;
+}
+.slip-name { font-size: 1.1rem; font-weight: 700; }
+.slip-net { text-align: right; }
+.slip-net-value { font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em; }
+.slip-head {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--text-faint); margin: 0 0 .3rem;
+}
+.slip-table { width: 100%; font-size: .92rem; }
+.slip-table td { padding: .28rem .2rem; border-top: 1px solid var(--border); }
+.slip-table tr:first-child td { border-top: 0; }
+.slip-table td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.slip-off td { color: var(--bad); }
+.slip-sum td { border-top: 2px solid var(--border-strong); }
+.slip-working summary { cursor: pointer; font-size: .88rem; color: var(--text-dim); }
+
+@media (max-width: 640px) {
+  .pay-table th:nth-child(n+4):nth-child(-n+8),
+  .pay-table td:nth-child(n+4):nth-child(-n+8) { display: none; }
+  .slip-net-value { font-size: 1.35rem; }
+}
