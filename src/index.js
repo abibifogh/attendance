@@ -215,11 +215,13 @@ export const ROUTES = [
   // nobody can get into.
   ['GET', '/api/payroll/access', 'hr_pay', payAccess.myAccess],
   ['POST', '/api/payroll/unlock', 'hr_pay', payAccess.unlock],
+  ['POST', '/api/payroll/pin', 'hr_pay', payAccess.setPin],
   ['POST', '/api/payroll/lock', 'hr_pay', payAccess.lock],
   // Granting it is an administrator's job, so it lives with the logins.
   ['GET', '/api/payroll/grants', 'users', payAccess.accessList],
   ['POST', '/api/payroll/grants', 'users', payAccess.grant],
   ['DELETE', '/api/payroll/grants/:id', 'users', payAccess.revoke],
+  ['DELETE', '/api/payroll/pin/:id', 'users', payAccess.resetPin],
 
   ['GET', '/api/payroll/returns', 'hr_pay', payroll.returns],
   ['GET', '/api/payroll/input/template', 'hr_pay', payroll.inputTemplate],
@@ -471,19 +473,21 @@ async function servePage(env, url, request, path) {
  * A prefix rather than a list of routes, so a route added under it is covered
  * the day it is written rather than the day somebody remembers.
  *
- * The three that ask about the lock itself are outside it, because a screen
- * that cannot ask for the code is a screen nobody can get into.
+ * The handful that ask about the lock itself are outside it, because a screen
+ * that cannot ask for the PIN is a screen nobody can get into.
  */
 const PAYROLL_PREFIX = '/api/payroll';
 const OUTSIDE_THE_LOCK = new Set([
   '/api/payroll/access',
   '/api/payroll/unlock',
+  '/api/payroll/pin',
   '/api/payroll/lock',
   '/api/payroll/grants',
 ]);
 const locked = (pathname) => pathname.startsWith(PAYROLL_PREFIX)
   && !OUTSIDE_THE_LOCK.has(pathname)
-  && !pathname.startsWith('/api/payroll/grants/');
+  && !pathname.startsWith('/api/payroll/grants/')
+  && !pathname.startsWith('/api/payroll/pin/');
 
 /**
  * Somebody else's payslip, and nothing else in the app.

@@ -2807,6 +2807,13 @@ html { touch-action: manipulation; }
 }
 .pay-lock-when { font-size: .82rem; margin: .9rem 0 0; }
 
+/* Choosing one. Three boxes down the middle rather than across, because a PIN
+   and its confirmation side by side is how people type the same typo twice. */
+.pay-lock-fields { display: grid; gap: .6rem; justify-items: center; margin-bottom: .3rem; }
+.pay-lock-fields label { display: grid; gap: .25rem; justify-items: center; }
+.pay-lock-fields label > span { font-size: .8rem; font-weight: 600; color: var(--muted); }
+.pay-lock .btn-row { justify-content: center; }
+
 /* Shown once, so it has to be readable across a desk and typed without a
    mistake. */
 .pay-code-shown {

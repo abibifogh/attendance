@@ -242,6 +242,8 @@ export const api = {
   payrollReturns: (month) => request(`/api/payroll/returns?month=${encodeURIComponent(month)}`),
   payrollAccess: () => request('/api/payroll/access'),
   payrollUnlock: (body) => request('/api/payroll/unlock', { method: 'POST', body }),
+  payrollSetPin: (body) => request('/api/payroll/pin', { method: 'POST', body }),
+  payrollResetPin: (id) => request(`/api/payroll/pin/${id}`, { method: 'DELETE' }),
   payrollLock: () => request('/api/payroll/lock', { method: 'POST', body: {} }),
   payrollGrants: () => request('/api/payroll/grants'),
   payrollGrant: (body) => request('/api/payroll/grants', { method: 'POST', body }),

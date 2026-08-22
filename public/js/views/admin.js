@@ -172,15 +172,31 @@ async function payrollGrantsCard(reload) {
         ? h('span.pill.good', 'Administrator')
         : accessPill(a)),
       h('td', person.admin
-        ? h('span.muted', 'Always. An administrator is who grants this.')
+        ? h('div',
+          h('div', a.hasPin ? 'PIN set' : 'No PIN yet'),
+          h('small.muted', 'Granted nothing: an administrator is who grants.'))
         : accessWhen(a)),
-      h('td.num', person.admin
-        ? null
-        : h('div.btn-row', { style: { justifyContent: 'flex-end' } },
-          h('button.btn-sm', {
-            onclick: () => grantTo(person, data, reload),
-          }, a.state === 'none' ? 'Grant it' : 'New code'),
-          a.state === 'none'
+      h('td.num',
+        h('div.btn-row', { style: { justifyContent: 'flex-end' } },
+          person.admin
+            ? null
+            : h('button.btn-sm', {
+              onclick: () => grantTo(person, data, reload),
+            }, a.state === 'none' ? 'Grant it' : 'New code'),
+          a.hasPin
+            ? h('button.btn-ghost.btn-sm', {
+              title: 'They choose a new one the next time they open the payroll',
+              onclick: async () => {
+                if (!confirmAction(`Reset ${person.name}’s payroll PIN? They choose a new `
+                  + 'one the next time they open the payroll, and anything they have open now '
+                  + 'is shut.')) return;
+                await api.payrollResetPin(person.id);
+                toast('Reset. They choose a new one.', 'good');
+                await reload();
+              },
+            }, 'Reset PIN')
+            : null,
+          person.admin || a.state === 'none'
             ? null
             : h('button.btn-ghost.btn-sm', {
               title: 'Take it away now',
@@ -199,20 +215,22 @@ async function payrollGrantsCard(reload) {
     note: `${data.people.filter((p) => p.admin || p.access.state !== 'none').length}`,
   },
   h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
-    'Three locks, not one. "Pay and labour cost" on a login says somebody is the kind of person '
-    + 'who might. A grant here says they may at the moment, and it runs out. A code they have to '
-    + `type says it is them, and it opens the payroll for ${data.unlockHours} hours at a time. `
-    + 'Administrators are not granted anything: they are the ones who grant.'),
+    'Four locks, not one. "Pay and labour cost" on a login says somebody is the kind of person '
+    + 'who might. A grant here says they may at the moment, and it runs out. A code they are '
+    + 'given says the grant reached the right person. And a PIN of their own, different from '
+    + 'the one they sign in with, is asked for every single time the payroll is opened. '
+    + 'Administrators are granted nothing, but they set a PIN like everybody else.'),
 
   rows.length
     ? h('table', h('thead', h('tr',
-      h('th', 'Login'), h('th', 'Payroll'), h('th', 'Until'), h('th', ''))),
+      h('th', 'Login'), h('th', 'Payroll'), h('th', 'PIN and dates'), h('th', ''))),
     h('tbody', rows))
     : h('p.muted', 'Nobody has "Pay and labour cost" on their login yet.'));
 }
 
 function accessPill(a) {
   if (a.state === 'open') return h('span.pill.good', 'Open now');
+  if (a.state === 'setup') return h('span.pill', 'Granted, no PIN yet');
   if (a.state === 'shut') return h('span.pill', 'Granted, shut');
   if (a.state === 'locked') return h('span.pill.bad', 'Locked out');
   if (a.state === 'expired') return h('span.pill.bad', 'Run out');
@@ -223,10 +241,11 @@ function accessWhen(a) {
   if (a.state === 'none') return h('span.muted', '—');
   return h('div',
     h('div', when(a.expiresAt)),
+    h('div', h('small.muted', a.hasPin ? 'PIN set' : 'No PIN yet')),
     a.unlockedUntil && a.state === 'open'
-      ? h('small.muted', `Open until ${when(a.unlockedUntil)}`)
+      ? h('div', h('small.muted', `Open until ${when(a.unlockedUntil)}`))
       : null,
-    a.grantedBy ? h('small.muted', `Given by ${a.grantedBy}`) : null);
+    a.grantedBy ? h('div', h('small.muted', `Given by ${a.grantedBy}`)) : null);
 }
 
 function when(value) {
@@ -256,11 +275,10 @@ async function grantTo(person, data, reload) {
     body: h('div',
       h('p.muted', { style: { fontSize: '.9rem', marginTop: 0 } },
         person.access.state === 'none'
-          ? 'They will be given a code to type. It opens the payroll for '
-            + `${data.unlockHours} hours at a time, and stops working altogether when the grant `
-            + 'below runs out.'
+          ? 'They will be given a code to type once, and they choose a payroll PIN of their '
+            + 'own with it. The code stops working altogether when the grant below runs out.'
           : 'This replaces what they have: a new code, a new end date, and anything they have '
-            + 'open now is shut.'),
+            + 'open now is shut. Their PIN is their own and stays as it is.'),
       field('For how long', days, 'You can take it away sooner at any time'),
       field('Why (optional)', h('input', {
         type: 'text', name: 'note', maxlength: 200, placeholder: 'Covering the month end',
@@ -290,8 +308,8 @@ function showCode(made) {
         + 'replaced rather than looked up.'),
       h('div.pay-code-shown', made.code),
       h('p.muted', { style: { fontSize: '.85rem' } },
-        `It opens the payroll for ${made.unlockHours} hours at a time, and stops working `
-        + `on ${when(made.expiresAt)}.`),
+        'They type it once and choose a payroll PIN with it; after that the PIN is all they '
+        + `type. The code stops working on ${when(made.expiresAt)}.`),
       h('div.btn-row',
         h('button.btn-sm', {
           type: 'button',

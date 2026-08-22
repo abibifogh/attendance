@@ -4,28 +4,33 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  LOCKOUT_MINUTES, MAX_TRIES, UNLOCK_HOURS, afterWrongCode, iso, mayOpen, newCode, readAccess,
-  refusalFor, tidyCode, unlockUntil,
+  LOCKOUT_MINUTES, MAX_TRIES, UNLOCK_MINUTES, afterWrongTry, iso, mayOpen, needsRenewal, newCode,
+  readAccess, refusalFor, tidyCode, unlockUntil,
 } from '../src/lib/payroll-access.js';
-import { accessList, grant, guardPayroll, lock, myAccess, revoke, unlock } from '../src/routes/payroll-access.js';
+import {
+  accessList, grant, guardPayroll, lock, myAccess, resetPin, revoke, setPin, unlock,
+} from '../src/routes/payroll-access.js';
 import { payroll, setProfiles } from '../src/routes/payroll.js';
 import worker from '../src/index.js';
-import { createToken } from '../src/lib/auth.js';
+import { createToken, getPepper, hashPin } from '../src/lib/auth.js';
 
 /**
  * The lock on the payroll.
  *
  * What people are paid is the one thing in this app that cannot be un-seen, so
  * what matters here is what is refused. Every case below is somebody being
- * turned away: no grant, an expired one, a wrong code, a code guessed at, a
- * colleague's payslip, and a route added later that somebody forgot to lock.
+ * turned away: no grant, an expired one, a wrong PIN, a PIN guessed at, a PIN
+ * that is only the login PIN again, a colleague's payslip, and a route added
+ * later that somebody forgot to lock.
  */
 
+const MINUTE = 60_000;
 const HOUR = 3_600_000;
 const NOW = Date.parse('2026-08-22T10:00:00Z');
 const rowAt = (over = {}) => ({
   user_id: 4,
   code_hash: 'x',
+  pin_hash: 'p',
   granted_by: 'Kwame (admin)',
   expires_at: iso(NOW + 30 * 24 * HOUR),
   unlocked_until: null,
@@ -45,18 +50,33 @@ test('no grant is not a grant', () => {
   assert.equal(a.unlocked, false);
 });
 
-test('granted but not unlocked is shut, not open', () => {
+test('granted with no PIN yet is a setup, not a refusal', () => {
+  const a = readAccess(rowAt({ pin_hash: null }), NOW);
+  assert.equal(a.state, 'setup');
+  assert.equal(a.granted, true);
+  assert.equal(a.hasPin, false);
+});
+
+test('granted and enrolled but not unlocked is shut, not open', () => {
   const a = readAccess(rowAt(), NOW);
   assert.equal(a.state, 'shut');
   assert.equal(a.granted, true);
   assert.equal(a.unlocked, false);
 });
 
+test('a row with no end date on it never runs out', () => {
+  // Which is only ever an administrator's own row: they are granted nothing,
+  // and a property with one administrator must never lock itself out.
+  const a = readAccess(rowAt({ code_hash: null, expires_at: null }), NOW);
+  assert.equal(a.granted, true);
+  assert.equal(a.state, 'shut');
+});
+
 test('an unlock that has run out is shut again', () => {
-  const stillGood = readAccess(rowAt({ unlocked_until: iso(NOW + HOUR) }), NOW);
+  const stillGood = readAccess(rowAt({ unlocked_until: iso(NOW + 10 * MINUTE) }), NOW);
   assert.equal(stillGood.state, 'open');
 
-  const gone = readAccess(rowAt({ unlocked_until: iso(NOW - 60_000) }), NOW);
+  const gone = readAccess(rowAt({ unlocked_until: iso(NOW - MINUTE) }), NOW);
   assert.equal(gone.state, 'shut', 'a minute past is past');
 });
 
@@ -82,21 +102,29 @@ test('the grant running out beats everything else', () => {
 test('guessing stops being free', () => {
   let row = rowAt();
   for (let i = 1; i < MAX_TRIES; i += 1) {
-    const after = afterWrongCode(row, NOW);
+    const after = afterWrongTry(row, NOW);
     assert.equal(after.tries, i);
     assert.equal(after.lockedUntil, null, 'a fat thumb is not a break-in');
     row = { ...row, tries: after.tries };
   }
 
-  const last = afterWrongCode(row, NOW);
+  const last = afterWrongTry(row, NOW);
   assert.equal(last.tries, 0, 'the count starts again with the lockout');
-  assert.equal(last.lockedUntil, iso(NOW + LOCKOUT_MINUTES * 60_000));
+  assert.equal(last.lockedUntil, iso(NOW + LOCKOUT_MINUTES * MINUTE));
 
   assert.equal(readAccess(rowAt({ locked_until: last.lockedUntil }), NOW).state, 'locked');
 });
 
-test('an unlock lasts a working day and no longer', () => {
-  assert.equal(unlockUntil(new Date(NOW)), iso(NOW + UNLOCK_HOURS * HOUR));
+test('the window is minutes, and it slides only once half of it has gone', () => {
+  assert.equal(unlockUntil(new Date(NOW)), iso(NOW + UNLOCK_MINUTES * MINUTE));
+
+  const fresh = rowAt({ unlocked_until: iso(NOW + UNLOCK_MINUTES * MINUTE) });
+  assert.equal(needsRenewal(fresh, NOW), false, 'no write behind every read');
+
+  const wearing = rowAt({ unlocked_until: iso(NOW + 5 * MINUTE) });
+  assert.equal(needsRenewal(wearing, NOW), true, 'an hour of work does not shut halfway');
+
+  assert.equal(needsRenewal(rowAt(), NOW), false, 'nothing to renew');
 });
 
 // ---------------------------------------------------------------------------
@@ -105,12 +133,28 @@ test('an unlock lasts a working day and no longer', () => {
 
 const asAdmin = { user: { id: 1, name: 'Kwame', role: 'admin' }, permissions: ['hr_pay'] };
 const asBookkeeper = { user: { id: 4, name: 'Yaa', role: 'manager' }, permissions: ['hr_pay'] };
+const asRecovery = {
+  user: { id: 0, name: 'Recovery access', role: 'admin', isRecovery: true },
+  permissions: ['hr_pay'],
+};
 
-test('an administrator is always in, and never needs a grant', () => {
-  assert.deepEqual(mayOpen(asAdmin, null, NOW).ok, true);
-  assert.equal(mayOpen(asAdmin, null, NOW).why, 'admin');
-  // Which is the point: a property with one administrator must never be able
-  // to lock itself out of its own payroll.
+test('an administrator is asked for a PIN like everybody else', () => {
+  const out = mayOpen(asAdmin, null, NOW);
+  assert.equal(out.ok, false);
+  assert.equal(out.why, 'setup', 'no row means they have never chosen one, not that they cannot');
+  assert.match(refusalFor(out.why), /Choose a payroll PIN/);
+
+  // And once they have one, it is the same question as anybody else gets.
+  assert.equal(mayOpen(asAdmin, rowAt({ code_hash: null, expires_at: null }), NOW).why, 'shut');
+});
+
+test('the recovery login is the way back in, and the only way past the PIN', () => {
+  // Whoever holds the worker's secrets already holds everything a PIN
+  // protects, and a property with one administrator who has forgotten theirs
+  // must not be locked out of its own payroll.
+  const out = mayOpen(asRecovery, null, NOW);
+  assert.equal(out.ok, true);
+  assert.equal(out.why, 'recovery');
 });
 
 test('the permission on its own opens nothing', () => {
@@ -121,14 +165,13 @@ test('the permission on its own opens nothing', () => {
 });
 
 test('a grant on its own opens nothing either', () => {
-  const out = mayOpen(asBookkeeper, rowAt(), NOW);
+  const out = mayOpen(asBookkeeper, rowAt({ pin_hash: null }), NOW);
   assert.equal(out.ok, false);
-  assert.equal(out.why, 'shut');
-  assert.match(refusalFor(out.why), /Enter your payroll code/);
+  assert.equal(out.why, 'setup');
 });
 
-test('granted, unlocked, and inside both windows is the only way in', () => {
-  const out = mayOpen(asBookkeeper, rowAt({ unlocked_until: iso(NOW + HOUR) }), NOW);
+test('granted, enrolled, unlocked and inside every window is the only way in', () => {
+  const out = mayOpen(asBookkeeper, rowAt({ unlocked_until: iso(NOW + MINUTE) }), NOW);
   assert.equal(out.ok, true);
   assert.equal(out.why, 'unlocked');
 });
@@ -207,6 +250,13 @@ const ctx = (db, session, { body = null, url = '/api/payroll/grants' } = {}) => 
 
 const read = async (r) => r.json();
 
+/** Grant a bookkeeper and take them all the way through to a PIN. */
+async function enrolled(db, { pin = '4321' } = {}) {
+  const made = await read(await grant(ctx(db, asAdmin, { body: { userId: 4, days: 30 } })));
+  await setPin(ctx(db, asBookkeeper, { body: { code: made.code, pin } }));
+  return made;
+}
+
 test('a grant hands back a code once, and only its fingerprint is kept', async () => {
   const { db, raw } = setup();
   const made = await read(await grant(ctx(db, asAdmin, { body: { userId: 4, days: 30 } })));
@@ -218,6 +268,7 @@ test('a grant hands back a code once, and only its fingerprint is kept', async (
   assert.ok(row.code_hash);
   assert.ok(!String(row.code_hash).includes(tidyCode(made.code)), 'the code itself is not kept');
   assert.equal(row.granted_by, 'Kwame (admin)');
+  assert.equal(row.pin_hash, null, 'a grant is not a PIN');
 });
 
 test('somebody without the pay permission cannot be granted the second lock', async () => {
@@ -236,16 +287,108 @@ test('an administrator has nothing to be given', async () => {
   );
 });
 
-test('the right code opens it, and the wrong one does not', async () => {
+// ---------------------------------------------------------------------------
+// The PIN
+// ---------------------------------------------------------------------------
+
+test('a member of staff needs the code to choose a PIN, and it has to be the right one', async () => {
   const { db } = setup();
   const made = await read(await grant(ctx(db, asAdmin, { body: { userId: 4, days: 30 } })));
 
   await assert.rejects(
-    () => unlock(ctx(db, asBookkeeper, { body: { code: '000 000 001' } })),
+    () => setPin(ctx(db, asBookkeeper, { body: { pin: '4321' } })),
+    /Type the code/,
+  );
+  await assert.rejects(
+    () => setPin(ctx(db, asBookkeeper, { body: { code: '000 000 001', pin: '4321' } })),
+    /code is not right/,
+  );
+
+  const done = await read(await setPin(ctx(db, asBookkeeper, { body: { code: made.code, pin: '4321' } })));
+  assert.equal(done.open, true, 'they just proved it is them, so they are in');
+});
+
+test('a PIN is 4 to 10 digits and nothing else', async () => {
+  const { db } = setup();
+  const made = await read(await grant(ctx(db, asAdmin, { body: { userId: 4, days: 30 } })));
+
+  for (const bad of ['12', '12345678901', 'abcd', '12 34', '']) {
+    await assert.rejects(
+      () => setPin(ctx(db, asBookkeeper, { body: { code: made.code, pin: bad } })),
+      /4 to 10 digits/,
+      String(bad),
+    );
+  }
+});
+
+test('the payroll PIN cannot be the PIN they sign in with', async () => {
+  const { db, raw } = setup();
+  const pepper = await getPepper(db);
+  raw.prepare('UPDATE users SET pin_hash = ? WHERE id = 4')
+    .run(await hashPin('1234', pepper));
+
+  const made = await read(await grant(ctx(db, asAdmin, { body: { userId: 4, days: 30 } })));
+  await assert.rejects(
+    () => setPin(ctx(db, asBookkeeper, { body: { code: made.code, pin: '1234' } })),
+    /different from the PIN you sign in with/,
+  );
+
+  // Anything else is fine.
+  await setPin(ctx(db, asBookkeeper, { body: { code: made.code, pin: '9876' } }));
+});
+
+test('a payroll PIN is not stored where a login PIN could be compared with it', async () => {
+  const { db, raw } = setup();
+  const pepper = await getPepper(db);
+  raw.prepare('UPDATE users SET pin_hash = ? WHERE id = 4').run(await hashPin('1234', pepper));
+
+  const made = await read(await grant(ctx(db, asAdmin, { body: { userId: 4, days: 30 } })));
+  await setPin(ctx(db, asBookkeeper, { body: { code: made.code, pin: '5678' } }));
+
+  const row = raw.prepare('SELECT pin_hash FROM pay_access WHERE user_id = 4').get();
+  assert.notEqual(row.pin_hash, await hashPin('5678', pepper),
+    'hashed under its own label, so the two can never be matched up');
+});
+
+test('an administrator chooses one with no code, having signed in with a password', async () => {
+  const { db, raw } = setup();
+  await assert.rejects(() => guardPayroll(ctx(db, asAdmin)), /Choose a payroll PIN/);
+
+  const done = await read(await setPin(ctx(db, asAdmin, { body: { pin: '2468' } })));
+  assert.equal(done.open, true);
+  await guardPayroll(ctx(db, asAdmin));
+
+  const row = raw.prepare('SELECT * FROM pay_access WHERE user_id = 1').get();
+  assert.equal(row.code_hash, null, 'granted nothing');
+  assert.equal(row.expires_at, null, 'and it does not run out');
+});
+
+test('changing it needs the one in use now', async () => {
+  const { db } = setup();
+  await enrolled(db, { pin: '4321' });
+
+  await assert.rejects(
+    () => setPin(ctx(db, asBookkeeper, { body: { current: '0000', pin: '5555' } })),
+    /current payroll PIN is not right/,
+  );
+  await setPin(ctx(db, asBookkeeper, { body: { current: '4321', pin: '5555' } }));
+
+  await lock(ctx(db, asBookkeeper));
+  await assert.rejects(() => unlock(ctx(db, asBookkeeper, { body: { pin: '4321' } })), /not right/);
+  assert.equal((await read(await unlock(ctx(db, asBookkeeper, { body: { pin: '5555' } })))).open, true);
+});
+
+test('the right PIN opens it, and the wrong one does not', async () => {
+  const { db } = setup();
+  await enrolled(db, { pin: '4321' });
+  await lock(ctx(db, asBookkeeper));
+
+  await assert.rejects(
+    () => unlock(ctx(db, asBookkeeper, { body: { pin: '0000' } })),
     /not right/,
   );
 
-  const opened = await read(await unlock(ctx(db, asBookkeeper, { body: { code: made.code } })));
+  const opened = await read(await unlock(ctx(db, asBookkeeper, { body: { pin: '4321' } })));
   assert.equal(opened.open, true);
 
   const now = await read(await myAccess(ctx(db, asBookkeeper)));
@@ -253,43 +396,68 @@ test('the right code opens it, and the wrong one does not', async () => {
   assert.equal(now.state, 'open');
 });
 
-test('the code still works after the unlock runs out, until the grant does not', async () => {
+test('the PIN keeps working after the window runs out, until the grant does not', async () => {
   const { db, raw } = setup();
-  const made = await read(await grant(ctx(db, asAdmin, { body: { userId: 4, days: 30 } })));
-  await unlock(ctx(db, asBookkeeper, { body: { code: made.code } }));
+  await enrolled(db, { pin: '4321' });
 
-  // Come back tomorrow: the unlock has gone but the code has not.
+  // Come back after lunch: the window has gone but the PIN has not.
   raw.prepare("UPDATE pay_access SET unlocked_until = '2020-01-01 00:00:00' WHERE user_id = 4").run();
   assert.equal((await read(await myAccess(ctx(db, asBookkeeper)))).state, 'shut');
-  assert.equal((await read(await unlock(ctx(db, asBookkeeper, { body: { code: made.code } })))).open, true);
+  assert.equal((await read(await unlock(ctx(db, asBookkeeper, { body: { pin: '4321' } })))).open, true);
 
   // Come back next year: it opens nothing.
   raw.prepare("UPDATE pay_access SET expires_at = '2020-01-01 00:00:00' WHERE user_id = 4").run();
   await assert.rejects(
-    () => unlock(ctx(db, asBookkeeper, { body: { code: made.code } })),
+    () => unlock(ctx(db, asBookkeeper, { body: { pin: '4321' } })),
     /run out/,
   );
 });
 
-test('five wrong codes and it shuts', async () => {
+test('five wrong PINs and it shuts', async () => {
   const { db } = setup();
-  await grant(ctx(db, asAdmin, { body: { userId: 4, days: 30 } }));
+  await enrolled(db, { pin: '4321' });
 
   for (let i = 0; i < MAX_TRIES - 1; i += 1) {
     await assert.rejects(
-      () => unlock(ctx(db, asBookkeeper, { body: { code: '000 000 001' } })), /not right/,
+      () => unlock(ctx(db, asBookkeeper, { body: { pin: '0000' } })), /not right/,
     );
   }
   await assert.rejects(
-    () => unlock(ctx(db, asBookkeeper, { body: { code: '000 000 001' } })), /Too many wrong codes/,
+    () => unlock(ctx(db, asBookkeeper, { body: { pin: '0000' } })), /Too many wrong tries/,
   );
   assert.equal((await read(await myAccess(ctx(db, asBookkeeper)))).state, 'locked');
+
+  // And the right one is no use while it is shut.
+  await assert.rejects(
+    () => unlock(ctx(db, asBookkeeper, { body: { pin: '4321' } })), /Too many wrong tries/,
+  );
+});
+
+test('an administrator resets a forgotten PIN, and that opens nothing by itself', async () => {
+  const { db } = setup();
+  await enrolled(db, { pin: '4321' });
+
+  await resetPin(ctx(db, asAdmin), '4');
+  const now = await read(await myAccess(ctx(db, asBookkeeper)));
+  assert.equal(now.state, 'setup');
+  assert.equal(now.hasPin, false);
+  assert.equal(now.needsCode, true, 'they need their code again to choose another');
+  await assert.rejects(() => guardPayroll(ctx(db, asBookkeeper)), /Choose a payroll PIN/);
+
+  // Nothing to reset twice.
+  await assert.rejects(() => resetPin(ctx(db, asAdmin), '4'), /have not set a payroll PIN/);
+});
+
+test('a reset does not throw away the grant, so the same code still enrols them', async () => {
+  const { db } = setup();
+  const made = await enrolled(db, { pin: '4321' });
+  await resetPin(ctx(db, asAdmin), '4');
+  assert.equal((await read(await setPin(ctx(db, asBookkeeper, { body: { code: made.code, pin: '8642' } })))).open, true);
 });
 
 test('taking it away stops somebody who has it open, at once', async () => {
   const { db } = setup();
-  const made = await read(await grant(ctx(db, asAdmin, { body: { userId: 4, days: 30 } })));
-  await unlock(ctx(db, asBookkeeper, { body: { code: made.code } }));
+  await enrolled(db, { pin: '4321' });
   assert.equal((await read(await myAccess(ctx(db, asBookkeeper)))).open, true);
 
   await revoke(ctx(db, asAdmin), '4');
@@ -297,41 +465,62 @@ test('taking it away stops somebody who has it open, at once', async () => {
   await assert.rejects(() => guardPayroll(ctx(db, asBookkeeper)), /not been granted/);
 });
 
-test('locking it again shuts it without giving up the grant', async () => {
+test('locking it shuts it without giving up the grant or the PIN', async () => {
   const { db } = setup();
-  const made = await read(await grant(ctx(db, asAdmin, { body: { userId: 4, days: 30 } })));
-  await unlock(ctx(db, asBookkeeper, { body: { code: made.code } }));
+  await enrolled(db, { pin: '4321' });
   await lock(ctx(db, asBookkeeper));
 
   const now = await read(await myAccess(ctx(db, asBookkeeper)));
   assert.equal(now.state, 'shut');
-  assert.equal(now.granted, true, 'the code still opens it again');
+  assert.equal(now.granted, true);
+  assert.equal(now.hasPin, true, 'the PIN opens it again');
 });
 
-test('the gate turns away everybody who has not been through all three locks', async () => {
+test('the gate turns away everybody who has not been through all four locks', async () => {
   const { db } = setup();
 
   await assert.rejects(() => guardPayroll(ctx(db, asBookkeeper)), /not been granted/);
 
   const made = await read(await grant(ctx(db, asAdmin, { body: { userId: 4, days: 30 } })));
-  await assert.rejects(() => guardPayroll(ctx(db, asBookkeeper)), /Enter your payroll code/);
+  await assert.rejects(() => guardPayroll(ctx(db, asBookkeeper)), /Choose a payroll PIN/);
 
-  await unlock(ctx(db, asBookkeeper, { body: { code: made.code } }));
+  await setPin(ctx(db, asBookkeeper, { body: { code: made.code, pin: '4321' } }));
   await guardPayroll(ctx(db, asBookkeeper));
 
-  // And an administrator sails through with no row at all.
-  await guardPayroll(ctx(db, asAdmin));
+  await lock(ctx(db, asBookkeeper));
+  await assert.rejects(() => guardPayroll(ctx(db, asBookkeeper)), /Enter your payroll PIN/);
+
+  await unlock(ctx(db, asBookkeeper, { body: { pin: '4321' } }));
+  await guardPayroll(ctx(db, asBookkeeper));
+
+  // And an administrator no longer sails through with no row at all.
+  await assert.rejects(() => guardPayroll(ctx(db, asAdmin)), /Choose a payroll PIN/);
 });
 
-test('the list says where everybody stands, and leaves out who cannot hold it', async () => {
+test('the window slides while somebody is working', async () => {
+  const { db, raw } = setup();
+  await enrolled(db, { pin: '4321' });
+
+  // Most of the window gone, and they are still typing.
+  const nearly = iso(Date.now() + 3 * MINUTE);
+  raw.prepare('UPDATE pay_access SET unlocked_until = ? WHERE user_id = 4').run(nearly);
+  await guardPayroll(ctx(db, asBookkeeper));
+
+  const after = raw.prepare('SELECT unlocked_until FROM pay_access WHERE user_id = 4').get();
+  assert.ok(after.unlocked_until > nearly, 'a payroll that takes an hour does not shut halfway');
+});
+
+test('the list says where everybody stands, including who has a PIN', async () => {
   const { db } = setup();
-  await grant(ctx(db, asAdmin, { body: { userId: 4, days: 30 } }));
+  await enrolled(db, { pin: '4321' });
 
   const { people } = await read(await accessList(ctx(db, asAdmin)));
   const by = new Map(people.map((p) => [p.name, p]));
 
   assert.equal(by.get('Kwame').admin, true);
-  assert.equal(by.get('Yaa').access.state, 'shut');
+  assert.equal(by.get('Kwame').access.hasPin, false, 'the administrator has not set one');
+  assert.equal(by.get('Yaa').access.state, 'open');
+  assert.equal(by.get('Yaa').access.hasPin, true);
   assert.equal(by.has('Kofi'), false, 'no pay permission, so nothing to grant');
 });
 
@@ -377,27 +566,24 @@ test('a payroll line reaches anybody but an administrator without its payslip', 
 // The routing table itself
 // ---------------------------------------------------------------------------
 
-test('every payroll route is behind the lock, except the three that open it', async () => {
+test('every payroll route is behind the lock, except the few that open it', async () => {
   const source = readFileSync('src/index.js', 'utf8');
   const routes = [...source.matchAll(/'\/api\/payroll[^']*'/g)].map((m) => m[0].slice(1, -1));
   assert.ok(routes.length > 8, 'found the routes');
 
   const outside = new Set([
-    '/api/payroll/access', '/api/payroll/unlock', '/api/payroll/lock',
-    '/api/payroll/grants', '/api/payroll/grants/:id',
+    '/api/payroll/access', '/api/payroll/unlock', '/api/payroll/pin', '/api/payroll/lock',
+    '/api/payroll/pin/', '/api/payroll/pin/:id',
+    '/api/payroll/grants', '/api/payroll/grants/', '/api/payroll/grants/:id',
   ]);
 
   // `locked` in the router decides this, and it is a prefix so a route added
   // later is covered the day it is written. This asserts the exceptions are
   // the ones intended and nothing has quietly joined them.
   for (const path of routes) {
-    const shouldBeLocked = !outside.has(path);
-    assert.equal(
-      path.startsWith('/api/payroll'),
-      true,
-      `${path} is under the payroll prefix`,
-    );
-    if (!shouldBeLocked) assert.ok(outside.has(path), `${path} is a deliberate exception`);
+    assert.equal(path.startsWith('/api/payroll'), true, `${path} is under the payroll prefix`);
+    if (outside.has(path)) continue;
+    assert.ok(!path.endsWith('/pin') && !path.endsWith('/unlock'), `${path} is locked`);
   }
 });
 
@@ -405,7 +591,7 @@ test('every payroll route is behind the lock, except the three that open it', as
  * Through the front door, with a real signed cookie.
  *
  * The tests above call the handlers. This one goes through the router, which
- * is where both locks actually live, because a handler that is right behind a
+ * is where the locks actually live, because a handler that is right behind a
  * gate nobody wired up is not protection.
  */
 async function asUser(db, raw, userId) {
@@ -425,7 +611,7 @@ async function asUser(db, raw, userId) {
   return { env, call };
 }
 
-test('the router turns a bookkeeper away from the payroll until all three locks are open', async () => {
+test('the router turns a bookkeeper away until every lock is open', async () => {
   const { db, raw } = setup();
   const admin = await asUser(db, raw, 1);
   const book = await asUser(db, raw, 4);
@@ -435,7 +621,7 @@ test('the router turns a bookkeeper away from the payroll until all three locks 
   assert.equal(res.status, 403);
   assert.match((await res.json()).error, /not been granted/);
 
-  // Granted, still shut.
+  // Granted, still no PIN.
   const made = await (await admin.call('/api/payroll/grants', {
     method: 'POST', body: JSON.stringify({ userId: 4, days: 30 }),
   })).json();
@@ -443,19 +629,39 @@ test('the router turns a bookkeeper away from the payroll until all three locks 
   assert.equal(res.status, 403);
   assert.equal((await res.json()).detail.payrollLocked, true);
 
-  // Unlocked.
-  assert.equal((await book.call('/api/payroll/unlock', {
-    method: 'POST', body: JSON.stringify({ code: made.code }),
+  // Enrolled, which opens it there and then.
+  assert.equal((await book.call('/api/payroll/pin', {
+    method: 'POST', body: JSON.stringify({ code: made.code, pin: '4321' }),
   })).status, 200);
   assert.equal((await book.call('/api/payroll?month=2026-08')).status, 200);
 
-  // Every other payroll route is behind the same gate, including the ones
-  // added after this was written.
+  // Leaving the tab shuts it, and every payroll route is behind the same gate,
+  // including the ones added after this was written.
   await (await book.call('/api/payroll/lock', { method: 'POST', body: '{}' })).json();
   for (const path of ['/api/payroll?month=2026-08', '/api/payroll/returns?month=2026-08',
     '/api/payroll/input/template?month=2026-08']) {
     assert.equal((await book.call(path)).status, 403, path);
   }
+
+  // And the PIN lets them back in without another code.
+  assert.equal((await book.call('/api/payroll/unlock', {
+    method: 'POST', body: JSON.stringify({ pin: '4321' }),
+  })).status, 200);
+  assert.equal((await book.call('/api/payroll?month=2026-08')).status, 200);
+});
+
+test('an administrator is stopped at the payroll until they have set a PIN', async () => {
+  const { db, raw } = setup();
+  const admin = await asUser(db, raw, 1);
+
+  const shut = await admin.call('/api/payroll?month=2026-08');
+  assert.equal(shut.status, 403);
+  assert.match((await shut.json()).error, /Choose a payroll PIN/);
+
+  assert.equal((await admin.call('/api/payroll/pin', {
+    method: 'POST', body: JSON.stringify({ pin: '2468' }),
+  })).status, 200);
+  assert.equal((await admin.call('/api/payroll?month=2026-08')).status, 200);
 });
 
 test('somebody else’s payslip is refused to anybody who is not an administrator', async () => {
@@ -463,6 +669,7 @@ test('somebody else’s payslip is refused to anybody who is not an administrato
   const admin = await asUser(db, raw, 1);
   const book = await asUser(db, raw, 4);
 
+  await admin.call('/api/payroll/pin', { method: 'POST', body: JSON.stringify({ pin: '2468' }) });
   await admin.call('/api/payroll/profiles', {
     method: 'POST',
     body: JSON.stringify({ rows: [{ staffId: 1, onPayroll: true, basic: 2000, ssnit: true }] }),
@@ -472,8 +679,8 @@ test('somebody else’s payslip is refused to anybody who is not an administrato
   const made = await (await admin.call('/api/payroll/grants', {
     method: 'POST', body: JSON.stringify({ userId: 4, days: 30 }),
   })).json();
-  await book.call('/api/payroll/unlock', {
-    method: 'POST', body: JSON.stringify({ code: made.code }),
+  await book.call('/api/payroll/pin', {
+    method: 'POST', body: JSON.stringify({ code: made.code, pin: '4321' }),
   });
   assert.equal((await book.call('/api/payroll?month=2026-08')).status, 200,
     'they can run the month');
@@ -491,7 +698,12 @@ test('a login with no pay permission gets nowhere near any of it', async () => {
 
   for (const path of ['/api/payroll?month=2026-08', '/api/payroll/access',
     '/api/payroll/slip/1', '/api/payroll/grants']) {
-    const res = await nobody.call(path);
+    assert.equal((await nobody.call(path)).status, 403, path);
+  }
+
+  // Including the two that exist to open it: no permission, no PIN to set.
+  for (const path of ['/api/payroll/pin', '/api/payroll/unlock']) {
+    const res = await nobody.call(path, { method: 'POST', body: JSON.stringify({ pin: '4321' }) });
     assert.equal(res.status, 403, path);
   }
 });

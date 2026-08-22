@@ -33,6 +33,19 @@ import { returnsSheet } from './pay-returns.js';
  * and payday is when trust is thinnest.
  */
 
+/**
+ * Arriving at the payroll tab.
+ *
+ * ASKED EVERY TIME, not once a day. Whatever window was left over from earlier
+ * is dropped here, before anything is fetched, so opening this tab always
+ * begins with the question. Everything inside the screen calls
+ * `renderAttPayroll` directly, so changing the month does not ask again.
+ */
+export async function renderAttPayrollTab(params) {
+  await api.payrollLock().catch(() => {});
+  return renderAttPayroll(params);
+}
+
 export async function renderAttPayroll(params) {
   const host = h('div');
   const month = /^\d{4}-\d{2}$/.test(params.month) ? params.month : monthOf(todayISO());
@@ -76,6 +89,18 @@ export async function renderAttPayroll(params) {
           }),
           h('button.btn-sm', { onclick: () => reload({ month: shiftMonth(month, 1) }) }, '›')),
         h('button.btn-sm', { onclick: () => reload({ month: monthOf(todayISO()) }) }, 'This month'),
+        // Leaving the tab asks for the PIN again anyway; this is for somebody
+        // who is staying on the screen and wants it shut behind them now.
+        h('button.btn-ghost.btn-sm', {
+          title: 'Shut the payroll now, without leaving the screen',
+          onclick: () => lockNow(reload),
+        }, 'Lock'),
+        access.hasPin
+          ? h('button.btn-ghost.btn-sm', {
+            title: 'Change the PIN you open the payroll with',
+            onclick: () => changePin(access, reload),
+          }, 'PIN')
+          : null,
         closed
           ? null
           : h('button.btn-sm', {
@@ -258,71 +283,186 @@ async function startFrom(month, reload) {
  * The padlock.
  *
  * WHAT SOMEBODY IS PAID IS THE MOST SENSITIVE THING THIS APP KNOWS, and until
- * now one tick on a login was the whole of the protection. A tick is set once
- * and then forgotten: it survives somebody changing job, and nothing about a
- * screen tells you who currently holds it.
+ * recently one tick on a login was the whole of the protection. A tick is set
+ * once and then forgotten: it survives somebody changing job, and nothing
+ * about a screen tells you who currently holds it.
  *
- * So the permission is only the first of three. An administrator grants the
- * person payroll access with an end date on it, hands them a code, and the
- * code opens the payroll for a working day at a time. None of the three is
- * enough on its own.
+ * So the permission is only the first of four. An administrator grants the
+ * person payroll access with an end date on it and hands them a code. The
+ * person chooses a PIN of their own, which is not the PIN they sign in with.
+ * And that PIN is asked for every single time this tab is opened, because a
+ * lock that is opened once in the morning is a lock that is open all day to
+ * whoever walks past the desk.
  */
 function lockScreen(access, reload) {
-  const code = h('input.pay-code', {
-    type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code',
-    placeholder: '000 000 000', 'aria-label': 'Payroll code',
-    maxlength: 20,
-  });
+  if (access.state === 'setup') return choosePin(access, reload);
+  return askPin(access, reload);
+}
+
+/** The card the lock lives on, whatever it happens to be saying. */
+function lockCard(title, blurb, ...rest) {
+  return h('div',
+    h('div.page-head', h('div', h('h1', 'Payroll'), h('div.sub', 'Locked'))),
+    h('div.card.pay-lock',
+      h('div.pay-lock-mark', '\u{1F512}'),
+      h('h2', title),
+      h('p.muted', blurb),
+      ...rest));
+}
+
+const pinBox = (label) => h('input.pay-code', {
+  type: 'password', inputmode: 'numeric', autocomplete: 'off',
+  maxlength: 10, placeholder: '\u2022\u2022\u2022\u2022', 'aria-label': label,
+});
+
+const codeBox = () => h('input.pay-code', {
+  type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code',
+  maxlength: 20, placeholder: '000 000 000', 'aria-label': 'The code you were given',
+});
+
+/** Type your PIN. The everyday case, and the one this screen is built around. */
+function askPin(access, reload) {
+  if (access.state !== 'shut') {
+    return lockCard(
+      access.state === 'expired'
+        ? 'Your payroll access has run out'
+        : access.state === 'locked'
+          ? 'Shut for a while'
+          : 'You cannot open this yet',
+      access.state === 'expired'
+        ? 'An administrator can grant it again, with a new code.'
+        : access.state === 'locked'
+          ? 'Too many wrong tries. Wait a while, or ask an administrator to reset your payroll '
+            + 'PIN for you.'
+          : 'Payroll is not opened by a tick on a login. An administrator has to grant it to '
+            + 'you, and they will give you a code to start with.',
+      access.expiresAt && access.state !== 'expired'
+        ? h('p.muted.pay-lock-when', `Your access runs until ${niceStamp(access.expiresAt)}.`)
+        : null,
+    );
+  }
+
+  const pin = pinBox('Payroll PIN');
   const problem = h('p.form-error', { style: { display: 'none' } });
 
   const open = async () => {
     problem.style.display = 'none';
     button.disabled = true;
     try {
-      await api.payrollUnlock({ code: code.value });
-      toast('Payroll open.', 'good');
+      await api.payrollUnlock({ pin: pin.value });
       await reload();
     } catch (err) {
       button.disabled = false;
       problem.textContent = err.message;
       problem.style.display = '';
-      code.select();
+      pin.select();
     }
   };
 
   const button = h('button.btn.btn-primary', { onclick: open }, 'Open the payroll');
-  code.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
+  pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
+  setTimeout(() => pin.focus(), 0);
 
-  const shut = access.state !== 'shut';
-
-  return h('div',
-    h('div.page-head', h('div', h('h1', 'Payroll'), h('div.sub', 'Locked'))),
-    h('div.card.pay-lock',
-      h('div.pay-lock-mark', '🔒'),
-      h('h2', shut ? 'You cannot open this yet' : 'Enter your payroll code'),
-      h('p.muted',
-        access.state === 'none'
-          ? 'Payroll is not opened by a tick on a login. An administrator has to grant it to '
-            + 'you, and they will give you a code to type here.'
-          : access.state === 'expired'
-            ? 'Your payroll access has run out. An administrator can grant it again, with a '
-              + 'new code.'
-            : access.state === 'locked'
-              ? 'Too many wrong codes, so this is shut for a while. Wait, or ask an '
-                + 'administrator for a new code.'
-              : `The code an administrator gave you. It opens the payroll for `
-                + `${access.unlockHours || 8} hours, then asks again.`),
-
-      shut
-        ? null
-        : h('div.pay-lock-form', code, button),
-      problem,
-
-      access.expiresAt
-        ? h('p.muted.pay-lock-when',
-          `Your access runs until ${niceStamp(access.expiresAt)}.`)
-        : null),
+  return lockCard(
+    'Enter your payroll PIN',
+    'Your own PIN, not the one you sign in with. It is asked for every time you open this tab.',
+    h('div.pay-lock-form', pin, button),
+    problem,
+    h('p.muted.pay-lock-when',
+      'Forgotten it? An administrator resets it for you, and you choose another.'),
   );
+}
+
+/**
+ * Choose one, the first time.
+ *
+ * A member of staff proves it is them with the code an administrator handed
+ * over. An administrator has already signed in with an email address and a
+ * password, which is the strongest thing this app asks anybody for, so they
+ * are asked for nothing beyond the PIN itself.
+ */
+function choosePin(access, reload) {
+  const code = codeBox();
+  const pin = pinBox('New payroll PIN');
+  const again = pinBox('The same again');
+  const problem = h('p.form-error', { style: { display: 'none' } });
+
+  const save = async () => {
+    problem.style.display = 'none';
+    if (pin.value !== again.value) {
+      problem.textContent = 'The two PINs are not the same.';
+      problem.style.display = '';
+      again.select();
+      return;
+    }
+    button.disabled = true;
+    try {
+      await api.payrollSetPin({ pin: pin.value, code: access.needsCode ? code.value : undefined });
+      toast('Payroll PIN set. You will be asked for it every time.', 'good');
+      await reload();
+    } catch (err) {
+      button.disabled = false;
+      problem.textContent = err.message;
+      problem.style.display = '';
+    }
+  };
+
+  const button = h('button.btn.btn-primary', { onclick: save }, 'Set it and open the payroll');
+  for (const box of [code, pin, again]) {
+    box.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  }
+  setTimeout(() => (access.needsCode ? code : pin).focus(), 0);
+
+  return lockCard(
+    'Choose your payroll PIN',
+    access.needsCode
+      ? 'Type the code an administrator gave you, then pick a PIN of your own. From then on the '
+        + 'PIN is all you type, and it is asked for every time you open this tab.'
+      : 'Pick a PIN of your own, between 4 and 10 digits. It is asked for every time you open '
+        + 'this tab, so it is what stops an unattended screen being an open payroll.',
+    h('div.pay-lock-fields',
+      access.needsCode ? h('label', h('span', 'The code you were given'), code) : null,
+      h('label', h('span', 'New payroll PIN'), pin),
+      h('label', h('span', 'The same again'), again)),
+    h('p.muted', { style: { fontSize: '.85rem' } },
+      'It has to be different from the PIN you sign in with.'),
+    h('div.btn-row', button),
+    problem,
+  );
+}
+
+/** Change it from inside, for somebody who thinks it has been seen. */
+async function changePin(access, reload) {
+  const current = pinBox('Current payroll PIN');
+  const pin = pinBox('New payroll PIN');
+  const again = pinBox('The same again');
+
+  const done = await formDialog({
+    title: 'Your payroll PIN',
+    submitLabel: 'Change it',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.9rem', marginTop: 0 } },
+        'This is the PIN you type to open the payroll, not the one you sign in with. Only its '
+        + 'fingerprint is kept, so a forgotten one is reset by an administrator rather than '
+        + 'looked up.'),
+      field('The one you use now', current),
+      field('New PIN', pin, '4 to 10 digits'),
+      field('The same again', again)),
+    onSubmit: () => {
+      if (pin.value !== again.value) throw new Error('The two PINs are not the same.');
+      return api.payrollSetPin({ current: current.value, pin: pin.value });
+    },
+  });
+
+  if (!done) return;
+  toast('Changed.', 'good');
+  await reload();
+}
+
+/** Shut it now, for somebody walking away from a desk. */
+async function lockNow(reload) {
+  await api.payrollLock().catch(() => {});
+  await reload();
 }
 
 /** 'YYYY-MM-DD HH:MM:SS' as somebody would say it. */

@@ -690,26 +690,38 @@ export const GUIDE = [
     blocks: [
       { sub: 'Getting in' },
       { p: 'What people are paid is the one thing in here that cannot be un-seen, so it is not '
-        + 'opened by a tick on a login. There are three locks and all three have to be open.' },
+        + 'opened by a tick on a login. There are four locks and all four have to be open.' },
       { list: [
         '"Pay and labour cost" on the login. That says somebody is the kind of person who '
           + 'might, and nothing more.',
         'A grant, made under Users & data, "Who may open the payroll". That says they may at '
           + 'the moment, and it has an end date on it.',
-        'A code, which the app shows you once when you grant it. They type it to open the '
-          + 'payroll, and it stays open for eight hours before asking again.',
+        'A code, which the app shows you once when you grant it. They type it the first time '
+          + 'and choose a payroll PIN with it.',
+        'That PIN, every single time the Payroll tab is opened. It is their own, it is not the '
+          + 'PIN they sign in with, and clicking away from the tab shuts the payroll behind '
+          + 'them.',
       ] },
-      { p: 'Administrators are not granted anything: they are the ones who grant, and a property '
-        + 'with one administrator must never be able to lock itself out of its own payroll.' },
+      { p: 'Administrators are granted nothing, because they are the ones who grant. They do '
+        + 'set a payroll PIN like everybody else, and they are asked for it just as often: an '
+        + 'office machine left signed in is exactly what the PIN is for.' },
       { list: [
+        'The first time an administrator opens Payroll it asks them to choose a PIN. No code, '
+          + 'because they signed in with an email address and a password already.',
+        'Change your own from the Payroll screen: the PIN button beside the month. You need '
+          + 'the one you are using now.',
+        'Forgotten it? An administrator resets it under Users & data and the person chooses '
+          + 'another. Staff need their code again to do that, so hand it over with the reset.',
+        'Five wrong tries shuts it for half an hour, so guessing is not free.',
         'Grant it again to change somebody\u2019s end date or to replace a code they have lost. '
-          + 'It is the same button, and it drops whatever they had open.',
+          + 'Their PIN is their own and survives it.',
         'Take it away and it stops the moment you press it, even if they are looking at the '
           + 'payroll as you do.',
-        'Five wrong codes shuts it for half an hour, so guessing is not free.',
       ] },
-      { warn: 'Only the fingerprint of a code is kept, never the code. A lost one is replaced '
-        + 'rather than looked up, which is why nobody can read one out of a backup.' },
+      { warn: 'Only fingerprints are kept, never a code or a PIN. A lost one is replaced rather '
+        + 'than looked up, which is why nobody can read one out of a backup. If the only '
+        + 'administrator forgets theirs, the recovery login in the worker\u2019s secrets is the '
+        + 'way back in.' },
 
       { p: 'Everything the app already knows — what somebody is paid, what they scored on '
         + 'their bonus schemes, what came off for misconduct, what they are repaying — comes '
