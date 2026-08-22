@@ -6,8 +6,8 @@ import {
 } from '../public/js/util.js';
 import { pathHasHole } from '../public/js/api.js';
 import {
-  asHours, byDepartment, byPosition, earliestFirst, lateBy, shiftHours, shiftLabel,
-  shiftMinutes, sortDepartments,
+  asHours, byDepartment, byPosition, earliestFirst, fullDayIsOwn, lateBy, shiftHours,
+  shiftLabel, shiftMinutes, sortDepartments,
 } from '../public/js/views/att-shared.js';
 
 /**
@@ -282,4 +282,37 @@ test('lateness is never negative and never a fraction', () => {
   assert.equal(lateBy(null), '0 min');
   assert.equal(lateBy(undefined), '0 min');
   assert.equal(lateBy('45'), '45 min');
+});
+
+
+// ---------------------------------------------------------------------------
+// What a full day is
+// ---------------------------------------------------------------------------
+
+test('a full day follows the shift unless somebody has said otherwise', () => {
+  // A new shift has nothing stored, so there is nothing to protect.
+  assert.equal(fullDayIsOwn(null), false);
+  assert.equal(fullDayIsOwn(undefined), false);
+
+  // Already the hours less the break. Following it changes nothing.
+  assert.equal(fullDayIsOwn({ starts_at: '06:00', ends_at: '14:00', full_day_minutes: 480 }), false);
+  assert.equal(
+    fullDayIsOwn({ starts_at: '06:00', ends_at: '14:00', break_minutes: 30, full_day_minutes: 450 }),
+    false,
+  );
+
+  // 420 on an eight-hour shift is the old blanket default rather than a
+  // decision, so it gives way to the hours.
+  assert.equal(fullDayIsOwn({ starts_at: '06:00', ends_at: '14:00', full_day_minutes: 420 }), false);
+
+  // Anything else somebody typed, and it stays typed.
+  assert.equal(fullDayIsOwn({ starts_at: '06:00', ends_at: '14:00', full_day_minutes: 400 }), true);
+  assert.equal(
+    fullDayIsOwn({ starts_at: '22:00', ends_at: '06:30', full_day_minutes: 450 }),
+    true,
+  );
+
+  // A seven-hour shift whose full day is 420 is both things at once, and
+  // following it is a no-op either way.
+  assert.equal(fullDayIsOwn({ starts_at: '06:00', ends_at: '13:00', full_day_minutes: 420 }), false);
 });

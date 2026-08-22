@@ -3,7 +3,7 @@ import { replaceParams } from '../app.js';
 import { confirmAction, fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import {
-  byPosition, field, formDialog, shiftColour, shiftColourPicker,
+  byPosition, field, formDialog, fullDayIsOwn, shiftColour, shiftColourPicker, shiftMinutes,
 } from './att-shared.js';
 
 /**
@@ -497,6 +497,32 @@ async function shiftsTab(reload) {
   ]);
 
   const edit = async (existing) => {
+    // The three boxes the full day is worked out from, held here so the one
+    // below can follow them.
+    const startsAt = h('input', { type: 'time', name: 'startsAt', required: true, value: existing?.starts_at ?? '06:00' });
+    const endsAt = h('input', { type: 'time', name: 'endsAt', required: true, value: existing?.ends_at ?? '14:00' });
+    const breakMinutes = h('input', { type: 'number', name: 'breakMinutes', min: 0, max: 480, value: existing?.break_minutes ?? 0 });
+
+    // A full day is the shift, less whatever is not paid. Nobody was working
+    // that out by hand and getting it right, so the box fills itself in and
+    // keeps up as the times are changed. It stops the moment somebody types
+    // their own number, because a property that wants a full day to mean
+    // seven hours on an eight-hour shift is entitled to say so.
+    const worked = () => shiftMinutes({
+      starts_at: startsAt.value,
+      ends_at: endsAt.value,
+      break_minutes: breakMinutes.value,
+    });
+    const fullDay = h('input', {
+      type: 'number', name: 'fullDayMinutes', min: 0, max: 1440,
+      value: existing?.full_day_minutes ?? worked(),
+    });
+    let own = fullDayIsOwn(existing);
+    if (!own) fullDay.value = String(worked());
+    fullDay.addEventListener('input', () => { own = true; });
+    const follow = () => { if (!own) fullDay.value = String(worked()); };
+    for (const el of [startsAt, endsAt, breakMinutes]) el.addEventListener('input', follow);
+
     const done = await formDialog({
       title: existing ? `Edit ${existing.name}` : 'Add a shift',
       submitLabel: existing ? 'Save changes' : 'Add the shift',
@@ -512,9 +538,9 @@ async function shiftsTab(reload) {
             'Groups the rota. Leave it alone unless another shift is the same job'),
         ),
         h('div.field-row',
-          field('Starts', h('input', { type: 'time', name: 'startsAt', required: true, value: existing?.starts_at ?? '06:00' })),
-          field('Ends', h('input', { type: 'time', name: 'endsAt', required: true, value: existing?.ends_at ?? '14:00' }), 'Before the start means it runs overnight'),
-          field('Unpaid break', h('input', { type: 'number', name: 'breakMinutes', min: 0, max: 480, value: existing?.break_minutes ?? 0 }), 'minutes'),
+          field('Starts', startsAt),
+          field('Ends', endsAt, 'Before the start means it runs overnight'),
+          field('Unpaid break', breakMinutes, 'minutes'),
         ),
         h('div.field-row',
           field('Grace before late', h('input', { type: 'number', name: 'graceIn', min: 0, max: 120, value: existing?.grace_in_minutes ?? 5 }), 'minutes'),
@@ -523,7 +549,7 @@ async function shiftsTab(reload) {
         ),
         h('div.field-row',
           field('Half day at', h('input', { type: 'number', name: 'halfDayMinutes', min: 0, max: 1440, value: existing?.half_day_minutes ?? 240 }), 'minutes worked'),
-          field('Full day at', h('input', { type: 'number', name: 'fullDayMinutes', min: 0, max: 1440, value: existing?.full_day_minutes ?? 420 }), 'minutes worked'),
+          field('Full day at', fullDay, 'minutes worked, from the hours less the break'),
         ),
         // Chosen for the shift already, from its id, so a property with
         // twenty-four shifts is not a colouring exercise before the rota

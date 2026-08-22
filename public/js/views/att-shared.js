@@ -96,6 +96,26 @@ export function shiftMinutes(shift) {
 }
 
 /**
+ * The blanket "full day" every shift was made with before this was worked out.
+ * Not a number anybody chose, so it does not count as one.
+ */
+export const LEGACY_FULL_DAY = 420;
+
+/**
+ * Whether a shift's full-day threshold is somebody's own decision.
+ *
+ * A property is allowed to say a full day on an eight-hour shift is seven
+ * hours, and that has to survive a change to the times. Everything else — a
+ * new shift, or one still carrying the old blanket 420 — follows the hours.
+ */
+export function fullDayIsOwn(shift) {
+  if (!shift) return false;
+  const stored = Number(shift.full_day_minutes);
+  if (!Number.isFinite(stored)) return false;
+  return stored !== shiftMinutes(shift) && stored !== LEGACY_FULL_DAY;
+}
+
+/**
  * A stretch of lateness, as somebody would say it out loud.
  *
  * Nobody says "eighty-seven minutes late". Past the hour it becomes hours and
