@@ -54,9 +54,15 @@ export async function renderAttMe(params = {}) {
     h('div.page-head',
       h('div',
         h('h1', 'My shifts'),
-        h('div.sub', next
-          ? `Next: ${fmtDay(next.day)}, ${next.shift.name} ${shiftHours(next.shift)}`
-          : 'Nothing on the rota for you in the next four weeks'),
+        // What is happening, in the order it matters: at work now, then the
+        // next one. "Next: today's shift" while standing on it is the line
+        // that made this screen feel like it was not paying attention.
+        h('div.sub', data.onShift
+          ? `On shift since ${data.onShift.since ?? 'earlier'}`
+            + `${data.onShift.shift?.ends_at ? `, until ${data.onShift.shift.ends_at}` : ''}`
+          : next
+            ? `Next: ${fmtDay(next.day)}, ${next.shift.name} ${shiftHours(next.shift)}`
+            : 'Nothing on the rota for you in the next four weeks'),
       ),
       h('div.btn-row',
         h('button.btn-sm', { onclick: () => runningLate(reload) }, 'I am running late'),
@@ -67,7 +73,7 @@ export async function renderAttMe(params = {}) {
       ),
     ),
 
-    countdownCard(data),
+    data.onShift ? onShiftCard(data) : countdownCard(data),
 
     // The dates the list below actually covers, and the arrows move by that
     // much. Showing a four-week span over a card holding seven days is the
@@ -153,6 +159,45 @@ function seeMore(rows, data, { label, title, empty }) {
           : h('p.muted', empty),
       }),
     }, label));
+}
+
+/**
+ * The banner that says you are at work.
+ *
+ * It replaces the countdown rather than sitting beside it. Somebody who
+ * clocked in at twenty to six for a six o'clock start does not need a clock
+ * ticking down to a shift they are already standing on; they need to know the
+ * terminal saw them, at what time, and when they finish.
+ *
+ * Nothing here ticks. The countdown ticks because seconds are what make a
+ * countdown believable; this is a statement of fact and a statement of fact
+ * that flickers looks like it is unsure.
+ */
+function onShiftCard(data) {
+  const on = data.onShift;
+  const shift = on.shift;
+
+  const how = on.lateMinutes > 0
+    ? h('span.pill.warn', `${on.lateMinutes} min late`)
+    : on.earlyIn > 0
+      ? h('span.pill.good', `${on.earlyIn} min early`)
+      : h('span.pill.good', 'On time');
+
+  return h('div.countdown.on-shift',
+    h('div',
+      h('div.countdown-label', 'You are on shift'),
+      h('div.on-shift-since', on.since ? `Clocked in at ${on.since}` : 'Clocked in'),
+      h('div.countdown-sub',
+        shift?.ends_at ? `until ${shift.ends_at}` : 'the terminal has you at work',
+        on.day !== data.today ? ` · started ${fmtDay(on.day)}` : ''),
+      h('div.on-shift-how', how)),
+    shift
+      ? h('div.countdown-shift', { 'data-shift-colour': String(shiftColour(shift)) },
+        h('strong', shift.name),
+        h('small.muted', `${shiftHours(shift)} · ${asHours(shiftMinutes(shift))}`),
+        shift.department ? h('small.muted', shift.department) : null)
+      : null,
+  );
 }
 
 /**
@@ -252,12 +297,25 @@ function dayRow(entry, data) {
           : h('span.muted', '—');
 
   return h('div.me-day', {
-    class: entry.day === data.today ? 'me-today' : '',
+    class: [entry.day === data.today ? 'me-today' : '', entry.onShift ? 'me-on-shift' : '']
+      .filter(Boolean).join(' '),
   },
     h('div.me-when',
       h('strong', when),
       h('small.muted', fmtDayShort(entry.day))),
     h('div.me-what',
+      // Against the shift itself, so a week with a banner in it is read the
+      // same way as a week without one: eyes down the middle column.
+      entry.onShift
+        ? h('div.me-banner',
+          h('span.me-banner-dot'),
+          h('strong', entry.onShift.since ? `On shift since ${entry.onShift.since}` : 'On shift'),
+          entry.onShift.lateMinutes > 0
+            ? h('small', ` · ${entry.onShift.lateMinutes} min late`)
+            : entry.onShift.earlyIn > 0
+              ? h('small', ` · ${entry.onShift.earlyIn} min early`)
+              : null)
+        : null,
       what,
       entry.holiday ? h('small.muted', entry.holiday) : null,
       entry.availability

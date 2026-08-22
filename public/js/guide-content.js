@@ -83,6 +83,16 @@ export const GUIDE = [
       { p: 'When your next shift is less than a day away, a countdown sits at the top and '
         + 'ticks. Further off than that it is a date rather than a countdown, and the list '
         + 'says it perfectly well.' },
+
+      { sub: 'While you are at work' },
+      { p: 'The moment the terminal has you clocked in, the countdown stops and the card turns '
+        + 'green: when you clocked in, when you finish, and whether you were early or late. '
+        + 'The day itself carries the same banner down the list, so a week with a shift running '
+        + 'in it is obvious at a glance.' },
+      { note: 'Clocking in twenty minutes before your start time stops the countdown as well. '
+        + 'A clock ticking down to a shift you are already standing on is the app arguing with '
+        + 'the room.' },
+      { p: 'It goes back to a countdown when you clock out, or when the shift finishes.' },
       { note: 'Only shifts that have been published show here. A blank day where you expected '
         + 'something usually means the rota for it is still being worked out — the day says so '
         + 'when that is why.' },

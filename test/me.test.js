@@ -347,3 +347,121 @@ test('a month that has not started yet says so rather than counting absences', a
   assert.equal(out.future, true);
   assert.equal(out.totals, null);
 });
+
+// ---------------------------------------------------------------------------
+// At work right now
+// ---------------------------------------------------------------------------
+
+/**
+ * A shift built around the clock as it stands.
+ *
+ * "Are they at work" is the one question on this screen that cannot be asked
+ * of a fixed date in the fixture: the app answers it against the real clock,
+ * because that is what makes it true. So the shift is placed around now, and
+ * kept inside the day so a window running past midnight does not turn the test
+ * into a different test between eight and nine in the evening.
+ */
+function nowWindow() {
+  const now = new Date();
+  const mins = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+  // Ninety minutes either side of now, pushed off the ends of the day. The
+  // floor of an hour keeps a clock-in "twenty minutes early" inside the same
+  // day when this runs at five past midnight.
+  const start = Math.min(Math.max(mins - 90, 60), 24 * 60 - 200);
+  const end = Math.max(Math.min(mins + 90, 24 * 60 - 1), start + 120);
+  return {
+    day: now.toISOString().slice(0, 10),
+    startsAt: clock(start),
+    endsAt: clock(end),
+    // How many minutes after the start they walked in.
+    at: (after) => clock(start + after),
+  };
+}
+
+function atWork(raw, { day, startsAt, endsAt }, punches) {
+  raw.prepare(
+    `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes)
+     VALUES (9, 'Today', ?, ?, 0)`,
+  ).run(startsAt, endsAt);
+  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 9, 1)')
+    .run(day);
+  for (const [at, dir] of punches) {
+    raw.prepare(
+      `INSERT INTO att_punches (device_serial, employee_no, staff_id, at_utc, at_local, day,
+                                direction, dedupe_key)
+       VALUES ('D1', '1', 1, ?, ?, ?, ?, ?)`,
+    ).run(`${day} ${at}:00`, `${day} ${at}:00`, day, dir, `${day}-${at}-${dir}`);
+  }
+}
+
+const myToday = async (db, from) => (await myWeek(ctx(db, KOFI, {
+  query: from ? `?from=${from}` : '',
+}))).json();
+
+test('clocked in and still at work says so, and stops the countdown', async () => {
+  const { db, raw } = setup();
+  const w = nowWindow();
+  // In twenty minutes before the shift started, which is the case that used to
+  // leave a clock ticking down to a shift somebody was already standing on.
+  atWork(raw, w, [[w.at(-20), 'in']]);
+
+  const out = await myToday(db);
+  assert.ok(out.onShift, 'the screen is told they are at work');
+  assert.equal(out.onShift.day, w.day);
+  assert.equal(out.onShift.since, w.at(-20));
+  assert.equal(out.onShift.lateMinutes, 0);
+  assert.equal(out.onShift.earlyIn, 20, 'and that they were twenty minutes early');
+  assert.equal(out.onShift.shift.name, 'Today');
+  assert.equal(out.next, null, 'and there is nothing left to count down to');
+
+  const row = out.days.find((d) => d.day === w.day);
+  assert.ok(row.onShift, 'the day itself wears the banner');
+  assert.equal(row.onShift.since, w.at(-20));
+});
+
+test('clocked in late says how late, rather than pretending otherwise', async () => {
+  const { db, raw } = setup();
+  const w = nowWindow();
+  atWork(raw, w, [[w.at(35), 'in']]);
+
+  const out = await myToday(db);
+  assert.equal(out.onShift.lateMinutes, 35);
+  assert.equal(out.onShift.earlyIn, 0);
+});
+
+test('clocked out again is not at work, whatever the punches say', async () => {
+  const { db, raw } = setup();
+  const w = nowWindow();
+  atWork(raw, w, [[w.at(0), 'in'], [w.at(60), 'out']]);
+
+  const out = await myToday(db);
+  assert.equal(out.onShift, null);
+  const row = out.days.find((d) => d.day === w.day);
+  assert.equal(row.onShift, null);
+});
+
+test('a shift nobody has clocked in for still counts down', async () => {
+  const { db, raw } = setup();
+  const w = nowWindow();
+  atWork(raw, w, []);
+
+  const out = await myToday(db);
+  assert.equal(out.onShift, null);
+  // The shift around now has already started, so there is nothing ahead of it
+  // today; what matters is that the absence of a punch did not invent one.
+  assert.equal(out.days.find((d) => d.day === w.day).onShift, null);
+});
+
+test('being at work is still the answer while looking at another week', async () => {
+  const { db, raw } = setup();
+  const w = nowWindow();
+  atWork(raw, w, [[w.at(-20), 'in']]);
+
+  // Scrolled back to a week months ago. They have not stopped being at work.
+  const out = await myToday(db, MON);
+  assert.ok(out.onShift, 'the card at the top does not depend on what is on screen');
+  assert.equal(out.onShift.since, w.at(-20));
+  assert.equal(out.days.find((d) => d.day === w.day), undefined, 'and that day is not in view');
+});

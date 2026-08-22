@@ -97,11 +97,17 @@ function secondsBetween(from, to) {
  * A countdown rather than a date, and only inside a day, because that is the
  * window in which the number changes what somebody does. "In 3 days" is a
  * calendar; "in 6 hours" is a reason to go to bed.
+ *
+ * A shift somebody has already clocked in for is not counted down to, even
+ * when the clock-in was early and the start time has not come round yet.
+ * Standing at the terminal watching a clock tick towards a shift you are
+ * already at work on is the app arguing with the room.
  */
-function countdownTo(days, timezone) {
+function countdownTo(days, timezone, onShift = null) {
   const now = nowIn(timezone);
   for (const entry of days) {
     if (!entry.shift?.starts_at) continue;
+    if (onShift && onShift.day === entry.day) continue;
     const seconds = secondsBetween(now, `${entry.day} ${entry.shift.starts_at}`);
     // Already begun, or long finished. A shift that started an hour ago is not
     // a countdown, and the day itself already says what it is.
@@ -115,6 +121,49 @@ function countdownTo(days, timezone) {
       // decides what to draw; the server decides what "soon" means, so both
       // halves of the app cannot disagree about it.
       soon: seconds <= 24 * 3600,
+    };
+  }
+  return null;
+}
+
+/**
+ * Are they at work right now, and on which shift?
+ *
+ * Yesterday and today rather than the weeks on screen, for two reasons.
+ * Somebody scrolling back to March does not stop being at work while they do
+ * it, and a night shift that began yesterday is still the answer to "am I
+ * clocked in".
+ *
+ * "Working" is the app's own word for a clock-in with no clock-out yet, before
+ * the shift has finished. After it finishes the same punches mean something
+ * else entirely, and that is not this question.
+ */
+function onShiftNow(ds, staffId, today) {
+  const records = computeRange(ds, staffId, addDays(today, -1), today);
+  for (const record of records) {
+    if (record.status !== 'working') continue;
+    const shift = scheduleFor(ds, staffId, record.day).shift;
+    const since = record.corrected_in ?? record.first_in ?? null;
+    return {
+      day: record.day,
+      since,
+      // Minutes after the start, or before it. A property where people clock
+      // in twenty minutes early every day should see that said plainly rather
+      // than as a countdown that has quietly stopped.
+      lateMinutes: Number(record.late_minutes) || 0,
+      earlyIn: shift?.starts_at && since
+        ? Math.max(0, Math.round(secondsBetween(`${record.day} ${since}`, `${record.day} ${shift.starts_at}`) / 60))
+        : 0,
+      shift: shift
+        ? {
+          id: shift.id,
+          name: shift.name,
+          starts_at: shift.starts_at,
+          ends_at: shift.ends_at,
+          department: shift.department ?? null,
+          colour: shift.colour ?? null,
+        }
+        : null,
     };
   }
   return null;
@@ -138,8 +187,14 @@ export async function myWeek(ctx) {
   const from = startOfWeek(isDay(asked) ? asked : today);
   const to = addDays(from, 27);
 
+  // The weeks on screen, and always today as well. Somebody scrolling back to
+  // March is still either at work or not, and the answer has to be in the
+  // dataset for the screen to be able to say so.
+  const dsFrom = [addDays(from, -1), addDays(today, -1)].sort()[0];
+  const dsTo = [addDays(to, 1), today].sort().pop();
+
   const [ds, availability, year, requests] = await Promise.all([
-    loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) }),
+    loadDataset(ctx.db, { from: dsFrom, to: dsTo }),
     ctx.db.prepare(
       'SELECT * FROM att_availability WHERE staff_id = ?1 AND day BETWEEN ?2 AND ?3',
     ).bind(staff.id, from, to).all().catch(() => ({ results: [] })),
@@ -157,6 +212,7 @@ export async function myWeek(ctx) {
     (availability.results ?? []).map((a) => [a.day, a]),
   );
   const verdicts = new Map(computeRange(ds, staff.id, from, to).map((r) => [r.day, r]));
+  const onShift = onShiftNow(ds, staff.id, today);
 
   const days = [];
   for (let day = from; day <= to; day = addDays(day, 1)) {
@@ -195,6 +251,10 @@ export async function myWeek(ctx) {
       restDay: settled && !shift,
       leave: leave ? (ds.reasonBy.get(leave.reason_code)?.label ?? leave.reason_code) : null,
       holiday: ds.holidayBy.get(day)?.name ?? null,
+      // The banner the row wears while somebody is at work on it.
+      onShift: onShift && onShift.day === day
+        ? { since: onShift.since, lateMinutes: onShift.lateMinutes, earlyIn: onShift.earlyIn }
+        : null,
       availability: avail
         ? {
           status: avail.status, note: avail.note ?? null,
@@ -240,8 +300,11 @@ export async function myWeek(ctx) {
     to,
     today,
     // How long until the next one starts. Only ever the next: a list of
-    // countdowns is a list, and the point of this is the one number.
-    next: countdownTo(days, timezone),
+    // countdowns is a list, and the point of this is the one number. Null
+    // while they are on the shift it would have been counting down to.
+    next: countdownTo(days, timezone, onShift),
+    // Whether they are at work right now, and on what.
+    onShift,
     me: { id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department },
     days,
     showBalance,

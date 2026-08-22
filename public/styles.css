@@ -1933,6 +1933,27 @@ tr:hover .pos-add, .pos-add:focus-visible {
 }
 .me-list > .me-day:first-child { border-top: none; }
 .me-day.me-today { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+/* The day somebody is standing on. It wins over "today", which it always is. */
+.me-day.me-on-shift {
+  background: color-mix(in srgb, var(--good) 9%, transparent);
+  box-shadow: inset 3px 0 0 var(--good);
+}
+
+/* The banner, against the shift rather than beside the date, so a week with
+   one in it reads the same way as a week without. */
+.me-banner {
+  display: flex; align-items: center; gap: .35rem; flex-wrap: wrap;
+  font-size: .8rem; color: var(--good);
+}
+.me-banner strong { font-weight: 700; }
+.me-banner small { color: inherit; opacity: .8; }
+.me-banner-dot {
+  width: .5rem; height: .5rem; border-radius: 50%; flex: none;
+  background: var(--good);
+  animation: me-banner-pulse 2.4s ease-in-out infinite;
+}
+@keyframes me-banner-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .me-banner-dot { animation: none; } }
 
 .me-when { display: grid; }
 .me-when strong { font-size: .9rem; }
@@ -1988,6 +2009,12 @@ tr:hover .pos-add, .pos-add:focus-visible {
 }
 /* Under three hours it stops being information and starts being a nudge. */
 .countdown-close { border-left-color: var(--warn); background: var(--warn-soft, var(--surface)); }
+
+/* At work: the same card, in the colour the app uses everywhere else for
+   "this is fine and it is happening now". */
+.on-shift { border-left-color: var(--good); background: var(--good-soft); }
+.on-shift-since { font-size: 1.35rem; font-weight: 700; line-height: 1.2; }
+.on-shift-how { margin-top: .35rem; }
 
 .countdown-label {
   font-size: .75rem;
