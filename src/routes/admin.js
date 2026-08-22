@@ -45,9 +45,17 @@ function setting(db, key, value) {
 // ---------------------------------------------------------------------------
 
 /**
- * Administrators sign in with an email address and password; everyone else
- * uses a PIN. Validated here rather than only in the form, so the rule holds
- * however the request arrives.
+ * What somebody signs in with.
+ *
+ * An administrator must have an email address and a password: a short code is
+ * not enough on its own for an account that can see every cost and erase data.
+ * They may also have a PIN, because an administrator standing at the tablet in
+ * the kitchen should not have to type a long password on a wet screen, and the
+ * payroll is behind a second PIN of its own either way. Everybody else has a
+ * PIN and nothing else.
+ *
+ * Validated here rather than only in the form, so the rule holds however the
+ * request arrives.
  */
 function readCredentials(body, role, { existing = null } = {}) {
   const isAdmin = role === 'admin';
@@ -72,7 +80,18 @@ function readCredentials(body, role, { existing = null } = {}) {
       throw badRequest(`An administrator needs a password of at least ${MIN_PASSWORD} characters`);
     }
 
-    return { isAdmin, email: email || existing?.email, password, pin: null };
+    // Theirs to have or not: blank leaves whatever they had, and the form
+    // sends clearPin when they want the short way in taken away again.
+    const adminPin = str(body.pin, 'PIN', { max: 10, fallback: '' });
+    if (adminPin && !PIN_RE.test(adminPin)) throw badRequest('The PIN must be 4 to 10 digits');
+
+    return {
+      isAdmin,
+      email: email || existing?.email,
+      password,
+      pin: adminPin,
+      clearPin: !adminPin && bool(body.clearPin, false),
+    };
   }
 
   // Everyone else: a PIN, required on creation. Right for a supervisor holding
@@ -85,7 +104,7 @@ function readCredentials(body, role, { existing = null } = {}) {
   const email = normaliseEmail(str(body.email, 'Email address', { max: 200, fallback: '' }));
   if (email && !isEmail(email)) throw badRequest('That does not look like an email address');
 
-  return { isAdmin, email: email || null, password: null, pin };
+  return { isAdmin, email: email || null, password: null, pin, clearPin: false };
 }
 
 function publicUser(row) {
@@ -93,7 +112,10 @@ function publicUser(row) {
     id: row.id,
     name: row.name,
     email: row.email ?? null,
-    signsInWith: row.role === 'admin' ? 'password' : 'pin',
+    signsInWith: row.role === 'admin'
+      ? (row.pin_hash ? 'password or PIN' : 'password')
+      : 'pin',
+    hasPin: Boolean(row.pin_hash),
     hasPassword: typeof row.password_hash === 'string' && row.password_hash.startsWith('pbkdf2c$'),
     role: row.role,
     // Which member of staff this login belongs to, for the accounts that are
@@ -214,7 +236,7 @@ export async function createUser(ctx) {
     ).first();
 
     await audit(ctx, 'user.create', row.id, {
-      name, role, signIn: creds.isAdmin ? 'password' : 'pin',
+      name, role, signIn: creds.isAdmin ? (creds.pin ? 'password and pin' : 'password') : 'pin',
     });
     return json({ user: publicUser(row) }, { status: 201 });
   } catch (err) {
@@ -259,9 +281,12 @@ export async function updateUser(ctx, id) {
   const creds = readCredentials(body, role, { existing });
   if (creds.pin && await isReservedPin(creds.pin, ctx.env)) throw badRequest(PIN_TAKEN);
 
-  // Promoting somebody to administrator retires their PIN, so the short code
-  // they have been typing all along stops being a way in.
-  let pinHash = creds.isAdmin ? null : existing.pin_hash;
+  // Promoting somebody to administrator still retires the PIN they had, unless
+  // a new one is typed in the same breath. An administrator may hold a PIN, but
+  // the four digits a supervisor has been using since opening day should not
+  // quietly become the keys to the whole property.
+  const promoted = creds.isAdmin && existing.role !== 'admin';
+  let pinHash = promoted || creds.clearPin ? null : existing.pin_hash;
   if (creds.pin) pinHash = await hashPin(creds.pin, await getPepper(ctx.db));
 
   let passwordHash = existing.password_hash;
@@ -282,6 +307,7 @@ export async function updateUser(ctx, id) {
       role,
       active,
       pinChanged: Boolean(creds.pin),
+      pinRemoved: Boolean(creds.clearPin || promoted),
       passwordChanged: Boolean(creds.password),
     });
     return json({ user: publicUser(row) });

@@ -103,7 +103,11 @@ async function peopleTab(reload) {
           label: 'Name',
           format: (v, r) => h('div',
             h('div', v, r.active ? null : h('span.pill', { style: { marginLeft: '.4rem' } }, 'inactive')),
-            h('small.muted', r.email || `signs in with a ${r.signsInWith}`),
+            h('small.muted', r.email
+              // An address is what they type; a PIN is worth saying as well,
+              // because it is the half somebody forgets they handed out.
+              ? `${r.email}${r.role === 'admin' && r.hasPin ? ' · and a PIN' : ''}`
+              : `signs in with a ${r.signsInWith}`),
           ),
         },
         { key: 'role', label: 'Role', format: (v) => h('span.pill', roleLabel(data.roles, v)) },
@@ -337,10 +341,11 @@ function roleLabel(roles, key) {
 /**
  * Add or edit a login.
  *
- * The credential half changes shape with the role, because administrators sign
- * in with an email address and a password and everybody else uses a PIN. The
- * password is stretched here, in the browser, and only the derived key is sent
- * — see crypto.js for why.
+ * The credential half changes shape with the role. An administrator must have
+ * an email address and a password, and may have a PIN as well for the tablet
+ * in the kitchen; everybody else has a PIN and nothing else. The password is
+ * stretched here, in the browser, and only the derived key is sent — see
+ * crypto.js for why.
  */
 function openUserDialog({ existing, data, reload }) {
   const name = h('input', { type: 'text', maxlength: 80, value: existing?.name ?? '' });
@@ -356,7 +361,15 @@ function openUserDialog({ existing, data, reload }) {
   const email = h('input', { type: 'email', maxlength: 200, value: existing?.email ?? '' });
   const password = h('input', { type: 'password', maxlength: 200, placeholder: existing?.hasPassword ? 'leave blank to keep' : 'at least 10 characters' });
 
-  const pinField = h('label.field', h('span', 'PIN'), pin);
+  // Taking an administrator's PIN away again, which is not the same as leaving
+  // the box blank: blank keeps what they had.
+  const dropPin = h('input', { type: 'checkbox' });
+  const dropPinRow = h('label.inline-check', { style: { display: 'none' } },
+    dropPin, h('span', 'Take the PIN away, so only the password signs them in'));
+
+  const pinLabel = h('span', 'PIN');
+  const pinHint = h('small.muted', { style: { display: 'none' } });
+  const pinField = h('label.field', pinLabel, pin, pinHint);
   const emailField = h('label.field', h('span', 'Email address'), email);
   const passwordField = h('label.field', h('span', 'Password'), password);
 
@@ -418,9 +431,24 @@ function openUserDialog({ existing, data, reload }) {
     for (const c of checkboxes) c.box.checked = list.includes(c.key);
 
     const isAdmin = roleSelect.value === 'admin';
-    pinField.style.display = isAdmin ? 'none' : '';
-    emailField.style.display = isAdmin ? '' : '';
+    // An address is worth keeping on file for anybody; only an administrator
+    // signs in with one.
+    emailField.style.display = '';
     passwordField.style.display = isAdmin ? '' : 'none';
+
+    // An administrator's PIN is theirs to have or not. Everybody else's is the
+    // only way they get in, so it is not optional and there is nothing to drop.
+    pinLabel.textContent = isAdmin ? 'PIN (optional)' : 'PIN';
+    pinHint.style.display = isAdmin ? '' : 'none';
+    pinHint.textContent = isAdmin
+      ? 'A second way in for the tablet, alongside the password. The payroll asks for its own '
+        + 'PIN either way.'
+      : '';
+    pin.placeholder = existing?.hasPin
+      ? 'leave blank to keep'
+      : isAdmin ? 'none set' : '4 to 10 digits';
+    dropPinRow.style.display = isAdmin && existing?.hasPin ? '' : 'none';
+    if (!isAdmin || !existing?.hasPin) dropPin.checked = false;
     showStaff();
   };
 
@@ -450,6 +478,7 @@ function openUserDialog({ existing, data, reload }) {
       rotaField,
       staffField,
     ),
+    dropPinRow,
     roleHint,
     h('label.field', h('span', 'Note (optional)'), note),
     h('div', { style: { marginTop: '.4rem' } },
@@ -502,6 +531,8 @@ function openUserDialog({ existing, data, reload }) {
           // crypto.js for why that is not merely belt and braces.
           Object.assign(payload, await prepareNewPassword(password.value));
         }
+        if (pin.value) payload.pin = pin.value.trim();
+        else if (dropPin.checked) payload.clearPin = true;
       } else {
         payload.email = email.value.trim() || null;
         if (pin.value) payload.pin = pin.value.trim();

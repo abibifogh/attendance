@@ -131,8 +131,10 @@ test('the window is minutes, and it slides only once half of it has gone', () =>
 // Who may open it
 // ---------------------------------------------------------------------------
 
-const asAdmin = { user: { id: 1, name: 'Kwame', role: 'admin' }, permissions: ['hr_pay'] };
-const asBookkeeper = { user: { id: 4, name: 'Yaa', role: 'manager' }, permissions: ['hr_pay'] };
+const asAdmin = { user: { id: 1, name: 'Kwame', role: 'admin' }, permissions: ['hr_pay'], via: 'password' };
+// The same administrator, in through the keypad rather than the sign-in form.
+const asAdminOnAPin = { ...asAdmin, via: 'pin' };
+const asBookkeeper = { user: { id: 4, name: 'Yaa', role: 'manager' }, permissions: ['hr_pay'], via: 'pin' };
 const asRecovery = {
   user: { id: 0, name: 'Recovery access', role: 'admin', isRecovery: true },
   permissions: ['hr_pay'],
@@ -361,6 +363,46 @@ test('an administrator chooses one with no code, having signed in with a passwor
   const row = raw.prepare('SELECT * FROM pay_access WHERE user_id = 1').get();
   assert.equal(row.code_hash, null, 'granted nothing');
   assert.equal(row.expires_at, null, 'and it does not run out');
+});
+
+test('an administrator on a login PIN cannot choose the payroll PIN with it', async () => {
+  // Four digits overheard at the tablet must not be the whole of what stands
+  // between somebody and everybody's pay.
+  const { db } = setup();
+  await assert.rejects(
+    () => setPin(ctx(db, asAdminOnAPin, { body: { pin: '2468' } })),
+    /Sign in with your email address and password/,
+  );
+
+  // The password session sets it, and after that the keypad session opens it
+  // with the payroll PIN like anybody else.
+  await setPin(ctx(db, asAdmin, { body: { pin: '2468' } }));
+  await lock(ctx(db, asAdminOnAPin));
+  assert.equal((await read(await unlock(ctx(db, asAdminOnAPin, { body: { pin: '2468' } })))).open, true);
+  await guardPayroll(ctx(db, asAdminOnAPin));
+});
+
+test('the screen is told to ask for the password before the form is filled in', async () => {
+  const { db } = setup();
+  const keypad = {
+    ...asAdminOnAPin,
+    user: { ...asAdminOnAPin.user, has_pin: 1 },
+  };
+  const now = await read(await myAccess(ctx(db, keypad)));
+  assert.equal(now.state, 'setup');
+  assert.equal(now.needsPassword, true);
+
+  // And not once there is a payroll PIN to type instead.
+  await setPin(ctx(db, asAdmin, { body: { pin: '2468' } }));
+  assert.equal((await read(await myAccess(ctx(db, keypad)))).needsPassword, false);
+});
+
+test('an administrator with no login PIN is not asked for the password again', async () => {
+  // There is nothing shorter to shoulder-surf, so the session they are in is
+  // already the strongest thing they have.
+  const { db, raw } = setup();
+  raw.prepare('UPDATE users SET pin_hash = NULL WHERE id = 1').run();
+  assert.equal((await read(await setPin(ctx(db, asAdminOnAPin, { body: { pin: '2468' } })))).open, true);
 });
 
 test('changing it needs the one in use now', async () => {
@@ -594,14 +636,14 @@ test('every payroll route is behind the lock, except the few that open it', asyn
  * is where the locks actually live, because a handler that is right behind a
  * gate nobody wired up is not protection.
  */
-async function asUser(db, raw, userId) {
+async function asUser(db, raw, userId, via = 'password') {
   const env = {
     DB: db,
     SESSION_SECRET: 'x'.repeat(40),
     ASSETS: { fetch: async () => new Response('asset') },
   };
   const token = await createToken(
-    { uid: userId, exp: Math.floor(Date.now() / 1000) + 3600 },
+    { uid: userId, via, exp: Math.floor(Date.now() / 1000) + 3600 },
     env.SESSION_SECRET,
   );
   const call = (path, init = {}) => worker.fetch(new Request(`https://x${path}`, {
@@ -652,7 +694,7 @@ test('the router turns a bookkeeper away until every lock is open', async () => 
 
 test('an administrator is stopped at the payroll until they have set a PIN', async () => {
   const { db, raw } = setup();
-  const admin = await asUser(db, raw, 1);
+  const admin = await asUser(db, raw, 1, 'password');
 
   const shut = await admin.call('/api/payroll?month=2026-08');
   assert.equal(shut.status, 403);

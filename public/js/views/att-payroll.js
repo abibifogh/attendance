@@ -382,6 +382,20 @@ function askPin(access, reload) {
  * are asked for nothing beyond the PIN itself.
  */
 function choosePin(access, reload) {
+  // An administrator on the keypad. Their login PIN opens the app but it does
+  // not get to choose the PIN that guards the payroll, or the payroll would be
+  // behind four digits somebody could read over their shoulder.
+  if (access.needsPassword) {
+    return lockCard(
+      'Sign in with your password first',
+      'You are signed in with your keypad PIN. Choosing the PIN that guards the payroll takes '
+      + 'your email address and password, which is the strongest thing this app asks you for. '
+      + 'Sign out, sign back in that way, and come here again.',
+      h('p.muted.pay-lock-when',
+        'After that, the payroll PIN is all you type, from the keypad or anywhere else.'),
+    );
+  }
+
   const code = codeBox();
   const pin = pinBox('New payroll PIN');
   const again = pinBox('The same again');

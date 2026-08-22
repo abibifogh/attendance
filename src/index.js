@@ -745,7 +745,8 @@ async function login(ctx) {
   const body = await readJson(request);
 
   // Two ways in: a PIN for a supervisor with a phone in a corridor, or an email
-  // address and password for administrators.
+  // address and password. An administrator must have the second and may have
+  // the first as well; everybody else has only the PIN.
   const user = body.email
     ? await userForCredentials(db, body.email, String(body.passwordKey ?? ''))
     : await userForPin(db, str(body.pin, 'PIN', { required: true, max: 64 }), env);
@@ -768,6 +769,9 @@ async function login(ctx) {
       uid: user.id,
       role: user.role,
       recovery: user.isRecovery ? 1 : 0,
+      // Which credential opened this session. A PIN is enough for the app; it
+      // is not enough to choose the PIN that guards the payroll.
+      via: body.email ? 'password' : 'pin',
       iat: now,
       exp: now + tokenTtl(user.role),
     },
@@ -823,6 +827,12 @@ async function me(ctx) {
     // open an apology.
     staffId: session.user.staff_id ?? null,
     signsInWith: session.user.role === 'admin' ? 'password' : 'pin',
+    // What they typed to get here, so My account knows which credential it can
+    // ask them to confirm with.
+    signedInWith: session.via ?? 'pin',
+    // Whether they already have a login PIN, so My account offers to change it
+    // rather than to set one.
+    hasPin: Boolean(session.user.has_pin),
     permissions: session.permissions,
     // What each one is called. Thirteen short strings sent with the session,
     // so a screen can name a permission the reader does not hold without
@@ -860,7 +870,8 @@ async function changeCredentials(ctx) {
   ).bind(session.user.id).first();
   if (!row) throw badRequest('Your account could not be found');
 
-  // Administrators hold a password; everyone else holds a PIN.
+  // Administrators hold a password, and may hold a PIN alongside it; everyone
+  // else holds a PIN.
   if (session.user.role === 'admin') {
     const pepper = await getPepper(db);
     const currentKey = String(body.currentPasswordKey ?? '');
@@ -869,6 +880,39 @@ async function changeCredentials(ctx) {
       await new Promise((resolve) => setTimeout(resolve, 400));
       throw badRequest('Your current password is not correct');
     }
+
+    // The password is what authorises anything done to the PIN, whether or not
+    // one exists yet. It outranks the PIN, so it can always speak for it, and
+    // asking for the PIN instead would leave an administrator who has
+    // forgotten theirs unable to choose another.
+    if (body.removePin || body.newPin != null) {
+      const wanted = String(body.newPin ?? '');
+      if (body.removePin) {
+        await db.batch([
+          db.prepare('UPDATE users SET pin_hash = NULL WHERE id = ?').bind(row.id),
+          db.prepare('INSERT INTO audit_log (actor, action, entity, detail) VALUES (?, ?, ?, ?)')
+            .bind(`${session.user.name} (${session.user.role})`, 'account.pin_removed', String(row.id), null),
+        ]);
+        return json({ ok: true, changed: 'pin', hasPin: false });
+      }
+
+      if (!/^\d{4,10}$/.test(wanted)) throw badRequest('The new PIN must be 4 to 10 digits');
+      if (await isReservedPin(wanted, ctx.env)) throw badRequest(PIN_TAKEN);
+
+      try {
+        await db.batch([
+          db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?')
+            .bind(await hashPin(wanted, pepper), row.id),
+          db.prepare('INSERT INTO audit_log (actor, action, entity, detail) VALUES (?, ?, ?, ?)')
+            .bind(`${session.user.name} (${session.user.role})`, 'account.pin_change', String(row.id), null),
+        ]);
+      } catch (err) {
+        if (String(err).includes('UNIQUE')) throw badRequest(PIN_TAKEN);
+        throw err;
+      }
+      return json({ ok: true, changed: 'pin', hasPin: true });
+    }
+
     if (!body.passwordKey || !body.passwordSalt) {
       throw badRequest('The new password did not reach the server correctly. Please try again.');
     }

@@ -5,6 +5,10 @@
 // entry screen, not filling in a login form. PINs are therefore unique across
 // users, which the users table enforces.
 //
+// Administrators must have an email address and a password, and may have a PIN
+// on top of it. Either signs them in; the token records which, because a few
+// things are deliberately out of a PIN session's reach.
+//
 // The env-var PINs from the original single-tenant setup still work as a
 // recovery route (see `recoveryUser`), so an admin who forgets their PIN or
 // deactivates the last account can always get back in.
@@ -278,9 +282,10 @@ export async function userForPin(db, pin, env) {
 
   if (row) {
     if (!row.active) return null;
-    // An administrator's PIN, if one was ever set, is not a way in. The whole
-    // point of giving them a password is that a short code is not enough.
-    if (row.role === 'admin') return null;
+    // An administrator may hold a PIN as well as a password, and either one
+    // signs them in. What the password still buys is everything a PIN is too
+    // short for on its own: it is the only way to set a payroll PIN in the
+    // first place, and the only way to change a login PIN from My account.
     return row;
   }
 
@@ -327,7 +332,7 @@ export async function getSession(request, env, db) {
     const user = payload.role === 'cook'
       ? { id: 0, name: 'Kitchen', role: 'cook', permissions: null, active: 1, isRecovery: true }
       : recoveryUser();
-    return { user, permissions: effectivePermissions(user) };
+    return { user, permissions: effectivePermissions(user), via: 'pin' };
   }
 
   // Re-reading means deactivating someone, changing their role or narrowing
@@ -339,12 +344,17 @@ export async function getSession(request, env, db) {
       // staff_id comes along because the whole of what a member of staff may
       // see is decided by it, and it must come from the session rather than
       // from anything a browser sends.
-      'SELECT id, name, role, permissions, active, staff_id FROM users WHERE id = ?',
+      // has_pin rather than the hash itself: the session is passed around the
+      // whole app, and a credential fingerprint has no business travelling
+      // with it just so one screen can say "change your PIN".
+      'SELECT id, name, role, permissions, active, staff_id, pin_hash IS NOT NULL AS has_pin '
+      + 'FROM users WHERE id = ?',
     ).bind(payload.uid).first().catch(async (err) => {
       // A database that has not been upgraded yet still signs people in.
       if (!isMissingTable(err)) throw err;
       return db.prepare(
-        'SELECT id, name, role, permissions, active FROM users WHERE id = ?',
+        'SELECT id, name, role, permissions, active, pin_hash IS NOT NULL AS has_pin '
+        + 'FROM users WHERE id = ?',
       ).bind(payload.uid).first();
     });
   } catch (err) {
@@ -353,7 +363,10 @@ export async function getSession(request, env, db) {
   }
 
   if (!user || !user.active) return null;
-  return { user, permissions: effectivePermissions(user) };
+  // How they signed in. Tokens issued before administrators could hold a PIN
+  // carry nothing, and are read as the PIN case, which is the careful way
+  // round: the worst it costs is one password sign-in.
+  return { user, permissions: effectivePermissions(user), via: payload.via === 'password' ? 'password' : 'pin' };
 }
 
 export function sessionCookie(token, role, secure = true) {

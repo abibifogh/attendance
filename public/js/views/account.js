@@ -12,8 +12,16 @@ import {
  * Available to everybody, because a credential that only an administrator can
  * change is a credential nobody ever changes — and a PIN that has been the same
  * since opening day is known to people who left months ago.
+ *
+ * An administrator has two of them. The password is the one that matters and
+ * the one they must have; the PIN is a shortcut for the tablet, and it is the
+ * password that authorises setting, changing or dropping it. That way an
+ * administrator who has forgotten the PIN is never stuck, and four overheard
+ * digits are never enough to replace themselves with four other ones.
  */
-export function openAccountDialog({ role, name, email: myEmail, isRecovery, canAlert = false }) {
+export function openAccountDialog({
+  role, name, email: myEmail, isRecovery, hasPin = false, canAlert = false,
+}) {
   const usesPassword = role === 'admin';
   // Only offered to people who would act on an alert. Somebody who reads the
   // month-end report has no use for a phone buzzing every morning.
@@ -84,6 +92,87 @@ export function openAccountDialog({ role, name, email: myEmail, isRecovery, canA
     }
   };
 
+  /** An administrator's optional keypad PIN, authorised by the password. */
+  function loginPinSection() {
+    const now = h('input', { type: 'password', placeholder: 'Your password', autocomplete: 'current-password' });
+    const wanted = h('input', {
+      type: 'password', inputmode: 'numeric', maxlength: 10,
+      placeholder: hasPin ? 'New PIN (4 to 10 digits)' : '4 to 10 digits',
+      autocomplete: 'new-password',
+    });
+    const problem = h('p.muted', { style: { minHeight: '1.2rem', fontSize: '.85rem' } });
+    let mine = hasPin;
+
+    const keyFor = async (password) => {
+      const params = await api.passwordSalt(myEmail);
+      return deriveLoginKey(password, params.salt, params.iterations);
+    };
+
+    const standing = h('p.muted', { style: { fontSize: '.85rem' } });
+    const paint = () => {
+      standing.textContent = mine
+        ? 'You have one. The keypad on the sign-in screen will take it.'
+        : 'You do not have one yet. The sign-in screen will only take your email address and '
+          + 'password.';
+      wanted.placeholder = mine ? 'New PIN (4 to 10 digits)' : '4 to 10 digits';
+      drop.style.display = mine ? '' : 'none';
+      setIt.textContent = mine ? 'Change the PIN' : 'Set a PIN';
+    };
+
+    const setIt = h('button.btn-primary', { onclick: async (event) => {
+      problem.textContent = '';
+      if (!now.value || !wanted.value) { problem.textContent = 'Fill in both boxes'; return; }
+      event.target.disabled = true;
+      problem.textContent = 'Saving…';
+      try {
+        await api.changeCredentials({
+          currentPasswordKey: await keyFor(now.value),
+          newPin: wanted.value.trim(),
+        });
+        mine = true;
+        now.value = '';
+        wanted.value = '';
+        problem.textContent = '';
+        paint();
+        toast('PIN saved. You can sign in with it now.', 'good');
+      } catch (err) {
+        problem.textContent = err.message;
+      } finally {
+        event.target.disabled = false;
+      }
+    } }, 'Set a PIN');
+
+    const drop = h('button.btn-ghost.btn-sm', { onclick: async (event) => {
+      problem.textContent = '';
+      if (!now.value) { problem.textContent = 'Type your password to take the PIN away'; return; }
+      event.target.disabled = true;
+      try {
+        await api.changeCredentials({ currentPasswordKey: await keyFor(now.value), removePin: true });
+        mine = false;
+        now.value = '';
+        paint();
+        toast('PIN taken away. Only your password signs you in now.', 'good');
+      } catch (err) {
+        problem.textContent = err.message;
+      } finally {
+        event.target.disabled = false;
+      }
+    } }, 'Take it away');
+
+    paint();
+
+    return h('div', { style: { marginTop: '1rem', paddingTop: '.9rem', borderTop: '1px solid var(--border)' } },
+      h('div.stat-label', { style: { marginBottom: '.3rem' } }, 'A PIN for the keypad'),
+      h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
+        'A short way in for a tablet, alongside your password. Your password is what sets it, '
+        + 'and the payroll asks for its own PIN either way.'),
+      standing,
+      h('label.field', h('span', 'Your password'), now),
+      h('label.field', h('span', hasPin ? 'New PIN' : 'PIN'), wanted),
+      problem,
+      h('div.btn-row', { style: { justifyContent: 'flex-end' } }, drop, setIt));
+  }
+
   const body = isRecovery
     ? h('div',
       h('div.alert.warn',
@@ -105,9 +194,13 @@ export function openAccountDialog({ role, name, email: myEmail, isRecovery, canA
       h('label.field', h('span', 'Repeat it'), confirm),
       error,
       h('div.btn-row', { style: { justifyContent: 'flex-end' } },
-        h('button', { onclick: () => dialog.close() }, 'Cancel'),
+        // An administrator has a second credential block under this one, so a
+        // Cancel button in the middle of the dialog would be answering a
+        // question nobody asked. The ✕ in the corner closes it either way.
+        usesPassword ? null : h('button', { onclick: () => dialog.close() }, 'Cancel'),
         h('button.btn-primary', { onclick: save }, usesPassword ? 'Change password' : 'Change PIN'),
-      ));
+      ),
+      usesPassword ? loginPinSection() : null);
 
   // What the sections below want to stop doing once this is shut. They are
   // built as arguments to the call that makes the dialog, so none of them can

@@ -57,8 +57,9 @@ export function renderLogin(onSuccess) {
   };
   window.addEventListener('keydown', onKeydown);
 
-  // Administrators sign in with an email address and password instead; the
-  // keypad stays the default because far more people use it, far more often.
+  // The other way in. An administrator must have an email address and a
+  // password and may also have a PIN, so both panes are theirs; the keypad
+  // stays the default because far more people use it, far more often.
   const email = h('input', { type: 'email', placeholder: 'you@niceoperation.com', autocomplete: 'username' });
   const password = h('input', { type: 'password', placeholder: 'Your password', autocomplete: 'current-password' });
 
@@ -87,14 +88,15 @@ export function renderLogin(onSuccess) {
 
   const pinPane = h('div', display, error, keypad,
     h('p.muted', { style: { fontSize: '.75rem', marginTop: '1rem' } },
-      'Supervisors and managers sign in with their own PIN.'));
+      'Everybody signs in with their own PIN, administrators included if they have set one.'));
 
   const passwordPane = h('div.hidden',
     h('label.field', { style: { textAlign: 'left' } }, h('span', 'Email address'), email),
     h('label.field', { style: { textAlign: 'left' } }, h('span', 'Password'), password),
     h('button.btn-primary', { style: { width: '100%' }, onclick: submitPassword }, 'Sign in'),
     h('p.muted', { style: { fontSize: '.75rem', marginTop: '1rem' } },
-      'Administrators sign in with an email address and password.'));
+      'Administrators always have an email address and a password. It is the only way to set '
+      + 'a payroll PIN.'));
 
   const showPin = (on) => {
     pinPane.classList.toggle('hidden', !on);

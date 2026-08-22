@@ -90,6 +90,11 @@ export async function myAccess(ctx) {
     state: verdict.ok ? 'open' : verdict.why,
     // A code is only ever asked for from somebody who was granted one.
     needsCode: !admin && !recovery && !access.hasPin,
+    // An administrator who came in on the keypad cannot choose the payroll PIN
+    // with it. Said here so the screen can say so, rather than letting them
+    // fill the form in and then refusing it.
+    needsPassword: admin && !recovery && !access.hasPin
+      && Boolean(ctx.session.user.has_pin) && ctx.session.via !== 'password',
     unlockMinutes: UNLOCK_MINUTES,
   });
 }
@@ -128,9 +133,22 @@ export async function setPin(ctx) {
   const pepper = await getPepper(ctx.db);
   const current = tidyPin(body.current);
   const code = tidyCode(body.code);
+  const user = await ctx.db.prepare('SELECT pin_hash FROM users WHERE id = ?').bind(me.id).first();
 
-  // An administrator with no PIN yet has nothing to prove: the password they
-  // signed in with is already the strongest credential here.
+  // An administrator choosing their first payroll PIN proves it with the
+  // password, which is the strongest credential this app asks anybody for.
+  //
+  // WHICH MEANS THE PASSWORD, NOT A SHORT CODE. An administrator may sign in
+  // with a login PIN now, and if four overheard digits could set the payroll
+  // PIN as well then the payroll would be behind those four digits and nothing
+  // else. So a PIN session is turned away here, once, and only here: after the
+  // payroll PIN exists, either kind of session opens it with that.
+  if (admin && !access.hasPin && user?.pin_hash && ctx.session.via !== 'password') {
+    throw forbidden('Sign in with your email address and password to choose a payroll PIN. '
+      + 'Your login PIN is not enough to set the one that guards the payroll.',
+    { payrollLocked: true, state: 'setup', needsPassword: true });
+  }
+
   let proved = admin && !access.hasPin;
   let wanted = null;
 
@@ -156,7 +174,6 @@ export async function setPin(ctx) {
 
   // The whole point is that it is not the PIN they sign in with. Somebody who
   // shoulder-surfs the tablet at the door should not be one tap from payroll.
-  const user = await ctx.db.prepare('SELECT pin_hash FROM users WHERE id = ?').bind(me.id).first();
   if (user?.pin_hash && await hashPin(pin, pepper) === user.pin_hash) {
     throw badRequest('Your payroll PIN has to be different from the PIN you sign in with.');
   }

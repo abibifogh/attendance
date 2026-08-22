@@ -43,8 +43,17 @@ export const GUIDE = [
       { p: 'Two ways, and neither needs anything installed. A PIN is for a phone in a corridor; '
         + 'a password is for whoever also opens the reports. Your administrator sets which you '
         + 'have, and you can change it yourself under your name in the top corner.' },
-      { warn: 'A PIN is four digits and stops a passer-by, not a determined person. Anybody '
-        + 'who can see wages, personnel records or letters should be on a password.' },
+      { p: 'An administrator has both. The email address and password are the account and cannot '
+        + 'be given up; a PIN can be added on top of them, so signing in at the kitchen tablet '
+        + 'is a few taps rather than a long password on a wet screen. Either one opens the app. '
+        + 'Set or drop it under your name in the top corner, or on somebody else under Users & '
+        + 'data.' },
+      { warn: 'A PIN is four digits and stops a passer-by, not a determined person. So the '
+        + 'password still has work that only it can do: an administrator has to be signed in '
+        + 'with it to choose the PIN that guards the payroll, and to set or change their own '
+        + 'login PIN. Promoting somebody to administrator also retires the PIN they had, '
+        + 'because the digits a supervisor has been using since opening day should not quietly '
+        + 'become the keys to the property.' },
 
       { sub: 'Install it on your phone' },
       { steps: [
@@ -707,7 +716,8 @@ export const GUIDE = [
         + 'office machine left signed in is exactly what the PIN is for.' },
       { list: [
         'The first time an administrator opens Payroll it asks them to choose a PIN. No code, '
-          + 'because they signed in with an email address and a password already.',
+          + 'but they do have to be signed in with their email address and password: a login '
+          + 'PIN is not enough to set the one that guards the payroll.',
         'Change your own from the Payroll screen: the PIN button beside the month. You need '
           + 'the one you are using now.',
         'Forgotten it? An administrator resets it under Users & data and the person chooses '

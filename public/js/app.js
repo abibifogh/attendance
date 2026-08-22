@@ -290,13 +290,15 @@ function shell(content) {
       noticeBell(),
       h('button.btn-ghost.btn-sm', { title: 'Switch light / dark', onclick: toggleTheme }, '🌗'),
       h('button.btn-ghost.btn-sm.topbar-account', {
-        title: state.role === 'admin' ? 'Change my password' : 'Change my PIN',
+        title: state.role === 'admin' ? 'My password and PIN' : 'Change my PIN',
         'aria-label': 'My account',
         onclick: () => openAccountDialog({
           role: state.role,
           name: state.name || 'you',
           email: state.email,
           isRecovery: state.isRecovery,
+          hasPin: state.hasPin,
+          signedInWith: state.signedInWith,
           // Anybody who has to act on an exception is worth alerting; somebody
           // who only reads the month-end report is not, and would come to
           // resent a phone buzzing every morning about it.
@@ -422,6 +424,8 @@ function resetSession() {
   state.name = null;
   state.email = null;
   state.isRecovery = false;
+  state.hasPin = false;
+  state.signedInWith = 'pin';
   state.permissions = [];
 }
 
@@ -474,6 +478,8 @@ window.addEventListener('online', () => { api.me().catch(() => {}); });
       state.name = me.name;
       state.email = me.email ?? null;
       state.isRecovery = Boolean(me.isRecovery);
+      state.hasPin = Boolean(me.hasPin);
+      state.signedInWith = me.signedInWith ?? 'pin';
       state.permissions = me.permissions || [];
       state.settings = me.settings || {};
       state.staffId = me.staffId ?? null;
