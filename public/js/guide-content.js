@@ -130,8 +130,10 @@ export const GUIDE = [
         + 'site has been added to your Home Screen.' },
       { p: 'Two things reach you that way. Your rota being published, so you hear about next '
         + 'week when it is decided rather than on the day. And your shift having started with '
-        + 'nothing recorded against you — once, allowing for whatever grace the shift already '
-        + 'has, and never after the first ninety minutes.' },
+        + 'nothing recorded against you, which repeats every half hour until you clock in — one '
+        + 'alert at twenty past six is one alert somebody asleep does not hear.' },
+      { p: 'It waits out whatever grace the shift already allows, it stops the moment you clock '
+        + 'in, and it stops on its own when the shift you were down for has ended.' },
       { note: 'That second one is a nudge, not a mark against you. Nothing about it reaches '
         + 'your record: the terminal decides what happened, as it always does.' },
 

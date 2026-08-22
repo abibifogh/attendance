@@ -40,10 +40,33 @@ const shiftDay = (day, n) => {
   return d.toISOString().slice(0, 10);
 };
 
-/** A shift starting so many minutes ago, in UTC, which is what the test runs in. */
+/**
+ * A shift that started so many minutes ago and runs for eight hours.
+ *
+ * Returned with the day it belongs to, because a run just after midnight puts
+ * "twenty minutes ago" on yesterday — which is the case the watcher itself had
+ * wrong, so the test must be able to say which day it means.
+ */
 function startingAgo(minutes) {
   const at = new Date(Date.now() - minutes * 60000);
-  return `${String(at.getUTCHours()).padStart(2, '0')}:${String(at.getUTCMinutes()).padStart(2, '0')}`;
+  const hh = String(at.getUTCHours()).padStart(2, '0');
+  const mm = String(at.getUTCMinutes()).padStart(2, '0');
+  const ends = new Date(at.getTime() + 8 * 3600000);
+  return {
+    day: at.toISOString().slice(0, 10),
+    starts_at: `${hh}:${mm}`,
+    ends_at: `${String(ends.getUTCHours()).padStart(2, '0')}:${String(ends.getUTCMinutes()).padStart(2, '0')}`,
+  };
+}
+
+/** Put that shift on the rota, published, on the day it actually starts. */
+function rosterAgo(raw, minutes) {
+  const at = startingAgo(minutes);
+  raw.prepare('UPDATE att_shifts SET starts_at = ?, ends_at = ? WHERE id = 1')
+    .run(at.starts_at, at.ends_at);
+  raw.prepare('INSERT OR REPLACE INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
+    .run(at.day);
+  return at;
 }
 
 function setup({ graceIn = 5 } = {}) {
@@ -229,12 +252,10 @@ test('running late reaches the floor rather than the person who said it', async 
 
 // ------------------------------------------------------------ shift watch --
 
-test('a started shift with nothing recorded tells that one person, once', async () => {
+test('a started shift with nothing recorded tells that one person', async () => {
   const { db, raw } = setup({ graceIn: 5 });
   const sent = await withPush(raw);
-  raw.prepare('UPDATE att_shifts SET starts_at = ? WHERE id = 1').run(startingAgo(20));
-  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
-    .run(today());
+  const on = rosterAgo(raw, 20);
 
   const first = await watchShifts(db, { timezone: 'UTC' });
   assert.equal(first.nudged, 1);
@@ -245,7 +266,8 @@ test('a started shift with nothing recorded tells that one person, once', async 
   ).get();
   assert.equal(notice.user_id, 7, 'to them, and to nobody else');
 
-  // A quarter of an hour later, and it does not say it again.
+  // A quarter of an hour later, still inside the same half hour, and it does
+  // not say it again.
   const second = await watchShifts(db, { timezone: 'UTC' });
   assert.equal(second.nudged, 0);
   assert.equal(sent.length, 1);
@@ -254,21 +276,62 @@ test('a started shift with nothing recorded tells that one person, once', async 
 test('it waits out the grace the shift already allows', async () => {
   const { db, raw } = setup({ graceIn: 30 });
   const sent = await withPush(raw);
-  raw.prepare('UPDATE att_shifts SET starts_at = ? WHERE id = 1').run(startingAgo(20));
-  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
-    .run(today());
+  const on = rosterAgo(raw, 20);
 
   const out = await watchShifts(db, { timezone: 'UTC' });
   assert.equal(out.nudged, 0, 'twenty minutes into thirty minutes of grace is not late');
   assert.equal(sent.length, 0);
 });
 
-test('it gives up rather than accusing somebody two hours later', async () => {
+test('it keeps going every half hour while the shift is still running', async () => {
   const { db, raw } = setup();
   const sent = await withPush(raw);
-  raw.prepare('UPDATE att_shifts SET starts_at = ? WHERE id = 1').run(startingAgo(150));
+  rosterAgo(raw, 20);
+
+  // Twenty minutes in: the first one.
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 1);
+  // A quarter of an hour later, still inside the same half hour: nothing.
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 0);
+
+  // Now fifty minutes in, which is the next half hour.
+  rosterAgo(raw, 50);
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 1);
+  rosterAgo(raw, 80);
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 1);
+
+  assert.equal(sent.length, 3, 'three half hours, three messages');
+});
+
+test('it stops the moment they clock in', async () => {
+  const { db, raw } = setup();
+  const sent = await withPush(raw);
+  const on = rosterAgo(raw, 20);
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 1);
+
+  raw.prepare(
+    `INSERT INTO att_punches (device_serial, employee_no, staff_id, at_utc, at_local, day,
+                              direction, dedupe_key)
+     VALUES ('D1', '1', 1, ?, ?, ?, 'in', 'k9')`,
+  ).run(`${on.day} ${on.starts_at}:00`, `${on.day} ${on.starts_at}:00`, on.day);
+
+  rosterAgo(raw, 50);
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 0, 'they are here now');
+  assert.equal(sent.length, 1);
+});
+
+test('it stops when the shift they were down for has ended', async () => {
+  const { db, raw } = setup();
+  const sent = await withPush(raw);
+  const at = startingAgo(600);
+  // Started ten hours ago and only ran for two. There is nothing left to
+  // arrive for, and a phone still buzzing about it is an accusation on a timer.
+  const ends = new Date(Date.now() - 8 * 3600000);
+  raw.prepare('UPDATE att_shifts SET starts_at = ?, ends_at = ? WHERE id = 1').run(
+    at.starts_at,
+    `${String(ends.getUTCHours()).padStart(2, '0')}:${String(ends.getUTCMinutes()).padStart(2, '0')}`,
+  );
   raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
-    .run(today());
+    .run(at.day);
 
   assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 0);
   assert.equal(sent.length, 0);
@@ -277,14 +340,12 @@ test('it gives up rather than accusing somebody two hours later', async () => {
 test('somebody who has clocked in is left alone, and so is somebody on leave', async () => {
   const { db, raw } = setup();
   const sent = await withPush(raw);
-  raw.prepare('UPDATE att_shifts SET starts_at = ? WHERE id = 1').run(startingAgo(20));
-  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
-    .run(today());
+  const on = rosterAgo(raw, 20);
   raw.prepare(
     `INSERT INTO att_punches (device_serial, employee_no, staff_id, at_utc, at_local, day,
                               direction, dedupe_key)
      VALUES ('D1', '1', 1, ?, ?, ?, 'in', 'k1')`,
-  ).run(`${today()} 06:00:00`, `${today()} 06:00:00`, today());
+  ).run(`${on.day} 06:00:00`, `${on.day} 06:00:00`, on.day);
 
   assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 0);
 
@@ -292,7 +353,7 @@ test('somebody who has clocked in is left alone, and so is somebody on leave', a
   raw.prepare(
     `INSERT INTO att_leave (staff_id, reason_code, from_day, to_day, days, status)
      VALUES (1, 'annual_leave', ?, ?, 1, 'approved')`,
-  ).run(today(), today());
+  ).run(on.day, on.day);
   assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 0);
   assert.equal(sent.length, 0);
 });
@@ -300,9 +361,11 @@ test('somebody who has clocked in is left alone, and so is somebody on leave', a
 test('an unpublished shift is nobody’s fault for not turning up to', async () => {
   const { db, raw } = setup();
   const sent = await withPush(raw);
-  raw.prepare('UPDATE att_shifts SET starts_at = ? WHERE id = 1').run(startingAgo(20));
+  const at = startingAgo(20);
+  raw.prepare('UPDATE att_shifts SET starts_at = ?, ends_at = ? WHERE id = 1')
+    .run(at.starts_at, at.ends_at);
   raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 0)')
-    .run(today());
+    .run(at.day);
 
   assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 0);
   assert.equal(sent.length, 0);
@@ -311,9 +374,7 @@ test('an unpublished shift is nobody’s fault for not turning up to', async () 
 test('turning the nudge off turns it off', async () => {
   const { db, raw } = setup();
   const sent = await withPush(raw);
-  raw.prepare('UPDATE att_shifts SET starts_at = ? WHERE id = 1').run(startingAgo(20));
-  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
-    .run(today());
+  const on = rosterAgo(raw, 20);
   raw.prepare("UPDATE settings SET value = '0' WHERE key = 'att_late_nudge'").run();
 
   const out = await watchShifts(db, { timezone: 'UTC' });
