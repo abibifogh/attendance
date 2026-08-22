@@ -2680,6 +2680,14 @@ html { touch-action: manipulation; }
 .pay-row:focus-visible > td:first-child { outline: 2px solid var(--accent); outline-offset: -2px; }
 .pay-total > td { border-top: 2px solid var(--border-strong); font-variant-numeric: tabular-nums; }
 .pay-score { width: 4.5rem; text-align: right; }
+/* What a spreadsheet would do, before it does it. */
+.pay-import-list { display: grid; gap: .5rem; max-height: 24rem; overflow: auto; margin-top: .6rem; }
+.pay-import-row {
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .5rem .65rem;
+}
+.pay-import-changes, .pay-import-notes { margin: .25rem 0 0; padding-left: 1.1rem; font-size: .88rem; }
+.pay-import-notes { color: var(--warn, #b45309); }
+
 .pay-month-pick { flex-wrap: nowrap; }
 .pay-month-pick input { min-width: 9rem; }
 

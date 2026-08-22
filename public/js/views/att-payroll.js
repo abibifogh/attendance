@@ -119,6 +119,7 @@ export async function renderAttPayroll(params) {
             `All ${data.lines.length} payslips`),
           h('button.btn-sm', { onclick: () => openReturns(month) },
             'Journal and PAYE'),
+          closed ? null : importButton(month, reload),
           closed
             ? null
             : h('button.btn.btn-primary', {
@@ -231,6 +232,117 @@ async function startFrom(month, reload) {
   toast(done.scores || done.penalties
     ? `Brought across: ${bits.join(' and ')}.`
     : 'There was nothing to bring across.', done.scores ? 'good' : 'warn');
+  await reload();
+}
+
+/**
+ * A month's figures, out of a spreadsheet.
+ *
+ * WHAT COMES DOWN IS THIS MONTH AS IT STANDS, not a blank form. Somebody
+ * changes the two figures that changed and sends it back, which is both less
+ * typing and far less to get wrong than a template with headings and nothing
+ * under them.
+ *
+ * WHAT IT WOULD DO SITS ON THE SCREEN UNTIL SOMEBODY AGREES. Payroll decides
+ * what people are paid, so an import that writes first and reports afterwards
+ * is one nobody dares run a second time.
+ */
+function importButton(month, reload) {
+  const picker = h('input', {
+    type: 'file',
+    accept: '.csv,text/csv',
+    style: { display: 'none' },
+    onchange: async (e) => {
+      const file = e.target.files?.[0];
+      // Cleared at once, so choosing the same file again after fixing
+      // something in it still fires a change.
+      e.target.value = '';
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const read = await api.payrollReadInput({ month, text });
+        await showImport({ month, text, read, reload });
+      } catch (err) {
+        toast(err.message, 'bad');
+      }
+    },
+  });
+
+  return h('span',
+    picker,
+    h('button.btn-sm', {
+      title: 'Take the month down as a spreadsheet, or send one back. Nothing is written '
+        + 'until you agree to it.',
+      onclick: () => picker.click(),
+    }, 'From a spreadsheet'),
+    h('a.btn.btn-sm', {
+      href: `/api/payroll/input/template?month=${encodeURIComponent(month)}`,
+      download: `payroll-${month}.csv`,
+      title: 'This month as it stands, to change and send back',
+    }, 'Download the sheet'));
+}
+
+/** What the file would do, and the button that does it. */
+async function showImport({ month, text, read, reload }) {
+  const { tally } = read;
+
+  const lines = read.lines.map((line) => h('div.pay-import-row',
+    h('div',
+      h('strong', line.name),
+      line.changes.length
+        ? h('ul.pay-import-changes', line.changes.map((c) => h('li',
+          `${c.label}: `,
+          h('span.muted', c.from === null ? 'nothing' : String(c.from)),
+          ' to ',
+          h('strong', String(c.to)))))
+        : null,
+      line.notes.length
+        ? h('ul.pay-import-notes', line.notes.map((n) => h('li', `${n.what}: ${n.why}`)))
+        : null)));
+
+  const done = await formDialog({
+    title: `${niceMonth(month)} from a spreadsheet`,
+    submitLabel: tally.changes ? `Change ${tally.changes} figures` : 'Nothing to change',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.9rem', marginTop: 0 } },
+        tally.changes
+          ? `${tally.changes} figure${tally.changes === 1 ? '' : 's'} would change across `
+            + `${tally.people} ${tally.people === 1 ? 'person' : 'people'}. Nothing has been `
+            + 'written yet.'
+          : 'Nothing in that file is different from what is already here.'),
+
+      read.missingColumns.length
+        ? h('div.returns-warn', `The sheet needs ${read.missingColumns.join(' and ')}.`)
+        : null,
+
+      read.unknown.length
+        ? h('div.returns-warn',
+          h('strong', 'Columns nobody recognised, so they were left alone'),
+          h('div', read.unknown.join(', ')),
+          h('div.muted', 'An allowance or a scheme has to exist here before a column can set '
+            + 'it. Nothing is made from a spreadsheet.'))
+        : null,
+
+      read.skipped.length
+        ? h('div.returns-warn',
+          h('strong', `${read.skipped.length} line${read.skipped.length === 1 ? '' : 's'} skipped`),
+          h('ul', read.skipped.map((row) => h('li',
+            `Line ${row.at}: ${row.name || row.employeeNo || 'blank'} · ${row.why}`))))
+        : null,
+
+      lines.length ? h('div.pay-import-list', lines) : null),
+
+    onSubmit: () => (tally.changes
+      ? api.payrollApplyInput({ month, text })
+      : Promise.resolve({ basics: 0, allowances: 0, scores: 0 })),
+  });
+
+  if (!done) return;
+  const bits = [];
+  if (done.basics) bits.push(`${done.basics} salaries`);
+  if (done.allowances) bits.push(`${done.allowances} allowances`);
+  if (done.scores) bits.push(`${done.scores} scores`);
+  toast(bits.length ? `Set: ${bits.join(', ')}.` : 'Nothing changed.', bits.length ? 'good' : 'warn');
   await reload();
 }
 

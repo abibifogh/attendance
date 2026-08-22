@@ -733,6 +733,29 @@ export const GUIDE = [
           + 'into the month are replaced rather than added to.',
       ] },
 
+      { sub: 'From a spreadsheet' },
+      { p: 'A month\u2019s figures can come in from a sheet instead of being typed. Download '
+        + 'the sheet gives you this month as it stands, not a blank form: a row per person, '
+        + 'and a column for the basic, each allowance the property uses, and a score against '
+        + 'each scheme somebody is under. Change what changed and send it back '
+        + 'with From a spreadsheet.' },
+      { p: 'What it would do sits on the screen until you agree to it, person by person and '
+        + 'figure by figure. Nothing is written before you press the button.' },
+      { list: [
+        'Rows are matched on employee number, or on the name where there is no number. A name '
+          + 'the register does not know is skipped and listed; nobody is created from a sheet.',
+        'A column has to be one of your own allowances or schemes. Anything else is named back '
+          + 'and left alone rather than making a new one.',
+        'A blank cell leaves a figure alone. A nought is a nought, so a nought against an '
+          + 'allowance takes it away.',
+        'A score against a scheme somebody is not under is refused, and so is one outside 0 to '
+          + '100.',
+      ] },
+      { warn: 'The advance column is read and checked, never written. An advance is an '
+        + 'agreement with a balance behind it and the payroll takes the instalment that '
+        + 'agreement says. Where the sheet disagrees with the books it says so, and the books '
+        + 'win. Advances are still granted and settled under Advances.' },
+
       { sub: 'The journal and the PAYE schedule' },
       { p: 'Journal and PAYE, on the month, opens the two returns the month has to produce. '
         + 'Nothing here posts to a ledger or files anything: it is a sheet to type from and a '

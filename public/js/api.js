@@ -241,6 +241,8 @@ export const api = {
   payrollRemovePenalty: (id) => request(`/api/payroll/penalties/${id}`, { method: 'DELETE' }),
   payrollReturns: (month) => request(`/api/payroll/returns?month=${encodeURIComponent(month)}`),
   payrollCopy: (body) => request('/api/payroll/copy', { method: 'POST', body }),
+  payrollReadInput: (body) => request('/api/payroll/input/read', { method: 'POST', body }),
+  payrollApplyInput: (body) => request('/api/payroll/input/apply', { method: 'POST', body }),
   payrollClose: (body) => request('/api/payroll/close', { method: 'POST', body }),
   payrollReopen: (body) => request('/api/payroll/reopen', { method: 'POST', body }),
 

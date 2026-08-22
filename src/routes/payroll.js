@@ -1,9 +1,10 @@
-import { badRequest, int, json, notFound, num, readJson, str } from '../lib/http.js';
+import { badRequest, csvResponse, int, json, notFound, num, readJson, str } from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
 import { balanceOf, dueThisMonth } from '../lib/advances.js';
 import { computeLine, totalsOf } from '../lib/payroll.js';
 import { ratesFrom, round2 } from '../lib/tax.js';
 import { PAYE_COLUMNS, journalFor, payeSchedule, tiersFrom } from '../lib/statutory.js';
+import { readSheet, tallyOf } from '../lib/pay-import.js';
 import { addMonths, isMonth, monthOf, todayIn } from '../util/dates.js';
 
 /**
@@ -291,6 +292,182 @@ export async function payroll(ctx) {
 }
 
 /** One payslip, in full. */
+// ---------------------------------------------------------------------------
+// The month's input, out of a spreadsheet
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything the sheet is read against: who is here, what they are on, what
+ * they are under, and what the payroll is going to take off them anyway.
+ */
+async function sheetContext(ctx, month) {
+  const data = await gather(ctx, month);
+
+  const memberOf = new Map();
+  for (const [schemeId, rows] of data.memberBy.entries()) {
+    for (const row of rows) {
+      if (!memberOf.has(row.staff_id)) memberOf.set(row.staff_id, []);
+      memberOf.get(row.staff_id).push(schemeId);
+    }
+  }
+
+  const advanceDue = new Map();
+  for (const advance of data.advances) {
+    const due = dueThisMonth(advance, data.entriesBy.get(advance.id) ?? [], month);
+    if (!due) continue;
+    advanceDue.set(advance.staff_id, round2((advanceDue.get(advance.staff_id) ?? 0) + due));
+  }
+
+  // Every allowance the property actually uses, so the columns are its own
+  // words rather than a format somebody has to learn.
+  const names = new Map();
+  for (const rows of data.allowanceBy.values()) {
+    for (const row of rows) if (!names.has(row.name)) names.set(row.name, row.name);
+  }
+
+  return {
+    data,
+    month,
+    staff: data.staff,
+    allowances: [...names.values()].sort((a, b) => a.localeCompare(b)),
+    schemes: data.schemes.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name })),
+    profiles: data.profileBy,
+    allowanceBy: data.allowanceBy,
+    scoreBy: new Map(data.scores.map((r) => [`${r.scheme_id}|${r.staff_id}`, r.score])),
+    memberOf,
+    advanceDue,
+  };
+}
+
+/**
+ * This month's sheet, already filled in.
+ *
+ * Not a blank template. Somebody downloads the month as it stands, changes the
+ * two figures that changed, and sends it back — which is both less typing and
+ * a great deal less to get wrong than a form with the headings and nothing
+ * under them.
+ */
+export async function inputTemplate(ctx) {
+  const { timezone } = await settingsOf(ctx.db);
+  const month = monthFrom(ctx.url, timezone);
+  const c = await sheetContext(ctx, month);
+
+  const header = [
+    'Employee no', 'Name', 'Basic',
+    ...c.allowances.map((name) => `Allowance: ${name}`),
+    ...c.schemes.map((s) => `Score: ${s.name}`),
+    'Advance',
+  ];
+
+  const rows = [header];
+  for (const person of c.staff) {
+    if (!person.active) continue;
+    const profile = c.profiles.get(person.id);
+    if (!profile) continue;
+
+    const mine = c.allowanceBy.get(person.id) ?? [];
+    const under = c.memberOf.get(person.id) ?? [];
+
+    rows.push([
+      person.employee_no ?? '',
+      person.name,
+      round2(profile.basic).toFixed(2),
+      ...c.allowances.map((name) => {
+        const found = mine.find((a) => a.name === name);
+        return found ? round2(found.amount).toFixed(2) : '';
+      }),
+      // Blank against a scheme somebody is not under, so nobody scores
+      // somebody on something they are not on.
+      ...c.schemes.map((s) => (under.includes(s.id)
+        ? round2(c.scoreBy.get(`${s.id}|${person.id}`) ?? 0).toFixed(2)
+        : '')),
+      round2(c.advanceDue.get(person.id) ?? 0).toFixed(2),
+    ]);
+  }
+
+  return csvResponse(`payroll-${month}.csv`, rows);
+}
+
+/** What the file would do, said before anything is done. */
+export async function readInput(ctx) {
+  const body = await readJson(ctx.request);
+  const text = String(body.text ?? '');
+  if (!text.trim()) throw badRequest('There is nothing in that file.');
+
+  const { timezone } = await settingsOf(ctx.db);
+  const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
+  const c = await sheetContext(ctx, month);
+
+  const read = readSheet(text, c);
+  return json({ month, ...read, tally: tallyOf(read) });
+}
+
+/**
+ * And then do it.
+ *
+ * The file is read again here rather than trusting a list of changes posted
+ * back from a screen, because the payroll may have moved between the preview
+ * and the button and the second read is the one that counts.
+ */
+export async function applyInput(ctx) {
+  const body = await readJson(ctx.request);
+  const text = String(body.text ?? '');
+  if (!text.trim()) throw badRequest('There is nothing in that file.');
+
+  const { timezone } = await settingsOf(ctx.db);
+  const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
+  const c = await sheetContext(ctx, month);
+  if (c.data.run.status === 'final') {
+    throw badRequest('That month is closed. Open it again before changing anything in it.');
+  }
+
+  const read = readSheet(text, c);
+  const run = await runFor(ctx.db, month, actorOf(ctx));
+  const actor = actorOf(ctx);
+  let basics = 0;
+  let allowances = 0;
+  let scores = 0;
+
+  for (const line of read.lines) {
+    for (const change of line.changes) {
+      if (change.kind === 'basic') {
+        await ctx.db.prepare(
+          "UPDATE pay_profile SET basic = ?2, set_by = ?3, set_at = datetime('now') WHERE staff_id = ?1",
+        ).bind(line.staffId, change.to, actor).run();
+        basics += 1;
+        continue;
+      }
+      if (change.kind === 'allowance') {
+        // One line per name, so a sheet run twice does not leave two
+        // Transports on somebody's payslip.
+        await ctx.db.prepare('DELETE FROM pay_allowance WHERE staff_id = ?1 AND name = ?2')
+          .bind(line.staffId, change.name).run();
+        if (change.to > 0) {
+          await ctx.db.prepare(
+            'INSERT INTO pay_allowance (staff_id, name, amount, taxable) VALUES (?1, ?2, ?3, ?4)',
+          ).bind(line.staffId, change.name, change.to, change.taxable === false ? 0 : 1).run();
+        }
+        allowances += 1;
+        continue;
+      }
+      if (change.kind === 'score') {
+        await ctx.db.prepare(
+          `INSERT INTO pay_score (run_id, scheme_id, staff_id, score) VALUES (?1, ?2, ?3, ?4)
+           ON CONFLICT (run_id, scheme_id, staff_id) DO UPDATE SET score = ?4, amount = NULL`,
+        ).bind(run.id, change.schemeId, line.staffId, change.to).run();
+        scores += 1;
+      }
+    }
+  }
+
+  await audit(ctx, 'payroll.input', month, {
+    basics, allowances, scores, skipped: read.skipped.length,
+  });
+  return json({
+    ok: true, month, basics, allowances, scores, skipped: read.skipped, notes: read.lines,
+  });
+}
+
 /**
  * The two returns the month has to produce, on one screen.
  *
