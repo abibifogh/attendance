@@ -1,5 +1,7 @@
 import { api } from '../api.js';
-import { fmtDayShort, fmtNum, h, money, mount, shiftDay, todayISO } from '../util.js';
+import {
+  daysApart, fmtDayShort, fmtNum, h, money, monthOf, mount, shiftDay, shiftMonth, todayISO,
+} from '../util.js';
 import { card, emptyState } from './components.js';
 import { can, navigate, replaceParams } from '../app.js';
 
@@ -45,6 +47,13 @@ const COLUMNS = [
   { key: 'nights', label: 'Nights', of: (r) => r.figures.nights, num: true },
   { key: 'weekends', label: 'Weekends', of: (r) => r.figures.weekends, num: true },
   {
+    key: 'sundays',
+    label: 'Sundays off',
+    of: (r) => r.figures.sundaysOff ?? 0,
+    num: true,
+    hint: 'Sundays they had to themselves, out of the Sundays in this period',
+  },
+  {
     key: 'rest',
     label: 'Rest',
     of: (r) => r.figures.shortestTurnaround ?? 999,
@@ -58,9 +67,10 @@ export async function renderAttWorkload(params) {
   const host = h('div');
   const from = params.from || mondayOf(todayISO());
   const to = params.to || shiftDay(from, 13);
+  const period = PERIODS.includes(params.view) ? params.view : periodOf(from, to);
   const sort = COLUMNS.some((c) => c.key === params.sort) ? params.sort : 'load';
   const dir = params.dir === 'asc' ? 'asc' : 'desc';
-  const only = ['over', 'quiet', 'all'].includes(params.only) ? params.only : 'all';
+  const only = ['over', 'quiet', 'sundays', 'all'].includes(params.only) ? params.only : 'all';
 
   const [data, cost] = await Promise.all([
     api.attWorkload({ from, to, ...(params.department ? { department: params.department } : {}) }),
@@ -69,8 +79,17 @@ export async function renderAttWorkload(params) {
     can('hr_pay') ? api.attLabourCost({ from, to }).catch(() => null) : Promise.resolve(null),
   ]);
 
+  // What came back, which is not always what was asked for: a range longer
+  // than the server will read comes back cut short, and every control on the
+  // screen should agree with the figures underneath them rather than with the
+  // dates somebody typed.
+  const shown = { from: data.from, to: data.to };
+  if (data.clamped) {
+    replaceParams('att-workload', { ...params, ...shown, sort, dir, only, view: period });
+  }
+
   const reload = async (next = {}) => {
-    const merged = { ...params, from, to, sort, dir, only, ...next };
+    const merged = { ...params, ...shown, sort, dir, only, view: period, ...next };
     replaceParams('att-workload', merged);
     mount(host, await renderAttWorkload(merged));
   };
@@ -91,10 +110,19 @@ export async function renderAttWorkload(params) {
 
   const over = data.rows.filter((r) => r.findings.some((f) => f.level === 'high'));
   const quiet = data.rows.filter((r) => r.resting.length);
+  // Whoever the property's own Sunday rule was broken for, rather than
+  // everybody who happened to work one.
+  const noSunday = data.rows.filter((r) => r.findings.some((f) => f.key === 'sundays'));
+  // Sundays are a monthly rule, so a fortnight has nothing to say about them
+  // and the tile stays out of the way until the period is long enough.
+  const sundaysWorthAsking = (data.rows[0]?.figures.sundays ?? 0) >= 4;
 
-  const shown = only === 'over' ? over : only === 'quiet' ? quiet : data.rows;
+  const listed = only === 'over' ? over
+    : only === 'quiet' ? quiet
+      : only === 'sundays' ? noSunday
+        : data.rows;
   const column = COLUMNS.find((c) => c.key === sort);
-  const ordered = [...shown].sort((a, b) => {
+  const ordered = [...listed].sort((a, b) => {
     const x = column.of(a);
     const y = column.of(b);
     const cmp = column.text ? String(x).localeCompare(String(y)) : Number(x) - Number(y);
@@ -113,21 +141,8 @@ export async function renderAttWorkload(params) {
     ),
 
     h('div.toolbar',
-      h('button.btn-sm', {
-        onclick: () => reload({ from: shiftDay(from, -14), to: shiftDay(to, -14) }),
-        'aria-label': 'The fortnight before',
-      }, '‹'),
-      h('input', {
-        type: 'date', value: from, 'aria-label': 'Fortnight beginning',
-        onchange: (e) => e.target.value && reload({ from: e.target.value, to: shiftDay(e.target.value, 13) }),
-      }),
-      h('button.btn-sm', {
-        onclick: () => reload({ from: shiftDay(from, 14), to: shiftDay(to, 14) }),
-        'aria-label': 'The fortnight after',
-      }, '›'),
-      h('button.btn-sm', {
-        onclick: () => reload({ from: mondayOf(todayISO()), to: shiftDay(mondayOf(todayISO()), 13) }),
-      }, 'This fortnight'),
+      periodPicker(period, reload, shown),
+      whenControls(period, { ...shown, reload }),
       h('div', { style: { flex: 1 } }),
       data.departments?.length
         ? h('select', {
@@ -141,7 +156,18 @@ export async function renderAttWorkload(params) {
         : null,
     ),
 
-    // The four numbers the fortnight comes down to, and three of them are also
+    data.clamped
+      ? h('div.alert.warn',
+        h('span.alert-icon', '⚠️'),
+        h('div',
+          h('div.alert-title', `Showing the first ${data.maxSpan} days of what you asked for`),
+          h('div.alert-detail',
+            `${fmtDayShort(data.from)} to ${fmtDayShort(data.to)}. A longer stretch than a `
+            + 'quarter is read a day at a time for everybody on the property, which is a slow '
+            + 'page rather than a useful one.')))
+      : null,
+
+    // The four numbers the period comes down to, and three of them are also
     // the filter. A count somebody has to act on should be the way in to the
     // people behind it rather than a figure they then go hunting for.
     h('div.grid.grid-4.wl-tiles',
@@ -155,13 +181,23 @@ export async function renderAttWorkload(params) {
         quiet.length ? 'carried by the rest of their department' : 'everybody is being used',
         only === 'quiet', quiet.length ? () => reload({ only: 'quiet' }) : null,
         quiet.length ? 'warn' : 'good'),
-      pick('Each may work', `${allowance} h`,
-        `${fmtDayShort(data.from)} – ${fmtDayShort(data.to)}`),
+      sundaysWorthAsking
+        ? pick('Short of a Sunday', String(noSunday.length),
+          noSunday.length
+            ? `fewer than the ${data.limits?.sundaysOffPerMonth?.value ?? 1} a month expected`
+            : 'everybody has had one',
+          only === 'sundays', noSunday.length ? () => reload({ only: 'sundays' }) : null,
+          noSunday.length ? 'warn' : 'good')
+        : pick('Each may work', `${allowance} h`,
+          `${fmtDayShort(data.from)} – ${fmtDayShort(data.to)}`),
     ),
 
     data.rows.length
       ? card(
-        only === 'over' ? 'Over a limit' : only === 'quiet' ? 'Barely used' : 'Everybody, compared',
+        only === 'over' ? 'Over a limit'
+          : only === 'quiet' ? 'Barely used'
+            : only === 'sundays' ? 'Short of a Sunday'
+              : 'Everybody, compared',
         {
           note: `${ordered.length} of ${data.rows.length} · by `
             + `${(column.label || 'warnings').toLowerCase()}`,
@@ -242,7 +278,8 @@ function comparison(rows, { data, allowance, scale, sort, dir, reload }) {
             h('div',
               h('div.finding-title', 'Nothing over a limit'),
               h('div.finding-detail',
-                `${f.daysOn} days, ${fmtNum(f.hours, 0)} hours, longest run ${f.longestRun}.`)))]),
+                `${f.daysOn} days, ${fmtNum(f.hours, 0)} hours, longest run ${f.longestRun}`
+                + `${f.sundays ? `, ${f.sundaysOff} of ${f.sundays} Sundays off` : ''}.`)))]),
 
         h('div.btn-row', { style: { marginTop: '.5rem' } },
           h('button.btn-sm', {
@@ -284,6 +321,9 @@ function comparison(rows, { data, allowance, scale, sort, dir, reload }) {
       row.findings.length
         ? h('small.on-phone', h(`span.pill.${LEVEL_PILL[worst] ?? ''}`,
           `${row.findings.length} to look at`))
+        : null,
+      f.sundays >= 4
+        ? h('small.on-phone.muted', `${f.sundaysOff} of ${f.sundays} Sundays off`)
         : null),
 
     h('td.wl-load', loadBar(f.hours, allowance, scale, worst, f)),
@@ -293,6 +333,7 @@ function comparison(rows, { data, allowance, scale, sort, dir, reload }) {
     h('td.num', String(f.longestRun)),
     h('td.num', f.nights ? String(f.nights) : h('span.muted', '—')),
     h('td.num', f.weekends ? String(f.weekends) : h('span.muted', '—')),
+    h('td.num', sundaysCell(f)),
     h('td.num', f.shortestTurnaround != null
       ? `${fmtNum(f.shortestTurnaround, 0)} h`
       : h('span.muted', '—')),
@@ -314,6 +355,23 @@ function comparison(rows, { data, allowance, scale, sort, dir, reload }) {
       h('span.muted', 'Press a row for what is behind it.'),
     ),
   );
+}
+
+/**
+ * Sundays off, out of the Sundays there were.
+ *
+ * Written as a pair rather than one number because "two" means nothing until
+ * somebody knows whether the period held two Sundays or five. Marked only when
+ * a month's worth of them went by and none was theirs — the colour is the
+ * state, and the row underneath names it.
+ */
+function sundaysCell(f) {
+  if (!f.sundays) return h('span.muted', '—');
+  const none = f.sundaysOff === 0;
+  return h('span', {
+    class: none ? 'stat-bad' : '',
+    title: `${f.sundaysWorked} of ${f.sundays} Sundays worked`,
+  }, h('strong', String(f.sundaysOff)), h('small.muted', `/${f.sundays}`));
 }
 
 /**
@@ -439,6 +497,104 @@ function limitsCard(limits) {
             spec.law ? spec.law : 'Set by this property',
             spec.changed ? h('span.finding-law', ' · changed from the default') : null),
         )))));
+}
+
+// --------------------------------------------------------------------------
+// How long a period is being looked at
+// --------------------------------------------------------------------------
+
+/**
+ * Three ways of asking, because three different questions get asked.
+ *
+ * A fortnight is the window a rota is built in, so it stays the way in. A
+ * month is the one that can say anything about Sundays and weekends — those
+ * are monthly rules, and a fortnight has nothing useful to say about either.
+ * A range is for the questions with a reason behind them: Christmas week, a
+ * quarter for a review, the stretch somebody was short-staffed.
+ */
+const PERIODS = ['fortnight', 'month', 'range'];
+
+const monthEnd = (month) => {
+  const [y, m] = month.split('-').map(Number);
+  return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
+};
+
+/** Which of the three a pair of dates is, read from the dates themselves. */
+function periodOf(from, to) {
+  if (from.endsWith('-01') && to === monthEnd(monthOf(from))) return 'month';
+  if (daysApart(from, to) === 13) return 'fortnight';
+  return 'range';
+}
+
+/** The dates a period lands on when somebody switches to it. */
+function datesFor(period, { from }) {
+  if (period === 'month') {
+    const month = monthOf(from);
+    return { from: `${month}-01`, to: monthEnd(month) };
+  }
+  if (period === 'fortnight') {
+    const monday = mondayOf(from);
+    return { from: monday, to: shiftDay(monday, 13) };
+  }
+  return null;                          // a range keeps whatever it had
+}
+
+function periodPicker(period, reload, dates) {
+  const label = { fortnight: 'Fortnight', month: 'Month', range: 'Range' };
+  return h('div.seg.seg-sm', PERIODS.map((key) => h('button', {
+    class: key === period ? 'active' : '',
+    type: 'button',
+    onclick: () => reload({ view: key, ...(datesFor(key, dates) ?? {}) }),
+  }, label[key])));
+}
+
+/** The dates themselves, in whatever shape the period asks for. */
+function whenControls(period, { from, to, reload }) {
+  if (period === 'month') {
+    const month = monthOf(from);
+    const go = (m) => reload({ from: `${m}-01`, to: monthEnd(m) });
+    return h('div.wl-when',
+      h('button.btn-sm', { onclick: () => go(shiftMonth(month, -1)), 'aria-label': 'The month before' }, '‹'),
+      h('input', {
+        type: 'month', value: month, 'aria-label': 'Month',
+        onchange: (e) => e.target.value && go(e.target.value),
+      }),
+      h('button.btn-sm', { onclick: () => go(shiftMonth(month, 1)), 'aria-label': 'The month after' }, '›'),
+      h('button.btn-sm', { onclick: () => go(monthOf(todayISO())) }, 'This month'),
+    );
+  }
+
+  if (period === 'range') {
+    return h('div.wl-when',
+      h('input', {
+        type: 'date', value: from, 'aria-label': 'From',
+        // A start after the end is two boxes disagreeing rather than a range.
+        // Take the day they typed and carry the length they had.
+        onchange: (e) => e.target.value && reload({
+          from: e.target.value,
+          to: e.target.value > to ? shiftDay(e.target.value, daysApart(from, to)) : to,
+        }),
+      }),
+      h('span.muted', 'to'),
+      h('input', {
+        type: 'date', value: to, min: from, 'aria-label': 'To',
+        onchange: (e) => e.target.value && reload({ to: e.target.value < from ? from : e.target.value }),
+      }),
+    );
+  }
+
+  const go = (n) => reload({ from: shiftDay(from, n), to: shiftDay(to, n) });
+  return h('div.wl-when',
+    h('button.btn-sm', { onclick: () => go(-14), 'aria-label': 'The fortnight before' }, '‹'),
+    h('input', {
+      type: 'date', value: from, 'aria-label': 'Fortnight beginning',
+      onchange: (e) => e.target.value && reload({ from: e.target.value, to: shiftDay(e.target.value, 13) }),
+    }),
+    h('button.btn-sm', { onclick: () => go(14), 'aria-label': 'The fortnight after' }, '›'),
+    h('button.btn-sm', {
+      onclick: () => reload({ from: mondayOf(todayISO()), to: shiftDay(mondayOf(todayISO()), 13) }),
+    }, 'This fortnight'),
+  );
 }
 
 /** The Monday on or before a day, which is where a rota fortnight starts. */

@@ -190,6 +190,75 @@ test('leave is rest, not work', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Sundays
+// ---------------------------------------------------------------------------
+
+// Four weeks ending on a Sunday: 31 May, 7, 14 and 21 June are the Sundays in
+// it, which is a month's worth of them.
+const FOUR_WEEKS = ['2026-05-25', '2026-06-21'];
+const everyDay = (...starts) => Object.assign({}, ...starts.map((d) => week(d, Array(7).fill('morning'))));
+const sixDays = (...starts) => Object.assign({},
+  ...starts.map((d) => week(d, ['morning', 'morning', 'morning', 'morning', 'morning', 'morning', null])));
+
+test('Sundays are counted from the calendar, worked or not', async () => {
+  const { ds, staff } = await world(sixDays('2026-05-25', '2026-06-01', '2026-06-08', '2026-06-15'));
+  const person = assessPerson(ds, staff, ...FOUR_WEEKS);
+
+  assert.equal(person.figures.sundays, 4, 'four Sundays went past');
+  assert.equal(person.figures.sundaysWorked, 0);
+  assert.equal(person.figures.sundaysOff, 4, 'and all four were theirs');
+  assert.ok(!person.findings.some((f) => f.key === 'sundays'));
+});
+
+test('a month of Sundays worked is named', async () => {
+  const { ds, staff } = await world(everyDay('2026-05-25', '2026-06-01', '2026-06-08', '2026-06-15'));
+  const person = assessPerson(ds, staff, ...FOUR_WEEKS);
+
+  assert.equal(person.figures.sundaysWorked, 4);
+  assert.equal(person.figures.sundaysOff, 0);
+  const found = person.findings.find((f) => f.key === 'sundays');
+  assert.ok(found, 'four Sundays in a row is the thing this is for');
+  assert.match(found.title, /every one of the 4 Sundays/);
+});
+
+test('a fortnight has nothing to say about a monthly rule', async () => {
+  const { ds, staff } = await world(everyDay('2026-06-01', '2026-06-08'));
+  const person = assessPerson(ds, staff, '2026-06-01', '2026-06-14');
+
+  assert.equal(person.figures.sundays, 2, 'two Sundays in a fortnight');
+  assert.equal(person.figures.sundaysOff, 0);
+  assert.ok(!person.findings.some((f) => f.key === 'sundays'),
+    'one a month comes to none owed over a fortnight, so it stays quiet');
+});
+
+test('a Sunday on leave is a Sunday at home', async () => {
+  const { raw, db, staff } = await world(everyDay('2026-05-25', '2026-06-01', '2026-06-08', '2026-06-15'));
+  const code = raw.prepare("SELECT code FROM att_reasons WHERE kind = 'leave' LIMIT 1").get();
+  raw.prepare(
+    `INSERT INTO att_leave (staff_id, from_day, to_day, reason_code, status, days)
+     VALUES (1, '2026-06-07', '2026-06-07', ?, 'approved', 1)`,
+  ).run(code.code);
+  const ds = await loadDataset(db, { from: '2026-05-25', to: '2026-06-21' });
+
+  const person = assessPerson(ds, staff, ...FOUR_WEEKS);
+  assert.equal(person.figures.sundaysOff, 1, 'the one they were away for');
+  assert.equal(person.figures.sundaysWorked, 3);
+});
+
+test('a property that does not count Sundays can turn the rule off', async () => {
+  const { ds, staff } = await world(everyDay('2026-05-25', '2026-06-01', '2026-06-08', '2026-06-15'));
+  const limits = limitsFrom({ wl_sundaysOffPerMonth: '0' });
+
+  assert.equal(limits.sundaysOffPerMonth.value, 0);
+  assert.equal(limits.sundaysOffPerMonth.changed, true);
+  const person = assessPerson(ds, staff, ...FOUR_WEEKS, limits);
+  assert.ok(!person.findings.some((f) => f.key === 'sundays'));
+  // And nothing else about the same rota has been switched off with it.
+  assert.equal(limits.weeklyHours.value, 40);
+  assert.ok(person.findings.some((f) => f.key === 'consecutive'));
+});
+
+// ---------------------------------------------------------------------------
 // The whole reading
 // ---------------------------------------------------------------------------
 

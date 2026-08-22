@@ -1476,6 +1476,14 @@ const WORKLOAD_LIMITS = [
     fallback: 3,
     hint: 'Counted so the same people are not always the ones giving theirs up',
   },
+  {
+    key: 'wl_sundaysOffPerMonth',
+    label: 'Sundays off in a month',
+    unit: 'Sundays',
+    fallback: 1,
+    min: 0,
+    hint: 'The fewest anybody should get. Set it to 0 if Sundays are like any other day here',
+  },
 ];
 
 async function workloadTab(reload) {
@@ -1502,7 +1510,8 @@ async function workloadTab(reload) {
         limit.law ? h('small.pill', limit.law) : null,
         set ? h('small.pill.warn', 'changed') : null),
       h('input', {
-        type: 'number', name: limit.key, min: 1, step: limit.unit === 'hours' ? 0.5 : 1,
+        type: 'number', name: limit.key, min: limit.min ?? 1,
+        step: limit.unit === 'hours' ? 0.5 : 1,
         value: current ?? limit.fallback,
       }),
       h('small.muted', `${limit.unit} · ${limit.hint}. Statutory or usual figure: ${limit.fallback}`),

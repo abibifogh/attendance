@@ -49,6 +49,10 @@ export const LIMITS = {
   nightsPerFortnight: { value: 7, label: 'Night shifts in a fortnight' },
   flipsPerFortnight: { value: 2, label: 'Swaps between nights and days' },
   weekendsPerMonth: { value: 3, label: 'Weekends worked in a month' },
+  // A Sunday off is the one most people here plan the rest of their life
+  // around, and it is the first thing a six-day rota quietly takes. Zero turns
+  // the check off for a property that does not work that way.
+  sundaysOffPerMonth: { value: 1, label: 'Sundays off in a month', zeroable: true },
 };
 
 /** Whatever the property has set, over the top of the defaults. */
@@ -56,10 +60,14 @@ export function limitsFrom(settings = {}) {
   const out = {};
   for (const [key, spec] of Object.entries(LIMITS)) {
     const stored = Number(settings[`wl_${key}`]);
+    // Zero is a real answer for the rules that can be switched off, and a
+    // typing mistake for the ones that cannot: nobody means "no hours in a
+    // week".
+    const usable = Number.isFinite(stored) && (stored > 0 || (spec.zeroable && stored === 0));
     out[key] = {
       ...spec,
-      value: Number.isFinite(stored) && stored > 0 ? stored : spec.value,
-      changed: Number.isFinite(stored) && stored > 0 && stored !== spec.value,
+      value: usable ? stored : spec.value,
+      changed: usable && stored !== spec.value,
     };
   }
   return out;
@@ -78,6 +86,10 @@ export function limitsFrom(settings = {}) {
  */
 const NIGHT_FROM = 0;        // midnight
 const NIGHT_TO = 5 * 60;     // five in the morning
+
+/** Monday is 0 here, so Sunday is 6. Four Sundays is what a month is worth. */
+const SUNDAY = 6;
+const SUNDAYS_IN_A_MONTH = 4;
 
 export function isNightShift(shift) {
   const probe = '2000-01-03';
@@ -311,6 +323,14 @@ export function assessPerson(ds, staff, from, to, limits = limitsFrom(ds?.settin
 
   const nights = onDuty.filter((w) => w.night).length;
   const weekends = onDuty.filter((w) => w.weekend).length;
+
+  // Sundays, counted from the calendar rather than from the rota: the question
+  // is how many of the Sundays that went past were theirs, so the ones nobody
+  // put them down for are the whole point. A Sunday on leave is a Sunday at
+  // home and counts as one they got.
+  const sundays = rangeDays(from, to).filter((day) => dow(day) === SUNDAY);
+  const sundaysWorked = onDuty.filter((w) => dow(w.day) === SUNDAY).length;
+  const sundaysOff = sundays.length - sundaysWorked;
   const holidays = onDuty.filter((w) => w.holiday).length;
   const leaveDays = inWindow.filter((w) => w.leave).length;
   const hours = Math.round(onDuty.reduce((n, w) => n + w.hours, 0) * 10) / 10;
@@ -382,6 +402,20 @@ export function assessPerson(ds, staff, from, to, limits = limitsFrom(ds?.settin
       `More than the ${limits.nightsPerFortnight.value} this property counts as a heavy fortnight.`));
   }
 
+  // Pro-rated from the house rule, so it only has anything to say about a
+  // window long enough to have an opinion: one Sunday a month over a fortnight
+  // works out at none owed, and the check stays quiet.
+  const sundaysOwed = Math.floor((sundays.length / SUNDAYS_IN_A_MONTH)
+    * limits.sundaysOffPerMonth.value);
+  if (sundaysOwed > 0 && sundaysOff < sundaysOwed) {
+    findings.push(finding(WARN, 'sundays',
+      sundaysOff === 0
+        ? `Worked every one of the ${sundays.length} Sundays`
+        : `Only ${sundaysOff} Sunday${sundaysOff === 1 ? '' : 's'} off out of ${sundays.length}`,
+      `The house rule is ${limits.sundaysOffPerMonth.value} a month, which comes to `
+      + `${sundaysOwed} over this period.`));
+  }
+
   if (flips > limits.flipsPerFortnight.value) {
     findings.push(finding(WARN, 'flips',
       `Turned around between nights and days ${flips} times`,
@@ -402,6 +436,9 @@ export function assessPerson(ds, staff, from, to, limits = limitsFrom(ds?.settin
       hours,
       nights,
       weekends,
+      sundays: sundays.length,
+      sundaysWorked,
+      sundaysOff,
       holidays,
       leaveDays,
       flips,

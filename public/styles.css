@@ -2198,6 +2198,11 @@ html { touch-action: manipulation; }
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
+/* The dates, in whatever shape the period asked for. One row that wraps
+   rather than a toolbar that scrolls sideways on a handset. */
+.wl-when { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+.wl-when input { min-width: 0; }
+
 .wl-table { width: 100%; }
 .wl-table th { white-space: nowrap; }
 .wl-load-head { width: 34%; min-width: 12rem; }

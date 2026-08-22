@@ -401,6 +401,17 @@ export const GUIDE = [
         'Leave cannot be overwritten. Days on approved leave are locked in the grid — cancel '
           + 'the leave first.',
       ] },
+
+      { sub: 'Workload: how the rota is treating people' },
+      { p: 'One row per person, all on the same scale, sortable by any column. Ask it for a '
+        + 'fortnight while you are building one, a month for the questions that only make sense '
+        + 'over a month, or any range you like up to a quarter. Press a row for what is behind '
+        + 'the figures.' },
+      { p: 'Sundays are counted in the month view: how many of the Sundays that went past were '
+        + 'theirs, out of how many there were. A Sunday on leave counts as one they got. The '
+        + 'app expects everybody to get at least one a month and says so when somebody has not '
+        + 'had theirs, which is the figure that otherwise goes unnoticed until somebody '
+        + 'complains. Set the number, or turn it off, under Setup → Workload.' },
     ],
   },
 

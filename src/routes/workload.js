@@ -20,16 +20,32 @@ async function timezoneOf(db) {
   return row?.value || 'UTC';
 }
 
+/**
+ * The longest stretch this screen will read in one go.
+ *
+ * A quarter. Everything here is derived from punches and the roster over the
+ * whole window, so a year asked for by accident is a slow page for everybody
+ * on the property rather than an error for the one person who asked. Asking
+ * for more gets the first quarter of it and is told so.
+ */
+const MAX_SPAN = 92;
+
 function windowOf(url, timezone) {
   const today = todayIn(timezone);
   const from = isDay(url.searchParams.get('from')) ? url.searchParams.get('from') : today;
-  const to = isDay(url.searchParams.get('to')) ? url.searchParams.get('to') : addDays(from, 13);
-  return { from, to };
+  const asked = isDay(url.searchParams.get('to')) ? url.searchParams.get('to') : addDays(from, 13);
+
+  // A backwards range is a mistake somebody made in two date boxes, and the
+  // kindest reading of it is the day they landed on.
+  if (asked < from) return { from, to: from, clamped: false };
+
+  const clamped = diffDays(from, asked) + 1 > MAX_SPAN;
+  return { from, to: clamped ? addDays(from, MAX_SPAN - 1) : asked, clamped };
 }
 
 export async function workload(ctx) {
   const timezone = await timezoneOf(ctx.db);
-  const { from, to } = windowOf(ctx.url, timezone);
+  const { from, to, clamped } = windowOf(ctx.url, timezone);
   const span = diffDays(from, to) + 1;
 
   const onlyDepartment = ctx.url.searchParams.get('department') || '';
@@ -100,6 +116,10 @@ export async function workload(ctx) {
     from,
     to,
     span,
+    // Said rather than silently done, so a range that comes back shorter than
+    // the one somebody typed does not read as a bug.
+    clamped,
+    maxSpan: MAX_SPAN,
     rows,
     limits,
     showsLeave,

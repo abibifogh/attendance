@@ -834,6 +834,9 @@ const SETTINGS = new Map([
   ['wl_nightsPerFortnight', (v) => String(int(v, 'Nights in a fortnight', { min: 1, max: 14 }))],
   ['wl_flipsPerFortnight', (v) => String(int(v, 'Swaps between nights and days', { min: 1, max: 14 }))],
   ['wl_weekendsPerMonth', (v) => String(int(v, 'Weekends in a month', { min: 1, max: 5 }))],
+  // Zero here means the property does not count Sundays, which is a real
+  // answer rather than an empty box.
+  ['wl_sundaysOffPerMonth', (v) => String(int(v, 'Sundays off in a month', { min: 0, max: 5 }))],
 ]);
 
 /**
