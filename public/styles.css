@@ -3347,6 +3347,18 @@ html { touch-action: manipulation; }
 .lunch-names { margin: 0; padding-left: 1.05rem; font-size: .85rem; }
 .lunch-names li { margin-bottom: .1rem; }
 
+/* The two moments the list opens and shuts on. A day and a time on one line,
+   because that is how somebody says it: "Thursday at nine". */
+.lunch-when { display: grid; gap: .5rem; margin: .3rem 0 .6rem; }
+.lunch-when-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.lunch-when-label { font-weight: 600; min-width: 3.5rem; }
+.lunch-when-row select { width: auto; min-width: 8rem; }
+.lunch-when-row input[type="time"] { width: auto; }
+.lunch-when-said { margin-top: -.4rem; }
+/* A day the rota does not have somebody in on, which the kitchen may still
+   put them down for. */
+.lunch-not-in { font-style: italic; }
+
 /* Setting the week's meals: a day to a row, so seven of them read as a week. */
 .lunch-menu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .5rem; }
 .lunch-menu-cell { border: 1px solid var(--border); border-radius: 10px; padding: .5rem .6rem; }

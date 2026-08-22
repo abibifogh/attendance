@@ -1160,15 +1160,36 @@ export const GUIDE = [
 
       { sub: 'How the week runs' },
       { steps: [
-        'Set the menu for next week: one meal a day, the same for everybody.',
-        'Staff open the link between Thursday and Sunday, find their name, and tick the days '
+        'Set the menu once. One meal a day, the same for everybody, and it repeats: Monday is '
+          + 'that every Monday until you change it.',
+        'Staff open the link while it is taking answers, find their name, and tick the days '
           + 'they are eating.',
         'Read the count under each day and place the order.',
         'Print the week for the kitchen.',
       ] },
-      { note: 'Thursday, Friday, Saturday and Sunday all order for the same Monday, so "next '
-        + 'week" means one thing to everybody. Outside those days the link opens and says when '
-        + 'it will start taking answers. Change the days under "When it opens".' },
+      { note: 'Everybody putting their name down inside one window is ordering for the same '
+        + 'week: the one beginning the first Monday after the window shuts. That is what makes '
+        + '"next week" mean one thing to everybody rather than shifting on Sunday night.' },
+
+      { sub: 'When it opens and shuts' },
+      { p: 'Two moments, each a day and a time, and they come round every week on their own. '
+        + 'Nobody has to press anything. Thursday 00:00 to Monday 00:00 is the usual '
+        + 'arrangement: the order goes in over the weekend for the week that starts on the '
+        + 'Monday. Change it under "When it opens".' },
+      { note: 'Times, not just days. "Open on Thursday" leaves the kitchen and everybody else '
+        + 'disagreeing about Thursday evening, and the disagreement only ever shows up as a '
+        + 'plate too few.' },
+      { list: [
+        'Outside the window the link still opens and says the day and the hour it will start '
+          + 'taking answers, and which week that will be for.',
+        '"Turn it off" stops it whatever the times say, for as long as you leave it off. The '
+          + 'link keeps working and tells people it has been turned off.',
+      ] },
+
+      { sub: 'The menu repeats' },
+      { p: 'Set the seven days once. They come back the same every week, so nobody types the '
+        + 'same meals in again each Thursday and a week nobody got round to is never blank. '
+        + 'Change a day and it changes from the next list onwards.' },
 
       { sub: 'The link' },
       { p: 'One address for the whole property, not one per person. Put it on the noticeboard '
@@ -1177,16 +1198,27 @@ export const GUIDE = [
       { p: 'It shows first names, rostered days and the menu. Nothing else about anybody is '
         + 'behind it: no pay, no records, no contact details. That is what makes it safe to '
         + 'pin to a wall.' },
+      { p: 'It does not change from week to week. Pin it up once and leave it there: turning '
+        + 'the list off and on again, and the window opening and shutting, do not touch the '
+        + 'address.' },
       { warn: 'The link is shown once and only a fingerprint is kept, so it cannot be shown '
-        + 'again. Making a new one retires the old the moment it is made, which is how you deal '
-        + 'with one that has gone somewhere it should not have.' },
+        + 'again. "Replace the address" retires the old one the moment it is made and everybody '
+        + 'has to be given the new one, so it is for a link that has gone somewhere it should '
+        + 'not have, and nothing else.' },
 
       { sub: 'Only days they are down to work' },
       { p: 'Somebody is offered the days the published rota has them in, and nothing else. '
         + 'Asking people which days they want lunch invites an answer about days they are at '
         + 'home, and the kitchen then cooks for them.' },
       { note: 'A day pencilled in and not published is not offered either. Publish the rota '
-        + 'before Thursday and the list has something to ask about.' },
+        + 'before the list opens and it has something to ask about.' },
+      { p: 'That is the rule for the link, where somebody is answering on their own. It is not '
+        + 'the rule for you. "Put somebody down" on the week takes anybody, on any day, whether '
+        + 'the rota has them in or not: a manager in on a day off, somebody covering at the '
+        + 'last minute, a person on leave who is in for a meeting. Days the rota does not '
+        + 'expect them on are marked rather than hidden.' },
+      { note: 'Somebody you have put down for a day sees it on their own page when they open '
+        + 'the link, and can change it, so nobody is stuck with an answer given for them.' },
 
       { sub: 'Reading the week' },
       { p: 'Seven columns, Monday to Sunday. The big number under each day is the head count, '

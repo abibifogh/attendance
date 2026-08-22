@@ -4,7 +4,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  daysFor, first, openDaysFrom, summarise, unanswered, weekDays, windowFor,
+  daysFor, first, menuWeek, readTime, scheduleFrom, showTime, summarise, unanswered, weekDays,
+  windowFor,
 } from '../src/lib/lunch.js';
 
 /**
@@ -12,9 +13,9 @@ import {
  *
  * Nearly everything that can go wrong here is a calendar mistake, and a
  * calendar mistake means the kitchen cooks for the wrong week. So the window
- * is tested against fixed dates rather than against whatever day the suite is
- * run on: 2026-08-20 is a Thursday, and the week it orders for begins Monday
- * 2026-08-24.
+ * is tested against fixed moments rather than against whatever day the suite
+ * is run on: 2026-08-20 is a Thursday, and the week it orders for begins
+ * Monday 2026-08-24.
  */
 
 const THU = '2026-08-20';
@@ -23,58 +24,151 @@ const SUN = '2026-08-23';
 const MON = '2026-08-24';
 const WED = '2026-08-26';
 
+/** The arrangement the property started with: all of Thursday to all of Sunday. */
+const USUAL = { opensDow: 4, opensAt: 0, closesDow: 1, closesAt: 0 };
+const at = (h2, m = 0) => h2 * 60 + m;
+
+// ---------------------------------------------------------------------------
+// Reading the two moments
+// ---------------------------------------------------------------------------
+
+test('a time is a time, and anything else is not', () => {
+  assert.equal(readTime('09:00'), 540);
+  assert.equal(readTime('9:05'), 545);
+  assert.equal(readTime('00:00'), 0);
+  assert.equal(readTime('23:59'), 1439);
+  // The far end of the day, which is how somebody writes the midnight they
+  // mean when they mean the end rather than the beginning.
+  assert.equal(readTime('24:00'), 1440);
+
+  assert.equal(readTime(''), null);
+  assert.equal(readTime('nine'), null);
+  assert.equal(readTime('25:00'), null);
+  assert.equal(readTime('09:70'), null);
+});
+
+test('a time comes back out the way it went in', () => {
+  assert.equal(showTime(0), '00:00');
+  assert.equal(showTime(540), '09:00');
+  assert.equal(showTime(1439), '23:59');
+  assert.equal(showTime(1440), '00:00');
+});
+
+test('the schedule falls back to the arrangement the property started with', () => {
+  assert.deepEqual(scheduleFrom({}), USUAL);
+  assert.deepEqual(scheduleFrom({
+    lunch_opens_dow: '5', lunch_opens_at: '17:30',
+    lunch_closes_dow: '7', lunch_closes_at: '20:00',
+  }), { opensDow: 5, opensAt: at(17, 30), closesDow: 7, closesAt: at(20) });
+
+  // Nonsense in a setting is not a reason to stop taking lunch orders.
+  assert.deepEqual(scheduleFrom({
+    lunch_opens_dow: '9', lunch_opens_at: 'lunchtime',
+    lunch_closes_dow: '', lunch_closes_at: null,
+  }), USUAL);
+});
+
 // ---------------------------------------------------------------------------
 // The window
 // ---------------------------------------------------------------------------
 
 test('Thursday through Sunday all order for the same Monday', () => {
-  for (const day of [THU, FRI, '2026-08-22', SUN]) {
-    const w = windowFor(day);
-    assert.equal(w.open, true, day);
-    assert.equal(w.monday, MON, `${day} points at the same week`);
+  for (const now of [`${THU} 00:00`, `${FRI} 12:00`, '2026-08-22 06:00', `${SUN} 23:59`]) {
+    const w = windowFor(now, USUAL);
+    assert.equal(w.open, true, now);
+    assert.equal(w.monday, MON, now);
   }
 });
 
 test('the rest of the week is shut, and says when it opens', () => {
-  for (const day of [MON, '2026-08-25', WED]) {
-    const w = windowFor(day);
-    assert.equal(w.open, false, day);
+  for (const now of [`${MON} 00:00`, `${MON} 09:00`, `${WED} 23:59`]) {
+    const w = windowFor(now, USUAL);
+    assert.equal(w.open, false, now);
+    assert.equal(w.opensOn, `${'2026-08-27'} 00:00`, now);
+    // A shut page still names the week it will be for, because "come back
+    // later" on its own is a page somebody comes back to at the wrong time.
+    assert.equal(w.monday, '2026-08-31', now);
   }
-
-  const monday = windowFor(MON);
-  assert.equal(monday.opensOn, '2026-08-27', 'the Thursday of this week');
-  // Shut, and still able to say which week it will be for. A page that only
-  // says "come back later" is one somebody comes back to at the wrong time.
-  assert.equal(monday.monday, '2026-08-31');
 });
 
-test('an open window says the last day answers are taken', () => {
-  assert.equal(windowFor(THU).closesAfter, SUN);
-  assert.equal(windowFor(SUN).closesAfter, SUN, 'the last day of the run is itself');
+test('the hour is part of it, at both ends', () => {
+  const nine = { opensDow: 4, opensAt: at(9), closesDow: 7, closesAt: at(18) };
+
+  assert.equal(windowFor(`${THU} 08:59`, nine).open, false, 'a minute early is early');
+  assert.equal(windowFor(`${THU} 09:00`, nine).open, true, 'and the minute itself is open');
+  assert.equal(windowFor(`${SUN} 17:59`, nine).open, true);
+  assert.equal(windowFor(`${SUN} 18:00`, nine).open, false, 'shut on the minute, not after it');
+
+  assert.equal(windowFor(`${THU} 08:59`, nine).opensOn, `${THU} 09:00`);
+  assert.equal(windowFor(`${THU} 09:00`, nine).closesOn, `${SUN} 18:00`);
+});
+
+test('everybody inside one window orders for the same week', () => {
+  const nine = { opensDow: 4, opensAt: at(9), closesDow: 7, closesAt: at(18) };
+  for (const now of [`${THU} 09:00`, `${FRI} 23:00`, `${SUN} 17:59`]) {
+    assert.equal(windowFor(now, nine).monday, MON, now);
+  }
+});
+
+test('a window that runs Monday to Wednesday orders for the Monday after', () => {
+  const early = { opensDow: 1, opensAt: at(9), closesDow: 3, closesAt: at(17) };
+  assert.equal(windowFor(`${MON} 09:00`, early).monday, '2026-08-31');
+  assert.equal(windowFor(`${WED} 16:59`, early).monday, '2026-08-31');
+  // Shut again, and now pointing at the week after that.
+  assert.equal(windowFor(`${WED} 17:00`, early).open, false);
+  assert.equal(windowFor(`${WED} 17:00`, early).monday, '2026-09-07');
+});
+
+test('a window that runs over the end of the week still holds together', () => {
+  // Saturday noon to Tuesday morning: the week rolls over inside it, which is
+  // the case a naive comparison gets wrong.
+  const wraps = { opensDow: 6, opensAt: at(12), closesDow: 2, closesAt: at(10) };
+
+  assert.equal(windowFor('2026-08-22 11:59', wraps).open, false);
+  assert.equal(windowFor('2026-08-22 12:00', wraps).open, true);
+  assert.equal(windowFor(`${MON} 23:00`, wraps).open, true, 'still open on the far side');
+  assert.equal(windowFor('2026-08-25 09:59', wraps).open, true);
+  assert.equal(windowFor('2026-08-25 10:00', wraps).open, false);
+
+  // And everybody in it names the same week, either side of the rollover.
+  const monday = windowFor('2026-08-22 12:00', wraps).monday;
+  assert.equal(windowFor(`${MON} 23:00`, wraps).monday, monday);
+  assert.equal(windowFor('2026-08-25 09:59', wraps).monday, monday);
 });
 
 test('the week is Monday to Sunday, seven days', () => {
-  const w = windowFor(THU);
+  const w = windowFor(`${THU} 10:00`, USUAL);
   assert.equal(w.days.length, 7);
-  assert.deepEqual(w.days, weekDays(MON));
   assert.equal(w.days[0], MON);
   assert.equal(w.days[6], '2026-08-30');
+  assert.deepEqual(weekDays(MON), w.days);
 });
 
-test('a property that orders on other days says so', () => {
-  // Somebody ordering on a Monday and a Tuesday for the week after.
-  const w = windowFor(MON, { openDays: [1, 2] });
-  assert.equal(w.open, true);
-  assert.equal(w.monday, '2026-08-31');
-  assert.equal(w.closesAfter, '2026-08-25');
-  assert.equal(windowFor(THU, { openDays: [1, 2] }).open, false);
+test('a date with no time on it means the beginning of that day', () => {
+  assert.deepEqual(windowFor(THU, USUAL).open, windowFor(`${THU} 00:00`, USUAL).open);
+  assert.equal(windowFor(THU, USUAL).monday, MON);
 });
 
-test('nonsense open days fall back to Thursday through Sunday', () => {
-  assert.deepEqual(openDaysFrom('4,5,6,7'), [4, 5, 6, 7]);
-  assert.deepEqual(openDaysFrom(''), [4, 5, 6, 7]);
-  assert.deepEqual(openDaysFrom('0,9,fish'), [4, 5, 6, 7]);
-  assert.deepEqual(openDaysFrom('3,3,1'), [1, 3], 'and duplicates collapse');
+// ---------------------------------------------------------------------------
+// The standing menu
+// ---------------------------------------------------------------------------
+
+test('the menu is seven days in order, whatever is set on them', () => {
+  const week = menuWeek([
+    { dow: 3, meal: 'Waakye' },
+    { dow: 1, meal: 'Jollof', note: 'Pepper on the side' },
+  ]);
+
+  assert.equal(week.length, 7);
+  assert.deepEqual(week.map((d) => d.name), [
+    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+  ]);
+  assert.equal(week[0].meal, 'Jollof');
+  assert.equal(week[0].note, 'Pepper on the side');
+  assert.equal(week[2].meal, 'Waakye');
+  // A day nobody has set is a day with no meal, not a missing row.
+  assert.equal(week[1].meal, null);
+  assert.equal(week[1].dow, 2);
 });
 
 // ---------------------------------------------------------------------------
@@ -82,10 +176,12 @@ test('nonsense open days fall back to Thursday through Sunday', () => {
 // ---------------------------------------------------------------------------
 
 const WEEK = weekDays(MON);
+// Keyed by which day of the week it is, not by the date: the menu is a
+// standing week and Monday is jollof every Monday.
 const MENU = new Map([
-  [MON, { meal: 'Jollof and chicken' }],
-  ['2026-08-25', { meal: 'Banku and tilapia', note: 'Pepper on the side' }],
-  ['2026-08-27', { meal: 'Waakye' }],
+  [1, { meal: 'Jollof and chicken' }],
+  [2, { meal: 'Banku and tilapia', note: 'Pepper on the side' }],
+  [4, { meal: 'Waakye' }],
 ]);
 
 test('somebody is only asked about days they are down to work', () => {
@@ -299,13 +395,13 @@ const ctxFor = (db, path, body) => ({
   }),
 });
 
-// The clock. The window is worked out from the real date, so the tests that
-// need a Thursday say so rather than hoping.
-function atDay(day, run) {
+// The clock. The window is worked out from the real moment, so the tests that
+// need a Thursday morning say so rather than hoping.
+function atDay(day, run, time = '09:00') {
   const Real = Date;
   globalThis.Date = class extends Real {
-    constructor(...a) { return a.length ? new Real(...a) : new Real(`${day}T09:00:00Z`); }
-    static now() { return new Real(`${day}T09:00:00Z`).getTime(); }
+    constructor(...a) { return a.length ? new Real(...a) : new Real(`${day}T${time}:00Z`); }
+    static now() { return new Real(`${day}T${time}:00Z`).getTime(); }
   };
   return Promise.resolve().then(run).finally(() => { globalThis.Date = Real; });
 }
@@ -345,7 +441,7 @@ test('making a new link retires the old one', async () => {
   });
 });
 
-test('closing the list shuts the link without losing what was said', async () => {
+test('turning the list off does not touch the link or what was said', async () => {
   const { db, raw } = property();
   const lunch = await import('../src/routes/lunch.js');
   const token = (await (await lunch.makeLink(ctxFor(db, '/api/lunch/link', {}))).json())
@@ -357,12 +453,27 @@ test('closing the list shuts the link without losing what was said', async () =>
     );
   });
 
-  await lunch.closeLink(ctxFor(db, '/api/lunch/close', {}));
+  await lunch.setOpen(ctxFor(db, '/api/lunch/switch', { on: false }));
 
   await atDay(THU, async () => {
-    await assert.rejects(() => lunch.lunchOpen(ctxFor(db, '/x'), token), /not open at the moment/);
+    // The address still opens. It has to: a link that 404s is a link somebody
+    // assumes is broken and asks for a new one.
+    const look = await (await lunch.lunchOpen(ctxFor(db, '/x'), token)).json();
+    assert.equal(look.open, false);
+    assert.equal(look.off, true, 'and it says why, rather than looking like the wrong hour');
+
+    await assert.rejects(
+      () => lunch.lunchSay(ctxFor(db, '/x', { days: [{ day: MON, taking: true }] }), token, '1'),
+      /shut/,
+    );
   });
   assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM lunch_order').get().n, 1);
+
+  // And on again, with the same address.
+  await lunch.setOpen(ctxFor(db, '/api/lunch/switch', { on: true }));
+  await atDay(THU, async () => {
+    assert.equal((await (await lunch.lunchOpen(ctxFor(db, '/x'), token)).json()).open, true);
+  });
 });
 
 test('the list refuses answers on a day it is not open', async () => {
@@ -376,11 +487,12 @@ test('the list refuses answers on a day it is not open', async () => {
   await atDay('2026-08-19', async () => {
     const look = await (await lunch.lunchOpen(ctxFor(db, '/x'), token)).json();
     assert.equal(look.open, false);
-    assert.equal(look.opensOn, THU);
+    assert.equal(look.off, false, 'too early, not turned off');
+    assert.equal(look.opensOn, `${THU} 00:00`);
 
     await assert.rejects(
       () => lunch.lunchSay(ctxFor(db, '/x', { days: [{ day: MON, taking: true }] }), token, '1'),
-      /shut. It opens again on Thursday/,
+      /shut. It opens again on Thursday at 00:00/,
     );
   });
 });
@@ -433,7 +545,7 @@ test('the kitchen counts plates, not the people who said yes', async () => {
 
   await atDay(THU, async () => {
     await lunch.setMenu(ctxFor(db, '/api/lunch/menu', {
-      days: [{ day: MON, meal: 'Jollof and chicken' }, { day: WED, meal: 'Waakye' }],
+      days: [{ dow: 1, meal: 'Jollof and chicken' }, { dow: 3, meal: 'Waakye' }],
     }));
     await lunch.lunchSay(ctxFor(db, '/x', {
       days: [
@@ -454,28 +566,109 @@ test('the kitchen counts plates, not the people who said yes', async () => {
   });
 });
 
-test('the menu is set for the week and a cleared day loses its row', async () => {
+test('the menu is a standing week, and a cleared day loses its row', async () => {
   const { db, raw } = property();
   const lunch = await import('../src/routes/lunch.js');
 
   await lunch.setMenu(ctxFor(db, '/api/lunch/menu', {
-    days: [{ day: MON, meal: 'Jollof', note: 'Pepper on the side' }, { day: WED, meal: 'Waakye' }],
+    days: [{ dow: 1, meal: 'Jollof', note: 'Pepper on the side' }, { dow: 3, meal: 'Waakye' }],
   }));
-  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM lunch_menu').get().n, 2);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM lunch_menu_week').get().n, 2);
 
-  await lunch.setMenu(ctxFor(db, '/api/lunch/menu', { days: [{ day: WED, meal: '' }] }));
-  assert.deepEqual(raw.prepare('SELECT day FROM lunch_menu').all().map((r) => r.day), [MON]);
+  await lunch.setMenu(ctxFor(db, '/api/lunch/menu', { days: [{ dow: 3, meal: '' }] }));
+  assert.deepEqual(raw.prepare('SELECT dow FROM lunch_menu_week').all().map((r) => r.dow), [1]);
 });
 
-test('the days ordering is open on have to be days', async () => {
+test('the same menu turns up week after week without being set again', async () => {
+  const { db } = property();
+  const lunch = await import('../src/routes/lunch.js');
+
+  await lunch.setMenu(ctxFor(db, '/api/lunch/menu', {
+    days: [{ dow: 1, meal: 'Jollof and chicken' }, { dow: 5, meal: 'Red red' }],
+  }));
+
+  for (const monday of [MON, '2026-08-31', '2026-12-28']) {
+    const week = await (await lunch.lunchWeek(
+      ctxFor(db, `/api/lunch?week=${monday}`),
+    )).json();
+    assert.equal(week.summary.columns[0].meal, 'Jollof and chicken', monday);
+    assert.equal(week.summary.columns[4].meal, 'Red red', monday);
+    assert.equal(week.summary.columns[1].meal, null, monday);
+  }
+});
+
+test('the two moments have to be two moments', async () => {
   const { db, raw } = property();
   const lunch = await import('../src/routes/lunch.js');
 
-  await lunch.setOpenDays(ctxFor(db, '/api/lunch/days', { days: [5, 6, 5] }));
-  assert.equal(raw.prepare("SELECT value FROM settings WHERE key = 'lunch_open_days'").get().value, '5,6');
+  await lunch.setSchedule(ctxFor(db, '/api/lunch/schedule', {
+    opensDow: 5, opensAt: '17:30', closesDow: 7, closesAt: '20:00',
+  }));
+  const got = (key) => raw.prepare('SELECT value FROM settings WHERE key = ?').get(key).value;
+  assert.equal(got('lunch_opens_dow'), '5');
+  assert.equal(got('lunch_opens_at'), '17:30');
+  assert.equal(got('lunch_closes_dow'), '7');
+  assert.equal(got('lunch_closes_at'), '20:00');
 
   await assert.rejects(
-    () => lunch.setOpenDays(ctxFor(db, '/api/lunch/days', { days: [0, 9] })),
-    /at least one day/,
+    () => lunch.setSchedule(ctxFor(db, '/x', {
+      opensDow: 9, opensAt: '09:00', closesDow: 1, closesAt: '00:00',
+    })),
+    /has to be a day/,
   );
+  await assert.rejects(
+    () => lunch.setSchedule(ctxFor(db, '/x', {
+      opensDow: 4, opensAt: 'morning', closesDow: 1, closesAt: '00:00',
+    })),
+    /has to be a time/,
+  );
+  await assert.rejects(
+    () => lunch.setSchedule(ctxFor(db, '/x', {
+      opensDow: 4, opensAt: '09:00', closesDow: 4, closesAt: '09:00',
+    })),
+    /same moment/,
+  );
+});
+
+test('the kitchen can put anybody down, on a day the rota does not have them', async () => {
+  const { db, raw } = property();
+  const lunch = await import('../src/routes/lunch.js');
+
+  // Ama is only pencilled in for Thursday and it was never published, so as
+  // far as the rota is concerned she is not in at all that week.
+  const friday = '2026-08-28';
+  const out = await (await lunch.setOrder(ctxFor(db, '/api/lunch/order', {
+    staffId: 2,
+    days: [{ day: friday, taking: true }, { day: MON, taking: false }],
+  }))).json();
+  assert.equal(out.saved, 2);
+  assert.equal(out.name, 'Ama Serwaa');
+
+  const week = await (await lunch.lunchWeek(ctxFor(db, '/api/lunch'))).json();
+  const fri = week.summary.columns.find((c) => c.day === friday);
+  assert.deepEqual(fri.names, ['Ama'], 'she is on the count even though she is not on the rota');
+});
+
+test('somebody the kitchen put down can change it themselves', async () => {
+  const { db } = property();
+  const lunch = await import('../src/routes/lunch.js');
+  const token = (await (await lunch.makeLink(ctxFor(db, '/api/lunch/link', {}))).json())
+    .url.split('/lunch/')[1];
+
+  const friday = '2026-08-28';
+  await lunch.setOrder(ctxFor(db, '/api/lunch/order', {
+    staffId: 1, days: [{ day: friday, taking: true }],
+  }));
+
+  await atDay(THU, async () => {
+    // The day is on his own page, even though the rota does not have him in.
+    const mine = await (await lunch.lunchMine(ctxFor(db, '/x'), token, '1')).json();
+    assert.ok(mine.days.some((d) => d.day === friday && d.taking === true));
+
+    // And he can say no to it.
+    const said = await (await lunch.lunchSay(
+      ctxFor(db, '/x', { days: [{ day: friday, taking: false }] }), token, '1',
+    )).json();
+    assert.equal(said.saved, 1);
+  });
 });

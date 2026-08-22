@@ -80,12 +80,16 @@ function pickName() {
       list.open
         ? null
         : h('div.alert.warn',
-          h('span.alert-icon', '🕒'),
+          h('span.alert-icon', list.off ? '⏸️' : '🕒'),
           h('div',
-            h('div.alert-title', 'The list is not taking answers yet'),
-            h('div.alert-detail', list.opensOn
-              ? `It opens on ${fmtDayShort(list.opensOn)}. You can see what is coming below.`
-              : 'You can see what is coming below.'))),
+            h('div.alert-title', list.off
+              ? 'The list is not taking answers'
+              : 'The list is not taking answers yet'),
+            h('div.alert-detail', list.off
+              ? 'The kitchen has turned it off for now. You can see what is coming below.'
+              : list.opensOn
+                ? `It opens ${when(list.opensOn)}. You can see what is coming below.`
+                : 'You can see what is coming below.'))),
     ),
 
     list.menu.length
@@ -197,8 +201,8 @@ function done(mine, answers) {
             h('strong', d.name), d.meal ? h('span.muted', ` · ${d.meal}`) : null))))
         : h('p.muted', 'You are not down for lunch on any day next week.'),
       h('p.muted', { style: { fontSize: '.85rem' } },
-        mine.closesAfter
-          ? `You can change your mind until the end of ${fmtDayShort(mine.closesAfter)}. `
+        mine.closesOn
+          ? `You can change your mind until ${when(mine.closesOn)}. `
             + 'Open the link again and find your name.'
           : 'Open the link again to change it.'),
       h('div.btn-row',
@@ -210,8 +214,15 @@ function done(mine, answers) {
 
 // ---------------------------------------------------------------------------
 
+/** A 'YYYY-MM-DD HH:MM' as somebody would say it out loud. */
+function when(stamp) {
+  if (!stamp) return '';
+  const [day, time] = String(stamp).split(' ');
+  return time ? `on ${fmtDayShort(day)} at ${time}` : `on ${fmtDayShort(day)}`;
+}
+
 const weekWords = (data) => `The week of ${fmtDayShort(data.monday)}`
-  + `${data.closesAfter ? `. Answers close at the end of ${fmtDayShort(data.closesAfter)}` : ''}`;
+  + `${data.open && data.closesOn ? `. Answers close ${when(data.closesOn)}` : ''}`;
 
 function shell(...children) {
   return h('div.invite-inner',

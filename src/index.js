@@ -192,8 +192,8 @@ export const ROUTES = [
   ['POST', '/api/lunch/menu', 'lunch', lunch.setMenu],
   ['POST', '/api/lunch/order', 'lunch', lunch.setOrder],
   ['POST', '/api/lunch/link', 'lunch', lunch.makeLink],
-  ['POST', '/api/lunch/close', 'lunch', lunch.closeLink],
-  ['POST', '/api/lunch/days', 'lunch', lunch.setOpenDays],
+  ['POST', '/api/lunch/switch', 'lunch', lunch.setOpen],
+  ['POST', '/api/lunch/schedule', 'lunch', lunch.setSchedule],
 
   // The public half. Nothing here needs a session; the token is the whole of
   // the check, and what it opens is first names, rostered days and meals.
