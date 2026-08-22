@@ -2162,3 +2162,145 @@ html { touch-action: manipulation; }
   .adjust-row { grid-template-columns: 1fr auto; }
   .adjust-row > button { grid-column: 2; justify-self: end; }
 }
+
+/* =============================================================== workload ==
+   One table, on one scale. The screen this replaced gave everybody a card
+   with four figures in it: every fact was on the page and none of them could
+   be compared with any other, which is the one thing the screen is for.
+   ========================================================================= */
+
+/* The four numbers the fortnight comes down to, three of which are the filter
+   as well. The tone is on the figure, never washed across the whole tile. */
+.wl-tiles { margin-bottom: 1rem; }
+.stat-on {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.wl-table { width: 100%; }
+.wl-table th { white-space: nowrap; }
+.wl-load-head { width: 34%; min-width: 12rem; }
+.th-arrow { margin-left: .2rem; opacity: .75; }
+
+.wl-row { cursor: pointer; }
+.wl-row:hover > td { background: var(--surface-2); }
+.wl-row:focus-visible > td:first-child { outline: 2px solid var(--accent); outline-offset: -2px; }
+.wl-name { font-weight: 620; }
+.wl-row > td { vertical-align: middle; }
+
+/* A left edge saying which rows have something on them, so scanning the column
+   of bars and scanning the column of names give the same answer. */
+.wl-row > td:first-child { border-left: 3px solid transparent; padding-left: .55rem; }
+.wl-warn > td:first-child { border-left-color: var(--warn); }
+.wl-high > td:first-child { border-left-color: var(--bad); }
+.wl-open > td { background: var(--surface-2); }
+
+/* ------------------------------------------------------------ the meter -- */
+
+.wl-meter { display: flex; align-items: center; gap: .6rem; }
+
+/* The track is the limit. A bar that reaches the end is somebody at it, and
+   anything past the end is said in words beside it rather than by rescaling —
+   rescaling would move everybody else's bar to make room for one person's bad
+   fortnight, and then no two rows would be comparable again. */
+.wl-track {
+  position: relative;
+  flex: 1;
+  min-width: 5rem;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  overflow: hidden;
+}
+
+/* Where the allowance falls, on the same scale as the bars. A line rather
+   than the end of the track: on a property where most people are over it,
+   ending the track at the limit pins every bar at the edge and no two of them
+   are comparable again — which is the one thing the bars are for. */
+.wl-limit {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--text-faint);
+  transform: translateX(-1px);
+}
+
+.wl-fill {
+  height: 100%;
+  border-radius: 0 999px 999px 0;
+  background: var(--accent);
+  transition: width .25s ease;
+}
+/* State, not identity. Amber and red mean a limit passed, and never appear
+   without a word beside them saying which one. */
+.wl-fill-warn { background: var(--warn); }
+.wl-fill-high, .wl-fill-over { background: var(--bad); }
+
+.wl-figure {
+  min-width: 4.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wl-over-pill { margin-left: .3rem; }
+
+/* The key. One measure and one threshold, so it is two words rather than a
+   legend box, and it sits under the table where somebody meets it after the
+   bars rather than before them. */
+.wl-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem 1rem;
+  align-items: center;
+  font-size: .8rem;
+  color: var(--text-dim);
+  margin: .55rem 0 0;
+}
+.wl-key-item { display: inline-flex; align-items: center; gap: .4rem; }
+.wl-key-swatch {
+  width: 1.6rem; height: 8px; border-radius: 999px; background: var(--accent);
+}
+.wl-key-line {
+  width: 2px; height: 14px; background: var(--text-faint);
+}
+
+/* ---------------------------------------------------- what is behind it -- */
+
+.wl-findings > td {
+  background: var(--surface-2);
+  padding: .7rem .8rem;
+}
+.wl-findings .finding-list { margin: 0; }
+
+@media (max-width: 620px) {
+  /* On a handset the comparison is the name and the bar. Everything else is in
+     the row when it opens, which is where somebody on a phone was going to
+     look anyway — and a table that scrolls sideways hides the bar, which is
+     the one thing worth seeing. */
+  .wl-table th:nth-child(n+3),
+  .wl-table td:nth-child(n+3) { display: none; }
+
+  .wl-table { width: 100%; table-layout: fixed; }
+  .wl-table th { white-space: normal; }
+  /* Two columns, both stated. Left to work it out, a fixed-layout table with
+     five hidden columns hands the load column a sliver and the hours spill
+     out of it. */
+  .wl-table th:first-child, .wl-table td:first-child { width: 45%; }
+  .wl-table th:nth-child(2), .wl-table td:nth-child(2) { width: 55%; }
+  .wl-load-head { min-width: 0; }
+  .wl-name { line-height: 1.25; }
+
+  .wl-meter { min-width: 0; gap: .4rem; }
+  .wl-track { min-width: 2rem; }
+  .wl-figure { min-width: 0; font-size: .85rem; }
+  /* The bar is already red and already past the line. Repeating it in a chip
+     costs the track the width it needs to be a bar at all. */
+  .wl-over-pill { display: none; }
+
+  /* The findings cell is as wide as the table, so its text has to wrap rather
+     than push the table wider than the screen. */
+  .wl-findings td { white-space: normal; }
+  .wl-findings .finding-title, .wl-findings .finding-detail { overflow-wrap: anywhere; }
+}
