@@ -3,6 +3,7 @@ import { can, navigate, replaceParams } from '../app.js';
 import { fmtDay, fmtNum, h, mount, shiftDay, toast, todayISO } from '../util.js';
 import { alertList, card, emptyState, exportButton, table } from './components.js';
 import { printButton } from '../print.js';
+import { birthdayStrip } from './birthday.js';
 import {
   clockCell, correctTimesDialog, field, formDialog, hoursCell, minutesCell, needsAttention,
   reasonSelect, statusPill, totalsLine,
@@ -34,6 +35,9 @@ export async function renderAttToday(params) {
   // the rota holds it on its own.
   const fixesTimes = can('att_times');
   const clocks = clockBanner(data.clockWarnings);
+  // Only ever on the day itself, and never allowed to stop the morning list
+  // loading. It is a nicety; the rest of this screen is the job.
+  const birthdays = day === todayISO() ? await birthdayStrip().catch(() => null) : null;
   const needing = data.rows.filter((r) => r.open);
   const absent = data.rows.filter((r) => !r.open && r.colour === 'red');
   const flagged = data.rows.filter((r) => !r.open && r.colour === 'amber');
@@ -87,6 +91,7 @@ export async function renderAttToday(params) {
       h('div.page-head', h('h1', 'Attendance'), h('div.sub', fmtDay(day, { withYear: true }))),
       nav,
       clocks,
+      birthdays,
       emptyState(
         'Nobody on the rota for this day',
         can('att_setup')
@@ -222,6 +227,7 @@ export async function renderAttToday(params) {
     ),
     nav,
     clocks,
+    birthdays,
 
     h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
       tile('On duty', `${fmtNum(data.totals.scheduled, 0)}`, 'rostered today'),

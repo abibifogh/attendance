@@ -207,6 +207,8 @@ export const api = {
   mySetAvailability: (body) => request('/api/me/availability', { method: 'POST', body }),
   myRunningLate: (body) => request('/api/me/running-late', { method: 'POST', body }),
 
+  attBirthdays: () => request('/api/att/birthdays'),
+  attBirthdayCard: (body) => request('/api/att/birthdays/card', { method: 'POST', body }),
   attSuggestRoster: (from, to) => request(`/api/att/roster/suggest?from=${from}&to=${to}`),
   attPublishRoster: (body) => request('/api/att/roster/publish', { method: 'POST', body }),
   attSetAvailability: (body) => request('/api/att/availability', { method: 'POST', body }),

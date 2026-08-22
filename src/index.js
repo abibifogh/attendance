@@ -11,6 +11,7 @@ import * as att from './routes/attendance.js';
 import * as suggest from './routes/suggest.js';
 import * as mine from './routes/me.js';
 import { watchShifts } from './lib/shift-watch.js';
+import * as birthday from './routes/birthdays.js';
 import * as attSetup from './routes/attendance-setup.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
@@ -124,6 +125,10 @@ export const ROUTES = [
   // which is why it is not behind the reports permission.
   ['POST', '/api/att/roster/publish', 'att_rota', att.publishRoster],
   ['GET', '/api/att/roster/suggest', 'att_rota', suggest.suggestRoster],
+
+  // The one thing here that is not about hours, lateness or money.
+  ['GET', '/api/att/birthdays', 'att_view', birthday.birthdays],
+  ['POST', '/api/att/birthdays/card', 'att_view', birthday.sendBirthdayCard],
 
   // A member of staff, looking at their own. Every route resolves who they are
   // from the session, so none of them takes a staff id and none of them has a
@@ -489,6 +494,17 @@ export default {
       if (result.open || result.absent) {
         console.log(`Attendance: ${result.open} to confirm, ${result.absent} absent`);
       }
+
+      // And whose birthday it is, which is the one thing the daily run does
+      // that nobody has to act on.
+      const wishes = await birthday.wishThem(env.DB, {
+        timezone,
+        ctx: { env, executionContext },
+      }).catch((err) => {
+        console.error('Birthdays failed', err);
+        return { wished: 0 };
+      });
+      if (wishes.wished) console.log(`Birthdays: ${wishes.wished} wished`);
     })().catch((err) => console.error('Scheduled run failed', err));
 
     if (executionContext?.waitUntil) executionContext.waitUntil(run);

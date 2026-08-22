@@ -145,6 +145,10 @@ export const GUIDE = [
       { note: 'That second one is a nudge, not a mark against you. Nothing about it reaches '
         + 'your record: the terminal decides what happened, as it always does.' },
 
+      { sub: 'Your birthday' },
+      { p: 'You will hear from the app on the day. Whether anybody else says anything is up to '
+        + 'them, which is how it should be.' },
+
       { sub: 'How much leave you have left' },
       { p: 'Shown at the top unless the property has turned it off. With it off you can still '
         + 'ask for leave in the ordinary way, and your manager still sees the figures — it '
@@ -191,6 +195,25 @@ export const GUIDE = [
         + 'the same across the week, for a Monday morning spent on a Friday nobody settled.' },
       { note: 'It is the screen, not the payroll export: no wages, no rates, no leave balances. '
         + 'Which is why anybody who can open this screen can download it.' },
+
+      { sub: 'Birthdays' },
+      { p: 'On the day, a line at the top of this screen says whose it is. They have already '
+        + 'been wished by the app, quietly and on their own phone; what the line is for is the '
+        + 'card.' },
+      { steps: [
+        'Press Make a card.',
+        'Change what it says, if you want to.',
+        'Share the card — it goes to your phone\u2019s own share sheet, which is how it reaches '
+          + 'a group chat.',
+      ] },
+      { p: 'Send it through the app is the other half: it tells them and, if you leave the box '
+        + 'ticked, everybody else. Once a day per person, whichever way you send it.' },
+      { note: 'The picture is drawn on your own device and never leaves it until you send it. '
+        + 'Nobody\u2019s age is on it: the record holds a full date because payroll needs one, '
+        + 'and a card announcing that somebody is fifty-three is not a kindness.' },
+      { p: 'Birthdays only appear for people whose date of birth is on their record, under '
+        + 'People. The month ahead is folded under the line, for when a card is being made in '
+        + 'advance.' },
 
       { sub: 'Buttons appear where something is wrong' },
       { p: 'Settle and Times show against days with something wrong with them — absent, late, '

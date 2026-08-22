@@ -2304,3 +2304,41 @@ html { touch-action: manipulation; }
   .wl-findings td { white-space: normal; }
   .wl-findings .finding-title, .wl-findings .finding-detail { overflow-wrap: anywhere; }
 }
+
+/* ============================================================== birthdays ==
+   The one thing on the morning screen that is not about hours, lateness or
+   money. Absent entirely on the days nobody has one, which is most of them.
+   ========================================================================= */
+
+.bd-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: center;
+  padding: .8rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid color-mix(in srgb, var(--c8) 40%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--c8) 10%, var(--surface));
+}
+.bd-strip-mark { font-size: 1.6rem; line-height: 1; }
+.bd-strip-text { flex: 1; min-width: 10rem; line-height: 1.35; }
+.bd-strip-text .muted { font-size: .85rem; }
+
+.bd-soon > summary { cursor: pointer; font-size: .85rem; color: var(--text-dim); margin-bottom: .8rem; }
+.bd-list { list-style: none; margin: .3rem 0 1rem; padding: 0; display: grid; gap: .25rem; }
+.bd-list li { display: flex; justify-content: space-between; gap: 1rem; font-size: .88rem; }
+
+/* The card. Square, because every chat crops to one. */
+.bd-preview {
+  display: grid;
+  place-items: center;
+  margin-bottom: .9rem;
+}
+.bd-canvas {
+  width: 100%;
+  max-width: 22rem;
+  height: auto;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}

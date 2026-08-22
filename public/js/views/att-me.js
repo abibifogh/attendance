@@ -69,10 +69,21 @@ export async function renderAttMe(params = {}) {
 
     countdownCard(data),
 
+    // The dates the list below actually covers, and the arrows move by that
+    // much. Showing a four-week span over a card holding seven days is the
+    // screen disagreeing with itself.
     h('div.toolbar',
-      h('button.btn-sm', { onclick: () => reload({ from: shiftDay(data.from, -28) }) }, '‹'),
-      h('strong', `${fmtDayShort(data.from)} – ${fmtDayShort(data.to)}`),
-      h('button.btn-sm', { onclick: () => reload({ from: shiftDay(data.from, 28) }) }, '›'),
+      h('button.btn-sm', {
+        onclick: () => reload({ from: shiftDay(data.from, -7) }),
+        'aria-label': 'The week before',
+      }, '‹'),
+      h('strong', thisWeek.length
+        ? `${fmtDayShort(thisWeek[0].day)} – ${fmtDayShort(thisWeek[thisWeek.length - 1].day)}`
+        : `${fmtDayShort(data.from)} – ${fmtDayShort(data.to)}`),
+      h('button.btn-sm', {
+        onclick: () => reload({ from: shiftDay(data.from, 7) }),
+        'aria-label': 'The week after',
+      }, '›'),
       h('button.btn-sm', { onclick: () => reload({ from: null }) }, 'Today'),
     ),
 
