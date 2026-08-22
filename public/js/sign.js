@@ -21,13 +21,13 @@ const paperScale = (box) => {
  * nothing to measure yet and the page comes out full size. Watching the box is
  * cheaper than guessing at it, and it covers a phone being turned sideways.
  */
-function paperInto(letter) {
+function paperInto(letter, options = {}) {
   const box = h('div.sign-paper');
   const draw = () => {
     const scale = paperScale(box);
     if (box.dataset.scale === String(scale)) return;
     box.dataset.scale = String(scale);
-    mount(box, paper(letter, { scale }));
+    mount(box, paper(letter, { ...options, scale }));
   };
   draw();
   if (typeof ResizeObserver === 'function') new ResizeObserver(draw).observe(box);
@@ -278,12 +278,14 @@ function draw() {
         : packet.letter.layout?.blocks?.length
           ? paperInto({
             ...packet.letter,
+            property: packet.property,
+            recipients: packet.recipients ?? [],
             signature_ink: packet.letter.signatureInk,
             signed_by: packet.letter.signedBy,
             signed_title: packet.letter.signedTitle,
             signed_at: packet.letter.signedAt,
             stamp: packet.letter.stamp,
-          })
+          }, { mine: packet.you?.seq ?? null })
           : h('pre.contract-text', packet.letter.body || ''),
     ),
 

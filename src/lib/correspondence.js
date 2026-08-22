@@ -119,6 +119,23 @@ export function currentSigner(recipients) {
     .find((r) => r.status !== 'signed' && r.status !== 'declined' && r.status !== 'revoked') ?? null;
 }
 
+/**
+ * Everybody still to sign, rather than only the next one.
+ *
+ * An envelope routed 'all' has no queue: the links open the day they are made
+ * and the parties sign whenever they get to it. That is right for a contract,
+ * where waiting for the other side to go first is a week nobody has, and
+ * wrong for an approval chain, which is why it is a choice and not a change.
+ */
+export function whoCanSign(recipients, routing = 'order') {
+  const waiting = [...(recipients ?? [])]
+    .filter((r) => r.role !== 'copy')
+    .sort((a, b) => a.seq - b.seq || a.id - b.id)
+    .filter((r) => r.status !== 'signed' && r.status !== 'declined' && r.status !== 'revoked');
+
+  return routing === 'all' ? waiting : waiting.slice(0, 1);
+}
+
 /** Where a letter has got to, worked out rather than stored twice. */
 export function progressOf(letter, recipients = []) {
   const signers = recipients.filter((r) => r.role !== 'copy');

@@ -499,6 +499,7 @@ export async function getLetter(ctx, id) {
       ...letter,
       layout: normaliseLayout(letter.layout),
       letterhead: letterhead ? shapeLetterhead(letterhead) : null,
+      routing: letter.routing === 'all' ? 'all' : 'order',
       // Recomputed on every read rather than trusted. If the stored words no
       // longer produce the hash taken when they were signed, they have been
       // changed since — which is the one thing a signature is meant to catch.
@@ -729,6 +730,12 @@ export async function sendForSignature(ctx, id) {
   const days = int(body.days, 'Days', {
     min: 1, max: 90, fallback: Number(await setting(ctx.db, 'corr_link_days', 14)),
   });
+
+  // In the order listed, or everybody at once. An approval chain wants the
+  // first; a two-party agreement wants the second, because waiting for the
+  // other side to go first is a week nobody has.
+  const routing = body.routing === 'all' ? 'all' : 'order';
+  const codeByDefault = (await setting(ctx.db, 'corr_default_code', '1')) !== '0';
   const pepper = await getPepper(ctx.db);
   const origin = await siteOrigin(ctx.db, ctx.url.origin);
 
@@ -744,7 +751,11 @@ export async function sendForSignature(ctx, id) {
 
     // Somebody copied in is not asked to sign, so they get no link at all.
     const token = role === 'copy' ? null : newToken();
-    const code = role === 'copy' || person.code === false ? null : newAccessCode();
+    // A code unless this person is marked as not needing one. The default is
+    // the property's; the exception is per person, because "this one is going
+    // to a solicitor I have on the phone" is a sentence about one recipient.
+    const wantsCode = person.code == null ? codeByDefault : person.code !== false;
+    const code = role === 'copy' || !wantsCode ? null : newAccessCode();
 
     const created = await ctx.db.prepare(
       `INSERT INTO corr_recipient
@@ -772,19 +783,23 @@ export async function sendForSignature(ctx, id) {
   }
 
   await ctx.db.prepare(
-    "UPDATE corr_letter SET status = 'awaiting_signature', updated_at = datetime('now') WHERE id = ?",
-  ).bind(letterId).run();
+    "UPDATE corr_letter SET status = 'awaiting_signature', routing = ?2, "
+    + "updated_at = datetime('now') WHERE id = ?1",
+  ).bind(letterId, routing).run();
 
   await appendEvent(ctx.db, letterId, {
     kind: 'sent_for_signature',
     actor: actorOf(ctx),
-    detail: made.map((m) => `${m.seq}. ${m.name}`).join('; '),
+    detail: `${routing === 'all' ? 'All at once' : 'In order'}: `
+      + made.map((m) => `${m.seq}. ${m.name}${m.code ? '' : ' (no code)'}`).join('; '),
     ip: ipOf(ctx),
     agent: agentOf(ctx),
   });
-  await audit(ctx, 'corr.send_for_signature', letterId, { recipients: made.length, days });
+  await audit(ctx, 'corr.send_for_signature', letterId, {
+    recipients: made.length, days, routing, withoutCode: made.filter((m) => !m.code).length,
+  });
 
-  return json({ ok: true, recipients: made, expiresInDays: days });
+  return json({ ok: true, recipients: made, expiresInDays: days, routing });
 }
 
 export async function revokeRecipient(ctx, id) {
@@ -1024,6 +1039,10 @@ export async function letterModel(ctx) {
     statuses: STATUSES,
     salutation: salutationFor({}),
     linkDays: Number(await setting(ctx.db, 'corr_link_days', 14)),
+    // Whose signature a "the property" field on the page belongs to, and
+    // whether new envelopes ask for an access code.
+    property: await setting(ctx.db, 'property_name', 'Somewhere Nice'),
+    codeByDefault: (await setting(ctx.db, 'corr_default_code', '1')) !== '0',
   });
 }
 

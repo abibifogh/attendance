@@ -172,9 +172,14 @@ export async function renderLetterCompose(params) {
 
   /** Make one block on the page selectable, editable and draggable. */
   function wire(block, el, scale) {
-    el.contentEditable = 'true';
-    el.spellcheck = true;
-    el.setAttribute('role', 'textbox');
+    // A place to sign is not words. Making it editable would let somebody type
+    // into the box the other party is meant to fill.
+    const isField = block.role === 'field';
+    if (!isField) {
+      el.contentEditable = 'true';
+      el.spellcheck = true;
+      el.setAttribute('role', 'textbox');
+    }
 
     const select = () => {
       if (state.selected === block.id) return;
@@ -186,10 +191,12 @@ export async function renderLetterCompose(params) {
     el.addEventListener('focus', select);
     el.addEventListener('pointerdown', select);
 
-    el.addEventListener('input', () => {
-      block.html = htmlOf(el);
-      touched();
-    });
+    if (!isField) {
+      el.addEventListener('input', () => {
+        block.html = htmlOf(el);
+        touched();
+      });
+    }
 
     // A handle rather than the whole box, so somebody clicking into the words
     // is editing and somebody grabbing the corner is moving. Making the block
@@ -226,13 +233,20 @@ export async function renderLetterCompose(params) {
 
     size.addEventListener('pointerdown', (event) => {
       event.preventDefault();
-      const start = { x: event.clientX, w: block.w };
+      const start = { x: event.clientX, y: event.clientY, w: block.w, h: block.h ?? 7 };
       size.setPointerCapture(event.pointerId);
 
       const move = (e) => {
         const dx = ((e.clientX - start.x) / scale / PAGE_W) * 100;
         block.w = snap(Math.min(100 - block.x, Math.max(8, start.w + dx)));
         el.style.width = `${block.w}%`;
+        // Words grow downwards on their own; a place to sign has to be told
+        // how tall it is, so its handle drags both ways.
+        if (isField) {
+          const dy = ((e.clientY - start.y) / scale / PAGE_H) * 100;
+          block.h = snap(Math.min(40, Math.max(3, start.h + dy)));
+          el.style.height = `${block.h}%`;
+        }
       };
       const up = () => {
         size.removeEventListener('pointermove', move);
@@ -312,28 +326,66 @@ export async function renderLetterCompose(params) {
         h('button.btn-sm', { onclick: () => navigate('letter', { id }) }, '‹ The letter'),
         h('strong.compose-ref', letter.reference)),
 
-      h('div.compose-bar-group',
-        face, size,
-        inline('bold', h('strong', 'B'), 'Bold'),
-        inline('italic', h('em', 'I'), 'Italic'),
-        inline('underline', h('u', 'U'), 'Underline'),
-        inline('insertUnorderedList', 'List', 'A list'),
-        align('left', 'Line up on the left'),
-        align('center', 'Centre it'),
-        align('right', 'Line up on the right'),
-        align('justify', 'Justified, both edges straight'),
-        h('select.compose-line', {
-          title: 'Line spacing',
-          disabled: !block,
-          onchange: (e) => { const now = selected(); if (!now) return; now.line = Number(e.target.value); apply(); },
-        },
-        [['1.15', 'Tight'], ['1.45', 'Normal'], ['1.8', 'Airy'], ['2.4', 'Double']]
-          .map(([value, label]) => h('option', {
-            value, selected: String(block?.line ?? 1.45) === value,
-          }, label)))),
+      // A place to sign has nothing to do with typefaces, so the middle of the
+      // bar changes to the two things it does have: whose it is, and what
+      // goes in it. A toolbar offering bold on a signature box is a toolbar
+      // nobody trusts the rest of.
+      block?.role === 'field'
+        ? h('div.compose-bar-group',
+          h('span.compose-what', 'Place to sign'),
+          h('select', {
+            title: 'Whose place this is',
+            onchange: (e) => { const now = selected(); if (!now) return; now.signer = Number(e.target.value); apply(); },
+          },
+          h('option', { value: 0, selected: block.signer === 0 }, 'The property'),
+          [1, 2, 3, 4, 5, 6].map((n) => h('option', {
+            value: n, selected: block.signer === n,
+          }, `Signer ${n}`))),
+          h('select', {
+            title: 'What goes in it',
+            onchange: (e) => { const now = selected(); if (!now) return; now.field = e.target.value; apply(); },
+          },
+          [['signature', 'Signature'], ['initials', 'Initials'], ['date', 'Date signed']]
+            .map(([value, label]) => h('option', {
+              value, selected: block.field === value,
+            }, label))),
+          h('input.compose-label', {
+            type: 'text', maxlength: 60, placeholder: 'Label (optional)',
+            value: block.label ?? '',
+            title: 'What the box says before it is signed',
+            onchange: (e) => {
+              const now = selected();
+              if (!now) return;
+              now.label = e.target.value.trim() || null;
+              apply();
+            },
+          }))
+        : h('div.compose-bar-group',
+          face, size,
+          inline('bold', h('strong', 'B'), 'Bold'),
+          inline('italic', h('em', 'I'), 'Italic'),
+          inline('underline', h('u', 'U'), 'Underline'),
+          inline('insertUnorderedList', 'List', 'A list'),
+          align('left', 'Line up on the left'),
+          align('center', 'Centre it'),
+          align('right', 'Line up on the right'),
+          align('justify', 'Justified, both edges straight'),
+          h('select.compose-line', {
+            title: 'Line spacing',
+            disabled: !block,
+            onchange: (e) => { const now = selected(); if (!now) return; now.line = Number(e.target.value); apply(); },
+          },
+          [['1.15', 'Tight'], ['1.45', 'Normal'], ['1.8', 'Airy'], ['2.4', 'Double']]
+            .map(([value, label]) => h('option', {
+              value, selected: String(block?.line ?? 1.45) === value,
+            }, label)))),
 
       h('div.compose-bar-group',
         h('button.btn-sm', { onclick: () => addBlock() }, '+ Text'),
+        h('button.btn-sm', {
+          title: 'A place on the page for somebody to put their name',
+          onclick: () => addField('signature'),
+        }, '+ Sign here'),
         h('button.btn-sm', {
           disabled: !block,
           title: 'Take this block off the page',
@@ -367,6 +419,44 @@ export async function renderLetterCompose(params) {
     state.layout.blocks.push({
       id: id2, page, x: 10, y: 55, w: 60, face: 'serif', size: 11, line: 1.45,
       align: 'left', bold: false, role: 'text', html: '<p>New text</p>',
+    });
+    state.selected = id2;
+    touched();
+    redraw();
+  }
+
+  /**
+   * A place on the page for somebody to sign.
+   *
+   * Dropped where the sign-off already is, because that is where a signature
+   * goes on nine letters out of ten and dragging it from the middle of the
+   * page every time would be the app making work.
+   */
+  function addField(what = 'signature') {
+    const id2 = `f${Date.now().toString(36)}`;
+    const page = lastPage(state.layout);
+    const already = state.layout.blocks.filter((b) => b.role === 'field').length;
+    state.layout.blocks.push({
+      id: id2,
+      page,
+      x: already % 2 ? 55 : 10,
+      // Below the sign-off rather than on top of it. The words there are
+      // "Yours faithfully" and a name, and a box dropped over them is the
+      // first thing somebody has to move every single time.
+      y: Math.min(90, 84 + Math.floor(already / 2) * 10),
+      w: what === 'date' ? 22 : 33,
+      h: what === 'date' ? 4 : 8,
+      face: 'sans',
+      size: 9,
+      line: 1.2,
+      align: 'left',
+      bold: false,
+      role: 'field',
+      // Whoever it is sent to first. Most letters have one signer, and the
+      // ones that have three are the ones somebody is paying attention to.
+      signer: 1,
+      field: what,
+      html: '',
     });
     state.selected = id2;
     touched();

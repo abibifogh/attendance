@@ -142,27 +142,62 @@ export function normaliseLayout(input) {
 
   const blocks = raw.blocks.slice(0, 40).map((block, i) => {
     const w = clamp(block.w, 5, 100, 80);
+    // What the block is for. For everything but a field this is only a label,
+    // and nothing behaves differently — but it is what lets the composer offer
+    // "add a signature line" rather than "add a block".
+    const role = String(block.role ?? 'text').slice(0, 20);
+    const field = role === 'field';
+
     return {
       id: String(block.id ?? `b${i + 1}`).slice(0, 24),
       page: Math.max(1, Math.min(20, Math.round(Number(block.page) || 1))),
       x: clamp(block.x, 0, 100 - w, 10),
       y: clamp(block.y, 0, 99, 20),
       w,
+      // Words grow to fit what is in them; a place to sign does not, because
+      // its whole job is to reserve a piece of the page.
+      h: field ? clamp(block.h, 2, 40, 7) : null,
       face: faceOf(block.face).key,
       size: clamp(block.size, 6, 48, 11),
       line: clamp(block.line, 1, 3, 1.45),
       align: ALIGN.includes(block.align) ? block.align : 'left',
       bold: Boolean(block.bold),
-      // What the block is for. Only ever a label — nothing behaves
-      // differently — but it is what lets the composer offer "add a signature
-      // line" rather than "add a block".
-      role: String(block.role ?? 'text').slice(0, 20),
-      html: sanitiseHtml(block.html),
+      role,
+      // Whose place this is, and what goes in it. Zero is the property's own
+      // signature; one upwards is the recipient in that position on the
+      // envelope, which is the order they are listed in when it is sent.
+      signer: field ? Math.max(0, Math.min(10, Math.round(Number(block.signer) || 0))) : null,
+      field: field ? (FIELDS.includes(block.field) ? block.field : 'signature') : null,
+      label: field ? (str(block.label, 60) || null) : null,
+      html: field ? '' : sanitiseHtml(block.html),
     };
   }).filter((block) => block.html || block.role !== 'text');
 
   return { blocks, pages: Math.max(1, ...blocks.map((b) => b.page)) };
 }
+
+/**
+ * What can be asked for in a place on the page.
+ *
+ * Three, and deliberately not more. Every e-signing product ships a dozen and
+ * the other nine are form fields, which is a different product: this one puts
+ * a letter on paper and asks somebody to put their name to it.
+ */
+export const FIELDS = ['signature', 'initials', 'date'];
+
+export const FIELD_LABELS = {
+  signature: 'Signature',
+  initials: 'Initials',
+  date: 'Date signed',
+};
+
+/** Who a field belongs to, in words. */
+export function whoseField(block, names = []) {
+  if (block.signer === 0) return 'The property';
+  return names[block.signer - 1] || `Signer ${block.signer}`;
+}
+
+const str = (value, max) => (value == null ? '' : String(value).trim().slice(0, max));
 
 const safeParse = (text) => {
   try {

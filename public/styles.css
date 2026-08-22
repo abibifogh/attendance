@@ -2738,6 +2738,78 @@ html { touch-action: manipulation; }
 
 /* The signature area is drawn rather than stored as a block: it is not
    something anybody may move after a letter has been signed. */
+/* ===================================================================== */
+/* A place on the page for somebody to put their name.
+   Empty it is a dashed box saying whose it is; theirs to fill it is
+   highlighted; filled it is ink over a rule, which is what it prints as. */
+.paper-field {
+  position: absolute;
+  box-sizing: border-box;
+  font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  color: #14181f;
+}
+.paper-field-empty {
+  height: 100%;
+  display: flex; flex-direction: column; justify-content: flex-end; gap: .15em;
+  border: 1.5px dashed #9aa3b0;
+  border-radius: 3px;
+  padding: .3em .45em;
+  background: rgba(148, 163, 184, .08);
+}
+.paper-field-what {
+  font-size: 8pt; letter-spacing: .03em; color: #566070;
+}
+.paper-field-cue {
+  font-size: 9pt; font-weight: 700; color: #1d4ed8;
+}
+/* The one the person reading it has to fill. Everything else on the page is
+   quiet so this is the thing their eye lands on. */
+.paper-field.is-mine .paper-field-empty {
+  border-color: #1d4ed8;
+  border-style: solid;
+  background: rgba(29, 78, 216, .09);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, .12);
+}
+.paper-field.is-filled { border: 0; }
+.paper-field-ink {
+  position: relative;
+  height: 100%;
+  display: flex; flex-direction: column; justify-content: flex-end;
+}
+.paper-field-ink > img {
+  max-height: 62%; max-width: 90%; object-fit: contain; object-position: left bottom;
+  align-self: flex-start;
+}
+.paper-field-typed {
+  font-family: "Segoe Script", "Bradley Hand", cursive;
+  font-size: 15pt; line-height: 1;
+}
+.paper-field-stamp {
+  position: absolute; right: 0; bottom: 25%;
+  max-height: 70%; opacity: .8; pointer-events: none;
+}
+.paper-field-rule { border-top: 1px solid #333; margin-top: .15em; }
+.paper-field-name { font-size: 9pt; font-weight: 600; margin-top: .15em; }
+.paper-field-when { font-size: 8pt; color: #555; }
+.paper-field-date {
+  height: 100%;
+  display: flex; align-items: flex-end;
+  font-size: 10pt;
+  border-bottom: 1px solid #333;
+}
+
+/* In the composer it is a block like any other: selectable, movable, and it
+   keeps its outline so an empty page still shows where the names will go. */
+.compose-what {
+  font-size: .78rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-faint);
+  padding-right: .2rem;
+}
+.compose-label { max-width: 12rem; }
+/* The field bar's pickers, kept to their content. Left to stretch they push
+   the rest of the toolbar onto a second row for no reason. */
+.compose-bar-group select { max-width: 11rem; }
+
 .paper-signatures {
   position: absolute; left: 10%; right: 10%; bottom: 12%;
   display: flex; gap: 3rem; flex-wrap: wrap; align-items: flex-end;

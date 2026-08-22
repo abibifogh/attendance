@@ -1091,6 +1091,27 @@ export const GUIDE = [
       { note: 'Preview shows the finished pages at their real proportions with nothing to drag. '
         + 'Print or save as PDF from there gives you the same thing on paper.' },
 
+      { sub: 'Where they sign' },
+      { p: 'Press "+ Sign here" and a box lands on the page. Say whose it is and what goes in '
+        + 'it, then drag it where the signature belongs. Two parties to an agreement get a box '
+        + 'each, side by side over their own names, instead of a stack of signatures at the '
+        + 'foot in whatever order they happened to arrive.' },
+      { table: {
+        head: ['Setting', 'What it means'],
+        rows: [
+          ['The property', 'Your own signature, put there when you sign it'],
+          ['Signer 1, 2, 3…', 'The person in that position when you send it out'],
+          ['Signature', 'Their ink, over a rule, with their name and the date under it'],
+          ['Initials', 'The same, smaller, for initialling a page'],
+          ['Date signed', 'Just the date, filled in when they sign'],
+        ],
+      } },
+      { p: 'Whoever opens the link sees every box on the page. Theirs is highlighted and says '
+        + '"Sign here"; everybody else\u2019s shows whose it is, filled or waiting. A letter '
+        + 'with boxes on it does not stack signatures underneath as well.' },
+      { note: 'A box is filled by whoever is in that position on the envelope. Signer 1 is the '
+        + 'first person listed when you send it out, so list them in the order the boxes expect.' },
+
       { sub: 'Who signs it' },
       { p: 'Done asks one question, and the answer decides what happens next.' },
       { table: {
@@ -1102,12 +1123,30 @@ export const GUIDE = [
           ['Neither yet', 'It stays a draft and nothing is sent'],
         ],
       } },
+      { sub: 'Sending it out' },
       { steps: [
-        'Send for signature, and list the signers in the order they should sign.',
+        'Send for signature, and list everybody: what each is asked to do, and whether they '
+          + 'need an access code.',
+        'Choose whether they sign in the order listed or all at once.',
         'Copy each link and send it to that person.',
-        'Give each of them their six-character access code separately, on a call rather than '
-          + 'in the same message.',
+        'Give each of them their access code separately, on a call rather than in the same '
+          + 'message.',
       ] },
+      { table: {
+        head: ['Choice', 'When to use it'],
+        rows: [
+          ['In the order listed', 'An approval chain. The second link stays shut until the '
+            + 'first person is done'],
+          ['All at once', 'A two-party agreement. Every link is live, and waiting for the '
+            + 'other side to go first is a week nobody has'],
+          ['Access code on', 'The default. A six-character secret told to them another way, so '
+            + 'a forwarded email on its own opens nothing'],
+          ['Access code off', 'A routine acknowledgement where the code is more friction than '
+            + 'the letter is worth. Whoever holds the link can sign'],
+        ],
+      } },
+      { warn: 'With the code off, the link is the whole of the security. Anybody it is '
+        + 'forwarded to can open and sign the letter, so use it where that does not matter.' },
       { p: 'Whoever opens the link sees the letter on your letterhead, laid out the way you '
         + 'left it, not a bare wall of text.' },
       { warn: 'Once a letter leaves draft the layout is fixed. Signatures are counted against '
@@ -1231,6 +1270,16 @@ export const GUIDE = [
       { sub: 'A login and a member of staff are different things' },
       { p: 'Almost nobody who clocks in has a login. A room attendant has a face on a terminal '
         + 'and no reason ever to open this. The two are linked where the same person is both.' },
+      { p: 'So the form asks, whatever role you give them: are they a member of staff? Answer '
+        + 'yes and choose their record, and My shifts, My report, My advance and My claims open '
+        + 'to them on top of everything the role already gives. The head of housekeeping who '
+        + 'builds the rota and works shifts on it needs both, and before this she could only '
+        + 'have one.' },
+      { note: 'It grants nothing about anybody else. Those four screens read the staff record '
+        + 'off the session and nothing else, which is what makes them safe to hand to anybody.' },
+      { p: 'Answer no and those screens are not in their menu at all, because there would be '
+        + 'nothing behind them. The Member of staff role does not ask the question: the answer '
+        + 'is yes, and the only thing left to say is which record.' },
     ],
   },
 

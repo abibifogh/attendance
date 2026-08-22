@@ -175,20 +175,45 @@ function openUserDialog({ existing, data, reload }) {
 
   const roleHint = h('p.muted', { style: { fontSize: '.85rem' } });
 
-  // Which member of staff a staff login belongs to. The whole of what that
-  // account can see is decided by this one field, so it is required for the
-  // role and hidden for every other: a manager has no staff record, and an
-  // account pointed at the wrong one would be reading somebody else's week.
+  // Whether this login belongs to somebody who is also on the rota.
+  //
+  // Asked of every role, not only the staff one. A supervisor who works
+  // shifts, a manager who covers a night and an administrator who is also on
+  // the payroll all have a staff record, and pointing the login at it is what
+  // gives them My shifts, My report, My advance and My claims. For the staff
+  // role the question does not arise: the answer is yes and the only thing
+  // left to say is which record.
   const staffSelect = h('select',
     h('option', { value: '' }, 'Choose…'),
     (data.staff ?? []).map((p) => h('option', {
       value: String(p.id), selected: String(existing?.staffId ?? '') === String(p.id),
     }, `${p.name}${p.department ? ` · ${p.department}` : ''} · No. ${p.employee_no}`)));
 
+  const onRota = h('select',
+    h('option', { value: 'no' }, 'No, this login only'),
+    h('option', { value: 'yes', selected: Boolean(existing?.staffId) }, 'Yes, they work shifts here'));
+
+  const staffNote = h('small.muted', 'Their own, and nothing else');
+
   const staffField = h('label.field',
-    h('span', 'Whose shifts they see'),
+    h('span', 'Which staff record'),
     staffSelect,
-    h('small.muted', 'Their own, and nothing else'));
+    staffNote);
+
+  const rotaField = h('label.field',
+    h('span', 'Are they a member of staff?'),
+    onRota,
+    h('small.muted', 'Somebody on the rota sees their own week as well as whatever else they do'));
+
+  const showStaff = () => {
+    const isStaffRole = roleSelect.value === 'staff';
+    rotaField.style.display = isStaffRole ? 'none' : '';
+    staffField.style.display = isStaffRole || onRota.value === 'yes' ? '' : 'none';
+    staffNote.textContent = isStaffRole
+      ? 'Their own, and nothing else'
+      : 'Their own shifts, report, advances and claims, on top of what the role gives them';
+  };
+  onRota.addEventListener('change', showStaff);
 
   // Permissions default to the role's, and only become a stored override once
   // somebody actually ticks something different.
@@ -209,7 +234,7 @@ function openUserDialog({ existing, data, reload }) {
     pinField.style.display = isAdmin ? 'none' : '';
     emailField.style.display = isAdmin ? '' : '';
     passwordField.style.display = isAdmin ? '' : 'none';
-    staffField.style.display = roleSelect.value === 'staff' ? '' : 'none';
+    showStaff();
   };
 
   roleSelect.addEventListener('change', () => { custom = null; applyRole(); });
@@ -235,6 +260,7 @@ function openUserDialog({ existing, data, reload }) {
       pinField,
       emailField,
       passwordField,
+      rotaField,
       staffField,
     ),
     roleHint,
@@ -262,12 +288,20 @@ function openUserDialog({ existing, data, reload }) {
       active: active.value === 'true',
       note: note.value.trim() || null,
       permissions: custom,
-      staffId: roleSelect.value === 'staff' ? (staffSelect.value || null) : null,
+      staffId: (roleSelect.value === 'staff' || onRota.value === 'yes')
+        ? (staffSelect.value || null)
+        : null,
     };
 
     if (roleSelect.value === 'staff' && !payload.staffId) {
       problem.textContent = 'Say whose shifts this login is for. Without it there is nothing '
         + 'for them to open.';
+      problem.style.display = '';
+      return;
+    }
+
+    if (roleSelect.value !== 'staff' && onRota.value === 'yes' && !payload.staffId) {
+      problem.textContent = 'Choose which staff record is theirs, or answer No above.';
       problem.style.display = '';
       return;
     }

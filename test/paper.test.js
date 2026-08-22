@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { PAGE, normaliseLayout, sanitiseHtml, starterLayout, textOf } from '../src/lib/paper.js';
+import {
+  PAGE, normaliseLayout, sanitiseHtml, starterLayout, textOf, whoseField,
+} from '../src/lib/paper.js';
 import {
   createLetter, getLetter, listLetterheads, saveLetterhead, updateLetter,
 } from '../src/routes/correspondence.js';
@@ -268,4 +270,70 @@ test('anything dangerous in a letter is gone before it reaches the database', as
   const stored = raw.prepare('SELECT layout FROM corr_letter WHERE id = ?').get(made.id).layout;
   assert.ok(!/script|onerror|<img/i.test(stored), `still dangerous: ${stored}`);
   assert.match(stored, /Hello/);
+});
+
+// ---------------------------------------------------------------------------
+// Places to sign
+// ---------------------------------------------------------------------------
+
+test('a place to sign keeps its height, its owner and what goes in it', () => {
+  const out = normaliseLayout({
+    blocks: [{
+      id: 'f1', role: 'field', page: 1, x: 10, y: 80, w: 33, h: 9,
+      signer: 2, field: 'initials', label: 'Initial each page',
+    }],
+  });
+
+  const [block] = out.blocks;
+  assert.equal(block.role, 'field');
+  assert.equal(block.h, 9, 'words grow to fit; a place to sign reserves the space');
+  assert.equal(block.signer, 2);
+  assert.equal(block.field, 'initials');
+  assert.equal(block.label, 'Initial each page');
+  // Kept even with nothing in it, because reserving the space is the job.
+  assert.equal(block.html, '');
+});
+
+test('a place to sign is not a place to type', () => {
+  const out = normaliseLayout({
+    blocks: [{ id: 'f1', role: 'field', signer: 1, html: '<p>sneaky words</p>' }],
+  });
+  assert.equal(out.blocks[0].html, '', 'anything typed into it is dropped');
+});
+
+test('a field falls back to a signature for the first signer', () => {
+  const out = normaliseLayout({ blocks: [{ id: 'f1', role: 'field' }] });
+  assert.equal(out.blocks[0].field, 'signature');
+  assert.equal(out.blocks[0].signer, 0, 'and to the property, which is the one always there');
+});
+
+test('nonsense in a field is clamped rather than believed', () => {
+  const out = normaliseLayout({
+    blocks: [{
+      id: 'f1', role: 'field', signer: 99, field: 'blood sample', h: 500, w: 900,
+      label: 'x'.repeat(200),
+    }],
+  });
+  const [block] = out.blocks;
+  assert.equal(block.signer, 10, 'ten signers is already more than any letter has');
+  assert.equal(block.field, 'signature');
+  assert.equal(block.h, 40);
+  assert.equal(block.w, 100);
+  assert.equal(block.label.length, 60);
+});
+
+test('words are still words, and carry no field of their own', () => {
+  const out = normaliseLayout({
+    blocks: [{ id: 'b1', role: 'body', html: '<p>Dear Sir</p>', signer: 3, field: 'date' }],
+  });
+  const [block] = out.blocks;
+  assert.equal(block.h, null);
+  assert.equal(block.signer, null, 'a paragraph belongs to nobody');
+  assert.equal(block.field, null);
+});
+
+test('whose a field is reads as a name once there is one', () => {
+  assert.equal(whoseField({ signer: 0 }), 'The property');
+  assert.equal(whoseField({ signer: 1 }, ['Accra Brewery Limited']), 'Accra Brewery Limited');
+  assert.equal(whoseField({ signer: 2 }, ['Accra Brewery Limited']), 'Signer 2');
 });

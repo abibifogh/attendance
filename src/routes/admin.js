@@ -162,14 +162,17 @@ export async function listUsers(ctx) {
 /**
  * Which member of staff a login belongs to.
  *
- * Only meaningful for the staff role. Sending it for anybody else is not an
- * error worth refusing — an administrator switching somebody's role should not
- * have to clear a field first — it is simply dropped, because a manager has no
- * staff record and an account pointed at one it should not be would be a way
- * to read somebody else's week.
+ * Asked of every role, not only the staff one. A supervisor who works shifts,
+ * a manager who covers a night and an administrator who is also on the payroll
+ * all have a staff record, and pointing their login at it is what lets them
+ * open their own week, their own advances and their own claims. Before this it
+ * was a field on one role, so the head of housekeeping could roster herself
+ * and then had no way to look at her own month.
+ *
+ * It grants nothing about anybody else: the "my" screens read the staff id off
+ * the session and nothing else, which is what makes them safe to hand out.
  */
-function readStaffLink(body, role) {
-  if (role !== 'staff') return null;
+function readStaffLink(body) {
   if (body.staffId == null || body.staffId === '') return null;
   const id = Number(body.staffId);
   if (!Number.isInteger(id) || id < 1) throw badRequest('That is not a member of staff.');
@@ -207,7 +210,7 @@ export async function createUser(ctx) {
        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING *`,
     ).bind(
       name, pinHash, creds.email, passwordHash, role, permissions, note,
-      readStaffLink(body, role),
+      readStaffLink(body),
     ).first();
 
     await audit(ctx, 'user.create', row.id, {
@@ -271,7 +274,7 @@ export async function updateUser(ctx, id) {
        WHERE id = ? RETURNING *`,
     ).bind(
       name, role, permissions, active ? 1 : 0, note,
-      pinHash, creds.email ?? null, passwordHash, readStaffLink(body, role), userId,
+      pinHash, creds.email ?? null, passwordHash, readStaffLink(body), userId,
     ).first();
 
     await audit(ctx, 'user.update', userId, {

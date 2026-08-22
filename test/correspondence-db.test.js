@@ -288,8 +288,10 @@ test('the challenge tells the browser how to prove it, and never the secret', as
 // Out for signature
 // ---------------------------------------------------------------------------
 
-async function sendOut(db, letterId, recipients) {
-  return read(await sendForSignature(ctx(db, { body: { recipients } }), letterId));
+async function sendOut(db, letterId, recipients, extra = {}) {
+  return read(await sendForSignature(
+    ctx(db, { body: { recipients, ...extra } }), letterId,
+  ));
 }
 
 const tokenOf = (made) => made.url.split('/s/')[1];
@@ -725,4 +727,141 @@ test('a letter on no letterhead has none to fetch', async () => {
   const opened = await read(await signOpen(outside(db, {}), token));
   assert.equal(opened.letter.letterhead, null);
   await assert.rejects(signLetterhead(outside(db, {}), token), /no letterhead/);
+});
+
+// ---------------------------------------------------------------------------
+// The envelope
+// ---------------------------------------------------------------------------
+
+test('an access code is the default, and can be turned off for one person', async () => {
+  const { raw, db } = await setup();
+  const letter = await draft(db);
+
+  const out = await sendOut(db, letter.id, [
+    { name: 'Needs one' },
+    { name: 'Does not', code: false },
+    { name: 'For information', role: 'copy' },
+  ]);
+
+  assert.ok(out.recipients[0].code, 'silence means yes, because that is the safe half');
+  assert.equal(out.recipients[1].code, null);
+  assert.equal(out.recipients[2].url, null, 'and somebody copied in has no link to protect');
+
+  // Stored as a hash or not at all, never as the code.
+  const rows = raw.prepare('SELECT name, code_hash FROM corr_recipient ORDER BY seq').all();
+  assert.ok(rows[0].code_hash);
+  assert.equal(rows[1].code_hash, null);
+});
+
+test('a link with no code opens on the link alone', async () => {
+  const { db } = await setup();
+  const letter = await draft(db);
+  const out = await sendOut(db, letter.id, [{ name: 'Kwame Mensah', code: false }]);
+  const token = tokenOf(out.recipients[0]);
+
+  const head = await read(await signHead(outside(db), token));
+  assert.equal(head.needsCode, false);
+
+  const opened = await read(await signOpen(outside(db, {}), token));
+  assert.equal(opened.letter.subject, 'Outstanding invoice 4471');
+});
+
+test('in order, the second link stays shut until the first is done', async () => {
+  const { db } = await setup();
+  const letter = await draft(db);
+  const out = await sendOut(db, letter.id, [
+    { name: 'First Signer', code: false },
+    { name: 'Second Signer', code: false },
+  ]);
+  const [first, second] = out.recipients;
+  assert.equal(out.routing, 'order', 'which is what it has always done');
+
+  await assert.rejects(
+    () => signOpen(outside(db, {}), tokenOf(second)),
+    /not your turn yet/,
+  );
+
+  const opened = await read(await signOpen(outside(db, {}), tokenOf(first)));
+  await signDocument(outside(db, {
+    contractId: null, name: 'First Signer', agreed: true, hash: opened.letter.hash,
+    ink: 'data:image/png;base64,SIG',
+  }), tokenOf(first));
+
+  // And now it does.
+  const now = await read(await signOpen(outside(db, {}), tokenOf(second)));
+  assert.equal(now.you.name, 'Second Signer');
+});
+
+test('all at once opens every link the day it is made', async () => {
+  const { db } = await setup();
+  const letter = await draft(db);
+  const out = await sendOut(db, letter.id, [
+    { name: 'First Signer', code: false },
+    { name: 'Second Signer', code: false },
+  ], { routing: 'all' });
+
+  assert.equal(out.routing, 'all');
+
+  // The second party goes first, which is the whole point of asking.
+  const opened = await read(await signOpen(outside(db, {}), tokenOf(out.recipients[1])));
+  assert.equal(opened.you.name, 'Second Signer');
+  await signDocument(outside(db, {
+    contractId: null, name: 'Second Signer', agreed: true, hash: opened.letter.hash,
+    ink: 'data:image/png;base64,SIG',
+  }), tokenOf(out.recipients[1]));
+
+  const other = await read(await signOpen(outside(db, {}), tokenOf(out.recipients[0])));
+  assert.equal(other.you.name, 'First Signer');
+});
+
+test('whoever is signing is told which places on the page are theirs', async () => {
+  const { db } = await setup();
+  const letter = await draft(db);
+
+  await updateLetter(ctx(db, {
+    body: {
+      subject: 'Outstanding invoice 4471',
+      layout: {
+        blocks: [
+          { id: 'a', role: 'body', page: 1, x: 10, y: 45, w: 80, html: '<p>Please sign.</p>' },
+          { id: 'us', role: 'field', page: 1, x: 10, y: 78, w: 33, h: 8, signer: 0, field: 'signature' },
+          { id: 'them', role: 'field', page: 1, x: 55, y: 78, w: 33, h: 8, signer: 1, field: 'signature' },
+        ],
+      },
+    },
+  }), letter.id);
+
+  const out = await sendOut(db, letter.id, [{ name: 'Accra Brewery Limited', code: false }]);
+  const opened = await read(await signOpen(outside(db, {}), tokenOf(out.recipients[0])));
+
+  assert.equal(opened.you.seq, 1, 'which signer they are, so the page can light their box up');
+  assert.equal(opened.letter.layout.blocks.filter((b) => b.role === 'field').length, 2);
+  assert.equal(opened.recipients.length, 1);
+  assert.equal(opened.recipients[0].name, 'Accra Brewery Limited');
+  assert.equal(opened.recipients[0].status, 'opened');
+  // Names and status, never an address: one supplier must not be handed
+  // another's contact details by the page they were sent to sign.
+  assert.equal(opened.recipients[0].email, undefined);
+});
+
+test('a signature lands against the signer it was asked of', async () => {
+  const { db } = await setup();
+  const letter = await draft(db);
+  const out = await sendOut(db, letter.id, [
+    { name: 'First Signer', code: false },
+    { name: 'Second Signer', code: false },
+  ], { routing: 'all' });
+
+  const opened = await read(await signOpen(outside(db, {}), tokenOf(out.recipients[1])));
+  await signDocument(outside(db, {
+    contractId: null, name: 'Second Signer', agreed: true, hash: opened.letter.hash,
+    ink: 'data:image/png;base64,TWO',
+  }), tokenOf(out.recipients[1]));
+
+  const { recipients } = await read(await getLetter(ctx(db), letter.id));
+  // In seq order, so the block that says "signer 2" draws the second row.
+  assert.deepEqual(recipients.map((r) => r.seq), [1, 2]);
+  assert.equal(recipients[0].status, 'pending');
+  assert.equal(recipients[1].status, 'signed');
+  assert.equal(recipients[1].signatureInk, 'data:image/png;base64,TWO');
 });

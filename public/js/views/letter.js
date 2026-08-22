@@ -6,7 +6,7 @@ import { field, formDialog } from './att-shared.js';
 import { signaturePad } from '../fields.js';
 import { printButton } from '../print.js';
 import { asBase64 } from './letters.js';
-import { paper } from './letter-paper.js';
+import { hasFields, paper } from './letter-paper.js';
 import { confirmItIsYou } from './letter-signing.js';
 
 /**
@@ -154,12 +154,19 @@ export async function renderLetter(params) {
           // here is provably what was signed there.
           ? h('div.letter-paper', paper({
             ...letter,
+            property: model.property ?? '',
+            // Everybody on the envelope, in seq order, so a signature lands in
+            // the place on the page it was asked for rather than at the foot.
+            recipients,
             stamp: data.stamp?.image ?? null,
             signedRecipients: recipients.filter((r) => r.signedAt),
           }, { scale: 0.86 }))
           : h('div.contract-body', letter.body || ''),
 
-      letter.signed_at || recipients.some((r) => r.signedAt)
+      // Only where the page does not already say where they go. A letter with
+      // places marked on it draws every signature in its box; repeating them
+      // underneath would show each one twice.
+      (letter.signed_at || recipients.some((r) => r.signedAt)) && !hasFields(letter.layout)
         ? h('div.sig-block',
           letter.signed_at
             ? signatureSlot('For the property', letter.signed_by, letter.signed_title,
@@ -430,10 +437,27 @@ async function sendOut(data, model, reload) {
             oninput: (e) => { person.email = e.target.value; },
           })),
         h('label.field', h('span', 'Asked to'),
-          h('select', { onchange: (e) => { person.role = e.target.value; } },
-            h('option', { value: 'signer', selected: person.role === 'signer' }, 'Sign'),
-            h('option', { value: 'approver', selected: person.role === 'approver' }, 'Approve'),
-            h('option', { value: 'copy', selected: person.role === 'copy' }, 'Read only'))),
+          h('select', {
+            onchange: (e) => { person.role = e.target.value; draw(); },
+          },
+          h('option', { value: 'signer', selected: person.role === 'signer' }, 'Sign'),
+          h('option', { value: 'approver', selected: person.role === 'approver' }, 'Approve'),
+          h('option', { value: 'copy', selected: person.role === 'copy' }, 'Read only'))),
+        // Per person, because "this one is going to a solicitor I have on the
+        // telephone" is a sentence about one recipient rather than about the
+        // envelope. Somebody copied in has no link, so nothing to protect.
+        person.role === 'copy'
+          ? null
+          : h('label.tickline.list-row-tick',
+            h('input', {
+              type: 'checkbox',
+              checked: person.code !== false,
+              onchange: (e) => { person.code = e.target.checked; },
+            }),
+            h('span', 'Needs an access code',
+              h('small.muted', person.code === false
+                ? ' — the link alone will open it'
+                : ' — told to them separately'))),
       ),
       h('button.btn-sm.list-row-remove', {
         type: 'button',
@@ -447,9 +471,9 @@ async function sendOut(data, model, reload) {
     title: 'Send for signature',
     submitLabel: 'Make the links',
     body: h('div',
-      h('p.muted', 'They sign in the order listed. Only the first person’s link works until they '
-        + 'have dealt with it — a letter counter-signed before it was signed is one nobody can '
-        + 'reason about afterwards.'),
+      h('p.muted', 'Everybody on the envelope, what each is asked to do, and how they are '
+        + 'checked. Places you marked on the page are filled in the order the signers are '
+        + 'listed here.'),
 
       parties.length
         ? field('Add from the address book', h('select', {
@@ -476,6 +500,10 @@ async function sendOut(data, model, reload) {
       }, '+ Add another'),
 
       h('div.field-row', { style: { marginTop: '.8rem' } },
+        field('They sign', h('select', { name: 'routing' },
+          h('option', { value: 'order' }, 'In the order listed'),
+          h('option', { value: 'all' }, 'All at once')),
+        'In order, the second link stays shut until the first person is done'),
         field('Links last for', h('select', { name: 'days' },
           [7, 14, 21, 30, 60].map((n) => h('option', {
             value: n, selected: n === model.linkDays,
@@ -483,12 +511,14 @@ async function sendOut(data, model, reload) {
       ),
 
       h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
-        'Each signer gets a six-character access code as well as the link. Give it to them by a '
-        + 'different route — read it out on a call — so a forwarded link on its own opens nothing.'),
+        'An access code is a six-character secret told to the person by another route — read '
+        + 'out on a call — so a forwarded link on its own opens nothing. Turn it off for '
+        + 'somebody where that is more friction than the letter is worth.'),
     ),
     onSubmit: async (form) => api.corrSendForSignature(data.letter.id, {
       recipients: people.filter((p) => String(p.name ?? '').trim()),
       days: Number(form.get('days')),
+      routing: form.get('routing'),
     }),
   });
 
@@ -511,11 +541,17 @@ async function showLinks(result) {
             + 'Lose one and you make another.'),
         )),
 
+      result.routing === 'all'
+        ? h('p.muted', { style: { fontSize: '.85rem' } },
+          'Every link is live now, so they can sign in any order.')
+        : h('p.muted', { style: { fontSize: '.85rem' } },
+          'Only the first link opens. The next one starts working when that person is done.'),
+
       result.recipients.map((r) => (r.url
         ? h('div', { style: { marginBottom: '1rem' } },
           h('h4', { style: { marginBottom: '.2rem' } }, `${r.seq}. ${r.name}`),
-          h('textarea.link-box', { rows: 3, readonly: true, onclick: (e) => e.target.select() },
-            `${r.url}\n\nAccess code: ${r.code}`),
+          h('textarea.link-box', { rows: r.code ? 3 : 2, readonly: true, onclick: (e) => e.target.select() },
+            r.code ? `${r.url}\n\nAccess code: ${r.code}` : r.url),
           h('div.btn-row',
             h('button.btn-sm.btn-primary', {
               onclick: async (e) => {
@@ -529,13 +565,18 @@ async function showLinks(result) {
               ? h('a.btn-sm', {
                 href: `mailto:${r.email}?subject=${encodeURIComponent('Document for your signature')}`
                   + `&body=${encodeURIComponent(`Please open this link to sign:\n\n${r.url}\n\n`
-                    + 'You will be asked for an access code, which I will give you separately.')}`,
+                    + (r.code
+                      ? 'You will be asked for an access code, which I will give you separately.'
+                      : ''))}`,
               }, 'Email it')
               : null,
           ),
-          h('p.muted', { style: { fontSize: '.82rem' } },
-            'Access code ', h('strong.mono', r.code),
-            ' — tell them this on a call, not in the same message as the link.'),
+          r.code
+            ? h('p.muted', { style: { fontSize: '.82rem' } },
+              'Access code ', h('strong.mono', r.code),
+              ', to be told on a call rather than in the same message as the link.')
+            : h('p.muted', { style: { fontSize: '.82rem' } },
+              'No access code: whoever holds this link can open and sign it.'),
         )
         : h('p.muted', `${r.seq}. ${r.name} — copied in for information, no link needed.`))),
 

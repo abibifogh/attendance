@@ -41,6 +41,9 @@ export const state = {
   isRecovery: false,
   permissions: [],
   settings: {},
+  // Which staff record this login belongs to, or null. Decides whether the
+  // screens about oneself mean anything.
+  staffId: null,
   // What the permissions and roles are called, sent with the session so the
   // guide can name one the reader does not hold.
   permissionLabels: {},
@@ -113,7 +116,12 @@ const root = document.getElementById('app');
 export function can(permission) {
   if (!permission) return true;
   const needed = Array.isArray(permission) ? permission : [permission];
-  return needed.some((p) => state.permissions.includes(p));
+  // "Your own" needs a you. An administrator holds every permission there is,
+  // including this one, and with no staff record behind the login there is
+  // nothing of theirs to show — a menu item that opens an apology is worse
+  // than no menu item.
+  return needed.some((p) => state.permissions.includes(p)
+    && (p !== 'att_me' || state.staffId != null));
 }
 
 function allowed(route) {
@@ -415,6 +423,7 @@ window.addEventListener('online', () => { api.me().catch(() => {}); });
       state.isRecovery = Boolean(me.isRecovery);
       state.permissions = me.permissions || [];
       state.settings = me.settings || {};
+      state.staffId = me.staffId ?? null;
       state.permissionLabels = me.permissionLabels || {};
       state.roleLabels = me.roleLabels || {};
     }

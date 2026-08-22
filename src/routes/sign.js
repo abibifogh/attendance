@@ -2,7 +2,7 @@ import { badRequest, forbidden, json, notFound, readJson, str } from '../lib/htt
 import { getPepper, hashPin, throttleCheck, throttleFail } from '../lib/auth.js';
 import { sendEmail } from '../lib/notify.js';
 import { sha256Hex } from '../lib/files.js';
-import { currentSigner } from '../lib/correspondence.js';
+import { whoCanSign } from '../lib/correspondence.js';
 import { normaliseLayout } from '../lib/paper.js';
 import { appendEvent, hashAccessCode, hashSignToken } from './correspondence.js';
 
@@ -70,15 +70,20 @@ async function recipientFor(ctx, token) {
  * document out of sequence or a link that appears broken.
  */
 async function assertTurn(ctx, recipient) {
-  const others = await ctx.db.prepare('SELECT * FROM corr_recipient WHERE letter_id = ? ORDER BY seq, id')
-    .bind(recipient.letter_id).all();
-  const turn = currentSigner(others.results ?? []);
+  const [others, letter] = await Promise.all([
+    ctx.db.prepare('SELECT * FROM corr_recipient WHERE letter_id = ? ORDER BY seq, id')
+      .bind(recipient.letter_id).all(),
+    ctx.db.prepare('SELECT routing FROM corr_letter WHERE id = ?').bind(recipient.letter_id).first(),
+  ]);
 
-  if (turn && turn.id !== recipient.id) {
+  // An envelope sent to everybody at once has no queue to wait in.
+  const open = whoCanSign(others.results ?? [], letter?.routing ?? 'order');
+  if (open.length && !open.some((r) => r.id === recipient.id)) {
+    const turn = open[0];
     throw forbidden(`It is not your turn yet — this is with ${turn.name} first. `
       + 'Your link will work once they have dealt with it.');
   }
-  return turn;
+  return open[0] ?? null;
 }
 
 async function property(db) {
@@ -144,9 +149,34 @@ export async function signOpen(ctx, token) {
       .bind(letter.letterhead_id).first().catch(() => null)
     : null;
 
+  // Everybody on the envelope, so the page can draw each signature in the
+  // place it belongs and say whose the empty ones are. Names and status only:
+  // an email address on this list would be handing one supplier another's.
+  const party = await ctx.db.prepare(
+    `SELECT seq, role, name, organisation, status, signed_at, signer_name, signature_ink
+       FROM corr_recipient WHERE letter_id = ? ORDER BY seq, id`,
+  ).bind(letter.id).all().catch(() => ({ results: [] }));
+
   return json({
     property: await property(ctx.db),
-    you: { name: recipient.name, role: recipient.role, status: recipient.status },
+    you: {
+      name: recipient.name,
+      role: recipient.role,
+      status: recipient.status,
+      // Which places on the page are theirs to fill.
+      seq: recipient.seq,
+    },
+    // In seq order, so position N in the list is the signer the page calls N.
+    recipients: (party.results ?? []).map((r) => ({
+      seq: r.seq,
+      role: r.role,
+      name: r.name,
+      organisation: r.organisation,
+      status: r.status,
+      signedAt: r.signed_at,
+      signerName: r.signer_name,
+      signatureInk: r.signature_ink,
+    })),
     // An email address is never shown back in full: a forwarded link should
     // not tell whoever opens it where the code would be sent.
     emailHint: recipient.email ? maskEmail(recipient.email) : null,

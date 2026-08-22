@@ -217,3 +217,51 @@ test('what a month expected is set by whoever sets the property up', () => {
   assert.equal(reaches('supervisor', 'POST', '/api/att/calendar'), false);
   assert.equal(reaches('planner', 'POST', '/api/att/calendar'), false);
 });
+
+// ---------------------------------------------------------------------------
+// Somebody who is on the rota as well as running it
+// ---------------------------------------------------------------------------
+
+test('a login pointed at a staff record sees its own week, whatever role it holds', () => {
+  // The head of housekeeping rosters her own department and works shifts in
+  // it. Before this she could build the rota and had no way to open her own
+  // month, because "your own" lived on one role.
+  for (const role of ['supervisor', 'planner', 'manager', 'viewer', 'admin']) {
+    const without = effectivePermissions({ role, permissions: null });
+    const with_ = effectivePermissions({ role, permissions: null, staff_id: 4 });
+
+    // An administrator holds every permission there is, so it already has it;
+    // the menu is what decides whether it means anything, and it asks whether
+    // there is a staff record rather than asking this list.
+    if (role !== 'admin') {
+      assert.equal(without.includes('att_me'), false, `${role} without a record`);
+    }
+    assert.ok(with_.includes('att_me'), `${role} with one`);
+
+    // And it adds nothing else. A staff record is not a promotion.
+    assert.deepEqual(
+      with_.filter((p) => p !== 'att_me').sort(),
+      without.filter((p) => p !== 'att_me').sort(),
+      `${role} gains only their own screens`,
+    );
+  }
+});
+
+test('a staff record does not smuggle in anybody else’s week', () => {
+  const held = effectivePermissions({ role: 'viewer', permissions: null, staff_id: 9 });
+  // Their own, and nothing that reads across people.
+  assert.ok(held.includes('att_me'));
+  assert.equal(held.includes('att_rota'), false);
+  assert.equal(held.includes('hr_pay'), false);
+  assert.equal(held.includes('users'), false);
+});
+
+test('a custom permission list still gains their own screens', () => {
+  // Ticking boxes by hand replaces the role's defaults outright, and the
+  // staff link has to survive that or the field would look like it did
+  // nothing on exactly the accounts somebody has bothered to tailor.
+  const held = effectivePermissions({
+    role: 'supervisor', permissions: JSON.stringify(['att_view']), staff_id: 2,
+  });
+  assert.deepEqual(held.sort(), ['att_me', 'att_view']);
+});

@@ -737,6 +737,11 @@ async function me(ctx) {
     email: session.user.email ?? null,
     userId: session.user.id,
     isRecovery: Boolean(session.user.isRecovery),
+    // Whether this login belongs to somebody on the rota. The menu uses it to
+    // decide whether "my own" means anything: an administrator holds every
+    // permission there is, and with no staff record behind it My shifts would
+    // open an apology.
+    staffId: session.user.staff_id ?? null,
     signsInWith: session.user.role === 'admin' ? 'password' : 'pin',
     permissions: session.permissions,
     // What each one is called. Thirteen short strings sent with the session,

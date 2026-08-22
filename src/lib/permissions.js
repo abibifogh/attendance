@@ -179,6 +179,15 @@ export function effectivePermissions(user) {
     }
   }
 
+  // Somebody who is on the rota as well as running it sees their own week.
+  //
+  // A supervisor who works shifts, a manager who covers a night, an
+  // administrator who is also on the payroll: pointing their login at a staff
+  // record is what says so, and once it is said the screens about themselves
+  // are theirs whatever else they hold. Nothing else follows from it, and it
+  // grants nothing about anybody else.
+  if (user.staff_id != null && !list.includes('att_me')) list.push('att_me');
+
   if (user.role === 'admin' && !list.includes('users')) list.push('users');
   // And the same argument for the employee records: an administrator who could
   // not open them would be looking at the one screen that can grant them.

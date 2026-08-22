@@ -34,7 +34,7 @@ export const faceCss = (key) => FACES[key] ?? FACES.serif;
  * can select and drag. Everywhere else they are just words on paper.
  */
 export function paperPage(letter, page = 1, {
-  scale = 1, interactive = false, onBlock = null, selected = null,
+  scale = 1, interactive = false, onBlock = null, selected = null, mine = null,
 } = {}) {
   const layout = letter.layout ?? { blocks: [] };
   const head = letter.letterhead ?? null;
@@ -50,28 +50,31 @@ export function paperPage(letter, page = 1, {
     },
   },
   blocks.map((block) => {
-    const el = h(interactive ? 'div.paper-block.paper-live' : 'div.paper-block', {
-      'data-block': block.id,
-      class: selected === block.id ? 'paper-on' : '',
-      style: {
-        left: `${block.x}%`,
-        top: `${block.y}%`,
-        width: `${block.w}%`,
-        fontFamily: faceCss(block.face),
-        fontSize: `${block.size}pt`,
-        lineHeight: String(block.line),
-        textAlign: block.align,
-        fontWeight: block.bold ? '700' : '400',
-      },
-      html: block.html || (interactive ? '<p><br></p>' : ''),
-    });
+    const el = block.role === 'field'
+      ? fieldBlock(block, letter, { interactive, selected, mine })
+      : h(interactive ? 'div.paper-block.paper-live' : 'div.paper-block', {
+        'data-block': block.id,
+        class: selected === block.id ? 'paper-on' : '',
+        style: {
+          left: `${block.x}%`,
+          top: `${block.y}%`,
+          width: `${block.w}%`,
+          fontFamily: faceCss(block.face),
+          fontSize: `${block.size}pt`,
+          lineHeight: String(block.line),
+          textAlign: block.align,
+          fontWeight: block.bold ? '700' : '400',
+        },
+        html: block.html || (interactive ? '<p><br></p>' : ''),
+      });
     if (interactive && onBlock) onBlock(block, el);
     return el;
   }),
 
-  // Where the signature goes, once there is one. Drawn rather than stored as
-  // a block, because it is not something anybody may move after the fact.
-  page === lastPage(layout) ? signatures(letter) : null);
+  // Where the signatures go when the page does not say. A letter with places
+  // marked on it puts them there instead; stacking them at the foot as well
+  // would print every signature twice.
+  page === lastPage(layout) && !hasFields(layout) ? signatures(letter) : null);
 
   if (scale === 1) return sheet;
 
@@ -93,6 +96,93 @@ export function paper(letter, options = {}) {
   const pages = lastPage(letter.layout);
   return h('div.paper-stack',
     Array.from({ length: pages }, (_, i) => paperPage(letter, i + 1, options)));
+}
+
+export const hasFields = (layout) => (layout?.blocks ?? []).some((b) => b.role === 'field');
+
+/**
+ * A place on the page for somebody to put their name.
+ *
+ * Three states and they read differently on purpose. Empty, it is a dashed
+ * box saying whose it is, because a signer opening a two-page agreement should
+ * be able to find their line without reading it twice. Theirs to fill, it is
+ * highlighted and nobody else's is. Filled, it is the ink, over a rule, with
+ * the name and the date under it — which is what it will look like on paper
+ * and therefore what everybody has to agree it looks like now.
+ */
+function fieldBlock(block, letter, { interactive, selected, mine }) {
+  const filled = fillFor(block, letter);
+  const isMine = mine != null && block.signer === mine;
+
+  const classes = [
+    'paper-field',
+    interactive ? 'paper-live' : '',
+    selected === block.id ? 'paper-on' : '',
+    filled ? 'is-filled' : '',
+    isMine && !filled ? 'is-mine' : '',
+  ].filter(Boolean).join(' ');
+
+  return h('div', {
+    class: classes,
+    'data-block': block.id,
+    'data-field': block.field,
+    style: {
+      left: `${block.x}%`,
+      top: `${block.y}%`,
+      width: `${block.w}%`,
+      height: `${block.h ?? 7}%`,
+    },
+  },
+  filled
+    ? filledField(block, filled)
+    : h('div.paper-field-empty',
+      h('div.paper-field-what', labelOf(block, letter)),
+      isMine ? h('div.paper-field-cue', 'Sign here') : null));
+}
+
+const labelOf = (block, letter) => block.label
+  || `${FIELD_WORDS[block.field] ?? 'Signature'} · ${whose(block, letter)}`;
+
+const FIELD_WORDS = { signature: 'Signature', initials: 'Initials', date: 'Date signed' };
+
+function whose(block, letter) {
+  if (block.signer === 0) return letter.property || 'The property';
+  const person = (letter.recipients ?? [])[block.signer - 1];
+  return person?.name || `Signer ${block.signer}`;
+}
+
+/** What has landed in this place, if anything. */
+function fillFor(block, letter) {
+  if (block.signer === 0) {
+    if (!letter.signature_ink && !letter.signed_at) return null;
+    return {
+      ink: letter.signature_ink,
+      name: letter.signed_by,
+      title: letter.signed_title,
+      at: letter.signed_at,
+      stamp: letter.stamp,
+    };
+  }
+  const person = (letter.recipients ?? [])[block.signer - 1];
+  if (!person || person.status !== 'signed') return null;
+  return {
+    ink: person.signatureInk ?? null,
+    name: person.signerName || person.name,
+    title: person.organisation,
+    at: person.signedAt,
+  };
+}
+
+function filledField(block, fill) {
+  if (block.field === 'date') {
+    return h('div.paper-field-date', String(fill.at ?? '').slice(0, 10));
+  }
+  return h('div.paper-field-ink',
+    fill.ink ? h('img', { src: fill.ink, alt: '' }) : h('span.paper-field-typed', fill.name || ''),
+    fill.stamp ? h('img.paper-field-stamp', { src: fill.stamp, alt: '' }) : null,
+    h('div.paper-field-rule'),
+    h('div.paper-field-name', [fill.name, fill.title].filter(Boolean).join(' · ')),
+    fill.at ? h('div.paper-field-when', String(fill.at).slice(0, 10)) : null);
 }
 
 /**
