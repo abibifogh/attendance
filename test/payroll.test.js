@@ -6,7 +6,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { BANDS, RATES, bonusTaxOn, grossUpBonus, payeOn, ratesFrom, ssnitOn } from '../src/lib/tax.js';
 import { computeLine, totalsOf } from '../src/lib/payroll.js';
 import {
-  addPenalty, closeRun, payroll, payslip, reopenRun, saveScheme, setProfiles, setScores,
+  addPenalty, closeRun, copyRun, payroll, payslip, reopenRun, saveScheme, setProfiles,
+  setScores,
 } from '../src/routes/payroll.js';
 import { addAdvance, advances } from '../src/routes/advances.js';
 
@@ -484,4 +485,133 @@ test('a scheme keeps the department it was filed under', async () => {
   }));
   const back = await read(await payroll(ctx(db, WAGES, { url: `/api/payroll?month=${MONTH}` })));
   assert.equal(back.schemes.find((s) => s.id === made.id).department, null);
+});
+
+
+// ---------------------------------------------------------------------------
+// Starting a month from the one before it
+// ---------------------------------------------------------------------------
+
+/** August scored and docked, ready to be carried into September. */
+async function august(db) {
+  await onPayroll(db);
+  const scheme = await read(await saveScheme(ctx(db, WAGES, {
+    body: { name: 'Guest scores', amount: 500, staffIds: [1, 2] },
+  })));
+  await setScores(ctx(db, WAGES, {
+    body: {
+      month: '2026-08',
+      rows: [
+        { schemeId: scheme.id, staffId: 1, score: 80 },
+        { schemeId: scheme.id, staffId: 2, score: 40 },
+      ],
+    },
+  }));
+  await addPenalty(ctx(db, WAGES, {
+    body: { month: '2026-08', staffId: 1, amount: 100, reason: 'Late three times' },
+  }));
+  return scheme;
+}
+
+test('a month starts from the one before it, scores and all', async () => {
+  const { db } = setup();
+  const scheme = await august(db);
+
+  const out = await read(await copyRun(ctx(db, WAGES, { body: { month: MONTH } })));
+  assert.equal(out.from, '2026-08');
+  assert.equal(out.scores, 2);
+  assert.equal(out.penalties, 0, 'misconduct does not follow somebody into the next month');
+
+  const now = await read(await payroll(ctx(db, WAGES, { query: `?month=${MONTH}` })));
+  const carried = now.schemes.find((s) => s.id === scheme.id).scores;
+  assert.deepEqual(
+    carried.sort((a, b) => a.staffId - b.staffId),
+    [{ staffId: 1, score: 80 }, { staffId: 2, score: 40 }],
+  );
+  assert.deepEqual(now.penalties, []);
+});
+
+test('misconduct comes across only when it is asked for', async () => {
+  const { db } = setup();
+  await august(db);
+
+  const out = await read(await copyRun(ctx(db, WAGES, {
+    body: { month: MONTH, penalties: true },
+  })));
+  assert.equal(out.penalties, 1);
+
+  const now = await read(await payroll(ctx(db, WAGES, { query: `?month=${MONTH}` })));
+  assert.equal(now.penalties.length, 1);
+  assert.equal(now.penalties[0].amount, 100);
+  assert.equal(now.penalties[0].reason, 'Late three times');
+
+  // Twice does not mean twice the money.
+  await copyRun(ctx(db, WAGES, { body: { month: MONTH, penalties: true } }));
+  const again = await read(await payroll(ctx(db, WAGES, { query: `?month=${MONTH}` })));
+  assert.equal(again.penalties.length, 1);
+});
+
+test('somebody taken off a scheme since is not scored on it again', async () => {
+  const { db } = setup();
+  const scheme = await august(db);
+
+  // Kofi comes off the scheme in September.
+  await saveScheme(ctx(db, WAGES, {
+    body: { id: scheme.id, name: 'Guest scores', amount: 500, staffIds: [1] },
+  }));
+
+  const out = await read(await copyRun(ctx(db, WAGES, { body: { month: MONTH } })));
+  assert.equal(out.scores, 1);
+
+  const now = await read(await payroll(ctx(db, WAGES, { query: `?month=${MONTH}` })));
+  assert.deepEqual(now.schemes.find((s) => s.id === scheme.id).scores, [{ staffId: 1, score: 80 }]);
+});
+
+test('what is already scored this month is replaced, not added to', async () => {
+  const { db } = setup();
+  const scheme = await august(db);
+
+  await setScores(ctx(db, WAGES, {
+    body: { month: MONTH, rows: [{ schemeId: scheme.id, staffId: 1, score: 10 }] },
+  }));
+  await copyRun(ctx(db, WAGES, { body: { month: MONTH } }));
+
+  const now = await read(await payroll(ctx(db, WAGES, { query: `?month=${MONTH}` })));
+  const scores = now.schemes.find((s) => s.id === scheme.id).scores;
+  assert.equal(scores.find((x) => x.staffId === 1).score, 80, 'last month wins over the stale 10');
+});
+
+test('a month cannot be started from itself or from a later one', async () => {
+  const { db } = setup();
+  await august(db);
+
+  await assert.rejects(
+    () => copyRun(ctx(db, WAGES, { body: { month: MONTH, from: MONTH } })),
+    /earlier one/,
+  );
+  await assert.rejects(
+    () => copyRun(ctx(db, WAGES, { body: { month: '2026-08', from: MONTH } })),
+    /earlier one/,
+  );
+});
+
+test('a month with no payroll behind it has nothing to give', async () => {
+  const { db } = setup();
+  await onPayroll(db);
+
+  await assert.rejects(
+    () => copyRun(ctx(db, WAGES, { body: { month: MONTH, from: '2025-01' } })),
+    /no payroll for 2025-01/,
+  );
+});
+
+test('a closed month refuses to have anything copied into it', async () => {
+  const { db } = setup();
+  await august(db);
+  await closeRun(ctx(db, WAGES, { body: { month: MONTH } }));
+
+  await assert.rejects(
+    () => copyRun(ctx(db, WAGES, { body: { month: MONTH } })),
+    /closed/,
+  );
 });

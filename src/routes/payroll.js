@@ -3,7 +3,7 @@ import { createNotice } from '../lib/notices.js';
 import { balanceOf, dueThisMonth } from '../lib/advances.js';
 import { computeLine, totalsOf } from '../lib/payroll.js';
 import { ratesFrom, round2 } from '../lib/tax.js';
-import { isMonth, monthOf, todayIn } from '../util/dates.js';
+import { addMonths, isMonth, monthOf, todayIn } from '../util/dates.js';
 
 /**
  * The payroll.
@@ -411,6 +411,79 @@ export async function removeScheme(ctx, idParam) {
   await ctx.db.prepare('DELETE FROM pay_scheme WHERE id = ?').bind(id).run();
   await audit(ctx, 'payroll.scheme_remove', id, {});
   return json({ ok: true });
+}
+
+/**
+ * Start a month from the one before it.
+ *
+ * What somebody is paid and what schemes they are under are standing things:
+ * those carry over on their own and there is nothing to copy. What does not
+ * is the month's own working, and most of that is the same as last month's
+ * with two or three lines changed. Typing thirty scores again to change two
+ * is how a wrong one gets typed.
+ *
+ * MISCONDUCT DOES NOT COPY UNLESS IT IS ASKED FOR. Money taken off the bonus
+ * belongs to the month it happened in. Carrying it forward by default would
+ * dock somebody twice for one thing, and they would find out on payday.
+ */
+export async function copyRun(ctx) {
+  const body = await readJson(ctx.request);
+  const { timezone } = await settingsOf(ctx.db);
+  const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
+  const from = isMonth(body.from) ? body.from : addMonths(month, -1);
+  if (from >= month) throw badRequest('A month can only be started from an earlier one.');
+
+  const source = await ctx.db.prepare('SELECT * FROM pay_run WHERE month = ?').bind(from).first();
+  if (!source) throw notFound(`There is no payroll for ${from} to copy.`);
+
+  const run = await runFor(ctx.db, month, actorOf(ctx));
+  if (run.status === 'final') {
+    throw badRequest('That month is closed. Open it again before copying anything into it.');
+  }
+
+  const wantsPenalties = body.penalties === true;
+
+  // Only scores for a scheme somebody is still under. A person taken off a
+  // scheme since last month is not scored on it, and a scheme that has gone
+  // has nothing to score.
+  const carried = await ctx.db.prepare(
+    `SELECT s.scheme_id, s.staff_id, s.score
+       FROM pay_score s
+       JOIN pay_scheme_staff m
+         ON m.scheme_id = s.scheme_id AND m.staff_id = s.staff_id
+       JOIN att_staff p ON p.id = s.staff_id AND p.active = 1
+      WHERE s.run_id = ?1`,
+  ).bind(source.id).all();
+
+  let scores = 0;
+  for (const row of carried.results ?? []) {
+    await ctx.db.prepare(
+      `INSERT INTO pay_score (run_id, scheme_id, staff_id, score) VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT (run_id, scheme_id, staff_id) DO UPDATE SET score = ?4, amount = NULL`,
+    ).bind(run.id, row.scheme_id, row.staff_id, round2(row.score)).run();
+    scores += 1;
+  }
+
+  let penalties = 0;
+  if (wantsPenalties) {
+    const old = await ctx.db.prepare(
+      `SELECT p.staff_id, p.amount, p.reason
+         FROM pay_penalty p JOIN att_staff s ON s.id = p.staff_id AND s.active = 1
+        WHERE p.run_id = ?1 ORDER BY p.id`,
+    ).bind(source.id).all();
+    // Wholesale, like the scores: copying onto a month that already has some
+    // would double them, and the button says it replaces.
+    await ctx.db.prepare('DELETE FROM pay_penalty WHERE run_id = ?').bind(run.id).run();
+    for (const row of old.results ?? []) {
+      await ctx.db.prepare(
+        'INSERT INTO pay_penalty (run_id, staff_id, amount, reason, actor) VALUES (?1, ?2, ?3, ?4, ?5)',
+      ).bind(run.id, row.staff_id, round2(row.amount), row.reason, actorOf(ctx)).run();
+      penalties += 1;
+    }
+  }
+
+  await audit(ctx, 'payroll.copy', month, { from, scores, penalties });
+  return json({ ok: true, month, from, scores, penalties });
 }
 
 /** This month's scores, scheme by scheme, in one submission. */

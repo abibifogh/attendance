@@ -54,13 +54,22 @@ export async function renderAttPayroll(params) {
         h('div.sub', `${niceMonth(month)} · ${data.rates.label}`),
       ),
       h('div.btn-row',
-        h('button.btn-sm', { onclick: () => reload({ month: shiftMonth(month, -1) }) }, '‹'),
-        h('input', {
-          type: 'month', value: month, 'aria-label': 'Month',
-          onchange: (e) => e.target.value && reload({ month: e.target.value }),
-        }),
-        h('button.btn-sm', { onclick: () => reload({ month: shiftMonth(month, 1) }) }, '›'),
-        h('button.btn-sm', { onclick: () => reload({ month: monthOf(todayISO()) }) }, 'This month')),
+        // The month and its two arrows stay together: wrapping between them
+        // leaves an arrow stranded above the box it moves.
+        h('div.btn-row.pay-month-pick',
+          h('button.btn-sm', { onclick: () => reload({ month: shiftMonth(month, -1) }) }, '‹'),
+          h('input', {
+            type: 'month', value: month, 'aria-label': 'Month',
+            onchange: (e) => e.target.value && reload({ month: e.target.value }),
+          }),
+          h('button.btn-sm', { onclick: () => reload({ month: shiftMonth(month, 1) }) }, '›')),
+        h('button.btn-sm', { onclick: () => reload({ month: monthOf(todayISO()) }) }, 'This month'),
+        closed
+          ? null
+          : h('button.btn-sm', {
+            title: 'Bring last month\u2019s scores across so only what changed is typed',
+            onclick: () => startFrom(month, reload),
+          }, 'Start from last month')),
     ),
 
     closed
@@ -175,6 +184,51 @@ export async function renderAttPayroll(params) {
   );
 
   return host;
+}
+
+/**
+ * Start this month from an earlier one.
+ *
+ * Salaries, allowances and who is under which scheme are standing things and
+ * carry over by themselves. What this brings across is the month's own
+ * working: the scores. Misconduct is asked about rather than assumed, because
+ * money taken off in June is not money taken off in July.
+ */
+async function startFrom(month, reload) {
+  const previous = shiftMonth(month, -1);
+
+  const pick = h('input', { type: 'month', name: 'from', value: previous, max: shiftMonth(month, -1) });
+  const penalties = h('input', { type: 'checkbox', name: 'penalties' });
+
+  const done = await formDialog({
+    title: `Start ${niceMonth(month)} from an earlier month`,
+    submitLabel: 'Bring it across',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.9rem', marginTop: 0 } },
+        'Salaries, allowances and who is under which scheme are not monthly things, so they are '
+        + 'already here. What comes across is the scoring, which is mostly the same month to '
+        + 'month, so only what changed has to be typed.'),
+      field('Copy from', pick),
+      h('label.tickline', penalties,
+        h('span', 'Also what came off for misconduct',
+          h('small.muted', ' \u00b7 leave this alone unless the same deduction runs every month'))),
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'Scores already typed into this month are replaced. Anybody taken off a scheme since, '
+        + 'or who has left, is left out.')),
+    onSubmit: () => api.payrollCopy({
+      month,
+      from: pick.value || previous,
+      penalties: penalties.checked,
+    }),
+  });
+
+  if (!done) return;
+  const bits = [`${done.scores} score${done.scores === 1 ? '' : 's'}`];
+  if (done.penalties) bits.push(`${done.penalties} off the bonus`);
+  toast(done.scores || done.penalties
+    ? `Brought across: ${bits.join(' and ')}.`
+    : 'There was nothing to bring across.', done.scores ? 'good' : 'warn');
+  await reload();
 }
 
 // --------------------------------------------------------------------------

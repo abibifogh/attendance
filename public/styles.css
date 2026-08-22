@@ -2680,6 +2680,8 @@ html { touch-action: manipulation; }
 .pay-row:focus-visible > td:first-child { outline: 2px solid var(--accent); outline-offset: -2px; }
 .pay-total > td { border-top: 2px solid var(--border-strong); font-variant-numeric: tabular-nums; }
 .pay-score { width: 4.5rem; text-align: right; }
+.pay-month-pick { flex-wrap: nowrap; }
+.pay-month-pick input { min-width: 9rem; }
 
 /* Schemes under the department they belong to, with the property-wide ones
    last under General. A flat run of cards was unreadable past about six. */
