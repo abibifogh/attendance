@@ -73,9 +73,12 @@ export async function renderAttMyMedical(params) {
 
         s.carriedIn
           ? h('p.muted', { style: { fontSize: '.85rem' } },
-            `Your allowance for ${year} is ${cash(s.allowance)}. ${cash(s.carriedIn)} of it had `
-            + 'already been claimed before this app was keeping the record, so the balance above '
-            + 'starts from what was left.')
+            `Your allowance for ${year} is ${cash(s.allowance)}, and you started the year with `
+            + `${cash(s.opening)}. `
+            + (s.carriedIn > 0
+              ? `The extra ${cash(s.carriedIn)} was carried over from last year.`
+              : `${cash(Math.abs(s.carriedIn))} of it had already been claimed before the app `
+                + 'was keeping the record.'))
           : null,
 
         s.ifAllApproved < 0

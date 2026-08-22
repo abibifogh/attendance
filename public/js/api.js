@@ -222,6 +222,7 @@ export const api = {
   advanceAdjust: (id, body) => request(`/api/advances/${id}`, { method: 'PATCH', body }),
   advanceEntry: (id, body) => request(`/api/advances/${id}/entry`, { method: 'POST', body }),
   advanceRemoveEntry: (id, entryId) => request(`/api/advances/${id}/entry/${entryId}`, { method: 'DELETE' }),
+  advancePaperUrl: (id) => `/api/advances/${id}/paper`,
 
   // ------------------------------------------------------------- medical --
   medical: (year) => request(`/api/medical${year ? `?year=${year}` : ''}`),

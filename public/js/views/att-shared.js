@@ -229,11 +229,21 @@ export function byPosition(shifts) {
     groups.get(key).shifts.push(shift);
   }
 
-  // Ordered as the shifts themselves are, by whichever of theirs comes first.
-  return [...groups.values()].map((group) => ({
-    ...group,
-    grouped: group.grouped && group.shifts.length > 1,
-  }));
+  // Within a position, earliest start at the top: a group is read as the shape
+  // of a day — who opens, who follows, who closes — and any other order makes
+  // somebody check three clocks to work out which is which.
+  const byStart = (a, b) => String(a.starts_at ?? '').localeCompare(String(b.starts_at ?? ''))
+    || String(a.name ?? '').localeCompare(String(b.name ?? ''));
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      shifts: [...group.shifts].sort(byStart),
+      grouped: group.grouped && group.shifts.length > 1,
+    }))
+    // And the positions themselves in the same order, by the earliest shift in
+    // each, so the whole column reads down the day.
+    .sort((a, b) => byStart(a.shifts[0] ?? {}, b.shifts[0] ?? {}));
 }
 
 /**

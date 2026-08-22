@@ -242,7 +242,14 @@ function personRows(person, { cash, reload }) {
   h('td.num', s
     ? h('div',
       cash(s.opening),
-      s.carriedIn ? h('small.muted', ` of ${cash(s.allowance)}`) : null)
+      // Where the two differ, the year's own figure sits under it: one of them
+      // is what they may spend and the other is what they were given, and a
+      // column showing only one of them invites the wrong question.
+      s.carriedIn
+        ? h('small.muted', s.carriedIn > 0
+          ? ` ${cash(s.allowance)} + ${cash(s.carriedIn)} carried over`
+          : ` of ${cash(s.allowance)}`)
+        : null)
     : h('span.muted', 'none set')),
   h('td.num', s ? cash(s.spent) : h('span.muted', '—')),
   h('td.num', s ? h('strong', cash(s.left)) : h('span.muted', '—')),
@@ -337,8 +344,9 @@ async function setAllowances(data, reload) {
     body: h('div',
       h('p.muted', { style: { fontSize: '.85rem' } },
         'Tick everybody who qualifies this year and say what they get. Leave the starting '
-        + 'balance blank unless they had already claimed something before the app was keeping '
-        + 'the record — then put what was actually left.'),
+        + 'balance blank where it is simply the allowance. Fill it in where it is not: less '
+        + 'if part of this year has already been claimed on paper, more if something unused '
+        + 'was carried over from last year.'),
 
       h('div.med-everyone',
         field('Give everybody ticked the same', everyone),

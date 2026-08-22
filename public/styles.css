@@ -28,6 +28,11 @@
      ground, where the icon's own amber goes to nothing. */
   --brand-mark: #d18617;
 
+  /* A message about something that just happened is not a card. It is a
+     snackbar: its own ground, lifted off the page, gone in a moment. */
+  --toast-bg: #161b23;
+  --toast-ink: #f4f6fa;
+
   --c1: #2f6df6; --c2: #12a594; --c3: #d97706; --c4: #8b5cf6;
   --c5: #e11d48; --c6: #0891b2; --c7: #65a30d; --c8: #db2777;
 
@@ -64,6 +69,8 @@
     --bad-soft: #2e1719;
     --info: #a78bfa;
     --brand-mark: #f0a94c;
+    --toast-bg: #2b333f;
+    --toast-ink: #f4f6fa;
 
     --c1: #5b8bff; --c2: #2dd4bf; --c3: #fbbf24; --c4: #a78bfa;
     --c5: #fb7185; --c6: #22d3ee; --c7: #a3e635; --c8: #f472b6;
@@ -80,6 +87,7 @@
   --warn: #f0a94c; --warn-soft: #2e2413;
   --bad: #f87171; --bad-soft: #2e1719; --info: #a78bfa;
   --brand-mark: #f0a94c;
+  --toast-bg: #2b333f; --toast-ink: #f4f6fa;
   --c1: #5b8bff; --c2: #2dd4bf; --c3: #fbbf24; --c4: #a78bfa;
   --c5: #fb7185; --c6: #22d3ee; --c7: #a3e635; --c8: #f472b6;
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -14px rgba(0, 0, 0, .6);
@@ -390,14 +398,27 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 /* -------------------------------------------------------------- toasts --- */
 .toasts { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); z-index: 100; display: grid; gap: .4rem; width: min(420px, calc(100vw - 2rem)); }
 /* Lift toasts clear of the entry screen's fixed action bar. */
+/* Its own dark ground rather than the page's surface. On a handset a white
+   box with coloured text lands among white cards and reads as one of them —
+   which is how a "Saved" message ends up looking like part of the screen it
+   is reporting on. The tone is a dot, so the words stay legible. */
 .toast {
-  padding: .6rem .85rem; border-radius: var(--radius-sm); font-size: .88rem; font-weight: 550;
-  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+  display: flex; align-items: flex-start; gap: .55rem;
+  padding: .7rem .85rem; border-radius: 12px;
+  font-size: .9rem; font-weight: 500; line-height: 1.35;
+  background: var(--toast-bg); color: var(--toast-ink);
+  box-shadow: 0 10px 28px -12px rgba(0, 0, 0, .65);
   animation: toast-in .18s ease;
+  text-wrap: pretty;
 }
-.toast.warn { border-color: color-mix(in srgb, var(--warn) 45%, transparent); color: var(--warn); }
-.toast.good { border-color: color-mix(in srgb, var(--good) 45%, transparent); color: var(--good); }
-.toast.bad { border-color: color-mix(in srgb, var(--bad) 45%, transparent); color: var(--bad); }
+.toast::before {
+  content: ''; flex: none;
+  width: .5rem; height: .5rem; margin-top: .42rem;
+  border-radius: 50%; background: var(--toast-ink); opacity: .6;
+}
+.toast.good::before { background: #34d399; opacity: 1; }
+.toast.warn::before { background: #f0a94c; opacity: 1; }
+.toast.bad::before { background: #f87171; opacity: 1; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 
 /* ---------------------------------------------------------------- misc --- */
@@ -578,6 +599,7 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   }
   .sidebar { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
   .toasts[popover] { bottom: max(1rem, calc(env(safe-area-inset-bottom) + .5rem)); }
+  .toast { font-size: .88rem; padding: .65rem .75rem; }
 }
 
 @media (max-width: 620px) and (min-resolution: 0dppx) {
@@ -2568,3 +2590,35 @@ html { touch-action: manipulation; }
   .med-set-wrap { max-height: 16rem; }
   .med-amount { width: 5.5rem; }
 }
+
+/* The positions somebody has grouped, listed so they can be changed from the
+   position's end rather than by opening each shift under it. */
+.pos-sets { display: grid; gap: .5rem; }
+/* Named apart from the rota's own .pos-group, which is the department heading
+   on that screen. Two classes with one name is how a stylesheet quietly
+   restyles a screen nobody was working on. */
+.pos-set {
+  display: flex; align-items: center; justify-content: space-between; gap: .8rem;
+  flex-wrap: wrap;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .55rem .7rem;
+}
+.pos-set-name { font-weight: 600; }
+.pos-set .muted { font-size: .85rem; }
+.pos-edit-list {
+  display: grid; gap: .15rem; max-height: 16rem; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .5rem .6rem;
+}
+
+/* What an advance is for. Three choices, each carrying its own ceiling and its
+   own repayment, because those are the reason to pick one over another. */
+.adv-purposes { display: grid; gap: .4rem; margin-bottom: .7rem; }
+.adv-purpose {
+  display: flex; flex-direction: column; align-items: flex-start; gap: .1rem;
+  text-align: left; width: 100%;
+  padding: .55rem .7rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+}
+.adv-purpose small { color: var(--text-faint); font-size: .8rem; }
+.adv-purpose.on { border-color: var(--accent); background: var(--accent-soft); }
+.adv-purpose:disabled { opacity: .45; cursor: not-allowed; }
+.adv-paper { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: .7rem; }

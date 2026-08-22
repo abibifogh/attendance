@@ -105,6 +105,14 @@ export const GUIDE = [
       { p: 'You can ask for one from the same screen. It is a request and not an agreement — '
         + 'nothing comes off your pay until somebody decides, and you are told either way. '
         + 'While it is still waiting you can take it back.' },
+      { p: 'Say what it is for first, because everything else follows from it. School fees and '
+        + 'rent go up to 5,000 and are paid back over ten months, and each needs a photograph '
+        + 'of the bill or the tenancy agreement attached. Anything else goes up to 1,000 and '
+        + 'comes out of your next pay. If you are still paying one back, the small one is the '
+        + 'only thing you can ask for.' },
+      { note: 'How long you pay it back over is not yours to set — it follows from what the '
+        + 'money is for. If you need longer, say so to whoever handles the wages: they can '
+        + 'change it, and they are the only ones who can.' },
       { note: 'If a month here does not match your payslip, say so in the same month. The '
         + 'figures are entered by a person, and a mistake is far easier to settle while '
         + 'everybody can still remember the payday it happened on.' },
@@ -424,6 +432,16 @@ export const GUIDE = [
           + 'the leave first.',
       ] },
 
+      { sub: 'Positions' },
+      { p: 'Several shifts that are really one job — three breakfast shifts that differ only '
+        + 'in when they finish — can be put under one position, and the rota reads by position '
+        + 'as well as by person. Tick them in Setup → Shifts and press "Put under one '
+        + 'position".' },
+      { p: 'Every position you have named is listed under the shifts, with Edit beside it. '
+        + 'That is where a position is renamed, or a shift added to one or taken out of it, '
+        + 'without opening each shift in turn. Shifts under a position stack earliest first, '
+        + 'so a group reads down the day.' },
+
       { sub: 'Workload: how the rota is treating people' },
       { p: 'One row per person, all on the same scale, sortable by any column. Ask it for a '
         + 'fortnight while you are building one, a month for the questions that only make sense '
@@ -572,11 +590,27 @@ export const GUIDE = [
           + 'are two different records.',
       ] },
 
-      { sub: 'Requests' },
+      { sub: 'Requests, and what may be asked for' },
       { p: 'Somebody can ask through the app, and it waits at the top of this screen. '
         + 'Approving is also where the terms are settled: what was asked for and what the '
         + 'property can do are often two different numbers, and the answer should be the '
         + 'agreement rather than a refusal and a second conversation.' },
+      { list: [
+        'School fees and rent go up to 5,000, are paid back over ten months, and will not '
+          + 'send without a copy of the bill or the tenancy agreement attached. Open it before '
+          + 'you decide.',
+        'Anything else goes up to 1,000 and comes back out of the next pay packet. Over 1,000 '
+          + 'the app stops offering it, because above that the property wants to know what the '
+          + 'money is for.',
+        'Somebody already paying one back can only ask for the small one. A second ten-month '
+          + 'advance on top of a running one is how a person ends up with no pay packet at all.',
+      ] },
+      { note: 'The repayment period is nobody’s to set but yours. It follows from what the '
+        + 'money is for, and the box for it is on the approval — change it there, or later '
+        + 'with Change the terms.' },
+      { p: 'None of this binds you when you are recording one you have already handed over. '
+        + 'The caps and the paperwork are rules about what staff may ask for; writing down '
+        + 'what has happened is a different thing.' },
 
       { note: 'Nothing here charges interest and there is nowhere to set any. What was lent is '
         + 'what comes back.' },
@@ -598,10 +632,10 @@ export const GUIDE = [
       { p: 'Set the year’s allowances opens one form with everybody on it. Tick who qualifies, '
         + 'type what they get, and there is a box at the top to give everybody ticked the same '
         + 'figure at once. Press it once and the year is set.' },
-      { p: 'The starting balance is separate from the allowance, and it matters in the first '
-        + 'year. If somebody has already claimed two hundred on paper before any of this '
-        + 'existed, put what was actually left. Their screen and yours then agree with the '
-        + 'drawer of receipts, which is the whole point.' },
+      { p: 'The starting balance is separate from the allowance, and it is what somebody '
+        + 'actually has to spend. Less than the allowance where part of the year has already '
+        + 'been claimed on paper; more where something unused was carried over from last year. '
+        + 'Leave it blank and it is simply the allowance.' },
       { note: 'Unticking somebody takes the year off them and leaves their claims alone. What '
         + 'was paid does not stop being true because the arrangement ended.' },
 

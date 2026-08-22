@@ -169,6 +169,9 @@ export const ROUTES = [
   ['PATCH', '/api/advances/:id', 'hr_pay', advance.adjustAdvance],
   ['POST', '/api/advances/:id/entry', 'hr_pay', advance.addEntry],
   ['DELETE', '/api/advances/:id/entry/:entryId', 'hr_pay', advance.removeEntry],
+  // The bill or the tenancy agreement behind a request. Readable by whoever
+  // decides it and by whoever attached it — see `paper`.
+  ['GET', '/api/advances/:id/paper', ['hr_pay', 'att_me'], advance.paper],
 
   // ----------------------------------------------------- medical claims --
   // A list of somebody's hospital bills says more about them than any other

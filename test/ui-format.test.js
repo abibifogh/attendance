@@ -6,7 +6,7 @@ import {
 } from '../public/js/util.js';
 import { pathHasHole } from '../public/js/api.js';
 import {
-  asHours, byDepartment, shiftHours, shiftLabel, shiftMinutes, sortDepartments,
+  asHours, byDepartment, byPosition, shiftHours, shiftLabel, shiftMinutes, sortDepartments,
 } from '../public/js/views/att-shared.js';
 
 /**
@@ -212,4 +212,23 @@ test('days apart counts whole days, either way round', () => {
   // Across a month end, and across the day the clocks would change elsewhere.
   assert.equal(daysApart('2026-02-27', '2026-03-02'), 3);
   assert.equal(daysApart('2026-03-28', '2026-03-30'), 2);
+});
+
+test('a position stacks its shifts earliest first', () => {
+  const at = (name, starts, ends, position) => ({ ...shift(name, starts, ends), position });
+  const groups = byPosition([
+    at('Housekeeping late', '14:00', '22:00', 'Housekeeping'),
+    at('Breakfast 15', '06:00', '15:00', 'Breakfast'),
+    at('Housekeeping early', '06:00', '14:00', 'Housekeeping'),
+    at('Breakfast 14', '06:00', '14:00', 'Breakfast'),
+    at('Night watch', '22:00', '06:00', null),
+  ]);
+
+  // Positions in the order the day happens, and the shifts inside each the
+  // same way — which is how anybody reads a rota out loud.
+  assert.deepEqual(groups.map((g) => g.name), ['Breakfast', 'Housekeeping', 'Night watch']);
+  assert.deepEqual(groups[1].shifts.map((s) => s.name),
+    ['Housekeeping early', 'Housekeeping late']);
+  assert.equal(groups[0].grouped, true, 'two shifts under one name is a grouping');
+  assert.equal(groups[2].grouped, false, 'and one on its own is not');
 });

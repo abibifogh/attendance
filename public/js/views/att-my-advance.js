@@ -47,9 +47,11 @@ export async function renderAttMyAdvance() {
         h('h1', 'My advance'),
         h('div.sub', 'What you owe, what comes off, and when it ends'),
       ),
-      waiting || running.length
+      waiting
         ? null
-        : h('button.btn-sm.btn-primary', { onclick: () => ask(reload, cash) }, 'Ask for an advance'),
+        : h('button.btn-sm.btn-primary', {
+          onclick: () => ask(data, reload, cash),
+        }, 'Ask for an advance'),
     ),
 
     waiting ? waitingCard(waiting, reload, cash) : null,
@@ -84,8 +86,15 @@ const STATUS = {
 function waitingCard(advance, reload, cash) {
   return card('Waiting on a decision', { note: 'not agreed yet' },
     h('p', h('strong', cash(advance.amount)),
-      ` over ${advance.months} month${advance.months === 1 ? '' : 's'}`,
+      advance.purposeLabel ? ` for ${advance.purposeLabel.toLowerCase()}` : '',
+      `, over ${advance.months} month${advance.months === 1 ? '' : 's'}`,
       advance.reason ? ` — ${advance.reason}` : ''),
+    advance.hasPaper
+      ? h('p', { style: { margin: '.2rem 0 .6rem' } },
+        h('a.btn-sm', {
+          href: api.advancePaperUrl(advance.id), target: '_blank', rel: 'noopener',
+        }, 'The paper you attached'))
+      : null,
     h('p.muted', { style: { fontSize: '.88rem' } },
       'Nothing has been agreed and nothing will come off your pay until somebody says yes. '
       + 'You will get a message either way.'),
@@ -165,38 +174,178 @@ function runningCard(advance, cash) {
     + 'mistake is worth catching in the same month it happened.'));
 }
 
-/** Ask for one. */
-async function ask(reload, cash) {
-  const amount = h('input', { type: 'number', name: 'amount', step: '0.01', min: '1', required: true });
-  const months = h('input', { type: 'number', name: 'months', min: '1', max: '24', value: 3, required: true });
-  const each = h('p.muted', { style: { fontSize: '.9rem', margin: '.2rem 0 0' } }, ' ');
+/**
+ * Ask for one.
+ *
+ * The purpose comes first, because everything else follows from it: what the
+ * ceiling is, how long it is paid back over, and whether a bill has to be
+ * attached. Asking for the amount first and then refusing it against a rule
+ * nobody had been told is the version of this form that makes people give up
+ * and go and find a manager.
+ *
+ * Somebody already paying one back sees only "something else", and the form
+ * says why rather than quietly hiding two options.
+ */
+async function ask(data, reload, cash) {
+  const purposes = data.purposes ?? [];
+  const other = purposes.find((p) => p.key === 'other');
+  const amount = h('input', {
+    type: 'number', name: 'amount', step: '0.01', min: '1', required: true,
+  });
+  const note = h('p.muted', { style: { fontSize: '.88rem', margin: '.2rem 0 0' } }, ' ');
+  const paperRow = h('div');
+  const picker = h('input', {
+    type: 'file', accept: 'image/*,application/pdf', style: { display: 'none' },
+  });
+  const paperStatus = h('small.muted');
+  let paper = null;
+  let chosen = data.hasOpen ? 'other' : (purposes[0]?.key ?? 'other');
 
-  const recompute = () => {
-    const total = Number(amount.value) || 0;
-    const over = Math.max(1, Number(months.value) || 1);
-    each.textContent = total
-      ? `That is about ${cash(Math.ceil((total / over) * 100) / 100)} off your pay each month.`
-      : ' ';
+  const choices = h('div.adv-purposes');
+
+  const draw = () => {
+    const asking = Number(amount.value) || 0;
+    const spec = purposes.find((p) => p.key === chosen);
+
+    // What may be asked for, worked out from the same rule the server uses:
+    // an advance already running leaves only the small one, and anything over
+    // the small one's ceiling has to be a named reason with paper behind it.
+    const allowed = purposes.filter((p) => {
+      if (data.hasOpen && p.key !== 'other') return false;
+      if (asking > p.cap) return false;
+      return true;
+    });
+
+    mount(choices, purposes.map((p) => {
+      const off = !allowed.some((a) => a.key === p.key);
+      return h(`button.adv-purpose${p.key === chosen ? '.on' : ''}`, {
+        type: 'button',
+        disabled: off,
+        title: off && data.hasOpen && p.key !== 'other'
+          ? 'You are still paying one back'
+          : off ? `Up to ${cash(p.cap)}` : '',
+        onclick: () => { chosen = p.key; draw(); },
+      },
+      h('strong', p.label),
+      h('small', p.key === 'other'
+        ? `up to ${cash(p.cap)} · back next month`
+        : `up to ${cash(p.cap)} · over ${p.months} months`));
+    }));
+
+    // If what they typed rules out what they picked, move them rather than
+    // letting them press a button that will be refused.
+    if (spec && !allowed.some((a) => a.key === chosen) && allowed.length) {
+      chosen = allowed[0].key;
+      return draw();
+    }
+
+    const now = purposes.find((p) => p.key === chosen);
+    amount.max = now?.cap ?? '';
+
+    mount(paperRow, now?.paper
+      ? h('div.adv-paper',
+        h('button.btn-sm', { type: 'button', onclick: () => picker.click() },
+          paper ? 'Use a different picture' : `Attach ${now.paper}`),
+        picker,
+        paperStatus)
+      : null);
+
+    note.textContent = !now
+      ? 'Nothing can be asked for at that amount.'
+      : asking > 0
+        ? `${cash(Math.ceil((asking / now.months) * 100) / 100)} would come off your pay `
+          + (now.months === 1 ? 'next month.' : `each month for ${now.months} months.`)
+        : now.months === 1
+          ? 'Paid back out of your next pay.'
+          : `Paid back over ${now.months} months.`;
+    return undefined;
   };
-  amount.addEventListener('input', recompute);
-  months.addEventListener('input', recompute);
+
+  picker.addEventListener('change', async () => {
+    const file = picker.files?.[0];
+    if (!file) return;
+    paperStatus.textContent = 'Making it smaller…';
+    try {
+      paper = await shrinkPaper(file);
+      paperStatus.textContent = `${file.name.slice(0, 26)} · ${Math.round(paper.bytes / 1024)} KB`;
+    } catch (err) {
+      paper = null;
+      paperStatus.textContent = err.message;
+    }
+    draw();
+  });
+  amount.addEventListener('input', draw);
+  draw();
 
   const done = await formDialog({
     title: 'Ask for a salary advance',
     submitLabel: 'Send the request',
     body: h('div',
       h('p.muted', { style: { fontSize: '.85rem' } },
-        'This is a request, not an agreement. Somebody will decide, and you will be told either '
-        + 'way. Nothing comes off your pay unless it is agreed.'),
-      h('div.field-row',
-        field('How much', amount),
-        field('Over how many months', months)),
-      each,
-      field('What it is for', h('input', { type: 'text', name: 'reason', maxlength: 300 }),
-        'Optional, but it helps whoever decides')),
-    onSubmit: (form) => api.myAskForAdvance(Object.fromEntries(form.entries())),
+        data.hasOpen
+          ? 'You are still paying one back, so the only thing you can ask for now is something '
+            + `else, up to ${cash(other?.cap ?? 1000)} and back out of your next pay.`
+          : 'This is a request, not an agreement. Somebody will decide, and you will be told '
+            + 'either way. Nothing comes off your pay unless it is agreed.'),
+      h('p.muted', { style: { fontSize: '.85rem', marginBottom: '.2rem' } }, 'What it is for'),
+      choices,
+      field('How much', amount),
+      note,
+      paperRow,
+      field('Anything to add', h('input', { type: 'text', name: 'reason', maxlength: 300 }))),
+    onSubmit: async (form) => api.myAskForAdvance({
+      purpose: chosen,
+      amount: form.get('amount'),
+      reason: form.get('reason'),
+      paper: paper ? { base64: paper.base64, mime: paper.mime, filename: paper.filename } : null,
+    }),
   });
   if (!done) return;
   toast('Sent. You will be told when it is decided.', 'good');
   await reload();
+}
+
+/**
+ * A photograph of a bill, made small enough to keep.
+ *
+ * The same ladder the personnel scans use. A phone camera produces four
+ * megabytes and a legible school bill needs a fraction of that.
+ */
+async function shrinkPaper(file) {
+  const LIMIT = 1_300_000;
+  const raw = new Uint8Array(await file.arrayBuffer());
+
+  if (!file.type.startsWith('image/')) {
+    if (raw.length > LIMIT) {
+      throw new Error(`That file is ${Math.round(raw.length / 1024)} KB and the limit is `
+        + `${Math.round(LIMIT / 1024)} KB. Photograph it instead — pictures are shrunk to fit.`);
+    }
+    let binary = '';
+    for (let i = 0; i < raw.length; i += 0x8000) {
+      binary += String.fromCharCode.apply(null, raw.subarray(i, i + 0x8000));
+    }
+    return {
+      base64: btoa(binary), mime: file.type || 'application/pdf', bytes: raw.length,
+      filename: file.name,
+    };
+  }
+
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+  for (const quality of [0.82, 0.7, 0.6, 0.5]) {
+    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+    const bytes = Math.round((dataUrl.length - dataUrl.indexOf(',') - 1) * 0.75);
+    if (bytes <= LIMIT) {
+      return {
+        base64: dataUrl.split(',')[1], mime: 'image/jpeg', bytes,
+        filename: `${(file.name || 'paper').replace(/\.[^.]+$/, '')}.jpg`,
+      };
+    }
+  }
+  throw new Error('That picture is too large even after shrinking. Try photographing it closer.');
 }

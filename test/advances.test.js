@@ -4,12 +4,12 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  balanceOf, finishesOn, firstMonthFor, instalmentFor, isMonthEnd, monthsLeft, scheduleFor,
-  summarise,
+  balanceOf, checkRequest, finishesOn, firstMonthFor, instalmentFor, isMonthEnd, monthsLeft,
+  purposesFor, scheduleFor, summarise,
 } from '../src/lib/advances.js';
 import {
   addAdvance, addEntry, adjustAdvance, advances, askAboutTheMonth, askForAdvance, closeMonth,
-  decideAdvance, myAdvances, removeEntry, withdrawMyAdvance,
+  decideAdvance, myAdvances, paper, removeEntry, withdrawMyAdvance,
 } from '../src/routes/advances.js';
 
 /**
@@ -77,6 +77,9 @@ const ctx = (db, session, { body = null, query = '' } = {}) => ({
 });
 
 const read = async (response) => response.json();
+
+/** A one-pixel PNG, so the attaching path is exercised without a fixture. */
+const PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const notices = (raw) => raw.prepare('SELECT * FROM app_notices ORDER BY id').all();
 
 // ---------------------------------------------------------------------------
@@ -137,6 +140,20 @@ test('two advances at once are two agreements and one deduction', () => {
   assert.equal(out.taken, 900);
 });
 
+test('what may be asked for narrows as the amount goes up', () => {
+  assert.deepEqual(purposesFor({ amount: 800 }).map((p) => p.key),
+    ['school_fees', 'rent', 'other']);
+  assert.deepEqual(purposesFor({ amount: 1500 }).map((p) => p.key), ['school_fees', 'rent'],
+    'over a thousand it has to be one of the named reasons');
+  assert.deepEqual(purposesFor({ hasOpen: true, amount: 500 }).map((p) => p.key), ['other']);
+  assert.deepEqual(purposesFor({ hasOpen: true, amount: 1500 }).map((p) => p.key), [],
+    'and there is nothing at all somebody can ask for on top of a running advance');
+
+  assert.equal(checkRequest({ purpose: 'school_fees', amount: 3000, hasPaper: true }).months, 10);
+  assert.equal(checkRequest({ purpose: 'other', amount: 300 }).months, 1);
+  assert.equal(checkRequest({ purpose: 'nonsense', amount: 300 }).ok, false);
+});
+
 // ---------------------------------------------------------------------------
 // Asking, deciding, paying back
 // ---------------------------------------------------------------------------
@@ -145,9 +162,13 @@ test('somebody asks, somebody decides, and both are told', async () => {
   const { raw, db } = setup();
 
   const asked = await read(await askForAdvance(ctx(db, KOFI, {
-    body: { amount: 900, months: 3, reason: 'School fees' },
+    body: {
+      purpose: 'school_fees', amount: 900, reason: 'Second term',
+      paper: { base64: PIXEL, mime: 'image/png', filename: 'bill.png' },
+    },
   })));
   assert.equal(asked.status, 'requested');
+  assert.equal(asked.months, 10, 'the period follows the purpose, not the asker');
 
   // Whoever does the wages hears about it, held against the permission rather
   // than a person, so it still reaches whoever does the job next month.
@@ -161,6 +182,7 @@ test('somebody asks, somebody decides, and both are told', async () => {
   assert.equal(mine.totals.owed, 0);
   assert.equal(mine.advances[0].status, 'requested');
 
+  // The office is the only one who can change the period, and does here.
   await decideAdvance(ctx(db, WAGES, {
     body: { approve: true, amount: 900, months: 3, takenOn: '2026-09-02', startMonth: '2026-09' },
   }), asked.id);
@@ -178,7 +200,9 @@ test('somebody asks, somebody decides, and both are told', async () => {
 
 test('a request nobody has decided can be taken back, and only by the person who made it', async () => {
   const { db } = setup();
-  const asked = await read(await askForAdvance(ctx(db, KOFI, { body: { amount: 200, months: 2 } })));
+  const asked = await read(await askForAdvance(ctx(db, KOFI, {
+    body: { purpose: 'other', amount: 200 },
+  })));
 
   await assert.rejects(
     () => withdrawMyAdvance(ctx(db, { user: { id: 9, name: 'Ama', staff_id: 2 } }), asked.id),
@@ -190,14 +214,14 @@ test('a request nobody has decided can be taken back, and only by the person who
   assert.equal(mine.advances[0].status, 'withdrawn');
 
   // And a second request is allowed once the first is out of the way.
-  await askForAdvance(ctx(db, KOFI, { body: { amount: 200, months: 2 } }));
+  await askForAdvance(ctx(db, KOFI, { body: { purpose: 'other', amount: 200 } }));
 });
 
 test('one request at a time', async () => {
   const { db } = setup();
-  await askForAdvance(ctx(db, KOFI, { body: { amount: 200, months: 2 } }));
+  await askForAdvance(ctx(db, KOFI, { body: { purpose: 'other', amount: 200 } }));
   await assert.rejects(
-    () => askForAdvance(ctx(db, KOFI, { body: { amount: 300, months: 2 } })),
+    () => askForAdvance(ctx(db, KOFI, { body: { purpose: 'other', amount: 300 } })),
     /already asked/,
   );
 });
@@ -227,6 +251,152 @@ test('somebody with no login is still recorded, and nothing throws', async () =>
 
   const out = await read(await advances(ctx(db, WAGES, { query: '?month=2026-09' })));
   assert.equal(out.totals.owed, 500);
+});
+
+// ---------------------------------------------------------------------------
+// What may be asked for
+// ---------------------------------------------------------------------------
+
+test('the period follows what the money is for, and the asker cannot set it', async () => {
+  const { raw, db } = setup();
+
+  const fees = await read(await askForAdvance(ctx(db, KOFI, {
+    body: {
+      purpose: 'school_fees', amount: 4000, months: 2,
+      paper: { base64: PIXEL, mime: 'image/png', filename: 'bill.png' },
+    },
+  })));
+  assert.equal(fees.months, 10, 'ten months whatever the form said');
+
+  const row = raw.prepare('SELECT * FROM hr_advance WHERE id = ?').get(fees.id);
+  assert.equal(row.purpose, 'school_fees');
+  assert.equal(row.monthly, 400);
+  assert.ok(row.document_id, 'and the bill is on file');
+
+  const doc = raw.prepare('SELECT * FROM hr_document WHERE id = ?').get(row.document_id);
+  assert.equal(doc.kind, 'advance_paper');
+  assert.equal(doc.staff_id, 1);
+});
+
+test('something else is paid back out of the next pay', async () => {
+  const { raw, db } = setup();
+  const out = await read(await askForAdvance(ctx(db, KOFI, {
+    body: { purpose: 'other', amount: 600 },
+  })));
+
+  assert.equal(out.months, 1);
+  assert.equal(raw.prepare('SELECT monthly FROM hr_advance WHERE id = ?').get(out.id).monthly, 600);
+});
+
+test('school fees and rent stop at five thousand, and something else at one', async () => {
+  const { db } = setup();
+  const paper = { base64: PIXEL, mime: 'image/png', filename: 'bill.png' };
+
+  await assert.rejects(
+    () => askForAdvance(ctx(db, KOFI, { body: { purpose: 'rent', amount: 6000, paper } })),
+    /Rent goes up to 5000/,
+  );
+  await assert.rejects(
+    () => askForAdvance(ctx(db, KOFI, { body: { purpose: 'other', amount: 1500 } })),
+    /has to be for school fees or rent/,
+  );
+});
+
+test('the paper is the point of naming the reason', async () => {
+  const { db } = setup();
+  await assert.rejects(
+    () => askForAdvance(ctx(db, KOFI, { body: { purpose: 'school_fees', amount: 2000 } })),
+    /needs a copy of the bill/,
+  );
+  await assert.rejects(
+    () => askForAdvance(ctx(db, KOFI, { body: { purpose: 'rent', amount: 2000 } })),
+    /needs a copy of the tenancy agreement/,
+  );
+  // The small one needs nothing.
+  await askForAdvance(ctx(db, KOFI, { body: { purpose: 'other', amount: 300 } }));
+});
+
+test('somebody still paying one back can only ask for the small one', async () => {
+  const { db } = setup();
+  await addAdvance(ctx(db, WAGES, {
+    body: { staffId: 1, amount: 1200, months: 6, takenOn: '2026-09-01' },
+  }));
+
+  await assert.rejects(
+    () => askForAdvance(ctx(db, KOFI, {
+      body: {
+        purpose: 'school_fees', amount: 2000,
+        paper: { base64: PIXEL, mime: 'image/png', filename: 'bill.png' },
+      },
+    })),
+    /still paying one back/,
+  );
+
+  const out = await read(await askForAdvance(ctx(db, KOFI, {
+    body: { purpose: 'other', amount: 400 },
+  })));
+  assert.equal(out.status, 'requested');
+
+  // And the screen is told the same thing the route enforces.
+  const mine = await read(await myAdvances(ctx(db, KOFI)));
+  assert.equal(mine.hasOpen, true);
+  assert.deepEqual(mine.canAsk, ['other']);
+});
+
+test('a settled advance stops counting against what may be asked for', async () => {
+  const { db } = setup();
+  const given = await read(await addAdvance(ctx(db, WAGES, {
+    body: { staffId: 1, amount: 200, months: 1, takenOn: '2026-09-01', startMonth: '2026-09' },
+  })));
+  await closeMonth(ctx(db, WAGES, {
+    body: { month: '2026-09', rows: [{ advanceId: given.id, paid: true }] },
+  }));
+
+  const mine = await read(await myAdvances(ctx(db, KOFI)));
+  assert.equal(mine.hasOpen, false, 'paid off is not still paying one back');
+
+  const out = await read(await askForAdvance(ctx(db, KOFI, {
+    body: {
+      purpose: 'rent', amount: 3000,
+      paper: { base64: PIXEL, mime: 'image/png', filename: 'lease.png' },
+    },
+  })));
+  assert.equal(out.months, 10);
+});
+
+test('the paper is readable by the person and by the office, and nobody else', async () => {
+  const { raw, db } = setup();
+  const out = await read(await askForAdvance(ctx(db, KOFI, {
+    body: {
+      purpose: 'rent', amount: 1500,
+      paper: { base64: PIXEL, mime: 'image/png', filename: 'lease.png' },
+    },
+  })));
+
+  const mine = await paper(ctx(db, KOFI), out.id);
+  assert.equal(mine.status, 200);
+  assert.equal(mine.headers.get('Content-Type'), 'image/png');
+  assert.equal((await paper(ctx(db, WAGES), out.id)).status, 200);
+
+  await assert.rejects(
+    () => paper(ctx(db, { user: { id: 9, name: 'Ama', staff_id: 2 }, permissions: ['att_me'] }), out.id),
+    /not yours/,
+  );
+  assert.ok(raw.prepare('SELECT id FROM hr_document').get(), 'and it is a document like any other');
+});
+
+test('the office is not held to the caps or the paperwork', async () => {
+  const { raw, db } = setup();
+  // Already handed over, above every ceiling, with nothing attached. Refusing
+  // to write down what has happened helps nobody.
+  const out = await read(await addAdvance(ctx(db, WAGES, {
+    body: { staffId: 1, purpose: 'rent', amount: 8000, months: 12, takenOn: '2026-09-01' },
+  })));
+
+  const row = raw.prepare('SELECT * FROM hr_advance WHERE id = ?').get(out.id);
+  assert.equal(row.amount, 8000);
+  assert.equal(row.purpose, 'rent');
+  assert.equal(row.months, 12);
 });
 
 // ---------------------------------------------------------------------------

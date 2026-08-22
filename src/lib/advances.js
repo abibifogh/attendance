@@ -32,6 +32,105 @@ export const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 export const STATUSES = ['requested', 'approved', 'declined', 'withdrawn', 'settled'];
 
+/**
+ * What an advance is for, and what follows from that.
+ *
+ * The property lends for three reasons and treats them differently, and every
+ * one of these figures was already its policy — what was missing was anywhere
+ * to write it down, so it was applied from memory and differently depending on
+ * who was asked.
+ *
+ * School fees and rent are the big, predictable ones. They come with a bill or
+ * a tenancy agreement, they go to five thousand, and they are paid back over
+ * ten months. Anything else is the small emergency: a thousand at most, back
+ * out of the next pay packet.
+ *
+ * THE PERIOD IS NOT THE ASKER'S TO SET. It follows from what the money is for.
+ * Somebody who needs longer says so to a person, and a person changes it —
+ * which is a conversation with a decision in it rather than a box on a form.
+ */
+export const PURPOSES = [
+  {
+    key: 'school_fees',
+    label: 'School fees',
+    cap: 5000,
+    months: 10,
+    paper: 'a copy of the bill',
+  },
+  {
+    key: 'rent',
+    label: 'Rent',
+    cap: 5000,
+    months: 10,
+    paper: 'a copy of the tenancy agreement',
+  },
+  {
+    key: 'other',
+    label: 'Something else',
+    cap: 1000,
+    months: 1,
+    paper: null,
+  },
+];
+
+export const purposeOf = (key) => PURPOSES.find((p) => p.key === key) ?? null;
+
+/**
+ * Which of the three somebody may pick, given what they are asking for.
+ *
+ * Two rules, and both of them are about not lending twice over. Anything above
+ * a thousand has to be one of the named reasons, with the paper to go with it;
+ * and somebody already paying one back can only ask for the small emergency,
+ * because a second ten-month advance on top of a running one is how a person
+ * ends up with no pay packet at all.
+ */
+export function purposesFor({ hasOpen = false, amount = 0 } = {}) {
+  return PURPOSES.filter((purpose) => {
+    if (hasOpen && purpose.key !== 'other') return false;
+    if (round2(amount) > purpose.cap) return false;
+    return true;
+  });
+}
+
+/**
+ * Whether a request stands up, said in the words the person will read.
+ *
+ * Never a bare "invalid": somebody refused by a form deserves to know which
+ * rule refused them, because the next thing they do is ask a manager and the
+ * manager should not have to guess either.
+ */
+export function checkRequest({ purpose, amount, hasOpen = false, hasPaper = false }) {
+  const spec = purposeOf(purpose);
+  if (!spec) return { ok: false, reason: 'Say what the money is for.' };
+
+  const asked = round2(amount);
+  if (asked <= 0) return { ok: false, reason: 'An advance has to be for something.' };
+
+  if (hasOpen && spec.key !== 'other') {
+    return {
+      ok: false,
+      reason: 'You are still paying one back, so the only thing you can ask for now is '
+        + `something else, up to ${purposeOf('other').cap}.`,
+    };
+  }
+
+  if (asked > spec.cap) {
+    return {
+      ok: false,
+      reason: spec.key === 'other'
+        ? `Anything over ${spec.cap} has to be for school fees or rent, with the paper to `
+          + 'go with it.'
+        : `${spec.label} goes up to ${spec.cap}.`,
+    };
+  }
+
+  if (spec.paper && !hasPaper) {
+    return { ok: false, reason: `${spec.label} needs ${spec.paper} attached.` };
+  }
+
+  return { ok: true, reason: null, months: spec.months };
+}
+
 /** An advance still being paid back. */
 export const isOpen = (advance) => advance.status === 'approved';
 

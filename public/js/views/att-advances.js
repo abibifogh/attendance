@@ -206,9 +206,20 @@ function requestsCard(data, reload, cash) {
   h('ul.adv-requests', data.requests.map((req) => h('li',
     h('div',
       h('div.adv-who', req.staffName),
-      h('div.muted', `${cash(req.amount)} over ${req.months} month${req.months === 1 ? '' : 's'}`
+      h('div.muted',
+        req.purposeLabel ? h('span.pill', req.purposeLabel) : null,
+        ` ${cash(req.amount)} over ${req.months} month${req.months === 1 ? '' : 's'}`
         + ` · asked ${fmtDay(String(req.askedAt).slice(0, 10))}`),
-      req.reason ? h('div.adv-reason', req.reason) : null),
+      req.reason ? h('div.adv-reason', req.reason) : null,
+      // The bill or the agreement they attached. Deciding a request for school
+      // fees without opening it is deciding it on trust.
+      req.hasPaper
+        ? h('a.btn-sm', {
+          href: api.advancePaperUrl(req.id), target: '_blank', rel: 'noopener',
+        }, 'See the paper')
+        : req.purpose && req.purpose !== 'other'
+          ? h('span.pill.warn', 'nothing attached')
+          : null),
     h('div.btn-row',
       h('button.btn-sm.btn-primary', {
         onclick: () => decide(req, true, reload, cash),
@@ -271,7 +282,11 @@ async function decide(req, approve, reload, cash) {
       req.reason ? h('p.muted', { style: { fontSize: '.85rem' } }, req.reason) : null,
       h('div.field-row',
         field('Amount', amount),
-        field('Over how many months', months),
+        field('Over how many months', months,
+          req.purposeLabel
+            ? `${req.purposeLabel} is normally ${req.months}. You are the only one who can `
+              + 'change it.'
+            : 'You are the only one who can change this.'),
         field('A month', monthly, 'Worked out for you. Change it if you have agreed otherwise.')),
       h('div.field-row',
         field('Handed over on', h('input', { type: 'date', name: 'takenOn', value: todayISO() })),
@@ -323,6 +338,13 @@ async function addOne(data, reload) {
         'They are told on their phone, and it shows on their own screen with the schedule. '
         + 'Money coming off a payslip nobody mentioned is how this arrangement loses people.'),
       field('Who', who),
+      field('What it is for', h('select', { name: 'purpose' },
+        h('option', { value: '' }, 'Not saying'),
+        h('option', { value: 'school_fees' }, 'School fees'),
+        h('option', { value: 'rent' }, 'Rent'),
+        h('option', { value: 'other' }, 'Something else')),
+      'The caps and the paperwork are rules about what staff may ask for. Recording one you '
+      + 'have already handed over is not held to them.'),
       h('div.field-row',
         field('How much', amount),
         field('Over how many months', months),
@@ -395,6 +417,7 @@ function advanceBlock(advance, { person, reload, cash }) {
     h('div.adv-block-head',
       h('div',
         h('strong', cash(advance.amount)),
+        advance.purposeLabel ? h('span.muted', ` for ${advance.purposeLabel.toLowerCase()}`) : null,
         h('span.muted', ` handed over ${advance.takenOn ? fmtDay(advance.takenOn) : 'at some point'}`),
         h('span.pill' + (badge[0] ? `.${badge[0]}` : ''), { style: { marginLeft: '.4rem' } }, badge[1])),
       advance.status === 'approved'

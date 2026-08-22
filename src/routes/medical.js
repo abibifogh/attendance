@@ -218,12 +218,14 @@ export async function setAllowances(ctx) {
     const allowance = round2(num(line.allowance, 'Allowance', {
       required: true, min: 0, max: 1_000_000,
     }));
+    // A starting balance is not capped by the allowance. It can be less, where
+    // part of the year has already been claimed on paper, and it can be more,
+    // where something unused was carried over from last year. Both happen, and
+    // an app that refused the second would be wrong about the people it was
+    // meant to be generous to.
     const opening = line.opening == null || line.opening === ''
       ? allowance
       : round2(num(line.opening, 'Starting balance', { min: 0, max: 1_000_000 }));
-    if (opening > allowance) {
-      throw badRequest('A starting balance cannot be more than the allowance itself.');
-    }
 
     await ctx.db.prepare(
       `INSERT INTO hr_medical_allowance (staff_id, year, allowance, opening, note, set_by)

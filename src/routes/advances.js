@@ -1,8 +1,11 @@
-import { badRequest, int, json, notFound, num, readJson, str } from '../lib/http.js';
-import { createNotice } from '../lib/notices.js';
 import {
-  balanceOf, finishesOn, firstMonthFor, instalmentFor, isMonthEnd, isOpen, monthsLeft,
-  repaidOf, round2, scheduleFor, summarise,
+  badRequest, forbidden, int, json, notFound, num, readJson, str,
+} from '../lib/http.js';
+import { createNotice } from '../lib/notices.js';
+import { readFile, storeFile } from './people.js';
+import {
+  PURPOSES, balanceOf, checkRequest, finishesOn, firstMonthFor, instalmentFor, isMonthEnd,
+  isOpen, monthsLeft, purposeOf, purposesFor, repaidOf, round2, scheduleFor, summarise,
 } from '../lib/advances.js';
 import { addMonths, isDay, isMonth, monthOf, todayIn } from '../util/dates.js';
 
@@ -67,6 +70,9 @@ function shape(advance, entries, { withSchedule = false } = {}) {
     monthly: round2(advance.monthly),
     currency: advance.currency,
     reason: advance.reason,
+    purpose: advance.purpose ?? null,
+    purposeLabel: purposeOf(advance.purpose)?.label ?? null,
+    hasPaper: Boolean(advance.document_id),
     status: advance.status,
     takenOn: advance.taken_on,
     startMonth: advance.start_month,
@@ -221,17 +227,17 @@ export async function addAdvance(ctx) {
   ).bind(staffId).first();
   if (!person) throw notFound('No such member of staff.');
 
-  const { amount, months, monthly, takenOn, startMonth, reason } = terms(body, timezone);
+  const { amount, months, monthly, takenOn, startMonth, reason, purpose } = terms(body, timezone);
 
   const row = await ctx.db.prepare(
     `INSERT INTO hr_advance
        (staff_id, amount, months, monthly, currency, reason, status, taken_on, start_month,
-        asked_by, decided_by, decided_at, decision)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'approved', ?7, ?8, ?9, ?9, datetime('now'), ?10)
+        asked_by, decided_by, decided_at, decision, purpose)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'approved', ?7, ?8, ?9, ?9, datetime('now'), ?10, ?11)
      RETURNING id`,
   ).bind(
     staffId, amount, months, monthly, currency, reason, takenOn, startMonth,
-    actorOf(ctx), 'Recorded by the office',
+    actorOf(ctx), 'Recorded by the office', purpose,
   ).first();
 
   await audit(ctx, 'advance.add', row?.id, { staffId, amount, months, monthly, startMonth });
@@ -249,7 +255,9 @@ export async function addAdvance(ctx) {
 /** The terms, from whatever the form sent. */
 function terms(body, timezone) {
   const amount = round2(num(body.amount, 'Amount', { required: true, min: 1, max: 1_000_000 }));
-  const months = int(body.months, 'Months to repay over', { required: true, min: 1, max: 60 });
+  const months = body.months == null || body.months === ''
+    ? (purposeOf(body.purpose)?.months ?? 1)
+    : int(body.months, 'Months to repay over', { min: 1, max: 60 });
 
   const takenOn = body.takenOn && isDay(String(body.takenOn))
     ? String(body.takenOn)
@@ -272,6 +280,10 @@ function terms(body, timezone) {
     monthly,
     takenOn,
     startMonth,
+    // The office is not held to the caps or the paper. Those are rules about
+    // what somebody may ask for; this is a record of what was handed over,
+    // and refusing to write down what has already happened helps nobody.
+    purpose: purposeOf(body.purpose)?.key ?? null,
     reason: str(body.reason, 'What it is for', { max: 300 }),
   };
 }
@@ -518,11 +530,20 @@ export async function myAdvances(ctx) {
   const { currency } = await settingsOf(ctx.db);
   const { advances: rows, entriesBy } = await ledger(ctx.db, { staffId });
 
+  const hasOpen = rows.some((r) => isOpen(r) && balanceOf(r, entriesBy.get(r.id) ?? []) > 0);
+
   return json({
     linked: true,
     currency,
     totals: summarise(rows, entriesBy),
     advances: rows.map((r) => shape(r, entriesBy.get(r.id) ?? [], { withSchedule: true })),
+    // The rules, sent rather than repeated in the screen, so the form and the
+    // route cannot come to disagree about what may be asked for.
+    hasOpen,
+    purposes: PURPOSES.map((p) => ({
+      key: p.key, label: p.label, cap: p.cap, months: p.months, paper: p.paper,
+    })),
+    canAsk: purposesFor({ hasOpen, amount: 0 }).map((p) => p.key),
   });
 }
 
@@ -546,7 +567,6 @@ export async function askForAdvance(ctx) {
   if (!staff) throw notFound('The staff record this login points at is gone.');
 
   const amount = round2(num(body.amount, 'How much', { required: true, min: 1, max: 1_000_000 }));
-  const months = int(body.months, 'Over how many months', { required: true, min: 1, max: 24 });
   const reason = str(body.reason, 'What it is for', { max: 300 });
 
   const waiting = await ctx.db.prepare(
@@ -554,26 +574,63 @@ export async function askForAdvance(ctx) {
   ).bind(staffId).first();
   if (waiting) throw badRequest('You have already asked for one and nobody has decided yet.');
 
-  const row = await ctx.db.prepare(
-    `INSERT INTO hr_advance (staff_id, amount, months, monthly, currency, reason, status, asked_by)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'requested', ?7) RETURNING id`,
-  ).bind(staffId, amount, months, instalmentFor(amount, months), currency, reason,
-    `${staff.name} (staff)`).first();
+  // Somebody still paying one back may only ask for the small emergency. Read
+  // here rather than trusted from the screen, which is a thing that can be
+  // out of date by the time the form is sent.
+  const open = await ctx.db.prepare(
+    "SELECT id FROM hr_advance WHERE staff_id = ? AND status = 'approved'",
+  ).bind(staffId).all().catch(() => ({ results: [] }));
+  const hasOpen = (open.results ?? []).length > 0;
 
-  await audit(ctx, 'advance.ask', row?.id, { amount, months });
+  const check = checkRequest({
+    purpose: body.purpose,
+    amount,
+    hasOpen,
+    hasPaper: Boolean(body.paper?.base64),
+  });
+  if (!check.ok) throw badRequest(check.reason);
+
+  // The period follows from what the money is for. Nothing the form sends
+  // about it is read: changing it is a decision, and decisions are made by
+  // whoever is answering the request.
+  const months = check.months;
+  const purpose = body.purpose;
+
+  const documentId = body.paper?.base64
+    ? await storeFile(ctx, staffId, {
+      kind: 'advance_paper',
+      title: `${purposeOf(purpose)?.label ?? 'Advance'} — ${staff.name}`,
+      filename: str(body.paper.filename, 'File name', { max: 120 }) || 'paper',
+      mime: str(body.paper.mime, 'File type', { max: 80 }) || 'image/jpeg',
+      bytes: fromBase64(body.paper.base64),
+      expiresOn: null,
+      by: `${staff.name} (staff)`,
+    })
+    : null;
+
+  const row = await ctx.db.prepare(
+    `INSERT INTO hr_advance (staff_id, amount, months, monthly, currency, reason, status,
+                             asked_by, purpose, document_id)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'requested', ?7, ?8, ?9) RETURNING id`,
+  ).bind(staffId, amount, months, instalmentFor(amount, months), currency, reason,
+    `${staff.name} (staff)`, purpose, documentId).first();
+
+  await audit(ctx, 'advance.ask', row?.id, { amount, months, purpose });
 
   await createNotice(ctx.db, {
     kind: 'advance.asked',
     level: 'info',
     title: `${staff.name} has asked for a salary advance`,
-    body: `${money(amount, currency)} over ${months} month${months === 1 ? '' : 's'}.`
+    body: `${money(amount, currency)} for ${(purposeOf(purpose)?.label ?? 'something').toLowerCase()}`
+      + `, over ${months} month${months === 1 ? '' : 's'}.`
+      + (documentId ? ' The paper is attached.' : '')
       + (reason ? ` ${reason}` : ''),
     link: '#/att-advances',
     actor: staff.name,
     audience: 'hr_pay',
   }, ctx);
 
-  return json({ ok: true, id: row?.id ?? null, status: 'requested' });
+  return json({ ok: true, id: row?.id ?? null, status: 'requested', months, purpose });
 }
 
 /** Take back a request nobody has decided yet. */
@@ -708,6 +765,55 @@ async function tell(ctx, person, { kind, title, body }) {
     push: true,
     email: false,
   }, ctx);
+}
+
+/**
+ * The bill or the tenancy agreement, handed back as the file it is.
+ *
+ * Two people may read it: whoever is deciding the request, and the person
+ * whose paper it is. The check is on this row rather than on the menu that led
+ * here.
+ */
+export async function paper(ctx, idParam) {
+  const id = int(idParam, 'Advance', { required: true, min: 1 });
+
+  const row = await ctx.db.prepare('SELECT staff_id, document_id FROM hr_advance WHERE id = ?')
+    .bind(id).first();
+  if (!row?.document_id) throw notFound('Nothing was attached to that request.');
+
+  const mine = Number(ctx.session.user.staff_id) || 0;
+  const everybody = (ctx.session.permissions ?? []).includes('hr_pay');
+  if (!everybody && mine !== Number(row.staff_id)) {
+    throw forbidden('That is not yours to read.');
+  }
+
+  const doc = await ctx.db.prepare('SELECT * FROM hr_document WHERE id = ?')
+    .bind(row.document_id).first();
+  if (!doc) throw notFound('That paper is no longer on file.');
+
+  const content = await readFile(ctx.db, doc);
+  return new Response(content, {
+    headers: {
+      'Content-Type': doc.mime || 'application/octet-stream',
+      'Content-Disposition': `inline; filename="${(doc.filename || 'paper').replace(/["\\]/g, '')}"`,
+      'Cache-Control': 'private, no-store',
+    },
+  });
+}
+
+/** Bytes out of what the browser sent, data-URI prefix and all. */
+function fromBase64(value) {
+  const clean = String(value ?? '').replace(/^data:[^,]*,/, '').replace(/\s/g, '');
+  if (!clean) return new Uint8Array(0);
+  let binary;
+  try {
+    binary = atob(clean);
+  } catch {
+    throw badRequest('That file did not arrive in one piece. Try again.');
+  }
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+  return out;
 }
 
 /** Money, said the way the screens say it: grouped, and no pesewas on a whole. */

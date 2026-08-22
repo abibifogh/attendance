@@ -108,7 +108,7 @@ test('what is left is the opening balance less what was actually allowed', () =>
   assert.equal(standing.left, 550);
   assert.equal(standing.waiting, 120, 'and what is waiting is neither spent nor free');
   assert.equal(standing.ifAllApproved, 430);
-  assert.equal(standing.carriedIn, 200, 'the part claimed before the app was keeping the record');
+  assert.equal(standing.carriedIn, -200, 'the part claimed before the app was keeping the record');
 });
 
 test('a claim bigger than the balance is reported rather than refused outright', () => {
@@ -141,16 +141,27 @@ test('the office sets who qualifies and what they get, everybody at once', async
 
   assert.equal(kofi.standing.left, 1000, 'a whole allowance where nothing is carried in');
   assert.equal(ama.standing.left, 400, 'and what was actually left where something is');
-  assert.equal(ama.standing.carriedIn, 600);
+  assert.equal(ama.standing.carriedIn, -600);
   assert.equal(seen.totals.allowance, 1400);
 });
 
-test('a starting balance cannot be more than the allowance it belongs to', async () => {
+test('a starting balance can carry over from last year as well as fall short', async () => {
   const { db } = setup();
-  await assert.rejects(
-    () => giveAllowance(db, [{ staffId: 1, qualifies: true, allowance: 500, opening: 900 }]),
-    /cannot be more than the allowance/,
-  );
+  await giveAllowance(db, [
+    // Part of this year already claimed on paper.
+    { staffId: 1, qualifies: true, allowance: 1000, opening: 400 },
+    // And something unused carried over from last year.
+    { staffId: 2, qualifies: true, allowance: 500, opening: 900 },
+  ]);
+
+  const seen = await read(await medical(ctx(db, WAGES, { query: `?year=${YEAR}` })));
+  const short = seen.people.find((p) => p.staff.id === 1).standing;
+  const carried = seen.people.find((p) => p.staff.id === 2).standing;
+
+  assert.equal(short.left, 400);
+  assert.equal(short.carriedIn, -600, 'six hundred of this year was already gone');
+  assert.equal(carried.left, 900);
+  assert.equal(carried.carriedIn, 400, 'four hundred came over from last year');
 });
 
 test('unticking somebody takes the year off them and leaves their claims alone', async () => {

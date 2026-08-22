@@ -75,10 +75,12 @@ export function standingOf(allowance, claims = []) {
     waiting,
     left: round2(opening - spent),
     ifAllApproved: round2(opening - spent - waiting),
-    // Where the opening balance is not the whole allowance, something had
-    // already been claimed before the app was keeping the record. Worth saying
-    // out loud on the screen rather than leaving two figures to disagree.
-    carriedIn: round2(round2(allowance.allowance) - opening),
+    // The difference between the year's allowance and what they actually
+    // started with. Negative where something was carried over from last year,
+    // positive where part of this year had already gone before the app was
+    // keeping the record. Either way it is a real thing that happened, and the
+    // screen says which rather than leaving two figures to disagree.
+    carriedIn: round2(opening - round2(allowance.allowance)),
   };
 }
 

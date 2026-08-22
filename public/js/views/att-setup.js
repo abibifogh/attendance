@@ -2,7 +2,9 @@ import { api } from '../api.js';
 import { replaceParams } from '../app.js';
 import { fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
-import { field, formDialog, shiftColour, shiftColourPicker } from './att-shared.js';
+import {
+  byPosition, field, formDialog, shiftColour, shiftColourPicker,
+} from './att-shared.js';
 
 /**
  * Attendance setup.
@@ -441,6 +443,10 @@ async function shiftsTab(reload) {
 
   const inUse = shifts.filter((s) => s.active);
   const retired = shifts.filter((s) => !s.active);
+  // Every position somebody has named, whether or not it currently holds two
+  // shifts. One that has been narrowed to a single shift is still a position,
+  // and hiding it would mean a rename that appears to have lost the thing.
+  const grouped = byPosition(inUse).filter((g) => g.key.startsWith('p:'));
 
   /**
    * Put several shifts under one position in one action.
@@ -490,6 +496,69 @@ async function shiftsTab(reload) {
     toast(done.position
       ? `${done.changed} shift${done.changed === 1 ? '' : 's'} under ${done.position}.`
       : `${done.changed} shift${done.changed === 1 ? '' : 's'} back on their own.`, 'good');
+    await reload();
+  };
+
+  /**
+   * Change a position that already exists.
+   *
+   * Grouping shifts is easy; ungrouping one, or fixing a name typed two ways,
+   * meant hunting down each shift and retyping the word. This is the same
+   * operation from the other end: the position is the thing on screen, and
+   * what changes is its name and which shifts are under it.
+   */
+  const editGroup = async (group) => {
+    const picked = new Set(group.shifts.map((r) => r.id));
+
+    const name = h('input', {
+      type: 'text', name: 'position', maxlength: 60, value: group.name, required: true,
+    });
+
+    const list = h('div.pos-edit-list', inUse.map((row) => h('label.tickline',
+      h('input', {
+        type: 'checkbox',
+        checked: picked.has(row.id),
+        onchange: (e) => {
+          if (e.target.checked) picked.add(row.id); else picked.delete(row.id);
+        },
+      }),
+      h('span', `${row.name} · ${row.starts_at}–${row.ends_at}`,
+        row.position && row.position !== group.name
+          ? h('small.muted', ` · under ${row.position}`)
+          : null))));
+
+    const done = await formDialog({
+      title: `The ${group.name} position`,
+      submitLabel: 'Save the position',
+      body: h('div',
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'Rename it, or change which shifts belong to it. Nothing about the shifts themselves '
+          + 'changes, and unticking one puts it back on its own.'),
+        field('Called', name),
+        h('p.muted', { style: { fontSize: '.85rem', marginBottom: '.2rem' } }, 'Shifts under it'),
+        list),
+      onSubmit: async (form) => {
+        const called = String(form.get('position') || '').trim();
+        if (!called) throw new Error('A position needs a name.');
+
+        const now = [...picked];
+        const dropped = group.shifts.map((r) => r.id).filter((id) => !picked.has(id));
+        if (!now.length && !dropped.length) return { changed: 0, position: called };
+
+        // Two calls on purpose: one says what the position now holds, the
+        // other puts what left it back on its own. Doing it in one would mean
+        // an endpoint that has to guess which of the two somebody meant.
+        if (now.length) await api.attGroupShifts({ shiftIds: now, position: called });
+        if (dropped.length) await api.attGroupShifts({ shiftIds: dropped, position: '' });
+        return { changed: now.length, position: called, dropped: dropped.length };
+      },
+    });
+
+    if (!done) return;
+    toast(done.dropped
+      ? `${done.position}: ${done.changed} shift${done.changed === 1 ? '' : 's'}, `
+        + `${done.dropped} put back on ${done.dropped === 1 ? 'its' : 'their'} own.`
+      : `${done.position}: ${done.changed} shift${done.changed === 1 ? '' : 's'}.`, 'good');
     await reload();
   };
 
@@ -579,6 +648,24 @@ async function shiftsTab(reload) {
         groupBy: (r) => r.department || null,
         groupNoun: ['shift', 'shifts'],
       }))),
+
+    // The positions themselves, where there are any. A property that has never
+    // grouped two shifts has nothing to read here, and the card stays away.
+    grouped.length
+      ? card('Positions', {
+        note: 'The job, as against the hours',
+        wide: true,
+      },
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'The rota can be read by position as well as by person. Shifts under one position are '
+          + 'stacked earliest first, so a group reads down the day.'),
+        h('div.pos-sets', grouped.map((group) => h('div.pos-set',
+          h('div',
+            h('div.pos-set-name', group.name),
+            h('div.muted', group.shifts
+              .map((r) => `${r.name} · ${r.starts_at}–${r.ends_at}`).join('  ·  '))),
+          h('button.btn-sm', { onclick: () => editGroup(group) }, 'Edit')))))
+      : null,
 
     // Folded away rather than mixed in. A retired shift is not one of the
     // property's shifts any more — it is a thing the history refers to — and
