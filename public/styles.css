@@ -3108,6 +3108,9 @@ html { touch-action: manipulation; }
 .lunch-table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 44rem; }
 .lunch-table th, .lunch-table td {
   border: 1px solid var(--border); padding: .5rem .55rem; vertical-align: top; text-align: left;
+  /* Meals and names are prose, not figures, so they wrap rather than run off
+     the end of the sheet the way the rest of the app's tables do. */
+  white-space: normal; overflow-wrap: break-word;
 }
 .lunch-table th { background: var(--surface-2, rgba(148, 163, 184, .1)); }
 .lunch-th-day { font-weight: 700; }
@@ -3165,9 +3168,21 @@ html { touch-action: manipulation; }
 .lunch-day-meal { font-size: .9rem; color: var(--text-dim); }
 .lunch-day-yes {
   font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint);
+  flex: none; min-width: 3.4rem; text-align: right;
 }
 .lunch-day:has(input:checked) .lunch-day-yes { color: var(--good); font-weight: 700; }
 .lunch-save { width: 100%; margin-top: .8rem; padding: .8rem; font-size: 1rem; }
+
+/* Who has not answered. A name, the days they are down for, and the button
+   that answers for them. */
+.lunch-waiting { display: grid; }
+.lunch-waiting-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; padding: .6rem .2rem; border-top: 1px solid var(--border);
+}
+.lunch-waiting-row:first-child { border-top: none; }
+.lunch-waiting-row > div { min-width: 0; }
+.lunch-waiting-row small { line-height: 1.5; }
 
 .lunch-done { text-align: center; }
 .lunch-tick {

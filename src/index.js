@@ -23,6 +23,7 @@ import * as pay from './routes/pay.js';
 import * as advance from './routes/advances.js';
 import * as medical from './routes/medical.js';
 import * as payroll from './routes/payroll.js';
+import * as lunch from './routes/lunch.js';
 import * as sign from './routes/sign.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
@@ -183,6 +184,21 @@ export const ROUTES = [
   // Readable by whoever decides the claim and by whoever handed the bill in.
   // The check is on the receipt itself — see `receipt`.
   ['GET', '/api/medical/receipt/:id', ['hr_pay', 'att_me'], medical.receipt],
+
+  // ------------------------------------------------------------- lunch --
+  // Whoever runs the kitchen, and one address everybody else opens.
+  ['GET', '/api/lunch', 'lunch', lunch.lunchWeek],
+  ['POST', '/api/lunch/menu', 'lunch', lunch.setMenu],
+  ['POST', '/api/lunch/order', 'lunch', lunch.setOrder],
+  ['POST', '/api/lunch/link', 'lunch', lunch.makeLink],
+  ['POST', '/api/lunch/close', 'lunch', lunch.closeLink],
+  ['POST', '/api/lunch/days', 'lunch', lunch.setOpenDays],
+
+  // The public half. Nothing here needs a session; the token is the whole of
+  // the check, and what it opens is first names, rostered days and meals.
+  ['GET', '/api/l/:token', 'public', lunch.lunchOpen],
+  ['GET', '/api/l/:token/me/:id', 'public', lunch.lunchMine],
+  ['POST', '/api/l/:token/me/:id', 'public', lunch.lunchSay],
 
   // ----------------------------------------------------------- payroll --
   ['GET', '/api/payroll', 'hr_pay', payroll.payroll],
@@ -469,6 +485,13 @@ export default {
     // less of the system it can reach the better.
     if (url.pathname.startsWith('/s/')) {
       return servePage(env, url, request, '/sign.html');
+    }
+
+    // The lunch list. One address for the whole property rather than one per
+    // person: almost nobody who eats here has a login, and the page is built
+    // to be found on a noticeboard.
+    if (url.pathname.startsWith('/lunch/')) {
+      return servePage(env, url, request, '/lunch.html');
     }
 
     // Arriving from the group hub with a hand-off code. Not under /api/

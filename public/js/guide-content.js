@@ -1046,6 +1046,62 @@ export const GUIDE = [
 
   // =========================================================================
   {
+    key: 'lunch',
+    title: 'Lunch',
+    permission: 'lunch',
+    lede: 'One link, one meal a day, and the head count the order goes in on.',
+    blocks: [
+      { p: 'The property feeds whoever is on duty, and the kitchen has to order before the week '
+        + 'starts. This replaces the sheet on the noticeboard and somebody counting names on a '
+        + 'Sunday night, which fails the same two ways every week: food cooked for people who '
+        + 'were not in, and people in with no food.' },
+
+      { sub: 'How the week runs' },
+      { steps: [
+        'Set the menu for next week: one meal a day, the same for everybody.',
+        'Staff open the link between Thursday and Sunday, find their name, and tick the days '
+          + 'they are eating.',
+        'Read the count under each day and place the order.',
+        'Print the week for the kitchen.',
+      ] },
+      { note: 'Thursday, Friday, Saturday and Sunday all order for the same Monday, so "next '
+        + 'week" means one thing to everybody. Outside those days the link opens and says when '
+        + 'it will start taking answers. Change the days under "When it opens".' },
+
+      { sub: 'The link' },
+      { p: 'One address for the whole property, not one per person. Put it on the noticeboard '
+        + 'and in the group chat. Whoever opens it finds their own name, sees the days the rota '
+        + 'says they are in next week, and ticks the ones they are eating.' },
+      { p: 'It shows first names, rostered days and the menu. Nothing else about anybody is '
+        + 'behind it: no pay, no records, no contact details. That is what makes it safe to '
+        + 'pin to a wall.' },
+      { warn: 'The link is shown once and only a fingerprint is kept, so it cannot be shown '
+        + 'again. Making a new one retires the old the moment it is made, which is how you deal '
+        + 'with one that has gone somewhere it should not have.' },
+
+      { sub: 'Only days they are down to work' },
+      { p: 'Somebody is offered the days the published rota has them in, and nothing else. '
+        + 'Asking people which days they want lunch invites an answer about days they are at '
+        + 'home, and the kitchen then cooks for them.' },
+      { note: 'A day pencilled in and not published is not offered either. Publish the rota '
+        + 'before Thursday and the list has something to ask about.' },
+
+      { sub: 'Reading the week' },
+      { p: 'Seven columns, Monday to Sunday. The big number under each day is the head count, '
+        + 'which is what the order is placed on; the meal is under it, and the first names of '
+        + 'everybody eating are under that so the count can be checked rather than trusted.' },
+      { p: '"of 9 in" beside a count says how many are rostered that day, so eight out of nine '
+        + 'reads differently from eight out of twenty.' },
+      { p: '"Still to say" is everybody on the rota who has answered nothing. Saying no counts '
+        + 'as answering; these are the ones the kitchen would be guessing about. Put somebody '
+        + 'down from there when they tell you in person rather than sending them to the link.' },
+      { note: 'Print the week gives the kitchen a sheet, and your print dialog will save it as '
+        + 'a PDF if you choose that as the destination.' },
+    ],
+  },
+
+  // =========================================================================
+  {
     key: 'letters',
     title: 'Letters',
     permission: 'corr_view',

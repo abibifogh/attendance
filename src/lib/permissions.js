@@ -87,6 +87,12 @@ export const PERMISSIONS = [
       + 'somebody is owed is settled at sign-off, not read off a screen midweek',
   },
   {
+    key: 'lunch',
+    label: 'Lunch orders',
+    detail: 'Set the week\u2019s meals, hold the link staff order on, and read the count the '
+      + 'kitchen orders against. Sees who is on the rota and who is eating, and nothing else',
+  },
+  {
     key: 'users',
     label: 'Users & data',
     detail: 'Manage logins, notifications and erasing data',
@@ -120,7 +126,7 @@ export const ROLES = [
       + 'employee records and the letter register. Add "Sign for the property" to let them '
       + 'sign and stamp letters.',
     defaults: ['att_view', 'att_reports', 'att_manage', 'hr_view', 'hr_manage',
-      'corr_view', 'corr_write'],
+      'corr_view', 'corr_write', 'lunch'],
   },
   {
     key: 'viewer',
