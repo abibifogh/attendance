@@ -448,3 +448,40 @@ test('the 15% ceiling is annual, so earlier months count against it', async () =
   assert.equal(Math.round((line.bonus.gross - line.bonus.tax) * 100) / 100, 1000,
     'and the person still gets the thousand they were promised');
 });
+
+test('a scheme keeps the department it was filed under', async () => {
+  const { db } = setup();
+  await onPayroll(db);
+
+  const made = await read(await saveScheme(ctx(db, WAGES, {
+    body: { name: 'Covers', amount: 300, department: 'Housekeeping', staffIds: [1] },
+  })));
+  const wide = await read(await saveScheme(ctx(db, WAGES, {
+    body: { name: 'Long service', amount: 100, staffIds: [1, 2] },
+  })));
+
+  const seen = await read(await payroll(ctx(db, WAGES, { url: `/api/payroll?month=${MONTH}` })));
+  const byId = new Map(seen.schemes.map((s) => [s.id, s]));
+  assert.equal(byId.get(made.id).department, 'Housekeeping');
+  // Nothing typed means the whole property, and null is how that is said.
+  assert.equal(byId.get(wide.id).department, null);
+
+  // Moved to another department, and moved back out of one.
+  await saveScheme(ctx(db, WAGES, {
+    body: { id: made.id, name: 'Covers', amount: 300, department: 'F&B', staffIds: [1] },
+  }));
+  await saveScheme(ctx(db, WAGES, {
+    body: { id: wide.id, name: 'Long service', amount: 100, department: 'Admin', staffIds: [1, 2] },
+  }));
+
+  const after = await read(await payroll(ctx(db, WAGES, { url: `/api/payroll?month=${MONTH}` })));
+  const nowBy = new Map(after.schemes.map((s) => [s.id, s]));
+  assert.equal(nowBy.get(made.id).department, 'F&B');
+  assert.equal(nowBy.get(wide.id).department, 'Admin');
+
+  await saveScheme(ctx(db, WAGES, {
+    body: { id: made.id, name: 'Covers', amount: 300, department: '', staffIds: [1] },
+  }));
+  const back = await read(await payroll(ctx(db, WAGES, { url: `/api/payroll?month=${MONTH}` })));
+  assert.equal(back.schemes.find((s) => s.id === made.id).department, null);
+});

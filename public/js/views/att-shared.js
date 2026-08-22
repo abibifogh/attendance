@@ -231,6 +231,32 @@ export function sortDepartments(names) {
   });
 }
 
+/**
+ * The department a bonus scheme belongs to.
+ *
+ * A scheme that covers the whole property has none, and that is a real answer
+ * rather than a gap: those sit together under General, at the bottom, where a
+ * property-wide scheme belongs after the ones that are somebody's own.
+ */
+export const GENERAL = 'General';
+export const schemeDepartment = (scheme) => (String(scheme?.department ?? '').trim() || GENERAL);
+
+/** Bonus schemes in departments, in the order they should be read. */
+export function schemesByDepartment(schemes) {
+  const groups = new Map();
+  for (const scheme of schemes ?? []) {
+    const key = schemeDepartment(scheme);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(scheme);
+  }
+  const names = [...groups.keys()].sort((a, b) => {
+    if (a === GENERAL) return 1;
+    if (b === GENERAL) return -1;
+    return a.localeCompare(b);
+  });
+  return names.map((name) => ({ name, schemes: groups.get(name) }));
+}
+
 /** Shifts in departments, in the order a list of them should appear. */
 export function byDepartment(shifts) {
   const groups = new Map();

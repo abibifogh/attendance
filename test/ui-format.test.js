@@ -6,8 +6,8 @@ import {
 } from '../public/js/util.js';
 import { pathHasHole } from '../public/js/api.js';
 import {
-  asHours, byDepartment, byPosition, earliestFirst, fullDayIsOwn, lateBy, shiftHours,
-  shiftLabel, shiftMinutes, sortDepartments,
+  asHours, byDepartment, byPosition, earliestFirst, fullDayIsOwn, lateBy, schemesByDepartment,
+  shiftHours, shiftLabel, shiftMinutes, sortDepartments,
 } from '../public/js/views/att-shared.js';
 
 /**
@@ -315,4 +315,35 @@ test('a full day follows the shift unless somebody has said otherwise', () => {
   // A seven-hour shift whose full day is 420 is both things at once, and
   // following it is a no-op either way.
   assert.equal(fullDayIsOwn({ starts_at: '06:00', ends_at: '13:00', full_day_minutes: 420 }), false);
+});
+
+
+// ---------------------------------------------------------------------------
+// Bonus schemes, in departments
+// ---------------------------------------------------------------------------
+
+test('schemes group under their department, with General last', () => {
+  const groups = schemesByDepartment([
+    { id: 1, name: 'Covers', department: 'Housekeeping' },
+    { id: 2, name: 'Long service', department: null },
+    { id: 3, name: 'Food cost', department: 'F&B' },
+    { id: 4, name: 'Turndown', department: 'Housekeeping' },
+    { id: 5, name: 'Attendance', department: '   ' },
+  ]);
+
+  assert.deepEqual(groups.map((g) => g.name), ['F&B', 'Housekeeping', 'General']);
+  assert.deepEqual(groups[1].schemes.map((s) => s.name), ['Covers', 'Turndown']);
+  // A department that is only spaces is no department at all.
+  assert.deepEqual(groups[2].schemes.map((s) => s.name), ['Long service', 'Attendance']);
+});
+
+test('a property with no departments on its schemes gets one General group', () => {
+  const groups = schemesByDepartment([{ id: 1, name: 'Bonus' }, { id: 2, name: 'Another' }]);
+  assert.deepEqual(groups.map((g) => g.name), ['General']);
+  assert.equal(groups[0].schemes.length, 2);
+});
+
+test('no schemes is no groups rather than an empty General', () => {
+  assert.deepEqual(schemesByDepartment([]), []);
+  assert.deepEqual(schemesByDepartment(null), []);
 });

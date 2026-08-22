@@ -70,7 +70,11 @@ async function gather(ctx, month) {
       ctx.db.prepare('SELECT id, name, department, employee_no, active FROM att_staff ORDER BY name').all(),
       ctx.db.prepare('SELECT * FROM pay_profile').all(),
       ctx.db.prepare('SELECT * FROM pay_allowance WHERE active = 1').all(),
-      ctx.db.prepare('SELECT * FROM pay_scheme ORDER BY name').all(),
+      ctx.db.prepare(
+        // Departments first, alphabetically, with the property-wide ones last
+        // under General; the screen groups on this order rather than re-sorting.
+        "SELECT * FROM pay_scheme ORDER BY COALESCE(NULLIF(department, ''), CHAR(255)), name",
+      ).all(),
       ctx.db.prepare('SELECT * FROM pay_scheme_staff').all(),
       ctx.db.prepare('SELECT * FROM pay_score WHERE run_id = ?').bind(run.id).all(),
       ctx.db.prepare('SELECT * FROM pay_penalty WHERE run_id = ? ORDER BY id').bind(run.id).all(),
@@ -251,6 +255,7 @@ export async function payroll(ctx) {
       id: scheme.id,
       name: scheme.name,
       note: scheme.note,
+      department: scheme.department || null,
       amount: round2(scheme.amount),
       active: Boolean(scheme.active),
       staffIds: (data.memberBy.get(scheme.id) ?? []).map((m) => m.staff_id),
@@ -368,6 +373,7 @@ export async function saveScheme(ctx) {
   const name = str(body.name, 'Name', { required: true, max: 80 });
   const amount = round2(num(body.amount, 'What it is worth', { required: true, min: 0, max: 1_000_000 }));
   const note = str(body.note, 'Note', { max: 300 });
+  const department = str(body.department, 'Department', { max: 60 }) || null;
   const staffIds = Array.isArray(body.staffIds)
     ? [...new Set(body.staffIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
     : [];
@@ -377,12 +383,14 @@ export async function saveScheme(ctx) {
     const found = await ctx.db.prepare('SELECT id FROM pay_scheme WHERE id = ?').bind(id).first();
     if (!found) throw notFound('No such scheme.');
     await ctx.db.prepare(
-      'UPDATE pay_scheme SET name = ?2, amount = ?3, note = ?4, active = ?5 WHERE id = ?1',
-    ).bind(id, name, amount, note, body.active === false ? 0 : 1).run();
+      'UPDATE pay_scheme SET name = ?2, amount = ?3, note = ?4, active = ?5, department = ?6 '
+      + 'WHERE id = ?1',
+    ).bind(id, name, amount, note, body.active === false ? 0 : 1, department).run();
   } else {
     const made = await ctx.db.prepare(
-      'INSERT INTO pay_scheme (name, amount, note) VALUES (?1, ?2, ?3) RETURNING id',
-    ).bind(name, amount, note).first();
+      'INSERT INTO pay_scheme (name, amount, note, department) VALUES (?1, ?2, ?3, ?4) '
+      + 'RETURNING id',
+    ).bind(name, amount, note, department).first();
     id = made?.id ?? null;
   }
 
@@ -393,7 +401,7 @@ export async function saveScheme(ctx) {
     ).bind(id, staffId).run();
   }
 
-  await audit(ctx, 'payroll.scheme', id, { name, amount, people: staffIds.length });
+  await audit(ctx, 'payroll.scheme', id, { name, amount, department, people: staffIds.length });
   return json({ ok: true, id, name, people: staffIds.length });
 }
 

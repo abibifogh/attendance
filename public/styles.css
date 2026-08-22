@@ -2681,6 +2681,28 @@ html { touch-action: manipulation; }
 .pay-total > td { border-top: 2px solid var(--border-strong); font-variant-numeric: tabular-nums; }
 .pay-score { width: 4.5rem; text-align: right; }
 
+/* Schemes under the department they belong to, with the property-wide ones
+   last under General. A flat run of cards was unreadable past about six. */
+.pay-scheme-group { margin-bottom: 1rem; }
+.pay-scheme-dept {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .8rem;
+  padding: .3rem 0 .35rem; margin-bottom: .5rem;
+  border-bottom: 1px solid var(--border-strong);
+  font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-dim);
+  cursor: pointer; list-style: none;
+}
+.pay-scheme-dept::-webkit-details-marker { display: none; }
+/* A department folds away, because a property with six schemes and thirty
+   people under them is otherwise one very long screen. */
+.pay-scheme-dept > span::before {
+  content: '\25be'; margin-right: .45rem; font-size: .9em; color: var(--text-faint);
+}
+.pay-scheme-group:not([open]) .pay-scheme-dept { margin-bottom: 0; }
+.pay-scheme-group:not([open]) .pay-scheme-dept > span::before { content: '\25b8'; }
+.pay-scheme-dept:hover { color: var(--text); }
+.pay-scheme-dept small { font-weight: 400; letter-spacing: 0; text-transform: none; }
+
 .pay-scheme {
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   padding: .6rem .7rem; margin-bottom: .6rem;

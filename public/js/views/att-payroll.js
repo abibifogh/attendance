@@ -3,7 +3,9 @@ import {
   confirmAction, fmtNum, h, money, monthOf, mount, shiftMonth, toast, todayISO,
 } from '../util.js';
 import { card, emptyState } from './components.js';
-import { field, formDialog, showSheet } from './att-shared.js';
+import {
+  GENERAL, field, formDialog, schemesByDepartment, showSheet,
+} from './att-shared.js';
 import { replaceParams } from '../app.js';
 import { printReport } from '../print.js';
 import { niceMonth } from './att-advances.js';
@@ -224,7 +226,13 @@ function schemesCard(data, month, closed, reload, cash) {
     + 'they get that share of it. Somebody can be under several schemes or under none.'),
 
   data.schemes.length
-    ? data.schemes.map((scheme) => {
+    ? schemesByDepartment(data.schemes).map((group) => h('details.pay-scheme-group', {
+      open: true,
+    },
+    h('summary.pay-scheme-dept',
+      h('span', group.name),
+      h('small.muted', `${group.schemes.length} scheme${group.schemes.length === 1 ? '' : 's'}`)),
+    group.schemes.map((scheme) => {
       const rows = scheme.staffIds.map((staffId) => {
         const person = data.staff.find((s) => s.id === staffId);
         const now = scheme.scores.find((x) => x.staffId === staffId)?.score ?? 0;
@@ -269,7 +277,7 @@ function schemesCard(data, month, closed, reload, cash) {
         rows.length
           ? h('table.pay-scores', h('tbody', rows))
           : h('p.muted', { style: { fontSize: '.85rem' } }, 'Nobody is under this one yet.'));
-    })
+    })))
     : null,
 
   data.schemes.length && !closed
@@ -298,6 +306,18 @@ function schemesCard(data, month, closed, reload, cash) {
 async function editScheme(scheme, data, reload) {
   const picked = new Set(scheme?.staffIds ?? []);
 
+  // The departments the property already has, off the staff list, plus
+  // whatever this scheme is under in case that department has since emptied.
+  const departments = [...new Set([
+    ...data.staff.map((person) => person.department).filter(Boolean),
+    ...(scheme?.department ? [scheme.department] : []),
+  ])].sort((a, b) => a.localeCompare(b));
+
+  const current = scheme?.department || '';
+  const departmentPick = h('select', { name: 'department' },
+    h('option', { value: '', selected: !current }, `${GENERAL}, the whole property`),
+    departments.map((name) => h('option', { value: name, selected: name === current }, name)));
+
   const list = h('div.pos-edit-list', data.staff.map((person) => h('label.tickline',
     h('input', {
       type: 'checkbox',
@@ -324,6 +344,8 @@ async function editScheme(scheme, data, reload) {
       field('What it is for', h('input', {
         type: 'text', name: 'note', maxlength: 300, value: scheme?.note ?? '',
       })),
+      field('Department', departmentPick,
+        'Groups the list. One that covers everybody belongs under General'),
       h('p.muted', { style: { fontSize: '.85rem', marginBottom: '.2rem' } }, 'Who is under it'),
       list),
     onSubmit: (form) => api.payrollScheme({
@@ -331,6 +353,7 @@ async function editScheme(scheme, data, reload) {
       name: form.get('name'),
       amount: form.get('amount'),
       note: form.get('note'),
+      department: form.get('department') || null,
       staffIds: [...picked],
     }),
   });
