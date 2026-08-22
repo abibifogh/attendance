@@ -296,20 +296,28 @@ export async function myReport(ctx) {
   if (from > today) {
     return json({
       month, from, to: monthEnd, future: true, me: person(staff), days: [], totals: null,
+      settled: false, withHolidays: true,
     });
   }
 
   const [ds, signed] = await Promise.all([
     loadDataset(ctx.db, { from, to }),
     ctx.db.prepare(
-      `SELECT from_day, to_day, decided_by, decided_at, days_applied, decision
-         FROM att_period_review
-        WHERE staff_id = ?1 AND from_day <= ?3 AND to_day >= ?2
-        ORDER BY from_day`,
+      `SELECT from_day FROM att_period_review
+        WHERE staff_id = ?1 AND from_day <= ?3 AND to_day >= ?2`,
     ).bind(staff.id, from, to).all().catch(() => ({ results: [] })),
   ]);
 
-  const records = computeRange(ds, staff.id, from, to);
+  // Whether a public holiday counts towards what they read here. A property
+  // that pays for them wants them in the figure; one that treats them as
+  // ordinary rest days does not. Left out of the totals and off the list
+  // together, so the day-by-day cannot disagree with the summary above it.
+  const withHolidays = ds.settings.att_report_holidays !== '0';
+  const all = computeRange(ds, staff.id, from, to);
+  const records = withHolidays
+    ? all
+    : all.filter((r) => (ds.reasonBy.get(r.reason_code)?.kind ?? r.status) !== 'holiday');
+
   const totals = summarise(records, { shifts: ds.shiftById, reasons: ds.reasonBy });
 
   return json({
@@ -318,6 +326,7 @@ export async function myReport(ctx) {
     to,
     monthEnd,
     today,
+    withHolidays,
     me: person(staff),
     // Only what a person should read about their own month. `summarise`
     // carries more than this; the rest of it is the property's business.
@@ -340,12 +349,11 @@ export async function myReport(ctx) {
         }))
         .sort((a, b) => b.days - a.days),
     },
-    // Whether anybody has closed any of it off. A signed month is settled;
-    // an unsigned one is what the terminal has said so far.
-    signed: (signed.results ?? []).map((r) => ({
-      from: r.from_day, to: r.to_day, by: r.decided_by, at: r.decided_at,
-      daysApplied: r.days_applied, decision: r.decision,
-    })),
+    // Whether any of it has been closed off. Whether, and not by whom: a
+    // member of staff reading their own month needs to know if the figures
+    // can still move, and putting a manager's name against their attendance
+    // record turns a report into something else.
+    settled: (signed.results ?? []).length > 0,
     days: records
       .filter((r) => r.scheduled || Number(r.worked_minutes) || r.status === 'leave')
       .map((r) => ({

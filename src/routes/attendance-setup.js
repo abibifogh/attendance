@@ -811,6 +811,13 @@ const SETTINGS = new Map([
   // been recorded against it.
   ['att_late_nudge', (v) => (v === '0' || v === 'false' ? '0' : '1')],
 
+  // Whether a public holiday counts towards what a member of staff reads on
+  // their own monthly report. A property that pays for them wants them in the
+  // figure; one that treats them as ordinary rest days does not, and a day
+  // that shows in one place and not another is a question somebody has to
+  // answer twice a month.
+  ['att_report_holidays', (v) => (v === '0' || v === 'false' ? '0' : '1')],
+
   // What this property considers a sustainable rota. The first four are
   // Act 651 and are seeded at the statutory figure; a property may tighten
   // them, and the app cites the section wherever it reports one. The rest are

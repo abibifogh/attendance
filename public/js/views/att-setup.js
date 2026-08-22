@@ -1336,7 +1336,7 @@ async function rulesTab(reload) {
           + 'manage the rota.'),
       ),
 
-      card('What staff see', { note: 'On their own My shifts screen' },
+      card('What staff see', { note: 'On My shifts and My report' },
         h('label.field',
           h('span', 'How much leave they have left'),
           h('select', { name: 'att_show_balance' },
@@ -1345,11 +1345,26 @@ async function rulesTab(reload) {
             h('option', { value: '0', selected: (s.att_show_balance ?? '1') === '0' },
               'Keep it off their screen'),
           )),
-        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+        h('p.muted', { style: { fontSize: '.85rem' } },
           'It is their own figure, so nothing here is confidential either way. Turn it off while '
           + 'the balances are still being tidied up after an import: a number in front of somebody '
           + 'is a number they will ask about, and it should be right before it is published to '
           + 'everybody. They can still ask for leave with it off.'),
+
+        h('label.field',
+          h('span', 'Public holidays on their monthly report'),
+          h('select', { name: 'att_report_holidays' },
+            h('option', { value: '1', selected: (s.att_report_holidays ?? '1') !== '0' },
+              'Count them'),
+            h('option', { value: '0', selected: (s.att_report_holidays ?? '1') === '0' },
+              'Leave them out'),
+          )),
+        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+          'A property that pays for public holidays wants them in the figure; one that treats '
+          + 'them as ordinary rest days does not. Left out, they go from the totals and from the '
+          + 'day-by-day together, so the two halves of the report cannot disagree. This changes '
+          + 'only what staff read about themselves — every management report counts them as it '
+          + 'always did.'),
       ),
     ),
     h('div.btn-row', { style: { marginTop: '1rem' } },

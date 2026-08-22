@@ -103,8 +103,10 @@ export const GUIDE = [
         + 'much, what you were absent for, and what leave it cost you. Pick a different month '
         + 'with the arrows. The day-by-day list underneath is where to look when one of the '
         + 'numbers surprises you.' },
-      { note: 'A month nobody has signed off can still change — a corrected clock time moves '
+      { note: 'A month nobody has closed off can still change — a corrected clock time moves '
         + 'the figures with it. The screen says which kind of month you are looking at.' },
+      { p: 'Whether public holidays are counted is up to the property, and set under Setup, '
+        + 'Rules. Left out, they go from the totals and from the day-by-day together.' },
 
       { sub: 'Asking for leave' },
       { steps: [

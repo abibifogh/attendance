@@ -77,13 +77,15 @@ export async function renderAttMyReport(params = {}) {
         t.daysAbsent ? 'bad' : 'good'),
     ),
 
-    signedLine(data),
+    settledLine(data),
 
     // The rest of the month, in one line each rather than four more tiles.
     card('The month in words', { wide: true },
       h('ul.report-lines',
         line('Rest days', fmtNum(t.daysRest, 0)),
-        t.daysHoliday ? line('Public holidays', fmtNum(t.daysHoliday, 0)) : null,
+        data.withHolidays && t.daysHoliday
+          ? line('Public holidays', fmtNum(t.daysHoliday, 0))
+          : null,
         t.daysLeave ? line('Days on leave', fmtNum(t.daysLeave, t.daysLeave % 1 ? 1 : 0)) : null,
         t.leaveDeducted
           ? line('Charged against your leave',
@@ -118,8 +120,9 @@ export async function renderAttMyReport(params = {}) {
       : h('p.muted', 'Nothing on the rota and nothing recorded.')),
 
     h('p.muted', { style: { fontSize: '.82rem' } },
-      'These are the figures as they stand. A month nobody has signed off can still change '
-      + 'if a clock time is corrected. What you are paid is settled separately.'),
+      'These are the figures as they stand. A month nobody has closed off can still change if '
+      + 'a clock time is corrected. What you are paid is settled separately.'
+      + (data.withHolidays ? '' : ' Public holidays are not counted here.')),
   );
 
   return host;
@@ -138,24 +141,22 @@ function line(label, value) {
   return h('li', h('span', label), h('strong', String(value)));
 }
 
-/** Whether anybody has closed this month off, and what it moved. */
-function signedLine(data) {
-  if (!data.signed.length) {
-    return h('p.signoff-counts',
-      h('span.pill.warn', 'Not signed off yet'),
+/**
+ * Whether the figures can still move.
+ *
+ * Whether, and not by whom. A member of staff reading their own month needs
+ * to know if a corrected clock time can still change what is above; putting a
+ * manager's name against their attendance record turns a report into
+ * something else.
+ */
+function settledLine(data) {
+  return data.settled
+    ? h('p.signoff-counts',
+      h('span.pill.good', 'Settled'),
+      h('span.muted', ' — these figures are final'))
+    : h('p.signoff-counts',
+      h('span.pill.warn', 'Not settled yet'),
       h('span.muted', ' — these figures can still change'));
-  }
-
-  const moved = data.signed.reduce((n, s) => n + (Number(s.daysApplied) || 0), 0);
-  const by = [...new Set(data.signed.map((s) => s.by).filter(Boolean))];
-
-  return h('p.signoff-counts',
-    h('span.pill.good', 'Signed off'),
-    h('span.muted', ` by ${by.join(', ') || 'somebody'}`),
-    moved
-      ? h('span.pill', { style: { marginLeft: '.4rem' } },
-        `${moved > 0 ? '+' : ''}${moved} against your leave`)
-      : null);
 }
 
 /**

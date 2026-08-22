@@ -290,14 +290,14 @@ test('my report reads the month asked for, and only mine', async () => {
   assert.ok(!/overtime/i.test(JSON.stringify(out)), 'settled at sign-off, not read off a screen');
 });
 
-test('a month nobody has closed says so, and a closed one names who', async () => {
+test('a month says whether it can still change, and never who closed it', async () => {
   const { db, raw } = setup();
   raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
     .run('2026-06-01');
 
   const url = new URL('https://x/api/me/report?month=2026-06');
   let out = await (await myReport({ ...ctx(db, KOFI), url })).json();
-  assert.deepEqual(out.signed, []);
+  assert.equal(out.settled, false);
 
   raw.prepare(
     `INSERT INTO att_period_review
@@ -307,9 +307,37 @@ test('a month nobody has closed says so, and a closed one names who', async () =
   ).run();
 
   out = await (await myReport({ ...ctx(db, KOFI), url })).json();
-  assert.equal(out.signed.length, 1);
-  assert.match(out.signed[0].by, /Ama/);
-  assert.equal(out.signed[0].daysApplied, -1);
+  assert.equal(out.settled, true);
+  // Whether, and not by whom: a manager's name against somebody's attendance
+  // record turns a report into something else.
+  assert.ok(!/Ama/.test(JSON.stringify(out)), 'nobody is named');
+});
+
+test('public holidays count unless the property says otherwise', async () => {
+  const { db, raw } = setup();
+  raw.prepare("INSERT INTO att_holidays (day, name, active) VALUES ('2026-06-02', 'Republic Day', 1)")
+    .run();
+  for (const d of ['2026-06-01', '2026-06-02']) {
+    raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
+      .run(d);
+  }
+
+  const url = new URL('https://x/api/me/report?month=2026-06');
+  let out = await (await myReport({ ...ctx(db, KOFI), url })).json();
+  assert.equal(out.withHolidays, true);
+  assert.equal(out.totals.daysHoliday, 1);
+  assert.ok(out.days.some((d) => d.day === '2026-06-02'));
+
+  raw.prepare(
+    "INSERT INTO settings (key, value) VALUES ('att_report_holidays','0') "
+    + "ON CONFLICT(key) DO UPDATE SET value = '0'",
+  ).run();
+
+  out = await (await myReport({ ...ctx(db, KOFI), url })).json();
+  assert.equal(out.withHolidays, false);
+  assert.equal(out.totals.daysHoliday, 0, 'gone from the totals');
+  assert.ok(!out.days.some((d) => d.day === '2026-06-02'),
+    'and from the day-by-day, so the two halves cannot disagree');
 });
 
 test('a month that has not started yet says so rather than counting absences', async () => {
