@@ -20,6 +20,7 @@ import * as corr from './routes/correspondence.js';
 import * as signoff from './routes/signoff.js';
 import * as workload from './routes/workload.js';
 import * as pay from './routes/pay.js';
+import * as advance from './routes/advances.js';
 import * as sign from './routes/sign.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
@@ -139,6 +140,9 @@ export const ROUTES = [
   ['POST', '/api/me/leave/:id/withdraw', 'att_me', mine.withdrawMyLeave],
   ['POST', '/api/me/availability', 'att_me', mine.setMyAvailability],
   ['POST', '/api/me/running-late', 'att_me', mine.tellThemImLate],
+  ['GET', '/api/me/advances', 'att_me', advance.myAdvances],
+  ['POST', '/api/me/advances', 'att_me', advance.askForAdvance],
+  ['POST', '/api/me/advances/:id/withdraw', 'att_me', advance.withdrawMyAdvance],
   ['POST', '/api/att/availability', 'att_rota', att.setAvailability],
   ['GET', '/api/att/workload', ['att_rota', 'att_reports'], workload.workload],
 
@@ -149,6 +153,18 @@ export const ROUTES = [
   ['POST', '/api/hr/staff/:id/pay', 'hr_pay', pay.setPay],
   ['DELETE', '/api/hr/staff/:id/pay/:rateId', 'hr_pay', pay.removePay],
   ['GET', '/api/att/labour-cost', 'hr_pay', pay.labourCost],
+
+  // ---------------------------------------------------------- advances --
+  // The same permission as what anybody earns: an advance says as much about
+  // somebody's circumstances as their salary does, and usually more.
+  ['GET', '/api/advances', 'hr_pay', advance.advances],
+  ['POST', '/api/advances', 'hr_pay', advance.addAdvance],
+  ['POST', '/api/advances/close', 'hr_pay', advance.closeMonth],
+  ['GET', '/api/advances/staff/:id', 'hr_pay', advance.staffAdvances],
+  ['POST', '/api/advances/:id/decide', 'hr_pay', advance.decideAdvance],
+  ['PATCH', '/api/advances/:id', 'hr_pay', advance.adjustAdvance],
+  ['POST', '/api/advances/:id/entry', 'hr_pay', advance.addEntry],
+  ['DELETE', '/api/advances/:id/entry/:entryId', 'hr_pay', advance.removeEntry],
   ['GET', '/api/att/workload/rota', ['att_rota', 'att_reports'], workload.rotaWarnings],
   ['POST', '/api/att/roster', 'att_rota', att.saveRoster],
   ['POST', '/api/att/roster/copy', 'att_rota', att.copyRoster],
@@ -505,6 +521,18 @@ export default {
         return { wished: 0 };
       });
       if (wishes.wished) console.log(`Birthdays: ${wishes.wished} wished`);
+
+      // And whether last month's advance deductions were actually taken, which
+      // is the one thing in here that asks a person a question rather than
+      // telling them something.
+      const asked = await advance.askAboutTheMonth(env.DB, {
+        timezone,
+        ctx: { env, executionContext },
+      }).catch((err) => {
+        console.error('Advance month-end failed', err);
+        return { asked: 0 };
+      });
+      if (asked.asked) console.log(`Advances: ${asked.asked} to confirm for ${asked.month}`);
     })().catch((err) => console.error('Scheduled run failed', err));
 
     if (executionContext?.waitUntil) executionContext.waitUntil(run);

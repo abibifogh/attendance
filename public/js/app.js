@@ -12,6 +12,8 @@ import { renderAttRota } from './views/att-rota.js';
 import { renderAttWorkload } from './views/att-workload.js';
 import { renderAttMe } from './views/att-me.js';
 import { renderAttMyReport } from './views/att-my-report.js';
+import { renderAttMyAdvance } from './views/att-my-advance.js';
+import { renderAttAdvances } from './views/att-advances.js';
 import { renderAttLeave } from './views/att-leave.js';
 import { renderAttSignoff } from './views/att-signoff.js';
 import { renderAttSetup } from './views/att-setup.js';
@@ -54,6 +56,9 @@ const ROUTES = [
   // Beside it, because the month is the other question somebody asks about
   // their own attendance and it is not one the week can answer.
   { path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport },
+  // Money going the other way. Beside their own report because that is where
+  // somebody looks when they are working out what they will be paid.
+  { path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance },
   { path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday },
   { path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek },
   // The planner reads the month before building the next one. The one thing
@@ -66,6 +71,8 @@ const ROUTES = [
   { path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave },
   { path: 'signoff', label: 'Sign-off', permission: 'att_signoff', render: renderAttSignoff },
   { path: 'people', label: 'People', permission: 'hr_view', render: renderPeople },
+  // Its own permission, the same one as what anybody earns.
+  { path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances },
   { path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters },
   { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },

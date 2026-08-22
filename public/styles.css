@@ -2419,3 +2419,83 @@ html { touch-action: manipulation; }
   .welcome-hello { font-size: 1.25rem; }
   .welcome-line { font-size: .9rem; }
 }
+
+/* --------------------------------------------------------------------------
+   Salary advances
+   Two screens off one ledger: whoever does the wages sees everybody, and the
+   person paying it back sees one bar and the months behind it.
+-------------------------------------------------------------------------- */
+.adv-tiles { margin-bottom: 1rem; }
+.adv-table { width: 100%; }
+.adv-row { cursor: pointer; }
+.adv-row:hover > td { background: var(--surface-2); }
+.adv-row:focus-visible > td:first-child { outline: 2px solid var(--accent); outline-offset: -2px; }
+.adv-who { font-weight: 600; }
+.adv-detail > td { background: var(--surface-2); padding: .6rem .7rem; }
+
+.adv-block {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: .7rem .8rem; margin-bottom: .6rem;
+}
+.adv-block:last-child { margin-bottom: 0; }
+.adv-block-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .6rem; flex-wrap: wrap; margin-bottom: .4rem;
+}
+.adv-reason { color: var(--text-dim); font-size: .88rem; margin-bottom: .4rem; }
+.adv-terms { display: flex; flex-wrap: wrap; gap: 1.1rem; margin: .5rem 0 .6rem; }
+.adv-term small { display: block; text-transform: uppercase; letter-spacing: .05em; font-size: .68rem; }
+.adv-term > div { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.adv-moves { width: 100%; font-size: .88rem; }
+.adv-moves td { padding: .3rem .4rem; border-top: 1px solid var(--border); }
+
+.adv-requests, .adv-history { list-style: none; margin: 0; padding: 0; }
+.adv-requests li, .adv-history li {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .8rem; flex-wrap: wrap;
+  padding: .55rem 0; border-top: 1px solid var(--border);
+}
+.adv-requests li:first-child, .adv-history li:first-child { border-top: 0; }
+
+/* The month-end form. Wide tap targets on the tick, because it is worked
+   through on a phone as often as at a desk. */
+.adv-close { width: 100%; }
+.adv-close td { padding: .45rem .4rem; }
+.adv-amount { width: 7rem; text-align: right; }
+.adv-skipped td { opacity: .55; }
+.adv-skipped .adv-amount { text-decoration: line-through; }
+
+/* What one person sees about their own. */
+.adv-mine { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; }
+.adv-mine-figure { flex: none; }
+.adv-mine-label {
+  text-transform: uppercase; letter-spacing: .06em; font-size: .7rem; color: var(--text-faint);
+  font-weight: 600;
+}
+.adv-mine-value { font-size: 1.9rem; font-weight: 700; letter-spacing: -.02em; }
+.adv-mine-bar { flex: 1; min-width: 12rem; }
+.adv-mine-track {
+  height: 12px; border-radius: 999px; background: var(--surface-3); overflow: hidden;
+}
+.adv-mine-fill { height: 100%; border-radius: 999px; background: var(--good); }
+.adv-mine-ends {
+  display: flex; justify-content: space-between; gap: .5rem;
+  margin-top: .3rem; font-size: .8rem; color: var(--text-faint);
+}
+.adv-sub { font-size: 1rem; margin: 1rem 0 .5rem; }
+.adv-schedule { width: 100%; font-size: .9rem; }
+.adv-schedule td { padding: .4rem .3rem; border-top: 1px solid var(--border); }
+/* Months that have not happened. Lighter, so the record and the forecast are
+   never mistaken for each other. */
+.adv-ahead td { color: var(--text-faint); }
+
+@media (max-width: 640px) {
+  .adv-table th:nth-child(n+3), .adv-table td:nth-child(n+3) { display: none; }
+  .adv-detail > td { display: table-cell !important; }
+  .adv-mine-value { font-size: 1.6rem; }
+  .adv-amount { width: 5.5rem; }
+  /* The running balance goes. It is the headline figure at the top of the
+     card, and repeating it in a fourth column pushes the month off a handset. */
+  .adv-schedule td:nth-child(4) { display: none; }
+}

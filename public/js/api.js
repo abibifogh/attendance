@@ -206,6 +206,19 @@ export const api = {
   myWithdrawLeave: (id) => request(`/api/me/leave/${id}/withdraw`, { method: 'POST', body: {} }),
   mySetAvailability: (body) => request('/api/me/availability', { method: 'POST', body }),
   myRunningLate: (body) => request('/api/me/running-late', { method: 'POST', body }),
+  myAdvances: () => request('/api/me/advances'),
+  myAskForAdvance: (body) => request('/api/me/advances', { method: 'POST', body }),
+  myWithdrawAdvance: (id) => request(`/api/me/advances/${id}/withdraw`, { method: 'POST', body: {} }),
+
+  // ------------------------------------------------------------ advances --
+  advances: (month) => request(`/api/advances${month ? `?month=${month}` : ''}`),
+  advanceAdd: (body) => request('/api/advances', { method: 'POST', body }),
+  advanceCloseMonth: (body) => request('/api/advances/close', { method: 'POST', body }),
+  advancesFor: (staffId) => request(`/api/advances/staff/${staffId}`),
+  advanceDecide: (id, body) => request(`/api/advances/${id}/decide`, { method: 'POST', body }),
+  advanceAdjust: (id, body) => request(`/api/advances/${id}`, { method: 'PATCH', body }),
+  advanceEntry: (id, body) => request(`/api/advances/${id}/entry`, { method: 'POST', body }),
+  advanceRemoveEntry: (id, entryId) => request(`/api/advances/${id}/entry/${entryId}`, { method: 'DELETE' }),
 
   attBirthdays: () => request('/api/att/birthdays'),
   attBirthdayCard: (body) => request('/api/att/birthdays/card', { method: 'POST', body }),

@@ -1,0 +1,720 @@
+import { badRequest, int, json, notFound, num, readJson, str } from '../lib/http.js';
+import { createNotice } from '../lib/notices.js';
+import {
+  balanceOf, finishesOn, firstMonthFor, instalmentFor, isMonthEnd, isOpen, monthsLeft,
+  repaidOf, round2, scheduleFor, summarise,
+} from '../lib/advances.js';
+import { addMonths, isDay, isMonth, monthOf, todayIn } from '../util/dates.js';
+
+/**
+ * Salary advances: who owes what, and what came off this month.
+ *
+ * Two audiences and one ledger. Whoever does the wages sees everybody, agrees
+ * the terms and records what was actually deducted; the person paying it back
+ * sees their own, and nothing else.
+ *
+ * THE MONTH-END QUESTION IS THE WHOLE POINT. Everything else here is
+ * bookkeeping around one habit: on the last day of the month somebody is asked
+ * whether the deduction was taken, person by person, and answers. Without that
+ * the ledger drifts from the payslips within two months and is then worse than
+ * no ledger at all, because it looks authoritative.
+ */
+
+const actorOf = (ctx) => `${ctx.session.user.name} (${ctx.session.user.role})`;
+
+const audit = (ctx, action, entity, detail) => ctx.db.prepare(
+  'INSERT INTO audit_log (actor, action, entity, detail) VALUES (?1, ?2, ?3, ?4)',
+).bind(actorOf(ctx), action, String(entity ?? ''), JSON.stringify(detail ?? {}))
+  .run().catch(() => {});
+
+async function settingsOf(db) {
+  const rows = await db.prepare("SELECT key, value FROM settings WHERE key IN ('timezone','currency')")
+    .all().catch(() => ({ results: [] }));
+  const map = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
+  return { timezone: map.timezone || 'UTC', currency: map.currency || 'GHS' };
+}
+
+/** Every advance and every movement, indexed. Small tables; read whole. */
+async function ledger(db, { staffId = null } = {}) {
+  const advances = staffId
+    ? await db.prepare('SELECT * FROM hr_advance WHERE staff_id = ? ORDER BY id DESC')
+      .bind(staffId).all()
+    : await db.prepare('SELECT * FROM hr_advance ORDER BY id DESC').all();
+
+  const rows = advances.results ?? [];
+  const ids = rows.map((r) => r.id);
+  const entriesBy = new Map(ids.map((id) => [id, []]));
+
+  if (ids.length) {
+    const entries = await db.prepare(
+      `SELECT * FROM hr_advance_entry WHERE advance_id IN (${ids.map(() => '?').join(',')})
+        ORDER BY month, id`,
+    ).bind(...ids).all();
+    for (const entry of entries.results ?? []) entriesBy.get(entry.advance_id)?.push(entry);
+  }
+
+  return { advances: rows, entriesBy };
+}
+
+/** One advance, dressed for a screen. */
+function shape(advance, entries, { withSchedule = false } = {}) {
+  const balance = balanceOf(advance, entries);
+  return {
+    id: advance.id,
+    staffId: advance.staff_id,
+    amount: round2(advance.amount),
+    months: advance.months,
+    monthly: round2(advance.monthly),
+    currency: advance.currency,
+    reason: advance.reason,
+    status: advance.status,
+    takenOn: advance.taken_on,
+    startMonth: advance.start_month,
+    askedBy: advance.asked_by,
+    askedAt: advance.asked_at,
+    decidedBy: advance.decided_by,
+    decidedAt: advance.decided_at,
+    decision: advance.decision,
+    repaid: repaidOf(entries),
+    balance,
+    left: isOpen(advance) ? monthsLeft(balance, advance.monthly) : 0,
+    finishes: isOpen(advance) ? finishesOn(advance, entries) : null,
+    entries: entries.map((e) => ({
+      id: e.id, month: e.month, kind: e.kind, amount: round2(e.amount), note: e.note,
+      actor: e.actor, at: e.at,
+    })),
+    ...(withSchedule ? { schedule: scheduleFor(advance, entries) } : {}),
+  };
+}
+
+// --------------------------------------------------------------------------
+// Whoever does the wages
+// --------------------------------------------------------------------------
+
+/**
+ * Everybody, and the month waiting to be closed.
+ *
+ * The month asked for defaults to the one just gone rather than the one
+ * running: on the last day of August, what somebody is being asked about is
+ * August, and defaulting to September would be asking about a month that has
+ * not happened.
+ */
+export async function advances(ctx) {
+  const { timezone, currency } = await settingsOf(ctx.db);
+  const today = todayIn(timezone);
+  const asked = ctx.url.searchParams.get('month');
+  const month = isMonth(asked) ? asked : monthOf(today);
+
+  const { advances: rows, entriesBy } = await ledger(ctx.db);
+  const staff = await ctx.db.prepare('SELECT id, name, department, employee_no, active FROM att_staff')
+    .all();
+  const staffById = new Map((staff.results ?? []).map((s) => [s.id, s]));
+
+  const closed = await ctx.db.prepare('SELECT * FROM hr_advance_month WHERE month = ?')
+    .bind(month).first().catch(() => null);
+
+  const people = new Map();
+  for (const advance of rows) {
+    const person = staffById.get(advance.staff_id);
+    if (!person) continue;
+    if (!people.has(advance.staff_id)) {
+      people.set(advance.staff_id, {
+        staff: {
+          id: person.id, name: person.name, department: person.department ?? null,
+          employeeNo: person.employee_no ?? null, active: Boolean(person.active),
+        },
+        advances: [],
+      });
+    }
+    people.get(advance.staff_id).advances.push(shape(advance, entriesBy.get(advance.id) ?? []));
+  }
+
+  const list = [...people.values()].map((person) => {
+    const raw = rows.filter((r) => r.staff_id === person.staff.id);
+    return { ...person, totals: summarise(raw, entriesBy) };
+  }).sort((a, b) => b.totals.owed - a.totals.owed
+    || a.staff.name.localeCompare(b.staff.name));
+
+  // What is owed for the month being closed: every open advance with a balance
+  // and nothing yet recorded against that month.
+  const due = [];
+  for (const advance of rows) {
+    if (!isOpen(advance)) continue;
+    const entries = entriesBy.get(advance.id) ?? [];
+    const balance = balanceOf(advance, entries);
+    if (balance <= 0) continue;
+    if ((advance.start_month || '9999-99') > month) continue;
+    const already = entries.find((e) => e.month === month && ['repayment', 'skipped'].includes(e.kind));
+    due.push({
+      advanceId: advance.id,
+      staff: staffById.get(advance.staff_id)?.name ?? 'Somebody',
+      staffId: advance.staff_id,
+      expected: Math.min(round2(advance.monthly), balance),
+      balance,
+      recorded: already
+        ? { id: already.id, kind: already.kind, amount: round2(already.amount) }
+        : null,
+    });
+  }
+
+  due.sort((a, b) => String(a.staff).localeCompare(String(b.staff)));
+
+  return json({
+    month,
+    today,
+    currency,
+    // The end of the month is when the asking happens, and a month left
+    // unanswered keeps being asked about afterwards.
+    monthEnd: isMonthEnd(today),
+    closed: closed ? { by: closed.closed_by, at: closed.closed_at, note: closed.note } : null,
+    due,
+    people: list,
+    requests: rows.filter((r) => r.status === 'requested').map((r) => ({
+      ...shape(r, entriesBy.get(r.id) ?? []),
+      staffName: staffById.get(r.staff_id)?.name ?? 'Somebody',
+    })),
+    totals: {
+      owed: round2(list.reduce((n, p) => n + p.totals.owed, 0)),
+      monthly: round2(list.reduce((n, p) => n + p.totals.monthly, 0)),
+      people: list.filter((p) => p.totals.owed > 0).length,
+    },
+    staff: (staff.results ?? []).filter((s) => s.active)
+      .map((s) => ({ id: s.id, name: s.name, department: s.department ?? null }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  });
+}
+
+/** One person's advances, with the schedule drawn out. */
+export async function staffAdvances(ctx, idParam) {
+  const staffId = int(idParam, 'Who', { required: true, min: 1 });
+  const { currency } = await settingsOf(ctx.db);
+  const person = await ctx.db.prepare('SELECT id, name FROM att_staff WHERE id = ?')
+    .bind(staffId).first();
+  if (!person) throw notFound('No such member of staff.');
+
+  const { advances: rows, entriesBy } = await ledger(ctx.db, { staffId });
+  return json({
+    currency,
+    staff: { id: person.id, name: person.name },
+    totals: summarise(rows, entriesBy),
+    advances: rows.map((r) => shape(r, entriesBy.get(r.id) ?? [], { withSchedule: true })),
+  });
+}
+
+/**
+ * Give somebody an advance, or write down one already handed over.
+ *
+ * Approved the moment it is recorded, because it is being recorded by the
+ * person who would have approved it. The one obligation is telling them: money
+ * coming off a payslip that nobody mentioned is how this arrangement loses
+ * people's trust.
+ */
+export async function addAdvance(ctx) {
+  const body = await readJson(ctx.request);
+  const { timezone, currency } = await settingsOf(ctx.db);
+
+  const staffId = int(body.staffId, 'Who', { required: true, min: 1 });
+  const person = await ctx.db.prepare(
+    `SELECT s.id, s.name, u.id AS user_id
+       FROM att_staff s LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
+      WHERE s.id = ? AND s.active = 1`,
+  ).bind(staffId).first();
+  if (!person) throw notFound('No such member of staff.');
+
+  const { amount, months, monthly, takenOn, startMonth, reason } = terms(body, timezone);
+
+  const row = await ctx.db.prepare(
+    `INSERT INTO hr_advance
+       (staff_id, amount, months, monthly, currency, reason, status, taken_on, start_month,
+        asked_by, decided_by, decided_at, decision)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'approved', ?7, ?8, ?9, ?9, datetime('now'), ?10)
+     RETURNING id`,
+  ).bind(
+    staffId, amount, months, monthly, currency, reason, takenOn, startMonth,
+    actorOf(ctx), 'Recorded by the office',
+  ).first();
+
+  await audit(ctx, 'advance.add', row?.id, { staffId, amount, months, monthly, startMonth });
+
+  await tell(ctx, person, {
+    kind: 'advance.given',
+    title: `A salary advance of ${money(amount, currency)} has been recorded for you`,
+    body: `${money(monthly, currency)} a month for ${months} month${months === 1 ? '' : 's'}, `
+      + `starting ${startMonth}. If this is not what you agreed, say so before payday.`,
+  });
+
+  return json({ ok: true, id: row?.id ?? null, monthly, startMonth });
+}
+
+/** The terms, from whatever the form sent. */
+function terms(body, timezone) {
+  const amount = round2(num(body.amount, 'Amount', { required: true, min: 1, max: 1_000_000 }));
+  const months = int(body.months, 'Months to repay over', { required: true, min: 1, max: 60 });
+
+  const takenOn = body.takenOn && isDay(String(body.takenOn))
+    ? String(body.takenOn)
+    : todayIn(timezone);
+
+  const startMonth = isMonth(body.startMonth)
+    ? String(body.startMonth)
+    : firstMonthFor(takenOn) ?? monthOf(takenOn);
+
+  // Whatever was typed, where somebody has set the instalment by hand, and the
+  // arithmetic otherwise. Both are the agreement; only one of them was worked
+  // out by a machine.
+  const monthly = body.monthly != null && body.monthly !== ''
+    ? round2(num(body.monthly, 'Monthly deduction', { min: 1, max: 1_000_000 }))
+    : instalmentFor(amount, months);
+
+  return {
+    amount,
+    months,
+    monthly,
+    takenOn,
+    startMonth,
+    reason: str(body.reason, 'What it is for', { max: 300 }),
+  };
+}
+
+/** Approve or turn down what somebody asked for. */
+export async function decideAdvance(ctx, idParam) {
+  const id = int(idParam, 'Advance', { required: true, min: 1 });
+  const body = await readJson(ctx.request);
+  const { timezone, currency } = await settingsOf(ctx.db);
+
+  const advance = await ctx.db.prepare('SELECT * FROM hr_advance WHERE id = ?').bind(id).first();
+  if (!advance) throw notFound('No such advance.');
+  if (advance.status !== 'requested') {
+    throw badRequest('That has already been decided.');
+  }
+
+  const person = await ctx.db.prepare(
+    `SELECT s.id, s.name, u.id AS user_id
+       FROM att_staff s LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
+      WHERE s.id = ?`,
+  ).bind(advance.staff_id).first();
+
+  const note = str(body.note, 'Note', { max: 300 });
+
+  if (body.approve === false) {
+    await ctx.db.prepare(
+      `UPDATE hr_advance SET status = 'declined', decided_by = ?2, decided_at = datetime('now'),
+              decision = ?3 WHERE id = ?1`,
+    ).bind(id, actorOf(ctx), note).run();
+    await audit(ctx, 'advance.decline', id, { note });
+
+    await tell(ctx, person, {
+      kind: 'advance.declined',
+      title: 'Your request for a salary advance was turned down',
+      body: note || 'Speak to whoever handles the wages if you want to know more.',
+    });
+    return json({ ok: true, status: 'declined' });
+  }
+
+  // Approving is also where the terms are settled: what somebody asked for and
+  // what the property can do are often two different numbers, and the answer
+  // should be the agreement rather than a refusal followed by a second form.
+  const amount = body.amount != null && body.amount !== ''
+    ? round2(num(body.amount, 'Amount', { min: 1, max: 1_000_000 }))
+    : round2(advance.amount);
+  const months = body.months != null && body.months !== ''
+    ? int(body.months, 'Months', { min: 1, max: 60 })
+    : advance.months;
+  const monthly = body.monthly != null && body.monthly !== ''
+    ? round2(num(body.monthly, 'Monthly deduction', { min: 1, max: 1_000_000 }))
+    : instalmentFor(amount, months);
+
+  const takenOn = isDay(body.takenOn) ? String(body.takenOn) : todayIn(timezone);
+  const startMonth = isMonth(body.startMonth)
+    ? String(body.startMonth)
+    : firstMonthFor(takenOn) ?? monthOf(takenOn);
+
+  await ctx.db.prepare(
+    `UPDATE hr_advance
+        SET status = 'approved', amount = ?2, months = ?3, monthly = ?4, taken_on = ?5,
+            start_month = ?6, decided_by = ?7, decided_at = datetime('now'), decision = ?8
+      WHERE id = ?1`,
+  ).bind(id, amount, months, monthly, takenOn, startMonth, actorOf(ctx), note).run();
+
+  await audit(ctx, 'advance.approve', id, { amount, months, monthly, startMonth });
+
+  const changed = amount !== round2(advance.amount) || months !== advance.months;
+  await tell(ctx, person, {
+    kind: 'advance.approved',
+    title: `Your salary advance of ${money(amount, currency)} is approved`,
+    body: `${money(monthly, currency)} a month for ${months} month${months === 1 ? '' : 's'}, `
+      + `from ${startMonth}.${changed ? ' The terms are not quite what you asked for.' : ''}`
+      + (note ? ` ${note}` : ''),
+  });
+
+  return json({ ok: true, status: 'approved', monthly });
+}
+
+/**
+ * Change the terms of one that is running.
+ *
+ * The instalment, the length, or the month it starts. Not the amount: what was
+ * handed over is a fact, and correcting it is deleting the advance and
+ * recording the right one.
+ */
+export async function adjustAdvance(ctx, idParam) {
+  const id = int(idParam, 'Advance', { required: true, min: 1 });
+  const body = await readJson(ctx.request);
+
+  const advance = await ctx.db.prepare('SELECT * FROM hr_advance WHERE id = ?').bind(id).first();
+  if (!advance) throw notFound('No such advance.');
+  if (!isOpen(advance)) throw badRequest('That advance is not running.');
+
+  const monthly = body.monthly != null && body.monthly !== ''
+    ? round2(num(body.monthly, 'Monthly deduction', { min: 1, max: 1_000_000 }))
+    : round2(advance.monthly);
+  const months = body.months != null && body.months !== ''
+    ? int(body.months, 'Months', { min: 1, max: 60 })
+    : advance.months;
+  const startMonth = isMonth(body.startMonth) ? String(body.startMonth) : advance.start_month;
+  const note = str(body.note, 'Why', { max: 300 });
+
+  await ctx.db.prepare(
+    'UPDATE hr_advance SET monthly = ?2, months = ?3, start_month = ?4 WHERE id = ?1',
+  ).bind(id, monthly, months, startMonth).run();
+
+  await audit(ctx, 'advance.adjust', id, {
+    was: { monthly: round2(advance.monthly), months: advance.months },
+    now: { monthly, months }, note,
+  });
+
+  if (monthly !== round2(advance.monthly)) {
+    const person = await ctx.db.prepare(
+      `SELECT s.id, s.name, u.id AS user_id
+         FROM att_staff s LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
+        WHERE s.id = ?`,
+    ).bind(advance.staff_id).first();
+    await tell(ctx, person, {
+      kind: 'advance.changed',
+      title: 'What comes off your pay for your advance has changed',
+      body: `${money(monthly, advance.currency)} a month from now on.${note ? ` ${note}` : ''}`,
+    });
+  }
+
+  return json({ ok: true, monthly, months });
+}
+
+/** Record one movement — a deduction taken, a month let go, a correction. */
+export async function addEntry(ctx, idParam) {
+  const id = int(idParam, 'Advance', { required: true, min: 1 });
+  const body = await readJson(ctx.request);
+
+  const advance = await ctx.db.prepare('SELECT * FROM hr_advance WHERE id = ?').bind(id).first();
+  if (!advance) throw notFound('No such advance.');
+
+  const month = isMonth(body.month) ? String(body.month) : null;
+  if (!month) throw badRequest('Say which month this belongs to.');
+
+  const kind = ['repayment', 'skipped', 'adjustment', 'writeoff'].includes(body.kind)
+    ? body.kind : 'repayment';
+  const amount = kind === 'skipped'
+    ? 0
+    : round2(num(body.amount, 'Amount', { required: true, min: -1_000_000, max: 1_000_000 }));
+
+  await write(ctx, advance, { month, kind, amount, note: str(body.note, 'Note', { max: 300 }) });
+  return json({ ok: true });
+}
+
+/** Take a movement back off the record. */
+export async function removeEntry(ctx, idParam, entryParam) {
+  const id = int(idParam, 'Advance', { required: true, min: 1 });
+  const entryId = int(entryParam, 'Movement', { required: true, min: 1 });
+
+  const entry = await ctx.db.prepare('SELECT * FROM hr_advance_entry WHERE id = ? AND advance_id = ?')
+    .bind(entryId, id).first();
+  if (!entry) throw notFound('No such movement.');
+
+  await ctx.db.prepare('DELETE FROM hr_advance_entry WHERE id = ?').bind(entryId).run();
+  await audit(ctx, 'advance.entry_remove', id, {
+    month: entry.month, kind: entry.kind, amount: round2(entry.amount),
+  });
+
+  // Taking a payment back off may reopen something that was marked finished.
+  await ctx.db.prepare(
+    `UPDATE hr_advance SET status = 'approved', settled_at = NULL
+      WHERE id = ? AND status = 'settled'`,
+  ).bind(id).run().catch(() => {});
+
+  return json({ ok: true });
+}
+
+/**
+ * Close off a month: what came off, person by person, in one answer.
+ *
+ * This is the end-of-month question, and it is deliberately one submission
+ * rather than a row at a time. Somebody working down a payroll wants to tick,
+ * tick, tick and press once; asked to save each line they will do three and
+ * come back to the rest never.
+ */
+export async function closeMonth(ctx) {
+  const body = await readJson(ctx.request);
+  const month = isMonth(body.month) ? String(body.month) : null;
+  if (!month) throw badRequest('Say which month is being closed.');
+
+  const rows = Array.isArray(body.rows) ? body.rows : [];
+  let taken = 0;
+  let skipped = 0;
+
+  for (const line of rows) {
+    const id = int(line.advanceId, 'Advance', { required: true, min: 1 });
+    const advance = await ctx.db.prepare('SELECT * FROM hr_advance WHERE id = ?').bind(id).first();
+    if (!advance || !isOpen(advance)) continue;
+
+    const already = await ctx.db.prepare(
+      `SELECT id FROM hr_advance_entry
+        WHERE advance_id = ? AND month = ? AND kind IN ('repayment','skipped')`,
+    ).bind(id, month).first();
+    if (already) continue;                       // answered already; never twice
+
+    if (line.paid === false) {
+      await write(ctx, advance, {
+        month, kind: 'skipped', amount: 0, note: str(line.note, 'Note', { max: 300 }),
+      });
+      skipped += 1;
+      continue;
+    }
+
+    const entries = await entriesFor(ctx.db, id);
+    const balance = balanceOf(advance, entries);
+    const asked = line.amount != null && line.amount !== ''
+      ? round2(num(line.amount, 'Amount', { min: 0, max: 1_000_000 }))
+      : Math.min(round2(advance.monthly), balance);
+    if (asked <= 0) continue;
+
+    await write(ctx, advance, {
+      month, kind: 'repayment', amount: Math.min(asked, balance),
+      note: str(line.note, 'Note', { max: 300 }),
+    });
+    taken += 1;
+  }
+
+  await ctx.db.prepare(
+    `INSERT INTO hr_advance_month (month, closed_by, note) VALUES (?1, ?2, ?3)
+     ON CONFLICT (month) DO UPDATE SET closed_by = ?2, closed_at = datetime('now'), note = ?3`,
+  ).bind(month, actorOf(ctx), str(body.note, 'Note', { max: 300 })).run();
+
+  await audit(ctx, 'advance.close_month', month, { taken, skipped });
+  return json({ ok: true, month, taken, skipped });
+}
+
+// --------------------------------------------------------------------------
+// The person paying it back
+// --------------------------------------------------------------------------
+
+/** Mine, with the schedule and when it ends. */
+export async function myAdvances(ctx) {
+  const staffId = Number(ctx.session.user.staff_id) || 0;
+  if (!staffId) {
+    return json({
+      linked: false, currency: 'GHS', advances: [], totals: { owed: 0, monthly: 0, finishes: null },
+    });
+  }
+
+  const { currency } = await settingsOf(ctx.db);
+  const { advances: rows, entriesBy } = await ledger(ctx.db, { staffId });
+
+  return json({
+    linked: true,
+    currency,
+    totals: summarise(rows, entriesBy),
+    advances: rows.map((r) => shape(r, entriesBy.get(r.id) ?? [], { withSchedule: true })),
+  });
+}
+
+/**
+ * Ask for one.
+ *
+ * The amount and how long they think they need. Nothing is agreed until
+ * somebody says so, and the screen says as much: an app that reads like a
+ * decision when it is only a request is how somebody ends up counting on money
+ * that is not coming.
+ */
+export async function askForAdvance(ctx) {
+  const staffId = Number(ctx.session.user.staff_id) || 0;
+  if (!staffId) throw badRequest('This login is not linked to a staff record yet.');
+
+  const body = await readJson(ctx.request);
+  const { currency } = await settingsOf(ctx.db);
+
+  const staff = await ctx.db.prepare('SELECT id, name FROM att_staff WHERE id = ? AND active = 1')
+    .bind(staffId).first();
+  if (!staff) throw notFound('The staff record this login points at is gone.');
+
+  const amount = round2(num(body.amount, 'How much', { required: true, min: 1, max: 1_000_000 }));
+  const months = int(body.months, 'Over how many months', { required: true, min: 1, max: 24 });
+  const reason = str(body.reason, 'What it is for', { max: 300 });
+
+  const waiting = await ctx.db.prepare(
+    "SELECT id FROM hr_advance WHERE staff_id = ? AND status = 'requested'",
+  ).bind(staffId).first();
+  if (waiting) throw badRequest('You have already asked for one and nobody has decided yet.');
+
+  const row = await ctx.db.prepare(
+    `INSERT INTO hr_advance (staff_id, amount, months, monthly, currency, reason, status, asked_by)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'requested', ?7) RETURNING id`,
+  ).bind(staffId, amount, months, instalmentFor(amount, months), currency, reason,
+    `${staff.name} (staff)`).first();
+
+  await audit(ctx, 'advance.ask', row?.id, { amount, months });
+
+  await createNotice(ctx.db, {
+    kind: 'advance.asked',
+    level: 'info',
+    title: `${staff.name} has asked for a salary advance`,
+    body: `${money(amount, currency)} over ${months} month${months === 1 ? '' : 's'}.`
+      + (reason ? ` ${reason}` : ''),
+    link: '#/att-advances',
+    actor: staff.name,
+    audience: 'hr_pay',
+  }, ctx);
+
+  return json({ ok: true, id: row?.id ?? null, status: 'requested' });
+}
+
+/** Take back a request nobody has decided yet. */
+export async function withdrawMyAdvance(ctx, idParam) {
+  const staffId = Number(ctx.session.user.staff_id) || 0;
+  const id = int(idParam, 'Request', { required: true, min: 1 });
+
+  const row = await ctx.db.prepare('SELECT * FROM hr_advance WHERE id = ? AND staff_id = ?')
+    .bind(id, staffId).first();
+  if (!row) throw notFound('That is not one of yours.');
+  if (row.status !== 'requested') throw badRequest('That has already been decided.');
+
+  await ctx.db.prepare("UPDATE hr_advance SET status = 'withdrawn' WHERE id = ?").bind(id).run();
+  await audit(ctx, 'advance.withdraw', id, {});
+  return json({ ok: true });
+}
+
+// --------------------------------------------------------------------------
+// The end of the month
+// --------------------------------------------------------------------------
+
+/**
+ * The nudge, from the daily cron.
+ *
+ * On the last day of the month, and on any day afterwards while a month is
+ * still unanswered. It asks rather than records: what came off somebody's pay
+ * is a fact about a payslip, and an app that assumes it happened is an app
+ * quietly writing fiction into a ledger people are held to.
+ */
+export async function askAboutTheMonth(db, { timezone = 'UTC', now = null, ctx = null } = {}) {
+  // The day is a parameter so a test can stand on the 30th of September
+  // without waiting for it. The cron passes nothing and gets the real one.
+  const today = isDay(now) ? String(now) : todayIn(timezone);
+  const thisMonth = monthOf(today);
+  const month = isMonthEnd(today) ? thisMonth : addMonths(thisMonth, -1);
+
+  const closed = await db.prepare('SELECT month FROM hr_advance_month WHERE month = ?')
+    .bind(month).first().catch(() => null);
+  if (closed) return { asked: 0, month };
+
+  // Only on the last day, and then once a week while it stays unanswered. A
+  // daily reminder about the same month is a notification people learn to
+  // dismiss without reading.
+  const day = Number(today.slice(8, 10));
+  if (!isMonthEnd(today) && day !== 7 && day !== 14) return { asked: 0, month };
+
+  const rows = await db.prepare(
+    `SELECT a.id, a.monthly, a.amount, a.start_month
+       FROM hr_advance a WHERE a.status = 'approved'`,
+  ).all().catch(() => ({ results: [] }));
+
+  const open = [];
+  for (const advance of rows.results ?? []) {
+    if ((advance.start_month || '9999-99') > month) continue;
+    const entries = await entriesFor(db, advance.id);
+    if (balanceOf(advance, entries) <= 0) continue;
+    if (entries.some((e) => e.month === month && ['repayment', 'skipped'].includes(e.kind))) continue;
+    open.push(advance);
+  }
+  if (!open.length) return { asked: 0, month };
+
+  const owed = round2(open.reduce((n, a) => n + round2(a.monthly), 0));
+  const currency = (await db.prepare("SELECT value FROM settings WHERE key = 'currency'")
+    .first().catch(() => null))?.value || 'GHS';
+
+  await createNotice(db, {
+    kind: 'advance.month_end',
+    level: 'info',
+    title: `Close off ${month}: ${open.length} advance${open.length === 1 ? '' : 's'} to confirm`,
+    body: `${money(owed, currency)} is due to come off this month. Say what was actually `
+      + 'deducted, and add anything new that was given out.',
+    link: `#/att-advances?month=${month}`,
+    day: today,
+    slot: `advance-month:${month}`,
+    actor: 'HIVE',
+    audience: 'hr_pay',
+    push: true,
+    email: false,
+  }, ctx);
+
+  return { asked: open.length, month };
+}
+
+// --------------------------------------------------------------------------
+
+async function entriesFor(db, advanceId) {
+  const rows = await db.prepare('SELECT * FROM hr_advance_entry WHERE advance_id = ? ORDER BY month, id')
+    .bind(advanceId).all().catch(() => ({ results: [] }));
+  return rows.results ?? [];
+}
+
+/** Write a movement, and settle the advance when nothing is left. */
+async function write(ctx, advance, { month, kind, amount, note }) {
+  await ctx.db.prepare(
+    `INSERT INTO hr_advance_entry (advance_id, month, kind, amount, note, actor)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+  ).bind(advance.id, month, kind, amount, note, actorOf(ctx)).run();
+
+  await audit(ctx, 'advance.entry', advance.id, { month, kind, amount });
+
+  const entries = await entriesFor(ctx.db, advance.id);
+  if (balanceOf(advance, entries) > 0.009) return;
+
+  await ctx.db.prepare(
+    "UPDATE hr_advance SET status = 'settled', settled_at = datetime('now') WHERE id = ?",
+  ).bind(advance.id).run();
+
+  const person = await ctx.db.prepare(
+    `SELECT s.id, s.name, u.id AS user_id
+       FROM att_staff s LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
+      WHERE s.id = ?`,
+  ).bind(advance.staff_id).first();
+
+  await tell(ctx, person, {
+    kind: 'advance.settled',
+    title: 'Your salary advance is paid off',
+    body: 'Nothing more will come off your pay for it.',
+  });
+}
+
+/** Tell the person, if there is an account to tell. */
+async function tell(ctx, person, { kind, title, body }) {
+  if (!person?.user_id) return;
+  await createNotice(ctx.db, {
+    kind,
+    level: 'info',
+    title,
+    body,
+    link: '#/att-my-advance',
+    actor: 'HIVE',
+    userId: person.user_id,
+    push: true,
+    email: false,
+  }, ctx);
+}
+
+/** Money, said the way the screens say it: grouped, and no pesewas on a whole. */
+const money = (amount, currency = 'GHS') => {
+  const n = round2(amount);
+  return `${currency} ${n.toLocaleString('en-GB', {
+    minimumFractionDigits: n % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
+};

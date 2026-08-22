@@ -98,6 +98,17 @@ export const GUIDE = [
         + 'somebody signs the month off, having looked at the whole of it. A running total on a '
         + 'phone would be a number to argue about rather than an answer.' },
 
+      { sub: 'My advance' },
+      { p: 'If you have taken a salary advance, My advance shows what is left, what comes off '
+        + 'your pay each month, and which payday is the last one. Underneath it is every month '
+        + 'so far: what actually came off, and any month where nothing was taken.' },
+      { p: 'You can ask for one from the same screen. It is a request and not an agreement — '
+        + 'nothing comes off your pay until somebody decides, and you are told either way. '
+        + 'While it is still waiting you can take it back.' },
+      { note: 'If a month here does not match your payslip, say so in the same month. The '
+        + 'figures are entered by a person, and a mistake is far easier to settle while '
+        + 'everybody can still remember the payday it happened on.' },
+
       { sub: 'My report' },
       { p: 'Your month, in figures: days worked, hours, how often you were late and by how '
         + 'much, what you were absent for, and what leave it cost you. Pick a different month '
@@ -508,6 +519,61 @@ export const GUIDE = [
         + 'manager, who holds employee records as a matter of course. What a colleague earns is a '
         + 'different order of confidence from where they live. Grant it to whoever does the '
         + 'wages, and to nobody else.' },
+    ],
+  },
+
+  {
+    key: 'advances',
+    title: 'Salary advances',
+    permission: 'hr_pay',
+    lede: 'What was lent, what has come back, and what is still to come off.',
+    blocks: [
+      { p: 'A hotel lends money whether or not an app knows about it. What goes wrong is never '
+        + 'the lending: it is that four months later nobody can say what is left, because the '
+        + 'record was a figure in a notebook and two people remembering different Junes.' },
+
+      { sub: 'Giving one' },
+      { p: 'Give an advance takes who, how much, and how many months. The monthly deduction is '
+        + 'worked out for you and you can change it — it is a term of the agreement, not a sum '
+        + 'the app insists on. Money handed over late in a month starts coming back the month '
+        + 'after, because that month’s payroll is usually already worked out.' },
+      { note: 'The person is told on their phone the moment it is recorded, and it appears on '
+        + 'their own screen with the whole schedule. Money coming off a payslip that nobody '
+        + 'mentioned is how this arrangement loses people’s trust.' },
+
+      { sub: 'The end of the month' },
+      { p: 'On the last day of every month the app asks whether the deductions were actually '
+        + 'taken. Everybody is ticked to start with, since that is the ordinary month: untick '
+        + 'anyone it did not come off, change the figure where it came off differently, and '
+        + 'press once. A month you miss is asked about again on the 7th and the 14th.' },
+      { p: 'Answer it honestly rather than tidily. A month marked as taken when payroll never '
+        + 'took it is a ledger that disagrees with the payslips, and by the third month nobody '
+        + 'believes either of them.' },
+
+      { sub: 'Changing things' },
+      { list: [
+        'Change the terms: what comes off each month from here on. It does not change what is '
+          + 'owed, only how long it takes, and the person is told.',
+        'Add a movement: a payment made in cash, a correction, a month deliberately let go, or '
+          + 'the rest of it written off.',
+        'The ✕ beside a movement takes it back off, and what is owed goes back up. Use it for '
+          + 'something entered wrongly rather than for something that did not happen — those '
+          + 'are two different records.',
+      ] },
+
+      { sub: 'Requests' },
+      { p: 'Somebody can ask through the app, and it waits at the top of this screen. '
+        + 'Approving is also where the terms are settled: what was asked for and what the '
+        + 'property can do are often two different numbers, and the answer should be the '
+        + 'agreement rather than a refusal and a second conversation.' },
+
+      { note: 'Nothing here charges interest and there is nowhere to set any. What was lent is '
+        + 'what comes back.' },
+
+      { warn: 'The app does not touch the payroll. It records what somebody says happened, and '
+        + 'whoever runs the wages still has to take the deduction. The two are kept apart on '
+        + 'purpose: an app that assumed the money moved would be writing fiction into a ledger '
+        + 'people are held to.' },
     ],
   },
 
