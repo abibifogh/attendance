@@ -35,9 +35,29 @@
 
   --c1: #2f6df6; --c2: #12a594; --c3: #d97706; --c4: #8b5cf6;
   --c5: #e11d48; --c6: #0891b2; --c7: #65a30d; --c8: #db2777;
+  --c9: #4338ca; --c10: #8a5a2b; --c11: #64748b;
 
   --radius: 14px;
   --radius-sm: 9px;
+}
+
+/* Which token a shift's colour number points at. One list rather than the
+   same eleven lines under every element that wears one: the rota cell, the
+   position card, a staff member's own shift and the countdown all read the
+   same attribute, and a twelfth colour should cost one line, not four. */
+[data-shift-colour="1"] { --shift: var(--c1); }
+[data-shift-colour="2"] { --shift: var(--c2); }
+[data-shift-colour="3"] { --shift: var(--c3); }
+[data-shift-colour="4"] { --shift: var(--c4); }
+[data-shift-colour="5"] { --shift: var(--c5); }
+[data-shift-colour="6"] { --shift: var(--c6); }
+[data-shift-colour="7"] { --shift: var(--c7); }
+[data-shift-colour="8"] { --shift: var(--c8); }
+[data-shift-colour="9"] { --shift: var(--c9); }
+[data-shift-colour="10"] { --shift: var(--c10); }
+[data-shift-colour="11"] { --shift: var(--c11); }
+
+:root {
   /* Measured from the real header, which grows a second row when the tab
      bar cannot fit. Everything sticky below it hangs off this. */
   --topbar-h: 58px;
@@ -74,6 +94,7 @@
 
     --c1: #5b8bff; --c2: #2dd4bf; --c3: #fbbf24; --c4: #a78bfa;
     --c5: #fb7185; --c6: #22d3ee; --c7: #a3e635; --c8: #f472b6;
+    --c9: #8b93ff; --c10: #c99a6a; --c11: #94a3b8;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -14px rgba(0, 0, 0, .6);
   }
 }
@@ -90,6 +111,7 @@
   --toast-bg: #2b333f; --toast-ink: #f4f6fa;
   --c1: #5b8bff; --c2: #2dd4bf; --c3: #fbbf24; --c4: #a78bfa;
   --c5: #fb7185; --c6: #22d3ee; --c7: #a3e635; --c8: #f472b6;
+  --c9: #8b93ff; --c10: #c99a6a; --c11: #94a3b8;
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -14px rgba(0, 0, 0, .6);
 }
 
@@ -751,6 +773,7 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
     --bad:  #b02436;  --bad-soft:  #fbe9eb;
     --c1: #1f5fd0; --c2: #0d8f80; --c3: #b96604; --c4: #6d43c4;
     --c5: #c01f42; --c6: #0a7591; --c7: #4f8209; --c8: #b32270;
+    --c9: #362eab; --c10: #6f4620; --c11: #4b5563;
     --shadow: none;
   }
 
@@ -1035,14 +1058,6 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
    Eight colours, and the same eight the charts use. Past eight nobody can tell
    two of them apart, and a colour nobody can name is decoration.
    -------------------------------------------------------------------------- */
-.rota-cellwrap[data-shift-colour="1"] { --shift: var(--c1); }
-.rota-cellwrap[data-shift-colour="2"] { --shift: var(--c2); }
-.rota-cellwrap[data-shift-colour="3"] { --shift: var(--c3); }
-.rota-cellwrap[data-shift-colour="4"] { --shift: var(--c4); }
-.rota-cellwrap[data-shift-colour="5"] { --shift: var(--c5); }
-.rota-cellwrap[data-shift-colour="6"] { --shift: var(--c6); }
-.rota-cellwrap[data-shift-colour="7"] { --shift: var(--c7); }
-.rota-cellwrap[data-shift-colour="8"] { --shift: var(--c8); }
 
 .rota-cellwrap[data-shift-colour]:not([data-shift-colour="0"]) {
   background: color-mix(in srgb, var(--shift) 20%, var(--surface));
@@ -1826,14 +1841,6 @@ tr.day-locked label.tickline { cursor: not-allowed; }
   border-color: color-mix(in srgb, var(--shift) 45%, var(--border));
   border-left: 3px solid var(--shift);
 }
-.pos-card[data-shift-colour="1"] { --shift: var(--c1); }
-.pos-card[data-shift-colour="2"] { --shift: var(--c2); }
-.pos-card[data-shift-colour="3"] { --shift: var(--c3); }
-.pos-card[data-shift-colour="4"] { --shift: var(--c4); }
-.pos-card[data-shift-colour="5"] { --shift: var(--c5); }
-.pos-card[data-shift-colour="6"] { --shift: var(--c6); }
-.pos-card[data-shift-colour="7"] { --shift: var(--c7); }
-.pos-card[data-shift-colour="8"] { --shift: var(--c8); }
 
 /* Dashed until published, the same promise the people view draws. */
 .pos-card.rota-draft { border-style: dashed; border-left-style: solid; }
@@ -1981,14 +1988,6 @@ tr:hover .pos-add, .pos-add:focus-visible {
 }
 .me-title { font-size: .7rem; font-weight: 650; color: var(--text-dim); }
 
-.me-shift[data-shift-colour="1"] { --shift: var(--c1); }
-.me-shift[data-shift-colour="2"] { --shift: var(--c2); }
-.me-shift[data-shift-colour="3"] { --shift: var(--c3); }
-.me-shift[data-shift-colour="4"] { --shift: var(--c4); }
-.me-shift[data-shift-colour="5"] { --shift: var(--c5); }
-.me-shift[data-shift-colour="6"] { --shift: var(--c6); }
-.me-shift[data-shift-colour="7"] { --shift: var(--c7); }
-.me-shift[data-shift-colour="8"] { --shift: var(--c8); }
 
 .me-past > summary { cursor: pointer; font-size: .9rem; font-weight: 650; margin: 1rem 0 .4rem; }
 
@@ -2048,14 +2047,6 @@ tr:hover .pos-add, .pos-add:focus-visible {
   background: color-mix(in srgb, var(--shift, var(--border)) 18%, var(--surface));
   min-width: 11rem;
 }
-.countdown-shift[data-shift-colour="1"] { --shift: var(--c1); }
-.countdown-shift[data-shift-colour="2"] { --shift: var(--c2); }
-.countdown-shift[data-shift-colour="3"] { --shift: var(--c3); }
-.countdown-shift[data-shift-colour="4"] { --shift: var(--c4); }
-.countdown-shift[data-shift-colour="5"] { --shift: var(--c5); }
-.countdown-shift[data-shift-colour="6"] { --shift: var(--c6); }
-.countdown-shift[data-shift-colour="7"] { --shift: var(--c7); }
-.countdown-shift[data-shift-colour="8"] { --shift: var(--c8); }
 
 /* ============================================================== on a phone ==
    Three things this app got wrong on a handset, each of which made it feel
@@ -3094,3 +3085,88 @@ html { touch-action: manipulation; }
 .sign-paper { display: flex; justify-content: center; }
 /* A letter laid out on headed paper wants the room A4 wants. */
 .invite.on-paper .invite-inner { max-width: 56rem; }
+
+/* ===================================================================== */
+/* The weekly lunch list.
+   The kitchen's sheet is seven columns and one big number under each: the
+   count is what the order is placed on, and the names under it are so it can
+   be checked rather than trusted. */
+.lunch-table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 44rem; }
+.lunch-table th, .lunch-table td {
+  border: 1px solid var(--border); padding: .5rem .55rem; vertical-align: top; text-align: left;
+}
+.lunch-table th { background: var(--surface-2, rgba(148, 163, 184, .1)); }
+.lunch-th-day { font-weight: 700; }
+.lunch-th-date { font-size: .75rem; color: var(--text-faint); font-weight: 400; }
+
+.lunch-count { font-size: 1.6rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.lunch-of { font-size: .72rem; color: var(--text-faint); margin-top: .1rem; }
+.lunch-heads td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.lunch-meals td { font-size: .85rem; }
+.lunch-meal { font-weight: 600; }
+.lunch-meal small { display: block; font-weight: 400; }
+.lunch-names { margin: 0; padding-left: 1.05rem; font-size: .85rem; }
+.lunch-names li { margin-bottom: .1rem; }
+
+/* Setting the week's meals: a day to a row, so seven of them read as a week. */
+.lunch-menu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .5rem; }
+.lunch-menu-cell { border: 1px solid var(--border); border-radius: 10px; padding: .5rem .6rem; }
+.lunch-menu-day { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); }
+.lunch-menu-form { display: grid; gap: .5rem; }
+.lunch-menu-field { display: grid; grid-template-columns: 6.5rem 1fr 1fr; gap: .4rem; align-items: center; }
+.lunch-menu-field .lunch-menu-day { align-self: center; }
+@media (max-width: 620px) {
+  .lunch-menu-field { grid-template-columns: 1fr; gap: .25rem; }
+  .lunch-menu-field .lunch-menu-day { margin-top: .4rem; }
+}
+
+/* The page everybody else opens. Built for a phone in a corridor. */
+.lunch-people { display: grid; gap: .4rem; margin-top: .6rem; max-height: 22rem; overflow: auto; }
+.lunch-name {
+  display: flex; align-items: baseline; gap: .5rem; width: 100%;
+  padding: .7rem .8rem; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text); text-align: left; cursor: pointer;
+  font-size: 1rem;
+}
+.lunch-name:hover, .lunch-name:focus-visible { border-color: var(--accent); }
+.lunch-name strong { font-size: 1.05rem; }
+
+.lunch-menu { display: grid; gap: .35rem; }
+.lunch-menu-row { display: grid; grid-template-columns: 4.5rem 1fr; gap: .5rem; font-size: .92rem; }
+.lunch-menu-row small { display: block; }
+
+.lunch-days { display: grid; gap: .5rem; }
+.lunch-day {
+  display: flex; align-items: center; gap: .8rem;
+  padding: .8rem .85rem; border: 1px solid var(--border); border-radius: 12px;
+  cursor: pointer;
+}
+.lunch-day:has(input:checked) {
+  border-color: var(--good); background: color-mix(in srgb, var(--good) 9%, transparent);
+}
+.lunch-day.is-shut { opacity: .7; cursor: default; }
+.lunch-day input { width: 1.35rem; height: 1.35rem; flex: none; }
+.lunch-day-what { flex: 1; min-width: 0; }
+.lunch-day-name { font-weight: 600; }
+.lunch-day-meal { font-size: .9rem; color: var(--text-dim); }
+.lunch-day-yes {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint);
+}
+.lunch-day:has(input:checked) .lunch-day-yes { color: var(--good); font-weight: 700; }
+.lunch-save { width: 100%; margin-top: .8rem; padding: .8rem; font-size: 1rem; }
+
+.lunch-done { text-align: center; }
+.lunch-tick {
+  width: 3rem; height: 3rem; margin: 0 auto .6rem; border-radius: 50%;
+  display: grid; place-content: center; font-size: 1.6rem;
+  background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good);
+}
+.lunch-summary { list-style: none; margin: .4rem 0; padding: 0; }
+.lunch-summary li { padding: .25rem 0; }
+
+/* Printing the week: the sheet and nothing else. */
+@media print {
+  .lunch-table { min-width: 0; font-size: 9pt; }
+  .lunch-table th, .lunch-table td { padding: 2mm; }
+  .lunch-count { font-size: 14pt; }
+}

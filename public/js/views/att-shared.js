@@ -125,27 +125,35 @@ export function shiftLabel(shift) {
  * so a shift is the same colour tomorrow as it was today, which is the only
  * property that makes a colour worth learning.
  *
- * An administrator can override it, and then theirs stands. Eight is the
- * ceiling on purpose: past that nobody can tell two of them apart at a glance,
- * and a colour nobody can name is decoration rather than information.
+ * An administrator can override it, and then theirs stands. Eleven is the
+ * ceiling, and it is a ceiling rather than a suggestion: past a dozen nobody
+ * can tell two of them apart at a glance, and a colour nobody can name is
+ * decoration rather than information. Every one of these can be named.
+ *
+ * Grey earns its place for a reason the others do not share. A property with
+ * a shift it wants on the rota and does not want the eye drawn to — a standby,
+ * a cover slot, an office day among a wall of service shifts — has had to
+ * spend a colour on it. Grey is the one that says "here, and not the thing to
+ * look at".
  */
-export const SHIFT_COLOURS = 8;
+export const SHIFT_COLOURS = 11;
 
 /**
- * Names for the eight, so a choice can be spoken about.
+ * Names for them, so a choice can be spoken about.
  *
  * "Colour 5" is not something anybody says to a colleague. "The red one" is.
  */
 export const SHIFT_COLOUR_NAMES = [
   'Blue', 'Teal', 'Amber', 'Violet', 'Red', 'Cyan', 'Green', 'Pink',
+  'Indigo', 'Brown', 'Grey',
 ];
 
 /**
- * Eight swatches to pick from, and the option of letting the app choose.
+ * The swatches to pick from, and the option of letting the app choose.
  *
  * A picker rather than a dropdown of numbers, because the whole point of the
  * setting is what the thing looks like on the rota, and a list reading
- * "Colour 1 … Colour 8" asks somebody to hold eight guesses in their head.
+ * "Colour 1 … Colour 11" asks somebody to hold eleven guesses in their head.
  */
 export function shiftColourPicker(existing) {
   const chosen = String(existing?.colour ?? '');
