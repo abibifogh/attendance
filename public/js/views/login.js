@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { deriveLoginKey } from '../crypto.js';
 import { h, mount, toast } from '../util.js';
-import { BRAND } from '../brand.js';
+import { BRAND, brandMark } from '../brand.js';
 
 /** PIN keypad. Big targets, no keyboard needed, works with gloves on. */
 export function renderLogin(onSuccess) {
@@ -118,7 +118,7 @@ export function renderLogin(onSuccess) {
 
   const wrap = h('div.login-wrap',
     h('div.card.login-card',
-      h('div', { style: { fontSize: '2rem' } }, BRAND.mark),
+      brandMark('3rem'),
       h('h1', BRAND.name),
       h('p.muted', { style: { marginTop: '-.2rem', fontSize: '.82rem', letterSpacing: '.02em' } },
         BRAND.full),

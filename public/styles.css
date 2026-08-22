@@ -23,6 +23,11 @@
   --bad-soft: #fdeaec;
   --info: #6b46d6;
 
+  /* The app's own mark, which is the icon's amber rather than the accent: the
+     accent is what a person can press, and the mark is not. Darker on a light
+     ground, where the icon's own amber goes to nothing. */
+  --brand-mark: #d18617;
+
   --c1: #2f6df6; --c2: #12a594; --c3: #d97706; --c4: #8b5cf6;
   --c5: #e11d48; --c6: #0891b2; --c7: #65a30d; --c8: #db2777;
 
@@ -33,6 +38,7 @@
   --topbar-h: 58px;
   --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 8px 24px -12px rgba(16, 24, 40, .18);
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --hex-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,7 87,28.5 87,71.5 50,93 13,71.5 13,28.5' fill='none' stroke='black' stroke-width='11' stroke-linejoin='round'/%3E%3C/svg%3E");
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
@@ -57,6 +63,7 @@
     --bad: #f87171;
     --bad-soft: #2e1719;
     --info: #a78bfa;
+    --brand-mark: #f0a94c;
 
     --c1: #5b8bff; --c2: #2dd4bf; --c3: #fbbf24; --c4: #a78bfa;
     --c5: #fb7185; --c6: #22d3ee; --c7: #a3e635; --c8: #f472b6;
@@ -72,6 +79,7 @@
   --good: #34d399; --good-soft: #10291f;
   --warn: #f0a94c; --warn-soft: #2e2413;
   --bad: #f87171; --bad-soft: #2e1719; --info: #a78bfa;
+  --brand-mark: #f0a94c;
   --c1: #5b8bff; --c2: #2dd4bf; --c3: #fbbf24; --c4: #a78bfa;
   --c5: #fb7185; --c6: #22d3ee; --c7: #a3e635; --c8: #f472b6;
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -14px rgba(0, 0, 0, .6);
@@ -110,7 +118,15 @@ a { color: var(--accent); }
   border-bottom: 1px solid var(--border);
 }
 .brand { display: flex; align-items: center; gap: .55rem; font-weight: 700; letter-spacing: -.02em; }
-.brand-mark { font-size: 1.25rem; }
+/* The mark. An inline hexagon rather than an emoji, so it is the same shape as
+   the icon on the home screen and the same shape on every phone. */
+.brand-hex {
+  --mark-size: 1.4rem;
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mark-size); height: var(--mark-size);
+  color: var(--brand-mark);
+}
+.brand-hex svg { display: block; width: 100%; height: 100%; }
 .brand-sub { color: var(--text-faint); font-weight: 500; font-size: .78rem; display: block; letter-spacing: 0; }
 .topbar-spacer { flex: 1; }
 
@@ -386,12 +402,14 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 
 /* ---------------------------------------------------------------- misc --- */
 .boot { min-height: 100dvh; display: grid; place-content: center; text-align: center; color: var(--text-dim); gap: .5rem; }
-/* Set here rather than in the markup, so the housekeeping site never flashes
-   the breakfast icon on the way in. */
-.boot-mark { font-size: 2.5rem; }
-/* In CSS rather than the markup, so the mark is painted with the first frame
-   instead of waiting for a module to load. */
-.boot-mark::after { content: '🕘'; }
+/* The same hexagon, drawn from the stylesheet rather than the markup so it is
+   painted with the first frame instead of waiting for a module to load. */
+.boot-mark {
+  width: 3rem; height: 3rem; margin: 0 auto;
+  background: var(--brand-mark);
+  -webkit-mask: var(--hex-mask) center / contain no-repeat;
+  mask: var(--hex-mask) center / contain no-repeat;
+}
 .empty { text-align: center; padding: 2rem 1rem; color: var(--text-faint); }
 .empty h3 { color: var(--text-dim); margin-bottom: .35rem; }
 .muted { color: var(--text-faint); }
@@ -734,6 +752,9 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
     display: flex; align-items: center; gap: .4rem;
     font-size: 10pt; color: #4a535e; margin-bottom: 2mm;
   }
+  /* Paper is white whichever theme the screen was in, so the mark takes the
+     darker amber rather than whatever the tokens happen to hold. */
+  .print-brand .brand-hex { color: #d18617; }
   .print-title { font-size: 20pt; margin: 0; letter-spacing: -.02em; }
   .print-subtitle { font-size: 11pt; color: #4a535e; margin-top: 1mm; }
   .print-note { font-size: 9.5pt; color: #4a535e; margin-top: 2mm; font-style: italic; }

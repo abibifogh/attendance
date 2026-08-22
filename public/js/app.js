@@ -25,7 +25,7 @@ import { renderLetters } from './views/letters.js';
 import { renderLetter } from './views/letter.js';
 import { renderLetterParties } from './views/letter-parties.js';
 import { renderLetterSigning } from './views/letter-signing.js';
-import { BRAND } from './brand.js';
+import { BRAND, brandMark } from './brand.js';
 
 export const state = {
   role: null,
@@ -199,7 +199,7 @@ function shell(content) {
       // instead of it. Somebody working here already knows where they work;
       // which system they are looking at is the thing worth saying.
       h('div.brand',
-        h('span.brand-mark', BRAND.mark),
+        brandMark(),
         h('div',
           BRAND.name,
           h('span.brand-sub', [

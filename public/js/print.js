@@ -1,5 +1,5 @@
 import { state } from './app.js';
-import { BRAND } from './brand.js';
+import { BRAND, brandMark } from './brand.js';
 import { h } from './util.js';
 
 /**
@@ -33,7 +33,7 @@ export function printReport({ title, subtitle, note, footer, onePage = false }) 
 
   const header = h('div.print-header',
     h('div.print-brand',
-      h('span', BRAND.mark),
+      brandMark('1.05em'),
       h('strong', state.settings.property_name || BRAND.name),
       state.settings.property_name
         ? h('span', { style: { color: '#6b7280', fontWeight: 400 } }, ` · ${BRAND.name}`)
