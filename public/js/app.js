@@ -15,7 +15,6 @@ import { renderAttMyReport } from './views/att-my-report.js';
 import { renderAttMyAdvance } from './views/att-my-advance.js';
 import { renderAttAdvances } from './views/att-advances.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
-import { renderAttLunch } from './views/att-lunch.js';
 import { renderAttMedical } from './views/att-medical.js';
 import { renderAttPayroll } from './views/att-payroll.js';
 import { renderAttLeave } from './views/att-leave.js';
@@ -84,7 +83,6 @@ const ROUTES = [
   { path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances },
   { path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical },
   { path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayroll },
-  { path: 'att-lunch', label: 'Lunch', permission: 'lunch', render: renderAttLunch },
   { path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters },
   { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
