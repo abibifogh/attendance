@@ -152,6 +152,8 @@ export const api = {
   attSetCalendar: (body) => request('/api/att/calendar', { method: 'POST', body }),
   attUndoReview: (body) => request('/api/att/review/undo', { method: 'POST', body }),
   attOutstanding: (params = {}) => request(`/api/att/outstanding?${new URLSearchParams(params)}`),
+  attLeaveAdjustments: (staffId) => request(`/api/att/staff/${staffId}/adjustments`),
+  attChangeDaysApplied: (id, body) => request(`/api/att/reviews/${id}/days`, { method: 'POST', body }),
   attSignDays: (body) => request('/api/att/sign-days', { method: 'POST', body }),
   attReopenDays: (body) => request('/api/att/sign-days/undo', { method: 'POST', body }),
   attQueries: (status) => request(`/api/att/queries${status ? `?status=${status}` : ''}`),

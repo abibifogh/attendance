@@ -2135,3 +2135,30 @@ html { touch-action: manipulation; }
   .off-phone { display: none; }
   .on-phone { display: block; }
 }
+
+/* A figure with something behind it. The whole tile is the target rather than
+   the number inside it, because a number is a poor thing to aim a thumb at. */
+.stat-open { cursor: pointer; }
+.stat-open:hover { border-color: var(--accent); }
+.stat-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.adjust-list { display: grid; }
+.adjust-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: .75rem;
+  align-items: center;
+  padding: .6rem .1rem;
+  border-top: 1px solid var(--border);
+}
+.adjust-list > .adjust-row:first-child { border-top: none; }
+.adjust-row small { display: block; }
+.adjust-figure { text-align: right; font-variant-numeric: tabular-nums; }
+.adjust-figure strong { font-size: 1.15rem; }
+.good-text { color: var(--good); }
+.bad-text { color: var(--bad); }
+
+@media (max-width: 620px) {
+  .adjust-row { grid-template-columns: 1fr auto; }
+  .adjust-row > button { grid-column: 2; justify-self: end; }
+}

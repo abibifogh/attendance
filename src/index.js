@@ -90,6 +90,8 @@ export const ROUTES = [
   // What is still waiting, day by day, and what to do about the awkward ones.
   ['GET', '/api/att/outstanding', 'att_signoff', signoff.outstanding],
   ['POST', '/api/att/sign-days', 'att_signoff', signoff.signDays],
+  ['GET', '/api/att/staff/:id/adjustments', ['att_reports', 'att_signoff'], signoff.leaveAdjustments],
+  ['POST', '/api/att/reviews/:id/days', 'att_signoff', signoff.changeDaysApplied],
   ['POST', '/api/att/sign-days/undo', 'att_signoff', signoff.reopenDays],
   // Raising a question is part of signing off; answering one is deciding, and
   // deciding is what settling a day and approving leave already need.

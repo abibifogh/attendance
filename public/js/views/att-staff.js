@@ -7,7 +7,7 @@ import { card, emptyState, exportButton, table } from './components.js';
 import { printButton } from '../print.js';
 import {
   clockCell, correctTimesDialog, field, formDialog, hoursCell, minutesCell, needsAttention,
-  reasonSelect, signOffDialog, spanLabel, statusPill, totalsLine,
+  reasonSelect, showSheet, signOffDialog, spanLabel, statusPill, totalsLine,
 } from './att-shared.js';
 
 /**
@@ -432,8 +432,13 @@ export async function renderAttStaff(params) {
         ? tile(
           adjusted > 0 ? 'Days given back' : 'Days charged',
           `${adjusted > 0 ? '+' : ''}${fmtNum(adjusted, 1)}`,
-          adjusted > 0 ? 'for months worked over' : 'for months worked short',
+          'what made this — tap to see',
           adjusted > 0 ? 'var(--good)' : 'var(--bad)',
+          // A figure with no visible cause is a figure people argue with. This
+          // one is the sum of every period signed off this leave year, and the
+          // only way to find out which ones was to read the sign-off screen
+          // month by month and add them up.
+          () => showAdjustments(data.staff, reload),
         )
         : null,
       tile('Taken', fmtNum(leave.taken, 1), leave.booked ? `${fmtNum(leave.booked, 1)} more booked` : 'days so far'),
@@ -525,12 +530,106 @@ function singleDayCard(record, staff) {
   );
 }
 
-function tile(label, value, sub, accent) {
-  return h('div.stat',
-    h('div.stat-label', label),
-    h('div.stat-value', { style: accent ? { color: accent } : null }, value),
-    sub ? h('div.stat-sub', h('span', sub)) : null,
+function tile(label, value, sub, accent, onclick = null) {
+  return h(`div.stat${onclick ? '.stat-open' : ''}`, onclick
+    ? { role: 'button', tabindex: 0, onclick, onkeydown: (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onclick(); }
+    } }
+    : null,
+  h('div.stat-label', label),
+  h('div.stat-value', { style: accent ? { color: accent } : null }, value),
+  sub ? h('div.stat-sub', h('span', sub)) : null);
+}
+
+/**
+ * Which sign-offs made the adjustment, and a way to put one right.
+ *
+ * Not a reopening. The days stay signed and the verdicts on them stay put;
+ * only the figure charged against, or given back to, the entitlement changes.
+ * That is the correction somebody actually needs — "I meant minus one, not
+ * minus four" — and reopening a whole month to fix a typed number would undo a
+ * decision nobody is questioning.
+ */
+async function showAdjustments(staff, reload) {
+  let data;
+  try {
+    data = await api.attLeaveAdjustments(staff.id);
+  } catch (err) {
+    toast(err.message, 'bad');
+    return;
+  }
+
+  const body = h('div');
+  const draw = () => mount(body,
+    h('p.muted', { style: { fontSize: '.85rem' } },
+      `Every period closed off in the ${data.year.label} leave year `
+      + `(${fmtDay(data.year.from)} to ${fmtDay(data.year.to)}). The figures add up to `
+      + `${data.adjusted > 0 ? '+' : ''}${data.adjusted}.`),
+
+    data.periods.length
+      ? h('div.adjust-list', data.periods.map((p) => h('div.adjust-row',
+        h('div',
+          h('div', h('strong', p.from === p.to
+            ? fmtDay(p.from)
+            : `${fmtDayShort(p.from)} – ${fmtDayShort(p.to)}`),
+          h('small.muted', ` · ${p.kind}`)),
+          h('small.muted', `${p.by || 'somebody'}`
+            + `${p.at ? ` · ${String(p.at).slice(0, 10)}` : ''}`
+            + `${p.excluded ? ` · ${p.excluded} day(s) left out` : ''}`),
+          p.note ? h('small.muted', `“${p.note}”`) : null),
+
+        h('div.adjust-figure',
+          h(`strong${p.daysApplied > 0 ? '.good-text' : p.daysApplied < 0 ? '.bad-text' : ''}`,
+            p.daysApplied ? `${p.daysApplied > 0 ? '+' : ''}${p.daysApplied}` : '0'),
+          h('small.muted', p.decision === 'waived' ? 'let stand' : 'against leave')),
+
+        data.canChange
+          ? h('button.btn-sm', { onclick: () => changeOne(p) }, 'Change')
+          : null,
+      )))
+      : h('p.muted', 'Nothing has been signed off in this leave year.'),
   );
+
+  const changeOne = async (period) => {
+    const done = await formDialog({
+      title: `${fmtDayShort(period.from)} – ${fmtDayShort(period.to)}`,
+      submitLabel: 'Change it',
+      body: h('div',
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          `${period.scheduledDays ?? 0} rostered, ${period.workedDays ?? 0} worked, `
+          + `which the figures made ${period.difference > 0 ? '+' : ''}${period.difference}. `
+          + `${period.by || 'Somebody'} recorded `
+          + `${period.daysApplied > 0 ? '+' : ''}${period.daysApplied}.`),
+        field('Days against their leave', h('input', {
+          type: 'number', name: 'daysApplied', step: 1, min: -60, max: 60,
+          value: String(period.daysApplied),
+        }), 'Negative takes days off the entitlement, positive gives them back'),
+        field('Why the change', h('input', { type: 'text', name: 'note', maxlength: 300 }),
+          'Kept with the sign-off'),
+        h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+          'The days stay signed off and nothing about what happened on them changes. Only '
+          + 'this figure moves, and the old one goes on the record.'),
+      ),
+      onSubmit: async (form) => api.attChangeDaysApplied(period.id, {
+        daysApplied: Number(form.get('daysApplied')),
+        note: form.get('note') || null,
+      }),
+    });
+    if (!done) return;
+
+    toast(done.changed
+      ? `Now ${done.daysApplied > 0 ? '+' : ''}${done.daysApplied}, was `
+        + `${done.was > 0 ? '+' : ''}${done.was}.`
+      : 'Nothing to change.', 'good');
+    data = await api.attLeaveAdjustments(staff.id);
+    draw();
+    // The balance above the sheet is now wrong, so the screen behind it is
+    // rebuilt as soon as the reader closes this.
+    sheet.addEventListener('close', () => reload({}), { once: true });
+  };
+
+  draw();
+  const sheet = showSheet({ title: `What moved ${staff.name.split(' ')[0]}'s leave`, body });
 }
 
 /** The dates a period selection means. */

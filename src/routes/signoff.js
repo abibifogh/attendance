@@ -6,7 +6,8 @@ import {
   parseDays, unsignedDays,
 } from '../lib/signoff.js';
 import {
-  calendarFor, computeRange, dayCredit, dayLedger, daysPerWeekFor, labelFor, loadDataset, overUnder, summarise,
+  calendarFor, computeRange, dayCredit, dayLedger, daysPerWeekFor, labelFor, leaveYearOf,
+  loadDataset, overUnder, summarise,
 } from '../lib/attendance.js';
 import { addDays, diffDays, isDay, monthBounds, todayIn } from '../util/dates.js';
 
@@ -875,6 +876,134 @@ async function closeQueriesFor(ctx, staffId, days, outcome, note) {
       "INSERT INTO att_query_note (query_id, kind, body, author) VALUES (?1, 'decision', ?2, ?3)",
     ).bind(query.id, note, actorOf(ctx)).run();
   }
+}
+
+
+
+// ---------------------------------------------------------------------------
+// What is behind a number
+// ---------------------------------------------------------------------------
+
+/**
+ * The sign-offs that made somebody's leave adjustment.
+ *
+ * "Days given back: +3" on a person's record is a figure with no visible
+ * cause. It is the sum of what every closed period in this leave year moved,
+ * and the only way to find out which ones was to read the sign-off screen
+ * month by month and add them up. This is that sum, itemised.
+ *
+ * Every closed period in the year comes back, not only the ones that moved
+ * something. A month that moved nothing is part of the answer to "why is this
+ * three and not four", and leaving it out makes the list look incomplete.
+ */
+export async function leaveAdjustments(ctx, idParam) {
+  const staffId = int(idParam, 'Staff', { required: true, min: 1 });
+
+  const staff = await ctx.db.prepare('SELECT id, name FROM att_staff WHERE id = ?')
+    .bind(staffId).first();
+  if (!staff) throw notFound('No such member of staff.');
+
+  const timezone = await timezoneOf(ctx.db);
+  const settings = await ctx.db.prepare(
+    "SELECT value FROM settings WHERE key = 'att_leave_year_starts'",
+  ).first().catch(() => null);
+
+  const asOf = isDay(ctx.url.searchParams.get('asOf'))
+    ? ctx.url.searchParams.get('asOf')
+    : todayIn(timezone);
+  const year = leaveYearOf(asOf, settings?.value || '01-01');
+
+  const rows = await ctx.db.prepare(
+    `SELECT * FROM att_period_review
+      WHERE staff_id = ?1 AND from_day >= ?2 AND from_day <= ?3
+      ORDER BY from_day`,
+  ).bind(staffId, year.start, year.end).all().catch(() => ({ results: [] }));
+
+  const periods = (rows.results ?? []).map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    from: r.from_day,
+    to: r.to_day,
+    daysApplied: Number(r.days_applied) || 0,
+    decision: r.decision,
+    difference: Number(r.difference) || 0,
+    scheduledDays: r.scheduled_days,
+    workedDays: r.worked_days,
+    note: r.note ?? null,
+    by: r.decided_by,
+    at: r.decided_at,
+    excluded: parseDays(r.excluded_days).length,
+  }));
+
+  return json({
+    staff: { id: staff.id, name: staff.name },
+    year: { label: year.label, from: year.start, to: year.end },
+    // The same arithmetic the balance does, so the list and the tile above it
+    // cannot disagree about what they add up to.
+    adjusted: Math.round(periods.reduce((n, p) => n + p.daysApplied, 0)),
+    canChange: allows('att_signoff', ctx.session.permissions),
+    periods,
+  });
+}
+
+/**
+ * Change what one sign-off moved.
+ *
+ * Not a reopening. The days stay signed and the verdicts on them stay put;
+ * only the number charged against, or given back to, the entitlement changes.
+ * That is the correction somebody actually needs — "I meant minus one, not
+ * minus four" — and reopening a whole month to fix a typed figure would undo a
+ * decision nobody is questioning.
+ *
+ * The old figure goes in the audit line, because a balance that moved with no
+ * record of what moved it is the thing this screen exists to prevent.
+ */
+export async function changeDaysApplied(ctx, idParam) {
+  const id = int(idParam, 'Sign-off', { required: true, min: 1 });
+  const body = await readJson(ctx.request);
+
+  const days = Number(body.daysApplied);
+  if (!Number.isFinite(days) || Math.abs(days) > 60 || days % 1 !== 0) {
+    throw badRequest('Give a whole number of days, between -60 and 60.');
+  }
+
+  const row = await ctx.db.prepare(
+    `SELECT r.*, s.name FROM att_period_review r JOIN att_staff s ON s.id = r.staff_id
+      WHERE r.id = ?`,
+  ).bind(id).first();
+  if (!row) throw notFound('No such sign-off.');
+
+  const was = Number(row.days_applied) || 0;
+  const note = str(body.note, 'Note', { max: 300 });
+  if (days === was && !note) {
+    return json({ ok: true, changed: false, daysApplied: was });
+  }
+
+  await ctx.db.prepare(
+    `UPDATE att_period_review
+        SET days_applied = ?2,
+            note = COALESCE(?3, note),
+            decided_by = ?4,
+            decided_at = datetime('now')
+      WHERE id = ?1`,
+  ).bind(id, days, note || null, actorOf(ctx)).run();
+
+  await audit(ctx, 'attendance.days_applied', row.staff_id, {
+    review: id, from: row.from_day, to: row.to_day, was, now: days, note,
+  });
+
+  await createNotice(ctx.db, {
+    kind: 'attendance.days_applied',
+    level: 'warn',
+    title: `${row.name}: a signed period now moves ${days > 0 ? '+' : ''}${days} days`,
+    body: `${row.from_day} to ${row.to_day} was ${was > 0 ? '+' : ''}${was}. `
+      + `Changed by ${actorOf(ctx)}.${note ? ` ${note}` : ''}`,
+    link: `#/att-staff?id=${row.staff_id}`,
+    actor: actorOf(ctx),
+    audience: 'att_reports',
+  }, ctx);
+
+  return json({ ok: true, changed: true, was, daysApplied: days });
 }
 
 export { effectiveDays };
