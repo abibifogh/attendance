@@ -396,16 +396,25 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .keypad button { height: 58px; font-size: 1.3rem; font-weight: 600; }
 
 /* -------------------------------------------------------------- toasts --- */
-.toasts { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); z-index: 100; display: grid; gap: .4rem; width: min(420px, calc(100vw - 2rem)); }
+/* The stack is as wide as it is allowed to get; each message is only as wide
+   as its words. A one-word "Saved." stretched to fill this was a bar across
+   the whole of a handset, which reads as a banner about the page rather than
+   as a note about what just happened. */
+.toasts {
+  position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
+  z-index: 100; display: grid; gap: .4rem; justify-items: center;
+  width: min(420px, calc(100vw - 2rem));
+}
 /* Lift toasts clear of the entry screen's fixed action bar. */
 /* Its own dark ground rather than the page's surface. On a handset a white
    box with coloured text lands among white cards and reads as one of them —
    which is how a "Saved" message ends up looking like part of the screen it
    is reporting on. The tone is a dot, so the words stay legible. */
 .toast {
-  display: flex; align-items: flex-start; gap: .55rem;
-  padding: .7rem .85rem; border-radius: 12px;
-  font-size: .9rem; font-weight: 500; line-height: 1.35;
+  display: flex; align-items: flex-start; gap: .5rem;
+  max-width: 100%;
+  padding: .5rem .95rem; border-radius: 999px;
+  font-size: .88rem; font-weight: 500; line-height: 1.35;
   background: var(--toast-bg); color: var(--toast-ink);
   box-shadow: 0 10px 28px -12px rgba(0, 0, 0, .65);
   animation: toast-in .18s ease;
@@ -413,7 +422,7 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 }
 .toast::before {
   content: ''; flex: none;
-  width: .5rem; height: .5rem; margin-top: .42rem;
+  width: .45rem; height: .45rem; margin-top: .38rem;
   border-radius: 50%; background: var(--toast-ink); opacity: .6;
 }
 .toast.good::before { background: #34d399; opacity: 1; }
@@ -599,7 +608,7 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   }
   .sidebar { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
   .toasts[popover] { bottom: max(1rem, calc(env(safe-area-inset-bottom) + .5rem)); }
-  .toast { font-size: .88rem; padding: .65rem .75rem; }
+  .toast { font-size: .85rem; padding: .45rem .85rem; }
 }
 
 @media (max-width: 620px) and (min-resolution: 0dppx) {
@@ -711,7 +720,7 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   overflow: visible;
 }
 .toasts[popover]:not(:popover-open) { display: none; }
-.toasts[popover]:popover-open { display: grid; }
+.toasts[popover]:popover-open { display: grid; justify-items: center; }
 
 /* --------------------------------------------------------------- printing --
    Reports are saved as PDF through the browser's own print dialog. The charts
