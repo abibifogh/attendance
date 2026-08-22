@@ -3,6 +3,7 @@ import { createNotice } from '../lib/notices.js';
 import { balanceOf, dueThisMonth } from '../lib/advances.js';
 import { computeLine, totalsOf } from '../lib/payroll.js';
 import { ratesFrom, round2 } from '../lib/tax.js';
+import { PAYE_COLUMNS, journalFor, payeSchedule, tiersFrom } from '../lib/statutory.js';
 import { addMonths, isMonth, monthOf, todayIn } from '../util/dates.js';
 
 /**
@@ -39,6 +40,7 @@ async function settingsOf(db) {
     currency: map.currency || 'GHS',
     property: map.property_name || null,
     rates: ratesFrom(map),
+    tiers: tiersFrom(map),
   };
 }
 
@@ -62,7 +64,7 @@ async function runFor(db, month, actor) {
  * under, what they scored, what came off, and what they are repaying.
  */
 async function gather(ctx, month) {
-  const { rates, currency, property } = await settingsOf(ctx.db);
+  const { rates, tiers, currency, property } = await settingsOf(ctx.db);
   const run = await runFor(ctx.db, month, actorOf(ctx));
 
   const [staff, profiles, allowances, schemes, members, scores, penalties, advances, entries, slips]
@@ -103,6 +105,7 @@ async function gather(ctx, month) {
   return {
     run,
     rates,
+    tiers,
     currency,
     property,
     staff: (staff.results ?? []),
@@ -288,6 +291,64 @@ export async function payroll(ctx) {
 }
 
 /** One payslip, in full. */
+/**
+ * The two returns the month has to produce, on one screen.
+ *
+ * Kept off the main payroll response and behind its own request, because it
+ * reads TIN and SSNIT numbers out of the personal records and there is no
+ * reason for those to travel with a screen that does not show them.
+ */
+export async function returns(ctx) {
+  const { timezone } = await settingsOf(ctx.db);
+  const month = monthFrom(ctx.url, timezone);
+  const data = await gather(ctx, month);
+
+  const closed = data.run.status === 'final';
+  const lines = closed
+    ? data.staff
+      .map((person) => data.slipBy.get(person.id))
+      .filter(Boolean)
+      .map((slip) => JSON.parse(slip.detail))
+    : linesFrom(data, month);
+
+  const records = await ctx.db.prepare(
+    'SELECT staff_id, tin_number, ssnit_number FROM hr_person',
+  ).all().catch(() => ({ results: [] }));
+  const people = new Map((records.results ?? []).map((r) => [Number(r.staff_id), r]));
+
+  const totals = totalsOf(lines);
+  const journal = journalFor({ lines, totals, rates: data.rates, tiers: data.tiers });
+  const schedule = payeSchedule({ lines, people });
+
+  const missing = schedule.rows.filter((row) => !row.tin || !row.ssnitNumber)
+    .map((row) => ({
+      name: row.name,
+      wants: [!row.tin ? 'TIN' : null, !row.ssnitNumber ? 'SSNIT number' : null].filter(Boolean),
+    }));
+
+  return json({
+    month,
+    currency: data.currency,
+    property: data.property,
+    status: data.run.status,
+    rates: {
+      label: data.rates.label,
+      ssnitEmployee: data.rates.ssnitEmployee,
+      ssnitEmployer: data.rates.ssnitEmployer,
+    },
+    tiers: data.tiers,
+    totals,
+    journal,
+    // The columns come from here rather than being written out again on the
+    // screen: a return with two lists of headings drifts apart.
+    columns: PAYE_COLUMNS,
+    schedule,
+    // Named rather than counted: whoever files the return has to go and get
+    // these, and a number does not tell them whose record to open.
+    missing,
+  });
+}
+
 export async function payslip(ctx, staffParam) {
   const { timezone } = await settingsOf(ctx.db);
   const month = monthFrom(ctx.url, timezone);

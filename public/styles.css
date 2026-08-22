@@ -2984,6 +2984,82 @@ html { touch-action: manipulation; }
   .compose-bar-end { margin-left: 0; }
 }
 
+/* ===================================================================== */
+/* The month's returns: the journal to type and the schedule to file.
+   Not an A4 page like a payslip. The PAYE schedule is fourteen columns and
+   belongs on landscape paper, so this is a flowing sheet that scrolls on a
+   screen and breaks where it lands on paper. */
+.returns-sheet {
+  width: 100%;
+  background: var(--surface); color: var(--text);
+  border-radius: var(--radius); padding: 1.6rem 1.8rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .12);
+}
+.returns { display: grid; gap: 1.6rem; }
+.returns-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1.5rem; flex-wrap: wrap;
+  border-bottom: 2px solid var(--border-strong); padding-bottom: .8rem;
+}
+.returns-head h1 { margin: 0 0 .15rem; font-size: 1.25rem; }
+.returns-when { text-align: right; }
+.returns-block { display: grid; gap: .5rem; }
+.returns-block h2 { margin: 0; font-size: 1rem; }
+.returns-block > p.muted { margin: 0; font-size: .88rem; }
+
+.returns-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.returns-table th, .returns-table td {
+  padding: .4rem .5rem; border-bottom: 1px solid var(--border);
+  text-align: left; vertical-align: top; white-space: normal;
+}
+.returns-table th {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-faint); border-bottom: 1px solid var(--border-strong);
+}
+.returns-table td.num, .returns-table th.num {
+  text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.returns-table .muted { font-size: .8rem; }
+.returns-total > td { border-top: 2px solid var(--border-strong); border-bottom: none; }
+/* Credits sit under the debits they answer, the way a journal is written. */
+.returns-indent { display: inline-block; width: 1.4rem; }
+.returns-journal { max-width: 40rem; }
+/* Fourteen columns fit a landscape sheet only because of three decisions:
+   the currency is said once in the heading rather than fourteen times a row,
+   the columns are given their widths rather than fighting for them, and the
+   headings are sentence case, which is narrower than shouting. */
+.returns-paye { min-width: 58rem; table-layout: fixed; }
+.returns-paye th, .returns-paye th.num { white-space: normal; }
+.returns-paye th {
+  text-transform: none; letter-spacing: 0; font-size: .74rem;
+  /* break-word, not anywhere: a word too long for its column is broken, but
+     the column is still measured on whole words. `anywhere` shrinks every
+     column to one letter and stacks the heading down the page. */
+  overflow-wrap: break-word;
+}
+.returns-paye th:nth-child(1) { width: 4.5%; }
+.returns-paye th:nth-child(2) { width: 13%; }
+.returns-paye th:nth-child(3),
+.returns-paye th:nth-child(4) { width: 8.5%; }
+
+.returns-tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; }
+.returns-tier {
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .6rem .7rem;
+}
+/* The two that are actually paid over, told apart from the two halves they
+   are made of, because those are the numbers on the forms. */
+.returns-tier.is-payment { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.returns-tier-label { font-size: .78rem; color: var(--text-dim); }
+.returns-tier-amount { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.returns-warn {
+  border-left: 3px solid var(--warn, #b45309); padding: .5rem .7rem;
+  background: color-mix(in srgb, var(--warn, #b45309) 8%, transparent);
+  border-radius: var(--radius-sm); font-size: .88rem; margin: 0;
+}
+.returns-warn ul { margin: .35rem 0 0; padding-left: 1.1rem; }
+.returns-foot { font-size: .78rem; color: var(--text-faint); margin: 0; }
+.preview-wide { max-width: 1400px; }
+
 /* Printing a letter or a payslip: the page and nothing else. */
 @media print {
   .compose-bar, .compose-page-no, .compose-safe, .preview-bar { display: none !important; }
@@ -3000,6 +3076,14 @@ html { touch-action: manipulation; }
   /* The rest of the app is still in the document behind the overlay, and it
      would otherwise print as a first page nobody asked for. */
   body:has(.preview-shade) > *:not(.preview-shade) { display: none !important; }
+  /* The returns are a flowing sheet, not a fixed page: no shadow, no rounded
+     corner, and the wide schedule shrinks rather than being cut off. */
+  .returns-sheet { box-shadow: none; border-radius: 0; padding: 0; }
+  /* Fourteen columns on a landscape sheet. */
+  .returns-paye { min-width: 0; width: 100%; font-size: 7.5pt; }
+  .returns-paye th { font-size: 7pt; }
+  .returns-paye th, .returns-paye td { padding: 1mm 1.5mm; }
+  .returns-block { break-inside: avoid; }
   /* The last page must not push a blank sheet out of the printer. */
   .preview-pages > *:last-child,
   .preview-pages > *:last-child .paper-page,

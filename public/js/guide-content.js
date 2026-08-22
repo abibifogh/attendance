@@ -720,6 +720,38 @@ export const GUIDE = [
         + 'history is one nobody can be held to. Reopening a month takes back the payslips and '
         + 'exactly the advance deductions the payroll recorded, and nothing else.' },
 
+      { sub: 'Starting a month from the one before' },
+      { p: 'Most of a month\u2019s scoring is last month\u2019s scoring with two or three lines '
+        + 'changed, and typing thirty scores again to change two is how a wrong one gets typed. '
+        + 'Start from last month brings the scores across and you touch only what moved.' },
+      { list: [
+        'Salaries, allowances and who is under which scheme are standing things, not monthly '
+          + 'ones. There was never anything to copy there and there still is not.',
+        'Money taken off for misconduct does not come across unless you tick for it. It belongs '
+          + 'to the month it happened in, and carrying it forward would dock somebody twice.',
+        'Anybody taken off a scheme since, or who has left, is left out. Scores already typed '
+          + 'into the month are replaced rather than added to.',
+      ] },
+
+      { sub: 'The journal and the PAYE schedule' },
+      { p: 'Journal and PAYE, on the month, opens the two returns the month has to produce. '
+        + 'Nothing here posts to a ledger or files anything: it is a sheet to type from and a '
+        + 'sheet to file from, and it prints or saves as PDF from the bar at the top.' },
+      { list: [
+        'The journal is the month\u2019s entry, balanced, with the debits above the credits the '
+          + 'way it is written.',
+        'Social security is shown as it is actually paid. The 18.5% of basic is one deduction '
+          + 'and two payments: 13.5% to SSNIT as the first tier and 5% to your second-tier '
+          + 'trustee, on separate forms to separate people.',
+        'The PAYE schedule is the GRA\u2019s own columns in the GRA\u2019s own order, so it '
+          + 'reads straight across into the return.',
+      ] },
+      { warn: 'The schedule lists anybody whose TIN or SSNIT number is missing from their '
+        + 'record, by name, because the return cannot be filed without them and a count does '
+        + 'not tell you whose record to open. Tax relief is left empty: it is claimed on a '
+        + 'certificate the GRA issues to the person, and a payroll that guessed at it would '
+        + 'be filing a claim nobody made.' },
+
       { sub: 'The payslip' },
       { p: 'One page, always. It is drawn at A4 and everything on it shrinks together until it '
         + 'fits, so somebody with a dozen allowances and two advances running gets smaller type '

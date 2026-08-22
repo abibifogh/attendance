@@ -10,6 +10,7 @@ import { replaceParams } from '../app.js';
 import { printReport } from '../print.js';
 import { niceMonth } from './att-advances.js';
 import { companyOf, payslipPage, showPayslips } from './payslip.js';
+import { returnsSheet } from './pay-returns.js';
 
 /**
  * The payroll.
@@ -116,6 +117,8 @@ export async function renderAttPayroll(params) {
           }) }, 'Print this table'),
           h('button.btn-sm', { onclick: () => openAllSlips(data, month) },
             `All ${data.lines.length} payslips`),
+          h('button.btn-sm', { onclick: () => openReturns(month) },
+            'Journal and PAYE'),
           closed
             ? null
             : h('button.btn.btn-primary', {
@@ -229,6 +232,37 @@ async function startFrom(month, reload) {
     ? `Brought across: ${bits.join(' and ')}.`
     : 'There was nothing to bring across.', done.scores ? 'good' : 'warn');
   await reload();
+}
+
+/**
+ * The month's journal and its PAYE schedule, on a sheet that prints.
+ *
+ * Behind its own request rather than on the page, because it reads TIN and
+ * SSNIT numbers out of the personal records and those have no business on a
+ * screen that is left open on a desk all afternoon.
+ */
+async function openReturns(month) {
+  let data;
+  try {
+    data = await api.payrollReturns(month);
+  } catch (err) {
+    return toast(err.message, 'bad');
+  }
+
+  const shade = h('div.preview-shade', {
+    onclick: (e) => { if (e.target === shade) shade.remove(); },
+  });
+  shade.append(h('div.preview-wrap.preview-wide',
+    h('div.preview-bar',
+      h('strong', 'Journal and PAYE schedule'),
+      h('span.muted', `${niceMonth(month)} · ${data.status === 'final' ? 'closed' : 'draft'}`),
+      h('div.btn-row',
+        h('button.btn-sm', { onclick: () => window.print() }, 'Print or save as PDF'),
+        h('button.btn-sm', { onclick: () => shade.remove() }, 'Close'))),
+    h('div.preview-pages', h('div.returns-sheet', returnsSheet(data, niceMonth(month))))));
+
+  document.body.append(shade);
+  return shade;
 }
 
 // --------------------------------------------------------------------------
