@@ -23,6 +23,7 @@ import * as pay from './routes/pay.js';
 import * as advance from './routes/advances.js';
 import * as medical from './routes/medical.js';
 import * as payroll from './routes/payroll.js';
+import * as payAccess from './routes/payroll-access.js';
 import * as lunch from './routes/lunch.js';
 import * as sign from './routes/sign.js';
 import * as admin from './routes/admin.js';
@@ -209,6 +210,17 @@ export const ROUTES = [
   ['POST', '/api/payroll/scores', 'hr_pay', payroll.setScores],
   ['POST', '/api/payroll/penalties', 'hr_pay', payroll.addPenalty],
   ['DELETE', '/api/payroll/penalties/:id', 'hr_pay', payroll.removePenalty],
+  // Where somebody stands with the lock, and the code that opens it. Outside
+  // the lock by necessity: a screen that cannot ask for the code is a screen
+  // nobody can get into.
+  ['GET', '/api/payroll/access', 'hr_pay', payAccess.myAccess],
+  ['POST', '/api/payroll/unlock', 'hr_pay', payAccess.unlock],
+  ['POST', '/api/payroll/lock', 'hr_pay', payAccess.lock],
+  // Granting it is an administrator's job, so it lives with the logins.
+  ['GET', '/api/payroll/grants', 'users', payAccess.accessList],
+  ['POST', '/api/payroll/grants', 'users', payAccess.grant],
+  ['DELETE', '/api/payroll/grants/:id', 'users', payAccess.revoke],
+
   ['GET', '/api/payroll/returns', 'hr_pay', payroll.returns],
   ['GET', '/api/payroll/input/template', 'hr_pay', payroll.inputTemplate],
   ['POST', '/api/payroll/input/read', 'hr_pay', payroll.readInput],
@@ -453,6 +465,35 @@ async function servePage(env, url, request, path) {
   return new Response('Not found', { status: 404 });
 }
 
+/**
+ * Everything the payroll lock covers.
+ *
+ * A prefix rather than a list of routes, so a route added under it is covered
+ * the day it is written rather than the day somebody remembers.
+ *
+ * The three that ask about the lock itself are outside it, because a screen
+ * that cannot ask for the code is a screen nobody can get into.
+ */
+const PAYROLL_PREFIX = '/api/payroll';
+const OUTSIDE_THE_LOCK = new Set([
+  '/api/payroll/access',
+  '/api/payroll/unlock',
+  '/api/payroll/lock',
+  '/api/payroll/grants',
+]);
+const locked = (pathname) => pathname.startsWith(PAYROLL_PREFIX)
+  && !OUTSIDE_THE_LOCK.has(pathname)
+  && !pathname.startsWith('/api/payroll/grants/');
+
+/**
+ * Somebody else's payslip, and nothing else in the app.
+ *
+ * A payslip is the one document that is entirely about one person's money.
+ * Running the payroll is a job somebody can be given; reading a colleague's
+ * payslip is not, whatever else they hold.
+ */
+const ADMIN_ONLY = new Set(['/api/payroll/slip/:id']);
+
 function match(pattern, pathname) {
   const want = pattern.split('/');
   // A trailing slash is the same address. Browsers, messaging apps and people
@@ -645,6 +686,13 @@ async function route(request, env, url, executionContext) {
       // A list means any one of them is enough — see `allows`.
       if (!allows(permission, ctx.session.permissions)) {
         throw forbidden('You do not have access to that part of the system.');
+      }
+      // The second lock, applied here rather than inside each handler: a
+      // payroll route added later and wired to the right permission but
+      // nothing else is exactly the accident this exists to stop.
+      if (locked(url.pathname)) await payAccess.guardPayroll(ctx);
+      if (ADMIN_ONLY.has(pattern) && ctx.session.user.role !== 'admin') {
+        throw forbidden('Only an administrator can open somebody else\u2019s payslip.');
       }
     }
 

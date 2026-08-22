@@ -36,6 +36,17 @@ import { returnsSheet } from './pay-returns.js';
 export async function renderAttPayroll(params) {
   const host = h('div');
   const month = /^\d{4}-\d{2}$/.test(params.month) ? params.month : monthOf(todayISO());
+
+  // The lock, before anything is asked for. A screen that fetched the month
+  // first and put a padlock over it would have already been sent the month.
+  const access = await api.payrollAccess().catch(() => ({ open: true, state: 'open' }));
+  if (!access.open) {
+    mount(host, lockScreen(access, async () => {
+      mount(host, await renderAttPayroll(params));
+    }));
+    return host;
+  }
+
   const data = await api.payroll(month);
   const cash = (n) => money(n, data.currency);
   const closed = data.status === 'final';
@@ -115,8 +126,10 @@ export async function renderAttPayroll(params) {
             subtitle: data.property || '',
             note: `${data.rates.label}. ${closed ? 'Closed' : 'Draft'}.`,
           }) }, 'Print this table'),
-          h('button.btn-sm', { onclick: () => openAllSlips(data, month) },
-            `All ${data.lines.length} payslips`),
+          data.slips
+            ? h('button.btn-sm', { onclick: () => openAllSlips(data, month) },
+              `All ${data.lines.length} payslips`)
+            : null,
           h('button.btn-sm', { onclick: () => openReturns(month) },
             'Journal and PAYE'),
           closed ? null : importButton(month, reload),
@@ -140,13 +153,17 @@ export async function renderAttPayroll(params) {
             h('th.num', 'Cost'),
           )),
           h('tbody', data.lines.map((line) => h('tr.pay-row', {
-            tabindex: 0,
-            role: 'button',
-            title: 'The payslip',
-            onclick: () => openSlip(line, data, month, reload),
-            onkeydown: (e) => {
-              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSlip(line, data, month, reload); }
-            },
+            tabindex: data.slips ? 0 : null,
+            role: data.slips ? 'button' : null,
+            title: data.slips ? 'The payslip' : null,
+            onclick: data.slips ? () => openSlip(line, data, month, reload) : null,
+            onkeydown: data.slips
+              ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault(); openSlip(line, data, month, reload);
+                }
+              }
+              : null,
           },
           h('td',
             h('div.adv-who', line.staff.name),
@@ -176,8 +193,10 @@ export async function renderAttPayroll(params) {
             h('td.num', cash(data.totals.loans)),
             h('td.num', h('strong', cash(data.totals.net))),
             h('td.num.off-phone', cash(data.totals.cost)))))),
-        h('p.muted', { style: { fontSize: '.85rem' } },
-          'Press a row for the payslip behind it.'))
+        h('p.muted', { style: { fontSize: '.85rem' } }, data.slips
+          ? 'Press a row for the payslip behind it.'
+          : 'Payslips are an administrator\u2019s to open. The figures here are what the '
+            + 'month comes to; what makes each of them up is on the slip.'))
       : emptyState('Nobody is on the payroll yet',
         'Say what each person is paid and whether SSNIT applies to them, and the month works '
         + 'itself out.'),
@@ -233,6 +252,86 @@ async function startFrom(month, reload) {
     ? `Brought across: ${bits.join(' and ')}.`
     : 'There was nothing to bring across.', done.scores ? 'good' : 'warn');
   await reload();
+}
+
+/**
+ * The padlock.
+ *
+ * WHAT SOMEBODY IS PAID IS THE MOST SENSITIVE THING THIS APP KNOWS, and until
+ * now one tick on a login was the whole of the protection. A tick is set once
+ * and then forgotten: it survives somebody changing job, and nothing about a
+ * screen tells you who currently holds it.
+ *
+ * So the permission is only the first of three. An administrator grants the
+ * person payroll access with an end date on it, hands them a code, and the
+ * code opens the payroll for a working day at a time. None of the three is
+ * enough on its own.
+ */
+function lockScreen(access, reload) {
+  const code = h('input.pay-code', {
+    type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code',
+    placeholder: '000 000 000', 'aria-label': 'Payroll code',
+    maxlength: 20,
+  });
+  const problem = h('p.form-error', { style: { display: 'none' } });
+
+  const open = async () => {
+    problem.style.display = 'none';
+    button.disabled = true;
+    try {
+      await api.payrollUnlock({ code: code.value });
+      toast('Payroll open.', 'good');
+      await reload();
+    } catch (err) {
+      button.disabled = false;
+      problem.textContent = err.message;
+      problem.style.display = '';
+      code.select();
+    }
+  };
+
+  const button = h('button.btn.btn-primary', { onclick: open }, 'Open the payroll');
+  code.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
+
+  const shut = access.state !== 'shut';
+
+  return h('div',
+    h('div.page-head', h('div', h('h1', 'Payroll'), h('div.sub', 'Locked'))),
+    h('div.card.pay-lock',
+      h('div.pay-lock-mark', '🔒'),
+      h('h2', shut ? 'You cannot open this yet' : 'Enter your payroll code'),
+      h('p.muted',
+        access.state === 'none'
+          ? 'Payroll is not opened by a tick on a login. An administrator has to grant it to '
+            + 'you, and they will give you a code to type here.'
+          : access.state === 'expired'
+            ? 'Your payroll access has run out. An administrator can grant it again, with a '
+              + 'new code.'
+            : access.state === 'locked'
+              ? 'Too many wrong codes, so this is shut for a while. Wait, or ask an '
+                + 'administrator for a new code.'
+              : `The code an administrator gave you. It opens the payroll for `
+                + `${access.unlockHours || 8} hours, then asks again.`),
+
+      shut
+        ? null
+        : h('div.pay-lock-form', code, button),
+      problem,
+
+      access.expiresAt
+        ? h('p.muted.pay-lock-when',
+          `Your access runs until ${niceStamp(access.expiresAt)}.`)
+        : null),
+  );
+}
+
+/** 'YYYY-MM-DD HH:MM:SS' as somebody would say it. */
+function niceStamp(value) {
+  const t = new Date(String(value).replace(' ', 'T') + 'Z');
+  if (Number.isNaN(t.getTime())) return String(value);
+  return t.toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
 }
 
 /**
@@ -592,18 +691,62 @@ async function editScheme(scheme, data, reload) {
   ])].sort((a, b) => a.localeCompare(b));
 
   const current = scheme?.department || '';
-  const departmentPick = h('select', { name: 'department' },
-    h('option', { value: '', selected: !current }, `${GENERAL}, the whole property`),
-    departments.map((name) => h('option', { value: name, selected: name === current }, name)));
+  const departmentPick = h('select', {
+    name: 'department',
+    onchange: () => drawList(),
+  },
+  h('option', { value: '', selected: !current }, `${GENERAL}, the whole property`),
+  departments.map((name) => h('option', { value: name, selected: name === current }, name)));
 
-  const list = h('div.pos-edit-list', data.staff.map((person) => h('label.tickline',
-    h('input', {
-      type: 'checkbox',
-      checked: picked.has(person.id),
-      onchange: (e) => { if (e.target.checked) picked.add(person.id); else picked.delete(person.id); },
-    }),
-    h('span', person.name,
-      person.department ? h('small.muted', ` · ${person.department}`) : null))));
+  const list = h('div.pos-edit-list');
+  const note = h('p.muted.scheme-who-note', { style: { fontSize: '.8rem' } });
+
+  /**
+   * Who can be under it.
+   *
+   * A scheme for the kitchen is scored on kitchen work, so the list is the
+   * kitchen. Scrolling past everybody else to find four names is how the wrong
+   * person gets ticked, and a scheme is money.
+   *
+   * SOMEBODY ALREADY TICKED IS NEVER HIDDEN. A person moves department, or the
+   * scheme is moved to another one, and they are still under it until somebody
+   * says otherwise. Dropping them off the list would take their bonus away
+   * without anybody deciding to, so they stay on it and are marked as being
+   * from somewhere else.
+   */
+  function drawList() {
+    const want = departmentPick.value;
+    const shown = data.staff.filter((person) => !want
+      || person.department === want
+      || picked.has(person.id));
+
+    const strays = shown.filter((p) => want && p.department !== want).length;
+
+    list.replaceChildren(...(shown.length
+      ? shown.map((person) => {
+        const elsewhere = want && person.department !== want;
+        return h('label.tickline', { class: elsewhere ? 'is-elsewhere' : '' },
+          h('input', {
+            type: 'checkbox',
+            checked: picked.has(person.id),
+            onchange: (e) => {
+              if (e.target.checked) picked.add(person.id); else picked.delete(person.id);
+            },
+          }),
+          h('span', person.name,
+            person.department ? h('small.muted', ` · ${person.department}`) : null));
+      })
+      : [h('p.muted', { style: { fontSize: '.85rem', margin: 0 } },
+        `Nobody is in ${want} at the moment.`)]));
+
+    note.textContent = want
+      ? (strays
+        ? `${want} only, and ${strays} already under it from elsewhere. Untick anybody who `
+          + 'should not be.'
+        : `${want} only. Move the scheme to General to put the whole property under it.`)
+      : 'Everybody, because a General scheme covers the whole property.';
+  }
+  drawList();
 
   const done = await formDialog({
     title: scheme ? `The ${scheme.name} scheme` : 'A new bonus scheme',
@@ -625,6 +768,7 @@ async function editScheme(scheme, data, reload) {
       field('Department', departmentPick,
         'Groups the list. One that covers everybody belongs under General'),
       h('p.muted', { style: { fontSize: '.85rem', marginBottom: '.2rem' } }, 'Who is under it'),
+      note,
       list),
     onSubmit: (form) => api.payrollScheme({
       id: scheme?.id ?? null,

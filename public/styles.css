@@ -2767,6 +2767,35 @@ html { touch-action: manipulation; }
 }
 /* A General scheme is one figure about the property, not twenty about people,
    so it gets one box rather than a table with the same number down it. */
+/* Somebody under a department scheme who is not in that department. Kept on
+   the list rather than hidden, and marked so it is obvious why they are there. */
+.tickline.is-elsewhere { opacity: .72; }
+.tickline.is-elsewhere small { font-style: italic; }
+.scheme-who-note { margin: 0 0 .35rem; }
+
+/* The padlock on the payroll, and the code that opens it. */
+.pay-lock { text-align: center; max-width: 30rem; margin: 0 auto; }
+.pay-lock-mark { font-size: 2rem; line-height: 1; }
+.pay-lock h2 { margin: .5rem 0 .3rem; }
+.pay-lock > p.muted { margin: 0 auto .9rem; max-width: 26rem; }
+.pay-lock-form { display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; }
+.pay-code {
+  width: 11rem; text-align: center; font-size: 1.15rem;
+  letter-spacing: .12em; font-variant-numeric: tabular-nums;
+}
+.pay-lock-when { font-size: .82rem; margin: .9rem 0 0; }
+
+/* Shown once, so it has to be readable across a desk and typed without a
+   mistake. */
+.pay-code-shown {
+  font-size: 1.7rem; font-weight: 700; letter-spacing: .1em; text-align: center;
+  font-variant-numeric: tabular-nums;
+  padding: .9rem; margin: .3rem 0 .6rem;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-2, rgba(148, 163, 184, .1));
+  user-select: all;
+}
+
 .pay-shared { display: grid; gap: .4rem; }
 .pay-shared-set { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .92rem; }
 .pay-shared-set label { font-weight: 600; }

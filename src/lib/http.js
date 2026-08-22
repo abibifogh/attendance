@@ -19,7 +19,7 @@ export class HttpError extends Error {
 
 export const badRequest = (message, detail) => new HttpError(400, message, detail);
 export const unauthorized = (message = 'Sign in required') => new HttpError(401, message);
-export const forbidden = (message = 'Manager access required') => new HttpError(403, message);
+export const forbidden = (message = 'Manager access required', detail) => new HttpError(403, message, detail);
 export const notFound = (message = 'Not found') => new HttpError(404, message);
 
 /**

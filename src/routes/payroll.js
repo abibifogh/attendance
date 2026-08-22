@@ -5,6 +5,7 @@ import { computeLine, totalsOf } from '../lib/payroll.js';
 import { ratesFrom, round2 } from '../lib/tax.js';
 import { PAYE_COLUMNS, journalFor, payeSchedule, tiersFrom } from '../lib/statutory.js';
 import { readSheet, tallyOf } from '../lib/pay-import.js';
+import { isAdmin } from '../lib/payroll-access.js';
 import { addMonths, isMonth, monthOf, todayIn } from '../util/dates.js';
 
 /**
@@ -253,7 +254,10 @@ export async function payroll(ctx) {
       bonusShareOfBasic: data.rates.bonusShareOfBasic,
       bands: data.rates.bands,
     },
-    lines,
+    // Everything the table needs, and for anybody but an administrator nothing
+    // the payslip would have added.
+    lines: isAdmin(ctx.session) ? lines : lines.map(withoutTheSlip),
+    slips: isAdmin(ctx.session),
     totals: totalsOf(lines),
     schemes: data.schemes.map((scheme) => ({
       id: scheme.id,
@@ -466,6 +470,28 @@ export async function applyInput(ctx) {
   return json({
     ok: true, month, basics, allowances, scores, skipped: read.skipped, notes: read.lines,
   });
+}
+
+/**
+ * A month's line with the payslip taken out of it.
+ *
+ * Running the payroll means seeing what the month comes to for each person,
+ * and there is no way to do the job without that. Reading somebody's payslip
+ * is a different thing: the allowances named one by one, which schemes they
+ * scored on, which tax band each part of their pay fell in, which advance is
+ * coming off. That is nobody's business but theirs and an administrator's.
+ *
+ * Taken out here rather than hidden on the screen, because a screen that hides
+ * something it was sent is not hiding it at all.
+ */
+function withoutTheSlip(line) {
+  return {
+    ...line,
+    allowances: [],
+    loans: [],
+    bonus: { ...line.bonus, schemes: [] },
+    paye: { ...line.paye, steps: [] },
+  };
 }
 
 /**

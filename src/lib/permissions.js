@@ -61,7 +61,8 @@ export const PERMISSIONS = [
     label: 'Pay and labour cost',
     detail: 'See and set what people are paid, and read the rota in money. Held by nobody by '
       + 'default: a manager needs contact details and contracts, and what a colleague earns is a '
-      + 'different order of confidence',
+      + 'different order of confidence. This alone does not open the payroll: an '
+      + 'administrator has to grant that separately, with an end date and a code',
   },
   {
     key: 'corr_view',

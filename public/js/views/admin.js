@@ -1,6 +1,7 @@
 import { api } from '../api.js';
-import { fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
+import { confirmAction, fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
+import { field, formDialog } from './att-shared.js';
 import { prepareNewPassword } from '../crypto.js';
 
 /**
@@ -128,6 +129,8 @@ async function peopleTab(reload) {
         empty: 'Nobody yet.',
       })),
 
+    await payrollGrantsCard(reload),
+
     card('The roles', { note: 'Starting points — any person can be adjusted individually', wide: true },
       table([
         { key: 'label', label: 'Role' },
@@ -141,6 +144,172 @@ async function peopleTab(reload) {
         },
       ], data.roles)),
   );
+}
+
+/**
+ * Who may open the payroll, and until when.
+ *
+ * The tick on somebody's login says they are the kind of person who might.
+ * This says they may at the moment, it has an end date on it, and it comes
+ * with a code they have to type. All three, because what people are paid is
+ * the one thing in here that cannot be un-seen.
+ */
+async function payrollGrantsCard(reload) {
+  let data;
+  try {
+    data = await api.payrollGrants();
+  } catch {
+    return null;
+  }
+
+  const rows = data.people.map((person) => {
+    const a = person.access;
+    return h('tr',
+      h('td',
+        h('strong', person.name),
+        h('small.muted', ` · ${person.role}`)),
+      h('td', person.admin
+        ? h('span.pill.good', 'Administrator')
+        : accessPill(a)),
+      h('td', person.admin
+        ? h('span.muted', 'Always. An administrator is who grants this.')
+        : accessWhen(a)),
+      h('td.num', person.admin
+        ? null
+        : h('div.btn-row', { style: { justifyContent: 'flex-end' } },
+          h('button.btn-sm', {
+            onclick: () => grantTo(person, data, reload),
+          }, a.state === 'none' ? 'Grant it' : 'New code'),
+          a.state === 'none'
+            ? null
+            : h('button.btn-ghost.btn-sm', {
+              title: 'Take it away now',
+              onclick: async () => {
+                if (!confirmAction(`Take payroll away from ${person.name}? It stops the moment `
+                  + 'you press this, even if they have it open.')) return;
+                await api.payrollRevoke(person.id);
+                toast('Taken away.', 'good');
+                await reload();
+              },
+            }, '✕'))));
+  });
+
+  return card('Who may open the payroll', {
+    wide: true,
+    note: `${data.people.filter((p) => p.admin || p.access.state !== 'none').length}`,
+  },
+  h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
+    'Three locks, not one. "Pay and labour cost" on a login says somebody is the kind of person '
+    + 'who might. A grant here says they may at the moment, and it runs out. A code they have to '
+    + `type says it is them, and it opens the payroll for ${data.unlockHours} hours at a time. `
+    + 'Administrators are not granted anything: they are the ones who grant.'),
+
+  rows.length
+    ? h('table', h('thead', h('tr',
+      h('th', 'Login'), h('th', 'Payroll'), h('th', 'Until'), h('th', ''))),
+    h('tbody', rows))
+    : h('p.muted', 'Nobody has "Pay and labour cost" on their login yet.'));
+}
+
+function accessPill(a) {
+  if (a.state === 'open') return h('span.pill.good', 'Open now');
+  if (a.state === 'shut') return h('span.pill', 'Granted, shut');
+  if (a.state === 'locked') return h('span.pill.bad', 'Locked out');
+  if (a.state === 'expired') return h('span.pill.bad', 'Run out');
+  return h('span.muted', 'Not granted');
+}
+
+function accessWhen(a) {
+  if (a.state === 'none') return h('span.muted', '—');
+  return h('div',
+    h('div', when(a.expiresAt)),
+    a.unlockedUntil && a.state === 'open'
+      ? h('small.muted', `Open until ${when(a.unlockedUntil)}`)
+      : null,
+    a.grantedBy ? h('small.muted', `Given by ${a.grantedBy}`) : null);
+}
+
+function when(value) {
+  if (!value) return '—';
+  const t = new Date(String(value).replace(' ', 'T') + 'Z');
+  if (Number.isNaN(t.getTime())) return String(value);
+  return t.toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+/**
+ * Grant it, and show the code once.
+ *
+ * Once, because only its fingerprint is kept. A lost code is replaced with a
+ * new one rather than looked up, which is how every other code in this app
+ * works and the reason none of them can be read out of a backup.
+ */
+async function grantTo(person, data, reload) {
+  const days = h('select', { name: 'days' },
+    [[7, 'A week'], [30, 'A month'], [90, 'Three months'], [180, 'Six months']]
+      .map(([n, label]) => h('option', { value: n, selected: n === 30 }, label)));
+
+  const done = await formDialog({
+    title: `Payroll for ${person.name}`,
+    submitLabel: person.access.state === 'none' ? 'Grant it' : 'Grant it again',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.9rem', marginTop: 0 } },
+        person.access.state === 'none'
+          ? 'They will be given a code to type. It opens the payroll for '
+            + `${data.unlockHours} hours at a time, and stops working altogether when the grant `
+            + 'below runs out.'
+          : 'This replaces what they have: a new code, a new end date, and anything they have '
+            + 'open now is shut.'),
+      field('For how long', days, 'You can take it away sooner at any time'),
+      field('Why (optional)', h('input', {
+        type: 'text', name: 'note', maxlength: 200, placeholder: 'Covering the month end',
+      }))),
+    onSubmit: (form) => api.payrollGrant({
+      userId: person.id,
+      days: Number(form.get('days')),
+      note: form.get('note'),
+    }),
+  });
+
+  if (!done) return;
+  await showCode(done);
+  await reload();
+}
+
+function showCode(made) {
+  return new Promise((resolve) => {
+    const dialog = h('dialog.app-dialog.app-dialog-narrow',
+      h('div.dialog-head',
+        h('h2', `${made.name}\u2019s payroll code`),
+        h('button.dialog-close', {
+          type: 'button', 'aria-label': 'Close', onclick: () => dialog.close(),
+        }, '✕')),
+      h('p.muted', { style: { fontSize: '.9rem' } },
+        'Give them this. It is shown once and only its fingerprint is kept, so a lost one is '
+        + 'replaced rather than looked up.'),
+      h('div.pay-code-shown', made.code),
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        `It opens the payroll for ${made.unlockHours} hours at a time, and stops working `
+        + `on ${when(made.expiresAt)}.`),
+      h('div.btn-row',
+        h('button.btn-sm', {
+          type: 'button',
+          onclick: async () => {
+            try {
+              await navigator.clipboard.writeText(made.code);
+              toast('Copied.', 'good');
+            } catch {
+              toast('Copy it by hand: this browser will not let a page do it.', 'warn');
+            }
+          },
+        }, 'Copy it'),
+        h('button.btn.btn-primary', { type: 'button', onclick: () => dialog.close() }, 'Done')));
+
+    dialog.addEventListener('close', () => { dialog.remove(); resolve(); });
+    document.body.append(dialog);
+    dialog.showModal();
+  });
 }
 
 function roleLabel(roles, key) {

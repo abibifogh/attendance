@@ -688,6 +688,29 @@ export const GUIDE = [
     permission: 'hr_pay',
     lede: 'The month worked out under Ghana’s tax law, and a payslip for each person.',
     blocks: [
+      { sub: 'Getting in' },
+      { p: 'What people are paid is the one thing in here that cannot be un-seen, so it is not '
+        + 'opened by a tick on a login. There are three locks and all three have to be open.' },
+      { list: [
+        '"Pay and labour cost" on the login. That says somebody is the kind of person who '
+          + 'might, and nothing more.',
+        'A grant, made under Users & data, "Who may open the payroll". That says they may at '
+          + 'the moment, and it has an end date on it.',
+        'A code, which the app shows you once when you grant it. They type it to open the '
+          + 'payroll, and it stays open for eight hours before asking again.',
+      ] },
+      { p: 'Administrators are not granted anything: they are the ones who grant, and a property '
+        + 'with one administrator must never be able to lock itself out of its own payroll.' },
+      { list: [
+        'Grant it again to change somebody\u2019s end date or to replace a code they have lost. '
+          + 'It is the same button, and it drops whatever they had open.',
+        'Take it away and it stops the moment you press it, even if they are looking at the '
+          + 'payroll as you do.',
+        'Five wrong codes shuts it for half an hour, so guessing is not free.',
+      ] },
+      { warn: 'Only the fingerprint of a code is kept, never the code. A lost one is replaced '
+        + 'rather than looked up, which is why nobody can read one out of a backup.' },
+
       { p: 'Everything the app already knows — what somebody is paid, what they scored on '
         + 'their bonus schemes, what came off for misconduct, what they are repaying — comes '
         + 'together once a month and turns into a payslip.' },
@@ -703,6 +726,10 @@ export const GUIDE = [
         'Put the scheme under a department. The list groups on it, and each department folds '
           + 'away so scoring one is not a scroll past the other five.',
       ] },
+      { note: 'Put a scheme under a department and only that department\u2019s people are '
+        + 'offered when you say who is under it. Anybody already ticked from somewhere else '
+        + 'stays on the list, marked, so moving a scheme never quietly takes somebody\u2019s '
+        + 'bonus away.' },
       { note: 'A scheme with no department covers the whole property and sits under General. '
         + 'Those are scored once: whether the year was a good one is the same answer for '
         + 'everybody it covers, so it is asked once and everybody under it gets it. A scheme '
@@ -790,6 +817,12 @@ export const GUIDE = [
         + 'be filing a claim nobody made.' },
 
       { sub: 'The payslip' },
+      { warn: 'Somebody else\u2019s payslip is an administrator\u2019s to open, whatever else '
+        + 'they hold. Running the payroll means seeing what the month comes to for each person, '
+        + 'and there is no way round that. Reading their slip is a different thing: the '
+        + 'allowances named one by one, which schemes they scored on, which tax band each part '
+        + 'of their pay fell in. Anybody but an administrator is not shown it, and is not sent '
+        + 'it either.' },
       { p: 'One page, always. It is drawn at A4 and everything on it shrinks together until it '
         + 'fits, so somebody with a dozen allowances and two advances running gets smaller type '
         + 'rather than a second sheet that will be separated from the first and lost.' },
