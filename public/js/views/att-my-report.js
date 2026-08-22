@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { fmtDayShort, fmtNum, h, monthOf, mount, shiftMonth, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
-import { asHours, monthLabel, showSheet } from './att-shared.js';
+import { asHours, lateBy, monthLabel, showSheet } from './att-shared.js';
 
 /**
  * My month.
@@ -70,7 +70,7 @@ export async function renderAttMyReport(params = {}) {
         `of ${fmtNum(t.scheduled, 0)} rostered`),
       figure('Hours', asHours(t.workedMinutes), 'on the clock'),
       figure('Late', String(t.lateCount),
-        t.lateMinutes ? `${fmtNum(t.lateMinutes, 0)} minutes in all` : 'never',
+        t.lateMinutes ? `${lateBy(t.lateMinutes)} in all` : 'never',
         t.lateCount ? 'warn' : 'good'),
       figure('Absent', fmtNum(t.daysAbsent, t.daysAbsent % 1 ? 1 : 0),
         t.daysAbsent ? 'days unaccounted for' : 'nothing unaccounted for',
@@ -93,7 +93,7 @@ export async function renderAttMyReport(params = {}) {
           : null,
         t.earlyCount
           ? line('Left early', `${t.earlyCount} time${t.earlyCount === 1 ? '' : 's'}`
-            + `, ${fmtNum(t.earlyMinutes, 0)} minutes in all`)
+            + `, ${lateBy(t.earlyMinutes)} in all`)
           : null,
       ),
       t.byReason.length
@@ -198,7 +198,7 @@ function dayTable(rows) {
       label: 'What happened',
       format: (v, r) => h('div',
         h(`span.pill${r.colour === 'green' ? '.good' : r.colour === 'red' ? '.bad' : r.colour === 'amber' ? '.warn' : ''}`, v),
-        r.lateMinutes ? h('small.muted', ` ${r.lateMinutes} min late`) : null),
+        r.lateMinutes ? h('small.muted', ` ${lateBy(r.lateMinutes)} late`) : null),
     },
   ], rows, { empty: 'Nothing recorded.', rowClass: (r) => `row-att-${r.colour}` });
 }

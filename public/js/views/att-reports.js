@@ -5,7 +5,7 @@ import {
 } from '../util.js';
 import { card, emptyState, exportButton, table } from './components.js';
 import { printButton } from '../print.js';
-import { daysCell, totalsLine } from './att-shared.js';
+import { daysCell, lateBy, totalsLine } from './att-shared.js';
 
 /**
  * The week grid.
@@ -87,7 +87,7 @@ export async function renderAttWeek(params) {
       tile('Days worked', fmtNum(data.totals.daysWorked, 1), `across ${data.rows.length} people`),
       tile('Hours', fmtNum(data.totals.workedMinutes / 60, 1), data.totals.overtimeMinutes ? `${fmtNum(data.totals.overtimeMinutes / 60, 1)} overtime` : 'total'),
       tile('Absences', fmtNum(data.totals.daysAbsent, 0), 'unexcused', data.totals.daysAbsent ? 'var(--bad)' : null),
-      tile('Late arrivals', fmtNum(data.totals.lateCount, 0), data.totals.lateMinutes ? `${fmtNum(data.totals.lateMinutes, 0)} min in total` : 'none', data.totals.lateCount ? 'var(--warn)' : null),
+      tile('Late arrivals', fmtNum(data.totals.lateCount, 0), data.totals.lateMinutes ? `${lateBy(data.totals.lateMinutes)} in total` : 'none', data.totals.lateCount ? 'var(--warn)' : null),
     ),
     card('The week', { note: totalsLine(data.totals), wide: true },
       table(columns, data.rows, { empty: 'Nothing recorded.' })),

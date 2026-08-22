@@ -245,8 +245,20 @@ a { color: var(--accent); }
   border-left-color: var(--accent); font-weight: 650;
 }
 
-.nav-toggle { display: none; font-size: 1.1rem; }
+/* The menu button is on every screen now. On a phone it is a drawer; on a
+   desk it folds the column away, because a rota fourteen days wide and a
+   payslip at A4 both want the two hundred pixels back. */
+.nav-toggle { display: inline-flex; font-size: 1.1rem; }
 .nav-scrim { display: none; }
+
+/* Folded. Not narrowed to icons: eleven sections whose names are the only
+   thing telling them apart do not survive being reduced to eleven glyphs,
+   and a menu you have to hover to read is a menu you press twice. */
+.shell.nav-folded .sidebar { display: none; }
+/* Folding is somebody asking for width, so the page may take more of it than
+   the reading cap normally allows. Not all of it: a paragraph two thousand
+   pixels wide is harder to read than one that is capped. */
+.shell.nav-folded .main { max-width: 1600px; }
 
 .main { flex: 1; min-width: 0; max-width: 1320px; margin: 0 auto; padding: clamp(.85rem, 2.5vw, 1.6rem); }
 
@@ -474,7 +486,9 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 /* On a phone the sidebar becomes a drawer. Nineteen links down the side would
    otherwise leave no room for the page they lead to. */
 @media (max-width: 900px) {
-  .nav-toggle { display: inline-flex; }
+  /* A drawer slides over the page, so folding does not apply and must not
+     leave somebody with no way back to the menu. */
+  .shell.nav-folded .sidebar { display: grid; }
   .sidebar {
     position: fixed; top: var(--topbar-h); bottom: 0; left: 0;
     width: 250px; flex-basis: 250px; max-height: none;

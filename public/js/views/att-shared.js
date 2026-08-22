@@ -30,7 +30,7 @@ export function hoursCell(value) {
 /** Minutes, shown only when there are any — a column of zeroes reads as noise. */
 export function minutesCell(value) {
   if (!value) return h('span.muted', '—');
-  return h('span', value >= 30 ? { style: { color: 'var(--bad)' } } : null, `${fmtNum(value, 0)} min`);
+  return h('span', value >= 30 ? { style: { color: 'var(--bad)' } } : null, lateBy(value));
 }
 
 export function daysCell(value) {
@@ -93,6 +93,22 @@ export function shiftMinutes(shift) {
   const end = at(shift.ends_at);
   const span = end > start ? end - start : (24 * 60) - start + end;
   return Math.max(0, span - (Number(shift.break_minutes) || 0));
+}
+
+/**
+ * A stretch of lateness, as somebody would say it out loud.
+ *
+ * Nobody says "eighty-seven minutes late". Past the hour it becomes hours and
+ * whatever is on top, which is both shorter and the only form a person can
+ * picture. Under the hour it stays in minutes, because "0 hr 40 min" is worse
+ * than "40 min" in every way.
+ */
+export function lateBy(minutes) {
+  const total = Math.max(0, Math.round(Number(minutes) || 0));
+  if (total < 60) return `${total} min`;
+  const hh = Math.floor(total / 60);
+  const mm = total % 60;
+  return mm ? `${hh} hr ${mm} min` : `${hh} hr${hh === 1 ? '' : 's'}`;
 }
 
 /** Those minutes as somebody would say them: 7h, 7h 30m. */

@@ -6,8 +6,8 @@ import {
 } from '../public/js/util.js';
 import { pathHasHole } from '../public/js/api.js';
 import {
-  asHours, byDepartment, byPosition, earliestFirst, shiftHours, shiftLabel, shiftMinutes,
-  sortDepartments,
+  asHours, byDepartment, byPosition, earliestFirst, lateBy, shiftHours, shiftLabel,
+  shiftMinutes, sortDepartments,
 } from '../public/js/views/att-shared.js';
 
 /**
@@ -253,4 +253,33 @@ test('everything that stacks shifts stacks them by the clock', () => {
   const early = shift('Alpha', '06:00', '14:00');
   const late = shift('Beta', '06:00', '15:00');
   assert.deepEqual([late, early].sort(earliestFirst).map((s) => s.name), ['Alpha', 'Beta']);
+});
+
+// ---------------------------------------------------------------------------
+// Lateness, in the words somebody uses
+// ---------------------------------------------------------------------------
+
+/**
+ * Nobody says "eighty-seven minutes late".
+ *
+ * Past the hour it becomes hours and whatever is on top. Under the hour it
+ * stays in minutes, because "0 hr 40 min" is worse than "40 min" in every way.
+ */
+test('lateness past the hour is said in hours', () => {
+  assert.equal(lateBy(0), '0 min');
+  assert.equal(lateBy(1), '1 min');
+  assert.equal(lateBy(59), '59 min', 'still minutes right up to the hour');
+  assert.equal(lateBy(60), '1 hr');
+  assert.equal(lateBy(61), '1 hr 1 min');
+  assert.equal(lateBy(87), '1 hr 27 min');
+  assert.equal(lateBy(120), '2 hrs');
+  assert.equal(lateBy(195), '3 hr 15 min');
+});
+
+test('lateness is never negative and never a fraction', () => {
+  assert.equal(lateBy(-30), '0 min');
+  assert.equal(lateBy(12.4), '12 min');
+  assert.equal(lateBy(null), '0 min');
+  assert.equal(lateBy(undefined), '0 min');
+  assert.equal(lateBy('45'), '45 min');
 });

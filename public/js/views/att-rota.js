@@ -456,10 +456,6 @@ export async function renderAttRota(params) {
               title: 'Put one shift across every day shown',
               onclick: () => fillRow(row),
             }, '⇢'),
-            h('button.btn-sm', {
-              title: 'Days they cannot work, or asked for',
-              onclick: () => editAvailability(row, data, reload),
-            }, '✕'),
           ),
         ),
         ...row.days.map((entry) => h('td', { class: dayClass(entry.day) }, cell(row, entry))),
@@ -673,16 +669,16 @@ export async function renderAttRota(params) {
                 style: { '--shift': `var(--c${shiftColour(position.shifts[0])})` },
               }),
               h('span', position.name)),
-            // One position holding several shifts says which, because the
-            // hours are the whole reason they are separate shifts.
+            // A position holding one shift says its hours, because that is
+            // the shift. A position holding four says nothing: the whole
+            // point of grouping them was that they are one job, and printing
+            // "05:00–11:30 · 05:00–13:30 · 06:00–12:00 · 06:00–13:30" under
+            // the name puts the four times back that grouping took away. The
+            // cell says which shift each person is on.
             position.grouped
-              ? h('small.muted', position.shifts
-                .map((sh) => shiftHours(sh)).join(' · '))
+              ? null
               : h('small.muted',
-                `${shiftHours(position.shifts[0])} · ${asHours(shiftMinutes(position.shifts[0]))}`),
-            position.grouped
-              ? h('small.muted', `${position.shifts.length} shifts under this`)
-              : null),
+                `${shiftHours(position.shifts[0])} · ${asHours(shiftMinutes(position.shifts[0]))}`)),
 
           ...data.days.map((day) => {
             const ids = new Set(position.shifts.map((sh) => String(sh.id)));
@@ -887,71 +883,6 @@ export async function renderAttRota(params) {
   );
 
   return host;
-}
-
-/**
- * Days somebody cannot work, or asked for, in the window on screen.
- *
- * Not leave: nothing is approved and nothing is spent. It is the fact the
- * planner needs in front of them before the dropdown, written down where the
- * rota will actually show it.
- */
-async function editAvailability(row, data, reload) {
-  const marked = new Map(row.days
-    .filter((d) => d.availability)
-    .map((d) => [d.day, d.availability]));
-
-  const done = await formDialog({
-    title: `When ${row.staff.name} cannot work`,
-    submitLabel: 'Save',
-    body: h('div',
-      h('p.muted', { style: { fontSize: '.85rem' } },
-        'This is not leave. Nothing is approved and no days are spent. The mark simply shows '
-        + 'in the cell so you see it before picking a shift.'),
-      h('div.avail-days', data.days.map((day) => h('label.tickline',
-        h('input', {
-          type: 'checkbox', name: 'day', value: day,
-          checked: marked.has(day),
-        }),
-        h('span', fmtDayShort(day),
-          marked.get(day)?.note ? h('small.muted', ` (${marked.get(day).note})`) : null),
-      ))),
-      field('Kind', h('select', { name: 'status' },
-        h('option', { value: 'unavailable' }, 'Cannot work'),
-        h('option', { value: 'preferred' }, 'Asked to work'),
-      )),
-      h('div.field-row',
-        field('From', h('input', { type: 'time', name: 'fromTime' }),
-          'Leave both empty for the whole day'),
-        field('Until', h('input', { type: 'time', name: 'toTime' })),
-      ),
-      field('Why', h('input', {
-        type: 'text', name: 'note', maxlength: 200,
-        placeholder: 'Clinic until noon',
-      }), 'Shown when you hover the mark'),
-    ),
-    onSubmit: async (form) => {
-      const chosen = form.getAll('day');
-      const before = [...marked.keys()];
-      const cleared = before.filter((d) => !chosen.includes(d));
-      if (cleared.length) {
-        await api.attSetAvailability({ staffId: row.staff.id, days: cleared, clear: true });
-      }
-      if (chosen.length) {
-        return api.attSetAvailability({
-          staffId: row.staff.id,
-          days: chosen,
-          status: form.get('status'),
-          note: form.get('note') || null,
-          fromTime: form.get('fromTime') || null,
-          toTime: form.get('toTime') || null,
-        });
-      }
-      return { ok: true };
-    },
-  });
-
-  if (done) { toast('Saved.', 'good'); await reload(); }
 }
 
 /**

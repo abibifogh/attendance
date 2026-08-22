@@ -15,6 +15,7 @@ import { renderAttMyReport } from './views/att-my-report.js';
 import { renderAttMyAdvance } from './views/att-my-advance.js';
 import { renderAttAdvances } from './views/att-advances.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
+import { renderAttLunch } from './views/att-lunch.js';
 import { renderAttMedical } from './views/att-medical.js';
 import { renderAttPayroll } from './views/att-payroll.js';
 import { renderAttLeave } from './views/att-leave.js';
@@ -83,6 +84,7 @@ const ROUTES = [
   { path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances },
   { path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical },
   { path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayroll },
+  { path: 'att-lunch', label: 'Lunch', permission: 'lunch', render: renderAttLunch },
   { path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters },
   { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
@@ -213,12 +215,62 @@ function closeDrawer() {
   document.querySelector('.shell')?.classList.remove('nav-open');
 }
 
+/**
+ * Hiding the menu on a wide screen.
+ *
+ * Two different things wear the same button. On a phone it is a drawer that
+ * slides over the page, because nineteen links down the side would leave no
+ * room for what they lead to. On a desk it is a column that is simply not
+ * there, because a rota fourteen days wide and a payslip at A4 both want the
+ * two hundred pixels back.
+ *
+ * The choice is remembered, per browser. Somebody who folds the menu away to
+ * read a rota does not want it back the next time they open one.
+ */
+const MENU_KEY = 'hive.menu.folded';
+
+const menuFolded = () => {
+  try {
+    return localStorage.getItem(MENU_KEY) === '1';
+  } catch {
+    // A browser refusing storage is not a reason to have no menu at all.
+    return false;
+  }
+};
+
+function applyMenu(shellEl) {
+  shellEl?.classList.toggle('nav-folded', menuFolded());
+}
+
+function toggleMenu() {
+  const shellEl = document.querySelector('.shell');
+  if (!shellEl) return;
+
+  // Under 900 pixels the same button is the drawer, which is a different
+  // thing and is never remembered: a drawer left open over the page would be
+  // a strange way to greet somebody.
+  if (window.matchMedia('(max-width: 900px)').matches) {
+    shellEl.classList.toggle('nav-open');
+    return;
+  }
+
+  const folded = !shellEl.classList.contains('nav-folded');
+  shellEl.classList.toggle('nav-folded', folded);
+  try {
+    localStorage.setItem(MENU_KEY, folded ? '1' : '0');
+  } catch {
+    // Then it lasts until the page is reloaded, which is still better than
+    // refusing to fold at all.
+  }
+}
+
 function shell(content) {
   const shellEl = h('div.shell',
     h('header.topbar',
       h('button.btn-ghost.btn-sm.nav-toggle', {
-        title: 'Menu',
-        onclick: () => document.querySelector('.shell')?.classList.toggle('nav-open'),
+        title: 'Show or hide the menu',
+        'aria-label': 'Show or hide the menu',
+        onclick: toggleMenu,
       }, '☰'),
       // The system's own name, with the property underneath rather than
       // instead of it. Somebody working here already knows where they work;
@@ -286,6 +338,7 @@ function shell(content) {
     ),
   );
 
+  applyMenu(shellEl);
   return shellEl;
 }
 

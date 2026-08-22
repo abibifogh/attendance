@@ -3,7 +3,7 @@ import { navigate } from '../app.js';
 import { fmtDay, fmtDayShort, fmtNum, h, mount, shiftDay, toast } from '../util.js';
 import { card, emptyState } from './components.js';
 import {
-  asHours, field, formDialog, shiftColour, shiftHours, shiftMinutes, showSheet,
+  asHours, field, formDialog, lateBy, shiftColour, shiftHours, shiftMinutes, showSheet,
 } from './att-shared.js';
 
 /**
@@ -178,7 +178,7 @@ function onShiftCard(data) {
   const shift = on.shift;
 
   const how = on.lateMinutes > 0
-    ? h('span.pill.warn', `${on.lateMinutes} min late`)
+    ? h('span.pill.warn', `${lateBy(on.lateMinutes)} late`)
     : on.earlyIn > 0
       ? h('span.pill.good', `${on.earlyIn} min early`)
       : h('span.pill.good', 'On time');
@@ -311,7 +311,7 @@ function dayRow(entry, data) {
           h('span.me-banner-dot'),
           h('strong', entry.onShift.since ? `On shift since ${entry.onShift.since}` : 'On shift'),
           entry.onShift.lateMinutes > 0
-            ? h('small', ` · ${entry.onShift.lateMinutes} min late`)
+            ? h('small', ` · ${lateBy(entry.onShift.lateMinutes)} late`)
             : entry.onShift.earlyIn > 0
               ? h('small', ` · ${entry.onShift.earlyIn} min early`)
               : null)
@@ -328,7 +328,7 @@ function dayRow(entry, data) {
         h('span', { class: `pill${entry.was.colour === 'green' ? ' good' : entry.was.colour === 'red' ? ' bad' : entry.was.colour === 'amber' ? ' warn' : ''}` },
           entry.was.label),
         entry.was.lateMinutes
-          ? h('small.muted', ` ${entry.was.lateMinutes} min late`)
+          ? h('small.muted', ` ${lateBy(entry.was.lateMinutes)} late`)
           : null,
         h('div', h('small.muted', `${entry.was.in || '—'} → ${entry.was.out || '—'}`)))
       : null),
