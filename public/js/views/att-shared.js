@@ -199,6 +199,44 @@ export function byDepartment(shifts) {
 }
 
 /**
+ * Shifts gathered into the jobs they actually are.
+ *
+ * A property runs "Breakfast 06:00–14:00", "Breakfast 06:00–14:30" and
+ * "Breakfast 06:00–15:00". Those are one job that finishes at three different
+ * times, and they are three shifts because a shift is what lateness is
+ * measured against. Where somebody has said so, they collapse into one row of
+ * the position view. Where nobody has, a shift is its own position, which is
+ * the truth for most of them.
+ */
+export function byPosition(shifts) {
+  const groups = new Map();
+  for (const shift of shifts ?? []) {
+    // Keyed by name so two positions spelled the same are the same, and by the
+    // shift's own id where there is no position, so it stands alone.
+    const name = (shift.position || '').trim();
+    const key = name ? `p:${name.toLowerCase()}` : `s:${shift.id}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        name: name || shift.name,
+        // A position holding one shift is not really a position, and saying so
+        // stops the view claiming credit for a grouping nobody made.
+        grouped: Boolean(name),
+        department: departmentOf(shift),
+        shifts: [],
+      });
+    }
+    groups.get(key).shifts.push(shift);
+  }
+
+  // Ordered as the shifts themselves are, by whichever of theirs comes first.
+  return [...groups.values()].map((group) => ({
+    ...group,
+    grouped: group.grouped && group.shifts.length > 1,
+  }));
+}
+
+/**
  * Shift options, banded by department.
  *
  * Twenty-four shifts in one flat list is a scroll and a squint. The same

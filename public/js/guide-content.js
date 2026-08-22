@@ -820,8 +820,22 @@ export const GUIDE = [
           ['Public holidays', 'Generated per year, then edited'],
           ['Terminals', 'The device, its token, and its clock'],
           ['Rules', 'The property’s name and address, leave entitlement, grace, how long links last'],
+          ['Workload', 'What counts as too much here — four from the law, four your own'],
         ],
       } },
+
+      { sub: 'Several shifts, one job' },
+      { p: 'A shift is what lateness is measured against, so a breakfast that finishes at two, '
+        + 'at half past two and at three is three shifts. It is one job, and the rota\u2019s '
+        + 'position view reads as a list of near duplicates until somebody says so.' },
+      { steps: [
+        'Setup → Shifts.',
+        'Tick the shifts that are really the same job.',
+        'Put under one position, and name it.',
+      ] },
+      { p: 'Nothing about the shifts themselves changes: the hours, the grace and every day '
+        + 'already recorded against them stay exactly as they were. Only the rota groups them. '
+        + 'Ticking them again and choosing "Its own position" undoes it.' },
       { warn: 'Set the property’s name and address first. They head every contract and '
         + 'every letter, and until they are set the letters go out with a placeholder where the '
         + 'employer’s name should be.' },

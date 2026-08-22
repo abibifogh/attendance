@@ -257,10 +257,44 @@ export async function listShifts(ctx) {
   // back, and it cannot offer what it cannot see. Every other screen filters
   // on `active`, and now has a straight answer on whether Delete is even
   // possible rather than having to find out by pressing it.
+  const shifts = (rows.results ?? []).map((s) => ({
+    ...s, deletable: !s.used_days && !s.used_rota,
+  }));
+
   return json({
-    shifts: (rows.results ?? []).map((s) => ({ ...s, deletable: !s.used_days && !s.used_rota })),
+    shifts,
     departments: await departmentOptions(ctx.db),
+    // Every position already in use, so the picker offers what exists before
+    // asking anybody to type it again. Two spellings of one job is exactly
+    // what a free-text field invites and exactly what this feature is for.
+    positions: [...new Set(shifts.map((s) => s.position).filter(Boolean))].sort(),
   });
+}
+
+/**
+ * Put a handful of shifts under one position.
+ *
+ * The direct answer to what this is for. Three breakfast shifts that differ
+ * only in when they finish get grouped in one action, rather than by opening
+ * each of them and typing the same word.
+ *
+ * Clearing is the same action with an empty name, so a grouping made in error
+ * is undone the way it was made.
+ */
+export async function groupShifts(ctx) {
+  const body = await readJson(ctx.request);
+  const ids = [...new Set((Array.isArray(body.shiftIds) ? body.shiftIds : [])
+    .map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) throw badRequest('Tick at least one shift.');
+
+  const position = str(body.position, 'Position', { max: 80 }) || null;
+
+  await ctx.db.batch(ids.map((id) => ctx.db.prepare(
+    'UPDATE att_shifts SET position = ?2 WHERE id = ?1',
+  ).bind(id, position)));
+
+  await audit(ctx, 'attendance.shift_position', null, { shifts: ids.length, position });
+  return json({ ok: true, changed: ids.length, position });
 }
 
 function shiftFields(body) {
@@ -282,6 +316,10 @@ function shiftFields(body) {
     int(body.sortOrder ?? 100, 'Order', { min: 0, max: 9999 }),
     bool(body.active, true) ? 1 : 0,
     str(body.department, 'Department', { max: 80 }),
+    // The job, as against the hours. Several shifts may name the same one, and
+    // the rota's position view groups by it. Blank means the shift is its own
+    // position, which is the truth for most of them.
+    str(body.position, 'Position', { max: 80 }),
   ];
 }
 
@@ -292,8 +330,9 @@ export async function createShift(ctx) {
     row = await ctx.db.prepare(
       `INSERT INTO att_shifts (name, starts_at, ends_at, break_minutes, grace_in_minutes,
                                grace_out_minutes, half_day_minutes, full_day_minutes,
-                               overtime_after, colour, sort_order, active, department)
-       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) RETURNING id`,
+                               overtime_after, colour, sort_order, active, department,
+                               position)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) RETURNING id`,
     ).bind(...shiftFields(body)).first();
   } catch (err) {
     rethrowConstraint(err, { unique: 'A shift with that name already exists.' });
@@ -322,8 +361,8 @@ export async function updateShift(ctx, id) {
       `UPDATE att_shifts SET name=?1, starts_at=?2, ends_at=?3, break_minutes=?4,
                              grace_in_minutes=?5, grace_out_minutes=?6, half_day_minutes=?7,
                              full_day_minutes=?8, overtime_after=?9, colour=?10,
-                             sort_order=?11, active=?12, department=?13
-       WHERE id = ?14`,
+                             sort_order=?11, active=?12, department=?13, position=?14
+       WHERE id = ?15`,
     ).bind(...shiftFields(body), shiftId).run();
   } catch (err) {
     rethrowConstraint(err, { unique: 'A shift with that name already exists.' });

@@ -235,6 +235,7 @@ export const api = {
   attShiftSuggestions: (days) => request(`/api/att/shift-suggestions${days ? `?days=${days}` : ''}`),
   attImportShifts: (shifts) => request('/api/att/shifts/import', { method: 'POST', body: { shifts } }),
   attCreateShift: (body) => request('/api/att/shifts', { method: 'POST', body }),
+  attGroupShifts: (body) => request('/api/att/shifts/group', { method: 'POST', body }),
   attUpdateShift: (id, body) => request(`/api/att/shifts/${id}`, { method: 'PUT', body }),
   attDeleteShift: (id) => request(`/api/att/shifts/${id}`, { method: 'DELETE' }),
 

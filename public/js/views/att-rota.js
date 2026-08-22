@@ -5,7 +5,7 @@ import {
 import { card, emptyState, table } from './components.js';
 import { navigate, replaceParams } from '../app.js';
 import {
-  asHours, byDepartment, field, formDialog, shiftColour, shiftHours, shiftLabel,
+  asHours, byDepartment, byPosition, field, formDialog, shiftColour, shiftHours, shiftLabel,
   shiftMinutes, shiftSelect,
 } from './att-shared.js';
 
@@ -567,17 +567,31 @@ export async function renderAttRota(params) {
     if (done.staffId) assign(done.staffId, day, shift.id, done.title);
   };
 
-  /** Fill a gap: put somebody on this shift on this day. */
-  const addToCell = async (shift, day) => {
+  /**
+   * Fill a gap: put somebody on this position on this day.
+   *
+   * A position may hold several shifts — the same job finishing at three
+   * different times — so where it does, which one is part of the question.
+   * Where it holds one, it is not asked.
+   */
+  const addToCell = async (position, day) => {
+    const shifts = position.shifts ?? [position];
     const options = candidates(day);
     const free = options.filter((o) => !o.blocked && o.busy == null);
     const taken = options.filter((o) => !o.blocked && o.busy != null);
 
     const done = await formDialog({
-      title: `Put somebody on ${shift.name}`,
+      title: `Put somebody on ${position.name}`,
       submitLabel: 'Put them on',
       body: h('div',
-        h('p.muted', `${fmtDayShort(day)}. ${shiftHours(shift)}, ${asHours(shiftMinutes(shift))}.`),
+        h('p.muted', `${fmtDayShort(day)}.`),
+        shifts.length > 1
+          ? field('Which shift', h('select', { name: 'shiftId', required: true },
+            shifts.map((sh) => h('option', { value: String(sh.id) },
+              `${sh.name} · ${shiftHours(sh)} · ${asHours(shiftMinutes(sh))}`))),
+          'They are the same job finishing at different times')
+          : h('p.muted', { style: { fontSize: '.85rem' } },
+            `${shiftHours(shifts[0])}, ${asHours(shiftMinutes(shifts[0]))}.`),
         field('Who', h('select', { name: 'staffId', required: true },
           h('option', { value: '' }, 'Choose…'),
           free.length
@@ -596,11 +610,12 @@ export async function renderAttRota(params) {
       ),
       onSubmit: async (form) => ({
         staffId: form.get('staffId'),
+        shiftId: Number(form.get('shiftId')) || shifts[0].id,
         title: (form.get('title') || '').trim(),
       }),
     });
     if (!done?.staffId) return;
-    assign(done.staffId, day, shift.id, done.title);
+    assign(done.staffId, day, done.shiftId, done.title);
   };
 
   /** One person's card on one shift on one day. */
@@ -617,15 +632,22 @@ export async function renderAttRota(params) {
   h('span.pos-card-who', row.staff.name));
 
   function drawPositions() {
-    const groups = byDepartment(data.shifts.filter((sh) => sh.active !== 0
-      && (!params.department || (sh.department || '') === params.department)));
+    const wanted = data.shifts.filter((sh) => sh.active !== 0
+      && (!params.department || (sh.department || '') === params.department));
 
-    mount(positionsBody, groups.flatMap((group) => {
-      // What this group costs the week: the hours standing on it, and how many
-      // different people it takes to cover them.
+    // Departments band the table; positions are the rows inside them. Where
+    // somebody has said that three breakfast shifts are one job, they are one
+    // row here rather than three near-identical ones.
+    const departments = byDepartment(wanted);
+
+    mount(positionsBody, departments.flatMap((department) => {
+      const positions = byPosition(department.shifts);
+
+      // What this department costs the week: the hours standing on it, and how
+      // many different people it takes to cover them.
       const people = new Set();
       let minutes = 0;
-      for (const shift of group.shifts) {
+      for (const shift of department.shifts) {
         for (const day of data.days) {
           for (const row of visible) {
             const entry = entryOf(row.staff.id, day);
@@ -640,30 +662,43 @@ export async function renderAttRota(params) {
       return [
         h('tr.rota-dept', h('td', { colspan: data.days.length + 1 },
           h('div.pos-group',
-            h('strong', group.name),
+            h('strong', department.name),
             h('small.muted', `${people.size} ${people.size === 1 ? 'person' : 'people'} · `
               + `${asHours(minutes)} rostered`)))),
 
-        ...group.shifts.map((shift) => h('tr',
+        ...positions.map((position) => h('tr',
           h('td.pos-shift',
             h('div.shift-key-item',
-              h('span.shift-key-swatch', { style: { '--shift': `var(--c${shiftColour(shift)})` } }),
-              h('span', shift.name)),
-            h('small.muted', `${shiftHours(shift)} · ${asHours(shiftMinutes(shift))}`)),
+              h('span.shift-key-swatch', {
+                style: { '--shift': `var(--c${shiftColour(position.shifts[0])})` },
+              }),
+              h('span', position.name)),
+            // One position holding several shifts says which, because the
+            // hours are the whole reason they are separate shifts.
+            position.grouped
+              ? h('small.muted', position.shifts
+                .map((sh) => shiftHours(sh)).join(' · '))
+              : h('small.muted',
+                `${shiftHours(position.shifts[0])} · ${asHours(shiftMinutes(position.shifts[0]))}`),
+            position.grouped
+              ? h('small.muted', `${position.shifts.length} shifts under this`)
+              : null),
 
           ...data.days.map((day) => {
+            const ids = new Set(position.shifts.map((sh) => String(sh.id)));
             const on = visible
               .map((row) => ({ row, entry: entryOf(row.staff.id, day) }))
-              .filter(({ entry }) => entry && !entry.leave
-                && String(entry.shift_id) === String(shift.id));
+              .filter(({ entry }) => entry && !entry.leave && ids.has(String(entry.shift_id)));
 
             return h('td', { class: dayClass(day) },
               h('div.pos-stack',
-                on.map(({ row, entry }) => shiftCard(shift, day, row, entry)),
+                on.map(({ row, entry }) => shiftCard(
+                  shiftById.get(String(entry.shift_id)) ?? position.shifts[0], day, row, entry,
+                )),
                 h('button.pos-add', {
                   type: 'button',
-                  title: `Put somebody on ${shift.name} on ${fmtDayShort(day)}`,
-                  onclick: () => addToCell(shift, day),
+                  title: `Put somebody on ${position.name} on ${fmtDayShort(day)}`,
+                  onclick: () => addToCell(position, day),
                 }, '+')));
           }))),
       ];

@@ -105,6 +105,48 @@ function departmentPicker(departments, current) {
   return h('div', select, typed);
 }
 
+/**
+ * Pick a position, or name one that does not exist yet.
+ *
+ * The same shape as the department picker and for the same reason: a plain box
+ * is how one job ends up spelled three ways, and a plain dropdown is a dead
+ * end the first time somebody adds a job that is not on it.
+ */
+function positionPicker(positions, current, { name = 'position' } = {}) {
+  const options = [...positions];
+  if (current && !options.some((p) => p.toLowerCase() === current.toLowerCase())) {
+    options.unshift(current);
+  }
+
+  const typed = h('input', {
+    type: 'text',
+    name: `${name}New`,
+    maxlength: 80,
+    placeholder: 'Name the position',
+    style: { display: 'none', marginTop: '.4rem' },
+  });
+
+  const select = h('select', {
+    name: `${name}Pick`,
+    onchange: (e) => {
+      const adding = e.target.value === NEW_DEPARTMENT;
+      typed.style.display = adding ? '' : 'none';
+      if (adding) typed.focus();
+    },
+  },
+  h('option', { value: '', selected: !current }, 'Its own position'),
+  options.map((p) => h('option', { value: p, selected: p === current }, p)),
+  h('option', { value: NEW_DEPARTMENT }, '+ New position…'));
+
+  return h('div', select, typed);
+}
+
+/** What a position picker was set to, whichever half of it was used. */
+const readPosition = (form, name = 'position') => (
+  form.get(`${name}Pick`) === NEW_DEPARTMENT
+    ? (form.get(`${name}New`) || '').trim()
+    : form.get(`${name}Pick`)) || null;
+
 async function staffTab(reload) {
   const [{ staff, departments = [] }, { unknown }] = await Promise.all([
     api.attStaff(), api.attUnknown(),
@@ -276,7 +318,7 @@ async function staffTab(reload) {
 // ---------------------------------------------------------------------------
 
 async function shiftsTab(reload) {
-  const [{ shifts, departments = [] }, suggested] = await Promise.all([
+  const [{ shifts, departments = [], positions = [] }, suggested] = await Promise.all([
     api.attShifts(),
     api.attShiftSuggestions().catch(() => null),
   ]);
@@ -290,6 +332,11 @@ async function shiftsTab(reload) {
           field('Name', h('input', { type: 'text', name: 'name', required: true, maxlength: 60, value: existing?.name ?? '', placeholder: 'Morning' })),
           field('Department', departmentPicker(departments, existing?.department ?? ''),
             'Groups the shift list and the reports'),
+          // The job, as against the hours. Three breakfast shifts that differ
+          // only in when they finish are one position, and the rota's position
+          // view reads as a list of near duplicates until somebody says so.
+          field('Position', positionPicker(positions, existing?.position ?? ''),
+            'Groups the rota. Leave it alone unless another shift is the same job'),
         ),
         h('div.field-row',
           field('Starts', h('input', { type: 'time', name: 'startsAt', required: true, value: existing?.starts_at ?? '06:00' })),
@@ -330,6 +377,7 @@ async function shiftsTab(reload) {
         payload.department = form.get('departmentPick') === NEW_DEPARTMENT
           ? (form.get('departmentNew') || '').trim() || null
           : form.get('departmentPick') || null;
+        payload.position = readPosition(form);
         return existing ? api.attUpdateShift(existing.id, payload) : api.attCreateShift(payload);
       },
     });
@@ -381,6 +429,7 @@ async function shiftsTab(reload) {
         fullDayMinutes: row.full_day_minutes,
         overtimeAfter: row.overtime_after,
         department: row.department || null,
+        position: row.position || null,
         active: !retired,
       });
       toast(retired ? 'Retired. It is off the rota.' : 'Back in use.', 'good');
@@ -393,6 +442,71 @@ async function shiftsTab(reload) {
   const inUse = shifts.filter((s) => s.active);
   const retired = shifts.filter((s) => !s.active);
 
+  /**
+   * Put several shifts under one position in one action.
+   *
+   * The direct answer to three breakfast shifts that differ only in when they
+   * finish. Doing it by opening each of them and typing the same word is how
+   * two of them end up spelled differently.
+   */
+  const chosen = new Set();
+  const groupBar = h('div.bulk-clear', { style: { display: 'none' } });
+
+  const refreshGroupBar = () => {
+    groupBar.style.display = chosen.size ? '' : 'none';
+    const names = inUse.filter((r) => chosen.has(r.id)).map((r) => r.name);
+    mount(groupBar,
+      h('span', h('strong', `${chosen.size} ticked`),
+        h('span.muted', ` — ${names.slice(0, 3).join(', ')}`
+          + (names.length > 3 ? ` and ${names.length - 3} more` : ''))),
+      h('button.btn-sm.btn-primary', { onclick: () => groupThem([...chosen]) },
+        'Put under one position'));
+  };
+
+  const groupThem = async (ids) => {
+    const rows = inUse.filter((r) => ids.includes(r.id));
+    const already = [...new Set(rows.map((r) => r.position).filter(Boolean))];
+
+    const done = await formDialog({
+      title: `${ids.length} shift${ids.length === 1 ? '' : 's'} under one position`,
+      submitLabel: 'Group them',
+      body: h('div',
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'A position is the job, as against the hours. Three breakfast shifts that differ '
+          + 'only in when they finish are one position, and the rota groups by it. Nothing '
+          + 'about the shifts themselves changes.'),
+        h('ul.signed-list', rows.map((r) => h('li', h('small',
+          `${r.name} · ${r.starts_at}–${r.ends_at}`
+          + `${r.position ? ` · now under ${r.position}` : ''}`)))),
+        field('Position', positionPicker(positions, already.length === 1 ? already[0] : ''),
+          'Pick "Its own position" to ungroup them again'),
+      ),
+      onSubmit: async (form) => api.attGroupShifts({
+        shiftIds: ids, position: readPosition(form),
+      }),
+    });
+
+    if (!done) return;
+    toast(done.position
+      ? `${done.changed} shift${done.changed === 1 ? '' : 's'} under ${done.position}.`
+      : `${done.changed} shift${done.changed === 1 ? '' : 's'} back on their own.`, 'good');
+    await reload();
+  };
+
+  const tickAll = h('input.th-tick', {
+    type: 'checkbox',
+    title: 'Tick every shift',
+    onchange: (event) => {
+      const on = event.target.checked;
+      for (const box of shiftBody.querySelectorAll('input[type=checkbox]')) {
+        box.checked = on;
+        box.dispatchEvent(new Event('change'));
+      }
+    },
+  });
+
+  const shiftBody = h('div');
+
   return h('div',
     suggestionsCard(suggested, reload),
 
@@ -401,7 +515,21 @@ async function shiftsTab(reload) {
       actions: h('button.btn.btn-primary', { onclick: () => edit(null) }, '+ Add a shift'),
       wide: true,
     },
-      table([
+      groupBar,
+      mount(shiftBody, table([
+        {
+          key: 'tick',
+          label: tickAll,
+          cls: 'no-print',
+          format: (v, r) => h('input', {
+            type: 'checkbox',
+            'aria-label': r.name,
+            onchange: (event) => {
+              if (event.target.checked) chosen.add(r.id); else chosen.delete(r.id);
+              refreshGroupBar();
+            },
+          }),
+        },
         {
           key: 'name',
           label: 'Name',
@@ -417,7 +545,12 @@ async function shiftsTab(reload) {
             r.ends_at <= v ? h('small.muted', 'overnight') : null,
           ),
         },
-        { key: 'break_minutes', label: 'Break', align: 'right', format: (v) => (v ? `${v} min` : h('span.muted', 'none')) },
+        {
+          key: 'position',
+          label: 'Position',
+          format: (v) => (v ? h('span.pill', v) : h('span.muted', 'its own')),
+        },
+        { key: 'break_minutes', label: 'Break', align: 'right', cls: 'off-phone', format: (v) => (v ? `${v} min` : h('span.muted', 'none')) },
         { key: 'grace_in_minutes', label: 'Grace in', align: 'right', format: (v) => `${v} min` },
         { key: 'grace_out_minutes', label: 'Grace out', align: 'right', format: (v) => `${v} min` },
         { key: 'half_day_minutes', label: 'Half day', align: 'right', format: (v) => `${fmtNum(v / 60, 1)} h` },
@@ -445,7 +578,7 @@ async function shiftsTab(reload) {
         // and the difference is entirely the headings.
         groupBy: (r) => r.department || null,
         groupNoun: ['shift', 'shifts'],
-      })),
+      }))),
 
     // Folded away rather than mixed in. A retired shift is not one of the
     // property's shifts any more — it is a thing the history refers to — and

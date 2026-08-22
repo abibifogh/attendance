@@ -174,6 +174,7 @@ export const ROUTES = [
   ['GET', '/api/att/shift-suggestions', 'att_setup', att.shiftSuggestions],
   ['POST', '/api/att/shifts/import', 'att_setup', att.importShifts],
   ['POST', '/api/att/shifts', 'att_setup', attSetup.createShift],
+  ['POST', '/api/att/shifts/group', 'att_setup', attSetup.groupShifts],
   ['PUT', '/api/att/shifts/:id', 'att_setup', attSetup.updateShift],
   ['DELETE', '/api/att/shifts/:id', 'att_setup', attSetup.deleteShift],
 
