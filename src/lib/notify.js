@@ -1,5 +1,5 @@
 import { originOf } from './site.js';
-import { getVapidKeys, sendPush } from './push.js';
+import { APP_NAME, getVapidKeys, sendPush } from './push.js';
 import { isMissingTable } from './http.js';
 import { labelFor } from './attendance.js';
 import { allows, effectivePermissions } from './permissions.js';
@@ -289,15 +289,21 @@ export function renderDigest({ day, propertyName, siteUrl, open, absent, escalat
 // Push
 // ---------------------------------------------------------------------------
 
-/** Short enough to read on a lock screen without unlocking it. */
-export function renderPing({ day, propertyName, open, absent, escalated }) {
+/**
+ * Short enough to read on a lock screen without unlocking it.
+ *
+ * The title is the app's name and nothing else. A phone puts "from HIVE" on
+ * that line itself, and the property's name in front of it pushed the only
+ * part that matters — how many days are waiting — onto a third line.
+ */
+export function renderPing({ day, open, absent, escalated }) {
   const parts = [];
   if (open) parts.push(`${open} to confirm`);
   if (absent) parts.push(`${absent} absent`);
 
   return {
-    title: `${propertyName} — attendance`,
-    body: `${day}: ${parts.join(', ') || 'all settled'}.`
+    title: APP_NAME,
+    body: `Attendance, ${day}: ${parts.join(', ') || 'all settled'}.`
       + (escalated.length ? `\nOn a run of absences: ${escalated.join(', ')}.` : ''),
     day,
   };
@@ -329,13 +335,7 @@ export async function pingExceptions(db, { day, open, absent, escalated = [] }) 
       return;
     }
 
-    const ping = renderPing({
-      day,
-      propertyName: settings.property_name || 'HIVE',
-      open,
-      absent,
-      escalated,
-    });
+    const ping = renderPing({ day, open, absent, escalated });
 
     const vapid = await getVapidKeys(db);
     const subject = settings.email_from && settings.email_from.includes('@')

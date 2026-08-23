@@ -1,6 +1,6 @@
 import { originOf } from '../lib/site.js';
 import { badRequest, json, readJson, str } from '../lib/http.js';
-import { getVapidKeys, sendPush } from '../lib/push.js';
+import { APP_NAME, getVapidKeys, sendPush } from '../lib/push.js';
 
 /**
  * Turning alerts on is per browser, not per person: permission to show a
@@ -95,7 +95,7 @@ export async function test(ctx) {
   const settings = Object.fromEntries((settingsRows.results ?? []).map((r) => [r.key, r.value]));
 
   const message = JSON.stringify({
-    title: settings.property_name || 'HIVE',
+    title: APP_NAME,
     body: 'Test alert. This is what you will see when a day needs confirming.',
     url: `${originOf(settings.site_url)}/#/att-today`,
   });

@@ -14,6 +14,16 @@
  * down can never delay the request that triggered it.
  */
 
+/**
+ * What a notification says it is from.
+ *
+ * The app's own name, never the property's. A phone already puts the name of
+ * the app that sent it on the same line, so "Sir Tobys Ghana LTD — attendance
+ * from HIVE" spent two lines of a lock screen saying who before it reached
+ * what. The property's name belongs in an email, where there is room for it.
+ */
+export const APP_NAME = 'HIVE';
+
 const encoder = new TextEncoder();
 
 // --------------------------------------------------------------- base64url --
