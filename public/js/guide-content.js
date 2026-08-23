@@ -194,6 +194,7 @@ export const GUIDE = [
           ['Clocked out at 14:05', 'And your departure, with the hours it recorded'],
           ['Your rota for next week', 'When it is published, rather than on the day'],
           ['Your shift started and nothing is recorded', 'Every half hour until you clock in'],
+          ['Your shift ends at 14:00', 'Ten minutes before it does, if you have not clocked out'],
         ],
       } },
       { p: 'The clock-in and clock-out messages say the time that went down and whether it '
@@ -201,9 +202,16 @@ export const GUIDE = [
         + 'you any of that, and it does not give you anything to look at three weeks later when '
         + 'a Tuesday is being argued about. This does, on your own phone, at the moment it '
         + 'happens. It goes to you and to nobody else.' },
-      { p: 'The last one waits out whatever grace the shift already allows, stops the moment '
-        + 'you clock in, and stops on its own when the shift you were down for has ended.' },
-      { note: 'That last one is a nudge, not a mark against you. Nothing about it reaches your '
+      { p: 'The two about clocking are the ones worth having. The first waits out whatever '
+        + 'grace the shift already allows, stops the moment you clock in, and stops on its own '
+        + 'when the shift you were down for has ended.' },
+      { p: 'The second arrives ten minutes before your shift finishes, while you are still on '
+        + 'the floor and still walking past the terminal, and only if you clocked in and have '
+        + 'not clocked out. Arriving feels like something you do; leaving does not, which is '
+        + 'why the tap on the way out is the one that goes missing. A day with only one tap is '
+        + 'held back rather than counted, and then somebody has to sit down with you a week '
+        + 'later and work out what time you went home.' },
+      { note: 'Both are nudges, not marks against you. Nothing about either reaches your '
         + 'record: the terminal decides what happened, as it always does.' },
       { note: 'A tap in the middle of a shift, going for lunch and coming back, does not buzz. '
         + 'Only the first arrival and the last departure of the day do.' },

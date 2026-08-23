@@ -1,0 +1,11 @@
+-- Ten minutes before a shift ends, a reminder to tap out.
+--
+-- Arriving feels like an event, so people remember. Leaving does not: the
+-- shift ends, somebody catches them on the way past the desk, and the tap
+-- never happens. What is left is a day with one punch, which is held back
+-- rather than counted, and a week later somebody has to sit with the person
+-- and agree what time they went home.
+--
+-- On by default, and separate from the late chase, because a property might
+-- well want one and not the other.
+INSERT OR IGNORE INTO settings (key, value) VALUES ('att_clockout_nudge', '1');

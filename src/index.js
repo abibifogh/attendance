@@ -608,10 +608,11 @@ export default {
         .catch(() => null);
       const timezone = row?.value || 'UTC';
 
-      // Two schedules through one handler. The quarter-hourly one only watches
-      // for a shift that started with nothing recorded against it; the daily
-      // one does the recompute and the morning bell. Told apart by the cron
-      // that fired, so adding a third never means guessing from the clock.
+      // Two schedules through one handler. The frequent one watches the shifts
+      // people are inside — one that started with nothing recorded against it,
+      // and one about to end with nobody clocked out. The daily one does the
+      // recompute and the morning bell. Told apart by the cron that fired, so
+      // adding a third never means guessing from the clock.
       const nightly = String(event?.cron ?? '').startsWith('30 0');
 
       const watched = await watchShifts(env.DB, {
@@ -622,6 +623,7 @@ export default {
         return { nudged: 0 };
       });
       if (watched.nudged) console.log(`Attendance: ${watched.nudged} told their shift has started`);
+      if (watched.reminded) console.log(`Attendance: ${watched.reminded} reminded to clock out`);
 
       if (!nightly) return;
 

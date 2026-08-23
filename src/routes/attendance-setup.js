@@ -835,6 +835,7 @@ const SETTINGS = new Map([
   // Whether the app tells somebody their shift has started and nothing has
   // been recorded against it.
   ['att_late_nudge', (v) => (v === '0' || v === 'false' ? '0' : '1')],
+  ['att_clockout_nudge', (v) => (v === '0' || v === 'false' ? '0' : '1')],
 
   // Whether somebody's own phone tells them their clock-in and clock-out
   // landed, and at what time. To them and nobody else.

@@ -69,6 +69,51 @@ function rosterAgo(raw, minutes) {
   return at;
 }
 
+/**
+ * A shift that ends in so many minutes, having run for eight hours before it.
+ *
+ * The other end of `startingAgo`, for the reminder that fires on the way out.
+ */
+function endingIn(minutes) {
+  const endsAt = new Date(Date.now() + minutes * 60000);
+  const startedAt = new Date(endsAt.getTime() - 8 * 3600000);
+  const hhmm = (d) => `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+  return {
+    day: startedAt.toISOString().slice(0, 10),
+    starts_at: hhmm(startedAt),
+    ends_at: hhmm(endsAt),
+    startedAt,
+    endsAt,
+  };
+}
+
+/** Put that shift on the rota, published, on the day it starts. */
+function rosterEndingIn(raw, minutes) {
+  const at = endingIn(minutes);
+  raw.prepare('UPDATE att_shifts SET starts_at = ?, ends_at = ? WHERE id = 1')
+    .run(at.starts_at, at.ends_at);
+  raw.prepare('INSERT OR REPLACE INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
+    .run(at.day);
+  return at;
+}
+
+/**
+ * A tap on the terminal, in whichever direction, at a real moment.
+ *
+ * The moment rather than a time of day, because a test that runs at one in the
+ * morning has an eight-hour shift straddling midnight, and stamping the tap on
+ * the wrong side of it is a test failing for a reason that is not the code's.
+ */
+function punch(raw, when, direction) {
+  const stamp = when.toISOString().slice(0, 19).replace('T', ' ');
+  const day = stamp.slice(0, 10);
+  raw.prepare(
+    `INSERT INTO att_punches (device_serial, employee_no, staff_id, at_utc, at_local, day,
+                              direction, dedupe_key)
+     VALUES ('D1', '1', 1, ?1, ?1, ?2, ?3, ?4)`,
+  ).run(stamp, day, direction, `${stamp}-${direction}`);
+}
+
 function setup({ graceIn = 5 } = {}) {
   const raw = new DatabaseSync(':memory:');
   raw.exec('PRAGMA foreign_keys = ON;');
@@ -374,11 +419,106 @@ test('an unpublished shift is nobody’s fault for not turning up to', async () 
 test('turning the nudge off turns it off', async () => {
   const { db, raw } = setup();
   const sent = await withPush(raw);
-  const on = rosterAgo(raw, 20);
+  rosterAgo(raw, 20);
   raw.prepare("UPDATE settings SET value = '0' WHERE key = 'att_late_nudge'").run();
 
   const out = await watchShifts(db, { timezone: 'UTC' });
   assert.equal(out.nudged, 0);
-  assert.equal(out.reason, 'switched off');
   assert.equal(sent.length, 0);
+
+  // The watcher is still on, because the clock-out reminder is a separate
+  // switch. Turning that off as well is what stops it running at all.
+  raw.prepare("UPDATE settings SET value = '0' WHERE key = 'att_clockout_nudge'").run();
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).reason, 'switched off');
+});
+
+// ------------------------------------------------------- the tap on the way out --
+
+test('ten minutes before the end, somebody still clocked in is reminded', async () => {
+  const { db, raw } = setup();
+  const sent = await withPush(raw);
+  const at = rosterEndingIn(raw, 8);
+  punch(raw, at.startedAt, 'in');
+
+  const out = await watchShifts(db, { timezone: 'UTC' });
+  assert.equal(out.reminded, 1);
+  assert.equal(out.nudged, 0, 'they are here, so nothing about being late');
+  assert.equal(sent.length, 1);
+
+  const notice = raw.prepare(
+    "SELECT * FROM app_notices WHERE kind = 'attendance.clock_out_due'",
+  ).get();
+  assert.ok(notice, 'and it is a notice, not only a buzz');
+  assert.match(notice.title, new RegExp(`ends at ${at.ends_at}`));
+  assert.match(notice.body, /Clock out at the terminal/);
+  assert.equal(notice.user_id, 7, 'to them and nobody else');
+});
+
+test('it is said once, however often the watcher runs', async () => {
+  const { db, raw } = setup();
+  const sent = await withPush(raw);
+  const at = rosterEndingIn(raw, 8);
+  punch(raw, at.startedAt, 'in');
+
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).reminded, 1);
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).reminded, 0);
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).reminded, 0);
+  assert.equal(sent.length, 1, 'a phone buzzing every five minutes is a phone turned off');
+});
+
+test('it holds its tongue until the end is close', async () => {
+  const { db, raw } = setup();
+  const sent = await withPush(raw);
+  const at = rosterEndingIn(raw, 45);
+  punch(raw, at.startedAt, 'in');
+
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).reminded, 0);
+  assert.equal(sent.length, 0);
+});
+
+test('somebody who has already clocked out is left alone', async () => {
+  const { db, raw } = setup();
+  const sent = await withPush(raw);
+  const at = rosterEndingIn(raw, 8);
+  punch(raw, at.startedAt, 'in');
+  punch(raw, at.endsAt, 'out');
+
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).reminded, 0);
+  assert.equal(sent.length, 0);
+});
+
+test('somebody who never clocked in is chased about that instead', async () => {
+  // Two messages that contradict each other is worse than either on its own:
+  // "do not forget to clock out" to somebody who was never here reads as the
+  // app not knowing whether they came.
+  const { db, raw } = setup();
+  const sent = await withPush(raw);
+  rosterEndingIn(raw, 8);
+
+  const out = await watchShifts(db, { timezone: 'UTC' });
+  assert.equal(out.reminded, 0);
+  assert.equal(out.nudged, 1);
+  assert.equal(sent.length, 1);
+  const notice = raw.prepare(
+    "SELECT * FROM app_notices WHERE kind = 'attendance.not_clocked_in'",
+  ).get();
+  assert.match(notice.body, /Nothing has been recorded/);
+});
+
+test('turning the clock-out reminder off leaves the late chase alone', async () => {
+  const { db, raw } = setup();
+  const sent = await withPush(raw);
+  const at = rosterEndingIn(raw, 8);
+  punch(raw, at.startedAt, 'in');
+  raw.prepare("UPDATE settings SET value = '0' WHERE key = 'att_clockout_nudge'").run();
+
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).reminded, 0);
+  assert.equal(sent.length, 0);
+
+  // And the other one still fires, on a shift that has started with nothing
+  // recorded against it.
+  raw.prepare('DELETE FROM att_punches').run();
+  raw.prepare('DELETE FROM att_roster').run();
+  rosterAgo(raw, 20);
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 1);
 });

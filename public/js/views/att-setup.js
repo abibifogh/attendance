@@ -1631,10 +1631,23 @@ async function rulesTab(reload) {
             h('option', { value: '0', selected: (s.att_late_nudge ?? '1') === '0' },
               'Say nothing'),
           )),
-        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+        h('p.muted', { style: { fontSize: '.85rem' } },
           'It waits out the grace the shift already allows, stops the moment a clock-in is '
-          + 'recorded, and stops on its own when the shift has ended. Both of these need '
-          + 'notifications turned on in the browser on their phone.'),
+          + 'recorded, and stops on its own when the shift has ended.'),
+
+        h('label.field',
+          h('span', 'Ten minutes before their shift ends'),
+          h('select', { name: 'att_clockout_nudge' },
+            h('option', { value: '1', selected: (s.att_clockout_nudge ?? '1') !== '0' },
+              'Remind them to clock out before they leave'),
+            h('option', { value: '0', selected: (s.att_clockout_nudge ?? '1') === '0' },
+              'Say nothing'),
+          )),
+        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+          'Only to somebody who clocked in and has not clocked out yet, and once per shift. '
+          + 'A day with one tap is held back rather than counted, so this is the cheapest way '
+          + 'to stop the pile of days somebody has to reconstruct at the end of the month. '
+          + 'All of these need notifications turned on in the browser on their phone.'),
       ),
 
       card('What staff see', { note: 'On My shifts and My report' },

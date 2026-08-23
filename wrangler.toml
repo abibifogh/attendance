@@ -38,13 +38,17 @@ database_id = "1df34f21-bfc6-43dc-b11a-1a57d7f691b0"
 # last few days so a punch that arrived late is reflected, and rings the bell
 # once for whatever still needs a person.
 #
-# The second runs every quarter of an hour and does one small thing — notices a
-# published shift that started, with its own grace allowed for, and nothing
-# recorded against it, and tells that one person. Anything less frequent turns
-# "you are twenty minutes late" into "you were an hour late", which is not
-# something a notification can help with.
+# The second watches the shifts people are inside right now, and says one of
+# two things to one person. That a published shift started, its own grace
+# allowed for, with nothing recorded against it. Or that the shift ends in ten
+# minutes and the tap on the way out has not happened yet.
+#
+# Every five minutes rather than every fifteen, because "ten minutes before it
+# ends" has to be able to land: on a quarter-hourly run a shift ending at two
+# o'clock would be told at a quarter to, and one ending at ten past would be
+# told at two. Five minutes is what makes the number in the message true.
 [triggers]
-crons = ["30 0 * * *", "*/15 * * * *"]
+crons = ["30 0 * * *", "*/5 * * * *"]
 
 [[routes]]
 pattern = "staff.niceoperation.com"

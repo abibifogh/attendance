@@ -1,14 +1,19 @@
 import { createNotice } from './notices.js';
-import { loadDataset, scheduleFor, toMinutes } from './attendance.js';
+import { computeRange, loadDataset, scheduleFor, toMinutes } from './attendance.js';
 import { addDays, nowIn } from '../util/dates.js';
 
 /**
- * The one alert that saves a shift rather than reporting on one.
+ * The two alerts that save a shift rather than reporting on one.
  *
- * Somebody is down for the early, the early started twenty minutes ago, and
- * the terminal has seen nothing. In a hotel that is almost always an alarm
- * that did not go off, and a phone buzzing at 06:20 gets somebody in for 06:40
- * — where the same fact discovered at nine is a lost shift and a conversation.
+ * One at each end of it. Nobody arrived, and nobody tapped out on the way
+ * home — the two ways a day ends up with a hole in it that somebody has to
+ * fill in from memory a week later.
+ *
+ * THE START. Somebody is down for the early, the early started twenty minutes
+ * ago, and the terminal has seen nothing. In a hotel that is almost always an
+ * alarm that did not go off, and a phone buzzing at 06:20 gets somebody in for
+ * 06:40 — where the same fact discovered at nine is a lost shift and a
+ * conversation.
  *
  * It repeats every half hour until they clock in, because one notification at
  * 06:20 is one notification somebody asleep does not hear. The moment a
@@ -24,12 +29,22 @@ import { addDays, nowIn } from '../util/dates.js';
  *   saying otherwise would be the app disagreeing with its own rules.
  *
  *   It says a thing once per half hour and no more. The watcher runs every
- *   quarter of an hour, and each half-hour slot is claimed in `att_nudge`
- *   before anything is sent, so a run that overlaps another cannot double up.
+ *   five minutes, and each half-hour slot is claimed in `att_nudge` before
+ *   anything is sent, so a run that overlaps another cannot double up.
  *
- * It records nothing against the day. The terminal decides what happened; this
- * is a message and never evidence.
+ * THE END, and the one that costs the property quietly. Arriving feels like an
+ * event, so people remember to tap. Leaving does not: the shift finishes,
+ * somebody catches them on the way past the desk, and the tap never happens.
+ * What is left is a day with one punch, held back rather than counted. So ten
+ * minutes before the end, while they are still on the floor and still walking
+ * past the terminal, their phone says it once.
+ *
+ * Neither records anything against the day. The terminal decides what
+ * happened; these are messages and never evidence.
  */
+
+/** How long before the end to remind somebody about the tap on the way out. */
+const BEFORE_END_MINUTES = 10;
 
 /** How long past the shift's own grace before it is worth saying anything. */
 const AFTER_GRACE_MINUTES = 5;
@@ -41,7 +56,11 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
   const settings = await db.prepare('SELECT key, value FROM settings').all()
     .catch(() => ({ results: [] }));
   const on = Object.fromEntries((settings.results ?? []).map((r) => [r.key, r.value]));
-  if (on.att_late_nudge === '0') return { checked: 0, nudged: 0, reason: 'switched off' };
+  const chaseLate = on.att_late_nudge !== '0';
+  const remindOut = on.att_clockout_nudge !== '0';
+  if (!chaseLate && !remindOut) {
+    return { checked: 0, nudged: 0, reminded: 0, reason: 'switched off' };
+  }
 
   const now = nowIn(timezone);
   const [today, clock] = now.split(' ');
@@ -58,7 +77,7 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
   ).all().catch(() => ({ results: [] }));
 
   const people = linked.results ?? [];
-  if (!people.length) return { checked: 0, nudged: 0, reason: 'nobody subscribed' };
+  if (!people.length) return { checked: 0, nudged: 0, reminded: 0, reason: 'nobody subscribed' };
 
   // Yesterday as well as today, for the shift that started at ten last night.
   // Its roster row is on the day it began, so at ten past midnight the only
@@ -77,6 +96,7 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
 
   let checked = 0;
   let nudged = 0;
+  let reminded = 0;
 
   for (const row of people) {
     const staffId = Number(row.staff_id);
@@ -92,10 +112,46 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
 
     checked += 1;
 
-    if (clockedIn.has(`${staffId}|${found.day}`)) continue;
     // A punch that landed on the calendar day either side of an overnight
     // shift still means they are here.
-    if (found.day !== today && clockedIn.has(`${staffId}|${today}`)) continue;
+    const here = clockedIn.has(`${staffId}|${found.day}`)
+      || (found.day !== today && clockedIn.has(`${staffId}|${today}`));
+
+    if (here) {
+      // They are in, and the shift is nearly over. The only thing left to say
+      // is the thing they are about to forget.
+      if (!remindOut) continue;
+      if (found.minutesLeft > BEFORE_END_MINUTES) continue;
+
+      // "Working" is the app's own word for clocked in with no clock-out yet,
+      // and it is the right question here rather than "is there an out punch
+      // anywhere today": somebody who tapped out for lunch and back in still
+      // has the last tap to make.
+      const [record] = computeRange(ds, staffId, found.day, found.day);
+      if (record?.status !== 'working') continue;
+
+      if (!await claim(db, staffId, found.day, 'leaving')) continue;
+
+      await createNotice(db, {
+        kind: 'attendance.clock_out_due',
+        level: 'info',
+        title: `Your ${found.shift.name} ends at ${found.shift.ends_at}`,
+        body: 'Clock out at the terminal before you leave. A day with only one tap is held '
+          + 'back rather than counted, and somebody has to work out afterwards what time you '
+          + 'went home.',
+        link: '#/att-me',
+        day: found.day,
+        actor: 'HIVE',
+        userId: row.user_id,
+        push: true,
+        email: false,
+      }, ctx);
+
+      reminded += 1;
+      continue;
+    }
+
+    if (!chaseLate) continue;
 
     const grace = Number(found.shift.grace_in_minutes ?? 0) + AFTER_GRACE_MINUTES;
     const overdue = found.minutesIn - grace;
@@ -104,10 +160,7 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
     // Which half hour of being overdue this is. Claimed before anything is
     // sent, so two runs of the watcher cannot both send the same one.
     const slot = Math.floor(overdue / REPEAT_MINUTES);
-    const claimed = await db.prepare(
-      'INSERT OR IGNORE INTO att_nudge (staff_id, day, kind) VALUES (?1, ?2, ?3)',
-    ).bind(staffId, found.day, `late:${slot}`).run().catch(() => null);
-    if (!Number(claimed?.meta?.changes ?? 0)) continue;
+    if (!await claim(db, staffId, found.day, `late:${slot}`)) continue;
 
     const late = Math.round(found.minutesIn);
     await createNotice(db, {
@@ -131,7 +184,21 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
     nudged += 1;
   }
 
-  return { checked, nudged, day: today };
+  return { checked, nudged, reminded, day: today };
+}
+
+/**
+ * Say a thing once.
+ *
+ * Claimed before anything is sent, so two runs of the watcher that overlap
+ * cannot both send the same message. The table's primary key is the whole
+ * rule; this only reports whether the row was ours to write.
+ */
+async function claim(db, staffId, day, kind) {
+  const done = await db.prepare(
+    'INSERT OR IGNORE INTO att_nudge (staff_id, day, kind) VALUES (?1, ?2, ?3)',
+  ).bind(staffId, day, kind).run().catch(() => null);
+  return Number(done?.meta?.changes ?? 0) > 0;
 }
 
 /**
@@ -161,7 +228,7 @@ function runningShift(ds, staffId, day, minutesNow) {
   const minutesIn = minutesNow - start;
   if (minutesIn < 0 || minutesNow >= finish) return null;
 
-  return { day, shift, minutesIn };
+  return { day, shift, minutesIn, minutesLeft: finish - minutesNow };
 }
 
 /** "20 minutes", "an hour and a half" — as somebody would say it. */
