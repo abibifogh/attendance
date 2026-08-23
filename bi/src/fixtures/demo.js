@@ -159,17 +159,62 @@ function rosterFor(day) {
   });
 }
 
+/**
+ * What a job pays, in pesewas an hour.
+ *
+ * By title rather than by person, because that is how a property actually sets
+ * wages, and because a demonstration where everybody costs the same would hide
+ * the very thing per-person rates were added to reveal: that the expensive
+ * hours and the busy hours are not the same hours.
+ */
+const HOURLY = [
+  [/head chef|manager/i, 3_200],
+  [/supervisor|auditor/i, 2_400],
+  [/chef|cook/i, 1_900],
+  [/receptionist|cashier/i, 1_700],
+  [/waiter|waitress|attendant|houseman/i, 1_350],
+];
+
+function hourlyFor(jobTitle) {
+  for (const [pattern, rate] of HOURLY) if (pattern.test(jobTitle)) return rate;
+  return 1_500;
+}
+
+/**
+ * How long a shift is, by the job.
+ *
+ * Not eight hours for everybody. A hotel runs six-hour breakfast shifts and
+ * twelve-hour night cover, and a demonstration where every roster line is 480
+ * minutes cannot tell a roll-up that sums the roster apart from one that
+ * multiplies heads by a hard-coded day — which is exactly the bug the roster
+ * figure was added to fix.
+ */
+const SHIFT_MINUTES = [
+  [/night auditor/i, 720],
+  [/head chef/i, 600],
+  [/chef|cook/i, 540],
+  [/supervisor/i, 540],
+  [/attendant|houseman/i, 420],
+];
+
+function shiftMinutesFor(jobTitle) {
+  for (const [pattern, minutes] of SHIFT_MINUTES) if (pattern.test(jobTitle)) return minutes;
+  return 480;
+}
+
 function attendance(days) {
   const bundle = emptyBundle();
   for (const [employeeNo, name, department, jobTitle] of STAFF) {
     bundle.people.push({
       externalId: employeeNo, employeeNo, name, department, jobTitle, active: true,
+      hourCost: hourlyFor(jobTitle),
     });
   }
 
   for (const day of days) {
     for (const person of rosterFor(day)) {
-      const { employeeNo, department, state, late, overtime, worked } = person;
+      const { employeeNo, department, jobTitle, state, late, overtime, worked } = person;
+      const expected = shiftMinutesFor(jobTitle || '');
       if (state === 'rest') {
         bundle.personDays.push({
           day, externalId: employeeNo, department, status: 'rest', reasonCode: 'rest_day',
@@ -184,7 +229,7 @@ function attendance(days) {
           status: state,
           reasonCode: state === 'leave' ? 'annual_leave' : 'absent',
           reasonKind: state === 'leave' ? 'leave' : 'absent',
-          scheduled: true, expectedMinutes: 480, workedMinutes: 0,
+          scheduled: true, expectedMinutes: expected, workedMinutes: 0,
           lateMinutes: 0, overtimeMinutes: 0, countsAsWorked: false,
         });
         continue;
@@ -193,7 +238,7 @@ function attendance(days) {
         day, externalId: employeeNo, department,
         status: state, reasonCode: state,
         reasonKind: 'worked', scheduled: true, countsAsWorked: true,
-        expectedMinutes: 480, workedMinutes: worked,
+        expectedMinutes: expected, workedMinutes: worked,
         lateMinutes: late, overtimeMinutes: overtime,
         firstIn: late ? clock(7, late) : '06:58',
         lastOut: clock(15, overtime),
@@ -205,6 +250,52 @@ function attendance(days) {
   for (const day of days) {
     if (day.endsWith('-03-06')) bundle.holidays.push({ day, name: 'Independence Day' });
     if (day.endsWith('-07-01')) bundle.holidays.push({ day, name: 'Republic Day' });
+  }
+
+  // ------------------------------------------------------------ payroll --
+  //
+  // Built from the hours actually generated above rather than from a separate
+  // random number, so the demonstration's payslips reconcile with its own
+  // attendance. A payroll that disagreed with the clock would teach a reader
+  // exactly the wrong lesson about what this comparison is for.
+  //
+  // Ghana's statutory rates: 5.5% employee pension, 13% employer, and PAYE
+  // approximated with a flat band — the point of the fixture is the shape of
+  // the arithmetic, not a tax calculation nobody should rely on.
+  const monthly = new Map();
+  for (const row of bundle.personDays) {
+    const key = `${row.day.slice(0, 7)}|${row.externalId}`;
+    const acc = monthly.get(key) || { minutes: 0, department: row.department };
+    acc.minutes += row.workedMinutes || 0;
+    monthly.set(key, acc);
+  }
+
+  for (const [key, acc] of monthly) {
+    const [month, employeeNo] = key.split('|');
+    const person = STAFF.find(([no]) => no === employeeNo);
+    if (!person) continue;
+    // A month only appears once its days are all in the window, the way a real
+    // pay run only closes after the month has finished.
+    const complete = days.includes(`${month}-28`);
+    if (!complete) continue;
+
+    const gross = Math.round((acc.minutes / 60) * hourlyFor(person[3]));
+    const ssfEmployee = Math.round(gross * 0.055);
+    const ssfEmployer = Math.round(gross * 0.13);
+    const paye = Math.round(Math.max(0, gross - ssfEmployee - 40_000) * 0.175);
+    bundle.payroll.push({
+      month,
+      externalId: employeeNo,
+      department: acc.department,
+      gross,
+      bonusGross: 0,
+      ssfEmployee,
+      ssfEmployer,
+      paye,
+      loans: 0,
+      net: gross - ssfEmployee - paye,
+      cost: gross + ssfEmployer,
+    });
   }
 
   bundle.notes.push('Demonstration data');

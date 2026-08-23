@@ -146,14 +146,55 @@ async function loadBundle(db, register, sourceId, bundle, config, from, to) {
     if (!personId) continue;
     statements.push(db.prepare(`
       INSERT INTO fact_person_day
-        (day, person_id, line_id, status, reason_code, scheduled, worked_minutes, late_minutes, overtime_minutes, first_in, last_out)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+        (day, person_id, line_id, status, reason_code, scheduled, expected_minutes,
+         worked_minutes, late_minutes, overtime_minutes, first_in, last_out)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
       ON CONFLICT (day, person_id) DO UPDATE SET
-        line_id = ?3, status = ?4, reason_code = ?5, scheduled = ?6,
-        worked_minutes = ?7, late_minutes = ?8, overtime_minutes = ?9, first_in = ?10, last_out = ?11`)
+        line_id = ?3, status = ?4, reason_code = ?5, scheduled = ?6, expected_minutes = ?7,
+        worked_minutes = ?8, late_minutes = ?9, overtime_minutes = ?10, first_in = ?11, last_out = ?12`)
       .bind(row.day, personId, row.line || lineForDepartment(row.department), row.status || '',
-        row.reasonCode || null, row.scheduled ? 1 : 0, minor(row.workedMinutes),
+        row.reasonCode || null, row.scheduled ? 1 : 0, minor(row.expectedMinutes),
+        minor(row.workedMinutes),
         minor(row.lateMinutes), minor(row.overtimeMinutes), row.firstIn || null, row.lastOut || null));
+  }
+
+  // ---------------------------------------------------------- payroll --
+  //
+  // Written by month rather than by day, and so deliberately outside the
+  // window-replace cycle every other fact goes through. A payslip belongs to
+  // the month it was run for; spreading it over that month's days would
+  // produce a daily wage figure that reconciles with no document anybody could
+  // be shown, which is the opposite of what payroll is for.
+  //
+  // Replaced by month instead: re-reading any window that touches March
+  // rewrites March's payslips and nothing else.
+  const payrollMonths = new Set();
+  for (const row of bundle.payroll || []) {
+    if (typeof row.month !== 'string' || !/^\d{4}-\d{2}$/.test(row.month)) continue;
+    let personId = personIdFor.get(row.externalId);
+    if (personId === undefined) {
+      personId = await register.person(sourceId, { externalId: row.externalId, name: row.externalId });
+      personIdFor.set(row.externalId, personId);
+    }
+    if (!personId) continue;
+
+    if (!payrollMonths.has(row.month)) {
+      payrollMonths.add(row.month);
+      await run(db, 'DELETE FROM fact_payroll WHERE month = ?1 AND source_id = ?2', row.month, sourceId);
+    }
+
+    statements.push(db.prepare(`
+      INSERT INTO fact_payroll
+        (month, person_id, source_id, line_id, department, gross, bonus_gross,
+         ssf_employee, ssf_employer, paye, loans, net, cost)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+      ON CONFLICT (month, person_id) DO UPDATE SET
+        source_id = ?3, line_id = ?4, department = ?5, gross = ?6, bonus_gross = ?7,
+        ssf_employee = ?8, ssf_employer = ?9, paye = ?10, loans = ?11, net = ?12, cost = ?13`)
+      .bind(row.month, personId, sourceId,
+        row.line || lineForDepartment(row.department), row.department || '',
+        minor(row.gross), minor(row.bonusGross), minor(row.ssfEmployee), minor(row.ssfEmployer),
+        minor(row.paye), minor(row.loans), minor(row.net), minor(row.cost)));
   }
 
   // ----------------------------------------------------------- revenue --
@@ -310,7 +351,14 @@ async function rollUpLabour(db, from, to, config) {
            SUM(d.worked_minutes)   AS worked_minutes,
            SUM(d.late_minutes)     AS late_minutes,
            SUM(d.overtime_minutes) AS overtime_minutes,
-           SUM(d.worked_minutes * COALESCE(p.hour_cost, ?3) / 60.0) AS labour_cost
+           SUM(d.expected_minutes) AS expected_minutes,
+           SUM(d.worked_minutes * COALESCE(p.hour_cost, ?3) / 60.0) AS labour_cost,
+           -- Which of the three the money came from. 'rate' only when every
+           -- person in the group had one; one unrated person makes the whole
+           -- figure part-guess, and saying "rate" of it would be a claim the
+           -- number cannot support.
+           CASE WHEN SUM(CASE WHEN p.hour_cost IS NULL THEN 1 ELSE 0 END) = 0
+                THEN 'rate' ELSE 'default' END AS cost_basis
       FROM fact_person_day d
       JOIN dim_person p ON p.id = d.person_id
      WHERE d.day BETWEEN ?1 AND ?2
@@ -319,16 +367,23 @@ async function rollUpLabour(db, from, to, config) {
   const statements = rows.map((row) => db.prepare(`
     INSERT INTO fact_labour
       (day, line_id, department, scheduled_count, present_count, absent_count, leave_count, late_count,
-       expected_minutes, worked_minutes, late_minutes, overtime_minutes, labour_cost)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+       expected_minutes, worked_minutes, late_minutes, overtime_minutes, labour_cost, cost_basis)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
     ON CONFLICT (day, line_id, department) DO UPDATE SET
       scheduled_count = ?4, present_count = ?5, absent_count = ?6, leave_count = ?7, late_count = ?8,
-      expected_minutes = ?9, worked_minutes = ?10, late_minutes = ?11, overtime_minutes = ?12, labour_cost = ?13`)
+      expected_minutes = ?9, worked_minutes = ?10, late_minutes = ?11, overtime_minutes = ?12,
+      labour_cost = ?13, cost_basis = ?14`)
     .bind(row.day, row.line, row.department, row.scheduled_count, row.present_count,
       row.absent_count, row.leave_count, row.late_count,
-      Math.round((row.scheduled_count || 0) * 480), Math.round(row.worked_minutes || 0),
+      // What HIVE says people were down to work. This used to be
+      // `scheduled_count * 480` — a hard-coded eight-hour day on a property
+      // that runs six-hour breakfast shifts and twelve-hour night cover, which
+      // made rostered-against-worked a comparison with a fiction. HIVE has
+      // stored the real figure all along and the connector was already
+      // fetching it; there was simply nowhere to put it.
+      Math.round(row.expected_minutes || 0), Math.round(row.worked_minutes || 0),
       Math.round(row.late_minutes || 0), Math.round(row.overtime_minutes || 0),
-      Math.round(row.labour_cost || 0)));
+      Math.round(row.labour_cost || 0), row.cost_basis || 'default'));
 
   return writeAll(db, statements);
 }
