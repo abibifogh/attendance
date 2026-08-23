@@ -398,8 +398,11 @@ export async function updateShift(ctx, id) {
  */
 export async function deleteShift(ctx, id) {
   const shiftId = Number(id);
+  // Slots nobody is on are not counted. They exist because the shift does, so
+  // deleting the shift is exactly the thing that is allowed to take them, and
+  // the foreign key does it. What stops a delete is a person rostered on it.
   const used = await ctx.db.prepare(
-    'SELECT (SELECT COUNT(*) FROM att_roster WHERE shift_id = ?1) AS rota, '
+    'SELECT (SELECT COUNT(*) FROM att_roster WHERE shift_id = ?1 AND staff_id IS NOT NULL) AS rota, '
     + '(SELECT COUNT(*) FROM att_days WHERE shift_id = ?1) AS days, '
     + '(SELECT COUNT(*) FROM att_patterns WHERE shift_id = ?1) AS patterns',
   ).bind(shiftId).first().catch(() => null);

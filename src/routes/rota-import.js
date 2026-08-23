@@ -1,6 +1,7 @@
 import { badRequest, int, json, notFound, readJson, str } from '../lib/http.js';
 import { loadDataset, toMinutes } from '../lib/attendance.js';
 import { countsOf, nearestShifts, parseRotaCsv, planImport } from '../lib/roster-import.js';
+import { replaceDay, rowsFor } from '../lib/roster.js';
 import { extractPdfText } from '../lib/pdf-text.js';
 import { parseRotaPdf } from '../lib/roster-pdf.js';
 
@@ -410,17 +411,24 @@ export async function confirmRotaImport(ctx) {
   const statements = [];
   let applied = 0;
 
+  // What is on those days already. An import is the whole week as somebody
+  // else drew it, so a line replaces whatever the person had that day rather
+  // than landing beside it as a second shift.
+  const ds = await loadDataset(ctx.db, { from: draft.from_day, to: draft.to_day });
+
   for (const r of usable) {
     const shiftId = r.shift_id ?? byName.get(r.shift_name) ?? null;
     if (!r.staff_id || !r.day || !shiftId) continue;
 
-    statements.push(ctx.db.prepare(
-      `INSERT INTO att_roster (staff_id, day, shift_id, note, set_by, set_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
-       ON CONFLICT (staff_id, day) DO UPDATE SET
-         shift_id = excluded.shift_id, note = excluded.note,
-         set_by = excluded.set_by, set_at = excluded.set_at`,
-    ).bind(r.staff_id, r.day, shiftId, r.raw_note || r.raw_title || null, actor));
+    statements.push(...replaceDay(ctx.db, {
+      rows: rowsFor(ds, r.staff_id, r.day),
+      staffId: r.staff_id,
+      day: r.day,
+      shiftId,
+      actor,
+      note: r.raw_note || r.raw_title || null,
+      title: rowsFor(ds, r.staff_id, r.day)[0]?.title ?? null,
+    }));
     applied += 1;
   }
 

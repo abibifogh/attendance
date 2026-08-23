@@ -471,6 +471,33 @@ export const GUIDE = [
           + 'the leave first.',
       ] },
 
+      { sub: 'Two shifts on one day' },
+      { p: 'Putting somebody on a second shift no longer takes the first one away. Both are '
+        + 'kept and both are marked: a ⚠ on each card in Positions view, and the second shift '
+        + 'listed under the dropdown in People view with an ✕ to drop it. The mark stays until '
+        + 'one of them goes.' },
+      { warn: 'It is almost always a mistake — two people filling the same rota from two ends '
+        + 'of the property — so the app keeps both and says so rather than choosing for you. '
+        + 'While it stands, the day is worked out against the earlier of the two shifts, which '
+        + 'is another reason to settle it.' },
+      { note: 'Setting a day to Off still clears the whole day. Somebody given the day off is '
+        + 'not also working the evening.' },
+
+      { sub: 'A shift with nobody on it' },
+      { p: 'In Positions view, the + on a cell puts a shift on a day whether or not you have '
+        + 'anybody for it yet. Choose Nobody and it stands there as an empty card until '
+        + 'somebody takes it, which is how "Thursday breakfast still needs covering" gets '
+        + 'written down instead of remembered.' },
+      { list: [
+        'Taking a person off a card leaves the card. Open it, choose Nobody, and the shift '
+          + 'stays on the day with nobody in it.',
+        'To take the shift off the day altogether, tick "Take this shift off the day" in the '
+          + 'same box.',
+        'A shift needing two people is two empty cards.',
+        'Deleting the shift itself under Setup → Shifts takes its empty cards with it. That is '
+          + 'the only thing that removes one without somebody saying so.',
+      ] },
+
       { sub: 'Positions' },
       { p: 'Several shifts that are really one job — three breakfast shifts that differ only '
         + 'in when they finish — can be put under one position, and the rota reads by position '

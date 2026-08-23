@@ -1497,7 +1497,45 @@ export function makeDataset(raw) {
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
   const reasonBy = new Map((raw.reasons ?? []).map((r) => [r.code, r]));
 
-  const rosterBy = new Map((raw.roster ?? []).map((r) => [`${r.staff_id}|${r.day}`, r]));
+  // The rota, three ways.
+  //
+  // A person may hold two shifts on one day now — usually by mistake, and the
+  // rota screen marks it as one — but a day still computes against one shift,
+  // because a day record is one row and one verdict. So `rosterBy` hands back
+  // the first shift of the day and everything downstream carries on exactly as
+  // it did; `rosterAllBy` is for the screens that have to show the clash and
+  // let somebody clear it.
+  //
+  // First means earliest by the clock. It is the one somebody turns up for,
+  // and picking it by row id would mean the day changed meaning depending on
+  // which shift was typed in first.
+  const rosterAllBy = new Map();
+  const slotsByDay = new Map();
+  for (const row of raw.roster ?? []) {
+    // A slot nobody is on yet. It belongs to the day, not to a person.
+    if (row.staff_id == null) {
+      if (!slotsByDay.has(row.day)) slotsByDay.set(row.day, []);
+      slotsByDay.get(row.day).push(row);
+      continue;
+    }
+    const key = `${row.staff_id}|${row.day}`;
+    if (!rosterAllBy.has(key)) rosterAllBy.set(key, []);
+    rosterAllBy.get(key).push(row);
+  }
+
+  const startsAt = (row) => {
+    const at = row.shift_id ? toMinutes(shiftById.get(row.shift_id)?.starts_at) : null;
+    // A rostered day off sorts last: it is not a shift anybody arrives for.
+    return at == null ? 24 * 60 + 1 : at;
+  };
+  for (const list of rosterAllBy.values()) {
+    list.sort((a, b) => startsAt(a) - startsAt(b) || Number(a.id ?? 0) - Number(b.id ?? 0));
+  }
+  for (const list of slotsByDay.values()) {
+    list.sort((a, b) => startsAt(a) - startsAt(b) || Number(a.id ?? 0) - Number(b.id ?? 0));
+  }
+
+  const rosterBy = new Map([...rosterAllBy].map(([key, list]) => [key, list[0]]));
   // Keyed by week as well as weekday. A person who does not rotate has one
   // week, numbered zero, and behaves exactly as before.
   const patternBy = new Map((raw.patterns ?? []).map((p) => [`${p.staff_id}|${p.week ?? 0}|${p.dow}`, p]));
@@ -1544,6 +1582,8 @@ export function makeDataset(raw) {
   return {
     settings,
     timezone: settings.timezone || 'UTC',
+    rosterAllBy,
+    slotsByDay,
     rotationAnchor: settings.att_rotation_anchor || ROTATION_ANCHOR,
     // 'YYYY-MM-DD HH:MM' in the property's own time. Its only job is to stop
     // today's later shifts being read as absences before they have begun, and

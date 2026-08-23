@@ -1881,6 +1881,72 @@ tr.day-locked label.tickline { cursor: not-allowed; }
 /* Dashed until published, the same promise the people view draws. */
 .pos-card.rota-draft { border-style: dashed; border-left-style: solid; }
 
+/* A shift nobody is on yet. Faint, because it is a question rather than a
+   plan, and it has to be obviously different from a card with a name on it
+   when nine of them are stacked in one column. */
+/* A shift with nobody on it. It keeps its colour, because it is still that
+   shift, but the colour is drained and the bar down its side is hollow: a
+   filled card is a fact and this is a question. The word does the rest. */
+.pos-card.pos-card-empty {
+  filter: saturate(.3);
+  border-style: dashed;
+  border-left-style: dashed;
+}
+.pos-card-empty .pos-card-who {
+  color: var(--text-faint);
+  font-style: italic;
+  font-weight: 600;
+}
+.pos-card-empty:hover { filter: none; }
+
+/* Two shifts on one day, marked on both of them. The mark sits on the card
+   rather than beside it, because in the position view the two halves of the
+   clash are usually in different rows and a mark between them would belong to
+   neither. */
+.pos-card-clash {
+  border-color: var(--bad);
+  /* Room at the top right for the mark, which is positioned rather than laid
+     out: the card is a grid, and a floated child of a grid is just a child. */
+  position: relative;
+  padding-right: 1.4rem;
+}
+.pos-card-clash-mark {
+  position: absolute;
+  top: .3rem;
+  right: .35rem;
+  font-size: .8rem;
+  line-height: 1;
+  color: var(--bad);
+}
+
+/* The same thing said in the people view, where both shifts are in one cell:
+   the second one is listed under the dropdown with a way to drop it. */
+.rota-cellwrap.rota-clashing { outline: 1px solid var(--bad); outline-offset: 1px; }
+.rota-clash {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  margin-top: .15rem;
+  padding: .1rem .25rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bad) 12%, transparent);
+  font-size: .68rem;
+  line-height: 1.2;
+}
+.rota-clash-mark { flex: none; }
+.rota-clash-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rota-clash-drop {
+  flex: none;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  padding: 0 .1rem;
+  cursor: pointer;
+}
+.rota-clash-drop:hover { color: var(--bad); }
+
 /* The gap under a shift. Almost invisible until the row is under a cursor,
    so a week of empty cells does not read as a week of buttons. */
 .pos-add {

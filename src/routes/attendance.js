@@ -10,6 +10,7 @@ import {
   clockDriftNote, clockOffset, deviceForPushToken, deviceForToken, exceptionNotice,
   ingestPunches, recompute, recomputeTouched,
 } from '../lib/attendance-ingest.js';
+import { replaceDay, rowsFor } from '../lib/roster.js';
 import { readNotification } from '../lib/push-events.js';
 import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from '../lib/device-shifts.js';
 import { getPepper } from '../lib/auth.js';
@@ -1725,12 +1726,32 @@ export async function getRoster(ctx) {
     for (const staff of ds.staff) {
       if (!staff.active) continue;
       if (ds.leaveBy.has(`${staff.id}|${day}`)) { onLeave += 1; continue; }
-      const shift = scheduleFor(ds, staff.id, day).shift;
-      if (shift && counts[shift.id] != null) counts[shift.id] += 1;
-      else off += 1;
+      // Every shift they hold, not only the first: a person covering the
+      // breakfast and the dinner is two people's worth of cover, and a count
+      // that showed one would be answering the wrong question.
+      const held = ds.rosterAllBy.get(`${staff.id}|${day}`);
+      const on = held
+        ? held.map((r) => (r.shift_id ? ds.shiftById.get(r.shift_id) : null))
+        : [scheduleFor(ds, staff.id, day).shift];
+
+      let any = false;
+      for (const shift of on) {
+        if (shift && counts[shift.id] != null) { counts[shift.id] += 1; any = true; }
+      }
+      if (!any) off += 1;
     }
 
-    return { day, counts, off, onLeave, holiday: ds.holidayBy.get(day)?.name ?? null };
+    // Slots nobody is on yet, per shift. What "is anybody on nights on Sunday"
+    // is really asking, and the number the grid exists to make visible.
+    const unfilled = {};
+    for (const slot of ds.slotsByDay.get(day) ?? []) {
+      if (!slot.shift_id) continue;
+      unfilled[slot.shift_id] = (unfilled[slot.shift_id] ?? 0) + 1;
+    }
+
+    return {
+      day, counts, unfilled, off, onLeave, holiday: ds.holidayBy.get(day)?.name ?? null,
+    };
   });
 
   return json({
@@ -1741,6 +1762,17 @@ export async function getRoster(ctx) {
     coverage,
     shifts,
     publish,
+    // Shifts wanted on a day with nobody on them yet. They belong to the day
+    // rather than to a person, so they travel beside the rows rather than in
+    // one of them.
+    slots: days.flatMap((day) => (ds.slotsByDay.get(day) ?? []).map((row) => ({
+      id: row.id,
+      day,
+      shift_id: row.shift_id,
+      title: row.title ?? null,
+      published: Boolean(row.published),
+      everPublished: Boolean(row.ever_published),
+    }))),
     departments: [...new Set(ds.staff.filter((s) => s.active)
       .map((s) => s.department).filter(Boolean))].sort(),
     tags: [...new Set(ds.staff.filter((s) => s.active)
@@ -1768,13 +1800,25 @@ export async function getRoster(ctx) {
         .some((w) => [0, 1, 2, 3, 4, 5, 6].some((d) => ds.patternBy.has(`${staff.id}|${w}|${d}`))),
       days: days.map((day) => {
         const schedule = scheduleFor(ds, staff.id, day);
-        const rostered = ds.rosterBy.get(`${staff.id}|${day}`);
+        const held = ds.rosterAllBy.get(`${staff.id}|${day}`) ?? [];
+        const rostered = held[0] ?? null;
         const avail = availabilityBy.get(`${staff.id}|${day}`);
         return {
           day,
+          id: rostered?.id ?? null,
           shift_id: schedule.shift?.id ?? null,
           source: schedule.source,
           explicit: schedule.explicit,
+          // Everything after the first. Nearly always empty; when it is not,
+          // somebody has been put on two shifts in one day and both ends of
+          // the rota say so until one of them goes.
+          extra: held.slice(1).map((row) => ({
+            id: row.id,
+            shift_id: row.shift_id,
+            title: row.title ?? null,
+            published: Boolean(row.published),
+            everPublished: Boolean(row.ever_published),
+          })),
           // A cell from the standing pattern was never published as such —
           // the pattern is the assumption, and publishing is about the days
           // somebody actually decided.
@@ -1955,8 +1999,22 @@ export async function setAvailability(ctx) {
  * or one day of everybody — and a request per cell would make a slow job on a
  * phone slower.
  *
- * `shiftId: null` is a rostered day off, which is a decision. Passing `clear`
- * removes the override entirely and hands the day back to the standing pattern.
+ * FIVE THINGS AN ENTRY CAN MEAN, because a cell is no longer one row.
+ *
+ *   `clear`        — hand the whole day back to the standing pattern. Every
+ *                    row the person holds that day goes, second shift and all.
+ *   `id` + `remove`— drop that one row. What takes a second shift off somebody
+ *                    without touching the first, and what deletes a slot.
+ *   `id`           — change that row: its shift, its title, or who is on it.
+ *                    `staffId: null` empties a slot and leaves it standing.
+ *   `add`          — a second shift on a day that already has one. Kept
+ *                    alongside rather than replacing it, and both are marked.
+ *   otherwise      — this day is now this shift, which is what the staff grid
+ *                    has always meant by picking one.
+ *
+ * `shiftId: null` is a rostered day off, which is a decision rather than the
+ * absence of one, and it replaces whatever else was on the day: somebody given
+ * Thursday off is not also working the evening.
  */
 export async function saveRoster(ctx) {
   const body = await readJson(ctx.request);
@@ -1968,39 +2026,124 @@ export async function saveRoster(ctx) {
   const statements = [];
   const touched = new Map();
 
-  for (const entry of entries) {
-    const staffId = int(entry.staffId, 'Staff', { required: true, min: 1 });
-    const day = readDay(entry.day);
-    const shiftId = entry.shiftId == null ? null : int(entry.shiftId, 'Shift', { min: 1 });
+  // What is already on the days being written to. Read once for the whole
+  // batch rather than a query per cell, because a fortnight of one person is
+  // fourteen cells and this is somebody standing at a desk waiting.
+  // Every entry names a day. Without one there is nothing to write it against,
+  // and a missing date used to reach the database as an undefined bind and
+  // come back as "something went wrong on the server".
+  const dayOf = (entry) => {
+    const day = readDay(entry.day, null);
+    if (!day) throw badRequest('Every change needs a date.');
+    return day;
+  };
+  const days = [...new Set(entries.map(dayOf))].sort();
+  const existing = days.length
+    ? await ctx.db.prepare(
+      `SELECT * FROM att_roster WHERE day BETWEEN ?1 AND ?2`,
+    ).bind(days[0], days[days.length - 1]).all().catch(() => ({ results: [] }))
+    : { results: [] };
 
-    if (entry.clear) {
-      statements.push(ctx.db.prepare('DELETE FROM att_roster WHERE staff_id = ? AND day = ?')
-        .bind(staffId, day));
-    } else {
-      statements.push(ctx.db.prepare(
-        `INSERT INTO att_roster (staff_id, day, shift_id, note, title, set_by, set_at, published)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), 0)
-         ON CONFLICT (staff_id, day) DO UPDATE SET
-           shift_id = excluded.shift_id, note = excluded.note, title = excluded.title,
-           set_by = excluded.set_by, set_at = excluded.set_at,
-           -- A changed day is a draft again, however published it was before.
-           -- Staff plan their lives around the solid ones, so a cell cannot
-           -- change under them while still claiming to be the version they saw.
-           -- ever_published is deliberately left alone: it is what tells a
-           -- new day apart from a promise being remade.
-           published = 0`,
-      ).bind(
-        staffId, day, shiftId,
-        str(entry.note, 'Note', { max: 200 }),
-        str(entry.title, 'Title', { max: 60 }),
-        actor,
-      ));
-    }
+  const byId = new Map((existing.results ?? []).map((r) => [Number(r.id), r]));
+  const heldBy = new Map();
+  for (const row of existing.results ?? []) {
+    if (row.staff_id == null) continue;
+    const key = `${row.staff_id}|${row.day}`;
+    if (!heldBy.has(key)) heldBy.set(key, []);
+    heldBy.get(key).push(row);
+  }
+  // Sorted the same way the dataset sorts them, so "the first shift of the
+  // day" means the same thing here as it does everywhere it is read.
+  const shiftRows = await ctx.db.prepare('SELECT id, starts_at FROM att_shifts').all()
+    .catch(() => ({ results: [] }));
+  const shiftStart = new Map((shiftRows.results ?? [])
+    .map((r) => [Number(r.id), toMinutes(r.starts_at)]));
+  const startsAt = (row) => {
+    const at = row.shift_id ? shiftStart.get(Number(row.shift_id)) : null;
+    return at == null ? 24 * 60 + 1 : at;
+  };
+  for (const list of heldBy.values()) {
+    list.sort((a, b) => startsAt(a) - startsAt(b) || Number(a.id) - Number(b.id));
+  }
 
+  const mark = (staffId, day) => {
+    if (!staffId) return;
     const range = touched.get(staffId) ?? { from: day, to: day };
     if (day < range.from) range.from = day;
     if (day > range.to) range.to = day;
     touched.set(staffId, range);
+  };
+
+  for (const entry of entries) {
+    const day = dayOf(entry);
+    const rowId = entry.id == null ? null : int(entry.id, 'Row', { min: 1 });
+    const shiftId = entry.shiftId == null ? null : int(entry.shiftId, 'Shift', { min: 1 });
+    const note = str(entry.note, 'Note', { max: 200 });
+    const title = str(entry.title, 'Title', { max: 60 });
+
+    // A row addressed by id: the position view's cards, and the only way to
+    // change one of two shifts without disturbing the other.
+    if (rowId != null) {
+      const row = byId.get(rowId);
+      if (!row) continue;
+      mark(row.staff_id, row.day);
+
+      if (entry.remove) {
+        statements.push(ctx.db.prepare('DELETE FROM att_roster WHERE id = ?').bind(rowId));
+        continue;
+      }
+
+      // Who is on it. Absent from the request means leave it alone; an
+      // explicit null empties the slot and leaves the slot standing, which is
+      // the whole point of a slot.
+      const who = 'staffId' in entry
+        ? (entry.staffId == null ? null : int(entry.staffId, 'Staff', { min: 1 }))
+        : row.staff_id;
+      mark(who, day);
+
+      statements.push(ctx.db.prepare(
+        `UPDATE att_roster
+            SET staff_id = ?2, shift_id = ?3, title = ?4, set_by = ?5,
+                set_at = datetime('now'), published = 0
+          WHERE id = ?1`,
+      ).bind(rowId, who, shiftId ?? row.shift_id, title ?? row.title, actor));
+      continue;
+    }
+
+    // A slot: this shift is wanted on this day and nobody is on it yet.
+    if (entry.slot) {
+      statements.push(ctx.db.prepare(
+        `INSERT INTO att_roster (staff_id, day, shift_id, title, set_by, set_at, published)
+         VALUES (NULL, ?1, ?2, ?3, ?4, datetime('now'), 0)`,
+      ).bind(day, shiftId, title, actor));
+      continue;
+    }
+
+    const staffId = int(entry.staffId, 'Staff', { required: true, min: 1 });
+    const held = heldBy.get(`${staffId}|${day}`) ?? [];
+    mark(staffId, day);
+
+    if (entry.clear) {
+      statements.push(ctx.db.prepare('DELETE FROM att_roster WHERE staff_id = ? AND day = ?')
+        .bind(staffId, day));
+      continue;
+    }
+
+    // A second shift, kept beside the first. Asking for one they already hold
+    // is not a double, it is the same promise written down twice, so it does
+    // nothing rather than failing.
+    if (entry.add && shiftId != null) {
+      if (held.some((r) => Number(r.shift_id) === shiftId)) continue;
+      statements.push(ctx.db.prepare(
+        `INSERT INTO att_roster (staff_id, day, shift_id, note, title, set_by, set_at, published)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), 0)`,
+      ).bind(staffId, day, shiftId, note, title, actor));
+      continue;
+    }
+
+    statements.push(...replaceDay(ctx.db, {
+      rows: held, staffId, day, shiftId, actor, note, title,
+    }));
   }
 
   for (let i = 0; i < statements.length; i += 100) {
@@ -2076,12 +2219,19 @@ export async function copyRoster(ctx) {
           'DELETE FROM att_roster WHERE staff_id = ? AND day = ?',
         ).bind(staff.id, targetDay));
       } else {
-        statements.push(ctx.db.prepare(
-          `INSERT INTO att_roster (staff_id, day, shift_id, set_by, set_at)
-           VALUES (?1, ?2, ?3, ?4, datetime('now'))
-           ON CONFLICT (staff_id, day) DO UPDATE SET
-             shift_id = excluded.shift_id, set_by = excluded.set_by, set_at = excluded.set_at`,
-        ).bind(staff.id, targetDay, wanted, actor));
+        // Copying a week says what the day is now, so a second shift somebody
+        // had picked up on the target day goes with it. The note and title
+        // already on the day stay: they belong to the day, not to the copy.
+        const here = rowsFor(ds, staff.id, targetDay);
+        statements.push(...replaceDay(ctx.db, {
+          rows: here,
+          staffId: staff.id,
+          day: targetDay,
+          shiftId: wanted,
+          actor,
+          note: here[0]?.note ?? null,
+          title: here[0]?.title ?? null,
+        }));
         copied += 1;
       }
 

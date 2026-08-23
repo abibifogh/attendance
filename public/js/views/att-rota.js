@@ -223,12 +223,23 @@ export async function renderAttRota(params) {
     // from the change that triggered it, so setting a title does not undo a
     // shift picked a moment earlier and vice versa.
     const stage = (value) => {
-      pending.set(`${row.staff.id}|${entry.day}`, value === 'pattern'
-        ? { staffId: row.staff.id, day: entry.day, clear: true }
+      const key = `${row.staff.id}|${entry.day}`;
+      if (value === 'pattern') {
+        pending.set(key, { staffId: row.staff.id, day: entry.day, clear: true });
+        return;
+      }
+      const shiftId = value === '' ? null : Number(value);
+
+      // A rest day replaces the whole day, second shift and all: somebody
+      // given the day off is not also working the evening. Anything else
+      // changes this one row and leaves the other alone, which is the point of
+      // the row having an id.
+      pending.set(key, shiftId != null && entry.id != null
+        ? { id: entry.id, day: entry.day, shiftId, title: entry.title || null }
         : {
           staffId: row.staff.id,
           day: entry.day,
-          shiftId: value === '' ? null : Number(value),
+          shiftId,
           title: entry.title || null,
         });
     };
@@ -314,6 +325,33 @@ export async function renderAttRota(params) {
     // Element.append() writes the string "null" for a null child, unlike the
     // h() helper, so only real nodes go in.
     const parts = [select, hours, titleButton];
+
+    // A second shift on the same day. Kept rather than quietly replaced, and
+    // marked at both ends of the rota until one of them goes — usually it is
+    // somebody rostered twice by two different people, and the fix is a
+    // decision rather than something the app should make on its own.
+    for (const extra of entry.extra ?? []) {
+      const other = shiftById.get(String(extra.shift_id));
+      const chip = h('div.rota-clash', {
+        title: `Also on ${other ? `${other.name}, ${shiftHours(other)}` : 'another shift'} `
+          + 'this day. Two shifts on one day is almost always a mistake; take one off.',
+      },
+      h('span.rota-clash-mark', '⚠'),
+      h('span.rota-clash-name', other ? other.name : 'Another shift'),
+      h('button.rota-clash-drop', {
+        type: 'button',
+        'aria-label': `Take ${other ? other.name : 'the second shift'} off this day`,
+        onclick: () => {
+          pending.set(`row:${extra.id}`, { id: extra.id, day: entry.day, remove: true });
+          entry.extra = (entry.extra ?? []).filter((x) => x.id !== extra.id);
+          chip.remove();
+          wrap.classList.toggle('rota-clashing', Boolean(entry.extra.length));
+          refreshSaveBar();
+        },
+      }, '✕'));
+      parts.push(chip);
+    }
+    wrap.classList.toggle('rota-clashing', Boolean(entry.extra?.length));
     if (avail) {
       parts.push(h('small.rota-avail', {
         class: avail.status === 'preferred' ? 'rota-avail-pref' : '',
@@ -486,21 +524,186 @@ export async function renderAttRota(params) {
     .find((d) => d.day === day) ?? null;
 
   /**
-   * Put somebody on a shift, or take them off it, from the position view.
+   * Every card on a day, in the order they read down the clock.
    *
-   * The staged change is the same shape the dropdowns produce, because it is
-   * the same rota: one person, one day, one shift.
+   * A card is a roster row now rather than a person: one row per shift
+   * somebody holds, plus the rows nobody is on yet. That is what lets a slot
+   * outlive the person who was standing in it, and what lets two shifts on one
+   * day both be shown instead of one quietly replacing the other.
+   *
+   * Days still covered by the standing pattern have no row of their own, so
+   * they carry a null id and the first edit writes one.
    */
-  const assign = (staffId, day, shiftId, title = undefined) => {
+  const cardsOn = (day) => {
+    const out = [];
+
+    for (const row of visible) {
+      const entry = entryOf(row.staff.id, day);
+      if (!entry || entry.leave) continue;
+      const doubled = Boolean(entry.extra?.length);
+
+      if (entry.shift_id != null) {
+        out.push({
+          id: entry.id,
+          day,
+          shiftId: entry.shift_id,
+          row,
+          title: entry.title ?? null,
+          published: entry.published,
+          clash: doubled,
+        });
+      }
+      for (const extra of entry.extra ?? []) {
+        out.push({
+          id: extra.id,
+          day,
+          shiftId: extra.shift_id,
+          row,
+          title: extra.title,
+          published: extra.published,
+          clash: true,
+        });
+      }
+    }
+
+    for (const slot of data.slots ?? []) {
+      if (slot.day !== day) continue;
+      out.push({
+        id: slot.id,
+        day,
+        shiftId: slot.shift_id,
+        row: null,
+        title: slot.title,
+        published: slot.published,
+        clash: false,
+      });
+    }
+
+    return out.sort((a, b) => earliestFirst(
+      shiftById.get(String(a.shiftId)),
+      shiftById.get(String(b.shiftId)),
+    ) || (a.row?.staff.name ?? '').localeCompare(b.row?.staff.name ?? ''));
+  };
+
+  /**
+   * The same change, applied to what is on screen.
+   *
+   * A staged edit has to show immediately or the planner presses the button
+   * again. Nothing here is authoritative — Save reloads the lot from the
+   * server, and any small drift between this and what the server did is
+   * corrected then. Its only job is to make the card move now.
+   */
+  let provisional = -1;
+
+  /** Pull a row out of the model wherever it is, and hand back what it held. */
+  const takeRow = (id) => {
+    for (const row of data.rows) {
+      for (const entry of row.days) {
+        if (entry.id === id) {
+          const was = { shift_id: entry.shift_id, title: entry.title };
+          // Whatever was second becomes first, exactly as the next load will
+          // have it: the earliest shift of the day is the day's shift.
+          const next = (entry.extra ?? []).shift() ?? null;
+          entry.id = next?.id ?? null;
+          entry.shift_id = next?.shift_id ?? null;
+          entry.title = next?.title ?? null;
+          entry.published = next ? next.published : false;
+          entry.explicit = true;
+          return was;
+        }
+        const at = (entry.extra ?? []).findIndex((x) => x.id === id);
+        if (at >= 0) {
+          const [gone] = entry.extra.splice(at, 1);
+          return { shift_id: gone.shift_id, title: gone.title };
+        }
+      }
+    }
+    const at = (data.slots ?? []).findIndex((x) => x.id === id);
+    if (at >= 0) {
+      const [gone] = data.slots.splice(at, 1);
+      return { shift_id: gone.shift_id, title: gone.title };
+    }
+    return null;
+  };
+
+  /** Put a shift on somebody, beside whatever they already hold. */
+  const putOn = (staffId, day, shiftId, title, id) => {
     const entry = entryOf(staffId, day);
     if (!entry) return;
-    entry.shift_id = shiftId;
+    if (entry.shift_id == null) {
+      entry.id = id;
+      entry.shift_id = shiftId;
+      entry.title = title ?? null;
+      entry.explicit = true;
+      entry.published = false;
+      return;
+    }
+    entry.extra = [...(entry.extra ?? []), {
+      id, shift_id: shiftId, title: title ?? null, published: false, everPublished: false,
+    }];
+  };
+
+  const applyLocally = (change) => {
+    if (change.remove && change.id != null) { takeRow(change.id); return; }
+
+    if (change.slot) {
+      data.slots = [...(data.slots ?? []), {
+        id: provisional--,
+        day: change.day,
+        shift_id: change.shiftId,
+        title: change.title ?? null,
+        published: false,
+        everPublished: false,
+      }];
+      return;
+    }
+
+    if (change.id != null) {
+      const was = takeRow(change.id);
+      if (!was) return;
+      const title = change.title ?? was.title;
+      if (change.staffId == null) {
+        data.slots = [...(data.slots ?? []), {
+          id: change.id,
+          day: change.day,
+          shift_id: was.shift_id,
+          title,
+          published: false,
+          everPublished: false,
+        }];
+        return;
+      }
+      putOn(change.staffId, change.day, was.shift_id, title, change.id);
+      return;
+    }
+
+    const entry = entryOf(change.staffId, change.day);
+    if (!entry) return;
+
+    if (change.clear) {
+      entry.extra = [];
+      entry.id = null;
+      entry.shift_id = null;
+      entry.explicit = false;
+      return;
+    }
+
+    if (change.add) {
+      putOn(change.staffId, change.day, change.shiftId, change.title, provisional--);
+      return;
+    }
+
+    entry.extra = [];
+    entry.shift_id = change.shiftId;
+    entry.title = change.title ?? null;
     entry.explicit = true;
     entry.published = false;
-    if (title !== undefined) entry.title = title || null;
-    pending.set(`${staffId}|${day}`, {
-      staffId: Number(staffId), day, shiftId, title: entry.title || null,
-    });
+  };
+
+  /** Queue a change to one card and redraw the positions under it. */
+  const queue = (key, change) => {
+    pending.set(key, change);
+    applyLocally(change);
     drawPositions();
     refreshSaveBar();
   };
@@ -522,63 +725,119 @@ export async function renderAttRota(params) {
         : null,
     }));
 
-  /** Hand one card to somebody else, or empty it. */
-  const editCard = async (shift, day, staffId) => {
-    const row = staffById.get(String(staffId));
-    const entry = entryOf(staffId, day);
-    const options = candidates(day, staffId);
+  /** The list of people for a card dialog, grouped by whether they are free. */
+  const whoOptions = (options, { firstLabel, firstValue = '' }) => {
+    const free = options.filter((o) => !o.blocked && o.busy == null);
+    const taken = options.filter((o) => !o.blocked && o.busy != null);
+    return h('select', { name: 'staffId' },
+      h('option', { value: firstValue, selected: true }, firstLabel),
+      // Not offered to a card that is already empty: it is the option it is
+      // already on, and two ways of saying the same thing is a question.
+      firstValue === 'nobody'
+        ? null
+        : h('option', { value: 'nobody' }, 'Nobody — leave the shift on the day, unfilled'),
+      free.length
+        ? h('optgroup', { label: 'Free that day' },
+          free.map((o) => h('option', { value: String(o.row.staff.id) }, o.row.staff.name)))
+        : null,
+      taken.length
+        ? h('optgroup', { label: 'Already on something' },
+          taken.map((o) => h('option', { value: String(o.row.staff.id) },
+            `${o.row.staff.name} — on ${o.busy}, this would be a second shift`)))
+        : null,
+    );
+  };
+
+  /**
+   * Change one card: who is on it, what it is called, or whether it stays.
+   *
+   * TAKING THE PERSON OFF NO LONGER TAKES THE SHIFT WITH THEM. The shift was
+   * put on the day because the day needs it covered, and that is still true
+   * when the person walks away from it. So "Nobody" leaves the card standing
+   * and empty, and there is a separate way to say the day does not need it at
+   * all.
+   */
+  const editCard = async (card) => {
+    const shift = shiftById.get(String(card.shiftId));
+    if (!shift) return;
+    const options = candidates(card.day, card.row?.staff.id ?? null);
 
     const done = await formDialog({
-      title: `${shift.name}, ${fmtDayShort(day)}`,
+      title: `${shift.name}, ${fmtDayShort(card.day)}`,
       submitLabel: 'Apply',
       body: h('div',
-        h('p.muted', `${row.staff.name} is on this. ${shiftHours(shift)}, `
-          + `${asHours(shiftMinutes(shift))}.`),
-        field('Who works it', h('select', { name: 'staffId' },
-          h('option', { value: String(staffId), selected: true }, `${row.staff.name} (as now)`),
-          h('option', { value: '' }, 'Nobody — take this shift off the day'),
-          options.map(({ row: other, blocked, busy }) => h('option', {
-            value: String(other.staff.id), disabled: Boolean(blocked),
-          }, `${other.staff.name}${blocked ? ` — ${blocked}` : busy ? ` — on ${busy}` : ''}`)),
-        ), 'Somebody already on another shift that day is moved onto this one'),
+        h('p.muted', card.row
+          ? `${card.row.staff.name} is on this. ${shiftHours(shift)}, ${asHours(shiftMinutes(shift))}.`
+          : `Nobody is on this yet. ${shiftHours(shift)}, ${asHours(shiftMinutes(shift))}.`),
+        card.clash
+          ? h('p.form-error', { style: { display: '' } },
+            `${card.row?.staff.name ?? 'They'} is down for two shifts this day. Take one off.`)
+          : null,
+        field('Who works it', whoOptions(options, {
+          firstLabel: card.row ? `${card.row.staff.name} (as now)` : 'Nobody (as now)',
+          firstValue: card.row ? String(card.row.staff.id) : 'nobody',
+        }), 'Somebody already on another shift keeps it: they end up on both, and both are marked'),
         field('Name for this shift', h('input', {
-          type: 'text', name: 'title', maxlength: 60, value: entry?.title ?? '',
+          type: 'text', name: 'title', maxlength: 60, value: card.title ?? '',
           placeholder: 'Optional. Stock take',
         })),
+        card.id != null
+          ? h('label.inline-check',
+            h('input', { type: 'checkbox', name: 'drop' }),
+            h('span', 'Take this shift off the day altogether'))
+          : null,
       ),
       onSubmit: async (form) => ({
         staffId: form.get('staffId'),
         title: (form.get('title') || '').trim(),
+        drop: form.get('drop') != null,
       }),
     });
     if (!done) return;
 
-    if (String(done.staffId) === String(staffId)) {
-      assign(staffId, day, shift.id, done.title);
+    if (done.drop && card.id != null) {
+      queue(`row:${card.id}`, { id: card.id, day: card.day, remove: true });
       return;
     }
-    // Off this person either way. A shift handed on is a shift they are not
-    // working, and that is a decision rather than a gap in the pattern.
-    assign(staffId, day, null);
-    if (done.staffId) assign(done.staffId, day, shift.id, done.title);
+
+    const who = done.staffId === 'nobody' ? null : Number(done.staffId);
+
+    // A card from the standing pattern has no row yet. Writing one is what
+    // turns an assumption into a decision, which is what an edit means.
+    if (card.id == null) {
+      if (who == null) {
+        queue(`${card.row.staff.id}|${card.day}`, {
+          staffId: card.row.staff.id, day: card.day, shiftId: null, title: null,
+        });
+        return;
+      }
+      queue(`${who}|${card.day}`, {
+        staffId: who, day: card.day, shiftId: card.shiftId, title: done.title || null,
+        add: String(who) !== String(card.row?.staff.id ?? ''),
+      });
+      return;
+    }
+
+    queue(`row:${card.id}`, {
+      id: card.id, day: card.day, staffId: who, title: done.title || null,
+    });
   };
 
   /**
-   * Fill a gap: put somebody on this position on this day.
+   * Put a shift on a day.
    *
    * A position may hold several shifts — the same job finishing at three
    * different times — so where it does, which one is part of the question.
-   * Where it holds one, it is not asked.
+   * Where it holds one, it is not asked. Nobody is a legitimate answer: the
+   * day needs covering whether or not anybody has been found yet.
    */
   const addToCell = async (position, day) => {
     const shifts = position.shifts ?? [position];
     const options = candidates(day);
-    const free = options.filter((o) => !o.blocked && o.busy == null);
-    const taken = options.filter((o) => !o.blocked && o.busy != null);
 
     const done = await formDialog({
-      title: `Put somebody on ${position.name}`,
-      submitLabel: 'Put them on',
+      title: `Put a shift on ${position.name}`,
+      submitLabel: 'Put it on',
       body: h('div',
         h('p.muted', `${fmtDayShort(day)}.`),
         shifts.length > 1
@@ -588,18 +847,9 @@ export async function renderAttRota(params) {
           'They are the same job finishing at different times')
           : h('p.muted', { style: { fontSize: '.85rem' } },
             `${shiftHours(shifts[0])}, ${asHours(shiftMinutes(shifts[0]))}.`),
-        field('Who', h('select', { name: 'staffId', required: true },
-          h('option', { value: '' }, 'Choose…'),
-          free.length
-            ? h('optgroup', { label: 'Free that day' },
-              free.map((o) => h('option', { value: String(o.row.staff.id) }, o.row.staff.name)))
-            : null,
-          taken.length
-            ? h('optgroup', { label: 'Already on something' },
-              taken.map((o) => h('option', { value: String(o.row.staff.id) },
-                `${o.row.staff.name} — on ${o.busy}`)))
-            : null,
-        ), 'People on leave or marked unavailable are left out'),
+        field('Who', whoOptions(options, { firstLabel: 'Choose…', firstValue: '' }),
+          'People on leave or marked unavailable are left out. Leave it unfilled and it '
+          + 'stays on the day until somebody takes it'),
         field('Name for this shift', h('input', {
           type: 'text', name: 'title', maxlength: 60, placeholder: 'Optional. Stock take',
         })),
@@ -611,21 +861,43 @@ export async function renderAttRota(params) {
       }),
     });
     if (!done?.staffId) return;
-    assign(done.staffId, day, done.shiftId, done.title);
+
+    if (done.staffId === 'nobody') {
+      queue(`slot:${day}:${done.shiftId}:${pending.size}`, {
+        slot: true, day, shiftId: done.shiftId, title: done.title || null,
+      });
+      return;
+    }
+
+    queue(`${done.staffId}|${day}`, {
+      staffId: Number(done.staffId), day, shiftId: done.shiftId, title: done.title || null,
+      add: true,
+    });
   };
 
-  /** One person's card on one shift on one day. */
-  const shiftCard = (shift, day, row, entry) => h('button.pos-card', {
+  /** One card on one shift on one day, filled or not. */
+  const shiftCard = (shift, card) => h('button.pos-card', {
     type: 'button',
-    class: entry.published === false ? 'rota-draft' : 'rota-published',
+    class: [
+      card.published === false ? 'rota-draft' : 'rota-published',
+      card.row ? '' : 'pos-card-empty',
+      card.clash ? 'pos-card-clash' : '',
+    ].filter(Boolean).join(' '),
     'data-shift-colour': String(shiftColour(shift)),
-    title: `${row.staff.name} — ${shift.name}, ${shiftHours(shift)}`,
-    onclick: () => editCard(shift, day, row.staff.id),
+    title: card.row
+      ? `${card.row.staff.name} — ${shift.name}, ${shiftHours(shift)}`
+      : `${shift.name}, ${shiftHours(shift)} — nobody on it yet`,
+    onclick: () => editCard(card),
   },
-  entry.title ? h('span.pos-card-title', entry.title) : null,
+  card.clash
+    ? h('span.pos-card-clash-mark', {
+      title: 'Two shifts on one day. Take one off.',
+    }, '⚠')
+    : null,
+  card.title ? h('span.pos-card-title', card.title) : null,
   h('span.pos-card-shift', shift.name),
   h('span.pos-card-clock', `${shiftHours(shift)} · ${asHours(shiftMinutes(shift))}`),
-  h('span.pos-card-who', row.staff.name));
+  h('span.pos-card-who', card.row ? card.row.staff.name : 'Empty'));
 
   function drawPositions() {
     const wanted = data.shifts.filter((sh) => sh.active !== 0
@@ -645,11 +917,11 @@ export async function renderAttRota(params) {
       let minutes = 0;
       for (const shift of department.shifts) {
         for (const day of data.days) {
-          for (const row of visible) {
-            const entry = entryOf(row.staff.id, day);
-            if (!entry || entry.leave) continue;
-            if (String(entry.shift_id) !== String(shift.id)) continue;
-            people.add(row.staff.id);
+          for (const card of cardsOn(day)) {
+            if (String(card.shiftId) !== String(shift.id)) continue;
+            // An unfilled slot is hours the department still owes, so its
+            // minutes count. Nobody is standing in it, so its head does not.
+            if (card.row) people.add(card.row.staff.id);
             minutes += shiftMinutes(shift);
           }
         }
@@ -682,25 +954,18 @@ export async function renderAttRota(params) {
 
           ...data.days.map((day) => {
             const ids = new Set(position.shifts.map((sh) => String(sh.id)));
-            const on = visible
-              .map((row) => ({ row, entry: entryOf(row.staff.id, day) }))
-              .filter(({ entry }) => entry && !entry.leave && ids.has(String(entry.shift_id)))
-              // By the clock rather than by whoever happens to be higher up the
-              // people list: a cell holding an 11:00 and a 13:45 should read
-              // down the day like everything else on this screen.
-              .sort((x, y) => earliestFirst(
-                shiftById.get(String(x.entry.shift_id)),
-                shiftById.get(String(y.entry.shift_id)),
-              ) || x.row.staff.name.localeCompare(y.row.staff.name));
+            // Already sorted by the clock, so a cell holding an 11:00 and a
+            // 13:45 reads down the day like everything else on this screen.
+            const on = cardsOn(day).filter((card) => ids.has(String(card.shiftId)));
 
             return h('td', { class: dayClass(day) },
               h('div.pos-stack',
-                on.map(({ row, entry }) => shiftCard(
-                  shiftById.get(String(entry.shift_id)) ?? position.shifts[0], day, row, entry,
+                on.map((card) => shiftCard(
+                  shiftById.get(String(card.shiftId)) ?? position.shifts[0], card,
                 )),
                 h('button.pos-add', {
                   type: 'button',
-                  title: `Put somebody on ${position.name} on ${fmtDayShort(day)}`,
+                  title: `Put a shift on ${position.name} on ${fmtDayShort(day)}`,
                   onclick: () => addToCell(position, day),
                 }, '+')));
           }))),
