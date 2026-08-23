@@ -15,14 +15,15 @@
  */
 
 /**
- * What a notification says it is from.
+ * The heading on an attendance alert.
  *
- * The app's own name, never the property's. A phone already puts the name of
- * the app that sent it on the same line, so "Sir Tobys Ghana LTD — attendance
- * from HIVE" spent two lines of a lock screen saying who before it reached
- * what. The property's name belongs in an email, where there is room for it.
+ * One word, and not the property's name. A phone puts "from HIVE" on that line
+ * by itself, so "Sir Tobys Ghana LTD — attendance from HIVE" spent two lines of
+ * a lock screen saying who it was from before it reached the only part that
+ * mattered. "Attendance from HIVE" says both in three words. The property's
+ * name belongs in an email, where there is room for it.
  */
-export const APP_NAME = 'HIVE';
+export const ALERT_TITLE = 'Attendance';
 
 const encoder = new TextEncoder();
 

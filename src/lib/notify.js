@@ -1,5 +1,5 @@
 import { originOf } from './site.js';
-import { APP_NAME, getVapidKeys, sendPush } from './push.js';
+import { ALERT_TITLE, getVapidKeys, sendPush } from './push.js';
 import { isMissingTable } from './http.js';
 import { labelFor } from './attendance.js';
 import { allows, effectivePermissions } from './permissions.js';
@@ -292,9 +292,9 @@ export function renderDigest({ day, propertyName, siteUrl, open, absent, escalat
 /**
  * Short enough to read on a lock screen without unlocking it.
  *
- * The title is the app's name and nothing else. A phone puts "from HIVE" on
- * that line itself, and the property's name in front of it pushed the only
- * part that matters — how many days are waiting — onto a third line.
+ * One word for a title. A phone adds "from HIVE" to it itself, and the
+ * property's name in front of that pushed the only part that matters — how
+ * many days are waiting — onto a third line.
  */
 export function renderPing({ day, open, absent, escalated }) {
   const parts = [];
@@ -302,8 +302,8 @@ export function renderPing({ day, open, absent, escalated }) {
   if (absent) parts.push(`${absent} absent`);
 
   return {
-    title: APP_NAME,
-    body: `Attendance, ${day}: ${parts.join(', ') || 'all settled'}.`
+    title: ALERT_TITLE,
+    body: `${day}: ${parts.join(', ') || 'all settled'}.`
       + (escalated.length ? `\nOn a run of absences: ${escalated.join(', ')}.` : ''),
     day,
   };
