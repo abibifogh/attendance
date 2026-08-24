@@ -1041,6 +1041,35 @@ async function reasonsTab(reload) {
   const { reasons } = await api.attReasons();
 
   const edit = async (existing) => {
+    const kindSelect = h('select', { name: 'kind', required: true, disabled: Boolean(existing?.system) },
+      KINDS.map(([value, label]) => h('option', { value, selected: existing?.kind === value }, label)));
+
+    /**
+     * Whether a member of staff may ask for this themselves.
+     *
+     * Only asked of a kind of leave, because nothing else appears on the Ask
+     * for leave list to begin with. Maternity leave is arranged in an office;
+     * a suspension is not something anybody requests. Whoever manages leave
+     * can still record every one of them.
+     */
+    const staffPickField = field('Staff can ask for this themselves',
+      h('select', { name: 'staffPick' },
+        h('option', { value: 'true', selected: (existing?.staff_pick ?? 1) !== 0 }, 'Yes — it is on their list'),
+        h('option', { value: 'false', selected: (existing?.staff_pick ?? 1) === 0 }, 'No — only somebody who manages leave can record it'),
+      ),
+      'Their Ask for leave list. It changes nothing about what you can record for them');
+
+    const kindField = field('Kind', kindSelect,
+      existing?.system
+        ? 'Built in — the kind cannot change, but everything below can'
+        : 'What the system does with a day charged to this');
+
+    const syncStaffPick = () => {
+      staffPickField.style.display = kindSelect.value === 'leave' ? '' : 'none';
+    };
+    kindSelect.addEventListener('change', syncStaffPick);
+    syncStaffPick();
+
     const done = await formDialog({
       title: existing ? `Edit "${existing.label}"` : 'Add a reason',
       submitLabel: 'Save',
@@ -1051,9 +1080,7 @@ async function reasonsTab(reload) {
             ? null
             : field('Code', h('input', { type: 'text', name: 'code', required: true, maxlength: 40, placeholder: 'study_leave' }), 'Used internally; letters and underscores'),
         ),
-        field('Kind', h('select', { name: 'kind', required: true, disabled: Boolean(existing?.system) },
-          KINDS.map(([value, label]) => h('option', { value, selected: existing?.kind === value }, label))),
-        existing?.system ? 'Built in — the kind cannot change, but everything below can' : 'What the system does with a day charged to this'),
+        kindField,
         h('div.field-row',
           field('Paid', h('select', { name: 'paid' },
             h('option', { value: 'true', selected: !!existing?.paid }, 'Yes'),
@@ -1078,6 +1105,7 @@ async function reasonsTab(reload) {
           )),
           field('Order', h('input', { type: 'number', name: 'sortOrder', min: 0, max: 9999, value: existing?.sort_order ?? 100 })),
         ),
+        staffPickField,
         h('p.muted', { style: { fontSize: '.82rem' } },
           'Paid and counts-as-worked are different questions. Paid annual leave is paid but is not a day '
           + 'worked; a day at a training course is both.'),
@@ -1093,6 +1121,7 @@ async function reasonsTab(reload) {
           requiresNote: form.get('requiresNote') === 'true',
           sortOrder: Number(form.get('sortOrder')),
           selectable: true,
+          staffPick: form.get('staffPick') !== 'false',
           active: true,
         };
         return existing
@@ -1136,6 +1165,13 @@ async function reasonsTab(reload) {
         { key: 'counts_as_worked', label: 'Day worked', format: yesNo },
         { key: 'deducts_leave', label: 'Off annual leave', format: yesNo },
         { key: 'requires_note', label: 'Needs a note', format: yesNo },
+        {
+          key: 'staff_pick',
+          label: 'Staff can ask',
+          // Only a kind of leave ever appears on their list, so the question
+          // does not arise for anything else and a Yes there would be a lie.
+          format: (v, r) => (r.kind === 'leave' ? yesNo(v) : h('span.muted', '—')),
+        },
         { key: 'colour', label: 'Colour', format: (v) => h(`span.pill${v === 'green' ? '.good' : v === 'red' ? '.bad' : v === 'amber' ? '.warn' : ''}`, v) },
         {
           key: 'actions',

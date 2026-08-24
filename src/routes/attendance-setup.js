@@ -458,6 +458,10 @@ function reasonFields(body, { code = null } = {}) {
     counts_as_worked: bool(body.countsAsWorked, false) ? 1 : 0,
     deducts_leave: bool(body.deductsLeave, false) ? 1 : 0,
     selectable: bool(body.selectable, true) ? 1 : 0,
+    // Whether a member of staff may ask for it themselves. A different
+    // question from `selectable`, which is whether a supervisor may charge a
+    // day to it afterwards, and only ever asked of a kind of leave.
+    staff_pick: bool(body.staffPick, true) ? 1 : 0,
     requires_note: bool(body.requiresNote, false) ? 1 : 0,
     colour,
     sort_order: int(body.sortOrder ?? 100, 'Order', { min: 0, max: 9999 }),
@@ -471,11 +475,12 @@ export async function createReason(ctx) {
   try {
     await ctx.db.prepare(
       `INSERT INTO att_reasons (code, label, kind, paid, counts_as_worked, deducts_leave,
-                                selectable, requires_note, colour, sort_order, system, active)
-       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,0,?11)`,
+                                selectable, requires_note, colour, sort_order, system, active,
+                                staff_pick)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,0,?11,?12)`,
     ).bind(
       f.code, f.label, f.kind, f.paid, f.counts_as_worked, f.deducts_leave,
-      f.selectable, f.requires_note, f.colour, f.sort_order, f.active,
+      f.selectable, f.requires_note, f.colour, f.sort_order, f.active, f.staff_pick,
     ).run();
   } catch (err) {
     rethrowConstraint(err, { unique: `There is already a reason with the code "${f.code}".` });
@@ -511,7 +516,8 @@ export async function updateReason(ctx, code) {
 
   await ctx.db.prepare(
     `UPDATE att_reasons SET label=?1, kind=?2, paid=?3, counts_as_worked=?4, deducts_leave=?5,
-                            selectable=?6, requires_note=?7, colour=?8, sort_order=?9, active=?10
+                            selectable=?6, requires_note=?7, colour=?8, sort_order=?9, active=?10,
+                            staff_pick=?12
      WHERE code = ?11`,
   ).bind(
     f.label, f.kind, f.paid, f.counts_as_worked, f.deducts_leave,
@@ -520,6 +526,7 @@ export async function updateReason(ctx, code) {
     // to charge a day to.
     existing.system ? 1 : f.active,
     existing.code,
+    f.staff_pick,
   ).run();
 
   await audit(ctx, 'attendance.reason_update', existing.code, {
@@ -527,6 +534,7 @@ export async function updateReason(ctx, code) {
       paid: existing.paid, counts_as_worked: existing.counts_as_worked, deducts_leave: existing.deducts_leave,
     },
     after: { paid: f.paid, counts_as_worked: f.counts_as_worked, deducts_leave: f.deducts_leave },
+    staffPick: f.staff_pick !== existing.staff_pick ? f.staff_pick : undefined,
   });
 
   return json({ ok: true });

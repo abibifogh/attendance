@@ -465,3 +465,91 @@ test('being at work is still the answer while looking at another week', async ()
   assert.equal(out.onShift.since, w.at(-20));
   assert.equal(out.days.find((d) => d.day === w.day), undefined, 'and that day is not in view');
 });
+
+// ---------------------------------------------------------------------------
+// Which kinds of leave reach their phone
+// ---------------------------------------------------------------------------
+
+/**
+ * The list on Ask for leave is the property's to choose.
+ *
+ * Every active kind of leave used to be on it, which is a different list.
+ * Maternity leave is arranged in an office rather than requested from a
+ * dropdown at the end of a shift, and offering it only invites a request
+ * nobody can act on and the same conversation afterwards.
+ */
+
+test('only the kinds an administrator has ticked are offered', async () => {
+  const { db, raw } = setup();
+
+  const all = (await week(db)).reasons.map((r) => r.code);
+  assert.ok(all.includes('annual_leave'));
+  assert.ok(all.includes('maternity'), 'everything is offered until somebody says otherwise');
+
+  raw.prepare("UPDATE att_reasons SET staff_pick = 0 WHERE code = 'maternity'").run();
+
+  const now = (await week(db)).reasons.map((r) => r.code);
+  assert.ok(now.includes('annual_leave'));
+  assert.ok(!now.includes('maternity'), 'off the list');
+});
+
+test('a kind left off the list is refused, not merely hidden', async () => {
+  const { db, raw } = setup();
+  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
+    .run(MON);
+  raw.prepare("UPDATE att_reasons SET staff_pick = 0 WHERE code = 'maternity'").run();
+
+  await assert.rejects(
+    () => askForLeave(ctx(db, KOFI, { body: { reason: 'maternity', from: MON, to: MON } })),
+    /Speak to whoever manages the rota/,
+  );
+
+  // And one still on it goes through exactly as before.
+  const out = await (await askForLeave(ctx(db, KOFI, {
+    body: { reason: 'annual_leave', from: MON, to: MON },
+  }))).json();
+  assert.equal(out.status, 'pending');
+});
+
+test('retiring a kind takes it off their list too', async () => {
+  const { db, raw } = setup();
+  raw.prepare("UPDATE att_reasons SET active = 0 WHERE code = 'unpaid_leave'").run();
+  assert.ok(!(await week(db)).reasons.some((r) => r.code === 'unpaid_leave'));
+});
+
+test('nothing but a kind of leave is ever on it', async () => {
+  const { db, raw } = setup();
+  // Ticking the box on something that is not leave changes nothing: the list
+  // is kinds of leave, and the tick only says which of those.
+  raw.prepare("UPDATE att_reasons SET staff_pick = 1 WHERE code = 'absent'").run();
+  const codes = (await week(db)).reasons.map((r) => r.code);
+  assert.ok(!codes.includes('absent'));
+});
+
+test('the tick survives a round trip through the setup screen', async () => {
+  const { db, raw } = setup();
+  const setupRoutes = await import('../src/routes/attendance-setup.js');
+  const admin = {
+    db,
+    env: {},
+    url: new URL('https://x/api/att/reasons'),
+    session: { user: { id: 2, name: 'Ama', role: 'admin' }, permissions: ['att_setup'] },
+    executionContext: null,
+    request: new Request('https://x/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        label: 'Maternity leave', kind: 'leave', paid: true, countsAsWorked: false,
+        deductsLeave: false, colour: 'grey', requiresNote: false, sortOrder: 120,
+        selectable: true, staffPick: false, active: true,
+      }),
+    }),
+  };
+  await setupRoutes.updateReason(admin, 'maternity');
+
+  assert.equal(
+    raw.prepare("SELECT staff_pick FROM att_reasons WHERE code = 'maternity'").get().staff_pick,
+    0,
+  );
+  assert.ok(!(await week(db)).reasons.some((r) => r.code === 'maternity'));
+});

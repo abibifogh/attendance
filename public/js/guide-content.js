@@ -555,6 +555,16 @@ export const GUIDE = [
         + 'annual entitlement and whether it needs a note. Add your own — study leave, '
         + 'quarantine, anything the property actually gives.' },
 
+      { sub: 'What staff see on Ask for leave' },
+      { p: 'Not every kind of leave belongs on a dropdown at the end of a shift. Maternity '
+        + 'leave is arranged in an office; nobody asks to be suspended; a property that '
+        + 'records unpaid leave may not want it offered beside the paid one. Each kind of '
+        + 'leave now carries "Staff can ask for this themselves" — set it under Setup → '
+        + 'Absence reasons and the ones you say no to come off their list.' },
+      { note: 'It changes nothing about what you can record for somebody. Whoever manages '
+        + 'leave still has every type, which is the whole point of the difference. Everything '
+        + 'is on their list until you take it off.' },
+
       { sub: 'The month, day for day' },
       { p: 'Five figures per person, and they reconcile: over / under is Worked plus On leave, '
         + 'less Calendar. A row that comes to nothing is somebody who gave the month exactly '

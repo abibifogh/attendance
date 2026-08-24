@@ -320,8 +320,12 @@ export async function myWeek(ctx) {
       note: r.decision_note ?? null,
       decidedBy: r.decided_by ?? null,
     })),
+    // Only the kinds the property has said somebody may ask for themselves.
+    // Whoever manages leave can still record any of them: maternity leave is
+    // arranged in an office rather than requested from a dropdown at the end
+    // of a shift, and offering it here only invites the same conversation.
     reasons: (ds.reasons ?? [])
-      .filter((r) => r.kind === 'leave' && r.active && r.selectable)
+      .filter((r) => r.kind === 'leave' && r.active && r.staff_pick)
       .map((r) => ({ code: r.code, label: r.label })),
   });
 }
@@ -458,6 +462,12 @@ export async function askForLeave(ctx) {
     'SELECT * FROM att_reasons WHERE code = ? AND active = 1',
   ).bind(reasonCode).first();
   if (!reason || reason.kind !== 'leave') throw badRequest('That is not a kind of leave.');
+  // Checked here as well as left off the list, because a list is a courtesy
+  // and this is the rule.
+  if (!reason.staff_pick) {
+    throw badRequest(`${reason.label} is not something to ask for here. Speak to whoever `
+      + 'manages the rota and they can record it for you.');
+  }
 
   const halfDay = ['start', 'end', 'both'].includes(body.halfDay) ? body.halfDay : null;
 
