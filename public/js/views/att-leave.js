@@ -99,6 +99,14 @@ export async function renderAttLeave(params = {}) {
       body: h('div',
         h('p', `${fmtDay(row.from_day)} to ${fmtDay(row.to_day)}, `
           + `${fmtNum(asked, asked % 1 ? 1 : 0)} rostered day${asked === 1 ? '' : 's'}.`),
+        // What they asked for is a suggestion. Whether it is paid, and whether
+        // it comes off the entitlement, follows from the type, and that is the
+        // property's decision rather than the asker's.
+        field('Type', h('select', { name: 'reason' },
+          leaveKinds.map((r) => h('option', {
+            value: r.code, selected: r.code === row.reason_code,
+          }, `${r.label}${r.paid ? '' : ' · unpaid'}${r.deducts_leave ? ' · comes off the entitlement' : ''}`))),
+        `They asked for ${(row.reason_label ?? row.reason_code ?? 'leave').toLowerCase()}`),
         field('Charged against the entitlement',
           h('input', {
             type: 'number', name: 'daysCharged', min: 0, max: asked, step: 0.5, value: asked,
@@ -110,6 +118,7 @@ export async function renderAttLeave(params = {}) {
       ),
       onSubmit: async (form) => api.attDecideLeave(row.id, {
         decision: 'approved',
+        reason: form.get('reason'),
         daysCharged: Number(form.get('daysCharged')),
         note: form.get('note') || null,
       }),
@@ -141,6 +150,37 @@ export async function renderAttLeave(params = {}) {
     await reload();
   };
 
+  /**
+   * Change what kind of leave a record is, after the fact.
+   *
+   * The type decides what a day costs — paid or not, off the entitlement or
+   * not — so it is the one thing on a leave record worth being able to correct
+   * without cancelling it and typing the whole thing in again.
+   */
+  const retype = async (row) => {
+    const done = await formDialog({
+      title: `${row.staff_name}'s leave`,
+      submitLabel: 'Change the type',
+      body: h('div',
+        h('p', `${fmtDay(row.from_day)} to ${fmtDay(row.to_day)}, `
+          + `${fmtNum(row.days, row.days % 1 ? 1 : 0)} day${Number(row.days) === 1 ? '' : 's'}, `
+          + `recorded as ${(row.reason_label ?? row.reason_code).toLowerCase()}.`),
+        field('Type', h('select', { name: 'reason', required: true },
+          leaveKinds.map((r) => h('option', {
+            value: r.code, selected: r.code === row.reason_code,
+          }, `${r.label}${r.paid ? '' : ' · unpaid'}${r.deducts_leave ? ' · comes off the entitlement' : ''}`)))),
+        h('p.muted', { style: { fontSize: '.82rem' } },
+          row.status === 'approved'
+            ? 'The days are worked out again, so the pay and the balance follow. They are told.'
+            : 'They are told, and the days are worked out when it is approved.'),
+      ),
+      onSubmit: async (form) => api.attSetLeaveType(row.id, { reason: form.get('reason') }),
+    });
+    if (!done) return;
+    toast(`Recorded as ${(done.label ?? 'the new type').toLowerCase()}.`, 'good');
+    await reload();
+  };
+
   const cancel = async (row) => {
     if (!window.confirm(
       `Cancel ${row.staff_name}'s ${row.reason_label?.toLowerCase() ?? 'leave'} `
@@ -163,7 +203,17 @@ export async function renderAttLeave(params = {}) {
       label: 'Name',
       format: (v, r) => h('div', h('div', v), h('small.muted', `No. ${r.employee_no}`)),
     },
-    { key: 'reason_label', label: 'Type', format: (v, r) => h('span.pill', v || r.reason_code) },
+    {
+      key: 'reason_label',
+      label: 'Type',
+      format: (v, r) => (decides && ['pending', 'approved'].includes(r.status)
+        ? h('button.pill.pill-button', {
+          type: 'button',
+          title: 'Change what kind of leave this is',
+          onclick: () => retype(r),
+        }, v || r.reason_code)
+        : h('span.pill', v || r.reason_code)),
+    },
     {
       key: 'from_day',
       label: 'When',

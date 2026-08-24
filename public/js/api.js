@@ -272,6 +272,7 @@ export const api = {
   attLeave: (params = {}) => request(`/api/att/leave?${new URLSearchParams(params)}`),
   attRequestLeave: (body) => request('/api/att/leave', { method: 'POST', body }),
   attDecideLeave: (id, body) => request(`/api/att/leave/${id}/decide`, { method: 'POST', body }),
+  attSetLeaveType: (id, body) => request(`/api/att/leave/${id}/type`, { method: 'POST', body }),
   attCancelLeave: (id) => request(`/api/att/leave/${id}`, { method: 'DELETE' }),
 
   attStaff: () => request('/api/att/staff'),

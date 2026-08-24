@@ -536,6 +536,25 @@ export const GUIDE = [
       { note: 'Entitlement is set under Setup → Rules and starts at the statutory fifteen '
         + 'working days after a year’s service (Labour Act 2003, s.20).' },
 
+      { sub: 'What kind of leave it is, is yours to say' },
+      { p: 'Whoever asks picks the option they know the name of, which is usually annual '
+        + 'leave. What it actually costs — whether it is paid, and whether it comes off the '
+        + 'entitlement — follows from the type, and that is the property’s decision.' },
+      { list: [
+        'Approving asks for the type as well as the days charged, starting on whatever they '
+          + 'asked for.',
+        'Press the type on any row to change it afterwards, pending or approved. On an '
+          + 'approved one the days are worked out again, so the pay and the balance follow.',
+        'The person is told, because it may have changed what they are paid and what they have '
+          + 'left.',
+        'A rejected request keeps the type it was asked with. Nothing happened, so there is '
+          + 'nothing to correct.',
+      ] },
+      { p: 'The list of types itself is under Setup → Absence reasons, where each one says '
+        + 'whether it is paid, whether it counts as a day worked, whether it comes off the '
+        + 'annual entitlement and whether it needs a note. Add your own — study leave, '
+        + 'quarantine, anything the property actually gives.' },
+
       { sub: 'The month, day for day' },
       { p: 'Five figures per person, and they reconcile: over / under is Worked plus On leave, '
         + 'less Calendar. A row that comes to nothing is somebody who gave the month exactly '

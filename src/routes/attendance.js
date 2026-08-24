@@ -2413,6 +2413,13 @@ export async function decideLeave(ctx, id) {
   if (!request) throw notFound('No such leave request.');
   if (request.status !== 'pending') throw badRequest('That request has already been decided.');
 
+  // What kind of leave it is recorded as, which is whoever decides it to say.
+  // Somebody asks for annual leave because it is the option they know the
+  // name of; whether it comes off the entitlement, and whether it is paid at
+  // all, is the property's decision and not theirs.
+  const reasonCode = str(body.reason, 'Type of leave', { max: 40 }) || request.reason_code;
+  if (reasonCode !== request.reason_code) await assertLeaveKind(ctx.db, reasonCode);
+
   // How much of the span is actually charged against their leave. The rest of
   // the rostered days in it are treated as ordinary rest days: the roster rows
   // are cleared so those days stop being scheduled, and nothing is spent on
@@ -2431,7 +2438,7 @@ export async function decideLeave(ctx, id) {
 
   await ctx.db.prepare(
     `UPDATE att_leave SET status = ?1, decided_by = ?2, decided_at = datetime('now'),
-            decision_note = ?3, days = ?4
+            decision_note = ?3, days = ?4, reason_code = ?6
      WHERE id = ?5`,
   ).bind(
     decision,
@@ -2439,6 +2446,7 @@ export async function decideLeave(ctx, id) {
     str(body.note, 'Note', { max: 500 }),
     decision === 'approved' ? charged : Number(request.days),
     request.id,
+    reasonCode,
   ).run();
 
   if (decision === 'approved') {
@@ -2448,6 +2456,7 @@ export async function decideLeave(ctx, id) {
     decision,
     requested: Number(request.days),
     charged: decision === 'approved' ? charged : null,
+    reasonCode: reasonCode !== request.reason_code ? reasonCode : undefined,
   });
 
   // Whoever asked hears the answer, by name.
@@ -2468,6 +2477,78 @@ export async function decideLeave(ctx, id) {
   }, ctx);
 
   return json({ ok: true, status: decision, charged: decision === 'approved' ? charged : null });
+}
+
+/**
+ * What kind of leave this is, said by whoever manages it.
+ *
+ * The type is the half of a leave record that decides what it costs — whether
+ * it is paid, and whether it comes off the entitlement — and until now it was
+ * fixed by whoever typed the request. Somebody asks for annual leave because
+ * that is the option they know the name of, and a week later it turns out to
+ * have been compassionate, or unpaid, or sick with a note.
+ *
+ * Changing it on an approved one recomputes the days it covers, because paid
+ * and unpaid are different days and the reports read them from there.
+ */
+export async function setLeaveType(ctx, id) {
+  const body = await readJson(ctx.request);
+  const reasonCode = str(body.reason, 'Type of leave', { required: true, max: 40 });
+
+  const request = await ctx.db.prepare('SELECT * FROM att_leave WHERE id = ?')
+    .bind(Number(id)).first();
+  if (!request) throw notFound('No such leave.');
+  if (!['pending', 'approved'].includes(request.status)) {
+    throw badRequest('That leave was not approved, so its type is a record of what was asked '
+      + 'for rather than of anything that happened.');
+  }
+
+  const reason = await assertLeaveKind(ctx.db, reasonCode);
+  if (reasonCode === request.reason_code) return json({ ok: true, reason: reasonCode });
+
+  const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
+  const was = await ctx.db.prepare('SELECT label FROM att_reasons WHERE code = ?')
+    .bind(request.reason_code).first();
+
+  await ctx.db.prepare(
+    'UPDATE att_leave SET reason_code = ?2 WHERE id = ?1',
+  ).bind(request.id, reasonCode).run();
+
+  if (request.status === 'approved') {
+    await recompute(ctx.db, {
+      staffIds: [request.staff_id], from: request.from_day, to: request.to_day,
+    });
+  }
+  await audit(ctx, 'attendance.leave_type', request.id, {
+    from: request.reason_code, to: reasonCode,
+  });
+
+  // The person hears about it, because it may have changed what they are paid
+  // and what they have left.
+  await createNotice(ctx.db, {
+    kind: 'attendance.leave_type',
+    level: 'info',
+    title: `Your leave is now recorded as ${reason.label.toLowerCase()}`,
+    body: `${request.from_day} to ${request.to_day}, changed from `
+      + `${(was?.label ?? request.reason_code).toLowerCase()}. `
+      + (reason.paid ? 'It is paid.' : 'It is unpaid.')
+      + (reason.deducts_leave ? ' It comes off your annual leave.' : ''),
+    link: '#/att-leave',
+    actor,
+    audience: 'att_rota',
+    userId: request.requested_by_id ?? null,
+  }, ctx);
+
+  return json({ ok: true, reason: reasonCode, label: reason.label });
+}
+
+/** A code that names an active kind of leave, or a refusal that says why. */
+async function assertLeaveKind(db, code) {
+  const reason = await db.prepare('SELECT * FROM att_reasons WHERE code = ?').bind(code).first();
+  if (!reason) throw badRequest('There is no such type of leave.');
+  if (!reason.active) throw badRequest(`${reason.label} is not offered any more.`);
+  if (reason.kind !== 'leave') throw badRequest(`${reason.label} is not a kind of leave.`);
+  return reason;
 }
 
 /**

@@ -313,6 +313,12 @@ a { color: var(--accent); }
 .pill.bad  { background: var(--bad-soft);  color: var(--bad);  border-color: transparent; }
 .pill.info { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 
+/* A pill you can press. Same shape, because it is the same fact — it is only
+   that this one is also the way to change it. */
+.pill-button { font-family: inherit; cursor: pointer; border-style: dashed; }
+.pill-button:hover { border-color: var(--accent); color: var(--accent); }
+.pill-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 /* --------------------------------------------------------------- alerts -- */
 .alert {
   display: flex; gap: .7rem; align-items: flex-start;
