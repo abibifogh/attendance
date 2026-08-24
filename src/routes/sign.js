@@ -1,6 +1,6 @@
 import { badRequest, forbidden, json, notFound, readJson, str } from '../lib/http.js';
 import { getPepper, hashPin, throttleCheck, throttleFail } from '../lib/auth.js';
-import { sendEmail } from '../lib/notify.js';
+import { sendEmail, senderNameOf, senderWithName } from '../lib/notify.js';
 import { sha256Hex } from '../lib/files.js';
 import { whoCanSign } from '../lib/correspondence.js';
 import { normaliseLayout } from '../lib/paper.js';
@@ -299,6 +299,7 @@ export async function signRequestCode(ctx, token) {
 
   const apiKey = ctx.env?.RESEND_API_KEY;
   const from = await setting(ctx.db, 'email_from', null);
+  const senderName = await setting(ctx.db, 'email_sender_name', null);
   if (!apiKey || !from) {
     throw badRequest('This property has not set up email, so a code cannot be sent. '
       + 'Ask them to confirm who you are another way.');
@@ -316,7 +317,9 @@ export async function signRequestCode(ctx, token) {
   const name = await property(ctx.db);
   await sendEmail({
     apiKey,
-    from,
+    // Named like every other message the property sends. A six-digit code from
+    // a bare address is the shape of every phishing mail anybody has ever had.
+    from: senderWithName(from, senderNameOf({ email_sender_name: senderName })),
     to: recipient.email,
     subject: `${code} is your code to sign ${letter.reference}`,
     html: `<p>Your one-time code to sign <strong>${escapeHtml(letter.subject)}</strong>`

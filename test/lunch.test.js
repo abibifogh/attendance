@@ -631,22 +631,27 @@ test('the two moments have to be two moments', async () => {
 });
 
 test('the kitchen can put anybody down, on a day the rota does not have them', async () => {
-  const { db, raw } = property();
+  const { db } = property();
   const lunch = await import('../src/routes/lunch.js');
 
-  // Ama is only pencilled in for Thursday and it was never published, so as
-  // far as the rota is concerned she is not in at all that week.
-  const friday = '2026-08-28';
-  const out = await (await lunch.setOrder(ctxFor(db, '/api/lunch/order', {
-    staffId: 2,
-    days: [{ day: friday, taking: true }, { day: MON, taking: false }],
-  }))).json();
-  assert.equal(out.saved, 2);
-  assert.equal(out.name, 'Ama Serwaa');
+  // Held on the Thursday, like every other test here. Without it the week the
+  // list shows is whichever week it happens to be when the suite runs, and a
+  // test that passes on a Wednesday and fails on a Sunday is not a test.
+  await atDay(THU, async () => {
+    // Ama is only pencilled in for Thursday and it was never published, so as
+    // far as the rota is concerned she is not in at all that week.
+    const friday = '2026-08-28';
+    const out = await (await lunch.setOrder(ctxFor(db, '/api/lunch/order', {
+      staffId: 2,
+      days: [{ day: friday, taking: true }, { day: MON, taking: false }],
+    }))).json();
+    assert.equal(out.saved, 2);
+    assert.equal(out.name, 'Ama Serwaa');
 
-  const week = await (await lunch.lunchWeek(ctxFor(db, '/api/lunch'))).json();
-  const fri = week.summary.columns.find((c) => c.day === friday);
-  assert.deepEqual(fri.names, ['Ama'], 'she is on the count even though she is not on the rota');
+    const week = await (await lunch.lunchWeek(ctxFor(db, '/api/lunch'))).json();
+    const fri = week.summary.columns.find((c) => c.day === friday);
+    assert.deepEqual(fri.names, ['Ama'], 'she is on the count even though she is not on the rota');
+  });
 });
 
 test('somebody the kitchen put down can change it themselves', async () => {

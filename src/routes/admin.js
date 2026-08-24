@@ -378,6 +378,9 @@ export async function getNotifications(ctx) {
     noticeEmail: settings.notice_email !== '0',
     recipients: parseRecipients(settings.att_email_to),
     from: settings.email_from || '',
+    // What the mail says it is from, which every recipient reads before they
+    // read anything else. Not the company's registered name any more.
+    senderName: settings.email_sender_name ?? '',
     // Where a reply goes. Staff do reply to these, and a reply that vanishes
     // into an unread mailbox teaches them the mail is not worth reading.
     replyTo: settings.email_reply_to || '',
@@ -409,6 +412,8 @@ export async function updateNotifications(ctx) {
     throw badRequest('The "from" address does not look like an email address');
   }
 
+  const senderName = str(body.senderName, 'Sender name', { max: 60, fallback: '' }) || '';
+
   const replyTo = str(body.replyTo, 'Reply-to address', { max: 200, fallback: '' }) || '';
   if (replyTo && !isEmail(replyTo.replace(/^.*<([^>]+)>.*$/, '$1'))) {
     throw badRequest('The "reply to" address does not look like an email address');
@@ -435,6 +440,7 @@ export async function updateNotifications(ctx) {
     setting(ctx.db, 'att_email_enabled', emailEnabled),
     setting(ctx.db, 'att_email_to', JSON.stringify(list)),
     setting(ctx.db, 'email_from', from),
+    setting(ctx.db, 'email_sender_name', senderName),
     setting(ctx.db, 'email_reply_to', replyTo),
     // Stored as an origin, not as whatever was in the address bar when
     // somebody filled the box in. A path left on the end here reappears in the

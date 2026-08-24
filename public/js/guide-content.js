@@ -1527,6 +1527,20 @@ export const GUIDE = [
       { p: 'Answer no and those screens are not in their menu at all, because there would be '
         + 'nothing behind them. The Member of staff role does not ask the question: the answer '
         + 'is yes, and the only thing left to say is which record.' },
+
+      { sub: 'What the mail says it is from' },
+      { p: 'Notifications tab, Email card. Sender name is what a recipient reads before they '
+        + 'read anything else, and it is not the company name on the certificate unless you '
+        + 'want it to be. HIVE unless you type something else, and the phone alerts already '
+        + 'say the same.' },
+      { list: [
+        'Sender name is the name. From address is the address, and it has to be at a domain '
+          + 'your email provider has verified.',
+        'A name written into the From address itself wins — "The Front Desk '
+          + '<hive@example.com>" is used exactly as typed.',
+        'Reply to is where a reply lands. Staff do reply to these, and a reply that vanishes '
+          + 'into an unread mailbox teaches them the mail is not worth reading.',
+      ] },
     ],
   },
 

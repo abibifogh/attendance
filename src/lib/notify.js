@@ -84,15 +84,26 @@ export function isEmail(value) {
  * A bare address in the From line is one of the plainer marks of mail nobody
  * bothered to set up: the inbox shows "hive@niceoperation.com" where every
  * other message shows who it is from, and a filter reading the same signal
- * draws the same conclusion. Whatever the property is called goes in front of
- * it — unless somebody has already written their own name into the setting, in
+ * draws the same conclusion. The sender name goes in front of it — unless
+ * somebody has already written their own name into the address setting, in
  * which case theirs stands.
  */
-export function senderWithName(from, propertyName) {
+/**
+ * The name on the outside of the envelope.
+ *
+ * Not the property's registered company name, which is what it used to be and
+ * which nobody at the property calls the place. A property that wants its own
+ * name on its mail types it in; the rest get the app's, which is also what
+ * their phones say.
+ */
+export const senderNameOf = (settings = {}) => String(settings.email_sender_name ?? '').trim()
+  || 'HIVE';
+
+export function senderWithName(from, senderName) {
   const address = String(from || '').trim();
   if (!address) return '';
   if (address.includes('<')) return address;            // already named
-  const name = String(propertyName || '').trim();
+  const name = String(senderName || '').trim();
   if (!name) return address;
 
   // A quoted display name, so a property called "Somewhere Nice, Accra" cannot
@@ -433,7 +444,7 @@ export async function emailExceptions(db, env, { day, open, absent, escalated = 
 
     await sendEmail({
       apiKey,
-      from: senderWithName(settings.email_from, settings.property_name || 'HIVE'),
+      from: senderWithName(settings.email_from, senderNameOf(settings)),
       to,
       subject,
       html,
@@ -643,7 +654,7 @@ export async function emailNotice(db, env, notice) {
     const to = people.map((p) => p.email);
     await sendEmail({
       apiKey,
-      from: senderWithName(from, settings.property_name || 'HIVE'),
+      from: senderWithName(from, senderNameOf(settings)),
       to,
       subject,
       html,

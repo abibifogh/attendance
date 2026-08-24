@@ -1,0 +1,12 @@
+-- What an email says it is from.
+--
+-- The property's own name was used, so a digest arrived as "Sir Tobys Ghana
+-- LTD" — the registered company, which is not what anybody there calls the
+-- place and reads like a letter from an accountant rather than the morning
+-- attendance list. The name an email is from is its own decision: it is the
+-- one thing every recipient reads before deciding whether to open it, and it
+-- belongs in a box somebody can type in.
+--
+-- HIVE by default, which is what the app is called and what the alerts on
+-- their phones already say. Change it under Users & data → Notifications.
+INSERT OR IGNORE INTO settings (key, value) VALUES ('email_sender_name', 'HIVE');

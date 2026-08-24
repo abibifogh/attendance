@@ -116,8 +116,10 @@ test('recording a notice sends it, from the configured address', async () => {
   const { url, body } = mail.sent[0];
   assert.equal(url, 'https://api.resend.com/emails');
   // Named, not bare. A From line reading only an address is one of the
-  // plainer marks of mail nobody set up.
-  assert.equal(body.from, '"Staff Attendance" <hive@niceoperation.com>');
+  // plainer marks of mail nobody set up. The name is the sender name setting,
+  // not the property's registered company name: nobody at a hotel calls the
+  // place by what is on the certificate.
+  assert.equal(body.from, '"HIVE" <hive@niceoperation.com>');
   assert.deepEqual(body.to, ['ama@example.test']);
   assert.equal(body.subject, 'Nelson Kumadey: a period needs your eye');
   assert.match(body.html, /nineteen days nobody can explain/);
@@ -211,7 +213,7 @@ test('a title with markup in it cannot become markup in the mail', () => {
 });
 
 
-test('the sender carries the property name, and a name already set is left alone', async () => {
+test('the sender carries the sender name, and a name already set is left alone', async () => {
   const { senderWithName } = await import('../src/lib/notify.js');
 
   assert.equal(senderWithName('hive@niceoperation.com', 'Somewhere Nice'),
@@ -231,6 +233,19 @@ test('the sender carries the property name, and a name already set is left alone
 
   assert.equal(senderWithName('hive@niceoperation.com', ''), 'hive@niceoperation.com');
   assert.equal(senderWithName('', 'Somewhere Nice'), '');
+});
+
+test('the sender name is a setting, and HIVE when nobody has set one', async () => {
+  const { senderNameOf } = await import('../src/lib/notify.js');
+
+  assert.equal(senderNameOf({ email_sender_name: 'The Front Desk' }), 'The Front Desk');
+  assert.equal(senderNameOf({ email_sender_name: '  Somewhere Nice  ' }), 'Somewhere Nice');
+
+  // Emptied, never set, or a property that still has its company name in the
+  // property box: the mail goes out as HIVE either way.
+  assert.equal(senderNameOf({ email_sender_name: '' }), 'HIVE');
+  assert.equal(senderNameOf({ property_name: 'Sir Tobys Ghana LTD' }), 'HIVE');
+  assert.equal(senderNameOf(), 'HIVE');
 });
 
 test('the plain-text part keeps the words and the links, and drops the markup', async () => {

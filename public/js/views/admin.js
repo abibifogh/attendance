@@ -568,6 +568,9 @@ async function alertsTab(reload) {
     placeholder: 'one address per line',
     value: data.recipients.join('\n'),
   });
+  const senderName = h('input', {
+    type: 'text', maxlength: 60, value: data.senderName ?? '', placeholder: 'HIVE',
+  });
   const from = h('input', { type: 'text', maxlength: 200, value: data.from, placeholder: 'HIVE <hive@niceoperation.com>' });
   const replyTo = h('input', { type: 'text', maxlength: 200, value: data.replyTo ?? '', placeholder: 'someone@niceoperation.com' });
   const siteUrl = h('input', { type: 'url', maxlength: 300, value: data.siteUrl, placeholder: 'https://staff.niceoperation.com' });
@@ -585,6 +588,7 @@ async function alertsTab(reload) {
         noticeEmail: noticeEmail.checked,
         recipients: recipients.value.split('\n').map((s) => s.trim()).filter(Boolean),
         from: from.value.trim(),
+        senderName: senderName.value.trim(),
         replyTo: replyTo.value.trim(),
         siteUrl: siteUrl.value.trim(),
       });
@@ -631,8 +635,12 @@ async function alertsTab(reload) {
         actions: h('button.btn-sm', { onclick: test }, 'Send one now'),
       },
         h('label.field', h('span', 'Send to'), recipients),
+        h('label.field', h('span', 'Sender name'), senderName,
+          h('small.muted', 'The name on the mail, which is the first thing anybody reads. '
+            + 'Leave it empty for HIVE')),
         h('label.field', h('span', 'From address'), from,
-          h('small.muted', 'Must be at a domain your email provider has verified')),
+          h('small.muted', 'Must be at a domain your email provider has verified. A name '
+            + 'written into this box wins over the one above')),
         h('label.field', h('span', 'Reply to'), replyTo,
           h('small.muted', 'Where a reply lands. Leave empty and replies go to the From address')),
         h('label.field', h('span', 'This site\'s address'), siteUrl,
