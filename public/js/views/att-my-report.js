@@ -66,8 +66,10 @@ export async function renderAttMyReport(params = {}) {
 
     // The four numbers somebody came for, before anything they have to read.
     h('div.grid.grid-4',
+      // The count on its own. What it was out of is a conversation with a
+      // manager, not a number to be read alone on a phone and worried about.
       figure('Days worked', fmtNum(t.daysWorked, t.daysWorked % 1 ? 1 : 0),
-        `of ${fmtNum(t.scheduled, 0)} rostered`),
+        'clocked in and out'),
       figure('Hours', asHours(t.workedMinutes), 'on the clock'),
       figure('Late', String(t.lateCount),
         t.lateMinutes ? `${lateBy(t.lateMinutes)} in all` : 'never',

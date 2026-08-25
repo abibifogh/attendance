@@ -25,7 +25,10 @@ export function openAccountDialog({
   const usesPassword = role === 'admin';
   // Only offered to people who would act on an alert. Somebody who reads the
   // month-end report has no use for a phone buzzing every morning.
-  const canSeeAlerts = canAlert && pushSupported();
+  // Shown to anybody who would act on an alert, whether or not this browser
+  // can carry one. A phone that cannot is exactly the phone whose owner needs
+  // to be told why, and hiding the section left them with nothing to read.
+  const canSeeAlerts = canAlert;
   const error = h('p.muted', { style: { minHeight: '1.2rem', fontSize: '.85rem' } });
 
   const current = h('input', {
@@ -300,6 +303,29 @@ export function openAccountDialog({
     const host = h('div', { style: { marginTop: '1.1rem', paddingTop: '.9rem', borderTop: '1px solid var(--border)' } });
     const status = h('p.muted', { style: { fontSize: '.85rem', minHeight: '1.2rem' } });
 
+    const heading = () => h('h3',
+      { style: { fontSize: '.95rem', marginBottom: '.35rem' } }, 'Alerts on this device');
+
+    // Nothing this browser can do. Which browser it is decides what is worth
+    // saying: an iPhone wants the Home Screen instruction, anything else wants
+    // to be told plainly so nobody spends an afternoon looking for a switch.
+    if (!pushSupported()) {
+      mount(host,
+        heading(),
+        needsHomeScreen()
+          ? h('div.guide-note.warn', { style: { marginTop: 0, fontSize: '.83rem' } },
+            h('strong', 'Add HIVE to your Home Screen first. '),
+            'Tap Share, then Add to Home Screen, and open HIVE from the icon. Apple only lets '
+            + 'a site send alerts once it has been added that way, so there is no switch here '
+            + 'until you have.')
+          : h('p.muted', { style: { fontSize: '.85rem' } },
+            'This browser cannot show alerts. Chrome, Edge, Firefox and Safari all can, on an '
+            + 'up-to-date phone or computer. On an iPhone or iPad, add HIVE to the Home Screen '
+            + 'and open it from there.'),
+      );
+      return host;
+    }
+
     const draw = (subscribed) => {
       const busy = (button, label) => { button.disabled = true; button.textContent = label; };
 
@@ -342,7 +368,7 @@ export function openAccountDialog({
       }, 'Send a test');
 
       mount(host,
-        h('h3', { style: { fontSize: '.95rem', marginBottom: '.35rem' } }, 'Alerts on this device'),
+        heading(),
         h('p.muted', { style: { fontSize: '.85rem' } },
           subscribed
             ? 'This device is alerted when something needs you.'
