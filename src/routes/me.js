@@ -2,7 +2,7 @@ import {
   badRequest, forbidden, int, json, notFound, readJson, str,
 } from '../lib/http.js';
 import {
-  colourFor, computeRange, labelFor, leaveBalance, leaveDaysIn, loadDataset, scheduleFor,
+  colourFor, computeRange, labelFor, leaveBalance, leaveDaysFor, loadDataset, scheduleFor,
   summarise, toMinutes,
 } from '../lib/attendance.js';
 import { createNotice } from '../lib/notices.js';
@@ -472,10 +472,17 @@ export async function askForLeave(ctx) {
   const halfDay = ['start', 'end', 'both'].includes(body.halfDay) ? body.halfDay : null;
 
   const ds = await loadDataset(ctx.db, { from, to });
-  const days = leaveDaysIn({ from, to, staffId: staff.id, ds, halfDay });
-  if (!days) {
-    throw badRequest('You are not rostered on any of those days, so there is no leave to take.');
+  const count = leaveDaysFor({ from, to, staffId: staff.id, ds, halfDay });
+  // ASKING BEFORE THE ROTA REACHES THAT FAR IS THE POINT. A week in December
+  // asked for in August used to be refused for not being rostered, which told
+  // people to wait until a fortnight before — the opposite of what anybody
+  // planning a rota wants. The only honest refusal left is a span that is
+  // already all rest days and holidays.
+  if (count.allSettled) {
+    throw badRequest('Every day in that period is already a rest day or a public holiday for '
+      + 'you, so there is no leave to take.');
   }
+  const days = count.days;
 
   const clash = await ctx.db.prepare(
     `SELECT id FROM att_leave
@@ -487,13 +494,14 @@ export async function askForLeave(ctx) {
   const row = await ctx.db.prepare(
     `INSERT INTO att_leave
        (staff_id, reason_code, from_day, to_day, days, half_day, status, reason,
-        requested_by, requested_by_id)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8, ?9) RETURNING id`,
+        requested_by, requested_by_id, estimated)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8, ?9, ?10) RETURNING id`,
   ).bind(
     staff.id, reasonCode, from, to, days, halfDay,
     str(body.note, 'Reason', { max: 500 }),
     `${staff.name} (staff)`,
     ctx.session.user.id ?? null,
+    count.estimated ? 1 : 0,
   ).first();
 
   await ctx.db.prepare(
@@ -509,14 +517,15 @@ export async function askForLeave(ctx) {
     kind: 'attendance.leave_asked',
     level: 'info',
     title: `${staff.name} has asked for leave`,
-    body: `${from} to ${to} — ${days} day${days === 1 ? '' : 's'}.`
+    body: `${from} to ${to} — ${days} day${days === 1 ? '' : 's'}`
+      + (count.estimated ? ', estimated: the rota does not reach that far yet.' : '.')
       + (body.note ? ` ${String(body.note).slice(0, 200)}` : ''),
     link: '#/att-leave',
     actor: staff.name,
     audience: 'att_manage',
   }, ctx);
 
-  return json({ ok: true, id: row?.id ?? null, days, status: 'pending' });
+  return json({ ok: true, id: row?.id ?? null, days, estimated: count.estimated, status: 'pending' });
 }
 
 /** Take back a request nobody has decided yet. */

@@ -387,8 +387,9 @@ async function askForLeave(data, reload) {
         (data.showBalance && data.balance
           ? `You have ${fmtNum(data.balance.remaining ?? 0, 1)} days left. `
           : '')
-        + 'Only days you are rostered on are charged: rest days and public holidays inside '
-        + 'the period cost nothing.'),
+        + 'Only working days are charged: rest days and public holidays inside the period '
+        + 'cost nothing. Ask as far ahead as you like — the rota does not have to reach '
+        + 'that far yet, and the days are settled when it is approved.'),
       field('Type', h('select', { name: 'reason', required: true },
         h('option', { value: '' }, 'Choose…'),
         data.reasons.map((r) => h('option', { value: r.code }, r.label)))),
@@ -416,7 +417,8 @@ async function askForLeave(data, reload) {
 
   if (!done) return;
   toast(`Sent. ${fmtNum(done.days, done.days % 1 ? 1 : 0)} day`
-    + `${done.days === 1 ? '' : 's'} if it is approved.`, 'good');
+    + `${done.days === 1 ? '' : 's'} if it is approved`
+    + (done.estimated ? ', give or take — the rota does not reach that far yet.' : '.'), 'good');
   await reload();
 }
 

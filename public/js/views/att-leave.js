@@ -93,12 +93,29 @@ export async function renderAttLeave(params = {}) {
    */
   const approve = async (row) => {
     const asked = Number(row.days);
+
+    // What the span comes to now. A request made before the rota reached that
+    // far carried an estimate, and by the time anybody approves it the real
+    // answer usually exists — so it is asked for here rather than trusting a
+    // figure frozen in August.
+    const now = await api.attLeaveDays(row.id).catch(() => null);
+    const suggested = now ? Number(now.days) : asked;
+    const ceiling = now ? Number(now.ceiling) : asked;
+    const wasGuessed = Boolean(now?.estimated);
+
     const done = await formDialog({
       title: `Approve ${row.staff_name}'s leave`,
       submitLabel: 'Approve',
       body: h('div',
         h('p', `${fmtDay(row.from_day)} to ${fmtDay(row.to_day)}, `
-          + `${fmtNum(asked, asked % 1 ? 1 : 0)} rostered day${asked === 1 ? '' : 's'}.`),
+          + `${fmtNum(suggested, suggested % 1 ? 1 : 0)} rostered day${suggested === 1 ? '' : 's'}.`),
+        wasGuessed
+          ? h('p.muted', { style: { fontSize: '.82rem' } },
+            `They asked for it before the rota reached that far, so ${fmtNum(asked, asked % 1 ? 1 : 0)} `
+            + `was an estimate. ${now?.stillEstimated
+              ? 'The rota still does not cover it, so this figure is one too — set it to whatever is right.'
+              : 'The rota covers it now, and this is what it says.'}`)
+          : null,
         // What they asked for is a suggestion. Whether it is paid, and whether
         // it comes off the entitlement, follows from the type, and that is the
         // property's decision rather than the asker's.
@@ -109,9 +126,9 @@ export async function renderAttLeave(params = {}) {
         `They asked for ${(row.reason_label ?? row.reason_code ?? 'leave').toLowerCase()}`),
         field('Charged against the entitlement',
           h('input', {
-            type: 'number', name: 'daysCharged', min: 0, max: asked, step: 0.5, value: asked,
+            type: 'number', name: 'daysCharged', min: 0, max: ceiling, step: 0.5, value: suggested,
           }),
-          `of ${fmtNum(asked, asked % 1 ? 1 : 0)}`),
+          `of ${fmtNum(ceiling, ceiling % 1 ? 1 : 0)}`),
         h('p.muted', { style: { fontSize: '.82rem' } },
           'Anything you leave out is recorded as an ordinary rest day and costs them nothing.'),
         field('Note', h('input', { type: 'text', name: 'note', maxlength: 500 })),
@@ -124,9 +141,10 @@ export async function renderAttLeave(params = {}) {
       }),
     });
     if (!done) return;
-    const charged = Number(done.charged ?? asked);
-    toast(charged < asked
-      ? `Approved. ${fmtNum(charged, charged % 1 ? 1 : 0)} of ${fmtNum(asked, asked % 1 ? 1 : 0)} charged.`
+    const charged = Number(done.charged ?? suggested);
+    toast(charged !== suggested
+      ? `Approved. ${fmtNum(charged, charged % 1 ? 1 : 0)} of `
+        + `${fmtNum(suggested, suggested % 1 ? 1 : 0)} charged.`
       : 'Approved.', 'good');
     await reload();
   };
@@ -219,7 +237,17 @@ export async function renderAttLeave(params = {}) {
       label: 'When',
       format: (v, r) => (v === r.to_day ? fmtDay(v) : `${fmtDay(v)} – ${fmtDay(r.to_day)}`),
     },
-    { key: 'days', label: 'Days', align: 'right', format: (v) => fmtNum(v, v % 1 ? 1 : 0) },
+    {
+      key: 'days',
+      label: 'Days',
+      align: 'right',
+      // A figure asked for before the rota reached that far is a guess, and a
+      // guess printed as a fact is the thing somebody argues about later.
+      format: (v, r) => (r.estimated
+        ? h('span', { title: 'Estimated: the rota did not reach that far when it was asked for. '
+          + 'It is settled when it is approved.' }, fmtNum(v, v % 1 ? 1 : 0), h('small.muted', ' est.'))
+        : fmtNum(v, v % 1 ? 1 : 0)),
+    },
     { key: 'paid', label: 'Paid', format: (v) => (v ? h('span.pill.good', 'Paid') : h('span.pill', 'Unpaid')) },
     { key: 'reason', label: 'Reason', format: (v) => (v ? h('small', v) : h('span.muted', '—')) },
     {

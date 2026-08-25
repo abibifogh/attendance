@@ -1,0 +1,13 @@
+-- Leave asked for before the rota reaches that far.
+--
+-- The day count on a leave request was frozen when it was made, and it was
+-- counted off the rota. A request for a week in December, made in August, hit
+-- a rota that reaches a fortnight out, counted nought days, and was refused
+-- outright — which is backwards, because asking early is exactly what a
+-- property wants people to do.
+--
+-- Now a span the rota has not reached is estimated from what the property
+-- expects of a week, and the row remembers that the figure was a guess. That
+-- is what lets whoever approves it charge more than the guess said, and what
+-- lets the screen show a number honestly as an estimate rather than as a fact.
+ALTER TABLE att_leave ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0;

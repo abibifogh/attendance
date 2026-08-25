@@ -1109,17 +1109,84 @@ export function leaveBalance({
  * — and a system that charges for those is one staff learn to game by asking
  * for Friday to Monday.
  */
-export function leaveDaysIn({ from, to, staffId, ds, halfDay = null }) {
-  let days = 0;
+export function leaveDaysIn(args) {
+  return leaveDaysFor(args).days;
+}
+
+/**
+ * The same count, and how much of it is known rather than guessed.
+ *
+ * LEAVE IS ASKED FOR BEFORE THE ROTA EXISTS. Somebody books a week in December
+ * in August, and in August the rota reaches a fortnight out. If the count came
+ * only from days the rota knows about, every request more than a fortnight
+ * ahead would be nought days — and the app used to refuse those outright,
+ * which is exactly backwards: asking early is the behaviour a property wants.
+ *
+ * So each day in the span is one of three things.
+ *
+ *   Known and working — the rota says so, or the standing pattern does. It
+ *   counts, and it is not a guess.
+ *
+ *   Known and not working — a rest day the pattern gives them, or a public
+ *   holiday. It counts for nothing, and that is not a guess either.
+ *
+ *   Unknown — nobody has said, because nobody has built that far ahead and
+ *   this person has no standing pattern at all. Guessed at from what the
+ *   property expects of a week, and marked as a guess so the figure can be
+ *   settled when somebody approves it and the rota is real. Somebody who does
+ *   have a pattern is never unknown: a pattern listing Monday to Friday has no
+ *   row for Saturday, and that silence is the answer.
+ *
+ * The guess is deliberately the crude one: a share of the calendar days, at
+ * the property's days per week. A whole week off comes to five, which is
+ * right; a Monday-to-Friday comes to three and a half, which is low, and
+ * whoever approves it sees the number with the rota in front of them.
+ */
+export function leaveDaysFor({ from, to, staffId, ds, halfDay = null }) {
+  let known = 0;
+  let unknown = 0;
+  let settled = 0;
+  let fromRota = 0;
+
   for (const day of rangeDays(from, to)) {
-    if (ds.holidayBy.has(day)) continue;
+    if (ds.holidayBy.has(day)) { settled += 1; continue; }
     const schedule = scheduleFor(ds, staffId, day);
-    if (!schedule.shift) continue;
-    days += 1;
+    if (schedule.source === 'none') {
+      // Their pattern already answered by not mentioning this weekday.
+      if (ds.patternStaff?.has(staffId)) settled += 1;
+      else unknown += 1;
+      continue;
+    }
+    if (schedule.source === 'roster') fromRota += 1;
+    if (schedule.shift) known += 1;
+    else settled += 1;
   }
+
+  // Somebody has built part of this span by hand, so the blanks in it are
+  // their decision rather than a gap in the calendar. Only a span nobody has
+  // touched at all gets guessed at.
+  if (fromRota > 0 && unknown > 0) {
+    settled += unknown;
+    unknown = 0;
+  }
+
+  const perWeek = daysPerWeekFor(ds.staffById?.get(staffId), ds.settings ?? {});
+  // Half days, because that is the smallest unit anything else here charges in.
+  const guessed = unknown ? Math.round((unknown * perWeek) / 7 * 2) / 2 : 0;
+
+  let days = known + guessed;
   if (halfDay === 'start' || halfDay === 'end') days -= 0.5;
   else if (halfDay === 'both') days -= 1;
-  return Math.max(0, days);
+
+  return {
+    days: Math.max(0, days),
+    known,
+    unknown,
+    // Every day in the span had an answer, and none of them was a working day.
+    // The only case where "there is no leave to take" is a true thing to say.
+    allSettled: unknown === 0 && known === 0 && settled > 0,
+    estimated: unknown > 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1539,6 +1606,12 @@ export function makeDataset(raw) {
   // Keyed by week as well as weekday. A person who does not rotate has one
   // week, numbered zero, and behaves exactly as before.
   const patternBy = new Map((raw.patterns ?? []).map((p) => [`${p.staff_id}|${p.week ?? 0}|${p.dow}`, p]));
+  // Who has a standing pattern at all, which is a different question from what
+  // it says on a given day. A pattern that lists Monday to Friday has no row
+  // for Saturday, and that silence is an answer: they do not work Saturdays.
+  // Somebody with no pattern whatsoever is the only person the app genuinely
+  // knows nothing about, and the only one whose future leave has to be guessed.
+  const patternStaff = new Set((raw.patterns ?? []).map((p) => p.staff_id));
   const holidayBy = new Map((raw.holidays ?? []).map((h) => [h.observed_on || h.day, h]));
 
   // Months somebody has been told what they expected, per person. Almost
@@ -1584,6 +1657,7 @@ export function makeDataset(raw) {
     timezone: settings.timezone || 'UTC',
     rosterAllBy,
     slotsByDay,
+    patternStaff,
     rotationAnchor: settings.att_rotation_anchor || ROTATION_ANCHOR,
     // 'YYYY-MM-DD HH:MM' in the property's own time. Its only job is to stop
     // today's later shifts being read as absences before they have begun, and

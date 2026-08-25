@@ -536,6 +536,25 @@ export const GUIDE = [
       { note: 'Entitlement is set under Setup → Rules and starts at the statutory fifteen '
         + 'working days after a year’s service (Labour Act 2003, s.20).' },
 
+      { sub: 'Asking before the rota reaches that far' },
+      { p: 'A rota is built a fortnight out; leave is booked months out. So a request does not '
+        + 'need the days to be rostered yet — somebody can ask in August for a week in '
+        + 'December, which is when a property most wants to hear about it.' },
+      { list: [
+        'Where the standing pattern answers, the days are counted from it and the figure is '
+          + 'a real one.',
+        'Where nobody has a pattern and nothing is rostered, the figure is worked out from the '
+          + 'days a week the property expects, and shown as an estimate — "5 est." on the row.',
+        'Approving counts it again against the rota as it stands then, offers that number, and '
+          + 'lets you charge more than the estimate said if the real week turned out longer. '
+          + 'Once decided it is a figure, not an estimate.',
+        'A span somebody has already been through by hand is not guessed at: the days they '
+          + 'left empty are days off, not gaps.',
+      ] },
+      { note: 'The one request still refused is a span that is entirely rest days and public '
+        + 'holidays for that person — those days are already theirs, so there is nothing to '
+        + 'take.' },
+
       { sub: 'What kind of leave it is, is yours to say' },
       { p: 'Whoever asks picks the option they know the name of, which is usually annual '
         + 'leave. What it actually costs — whether it is paid, and whether it comes off the '

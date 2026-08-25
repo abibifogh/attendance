@@ -2,7 +2,7 @@ import {
   badRequest, csvResponse, int, json, notFound, readJson, str,
 } from '../lib/http.js';
 import {
-  colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysIn,
+  colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysFor,
   calendarFor, dayCredit, dayLedger, daysPerWeekFor, loadDataset, overUnder, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes,
   weekCountOf,
 } from '../lib/attendance.js';
@@ -2365,10 +2365,16 @@ export async function requestLeave(ctx) {
   if (!reason || reason.kind !== 'leave') throw badRequest('That is not a kind of leave.');
 
   const ds = await loadDataset(ctx.db, { from, to });
-  const days = leaveDaysIn({ from, to, staffId, ds, halfDay });
-  if (!days) {
-    throw badRequest('That period has no rostered days in it, so there is no leave to take.');
+  const count = leaveDaysFor({ from, to, staffId, ds, halfDay });
+  // Only refused when every day in the span has an answer and none of them is
+  // a working day. A span the rota has not reached is not that: it is a span
+  // nobody has built yet, and it is the commonest kind of leave request there
+  // is.
+  if (count.allSettled) {
+    throw badRequest('Every day in that period is already a rest day or a public holiday for '
+      + 'them, so there is no leave to take.');
   }
+  const days = count.days;
 
   const clash = await ctx.db.prepare(
     `SELECT id FROM att_leave
@@ -2385,8 +2391,8 @@ export async function requestLeave(ctx) {
   const row = await ctx.db.prepare(
     `INSERT INTO att_leave
        (staff_id, reason_code, from_day, to_day, days, half_day, status, reason,
-        requested_by, requested_by_id, decided_by, decided_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) RETURNING id`,
+        requested_by, requested_by_id, decided_by, decided_at, estimated)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) RETURNING id`,
   ).bind(
     staffId, reasonCode, from, to, days, halfDay,
     canApprove ? 'approved' : 'pending',
@@ -2395,12 +2401,19 @@ export async function requestLeave(ctx) {
     ctx.session.user.id ?? null,
     canApprove ? actor : null,
     canApprove ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null,
+    count.estimated ? 1 : 0,
   ).first();
 
   if (canApprove) await recompute(ctx.db, { staffIds: [staffId], from, to });
   await audit(ctx, 'attendance.leave_request', row?.id, { staffId, reasonCode, from, to, days });
 
-  return json({ ok: true, id: row?.id ?? null, days, status: canApprove ? 'approved' : 'pending' });
+  return json({
+    ok: true,
+    id: row?.id ?? null,
+    days,
+    estimated: count.estimated,
+    status: canApprove ? 'approved' : 'pending',
+  });
 }
 
 export async function decideLeave(ctx, id) {
@@ -2421,24 +2434,45 @@ export async function decideLeave(ctx, id) {
   if (reasonCode !== request.reason_code) await assertLeaveKind(ctx.db, reasonCode);
 
   // How much of the span is actually charged against their leave. The rest of
-  // the rostered days in it are treated as ordinary rest days: the roster rows
+  // the rostered days in it are treated as ordinary rest days: the rota rows
   // are cleared so those days stop being scheduled, and nothing is spent on
   // them. Asked at approval because that is when somebody is looking at the
-  // figure; the request itself froze the full count.
-  let charged = Number(request.days);
+  // figure.
+  //
+  // THE CEILING IS NOT ALWAYS WHAT WAS ASKED FOR. A request made before the
+  // rota reached that far carries an estimate, and by the time somebody
+  // approves it the rota usually exists — so the count is done again here, and
+  // where the request was a guess the approver may charge more than the guess
+  // said. Nothing above the calendar days in the span, which no honest figure
+  // can exceed.
+  const fresh = await leaveCountNow(ctx.db, request);
+  const span = diffDays(request.from_day, request.to_day) + 1;
+  const ceiling = !request.estimated
+    // Counted off a real rota when it was asked for, so that figure stands.
+    ? Number(request.days)
+    : fresh.estimated
+      // Still nobody has built it. Anything up to the days in the span is a
+      // figure somebody could honestly defend.
+      ? span
+      : Math.max(fresh.days, Number(request.days));
+
+  let charged = request.estimated ? fresh.days : Number(request.days);
   if (decision === 'approved' && body.daysCharged != null) {
     charged = Number(body.daysCharged);
-    if (!Number.isFinite(charged) || charged < 0 || charged > Number(request.days)
+    if (!Number.isFinite(charged) || charged < 0 || charged > ceiling
       || (charged * 2) % 1 !== 0) {
       throw badRequest(
-        `Days charged must be between 0 and ${request.days}, in half days.`,
+        `Days charged must be between 0 and ${ceiling}, in half days.`,
       );
     }
   }
 
   await ctx.db.prepare(
     `UPDATE att_leave SET status = ?1, decided_by = ?2, decided_at = datetime('now'),
-            decision_note = ?3, days = ?4, reason_code = ?6
+            decision_note = ?3, days = ?4, reason_code = ?6,
+            -- Decided is decided: the figure on the row is now a fact, not an
+            -- estimate, whatever it was when it was asked for.
+            estimated = 0
      WHERE id = ?5`,
   ).bind(
     decision,
@@ -2477,6 +2511,47 @@ export async function decideLeave(ctx, id) {
   }, ctx);
 
   return json({ ok: true, status: decision, charged: decision === 'approved' ? charged : null });
+}
+
+/**
+ * What the span comes to now, with today's rota rather than the day's it was
+ * asked on.
+ */
+async function leaveCountNow(db, request) {
+  const ds = await loadDataset(db, { from: request.from_day, to: request.to_day });
+  return leaveDaysFor({
+    from: request.from_day,
+    to: request.to_day,
+    staffId: request.staff_id,
+    ds,
+    halfDay: request.half_day ?? null,
+  });
+}
+
+/**
+ * How many days this leave would cost if it were counted today.
+ *
+ * The approve box asks for it, because a request made in August against a rota
+ * that reached a fortnight out is a guess, and by the time anybody approves it
+ * the real answer usually exists. One request, one span, one dataset.
+ */
+export async function leaveDays(ctx, id) {
+  const request = await ctx.db.prepare('SELECT * FROM att_leave WHERE id = ?')
+    .bind(Number(id)).first();
+  if (!request) throw notFound('No such leave.');
+
+  const now = await leaveCountNow(ctx.db, request);
+  const span = diffDays(request.from_day, request.to_day) + 1;
+  return json({
+    asked: Number(request.days),
+    estimated: Boolean(request.estimated),
+    days: now.days,
+    stillEstimated: now.estimated,
+    // Nothing honest can be above this, so it is what the box allows.
+    ceiling: !request.estimated
+      ? Number(request.days)
+      : now.estimated ? span : Math.max(now.days, Number(request.days)),
+  });
 }
 
 /**
