@@ -3525,3 +3525,10 @@ html { touch-action: manipulation; }
 .history-detail { font-size: .78rem; color: var(--text-dim); font-style: italic; }
 .history-source { font-size: .7rem; margin-top: .25rem; }
 .rota-history { max-height: 22rem; overflow-y: auto; }
+
+/* ------------------------------------------------- where somebody works -- */
+.tick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: .1rem .8rem;
+}

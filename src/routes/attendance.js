@@ -3,6 +3,7 @@ import {
 } from '../lib/http.js';
 import {
   colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysFor, onRota,
+  worksIn,
   calendarFor, dayCredit, dayLedger, daysPerWeekFor, loadDataset, overUnder, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes,
   weekCountOf,
 } from '../lib/attendance.js';
@@ -1786,6 +1787,10 @@ export async function getRoster(ctx) {
         employee_no: staff.employee_no,
         department: staff.department,
         tags: parseTags(staff.tags),
+        // Where this person may be put on. Their own department unless
+        // somebody has said otherwise, so the grid can put the shifts they
+        // might actually work at the top of every cell.
+        worksIn: worksIn(staff),
       },
       // The whole cycle, one entry per week, so the dialog can show a rotation
       // without asking for it a week at a time.

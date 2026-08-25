@@ -110,6 +110,22 @@ export async function listStaff(ctx) {
  * already held under that number are attached on the spot, and the count is
  * reported back — which is also the quickest way to notice the typo.
  */
+/**
+ * The departments somebody may be rostered in, as they arrive from a form.
+ *
+ * An empty list is stored as null rather than "[]", because the two mean the
+ * same thing here and one of them reads as a decision somebody made.
+ */
+function readWorksIn(value) {
+  if (value == null) return null;
+  const list = (Array.isArray(value) ? value : [value])
+    .map((v) => String(v).trim())
+    .filter(Boolean);
+  const unique = [...new Set(list)];
+  if (unique.length > 20) throw badRequest('That is more departments than a property has.');
+  return unique.length ? JSON.stringify(unique) : null;
+}
+
 export async function createStaff(ctx) {
   const body = await readJson(ctx.request);
   const employeeNo = str(body.employeeNo, 'Employee number', { required: true, max: 40 });
@@ -119,8 +135,8 @@ export async function createStaff(ctx) {
   try {
     row = await ctx.db.prepare(
       `INSERT INTO att_staff (employee_no, name, department, job_title, hired_on, leave_days,
-                              days_per_week, user_id, note, on_rota)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) RETURNING id`,
+                              days_per_week, user_id, note, on_rota, works_in)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) RETURNING id`,
     ).bind(
       employeeNo, name,
       str(body.department, 'Department', { max: 80 }),
@@ -131,6 +147,7 @@ export async function createStaff(ctx) {
       body.userId == null || body.userId === '' ? null : int(body.userId, 'Login', { min: 1 }),
       str(body.note, 'Note', { max: 300 }),
       bool(body.onRota, true) ? 1 : 0,
+      readWorksIn(body.worksIn),
     ).first();
   } catch (err) {
     rethrowConstraint(err, {
@@ -161,7 +178,8 @@ export async function updateStaff(ctx, id) {
     await ctx.db.prepare(
       `UPDATE att_staff SET employee_no = ?1, name = ?2, department = ?3, job_title = ?4,
                             hired_on = ?5, left_on = ?6, leave_days = ?7, user_id = ?8,
-                            active = ?9, note = ?10, days_per_week = ?12, on_rota = ?13
+                            active = ?9, note = ?10, days_per_week = ?12, on_rota = ?13,
+                            works_in = ?14
        WHERE id = ?11`,
     ).bind(
       employeeNo,
@@ -177,6 +195,7 @@ export async function updateStaff(ctx, id) {
       staffId,
       readDaysPerWeek(body.daysPerWeek),
       onRota ? 1 : 0,
+      readWorksIn(body.worksIn),
     ).run();
   } catch (err) {
     rethrowConstraint(err, {

@@ -170,7 +170,7 @@ export async function renderAttRota(params) {
     // rather than pretending it cannot happen.
     const avail = entry.availability;
 
-    const { own, other } = shiftsFor(data.shifts, row.staff.department);
+    const { own, other } = shiftsFor(data.shifts, row.staff.worksIn);
 
     const opt = (shift) => h('option', {
       value: shift.id, selected: String(shift.id) === String(entry.shift_id),
@@ -392,7 +392,7 @@ export async function renderAttRota(params) {
       body: h('div',
         h('p.muted', `${fmtDayShort(data.from)} to ${fmtDayShort(data.to)}. Days already covered by `
           + 'approved leave are left as they are.'),
-        field('Put them on', scopedShiftSelect(data.shifts, row.staff.department, '', { name: 'shiftId' }),
+        field('Put them on', scopedShiftSelect(data.shifts, row.staff.worksIn, '', { name: 'shiftId' }),
           'Leave blank to make the chosen days rest days'),
         field('On these days', h('div.btn-row', { style: { flexWrap: 'wrap' } },
           names.map((label, dow) => h('label', {
@@ -731,9 +731,23 @@ export async function renderAttRota(params) {
     }));
 
   /** The list of people for a card dialog, grouped by whether they are free. */
-  const whoOptions = (options, { firstLabel, firstValue = '' }) => {
-    const free = options.filter((o) => !o.blocked && o.busy == null);
-    const taken = options.filter((o) => !o.blocked && o.busy != null);
+  const whoOptions = (options, { firstLabel, firstValue = '', department = null }) => {
+    // Somebody set up for this work. Nothing ticked means their own department
+    // answers, which the grid already sent as worksIn.
+    const fits = (o) => {
+      if (!department) return true;
+      const areas = o.row.staff.worksIn ?? [];
+      return !areas.length || areas.includes(department);
+    };
+
+    const here = options.filter(fits);
+    const free = here.filter((o) => !o.blocked && o.busy == null);
+    const taken = here.filter((o) => !o.blocked && o.busy != null);
+    // Kept, not hidden. A planner covering a gap with whoever is standing
+    // there is a real Saturday, and the answer to it is a warning rather than
+    // an empty list.
+    const elsewhere = options.filter((o) => !fits(o) && !o.blocked);
+
     return h('select', { name: 'staffId' },
       h('option', { value: firstValue, selected: true }, firstLabel),
       // Not offered to a card that is already empty: it is the option it is
@@ -749,6 +763,12 @@ export async function renderAttRota(params) {
         ? h('optgroup', { label: 'Already on something' },
           taken.map((o) => h('option', { value: String(o.row.staff.id) },
             `${o.row.staff.name} — on ${o.busy}, this would be a second shift`)))
+        : null,
+      elsewhere.length
+        ? h('optgroup', { label: `Not set up for ${department}` },
+          elsewhere.map((o) => h('option', { value: String(o.row.staff.id) },
+            `${o.row.staff.name} — ${(o.row.staff.worksIn ?? []).join(', ') || 'no department'}`
+            + `${o.busy ? `, on ${o.busy}` : ''}`)))
         : null,
     );
   };
@@ -781,6 +801,7 @@ export async function renderAttRota(params) {
         field('Who works it', whoOptions(options, {
           firstLabel: card.row ? `${card.row.staff.name} (as now)` : 'Nobody (as now)',
           firstValue: card.row ? String(card.row.staff.id) : 'nobody',
+          department: shift.department || null,
         }), 'Somebody already on another shift keeps it: they end up on both, and both are marked'),
         field('Name for this shift', h('input', {
           type: 'text', name: 'title', maxlength: 60, value: card.title ?? '',
@@ -855,7 +876,15 @@ export async function renderAttRota(params) {
           'They are the same job finishing at different times')
           : h('p.muted', { style: { fontSize: '.85rem' } },
             `${shiftHours(shifts[0])}, ${asHours(shiftMinutes(shifts[0]))}.`),
-        field('Who', whoOptions(options, { firstLabel: 'Choose…', firstValue: '' }),
+        field('Who', whoOptions(options, {
+          firstLabel: 'Choose…',
+          firstValue: '',
+          // Where a position spans two departments there is no one answer, so
+          // nobody is marked as out of place rather than half of them wrongly.
+          department: new Set(shifts.map((sh) => sh.department || '')).size === 1
+            ? (shifts[0].department || null)
+            : null,
+        }),
           'People on leave or marked unavailable are left out. Leave it unfilled and it '
           + 'stays on the day until somebody takes it'),
         field('Name for this shift', h('input', {
@@ -1248,7 +1277,7 @@ async function editPattern(row, shifts, reload) {
         : null,
       h('div.field-row', days.map((label, dow) => field(
         label,
-        scopedShiftSelect(shifts, row.staff.department, valueAt(week, dow), { name: `w${week}d${dow}` }),
+        scopedShiftSelect(shifts, row.staff.worksIn, valueAt(week, dow), { name: `w${week}d${dow}` }),
       ))),
     )));
   };
@@ -1369,14 +1398,17 @@ const EXPAND = '__all__';
  * Somebody with no department, or a department with no shifts of its own, gets
  * everything — a short list is only an improvement while it contains the answer.
  */
-function shiftsFor(shifts, department) {
+function shiftsFor(shifts, areas) {
   const active = (shifts ?? []).filter((s) => s.active !== 0);
-  if (!department) return { own: active, other: [] };
+  const list = Array.isArray(areas) ? areas.filter(Boolean) : [areas].filter(Boolean);
+  if (!list.length) return { own: active, other: [] };
 
-  const own = active.filter((s) => (s.department || '') === department);
+  // A shift belonging to no department is anybody's, so it belongs at the top
+  // with the ones they are set up for rather than behind a heading.
+  const own = active.filter((s) => !s.department || list.includes(s.department));
   if (!own.length) return { own: active, other: [] };
 
-  return { own, other: active.filter((s) => (s.department || '') !== department) };
+  return { own, other: active.filter((s) => s.department && !list.includes(s.department)) };
 }
 
 /**
@@ -1387,17 +1419,18 @@ function shiftsFor(shifts, department) {
  * enough: the five shifts they might actually work sit at the top under their
  * own department, and the other nineteen are below under theirs.
  */
-function scopedShiftSelect(shifts, department, selected, props = {}) {
-  const { own, other } = shiftsFor(shifts, department);
+function scopedShiftSelect(shifts, areas, selected, props = {}) {
+  const { own, other } = shiftsFor(shifts, areas);
   if (!other.length) return shiftSelect(own, selected, props);
 
+  const list = Array.isArray(areas) ? areas.filter(Boolean) : [areas].filter(Boolean);
   const opt = (s) => h('option', {
     value: s.id, selected: String(s.id) === String(selected),
   }, shiftLabel(s));
 
   return h('select', props,
     h('option', { value: '' }, '—'),
-    h('optgroup', { label: department }, own.map(opt)),
+    h('optgroup', { label: list.join(', ') || 'Theirs' }, own.map(opt)),
     // The rest under their own departments rather than one heading reading
     // "other": nineteen shifts in a lump is the list this grouping exists to
     // avoid, and putting it behind a heading does not make it shorter.

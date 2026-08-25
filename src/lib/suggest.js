@@ -34,7 +34,7 @@
 // weeks behind it are the only honest source for what the week ahead wants.
 
 import { addDays, dow, rangeDays } from '../util/dates.js';
-import { onRota, scheduleFor } from './attendance.js';
+import { mayWork, onRota, scheduleFor } from './attendance.js';
 import { isNightShift, limitsFrom, shiftsInWindow } from './workload.js';
 
 /** How far back to read the property's habits. Six weeks: long enough to see a
@@ -292,6 +292,11 @@ export function canTake(ds, proposed, person, day, shift, limits, availabilityBy
   if (person.hired_on && day < person.hired_on) return no('had not started');
   if (person.left_on && day > person.left_on) return no('has left');
 
+  // Where somebody may be put on at all. Checked before anything about the
+  // day, because it is not a fact about this Tuesday: it is a fact about them,
+  // and no amount of being free makes a housekeeper right for Security.
+  if (!mayWork(person, shift)) return no(`not set up for ${shift.department}`);
+
   if (ds.leaveBy?.get(`${person.id}|${day}`)) return no('on leave');
   if (busyOn(ds, proposed, person.id, day)) return no('already has that day');
 
@@ -424,5 +429,14 @@ function reasonNobodyIsFree(ds, proposed, people, day, shift, limits, availabili
   }
   const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   if (!ranked.length) return 'nobody at all on the books';
+
+  // Where the department itself rules everybody out, the count is beside the
+  // point: the answer is that nobody is set up for this work, and a planner
+  // fixes that under Setup rather than by moving days around.
+  const shut = `not set up for ${shift.department}`;
+  if (counts.get(shut) === people.length) {
+    return `nobody is set up to work in ${shift.department}`;
+  }
+
   return ranked.slice(0, 2).map(([why, n]) => `${n} ${why}`).join(', ');
 }

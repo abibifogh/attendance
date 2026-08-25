@@ -167,6 +167,47 @@ export function rotationWeekOf(day, rotationWeeks = 1, anchor = ROTATION_ANCHOR)
  */
 export const onRota = (staff) => Boolean(staff?.active) && staff?.on_rota !== 0;
 
+/** A JSON array kept in a text column, read back without ever throwing. */
+export function parseList(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((t) => String(t).trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The departments somebody may be put on.
+ *
+ * Their own department answers for them until somebody says otherwise, which
+ * is the truth for most of the staff and was the assumption every screen made
+ * anyway. Naming departments explicitly is for the people it is not true of:
+ * a supervisor who covers reception and the bar, a porter who does nights on
+ * security.
+ */
+export function worksIn(staff) {
+  const listed = parseList(staff?.works_in);
+  if (listed.length) return listed;
+  return staff?.department ? [staff.department] : [];
+}
+
+/**
+ * May this person be put on this shift?
+ *
+ * Two deliberate yeses. A shift belonging to no department is anybody's, and
+ * somebody with no department and nothing listed is unrestricted, because
+ * refusing on the strength of a blank field is refusing on no evidence.
+ */
+export function mayWork(staff, shift) {
+  const department = shift?.department || null;
+  if (!department) return true;
+  const areas = worksIn(staff);
+  if (!areas.length) return true;
+  return areas.includes(department);
+}
+
 export function scheduleFor(ds, staffId, day) {
   const rostered = ds.rosterBy.get(`${staffId}|${day}`);
   if (rostered) {

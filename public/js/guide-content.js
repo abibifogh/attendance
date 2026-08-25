@@ -1544,6 +1544,19 @@ export const GUIDE = [
         + 'goes with it, or it would put them straight back. What is already behind you is left '
         + 'alone, because it happened.' },
 
+      { sub: 'Where somebody may be put on' },
+      { p: 'Department says where a person sits. They can work in says where they may be '
+        + 'rostered, and until you tick anything their own department answers for them. That is '
+        + 'right for most of the staff and saves ticking one box twenty-four times.' },
+      { p: 'Tick more for the people it is not true of: a supervisor who covers reception and '
+        + 'the bar, a porter who does nights on security. The draft never puts anybody on a '
+        + 'shift outside these, and where it cannot fill one it says nobody is set up for that '
+        + 'work rather than leaving you to guess.' },
+      { note: 'You can still put somebody on by hand wherever you like. Covering a gap with '
+        + 'whoever is standing there is a real Saturday, so the person is offered under a '
+        + '"Not set up for" heading rather than hidden. A shift belonging to no department is '
+        + 'anybody\u2019s.' },
+
       { sub: 'How many a shift needs' },
       { p: 'Under Setup → Shifts, People needed is what the draft aims at: three on '
         + 'reception means three, whether or not the last few weeks managed it. Left blank the '

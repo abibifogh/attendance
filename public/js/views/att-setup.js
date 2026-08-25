@@ -314,6 +314,17 @@ function positionPicker(positions, current, { name = 'position' } = {}) {
   return h('div', select, typed);
 }
 
+/** The departments already ticked for somebody, read off the record. */
+function readWorksIn(staff) {
+  if (!staff?.works_in) return [];
+  try {
+    const parsed = JSON.parse(staff.works_in);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 /** What a position picker was set to, whichever half of it was used. */
 const readPosition = (form, name = 'position') => (
   form.get(`${name}Pick`) === NEW_DEPARTMENT
@@ -338,6 +349,22 @@ async function staffTab(reload) {
    */
   const edit = async (existing) => {
     const isEdit = Boolean(existing?.id);
+
+    // Every department the property has, plus any this person is already
+    // ticked for that has since been renamed away. Dropping one silently is
+    // how a restriction becomes a mystery.
+    const already = new Set(readWorksIn(existing));
+    const areas = [...new Set([...departments, ...already])].sort();
+    const chosen = new Set(already);
+    const worksInBoxes = areas.length
+      ? areas.map((name) => h('label.tickline',
+        h('input', {
+          type: 'checkbox',
+          checked: chosen.has(name),
+          onchange: (e) => (e.target.checked ? chosen.add(name) : chosen.delete(name)),
+        }),
+        h('span', name)))
+      : [h('small.muted', 'No departments set up yet. Add one on a shift or a person first.')];
 
     const done = await formDialog({
       title: isEdit ? `Edit ${existing.name}` : 'Add somebody',
@@ -375,6 +402,13 @@ async function staffTab(reload) {
             'What the month expects of them. Blank uses the property default',
           ),
         ),
+        // Where they may be put on. Their own department answers for them until
+        // somebody ticks more, which is the truth for most of the staff and
+        // saves ticking one box twenty-four times.
+        field('They can work in', h('div.tick-grid', worksInBoxes),
+          'Leave them all clear and their own department answers for them. The draft never '
+          + 'puts somebody on a shift outside these'),
+
         h('div.field-row',
           isEdit
             ? field('Status', h('select', { name: 'active' },
@@ -407,6 +441,7 @@ async function staffTab(reload) {
           note: form.get('note') || null,
           active: form.get('active') !== 'false',
           onRota: form.get('onRota') !== 'false',
+          worksIn: [...chosen],
         };
         return isEdit ? api.attUpdateStaff(existing.id, payload) : api.attCreateStaff(payload);
       },
@@ -481,6 +516,10 @@ async function staffTab(reload) {
                 ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'not on rota')
                 : null),
             h('small.muted', [r.job_title, r.department].filter(Boolean).join(' · ') || '—'),
+            readWorksIn(r).length
+              ? h('small.muted', { style: { display: 'block' } },
+                `Works in ${readWorksIn(r).join(', ')}`)
+              : null,
           ),
         },
         { key: 'employee_no', label: 'Employee no', format: (v) => h('code', v) },
