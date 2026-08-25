@@ -325,6 +325,17 @@ function readWorksIn(staff) {
   }
 }
 
+/** The shifts somebody has been picked out for one at a time. */
+function readWorksShifts(staff) {
+  if (!staff?.works_shifts) return [];
+  try {
+    const parsed = JSON.parse(staff.works_shifts);
+    return Array.isArray(parsed) ? parsed.map(Number).filter(Number.isFinite) : [];
+  } catch {
+    return [];
+  }
+}
+
 /** What a position picker was set to, whichever half of it was used. */
 const readPosition = (form, name = 'position') => (
   form.get(`${name}Pick`) === NEW_DEPARTMENT
@@ -332,7 +343,7 @@ const readPosition = (form, name = 'position') => (
     : form.get(`${name}Pick`)) || null;
 
 async function staffTab(reload) {
-  const [{ staff, departments = [] }, { unknown }] = await Promise.all([
+  const [{ staff, departments = [], shifts = [] }, { unknown }] = await Promise.all([
     api.attStaff(), api.attUnknown(),
   ]);
 
@@ -356,15 +367,91 @@ async function staffTab(reload) {
     const already = new Set(readWorksIn(existing));
     const areas = [...new Set([...departments, ...already])].sort();
     const chosen = new Set(already);
+    const pickedShifts = new Set(readWorksShifts(existing));
+
+    // Shifts belonging to no department are open to everybody whatever is
+    // ticked here, so offering a box for them would be offering a box that
+    // does nothing. Said in the hint underneath instead.
+    // Retired shifts are left out: nobody can be rostered onto one, so a box
+    // for it is a box that does nothing. One this person is already picked out
+    // for stays, because a tick nobody can see is a tick nobody can undo.
+    const inAreas = shifts.filter((sh) => sh.department
+      && (sh.active !== 0 || pickedShifts.has(sh.id)));
+    const byArea = new Map(areas.map((name) => [name, []]));
+    for (const sh of inAreas) {
+      if (!byArea.has(sh.department)) byArea.set(sh.department, []);
+      byArea.get(sh.department).push(sh);
+    }
+
+    // Ticking a department is a standing answer: anything in it, including the
+    // shift added next month. Naming shifts is the narrow one. So a ticked
+    // department covers its own shifts, and their boxes go quiet to say so.
+    const shiftBoxes = new Map();
+    const syncArea = (name) => {
+      for (const box of shiftBoxes.get(name) ?? []) {
+        box.disabled = chosen.has(name);
+        box.checked = chosen.has(name) || pickedShifts.has(Number(box.dataset.shift));
+      }
+    };
+
+    // The one way to get this wrong: naming a shift somewhere else and losing
+    // your own department without noticing. Said out loud, and only while it
+    // is true.
+    const warning = h('small.muted', { style: { display: 'none' } });
+    const syncWarning = () => {
+      const lost = pickedShifts.size && !chosen.size && existing?.department;
+      warning.style.display = lost ? '' : 'none';
+      warning.textContent = lost
+        ? `Only the shifts ticked above. Tick ${existing.department} as well if they should `
+          + 'still work their own department.'
+        : '';
+    };
+
+    const areaBlock = (name) => {
+      const list = (byArea.get(name) ?? []);
+      const boxes = [];
+      shiftBoxes.set(name, boxes);
+
+      return h('div.works-area',
+        h('label.tickline.works-area-head',
+          h('input', {
+            type: 'checkbox',
+            checked: chosen.has(name),
+            onchange: (e) => {
+              if (e.target.checked) chosen.add(name); else chosen.delete(name);
+              syncArea(name);
+              syncWarning();
+            },
+          }),
+          h('span', h('strong', name),
+            h('small.muted', ` · the whole department${list.length ? `, ${list.length} shift${list.length === 1 ? '' : 's'}` : ''}`))),
+
+        list.length
+          ? h('div.works-shifts', list.map((sh) => {
+            const box = h('input', {
+              type: 'checkbox',
+              'data-shift': String(sh.id),
+              checked: chosen.has(name) || pickedShifts.has(sh.id),
+              disabled: chosen.has(name),
+              onchange: (e) => {
+                if (e.target.checked) pickedShifts.add(sh.id); else pickedShifts.delete(sh.id);
+                syncWarning();
+              },
+            });
+            boxes.push(box);
+            return h('label.tickline', box,
+              h('span', sh.name,
+                h('small.muted', ` · ${sh.starts_at}–${sh.ends_at}`),
+                sh.active === 0 ? h('small.muted', ' · retired') : null));
+          }))
+          : null,
+      );
+    };
+
     const worksInBoxes = areas.length
-      ? areas.map((name) => h('label.tickline',
-        h('input', {
-          type: 'checkbox',
-          checked: chosen.has(name),
-          onchange: (e) => (e.target.checked ? chosen.add(name) : chosen.delete(name)),
-        }),
-        h('span', name)))
+      ? [...areas.map(areaBlock), warning]
       : [h('small.muted', 'No departments set up yet. Add one on a shift or a person first.')];
+    syncWarning();
 
     const done = await formDialog({
       title: isEdit ? `Edit ${existing.name}` : 'Add somebody',
@@ -405,9 +492,10 @@ async function staffTab(reload) {
         // Where they may be put on. Their own department answers for them until
         // somebody ticks more, which is the truth for most of the staff and
         // saves ticking one box twenty-four times.
-        field('They can work in', h('div.tick-grid', worksInBoxes),
-          'Leave them all clear and their own department answers for them. The draft never '
-          + 'puts somebody on a shift outside these'),
+        field('They can work in', h('div.works-picker', worksInBoxes),
+          'Tick a whole department, or pick out single shifts within one. Leave everything '
+          + 'clear and their own department answers for them. Shifts that are not in a '
+          + 'department are open to everybody either way'),
 
         h('div.field-row',
           isEdit
@@ -442,6 +530,12 @@ async function staffTab(reload) {
           active: form.get('active') !== 'false',
           onRota: form.get('onRota') !== 'false',
           worksIn: [...chosen],
+          // A shift inside a ticked department is already covered by it, and
+          // storing it twice makes a rename look like a change nobody made.
+          worksShifts: [...pickedShifts].filter((id) => {
+            const sh = shifts.find((x) => x.id === id);
+            return sh && !chosen.has(sh.department);
+          }),
         };
         return isEdit ? api.attUpdateStaff(existing.id, payload) : api.attCreateStaff(payload);
       },
@@ -516,9 +610,14 @@ async function staffTab(reload) {
                 ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'not on rota')
                 : null),
             h('small.muted', [r.job_title, r.department].filter(Boolean).join(' · ') || '—'),
-            readWorksIn(r).length
+            readWorksIn(r).length || readWorksShifts(r).length
               ? h('small.muted', { style: { display: 'block' } },
-                `Works in ${readWorksIn(r).join(', ')}`)
+                `Works in ${[
+                  ...readWorksIn(r),
+                  ...readWorksShifts(r)
+                    .map((id) => shifts.find((sh) => sh.id === id)?.name)
+                    .filter(Boolean),
+                ].join(', ')}`)
               : null,
           ),
         },

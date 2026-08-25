@@ -202,3 +202,89 @@ test('the rota sends where each person may work', async () => {
   assert.deepEqual(data.rows.find((r) => r.staff.id === 2).staff.worksIn,
     ['Housekeeping', 'Bar']);
 });
+
+// ---------------------------------------------------------------------------
+// Named shifts, as against a whole department
+// ---------------------------------------------------------------------------
+
+test('a named shift is allowed and its neighbours are not', () => {
+  const porter = { department: 'Portering', works_shifts: '[7]' };
+  assert.equal(mayWork(porter, { id: 7, department: 'Security' }), true);
+  assert.equal(mayWork(porter, { id: 8, department: 'Security' }), false,
+    'the other security shift is a different promise');
+});
+
+test('naming a shift is the whole answer, not an addition to their department', () => {
+  const porter = { department: 'Portering', works_shifts: '[7]' };
+  assert.deepEqual(worksIn(porter), [],
+    'their department does not widen it back out');
+  assert.equal(mayWork(porter, { id: 9, department: 'Portering' }), false);
+});
+
+test('a department and a named shift together are both honoured', () => {
+  const both = { department: 'Portering', works_in: '["Portering"]', works_shifts: '[7]' };
+  assert.equal(mayWork(both, { id: 9, department: 'Portering' }), true);
+  assert.equal(mayWork(both, { id: 7, department: 'Security' }), true);
+  assert.equal(mayWork(both, { id: 8, department: 'Security' }), false);
+});
+
+test('a shift outside every department stays anybody’s', () => {
+  const porter = { department: 'Portering', works_shifts: '[7]' };
+  assert.equal(mayWork(porter, { id: 20, department: null }), true);
+});
+
+test('the draft honours a shift picked out one at a time', async () => {
+  const { db, raw } = setup();
+  // Yaw does one night on Security and nothing else there.
+  raw.prepare("UPDATE att_staff SET works_shifts = '[1]' WHERE id = 3").run();
+  raw.prepare('UPDATE att_shifts SET needed = 3 WHERE id = 1').run();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+
+  const plan = await draft(db);
+  const nights = plan.entries.filter((e) => e.shiftId === 1).map((e) => e.staffId).sort();
+  assert.deepEqual(nights, [1, 3], 'the guard and the porter, not the housekeeper');
+});
+
+test('named shifts are saved, deduplicated and read back', async () => {
+  const { db, raw } = setup();
+  await updateStaff(ctx(db, {
+    body: {
+      name: 'Yaw',
+      employeeNo: '3',
+      department: 'Housekeeping',
+      worksIn: [],
+      worksShifts: [1, 1, '1', 3],
+    },
+  }), 3);
+
+  assert.equal(raw.prepare('SELECT works_shifts FROM att_staff WHERE id = 3').get().works_shifts,
+    '[1,3]');
+});
+
+test('rubbish in the shift list is dropped rather than stored', async () => {
+  const { db, raw } = setup();
+  await updateStaff(ctx(db, {
+    body: { name: 'Yaw', employeeNo: '3', worksShifts: ['x', -2, 0, null, 2] },
+  }), 3);
+
+  assert.equal(raw.prepare('SELECT works_shifts FROM att_staff WHERE id = 3').get().works_shifts,
+    '[2]');
+});
+
+test('the rota sends the named shifts alongside the departments', async () => {
+  const { db, raw } = setup();
+  raw.prepare("UPDATE att_staff SET works_shifts = '[1]' WHERE id = 3").run();
+
+  const data = await (await getRoster(ctx(db, { query: '?from=2026-06-01&to=2026-06-07' }))).json();
+  const yaw = data.rows.find((r) => r.staff.id === 3).staff;
+  assert.deepEqual(yaw.worksIn, [], 'a named shift answers on its own');
+  assert.deepEqual(yaw.worksShifts, [1]);
+});
+
+test('the staff list carries the shifts to offer', async () => {
+  const { db } = setup();
+  const out = await (await listStaff(ctx(db))).json();
+  assert.equal(out.shifts.length, 3);
+  assert.equal(out.shifts[0].name != null, true);
+  assert.equal('starts_at' in out.shifts[0], true, 'with the hours, to tell four alike apart');
+});

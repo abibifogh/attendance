@@ -190,7 +190,16 @@ export function parseList(value) {
 export function worksIn(staff) {
   const listed = parseList(staff?.works_in);
   if (listed.length) return listed;
+  // Named shifts are an answer in their own right. Where somebody has been
+  // picked out shift by shift, their department does not get to widen it back
+  // to everything in the department.
+  if (parseList(staff?.works_shifts).length) return [];
   return staff?.department ? [staff.department] : [];
+}
+
+/** The individual shifts somebody has been picked out for, as numbers. */
+export function worksShifts(staff) {
+  return parseList(staff?.works_shifts).map(Number).filter(Number.isFinite);
 }
 
 /**
@@ -203,9 +212,12 @@ export function worksIn(staff) {
 export function mayWork(staff, shift) {
   const department = shift?.department || null;
   if (!department) return true;
+
   const areas = worksIn(staff);
-  if (!areas.length) return true;
-  return areas.includes(department);
+  const named = worksShifts(staff);
+  if (!areas.length && !named.length) return true;
+
+  return areas.includes(department) || named.includes(Number(shift.id));
 }
 
 export function scheduleFor(ds, staffId, day) {

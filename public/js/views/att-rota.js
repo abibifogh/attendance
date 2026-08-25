@@ -170,7 +170,7 @@ export async function renderAttRota(params) {
     // rather than pretending it cannot happen.
     const avail = entry.availability;
 
-    const { own, other } = shiftsFor(data.shifts, row.staff.worksIn);
+    const { own, other } = shiftsFor(data.shifts, row.staff);
 
     const opt = (shift) => h('option', {
       value: shift.id, selected: String(shift.id) === String(entry.shift_id),
@@ -392,7 +392,7 @@ export async function renderAttRota(params) {
       body: h('div',
         h('p.muted', `${fmtDayShort(data.from)} to ${fmtDayShort(data.to)}. Days already covered by `
           + 'approved leave are left as they are.'),
-        field('Put them on', scopedShiftSelect(data.shifts, row.staff.worksIn, '', { name: 'shiftId' }),
+        field('Put them on', scopedShiftSelect(data.shifts, row.staff, '', { name: 'shiftId' }),
           'Leave blank to make the chosen days rest days'),
         field('On these days', h('div.btn-row', { style: { flexWrap: 'wrap' } },
           names.map((label, dow) => h('label', {
@@ -730,15 +730,20 @@ export async function renderAttRota(params) {
         : null,
     }));
 
+  /** What somebody is set up for, departments and named shifts alike. */
+  const setUpFor = (staff) => [
+    ...(staff.worksIn ?? []),
+    ...(staff.worksShifts ?? [])
+      .map((id) => shiftById.get(String(id))?.name)
+      .filter(Boolean),
+  ].join(', ') || 'no department';
+
   /** The list of people for a card dialog, grouped by whether they are free. */
-  const whoOptions = (options, { firstLabel, firstValue = '', department = null }) => {
-    // Somebody set up for this work. Nothing ticked means their own department
-    // answers, which the grid already sent as worksIn.
-    const fits = (o) => {
-      if (!department) return true;
-      const areas = o.row.staff.worksIn ?? [];
-      return !areas.length || areas.includes(department);
-    };
+  const whoOptions = (options, { firstLabel, firstValue = '', forShift = null }) => {
+    // Somebody set up for this work. Nothing ticked about them means their own
+    // department answers, which the grid was sent as worksIn.
+    const department = forShift?.department || null;
+    const fits = (o) => (forShift ? allowedShift(o.row.staff, forShift) : true);
 
     const here = options.filter(fits);
     const free = here.filter((o) => !o.blocked && o.busy == null);
@@ -767,7 +772,7 @@ export async function renderAttRota(params) {
       elsewhere.length
         ? h('optgroup', { label: `Not set up for ${department}` },
           elsewhere.map((o) => h('option', { value: String(o.row.staff.id) },
-            `${o.row.staff.name} — ${(o.row.staff.worksIn ?? []).join(', ') || 'no department'}`
+            `${o.row.staff.name} — ${setUpFor(o.row.staff)}`
             + `${o.busy ? `, on ${o.busy}` : ''}`)))
         : null,
     );
@@ -801,7 +806,7 @@ export async function renderAttRota(params) {
         field('Who works it', whoOptions(options, {
           firstLabel: card.row ? `${card.row.staff.name} (as now)` : 'Nobody (as now)',
           firstValue: card.row ? String(card.row.staff.id) : 'nobody',
-          department: shift.department || null,
+          forShift: shift,
         }), 'Somebody already on another shift keeps it: they end up on both, and both are marked'),
         field('Name for this shift', h('input', {
           type: 'text', name: 'title', maxlength: 60, value: card.title ?? '',
@@ -879,11 +884,10 @@ export async function renderAttRota(params) {
         field('Who', whoOptions(options, {
           firstLabel: 'Choose…',
           firstValue: '',
-          // Where a position spans two departments there is no one answer, so
-          // nobody is marked as out of place rather than half of them wrongly.
-          department: new Set(shifts.map((sh) => sh.department || '')).size === 1
-            ? (shifts[0].department || null)
-            : null,
+          // Where a position holds several shifts there is no one answer until
+          // one is picked, so nobody is marked as out of place rather than
+          // half of them wrongly.
+          forShift: shifts.length === 1 ? shifts[0] : null,
         }),
           'People on leave or marked unavailable are left out. Leave it unfilled and it '
           + 'stays on the day until somebody takes it'),
@@ -1277,7 +1281,7 @@ async function editPattern(row, shifts, reload) {
         : null,
       h('div.field-row', days.map((label, dow) => field(
         label,
-        scopedShiftSelect(shifts, row.staff.worksIn, valueAt(week, dow), { name: `w${week}d${dow}` }),
+        scopedShiftSelect(shifts, row.staff, valueAt(week, dow), { name: `w${week}d${dow}` }),
       ))),
     )));
   };
@@ -1398,17 +1402,35 @@ const EXPAND = '__all__';
  * Somebody with no department, or a department with no shifts of its own, gets
  * everything — a short list is only an improvement while it contains the answer.
  */
-function shiftsFor(shifts, areas) {
+function shiftsFor(shifts, staff) {
   const active = (shifts ?? []).filter((s) => s.active !== 0);
-  const list = Array.isArray(areas) ? areas.filter(Boolean) : [areas].filter(Boolean);
-  if (!list.length) return { own: active, other: [] };
+  if (!staff) return { own: active, other: [] };
+
+  const areas = staff.worksIn ?? [];
+  const named = staff.worksShifts ?? [];
+  if (!areas.length && !named.length) return { own: active, other: [] };
 
   // A shift belonging to no department is anybody's, so it belongs at the top
   // with the ones they are set up for rather than behind a heading.
-  const own = active.filter((s) => !s.department || list.includes(s.department));
+  const own = active.filter((s) => allowedShift(staff, s));
   if (!own.length) return { own: active, other: [] };
 
-  return { own, other: active.filter((s) => s.department && !list.includes(s.department)) };
+  return { own, other: active.filter((s) => !allowedShift(staff, s)) };
+}
+
+/**
+ * May this person be put on this shift? The same two rules the server keeps.
+ *
+ * Held in both places on purpose: the server decides what the draft does, and
+ * the grid decides what a cell offers first. Neither refuses what the other
+ * allows — a planner covering a gap by hand is never blocked, only sorted.
+ */
+function allowedShift(staff, shift) {
+  if (!shift.department) return true;
+  const areas = staff?.worksIn ?? [];
+  const named = staff?.worksShifts ?? [];
+  if (!areas.length && !named.length) return true;
+  return areas.includes(shift.department) || named.includes(Number(shift.id));
 }
 
 /**
@@ -1419,18 +1441,17 @@ function shiftsFor(shifts, areas) {
  * enough: the five shifts they might actually work sit at the top under their
  * own department, and the other nineteen are below under theirs.
  */
-function scopedShiftSelect(shifts, areas, selected, props = {}) {
-  const { own, other } = shiftsFor(shifts, areas);
+function scopedShiftSelect(shifts, staff, selected, props = {}) {
+  const { own, other } = shiftsFor(shifts, staff);
   if (!other.length) return shiftSelect(own, selected, props);
 
-  const list = Array.isArray(areas) ? areas.filter(Boolean) : [areas].filter(Boolean);
   const opt = (s) => h('option', {
     value: s.id, selected: String(s.id) === String(selected),
   }, shiftLabel(s));
 
   return h('select', props,
     h('option', { value: '' }, '—'),
-    h('optgroup', { label: list.join(', ') || 'Theirs' }, own.map(opt)),
+    h('optgroup', { label: (staff?.worksIn ?? []).join(', ') || 'What they work' }, own.map(opt)),
     // The rest under their own departments rather than one heading reading
     // "other": nineteen shifts in a lump is the list this grouping exists to
     // avoid, and putting it behind a heading does not make it shorter.

@@ -3527,8 +3527,20 @@ html { touch-action: manipulation; }
 .rota-history { max-height: 22rem; overflow-y: auto; }
 
 /* ------------------------------------------------- where somebody works -- */
-.tick-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-  gap: .1rem .8rem;
+.works-picker {
+  max-height: 18rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: .5rem .7rem;
 }
+.works-area + .works-area { margin-top: .5rem; border-top: 1px solid var(--border); padding-top: .5rem; }
+.works-area-head span { font-size: .9rem; }
+.works-shifts {
+  margin-left: 1.6rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0 .8rem;
+}
+.works-shifts .tickline { padding: .12rem 0; font-size: .85rem; }
+.works-shifts input:disabled + span { opacity: .5; }

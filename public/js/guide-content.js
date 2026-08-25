@@ -1548,10 +1548,17 @@ export const GUIDE = [
       { p: 'Department says where a person sits. They can work in says where they may be '
         + 'rostered, and until you tick anything their own department answers for them. That is '
         + 'right for most of the staff and saves ticking one box twenty-four times.' },
-      { p: 'Tick more for the people it is not true of: a supervisor who covers reception and '
-        + 'the bar, a porter who does nights on security. The draft never puts anybody on a '
-        + 'shift outside these, and where it cannot fill one it says nobody is set up for that '
-        + 'work rather than leaving you to guess.' },
+      { p: 'Tick more for the people it is not true of, and at whichever size fits. A whole '
+        + 'department is a standing answer: anything in it, including the shift added next '
+        + 'month, which is what a supervisor covering the bar means. Single shifts within a '
+        + 'department are the narrow one: a porter who does one named night on security is not '
+        + 'Security, and should not be in the running for the other two.' },
+      { p: 'The draft never puts anybody on a shift outside these, and where it cannot fill one '
+        + 'it says nobody is set up for that work rather than leaving you to guess.' },
+      { warn: 'Naming shifts on their own is the whole answer, not an addition. Somebody with '
+        + 'one F&B shift ticked and nothing else has that shift and no more, their own '
+        + 'department included. The form says so underneath while it is true. Tick their '
+        + 'department as well to mean "their usual work, and also this".' },
       { note: 'You can still put somebody on by hand wherever you like. Covering a gap with '
         + 'whoever is standing there is a real Saturday, so the person is offered under a '
         + '"Not set up for" heading rather than hidden. A shift belonging to no department is '

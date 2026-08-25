@@ -98,7 +98,15 @@ export async function listStaff(ctx) {
     departmentOptions(ctx.db),
   ]);
 
-  return json({ staff: rows.results ?? [], departments });
+  // Every shift, so the "they can work in" picker can offer them by name
+  // rather than only by department. Retired ones come too, because somebody
+  // already picked out for one should see why they are.
+  const shifts = await ctx.db.prepare(
+    `SELECT id, name, department, starts_at, ends_at, active
+       FROM att_shifts ORDER BY sort_order, starts_at, name`,
+  ).all().catch(() => ({ results: [] }));
+
+  return json({ staff: rows.results ?? [], departments, shifts: shifts.results ?? [] });
 }
 
 /**
@@ -126,6 +134,17 @@ function readWorksIn(value) {
   return unique.length ? JSON.stringify(unique) : null;
 }
 
+/** The same, for shifts picked out one at a time. */
+function readWorksShifts(value) {
+  if (value == null) return null;
+  const list = (Array.isArray(value) ? value : [value])
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const unique = [...new Set(list)];
+  if (unique.length > 200) throw badRequest('That is more shifts than a property has.');
+  return unique.length ? JSON.stringify(unique) : null;
+}
+
 export async function createStaff(ctx) {
   const body = await readJson(ctx.request);
   const employeeNo = str(body.employeeNo, 'Employee number', { required: true, max: 40 });
@@ -135,8 +154,8 @@ export async function createStaff(ctx) {
   try {
     row = await ctx.db.prepare(
       `INSERT INTO att_staff (employee_no, name, department, job_title, hired_on, leave_days,
-                              days_per_week, user_id, note, on_rota, works_in)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) RETURNING id`,
+                              days_per_week, user_id, note, on_rota, works_in, works_shifts)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) RETURNING id`,
     ).bind(
       employeeNo, name,
       str(body.department, 'Department', { max: 80 }),
@@ -148,6 +167,7 @@ export async function createStaff(ctx) {
       str(body.note, 'Note', { max: 300 }),
       bool(body.onRota, true) ? 1 : 0,
       readWorksIn(body.worksIn),
+      readWorksShifts(body.worksShifts),
     ).first();
   } catch (err) {
     rethrowConstraint(err, {
@@ -179,7 +199,7 @@ export async function updateStaff(ctx, id) {
       `UPDATE att_staff SET employee_no = ?1, name = ?2, department = ?3, job_title = ?4,
                             hired_on = ?5, left_on = ?6, leave_days = ?7, user_id = ?8,
                             active = ?9, note = ?10, days_per_week = ?12, on_rota = ?13,
-                            works_in = ?14
+                            works_in = ?14, works_shifts = ?15
        WHERE id = ?11`,
     ).bind(
       employeeNo,
@@ -196,6 +216,7 @@ export async function updateStaff(ctx, id) {
       readDaysPerWeek(body.daysPerWeek),
       onRota ? 1 : 0,
       readWorksIn(body.worksIn),
+      readWorksShifts(body.worksShifts),
     ).run();
   } catch (err) {
     rethrowConstraint(err, {
