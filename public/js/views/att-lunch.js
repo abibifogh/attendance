@@ -80,8 +80,12 @@ export async function renderAttLunch(params = {}) {
         h('p.muted', { style: { fontSize: '.85rem', margin: 0 } },
           'The number is what you order against. The names under it are so you can check it.'))),
 
+    // Off the printout. What the kitchen carries out of here is the count and
+    // the names; the menu is the thing they are cooking from memory anyway,
+    // and on paper it pushed the sheet onto a second page.
     card('What is being served', {
       wide: true,
+      cls: 'no-print',
       note: 'The same every week',
       actions: h('button.btn-sm', { onclick: () => setMenu(data, reload) }, 'Set the menu'),
     },
@@ -97,6 +101,7 @@ export async function renderAttLunch(params = {}) {
     data.waiting.length
       ? card('Still to say', {
         wide: true,
+        cls: 'no-print',
         note: `${data.waiting.length} ${data.waiting.length === 1 ? 'person' : 'people'}`,
       },
       h('p.muted', { style: { fontSize: '.85rem' } },

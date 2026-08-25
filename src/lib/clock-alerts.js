@@ -18,11 +18,9 @@ import { addDays, nowIn } from '../util/dates.js';
  *
  * THREE THINGS KEEP IT HONEST.
  *
- *   It only speaks about a punch that has just happened. A terminal coming
- *   back from a day offline posts its whole backlog at once, and an import
- *   carries a year; neither is news, and a phone that buzzes ninety times
- *   because the internet came back is a phone whose owner never trusts it
- *   again.
+ *   It only speaks about a punch from the last hour. A terminal coming back
+ *   from a day offline posts its whole backlog at once, and an import carries
+ *   a year; neither is news.
  *
  *   It says a given clock-in once. The slot is claimed in `att_nudge` before
  *   anything is sent, so a poller re-offering an overlapping window, or two
@@ -40,8 +38,18 @@ import { addDays, nowIn } from '../util/dates.js';
  * their own clock-in, in the place they would go looking for it.
  */
 
-/** How recent a punch has to be to be worth telling somebody about. */
-const FRESH_MINUTES = 25;
+/**
+ * How recent a punch has to be to be worth telling somebody about.
+ *
+ * An hour, not the twenty-five minutes it was. The on-site poller reads the
+ * terminal on its own schedule and the property's internet is not always
+ * there: a punch at 06:04 that reached the app at 06:40 is still news to the
+ * person who made it, and going quiet about it looks exactly like the app
+ * having missed the tap. Anything older than an hour is a backlog rather than
+ * a morning, and a phone that buzzes ninety times because the internet came
+ * back is a phone whose owner never trusts it again.
+ */
+const FRESH_MINUTES = 60;
 
 export async function notifyClockings(db, { punches, timezone = 'UTC' } = {}) {
   const rows = (punches ?? []).filter((p) => p && p.staff_id);

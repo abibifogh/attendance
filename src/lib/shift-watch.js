@@ -84,13 +84,23 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
   // place to find it is the day before.
   const [ds, punches] = await Promise.all([
     loadDataset(db, { from: yesterday, to: today }),
+    // ANY TAP AT ALL, not only one the terminal labelled 'in'.
+    //
+    // `direction` is null whenever the device has no attendance mode
+    // configured, which is the ordinary case on a plain access terminal — and
+    // `direction != 'out'` is false for a null in SQL, not true. So somebody
+    // who tapped at 06:04 on a terminal that does not label its events was
+    // invisible here, and the app chased them every half hour all morning
+    // telling them nothing had been recorded. Something had.
+    //
+    // The question this answers is "has anything been recorded for them
+    // today", and the honest test for that is whether there is a punch.
     db.prepare(
-      `SELECT DISTINCT staff_id, day FROM att_punches
-        WHERE day IN (?1, ?2) AND direction != 'out'`,
+      'SELECT DISTINCT staff_id, day FROM att_punches WHERE day IN (?1, ?2)',
     ).bind(yesterday, today).all().catch(() => ({ results: [] })),
   ]);
 
-  const clockedIn = new Set(
+  const seen = new Set(
     (punches.results ?? []).map((r) => `${Number(r.staff_id)}|${r.day}`),
   );
 
@@ -114,8 +124,8 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
 
     // A punch that landed on the calendar day either side of an overnight
     // shift still means they are here.
-    const here = clockedIn.has(`${staffId}|${found.day}`)
-      || (found.day !== today && clockedIn.has(`${staffId}|${today}`));
+    const here = seen.has(`${staffId}|${found.day}`)
+      || (found.day !== today && seen.has(`${staffId}|${today}`));
 
     if (here) {
       // They are in, and the shift is nearly over. The only thing left to say

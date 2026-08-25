@@ -3,7 +3,7 @@ import {
   fmtDayShort, h, mount, shiftDay, toast, todayISO,
 } from '../util.js';
 import { card, emptyState, table } from './components.js';
-import { navigate, replaceParams } from '../app.js';
+import { holdRefresh, navigate, replaceParams } from '../app.js';
 import {
   asHours, byDepartment, byPosition, earliestFirst, field, formDialog, shiftColour, shiftHours,
   shiftLabel, shiftMinutes, shiftSelect,
@@ -85,6 +85,10 @@ export async function renderAttRota(params) {
   // Pending edits, held until Save. A request per cell would make filling in a
   // fortnight on a phone a hundred round trips.
   const pending = new Map();
+
+  // And the page does not refresh itself out from under them. Somebody who has
+  // spent five minutes filling in a fortnight must not lose it to a clock.
+  holdRefresh(() => pending.size > 0);
 
   const saveBar = h('div.toolbar.rota-savebar', { style: { display: 'none' } });
 

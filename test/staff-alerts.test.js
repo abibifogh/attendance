@@ -432,6 +432,39 @@ test('turning the nudge off turns it off', async () => {
   assert.equal((await watchShifts(db, { timezone: 'UTC' })).reason, 'switched off');
 });
 
+test('a tap the terminal did not label still stops the chase', async () => {
+  // A plain access terminal with no attendance mode records the event and
+  // leaves `direction` null. `direction != 'out'` is false for a null in SQL,
+  // so somebody who tapped at 06:04 was invisible to the watcher and got
+  // chased every half hour until the shift ended, told that nothing had been
+  // recorded. Something had.
+  const { db, raw } = setup();
+  const sent = await withPush(raw);
+  const at = rosterAgo(raw, 40);
+  raw.prepare(
+    `INSERT INTO att_punches (device_serial, employee_no, staff_id, at_utc, at_local, day,
+                              direction, dedupe_key)
+     VALUES ('D1', '1', 1, ?1, ?1, ?2, NULL, 'unlabelled')`,
+  ).run(`${at.day} ${at.starts_at}:00`, at.day);
+
+  const out = await watchShifts(db, { timezone: 'UTC' });
+  assert.equal(out.nudged, 0, 'they are here, whatever the terminal called it');
+  assert.equal(sent.length, 0);
+});
+
+test('an out-only tap is still somebody being seen', async () => {
+  // The message says nothing has been recorded. A departure is a recording.
+  const { db, raw } = setup();
+  const sent = await withPush(raw);
+  const at = rosterAgo(raw, 40);
+  punch(raw, new Date(Date.now() - 10 * 60000), 'out');
+  raw.prepare('UPDATE att_punches SET day = ? WHERE dedupe_key LIKE ?')
+    .run(at.day, '%-out');
+
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 0);
+  assert.equal(sent.length, 0);
+});
+
 // ------------------------------------------------------- the tap on the way out --
 
 test('ten minutes before the end, somebody still clocked in is reminded', async () => {

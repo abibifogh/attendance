@@ -70,10 +70,21 @@ export const GUIDE = [
         + 'for approval, a supervisor gets days that need confirming. Opening the list marks it '
         + 'as read; it does not mark the work as done.' },
 
+      { sub: 'The screen keeps itself current' },
+      { p: 'A page brings itself up to date about once a minute, and again the moment you come '
+        + 'back to the tab after leaving it. Today left open on the office computer is this '
+        + 'morning, not the morning it was opened.' },
+      { note: 'It never does it while you are in the middle of something. A box open, a cursor '
+        + 'in a field, or a rota with changes you have not saved all hold it off until you are '
+        + 'done, and it keeps your place on the page rather than jumping to the top.' },
+
       { sub: 'Printing' },
       { p: 'Anything with a Save as PDF button prints properly: the buttons, menus and tick '
         + 'boxes come off the page and what is left is something you could hand to somebody. '
         + 'Use the browser’s own print if you want the screen as it stands.' },
+      { note: 'The lunch sheet prints the count and the names and nothing else. What is being '
+        + 'served stays on the screen: the kitchen is cooking it, not reading it off a list, '
+        + 'and on paper it pushed the sheet onto a second page.' },
     ],
   },
 

@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { confirmAction, h, mount, toast } from '../util.js';
 import { emptyState } from './components.js';
-import { navigate } from '../app.js';
+import { holdRefresh, navigate } from '../app.js';
 import { field, formDialog } from './att-shared.js';
 import { PAGE_H, PAGE_W, faceCss, lastPage, paperPage } from './letter-paper.js';
 
@@ -64,6 +64,11 @@ export async function renderLetterCompose(params) {
     dirty: false,
     saving: false,
   };
+
+  // A composer is a page somebody is writing on. It is never refreshed under
+  // them, saved or not: even between autosaves the cursor and the selection
+  // are work.
+  holdRefresh(() => true);
 
   const canvas = h('div.compose-canvas');
   const bar = h('div.compose-bar');

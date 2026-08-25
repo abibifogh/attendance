@@ -392,6 +392,10 @@ export async function render() {
     return;
   }
 
+  // Whatever the last view asked us not to interrupt went with it.
+  holds = [];
+  lastRefresh = Date.now();
+
   const container = h('div');
   mount(root, shell(container));
   trackTopbarHeight();
@@ -418,6 +422,83 @@ export async function render() {
     ));
   }
 }
+
+// ---------------------------------------------------------------------------
+// Keeping the screen honest
+// ---------------------------------------------------------------------------
+
+/**
+ * The page brings itself up to date.
+ *
+ * These screens are read as boards. Somebody leaves Today open on the office
+ * computer, or opens Rota on a phone and puts it in a pocket, and an hour
+ * later they are looking at an hour-old answer and treating it as this
+ * morning's. Nothing about the page says so, which is the whole problem: a
+ * stale screen and a fresh one are indistinguishable.
+ *
+ * THREE THINGS STOP IT BEING AN INTERRUPTION, which is the only way a thing
+ * like this survives on a screen somebody is working in.
+ *
+ *   It never refreshes while somebody is in the middle of something. A dialog
+ *   open, a cursor in a box, or a view holding unsaved changes all hold it
+ *   off, and it tries again on the next turn rather than throwing the work
+ *   away.
+ *
+ *   It does nothing while the tab is hidden. A phone in a pocket is not
+ *   reading anything, and waking every minute to fetch a rota is somebody's
+ *   battery. Coming back to the tab refreshes at once, which is the moment it
+ *   actually matters.
+ *
+ *   It is silent. No spinner, no flash, no scroll jump — the view is rebuilt
+ *   in place and the page keeps its scroll position, so somebody reading the
+ *   bottom of a list stays at the bottom of it.
+ */
+const REFRESH_SECONDS = 60;
+
+/** What a view has asked us not to interrupt. Cleared on every render. */
+let holds = [];
+
+/**
+ * "Do not refresh me yet."
+ *
+ * A view with staged edits registers one of these. It is asked, not told, so a
+ * view that has since been replaced simply stops being asked.
+ */
+export function holdRefresh(check) {
+  holds.push(check);
+}
+
+const busy = () => {
+  if (document.querySelector('dialog[open]')) return true;
+  const focused = document.activeElement;
+  if (focused && /^(INPUT|SELECT|TEXTAREA)$/.test(focused.tagName)) return true;
+  return holds.some((check) => {
+    try { return check(); } catch { return false; }
+  });
+};
+
+let lastRefresh = Date.now();
+
+async function refreshIfIdle() {
+  if (document.hidden || !state.role || busy() || !serverReachable()) return;
+  lastRefresh = Date.now();
+  const x = window.scrollX;
+  const y = window.scrollY;
+  await render();
+  // render() replaces the whole shell, so the browser would otherwise put
+  // somebody who was reading the bottom of a list back at the top of it.
+  window.scrollTo(x, y);
+}
+
+setInterval(() => {
+  if (Date.now() - lastRefresh >= REFRESH_SECONDS * 1000) refreshIfIdle();
+}, 15_000);
+
+document.addEventListener('visibilitychange', () => {
+  // Back from a pocket. Whatever is on the screen is as old as the time it
+  // spent there, and this is the moment somebody looks at it.
+  if (!document.hidden && Date.now() - lastRefresh >= REFRESH_SECONDS * 1000) refreshIfIdle();
+});
 
 function resetSession() {
   state.role = null;
