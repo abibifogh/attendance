@@ -455,6 +455,14 @@ export const GUIDE = [
         'Save the rota. Nothing is written until you do.',
       ] },
 
+      { sub: 'Letting it draft one for you' },
+      { p: 'Suggest a draft reads the weeks behind this one and fills the days nothing has been '
+        + 'said about. It aims at what each shift asks for under Setup → Shifts; where a shift '
+        + 'has not said, it copies what the last few weeks actually did, and empty cards already '
+        + 'standing on a day are filled rather than doubled. Nothing it proposes is published.' },
+      { p: 'Whatever it could not fill is listed before you accept it, shift by shift, with the '
+        + 'reason nobody was free. That list is the work left to do by hand.' },
+
       { sub: 'Two shortcuts worth knowing' },
       { list: [
         '⇢ beside a name puts one shift across the whole fortnight on whichever weekdays you tick.',
@@ -1517,6 +1525,21 @@ export const GUIDE = [
       { note: 'The logo is best as a PNG with a transparent background. It is shrunk to about '
         + '600 pixels across on the way in, which is more than a payslip can show. Without one '
         + 'a payslip is headed by the name alone.' },
+
+      { sub: 'Somebody who is never rostered' },
+      { p: 'A director, a consultant, an owner: on the payroll, with a record and a payslip and '
+        + 'a leave balance, and no business taking up a column on the grid. Setup → Staff, '
+        + 'edit them, and set On the rota to No.' },
+      { p: 'They come off the grid, out of the workload list and out of the draft. Anything '
+        + 'already rostered for them from today onwards is taken off, and their standing pattern '
+        + 'goes with it, or it would put them straight back. What is already behind you is left '
+        + 'alone, because it happened.' },
+
+      { sub: 'How many a shift needs' },
+      { p: 'Under Setup → Shifts, People needed is what the draft aims at: three on '
+        + 'reception means three, whether or not the last few weeks managed it. Left blank the '
+        + 'draft copies what those weeks actually did, which is right for a shift that has been '
+        + 'running and no use at all for one you added yesterday.' },
 
       { sub: 'Several shifts, one job' },
       { p: 'A shift is what lateness is measured against, so a breakfast that finishes at two, '

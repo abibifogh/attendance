@@ -2,7 +2,7 @@ import {
   badRequest, csvResponse, int, json, notFound, readJson, str,
 } from '../lib/http.js';
 import {
-  colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysFor,
+  colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysFor, onRota,
   calendarFor, dayCredit, dayLedger, daysPerWeekFor, loadDataset, overUnder, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes,
   weekCountOf,
 } from '../lib/attendance.js';
@@ -1724,7 +1724,7 @@ export async function getRoster(ctx) {
     let onLeave = 0;
 
     for (const staff of ds.staff) {
-      if (!staff.active) continue;
+      if (!onRota(staff)) continue;
       if (ds.leaveBy.has(`${staff.id}|${day}`)) { onLeave += 1; continue; }
       // Every shift they hold, not only the first: a person covering the
       // breakfast and the dinner is two people's worth of cover, and a count
@@ -1773,11 +1773,13 @@ export async function getRoster(ctx) {
       published: Boolean(row.published),
       everPublished: Boolean(row.ever_published),
     }))),
-    departments: [...new Set(ds.staff.filter((s) => s.active)
+    departments: [...new Set(ds.staff.filter(onRota)
       .map((s) => s.department).filter(Boolean))].sort(),
-    tags: [...new Set(ds.staff.filter((s) => s.active)
+    tags: [...new Set(ds.staff.filter(onRota)
       .flatMap((s) => parseTags(s.tags)))].sort(),
-    rows: ds.staff.filter((s) => s.active).map((staff) => ({
+    // Only the people the rota is about. Somebody marked off it keeps every
+    // other screen they were on; this is the one that was never theirs.
+    rows: ds.staff.filter(onRota).map((staff) => ({
       staff: {
         id: staff.id,
         name: staff.name,
@@ -2066,6 +2068,19 @@ export async function saveRoster(ctx) {
     list.sort((a, b) => startsAt(a) - startsAt(b) || Number(a.id) - Number(b.id));
   }
 
+  // Somebody marked as not on the rota cannot be put back on it by a stray
+  // save. The grid never offers them, so reaching here means a stale tab or a
+  // hand-made request, and either way the answer is no.
+  const offRota = await ctx.db.prepare(
+    'SELECT id, name FROM att_staff WHERE on_rota = 0',
+  ).all().catch(() => ({ results: [] }));
+  const offById = new Map((offRota.results ?? []).map((r) => [Number(r.id), r.name]));
+  const checkOn = (staffId) => {
+    if (staffId && offById.has(Number(staffId))) {
+      throw badRequest(`${offById.get(Number(staffId))} is not on the rota.`);
+    }
+  };
+
   const mark = (staffId, day) => {
     if (!staffId) return;
     const range = touched.get(staffId) ?? { from: day, to: day };
@@ -2099,6 +2114,7 @@ export async function saveRoster(ctx) {
       const who = 'staffId' in entry
         ? (entry.staffId == null ? null : int(entry.staffId, 'Staff', { min: 1 }))
         : row.staff_id;
+      if ('staffId' in entry) checkOn(who);
       mark(who, day);
 
       statements.push(ctx.db.prepare(
@@ -2128,6 +2144,8 @@ export async function saveRoster(ctx) {
         .bind(staffId, day));
       continue;
     }
+
+    checkOn(staffId);
 
     // A second shift, kept beside the first. Asking for one they already hold
     // is not a double, it is the same promise written down twice, so it does
@@ -2192,7 +2210,7 @@ export async function copyRoster(ctx) {
   let skippedLeave = 0;
 
   for (const staff of ds.staff) {
-    if (!staff.active) continue;
+    if (!onRota(staff)) continue;
 
     for (let offset = 0; offset < dayCount; offset++) {
       const sourceDay = addDays(fromWeek, offset);
@@ -2209,7 +2227,11 @@ export async function copyRoster(ctx) {
       const patternHere = ds.patternBy.get(
         `${staff.id}|${rotationWeekOf(targetDay, staff.rotation_weeks, ds.rotationAnchor)}|${dow(targetDay)}`,
       );
-      const patternShift = patternHere ? patternHere.shift_id : undefined;
+      // A missing pattern row and a pattern row saying "off" are the same
+      // answer, so both read as null. Left as undefined the comparison below
+      // never matched an empty source day, and copying a week wrote a blank
+      // row for every person on every day of it.
+      const patternShift = patternHere ? (patternHere.shift_id ?? null) : null;
       const wanted = source.shift?.id ?? null;
 
       if (patternShift === wanted) {

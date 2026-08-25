@@ -34,7 +34,7 @@
 // weeks behind it are the only honest source for what the week ahead wants.
 
 import { addDays, dow, rangeDays } from '../util/dates.js';
-import { scheduleFor } from './attendance.js';
+import { onRota, scheduleFor } from './attendance.js';
 import { isNightShift, limitsFrom, shiftsInWindow } from './workload.js';
 
 /** How far back to read the property's habits. Six weeks: long enough to see a
@@ -56,7 +56,7 @@ export function suggestRota({
   const rules = limits ?? limitsFrom(ds.settings ?? {});
   const days = rangeDays(from, to);
   const shifts = (ds.shifts ?? []).filter((s) => s.active);
-  const people = (ds.staff ?? []).filter((s) => s.active
+  const people = (ds.staff ?? []).filter((s) => onRota(s)
     && (!staffIds || staffIds.includes(s.id)));
 
   if (!days.length || !shifts.length || !people.length) {
@@ -78,10 +78,21 @@ export function suggestRota({
     const weekday = dow(day);
 
     for (const shift of shifts) {
-      const target = wanted.get(`${shift.id}|${weekday}`) ?? 0;
-      if (!target) continue;
+      // Three things can say how many people a shift wants, and the largest
+      // of them wins. What the shift itself asks for is the plain answer; the
+      // last few weeks are the fallback for a shift that has never said; and
+      // empty slots already sitting on the day are a request in their own
+      // right, because somebody put three reception cards there on purpose.
+      const usual = wanted.get(`${shift.id}|${weekday}`) ?? 0;
+      const asked = shift.needed == null ? null : Number(shift.needed);
+      const openRows = (ds.slotsByDay?.get(day) ?? [])
+        .filter((row) => Number(row.shift_id) === Number(shift.id));
+      const open = openRows.length;
 
       const already = people.filter((p) => onThisShift(ds, proposed, p.id, day, shift.id)).length;
+      const target = Math.max(asked == null ? usual : asked, already + open);
+      if (!target) continue;
+
       let short = target - already;
       if (short <= 0) continue;
       considered += short;
@@ -106,12 +117,18 @@ export function suggestRota({
           || a.load - b.load
           || String(a.person.name).localeCompare(String(b.person.name)));
 
+      // An empty slot standing on the day is filled rather than added
+      // alongside, or three reception cards would come back as six.
+      const toFill = [...openRows];
+
       for (const candidate of ranked) {
         if (short <= 0) break;
+        const slot = toFill.shift();
         entries.push({
           staffId: candidate.person.id,
           day,
           shiftId: shift.id,
+          rowId: slot ? Number(slot.id) : null,
           why: candidate.habit
             ? `Usually works ${shift.name} on this day`
             : 'Free, and the lightest fortnight of anybody who is',

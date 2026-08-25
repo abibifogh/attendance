@@ -1683,6 +1683,16 @@ async function suggest(from, to, reload) {
     return;
   }
 
+  // What it could not fill, by shift. Fourteen rows saying Reception is one
+  // problem with Reception, and that is the thing somebody has to solve.
+  const gapsByShift = new Map();
+  for (const gap of plan.gaps) {
+    if (!gapsByShift.has(gap.shift)) gapsByShift.set(gap.shift, []);
+    gapsByShift.get(gap.shift).push(gap);
+  }
+  const shortest = [...gapsByShift.entries()]
+    .sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0])));
+
   // Grouped by person, because that is the unit somebody checks. Twelve rows
   // reading "Kofi, Early" are one decision about Kofi, not twelve.
   const byPerson = new Map();
@@ -1701,7 +1711,7 @@ async function suggest(from, to, reload) {
 
   const done = await formDialog({
     title: 'A first draft',
-    submitLabel: 'Put them on as drafts',
+    submitLabel: plan.entries.length ? 'Put them on as drafts' : 'Close',
     body: h('div',
       h('p.muted', { style: { fontSize: '.85rem' } },
         `Read from the ${plan.weeksRead} weeks behind this one. It only fills days nothing has `
@@ -1731,26 +1741,37 @@ async function suggest(from, to, reload) {
         : null,
 
       plan.gaps.length
-        ? h('details', { style: { marginTop: '.8rem' } },
-          h('summary', { style: { cursor: 'pointer', fontSize: '.85rem' } },
-            `${plan.gaps.length} it could not fill`),
-          h('ul.finding-list', plan.gaps.map((g) => h('li',
+        ? h('div.alert.warn', { style: { marginTop: '.8rem', display: 'block' } },
+          h('div.alert-title', `${plan.gaps.length} shift${plan.gaps.length === 1 ? '' : 's'} `
+            + 'it could not fill'),
+          h('div.alert-detail', { style: { marginBottom: '.4rem' } },
+            'These are still open after the draft. Put somebody on by hand, or change what '
+            + 'the shift asks for.'),
+          h('ul.finding-list', shortest.map(([name, list]) => h('li',
             h('div',
-              h('div.finding-title', `${fmtDayShort(g.day)} — ${g.shift}, `
-                + `${g.short} short of ${g.wanted}`),
-              h('div.finding-detail', g.why))))))
+              h('div.finding-title', `${name} — ${list.length} `
+                + `day${list.length === 1 ? '' : 's'} short`),
+              h('div.finding-detail',
+                list.map((g) => `${fmtDayShort(g.day)} (${g.short} of ${g.wanted})`).join(', ')),
+              h('div.finding-detail', list[0].why))))))
         : null,
     ),
     onSubmit: async () => {
+      if (!plan.entries.length) return true;
       const entries = plan.entries
         .filter((e) => !dropped.has(e.staff))
-        .map((e) => ({ staffId: e.staffId, day: e.day, shiftId: e.shiftId }));
+        // A suggestion that lands on an empty slot already standing on the day
+        // is addressed by that row, so the slot is filled rather than doubled.
+        .map((e) => (e.rowId
+          ? { id: e.rowId, day: e.day, staffId: e.staffId, shiftId: e.shiftId }
+          : { staffId: e.staffId, day: e.day, shiftId: e.shiftId }));
       if (!entries.length) throw new Error('Nothing is ticked, so there is nothing to put on.');
       return api.attSaveRoster({ entries });
     },
   });
 
   if (!done) return;
+  if (done === true) return;
   toast(`${done.changed} draft shift${done.changed === 1 ? '' : 's'} added. `
     + 'Adjust them, then publish when you are happy.', 'good');
   await reload();

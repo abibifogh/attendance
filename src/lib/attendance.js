@@ -155,6 +155,18 @@ export function rotationWeekOf(day, rotationWeeks = 1, anchor = ROTATION_ANCHOR)
   return ((elapsed % weeks) + weeks) % weeks;
 }
 
+/**
+ * Somebody the rota is about.
+ *
+ * A property has people who are paid, clock in, take leave and never appear on
+ * a rota: the manager, the accountant, the owner's driver. They are staff in
+ * every other sense — their attendance is recorded, their leave is counted,
+ * they are on the payroll — and on the rota they were a name with twenty-eight
+ * blank cells after it, counted by every screen built on the grid as somebody
+ * with nothing on.
+ */
+export const onRota = (staff) => Boolean(staff?.active) && staff?.on_rota !== 0;
+
 export function scheduleFor(ds, staffId, day) {
   const rostered = ds.rosterBy.get(`${staffId}|${day}`);
   if (rostered) {

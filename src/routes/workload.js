@@ -1,6 +1,6 @@
 import { json } from '../lib/http.js';
 import { allows } from '../lib/permissions.js';
-import { leaveBalance, loadDataset } from '../lib/attendance.js';
+import { leaveBalance, loadDataset, onRota } from '../lib/attendance.js';
 import {
   assessPerson, limitsFrom, restFindings, strainScore,
 } from '../lib/workload.js';
@@ -60,7 +60,7 @@ export async function workload(ctx) {
 
   const people = [];
   for (const staff of ds.staff) {
-    if (!staff.active) continue;
+    if (!onRota(staff)) continue;
     if (onlyDepartment && (staff.department || '') !== onlyDepartment) continue;
     people.push(assessPerson(ds, staff, from, to, limits));
   }
@@ -123,7 +123,7 @@ export async function workload(ctx) {
     rows,
     limits,
     showsLeave,
-    departments: [...new Set(ds.staff.filter((s) => s.active)
+    departments: [...new Set(ds.staff.filter(onRota)
       .map((s) => s.department).filter(Boolean))].sort(),
     summary: {
       people: rows.length,
@@ -150,7 +150,7 @@ export async function rotaWarnings(ctx) {
 
   const rows = {};
   for (const staff of ds.staff) {
-    if (!staff.active) continue;
+    if (!onRota(staff)) continue;
     const person = assessPerson(ds, staff, from, to, limits);
     if (!person.findings.length) continue;
     rows[staff.id] = {

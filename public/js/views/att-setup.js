@@ -375,12 +375,21 @@ async function staffTab(reload) {
             'What the month expects of them. Blank uses the property default',
           ),
         ),
-        isEdit
-          ? field('Status', h('select', { name: 'active' },
-            h('option', { value: 'true', selected: !!existing.active }, 'Active'),
-            h('option', { value: 'false', selected: !existing.active }, 'Not active'),
-          ))
-          : null,
+        h('div.field-row',
+          isEdit
+            ? field('Status', h('select', { name: 'active' },
+              h('option', { value: 'true', selected: !!existing.active }, 'Active'),
+              h('option', { value: 'false', selected: !existing.active }, 'Not active'),
+            ))
+            : null,
+          // Somebody on the payroll who is never rostered: a director, a
+          // consultant, the owner. They keep their record and their payslip
+          // and simply stop taking up a column on the grid.
+          field('On the rota', h('select', { name: 'onRota' },
+            h('option', { value: 'true', selected: existing?.on_rota !== 0 }, 'Yes'),
+            h('option', { value: 'false', selected: existing?.on_rota === 0 }, 'No, never rostered'),
+          ), 'No takes them off the grid, the draft and the workload list'),
+        ),
         field('Note', h('input', { type: 'text', name: 'note', maxlength: 300, value: existing?.note ?? '' })),
       ),
       onSubmit: async (form) => {
@@ -397,13 +406,18 @@ async function staffTab(reload) {
           daysPerWeek: form.get('daysPerWeek') || null,
           note: form.get('note') || null,
           active: form.get('active') !== 'false',
+          onRota: form.get('onRota') !== 'false',
         };
         return isEdit ? api.attUpdateStaff(existing.id, payload) : api.attCreateStaff(payload);
       },
     });
 
     if (done) {
-      if (done.claimedPunches) {
+      if (done.clearedFromRota) {
+        toast(`Saved. ${done.clearedFromRota} shift`
+          + `${done.clearedFromRota === 1 ? '' : 's'} from today onwards have been taken off `
+          + 'the rota.', 'good');
+      } else if (done.claimedPunches) {
         toast(`Added — and ${done.claimedPunches} punch${done.claimedPunches === 1 ? '' : 'es'} already held for that number have been attached.`, 'good');
       } else {
         toast('Saved.', 'good');
@@ -448,7 +462,11 @@ async function staffTab(reload) {
       : null,
 
     card('Staff', {
-      note: `${staff.filter((s) => s.active).length} active`,
+      note: (() => {
+        const active = staff.filter((s) => s.active).length;
+        const off = staff.filter((s) => s.active && s.on_rota === 0).length;
+        return off ? `${active} active, ${off} not on the rota` : `${active} active`;
+      })(),
       actions: h('button.btn.btn-primary', { onclick: () => edit(null) }, '+ Add somebody'),
       wide: true,
     },
@@ -457,7 +475,11 @@ async function staffTab(reload) {
           key: 'name',
           label: 'Name',
           format: (v, r) => h('div',
-            h('div', v, r.active ? null : h('span.pill', { style: { marginLeft: '.4rem' } }, 'inactive')),
+            h('div', v,
+              r.active ? null : h('span.pill', { style: { marginLeft: '.4rem' } }, 'inactive'),
+              r.on_rota === 0
+                ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'not on rota')
+                : null),
             h('small.muted', [r.job_title, r.department].filter(Boolean).join(' · ') || '—'),
           ),
         },
@@ -550,6 +572,12 @@ async function shiftsTab(reload) {
         h('div.field-row',
           field('Half day at', h('input', { type: 'number', name: 'halfDayMinutes', min: 0, max: 1440, value: existing?.half_day_minutes ?? 240 }), 'minutes worked'),
           field('Full day at', fullDay, 'minutes worked, from the hours less the break'),
+          // What the draft aims at. Three on reception every day is a fact
+          // about the job, and left blank the suggester has to guess it from
+          // the weeks behind, which a brand new shift does not have.
+          field('People needed', h('input', {
+            type: 'number', name: 'needed', min: 0, max: 99, value: existing?.needed ?? '',
+          }), 'How many the draft puts on. Blank copies what the last few weeks did'),
         ),
         // Chosen for the shift already, from its id, so a property with
         // twenty-four shifts is not a colouring exercise before the rota
@@ -627,6 +655,7 @@ async function shiftsTab(reload) {
         halfDayMinutes: row.half_day_minutes,
         fullDayMinutes: row.full_day_minutes,
         overtimeAfter: row.overtime_after,
+        needed: row.needed,
         department: row.department || null,
         position: row.position || null,
         active: !retired,
@@ -821,6 +850,13 @@ async function shiftsTab(reload) {
         { key: 'grace_out_minutes', label: 'Grace out', align: 'right', format: (v) => `${v} min` },
         { key: 'half_day_minutes', label: 'Half day', align: 'right', format: (v) => `${fmtNum(v / 60, 1)} h` },
         { key: 'full_day_minutes', label: 'Full day', align: 'right', format: (v) => `${fmtNum(v / 60, 1)} h` },
+        {
+          key: 'needed',
+          label: 'Needed',
+          align: 'right',
+          cls: 'off-phone',
+          format: (v) => (v == null ? h('span.muted', 'from history') : fmtNum(v, 0)),
+        },
         {
           key: 'actions',
           label: '',

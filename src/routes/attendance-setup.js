@@ -119,8 +119,8 @@ export async function createStaff(ctx) {
   try {
     row = await ctx.db.prepare(
       `INSERT INTO att_staff (employee_no, name, department, job_title, hired_on, leave_days,
-                              days_per_week, user_id, note)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id`,
+                              days_per_week, user_id, note, on_rota)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) RETURNING id`,
     ).bind(
       employeeNo, name,
       str(body.department, 'Department', { max: 80 }),
@@ -130,6 +130,7 @@ export async function createStaff(ctx) {
       readDaysPerWeek(body.daysPerWeek),
       body.userId == null || body.userId === '' ? null : int(body.userId, 'Login', { min: 1 }),
       str(body.note, 'Note', { max: 300 }),
+      bool(body.onRota, true) ? 1 : 0,
     ).first();
   } catch (err) {
     rethrowConstraint(err, {
@@ -154,12 +155,13 @@ export async function updateStaff(ctx, id) {
   if (!existing) throw notFound('No such member of staff.');
 
   const employeeNo = str(body.employeeNo, 'Employee number', { required: true, max: 40 });
+  const onRota = bool(body.onRota, true);
 
   try {
     await ctx.db.prepare(
       `UPDATE att_staff SET employee_no = ?1, name = ?2, department = ?3, job_title = ?4,
                             hired_on = ?5, left_on = ?6, leave_days = ?7, user_id = ?8,
-                            active = ?9, note = ?10, days_per_week = ?12
+                            active = ?9, note = ?10, days_per_week = ?12, on_rota = ?13
        WHERE id = ?11`,
     ).bind(
       employeeNo,
@@ -174,6 +176,7 @@ export async function updateStaff(ctx, id) {
       str(body.note, 'Note', { max: 300 }),
       staffId,
       readDaysPerWeek(body.daysPerWeek),
+      onRota ? 1 : 0,
     ).run();
   } catch (err) {
     rethrowConstraint(err, {
@@ -193,10 +196,30 @@ export async function updateStaff(ctx, id) {
 
   const timezone = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'timezone'").first())?.value || 'UTC';
   const today = todayIn(timezone);
-  await recompute(ctx.db, { staffIds: [staffId], from: addDays(today, -60), to: today });
-  await audit(ctx, 'attendance.staff_update', staffId, { employeeNo });
 
-  return json({ ok: true });
+  // TAKEN OFF THE ROTA, AND OFF IT PROPERLY. Their standing pattern and any
+  // day they were down for from today onwards go with them, so nothing is left
+  // acting on a rota nobody can see: no cell in a cover count, no shift alert
+  // at six in the morning, nothing on their own My shifts. What is behind them
+  // stays untouched — a report for March must still show the March they
+  // worked.
+  let cleared = 0;
+  if (existing.on_rota && !onRota) {
+    const gone = await ctx.db.prepare(
+      'DELETE FROM att_roster WHERE staff_id = ?1 AND day >= ?2',
+    ).bind(staffId, today).run().catch(() => null);
+    cleared = Number(gone?.meta?.changes ?? 0);
+    await ctx.db.prepare('DELETE FROM att_patterns WHERE staff_id = ?').bind(staffId)
+      .run().catch(() => {});
+  }
+
+  await recompute(ctx.db, { staffIds: [staffId], from: addDays(today, -60), to: today });
+  await audit(ctx, 'attendance.staff_update', staffId, {
+    employeeNo,
+    offRota: existing.on_rota && !onRota ? { cleared } : undefined,
+  });
+
+  return json({ ok: true, clearedFromRota: cleared });
 }
 
 /**
@@ -321,6 +344,13 @@ function shiftFields(body) {
     // the rota's position view groups by it. Blank means the shift is its own
     // position, which is the truth for most of them.
     str(body.position, 'Position', { max: 80 }),
+    // How many people this shift wants on a normal day. Left blank the
+    // suggester reads the last few weeks and copies whatever the rota has
+    // usually done, which is right until the day a new shift has no history
+    // and quietly gets nobody.
+    body.needed == null || body.needed === ''
+      ? null
+      : int(body.needed, 'People needed', { min: 0, max: 99 }),
   ];
 }
 
@@ -332,8 +362,8 @@ export async function createShift(ctx) {
       `INSERT INTO att_shifts (name, starts_at, ends_at, break_minutes, grace_in_minutes,
                                grace_out_minutes, half_day_minutes, full_day_minutes,
                                overtime_after, colour, sort_order, active, department,
-                               position)
-       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) RETURNING id`,
+                               position, needed)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15) RETURNING id`,
     ).bind(...shiftFields(body)).first();
   } catch (err) {
     rethrowConstraint(err, { unique: 'A shift with that name already exists.' });
@@ -362,8 +392,9 @@ export async function updateShift(ctx, id) {
       `UPDATE att_shifts SET name=?1, starts_at=?2, ends_at=?3, break_minutes=?4,
                              grace_in_minutes=?5, grace_out_minutes=?6, half_day_minutes=?7,
                              full_day_minutes=?8, overtime_after=?9, colour=?10,
-                             sort_order=?11, active=?12, department=?13, position=?14
-       WHERE id = ?15`,
+                             sort_order=?11, active=?12, department=?13, position=?14,
+                             needed=?15
+       WHERE id = ?16`,
     ).bind(...shiftFields(body), shiftId).run();
   } catch (err) {
     rethrowConstraint(err, { unique: 'A shift with that name already exists.' });
