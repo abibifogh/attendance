@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { h, mount } from '../util.js';
+import { fmtSince as when, h, mount } from '../util.js';
 
 /**
  * The bell.
@@ -114,19 +114,4 @@ export function noticeBell() {
   return h('div.bell-wrap', button, panel);
 }
 
-/** "12 minutes ago" beats a timestamp for anything from the last day or so. */
-function when(at) {
-  if (!at) return '';
-  const stamp = new Date(`${String(at).replace(' ', 'T')}Z`);
-  if (Number.isNaN(stamp.getTime())) return String(at);
 
-  const seconds = Math.max(0, Math.round((Date.now() - stamp.getTime()) / 1000));
-  if (seconds < 90) return 'just now';
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} minutes ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
-  const days = Math.round(hours / 24);
-  if (days < 7) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-  return stamp.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}

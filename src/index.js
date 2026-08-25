@@ -130,6 +130,7 @@ export const ROUTES = [
   // which is why it is not behind the reports permission.
   ['POST', '/api/att/roster/publish', 'att_rota', att.publishRoster],
   ['GET', '/api/att/roster/suggest', 'att_rota', suggest.suggestRoster],
+  ['GET', '/api/att/roster/history', ['att_rota', 'att_reports'], att.rosterHistory],
 
   // The one thing here that is not about hours, lateness or money.
   ['GET', '/api/att/birthdays', 'att_view', birthday.birthdays],

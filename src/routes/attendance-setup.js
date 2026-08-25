@@ -205,6 +205,14 @@ export async function updateStaff(ctx, id) {
   // worked.
   let cleared = 0;
   if (existing.on_rota && !onRota) {
+    await ctx.db.prepare(
+      `INSERT INTO att_roster_log
+         (day, staff_id, shift_id, was_staff_id, was_shift_id, action, source, actor, detail)
+       SELECT day, staff_id, NULL, staff_id, shift_id, 'removed', 'off_rota', ?3,
+              'Taken off the rota'
+         FROM att_roster WHERE staff_id = ?1 AND day >= ?2`,
+    ).bind(staffId, today, `${ctx.session.user.name} (${ctx.session.user.role})`)
+      .run().catch(() => {});
     const gone = await ctx.db.prepare(
       'DELETE FROM att_roster WHERE staff_id = ?1 AND day >= ?2',
     ).bind(staffId, today).run().catch(() => null);

@@ -10,7 +10,7 @@ import {
   clockDriftNote, clockOffset, deviceForPushToken, deviceForToken, exceptionNotice,
   ingestPunches, recompute, recomputeTouched,
 } from '../lib/attendance-ingest.js';
-import { replaceDay, rowsFor } from '../lib/roster.js';
+import { logChange, logRows, replaceDay, rowsFor } from '../lib/roster.js';
 import { readNotification } from '../lib/push-events.js';
 import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from '../lib/device-shifts.js';
 import { getPepper } from '../lib/auth.js';
@@ -1853,6 +1853,111 @@ export async function getRoster(ctx) {
  * the people who manage attendance today, and for every member of staff the
  * moment they have their own way in.
  */
+/**
+ * Who changed this shift, and what it said before.
+ *
+ * Three ways of asking, because there are three things somebody is holding
+ * when they ask. A cell: this person's Tuesday. A slot: that empty card on
+ * Thursday. A window: everything that has moved on this rota lately, which is
+ * the one a planner reads on a Monday morning to find out what happened over
+ * the weekend.
+ *
+ * A day that follows the standing pattern has no rows and so no trail. That is
+ * not a gap: nobody changed it, the pattern answered it, and the pattern has
+ * its own record.
+ */
+export async function rosterHistory(ctx) {
+  const q = ctx.url.searchParams;
+  const day = readDay(q.get('day'), null);
+  const staffId = q.get('staffId') ? int(q.get('staffId'), 'Staff', { min: 1 }) : null;
+  const shiftId = q.get('shiftId') ? int(q.get('shiftId'), 'Shift', { min: 1 }) : null;
+
+  let where;
+  let binds;
+  if (day && staffId) {
+    where = 'l.day = ?1 AND l.staff_id = ?2';
+    binds = [day, staffId];
+  } else if (day && shiftId) {
+    // The empty card, and anybody who has stood on it. Both halves matter:
+    // "made empty on Tuesday, Kofi put on Wednesday, taken off again Thursday"
+    // is one story about one card.
+    where = 'l.day = ?1 AND (l.shift_id IS ?2 OR l.was_shift_id IS ?2)';
+    binds = [day, shiftId];
+  } else {
+    const timezone = await timezoneOf(ctx.db);
+    const from = readDay(q.get('from'), todayIn(timezone));
+    const to = readDay(q.get('to'), addDays(from, 13));
+    if (diffDays(from, to) > 62) throw badRequest('Choose a shorter period, two months at most.');
+    where = 'l.day BETWEEN ?1 AND ?2';
+    binds = [from, to];
+  }
+
+  const rows = await ctx.db.prepare(
+    `SELECT l.*,
+            s.name  AS staff_name,
+            w.name  AS was_staff_name,
+            sh.name AS shift_name,
+            wsh.name AS was_shift_name
+       FROM att_roster_log l
+       LEFT JOIN att_staff  s   ON s.id   = l.staff_id
+       LEFT JOIN att_staff  w   ON w.id   = l.was_staff_id
+       LEFT JOIN att_shifts sh  ON sh.id  = l.shift_id
+       LEFT JOIN att_shifts wsh ON wsh.id = l.was_shift_id
+      WHERE ${where}
+      ORDER BY l.at DESC, l.id DESC
+      LIMIT 200`,
+  ).bind(...binds).all().catch(() => ({ results: [] }));
+
+  return json({
+    day,
+    staffId,
+    shiftId,
+    entries: (rows.results ?? []).map((r) => ({
+      id: r.id,
+      at: r.at,
+      day: r.day,
+      action: r.action,
+      source: r.source,
+      actor: r.actor,
+      detail: r.detail,
+      staff: r.staff_id ? { id: r.staff_id, name: r.staff_name } : null,
+      wasStaff: r.was_staff_id ? { id: r.was_staff_id, name: r.was_staff_name } : null,
+      shift: r.shift_id ? { id: r.shift_id, name: r.shift_name } : null,
+      wasShift: r.was_shift_id ? { id: r.was_shift_id, name: r.was_shift_name } : null,
+      // Said here rather than in the browser, so the wording is the same in
+      // the dialog, the panel and anything printed off the back of it.
+      said: sentenceFor(r),
+    })),
+  });
+}
+
+/** One line saying what happened, in the words somebody would use out loud. */
+function sentenceFor(r) {
+  const who = r.staff_name ?? r.was_staff_name ?? 'Nobody';
+  const shift = r.shift_name ?? null;
+  const was = r.was_shift_name ?? null;
+
+  if (r.action === 'published') {
+    return shift ? `${who} on ${shift} was published` : `${who}’s day was published`;
+  }
+  if (r.action === 'removed') {
+    if (r.was_staff_id == null) return `The empty ${was ?? 'slot'} card was taken off`;
+    return was ? `${who} was taken off ${was}` : `${who} was taken off the day`;
+  }
+  if (r.action === 'added') {
+    if (r.staff_id == null) return `An empty ${shift ?? 'slot'} card was put on the day`;
+    return shift ? `${who} was put on ${shift}` : `${who} was put down for the day`;
+  }
+  // changed
+  if (r.staff_id !== r.was_staff_id) {
+    const before = r.was_staff_name ?? 'nobody';
+    return `${shift ?? 'The shift'} went from ${before} to ${r.staff_name ?? 'nobody'}`;
+  }
+  if (!was) return `${who} was put on ${shift}`;
+  if (!shift) return `${who} came off ${was}`;
+  return `${who} moved from ${was} to ${shift}`;
+}
+
 export async function publishRoster(ctx) {
   const body = await readJson(ctx.request);
   const from = readDay(body.from);
@@ -1897,6 +2002,16 @@ export async function publishRoster(ctx) {
   const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
 
   await ctx.db.batch([
+    // Before the update, or there is nothing left that still reads as a draft
+    // to write an entry about.
+    logRows(ctx.db, {
+      where: 'day BETWEEN ?1 AND ?2 AND published = 0',
+      binds: [from, to],
+      action: 'published',
+      source: 'publish',
+      actor,
+      detail: told === 'none' ? 'Published quietly' : null,
+    }),
     ctx.db.prepare(
       `UPDATE att_roster SET published = 1, ever_published = 1
         WHERE day BETWEEN ?1 AND ?2 AND published = 0`,
@@ -2104,6 +2219,14 @@ export async function saveRoster(ctx) {
       mark(row.staff_id, row.day);
 
       if (entry.remove) {
+        statements.push(logChange(ctx.db, {
+          day: row.day,
+          staffId: row.staff_id,
+          wasStaffId: row.staff_id,
+          wasShiftId: row.shift_id,
+          action: 'removed',
+          actor,
+        }));
         statements.push(ctx.db.prepare('DELETE FROM att_roster WHERE id = ?').bind(rowId));
         continue;
       }
@@ -2117,12 +2240,26 @@ export async function saveRoster(ctx) {
       if ('staffId' in entry) checkOn(who);
       mark(who, day);
 
+      const nowShift = shiftId ?? row.shift_id;
+      if (Number(who ?? 0) !== Number(row.staff_id ?? 0)
+        || Number(nowShift ?? 0) !== Number(row.shift_id ?? 0)) {
+        statements.push(logChange(ctx.db, {
+          day: row.day,
+          staffId: who,
+          shiftId: nowShift,
+          wasStaffId: row.staff_id,
+          wasShiftId: row.shift_id,
+          action: 'changed',
+          actor,
+        }));
+      }
+
       statements.push(ctx.db.prepare(
         `UPDATE att_roster
             SET staff_id = ?2, shift_id = ?3, title = ?4, set_by = ?5,
                 set_at = datetime('now'), published = 0
           WHERE id = ?1`,
-      ).bind(rowId, who, shiftId ?? row.shift_id, title ?? row.title, actor));
+      ).bind(rowId, who, nowShift, title ?? row.title, actor));
       continue;
     }
 
@@ -2132,6 +2269,9 @@ export async function saveRoster(ctx) {
         `INSERT INTO att_roster (staff_id, day, shift_id, title, set_by, set_at, published)
          VALUES (NULL, ?1, ?2, ?3, ?4, datetime('now'), 0)`,
       ).bind(day, shiftId, title, actor));
+      statements.push(logChange(ctx.db, {
+        day, shiftId, action: 'added', actor, detail: 'Left empty for somebody to take',
+      }));
       continue;
     }
 
@@ -2140,6 +2280,12 @@ export async function saveRoster(ctx) {
     mark(staffId, day);
 
     if (entry.clear) {
+      statements.push(logRows(ctx.db, {
+        where: 'staff_id = ?1 AND day = ?2',
+        binds: [staffId, day],
+        action: 'removed',
+        actor,
+      }));
       statements.push(ctx.db.prepare('DELETE FROM att_roster WHERE staff_id = ? AND day = ?')
         .bind(staffId, day));
       continue;
@@ -2156,6 +2302,9 @@ export async function saveRoster(ctx) {
         `INSERT INTO att_roster (staff_id, day, shift_id, note, title, set_by, set_at, published)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), 0)`,
       ).bind(staffId, day, shiftId, note, title, actor));
+      statements.push(logChange(ctx.db, {
+        day, staffId, shiftId, action: 'added', actor, detail: 'A second shift on the day',
+      }));
       continue;
     }
 
@@ -2237,6 +2386,14 @@ export async function copyRoster(ctx) {
       if (patternShift === wanted) {
         // The pattern already says this. Drop any override so the cell goes
         // back to being pattern-driven rather than pinned.
+        statements.push(logRows(ctx.db, {
+          where: 'staff_id = ?1 AND day = ?2',
+          binds: [staff.id, targetDay],
+          action: 'removed',
+          source: 'copy',
+          actor,
+          detail: `Back to the standing pattern, copying ${sourceDay}`,
+        }));
         statements.push(ctx.db.prepare(
           'DELETE FROM att_roster WHERE staff_id = ? AND day = ?',
         ).bind(staff.id, targetDay));
@@ -2253,6 +2410,8 @@ export async function copyRoster(ctx) {
           actor,
           note: here[0]?.note ?? null,
           title: here[0]?.title ?? null,
+          source: 'copy',
+          detail: `Copied from ${sourceDay}`,
         }));
         copied += 1;
       }

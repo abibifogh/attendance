@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import {
-  fmtDayShort, h, mount, shiftDay, toast, todayISO,
+  fmtDayShort, fmtSince, fmtStamp, h, mount, shiftDay, toast, todayISO,
 } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import { holdRefresh, navigate, replaceParams } from '../app.js';
@@ -254,7 +254,7 @@ export async function renderAttRota(params) {
     // not read as ninety captions waiting to be written.
     const titleButton = h('button.rota-title', {
       type: 'button',
-      title: 'A name for this shift, if it needs one',
+      title: 'A name for this shift, and who has changed it',
       onclick: async () => {
         const got = await formDialog({
           title: `${row.staff.name}, ${fmtDayShort(entry.day)}`,
@@ -264,6 +264,7 @@ export async function renderAttRota(params) {
               type: 'text', name: 'title', maxlength: 60, value: entry.title ?? '',
               placeholder: 'Stock take',
             }), 'Optional. Shown on the card and nowhere else'),
+            historyBlock({ day: entry.day, staffId: row.staff.id }),
           ),
           onSubmit: async (form) => ({ title: (form.get('title') || '').trim() }),
         });
@@ -790,6 +791,9 @@ export async function renderAttRota(params) {
             h('input', { type: 'checkbox', name: 'drop' }),
             h('span', 'Take this shift off the day altogether'))
           : null,
+        historyBlock(card.row
+          ? { day: card.day, staffId: card.row.staff.id }
+          : { day: card.day, shiftId: card.shiftId }),
       ),
       onSubmit: async (form) => ({
         staffId: form.get('staffId'),
@@ -1125,6 +1129,20 @@ export async function renderAttRota(params) {
         : null,
       view === 'people' ? importButton(reload) : null,
       h('button.btn-sm', {
+        onclick: () => formDialog({
+          title: 'What has changed on this rota',
+          submitLabel: 'Close',
+          body: h('div',
+            h('p.muted', { style: { fontSize: '.85rem' } },
+              `Every change to ${fmtDayShort(from)} to ${fmtDayShort(to)}, newest first. Days `
+              + 'following a standing pattern are not here: nobody changed them.'),
+            historyBlock({ from, to }, { title: 'Newest first' }),
+          ),
+          onSubmit: async () => true,
+        }),
+        title: 'Who changed what on this rota, and when',
+      }, 'What changed'),
+      h('button.btn-sm', {
         onclick: () => suggest(from, to, reload),
         title: 'Fill the blanks from what this property usually does. '
           + 'Nothing is published and nothing you have decided is touched',
@@ -1281,6 +1299,57 @@ async function editPattern(row, shifts, reload) {
     await reload();
   }
 }
+
+/**
+ * What has happened to a shift, in the order it happened.
+ *
+ * Loaded when the dialog opens rather than with the grid: ninety cells is
+ * ninety trails, and all but the one somebody clicked would be read by nobody.
+ * The block renders itself as it goes, so a slow answer shows a line rather
+ * than an empty space somebody has to guess about.
+ */
+function historyBlock(query, { title = 'What has changed' } = {}) {
+  const list = h('div.rota-history', h('p.muted', { style: { fontSize: '.82rem' } }, 'Reading…'));
+
+  const host = h('div', {
+    style: { marginTop: '.9rem', paddingTop: '.7rem', borderTop: '1px solid var(--border)' },
+  },
+  h('h3', { style: { fontSize: '.9rem', marginBottom: '.4rem' } }, title),
+  list);
+
+  api.attRosterHistory(query).then((data) => {
+    if (!data.entries.length) {
+      mount(list, h('p.muted', { style: { fontSize: '.82rem' } },
+        'Nothing yet. A day that follows the standing pattern has nothing to record until '
+        + 'somebody changes it.'));
+      return;
+    }
+
+    mount(list, h('ul.history-list', data.entries.map((e) => h('li',
+      h('div.history-said', e.said),
+      h('div.history-by',
+        h('span', { title: fmtStamp(e.at) }, fmtSince(e.at)),
+        h('span.muted', ' · '),
+        h('span', e.actor),
+        e.day ? h('span.muted', ` · ${fmtDayShort(e.day)}`) : null),
+      e.detail ? h('div.history-detail', e.detail) : null,
+      SOURCE_WORDS[e.source] ? h('span.pill.history-source', SOURCE_WORDS[e.source]) : null,
+    ))));
+  }).catch((err) => {
+    mount(list, h('p.form-error', { style: { display: '' } }, err.message));
+  });
+
+  return host;
+}
+
+// Where a change came from, where that is not simply somebody typing.
+const SOURCE_WORDS = {
+  copy: 'copied week',
+  import: 'import',
+  draft: 'draft',
+  publish: 'publish',
+  off_rota: 'taken off the rota',
+};
 
 const EXPAND = '__all__';
 

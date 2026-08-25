@@ -107,6 +107,38 @@ export function fmtDay(day, { withYear = false } = {}) {
   });
 }
 
+/**
+ * "12 minutes ago" beats a timestamp for anything from the last day or so.
+ *
+ * Past a week it goes back to a date, because "forty-one days ago" is a number
+ * somebody has to do arithmetic on and "14 Jun" is not.
+ */
+export function fmtSince(at) {
+  if (!at) return '';
+  const stamp = new Date(`${String(at).replace(' ', 'T')}Z`);
+  if (Number.isNaN(stamp.getTime())) return String(at);
+
+  const seconds = Math.max(0, Math.round((Date.now() - stamp.getTime()) / 1000));
+  if (seconds < 90) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+  return stamp.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+/** The same moment written out in full, for a tooltip beside the short form. */
+export function fmtStamp(at) {
+  if (!at) return '';
+  const stamp = new Date(`${String(at).replace(' ', 'T')}Z`);
+  if (Number.isNaN(stamp.getTime())) return String(at);
+  return stamp.toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
 export function fmtDayShort(day) {
   if (!day) return '';
   return new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });

@@ -257,6 +257,9 @@ export const api = {
   attBirthdays: () => request('/api/att/birthdays'),
   attBirthdayCard: (body) => request('/api/att/birthdays/card', { method: 'POST', body }),
   attSuggestRoster: (from, to) => request(`/api/att/roster/suggest?from=${from}&to=${to}`),
+  attRosterHistory: (params) => request(`/api/att/roster/history?${new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v != null && v !== ''),
+  )}`),
   attPublishRoster: (body) => request('/api/att/roster/publish', { method: 'POST', body }),
   attSetAvailability: (body) => request('/api/att/availability', { method: 'POST', body }),
   attCopyRoster: (body) => request('/api/att/roster/copy', { method: 'POST', body }),

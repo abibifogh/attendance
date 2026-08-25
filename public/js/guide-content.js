@@ -455,6 +455,15 @@ export const GUIDE = [
         'Save the rota. Nothing is written until you do.',
       ] },
 
+      { sub: 'Who changed this shift' },
+      { p: 'Every change to the rota is kept: who made it, when, and what the day said before. '
+        + 'What changed on the toolbar reads the whole window newest first, and the same trail '
+        + 'is at the bottom of any cell or card you open.' },
+      { p: 'Copying a week, confirming an import, accepting a draft, publishing and taking '
+        + 'somebody off the rota all leave their own entry, so a change nobody remembers making '
+        + 'usually turns out to have a name against it. A day following a standing pattern has '
+        + 'nothing to show, which is the honest answer: nobody changed it.' },
+
       { sub: 'Letting it draft one for you' },
       { p: 'Suggest a draft reads the weeks behind this one and fills the days nothing has been '
         + 'said about. It aims at what each shift asks for under Setup → Shifts; where a shift '

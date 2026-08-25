@@ -428,6 +428,8 @@ export async function confirmRotaImport(ctx) {
       actor,
       note: r.raw_note || r.raw_title || null,
       title: rowsFor(ds, r.staff_id, r.day)[0]?.title ?? null,
+      source: 'import',
+      detail: 'From an imported week',
     }));
     applied += 1;
   }
