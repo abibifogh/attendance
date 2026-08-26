@@ -9,7 +9,7 @@ import {
   alternatesOf, altScope, alwaysOff, everyDays, loadDataset, mayWork, offDays, runsOn,
   runsOnDay,
 } from '../src/lib/attendance.js';
-import { suggestRota } from '../src/lib/suggest.js';
+import { canTake, suggestRota } from '../src/lib/suggest.js';
 import { limitsFrom } from '../src/lib/workload.js';
 
 /**
@@ -612,4 +612,90 @@ test('the clash scope is saved', async () => {
   const row = raw.prepare('SELECT alt_group, alt_scope FROM att_shifts WHERE id = 3').get();
   assert.equal(row.alt_group, 'Deep clean');
   assert.equal(row.alt_scope, 'week');
+});
+
+// ---------------------------------------------------------------------------
+// Filling everything, and saying what it cost
+// ---------------------------------------------------------------------------
+
+test('a refusal says which rule it was, not only how it reads', () => {
+  const { db } = setup();
+  void db;
+  const verdict = canTake(
+    { leaveBy: new Map() },
+    new Map(),
+    { id: 1, off_days: '[0]' },
+    MONDAY,
+    { id: 1, department: null },
+    limitsFrom({}),
+  );
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.rule, 'weekday');
+});
+
+test('somebody is moved off another shift rather than leaving one empty', async () => {
+  const { db, raw } = setup();
+  // Two shifts, two people, and only Kofi may work the second. Asked in order,
+  // the first shift takes Kofi and the second finds nobody.
+  raw.prepare('DELETE FROM att_shifts WHERE id = 3').run();
+  raw.prepare('DELETE FROM att_staff WHERE id = 3').run();
+  raw.prepare('UPDATE att_shifts SET only_staff_id = 1 WHERE id = 2').run();
+
+  const plan = await draft(db);
+  const covered = plan.entries.map((e) => e.shiftId).sort();
+  assert.deepEqual(covered, [1, 2], 'both are covered');
+  assert.equal(plan.entries.find((e) => e.shiftId === 2).staffId, 1);
+  assert.equal(plan.entries.find((e) => e.shiftId === 1).staffId, 2,
+    'and Ama took the one anybody could do');
+  assert.equal(plan.entries.every((e) => !e.breach), true, 'no rule was bent to do it');
+});
+
+test('a shift nobody is left for is covered by going past a limit, and says which', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id = 3').run();
+  raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+
+  const plan = await draft(db);
+  assert.equal(plan.entries.length, 2, 'one person, two shifts, both covered');
+  assert.equal(plan.gaps.length, 0);
+
+  const bent = plan.entries.find((e) => e.breach);
+  assert.ok(bent, 'and one of them is marked');
+  assert.equal(bent.second, true, 'as a second shift in the day');
+  assert.equal(bent.breach.label, 'Two shifts in one day');
+  assert.equal(bent.breach.law, 'Act 651 ss.33–34', 'naming the section it goes against');
+  assert.deepEqual(plan.stretched, [bent]);
+});
+
+test('nobody is given a third shift in one day', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+
+  const plan = await draft(db);
+  const onTheDay = plan.entries.filter((e) => e.day === MONDAY && e.staffId === 1);
+  assert.equal(onTheDay.length, 2, 'two is the most it will ask');
+  assert.equal(plan.gaps.length, 1, 'and the third shift is reported rather than invented');
+});
+
+test('leave, a day off and the wrong department are never stretched', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+  raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+  raw.prepare("UPDATE att_staff SET off_days = '[0]' WHERE id = 1").run();
+
+  const plan = await draft(db);
+  assert.equal(plan.entries.length, 0, 'a weekday they never work is a fact, not a limit');
+  assert.equal(plan.gaps.length, 1);
+});
+
+test('an optional shift is never filled by bending a rule', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id = 3').run();
+  raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+  raw.prepare('UPDATE att_shifts SET optional = 1 WHERE id = 2').run();
+
+  const plan = await draft(db);
+  assert.equal(plan.entries.length, 1, 'the one that had to be covered, and no more');
+  assert.equal(plan.entries[0].shiftId, 1);
+  assert.equal(plan.gaps.find((g) => g.shiftId === 2).optional, true);
 });

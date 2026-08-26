@@ -189,8 +189,8 @@ export const GUIDE = [
         + 'breakfast shift.' },
 
       { sub: 'Running late' },
-      { p: 'One button. It tells whoever is on the floor before the shift starts, instead of '
-        + 'them finding out by looking at an empty station.' },
+      { p: 'One button. It tells your manager before the shift starts, so somebody can cover '
+        + 'you in the meantime, instead of them finding out by looking at an empty station.' },
       { warn: 'It changes nothing on your record. The terminal still decides what time you '
         + 'arrived, and pressing this is a message rather than an excuse note.' },
 
@@ -216,8 +216,8 @@ export const GUIDE = [
       { p: 'The two about clocking are the ones worth having. The first waits out whatever '
         + 'grace the shift already allows, stops the moment you clock in, and stops on its own '
         + 'when the shift you were down for has ended.' },
-      { p: 'The second arrives ten minutes before your shift finishes, while you are still on '
-        + 'the floor and still walking past the terminal, and only if you clocked in and have '
+      { p: 'The second arrives ten minutes before your shift finishes, while you are still at '
+        + 'work and still walking past the terminal, and only if you clocked in and have '
         + 'not clocked out. Arriving feels like something you do; leaving does not, which is '
         + 'why the tap on the way out is the one that goes missing. A day with only one tap is '
         + 'held back rather than counted, and then somebody has to sit down with you a week '
@@ -1050,7 +1050,8 @@ export const GUIDE = [
 
       { note: 'Every notice also goes out by email, to whoever it names — the person it is '
         + 'addressed to, or whoever holds the permission it is for. So a question raised while '
-        + 'you are off the floor reaches you anyway. Setup → Notifications turns it off.' },
+        + 'you are away from your desk reaches you anyway. Setup → Notifications turns it '
+        + 'off.' },
 
       { note: 'Whoever you last acted on is held at the top until you do something else, '
         + 'with a line saying what just happened to them and how many of their days are '
@@ -1605,6 +1606,27 @@ export const GUIDE = [
       { note: 'Once a week is Days in between set to seven. There is no separate weekly '
         + 'setting: a shift that is wanted, may run any day, and cannot run twice within seven '
         + 'days runs once a week by itself.' },
+      { sub: 'It will fill everything, and tell you what that cost' },
+      { p: 'Aside from what you have marked optional, the draft tries every way it has of '
+        + 'covering a shift. First the people who are free. Then, where nobody is, it looks '
+        + 'for somebody already down for something else that day whose shift another person '
+        + 'could take instead, and swaps the two: a greedy pass gives the first shift of the '
+        + 'day its best person and leaves the last with nobody, and that is the order of the '
+        + 'asking rather than the property being short.' },
+      { p: 'When even that leaves a shift empty, it goes past a limit rather than leave it. '
+        + 'Your own practice first, then the Labour Act, and never quietly. Every one of those '
+        + 'arrives marked in red on the draft, named on the person\u2019s line, and counted in '
+        + 'a block at the bottom saying which section it goes against.' },
+      { warn: 'Read that block before you accept a draft. A rota where most of the shifts are '
+        + 'marked is not a rota to publish: it is the app showing you that the shift list is '
+        + 'asking for more work than the property has people to do. Nobody can work two shifts '
+        + 'a day for a fortnight, whatever the arithmetic says.' },
+      { note: 'Two shifts in one day is the last thing it will try and the most it will ask. '
+        + 'It never writes a third, and it never touches leave, a day somebody said they '
+        + 'cannot work, a weekday they never work, or a department they are not set up for. '
+        + 'Those are not limits to be stretched, they are facts, and going past them would be '
+        + 'writing down something untrue.' },
+
       { warn: 'A draft that comes back with dozens of shifts it could not fill is usually the '
         + 'shift list claiming more than the property runs. Twenty-two shifts wanted every day '
         + 'is three hundred shift-days a fortnight, and no property that size has the people '

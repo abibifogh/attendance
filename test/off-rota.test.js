@@ -179,8 +179,10 @@ test('the draft never proposes somebody who is off the rota', async () => {
   offRota(raw, 1);
 
   const plan = await draft(db);
-  assert.equal(plan.entries.some((e) => e.staffId === 1), false);
-  assert.equal(plan.entries.length, 2, 'the two who are left are both put on');
+  assert.equal(plan.entries.some((e) => e.staffId === 1), false,
+    'not once, not even to keep a shift covered');
+  assert.deepEqual([...new Set(plan.entries.map((e) => e.staffId))].sort(), [2, 3],
+    'and the two who are left carry it between them');
 });
 
 test('a shift that says what it needs is filled even with no history behind it', async () => {

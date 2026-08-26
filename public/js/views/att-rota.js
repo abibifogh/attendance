@@ -1840,6 +1840,19 @@ async function suggest(from, to, reload) {
   const spareOnly = byShift(plan.gaps.filter(soft));
   const unfilled = plan.gaps.filter((g) => !soft(g)).length;
 
+  // What it had to go past, by rule. One line per limit, because "over 40
+  // hours" nine times is one decision about hours and not nine.
+  const breaches = new Map();
+  for (const entry of plan.stretched ?? []) {
+    const label = entry.breach?.label ?? 'A limit';
+    if (!breaches.has(label)) breaches.set(label, []);
+    breaches.get(label).push({
+      staff: entry.staff,
+      day: entry.day,
+      law: entry.breach?.law ?? null,
+    });
+  }
+
   // Shifts left alone because an alternative already covers the day.
   const instead = new Map();
   for (const row of plan.instead ?? []) {
@@ -1889,9 +1902,32 @@ async function suggest(from, to, reload) {
             h('span', h('strong', name),
               h('small.muted', ` · ${rows.length} shift${rows.length === 1 ? '' : 's'}`))),
           h('div.clean-days', rows.map((r) => h('small',
-            `${fmtDayShort(r.day)} ${r.shift}`))),
+            { class: r.breach ? 'clean-day-breach' : '' },
+            `${fmtDayShort(r.day)} ${r.shift}`,
+            r.breach ? ` ⚠ ${r.breach.label.toLowerCase()}` : ''))),
           h('small.muted', rows[0].why),
         )))
+        : null,
+
+      // Loudest first, and above the list of names. This is the one thing on
+      // the screen that a person has to decide about rather than read.
+      (plan.stretched ?? []).length
+        ? h('div.alert.high', { style: { marginTop: '.8rem', display: 'block' } },
+          h('div.alert-title',
+            `${plan.stretched.length} shift${plan.stretched.length === 1 ? '' : 's'} `
+            + 'could only be covered by going past a limit'),
+          h('div.alert-detail', { style: { marginBottom: '.4rem' } },
+            'Nobody was left who could work these inside the rules. They are on the draft so '
+            + 'the day is covered, marked on the grid, and yours to accept or undo.'),
+          h('ul.finding-list', [...breaches.entries()].map(([label, list]) => h('li',
+            h('div',
+              h('div.finding-title', `${label} — ${list.length} `
+                + `time${list.length === 1 ? '' : 's'}`),
+              h('div.finding-detail',
+                list[0].law ? `Against ${list[0].law}.` : 'Your own rule, not the law.'),
+              h('div.finding-detail',
+                list.slice(0, 6).map((b) => `${b.staff}, ${fmtDayShort(b.day)}`).join('; ')
+                + (list.length > 6 ? `, and ${list.length - 6} more` : '')))))))
         : null,
 
       instead.size
@@ -1944,9 +1980,15 @@ async function suggest(from, to, reload) {
         .filter((e) => !dropped.has(e.staff))
         // A suggestion that lands on an empty slot already standing on the day
         // is addressed by that row, so the slot is filled rather than doubled.
-        .map((e) => (e.rowId
-          ? { id: e.rowId, day: e.day, staffId: e.staffId, shiftId: e.shiftId }
-          : { staffId: e.staffId, day: e.day, shiftId: e.shiftId }));
+        .map((e) => {
+          if (e.rowId) return { id: e.rowId, day: e.day, staffId: e.staffId, shiftId: e.shiftId };
+          // A second shift on a day they already hold one goes beside it. Sent
+          // as a plain change it would replace the first, and the day would
+          // come back covered once instead of twice.
+          return {
+            staffId: e.staffId, day: e.day, shiftId: e.shiftId, add: Boolean(e.second),
+          };
+        });
       if (!entries.length) throw new Error('Nothing is ticked, so there is nothing to put on.');
       return api.attSaveRoster({ entries });
     },

@@ -202,21 +202,94 @@ export function suggestRota({
         // alongside, or three reception cards would come back as six.
         const toFill = [...openRows];
 
-        for (const candidate of ranked) {
-          if (short <= 0) break;
+        const place = (personId, note, breach = null) => {
           const slot = toFill.shift();
+          const key = `${personId}|${day}`;
+          const held = proposed.get(key) ?? [];
           entries.push({
-            staffId: candidate.person.id,
+            staffId: personId,
             day,
             shiftId: shift.id,
             rowId: slot ? Number(slot.id) : null,
-            why: candidate.habit
-              ? `Usually works ${shift.name} on this day`
-              : 'Free, and the lightest fortnight of anybody who is',
+            why: note,
+            breach,
+            // A day they are already down for: this goes beside what they
+            // hold rather than over it, which is what the grid means by a
+            // second shift and what Save has to be told.
+            second: held.length > 0,
           });
-          proposed.set(`${candidate.person.id}|${day}`, shift.id);
+          proposed.set(key, [...held, shift.id]);
           ran.add(`${day}|${shift.id}`);
           short -= 1;
+        };
+
+        for (const candidate of ranked) {
+          if (short <= 0) break;
+          place(candidate.person.id, candidate.habit
+            ? `Usually works ${shift.name} on this day`
+            : 'Free, and the lightest fortnight of anybody who is');
+        }
+
+        // NOBODY WAS FREE. Before this shift is written off, two more goes.
+        //
+        // The first costs nothing: somebody who could work it is already down
+        // for something else today, and that something else has a spare pair
+        // of hands nobody has used. Move them across. A greedy pass hands the
+        // first shift of the day whoever is best and leaves the last with
+        // nobody, and that is not the property being short: it is the order
+        // the shifts happened to be asked in.
+        while (short > 0) {
+          const moved = shuffleSomebodyOut(
+            { ds, proposed, people, day, shift, rules, availabilityBy, entries },
+          );
+          if (!moved) break;
+          place(moved.staffId, `Moved off ${moved.from} so this is covered`);
+        }
+
+        // STILL EMPTY, AND IT IS NOT AN OPTIONAL SHIFT. The last resort: fill
+        // it by going past a limit, and say out loud which one and what it
+        // costs. Four of the limits are the Labour Act and the rest are the
+        // property's own practice, so the practice ones are spent first and
+        // the law only where there is nothing else left.
+        //
+        // Never silently. Every one of these arrives on the grid marked, is
+        // counted in its own red block on the draft, and names the section it
+        // goes against. The decision is the employer's to make and theirs to
+        // see.
+        if (short > 0 && !shift.optional) {
+          const stretched = people
+            .map((person) => ({
+              person,
+              verdict: canTake(ds, proposed, person, day, shift, rules, availabilityBy),
+            }))
+            // Never the same shift twice. A second shift in a day means a
+            // different one; writing somebody down for this one again is not
+            // covering it, it is counting it twice.
+            .filter((c) => STRETCHABLE.has(c.verdict.rule)
+              && !onThisShift(ds, proposed, c.person.id, day, shift.id)
+              // Two shifts in a day is already the end of what can be asked.
+              // Three is not covering the rota, it is inventing hours nobody
+              // is going to work, and a draft full of them tells a planner
+              // nothing they can act on.
+              && (proposed.get(`${c.person.id}|${day}`) ?? []).length < 2)
+            .sort((a, b) => cost(a.verdict.rule) - cost(b.verdict.rule)
+              || loadOf(ds, proposed, a.person.id, day) - loadOf(ds, proposed, b.person.id, day)
+              || String(a.person.name).localeCompare(String(b.person.name)));
+
+          for (const candidate of stretched) {
+            if (short <= 0) break;
+            const spec = rules[candidate.verdict.rule] ?? EXTRA_RULES[candidate.verdict.rule] ?? {};
+            place(
+              candidate.person.id,
+              `Nobody was left, so ${candidate.verdict.why}`,
+              {
+                rule: candidate.verdict.rule,
+                label: spec.label ?? candidate.verdict.rule,
+                law: spec.law ?? null,
+                detail: candidate.verdict.why,
+              },
+            );
+          }
         }
 
         if (short > 0) {
@@ -251,6 +324,9 @@ export function suggestRota({
     entries,
     gaps,
     instead,
+    // Every shift that could only be covered by going past a limit, so the
+    // screen can say so once rather than the reader counting them.
+    stretched: entries.filter((e) => e.breach),
     filled: entries.length,
     considered,
     habits: [...wanted.entries()]
@@ -260,6 +336,42 @@ export function suggestRota({
       })
       .filter((row) => row.usually),
   };
+}
+
+/**
+ * The refusals that may be overridden to keep a shift covered, cheapest first.
+ *
+ * Everything not in here is a fact rather than a limit: somebody on leave is
+ * not at work, somebody who never works Sundays does not work Sundays, and a
+ * housekeeper is not a security guard. Overriding those would not be trying
+ * harder, it would be writing down something untrue.
+ */
+const STRETCHABLE = new Set([
+  'consecutiveDays', 'nightsPerFortnight', 'dailyRestHours', 'weeklyHours', 'busy',
+]);
+
+/** What a rule is called and what it goes against, where the limits do not say. */
+const EXTRA_RULES = {
+  busy: { label: 'Two shifts in one day', law: 'Act 651 ss.33–34' },
+};
+
+/**
+ * What breaking a rule costs, low first.
+ *
+ * The property's own practice before the Labour Act, and within the Act the
+ * one that can be made good with a payment before the one that cannot. A sixth
+ * day in a row is a conversation; twelve hours' rest is the law.
+ */
+function cost(rule) {
+  return {
+    consecutiveDays: 1,
+    nightsPerFortnight: 2,
+    weeklyHours: 3,
+    dailyRestHours: 4,
+    // Last of all. Asking somebody to come back the same day is the biggest
+    // thing on this list to ask of a person, whatever the arithmetic says.
+    busy: 5,
+  }[rule] ?? 9;
 }
 
 // --------------------------------------------------------------------------
@@ -365,8 +477,77 @@ const daysApart = (from, to) => Math.round(
 /** Whether somebody is already down for this shift on this day. */
 function onThisShift(ds, proposed, staffId, day, shiftId) {
   const staged = proposed.get(`${staffId}|${day}`);
-  if (staged !== undefined) return staged === shiftId;
+  if (staged !== undefined) return staged.includes(shiftId);
   return scheduleFor(ds, staffId, day).shift?.id === shiftId;
+}
+
+/**
+ * Free somebody up for a shift nobody is left for.
+ *
+ * The one thing a greedy pass cannot see. Reception is asked first and takes
+ * Kofi, who is the only person set up for the bar; the bar is asked last and
+ * finds nobody. Reception had three other people who could have covered it,
+ * so the property was never short: the shifts were merely asked in an unlucky
+ * order.
+ *
+ * So: for each person who could work the shift standing empty, look at what
+ * they are down for today and ask whether anybody else could take that
+ * instead. If somebody can, the two are swapped and both shifts are covered.
+ * Nothing here bends a rule — every move is checked by the same `canTake` as
+ * a first choice — which is why it is tried before anything that does.
+ *
+ * One level deep on purpose. Chains of three and four swaps are hard to read
+ * on a grid, and a planner who cannot see why the rota moved will not trust
+ * the next one.
+ */
+function shuffleSomebodyOut({
+  ds, proposed, people, day, shift, rules, availabilityBy, entries,
+}) {
+  for (const person of people) {
+    // Only somebody the shift itself would take. Whatever is in their way, it
+    // must be that they are already busy rather than that they are wrong for
+    // the work or away.
+    const verdict = canTake(ds, proposed, person, day, shift, rules, availabilityBy);
+    if (verdict.ok || verdict.rule !== 'busy') continue;
+
+    // What this run proposed for them today. A day that came from the rota or
+    // a standing pattern is somebody's decision and is left alone; only this
+    // draft's own choices are moved.
+    const held = proposed.get(`${person.id}|${day}`) ?? [];
+    if (held.length !== 1) continue;
+    const holding = held[0];
+
+    const mine = entries.find((e) => e.staffId === person.id && e.day === day);
+    if (!mine) continue;
+
+    // Somebody else to take what they were on.
+    for (const other of people) {
+      if (other.id === person.id) continue;
+      const heldShift = { ...ds.shiftById?.get(holding) ?? {}, id: holding };
+      const swap = canTake(ds, proposed, other, day, heldShift, rules, availabilityBy);
+      if (!swap.ok) continue;
+
+      // Do it: the stand-in takes the old shift, and the person is freed.
+      mine.staffId = other.id;
+      mine.why = `Covering for ${person.name}, who is needed on ${shift.name}`;
+      proposed.set(`${other.id}|${day}`, [holding]);
+      proposed.delete(`${person.id}|${day}`);
+
+      const stillOk = canTake(ds, proposed, person, day, shift, rules, availabilityBy);
+      if (stillOk.ok) {
+        return { staffId: person.id, from: ds.shiftById?.get(holding)?.name ?? 'another shift' };
+      }
+
+      // Freeing them was not enough after all. Put it back exactly as it was
+      // rather than leaving the grid half-swapped.
+      mine.staffId = person.id;
+      proposed.set(`${person.id}|${day}`, [holding]);
+      proposed.delete(`${other.id}|${day}`);
+      break;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -416,30 +597,33 @@ function busyOn(ds, proposed, staffId, day) {
  * is only ever read to explain a gap and one honest reason is worth four.
  */
 export function canTake(ds, proposed, person, day, shift, limits, availabilityBy = new Map()) {
-  const no = (why) => ({ ok: false, why });
+  // Every refusal says which rule it was, not only how it reads. Some of them
+  // can be stretched to fill a shift that would otherwise stand empty and some
+  // of them cannot, and a sentence is no way to tell the two apart.
+  const no = (rule, why) => ({ ok: false, rule, why });
 
-  if (person.hired_on && day < person.hired_on) return no('had not started');
-  if (person.left_on && day > person.left_on) return no('has left');
+  if (person.hired_on && day < person.hired_on) return no('hired', 'had not started');
+  if (person.left_on && day > person.left_on) return no('left', 'has left');
 
   // A weekday they never work. Standing, so it needs no ✕ on the grid every
   // fortnight, and checked before anything about the shift because it rules
   // out the whole day rather than this shift on it.
-  if (alwaysOff(person, day)) return no('never works this weekday');
+  if (alwaysOff(person, day)) return no('weekday', 'never works this weekday');
 
   // Where somebody may be put on at all. Checked before anything about the
   // day, because it is not a fact about this Tuesday: it is a fact about them,
   // and no amount of being free makes a housekeeper right for Security.
-  if (!mayWork(person, shift)) return no(`not set up for ${shift.department}`);
+  if (!mayWork(person, shift)) return no('department', `not set up for ${shift.department}`);
 
-  if (ds.leaveBy?.get(`${person.id}|${day}`)) return no('on leave');
-  if (busyOn(ds, proposed, person.id, day)) return no('already has that day');
+  if (ds.leaveBy?.get(`${person.id}|${day}`)) return no('leave', 'on leave');
+  if (busyOn(ds, proposed, person.id, day)) return no('busy', 'already has that day');
 
   const avail = availabilityBy.get(`${person.id}|${day}`);
   if (avail && avail.status === 'unavailable') {
     // A window inside the day only rules out the shifts that overlap it.
-    if (!avail.from_time || !avail.to_time) return no('cannot work that day');
+    if (!avail.from_time || !avail.to_time) return no('availability', 'cannot work that day');
     if (overlaps(shift, avail.from_time, avail.to_time)) {
-      return no(`cannot work ${avail.from_time}–${avail.to_time}`);
+      return no('availability', `cannot work ${avail.from_time}–${avail.to_time}`);
     }
   }
 
@@ -449,32 +633,37 @@ export function canTake(ds, proposed, person, day, shift, limits, availabilityBy
   const withThis = [...worked, madeUp(shift, day)].sort((a, b) => a.day.localeCompare(b.day));
 
   if (runEndingOn(withThis, day) > limits.consecutiveDays.value) {
-    return no(`would be ${runEndingOn(withThis, day)} days in a row`);
+    return no('consecutiveDays', `would be ${runEndingOn(withThis, day)} days in a row`);
   }
   if (tooCloseTogether(withThis, limits.dailyRestHours.value)) {
-    return no(`under ${limits.dailyRestHours.value} hours' rest either side`);
+    return no('dailyRestHours', `under ${limits.dailyRestHours.value} hours' rest either side`);
   }
   if (hoursInWeekOf(withThis, day) > limits.weeklyHours.value) {
-    return no(`over ${limits.weeklyHours.value} hours that week`);
+    return no('weeklyHours', `over ${limits.weeklyHours.value} hours that week`);
   }
   if (isNightShift(shift)
     && withThis.filter((w) => w.night).length > limits.nightsPerFortnight.value) {
-    return no(`over ${limits.nightsPerFortnight.value} nights in the fortnight`);
+    return no('nightsPerFortnight', `over ${limits.nightsPerFortnight.value} nights in the fortnight`);
   }
 
-  return { ok: true, why: null };
+  return { ok: true, rule: null, why: null };
 }
 
 /** What they are down to work, with anything proposed folded in. */
 function withProposals(ds, proposed, staffId, from, to) {
   const real = shiftsInWindow(ds, staffId, from, to).filter((w) => !w.leave);
   const extra = [];
-  for (const [key, shiftId] of proposed) {
+  for (const [key, shiftIds] of proposed) {
     const [who, day] = key.split('|');
     if (String(who) !== String(staffId)) continue;
     if (day < from || day > to) continue;
-    const shift = ds.shiftById?.get(shiftId);
-    if (shift) extra.push(madeUp(shift, day));
+    // Every shift proposed for that day, not the first. A second one taken on
+    // to keep a shift covered is hours worked, and the limits have to see it
+    // or the next decision is made on a false total.
+    for (const shiftId of shiftIds) {
+      const shift = ds.shiftById?.get(shiftId);
+      if (shift) extra.push(madeUp(shift, day));
+    }
   }
   return [...real, ...extra].sort((a, b) => a.day.localeCompare(b.day));
 }

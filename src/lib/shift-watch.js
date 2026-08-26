@@ -180,7 +180,8 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
         ? `Your ${found.shift.name} started at ${found.shift.starts_at}`
         : `Still nothing recorded — ${describe(late)} into your ${found.shift.name}`,
       body: 'Nothing has been recorded for you yet. If you are on your way, press '
-        + '"I am running late" so the floor knows. Once you clock in this stops.',
+        + '"I am running late" so your manager can have somebody cover you in the '
+        + 'meantime. Once you clock in this stops.',
       link: '#/att-me',
       day: found.day,
       actor: 'HIVE',

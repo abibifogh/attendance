@@ -3552,3 +3552,6 @@ html { touch-action: manipulation; }
   gap: .1rem .9rem;
 }
 .day-ticks .tickline { padding: .15rem 0; }
+
+/* ------------------------------------------- a draft that bends a rule -- */
+.clean-day-breach { color: var(--bad); font-weight: 600; }

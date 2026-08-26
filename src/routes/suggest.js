@@ -76,6 +76,11 @@ export async function suggestRoster(ctx) {
     shift: ds.shiftById.get(entry.shiftId)?.name ?? null,
   }));
 
+  // Said apart as well as inline. A planner who is about to put a fortnight in
+  // front of twenty-four people should read what it costs before they scroll,
+  // not find it three names down a list.
+  const stretched = named.filter((entry) => entry.breach);
+
   return json({
     from,
     to,
@@ -84,6 +89,7 @@ export async function suggestRoster(ctx) {
     entries: named,
     gaps: out.gaps,
     instead: out.instead ?? [],
+    stretched,
     filled: out.filled,
     considered: out.considered,
     // Said out loud on the way out, because it is the promise the whole

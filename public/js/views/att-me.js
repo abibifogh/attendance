@@ -488,8 +488,9 @@ async function runningLate(reload) {
     submitLabel: 'Send it',
     body: h('div',
       h('p.muted', { style: { fontSize: '.85rem' } },
-        'This is a message, not an excuse note. It changes nothing on your record: the '
-        + 'terminal still decides what time you arrived.'),
+        'Let them know you are running late so your manager can have somebody cover you in '
+        + 'the meantime. This is a message, not an excuse note: it changes nothing on your '
+        + 'record, and the terminal still decides what time you arrived.'),
       field('About how late', h('select', { name: 'minutes' },
         [10, 15, 30, 45, 60, 90, 120].map((n) => h('option', {
           value: String(n), selected: n === 15,
