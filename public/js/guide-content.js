@@ -1536,6 +1536,18 @@ export const GUIDE = [
         + '600 pixels across on the way in, which is more than a payslip can show. Without one '
         + 'a payslip is headed by the name alone.' },
 
+      { sub: 'The most days a week' },
+      { p: 'Most days a week, on the staff form, is the ceiling the rota works to. Left blank '
+        + 'it is their contracted week, which for this property is five days, so the ordinary '
+        + 'answer needs nothing typed at all. Fill it in only for the people the property '
+        + 'genuinely works differently.' },
+      { warn: 'It is deliberately not the same field as Days a week directly above it. That '
+        + 'one is what their month is measured against and the divisor behind their day rate '
+        + 'on a payslip. Raising it to let somebody work a sixth day would quietly change what '
+        + 'they are paid for a day, which is why the rota has a figure of its own.' },
+      { note: 'A day is a day however many shifts are on it. Somebody with two shifts on one '
+        + 'Tuesday has worked one of their five, not two.' },
+
       { sub: 'Weekdays somebody never works' },
       { p: 'Never works, on the staff form, is the standing version of the ✕ on the rota. '
         + 'Somebody at church every Sunday is not going to be told a fortnight at a time, and '
@@ -1617,6 +1629,10 @@ export const GUIDE = [
         + 'Your own practice first, then the Labour Act, and never quietly. Every one of those '
         + 'arrives marked in red on the draft, named on the person\u2019s line, and counted in '
         + 'a block at the bottom saying which section it goes against.' },
+      { p: 'One shift often goes past more than one rule at once: a sixth day in a row is '
+        + 'usually a sixth day in the week too, and may be the forty-first hour as well. All '
+        + 'of them are named rather than whichever the app happened to check first, so the '
+        + 'counts in that block add up to more than the number of shifts.' },
       { warn: 'Read that block before you accept a draft. A rota where most of the shifts are '
         + 'marked is not a rota to publish: it is the app showing you that the shift list is '
         + 'asking for more work than the property has people to do. Nobody can work two shifts '

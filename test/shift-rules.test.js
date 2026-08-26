@@ -6,8 +6,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { createShift, listShifts, updateShift, updateStaff } from '../src/routes/attendance-setup.js';
 import { getRoster } from '../src/routes/attendance.js';
 import {
-  alternatesOf, altScope, alwaysOff, everyDays, loadDataset, mayWork, offDays, runsOn,
-  runsOnDay,
+  alternatesOf, altScope, alwaysOff, everyDays, loadDataset, maxDaysPerWeekFor, mayWork,
+  offDays, runsOn, runsOnDay,
 } from '../src/lib/attendance.js';
 import { canTake, suggestRota } from '../src/lib/suggest.js';
 import { limitsFrom } from '../src/lib/workload.js';
@@ -698,4 +698,90 @@ test('an optional shift is never filled by bending a rule', async () => {
   assert.equal(plan.entries.length, 1, 'the one that had to be covered, and no more');
   assert.equal(plan.entries[0].shiftId, 1);
   assert.equal(plan.gaps.find((g) => g.shiftId === 2).optional, true);
+});
+
+// ---------------------------------------------------------------------------
+// The most days a week
+// ---------------------------------------------------------------------------
+
+test('their contracted week is the cap until somebody says otherwise', () => {
+  assert.equal(maxDaysPerWeekFor({}, {}), 5, 'the property default');
+  assert.equal(maxDaysPerWeekFor({ days_per_week: 4 }, {}), 4, 'their own contract');
+  assert.equal(maxDaysPerWeekFor({ days_per_week: 4, max_days_per_week: 6 }, {}), 6,
+    'and the override beats it');
+  assert.equal(maxDaysPerWeekFor({ max_days_per_week: 99 }, {}), 7, 'a week has seven days');
+});
+
+// Six hours, so five days is thirty and the forty-hour rule cannot be what
+// stops a sixth day. Otherwise the two rules bind at the same moment and this
+// would pass whether the days rule existed or not.
+const shortShift = (raw) => raw
+  .prepare("UPDATE att_shifts SET ends_at = '12:00' WHERE id = 1").run();
+
+test('nobody is drafted for a sixth day in a week', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+  raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+  shortShift(raw);
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  const clean = plan.entries.filter((e) => !e.breach);
+  assert.equal(clean.length, 5, 'five days, and the sixth and seventh are not free ones');
+});
+
+test('a sixth day is taken only as a marked breach, and named as the property’s own rule', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+  raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+  shortShift(raw);
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  const bent = plan.entries.filter((e) => e.breach?.rule === 'daysPerWeek');
+  assert.ok(bent.length, 'the shift is covered rather than left empty');
+  assert.equal(bent[0].breach.label, 'Days worked in a week');
+  assert.equal(bent[0].breach.law, null, 'the property’s own rule, not the Act');
+});
+
+test('somebody marked as the exception takes the extra days cleanly', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+  raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+  raw.prepare('UPDATE att_staff SET max_days_per_week = 7 WHERE id = 1').run();
+  shortShift(raw);
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  const onDays = plan.entries.filter((e) => e.breach?.rule === 'daysPerWeek');
+  assert.equal(onDays.length, 0, 'no days-in-a-week breach for the person exempted');
+  assert.equal(plan.entries.length, 7, 'and the whole week is covered');
+});
+
+test('two shifts on one day count as one day worked', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id = 3').run();
+  raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+
+  // Monday holds two shifts. Tuesday to Friday should still be free days.
+  const plan = await draft(db, MONDAY, '2026-06-05');
+  const monday = plan.entries.filter((e) => e.day === MONDAY);
+  assert.equal(monday.length, 2, 'both Monday shifts covered');
+  assert.equal(plan.entries.filter((e) => e.breach?.rule === 'daysPerWeek').length, 0,
+    'and the week is five days, not six');
+});
+
+test('the exception is set by the migration for the two named people', async () => {
+  const { raw } = setup();
+  raw.prepare(
+    `INSERT INTO att_staff (id, employee_no, name, hired_on)
+     VALUES (90, '90', 'Dorcas Sarpei', '2020-01-01'),
+            (91, '91', 'Henry Nii Aryee', '2020-01-01'),
+            (92, '92', 'Somebody Else', '2020-01-01')`,
+  ).run();
+  // Re-running the migration is what a deploy does; it must be safe and exact.
+  raw.exec(readFileSync('migrations/0065_max_days_per_week.sql', 'utf8')
+    .split('\n').filter((l) => !l.startsWith('ALTER')).join('\n'));
+
+  const rows = raw.prepare(
+    'SELECT name, max_days_per_week FROM att_staff WHERE id IN (90, 91, 92) ORDER BY id',
+  ).all();
+  assert.deepEqual(rows.map((r) => r.max_days_per_week), [7, 7, null]);
 });

@@ -134,6 +134,12 @@ function readWorksIn(value) {
   return unique.length ? JSON.stringify(unique) : null;
 }
 
+/** The most days a week somebody may be rostered, or null for their contract. */
+function readMaxDays(value) {
+  if (value == null || value === '') return null;
+  return num(value, 'Most days a week', { min: 1, max: 7 });
+}
+
 /** The weekdays somebody never works, as they arrive from a form. */
 function readOffDays(value) {
   if (value == null) return null;
@@ -166,8 +172,8 @@ export async function createStaff(ctx) {
     row = await ctx.db.prepare(
       `INSERT INTO att_staff (employee_no, name, department, job_title, hired_on, leave_days,
                               days_per_week, user_id, note, on_rota, works_in, works_shifts,
-                              off_days)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) RETURNING id`,
+                              off_days, max_days_per_week)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) RETURNING id`,
     ).bind(
       employeeNo, name,
       str(body.department, 'Department', { max: 80 }),
@@ -181,6 +187,7 @@ export async function createStaff(ctx) {
       readWorksIn(body.worksIn),
       readWorksShifts(body.worksShifts),
       readOffDays(body.offDays),
+      readMaxDays(body.maxDaysPerWeek),
     ).first();
   } catch (err) {
     rethrowConstraint(err, {
@@ -212,7 +219,8 @@ export async function updateStaff(ctx, id) {
       `UPDATE att_staff SET employee_no = ?1, name = ?2, department = ?3, job_title = ?4,
                             hired_on = ?5, left_on = ?6, leave_days = ?7, user_id = ?8,
                             active = ?9, note = ?10, days_per_week = ?12, on_rota = ?13,
-                            works_in = ?14, works_shifts = ?15, off_days = ?16
+                            works_in = ?14, works_shifts = ?15, off_days = ?16,
+                            max_days_per_week = ?17
        WHERE id = ?11`,
     ).bind(
       employeeNo,
@@ -231,6 +239,7 @@ export async function updateStaff(ctx, id) {
       readWorksIn(body.worksIn),
       readWorksShifts(body.worksShifts),
       readOffDays(body.offDays),
+      readMaxDays(body.maxDaysPerWeek),
     ).run();
   } catch (err) {
     rethrowConstraint(err, {

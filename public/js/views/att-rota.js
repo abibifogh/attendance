@@ -1844,13 +1844,17 @@ async function suggest(from, to, reload) {
   // hours" nine times is one decision about hours and not nine.
   const breaches = new Map();
   for (const entry of plan.stretched ?? []) {
-    const label = entry.breach?.label ?? 'A limit';
-    if (!breaches.has(label)) breaches.set(label, []);
-    breaches.get(label).push({
-      staff: entry.staff,
-      day: entry.day,
-      law: entry.breach?.law ?? null,
-    });
+    // Every rule the placement goes past, not only its headline. A sixth day
+    // in a row is often a sixth day in the week as well, and counting it once
+    // under whichever check ran first leaves the other unsaid.
+    const broken = entry.breach?.all?.length
+      ? entry.breach.all
+      : [entry.breach ?? { label: 'A limit', law: null }];
+    for (const one of broken) {
+      const label = one.label ?? 'A limit';
+      if (!breaches.has(label)) breaches.set(label, []);
+      breaches.get(label).push({ staff: entry.staff, day: entry.day, law: one.law ?? null });
+    }
   }
 
   // Shifts left alone because an alternative already covers the day.
@@ -1904,7 +1908,10 @@ async function suggest(from, to, reload) {
           h('div.clean-days', rows.map((r) => h('small',
             { class: r.breach ? 'clean-day-breach' : '' },
             `${fmtDayShort(r.day)} ${r.shift}`,
-            r.breach ? ` ⚠ ${r.breach.label.toLowerCase()}` : ''))),
+            r.breach
+              ? ` ⚠ ${(r.breach.all?.length ? r.breach.all : [r.breach])
+                .map((b) => b.label.toLowerCase()).join(', ')}`
+              : ''))),
           h('small.muted', rows[0].why),
         )))
         : null,
@@ -1918,7 +1925,9 @@ async function suggest(from, to, reload) {
             + 'could only be covered by going past a limit'),
           h('div.alert-detail', { style: { marginBottom: '.4rem' } },
             'Nobody was left who could work these inside the rules. They are on the draft so '
-            + 'the day is covered, marked on the grid, and yours to accept or undo.'),
+            + 'the day is covered, marked on the grid, and yours to accept or undo. One shift '
+            + 'may go past more than one rule, so the counts below add up to more than the '
+            + 'number of shifts.'),
           h('ul.finding-list', [...breaches.entries()].map(([label, list]) => h('li',
             h('div',
               h('div.finding-title', `${label} — ${list.length} `

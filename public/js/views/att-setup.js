@@ -521,6 +521,16 @@ async function staffTab(reload) {
             h('input', { type: 'number', name: 'daysPerWeek', min: 0.5, max: 7, step: 0.5, value: existing?.days_per_week ?? '' }),
             'What the month expects of them. Blank uses the property default',
           ),
+          // Apart from the line above on purpose. That one is the divisor
+          // behind their day rate; this one is only about the rota.
+          field(
+            'Most days a week',
+            h('input', {
+              type: 'number', name: 'maxDaysPerWeek', min: 1, max: 7, step: 1,
+              value: existing?.max_days_per_week ?? '',
+            }),
+            'The most the rota may put them down for. Blank keeps them to their contracted week',
+          ),
         ),
         field('Never works', h('div.day-ticks', offBoxes),
           'A standing rule, so it needs no ✕ on the rota every fortnight. For one date only, '
@@ -563,6 +573,7 @@ async function staffTab(reload) {
           leftOn: form.get('leftOn') || null,
           leaveDays: form.get('leaveDays') || null,
           daysPerWeek: form.get('daysPerWeek') || null,
+          maxDaysPerWeek: form.get('maxDaysPerWeek') || null,
           note: form.get('note') || null,
           active: form.get('active') !== 'false',
           onRota: form.get('onRota') !== 'false',
@@ -648,6 +659,10 @@ async function staffTab(reload) {
                 ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'not on rota')
                 : null),
             h('small.muted', [r.job_title, r.department].filter(Boolean).join(' · ') || '—'),
+            r.max_days_per_week
+              ? h('small.muted', { style: { display: 'block' } },
+                `Up to ${fmtNum(r.max_days_per_week, 0)} days a week`)
+              : null,
             readDayList(r.off_days).length
               ? h('small.muted', { style: { display: 'block' } },
                 `Never works ${readDayList(r.off_days)

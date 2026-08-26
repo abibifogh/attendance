@@ -35,7 +35,8 @@
 
 import { addDays, dow, rangeDays, startOfWeek } from '../util/dates.js';
 import {
-  alternatesOf, altScope, alwaysOff, everyDays, mayWork, onRota, runsOnDay, scheduleFor,
+  alternatesOf, altScope, alwaysOff, everyDays, maxDaysPerWeekFor, mayWork, onRota, runsOnDay,
+  scheduleFor,
 } from './attendance.js';
 import { isNightShift, limitsFrom, shiftsInWindow } from './workload.js';
 
@@ -278,16 +279,23 @@ export function suggestRota({
 
           for (const candidate of stretched) {
             if (short <= 0) break;
-            const spec = rules[candidate.verdict.rule] ?? EXTRA_RULES[candidate.verdict.rule] ?? {};
+            // Every rule this placement goes past, not merely the first one
+            // that refused it. A sixth day in a row is often a sixth day in
+            // the week as well, and reporting only whichever check ran first
+            // means one of the two is never named at all.
+            const broken = whatItBreaks(
+              ds, proposed, candidate.person, day, shift, rules,
+            );
+            const worst = broken[broken.length - 1] ?? {
+              rule: candidate.verdict.rule,
+              label: candidate.verdict.rule,
+              law: null,
+              detail: candidate.verdict.why,
+            };
             place(
               candidate.person.id,
               `Nobody was left, so ${candidate.verdict.why}`,
-              {
-                rule: candidate.verdict.rule,
-                label: spec.label ?? candidate.verdict.rule,
-                law: spec.law ?? null,
-                detail: candidate.verdict.why,
-              },
+              { ...worst, all: broken },
             );
           }
         }
@@ -339,6 +347,50 @@ export function suggestRota({
 }
 
 /**
+ * Every stretchable rule a placement would go past, mildest last-but-one and
+ * the most serious at the end.
+ *
+ * `canTake` stops at the first refusal, which is right for deciding whether
+ * somebody may work and wrong for saying what it costs. A sixth day in a row
+ * is usually a sixth day in the week too, and a planner who is shown only one
+ * of the two is being told half of it.
+ */
+function whatItBreaks(ds, proposed, person, day, shift, limits) {
+  const found = [];
+  const seen = new Map();
+
+  // Run the checks one at a time by turning the others off, so each answers
+  // for itself rather than for whichever happened to be tested first.
+  for (const rule of STRETCHABLE) {
+    if (rule === 'busy') continue;
+    const only = { ...limits };
+    for (const other of STRETCHABLE) {
+      if (other === rule || other === 'busy') continue;
+      // Most of these are ceilings and are switched off by raising them. Rest
+      // between shifts is a floor: raising it would make every shift too close
+      // to the last, which is the opposite of ignoring it.
+      only[other] = {
+        ...(limits[other] ?? {}),
+        value: other === 'dailyRestHours' ? 0 : Number.MAX_SAFE_INTEGER,
+      };
+    }
+    const verdict = canTake(ds, proposed, person, day, shift, only);
+    if (verdict.rule === rule) seen.set(rule, verdict.why);
+  }
+
+  if ((proposed.get(`${person.id}|${day}`) ?? []).length > 0) {
+    seen.set('busy', 'a second shift in the day');
+  }
+
+  for (const [rule, detail] of seen) {
+    const spec = limits[rule] ?? EXTRA_RULES[rule] ?? {};
+    found.push({ rule, label: spec.label ?? rule, law: spec.law ?? null, detail });
+  }
+
+  return found.sort((a, b) => cost(a.rule) - cost(b.rule));
+}
+
+/**
  * The refusals that may be overridden to keep a shift covered, cheapest first.
  *
  * Everything not in here is a fact rather than a limit: somebody on leave is
@@ -347,12 +399,16 @@ export function suggestRota({
  * harder, it would be writing down something untrue.
  */
 const STRETCHABLE = new Set([
-  'consecutiveDays', 'nightsPerFortnight', 'dailyRestHours', 'weeklyHours', 'busy',
+  'daysPerWeek', 'consecutiveDays', 'nightsPerFortnight', 'dailyRestHours', 'weeklyHours', 'busy',
 ]);
 
 /** What a rule is called and what it goes against, where the limits do not say. */
 const EXTRA_RULES = {
   busy: { label: 'Two shifts in one day', law: 'Act 651 ss.33–34' },
+  // The property's own answer, not the Act's. It has no section against it,
+  // and saying so is the point: a planner reading the list should be able to
+  // tell what they may decide from what they may not.
+  daysPerWeek: { label: 'Days worked in a week', law: null },
 };
 
 /**
@@ -364,6 +420,9 @@ const EXTRA_RULES = {
  */
 function cost(rule) {
   return {
+    // Spent first. It is the property's own rule rather than the Act's, and a
+    // sixth day is the smallest thing on this list to ask of anybody.
+    daysPerWeek: 0,
     consecutiveDays: 1,
     nightsPerFortnight: 2,
     weeklyHours: 3,
@@ -641,6 +700,19 @@ export function canTake(ds, proposed, person, day, shift, limits, availabilityBy
   if (hoursInWeekOf(withThis, day) > limits.weeklyHours.value) {
     return no('weeklyHours', `over ${limits.weeklyHours.value} hours that week`);
   }
+
+  // Days in the week, as against hours in it. Five days of eight hours is
+  // forty and passes the hours rule exactly, so a sixth day has to be refused
+  // on its own terms or it never gets refused at all.
+  //
+  // Last of the four on purpose. Only one rule is reported per person, and it
+  // should be the most serious one that applies: where a sixth day is also the
+  // forty-first hour, the Act is what a planner needs to read, not the
+  // property's own preference about days.
+  const cap = maxDaysPerWeekFor(person, ds.settings ?? {});
+  if (daysInWeekOf(withThis, day) > cap) {
+    return no('daysPerWeek', `over ${cap} days that week`);
+  }
   if (isNightShift(shift)
     && withThis.filter((w) => w.night).length > limits.nightsPerFortnight.value) {
     return no('nightsPerFortnight', `over ${limits.nightsPerFortnight.value} nights in the fortnight`);
@@ -729,6 +801,21 @@ function hoursInWeekOf(worked, day) {
   return worked
     .filter((w) => w.day >= monday && w.day <= sunday)
     .reduce((n, w) => n + w.hours, 0);
+}
+
+/**
+ * Days worked in the Monday-to-Sunday week around a date.
+ *
+ * Days, not shifts. Somebody with two shifts on one Tuesday has worked one
+ * day, however the hours add up, and counting it as two would refuse them a
+ * Wednesday they are perfectly free for.
+ */
+function daysInWeekOf(worked, day) {
+  const monday = addDays(day, -dow(day));
+  const sunday = addDays(monday, 6);
+  return new Set(
+    worked.filter((w) => w.day >= monday && w.day <= sunday).map((w) => w.day),
+  ).size;
 }
 
 /** How loaded somebody's fortnight already is, for breaking a tie. */
