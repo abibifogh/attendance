@@ -1544,10 +1544,10 @@ export const GUIDE = [
       { warn: 'One figure, so raising somebody to six days to let the rota use them also '
         + 'changes what a day of theirs is worth. It is the divisor behind their day rate on a '
         + 'payslip. Worth a look at the payroll before you move it.' },
-      { note: 'Nobody is ever put on two shifts in one day by the draft. Not to cover a gap, '
-        + 'not as a last resort, not at any cost: a shift nobody is left for is reported empty '
-        + 'instead. You can still put a second shift on by hand where you mean to, and the '
-        + 'grid marks it as it always has.' },
+      { note: 'Two things the draft will not do at any price: put somebody on two shifts in '
+        + 'one day, or past their days a week. Not to cover a gap, not as a last resort. A '
+        + 'shift nobody is left for is reported empty instead. You can still put either on by '
+        + 'hand where you mean to, and the grid marks it as it always has.' },
 
       { sub: 'Weekdays somebody never works' },
       { p: 'Never works, on the staff form, is the standing version of the ✕ on the rota. '
@@ -1626,6 +1626,10 @@ export const GUIDE = [
         + 'could take instead, and swaps the two: a greedy pass gives the first shift of the '
         + 'day its best person and leaves the last with nobody, and that is the order of the '
         + 'asking rather than the property being short.' },
+      { p: 'The rules that hold absolutely are asked before any that can be stretched, which '
+        + 'sounds like housekeeping and is not. Checked the other way round, a sixth day that '
+        + 'was also the forty-first hour came back as an hours refusal, hours may be gone past '
+        + 'to cover a shift, and somebody ended the fortnight on seven days nobody agreed to.' },
       { p: 'When even that leaves a shift empty, it goes past a limit rather than leave it. '
         + 'Your own practice first, then the Labour Act, and never quietly. Every one of those '
         + 'arrives marked in red on the draft, named on the person\u2019s line, and counted in '
@@ -1639,10 +1643,10 @@ export const GUIDE = [
         + 'asking for more work than the property has people to do. Nobody can work two shifts '
         + 'a day for a fortnight, whatever the arithmetic says.' },
       { note: 'What it will never do, whatever it costs: put somebody on two shifts in one '
-        + 'day, or touch leave, a date somebody said they cannot work, a weekday they never '
-        + 'work, or a department they are not set up for. Those are not limits to be '
-        + 'stretched. Some are facts, and going past them would be writing down something '
-        + 'untrue; one shift a person a day is simply where the property has drawn the line.' },
+        + 'day, past their days a week, or on leave, a date they said they cannot work, a '
+        + 'weekday they never work, or a department they are not set up for. Those are not '
+        + 'limits to be stretched. Some are facts, and going past them would be writing down '
+        + 'something untrue; the other two are where the property has drawn the line.' },
 
       { warn: 'A draft that comes back with dozens of shifts it could not fill is usually the '
         + 'shift list claiming more than the property runs. Twenty-two shifts wanted every day '

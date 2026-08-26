@@ -258,10 +258,11 @@ export function suggestRota({
         // goes against. The decision is the employer's to make and theirs to
         // see.
         //
-        // ONE SHIFT A PERSON A DAY IS NOT ON THAT LIST AND WILL NOT BE.
-        // Whatever the arithmetic says, asking somebody back the same day is
-        // not a limit to be spent: a shift nobody is left for is reported
-        // empty rather than covered by writing the same person down twice.
+        // TWO THINGS ARE NOT ON THAT LIST AND WILL NOT BE: a second shift in
+        // one day, and a sixth day in somebody's week. Whatever the arithmetic
+        // says, those are not limits to be spent. A shift nobody is left for
+        // is reported empty rather than covered by writing the same person
+        // down twice or working them through their day off.
         if (short > 0 && !shift.optional) {
           const stretched = people
             .map((person) => ({
@@ -393,8 +394,18 @@ function whatItBreaks(ds, proposed, person, day, shift, limits) {
  * harder, it would be writing down something untrue.
  */
 const STRETCHABLE = new Set([
-  'daysPerWeek', 'consecutiveDays', 'nightsPerFortnight', 'dailyRestHours', 'weeklyHours',
+  'consecutiveDays', 'nightsPerFortnight', 'dailyRestHours', 'weeklyHours',
 ]);
+
+/**
+ * The refusals that hold whatever it costs.
+ *
+ * Not because they are graver than the ones above — two of those are the
+ * Labour Act — but because the property has drawn a line at them. A shift
+ * nobody is left for is reported empty rather than covered by breaking one of
+ * these, and the arithmetic does not get a vote.
+ */
+const ABSOLUTE = new Set(['busy', 'daysPerWeek']);
 
 /** What a rule is called and what it goes against, where the limits do not say. */
 const EXTRA_RULES = {
@@ -667,6 +678,20 @@ export function canTake(ds, proposed, person, day, shift, limits, availabilityBy
   if (ds.leaveBy?.get(`${person.id}|${day}`)) return no('leave', 'on leave');
   if (busyOn(ds, proposed, person.id, day)) return no('busy', 'already has that day');
 
+  // Days in the week, as against hours in it. Five days of eight hours is
+  // forty and passes the hours rule exactly, so a sixth day has to be refused
+  // on its own terms or it never gets refused at all.
+  //
+  // ASKED BEFORE ANY RULE THAT MAY BE STRETCHED, and that ordering is the
+  // whole of it. Checked after the hours rule, a sixth day that was also the
+  // forty-first hour came back as an hours refusal, hours may be gone past to
+  // cover a shift, and somebody ended the fortnight with seven days in a week
+  // nobody had agreed to.
+  const cap = maxDaysPerWeekFor(person, ds.settings ?? {});
+  if (daysInWeekOf(shiftsAround(ds, proposed, person.id, day), day) >= cap) {
+    return no('daysPerWeek', `over ${cap} days that week`);
+  }
+
   const avail = availabilityBy.get(`${person.id}|${day}`);
   if (avail && avail.status === 'unavailable') {
     // A window inside the day only rules out the shifts that overlap it.
@@ -678,7 +703,7 @@ export function canTake(ds, proposed, person, day, shift, limits, availabilityBy
 
   // The property's own limits, measured over the fortnight around the day so a
   // run that started last week is visible.
-  const worked = withProposals(ds, proposed, person.id, addDays(day, -13), addDays(day, 6));
+  const worked = shiftsAround(ds, proposed, person.id, day);
   const withThis = [...worked, madeUp(shift, day)].sort((a, b) => a.day.localeCompare(b.day));
 
   if (runEndingOn(withThis, day) > limits.consecutiveDays.value) {
@@ -689,19 +714,6 @@ export function canTake(ds, proposed, person, day, shift, limits, availabilityBy
   }
   if (hoursInWeekOf(withThis, day) > limits.weeklyHours.value) {
     return no('weeklyHours', `over ${limits.weeklyHours.value} hours that week`);
-  }
-
-  // Days in the week, as against hours in it. Five days of eight hours is
-  // forty and passes the hours rule exactly, so a sixth day has to be refused
-  // on its own terms or it never gets refused at all.
-  //
-  // Last of the four on purpose. Only one rule is reported per person, and it
-  // should be the most serious one that applies: where a sixth day is also the
-  // forty-first hour, the Act is what a planner needs to read, not the
-  // property's own preference about days.
-  const cap = maxDaysPerWeekFor(person, ds.settings ?? {});
-  if (daysInWeekOf(withThis, day) > cap) {
-    return no('daysPerWeek', `over ${cap} days that week`);
   }
   if (isNightShift(shift)
     && withThis.filter((w) => w.night).length > limits.nightsPerFortnight.value) {
@@ -791,6 +803,11 @@ function hoursInWeekOf(worked, day) {
   return worked
     .filter((w) => w.day >= monday && w.day <= sunday)
     .reduce((n, w) => n + w.hours, 0);
+}
+
+/** The fortnight around a day, which is the window every limit is read over. */
+function shiftsAround(ds, proposed, staffId, day) {
+  return withProposals(ds, proposed, staffId, addDays(day, -13), addDays(day, 6));
 }
 
 /**

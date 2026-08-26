@@ -652,20 +652,19 @@ test('somebody is moved off another shift rather than leaving one empty', async 
 
 test('a shift nobody is left for is covered by going past a limit, and says which', async () => {
   const { db, raw } = setup();
-  // One person and one shift a day for eight days, so the only way to cover
-  // the last three is to go past a limit rather than to double anybody up.
+  // One person on a seven-day week, so the days rule is out of the way and
+  // the hours and consecutive-days rules are what have to give.
   raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
   raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
-  shortShift(raw);
+  raw.prepare('UPDATE att_staff SET days_per_week = 7 WHERE id = 1').run();
 
   const plan = await draft(db, MONDAY, SUNDAY);
   assert.equal(plan.entries.length, 7, 'every day of the week is covered');
   assert.equal(plan.gaps.length, 0);
 
   const bent = plan.entries.filter((e) => e.breach);
-  assert.equal(bent.length, 2, 'the sixth and seventh days are marked');
-  assert.equal(bent[0].breach.label, 'Days worked in a week');
-  assert.equal(bent[0].breach.law, null, 'the property’s own rule, not the Act');
+  assert.ok(bent.length, 'the days past the limits are marked');
+  assert.equal(bent.every((e) => e.breach.law), true, 'and every one names its section');
   assert.deepEqual(plan.stretched, bent);
 });
 
@@ -734,17 +733,18 @@ test('nobody is drafted for a sixth day in a week', async () => {
   assert.equal(clean.length, 5, 'five days, and the sixth and seventh are not free ones');
 });
 
-test('a sixth day is taken only as a marked breach, and named as the property’s own rule', async () => {
+test('a sixth day is never taken, whatever it costs the rota', async () => {
   const { db, raw } = setup();
   raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
   raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
   shortShift(raw);
 
   const plan = await draft(db, MONDAY, SUNDAY);
-  const bent = plan.entries.filter((e) => e.breach?.rule === 'daysPerWeek');
-  assert.ok(bent.length, 'the shift is covered rather than left empty');
-  assert.equal(bent[0].breach.label, 'Days worked in a week');
-  assert.equal(bent[0].breach.law, null, 'the property’s own rule, not the Act');
+  assert.equal(plan.entries.length, 5, 'five days, and the week stops there');
+  assert.equal(plan.entries.every((e) => !e.breach), true, 'none of them bent anything');
+  assert.equal(plan.gaps.length, 2, 'the sixth and seventh days are reported empty instead');
+  assert.equal(plan.gaps.every((g) => /days that week/.test(g.why)), true,
+    'saying exactly why nobody could take them');
 });
 
 test('somebody marked as the exception takes the extra days cleanly', async () => {
@@ -791,4 +791,34 @@ test('the exception is set by the migration for the two named people', async () 
     'SELECT name, max_days_per_week FROM att_staff WHERE id IN (90, 91, 92) ORDER BY id',
   ).all();
   assert.deepEqual(rows.map((r) => r.max_days_per_week), [7, 7, null]);
+});
+
+test('the two named as the exception still take a full week', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+  raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+  raw.prepare('UPDATE att_staff SET days_per_week = 7 WHERE id = 1').run();
+  shortShift(raw);
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  assert.equal(plan.entries.length, 7, 'seven days for somebody set to seven');
+  assert.equal(plan.entries.filter((e) => e.breach?.rule === 'daysPerWeek').length, 0);
+});
+
+test('a week already half worked by hand still stops at five', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+  raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+  shortShift(raw);
+  // Three days put on by hand before the draft runs.
+  raw.prepare(
+    `INSERT INTO att_roster (staff_id, day, shift_id, set_by, published)
+     VALUES (1, '2026-06-01', 1, 'seed', 1),
+            (1, '2026-06-02', 1, 'seed', 1),
+            (1, '2026-06-03', 1, 'seed', 1)`,
+  ).run();
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  assert.equal(plan.entries.length, 2, 'two more days, not four');
+  assert.equal(plan.entries.every((e) => !e.breach), true);
 });
