@@ -1540,7 +1540,7 @@ export const GUIDE = [
       { p: 'Days a week is both things at once: what their month is measured against, and the '
         + 'ceiling the rota works to. Blank uses the property default, five days here, so the '
         + 'ordinary answer needs nothing typed. Fill it in for the people the property works '
-        + 'differently: Dorcas Sarpei and Henry Aryee are on seven.' },
+        + 'differently: Dorcas Sarpei and Henry Aryee are on six.' },
       { warn: 'One figure, so raising somebody to six days to let the rota use them also '
         + 'changes what a day of theirs is worth. It is the divisor behind their day rate on a '
         + 'payslip. Worth a look at the payroll before you move it.' },

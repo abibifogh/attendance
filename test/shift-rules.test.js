@@ -822,3 +822,35 @@ test('a week already half worked by hand still stops at five', async () => {
   assert.equal(plan.entries.length, 2, 'two more days, not four');
   assert.equal(plan.entries.every((e) => !e.breach), true);
 });
+
+test('somebody on a six-day week gets six, and no seventh', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+  raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+  raw.prepare('UPDATE att_staff SET days_per_week = 6 WHERE id = 1').run();
+  shortShift(raw);
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  assert.equal(plan.entries.length, 6, 'six days, and the Sunday stays clear');
+  assert.equal(plan.entries.every((e) => !e.breach), true, 'none of them bent anything');
+  assert.equal(plan.entries.some((e) => e.day === SUNDAY), false);
+  assert.equal(plan.gaps.length, 1);
+});
+
+test('the migration puts the two named on six, and leaves anybody else alone', () => {
+  const { raw } = setup();
+  raw.prepare(
+    `INSERT INTO att_staff (id, employee_no, name, days_per_week, hired_on)
+     VALUES (90, '90', 'Dorcas Sarpei', 7, '2020-01-01'),
+            (91, '91', 'Henry Nii Aryee', 7, '2020-01-01'),
+            (92, '92', 'Somebody Else', 7, '2020-01-01'),
+            (93, '93', 'Ama Sarpei', 5, '2020-01-01')`,
+  ).run();
+  raw.exec(readFileSync('migrations/0067_six_days_for_the_two.sql', 'utf8'));
+
+  const rows = raw.prepare(
+    'SELECT name, days_per_week FROM att_staff WHERE id BETWEEN 90 AND 93 ORDER BY id',
+  ).all();
+  assert.deepEqual(rows.map((r) => r.days_per_week), [6, 6, 7, 5],
+    'the two named come down, a seven nobody named stays, and a five is untouched');
+});
