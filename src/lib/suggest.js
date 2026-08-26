@@ -257,6 +257,11 @@ export function suggestRota({
         // counted in its own red block on the draft, and names the section it
         // goes against. The decision is the employer's to make and theirs to
         // see.
+        //
+        // ONE SHIFT A PERSON A DAY IS NOT ON THAT LIST AND WILL NOT BE.
+        // Whatever the arithmetic says, asking somebody back the same day is
+        // not a limit to be spent: a shift nobody is left for is reported
+        // empty rather than covered by writing the same person down twice.
         if (short > 0 && !shift.optional) {
           const stretched = people
             .map((person) => ({
@@ -266,13 +271,7 @@ export function suggestRota({
             // Never the same shift twice. A second shift in a day means a
             // different one; writing somebody down for this one again is not
             // covering it, it is counting it twice.
-            .filter((c) => STRETCHABLE.has(c.verdict.rule)
-              && !onThisShift(ds, proposed, c.person.id, day, shift.id)
-              // Two shifts in a day is already the end of what can be asked.
-              // Three is not covering the rota, it is inventing hours nobody
-              // is going to work, and a draft full of them tells a planner
-              // nothing they can act on.
-              && (proposed.get(`${c.person.id}|${day}`) ?? []).length < 2)
+            .filter((c) => STRETCHABLE.has(c.verdict.rule))
             .sort((a, b) => cost(a.verdict.rule) - cost(b.verdict.rule)
               || loadOf(ds, proposed, a.person.id, day) - loadOf(ds, proposed, b.person.id, day)
               || String(a.person.name).localeCompare(String(b.person.name)));
@@ -362,10 +361,9 @@ function whatItBreaks(ds, proposed, person, day, shift, limits) {
   // Run the checks one at a time by turning the others off, so each answers
   // for itself rather than for whichever happened to be tested first.
   for (const rule of STRETCHABLE) {
-    if (rule === 'busy') continue;
     const only = { ...limits };
     for (const other of STRETCHABLE) {
-      if (other === rule || other === 'busy') continue;
+      if (other === rule) continue;
       // Most of these are ceilings and are switched off by raising them. Rest
       // between shifts is a floor: raising it would make every shift too close
       // to the last, which is the opposite of ignoring it.
@@ -376,10 +374,6 @@ function whatItBreaks(ds, proposed, person, day, shift, limits) {
     }
     const verdict = canTake(ds, proposed, person, day, shift, only);
     if (verdict.rule === rule) seen.set(rule, verdict.why);
-  }
-
-  if ((proposed.get(`${person.id}|${day}`) ?? []).length > 0) {
-    seen.set('busy', 'a second shift in the day');
   }
 
   for (const [rule, detail] of seen) {
@@ -399,12 +393,11 @@ function whatItBreaks(ds, proposed, person, day, shift, limits) {
  * harder, it would be writing down something untrue.
  */
 const STRETCHABLE = new Set([
-  'daysPerWeek', 'consecutiveDays', 'nightsPerFortnight', 'dailyRestHours', 'weeklyHours', 'busy',
+  'daysPerWeek', 'consecutiveDays', 'nightsPerFortnight', 'dailyRestHours', 'weeklyHours',
 ]);
 
 /** What a rule is called and what it goes against, where the limits do not say. */
 const EXTRA_RULES = {
-  busy: { label: 'Two shifts in one day', law: 'Act 651 ss.33–34' },
   // The property's own answer, not the Act's. It has no section against it,
   // and saying so is the point: a planner reading the list should be able to
   // tell what they may decide from what they may not.
@@ -427,9 +420,6 @@ function cost(rule) {
     nightsPerFortnight: 2,
     weeklyHours: 3,
     dailyRestHours: 4,
-    // Last of all. Asking somebody to come back the same day is the biggest
-    // thing on this list to ask of a person, whatever the arithmetic says.
-    busy: 5,
   }[rule] ?? 9;
 }
 

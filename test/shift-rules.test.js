@@ -652,29 +652,33 @@ test('somebody is moved off another shift rather than leaving one empty', async 
 
 test('a shift nobody is left for is covered by going past a limit, and says which', async () => {
   const { db, raw } = setup();
-  raw.prepare('DELETE FROM att_shifts WHERE id = 3').run();
+  // One person and one shift a day for eight days, so the only way to cover
+  // the last three is to go past a limit rather than to double anybody up.
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
   raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+  shortShift(raw);
 
-  const plan = await draft(db);
-  assert.equal(plan.entries.length, 2, 'one person, two shifts, both covered');
+  const plan = await draft(db, MONDAY, SUNDAY);
+  assert.equal(plan.entries.length, 7, 'every day of the week is covered');
   assert.equal(plan.gaps.length, 0);
 
-  const bent = plan.entries.find((e) => e.breach);
-  assert.ok(bent, 'and one of them is marked');
-  assert.equal(bent.second, true, 'as a second shift in the day');
-  assert.equal(bent.breach.label, 'Two shifts in one day');
-  assert.equal(bent.breach.law, 'Act 651 ss.33–34', 'naming the section it goes against');
-  assert.deepEqual(plan.stretched, [bent]);
+  const bent = plan.entries.filter((e) => e.breach);
+  assert.equal(bent.length, 2, 'the sixth and seventh days are marked');
+  assert.equal(bent[0].breach.label, 'Days worked in a week');
+  assert.equal(bent[0].breach.law, null, 'the property’s own rule, not the Act');
+  assert.deepEqual(plan.stretched, bent);
 });
 
-test('nobody is given a third shift in one day', async () => {
+test('nobody is given a second shift in one day, whatever it costs', async () => {
   const { db, raw } = setup();
   raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
 
   const plan = await draft(db);
   const onTheDay = plan.entries.filter((e) => e.day === MONDAY && e.staffId === 1);
-  assert.equal(onTheDay.length, 2, 'two is the most it will ask');
-  assert.equal(plan.gaps.length, 1, 'and the third shift is reported rather than invented');
+  assert.equal(onTheDay.length, 1, 'one shift a person a day, full stop');
+  assert.equal(plan.entries.every((e) => !e.second), true);
+  assert.equal(plan.gaps.length, 2, 'the other two shifts are reported empty rather than doubled');
+  assert.equal(plan.gaps.every((g) => /already has that day/.test(g.why)), true);
 });
 
 test('leave, a day off and the wrong department are never stretched', async () => {
@@ -704,12 +708,13 @@ test('an optional shift is never filled by bending a rule', async () => {
 // The most days a week
 // ---------------------------------------------------------------------------
 
-test('their contracted week is the cap until somebody says otherwise', () => {
+test('the cap is their contracted week, the one field and no other', () => {
   assert.equal(maxDaysPerWeekFor({}, {}), 5, 'the property default');
   assert.equal(maxDaysPerWeekFor({ days_per_week: 4 }, {}), 4, 'their own contract');
-  assert.equal(maxDaysPerWeekFor({ days_per_week: 4, max_days_per_week: 6 }, {}), 6,
-    'and the override beats it');
-  assert.equal(maxDaysPerWeekFor({ max_days_per_week: 99 }, {}), 7, 'a week has seven days');
+  assert.equal(maxDaysPerWeekFor({ days_per_week: 6 }, {}), 6, 'six for somebody on six');
+  assert.equal(maxDaysPerWeekFor({ days_per_week: 4, max_days_per_week: 6 }, {}), 4,
+    'the old separate figure is read by nothing');
+  assert.equal(maxDaysPerWeekFor({}, { att_days_per_week: 9 }), 7, 'a week has seven days');
 });
 
 // Six hours, so five days is thirty and the forty-hour rule cannot be what
@@ -746,7 +751,7 @@ test('somebody marked as the exception takes the extra days cleanly', async () =
   const { db, raw } = setup();
   raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
   raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
-  raw.prepare('UPDATE att_staff SET max_days_per_week = 7 WHERE id = 1').run();
+  raw.prepare('UPDATE att_staff SET days_per_week = 7 WHERE id = 1').run();
   shortShift(raw);
 
   const plan = await draft(db, MONDAY, SUNDAY);
@@ -758,14 +763,16 @@ test('somebody marked as the exception takes the extra days cleanly', async () =
 test('two shifts on one day count as one day worked', async () => {
   const { db, raw } = setup();
   raw.prepare('DELETE FROM att_shifts WHERE id = 3').run();
-  raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
+  raw.prepare('DELETE FROM att_staff WHERE id = 3').run();
+  shortShift(raw);
 
-  // Monday holds two shifts. Tuesday to Friday should still be free days.
+  // Two people, two shifts, so Monday holds both without anybody doubling up.
   const plan = await draft(db, MONDAY, '2026-06-05');
   const monday = plan.entries.filter((e) => e.day === MONDAY);
   assert.equal(monday.length, 2, 'both Monday shifts covered');
+  assert.equal(new Set(monday.map((e) => e.staffId)).size, 2, 'by two different people');
   assert.equal(plan.entries.filter((e) => e.breach?.rule === 'daysPerWeek').length, 0,
-    'and the week is five days, not six');
+    'and neither week is six days');
 });
 
 test('the exception is set by the migration for the two named people', async () => {

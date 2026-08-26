@@ -1537,16 +1537,17 @@ export const GUIDE = [
         + 'a payslip is headed by the name alone.' },
 
       { sub: 'The most days a week' },
-      { p: 'Most days a week, on the staff form, is the ceiling the rota works to. Left blank '
-        + 'it is their contracted week, which for this property is five days, so the ordinary '
-        + 'answer needs nothing typed at all. Fill it in only for the people the property '
-        + 'genuinely works differently.' },
-      { warn: 'It is deliberately not the same field as Days a week directly above it. That '
-        + 'one is what their month is measured against and the divisor behind their day rate '
-        + 'on a payslip. Raising it to let somebody work a sixth day would quietly change what '
-        + 'they are paid for a day, which is why the rota has a figure of its own.' },
-      { note: 'A day is a day however many shifts are on it. Somebody with two shifts on one '
-        + 'Tuesday has worked one of their five, not two.' },
+      { p: 'Days a week is both things at once: what their month is measured against, and the '
+        + 'ceiling the rota works to. Blank uses the property default, five days here, so the '
+        + 'ordinary answer needs nothing typed. Fill it in for the people the property works '
+        + 'differently: Dorcas Sarpei and Henry Aryee are on seven.' },
+      { warn: 'One figure, so raising somebody to six days to let the rota use them also '
+        + 'changes what a day of theirs is worth. It is the divisor behind their day rate on a '
+        + 'payslip. Worth a look at the payroll before you move it.' },
+      { note: 'Nobody is ever put on two shifts in one day by the draft. Not to cover a gap, '
+        + 'not as a last resort, not at any cost: a shift nobody is left for is reported empty '
+        + 'instead. You can still put a second shift on by hand where you mean to, and the '
+        + 'grid marks it as it always has.' },
 
       { sub: 'Weekdays somebody never works' },
       { p: 'Never works, on the staff form, is the standing version of the ✕ on the rota. '
@@ -1637,11 +1638,11 @@ export const GUIDE = [
         + 'marked is not a rota to publish: it is the app showing you that the shift list is '
         + 'asking for more work than the property has people to do. Nobody can work two shifts '
         + 'a day for a fortnight, whatever the arithmetic says.' },
-      { note: 'Two shifts in one day is the last thing it will try and the most it will ask. '
-        + 'It never writes a third, and it never touches leave, a day somebody said they '
-        + 'cannot work, a weekday they never work, or a department they are not set up for. '
-        + 'Those are not limits to be stretched, they are facts, and going past them would be '
-        + 'writing down something untrue.' },
+      { note: 'What it will never do, whatever it costs: put somebody on two shifts in one '
+        + 'day, or touch leave, a date somebody said they cannot work, a weekday they never '
+        + 'work, or a department they are not set up for. Those are not limits to be '
+        + 'stretched. Some are facts, and going past them would be writing down something '
+        + 'untrue; one shift a person a day is simply where the property has drawn the line.' },
 
       { warn: 'A draft that comes back with dozens of shifts it could not fill is usually the '
         + 'shift list claiming more than the property runs. Twenty-two shifts wanted every day '

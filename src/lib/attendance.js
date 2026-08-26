@@ -1445,16 +1445,13 @@ export function calendarFor(ds, staffId) {
 /**
  * The most days in a week this person may be rostered.
  *
- * Their contracted week unless somebody has said otherwise, so the ordinary
- * answer needs no setting at all. The override exists for the handful of
- * people a property genuinely works differently, and is deliberately not the
- * same field as `days_per_week`: that one is the divisor behind a day rate,
- * and raising it to allow a sixth day would change what they are paid.
+ * The same figure as their contracted week: one number rather than two, which
+ * is what the property asked for. It is worth knowing that it is also the
+ * divisor behind their day rate, so raising somebody to a six-day week to let
+ * the rota use them changes what a day of theirs is worth on a payslip.
  */
 export function maxDaysPerWeekFor(staff, settings = {}) {
-  const own = Number(staff?.max_days_per_week);
-  if (Number.isFinite(own) && own > 0) return Math.min(own, 7);
-  return daysPerWeekFor(staff, settings);
+  return Math.min(daysPerWeekFor(staff, settings), 7);
 }
 
 export function daysPerWeekFor(staff, settings = {}) {
