@@ -33,9 +33,9 @@
 // somebody typed: the rota is the record of what the place needs, and the
 // weeks behind it are the only honest source for what the week ahead wants.
 
-import { addDays, dow, rangeDays } from '../util/dates.js';
+import { addDays, dow, rangeDays, startOfWeek } from '../util/dates.js';
 import {
-  alternatesOf, alwaysOff, mayWork, onRota, runsOnDay, scheduleFor,
+  alternatesOf, altScope, alwaysOff, everyDays, mayWork, onRota, runsOnDay, scheduleFor,
 } from './attendance.js';
 import { isNightShift, limitsFrom, shiftsInWindow } from './workload.js';
 
@@ -72,6 +72,19 @@ export function suggestRota({
   // first one did. Without this the suggester would happily give somebody
   // eight days straight, one blameless decision at a time.
   const proposed = new Map();
+
+  // Every day each shift is already down to run, whoever is on it and whether
+  // anybody is. Read once and added to as proposals are made, so a shift with
+  // a day's break in between can see both what the rota says and what this
+  // draft has just decided.
+  const ran = new Set();
+  for (const list of ds.rosterAllBy?.values() ?? []) {
+    for (const row of list) if (row.shift_id) ran.add(`${row.day}|${row.shift_id}`);
+  }
+  for (const [slotDay, rows] of ds.slotsByDay ?? []) {
+    for (const row of rows) if (row.shift_id) ran.add(`${slotDay}|${row.shift_id}`);
+  }
+
   const entries = [];
   const gaps = [];
   // Shifts left alone because an alternative is already covering the day.
@@ -109,21 +122,48 @@ export function suggestRota({
         // not be covered.
         if (!runsOnDay(shift, day)) continue;
 
+        // A day's break in between, counted both ways. Backwards catches what
+        // this run has just proposed; forwards catches a day somebody already
+        // pinned by hand, and without it a deep clean fixed for Tuesday would
+        // still be offered the Monday beside it.
+        if (tooClose(ran, shift, day)) continue;
+
         // One of a group of alternatives, and one only. Five breakfast shifts
         // that differ by half an hour are five ways of saying the same morning,
         // so once the day has settled on one the rest are not wanted at all.
+        //
+        // Over a day or over the week, depending what the group says. A pair
+        // that each run once a week rule each other out for the whole week,
+        // not merely for the Tuesday one of them happened to land on.
+        const span = altScope(shift) === 'week'
+          ? rangeDays(startOfWeek(day), addDays(startOfWeek(day), 6))
+          : [day];
         const insteadOf = alternatesOf(shift, shifts)
-          .find((other) => running(ds, proposed, people, day, other.id));
+          .find((other) => span.some((d) => ran.has(`${d}|${other.id}`)
+            || running(ds, proposed, people, d, other.id)));
         if (insteadOf) {
           instead.push({ day, shiftId: shift.id, shift: shift.name, ranAs: insteadOf.name });
           continue;
         }
 
-        // Three things can say how many people a shift wants, and the largest
+        // Four things can say how many people a shift wants, and the largest
         // of them wins. What the shift itself asks for is the plain answer; the
-        // last few weeks are the fallback for a shift that has never said; and
+        // last few weeks are the fallback for a shift that has never said;
         // empty slots already sitting on the day are a request in their own
-        // right, because somebody put three reception cards there on purpose.
+        // right, because somebody put three reception cards there on purpose;
+        // and a shift on the rota at all wants at least somebody.
+        //
+        // THAT LAST ONE IS WHY EVERY SHIFT GETS CREATED. A shift with nothing
+        // asked for, no history and no cards used to come out at nought and be
+        // skipped in silence, which is how a shift added last week never
+        // appeared on a draft. Being on the rota is itself the instruction.
+        // What keeps this from covering the grid is the rest of the rules: the
+        // days it runs, the gap in between, and the alternative already
+        // covering the day.
+        //
+        // Optional is not an exception to it. Optional decides *when* a shift
+        // is filled, not whether it is wanted: it waits for the second pass
+        // and takes whoever is left, and going without is not a failure.
         const usual = wanted.get(`${shift.id}|${weekday}`) ?? 0;
         const asked = shift.needed == null ? null : Number(shift.needed);
         const openRows = (ds.slotsByDay?.get(day) ?? [])
@@ -131,7 +171,7 @@ export function suggestRota({
         const open = openRows.length;
 
         const already = people.filter((p) => onThisShift(ds, proposed, p.id, day, shift.id)).length;
-        const target = Math.max(asked == null ? usual : asked, already + open);
+        const target = Math.max(asked == null ? usual : asked, already + open, 1);
         if (!target) continue;
 
         let short = target - already;
@@ -175,6 +215,7 @@ export function suggestRota({
               : 'Free, and the lightest fortnight of anybody who is',
           });
           proposed.set(`${candidate.person.id}|${day}`, shift.id);
+          ran.add(`${day}|${shift.id}`);
           short -= 1;
         }
 
@@ -326,6 +367,23 @@ function onThisShift(ds, proposed, staffId, day, shiftId) {
   const staged = proposed.get(`${staffId}|${day}`);
   if (staged !== undefined) return staged === shiftId;
   return scheduleFor(ds, staffId, day).shift?.id === shiftId;
+}
+
+/**
+ * Would putting this shift on this day break its day's-break-in-between rule?
+ *
+ * Looked at in both directions. A rule about the gap between two runnings is
+ * symmetric, and checking only backwards let a day already pinned for Tuesday
+ * sit next to a Monday the draft had just added.
+ */
+function tooClose(ran, shift, day) {
+  const gap = everyDays(shift);
+  if (gap <= 1) return false;
+  for (let step = 1; step < gap; step++) {
+    if (ran.has(`${addDays(day, -step)}|${shift.id}`)) return true;
+    if (ran.has(`${addDays(day, step)}|${shift.id}`)) return true;
+  }
+  return false;
 }
 
 /**

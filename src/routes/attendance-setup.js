@@ -426,6 +426,7 @@ function shiftFields(body) {
     readRunsOn(body.runsOn),
     // Shifts sharing this name are alternatives: one of them runs on a day.
     str(body.altGroup, 'Alternatives group', { max: 60 }),
+    body.altScope === 'week' ? 'week' : 'day',
     // Worth running when somebody is spare, not worth pulling anybody off
     // anything for.
     bool(body.optional, false) ? 1 : 0,
@@ -433,6 +434,11 @@ function shiftFields(body) {
     body.onlyStaffId == null || body.onlyStaffId === ''
       ? null
       : int(body.onlyStaffId, 'Whose shift', { min: 1 }),
+    // Days from one running of it to the next. Two is every other day, and
+    // one is the ordinary case, stored as nothing.
+    body.everyDays == null || body.everyDays === '' || Number(body.everyDays) <= 1
+      ? null
+      : int(body.everyDays, 'Days in between', { min: 2, max: 30 }),
   ];
 }
 
@@ -455,8 +461,10 @@ export async function createShift(ctx) {
       `INSERT INTO att_shifts (name, starts_at, ends_at, break_minutes, grace_in_minutes,
                                grace_out_minutes, half_day_minutes, full_day_minutes,
                                overtime_after, colour, sort_order, active, department,
-                               position, needed, runs_on, alt_group, optional, only_staff_id)
-       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19) RETURNING id`,
+                               position, needed, runs_on, alt_group, alt_scope, optional,
+                               only_staff_id, every_days)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)
+       RETURNING id`,
     ).bind(...shiftFields(body)).first();
   } catch (err) {
     rethrowConstraint(err, { unique: 'A shift with that name already exists.' });
@@ -486,9 +494,9 @@ export async function updateShift(ctx, id) {
                              grace_in_minutes=?5, grace_out_minutes=?6, half_day_minutes=?7,
                              full_day_minutes=?8, overtime_after=?9, colour=?10,
                              sort_order=?11, active=?12, department=?13, position=?14,
-                             needed=?15, runs_on=?16, alt_group=?17, optional=?18,
-                             only_staff_id=?19
-       WHERE id = ?20`,
+                             needed=?15, runs_on=?16, alt_group=?17, alt_scope=?18,
+                             optional=?19, only_staff_id=?20, every_days=?21
+       WHERE id = ?22`,
     ).bind(...shiftFields(body), shiftId).run();
   } catch (err) {
     rethrowConstraint(err, { unique: 'A shift with that name already exists.' });

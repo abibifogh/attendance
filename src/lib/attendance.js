@@ -240,6 +240,18 @@ export function runsOnDay(shift, day) {
 }
 
 /**
+ * How many days apart this shift is allowed to run, or 1 for no rule.
+ *
+ * Two means every other day: a day's break in between. Read as a gap rather
+ * than a cadence counted from some anchor date, because an anchor is a thing
+ * somebody has to maintain and it goes wrong the first time a day is skipped.
+ */
+export function everyDays(shift) {
+  const n = Number(shift?.every_days);
+  return Number.isInteger(n) && n > 1 ? Math.min(n, 30) : 1;
+}
+
+/**
  * The shifts that stand in for this one.
  *
  * Alternatives, not merely similar: exactly one of a group runs on a day, so
@@ -249,6 +261,14 @@ export function alternatesOf(shift, shifts) {
   const group = shift?.alt_group || null;
   if (!group) return [];
   return (shifts ?? []).filter((s) => s.alt_group === group && s.id !== shift.id);
+}
+
+/**
+ * Over what stretch a group's alternatives rule each other out: one day, or
+ * the whole Monday-to-Sunday week.
+ */
+export function altScope(shift) {
+  return shift?.alt_scope === 'week' ? 'week' : 'day';
 }
 
 /** The individual shifts somebody has been picked out for, as numbers. */

@@ -6,7 +6,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { createShift, listShifts, updateShift, updateStaff } from '../src/routes/attendance-setup.js';
 import { getRoster } from '../src/routes/attendance.js';
 import {
-  alternatesOf, alwaysOff, loadDataset, mayWork, offDays, runsOn, runsOnDay,
+  alternatesOf, altScope, alwaysOff, everyDays, loadDataset, mayWork, offDays, runsOn,
+  runsOnDay,
 } from '../src/lib/attendance.js';
 import { suggestRota } from '../src/lib/suggest.js';
 import { limitsFrom } from '../src/lib/workload.js';
@@ -427,4 +428,188 @@ test('a one-person shift is asked before the ones anybody can take', async () =>
   const plan = await draft(db);
   assert.deepEqual(plan.entries.filter((e) => e.shiftId === 3).map((e) => e.staffId), [2]);
   assert.equal(plan.gaps.length, 0, 'and the other two shifts still got somebody');
+});
+
+// ---------------------------------------------------------------------------
+// A day's break in between
+// ---------------------------------------------------------------------------
+
+test('no rule means it can run any day', () => {
+  assert.equal(everyDays({}), 1);
+  assert.equal(everyDays({ every_days: 1 }), 1);
+  assert.equal(everyDays({ every_days: 2 }), 2);
+});
+
+test('an absurd gap is capped rather than believed', () => {
+  assert.equal(everyDays({ every_days: 900 }), 30);
+});
+
+test('every other day comes out as every other day', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (1, 2)').run();
+  raw.prepare('UPDATE att_shifts SET every_days = 2 WHERE id = 3').run();
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  const days = plan.entries.filter((e) => e.shiftId === 3).map((e) => e.day).sort();
+  assert.deepEqual(days, ['2026-06-01', '2026-06-03', '2026-06-05', '2026-06-07'],
+    'Monday, Wednesday, Friday, Sunday');
+});
+
+test('a day it is already down for keeps the next day clear', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (1, 2)').run();
+  raw.prepare('UPDATE att_shifts SET every_days = 2 WHERE id = 3').run();
+  // Somebody put it on the Tuesday by hand.
+  raw.prepare(
+    `INSERT INTO att_roster (staff_id, day, shift_id, set_by, published)
+     VALUES (1, '2026-06-02', 3, 'seed', 1)`,
+  ).run();
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  const days = plan.entries.filter((e) => e.shiftId === 3).map((e) => e.day).sort();
+  assert.equal(days.includes('2026-06-01'), false, 'the Monday before it is left clear');
+  assert.equal(days.includes('2026-06-03'), false, 'and so is the Wednesday after');
+  assert.deepEqual(days, ['2026-06-04', '2026-06-06'], 'it picks up again from there');
+});
+
+test('a run just before the window still counts', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (1, 2)').run();
+  raw.prepare('UPDATE att_shifts SET every_days = 3 WHERE id = 3').run();
+  raw.prepare(
+    `INSERT INTO att_roster (staff_id, day, shift_id, set_by, published)
+     VALUES (1, '2026-05-31', 3, 'seed', 1)`,
+  ).run();
+
+  const ds = await loadDataset(db, { from: '2026-05-25', to: '2026-06-08' });
+  const plan = suggestRota({ ds, history: [], from: MONDAY, to: '2026-06-04' });
+  const days = plan.entries.filter((e) => e.shiftId === 3).map((e) => e.day).sort();
+  assert.deepEqual(days, ['2026-06-03'],
+    'the Sunday before rules out Monday and Tuesday, so it resumes on Wednesday');
+});
+
+test('an empty card counts as the shift having run', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (1, 2)').run();
+  raw.prepare('UPDATE att_shifts SET every_days = 2 WHERE id = 3').run();
+  raw.prepare(
+    `INSERT INTO att_roster (staff_id, day, shift_id, set_by, published)
+     VALUES (NULL, '2026-06-02', 3, 'seed', 0)`,
+  ).run();
+
+  const plan = await draft(db, MONDAY, '2026-06-03');
+  const days = plan.entries.filter((e) => e.shiftId === 3).map((e) => e.day);
+  assert.equal(days.includes('2026-06-01'), false);
+  assert.equal(days.includes('2026-06-03'), false, 'the card standing on Tuesday spaces it');
+});
+
+test('the gap is saved, and one day in between is stored as no rule', async () => {
+  const { db, raw } = setup();
+  await updateShift(ctx(db, {
+    body: { name: 'Deep clean', startsAt: '09:00', endsAt: '17:00', everyDays: 2 },
+  }), 3);
+  assert.equal(raw.prepare('SELECT every_days FROM att_shifts WHERE id = 3').get().every_days, 2);
+
+  await updateShift(ctx(db, {
+    body: { name: 'Deep clean', startsAt: '09:00', endsAt: '17:00', everyDays: 1 },
+  }), 3);
+  assert.equal(raw.prepare('SELECT every_days FROM att_shifts WHERE id = 3').get().every_days, null);
+});
+
+// ---------------------------------------------------------------------------
+// Everything not marked optional gets created
+// ---------------------------------------------------------------------------
+
+test('a shift nobody has said anything about still reaches the draft', async () => {
+  const { db, raw } = setup();
+  raw.prepare('UPDATE att_shifts SET needed = NULL').run();
+
+  const plan = await draft(db);
+  assert.deepEqual(plan.entries.map((e) => e.shiftId).sort(), [1, 2, 3],
+    'all three, with nothing asked for and no history behind any of them');
+});
+
+test('and it appears on every day it is allowed to run', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+  raw.prepare('UPDATE att_shifts SET needed = NULL').run();
+
+  const plan = await draft(db, MONDAY, '2026-06-03');
+  assert.deepEqual(plan.entries.map((e) => e.day).sort(),
+    ['2026-06-01', '2026-06-02', '2026-06-03']);
+});
+
+test('optional is the only thing that opts a shift out of that', async () => {
+  const { db, raw } = setup();
+  raw.prepare('UPDATE att_shifts SET needed = NULL').run();
+  raw.prepare('UPDATE att_shifts SET optional = 1 WHERE id = 2').run();
+
+  const plan = await draft(db);
+  assert.equal(plan.entries.some((e) => e.shiftId === 2), true,
+    'three people and three shifts, so the optional one does get the spare');
+
+  // With nobody spare it is the one that goes without.
+  raw.prepare('DELETE FROM att_staff WHERE id = 3').run();
+  const tighter = await draft(db);
+  assert.equal(tighter.entries.some((e) => e.shiftId === 2), false);
+  assert.equal(tighter.entries.filter((e) => e.shiftId === 1 || e.shiftId === 3).length, 2);
+});
+
+// ---------------------------------------------------------------------------
+// Alternatives that clash for a whole week
+// ---------------------------------------------------------------------------
+
+test('a group can clash for the day or for the week', () => {
+  assert.equal(altScope({}), 'day');
+  assert.equal(altScope({ alt_scope: 'week' }), 'week');
+  assert.equal(altScope({ alt_scope: 'nonsense' }), 'day', 'anything odd reads as the day');
+});
+
+test('two weekly shifts in one group leave each other alone all week', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id = 3').run();
+  raw.prepare(
+    "UPDATE att_shifts SET alt_group = 'Deep clean', alt_scope = 'week', every_days = 7",
+  ).run();
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  const which = [...new Set(plan.entries.map((e) => e.shiftId))];
+  assert.deepEqual(which, [1], 'one of the pair, once, for the whole week');
+  assert.equal(plan.entries.length, 1);
+});
+
+test('the same pair scoped to the day may both run in one week', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id = 3').run();
+  raw.prepare(
+    "UPDATE att_shifts SET alt_group = 'Deep clean', alt_scope = 'day', every_days = 7",
+  ).run();
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  const which = [...new Set(plan.entries.map((e) => e.shiftId))].sort();
+  assert.deepEqual(which, [1, 2], 'both, on the same Monday being the only clash they have');
+});
+
+test('a week-scoped clash starts fresh the following Monday', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id = 3').run();
+  raw.prepare(
+    "UPDATE att_shifts SET alt_group = 'Deep clean', alt_scope = 'week', every_days = 7",
+  ).run();
+
+  const plan = await draft(db, MONDAY, '2026-06-14');
+  assert.deepEqual(plan.entries.map((e) => e.day), ['2026-06-01', '2026-06-08'],
+    'once in each of the two weeks');
+});
+
+test('the clash scope is saved', async () => {
+  const { db, raw } = setup();
+  await updateShift(ctx(db, {
+    body: {
+      name: 'Craft', startsAt: '09:00', endsAt: '17:00', altGroup: 'Deep clean', altScope: 'week',
+    },
+  }), 3);
+  const row = raw.prepare('SELECT alt_group, alt_scope FROM att_shifts WHERE id = 3').get();
+  assert.equal(row.alt_group, 'Deep clean');
+  assert.equal(row.alt_scope, 'week');
 });

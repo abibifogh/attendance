@@ -1578,8 +1578,12 @@ export const GUIDE = [
         + 'running and no use at all for one you added yesterday.' },
 
       { sub: 'When a shift is wanted, and when it is not' },
-      { p: 'Four more things a shift can say, all on the same form, all of them things somebody '
-        + 'used to have to remember.' },
+      { p: 'Every shift on the rota is wanted, every day it is allowed to run. That is the '
+        + 'starting point, and the rest of this is how you narrow it. A shift you added last '
+        + 'week has no history to copy and nobody has typed a number against it, and it still '
+        + 'reaches the draft, because being on the rota is itself the instruction.' },
+      { p: 'Six things a shift can say, all on the same form, all of them things somebody used '
+        + 'to have to remember.' },
       { table: {
         head: ['Says', 'What the draft does'],
         rows: [
@@ -1591,8 +1595,21 @@ export const GUIDE = [
             + 'off it does not run at all, rather than becoming a gap nobody can fill'],
           ['Only if somebody is spare', 'Filled last, from whoever is left over, and never at '
             + 'the cost of a shift that has to be covered'],
+          ['Days in between', 'Every other day, say. The deep clean is wanted often and not two '
+            + 'days running, because the point of it is the day in between'],
+          ['And they clash', 'Whether a group rules itself out for the day or for the whole '
+            + 'week. Two breakfasts clash for the morning; two shifts that each run once a '
+            + 'week clash for the week, whichever day either lands on'],
         ],
       } },
+      { note: 'Once a week is Days in between set to seven. There is no separate weekly '
+        + 'setting: a shift that is wanted, may run any day, and cannot run twice within seven '
+        + 'days runs once a week by itself.' },
+      { warn: 'A draft that comes back with dozens of shifts it could not fill is usually the '
+        + 'shift list claiming more than the property runs. Twenty-two shifts wanted every day '
+        + 'is three hundred shift-days a fortnight, and no property that size has the people '
+        + 'for it. Group the alternatives, close the days that are shut, and mark what is only '
+        + 'wanted if somebody is spare.' },
       { note: 'A shift belonging to one person is asked for first, before the ones anybody can '
         + 'take. Asked last it would lose every race: by the time it came up its one person '
         + 'would already have been given something else, and it would read as unfillable when '

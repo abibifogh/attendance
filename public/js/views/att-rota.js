@@ -1923,7 +1923,12 @@ async function suggest(from, to, reload) {
             + 'it could not fill'),
           h('div.alert-detail', { style: { marginBottom: '.4rem' } },
             'These are still open after the draft. Put somebody on by hand, or change what '
-            + 'the shift asks for.'),
+            + 'the shift asks for.'
+            + (unfilled > 20
+              ? ' A long list usually means the shift list is claiming more than the property '
+                + 'runs: under Setup → Shifts, say which days each one runs, which of them '
+                + 'stand in for each other, and which are only wanted if somebody is spare.'
+              : '')),
           h('ul.finding-list', shortest.map(([name, list]) => h('li',
             h('div',
               h('div.finding-title', `${name} — ${list.length} `

@@ -185,6 +185,7 @@ test('the draft never proposes somebody who is off the rota', async () => {
 
 test('a shift that says what it needs is filled even with no history behind it', async () => {
   const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id = 2').run();
   raw.prepare('UPDATE att_shifts SET needed = 3 WHERE id = 1').run();
 
   const plan = await draft(db);
@@ -192,15 +193,31 @@ test('a shift that says what it needs is filled even with no history behind it',
   assert.equal(reception.length, 3, 'three asked for, three put on');
 });
 
-test('a shift with nothing behind it and nothing asked for is left alone', async () => {
-  const { db } = setup();
+test('a shift with nothing behind it and nothing asked for is still created', async () => {
+  // Being on the rota and not being marked optional is itself the
+  // instruction. A shift added last week has no history to copy and nobody
+  // has typed a number against it, and it must still reach the draft.
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+
   const plan = await draft(db);
-  assert.equal(plan.entries.length, 0);
+  assert.equal(plan.entries.filter((e) => e.shiftId === 1).length, 1);
   assert.equal(plan.gaps.length, 0);
+});
+
+test('optional decides when a shift is filled, not whether it is wanted', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+  raw.prepare('UPDATE att_shifts SET optional = 1 WHERE id = 1').run();
+
+  const plan = await draft(db);
+  assert.equal(plan.entries.filter((e) => e.shiftId === 1).length, 1,
+    'nobody else wants these people, so the optional shift gets one');
 });
 
 test('what it could not fill is said, shift by shift', async () => {
   const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
   raw.prepare('UPDATE att_shifts SET needed = 5 WHERE id = 1').run();
 
   const plan = await draft(db);
@@ -228,6 +245,7 @@ test('empty slots already on the day are a request the draft answers', async () 
 
 test('filling a slot leaves the count where it was', async () => {
   const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
   raw.prepare(
     `INSERT INTO att_roster (staff_id, day, shift_id, set_by, published)
      VALUES (NULL, '2026-06-01', 1, 'seed', 0), (NULL, '2026-06-01', 1, 'seed', 0)`,

@@ -783,6 +783,19 @@ async function shiftsTab(reload) {
           + 'not count it as a gap'),
 
         h('div.field-row',
+          // Work that is wanted often but not two days running, because the
+          // point of it is the day in between.
+          field('Days in between', h('select', { name: 'everyDays' },
+            [1, 2, 3, 4, 7, 14].map((n) => h('option', {
+              value: String(n),
+              selected: Number(existing?.every_days || 1) === n,
+            }, n === 1 ? 'None, it can run any day'
+              : n === 2 ? 'Every other day'
+                : n === 7 ? 'Once a week'
+                  : n === 14 ? 'Once a fortnight'
+                    : `Every ${n} days`))),
+          'A deep clean wanted every other day, not three days running'),
+
           // The five breakfasts that differ by half an hour are one morning
           // written five ways. Naming them the same thing here says so.
           field('One of these runs a day', positionPicker(altGroups, existing?.alt_group ?? '', {
@@ -791,8 +804,14 @@ async function shiftsTab(reload) {
             add: '+ New group…',
             placeholder: 'Name the group, eg Breakfast',
           }),
-            'Shifts sharing a name here stand in for each other. Once the day has one of them '
-            + 'the draft leaves the rest alone'),
+            'Shifts sharing a name here stand in for each other'),
+          field('And they clash', h('select', { name: 'altScope' },
+            h('option', { value: 'day', selected: existing?.alt_scope !== 'week' },
+              'For that day only'),
+            h('option', { value: 'week', selected: existing?.alt_scope === 'week' },
+              'For the whole week'),
+          ), 'Two breakfasts clash for the morning. Two shifts that each run once a week clash '
+            + 'for the week, whichever day either of them lands on'),
           field('Whose shift it is', h('select', { name: 'onlyStaffId' },
             h('option', { value: '', selected: existing?.only_staff_id == null }, 'Anybody set up for it'),
             staff.map((p) => h('option', {
@@ -837,6 +856,8 @@ async function shiftsTab(reload) {
         payload.altGroup = readPosition(form, 'altGroup');
         payload.optional = form.get('optional') === 'true';
         payload.onlyStaffId = form.get('onlyStaffId') || null;
+        payload.everyDays = Number(form.get('everyDays')) || 1;
+        payload.altScope = form.get('altScope') === 'week' ? 'week' : 'day';
         return existing ? api.attUpdateShift(existing.id, payload) : api.attCreateShift(payload);
       },
     });
@@ -890,8 +911,10 @@ async function shiftsTab(reload) {
         needed: row.needed,
         runsOn: readRunsOn(row) ?? [0, 1, 2, 3, 4, 5, 6],
         altGroup: row.alt_group || null,
+        altScope: row.alt_scope || 'day',
         optional: Boolean(row.optional),
         onlyStaffId: row.only_staff_id ?? null,
+        everyDays: row.every_days ?? 1,
         department: row.department || null,
         position: row.position || null,
         active: !retired,
@@ -1107,7 +1130,12 @@ async function shiftsTab(reload) {
                   .filter((_, i) => days.includes(i)).join(' '))
                 : h('span.muted', 'every day'),
               r.alt_group
-                ? h('small.muted', { style: { display: 'block' } }, `or ${r.alt_group}`)
+                ? h('small.muted', { style: { display: 'block' } },
+                  `or ${r.alt_group}${r.alt_scope === 'week' ? ', weekly' : ''}`)
+                : null,
+              r.every_days > 1
+                ? h('small.muted', { style: { display: 'block' } },
+                  r.every_days === 2 ? 'every other day' : `every ${r.every_days} days`)
                 : null,
               r.only_staff_id
                 ? h('small.muted', { style: { display: 'block' } },
