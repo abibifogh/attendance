@@ -134,6 +134,17 @@ function readWorksIn(value) {
   return unique.length ? JSON.stringify(unique) : null;
 }
 
+/** The weekdays somebody never works, as they arrive from a form. */
+function readOffDays(value) {
+  if (value == null) return null;
+  const list = (Array.isArray(value) ? value : [value])
+    .map((v) => Number(v))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+  const unique = [...new Set(list)].sort((a, b) => a - b);
+  if (unique.length === 7) throw badRequest('That leaves them no day they can work.');
+  return unique.length ? JSON.stringify(unique) : null;
+}
+
 /** The same, for shifts picked out one at a time. */
 function readWorksShifts(value) {
   if (value == null) return null;
@@ -154,8 +165,9 @@ export async function createStaff(ctx) {
   try {
     row = await ctx.db.prepare(
       `INSERT INTO att_staff (employee_no, name, department, job_title, hired_on, leave_days,
-                              days_per_week, user_id, note, on_rota, works_in, works_shifts)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) RETURNING id`,
+                              days_per_week, user_id, note, on_rota, works_in, works_shifts,
+                              off_days)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) RETURNING id`,
     ).bind(
       employeeNo, name,
       str(body.department, 'Department', { max: 80 }),
@@ -168,6 +180,7 @@ export async function createStaff(ctx) {
       bool(body.onRota, true) ? 1 : 0,
       readWorksIn(body.worksIn),
       readWorksShifts(body.worksShifts),
+      readOffDays(body.offDays),
     ).first();
   } catch (err) {
     rethrowConstraint(err, {
@@ -199,7 +212,7 @@ export async function updateStaff(ctx, id) {
       `UPDATE att_staff SET employee_no = ?1, name = ?2, department = ?3, job_title = ?4,
                             hired_on = ?5, left_on = ?6, leave_days = ?7, user_id = ?8,
                             active = ?9, note = ?10, days_per_week = ?12, on_rota = ?13,
-                            works_in = ?14, works_shifts = ?15
+                            works_in = ?14, works_shifts = ?15, off_days = ?16
        WHERE id = ?11`,
     ).bind(
       employeeNo,
@@ -217,6 +230,7 @@ export async function updateStaff(ctx, id) {
       onRota ? 1 : 0,
       readWorksIn(body.worksIn),
       readWorksShifts(body.worksShifts),
+      readOffDays(body.offDays),
     ).run();
   } catch (err) {
     rethrowConstraint(err, {
@@ -333,8 +347,15 @@ export async function listShifts(ctx) {
     ...s, deletable: !s.used_days && !s.used_rota,
   }));
 
+  // Who a shift can be given to outright. Only people still on the rota: a
+  // shift belonging to somebody who has left is a shift nobody can work.
+  const staff = await ctx.db.prepare(
+    'SELECT id, name, department FROM att_staff WHERE active = 1 AND on_rota = 1 ORDER BY name',
+  ).all().catch(() => ({ results: [] }));
+
   return json({
     shifts,
+    staff: staff.results ?? [],
     departments: await departmentOptions(ctx.db),
     // Every position already in use, so the picker offers what exists before
     // asking anybody to type it again. Two spellings of one job is exactly
@@ -399,7 +420,31 @@ function shiftFields(body) {
     body.needed == null || body.needed === ''
       ? null
       : int(body.needed, 'People needed', { min: 0, max: 99 }),
+    // The weekdays it runs, Monday as 0. A full week is stored as nothing,
+    // because "every day" is what nothing already meant and two ways of
+    // saying it is two things to keep in step.
+    readRunsOn(body.runsOn),
+    // Shifts sharing this name are alternatives: one of them runs on a day.
+    str(body.altGroup, 'Alternatives group', { max: 60 }),
+    // Worth running when somebody is spare, not worth pulling anybody off
+    // anything for.
+    bool(body.optional, false) ? 1 : 0,
+    // Whose shift it is, where it is only ever one person's.
+    body.onlyStaffId == null || body.onlyStaffId === ''
+      ? null
+      : int(body.onlyStaffId, 'Whose shift', { min: 1 }),
   ];
+}
+
+/** The weekdays a shift runs, as they arrive from a form. */
+function readRunsOn(value) {
+  if (value == null) return null;
+  const list = (Array.isArray(value) ? value : [value])
+    .map((v) => Number(v))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+  const unique = [...new Set(list)].sort((a, b) => a - b);
+  if (!unique.length || unique.length === 7) return null;
+  return JSON.stringify(unique);
 }
 
 export async function createShift(ctx) {
@@ -410,8 +455,8 @@ export async function createShift(ctx) {
       `INSERT INTO att_shifts (name, starts_at, ends_at, break_minutes, grace_in_minutes,
                                grace_out_minutes, half_day_minutes, full_day_minutes,
                                overtime_after, colour, sort_order, active, department,
-                               position, needed)
-       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15) RETURNING id`,
+                               position, needed, runs_on, alt_group, optional, only_staff_id)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19) RETURNING id`,
     ).bind(...shiftFields(body)).first();
   } catch (err) {
     rethrowConstraint(err, { unique: 'A shift with that name already exists.' });
@@ -441,8 +486,9 @@ export async function updateShift(ctx, id) {
                              grace_in_minutes=?5, grace_out_minutes=?6, half_day_minutes=?7,
                              full_day_minutes=?8, overtime_after=?9, colour=?10,
                              sort_order=?11, active=?12, department=?13, position=?14,
-                             needed=?15
-       WHERE id = ?16`,
+                             needed=?15, runs_on=?16, alt_group=?17, optional=?18,
+                             only_staff_id=?19
+       WHERE id = ?20`,
     ).bind(...shiftFields(body), shiftId).run();
   } catch (err) {
     rethrowConstraint(err, { unique: 'A shift with that name already exists.' });

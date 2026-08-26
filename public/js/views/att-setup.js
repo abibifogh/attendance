@@ -285,7 +285,9 @@ function departmentPicker(departments, current) {
  * is how one job ends up spelled three ways, and a plain dropdown is a dead
  * end the first time somebody adds a job that is not on it.
  */
-function positionPicker(positions, current, { name = 'position' } = {}) {
+function positionPicker(positions, current, {
+  name = 'position', blank = 'Its own position', add = '+ New position…', placeholder = 'Name the position',
+} = {}) {
   const options = [...positions];
   if (current && !options.some((p) => p.toLowerCase() === current.toLowerCase())) {
     options.unshift(current);
@@ -295,7 +297,7 @@ function positionPicker(positions, current, { name = 'position' } = {}) {
     type: 'text',
     name: `${name}New`,
     maxlength: 80,
-    placeholder: 'Name the position',
+    placeholder,
     style: { display: 'none', marginTop: '.4rem' },
   });
 
@@ -307,9 +309,9 @@ function positionPicker(positions, current, { name = 'position' } = {}) {
       if (adding) typed.focus();
     },
   },
-  h('option', { value: '', selected: !current }, 'Its own position'),
+  h('option', { value: '', selected: !current }, blank),
   options.map((p) => h('option', { value: p, selected: p === current }, p)),
-  h('option', { value: NEW_DEPARTMENT }, '+ New position…'));
+  h('option', { value: NEW_DEPARTMENT }, add));
 
   return h('div', select, typed);
 }
@@ -334,6 +336,25 @@ function readWorksShifts(staff) {
   } catch {
     return [];
   }
+}
+
+/** A stored array of weekdays, Monday as 0, read back without ever throwing. */
+function readDayList(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The weekdays a shift is set to run, or null for every day. */
+function readRunsOn(shift) {
+  const list = readDayList(shift?.runs_on);
+  return list.length ? list : null;
 }
 
 /** What a position picker was set to, whichever half of it was used. */
@@ -364,6 +385,18 @@ async function staffTab(reload) {
     // Every department the property has, plus any this person is already
     // ticked for that has since been renamed away. Dropping one silently is
     // how a restriction becomes a mystery.
+    // Weekdays they never work. The standing version of the ✕ on the rota,
+    // which is about one named date.
+    const WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const never = new Set(readDayList(existing?.off_days));
+    const offBoxes = WEEK.map((label, index) => h('label.tickline',
+      h('input', {
+        type: 'checkbox',
+        checked: never.has(index),
+        onchange: (e) => (e.target.checked ? never.add(index) : never.delete(index)),
+      }),
+      h('span', label)));
+
     const already = new Set(readWorksIn(existing));
     const areas = [...new Set([...departments, ...already])].sort();
     const chosen = new Set(already);
@@ -489,6 +522,10 @@ async function staffTab(reload) {
             'What the month expects of them. Blank uses the property default',
           ),
         ),
+        field('Never works', h('div.day-ticks', offBoxes),
+          'A standing rule, so it needs no ✕ on the rota every fortnight. For one date only, '
+          + 'use Days they cannot work on the rota instead'),
+
         // Where they may be put on. Their own department answers for them until
         // somebody ticks more, which is the truth for most of the staff and
         // saves ticking one box twenty-four times.
@@ -529,6 +566,7 @@ async function staffTab(reload) {
           note: form.get('note') || null,
           active: form.get('active') !== 'false',
           onRota: form.get('onRota') !== 'false',
+          offDays: [...never],
           worksIn: [...chosen],
           // A shift inside a ticked department is already covered by it, and
           // storing it twice makes a rename look like a change nobody made.
@@ -610,6 +648,11 @@ async function staffTab(reload) {
                 ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'not on rota')
                 : null),
             h('small.muted', [r.job_title, r.department].filter(Boolean).join(' · ') || '—'),
+            readDayList(r.off_days).length
+              ? h('small.muted', { style: { display: 'block' } },
+                `Never works ${readDayList(r.off_days)
+                  .map((d) => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d]).join(' ')}`)
+              : null,
             readWorksIn(r).length || readWorksShifts(r).length
               ? h('small.muted', { style: { display: 'block' } },
                 `Works in ${[
@@ -651,7 +694,7 @@ async function staffTab(reload) {
 // ---------------------------------------------------------------------------
 
 async function shiftsTab(reload) {
-  const [{ shifts, departments = [], positions = [] }, suggested] = await Promise.all([
+  const [{ shifts, departments = [], positions = [], staff = [] }, suggested] = await Promise.all([
     api.attShifts(),
     api.attShiftSuggestions().catch(() => null),
   ]);
@@ -682,6 +725,23 @@ async function shiftsTab(reload) {
     fullDay.addEventListener('input', () => { own = true; });
     const follow = () => { if (!own) fullDay.value = String(worked()); };
     for (const el of [startsAt, endsAt, breakMinutes]) el.addEventListener('input', follow);
+
+    // Monday first, to match the standing pattern and the grid. Nothing stored
+    // means every day, so a shift nobody has said anything about opens with
+    // all seven ticked and saves as nothing at all.
+    const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const runsOn = new Set(readRunsOn(existing) ?? [0, 1, 2, 3, 4, 5, 6]);
+    const dayBoxes = DAY_NAMES.map((label, index) => h('label.tickline',
+      h('input', {
+        type: 'checkbox',
+        checked: runsOn.has(index),
+        onchange: (e) => (e.target.checked ? runsOn.add(index) : runsOn.delete(index)),
+      }),
+      h('span', label)));
+
+    // Every alternatives group already named, so the second breakfast is put
+    // in the same one rather than into a second spelling of it.
+    const altGroups = [...new Set(shifts.map((sh) => sh.alt_group).filter(Boolean))].sort();
 
     const done = await formDialog({
       title: existing ? `Edit ${existing.name}` : 'Add a shift',
@@ -717,6 +777,36 @@ async function shiftsTab(reload) {
             type: 'number', name: 'needed', min: 0, max: 99, value: existing?.needed ?? '',
           }), 'How many the draft puts on. Blank copies what the last few weeks did'),
         ),
+
+        field('It runs on', h('div.day-ticks', dayBoxes),
+          'Untick a day and the shift is not wanted then. The draft leaves it alone and does '
+          + 'not count it as a gap'),
+
+        h('div.field-row',
+          // The five breakfasts that differ by half an hour are one morning
+          // written five ways. Naming them the same thing here says so.
+          field('One of these runs a day', positionPicker(altGroups, existing?.alt_group ?? '', {
+            name: 'altGroup',
+            blank: 'Nothing stands in for it',
+            add: '+ New group…',
+            placeholder: 'Name the group, eg Breakfast',
+          }),
+            'Shifts sharing a name here stand in for each other. Once the day has one of them '
+            + 'the draft leaves the rest alone'),
+          field('Whose shift it is', h('select', { name: 'onlyStaffId' },
+            h('option', { value: '', selected: existing?.only_staff_id == null }, 'Anybody set up for it'),
+            staff.map((p) => h('option', {
+              value: String(p.id),
+              selected: Number(existing?.only_staff_id) === p.id,
+            }, p.department ? `${p.name} · ${p.department}` : p.name)),
+          ), 'Where it is one person\u2019s shift and nobody else\u2019s. On a day they are off '
+            + 'it does not run at all, rather than becoming a gap nobody can fill'),
+          field('Only if somebody is spare', h('select', { name: 'optional' },
+            h('option', { value: 'false', selected: !existing?.optional }, 'No, it has to be covered'),
+            h('option', { value: 'true', selected: !!existing?.optional }, 'Yes, optional'),
+          ), 'Optional shifts are filled last, from whoever is left over, and never at the cost '
+            + 'of one that has to be covered'),
+        ),
         // Chosen for the shift already, from its id, so a property with
         // twenty-four shifts is not a colouring exercise before the rota
         // becomes readable. This is only for when the automatic one puts two
@@ -743,6 +833,10 @@ async function shiftsTab(reload) {
           ? (form.get('departmentNew') || '').trim() || null
           : form.get('departmentPick') || null;
         payload.position = readPosition(form);
+        payload.runsOn = [...runsOn];
+        payload.altGroup = readPosition(form, 'altGroup');
+        payload.optional = form.get('optional') === 'true';
+        payload.onlyStaffId = form.get('onlyStaffId') || null;
         return existing ? api.attUpdateShift(existing.id, payload) : api.attCreateShift(payload);
       },
     });
@@ -794,6 +888,10 @@ async function shiftsTab(reload) {
         fullDayMinutes: row.full_day_minutes,
         overtimeAfter: row.overtime_after,
         needed: row.needed,
+        runsOn: readRunsOn(row) ?? [0, 1, 2, 3, 4, 5, 6],
+        altGroup: row.alt_group || null,
+        optional: Boolean(row.optional),
+        onlyStaffId: row.only_staff_id ?? null,
         department: row.department || null,
         position: row.position || null,
         active: !retired,
@@ -993,7 +1091,29 @@ async function shiftsTab(reload) {
           label: 'Needed',
           align: 'right',
           cls: 'off-phone',
-          format: (v) => (v == null ? h('span.muted', 'from history') : fmtNum(v, 0)),
+          format: (v, r) => h('div',
+            v == null ? h('span.muted', 'from history') : fmtNum(v, 0),
+            r.optional ? h('small.muted', { style: { display: 'block' } }, 'if spare') : null),
+        },
+        {
+          key: 'runs_on',
+          label: 'Runs',
+          cls: 'off-phone',
+          format: (v, r) => {
+            const days = readRunsOn(r);
+            return h('div',
+              days
+                ? h('span', ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                  .filter((_, i) => days.includes(i)).join(' '))
+                : h('span.muted', 'every day'),
+              r.alt_group
+                ? h('small.muted', { style: { display: 'block' } }, `or ${r.alt_group}`)
+                : null,
+              r.only_staff_id
+                ? h('small.muted', { style: { display: 'block' } },
+                  staff.find((p) => p.id === r.only_staff_id)?.name ?? 'one person only')
+                : null);
+          },
         },
         {
           key: 'actions',

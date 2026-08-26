@@ -34,7 +34,9 @@
 // weeks behind it are the only honest source for what the week ahead wants.
 
 import { addDays, dow, rangeDays } from '../util/dates.js';
-import { mayWork, onRota, scheduleFor } from './attendance.js';
+import {
+  alternatesOf, alwaysOff, mayWork, onRota, runsOnDay, scheduleFor,
+} from './attendance.js';
 import { isNightShift, limitsFrom, shiftsInWindow } from './workload.js';
 
 /** How far back to read the property's habits. Six weeks: long enough to see a
@@ -72,80 +74,134 @@ export function suggestRota({
   const proposed = new Map();
   const entries = [];
   const gaps = [];
+  // Shifts left alone because an alternative is already covering the day.
+  // Reported rather than dropped: a planner who expected the late breakfast
+  // and got the early one should be told which, not left comparing grids.
+  const instead = [];
   let considered = 0;
 
-  for (const day of days) {
-    const weekday = dow(day);
+  // Two passes over the whole window, not two passes over each day. A shift
+  // that only runs when somebody is spare must not take a person on Monday who
+  // is needed on Thursday, and it would if each day were finished in turn.
+  //
+  // Within a pass, the shifts nobody else can work go first. A shift belonging
+  // to one person loses every race against a shift anybody can take: by the
+  // time it is reached its one person has been given something else, and it
+  // reads as unfillable when it was merely asked last.
+  const tightestFirst = (list) => [
+    ...list.filter((shift) => shift.only_staff_id != null),
+    ...list.filter((shift) => shift.only_staff_id == null),
+  ];
 
-    for (const shift of shifts) {
-      // Three things can say how many people a shift wants, and the largest
-      // of them wins. What the shift itself asks for is the plain answer; the
-      // last few weeks are the fallback for a shift that has never said; and
-      // empty slots already sitting on the day are a request in their own
-      // right, because somebody put three reception cards there on purpose.
-      const usual = wanted.get(`${shift.id}|${weekday}`) ?? 0;
-      const asked = shift.needed == null ? null : Number(shift.needed);
-      const openRows = (ds.slotsByDay?.get(day) ?? [])
-        .filter((row) => Number(row.shift_id) === Number(shift.id));
-      const open = openRows.length;
+  const passes = [
+    tightestFirst(shifts.filter((shift) => !shift.optional)),
+    tightestFirst(shifts.filter((shift) => shift.optional)),
+  ].filter((list) => list.length);
 
-      const already = people.filter((p) => onThisShift(ds, proposed, p.id, day, shift.id)).length;
-      const target = Math.max(asked == null ? usual : asked, already + open);
-      if (!target) continue;
+  for (const pass of passes) {
+    for (const day of days) {
+      const weekday = dow(day);
 
-      let short = target - already;
-      if (short <= 0) continue;
-      considered += short;
+      for (const shift of pass) {
+        // A shift that does not run today is not short of anybody. The craft
+        // shop being shut on Sunday is not a gap to be filled, and saying so
+        // here keeps it out of both the proposals and the list of what could
+        // not be covered.
+        if (!runsOnDay(shift, day)) continue;
 
-      const ranked = people
-        .map((person) => ({
-          person,
-          why: canTake(ds, proposed, person, day, shift, rules, availabilityBy),
-        }))
-        .filter((c) => c.why.ok)
-        .map((c) => ({
-          ...c,
-          // Two keys, not one sum. Habit decides it: a rota should look to the
-          // people on it like the rota they know, and somebody who has worked
-          // the early on four of the last four Mondays is who works it. Load
-          // only breaks a tie — which is most of the grid, and is exactly
-          // where it matters that the same three names do not carry every gap.
-          habit: habit.get(`${c.person.id}|${shift.id}|${weekday}`) ?? 0,
-          load: loadOf(ds, proposed, c.person.id, day),
-        }))
-        .sort((a, b) => b.habit - a.habit
-          || a.load - b.load
-          || String(a.person.name).localeCompare(String(b.person.name)));
+        // One of a group of alternatives, and one only. Five breakfast shifts
+        // that differ by half an hour are five ways of saying the same morning,
+        // so once the day has settled on one the rest are not wanted at all.
+        const insteadOf = alternatesOf(shift, shifts)
+          .find((other) => running(ds, proposed, people, day, other.id));
+        if (insteadOf) {
+          instead.push({ day, shiftId: shift.id, shift: shift.name, ranAs: insteadOf.name });
+          continue;
+        }
 
-      // An empty slot standing on the day is filled rather than added
-      // alongside, or three reception cards would come back as six.
-      const toFill = [...openRows];
+        // Three things can say how many people a shift wants, and the largest
+        // of them wins. What the shift itself asks for is the plain answer; the
+        // last few weeks are the fallback for a shift that has never said; and
+        // empty slots already sitting on the day are a request in their own
+        // right, because somebody put three reception cards there on purpose.
+        const usual = wanted.get(`${shift.id}|${weekday}`) ?? 0;
+        const asked = shift.needed == null ? null : Number(shift.needed);
+        const openRows = (ds.slotsByDay?.get(day) ?? [])
+          .filter((row) => Number(row.shift_id) === Number(shift.id));
+        const open = openRows.length;
 
-      for (const candidate of ranked) {
-        if (short <= 0) break;
-        const slot = toFill.shift();
-        entries.push({
-          staffId: candidate.person.id,
-          day,
-          shiftId: shift.id,
-          rowId: slot ? Number(slot.id) : null,
-          why: candidate.habit
-            ? `Usually works ${shift.name} on this day`
-            : 'Free, and the lightest fortnight of anybody who is',
-        });
-        proposed.set(`${candidate.person.id}|${day}`, shift.id);
-        short -= 1;
-      }
+        const already = people.filter((p) => onThisShift(ds, proposed, p.id, day, shift.id)).length;
+        const target = Math.max(asked == null ? usual : asked, already + open);
+        if (!target) continue;
 
-      if (short > 0) {
-        gaps.push({
-          day,
-          shiftId: shift.id,
-          shift: shift.name,
-          short,
-          wanted: target,
-          why: reasonNobodyIsFree(ds, proposed, people, day, shift, rules, availabilityBy),
-        });
+        let short = target - already;
+        if (short <= 0) continue;
+        considered += short;
+
+        const ranked = people
+          .map((person) => ({
+            person,
+            why: canTake(ds, proposed, person, day, shift, rules, availabilityBy),
+          }))
+          .filter((c) => c.why.ok)
+          .map((c) => ({
+            ...c,
+            // Two keys, not one sum. Habit decides it: a rota should look to the
+            // people on it like the rota they know, and somebody who has worked
+            // the early on four of the last four Mondays is who works it. Load
+            // only breaks a tie — which is most of the grid, and is exactly
+            // where it matters that the same three names do not carry every gap.
+            habit: habit.get(`${c.person.id}|${shift.id}|${weekday}`) ?? 0,
+            load: loadOf(ds, proposed, c.person.id, day),
+          }))
+          .sort((a, b) => b.habit - a.habit
+            || a.load - b.load
+            || String(a.person.name).localeCompare(String(b.person.name)));
+
+        // An empty slot standing on the day is filled rather than added
+        // alongside, or three reception cards would come back as six.
+        const toFill = [...openRows];
+
+        for (const candidate of ranked) {
+          if (short <= 0) break;
+          const slot = toFill.shift();
+          entries.push({
+            staffId: candidate.person.id,
+            day,
+            shiftId: shift.id,
+            rowId: slot ? Number(slot.id) : null,
+            why: candidate.habit
+              ? `Usually works ${shift.name} on this day`
+              : 'Free, and the lightest fortnight of anybody who is',
+          });
+          proposed.set(`${candidate.person.id}|${day}`, shift.id);
+          short -= 1;
+        }
+
+        if (short > 0) {
+          // A shift that belongs to one person, on a day that person is off,
+          // does not run. Nobody else can work it, so calling it a gap is
+          // asking a planner to solve something with no solution, every week,
+          // until they stop reading the list.
+          const theirs = shift.only_staff_id == null
+            ? null
+            : (people.find((p) => Number(p.id) === Number(shift.only_staff_id))?.name
+              ?? 'the person it belongs to');
+
+          gaps.push({
+            day,
+            shiftId: shift.id,
+            shift: shift.name,
+            short,
+            wanted: target,
+            onlyPerson: theirs,
+            // An optional shift nobody was spare for is not a gap, it is the
+            // answer. Reported all the same, under its own heading, because
+            // "nobody was free for the extra porter" is worth knowing.
+            optional: Boolean(shift.optional),
+            why: reasonNobodyIsFree(ds, proposed, people, day, shift, rules, availabilityBy),
+          });
+        }
       }
     }
   }
@@ -153,6 +209,7 @@ export function suggestRota({
   return {
     entries,
     gaps,
+    instead,
     filled: entries.length,
     considered,
     habits: [...wanted.entries()]
@@ -271,6 +328,20 @@ function onThisShift(ds, proposed, staffId, day, shiftId) {
   return scheduleFor(ds, staffId, day).shift?.id === shiftId;
 }
 
+/**
+ * Is this shift covered on this day at all: by somebody already down for it,
+ * by a proposal made a moment ago, or by an empty card standing on the day?
+ *
+ * The empty card counts. A slot somebody put on Tuesday for the late breakfast
+ * is the day saying which breakfast it wants, and the early one should not be
+ * drafted alongside it just because nobody is standing on it yet.
+ */
+function running(ds, proposed, people, day, shiftId) {
+  if (people.some((p) => onThisShift(ds, proposed, p.id, day, shiftId))) return true;
+  return (ds.slotsByDay?.get(day) ?? [])
+    .some((row) => Number(row.shift_id) === Number(shiftId));
+}
+
 /** Whether anything at all is on their day already, proposed or decided. */
 function busyOn(ds, proposed, staffId, day) {
   if (proposed.has(`${staffId}|${day}`)) return true;
@@ -291,6 +362,11 @@ export function canTake(ds, proposed, person, day, shift, limits, availabilityBy
 
   if (person.hired_on && day < person.hired_on) return no('had not started');
   if (person.left_on && day > person.left_on) return no('has left');
+
+  // A weekday they never work. Standing, so it needs no ✕ on the grid every
+  // fortnight, and checked before anything about the shift because it rules
+  // out the whole day rather than this shift on it.
+  if (alwaysOff(person, day)) return no('never works this weekday');
 
   // Where somebody may be put on at all. Checked before anything about the
   // day, because it is not a fact about this Tuesday: it is a fact about them,

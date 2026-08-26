@@ -2,8 +2,8 @@ import {
   badRequest, csvResponse, int, json, notFound, readJson, str,
 } from '../lib/http.js';
 import {
-  colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysFor, onRota,
-  worksIn, worksShifts,
+  alwaysOff, colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysFor,
+  offDays, onRota, worksIn, worksShifts,
   calendarFor, dayCredit, dayLedger, daysPerWeekFor, loadDataset, overUnder, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes,
   weekCountOf,
 } from '../lib/attendance.js';
@@ -1794,6 +1794,7 @@ export async function getRoster(ctx) {
         // without being down for security.
         worksIn: worksIn(staff),
         worksShifts: worksShifts(staff),
+        offDays: offDays(staff) ?? [],
       },
       // The whole cycle, one entry per week, so the dialog can show a rotation
       // without asking for it a week at a time.
@@ -1845,6 +1846,9 @@ export async function getRoster(ctx) {
               to: avail.to_time ?? null,
             }
             : null,
+          // A weekday they never work. Not the same as a ✕ on this date, so it
+          // is sent apart from availability and marked apart on the grid.
+          alwaysOff: alwaysOff(staff, day),
           leave: ds.leaveBy.get(`${staff.id}|${day}`)?.reason_code ?? null,
           holiday: ds.holidayBy.get(day)?.name ?? null,
         };

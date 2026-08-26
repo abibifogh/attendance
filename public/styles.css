@@ -3544,3 +3544,11 @@ html { touch-action: manipulation; }
 }
 .works-shifts .tickline { padding: .12rem 0; font-size: .85rem; }
 .works-shifts input:disabled + span { opacity: .5; }
+
+/* --------------------------------------------------- when a shift runs -- */
+.day-ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .1rem .9rem;
+}
+.day-ticks .tickline { padding: .15rem 0; }

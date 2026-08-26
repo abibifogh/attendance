@@ -1535,6 +1535,13 @@ export const GUIDE = [
         + '600 pixels across on the way in, which is more than a payslip can show. Without one '
         + 'a payslip is headed by the name alone.' },
 
+      { sub: 'Weekdays somebody never works' },
+      { p: 'Never works, on the staff form, is the standing version of the ✕ on the rota. '
+        + 'Somebody at church every Sunday is not going to be told a fortnight at a time, and '
+        + 'was being asked to be. Tick the day once and the draft leaves it alone for good.' },
+      { note: 'For one date only, keep using Days they cannot work on the rota. That is a fact '
+        + 'about one week; this is a fact about them.' },
+
       { sub: 'Somebody who is never rostered' },
       { p: 'A director, a consultant, an owner: on the payroll, with a record and a payslip and '
         + 'a leave balance, and no business taking up a column on the grid. Setup → Staff, '
@@ -1569,6 +1576,31 @@ export const GUIDE = [
         + 'reception means three, whether or not the last few weeks managed it. Left blank the '
         + 'draft copies what those weeks actually did, which is right for a shift that has been '
         + 'running and no use at all for one you added yesterday.' },
+
+      { sub: 'When a shift is wanted, and when it is not' },
+      { p: 'Four more things a shift can say, all on the same form, all of them things somebody '
+        + 'used to have to remember.' },
+      { table: {
+        head: ['Says', 'What the draft does'],
+        rows: [
+          ['It runs on', 'Untick Sunday and the craft shop is not wanted on a Sunday. Not '
+            + 'proposed, and not counted as a gap either'],
+          ['One of these runs a day', 'Give the five breakfasts the same group name. Once the '
+            + 'day has settled on one, the rest are left alone'],
+          ['Whose shift it is', 'One person\u2019s and nobody else\u2019s. On a day they are '
+            + 'off it does not run at all, rather than becoming a gap nobody can fill'],
+          ['Only if somebody is spare', 'Filled last, from whoever is left over, and never at '
+            + 'the cost of a shift that has to be covered'],
+        ],
+      } },
+      { note: 'A shift belonging to one person is asked for first, before the ones anybody can '
+        + 'take. Asked last it would lose every race: by the time it came up its one person '
+        + 'would already have been given something else, and it would read as unfillable when '
+        + 'it was merely late.' },
+      { p: 'The draft splits what it could not do into two lists. Shifts that had to be covered '
+        + 'and were not are the work; a shut day, a covered alternative, an optional shift '
+        + 'nobody was spare for and a one-person shift on their day off are all reported '
+        + 'separately, under a heading saying there is nothing to fix.' },
 
       { sub: 'Several shifts, one job' },
       { p: 'A shift is what lateness is measured against, so a breakfast that finishes at two, '

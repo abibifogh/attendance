@@ -83,6 +83,7 @@ export async function suggestRoster(ctx) {
     historyRows: rows.length,
     entries: named,
     gaps: out.gaps,
+    instead: out.instead ?? [],
     filled: out.filled,
     considered: out.considered,
     // Said out loud on the way out, because it is the promise the whole

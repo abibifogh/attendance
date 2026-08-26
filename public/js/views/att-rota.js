@@ -357,6 +357,13 @@ export async function renderAttRota(params) {
       parts.push(chip);
     }
     wrap.classList.toggle('rota-clashing', Boolean(entry.extra?.length));
+    // A weekday they never work. Said even where somebody has been rostered
+    // over it, because that is exactly when it is worth reading.
+    if (entry.alwaysOff) {
+      parts.push(h('small.rota-avail', {
+        title: 'A weekday this person never works, set under Setup → Staff',
+      }, '✕ never works'));
+    }
     if (avail) {
       parts.push(h('small.rota-avail', {
         class: avail.status === 'preferred' ? 'rota-avail-pref' : '',
@@ -1426,6 +1433,9 @@ function shiftsFor(shifts, staff) {
  * allows — a planner covering a gap by hand is never blocked, only sorted.
  */
 function allowedShift(staff, shift) {
+  if (shift.only_staff_id != null) {
+    return Number(shift.only_staff_id) === Number(staff?.id);
+  }
   if (!shift.department) return true;
   const areas = staff?.worksIn ?? [];
   const named = staff?.worksShifts ?? [];
@@ -1808,13 +1818,34 @@ async function suggest(from, to, reload) {
 
   // What it could not fill, by shift. Fourteen rows saying Reception is one
   // problem with Reception, and that is the thing somebody has to solve.
-  const gapsByShift = new Map();
-  for (const gap of plan.gaps) {
-    if (!gapsByShift.has(gap.shift)) gapsByShift.set(gap.shift, []);
-    gapsByShift.get(gap.shift).push(gap);
+  //
+  // Split first, because the two halves are different news. A shift that had
+  // to be covered and is not is a problem; an optional one nobody was spare
+  // for is the rule working, and mixing them buries the first in the second.
+  const byShift = (list) => {
+    const map = new Map();
+    for (const gap of list) {
+      if (!map.has(gap.shift)) map.set(gap.shift, []);
+      map.get(gap.shift).push(gap);
+    }
+    return [...map.entries()]
+      .sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0])));
+  };
+
+  // Soft news: an optional shift nobody was spare for, and a one-person shift
+  // on a day that person is off. Neither is a thing a planner can fix, and
+  // both buried the ones that are.
+  const soft = (g) => Boolean(g.optional) || Boolean(g.onlyPerson);
+  const shortest = byShift(plan.gaps.filter((g) => !soft(g)));
+  const spareOnly = byShift(plan.gaps.filter(soft));
+  const unfilled = plan.gaps.filter((g) => !soft(g)).length;
+
+  // Shifts left alone because an alternative already covers the day.
+  const instead = new Map();
+  for (const row of plan.instead ?? []) {
+    const key = `${row.shift} → ${row.ranAs}`;
+    instead.set(key, (instead.get(key) ?? 0) + 1);
   }
-  const shortest = [...gapsByShift.entries()]
-    .sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0])));
 
   // Grouped by person, because that is the unit somebody checks. Twelve rows
   // reading "Kofi, Early" are one decision about Kofi, not twelve.
@@ -1863,9 +1894,32 @@ async function suggest(from, to, reload) {
         )))
         : null,
 
-      plan.gaps.length
+      instead.size
+        ? h('div.alert.info', { style: { marginTop: '.8rem', display: 'block' } },
+          h('div.alert-title', 'Left alone, because something else covers the day'),
+          h('div.alert-detail',
+            [...instead.entries()]
+              .map(([pair, n]) => `${pair} (${n} day${n === 1 ? '' : 's'})`)
+              .join(' · ')))
+        : null,
+
+      spareOnly.length
+        ? h('div.alert', { style: { marginTop: '.8rem', display: 'block' } },
+          h('div.alert-title', 'Left unfilled on purpose'),
+          h('div.alert-detail',
+            spareOnly.map(([name, list]) => {
+              const owner = list.find((g) => g.onlyPerson)?.onlyPerson;
+              return owner
+                ? `${name} (${list.length}, ${owner} is off)`
+                : `${name} (${list.length}, nobody spare)`;
+            }).join(' · ')
+            + '. Nothing to fix: an optional shift is only filled when somebody is left over, '
+            + 'and a shift belonging to one person does not run when they are off.'))
+        : null,
+
+      unfilled
         ? h('div.alert.warn', { style: { marginTop: '.8rem', display: 'block' } },
-          h('div.alert-title', `${plan.gaps.length} shift${plan.gaps.length === 1 ? '' : 's'} `
+          h('div.alert-title', `${unfilled} shift${unfilled === 1 ? '' : 's'} `
             + 'it could not fill'),
           h('div.alert-detail', { style: { marginBottom: '.4rem' } },
             'These are still open after the draft. Put somebody on by hand, or change what '

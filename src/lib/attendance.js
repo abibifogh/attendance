@@ -197,6 +197,60 @@ export function worksIn(staff) {
   return staff?.department ? [staff.department] : [];
 }
 
+/**
+ * The weekdays a shift runs, Monday as 0, or null for every day.
+ *
+ * Null and a full week mean the same thing to every caller, but they are kept
+ * apart on the way in: a shift nobody has said anything about is not the same
+ * as one somebody deliberately ticked all seven days for, and the form should
+ * show the difference back to them.
+ */
+export function runsOn(shift) {
+  const listed = parseList(shift?.runs_on)
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+  return listed.length ? [...new Set(listed)].sort((a, b) => a - b) : null;
+}
+
+/**
+ * The weekdays somebody never works, Monday as 0, or null for no standing
+ * rule.
+ *
+ * Different from the ✕ on the rota, which is a fact about one named date.
+ * Somebody at church every Sunday is not going to be told a fortnight at a
+ * time, and was being asked to be.
+ */
+export function offDays(staff) {
+  const listed = parseList(staff?.off_days)
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+  return listed.length ? [...new Set(listed)].sort((a, b) => a - b) : null;
+}
+
+/** Is this a day they never work? */
+export function alwaysOff(staff, day) {
+  const days = offDays(staff);
+  return Boolean(days && days.includes(dow(day)));
+}
+
+/** Does this shift run on this date? */
+export function runsOnDay(shift, day) {
+  const days = runsOn(shift);
+  return !days || days.includes(dow(day));
+}
+
+/**
+ * The shifts that stand in for this one.
+ *
+ * Alternatives, not merely similar: exactly one of a group runs on a day, so
+ * finding two of them on one Tuesday is a mistake rather than a busy Tuesday.
+ */
+export function alternatesOf(shift, shifts) {
+  const group = shift?.alt_group || null;
+  if (!group) return [];
+  return (shifts ?? []).filter((s) => s.alt_group === group && s.id !== shift.id);
+}
+
 /** The individual shifts somebody has been picked out for, as numbers. */
 export function worksShifts(staff) {
   return parseList(staff?.works_shifts).map(Number).filter(Number.isFinite);
@@ -210,6 +264,13 @@ export function worksShifts(staff) {
  * refusing on the strength of a blank field is refusing on no evidence.
  */
 export function mayWork(staff, shift) {
+  // A shift belonging to one person answers before anything else does, in both
+  // directions: it is theirs whatever their department says, and it is nobody
+  // else's however free they are.
+  if (shift?.only_staff_id != null) {
+    return Number(shift.only_staff_id) === Number(staff?.id);
+  }
+
   const department = shift?.department || null;
   if (!department) return true;
 
