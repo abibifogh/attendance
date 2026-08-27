@@ -278,6 +278,31 @@ test('a property that draws the line elsewhere gets its own line', async () => {
   assert.equal(isLoud(await look(db), 'Adjoa', SHOWN), true);
 });
 
+test('a Sunday somebody actually worked counts, whatever the rota says now', async () => {
+  const { db, raw } = setup();
+  // The rota for the earlier weeks was never built here, or a Clear took the
+  // rows off afterwards. Either way she was at work, and a count that reads
+  // only the roster table says she has had the month off.
+  raw.prepare(
+    `INSERT INTO att_days (staff_id, day, shift_id, punches, worked_minutes, status)
+     VALUES (1, '2026-09-06', 1, 2, 480, 'present'),
+            (1, '2026-09-20', 1, 2, 480, 'present')`,
+  ).run();
+
+  assert.deepEqual(countOn(await look(db), 'Adjoa', SHOWN),
+    { worked: 2, of: 4, cap: 2, over: true });
+});
+
+test('a Sunday somebody was booked for but never turned up to does not count', async () => {
+  const { db, raw } = setup();
+  raw.prepare(
+    `INSERT INTO att_days (staff_id, day, shift_id, punches, worked_minutes, status)
+     VALUES (1, '2026-09-06', 1, 0, 0, 'absent')`,
+  ).run();
+
+  assert.equal(countOn(await look(db), 'Adjoa', SHOWN).worked, 0);
+});
+
 test('a fortnight spanning two months counts each month on its own', async () => {
   const { db, raw } = setup();
   // Every Sunday in September, none in October. The September Sundays on

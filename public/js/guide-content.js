@@ -506,6 +506,10 @@ export const GUIDE = [
         'Save the rota. Nothing is written until you do.',
       ] },
 
+      { note: 'Today\u2019s column is marked on both views: a rail down each side and the word '
+        + 'in the header. Each Sunday cell carries how many of that month\u2019s Sundays the '
+        + 'person is on, counting what they actually worked on the days already gone.' },
+
       { sub: 'What staff have asked for' },
       { p: 'Availability a member of staff sends from their own screen arrives as a request '
         + 'rather than a fact. Asked for on the toolbar carries the count of what is waiting; '

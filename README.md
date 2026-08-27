@@ -443,6 +443,14 @@ month's Sundays* — which is the thing worth knowing while the cell is still
 empty. Nothing here waits for Publish either: a rota is decided when it is
 saved. The same is true of the special-meal mark below.
 
+**It counts what actually happened, not only what the rota says.** A Sunday
+already gone is not a plan any more. Reading the count off the rota alone meant
+every Sunday somebody worked before the rota was kept here, or whose rows a
+Clear took off afterwards, came back as a Sunday they had off, and the count
+said one of four on a month somebody spent at work. Anybody who turned up and
+clocked in was working that day, whatever is left on the rota for it. Days
+still ahead are read from the rota and the standing pattern, as before.
+
 **It trips on Sundays worked, not on Sundays lost.** Asking whether anybody has
 been left without one at all only fires once every Sunday is gone, which is a
 month too late to move them. Two in a month is where this property draws the
@@ -451,6 +459,15 @@ be drawn somewhere else or switched off. Standing patterns count, because
 somebody who works every Sunday by pattern and has no roster rows at all is the
 plainest case and the one a count over the roster table alone would miss. Leave
 is a Sunday off.
+
+**Today is a column, not a shade.** A fortnight is fourteen columns that look
+alike, and the first thing anybody does on this screen is find the day they are
+standing in. Today's column carries a rail down both sides, a coloured header
+and the word itself, on both the people and the positions view.
+
+**The gap for a second shift sits under the card, not inside it.** A second
+shift is another card on the day. A button drawn inside the box said the
+opposite: that whatever it made belonged to the shift above it.
 
 **Every card on the positions grid is the same height.** A card whose height
 depended on the length of somebody's name made a row that stepped up and down

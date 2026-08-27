@@ -743,7 +743,12 @@ export async function renderAttRota(params) {
     // for it: a plus on every cell of a grid of a hundred and sixty-eight is a
     // hundred and sixty-eight invitations nobody asked for, and a second shift
     // on one day is a rare and deliberate thing. Hovering the cell offers it.
-    parts.push(h('button.rota-add', {
+    //
+    // It sits under the card rather than in it. A second shift is another card
+    // on the day, not a line inside the first one, and putting the button
+    // inside the box said the opposite: that whatever it made belonged to the
+    // shift above it.
+    const addSecond = h('button.rota-add', {
       type: 'button',
       title: 'Put a second shift on this day',
       'aria-label': `Put a second shift on ${fmtDayShort(entry.day)}`,
@@ -751,7 +756,7 @@ export async function renderAttRota(params) {
         event.stopPropagation();
         addSecondShift(row, entry);
       },
-    }, h('span.rota-add-mark', '+ shift')));
+    }, h('span.rota-add-mark', '+ shift'));
 
     wrap.append(...parts);
 
@@ -816,7 +821,9 @@ export async function renderAttRota(params) {
       },
     });
 
-    return wrap;
+    // The card and the gap under it, so the gap is beside the box rather than
+    // inside it. Everything else still hangs off the card itself.
+    return h('div.rota-cellstack', wrap, addSecond);
   };
 
   /**
@@ -911,6 +918,15 @@ export async function renderAttRota(params) {
     day === data.today ? 'rota-today' : '',
   ].filter(Boolean).join(' ');
 
+  // Today, said in the header rather than left to a shade.
+  //
+  // A fortnight is fourteen columns that look alike, and the first thing
+  // anybody does on this screen is find the one they are standing in. A tint
+  // alone was not enough to pick out at a glance, and on a phone at arm's
+  // length it was not there at all. The rail down the column and the word in
+  // the header are what Humanity does, and it is right.
+  const todayMark = (day) => (day === data.today ? h('span.rota-today-mark', 'Today') : null);
+
   const headRow = h('tr',
     h('th', 'Name'),
     h('th', 'Pattern'),
@@ -924,6 +940,7 @@ export async function renderAttRota(params) {
       // same word thirteen times, and the row above already says which weeks
       // these are.
       h('small.muted', span > 7 ? String(Number(day.slice(8, 10))) : fmtDayShort(day)),
+      todayMark(day),
     )),
   );
 
@@ -1781,6 +1798,7 @@ export async function renderAttRota(params) {
             title: isMealDay(day) ? 'The special meal is on the last Friday of the month' : null },
           h('div', new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })),
           h('small.muted', span > 7 ? String(Number(day.slice(8, 10))) : fmtDayShort(day)),
+          todayMark(day),
         )),
       )),
       positionsBody,

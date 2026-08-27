@@ -1160,9 +1160,38 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 
 td.rota-past { opacity: .55; }
 td.rota-past .rota-cell { pointer-events: auto; }   /* history can still be corrected */
+/* ------------------------------------------------------------------ today --
+   Read as a column rather than a shade. A fortnight is fourteen columns that
+   look alike, and the first thing anybody does here is find the day they are
+   standing in. A tint on its own was too quiet to do that at a glance, so the
+   column gets a rail down both sides and the header says the word. */
 th.rota-today, td.rota-today {
   background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+  border-left: 2px solid var(--accent);
+  border-right: 2px solid var(--accent);
 }
+th.rota-today {
+  border-top: 2px solid var(--accent);
+  /* The header carries the colour so the column has a top to it, the way a
+     tab does. The cells under it stay light enough to read a shift on. */
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent);
+}
+.rota-table tbody tr:last-child td.rota-today { border-bottom: 2px solid var(--accent); }
+
+/* The word itself. Small, in the accent, under the date it belongs to. */
+.rota-today-mark {
+  display: block;
+  margin-top: .1rem;
+  font-size: .6rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+/* Squeezed to a month there is no room for a word under a number, and the
+   rail says it on its own. */
+.rota-table.rota-tightest .rota-today-mark { display: none; }
 
 /* "Cannot work this day", under the dropdown, before the planner chooses.
    Rostering over it stays possible and the mark stays put: some conflicts are
@@ -3713,6 +3742,13 @@ html { touch-action: manipulation; }
   top: 0;
   z-index: 3;
   background: var(--surface);
+}
+/* Today keeps its colour under the sticky rule above, which would otherwise
+   paint every header the same and take the top off the column. */
+.rota-scroll thead th.rota-today {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+.rota-scroll thead th {
   /* A border on a sticky cell scrolls away with the table. A shadow does not. */
   box-shadow: inset 0 -1px 0 var(--border);
   border-bottom: 0;
@@ -4212,7 +4248,7 @@ body.rota-dragging .pos-add { pointer-events: none; }
    pointer.
    -------------------------------------------------------------------------- */
 .rota-add {
-  margin-top: auto;
+  margin-top: 0;
   width: 100%;
   padding: .1rem 0;
   border: 1px dashed transparent;
@@ -4224,11 +4260,22 @@ body.rota-dragging .pos-add { pointer-events: none; }
   color: transparent;
   cursor: pointer;
 }
+/* The gap belongs beside the card, not in it. A second shift is another card
+   on the day rather than a line inside the first one, and a button drawn
+   inside the box said the opposite. */
+.rota-cellstack {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  height: 100%;
+}
+.rota-cellstack > .rota-cellwrap { flex: 1 1 auto; }
+
 /* Only under a shift. On a day with nothing on it, "add a second" is the
    dropdown that is already sitting there, and offering both would be two ways
    of saying one thing. */
-.rota-cellwrap:not(.rota-set) .rota-add { display: none; }
-.rota-cellwrap.rota-set:hover .rota-add,
+.rota-cellstack:not(:has(.rota-cellwrap.rota-set)) .rota-add { display: none; }
+.rota-cellstack:hover .rota-add,
 .rota-add:focus-visible {
   border-color: var(--rota-line);
   color: var(--text-faint);

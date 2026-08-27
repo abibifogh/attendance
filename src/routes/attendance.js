@@ -1730,8 +1730,26 @@ export async function addPunch(ctx) {
  */
 async function wasWorking(db, ds, days, outside) {
   const shown = new Set(days);
-  const missing = [...new Set(outside)].filter((day) => !shown.has(day));
+  const asked = [...new Set(outside)];
+  const missing = asked.filter((day) => !shown.has(day));
   const known = new Map();
+
+  // WHAT ACTUALLY HAPPENED BEATS WHAT THE ROTA SAYS ABOUT IT. A day already
+  // gone is not a plan any more, and reading it off the roster table alone
+  // means every Sunday somebody worked before the rota was kept here, or
+  // whose rows a Clear took off afterwards, counts as a Sunday they had off.
+  // The count then says one of four on a month somebody spent at work, which
+  // is worse than not saying it at all. Anybody who turned up and clocked in
+  // was working, whatever is left on the rota for that day.
+  const turnedUp = new Set();
+  if (asked.length) {
+    const marks = asked.map((_, i) => `?${i + 1}`).join(',');
+    const rows = await db.prepare(
+      `SELECT staff_id, day FROM att_days
+        WHERE day IN (${marks}) AND (punches > 0 OR worked_minutes > 0)`,
+    ).bind(...asked).all().catch(() => ({ results: [] }));
+    for (const row of rows.results ?? []) turnedUp.add(`${row.staff_id}|${row.day}`);
+  }
 
   if (missing.length) {
     const marks = missing.map((_, i) => `?${i + 1}`).join(',');
@@ -1748,8 +1766,12 @@ async function wasWorking(db, ds, days, outside) {
   }
 
   return (staffId, day) => {
-    if (ds.leaveBy.has(`${staffId}|${day}`)) return false;
-    const found = known.get(`${staffId}|${day}`);
+    const key = `${staffId}|${day}`;
+    // Somebody who was there was working, whatever was booked. Leave they
+    // came in on is still a day they worked.
+    if (turnedUp.has(key)) return true;
+    if (ds.leaveBy.has(key)) return false;
+    const found = known.get(key);
     if (found !== undefined) return found;
     return Boolean(scheduleFor(ds, staffId, day).shift);
   };
