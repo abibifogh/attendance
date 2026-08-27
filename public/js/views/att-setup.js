@@ -2193,6 +2193,15 @@ const WORKLOAD_LIMITS = [
     min: 0,
     hint: 'The fewest anybody should get. Set it to 0 if Sundays are like any other day here',
   },
+  {
+    key: 'wl_sundaysWorkedPerMonth',
+    label: 'Sundays worked in a month',
+    unit: 'Sundays',
+    fallback: 2,
+    min: 0,
+    hint: 'The most before the rota marks it. Reaching this is what puts the mark on the '
+      + 'Sunday cells, while there is still time to move somebody',
+  },
 ];
 
 /**

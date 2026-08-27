@@ -24,7 +24,7 @@ import { emailExceptions, pingExceptions } from '../lib/notify.js';
 import {
   addDays, diffDays, dow, isDay, isMonth, monthBounds, rangeDays, startOfWeek, todayIn,
 } from '../util/dates.js';
-import { SUNDAY_DOW, limitsFrom, sundaysOwedOff } from '../lib/workload.js';
+import { SUNDAY_DOW, limitsFrom, sundaysWorkedCap } from '../lib/workload.js';
 
 /**
  * Attendance: the API over what the terminal saw.
@@ -1691,16 +1691,22 @@ export async function addPunch(ctx) {
 /**
  * Who is over their Sundays, counted a calendar month at a time.
  *
- * "One Sunday off a month" only means anything over a month, and somebody
- * looking at a week sees a single Sunday with no way of telling whether it is
- * their first this month or their fourth. So the count is taken over the whole
- * month each Sunday on screen belongs to, however little of that month the
- * planner happens to have open, and the answer travels back with the day it
- * belongs to.
+ * A Sunday only means anything counted over a month, and somebody looking at a
+ * week sees a single one with no way of telling whether it is their first this
+ * month or their fourth. So the count is taken over the whole month each
+ * Sunday on screen belongs to, however little of that month the planner
+ * happens to have open, and the answer travels back with the day it belongs
+ * to.
+ *
+ * WHAT TRIPS IT IS SUNDAYS WORKED, NOT SUNDAYS LOST. Asking "has anybody been
+ * left without a Sunday at all" only fires once somebody has worked every one
+ * of them, which is a month too late to move anybody. Two in a month is where
+ * this property draws the line, and it is a setting, so it can be drawn
+ * somewhere else.
  *
  * Standing patterns count. A person who works every Sunday by pattern and has
- * no roster rows at all is the plainest case of the rule being broken, and a
- * count that read only the roster table would miss exactly them.
+ * no roster rows at all is the plainest case of it going wrong, and a count
+ * that read only the roster table would miss exactly them.
  */
 async function sundaysOver(db, ds, days, limits) {
   const here = days.filter((day) => dow(day) === SUNDAY_DOW);
@@ -1739,19 +1745,20 @@ async function sundaysOver(db, ds, days, limits) {
     return Boolean(scheduleFor(ds, staffId, day).shift);
   };
 
+  const cap = sundaysWorkedCap(limits);
+  if (!cap) return new Map();
+
   const out = new Map();
   for (const staff of ds.staff) {
     if (!onRota(staff)) continue;
     for (const [month, all] of inMonth) {
-      const owed = sundaysOwedOff(all.length, limits);
-      if (!owed) continue;
       const worked = all.filter((day) => working(staff.id, day)).length;
-      if (all.length - worked >= owed) continue;
+      if (worked < cap) continue;
 
-      const over = { worked, of: all.length, owed };
+      const over = { worked, of: all.length, cap };
       for (const day of here) {
         // Marked on the Sundays they are actually on, because a Sunday they
-        // have off is the rule being kept, not broken.
+        // have off is not the one anybody needs to look at.
         if (day.slice(0, 7) === month && working(staff.id, day)) {
           out.set(`${staff.id}|${day}`, over);
         }
@@ -1933,9 +1940,9 @@ export async function getRoster(ctx) {
           // A weekday they never work. Not the same as a ✕ on this date, so it
           // is sent apart from availability and marked apart on the grid.
           alwaysOff: alwaysOff(staff, day),
-          // A Sunday they are working in a month where they will not get the
-          // Sundays off the house rule owes them. Counted over the whole
-          // month, so it says the same thing whichever week is on screen.
+          // A Sunday they are working in a month where they are already on as
+          // many as this property counts as enough. Over the whole month, so
+          // it says the same thing whichever week is on screen.
           sundayOver: overSundays.get(`${staff.id}|${day}`) ?? null,
           leave: ds.leaveBy.get(`${staff.id}|${day}`)?.reason_code ?? null,
           holiday: ds.holidayBy.get(day)?.name ?? null,

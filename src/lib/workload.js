@@ -53,6 +53,12 @@ export const LIMITS = {
   // around, and it is the first thing a six-day rota quietly takes. Zero turns
   // the check off for a property that does not work that way.
   sundaysOffPerMonth: { value: 1, label: 'Sundays off in a month', zeroable: true },
+  // A different question from the one above, and an earlier one. "Has anybody
+  // been left without a Sunday at all" only fires once somebody has worked
+  // every one of them, which is a month too late to do anything about. This
+  // asks how many Sundays somebody may work before it is worth saying, so the
+  // rota can say it while the rota can still be changed.
+  sundaysWorkedPerMonth: { value: 2, label: 'Sundays worked in a month', zeroable: true },
 };
 
 /** Whatever the property has set, over the top of the defaults. */
@@ -106,6 +112,18 @@ export function sundaysOwedOff(count, limits = LIMITS) {
   const rule = Number(limits?.sundaysOffPerMonth?.value ?? 0);
   if (!(rule > 0)) return 0;
   return Math.floor((count / SUNDAYS_IN_A_MONTH) * rule);
+}
+
+/**
+ * How many Sundays somebody may work in a month before it is worth saying.
+ *
+ * Not pro-rated, because it is already written per month and the rota asks it
+ * a month at a time. Zero switches the mark off for a property where Sunday is
+ * a day like any other.
+ */
+export function sundaysWorkedCap(limits = LIMITS) {
+  const rule = Number(limits?.sundaysWorkedPerMonth?.value ?? 0);
+  return rule > 0 ? rule : 0;
 }
 
 export function isNightShift(shift) {

@@ -318,15 +318,20 @@ nothing approved, nothing spent — and rostering over it stays possible, with
 the mark staying put. Some conflicts are deliberate, and a grid that hides them
 is lying.
 
-**Sundays** are marked where somebody is over them. The house rule is one
-Sunday off a month, and a rota read a week at a time hid every breach of it: one
-Sunday on screen says nothing about the other three. So the count is taken over
-the whole calendar month a Sunday belongs to, however little of that month is
-open, and the cell says how many of them that person is on — `⊙ 5/5 Sundays`.
-Standing patterns count, because somebody who works every Sunday by pattern and
-has no roster rows at all is the plainest case of the rule going and the one a
-count over the roster table alone would miss. Leave is a Sunday off. Setting the
-rule to nothing under Setup → Workload takes the mark away with it.
+**Sundays** are marked where somebody is over them. A rota read a week at a
+time hid this completely: one Sunday on screen says nothing about the other
+three. So the count is taken over the whole calendar month a Sunday belongs to,
+however little of that month is open, and the cell says how many of them that
+person is on — `⊙ 3/5 Sundays`.
+
+**It trips on Sundays worked, not on Sundays lost.** Asking whether anybody has
+been left without one at all only fires once every Sunday is gone, which is a
+month too late to move them. Two in a month is where this property draws the
+line, and it is *Sundays worked in a month* under Setup → Workload, so it can
+be drawn somewhere else or switched off. Standing patterns count, because
+somebody who works every Sunday by pattern and has no roster rows at all is the
+plainest case and the one a count over the roster table alone would miss. Leave
+is a Sunday off.
 
 The type steps with the span. A fortnight gives a day half the room a week
 does and four weeks a third of that again, so one size for "narrow" was always

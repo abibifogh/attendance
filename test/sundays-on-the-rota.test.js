@@ -4,18 +4,18 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import { getRoster } from '../src/routes/attendance.js';
-import { sundaysOwedOff } from '../src/lib/workload.js';
+import { sundaysOwedOff, sundaysWorkedCap } from '../src/lib/workload.js';
 
 /**
  * The Sunday mark on the rota.
  *
- * The house rule is one Sunday off a month, and the rota is read a week at a
- * time. One Sunday on screen says nothing about the other three, so a breach
- * of the rule was invisible on the one screen where somebody could still do
- * something about it. What is pinned down here is that the count is taken over
- * the whole calendar month whatever window is open, that a standing pattern
- * counts the same as a rostered day, and that leave is a Sunday off rather
- * than a Sunday worked.
+ * The rota is read a week at a time, and one Sunday on screen says nothing
+ * about the other three, so anybody being given too many of them was invisible
+ * on the one screen where somebody could still move them. What is pinned down
+ * here is that the count is taken over the whole calendar month whatever
+ * window is open, that it trips on Sundays worked rather than on Sundays lost
+ * — two in a month, not the last one gone — that a standing pattern counts the
+ * same as a rostered day, and that leave is a Sunday off.
  *
  * September 2026 has four Sundays: the 6th, 13th, 20th and 27th. The window
  * used throughout is Monday the 7th to Sunday the 13th, so exactly one of
@@ -104,6 +104,14 @@ test('a house that has switched the rule off is owed nothing', () => {
   assert.equal(sundaysOwedOff(4, { sundaysOffPerMonth: { value: 0 } }), 0);
 });
 
+test('the mark trips on Sundays worked, and two is the default', () => {
+  // The older rule only had anything to say once every Sunday was gone, which
+  // is a month too late to move anybody.
+  assert.equal(sundaysWorkedCap(), 2);
+  assert.equal(sundaysWorkedCap({ sundaysWorkedPerMonth: { value: 3 } }), 3);
+  assert.equal(sundaysWorkedCap({ sundaysWorkedPerMonth: { value: 0 } }), 0);
+});
+
 // ---------------------------------------------------------------------------
 // The mark on the grid
 // ---------------------------------------------------------------------------
@@ -113,7 +121,19 @@ test('working every Sunday of the month marks the one on screen', async () => {
   roster(raw, 1, SUNDAYS);
 
   const cell = cellOn(await look(db), 'Adjoa', SHOWN);
-  assert.deepEqual(cell.sundayOver, { worked: 4, of: 4, owed: 1 });
+  assert.deepEqual(cell.sundayOver, { worked: 4, of: 4, cap: 2 });
+});
+
+test('two in a month is where it starts, and one is not marked', async () => {
+  const { db, raw } = setup();
+  roster(raw, 1, [SHOWN]);
+  assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver, null,
+    'one Sunday is not a pattern');
+
+  roster(raw, 1, ['2026-09-20']);
+  assert.deepEqual(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver,
+    { worked: 2, of: 4, cap: 2 },
+    'the second one is, and it says so while there is still time to move them');
 });
 
 test('the count is the month, not the week on screen', async () => {
@@ -127,9 +147,9 @@ test('the count is the month, not the week on screen', async () => {
   assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver.worked, 4);
 });
 
-test('one Sunday off in the month is the rule kept', async () => {
+test('a month with one Sunday on it is left alone', async () => {
   const { db, raw } = setup();
-  roster(raw, 1, ['2026-09-06', SHOWN, '2026-09-20']);
+  roster(raw, 1, [SHOWN]);
   assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver, null);
 });
 
@@ -143,20 +163,29 @@ test('a standing pattern counts the same as a rostered day', async () => {
   ).run();
 
   const cell = cellOn(await look(db), 'Adjoa', SHOWN);
-  assert.deepEqual(cell.sundayOver, { worked: 4, of: 4, owed: 1 });
+  assert.deepEqual(cell.sundayOver, { worked: 4, of: 4, cap: 2 });
 });
 
 test('leave on a Sunday is a Sunday off', async () => {
   const { db, raw } = setup();
+  // The first Sunday of the month, so the leave that follows it can take the
+  // other three without taking the cell being looked at.
+  const FIRST = '2026-09-06';
+  const ITS_WEEK = '?from=2026-08-31&to=2026-09-06';
+
   raw.prepare(
     'INSERT INTO att_patterns (staff_id, week, dow, shift_id) VALUES (1, 0, 6, 1)',
   ).run();
+  assert.equal(cellOn(await look(db, ITS_WEEK), 'Adjoa', FIRST).sundayOver.worked, 4,
+    'down for all four by pattern');
+
   raw.prepare(
     `INSERT INTO att_leave (staff_id, reason_code, from_day, to_day, days, status)
-     VALUES (1, 'annual_leave', '2026-09-19', '2026-09-21', 3, 'approved')`,
+     VALUES (1, 'annual_leave', '2026-09-08', '2026-09-30', 17, 'approved')`,
   ).run();
 
-  assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver, null);
+  assert.equal(cellOn(await look(db, ITS_WEEK), 'Adjoa', FIRST).sundayOver, null,
+    'one Sunday actually worked, so there is nothing to say');
 });
 
 test('a Sunday somebody is off is never marked', async () => {
@@ -192,11 +221,26 @@ test('switching the rule off takes the mark away', async () => {
   const { db, raw } = setup();
   roster(raw, 1, SUNDAYS);
   raw.prepare(
-    "INSERT INTO settings (key, value) VALUES ('wl_sundaysOffPerMonth', '0')"
+    "INSERT INTO settings (key, value) VALUES ('wl_sundaysWorkedPerMonth', '0')"
     + ' ON CONFLICT (key) DO UPDATE SET value = excluded.value',
   ).run();
 
   assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver, null);
+});
+
+test('a property that draws the line elsewhere gets its own line', async () => {
+  const { db, raw } = setup();
+  roster(raw, 1, ['2026-09-06', SHOWN, '2026-09-20']);
+  raw.prepare(
+    "INSERT INTO settings (key, value) VALUES ('wl_sundaysWorkedPerMonth', '4')"
+    + ' ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+  ).run();
+
+  assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver, null,
+    'three is under a cap of four');
+
+  roster(raw, 1, ['2026-09-27']);
+  assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver.worked, 4);
 });
 
 test('a fortnight spanning two months counts each month on its own', async () => {
