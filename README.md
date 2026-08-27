@@ -363,6 +363,51 @@ a plan.
 > a property in breach every week of its life. A warning that cries wolf on a
 > normal rota is the one people switch off.
 
+### Every screen is live
+
+These screens are read as boards. Somebody leaves Today open on the office
+computer, a supervisor has Rota on a phone, a member of staff has My shifts on
+theirs — and a stale screen and a fresh one are indistinguishable, which is the
+whole problem.
+
+This used to be a timer: every screen brought itself up to date once a minute,
+whether or not anything had happened. Wrong on both sides. A rota two people
+were building at the same time was a minute behind all day, and a phone left on
+a counter with nothing going on made fourteen hundred requests a day to be told
+so. **The timer is gone.** Every signed-in browser holds one socket open to the
+server, and the server says when something changed. The other screens answer it
+within the second, and sit completely still the rest of the time — no requests
+at all while nothing is happening.
+
+**What travels is the fact that something changed, and nothing else.** A message
+is a topic name and a timestamp: no rows, no names, no numbers. The screen that
+hears it re-asks the API through the same permission-checked endpoints it always
+used, so the channel can never become a second way of reading the database
+however far the app grows around it. The topic still decides who is told, because
+*the payroll moved* is worth keeping off a supervisor's phone even with nothing
+attached to it — and the list is written in terms of who may **hear**, not who
+may change: a member of staff can do nothing at all to a rota and is the person
+most waiting to hear that one has been published.
+
+Three things keep it from being an interruption on a screen somebody is working
+in. It never refreshes while somebody is in the middle of something — a dialog
+open, a cursor in a box, a rota holding staged edits — and comes back to it when
+the screen is free rather than taking the work with it. It does nothing while
+the tab is hidden, and puts up what arrived the moment somebody looks again. And
+it is silent: the view is rebuilt in place and keeps its scroll position, so
+somebody reading the bottom of a list stays at the bottom of it. The tab that
+made the change is left out of its own announcement, because it has already
+redrawn itself off the answer to its own save — the same person's *other*
+screens are told, on purpose, since a rota open on the office computer and on a
+phone are two screens.
+
+The connection is a Durable Object, which is the one thing in this runtime two
+requests can both be looking at. Sockets hibernate rather than sit in memory, so
+two dozen phones connected overnight cost nothing while nothing is happening. If
+the socket cannot be opened at all the app falls back to asking every couple of
+minutes, and stops the moment the socket is back: a deployment without the
+binding is slower, not broken.
+
 ### On a phone
 
 **It installs.** A web app manifest, real PNG icons at 192 and 512 including a

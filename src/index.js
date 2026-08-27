@@ -28,9 +28,15 @@ import * as lunch from './routes/lunch.js';
 import * as sign from './routes/sign.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
+import * as live from './lib/live.js';
 import { handleSsoArrival } from './lib/sso-consumer.js';
 import { todayIn } from './util/dates.js';
 import { PIN_TAKEN } from './routes/admin.js';
+
+// The one thing in this runtime two requests can both be looking at. Named
+// here because Wrangler binds a Durable Object by the class the entry point
+// exports, not by the file it was written in.
+export { LiveHub } from './live-hub.js';
 
 /**
  * Route table: [method, pattern, permission, handler].
@@ -405,6 +411,11 @@ export const ROUTES = [
   ['PUT', '/api/users/:id', 'users', admin.updateUser],
   ['DELETE', '/api/users/:id', 'users', admin.deleteUser],
 
+  // Being told, rather than asking every minute. A socket, held open for as
+  // long as the tab is, carrying the fact that something changed and nothing
+  // else — see the note at the top of lib/live.js.
+  ['GET', '/api/live', null, live.connect],
+
   ['GET', '/api/push/key', null, push.publicKey],
   ['GET', '/api/push/status', null, push.status],
   ['POST', '/api/push/subscribe', null, push.subscribe],
@@ -705,7 +716,19 @@ async function route(request, env, url, executionContext) {
       }
     }
 
-    return handler(ctx, ...params);
+    const response = await handler(ctx, ...params);
+
+    // One place, so a route added later is live the day it is written rather
+    // than the day somebody remembers. Only what actually changed something,
+    // and only where it worked: a refused save is not news.
+    if (response?.ok && live.worthTelling(method, url.pathname)) {
+      live.announce(env, executionContext, {
+        topic: live.topicFor(url.pathname),
+        by: request.headers.get('X-Hive-Client'),
+      });
+    }
+
+    return response;
   }
 
   if (allowedMethods?.length) {

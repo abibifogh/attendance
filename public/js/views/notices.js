@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { onLive } from '../live.js';
 import { fmtSince as when, h, mount } from '../util.js';
 
 /**
@@ -10,17 +11,18 @@ import { fmtSince as when, h, mount } from '../util.js';
  * or an empty recipient list is invisible until somebody asks why they never
  * heard about Tuesday; here it shows up as a warning the moment it happens.
  *
- * Deliberately not a live feed. It refreshes when the page is opened, when the
- * tab comes back to the front, and every couple of minutes — often enough that
- * a manager sees a round land while looking at the screen, rarely enough that a
- * phone left on the counter all day is not making a request a second.
+ * It is a live feed now. It used to refresh every couple of minutes, which was
+ * the compromise a timer forces: often enough that a manager might see a round
+ * land while looking at the screen, rarely enough that a phone left on the
+ * counter all day was not asking constantly. Neither half of that is true any
+ * more — anything that puts a notice in the bell is said down the same socket
+ * the rest of the app listens on, so the count moves when it happens and sits
+ * still the rest of the time.
  */
-
-const REFRESH_MS = 120000;
 
 const LEVEL_ICON = { high: '⛔', warn: '⚠️', info: '🛏' };
 
-let timer = null;
+let stopListening = null;
 
 export function noticeBell() {
   const count = h('span.bell-count');
@@ -90,9 +92,18 @@ export function noticeBell() {
     }
   };
 
-  // One timer for the app's lifetime, pointed at whichever bell is on screen.
-  clearInterval(timer);
-  timer = setInterval(() => { if (!document.hidden) refresh(); }, REFRESH_MS);
+  // One subscription for the app's lifetime, pointed at whichever bell is on
+  // screen. The old one is dropped rather than left listening, or every render
+  // of the shell would leave another bell behind counting into nothing.
+  stopListening?.();
+  stopListening = onLive((event) => {
+    if (document.hidden) return;
+    // Anything at all: the bell is rung by half the app, so a topic list here
+    // would be a list to keep in step with every screen there is. Coming back
+    // from a dropped connection counts too — a notice may have landed while
+    // this browser was on its own.
+    if (event.topics || event.missed) refresh();
+  });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 
   // Clicking anywhere else closes it, which is what every menu on every phone

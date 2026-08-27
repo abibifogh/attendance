@@ -15,6 +15,21 @@ binding = "ASSETS"
 enabled = true
 head_sampling_rate = 1
 
+# The live channel. One object for the property: every signed-in browser holds
+# a socket to it, and anything that changes on the server is said down all of
+# them at once. Sockets are hibernated rather than held in memory, so two dozen
+# phones connected overnight cost nothing while nothing is happening.
+[[durable_objects.bindings]]
+name = "LIVE"
+class_name = "LiveHub"
+
+# SQLite-backed, which is what makes a Durable Object available without a paid
+# plan. Nothing is stored in it — the sockets are the whole state — but the
+# storage backend still has to be declared.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["LiveHub"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "attendance"

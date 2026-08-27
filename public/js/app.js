@@ -1,4 +1,5 @@
 import { api, onReachabilityChange, serverReachable, setUnauthorizedHandler } from './api.js';
+import { liveUp, onLive, startLive, stopLive } from './live.js';
 import { registerWorker, watchForInstall } from './install.js';
 import { h, mount } from './util.js';
 import { renderLogin } from './views/login.js';
@@ -60,49 +61,49 @@ export const state = {
 const ROUTES = [
   // First, and for most people the only one. A member of staff holds this and
   // nothing else, so it has to be the screen they land on.
-  { path: 'att-me', label: 'My shifts', permission: 'att_me', render: renderAttMe },
+  { path: 'att-me', label: 'My shifts', permission: 'att_me', render: renderAttMe, live: ['rota', 'attendance', 'leave', 'lunch'] },
   // Beside it, because the month is the other question somebody asks about
   // their own attendance and it is not one the week can answer.
-  { path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport },
+  { path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport, live: ['attendance', 'leave'] },
   // Money going the other way. Beside their own report because that is where
   // somebody looks when they are working out what they will be paid.
-  { path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance },
-  { path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical },
-  { path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday },
-  { path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek },
+  { path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
+  { path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
+  { path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday, live: ['attendance', 'rota', 'leave'] },
+  { path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek, live: ['attendance', 'rota', 'leave'] },
   // The planner reads the month before building the next one. The one thing
   // they may not see — how much leave anybody has left — comes out of the
   // answer, not just off the screen.
-  { path: 'att-overview', label: 'Month', permission: ['att_reports', 'att_rota'], render: renderAttOverview },
-  { path: 'att-rota', label: 'Rota', permission: 'att_rota', render: renderAttRota },
+  { path: 'att-overview', label: 'Month', permission: ['att_reports', 'att_rota'], render: renderAttOverview, live: ['attendance', 'rota', 'leave'] },
+  { path: 'att-rota', label: 'Rota', permission: 'att_rota', render: renderAttRota, live: ['rota', 'leave', 'attendance'] },
   // Beside the rota, because it is read while the rota is being built.
-  { path: 'att-workload', label: 'Workload', permission: ['att_rota', 'att_reports'], render: renderAttWorkload },
-  { path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave },
-  { path: 'signoff', label: 'Sign-off', permission: 'att_signoff', render: renderAttSignoff },
-  { path: 'people', label: 'People', permission: 'hr_view', render: renderPeople },
+  { path: 'att-workload', label: 'Workload', permission: ['att_rota', 'att_reports'], render: renderAttWorkload, live: ['rota', 'leave'] },
+  { path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave, live: ['leave', 'rota'] },
+  { path: 'signoff', label: 'Sign-off', permission: 'att_signoff', render: renderAttSignoff, live: ['attendance', 'rota', 'leave'] },
+  { path: 'people', label: 'People', permission: 'hr_view', render: renderPeople, live: ['people'] },
   // Its own permission, the same one as what anybody earns.
-  { path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances },
-  { path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical },
-  { path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayrollTab },
-  { path: 'att-lunch', label: 'Lunch', permission: 'lunch', render: renderAttLunch },
-  { path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters },
-  { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup },
-  { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
+  { path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances, live: ['pay'] },
+  { path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
+  { path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayrollTab, live: ['pay', 'attendance'] },
+  { path: 'att-lunch', label: 'Lunch', permission: 'lunch', render: renderAttLunch, live: ['lunch', 'rota'] },
+  { path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters, live: ['letters'] },
+  { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup, live: ['admin', 'rota', 'attendance'] },
+  { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin, live: ['admin'] },
   // Last in the menu and reachable by everybody. What it contains is filtered
   // to what the reader actually holds, so it is short for a supervisor and
   // long for an administrator without either of them being sent elsewhere.
   { path: 'guide', label: 'Guide', permission: null, render: renderGuide },
   // Reached by clicking a name rather than from the menu.
-  { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, hidden: true },
-  { path: 'person', label: 'Record', permission: 'hr_view', render: renderPerson, hidden: true },
+  { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, live: ['attendance', 'rota', 'leave'], hidden: true },
+  { path: 'person', label: 'Record', permission: 'hr_view', render: renderPerson, live: ['people'], hidden: true },
   { path: 'people-templates', label: 'Templates', permission: 'hr_manage', render: renderPeopleTemplates, hidden: true },
   { path: 'people-form', label: 'What to ask for', permission: 'hr_manage', render: renderPeopleForm, hidden: true },
-  { path: 'contract', label: 'Contract', permission: 'hr_view', render: renderContract, hidden: true },
-  { path: 'letter', label: 'Letter', permission: 'corr_view', render: renderLetter, hidden: true },
+  { path: 'contract', label: 'Contract', permission: 'hr_view', render: renderContract, live: ['people'], hidden: true },
+  { path: 'letter', label: 'Letter', permission: 'corr_view', render: renderLetter, live: ['letters'], hidden: true },
   // Writing one. Its own screen rather than a dialog: the page is the point.
   { path: 'letter-compose', label: 'Write', permission: 'corr_write', render: renderLetterCompose, hidden: true },
-  { path: 'letter-parties', label: 'Address book', permission: 'corr_view', render: renderLetterParties, hidden: true },
-  { path: 'letter-signing', label: 'Signature & stamp', permission: 'corr_view', render: renderLetterSigning, hidden: true },
+  { path: 'letter-parties', label: 'Address book', permission: 'corr_view', render: renderLetterParties, live: ['letters'], hidden: true },
+  { path: 'letter-signing', label: 'Signature & stamp', permission: 'corr_view', render: renderLetterSigning, live: ['letters'], hidden: true },
 ];
 
 const root = document.getElementById('app');
@@ -185,6 +186,7 @@ export function replaceParams(path, params) {
  * heading for a list of ten would be furniture for its own sake.
  */
 async function signOut() {
+  stopLive();
   await api.logout().catch(() => {});
   resetSession();
   render();
@@ -380,6 +382,7 @@ export async function render() {
       state.email = email ?? null;
       state.isRecovery = Boolean(isRecovery);
       state.permissions = permissions ?? [];
+      startLive();
       if (!location.hash || !currentRoute()) navigate(defaultRoute());
       await render();
     }));
@@ -392,9 +395,10 @@ export async function render() {
     return;
   }
 
-  // Whatever the last view asked us not to interrupt went with it.
+  // Whatever the last view asked us not to interrupt went with it, and a
+  // change waiting for the old screen has been answered by drawing this one.
   holds = [];
-  lastRefresh = Date.now();
+  pending = false;
 
   const container = h('div');
   mount(root, shell(container));
@@ -428,7 +432,7 @@ export async function render() {
 // ---------------------------------------------------------------------------
 
 /**
- * The page brings itself up to date.
+ * The page brings itself up to date, when something actually changes.
  *
  * These screens are read as boards. Somebody leaves Today open on the office
  * computer, or opens Rota on a phone and puts it in a pocket, and an hour
@@ -436,24 +440,41 @@ export async function render() {
  * morning's. Nothing about the page says so, which is the whole problem: a
  * stale screen and a fresh one are indistinguishable.
  *
+ * This used to be a timer — once a minute, on every screen, whether or not
+ * anything had happened. Wrong on both sides: a rota two people are building
+ * at the same time was a minute behind all day, and a phone on a counter with
+ * nothing going on fetched fourteen hundred times a day to be told so. Now the
+ * server says when something changed and the screen answers it, which is both
+ * immediate and quiet. See live.js.
+ *
  * THREE THINGS STOP IT BEING AN INTERRUPTION, which is the only way a thing
  * like this survives on a screen somebody is working in.
  *
  *   It never refreshes while somebody is in the middle of something. A dialog
  *   open, a cursor in a box, or a view holding unsaved changes all hold it
- *   off, and it tries again on the next turn rather than throwing the work
- *   away.
+ *   off, and it comes back to it when the screen is free rather than throwing
+ *   the work away.
  *
  *   It does nothing while the tab is hidden. A phone in a pocket is not
- *   reading anything, and waking every minute to fetch a rota is somebody's
- *   battery. Coming back to the tab refreshes at once, which is the moment it
- *   actually matters.
+ *   reading anything. What arrived while it was away is remembered, and taken
+ *   in the moment somebody looks at the screen again.
  *
  *   It is silent. No spinner, no flash, no scroll jump — the view is rebuilt
  *   in place and the page keeps its scroll position, so somebody reading the
  *   bottom of a list stays at the bottom of it.
  */
-const REFRESH_SECONDS = 60;
+
+/**
+ * How long to wait before asking again while the live channel is down.
+ *
+ * The only timer left, and it runs only when there is no socket: a site that
+ * cannot be told is better off asking slowly than sitting on an answer from
+ * an hour ago. It stops the moment the socket comes back.
+ */
+const WHILE_DEAF_MS = 120000;
+
+/** How often to look at a deferred update to see whether the screen is free. */
+const RETRY_MS = 4000;
 
 /** What a view has asked us not to interrupt. Cleared on every render. */
 let holds = [];
@@ -477,11 +498,32 @@ const busy = () => {
   });
 };
 
-let lastRefresh = Date.now();
+/** Something changed that this screen has not taken in yet. */
+let pending = false;
+let deafTimer = null;
 
-async function refreshIfIdle() {
+/**
+ * Is this screen looking at the thing that changed?
+ *
+ * A route says what it watches; one that says nothing watches everything,
+ * which is what every screen did under the timer and is the safe answer for a
+ * screen nobody has thought about yet.
+ */
+function watching(topic) {
+  const route = currentRoute();
+  if (!route) return false;
+  if (!route.live || topic === 'other') return true;
+  return route.live.includes(topic);
+}
+
+async function catchUp() {
+  if (!pending) return;
+  // Not gone — held. Somebody typing, or a dialog open, or a rota with staged
+  // edits: the update waits for the screen to be free rather than taking the
+  // work with it.
   if (document.hidden || !state.role || busy() || !serverReachable()) return;
-  lastRefresh = Date.now();
+
+  pending = false;
   const x = window.scrollX;
   const y = window.scrollY;
   await render();
@@ -490,14 +532,46 @@ async function refreshIfIdle() {
   window.scrollTo(x, y);
 }
 
-setInterval(() => {
-  if (Date.now() - lastRefresh >= REFRESH_SECONDS * 1000) refreshIfIdle();
-}, 15_000);
+onLive((event) => {
+  if (event.topics) {
+    if (event.topics.some(watching)) {
+      pending = true;
+      catchUp();
+    }
+    return;
+  }
+
+  if (event.open) {
+    clearInterval(deafTimer);
+    deafTimer = null;
+    // Back after being away. Whatever happened in between was said down a
+    // socket that was not there to hear it, so the screen asks once.
+    if (event.missed) {
+      pending = true;
+      catchUp();
+    }
+    return;
+  }
+
+  // No socket. Fall back to asking, slowly, rather than sitting on an answer
+  // that gets older every minute.
+  if (!deafTimer) {
+    deafTimer = setInterval(() => {
+      if (liveUp()) return;
+      pending = true;
+      catchUp();
+    }, WHILE_DEAF_MS);
+  }
+});
+
+// A held update, looked at again. Not a poll: nothing is fetched unless
+// something already told us there was a reason to.
+setInterval(() => { if (pending) catchUp(); }, RETRY_MS);
 
 document.addEventListener('visibilitychange', () => {
-  // Back from a pocket. Whatever is on the screen is as old as the time it
-  // spent there, and this is the moment somebody looks at it.
-  if (!document.hidden && Date.now() - lastRefresh >= REFRESH_SECONDS * 1000) refreshIfIdle();
+  // Back from a pocket, and this is the moment whatever arrived while it was
+  // in there is worth putting on the screen.
+  if (!document.hidden) catchUp();
 });
 
 function resetSession() {
@@ -521,6 +595,9 @@ function roleLabel(role) {
 }
 
 setUnauthorizedHandler(() => {
+  // The socket is a signed-in thing. Holding one open against a session that
+  // has expired is a reconnect loop nobody can see.
+  stopLive();
   resetSession();
   render();
 });
@@ -570,5 +647,6 @@ window.addEventListener('online', () => { api.me().catch(() => {}); });
   } catch { /* fall through to the login screen */ }
 
   if (state.role && !currentRoute()) navigate(defaultRoute());
+  if (state.role) startLive();
   await render();
 })();

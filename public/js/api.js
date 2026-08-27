@@ -1,6 +1,8 @@
 // Thin fetch wrapper. Every call goes through here so an expired session and a
 // dropped connection are handled in exactly one place rather than in thirty.
 
+import { tabId } from './live.js';
+
 class ApiError extends Error {
   constructor(status, message, detail) {
     super(message);
@@ -99,7 +101,14 @@ async function request(path, { method = 'GET', body, signal } = {}) {
     response = await fetch(path, {
       method,
       signal,
-      headers: body ? { 'Content-Type': 'application/json' } : {},
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        // Which tab is asking. Only ever used to leave this tab out of the
+        // announcement its own save causes: it has already redrawn itself off
+        // the answer, and a second redraw over staged edits is how somebody
+        // loses work. See live.js.
+        'X-Hive-Client': tabId(),
+      },
       body: body ? JSON.stringify(body) : undefined,
       credentials: 'same-origin',
     });
