@@ -6,9 +6,20 @@ import {
   summarise, toMinutes,
 } from '../lib/attendance.js';
 import { createNotice } from '../lib/notices.js';
+import { fromBase64 } from '../lib/files.js';
+import { storeFile } from './people.js';
 import {
   addDays, diffDays, isDay, isMonth, monthBounds, monthOf, nowIn, startOfWeek, todayIn,
 } from '../util/dates.js';
+
+/**
+ * As big as a photograph of a face needs to be.
+ *
+ * Far smaller than the twelve megabytes a scanned contract is allowed: this is
+ * shown at two centimetres across beside a name, and a phone camera's full
+ * output is a hundred times more than that is worth.
+ */
+const MAX_PHOTO = 4_000_000;
 
 /** A date, or the fallback. Anything else is a mistake worth naming. */
 function readDay(value, fallback) {
@@ -595,16 +606,104 @@ export async function setMyAvailability(ctx) {
     throw badRequest('The end of the window has to come after its start.');
   }
 
+  // ASKED FOR, NOT SET. Somebody saying they cannot work the 14th is a request
+  // the property has to be able to answer, and it used to take effect the
+  // moment it was typed. It waits now, and whoever builds the rota is told
+  // there is something to answer. Anything already decided and asked for again
+  // goes back to waiting, because the answer was to the old request.
   await ctx.db.batch(days.map((day) => ctx.db.prepare(
-    `INSERT INTO att_availability (staff_id, day, status, note, set_by, from_time, to_time)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `INSERT INTO att_availability (staff_id, day, status, note, set_by, from_time, to_time,
+                                   decision, decided_by, decided_at, decision_note)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'waiting', NULL, NULL, NULL)
      ON CONFLICT (staff_id, day) DO UPDATE SET
        status = excluded.status, note = excluded.note,
        set_by = excluded.set_by, set_at = datetime('now'),
-       from_time = excluded.from_time, to_time = excluded.to_time`,
+       from_time = excluded.from_time, to_time = excluded.to_time,
+       decision = 'waiting', decided_by = NULL, decided_at = NULL, decision_note = NULL`,
   ).bind(staff.id, day, status, note, `${staff.name} (staff)`, fromTime, toTime)));
 
-  return json({ ok: true, marked: days.length, status });
+  // The people who have to work around it hear that there is something to
+  // answer. One notice for the batch: somebody marking a fortnight off should
+  // not ring the bell fourteen times.
+  await createNotice(ctx.db, {
+    kind: 'attendance.availability_asked',
+    level: 'info',
+    title: `${staff.name} asked about ${days.length} day${days.length === 1 ? '' : 's'}`,
+    body: `${status === 'preferred' ? 'Asked to work' : 'Said they cannot work'} `
+      + `${days.length === 1 ? days[0] : `${days.slice().sort()[0]} onwards`}`
+      + `${note ? `: ${note}` : ''}. Waiting for an answer.`,
+    link: '#/att-leave',
+    actor: `${staff.name} (staff)`,
+    audience: 'att_rota',
+  }, ctx);
+
+  return json({ ok: true, asked: days.length, status, decision: 'waiting' });
+}
+
+/**
+ * Your own photograph.
+ *
+ * The passport photograph was already one of the standard documents, and the
+ * only ways it reached the file were the office scanning one or the person
+ * following a one-time link they were sent when they joined. Neither is a way
+ * to change it afterwards, and it is now the face against their name on every
+ * rota anybody opens — which is a good enough reason to let somebody choose
+ * the one that gets used.
+ *
+ * It replaces rather than adds. A second passport photograph is somebody
+ * changing theirs, not the office acquiring two, and leaving both would have
+ * the grid picking whichever was newest anyway without saying so.
+ */
+export async function setMyPhoto(ctx) {
+  const staff = await meOf(ctx);
+  const body = await readJson(ctx.request);
+
+  const bytes = fromBase64(body.content);
+  if (!bytes.length) throw badRequest('There was nothing in that file.');
+  if (bytes.length > MAX_PHOTO) {
+    throw badRequest(
+      `That picture is ${Math.round(bytes.length / 1_000_000)} MB and the limit is `
+      + `${Math.round(MAX_PHOTO / 1_000_000)} MB. One taken with the camera app is usually fine.`,
+    );
+  }
+
+  const mime = str(body.mime, 'Type', { max: 80, fallback: 'image/jpeg' });
+  if (!mime.startsWith('image/')) throw badRequest('That needs to be a picture.');
+
+  const old = await ctx.db.prepare(
+    "SELECT id FROM hr_document WHERE staff_id = ? AND kind = 'photo'",
+  ).bind(staff.id).all().catch(() => ({ results: [] }));
+  for (const row of old.results ?? []) {
+    await ctx.db.prepare('DELETE FROM hr_document WHERE id = ?').bind(row.id).run();
+  }
+
+  await storeFile({ db: ctx.db }, staff.id, {
+    kind: 'photo',
+    title: 'Passport photograph',
+    filename: str(body.filename, 'File name', { max: 200 }) || 'photo.jpg',
+    mime,
+    bytes,
+    expiresOn: null,
+    // Theirs, and about them, and it appears in one place: beside their own
+    // name on a rota. Nothing here is waiting on the office to look at it.
+    status: 'filed',
+    source: 'self',
+    by: `${staff.name} (themselves)`,
+  });
+
+  return json({ ok: true });
+}
+
+/** Take it off again. */
+export async function clearMyPhoto(ctx) {
+  const staff = await meOf(ctx);
+  const rows = await ctx.db.prepare(
+    "SELECT id FROM hr_document WHERE staff_id = ? AND kind = 'photo'",
+  ).bind(staff.id).all().catch(() => ({ results: [] }));
+  for (const row of rows.results ?? []) {
+    await ctx.db.prepare('DELETE FROM hr_document WHERE id = ?').bind(row.id).run();
+  }
+  return json({ ok: true, removed: (rows.results ?? []).length });
 }
 
 /**

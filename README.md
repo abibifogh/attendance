@@ -401,6 +401,35 @@ nothing approved, nothing spent — and rostering over it stays possible, with
 the mark staying put. Some conflicts are deliberate, and a grid that hides them
 is lying.
 
+**Availability a member of staff asks for waits for approval.** What somebody
+sends from their own screen is a request, not a fact about the week, and a day
+that takes itself off the rota the moment it is typed hands the shape of the
+week to whoever types fastest. It arrives as *asked for*, the bell rings for
+whoever plans the rota, and the rota screen carries a count of what is waiting.
+Approving it makes it the mark a planner sees in the cell and tells the person
+it was approved; turning it down tells them that, with whatever reason was
+given. A planner writing availability on somebody's behalf is already the
+decision, so it goes straight in.
+
+**Staff can put a picture to their name.** A grid of thirty names is read by
+face long before it is read by name, and everybody who has used Humanity looks
+for the face first. It is uploaded from *My picture* on the staff screen,
+shrunk in the browser before it is sent so a phone photo does not arrive as
+four megabytes, and it shows in the circle beside the name on the people grid.
+Anybody without one keeps their initials, centred in the circle.
+
+**A shift that runs into the night carries a moon.** `☾` sits beside the time
+on any shift that ends at or before it starts, or ends at midnight. Reading
+`22:00 to 06:00` and working out that it crosses the night is a thing the eye
+should not have to do twice a row.
+
+**The rota exports, drafts and all.** *Export* writes the period on screen out
+as a CSV, one line per shift, with the date, the weekday, the employee number,
+the name, the department, the shift and its hours, and the state of the row:
+published, draft, off, pattern or leave. Waiting for Publish before anything
+can leave the screen is what sends a planner back to a spreadsheet, so a draft
+exports with the word *draft* on it rather than not at all.
+
 **Sundays** are marked where somebody is over them. A rota read a week at a
 time hid this completely: one Sunday on screen says nothing about the other
 three. So the count is taken over the whole calendar month a Sunday belongs to,
@@ -753,7 +782,11 @@ Built for the way a rota is actually made — last week, with a few changes:
   the weeks being written to is never overwritten, and a day the standing
   pattern already covers goes back to following the pattern rather than being
   pinned — otherwise one press would turn the entire grid into hand-set
-  overrides and the distinction below would be gone by Wednesday.
+  overrides and the distinction below would be gone by Wednesday. Shifts nobody
+  is on yet come across as well: a slot is the week saying it still wants a
+  third receptionist on the Saturday, and copying only the people copies a week
+  that has apparently stopped needing anybody. Only the shortfall is written, so
+  pressing Copy twice does not stack them up.
 - **Fill a row.** One shift across every day shown for one person, skipping days
   they are already on leave.
 - **Totals along the bottom.** How many people each shift has each day. A shift

@@ -137,6 +137,10 @@ export const ROUTES = [
   ['POST', '/api/att/roster/publish', 'att_rota', att.publishRoster],
   ['GET', '/api/att/roster/suggest', 'att_rota', suggest.suggestRoster],
   ['GET', '/api/att/roster/history', ['att_rota', 'att_reports'], att.rosterHistory],
+  // The rota as a file, draft and all. Everything else that leaves this app is
+  // a record of what happened; a rota being built has not happened yet, which
+  // is exactly why somebody wants it out.
+  ['GET', '/api/att/roster/export', ['att_rota', 'att_reports'], att.exportRoster],
   // A face against a name on the rota. The picture and nothing else — see the
   // note on the handler.
   ['GET', '/api/att/staff/:id/photo', ['att_rota', 'att_view', 'att_reports'], att.staffPhoto],
@@ -153,6 +157,9 @@ export const ROUTES = [
   ['POST', '/api/me/leave', 'att_me', mine.askForLeave],
   ['POST', '/api/me/leave/:id/withdraw', 'att_me', mine.withdrawMyLeave],
   ['POST', '/api/me/availability', 'att_me', mine.setMyAvailability],
+  // The face against their own name on the rota, chosen by them.
+  ['POST', '/api/me/photo', 'att_me', mine.setMyPhoto],
+  ['DELETE', '/api/me/photo', 'att_me', mine.clearMyPhoto],
   ['POST', '/api/me/running-late', 'att_me', mine.tellThemImLate],
   ['GET', '/api/me/advances', 'att_me', advance.myAdvances],
   ['POST', '/api/me/advances', 'att_me', advance.askForAdvance],
@@ -161,6 +168,9 @@ export const ROUTES = [
   ['POST', '/api/me/medical', 'att_me', medical.claim],
   ['POST', '/api/me/medical/:id/withdraw', 'att_me', medical.withdrawClaim],
   ['POST', '/api/att/availability', 'att_rota', att.setAvailability],
+  // What people have asked for and nobody has answered yet, and the answer.
+  ['GET', '/api/att/availability/waiting', 'att_rota', att.waitingAvailability],
+  ['POST', '/api/att/availability/decide', 'att_rota', att.decideAvailability],
   ['GET', '/api/att/workload', ['att_rota', 'att_reports'], workload.workload],
 
   // Pay. Its own permission, held by nobody by default — a manager holds

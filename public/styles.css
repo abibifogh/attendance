@@ -4224,7 +4224,11 @@ body.rota-dragging .pos-add { pointer-events: none; }
   color: transparent;
   cursor: pointer;
 }
-.rota-cellwrap:hover .rota-add,
+/* Only under a shift. On a day with nothing on it, "add a second" is the
+   dropdown that is already sitting there, and offering both would be two ways
+   of saying one thing. */
+.rota-cellwrap:not(.rota-set) .rota-add { display: none; }
+.rota-cellwrap.rota-set:hover .rota-add,
 .rota-add:focus-visible {
   border-color: var(--rota-line);
   color: var(--text-faint);
@@ -4235,3 +4239,35 @@ body.rota-dragging .pos-add { pointer-events: none; }
 /* Squeezed, the gap goes: at a fortnight a cell is two lines of type and there
    is no room to keep one of them empty. The card dialog still adds a second. */
 .rota-table.rota-tight .rota-add { display: none; }
+
+/* A little moon beside a shift that runs into the small hours, or up to them.
+   The "+1" says the same thing in arithmetic; this says it at a glance, and a
+   bar closing at midnight has no "+1" to say it with. */
+.night-mark {
+  color: var(--accent);
+  font-size: .9em;
+  line-height: 1;
+}
+
+/* --------------------------------------------------------- what was asked --
+   A day somebody marks for themselves waits until it is answered, so it needs
+   somewhere to be answered. One press covers a whole run of days: approving a
+   fortnight one day at a time is how a queue stops being read.
+   -------------------------------------------------------------------------- */
+.ask-list { display: flex; flex-direction: column; gap: .5rem; margin-top: .6rem; }
+.ask-row {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .55rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.ask-what { flex: 1; min-width: 0; }
+.ask-who { font-weight: 650; font-size: .9rem; }
+.ask-when { font-size: .82rem; color: var(--text-dim); }
+.ask-note { font-size: .8rem; color: var(--text-faint); font-style: italic; }
+
+/* A mark nobody has answered yet reads as a question rather than a fact. */
+.rota-avail-waiting { color: var(--warn); }

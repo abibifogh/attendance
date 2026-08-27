@@ -78,6 +78,30 @@ export function shiftHours(shift) {
 }
 
 /**
+ * Does this shift run into the small hours, or right up to them?
+ *
+ * Two shapes, and they read the same to whoever is working it. One ends after
+ * it starts, which is the night shift everybody recognises. The other ends at
+ * exactly midnight — a bar closing at twelve is not a day shift, whatever the
+ * clock arithmetic says about which date it finishes on.
+ */
+export function runsIntoTheNight(shift) {
+  if (!shift?.starts_at || !shift?.ends_at) return false;
+  return shift.ends_at <= shift.starts_at || shift.ends_at === '00:00';
+}
+
+/** The little moon, for a shift that does. Nothing at all for one that does not. */
+export function nightMark(shift) {
+  if (!runsIntoTheNight(shift)) return null;
+  return h('span.night-mark', {
+    title: shift.ends_at === '00:00' && shift.ends_at > shift.starts_at
+      ? 'Runs until midnight'
+      : 'Runs overnight, finishing the next morning',
+    'aria-label': 'overnight',
+  }, '☾');
+}
+
+/**
  * How long a shift lasts, in minutes, less its unpaid break.
  *
  * A shift that ends at or before it starts runs into the next day, which is

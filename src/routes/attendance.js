@@ -4,7 +4,7 @@ import {
 import {
   alwaysOff, colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysFor,
   offDays, onRota, worksIn, worksShifts,
-  calendarFor, dayCredit, dayLedger, daysPerWeekFor, loadDataset, overUnder, rotationWeekOf, scheduleFor, streakOf, summarise, toMinutes,
+  calendarFor, dayCredit, dayLedger, daysPerWeekFor, loadDataset, overUnder, rotationWeekOf, scheduleFor, shiftWindow, streakOf, summarise, toMinutes,
   weekCountOf,
 } from '../lib/attendance.js';
 import {
@@ -23,8 +23,8 @@ import { daysBetween, parseDays } from '../lib/signoff.js';
 import { refuseUnsettled } from './signoff.js';
 import { emailExceptions, pingExceptions } from '../lib/notify.js';
 import {
-  addDays, addMonths, diffDays, dow, isDay, isMonth, lastFridayOf, monthBounds, monthOf,
-  rangeDays, startOfWeek, todayIn,
+  DOW_LABELS, addDays, addMonths, diffDays, dow, isDay, isMonth, lastFridayOf, monthBounds,
+  monthOf, rangeDays, startOfWeek, todayIn,
 } from '../util/dates.js';
 import { SUNDAY_DOW, limitsFrom, sundaysWorkedCap } from '../lib/workload.js';
 
@@ -1859,6 +1859,87 @@ export async function staffPhoto(ctx, id) {
   });
 }
 
+/**
+ * The rota as a file, draft and all.
+ *
+ * Everything else that leaves this app is a record of what happened, and a
+ * draft has not happened yet — which is exactly why somebody wants it out.
+ * A rota being built gets printed, pinned up, argued over and sent to whoever
+ * is doing the ordering, and until now the only way to get it out of the
+ * screen was a photograph of the screen.
+ *
+ * SO IT SAYS WHAT IS DRAFT. Every row carries whether that day is published,
+ * because a sheet that does not distinguish them is a sheet somebody plans
+ * around, and half of it is still being argued over. One row per person per
+ * day, including the days they are off: a rota with the empty days missing is
+ * a rota you cannot read across.
+ */
+export async function exportRoster(ctx) {
+  const timezone = await timezoneOf(ctx.db);
+  const from = startOfWeek(readDay(ctx.url.searchParams.get('from'), todayIn(timezone)));
+  const to = readDay(ctx.url.searchParams.get('to'), addDays(from, 13));
+  if (diffDays(from, to) > 92) throw badRequest('Three months at most in one file.');
+
+  const only = ctx.url.searchParams.get('department') || null;
+  const tag = ctx.url.searchParams.get('tag') || null;
+  const ds = await loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) });
+  const days = rangeDays(from, to);
+
+  const rows = [[
+    'Date', 'Weekday', 'Employee no', 'Name', 'Department', 'Shift',
+    'Starts', 'Ends', 'Hours', 'Named', 'State', 'Set by', 'Note',
+  ]];
+
+  for (const staff of ds.staff) {
+    if (!onRota(staff)) continue;
+    if (only && (staff.department || '') !== only) continue;
+    if (tag && !parseTags(staff.tags).includes(tag)) continue;
+
+    for (const day of days) {
+      if (staff.hired_on && day < staff.hired_on) continue;
+      if (staff.left_on && day > staff.left_on) continue;
+
+      const leave = ds.leaveBy.get(`${staff.id}|${day}`);
+      const held = ds.rosterAllBy.get(`${staff.id}|${day}`) ?? [];
+      const schedule = scheduleFor(ds, staff.id, day);
+
+      // Every shift they hold, not the first: somebody down for two is two
+      // lines, the same as they are two cards on the grid.
+      const on = held.length
+        ? held.map((r) => ({ row: r, shift: r.shift_id ? ds.shiftById.get(r.shift_id) : null }))
+        : [{ row: null, shift: schedule.shift }];
+
+      for (const { row, shift } of on) {
+        const state = leave
+          ? 'leave'
+          : !shift
+            ? 'off'
+            : row
+              ? (row.published ? 'published' : 'draft')
+              : 'pattern';
+
+        rows.push([
+          day,
+          DOW_LABELS[dow(day)],
+          staff.employee_no,
+          staff.name,
+          staff.department ?? '',
+          shift?.name ?? '',
+          shift?.starts_at ?? '',
+          shift?.ends_at ?? '',
+          shift ? hours(shiftWindow(shift, day)?.expected ?? 0) : '',
+          row?.title ?? '',
+          state,
+          row?.set_by ?? '',
+          row?.note ?? '',
+        ]);
+      }
+    }
+  }
+
+  return csvResponse(`rota-${from}-to-${to}.csv`, rows);
+}
+
 export async function getRoster(ctx) {
   const timezone = await timezoneOf(ctx.db);
   const from = startOfWeek(readDay(ctx.url.searchParams.get('from'), todayIn(timezone)));
@@ -1888,6 +1969,13 @@ export async function getRoster(ctx) {
       WHERE day BETWEEN ?1 AND ?2 AND published = 0
       GROUP BY ever_published`,
   ).bind(from, to).all().catch(() => ({ results: [] }));
+
+  // How many days people have asked about that nobody has answered. Counted
+  // over everything rather than over the window: a request for next month is
+  // still waiting on somebody while they look at this week.
+  const asked = await ctx.db.prepare(
+    "SELECT COUNT(*) AS n FROM att_availability WHERE decision = 'waiting'",
+  ).first().catch(() => ({ n: 0 }));
 
   const publish = { fresh: 0, again: 0 };
   for (const row of waiting.results ?? []) {
@@ -1954,6 +2042,7 @@ export async function getRoster(ctx) {
     coverage,
     shifts,
     publish,
+    asked: Number(asked?.n ?? 0),
     // Shifts wanted on a day with nobody on them yet. They belong to the day
     // rather than to a person, so they travel beside the rows rather than in
     // one of them.
@@ -2036,6 +2125,12 @@ export async function getRoster(ctx) {
               note: avail.note ?? null,
               from: avail.from_time ?? null,
               to: avail.to_time ?? null,
+              // Whether anybody has answered it yet. A day somebody has asked
+              // about and a day that has been agreed look the same on a grid
+              // and are not the same thing at all — one is a fact to plan
+              // around, the other is a question waiting on somebody.
+              decision: avail.decision || 'approved',
+              askedBy: avail.set_by ?? null,
             }
             : null,
           // A weekday they never work. Not the same as a ✕ on this date, so it
@@ -2291,7 +2386,9 @@ export async function setAvailability(ctx) {
   const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
 
   if (body.clear) {
-    await ctx.db.batch(days.map((day) => ctx.db.prepare(
+    // Whoever builds the rota is the approval. Asking them to approve their own
+  // note would be a click that means nothing.
+  await ctx.db.batch(days.map((day) => ctx.db.prepare(
       'DELETE FROM att_availability WHERE staff_id = ? AND day = ?',
     ).bind(staffId, day)));
     return json({ ok: true, cleared: days.length });
@@ -2312,15 +2409,157 @@ export async function setAvailability(ctx) {
   }
 
   await ctx.db.batch(days.map((day) => ctx.db.prepare(
-    `INSERT INTO att_availability (staff_id, day, status, note, set_by, from_time, to_time)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `INSERT INTO att_availability (staff_id, day, status, note, set_by, from_time, to_time,
+                                   decision, decided_by, decided_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'approved', ?5, datetime('now'))
      ON CONFLICT (staff_id, day) DO UPDATE SET
        status = excluded.status, note = excluded.note,
        set_by = excluded.set_by, set_at = datetime('now'),
-       from_time = excluded.from_time, to_time = excluded.to_time`,
+       from_time = excluded.from_time, to_time = excluded.to_time,
+       decision = 'approved', decided_by = excluded.set_by,
+       decided_at = datetime('now'), decision_note = NULL`,
   ).bind(staffId, day, status, note, actor, fromTime, toTime)));
 
   return json({ ok: true, marked: days.length, status });
+}
+
+/**
+ * Answer what somebody asked for.
+ *
+ * A day marked by the person themselves waits until somebody who has to work
+ * around it says yes or no, and either way they are told — a request that
+ * disappears into a rota is a request people stop making, and then the first
+ * anybody hears of the graduation is on the day.
+ *
+ * Approved, the mark stands and the planner sees it in the cell exactly as
+ * before. Declined, the mark goes: the day is ordinary again and the answer is
+ * in the notice rather than left on the grid as a thing that looks live but is
+ * not.
+ */
+export async function decideAvailability(ctx) {
+  const body = await readJson(ctx.request);
+  const decision = body.decision === 'approved' ? 'approved'
+    : body.decision === 'declined' ? 'declined' : null;
+  if (!decision) throw badRequest('Say approved or declined.');
+
+  const staffId = int(body.staffId, 'Staff', { required: true, min: 1 });
+  const days = [...new Set((Array.isArray(body.days) ? body.days : []).map(String))]
+    .filter((d) => readDay(d, null));
+  if (!days.length) throw badRequest('Say which days.');
+  if (days.length > 62) throw badRequest('Two months of days at most in one go.');
+
+  const staff = await ctx.db.prepare('SELECT id, name FROM att_staff WHERE id = ?')
+    .bind(staffId).first();
+  if (!staff) throw notFound('No such member of staff.');
+
+  const marks = days.map((_, i) => `?${i + 2}`).join(',');
+  const waiting = await ctx.db.prepare(
+    `SELECT * FROM att_availability
+      WHERE staff_id = ?1 AND day IN (${marks}) AND decision = 'waiting'`,
+  ).bind(staffId, ...days).all().catch(() => ({ results: [] }));
+  const found = waiting.results ?? [];
+  if (!found.length) throw badRequest('Nothing there is waiting for an answer.');
+
+  const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
+  const note = str(body.note, 'Note', { max: 300 });
+  const settled = found.map((row) => row.day).sort();
+
+  const statements = settled.map((day) => (decision === 'approved'
+    ? ctx.db.prepare(
+      `UPDATE att_availability
+          SET decision = 'approved', decided_by = ?1, decided_at = datetime('now'),
+              decision_note = ?2
+        WHERE staff_id = ?3 AND day = ?4`,
+    ).bind(actor, note, staffId, day)
+    // Declined leaves nothing behind. A mark on the grid that has been said no
+    // to still reads as a mark, and the answer belongs in the notice.
+    : ctx.db.prepare(
+      'DELETE FROM att_availability WHERE staff_id = ? AND day = ?',
+    ).bind(staffId, day)));
+  await ctx.db.batch(statements);
+
+  await audit(ctx, 'attendance.availability_decide', staffId, {
+    decision, days: settled, note: note || undefined,
+  });
+
+  // Their login, so the answer reaches them rather than the noticeboard.
+  // Somebody with no login still gets the audit entry and the grid; there is
+  // simply nowhere to ring.
+  const theirLogin = await ctx.db.prepare(
+    'SELECT id FROM users WHERE staff_id = ? AND active = 1 LIMIT 1',
+  ).bind(staffId).first().catch(() => null);
+
+  const span = settled.length === 1
+    ? settled[0]
+    : `${settled[0]} to ${settled[settled.length - 1]}`;
+  const asked = found[0]?.status === 'preferred' ? 'asking to work' : 'saying you cannot work';
+
+  await createNotice(ctx.db, {
+    kind: 'attendance.availability_decided',
+    level: decision === 'approved' ? 'good' : 'warn',
+    title: decision === 'approved'
+      ? `Agreed: ${span}`
+      : `Not agreed: ${span}`,
+    body: decision === 'approved'
+      ? `What you sent in ${asked} on ${span} has been agreed. `
+        + 'The rota will be built around it.'
+        + (note ? ` ${note}` : '')
+      : `What you sent in ${asked} on ${span} has not been agreed, so those days are `
+        + `ordinary again.${note ? ` ${note}` : ' Speak to your manager for the reason.'}`,
+    link: '#/att-me',
+    actor,
+    // The person who asked, and nobody else: this is an answer to them.
+    audience: null,
+    userId: theirLogin?.id ?? null,
+    // A buzz rather than an inbox. They are in the app — that is where they
+    // sent the request from — and a property answering twenty of these a week
+    // by email is twenty emails nobody reads.
+    email: false,
+    push: true,
+  }, ctx);
+
+  return json({ ok: true, decision, days: settled.length });
+}
+
+/**
+ * Everything waiting for an answer, oldest first.
+ *
+ * Small on purpose: a name, the days, what they said and why. Deciding is a
+ * separate call, because approving fourteen days one at a time is how a queue
+ * stops being read.
+ */
+export async function waitingAvailability(ctx) {
+  const rows = await ctx.db.prepare(
+    `SELECT a.staff_id, a.day, a.status, a.note, a.set_by, a.set_at,
+            a.from_time, a.to_time, s.name AS staff, s.department
+       FROM att_availability a
+       JOIN att_staff s ON s.id = a.staff_id
+      WHERE a.decision = 'waiting'
+      ORDER BY a.set_at, a.day`,
+  ).all().catch(() => ({ results: [] }));
+
+  // One entry per person per run of days they asked about, so a fortnight is
+  // one thing to answer rather than fourteen.
+  const byWho = new Map();
+  for (const row of rows.results ?? []) {
+    const key = `${row.staff_id}|${row.status}|${row.note ?? ''}`;
+    if (!byWho.has(key)) {
+      byWho.set(key, {
+        staffId: row.staff_id,
+        staff: row.staff,
+        department: row.department,
+        status: row.status,
+        note: row.note,
+        askedAt: row.set_at,
+        fromTime: row.from_time,
+        toTime: row.to_time,
+        days: [],
+      });
+    }
+    byWho.get(key).days.push(row.day);
+  }
+
+  return json({ waiting: [...byWho.values()] });
 }
 
 /**
@@ -2645,16 +2884,60 @@ export async function copyRoster(ctx) {
     }
   }
 
+  // The shifts nobody is on yet come across as well.
+  //
+  // A slot is the week saying it still wants a third receptionist on the
+  // Saturday. Copying only the people copies a week that has apparently
+  // stopped needing anybody, and the shape of the week is lost the first time
+  // a planner presses Copy.
+  //
+  // Only the shortfall is written. A target day already standing two
+  // Receptions does not end up with four for having been copied onto twice,
+  // and pressing Copy again changes nothing.
+  let slots = 0;
+  for (let offset = 0; offset < dayCount; offset++) {
+    const sourceDay = addDays(fromWeek, offset);
+    const targetDay = addDays(toWeek, offset);
+
+    const wanted = (ds.slotsByDay.get(sourceDay) ?? []).filter((row) => row.shift_id);
+    if (!wanted.length) continue;
+
+    const already = new Map();
+    for (const row of ds.slotsByDay.get(targetDay) ?? []) {
+      if (!row.shift_id) continue;
+      already.set(row.shift_id, (already.get(row.shift_id) ?? 0) + 1);
+    }
+
+    for (const row of wanted) {
+      const covered = already.get(row.shift_id) ?? 0;
+      if (covered > 0) { already.set(row.shift_id, covered - 1); continue; }
+
+      statements.push(ctx.db.prepare(
+        `INSERT INTO att_roster (staff_id, day, shift_id, title, set_by, set_at, published)
+         VALUES (NULL, ?1, ?2, ?3, ?4, datetime('now'), 0)`,
+      ).bind(targetDay, row.shift_id, row.title ?? null, actor));
+      statements.push(logChange(ctx.db, {
+        day: targetDay,
+        shiftId: row.shift_id,
+        action: 'added',
+        source: 'copy',
+        actor,
+        detail: `An empty shift copied from ${sourceDay}`,
+      }));
+      slots += 1;
+    }
+  }
+
   for (let i = 0; i < statements.length; i += 100) {
     await ctx.db.batch(statements.slice(i, i + 100));
   }
   await recomputeTouched(ctx.db, touched);
   await audit(ctx, 'attendance.roster_copy', null, {
-    from: fromWeek, to: toWeek, weeks: span, copied, skippedLeave,
+    from: fromWeek, to: toWeek, weeks: span, copied, slots, skippedLeave,
   });
 
   return json({
-    ok: true, from: fromWeek, to: toWeek, weeks: span, copied, skippedLeave,
+    ok: true, from: fromWeek, to: toWeek, weeks: span, copied, slots, skippedLeave,
   });
 }
 

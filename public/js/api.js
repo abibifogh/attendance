@@ -273,6 +273,10 @@ export const api = {
   attSetAvailability: (body) => request('/api/att/availability', { method: 'POST', body }),
   attCopyRoster: (body) => request('/api/att/roster/copy', { method: 'POST', body }),
   attClearRoster: (body) => request('/api/att/roster/clear', { method: 'POST', body }),
+  attWaitingAvailability: () => request('/api/att/availability/waiting'),
+  setMyPhoto: (body) => request('/api/me/photo', { method: 'POST', body }),
+  clearMyPhoto: () => request('/api/me/photo', { method: 'DELETE' }),
+  attDecideAvailability: (body) => request('/api/att/availability/decide', { method: 'POST', body }),
   attSavePattern: (body) => request('/api/att/patterns', { method: 'POST', body }),
 
   attRotaImport: () => request('/api/att/rota-import'),

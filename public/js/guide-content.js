@@ -501,9 +501,27 @@ export const GUIDE = [
       { steps: [
         'Rota. You see a fortnight at a time.',
         'Copy a week from the one before — most weeks are last week with two changes.',
+        'Shifts nobody is on yet come with it, so the week keeps its shape.',
         'Fix the two. Grey cells follow the standing pattern; black ones were set by hand.',
         'Save the rota. Nothing is written until you do.',
       ] },
+
+      { sub: 'What staff have asked for' },
+      { p: 'Availability a member of staff sends from their own screen arrives as a request '
+        + 'rather than a fact. Asked for on the toolbar carries the count of what is waiting; '
+        + 'open it, and approve or turn down each one. Approving puts the mark in the cell and '
+        + 'tells them it was approved. Turning it down tells them that too, with your reason. '
+        + 'What you write on somebody\u2019s behalf is already the decision, so it goes in.' },
+
+      { sub: 'Taking the rota out' },
+      { p: 'Export writes the period on screen out as a spreadsheet file: a line per shift with '
+        + 'the date, the name, the department, the shift, its hours, and whether the row is '
+        + 'published, still a draft, a day off, the standing pattern or leave. Drafts come out '
+        + 'too, marked as drafts, so nothing has to be published before it can leave the screen.' },
+
+      { note: 'A shift that runs into the night carries a moon beside its time, and a face '
+        + 'beside every name that has one. Staff add their own picture from My picture on their '
+        + 'screen; anybody without one keeps their initials.' },
 
       { sub: 'Who changed this shift' },
       { p: 'Every change to the rota is kept: who made it, when, and what the day said before. '

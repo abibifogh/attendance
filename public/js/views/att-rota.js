@@ -5,8 +5,8 @@ import {
 import { card, emptyState, table } from './components.js';
 import { holdRefresh, navigate, replaceParams } from '../app.js';
 import {
-  asHours, byDepartment, byPosition, earliestFirst, field, formDialog, shiftColour, shiftHours,
-  shiftLabel, shiftMinutes, shiftSelect,
+  asHours, byDepartment, byPosition, earliestFirst, field, formDialog, nightMark, shiftColour,
+  shiftHours, shiftLabel, shiftMinutes, shiftSelect,
 } from './att-shared.js';
 
 /**
@@ -500,6 +500,11 @@ export async function renderAttRota(params) {
     const syncHours = () => {
       const chosen = shiftById.get(String(select.value));
       hours.textContent = chosen ? shiftHours(chosen) : '';
+      // A little moon for a shift that runs into the small hours, or up to
+      // them. The "+1" says the same thing in arithmetic; this says it at a
+      // glance, and a bar closing at midnight has no "+1" to say it with.
+      const moon = chosen ? nightMark(chosen) : null;
+      if (moon) hours.append(' ', moon);
       hours.className = `rota-hours${chosen ? '' : ' rota-hours-off'}`;
       // Only a box with something in it is worth picking up, and the grab
       // cursor is the only thing that says so before somebody tries.
@@ -710,19 +715,29 @@ export async function renderAttRota(params) {
       // Off for a rostered day off, so the same word underneath in red was two
       // different things stacked one on the other: one is what the rota says,
       // the other is what the person said. It says which now.
+      const waiting = avail.decision === 'waiting';
       parts.push(h('small.rota-avail', {
-        class: avail.status === 'preferred' ? 'rota-avail-pref' : '',
+        class: [
+          avail.status === 'preferred' ? 'rota-avail-pref' : '',
+          waiting ? 'rota-avail-waiting' : '',
+        ].filter(Boolean).join(' '),
         title: [
+          waiting ? 'Waiting on an answer. ' : '',
           avail.status === 'preferred'
             ? 'They asked to work'
             : 'They said they cannot work',
           availWindow || ' this day',
           avail.note ? `: ${avail.note}` : '',
-          '. Set under the ⋯ button on their row, or sent in by them.',
+          waiting
+            ? '. Agree or decline it under "asked for" on the toolbar.'
+            : '. Set under the ⋯ button on their row, or sent in by them.',
         ].join(''),
-      }, avail.status === 'preferred'
-        ? `★ asked to work${availWindow}`
-        : `✕ cannot work${availWindow}`));
+      },
+      // A day somebody has asked about and a day that has been agreed look the
+      // same on a grid and are not the same thing: one is a fact to plan
+      // around, the other is a question waiting on somebody.
+      `${waiting ? '⏳ ' : ''}${avail.status === 'preferred' ? '★ asked to work' : '✕ cannot work'}`
+      + availWindow));
     }
     // Room under the shift for a second one. Empty until somebody goes looking
     // for it: a plus on every cell of a grid of a hundred and sixty-eight is a
@@ -1584,7 +1599,7 @@ export async function renderAttRota(params) {
   // card that now has a fixed one, so "05:00–11:30 · 6h 30m" was reading as
   // "05:00–11:30 · 6h …" — and the position's own row already carries it,
   // as does the dialog behind the card.
-  h('span.pos-card-clock', shiftHours(shift)),
+  h('span.pos-card-clock', shiftHours(shift), nightMark(shift) ? ' ' : null, nightMark(shift)),
   h('span.pos-card-who', card.row ? card.row.staff.name : 'Empty'));
 
   /** Which of a position's shifts a dragged one lands on. */
@@ -1902,6 +1917,21 @@ export async function renderAttRota(params) {
       view === 'people'
         ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week')
         : null,
+      // A rota being built gets printed, pinned up and argued over. Until now
+      // the only way to get one off the screen was a photograph of the screen.
+      h('a.btn-sm', {
+        href: `/api/att/roster/export?from=${from}&to=${to}`
+          + `${params.department ? `&department=${encodeURIComponent(params.department)}` : ''}`
+          + `${params.tag ? `&tag=${encodeURIComponent(params.tag)}` : ''}`,
+        title: 'The window on screen as a spreadsheet, draft days and all, each row saying '
+          + 'whether it is published',
+      }, 'Export'),
+      data.asked
+        ? h('button.btn-sm', {
+          onclick: () => answerRequests(reload),
+          title: 'Days people have asked about that nobody has answered yet',
+        }, `⏳ ${data.asked} asked for`)
+        : null,
       h('button.btn-sm', {
         onclick: () => clearPeriod(data, params, reload),
         title: 'Take a stretch of the rota back off, either to the standing pattern '
@@ -1975,6 +2005,76 @@ export async function renderAttRota(params) {
  * is what undoing a week means. Writing a day off on every day is what an
  * empty period means. Both are offered, in those words.
  */
+/**
+ * What people have asked for, and the answer.
+ *
+ * A day somebody marks for themselves used to take effect the moment they
+ * typed it, which makes it a statement rather than a request: the property
+ * could not say no, and the person was never told either way. Now it waits
+ * here, and both halves of that are fixed — one press answers a whole run of
+ * days, and whoever asked is told.
+ */
+async function answerRequests(reload) {
+  const { waiting } = await api.attWaitingAvailability().catch(() => ({ waiting: [] }));
+  if (!waiting.length) {
+    toast('Nothing is waiting for an answer.', 'good');
+    return;
+  }
+
+  const said = (row) => (row.status === 'preferred' ? 'Asked to work' : 'Cannot work');
+  const when = (row) => (row.days.length === 1
+    ? fmtDayShort(row.days[0])
+    : `${row.days.length} days, ${fmtDayShort(row.days[0])} to `
+      + `${fmtDayShort(row.days[row.days.length - 1])}`);
+
+  const list = h('div.ask-list');
+  const draw = (rows) => mount(list, rows.length
+    ? rows.map((row) => {
+      const answer = async (decision) => {
+        try {
+          await api.attDecideAvailability({
+            staffId: row.staffId, days: row.days, decision,
+          });
+          toast(decision === 'approved'
+            ? `Agreed, and ${row.staff} has been told.`
+            : `Declined, and ${row.staff} has been told.`, decision === 'approved' ? 'good' : 'bad');
+          draw(rows.filter((r) => r !== row));
+        } catch (err) {
+          toast(err.message, 'bad');
+        }
+      };
+
+      return h('div.ask-row',
+        h('div.ask-what',
+          h('div.ask-who', row.staff,
+            h('small.muted', ` · ${row.department || 'no department'}`)),
+          h('div.ask-when', `${said(row)} — ${when(row)}`
+            + (row.fromTime ? `, ${row.fromTime} to ${row.toTime}` : '')),
+          row.note ? h('div.ask-note', row.note) : null),
+        h('div.btn-row',
+          h('button.btn-sm.btn-primary', { onclick: () => answer('approved') }, 'Agree'),
+          h('button.btn-sm', { onclick: () => answer('declined') }, 'Decline')),
+      );
+    })
+    : h('p.muted', 'Nothing left to answer.'));
+
+  draw(waiting);
+
+  await formDialog({
+    title: 'What people have asked for',
+    submitLabel: 'Done',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'A day somebody marks for themselves waits here until it is answered. Agreeing '
+        + 'leaves the mark on the grid for the rota to be built around; declining takes it '
+        + 'off, and the day is ordinary again. Either way they are told.'),
+      list,
+    ),
+    onSubmit: async () => true,
+  });
+  await reload();
+}
+
 async function clearPeriod(data, params, reload) {
   const filtered = params.department || params.tag;
 

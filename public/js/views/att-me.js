@@ -23,6 +23,75 @@ import {
  * somebody signs the month off — a running total on a phone is a number to
  * argue about, and the app should not be the one starting the argument.
  */
+/**
+ * The picture that goes beside your name.
+ *
+ * It is on every rota anybody opens, which is reason enough to let the person
+ * it is of choose it rather than living with whatever was scanned the week
+ * they joined. Shrunk here rather than on the way in: a phone camera sends
+ * four megabytes of a face that is shown at two centimetres across, and the
+ * browser can do the resizing for nothing.
+ */
+async function shrink(file, side = 480) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, side / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h2 = Math.round(bitmap.height * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h2;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h2);
+  bitmap.close?.();
+
+  const blob = await new Promise((done) => canvas.toBlob(done, 'image/jpeg', 0.82));
+  const buffer = await blob.arrayBuffer();
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return { content: btoa(binary), mime: 'image/jpeg', bytes: bytes.length };
+}
+
+async function choosePhoto(reload) {
+  const pick = h('input', { type: 'file', accept: 'image/*', name: 'photo' });
+  const note = h('p.muted', { style: { fontSize: '.82rem' } },
+    'A head-and-shoulders picture, the way it would look on a staff card. It is shown beside '
+    + 'your name on the rota and nowhere else, and it is shrunk on this device before it is '
+    + 'sent, so a photograph straight from the camera is fine.');
+
+  const done = await formDialog({
+    title: 'My picture',
+    submitLabel: 'Use it',
+    body: h('div',
+      field('Choose a picture', pick),
+      note,
+      h('button.btn-sm', {
+        type: 'button',
+        onclick: async () => {
+          try {
+            await api.clearMyPhoto();
+            toast('Taken off. Your initials will show instead.', 'good');
+          } catch (err) { toast(err.message, 'bad'); }
+        },
+      }, 'Take my picture off'),
+    ),
+    onSubmit: async () => {
+      const file = pick.files?.[0];
+      if (!file) throw new Error('Choose a picture first.');
+      const shrunk = await shrink(file).catch(() => {
+        throw new Error('That file could not be read as a picture.');
+      });
+      await api.setMyPhoto({ ...shrunk, filename: file.name });
+      return true;
+    },
+  });
+
+  if (done) {
+    toast('That is your picture now.', 'good');
+    await reload();
+  }
+}
+
 export async function renderAttMe(params = {}) {
   const host = h('div');
   const from = params.from || null;
@@ -65,6 +134,7 @@ export async function renderAttMe(params = {}) {
             : 'Nothing on the rota for you in the next four weeks'),
       ),
       h('div.btn-row',
+        h('button.btn-sm', { onclick: () => choosePhoto(reload) }, 'My picture'),
         h('button.btn-sm', { onclick: () => runningLate(reload) }, 'I am running late'),
         h('button.btn-sm', {
           onclick: () => editMyAvailability(data, reload),
