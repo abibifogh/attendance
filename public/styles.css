@@ -3676,9 +3676,13 @@ html { touch-action: manipulation; }
    over the buttons beside it. Names wrap; nothing else in the column needs
    to. */
 .rota-table:not(.rota-positions) td:first-child { white-space: normal; }
-/* And the warning dot stays beside the name rather than being carried onto a
-   line of its own by the last word of it. */
-.rota-table:not(.rota-positions) td:first-child > div:first-of-type {
+/* And the warning sign stays beside the name rather than being carried onto a
+   line of its own by the last word of it.
+   Aimed at the name rather than at "the first div in the cell", which is what
+   it used to say and which stopped being the name the day a face was put in
+   front of it: the face inherited a flex row and pushed its initials to the
+   left of their own circle. */
+.rota-table:not(.rota-positions) td:first-child .rota-who-name {
   display: flex;
   align-items: center;
   gap: .1rem;
@@ -3726,14 +3730,19 @@ html { touch-action: manipulation; }
   border-right-color: var(--warn);
   border-bottom-color: var(--warn);
 }
+/* Quiet by default: it is a running count, and twenty-four Sundays shouting at
+   once is twenty-four things nobody reads. It goes loud at the line. */
 .rota-sunday-note {
-  color: var(--warn);
-  font-weight: 650;
-  /* Everything else on this line is two words and fits. This one carries a
-     count, and a narrow column should wrap it rather than cut it off. */
+  display: block;
+  color: var(--text-faint);
+  font-weight: 600;
+  font-size: .68rem;
+  /* It carries a count, and a narrow column should wrap it rather than cut
+     it off. */
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.rota-sunday-loud { color: var(--warn); font-weight: 650; }
 .rota-table.rota-tight .rota-sunday-word { display: none; }
 
 /* ------------------------------------------------ a week, on one screen -- */
@@ -4083,10 +4092,28 @@ body.rota-dragging .pos-add { pointer-events: none; }
    positions view draws, and the two views of one window should not look like
    two different screens.
    -------------------------------------------------------------------------- */
+/* The line itself. A near-black hairline rather than the app's usual soft
+   border: a rota is read as a grid of boxes, and a line that has to be looked
+   for is not drawing boxes. Inverted for the dark theme, where a black line on
+   a dark ground is no line at all. */
+:root { --rota-line: color-mix(in srgb, var(--text) 55%, transparent); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --rota-line: color-mix(in srgb, var(--text) 32%, transparent); }
+}
+:root[data-theme="dark"] { --rota-line: color-mix(in srgb, var(--text) 32%, transparent); }
+
 .rota-table th,
-.rota-table td { border-right: 1px solid var(--border); }
+.rota-table td {
+  border-right: 1px solid var(--rota-line);
+  border-bottom: 1px solid var(--rota-line);
+}
 .rota-table th:last-child,
 .rota-table td:last-child { border-right: 0; }
+
+/* A `td` set to flex stops being a table cell, and the column line beside the
+   names stopped lining up with the rows it was meant to divide. The cell stays
+   a cell; the row inside it does the arranging. */
+.rota-who-in { display: flex; align-items: flex-start; gap: .5rem; }
 
 /* A cell is the same size whatever is in it, and the same size as a card on
    the positions view: an empty Tuesday and a Tuesday with a shift on it are
@@ -4106,7 +4133,6 @@ body.rota-dragging .pos-add { pointer-events: none; }
    Under the name is what this window already has them down for, which is the
    number being weighed every time a cell is filled and which used to live on
    the Workload screen, nowhere near the decision. */
-.rota-who { display: flex; align-items: flex-start; gap: .5rem; }
 .rota-who-text { min-width: 0; flex: 1; }
 .rota-who-name { display: flex; align-items: center; gap: .1rem; }
 
@@ -4166,3 +4192,46 @@ body.rota-dragging .pos-add { pointer-events: none; }
 .rota-cellwrap.rota-set { cursor: pointer; }
 .rota-cellwrap.rota-set:hover { border-color: var(--accent); }
 .rota-cellwrap .rota-cell { cursor: pointer; }
+
+/* The workload sign. A triangle rather than a dot: the shape says "something
+   is wrong" on its own, so it still reads for somebody who cannot tell the red
+   from the amber. */
+.rota-strain-high { color: var(--bad); }
+.rota-strain-some { color: var(--warn); }
+.rota-strain { font-size: 1rem; line-height: 1; }
+
+/* The face keeps its own centring whatever the cell around it is doing. */
+.rota-face { display: grid !important; place-items: center; }
+
+/* ---------------------------------------------------- room for a second --
+   A gap under the shift that is nothing at all until somebody goes looking for
+   it. A plus on every cell of a grid of a hundred and sixty-eight is a hundred
+   and sixty-eight invitations nobody asked for, and a second shift on one day
+   is rare and always deliberate. Hovering the cell offers it; a keyboard finds
+   it by tabbing, which is the one case where it has to be visible without a
+   pointer.
+   -------------------------------------------------------------------------- */
+.rota-add {
+  margin-top: auto;
+  width: 100%;
+  padding: .1rem 0;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  font-size: .68rem;
+  font-weight: 600;
+  color: transparent;
+  cursor: pointer;
+}
+.rota-cellwrap:hover .rota-add,
+.rota-add:focus-visible {
+  border-color: var(--rota-line);
+  color: var(--text-faint);
+}
+.rota-add:hover { border-color: var(--accent); color: var(--accent); }
+.rota-cellwrap { display: flex; flex-direction: column; }
+
+/* Squeezed, the gap goes: at a fortnight a cell is two lines of type and there
+   is no room to keep one of them empty. The card dialog still adds a second. */
+.rota-table.rota-tight .rota-add { display: none; }

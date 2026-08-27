@@ -11,11 +11,16 @@ import { sundaysOwedOff, sundaysWorkedCap } from '../src/lib/workload.js';
  *
  * The rota is read a week at a time, and one Sunday on screen says nothing
  * about the other three, so anybody being given too many of them was invisible
- * on the one screen where somebody could still move them. What is pinned down
- * here is that the count is taken over the whole calendar month whatever
- * window is open, that it trips on Sundays worked rather than on Sundays lost
- * — two in a month, not the last one gone — that a standing pattern counts the
- * same as a rostered day, and that leave is a Sunday off.
+ * on the one screen where somebody could still move them.
+ *
+ * Every Sunday cell now carries the running count, full or empty, because "this
+ * is their second of four" is what somebody about to fill one needs. Whether
+ * they are at the line is a separate flag on the same answer, so the screen can
+ * say the count quietly and the warning loudly. What is pinned down here is
+ * that the count is taken over the whole calendar month whatever window is
+ * open, that the line is Sundays worked rather than Sundays lost — two in a
+ * month, not the last one gone — that a standing pattern counts the same as a
+ * rostered day, and that leave is a Sunday off.
  *
  * September 2026 has four Sundays: the 6th, 13th, 20th and 27th. The window
  * used throughout is Monday the 7th to Sunday the 13th, so exactly one of
@@ -87,6 +92,10 @@ const cellOn = (data, name, day) => data.rows
   .find((r) => r.staff.name === name)
   .days.find((d) => d.day === day);
 
+/** The count on a cell, and whether it is at the line this property draws. */
+const countOn = (data, name, day) => cellOn(data, name, day).sundays;
+const isLoud = (data, name, day) => Boolean(countOn(data, name, day)?.over);
+
 const look = async (db, query = WEEK) => (await getRoster(ctx(db, query))).json();
 
 // ---------------------------------------------------------------------------
@@ -120,37 +129,38 @@ test('working every Sunday of the month marks the one on screen', async () => {
   const { db, raw } = setup();
   roster(raw, 1, SUNDAYS);
 
-  const cell = cellOn(await look(db), 'Adjoa', SHOWN);
-  assert.deepEqual(cell.sundayOver, { worked: 4, of: 4, cap: 2 });
+  assert.deepEqual(countOn(await look(db), 'Adjoa', SHOWN),
+    { worked: 4, of: 4, cap: 2, over: true });
 });
 
-test('two in a month is where it starts, and one is not marked', async () => {
+test('two in a month is where it goes loud, and one is said quietly', async () => {
   const { db, raw } = setup();
   roster(raw, 1, [SHOWN]);
-  assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver, null,
-    'one Sunday is not a pattern');
+  assert.deepEqual(countOn(await look(db), 'Adjoa', SHOWN),
+    { worked: 1, of: 4, cap: 2, over: false },
+    'one Sunday is a count, not a warning');
 
   roster(raw, 1, ['2026-09-20']);
-  assert.deepEqual(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver,
-    { worked: 2, of: 4, cap: 2 },
+  assert.deepEqual(countOn(await look(db), 'Adjoa', SHOWN),
+    { worked: 2, of: 4, cap: 2, over: true },
     'the second one is, and it says so while there is still time to move them');
 });
 
 test('the count is the month, not the week on screen', async () => {
   const { db, raw } = setup();
   // The only Sunday the planner can see is one she is on, and on its own it
-  // says nothing. The three behind it are what make it a breach.
+  // says nothing. The three behind it are what make it a warning.
   roster(raw, 1, [SHOWN]);
-  assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver, null);
+  assert.equal(isLoud(await look(db), 'Adjoa', SHOWN), false);
 
   roster(raw, 1, ['2026-09-06', '2026-09-20', '2026-09-27']);
-  assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver.worked, 4);
+  assert.equal(countOn(await look(db), 'Adjoa', SHOWN).worked, 4);
 });
 
-test('a month with one Sunday on it is left alone', async () => {
+test('a month with one Sunday on it counts but does not warn', async () => {
   const { db, raw } = setup();
   roster(raw, 1, [SHOWN]);
-  assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver, null);
+  assert.equal(isLoud(await look(db), 'Adjoa', SHOWN), false);
 });
 
 test('a standing pattern counts the same as a rostered day', async () => {
@@ -162,8 +172,8 @@ test('a standing pattern counts the same as a rostered day', async () => {
     'INSERT INTO att_patterns (staff_id, week, dow, shift_id) VALUES (1, 0, 6, 1)',
   ).run();
 
-  const cell = cellOn(await look(db), 'Adjoa', SHOWN);
-  assert.deepEqual(cell.sundayOver, { worked: 4, of: 4, cap: 2 });
+  assert.deepEqual(countOn(await look(db), 'Adjoa', SHOWN),
+    { worked: 4, of: 4, cap: 2, over: true });
 });
 
 test('leave on a Sunday is a Sunday off', async () => {
@@ -176,7 +186,7 @@ test('leave on a Sunday is a Sunday off', async () => {
   raw.prepare(
     'INSERT INTO att_patterns (staff_id, week, dow, shift_id) VALUES (1, 0, 6, 1)',
   ).run();
-  assert.equal(cellOn(await look(db, ITS_WEEK), 'Adjoa', FIRST).sundayOver.worked, 4,
+  assert.equal(countOn(await look(db, ITS_WEEK), 'Adjoa', FIRST).worked, 4,
     'down for all four by pattern');
 
   raw.prepare(
@@ -184,8 +194,9 @@ test('leave on a Sunday is a Sunday off', async () => {
      VALUES (1, 'annual_leave', '2026-09-08', '2026-09-30', 17, 'approved')`,
   ).run();
 
-  assert.equal(cellOn(await look(db, ITS_WEEK), 'Adjoa', FIRST).sundayOver, null,
-    'one Sunday actually worked, so there is nothing to say');
+  assert.deepEqual(countOn(await look(db, ITS_WEEK), 'Adjoa', FIRST),
+    { worked: 1, of: 4, cap: 2, over: false },
+    'one Sunday actually worked, so it counts but does not warn');
 });
 
 test('a Sunday they are off is marked too, which is the point of it', async () => {
@@ -197,7 +208,7 @@ test('a Sunday they are off is marked too, which is the point of it', async () =
 
   const cell = cellOn(await look(db), 'Kwesi', SHOWN);
   assert.equal(cell.shift_id, null, 'nobody has put him on this one');
-  assert.deepEqual(cell.sundayOver, { worked: 3, of: 4, cap: 2 });
+  assert.deepEqual(cell.sundays, { worked: 3, of: 4, cap: 2, over: true });
 });
 
 test('a draft Sunday counts the same as a published one', async () => {
@@ -208,16 +219,17 @@ test('a draft Sunday counts the same as a published one', async () => {
   roster(raw, 1, ['2026-09-06', '2026-09-20']);
   raw.prepare('UPDATE att_roster SET published = 0').run();
 
-  assert.deepEqual(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver,
-    { worked: 2, of: 4, cap: 2 });
+  assert.deepEqual(countOn(await look(db), 'Adjoa', SHOWN),
+    { worked: 2, of: 4, cap: 2, over: true });
 });
 
-test('somebody under the line has nothing on their Sundays, full or empty', async () => {
+test('somebody under the line still gets their count, quietly', async () => {
   const { db, raw } = setup();
   roster(raw, 2, ['2026-09-06']);
-  const marked = (await look(db)).rows
-    .flatMap((r) => r.days).filter((d) => d.sundayOver);
-  assert.deepEqual(marked, [], 'one Sunday is not a pattern, so nothing is said');
+  const loud = (await look(db)).rows
+    .flatMap((r) => r.days).filter((d) => d.sundays?.over);
+  assert.deepEqual(loud, [], 'nobody is at the line');
+  assert.equal(countOn(await look(db), 'Kwesi', SHOWN).worked, 1, 'but the count is there');
 });
 
 test('the mark is only ever on a Sunday', async () => {
@@ -225,9 +237,9 @@ test('the mark is only ever on a Sunday', async () => {
   roster(raw, 1, SUNDAYS);
   roster(raw, 1, ['2026-09-07', '2026-09-08', '2026-09-09']);
 
-  const marked = (await look(db)).rows
-    .flatMap((r) => r.days).filter((d) => d.sundayOver).map((d) => d.day);
-  assert.deepEqual(marked, [SHOWN], 'the weekdays they are on carry nothing');
+  const counted = [...new Set((await look(db)).rows
+    .flatMap((r) => r.days).filter((d) => d.sundays).map((d) => d.day))];
+  assert.deepEqual(counted, [SHOWN], 'the weekdays they are on carry nothing');
 });
 
 test('a window with no Sunday in it asks nothing and marks nothing', async () => {
@@ -236,7 +248,7 @@ test('a window with no Sunday in it asks nothing and marks nothing', async () =>
 
   const data = await look(db, '?from=2026-09-07&to=2026-09-11');
   assert.equal(data.days.length, 5);
-  assert.equal(data.rows.flatMap((r) => r.days).some((d) => d.sundayOver), false);
+  assert.equal(data.rows.flatMap((r) => r.days).some((d) => d.sundays), false);
 });
 
 test('switching the rule off takes the mark away', async () => {
@@ -247,7 +259,8 @@ test('switching the rule off takes the mark away', async () => {
     + ' ON CONFLICT (key) DO UPDATE SET value = excluded.value',
   ).run();
 
-  assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver, null);
+  assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundays, null,
+    'the rule is off, so there is no count either');
 });
 
 test('a property that draws the line elsewhere gets its own line', async () => {
@@ -258,11 +271,11 @@ test('a property that draws the line elsewhere gets its own line', async () => {
     + ' ON CONFLICT (key) DO UPDATE SET value = excluded.value',
   ).run();
 
-  assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver, null,
+  assert.equal(isLoud(await look(db), 'Adjoa', SHOWN), false,
     'three is under a cap of four');
 
   roster(raw, 1, ['2026-09-27']);
-  assert.equal(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver.worked, 4);
+  assert.equal(isLoud(await look(db), 'Adjoa', SHOWN), true);
 });
 
 test('a fortnight spanning two months counts each month on its own', async () => {
@@ -272,6 +285,8 @@ test('a fortnight spanning two months counts each month on its own', async () =>
   roster(raw, 1, SUNDAYS);
 
   const data = await look(db, '?from=2026-09-21&to=2026-10-04');
-  assert.equal(cellOn(data, 'Adjoa', '2026-09-27').sundayOver.worked, 4);
-  assert.equal(cellOn(data, 'Adjoa', '2026-10-04').sundayOver, null);
+  assert.equal(countOn(data, 'Adjoa', '2026-09-27').worked, 4, 'September, all four');
+  assert.deepEqual(countOn(data, 'Adjoa', '2026-10-04'),
+    { worked: 0, of: 4, cap: 2, over: false },
+    'October starts again at nothing, which is the point of counting by month');
 });

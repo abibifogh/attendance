@@ -1706,11 +1706,11 @@ export async function addPunch(ctx) {
  * this property draws the line, and it is a setting, so it can be drawn
  * somewhere else.
  *
- * AND IT IS SAID ON THE EMPTY SUNDAYS TOO. A mark that waits until somebody is
- * already on the shift arrives after the decision it exists to inform. On a
- * cell with nobody on it, it reads as "this person has already done three of
- * this month's Sundays" — which is the thing worth knowing while the cell is
- * still empty.
+ * AND IT IS SAID ON EVERY SUNDAY, WHATEVER THE COUNT. The count is a fact
+ * about the month and it is wanted in front of every Sunday cell, full or
+ * empty: "this is their second of four" is what somebody about to fill one
+ * needs. Whether they are at the line is a separate flag on the same answer,
+ * so the screen can say the count quietly and the warning loudly.
  *
  * Standing patterns count. A person who works every Sunday by pattern and has
  * no roster rows at all is the plainest case of it going wrong, and a count
@@ -1787,7 +1787,7 @@ async function missedTheMeal(db, ds, days) {
   return out;
 }
 
-async function sundaysOver(db, ds, days, limits) {
+async function sundayCount(db, ds, days, limits) {
   const here = days.filter((day) => dow(day) === SUNDAY_DOW);
   if (!here.length) return new Map();
 
@@ -1807,17 +1807,18 @@ async function sundaysOver(db, ds, days, limits) {
     if (!onRota(staff)) continue;
     for (const [month, all] of inMonth) {
       const worked = all.filter((day) => working(staff.id, day)).length;
-      if (worked < cap) continue;
+      const count = { worked, of: all.length, cap, over: worked >= cap };
 
-      const over = { worked, of: all.length, cap };
       for (const day of here) {
-        // ON EVERY SUNDAY OF THAT MONTH, INCLUDING THE ONES THEY ARE OFF. The
-        // whole point is to be told before deciding, and a mark that only
-        // appears once somebody is already on the shift arrives after the
-        // decision it was meant to inform. On an empty cell it reads as "this
-        // person has already done three of this month's Sundays", which is
-        // exactly what a planner about to fill it needs to know.
-        if (day.slice(0, 7) === month) out.set(`${staff.id}|${day}`, over);
+        // ON EVERY SUNDAY, WHATEVER THE COUNT AND WHOEVER IS ON IT. A mark
+        // that only appears once somebody is already over arrives after the
+        // decision it exists to inform, and one that only appears on a cell
+        // somebody is already on arrives after the other half of it. What a
+        // planner wants in front of a Sunday is the running count — "this is
+        // their second of four" — with the ones who are at the line saying so
+        // more loudly. `over` is what carries that, so the count is a fact and
+        // the warning is a judgement on it.
+        if (day.slice(0, 7) === month) out.set(`${staff.id}|${day}`, count);
       }
     }
   }
@@ -1896,7 +1897,7 @@ export async function getRoster(ctx) {
   const days = rangeDays(from, to);
   const shifts = ds.shifts.filter((s) => s.active);
   const [overSundays, missedMeal, faces] = await Promise.all([
-    sundaysOver(ctx.db, ds, days, limitsFrom(ds.settings ?? {})),
+    sundayCount(ctx.db, ds, days, limitsFrom(ds.settings ?? {})),
     missedTheMeal(ctx.db, ds, days),
     // Who has a photograph, not the photographs themselves. Twenty-four blobs
     // in a rota payload would be megabytes on every draw; twenty-four ids is
@@ -2040,10 +2041,11 @@ export async function getRoster(ctx) {
           // A weekday they never work. Not the same as a ✕ on this date, so it
           // is sent apart from availability and marked apart on the grid.
           alwaysOff: alwaysOff(staff, day),
-          // A Sunday they are working in a month where they are already on as
-          // many as this property counts as enough. Over the whole month, so
-          // it says the same thing whichever week is on screen.
-          sundayOver: overSundays.get(`${staff.id}|${day}`) ?? null,
+          // How many of this month's Sundays this person is on, and whether
+          // that is as many as this property counts as enough. Counted over
+          // the whole month, so it says the same thing whichever week is on
+          // screen, and sent for every Sunday whether or not they are on it.
+          sundays: overSundays.get(`${staff.id}|${day}`) ?? null,
           // The last Friday of the month is the special meal, and this person
           // was off the last one. Said whether or not they are down for this
           // one, because it is a fact about last month rather than a gap: on

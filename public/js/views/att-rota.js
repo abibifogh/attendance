@@ -212,11 +212,19 @@ export async function renderAttRota(params) {
     const shown = found.findings.slice(0, 4);
 
     return h('span.rota-strain-wrap',
+      // A danger sign rather than a coloured dot. A red circle says something
+      // is red; a warning triangle says something is wrong, which is what this
+      // is for — the plan is working somebody harder than the rules allow.
+      // The colour is the severity and the shape carries the meaning, so it
+      // still reads where colour does not.
       h('button.rota-strain', {
         type: 'button',
+        class: `rota-strain rota-strain-${found.level === 'high' ? 'high' : 'some'}`,
+        title: `${found.count} thing${found.count === 1 ? '' : 's'} to look at in how this `
+          + 'plan is working them. Hover for what, or open Workload.',
         'aria-label': `${found.count} workload warning${found.count === 1 ? '' : 's'}`,
         onclick: () => navigate('att-workload', { from, to }),
-      }, found.level === 'high' ? '🔴' : '🟠'),
+      }, '⚠'),
 
       h('div.rota-strain-pop', { role: 'tooltip' },
         h('ul', shown.map((f) => h('li',
@@ -407,6 +415,52 @@ export async function renderAttRota(params) {
       staffId: Number(staffId), day, shiftId, title: title || null,
     });
     return true;
+  };
+
+  /**
+   * A second shift on a day somebody already works.
+   *
+   * Rare and always deliberate — a double is marked at both ends and is
+   * somebody's decision — so it is asked for rather than offered, and what it
+   * asks is only which shift: who is working it is already answered by whose
+   * row this is.
+   */
+  const addSecondShift = async (row, entry) => {
+    const { own, other } = shiftsFor(data.shifts, row.staff);
+    const choices = [...own, ...other];
+    if (!choices.length) return;
+
+    const done = await formDialog({
+      title: `A second shift for ${row.staff.name}`,
+      submitLabel: 'Put it on',
+      body: h('div',
+        h('p.muted', `${fmtDayShort(entry.day)}. They are already down for `
+          + `${shiftById.get(String(entry.shift_id))?.name ?? 'a shift'} that day, and this `
+          + 'goes beside it rather than instead of it.'),
+        field('Which shift', h('select', { name: 'shiftId', required: true },
+          own.length
+            ? h('optgroup', { label: row.staff.department || 'Theirs' },
+              own.map((sh) => h('option', { value: String(sh.id) }, shiftLabel(sh))))
+            : null,
+          other.length
+            ? h('optgroup', { label: 'Other departments' },
+              other.map((sh) => h('option', { value: String(sh.id) }, shiftLabel(sh))))
+            : null)),
+        field('Name for this shift', h('input', {
+          type: 'text', name: 'title', maxlength: 60, placeholder: 'Optional. Stock take',
+        })),
+      ),
+      onSubmit: async (form) => ({
+        shiftId: Number(form.get('shiftId')),
+        title: (form.get('title') || '').trim(),
+      }),
+    });
+    if (!done?.shiftId) return;
+
+    queue(`${row.staff.id}|${entry.day}|second:${pending.size}`, {
+      staffId: row.staff.id, day: entry.day, shiftId: done.shiftId,
+      title: done.title || null, add: true,
+    });
   };
 
   const cell = (row, entry) => {
@@ -631,13 +685,18 @@ export async function renderAttRota(params) {
           + 'This is the next one.',
       }, '◆ missed the last'));
     }
-    if (entry.sundayOver) {
-      const { worked, of, cap } = entry.sundayOver;
+    // Every Sunday carries its own count, full or empty. The number is a fact
+    // about the month and it is wanted in front of the cell somebody is about
+    // to fill; whether they are at the line this property draws is what makes
+    // it shout rather than murmur.
+    if (entry.sundays) {
+      const { worked, of, cap, over } = entry.sundays;
       const month = new Date(`${entry.day}T12:00:00Z`).toLocaleDateString('en-GB', {
         month: 'long', timeZone: 'UTC',
       });
-      wrap.classList.add('rota-sunday-over');
-      parts.push(h('small.rota-avail.rota-sunday-note', {
+      if (over) wrap.classList.add('rota-sunday-over');
+      parts.push(h('small.rota-sunday-note', {
+        class: `rota-sunday-note ${over ? 'rota-sunday-loud' : ''}`.trim(),
         title: `On ${worked} of the ${of} Sundays in ${month}. `
           + `This property marks it at ${cap} a month, set under Setup → Workload.`,
       },
@@ -665,6 +724,20 @@ export async function renderAttRota(params) {
         ? `★ asked to work${availWindow}`
         : `✕ cannot work${availWindow}`));
     }
+    // Room under the shift for a second one. Empty until somebody goes looking
+    // for it: a plus on every cell of a grid of a hundred and sixty-eight is a
+    // hundred and sixty-eight invitations nobody asked for, and a second shift
+    // on one day is a rare and deliberate thing. Hovering the cell offers it.
+    parts.push(h('button.rota-add', {
+      type: 'button',
+      title: 'Put a second shift on this day',
+      'aria-label': `Put a second shift on ${fmtDayShort(entry.day)}`,
+      onclick: (event) => {
+        event.stopPropagation();
+        addSecondShift(row, entry);
+      },
+    }, h('span.rota-add-mark', '+ shift')));
+
     wrap.append(...parts);
 
     /**
@@ -848,8 +921,9 @@ export async function renderAttRota(params) {
       h('thead', headRow),
       h('tbody', visible.map((row) => h('tr',
         h('td.rota-who',
-          faceOf(row.staff),
-          h('div.rota-who-text',
+          h('div.rota-who-in',
+            faceOf(row.staff),
+            h('div.rota-who-text',
             h('div.rota-who-name', row.staff.name, strainMark(row.staff.id)),
             h('small.muted', row.staff.department || `No. ${row.staff.employee_no}`),
             // What this window already has them down for. The number a planner
@@ -859,9 +933,10 @@ export async function renderAttRota(params) {
               title: `Down for ${asHours(hoursThisWindow(row.staff.id))} over the `
                 + `${data.days.length} days shown`,
             }, `🕐 ${asHours(hoursThisWindow(row.staff.id))}`),
-            row.staff.tags?.length
-              ? h('div.rota-tags', row.staff.tags.map((t) => h('span.rota-tag', t)))
-              : null,
+              row.staff.tags?.length
+                ? h('div.rota-tags', row.staff.tags.map((t) => h('span.rota-tag', t)))
+                : null,
+            ),
           ),
         ),
         h('td',
