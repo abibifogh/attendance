@@ -1027,10 +1027,37 @@ export async function renderAttRota(params) {
       .filter(Boolean),
   ].join(', ') || 'no department';
 
-  /** The list of people for a card dialog, grouped by whether they are free. */
+  /** What somebody is already down for over the whole window, in hours. */
+  const hoursThisWindow = (staffId) => {
+    const row = staffById.get(String(staffId));
+    if (!row) return 0;
+    let minutes = 0;
+    for (const entry of row.days) {
+      for (const id of [entry.shift_id, ...(entry.extra ?? []).map((x) => x.shift_id)]) {
+        const shift = id == null ? null : shiftById.get(String(id));
+        if (shift) minutes += shiftMinutes(shift);
+      }
+    }
+    return minutes;
+  };
+
+  /**
+   * Who works it.
+   *
+   * This was a dropdown whose options had grown into sentences — a name, then
+   * every department and named shift that person is set up for, then what they
+   * are already on. Twenty-four of those is a wall of text with the one thing
+   * anybody is looking for, the name, buried at the front of each line.
+   *
+   * So the detail moves off the line and under it. A name reads as a name, and
+   * what stands in the way of giving them the shift reads as one short phrase
+   * beneath it, in the colour that says whether it matters. Grouped by that
+   * same question with a count on each heading, so "eight people are already
+   * on something" is answered by looking rather than by reading eight lines.
+   * A search box, because twenty-four names is past the point where scanning
+   * beats typing.
+   */
   const whoOptions = (options, { firstLabel, firstValue = '', forShift = null }) => {
-    // Somebody set up for this work. Nothing ticked about them means their own
-    // department answers, which the grid was sent as worksIn.
     const department = forShift?.department || null;
     const fits = (o) => (forShift ? allowedShift(o.row.staff, forShift) : true);
 
@@ -1041,30 +1068,85 @@ export async function renderAttRota(params) {
     // there is a real Saturday, and the answer to it is a warning rather than
     // an empty list.
     const elsewhere = options.filter((o) => !fits(o) && !o.blocked);
+    // Nor are the people who cannot work it hidden, for the same reason. They
+    // are last and they say why.
+    const cannot = options.filter((o) => o.blocked);
 
-    return h('select', { name: 'staffId' },
-      h('option', { value: firstValue, selected: true }, firstLabel),
-      // Not offered to a card that is already empty: it is the option it is
-      // already on, and two ways of saying the same thing is a question.
-      firstValue === 'nobody'
-        ? null
-        : h('option', { value: 'nobody' }, 'Nobody — leave the shift on the day, unfilled'),
-      free.length
-        ? h('optgroup', { label: 'Free that day' },
-          free.map((o) => h('option', { value: String(o.row.staff.id) }, o.row.staff.name)))
-        : null,
-      taken.length
-        ? h('optgroup', { label: 'Already on something' },
-          taken.map((o) => h('option', { value: String(o.row.staff.id) },
-            `${o.row.staff.name} — on ${o.busy}, this would be a second shift`)))
-        : null,
-      elsewhere.length
-        ? h('optgroup', { label: `Not set up for ${department}` },
-          elsewhere.map((o) => h('option', { value: String(o.row.staff.id) },
-            `${o.row.staff.name} — ${setUpFor(o.row.staff)}`
-            + `${o.busy ? `, on ${o.busy}` : ''}`)))
-        : null,
+    const field = h('input', { type: 'hidden', name: 'staffId', value: firstValue });
+    const list = h('div.who-list');
+    const search = h('input.who-search', {
+      type: 'search',
+      placeholder: 'Search by name',
+      'aria-label': 'Search by name',
+      // Typed into rather than submitted: Enter in a dialog is Apply, and a
+      // search box that closed the dialog would be its own small disaster.
+      onkeydown: (e) => { if (e.key === 'Enter') e.preventDefault(); },
+      oninput: () => draw(search.value.trim().toLowerCase()),
+    });
+
+    const pick = (value) => {
+      field.value = value;
+      for (const node of list.querySelectorAll('.who-row')) {
+        node.classList.toggle('on', node.dataset.value === value);
+      }
+    };
+
+    const row = (value, name, note, tone = '', hours = null) => h('button.who-row', {
+      type: 'button',
+      'data-value': value,
+      class: `who-row ${tone} ${field.value === value ? 'on' : ''}`.trim(),
+      onclick: () => pick(value),
+    },
+    h('span.who-name', name),
+    note || hours
+      ? h('span.who-line',
+        note ? h('span.who-note', note) : null,
+        // Hours stay plain. They are a fact about the week rather than a
+        // verdict on it, and colouring "40h" the same green as "free that day"
+        // reads as approval of a full week.
+        hours ? h('span.who-hours', hours) : null)
+      : null);
+
+    const person = (o, note, tone) => row(
+      String(o.row.staff.id),
+      o.row.staff.name,
+      note,
+      tone,
+      asHours(hoursThisWindow(o.row.staff.id)),
     );
+
+    const section = (label, items, note, tone) => (items.length
+      ? [h('div.who-head', `${label} (${items.length})`), ...items.map((o) => person(o, note(o), tone))]
+      : []);
+
+    const draw = (term) => {
+      const matching = (list2) => (term
+        ? list2.filter((o) => o.row.staff.name.toLowerCase().includes(term))
+        : list2);
+
+      mount(list,
+        term ? null : row(firstValue, firstLabel, 'as it stands'),
+        // Not offered to a card that is already empty: it is the option it is
+        // already on, and two ways of saying the same thing is a question.
+        term || firstValue === 'nobody'
+          ? null
+          : row('nobody', 'Nobody', 'leave the shift on the day, unfilled'),
+        ...section('Free that day', matching(free), () => null, 'good'),
+        ...section('Already on something', matching(taken),
+          (o) => `on ${o.busy}, this would be a second shift`, 'warn'),
+        ...section(`Not set up for ${department || 'this'}`, matching(elsewhere),
+          (o) => `${setUpFor(o.row.staff)}${o.busy ? `, on ${o.busy}` : ''}`, 'warn'),
+        ...section('Cannot work that day', matching(cannot),
+          (o) => o.blocked, 'bad'),
+      );
+
+      if (term && !list.querySelector('.who-row')) {
+        mount(list, h('p.muted.who-none', `Nobody here matches “${search.value.trim()}”.`));
+      }
+    };
+
+    draw('');
+    return h('div.who-picker', field, search, list);
   };
 
   /**

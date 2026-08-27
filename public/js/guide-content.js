@@ -472,6 +472,17 @@ export const GUIDE = [
         + 'is opening on Saturday" without reading twenty-four rows. Show a week, a fortnight or '
         + 'four weeks; filter by department or tag; the date box opens a calendar and snaps to '
         + 'the Monday.' },
+      { sub: 'Choosing who works a shift' },
+      { p: 'Open a card and the list of people is grouped by what stands in the way: free '
+        + 'that day, already on something, not set up for that department, cannot work it. '
+        + 'Each group carries a count, each name carries the hours they are already down for, '
+        + 'and the reason sits under the name in the colour that says whether it matters. '
+        + 'Type to search once the list is longer than the eye wants to scan.' },
+      { note: 'Nobody is hidden. Somebody out of department, or already on a shift that day, '
+        + 'is still offered with the reason against them \u2014 covering a gap with whoever is '
+        + 'standing there is a real Saturday, and the answer to it is a warning rather than '
+        + 'an empty list.' },
+
       { sub: 'When somebody cannot work' },
       { p: 'The ✕ button on their row marks days they cannot work (or asked to work), with the '
         + 'reason. Not leave — nothing is approved and no entitlement is spent. The mark shows '

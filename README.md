@@ -329,6 +329,20 @@ planned their lives around those. Approved leave is never touched. A department
 or tag filter narrows it to whoever was on screen, and every day cleared leaves
 its own entry in *What changed*.
 
+**Who works it** is a list rather than a dropdown. It had grown into a wall of
+sentences: a name, then every department and named shift that person is set up
+for, then whatever they were already on — twenty-four of those with the one
+thing anybody is looking for buried at the front of each line. The detail moves
+off the line and under it. A name reads as a name; what stands in the way reads
+as one short phrase beneath, in the colour that says whether it matters. The
+groups carry counts, so *eight people are already on something* is answered by
+looking. Hours for the window sit beside the reason in plain grey, because they
+are a fact about the week rather than a verdict on it. There is a search box,
+because twenty-four names is past the point where scanning beats typing. Nobody
+is hidden — somebody out of department or already on a shift is still offered,
+with the reason, because a planner covering a gap with whoever is standing there
+is a real Saturday.
+
 **Availability** is the fact a planner needs before the dropdown: days somebody
 cannot work (or asked to work), with the reason, shown in the cell. Not leave —
 nothing approved, nothing spent — and rostering over it stays possible, with

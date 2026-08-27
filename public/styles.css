@@ -3869,3 +3869,85 @@ body.rota-dragging .pos-add { pointer-events: none; }
   .rota-cellwrap[draggable="true"],
   .pos-card[draggable="true"] { cursor: pointer; }
 }
+
+/* --------------------------------------------------------------------------
+   Who works it
+   --------------------------------------------------------------------------
+   This was a dropdown whose options had grown into sentences: a name, then
+   every department and named shift that person is set up for, then whatever
+   they were already on. Twenty-four of those is a wall of text with the one
+   thing anybody is looking for — the name — buried at the front of each line.
+
+   The detail moves off the line and under it. A name reads as a name; what
+   stands in the way of giving them the shift reads as one short phrase
+   beneath, in the colour that says whether it matters.
+   -------------------------------------------------------------------------- */
+.who-picker { display: flex; flex-direction: column; gap: .4rem; }
+
+.who-search {
+  width: 100%;
+  padding: .45rem .6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font: inherit;
+}
+
+.who-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 17rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+/* Counted, so "eight people are already on something" is answered by looking
+   rather than by reading eight lines. */
+.who-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: .35rem .6rem .2rem;
+  background: var(--surface-2);
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  font-weight: 650;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+}
+
+.who-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .1rem;
+  width: 100%;
+  padding: .4rem .6rem;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.who-row:last-child { border-bottom: 0; }
+.who-row:hover { background: var(--surface-2); }
+.who-row.on { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.who-row.on .who-name { font-weight: 700; }
+
+.who-name { font-size: .9rem; font-weight: 600; }
+.who-line { display: flex; gap: .35rem; align-items: baseline; flex-wrap: wrap; }
+.who-note { font-size: .76rem; color: var(--text-dim); }
+.who-hours {
+  font-size: .74rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.who-row.good .who-note { color: var(--good); }
+.who-row.warn .who-note { color: var(--warn); }
+.who-row.bad .who-note { color: var(--bad); }
+
+.who-none { margin: .6rem; font-size: .86rem; }
