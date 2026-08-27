@@ -137,6 +137,9 @@ export const ROUTES = [
   ['POST', '/api/att/roster/publish', 'att_rota', att.publishRoster],
   ['GET', '/api/att/roster/suggest', 'att_rota', suggest.suggestRoster],
   ['GET', '/api/att/roster/history', ['att_rota', 'att_reports'], att.rosterHistory],
+  // A face against a name on the rota. The picture and nothing else — see the
+  // note on the handler.
+  ['GET', '/api/att/staff/:id/photo', ['att_rota', 'att_view', 'att_reports'], att.staffPhoto],
 
   // The one thing here that is not about hours, lateness or money.
   ['GET', '/api/att/birthdays', 'att_view', birthday.birthdays],

@@ -12,6 +12,7 @@ import {
   ingestPunches, recompute, recomputeTouched,
 } from '../lib/attendance-ingest.js';
 import { logChange, logRows, replaceDay, rowsFor } from '../lib/roster.js';
+import { readFile } from './people.js';
 import { readNotification } from '../lib/push-events.js';
 import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from '../lib/device-shifts.js';
 import { getPepper } from '../lib/auth.js';
@@ -1823,6 +1824,40 @@ async function sundaysOver(db, ds, days, limits) {
   return out;
 }
 
+/**
+ * Somebody's photograph, for the grid.
+ *
+ * The passport photograph is already on file — it is one of the standard
+ * documents, taken for the staff card and the terminal — and a rota reads far
+ * better with a face against a name than with twenty-four rows of text. What
+ * it is not is a reason to hand a rota planner the personnel file: this
+ * returns the picture and nothing else, no name, no record, no other kind of
+ * document, and only to somebody who can already see this person on a rota.
+ *
+ * Cached in the browser for the day. A photograph does not change, and
+ * fetching twenty-four of them out of the database on every draw would be the
+ * most expensive thing this screen does.
+ */
+export async function staffPhoto(ctx, id) {
+  const staffId = int(id, 'Staff', { min: 1 });
+  const row = await ctx.db.prepare(
+    `SELECT * FROM hr_document
+      WHERE staff_id = ?1 AND kind = 'photo'
+      ORDER BY uploaded_at DESC, id DESC LIMIT 1`,
+  ).bind(staffId).first().catch(() => null);
+  if (!row) throw notFound('No photograph on file.');
+
+  const content = await readFile(ctx.db, row);
+  return new Response(content, {
+    headers: {
+      'Content-Type': row.mime || 'image/jpeg',
+      // Private: it is somebody's face, and no shared cache has any business
+      // holding it.
+      'Cache-Control': 'private, max-age=86400',
+    },
+  });
+}
+
 export async function getRoster(ctx) {
   const timezone = await timezoneOf(ctx.db);
   const from = startOfWeek(readDay(ctx.url.searchParams.get('from'), todayIn(timezone)));
@@ -1860,10 +1895,16 @@ export async function getRoster(ctx) {
   }
   const days = rangeDays(from, to);
   const shifts = ds.shifts.filter((s) => s.active);
-  const [overSundays, missedMeal] = await Promise.all([
+  const [overSundays, missedMeal, faces] = await Promise.all([
     sundaysOver(ctx.db, ds, days, limitsFrom(ds.settings ?? {})),
     missedTheMeal(ctx.db, ds, days),
+    // Who has a photograph, not the photographs themselves. Twenty-four blobs
+    // in a rota payload would be megabytes on every draw; twenty-four ids is
+    // one row, and the grid asks for the ones it is going to show.
+    ctx.db.prepare("SELECT DISTINCT staff_id FROM hr_document WHERE kind = 'photo'")
+      .all().catch(() => ({ results: [] })),
   ]);
+  const hasPhoto = new Set((faces.results ?? []).map((r) => Number(r.staff_id)));
 
   // How many people each shift has on each day. The number a rota is actually
   // built to answer — "is anybody on nights on Sunday" — and the one a grid of
@@ -1936,6 +1977,7 @@ export async function getRoster(ctx) {
         employee_no: staff.employee_no,
         department: staff.department,
         tags: parseTags(staff.tags),
+        hasPhoto: hasPhoto.has(Number(staff.id)),
         // Where this person may be put on. Their own department unless
         // somebody has said otherwise, so the grid can put the shifts they
         // might actually work at the top of every cell. Departments and named

@@ -136,6 +136,65 @@ export async function renderAttRota(params) {
 
   const shiftById = new Map(data.shifts.map((s) => [String(s.id), s]));
 
+  const staffById = new Map(data.rows.map((row) => [String(row.staff.id), row]));
+
+  /** The cell for one person on one day, wherever the view is looking at it. */
+  const entryOf = (staffId, day) => staffById.get(String(staffId))?.days
+    .find((d) => d.day === day) ?? null;
+
+  /** What somebody is already down for over the whole window, in minutes. */
+  const hoursThisWindow = (staffId) => {
+    const row = staffById.get(String(staffId));
+    if (!row) return 0;
+    let minutes = 0;
+    for (const entry of row.days) {
+      for (const id of [entry.shift_id, ...(entry.extra ?? []).map((x) => x.shift_id)]) {
+        const shift = id == null ? null : shiftById.get(String(id));
+        if (shift) minutes += shiftMinutes(shift);
+      }
+    }
+    return minutes;
+  };
+
+  /**
+   * A face against a name.
+   *
+   * The passport photograph is already on file for anybody who has sent one
+   * in, and a rota of twenty-four rows reads far better with faces down the
+   * side than with twenty-four lines of text. Where there is no photograph
+   * there are initials on a colour taken from the name, which is stable — the
+   * same person is the same colour every week — and is a good deal better than
+   * a grey silhouette repeated twenty times.
+   */
+  const initialsOf = (name) => String(name || '?')
+    .split(/\s+/).filter(Boolean).slice(0, 2)
+    .map((word) => word[0]).join('').toUpperCase();
+
+  const toneOf = (name) => {
+    let hash = 0;
+    for (const ch of String(name || '')) hash = (hash * 31 + ch.charCodeAt(0)) % 360;
+    return hash;
+  };
+
+  const faceOf = (staff) => {
+    const face = h('div.rota-face', {
+      style: { '--face': `${toneOf(staff.name)}deg` },
+      title: staff.name,
+    }, h('span.rota-face-letters', initialsOf(staff.name)));
+
+    if (staff.hasPhoto) {
+      face.append(h('img.rota-face-photo', {
+        src: `/api/att/staff/${staff.id}/photo`,
+        alt: '',
+        loading: 'lazy',
+        // A photograph that will not load leaves the initials showing rather
+        // than a broken picture icon.
+        onerror: (e) => e.target.remove(),
+      }));
+    }
+    return face;
+  };
+
   /**
    * A mark against the name of anybody the plan is overworking.
    *
@@ -588,18 +647,54 @@ export async function renderAttRota(params) {
       h('span.rota-sunday-word', ' Sundays')));
     }
     if (avail) {
+      // "off" was the wrong word for this. The dropdown directly above it says
+      // Off for a rostered day off, so the same word underneath in red was two
+      // different things stacked one on the other: one is what the rota says,
+      // the other is what the person said. It says which now.
       parts.push(h('small.rota-avail', {
         class: avail.status === 'preferred' ? 'rota-avail-pref' : '',
         title: [
-          avail.status === 'preferred' ? 'Asked to work' : 'Cannot work',
+          avail.status === 'preferred'
+            ? 'They asked to work'
+            : 'They said they cannot work',
           availWindow || ' this day',
           avail.note ? `: ${avail.note}` : '',
+          '. Set under the ⋯ button on their row, or sent in by them.',
         ].join(''),
       }, avail.status === 'preferred'
-        ? `★ asked${availWindow}`
-        : `✕ off${availWindow}`));
+        ? `★ asked to work${availWindow}`
+        : `✕ cannot work${availWindow}`));
     }
     wrap.append(...parts);
+
+    /**
+     * Open the shift itself, from the people grid.
+     *
+     * The dropdown answers "what is this person on", which is one of the two
+     * questions somebody has in front of a cell. The other is "who is on this
+     * shift, and should it be somebody else" — and answering that meant
+     * switching to the positions view, finding the same day, and opening the
+     * card there. It is the same card; it opens from here now.
+     *
+     * The dropdown keeps the click that lands on it, because changing a shift
+     * in place is faster than a dialog and is what most edits are. Anywhere
+     * else on the card opens it.
+     */
+    wrap.addEventListener('click', (event) => {
+      if (event.target.closest('select, button, a, input')) return;
+      if (select.value === '') return;   // an empty day has no shift to open
+
+      const held = entryOf(row.staff.id, entry.day);
+      editCard({
+        id: held?.id ?? entry.id ?? null,
+        day: entry.day,
+        shiftId: Number(select.value),
+        row,
+        title: held?.title ?? entry.title ?? null,
+        published: held?.published ?? entry.published ?? false,
+        clash: Boolean(held?.extra?.length),
+      });
+    });
 
     // Picked up when there is something on it, and put down anywhere. An
     // empty cell is still a place to drop: that is most of what a planner is
@@ -752,12 +847,22 @@ export async function renderAttRota(params) {
     h('table.rota-table', { class: tightness },
       h('thead', headRow),
       h('tbody', visible.map((row) => h('tr',
-        h('td',
-          h('div', row.staff.name, strainMark(row.staff.id)),
-          h('small.muted', row.staff.department || `No. ${row.staff.employee_no}`),
-          row.staff.tags?.length
-            ? h('div.rota-tags', row.staff.tags.map((t) => h('span.rota-tag', t)))
-            : null,
+        h('td.rota-who',
+          faceOf(row.staff),
+          h('div.rota-who-text',
+            h('div.rota-who-name', row.staff.name, strainMark(row.staff.id)),
+            h('small.muted', row.staff.department || `No. ${row.staff.employee_no}`),
+            // What this window already has them down for. The number a planner
+            // is weighing every time they fill a cell, and it was on the
+            // Workload screen and nowhere near the decision.
+            h('div.rota-who-hours', {
+              title: `Down for ${asHours(hoursThisWindow(row.staff.id))} over the `
+                + `${data.days.length} days shown`,
+            }, `🕐 ${asHours(hoursThisWindow(row.staff.id))}`),
+            row.staff.tags?.length
+              ? h('div.rota-tags', row.staff.tags.map((t) => h('span.rota-tag', t)))
+              : null,
+          ),
         ),
         h('td',
           h('div.btn-row',
@@ -792,11 +897,6 @@ export async function renderAttRota(params) {
    */
   const positionsBody = h('tbody');
 
-  const staffById = new Map(data.rows.map((row) => [String(row.staff.id), row]));
-
-  /** The cell for one person on one day, wherever the view is looking at it. */
-  const entryOf = (staffId, day) => staffById.get(String(staffId))?.days
-    .find((d) => d.day === day) ?? null;
 
   /**
    * Every card on a day, in the order they read down the clock.
@@ -1003,11 +1103,74 @@ export async function renderAttRota(params) {
     entry.published = false;
   };
 
-  /** Queue a change to one card and redraw the positions under it. */
+  /**
+   * Put every people-grid cell back in step with the model.
+   *
+   * The positions view redraws itself from `data` after a change; the people
+   * grid does not, because its cells are live dropdowns somebody may be
+   * halfway through using and throwing them away mid-edit is how work gets
+   * lost. So the values are set in place instead. Cheap enough to do the whole
+   * grid: it is a few hundred assignments and no layout.
+   */
+  /**
+   * Which cells a staged change touched.
+   *
+   * A change addressed by row id names no person and no day — the row knows
+   * both — so the people grid cannot tell from the change alone which of its
+   * cells to mark as unsaved. Reassigning a shift touches two: the one it left
+   * and the one it went to.
+   */
+  const touchedCells = new Set();
+
+  /** Where a roster row currently sits, as a cell key. */
+  const whereRowIs = (rowId) => {
+    for (const person of data.rows) {
+      for (const entry of person.days) {
+        if (entry.id === rowId) return `${person.staff.id}|${entry.day}`;
+        if ((entry.extra ?? []).some((x) => x.id === rowId)) {
+          return `${person.staff.id}|${entry.day}`;
+        }
+      }
+    }
+    return null;
+  };
+
+  const syncPeopleCells = () => {
+    for (const [key, cell] of cells) {
+      const [staffId, day] = key.split('|');
+      const entry = entryOf(staffId, day);
+      if (!entry) continue;
+
+      const shiftId = entry.shift_id;
+      const chosen = shiftId == null ? null : shiftById.get(String(shiftId));
+      // A shift from another department has no option in this cell's list, and
+      // setting a value the list does not hold silently falls back to Off.
+      if (chosen && !cell.select.querySelector(`option[value="${shiftId}"]`)) {
+        cell.select.append(h('option', { value: chosen.id }, shiftLabel(chosen)));
+      }
+      const wanted = shiftId == null ? '' : String(shiftId);
+      if (cell.select.value !== wanted) cell.select.value = wanted;
+      cell.select.classList.toggle('rota-dirty', pending.has(key) || touchedCells.has(key));
+      cell.syncHours();
+    }
+  };
+
+  /** Queue a change to one card and redraw whichever grid is on screen. */
   const queue = (key, change) => {
+    // Where the row is now, before the change moves it. Afterwards it is
+    // somewhere else, or nowhere.
+    if (change.id != null) {
+      const was = whereRowIs(change.id);
+      if (was) touchedCells.add(was);
+    }
+    if (change.staffId != null && change.day) {
+      touchedCells.add(`${change.staffId}|${change.day}`);
+    }
+
     pending.set(key, change);
     applyLocally(change, key);
     drawPositions();
+    syncPeopleCells();
     refreshSaveBar();
   };
 
@@ -1024,6 +1187,7 @@ export async function renderAttRota(params) {
     cameFrom.delete(mark);
     takeRow(mark);
     drawPositions();
+    syncPeopleCells();
     refreshSaveBar();
   };
 
@@ -1051,20 +1215,6 @@ export async function renderAttRota(params) {
       .map((id) => shiftById.get(String(id))?.name)
       .filter(Boolean),
   ].join(', ') || 'no department';
-
-  /** What somebody is already down for over the whole window, in hours. */
-  const hoursThisWindow = (staffId) => {
-    const row = staffById.get(String(staffId));
-    if (!row) return 0;
-    let minutes = 0;
-    for (const entry of row.days) {
-      for (const id of [entry.shift_id, ...(entry.extra ?? []).map((x) => x.shift_id)]) {
-        const shift = id == null ? null : shiftById.get(String(id));
-        if (shift) minutes += shiftMinutes(shift);
-      }
-    }
-    return minutes;
-  };
 
   /**
    * Who works it.

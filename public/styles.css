@@ -1172,7 +1172,10 @@ th.rota-today, td.rota-today {
   font-size: .68rem;
   color: var(--bad);
   font-weight: 650;
-  white-space: nowrap;
+  /* It says a sentence now rather than one word, so a narrow column wraps it
+     rather than cutting it off. */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .rota-avail.rota-avail-pref { color: var(--good); }
 
@@ -4071,3 +4074,95 @@ body.rota-dragging .pos-add { pointer-events: none; }
   content: '◆';
   font-size: .62rem;
 }
+
+/* --------------------------------------------------------------------------
+   The people grid, read as a grid
+   --------------------------------------------------------------------------
+   Lines down the columns as well as across the rows, so a shift reads as a box
+   on a day rather than as text floating in a band. It is the same grid the
+   positions view draws, and the two views of one window should not look like
+   two different screens.
+   -------------------------------------------------------------------------- */
+.rota-table th,
+.rota-table td { border-right: 1px solid var(--border); }
+.rota-table th:last-child,
+.rota-table td:last-child { border-right: 0; }
+
+/* A cell is the same size whatever is in it, and the same size as a card on
+   the positions view: an empty Tuesday and a Tuesday with a shift on it are
+   the same Tuesday, and a row that steps up and down across the week reads as
+   meaning something it does not. */
+.rota-table:not(.rota-tight) .rota-cellwrap { min-height: 5.6rem; }
+.rota-table.rota-tight .rota-cellwrap { min-height: 2.6rem; }
+.rota-table.rota-tightest .rota-cellwrap { min-height: 1.9rem; }
+
+/* -------------------------------------------------------- a face and a load --
+   Twenty-four rows of text is a list. Twenty-four faces is a staff, and a
+   planner picks somebody out of it far faster. Where there is no photograph on
+   file there are initials on a colour taken from the name — stable, so the
+   same person is the same colour every week, and better than a grey silhouette
+   repeated twenty times.
+
+   Under the name is what this window already has them down for, which is the
+   number being weighed every time a cell is filled and which used to live on
+   the Workload screen, nowhere near the decision. */
+.rota-who { display: flex; align-items: flex-start; gap: .5rem; }
+.rota-who-text { min-width: 0; flex: 1; }
+.rota-who-name { display: flex; align-items: center; gap: .1rem; }
+
+.rota-face {
+  position: relative;
+  flex: none;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: hsl(var(--face) 45% 88%);
+  color: hsl(var(--face) 45% 28%);
+  border: 1px solid hsl(var(--face) 40% 78%);
+}
+.rota-face-letters { font-size: .74rem; font-weight: 700; letter-spacing: .02em; }
+.rota-face-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rota-who-hours {
+  margin-top: .15rem;
+  font-size: .74rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Squeezed, the face goes before the name does: a name is what the row is for
+   and a picture is a courtesy. */
+.rota-table.rota-tight .rota-face { width: 1.6rem; height: 1.6rem; }
+.rota-table.rota-tight .rota-face-letters { font-size: .6rem; }
+.rota-table.rota-tight .rota-who-hours { font-size: .64rem; margin-top: .05rem; }
+.rota-table.rota-tightest .rota-face { display: none; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .rota-face {
+    background: hsl(var(--face) 35% 26%);
+    color: hsl(var(--face) 45% 86%);
+    border-color: hsl(var(--face) 30% 36%);
+  }
+}
+:root[data-theme="dark"] .rota-face {
+  background: hsl(var(--face) 35% 26%);
+  color: hsl(var(--face) 45% 86%);
+  border-color: hsl(var(--face) 30% 36%);
+}
+
+/* The whole cell is a way into the shift, so it says so. The dropdown inside
+   it keeps its own arrow and its own pointer: changing a shift in place is
+   faster than a dialog and is what most edits are. */
+.rota-cellwrap.rota-set { cursor: pointer; }
+.rota-cellwrap.rota-set:hover { border-color: var(--accent); }
+.rota-cellwrap .rota-cell { cursor: pointer; }

@@ -293,6 +293,26 @@ opening on Saturday" read directly). One, two or four weeks; a calendar picker
 that snaps to Mondays; department and tag filters; a conflicts chip that counts
 who the plan is overworking and opens Workload.
 
+**The people grid reads as a grid.** Lines down the columns as well as across
+the rows, so a shift is a box on a day rather than text floating in a band, and
+every cell is the same size as a card on the positions view — an empty Tuesday
+and a Tuesday with a shift on it are the same Tuesday. Beside each name is a
+face: the passport photograph where one is on file, and otherwise the person's
+initials on a colour taken from their name, stable so the same person is the
+same colour every week. Under the name is what this window already has them
+down for, which is the number being weighed every time a cell is filled and
+which used to live on the Workload screen, nowhere near the decision. The photo
+endpoint returns the picture and nothing else — no name, no record, no other
+kind of document — and only to somebody who can already see that person on a
+rota.
+
+**A shift opens from either view.** The dropdown answers *what is this person
+on*, which is one of the two questions somebody has in front of a cell.
+Clicking anywhere else on the card answers the other — *who is on this shift,
+and should it be somebody else* — with the same dialog the positions view
+opens. Reassigning from there moves the shift and marks both cells, the one it
+left and the one it went to, as unsaved.
+
 **A shift is dragged from one box to another.** Half of building a week is
 "that one, but on Wednesday" or "give Ama's Saturday to Kofi", and both used to
 mean two dropdowns: find the cell, set it to Off, find the other cell, pick the
