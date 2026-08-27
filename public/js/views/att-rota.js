@@ -159,6 +159,186 @@ export async function renderAttRota(params) {
     );
   };
 
+  // -------------------------------------------------------------------------
+  // Dragging a shift from one box to another
+  // -------------------------------------------------------------------------
+  /**
+   * A rota is rearranged far more often than it is written.
+   *
+   * Half of building a week is "that one, but on Wednesday" or "give Ama's
+   * Saturday to Kofi", and until now both meant two dropdowns: find the cell,
+   * set it to Off, find the other cell, pick the shift out of a list of
+   * thirty. Picking a shift up and putting it down says the same thing in one
+   * gesture, which is how every rota tool a planner has used before this one
+   * behaves.
+   *
+   * THE DROP ASKS. A drag is genuinely ambiguous — the same gesture means
+   * "this shift lives here now" and "another one of these, here as well" — and
+   * a tool that guesses is a tool that quietly loses a shift somebody meant to
+   * keep. So the answer is asked for, at the point of the drop, in two words.
+   *
+   * It is a mouse gesture and it is nobody's only way of doing this. Every
+   * cell still opens its dropdown, every card still opens its dialog, and a
+   * phone — where dragging across a fourteen-column grid is not a thing
+   * anybody wants to do — is unchanged.
+   */
+
+  /** The shift currently in somebody's hand, or null. */
+  let carrying = null;
+
+  const dropMenu = h('div.drop-ask', { hidden: true });
+  let closeMenu = null;
+
+  const askDrop = (event, { what, who, onto, note }) => new Promise((resolve) => {
+    closeMenu?.();
+
+    const finish = (answer) => {
+      closeMenu = null;
+      dropMenu.hidden = true;
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('pointerdown', onAway, true);
+      resolve(answer);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); finish(null); }
+    };
+    const onAway = (e) => { if (!dropMenu.contains(e.target)) finish(null); };
+
+    const move = h('button.btn.btn-primary.btn-sm', { onclick: () => finish('move') }, 'Move it');
+    mount(dropMenu,
+      h('div.drop-ask-what', what),
+      h('div.drop-ask-where', `${who ? `${who} · ` : ''}${onto}`),
+      note ? h('div.drop-ask-over', note) : null,
+      h('div.drop-ask-row',
+        move,
+        h('button.btn-sm', { onclick: () => finish('copy') }, 'Copy it'),
+        h('button.btn-ghost.btn-sm', { onclick: () => finish(null) }, 'Cancel')),
+    );
+
+    dropMenu.hidden = false;
+    // Placed at the drop and then pulled back inside the window, because a
+    // shift dropped on the last column would otherwise ask its question off
+    // the side of the screen.
+    dropMenu.style.left = '0px';
+    dropMenu.style.top = '0px';
+    const box = dropMenu.getBoundingClientRect();
+    const x = Math.min(Math.max(8, event.clientX - 12), window.innerWidth - box.width - 8);
+    const y = Math.min(Math.max(8, event.clientY - 12), window.innerHeight - box.height - 8);
+    dropMenu.style.left = `${Math.round(x)}px`;
+    dropMenu.style.top = `${Math.round(y)}px`;
+
+    move.focus();
+    closeMenu = () => finish(null);
+    document.addEventListener('keydown', onKey, true);
+    // Captured, so a click on the grid behind it closes the menu rather than
+    // opening a dropdown under it.
+    document.addEventListener('pointerdown', onAway, true);
+  });
+
+  /** What to call the thing being dragged, in a sentence somebody reads. */
+  const nameOf = (shiftId, title) => {
+    const shift = shiftById.get(String(shiftId));
+    const name = shift ? `${shift.name}, ${shiftHours(shift)}` : 'That shift';
+    return title ? `${name} — ${title}` : name;
+  };
+
+  /**
+   * Mark a thing as pickable, and say what is in the hand while it is up.
+   *
+   * The grid is told a drag is happening as well, because a drop target that
+   * only lights up under the pointer is a target somebody has to go looking
+   * for. Everything droppable dims into view at once.
+   */
+  const pickUpFrom = (node, options, load) => {
+    // A cell that empties and fills as somebody works decides for itself; a
+    // card only exists while it holds a shift, so it is always pickable.
+    if (options.pickable !== false) node.draggable = true;
+    node.addEventListener('dragstart', (event) => {
+      carrying = load();
+      if (!carrying) { event.preventDefault(); return; }
+      node.classList.add('rota-carrying');
+      document.body.classList.add('rota-dragging');
+      try {
+        event.dataTransfer.effectAllowed = 'copyMove';
+        // Something has to be set or Firefox refuses to start the drag at all.
+        event.dataTransfer.setData('text/plain', nameOf(carrying.shiftId, carrying.title));
+      } catch { /* the drag still works; it just has no payload nobody reads */ }
+    });
+    node.addEventListener('dragend', () => {
+      carrying = null;
+      node.classList.remove('rota-carrying');
+      document.body.classList.remove('rota-dragging');
+      for (const lit of document.querySelectorAll('.rota-drop-over')) {
+        lit.classList.remove('rota-drop-over');
+      }
+    });
+  };
+
+  /** Mark a thing as a place a shift can be put down. */
+  const dropOnto = (node, { accepts, onDrop }) => {
+    node.classList.add('rota-drop');
+    node.addEventListener('dragover', (event) => {
+      if (!carrying || !accepts(carrying)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      node.classList.add('rota-drop-over');
+    });
+    node.addEventListener('dragleave', () => node.classList.remove('rota-drop-over'));
+    node.addEventListener('drop', async (event) => {
+      node.classList.remove('rota-drop-over');
+      if (!carrying || !accepts(carrying)) return;
+      event.preventDefault();
+      // Held, because dragend fires before the question has been answered and
+      // would otherwise empty the hand mid-question.
+      const load = carrying;
+      document.body.classList.remove('rota-dragging');
+      await onDrop(load, event);
+    });
+  };
+
+  /**
+   * Put a shift on one cell of the people grid, in place.
+   *
+   * Set on the screen and queued for Save in one move, so every way of
+   * changing a cell — the dropdown, filling a row, dragging one across —
+   * leaves exactly the same thing behind. Returns whether it landed: a day on
+   * approved leave has no cell to put anything on.
+   */
+  const putShift = (staffId, day, shiftId, title = null) => {
+    const found = cells.get(`${staffId}|${day}`);
+    if (!found) return false;
+
+    // A cell only lists this person's own department until somebody asks for
+    // more, so setting a cover shift from elsewhere would set a value the
+    // dropdown has no option for — which silently falls back to Off while the
+    // change queued underneath says otherwise. Add the option.
+    const chosen = shiftId == null ? null : shiftById.get(String(shiftId));
+    if (chosen && !found.select.querySelector(`option[value="${shiftId}"]`)) {
+      found.select.append(h('option', { value: chosen.id }, shiftLabel(chosen)));
+    }
+
+    found.select.value = shiftId == null ? '' : String(shiftId);
+    found.select.classList.add('rota-dirty');
+    found.syncHours();
+
+    // Kept in step with what the positions view reads, so switching tabs
+    // mid-edit shows the same rota rather than the one from the last load.
+    // A change addressed by person and day replaces the whole day, second
+    // shift and all, which is what the server does with it too.
+    const entry = entryOf(staffId, day);
+    if (entry) {
+      entry.extra = [];
+      entry.shift_id = shiftId;
+      entry.title = title;
+      entry.explicit = true;
+      entry.published = false;
+    }
+    pending.set(`${staffId}|${day}`, {
+      staffId: Number(staffId), day, shiftId, title: title || null,
+    });
+    return true;
+  };
+
   const cell = (row, entry) => {
     if (entry.leave) {
       return h('div.rota-locked', { title: 'Approved leave' }, 'Leave');
@@ -197,6 +377,9 @@ export async function renderAttRota(params) {
       const chosen = shiftById.get(String(select.value));
       hours.textContent = chosen ? shiftHours(chosen) : '';
       hours.className = `rota-hours${chosen ? '' : ' rota-hours-off'}`;
+      // Only a box with something in it is worth picking up, and the grab
+      // cursor is the only thing that says so before somebody tries.
+      wrap.draggable = Boolean(chosen);
       paint(select);
     };
 
@@ -397,6 +580,39 @@ export async function renderAttRota(params) {
         : `✕ off${availWindow}`));
     }
     wrap.append(...parts);
+
+    // Picked up when there is something on it, and put down anywhere. An
+    // empty cell is still a place to drop: that is most of what a planner is
+    // doing when they drag one.
+    pickUpFrom(wrap, { pickable: false }, () => (select.value === '' ? null : {
+      staffId: row.staff.id,
+      day: entry.day,
+      shiftId: Number(select.value),
+      title: entry.title ?? null,
+      who: row.staff.name,
+    }));
+
+    dropOnto(wrap, {
+      accepts: (load) => !(String(load.staffId) === String(row.staff.id) && load.day === entry.day),
+      onDrop: async (load, event) => {
+        const landing = shiftById.get(String(select.value));
+        const answer = await askDrop(event, {
+          what: nameOf(load.shiftId, load.title),
+          who: row.staff.name,
+          onto: fmtDayShort(entry.day),
+          note: landing ? `Takes the place of ${landing.name}` : null,
+        });
+        if (!answer) return;
+
+        putShift(row.staff.id, entry.day, load.shiftId, load.title);
+        // Moved, so it is no longer where it was. The title goes with it,
+        // because "Stock take" belonged to the shift rather than to the
+        // Tuesday it happened to be on.
+        if (answer === 'move') putShift(load.staffId, load.day, null, null);
+        refreshSaveBar();
+      },
+    });
+
     return wrap;
   };
 
@@ -454,26 +670,9 @@ export async function renderAttRota(params) {
       if (entry.leave) continue;
       // Monday-first, to match the tick boxes and the grid.
       if (!wanted.has((new Date(`${entry.day}T12:00:00Z`).getUTCDay() + 6) % 7)) continue;
-      const found = cells.get(`${row.staff.id}|${entry.day}`);
-      if (!found) continue;
-
-      // A cell only lists this person's own department until somebody asks for
-      // more, so filling a row with a cover shift from elsewhere would set a
-      // value the dropdown has no option for — which silently falls back to Off
-      // while the change queued underneath says otherwise. Add the option.
-      const chosen = shiftId == null ? null : shiftById.get(String(shiftId));
-      if (chosen && !found.select.querySelector(`option[value="${shiftId}"]`)) {
-        found.select.append(h('option', { value: chosen.id }, shiftLabel(chosen)));
-      }
-
-      found.select.value = shiftId == null ? '' : String(shiftId);
-      found.select.classList.add('rota-dirty');
-      found.syncHours();
       // The title belongs to the day, not to the shift, so filling a row with
       // a different shift leaves "Stock take" where somebody wrote it.
-      pending.set(`${row.staff.id}|${entry.day}`, {
-        staffId: row.staff.id, day: entry.day, shiftId, title: entry.title || null,
-      });
+      if (!putShift(row.staff.id, entry.day, shiftId, entry.title || null)) continue;
       touched += 1;
     }
 
@@ -953,7 +1152,20 @@ export async function renderAttRota(params) {
   };
 
   /** One card on one shift on one day, filled or not. */
-  const shiftCard = (shift, card) => h('button.pos-card', {
+  const shiftCard = (shift, card) => {
+    const node = posCard(shift, card);
+    pickUpFrom(node, {}, () => ({
+      cardId: card.id,
+      day: card.day,
+      shiftId: card.shiftId,
+      staffId: card.row?.staff.id ?? null,
+      title: card.title ?? null,
+      who: card.row?.staff.name ?? null,
+    }));
+    return node;
+  };
+
+  const posCard = (shift, card) => h('button.pos-card', {
     type: 'button',
     class: [
       card.published === false ? 'rota-draft' : 'rota-published',
@@ -975,6 +1187,83 @@ export async function renderAttRota(params) {
   h('span.pos-card-shift', shift.name),
   h('span.pos-card-clock', `${shiftHours(shift)} · ${asHours(shiftMinutes(shift))}`),
   h('span.pos-card-who', card.row ? card.row.staff.name : 'Empty'));
+
+  /** Which of a position's shifts a dragged one lands on. */
+  const landsOn = (position, load) => {
+    const shifts = position.shifts ?? [position];
+    const same = shifts.find((sh) => String(sh.id) === String(load.shiftId));
+    return same ? Number(same.id) : Number(shifts[0].id);
+  };
+
+  /**
+   * A card put down on the positions grid.
+   *
+   * Three things can change in one gesture — the day, the shift and, where a
+   * position holds several, which of them — so the menu says all three back
+   * before anything happens. Who is on it never changes: a card carries its
+   * person, and the dialog behind it is where somebody else takes over.
+   */
+  const dropOnPosition = async (load, position, day, event) => {
+    const shiftId = landsOn(position, load);
+
+    // A card put down beside a shift the same person already holds is a real
+    // double shift. The app marks those at both ends rather than quietly
+    // resolving one away, so the least it can do is say so before making one.
+    // Within a day a move is a change of shift and adds nothing; across days,
+    // and for a copy either way, it is a second shift.
+    const here = load.staffId == null ? null : entryOf(load.staffId, day);
+    const already = here && String(here.shift_id) !== String(shiftId)
+      ? shiftById.get(String(here.shift_id))
+      : null;
+
+    const answer = await askDrop(event, {
+      what: nameOf(shiftId, load.title),
+      who: load.who,
+      onto: `${position.name} · ${fmtDayShort(day)}`,
+      note: already
+        ? (load.day === day
+          ? `Moving it puts ${load.who} on this instead of ${already.name}; copying makes it a second shift`
+          : `${load.who} is already on ${already.name} that day, so this makes it a second shift`)
+        : null,
+    });
+    if (!answer) return;
+
+    // Nobody was on it, so what is being moved is the shift itself: an unfilled
+    // slot standing on a day, put on a different one.
+    if (load.staffId == null) {
+      if (answer === 'move' && load.cardId != null) {
+        queue(`row:${load.cardId}`, { id: load.cardId, day: load.day, remove: true });
+      }
+      queue(`slot:${day}:${shiftId}:${pending.size}`, {
+        slot: true, day, shiftId, title: load.title || null,
+      });
+      return;
+    }
+
+    // Moved within one day is one change rather than two, and queueing it as
+    // two would have the second overwrite the first: they share a key.
+    if (answer === 'move' && load.day === day) {
+      queue(`${load.staffId}|${day}`, {
+        staffId: Number(load.staffId), day, shiftId, title: load.title || null,
+      });
+      return;
+    }
+
+    if (answer === 'move') {
+      queue(load.cardId != null ? `row:${load.cardId}` : `${load.staffId}|${load.day}`,
+        load.cardId != null
+          ? { id: load.cardId, day: load.day, remove: true }
+          : { staffId: Number(load.staffId), day: load.day, shiftId: null, title: null });
+    }
+
+    queue(`${load.staffId}|${day}`, {
+      staffId: Number(load.staffId), day, shiftId, title: load.title || null,
+      // Beside whatever they already hold rather than instead of it. Two
+      // shifts in a day is marked at both ends and is somebody's decision to
+      // make, not something a drag should quietly undo.
+      add: true,
+    });
+  };
 
   function drawPositions() {
     const wanted = data.shifts.filter((sh) => sh.active !== 0
@@ -1035,16 +1324,26 @@ export async function renderAttRota(params) {
             // 13:45 reads down the day like everything else on this screen.
             const on = cardsOn(day).filter((card) => ids.has(String(card.shiftId)));
 
-            return h('td', { class: dayClass(day) },
-              h('div.pos-stack',
-                on.map((card) => shiftCard(
-                  shiftById.get(String(card.shiftId)) ?? position.shifts[0], card,
-                )),
-                h('button.pos-add', {
-                  type: 'button',
-                  title: `Put a shift on ${position.name} on ${fmtDayShort(day)}`,
-                  onclick: () => addToCell(position, day),
-                }, '+')));
+            const stack = h('div.pos-stack',
+              on.map((card) => shiftCard(
+                shiftById.get(String(card.shiftId)) ?? position.shifts[0], card,
+              )),
+              h('button.pos-add', {
+                type: 'button',
+                title: `Put a shift on ${position.name} on ${fmtDayShort(day)}`,
+                onclick: () => addToCell(position, day),
+              }, '+'));
+
+            dropOnto(stack, {
+              // Everywhere except back where it came from. A position holding
+              // several shifts keeps the one being carried when it is one of
+              // them, and otherwise the drop lands on the position's own — the
+              // menu names whichever it will be before anybody commits to it.
+              accepts: (load) => !(load.day === day && landsOn(position, load) === load.shiftId),
+              onDrop: (load, event) => dropOnPosition(load, position, day, event),
+            });
+
+            return h('td', { class: dayClass(day) }, stack);
           }))),
       ];
     }));
@@ -1229,7 +1528,11 @@ export async function renderAttRota(params) {
       view === 'people' ? grid : positionsGrid,
     ),
     h('p.muted', { style: { fontSize: '.82rem' } },
-      'Off means a rostered rest day. Days on approved leave are locked here; cancel the leave first.'),
+      'Off means a rostered rest day. Days on approved leave are locked here; cancel the leave first. '
+      + 'Drag a shift onto another box to move or copy it.'),
+    // Asked at the point of the drop, so it sits above the grid rather than
+    // inside the box that scrolls.
+    dropMenu,
   );
 
   return host;

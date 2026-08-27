@@ -293,6 +293,25 @@ opening on Saturday" read directly). One, two or four weeks; a calendar picker
 that snaps to Mondays; department and tag filters; a conflicts chip that counts
 who the plan is overworking and opens Workload.
 
+**A shift is dragged from one box to another.** Half of building a week is
+"that one, but on Wednesday" or "give Ama's Saturday to Kofi", and both used to
+mean two dropdowns: find the cell, set it to Off, find the other cell, pick the
+shift out of a list of thirty. Picking it up and putting it down says the same
+thing in one gesture, in both views — across days on one person's row, down onto
+somebody else's, or from one position to another.
+
+**The drop asks.** The gesture is genuinely ambiguous: it means *this shift lives
+here now* and *another one of these, here as well*, and a tool that guesses is a
+tool that quietly loses a shift somebody meant to keep. So the answer is asked
+for at the point of the drop, in two words — Move it, Copy it — with what is
+about to happen said back first: what the shift is, whose day it is landing on,
+and what it would take the place of, or that it would make somebody's second
+shift of the day. Escape and Cancel leave everything where it was, and nothing is
+written until Save, the same as every other change here. It is a mouse gesture
+and nobody's only way of doing this: every cell still opens its dropdown and
+every card its dialog, which is what a phone uses, because dragging across a
+fourteen-column grid with a thumb is not a thing anybody wants to do.
+
 **Availability** is the fact a planner needs before the dropdown: days somebody
 cannot work (or asked to work), with the reason, shown in the cell. Not leave —
 nothing approved, nothing spent — and rostering over it stays possible, with

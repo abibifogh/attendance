@@ -70,13 +70,16 @@ export const GUIDE = [
         + 'for approval, a supervisor gets days that need confirming. Opening the list marks it '
         + 'as read; it does not mark the work as done.' },
 
-      { sub: 'The screen keeps itself current' },
-      { p: 'A page brings itself up to date about once a minute, and again the moment you come '
-        + 'back to the tab after leaving it. Today left open on the office computer is this '
-        + 'morning, not the morning it was opened.' },
+      { sub: 'Every screen is live' },
+      { p: 'When somebody changes something, every other screen that shows it updates within the '
+        + 'second, on every device signed in. Today left open on the office computer is this '
+        + 'morning, not the morning it was opened, and a rota two of you are working on is the '
+        + 'same rota on both screens. Nothing is on a timer any more, so a page with nothing '
+        + 'happening on it sits completely still.' },
       { note: 'It never does it while you are in the middle of something. A box open, a cursor '
         + 'in a field, or a rota with changes you have not saved all hold it off until you are '
-        + 'done, and it keeps your place on the page rather than jumping to the top.' },
+        + 'done, and it keeps your place on the page rather than jumping to the top. A phone in '
+        + 'a pocket does nothing at all and catches up the moment you look at it.' },
 
       { sub: 'Printing' },
       { p: 'Anything with a Save as PDF button prints properly: the buttons, menus and tick '
@@ -451,6 +454,17 @@ export const GUIDE = [
       { p: 'The row of days is pinned. Scroll down twenty names and it stays at the top, so the '
         + 'column you are in is still the column you think you are in. On a phone the page '
         + 'scrolls as it always did, a box inside a box being one scroll too many.' },
+
+      { sub: 'Moving a shift' },
+      { p: 'Drag a shift out of one box and drop it on another. The drop asks whether you meant '
+        + 'to move it or to copy it, because the same gesture means both and guessing would '
+        + 'quietly lose one you meant to keep. It works both ways round: across days on one '
+        + 'person\u2019s row, or down onto somebody else\u2019s.' },
+      { note: 'It tells you what it is about to do before you choose \u2014 what the shift is, '
+        + 'whose day it is landing on, and what it would take the place of. Cancel or Escape '
+        + 'leaves everything where it was. Nothing is written until you press Save, the same as '
+        + 'every other change here. On a phone use the dropdown in the cell; dragging across a '
+        + 'grid this wide with a thumb is not worth anybody\u2019s time.' },
 
       { sub: 'Two ways to read it' },
       { p: 'People view is rows of people — where you assign shifts. Positions view turns the '

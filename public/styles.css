@@ -3781,3 +3781,67 @@ html { touch-action: manipulation; }
    legend, two bars and a card heading before anybody saw a Monday. */
 .rota-page .page-head { margin-bottom: .7rem; align-items: center; }
 .rota-card { padding: .55rem .6rem; }
+
+/* --------------------------------------------------------------------------
+   Dragging a shift from one box to another
+   --------------------------------------------------------------------------
+   Half of building a week is "that one, but on Wednesday". Picking a shift up
+   and putting it down says it in one gesture, and the drop asks whether it
+   moved or was copied, because the gesture means both and a tool that guesses
+   is a tool that loses a shift somebody meant to keep.
+
+   Everything droppable dims into view together while something is in the
+   hand. A target that only lights up under the pointer is a target somebody
+   has to go hunting for.
+   -------------------------------------------------------------------------- */
+.rota-cellwrap[draggable="true"],
+.pos-card[draggable="true"] { cursor: grab; }
+.rota-cellwrap.rota-carrying,
+.pos-card.rota-carrying { opacity: .4; cursor: grabbing; }
+
+body.rota-dragging .rota-drop {
+  outline: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+body.rota-dragging .rota-drop-over {
+  outline: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+/* The select and the buttons inside a card would otherwise swallow the drag
+   before it starts, and a card half of which is draggable is worse than one
+   that is not. */
+body.rota-dragging .rota-cell,
+body.rota-dragging .rota-title,
+body.rota-dragging .pos-add { pointer-events: none; }
+
+/* The question, at the point of the drop. Two words and the two buttons that
+   answer them, rather than a dialog in the middle of the screen for a gesture
+   that happened in the corner of it. */
+.drop-ask {
+  position: fixed;
+  z-index: 60;
+  min-width: 14rem;
+  max-width: 20rem;
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  padding: .6rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 22%);
+}
+.drop-ask[hidden] { display: none; }
+.drop-ask-what { font-weight: 650; font-size: .86rem; line-height: 1.25; }
+.drop-ask-where { font-size: .8rem; color: var(--text-dim); }
+.drop-ask-over { font-size: .78rem; color: var(--warn); }
+.drop-ask-row { display: flex; gap: .35rem; margin-top: .25rem; }
+
+@media (pointer: coarse) {
+  /* A fourteen-column grid dragged with a thumb is not a thing anybody wants
+     to do, and the browser's own drag does not fire on touch anyway. The
+     dropdown and the card dialog are the whole feature here, as before. */
+  .rota-cellwrap[draggable="true"],
+  .pos-card[draggable="true"] { cursor: pointer; }
+}
