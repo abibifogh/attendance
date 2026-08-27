@@ -3660,3 +3660,29 @@ html { touch-action: manipulation; }
 .rota-positions.rota-tight td:first-child { width: 13rem; }
 .rota-positions.rota-tight th:nth-child(2),
 .rota-positions.rota-tight td:nth-child(2) { width: auto; }
+
+/* ------------------------------------------------ the rota's own header -- */
+/* One bar, two halves. Wide, both sit on a line; narrow, they take a line
+   each. Two rows at the very most, because everything above the grid is
+   space the grid is not getting. */
+.rota-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .45rem .8rem;
+  margin-bottom: .7rem;
+}
+.rota-bar-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem;
+  min-width: 0;
+}
+.rota-bar input[type="date"], .rota-bar select { width: auto; min-width: 8.5rem; }
+
+/* The rota page is a grid and a header, and the header had grown a title, a
+   legend, two bars and a card heading before anybody saw a Monday. */
+.rota-page .page-head { margin-bottom: .7rem; align-items: center; }
+.rota-card { padding: .55rem .6rem; }

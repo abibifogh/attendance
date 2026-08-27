@@ -28,7 +28,7 @@ import {
  * they are not — one of them is a decision somebody made.
  */
 export async function renderAttRota(params) {
-  const host = h('div');
+  const host = h('div.rota-page');
 
   // One week to plan a busy weekend, a fortnight for the ordinary rhythm,
   // four weeks to see a rotation come round. The span is the window and
@@ -1124,14 +1124,15 @@ export async function renderAttRota(params) {
 
   mount(host,
     h('div.page-head',
-      h('div',
-        h('h1', 'Rota'),
-        h('div.sub', 'Dashed is a draft, solid is published. Grey days are behind you.'),
-      ),
+      h('h1', 'Rota'),
       publishButton,
     ),
 
-    h('div.toolbar',
+    // One bar rather than two. Wide, the whole thing sits on a line; narrow,
+    // the two halves take a line each. Either way it is two rows at the very
+    // most, which is what the rota is entitled to before the grid starts.
+    h('div.rota-bar',
+      h('div.rota-bar-group',
       seg([['people', 'People'], ['positions', 'Positions']], view, (v) => reload({ view: v })),
       seg([['7', 'Week'], ['14', 'Fortnight'], ['28', '4 weeks']], span, (v) => reload({ span: v })),
       h('button.btn-sm', { onclick: () => reload({ from: shiftDay(from, -span) }) }, '‹'),
@@ -1144,8 +1145,6 @@ export async function renderAttRota(params) {
       }),
       h('button.btn-sm', { onclick: () => reload({ from: shiftDay(from, span) }) }, '›'),
       h('button.btn-sm', { onclick: () => reload({ from: mondayOf(todayISO()) }) }, 'Today'),
-
-      h('div', { style: { flex: 1 } }),
 
       data.departments?.length
         ? h('select', {
@@ -1163,16 +1162,15 @@ export async function renderAttRota(params) {
         h('option', { value: '' }, 'Any tag'),
         data.tags.map((t) => h('option', { value: t, selected: params.tag === t }, t)))
         : null,
-    ),
+      ),
 
-    h('div.toolbar',
+      h('div.rota-bar-group',
       conflicts
         ? h('button.btn-sm', {
           onclick: () => navigate('att-workload', { from, to }),
           title: 'People this plan is overworking. The full picture is on Workload',
         }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`)
         : null,
-      h('div', { style: { flex: 1 } }),
       view === 'people'
         ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week')
         : null,
@@ -1196,6 +1194,7 @@ export async function renderAttRota(params) {
         title: 'Fill the blanks from what this property usually does. '
           + 'Nothing is published and nothing you have decided is touched',
       }, 'Suggest a draft'),
+      ),
     ),
 
     saveBar,
@@ -1205,13 +1204,8 @@ export async function renderAttRota(params) {
       ? importCard(imported.draft, data.rows.map((r) => r.staff), reload)
       : null,
     card(
-      span === 7 ? 'One week' : span === 28 ? 'Four weeks' : 'Two weeks',
-      {
-        note: view === 'people'
-          ? `${visible.length}${visible.length !== data.rows.length ? ` of ${data.rows.length}` : ''} people`
-          : 'who is on each shift',
-        wide: true,
-      },
+      null,
+      { wide: true, cls: 'rota-card' },
       view === 'people' ? grid : positionsGrid,
     ),
     h('p.muted', { style: { fontSize: '.82rem' } },
