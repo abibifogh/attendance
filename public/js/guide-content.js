@@ -399,6 +399,12 @@ export const GUIDE = [
         + 'the approve box, where it opens in its own tab so you do not lose the note you have '
         + 'started typing.' },
 
+      { note: 'A change the planner sends up arrives as a push notification on your phone and '
+        + 'not as an email. It is a small decision that wants making today, and a property '
+        + 'correcting a dozen clock times a week would be sending a dozen emails into a folder '
+        + 'nobody opens. A change an administrator makes themselves is a record rather than a '
+        + 'request, so that one still writes.' },
+
       { note: 'Approving settles the day. The times go on, the day is worked out again from '
         + 'them, and it closes on that verdict under your name. You are not choosing a status: '
         + 'you are approving two clock times, and present, late or absent follows from them. It '

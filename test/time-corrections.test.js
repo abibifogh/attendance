@@ -7,6 +7,7 @@ import {
   correctTimes, decideTimeEdit, resolveDay, staffReport, timeEdits, unresolveDay,
 } from '../src/routes/attendance.js';
 import { computeDay } from '../src/lib/attendance.js';
+import { b64urlEncode } from '../src/lib/push.js';
 
 /**
  * Correcting a clock time, as whoever builds the rota actually does it.
@@ -593,4 +594,86 @@ test('buttons are offered against days with something wrong, and held back other
   // is undone. A decision nobody can reverse is a decision nobody will make.
   assert.equal(needsAttention({ colour: 'green', status: 'present', resolution: 'resolved' }), true);
   assert.equal(needsAttention({ colour: 'green', status: 'missing_out', resolution: 'auto' }), true);
+});
+
+// ---------------------------------------------------------------------------
+// Which way the administrator is told
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything the app would have to reach the outside world, recorded rather
+ * than sent.
+ *
+ * One stub catches both channels: the email goes to Resend over HTTPS and the
+ * push goes to the browser's own endpoint, so which arrived is a question
+ * about where the request was addressed.
+ */
+async function watchSending(raw) {
+  raw.prepare("INSERT INTO users (id, name, email, role, active) VALUES (3, 'Kwame', 'kwame@example.test', 'admin', 1)")
+    .run();
+  raw.prepare("UPDATE settings SET value = 'rota@example.test' WHERE key = 'email_from'").run();
+  raw.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('email_from', 'rota@example.test')")
+    .run();
+
+  const pair = await crypto.subtle.generateKey(
+    { name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'],
+  );
+  const key = new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey));
+  raw.prepare(
+    `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, label)
+     VALUES (3, 'https://push.example.test/kwame', ?, ?, 'Phone')`,
+  ).run(b64urlEncode(key), b64urlEncode(crypto.getRandomValues(new Uint8Array(16))));
+
+  const sent = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    sent.push(String(url));
+    return new Response('{}', { status: 201, headers: { 'Content-Type': 'application/json' } });
+  };
+  return {
+    sent,
+    emails: () => sent.filter((u) => /resend/i.test(u)).length,
+    pushes: () => sent.filter((u) => /push\.example\.test/.test(u)).length,
+    stop: () => { globalThis.fetch = real; },
+  };
+}
+
+const withEnv = (base) => ({ ...base, env: { RESEND_API_KEY: 'test-key' } });
+
+test('a change the planner sends up buzzes the phone and writes no email', async () => {
+  const { raw, db } = await setup();
+  const watch = await watchSending(raw);
+  try {
+    await correctTimes(withEnv(ctx(db, {
+      body: { staffId: 1, out: '21:00', reason: 'The kitchen ran until nine' },
+    })), '2026-06-03');
+  } finally {
+    watch.stop();
+  }
+
+  assert.equal(watch.emails(), 0, 'nothing goes to the inbox');
+  assert.equal(watch.pushes(), 1, 'and the phone is buzzed once');
+
+  const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'attendance.times' ORDER BY id DESC").get();
+  assert.match(notice.title, /^Approve: /, 'it is still the request it always was');
+  assert.equal(notice.audience, 'att_setup');
+});
+
+test('a change an administrator makes themselves is a record, and still writes', async () => {
+  const { raw, db } = await setup();
+  const watch = await watchSending(raw);
+  try {
+    await correctTimes(withEnv(ctx(db, {
+      session: ADMIN,
+      body: { staffId: 1, out: '21:00', reason: 'Signed off with the head chef' },
+    })), '2026-06-03');
+  } finally {
+    watch.stop();
+  }
+
+  assert.equal(watch.emails(), 1, 'a change already made is worth an inbox');
+  assert.equal(watch.pushes(), 0, 'and is not worth a buzz');
+
+  const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'attendance.times' ORDER BY id DESC").get();
+  assert.doesNotMatch(notice.title, /^Approve: /, 'nothing is waiting on anybody');
 });

@@ -1538,6 +1538,13 @@ async function recordTimeEdit(ctx, {
   // Addressed to the setup permission because that is the one administrators
   // hold and managers do not. A notice that reached everybody who can settle a
   // day would be read by nobody.
+  //
+  // A change the planner has sent up for approval goes by push and not by
+  // email. It is a small decision that wants making today, an administrator
+  // is either at their desk or holding their phone, and a property correcting
+  // a dozen clock times a week would be sending a dozen emails that get
+  // filtered into a folder nobody opens. A change an administrator made
+  // themselves is a record rather than a request, so that one still writes.
   const waiting = status === 'pending';
   await createNotice(ctx.db, {
     kind: 'attendance.times',
@@ -1554,6 +1561,8 @@ async function recordTimeEdit(ctx, {
     day,
     actor: actorOf(ctx),
     audience: 'att_setup',
+    email: !waiting,
+    push: waiting,
   }, ctx);
 
   return written?.id ?? null;
