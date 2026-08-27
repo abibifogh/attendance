@@ -312,6 +312,23 @@ and nobody's only way of doing this: every cell still opens its dropdown and
 every card its dialog, which is what a phone uses, because dragging across a
 fourteen-column grid with a thumb is not a thing anybody wants to do.
 
+**A period can be taken back off.** Starting a fortnight again, undoing an
+import that came in wrong, emptying a month somebody built against the wrong
+week: all of them meant opening every cell and setting it to Off, and ninety
+clicks is not a way of doing something, it is a reason to build the rota
+somewhere else. *Clear a period* takes a stretch of dates in one go, and asks
+what "empty" means — because on a rota with standing patterns behind it there
+are two answers and they look nothing alike. Clearing back to the pattern takes
+the decisions off and lets the usual week show through, which is what undoing
+means. Clearing to nothing writes a day off on every day, which is what an empty
+period means; it skips a day that is already empty, so it never writes three
+hundred rows to say nothing happened.
+
+Published days are left alone unless it is asked for, because people have
+planned their lives around those. Approved leave is never touched. A department
+or tag filter narrows it to whoever was on screen, and every day cleared leaves
+its own entry in *What changed*.
+
 **Availability** is the fact a planner needs before the dropdown: days somebody
 cannot work (or asked to work), with the reason, shown in the cell. Not leave —
 nothing approved, nothing spent — and rostering over it stays possible, with

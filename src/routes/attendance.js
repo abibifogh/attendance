@@ -2313,6 +2313,14 @@ export async function saveRoster(ctx) {
 
   for (const entry of entries) {
     const day = dayOf(entry);
+    // A row id names a row that exists. The grid gives a card it has only
+    // staged a negative placeholder, and one of those reaching here used to
+    // come back as "Row must be between 1 and 1000000000" — a sentence that
+    // says nothing about what happened and leaves a whole afternoon unsaved.
+    if (entry.id != null && !(Number.isInteger(Number(entry.id)) && Number(entry.id) > 0)) {
+      throw badRequest('One of these changes is about a shift that has not been saved yet. '
+        + 'Reload the page and make it again.');
+    }
     const rowId = entry.id == null ? null : int(entry.id, 'Row', { min: 1 });
     const shiftId = entry.shiftId == null ? null : int(entry.shiftId, 'Shift', { min: 1 });
     const note = str(entry.note, 'Note', { max: 200 });
@@ -2541,6 +2549,154 @@ export async function copyRoster(ctx) {
   return json({
     ok: true, from: fromWeek, to: toWeek, weeks: span, copied, skippedLeave,
   });
+}
+
+/**
+ * Take a period off the rota.
+ *
+ * The one thing a planner could not do in fewer than ninety clicks. Starting a
+ * fortnight again, undoing an import that came in wrong, emptying a month
+ * somebody built against the wrong week: all of them meant opening every cell
+ * and setting it to Off, and a planner who has to do that will find another way
+ * to build a rota.
+ *
+ * TWO KINDS OF CLEAR, because "empty" means two different things on a rota with
+ * standing patterns behind it.
+ *
+ *   `pattern` takes the decisions off and lets the standing pattern show
+ *   through again, which is what "undo what I did here" means. Days somebody
+ *   normally works come back.
+ *
+ *   `off` writes a rostered day off on every day instead, which is what "this
+ *   period is empty" means. Nothing shows through, and the days read as
+ *   decisions — because they are.
+ *
+ * Published days are left alone unless somebody says otherwise. Staff have
+ * planned their lives around those, and a clear that quietly took them is the
+ * one mistake here that cannot be walked back with an apology.
+ *
+ * Approved leave is never touched. It is not the rota's to clear.
+ */
+export async function clearRoster(ctx) {
+  const body = await readJson(ctx.request);
+  const from = readDay(body.from);
+  const to = readDay(body.to);
+  if (!from || !to) throw badRequest('A period needs both a start and an end.');
+  if (to < from) throw badRequest('The end of the period is before its start.');
+  if (diffDays(from, to) > 92) throw badRequest('Clear at most three months at a time.');
+
+  const mode = body.mode === 'off' ? 'off' : 'pattern';
+  const alsoPublished = body.includePublished === true;
+  const department = str(body.department, 'Department', { max: 60 }) || null;
+  const tag = str(body.tag, 'Tag', { max: 60 }) || null;
+
+  const ds = await loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) });
+  const days = rangeDays(from, to);
+
+  // The same filtering the grid was showing, so what gets cleared is what the
+  // planner was looking at rather than everybody on the payroll.
+  const people = ds.staff.filter((staff) => {
+    if (!onRota(staff)) return false;
+    if (department && (staff.department || '') !== department) return false;
+    if (tag && !parseTags(staff.tags).includes(tag)) return false;
+    return true;
+  });
+
+  const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
+  const detail = `Cleared ${from} to ${to}`;
+  const statements = [];
+  const touched = new Map();
+  let cleared = 0;
+  let keptPublished = 0;
+  let keptLeave = 0;
+
+  const mark = (staffId, day) => {
+    const range = touched.get(staffId) ?? { from: day, to: day };
+    if (day < range.from) range.from = day;
+    if (day > range.to) range.to = day;
+    touched.set(staffId, range);
+  };
+
+  for (const staff of people) {
+    for (const day of days) {
+      if (ds.leaveBy.has(`${staff.id}|${day}`)) { keptLeave += 1; continue; }
+
+      const here = rowsFor(ds, staff.id, day);
+      if (alsoPublished === false && here.some((row) => row.published)) {
+        keptPublished += 1;
+        continue;
+      }
+
+      if (mode === 'off') {
+        // A day off is only worth writing where something would otherwise
+        // show. Somebody with no row and no pattern on a Tuesday already has
+        // nothing on that Tuesday, and writing one row per person per day to
+        // say so is three hundred rows that mean nothing — and a trail full
+        // of changes where nothing changed.
+        if (here.length === 1 && here[0].shift_id == null) continue;
+        if (!here.length && !scheduleFor(ds, staff.id, day).shift) continue;
+        statements.push(...replaceDay(ctx.db, {
+          rows: here,
+          staffId: staff.id,
+          day,
+          shiftId: null,
+          actor,
+          source: 'clear',
+          detail,
+        }));
+        cleared += 1;
+        mark(staff.id, day);
+        continue;
+      }
+
+      if (!here.length) continue;
+      statements.push(logRows(ctx.db, {
+        where: 'staff_id = ?1 AND day = ?2',
+        binds: [staff.id, day],
+        action: 'removed',
+        source: 'clear',
+        actor,
+        detail: `${detail}, back to the standing pattern`,
+      }));
+      statements.push(ctx.db.prepare(
+        'DELETE FROM att_roster WHERE staff_id = ? AND day = ?',
+      ).bind(staff.id, day));
+      cleared += 1;
+      mark(staff.id, day);
+    }
+  }
+
+  // Slots nobody was ever on belong to the period too: a shift standing on a
+  // day it is no longer wanted on is exactly what a clear is for. Only where
+  // the whole property is being cleared, because a slot belongs to no
+  // department and filtering by one cannot say anything about it.
+  let slots = 0;
+  if (!department && !tag) {
+    const empty = days.flatMap((day) => (ds.slotsByDay.get(day) ?? []))
+      .filter((row) => alsoPublished || !row.published);
+    for (const row of empty) {
+      statements.push(logRows(ctx.db, {
+        where: 'id = ?1',
+        binds: [row.id],
+        action: 'removed',
+        source: 'clear',
+        actor,
+        detail: `${detail}, an unfilled shift`,
+      }));
+      statements.push(ctx.db.prepare('DELETE FROM att_roster WHERE id = ?').bind(row.id));
+      slots += 1;
+    }
+  }
+
+  for (let i = 0; i < statements.length; i += 100) {
+    await ctx.db.batch(statements.slice(i, i + 100));
+  }
+  await recomputeTouched(ctx.db, touched);
+  await audit(ctx, 'attendance.roster_clear', null, {
+    from, to, mode, cleared, slots, keptPublished, keptLeave, department, tag,
+  });
+
+  return json({ ok: true, from, to, mode, cleared, slots, keptPublished, keptLeave });
 }
 
 /**

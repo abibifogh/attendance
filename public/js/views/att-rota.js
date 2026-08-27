@@ -845,6 +845,30 @@ export async function renderAttRota(params) {
    */
   let provisional = -1;
 
+  /**
+   * A card that only exists in this editing session has no row behind it yet.
+   *
+   * It is given a negative placeholder so the model has something to key it
+   * on, and that placeholder must never reach the server: `id` there means a
+   * row in the database, and a save addressed to row -1 comes back as "Row
+   * must be between 1 and 1000000000" with the planner's whole afternoon still
+   * unsaved. So every change addressed by a card id asks this first, and falls
+   * back to naming the person and the day where the answer is no.
+   */
+  const realRow = (id) => {
+    const n = Number(id);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  };
+
+  /**
+   * Which staged change put a placeholder card on the screen.
+   *
+   * Changing that card again has to amend the change that made it rather than
+   * queue a second one about a row that does not exist. Keyed by placeholder,
+   * so the second edit lands on top of the first.
+   */
+  const cameFrom = new Map();
+
   /** Pull a row out of the model wherever it is, and hand back what it held. */
   const takeRow = (id) => {
     for (const row of data.rows) {
@@ -893,12 +917,14 @@ export async function renderAttRota(params) {
     }];
   };
 
-  const applyLocally = (change) => {
+  const applyLocally = (change, key = null) => {
     if (change.remove && change.id != null) { takeRow(change.id); return; }
 
     if (change.slot) {
+      const mark = provisional--;
+      if (key) cameFrom.set(mark, key);
       data.slots = [...(data.slots ?? []), {
-        id: provisional--,
+        id: mark,
         day: change.day,
         shift_id: change.shiftId,
         title: change.title ?? null,
@@ -939,7 +965,9 @@ export async function renderAttRota(params) {
     }
 
     if (change.add) {
-      putOn(change.staffId, change.day, change.shiftId, change.title, provisional--);
+      const mark = provisional--;
+      if (key) cameFrom.set(mark, key);
+      putOn(change.staffId, change.day, change.shiftId, change.title, mark);
       return;
     }
 
@@ -953,7 +981,23 @@ export async function renderAttRota(params) {
   /** Queue a change to one card and redraw the positions under it. */
   const queue = (key, change) => {
     pending.set(key, change);
-    applyLocally(change);
+    applyLocally(change, key);
+    drawPositions();
+    refreshSaveBar();
+  };
+
+  /**
+   * Undo a staged change that has not been saved.
+   *
+   * The only honest way to take a card off that was only ever put on in this
+   * session: there is no row to delete, so what goes is the change that would
+   * have made one.
+   */
+  const unqueue = (mark) => {
+    const key = cameFrom.get(mark);
+    if (key) pending.delete(key);
+    cameFrom.delete(mark);
+    takeRow(mark);
     drawPositions();
     refreshSaveBar();
   };
@@ -1074,16 +1118,25 @@ export async function renderAttRota(params) {
     });
     if (!done) return;
 
+    const row = realRow(card.id);
+
     if (done.drop && card.id != null) {
-      queue(`row:${card.id}`, { id: card.id, day: card.day, remove: true });
+      // A card put on in this session has nothing to delete. What goes is the
+      // change that would have put it there.
+      if (row == null) unqueue(card.id);
+      else queue(`row:${row}`, { id: row, day: card.day, remove: true });
       return;
     }
 
     const who = done.staffId === 'nobody' ? null : Number(done.staffId);
 
-    // A card from the standing pattern has no row yet. Writing one is what
-    // turns an assumption into a decision, which is what an edit means.
-    if (card.id == null) {
+    // A card from the standing pattern has no row yet, and neither has one put
+    // on a moment ago and not yet saved. Writing one is what turns an
+    // assumption into a decision, which is what an edit means.
+    if (row == null) {
+      // Amending the change that made this card rather than stacking a second
+      // one on top of a row that does not exist.
+      if (card.id != null) unqueue(card.id);
       if (who == null) {
         queue(`${card.row.staff.id}|${card.day}`, {
           staffId: card.row.staff.id, day: card.day, shiftId: null, title: null,
@@ -1097,8 +1150,8 @@ export async function renderAttRota(params) {
       return;
     }
 
-    queue(`row:${card.id}`, {
-      id: card.id, day: card.day, staffId: who, title: done.title || null,
+    queue(`row:${row}`, {
+      id: row, day: card.day, staffId: who, title: done.title || null,
     });
   };
 
@@ -1242,7 +1295,9 @@ export async function renderAttRota(params) {
     // slot standing on a day, put on a different one.
     if (load.staffId == null) {
       if (answer === 'move' && load.cardId != null) {
-        queue(`row:${load.cardId}`, { id: load.cardId, day: load.day, remove: true });
+        const row = realRow(load.cardId);
+        if (row == null) unqueue(load.cardId);
+        else queue(`row:${row}`, { id: row, day: load.day, remove: true });
       }
       queue(`slot:${day}:${shiftId}:${pending.size}`, {
         slot: true, day, shiftId, title: load.title || null,
@@ -1260,10 +1315,17 @@ export async function renderAttRota(params) {
     }
 
     if (answer === 'move') {
-      queue(load.cardId != null ? `row:${load.cardId}` : `${load.staffId}|${load.day}`,
-        load.cardId != null
-          ? { id: load.cardId, day: load.day, remove: true }
-          : { staffId: Number(load.staffId), day: load.day, shiftId: null, title: null });
+      const row = realRow(load.cardId);
+      if (row != null) {
+        queue(`row:${row}`, { id: row, day: load.day, remove: true });
+      } else if (load.cardId != null) {
+        // Never saved, so there is no row to take off — only the change that
+        // would have made one.
+        unqueue(load.cardId);
+      } else {
+        queue(`${load.staffId}|${load.day}`,
+          { staffId: Number(load.staffId), day: load.day, shiftId: null, title: null });
+      }
     }
 
     queue(`${load.staffId}|${day}`, {
@@ -1503,6 +1565,11 @@ export async function renderAttRota(params) {
       view === 'people'
         ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week')
         : null,
+      h('button.btn-sm', {
+        onclick: () => clearPeriod(data, params, reload),
+        title: 'Take a stretch of the rota back off, either to the standing pattern '
+          + 'or to nothing at all',
+      }, 'Clear a period'),
       view === 'people' ? importButton(reload) : null,
       h('button.btn-sm', {
         onclick: () => formDialog({
@@ -1557,6 +1624,75 @@ export async function renderAttRota(params) {
  * pattern rather than being pinned — otherwise one press would turn the whole
  * grid black and the distinction the screen rests on would be gone.
  */
+/**
+ * Take a period back off the rota.
+ *
+ * Starting a fortnight again, undoing an import that came in wrong, emptying a
+ * month somebody built against the wrong week: all of them meant opening every
+ * cell and setting it to Off. Ninety clicks is not a way of doing something,
+ * it is a reason to build the rota somewhere else.
+ *
+ * The question it has to ask is what "empty" means, because on a rota with
+ * standing patterns behind it there are two answers and they look nothing
+ * alike. Taking the decisions off lets the pattern show through again, which
+ * is what undoing a week means. Writing a day off on every day is what an
+ * empty period means. Both are offered, in those words.
+ */
+async function clearPeriod(data, params, reload) {
+  const filtered = params.department || params.tag;
+
+  const done = await formDialog({
+    title: 'Clear a period',
+    submitLabel: 'Clear it',
+    body: h('div',
+      h('div.field-row',
+        field('From', h('input', {
+          type: 'date', name: 'from', value: data.from, required: true,
+        })),
+        field('To', h('input', {
+          type: 'date', name: 'to', value: data.to, required: true,
+        })),
+      ),
+      field('What to leave behind', h('select', { name: 'mode' },
+        h('option', { value: 'pattern', selected: true },
+          'The standing pattern — undo what was set by hand'),
+        h('option', { value: 'off' },
+          'Nothing at all — a day off on every day'),
+      ),
+      'A pattern is what somebody normally works. Clearing back to it undoes the '
+      + 'decisions and leaves the usual week showing; clearing to nothing leaves the '
+      + 'period genuinely empty'),
+      h('label.inline-check',
+        h('input', { type: 'checkbox', name: 'published' }),
+        h('span', 'Include days that are already published')),
+      h('p.muted', { style: { fontSize: '.82rem' } },
+        'Published days are left alone unless you tick that: people have planned their '
+        + 'lives around them. Approved leave is never touched.'
+        + (filtered
+          ? ` Only ${params.department || `people tagged ${params.tag}`}, because that is `
+            + 'what the grid is filtered to.'
+          : ' Everybody on the rota.')),
+    ),
+    onSubmit: async (form) => api.attClearRoster({
+      from: form.get('from'),
+      to: form.get('to'),
+      mode: form.get('mode'),
+      includePublished: form.get('published') != null,
+      department: params.department || null,
+      tag: params.tag || null,
+    }),
+  });
+
+  if (!done) return;
+
+  const bits = [`${done.cleared} day${done.cleared === 1 ? '' : 's'} cleared`];
+  if (done.slots) bits.push(`${done.slots} unfilled shift${done.slots === 1 ? '' : 's'} taken off`);
+  if (done.keptPublished) bits.push(`${done.keptPublished} left published`);
+  if (done.keptLeave) bits.push(`${done.keptLeave} left as leave`);
+  toast(`${bits.join(', ')}.`, done.cleared ? 'good' : 'bad');
+  await reload();
+}
+
 async function copyWeek(data, reload) {
   const target = data.from;
   const suggested = shiftDay(target, -7);

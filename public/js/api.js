@@ -272,6 +272,7 @@ export const api = {
   attPublishRoster: (body) => request('/api/att/roster/publish', { method: 'POST', body }),
   attSetAvailability: (body) => request('/api/att/availability', { method: 'POST', body }),
   attCopyRoster: (body) => request('/api/att/roster/copy', { method: 'POST', body }),
+  attClearRoster: (body) => request('/api/att/roster/clear', { method: 'POST', body }),
   attSavePattern: (body) => request('/api/att/patterns', { method: 'POST', body }),
 
   attRotaImport: () => request('/api/att/rota-import'),

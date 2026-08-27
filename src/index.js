@@ -240,6 +240,9 @@ export const ROUTES = [
   ['GET', '/api/att/workload/rota', ['att_rota', 'att_reports'], workload.rotaWarnings],
   ['POST', '/api/att/roster', 'att_rota', att.saveRoster],
   ['POST', '/api/att/roster/copy', 'att_rota', att.copyRoster],
+  // Taking a period back off. Its own route rather than a flag on the save,
+  // because a save is a list of cells somebody chose and this is a range.
+  ['POST', '/api/att/roster/clear', 'att_rota', att.clearRoster],
   ['POST', '/api/att/patterns', 'att_rota', att.savePattern],
 
   // Importing a week. Reading and drafting is part of building the rota;
