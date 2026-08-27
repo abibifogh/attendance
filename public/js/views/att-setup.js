@@ -752,6 +752,7 @@ async function shiftsTab(reload) {
     // Every alternatives group already named, so the second breakfast is put
     // in the same one rather than into a second spelling of it.
     const altGroups = [...new Set(shifts.map((sh) => sh.alt_group).filter(Boolean))].sort();
+    const pairGroups = [...new Set(shifts.map((sh) => sh.pair_group).filter(Boolean))].sort();
 
     // Whose shift it is, in order. "Nii, and Dorcas when Nii is not there" is
     // one instruction and the order is what carries it, so the rows are
@@ -846,6 +847,17 @@ async function shiftsTab(reload) {
             placeholder: 'Name the group, eg Breakfast',
           }),
             'Shifts sharing a name here stand in for each other'),
+          // The other arrangement, and the one the alternates group could not
+          // express: a service cut in two is two shifts and one decision.
+          field('These run together', positionPicker(pairGroups, existing?.pair_group ?? '', {
+            name: 'pairGroup',
+            blank: 'It runs on its own',
+            add: '+ New pair…',
+            placeholder: 'Name the pair, eg Bistro split',
+          }),
+            'Shifts sharing a name here are one service cut in two: either all of them are on '
+            + 'a day or none of them is. A pair may sit in an alternates group against the '
+            + 'single shift that replaces it, and the two of them will not rule each other out'),
           field('And they clash', h('select', { name: 'altScope' },
             h('option', { value: 'day', selected: existing?.alt_scope !== 'week' },
               'For that day only'),
@@ -890,6 +902,7 @@ async function shiftsTab(reload) {
         payload.position = readPosition(form);
         payload.runsOn = [...runsOn];
         payload.altGroup = readPosition(form, 'altGroup');
+        payload.pairGroup = readPosition(form, 'pairGroup');
         payload.optional = form.get('optional') === 'true';
         payload.onlyStaff = [...owners];
         payload.everyDays = Number(form.get('everyDays')) || 1;
@@ -947,6 +960,7 @@ async function shiftsTab(reload) {
         needed: row.needed,
         runsOn: readRunsOn(row) ?? [0, 1, 2, 3, 4, 5, 6],
         altGroup: row.alt_group || null,
+        pairGroup: row.pair_group || null,
         altScope: row.alt_scope || 'day',
         optional: Boolean(row.optional),
         onlyStaff: readOnlyStaff(row),
@@ -1165,6 +1179,10 @@ async function shiftsTab(reload) {
                 ? h('span', ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
                   .filter((_, i) => days.includes(i)).join(' '))
                 : h('span.muted', 'every day'),
+              r.pair_group
+                ? h('span.rule-chip', { title: `Runs together with the rest of ${r.pair_group}` },
+                  `with ${r.pair_group}`)
+                : null,
               r.alt_group
                 ? h('small.muted', { style: { display: 'block' } },
                   `or ${r.alt_group}${r.alt_scope === 'week' ? ', weekly' : ''}`)

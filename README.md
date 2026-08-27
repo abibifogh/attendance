@@ -343,6 +343,25 @@ is hidden — somebody out of department or already on a shift is still offered,
 with the reason, because a planner covering a gap with whoever is standing there
 is a real Saturday.
 
+**Shifts that run together, and shifts that stand in for a pair.** A shift
+could already say who it runs *instead of* — five breakfasts that differ by half
+an hour are one morning written five ways, so once a day settles on one the rest
+are not wanted. What it could not say is the other half of how a service gets
+split: Bistro shift 1 and Bistro shift 2 are one service cut in two, so either
+both of them run or neither does, and the single Bistro is what runs instead of
+the pair. Putting all three in one alternates group would have said exactly the
+wrong thing — it would have made the two halves rule each other out. So a shift
+now says who it runs *with* as well, and alternates deliberately ignores anybody
+in the same pair.
+
+The pair is settled before the shift that replaces it, because otherwise which
+arrangement a day gets is decided by nothing more than the order the shifts came
+out of the database. The split is the arrangement and the single is the
+stand-in, which is how the property actually runs it. Where one half cannot be
+staffed the draft says so and names the shift it goes with, so *Bistro shift 2
+is short* reads as *the split Bistro is short*, which is the question a planner
+has to answer.
+
 **Availability** is the fact a planner needs before the dropdown: days somebody
 cannot work (or asked to work), with the reason, shown in the cell. Not leave —
 nothing approved, nothing spent — and rostering over it stays possible, with

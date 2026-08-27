@@ -427,6 +427,11 @@ function shiftFields(body) {
     // Shifts sharing this name are alternatives: one of them runs on a day.
     str(body.altGroup, 'Alternatives group', { max: 60 }),
     body.altScope === 'week' ? 'week' : 'day',
+    // And shifts sharing this one run together: a service cut in two is two
+    // shifts and one decision. The opposite arrangement to the group above,
+    // and deliberately usable alongside it — a pair sits in an alternates
+    // group against the single shift that replaces it.
+    str(body.pairGroup, 'Runs-together group', { max: 60 }),
     // Worth running when somebody is spare, not worth pulling anybody off
     // anything for.
     bool(body.optional, false) ? 1 : 0,
@@ -474,9 +479,9 @@ export async function createShift(ctx) {
       `INSERT INTO att_shifts (name, starts_at, ends_at, break_minutes, grace_in_minutes,
                                grace_out_minutes, half_day_minutes, full_day_minutes,
                                overtime_after, colour, sort_order, active, department,
-                               position, needed, runs_on, alt_group, alt_scope, optional,
-                               only_staff, every_days)
-       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)
+                               position, needed, runs_on, alt_group, alt_scope, pair_group,
+                               optional, only_staff, every_days)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)
        RETURNING id`,
     ).bind(...shiftFields(body)).first();
   } catch (err) {
@@ -508,8 +513,8 @@ export async function updateShift(ctx, id) {
                              full_day_minutes=?8, overtime_after=?9, colour=?10,
                              sort_order=?11, active=?12, department=?13, position=?14,
                              needed=?15, runs_on=?16, alt_group=?17, alt_scope=?18,
-                             optional=?19, only_staff=?20, every_days=?21
-       WHERE id = ?22`,
+                             pair_group=?19, optional=?20, only_staff=?21, every_days=?22
+       WHERE id = ?23`,
     ).bind(...shiftFields(body), shiftId).run();
   } catch (err) {
     rethrowConstraint(err, { unique: 'A shift with that name already exists.' });

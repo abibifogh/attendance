@@ -36,6 +36,7 @@
 import { addDays, dow, rangeDays, startOfWeek } from '../util/dates.js';
 import {
   alternatesOf, altScope, alwaysOff, everyDays, maxDaysPerWeekFor, mayWork, onlyStaff, onRota,
+  pairGroup, partnersOf,
   runsOnDay, scheduleFor, standingFor,
 } from './attendance.js';
 import { isNightShift, limitsFrom, shiftsInWindow } from './workload.js';
@@ -104,12 +105,22 @@ export function suggestRota({
   // five, and by the Saturday Atsu has spent his week on the laundry, so a
   // shift with two people named for it ends up with neither. Going through all
   // fourteen days of it first reserves them.
+  //
+  // AND A SPLIT SERVICE IS SETTLED BEFORE THE SHIFT THAT REPLACES IT. Within
+  // an alternates group, whichever member the loop happens to reach first is
+  // the one that runs, and left to itself that is decided by nothing more than
+  // the order the shifts came out of the database. Where the group holds a
+  // pair and a single shift, the pair is the arrangement and the single is the
+  // stand-in — the property runs a split Bistro six days a week and the whole
+  // Bistro on the seventh, not the other way round — so the pair goes first
+  // and the single one falls out as "ran as Bistro" on the days it is needed.
+  const firstIfPaired = (a, b) => (pairGroup(a) ? 0 : 1) - (pairGroup(b) ? 0 : 1);
   const required = shifts.filter((shift) => !shift.optional);
   const passes = [
     required.filter((shift) => onlyStaff(shift).length),
     required.filter((shift) => !onlyStaff(shift).length),
     shifts.filter((shift) => shift.optional),
-  ].filter((list) => list.length);
+  ].filter((list) => list.length).map((list) => [...list].sort(firstIfPaired));
 
   for (const pass of passes) {
     for (const day of days) {
@@ -325,6 +336,10 @@ export function suggestRota({
             // answer. Reported all the same, under its own heading, because
             // "nobody was free for the extra porter" is worth knowing.
             optional: Boolean(shift.optional),
+            // A service split in two is one decision. Saying which shift this
+            // one runs beside turns "Bistro shift 2 is short" into "the split
+            // Bistro is short", which is the thing a planner has to answer.
+            goesWith: partnersOf(shift, shifts).map((other) => other.name).join(' and ') || null,
             why: reasonNobodyIsFree(ds, proposed, people, day, shift, rules, availabilityBy),
           });
         }

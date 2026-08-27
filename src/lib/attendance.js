@@ -260,7 +260,34 @@ export function everyDays(shift) {
 export function alternatesOf(shift, shifts) {
   const group = shift?.alt_group || null;
   if (!group) return [];
-  return (shifts ?? []).filter((s) => s.alt_group === group && s.id !== shift.id);
+  const pair = pairGroup(shift);
+  return (shifts ?? []).filter((s) => s.alt_group === group
+    && s.id !== shift.id
+    // Somebody this shift runs *with* is never somebody it runs *instead of*.
+    // Bistro shift 1 and Bistro shift 2 are one service cut in two and share a
+    // group with the single Bistro that replaces the pair; without this they
+    // would rule each other out, which is exactly backwards.
+    && !(pair && pairGroup(s) === pair));
+}
+
+/**
+ * The name of the set of shifts that run together, or null.
+ *
+ * A service split in two is two shifts and one decision: either both of them
+ * are on the day or neither is. Different from alternates, which is the
+ * opposite arrangement, and the two are meant to be used together — a pair
+ * standing in one alternates group against the single shift it replaces.
+ */
+export function pairGroup(shift) {
+  const group = shift?.pair_group;
+  return typeof group === 'string' && group.trim() ? group.trim() : null;
+}
+
+/** The other shifts this one always runs beside. */
+export function partnersOf(shift, shifts) {
+  const group = pairGroup(shift);
+  if (!group) return [];
+  return (shifts ?? []).filter((s) => pairGroup(s) === group && s.id !== shift.id);
 }
 
 /**
