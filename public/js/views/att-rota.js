@@ -1777,9 +1777,13 @@ async function clearPeriod(data, params, reload) {
       h('label.inline-check',
         h('input', { type: 'checkbox', name: 'published' }),
         h('span', 'Include days that are already published')),
+      h('label.inline-check',
+        h('input', { type: 'checkbox', name: 'slots' }),
+        h('span', 'Also take off shifts that have nobody on them')),
       h('p.muted', { style: { fontSize: '.82rem' } },
-        'Published days are left alone unless you tick that: people have planned their '
-        + 'lives around them. Approved leave is never touched.'
+        'A shift with nobody on it is what the day still needs, so it stays unless you tick '
+        + 'that. Published days are left alone unless you tick the other: people have '
+        + 'planned their lives around them. Approved leave is never touched.'
         + (filtered
           ? ` Only ${params.department || `people tagged ${params.tag}`}, because that is `
             + 'what the grid is filtered to.'
@@ -1790,6 +1794,7 @@ async function clearPeriod(data, params, reload) {
       to: form.get('to'),
       mode: form.get('mode'),
       includePublished: form.get('published') != null,
+      includeSlots: form.get('slots') != null,
       department: params.department || null,
       tag: params.tag || null,
     }),

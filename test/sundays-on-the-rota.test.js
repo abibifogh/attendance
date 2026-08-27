@@ -188,14 +188,36 @@ test('leave on a Sunday is a Sunday off', async () => {
     'one Sunday actually worked, so there is nothing to say');
 });
 
-test('a Sunday somebody is off is never marked', async () => {
+test('a Sunday they are off is marked too, which is the point of it', async () => {
   const { db, raw } = setup();
-  // Kwesi is on three Sundays and off the one on screen, so the month is short
-  // of nothing and there is nothing on his cell either way.
+  // Kwesi is on three of September's Sundays and off the one on screen. The
+  // empty cell is exactly where a planner is about to put him on a fourth, so
+  // it is where the count is worth saying.
   roster(raw, 2, ['2026-09-06', '2026-09-20', '2026-09-27']);
+
   const cell = cellOn(await look(db), 'Kwesi', SHOWN);
-  assert.equal(cell.sundayOver, null);
-  assert.equal(cell.shift_id, null);
+  assert.equal(cell.shift_id, null, 'nobody has put him on this one');
+  assert.deepEqual(cell.sundayOver, { worked: 3, of: 4, cap: 2 });
+});
+
+test('a draft Sunday counts the same as a published one', async () => {
+  const { db, raw } = setup();
+  // Nothing here waits for Publish. A rota is decided when it is saved, and a
+  // count that only saw published days would say a planner had done nothing
+  // all afternoon.
+  roster(raw, 1, ['2026-09-06', '2026-09-20']);
+  raw.prepare('UPDATE att_roster SET published = 0').run();
+
+  assert.deepEqual(cellOn(await look(db), 'Adjoa', SHOWN).sundayOver,
+    { worked: 2, of: 4, cap: 2 });
+});
+
+test('somebody under the line has nothing on their Sundays, full or empty', async () => {
+  const { db, raw } = setup();
+  roster(raw, 2, ['2026-09-06']);
+  const marked = (await look(db)).rows
+    .flatMap((r) => r.days).filter((d) => d.sundayOver);
+  assert.deepEqual(marked, [], 'one Sunday is not a pattern, so nothing is said');
 });
 
 test('the mark is only ever on a Sunday', async () => {
@@ -205,7 +227,7 @@ test('the mark is only ever on a Sunday', async () => {
 
   const marked = (await look(db)).rows
     .flatMap((r) => r.days).filter((d) => d.sundayOver).map((d) => d.day);
-  assert.deepEqual(marked, [SHOWN]);
+  assert.deepEqual(marked, [SHOWN], 'the weekdays they are on carry nothing');
 });
 
 test('a window with no Sunday in it asks nothing and marks nothing', async () => {

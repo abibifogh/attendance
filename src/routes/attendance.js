@@ -1705,6 +1705,12 @@ export async function addPunch(ctx) {
  * this property draws the line, and it is a setting, so it can be drawn
  * somewhere else.
  *
+ * AND IT IS SAID ON THE EMPTY SUNDAYS TOO. A mark that waits until somebody is
+ * already on the shift arrives after the decision it exists to inform. On a
+ * cell with nobody on it, it reads as "this person has already done three of
+ * this month's Sundays" — which is the thing worth knowing while the cell is
+ * still empty.
+ *
  * Standing patterns count. A person who works every Sunday by pattern and has
  * no roster rows at all is the plainest case of it going wrong, and a count
  * that read only the roster table would miss exactly them.
@@ -1804,11 +1810,13 @@ async function sundaysOver(db, ds, days, limits) {
 
       const over = { worked, of: all.length, cap };
       for (const day of here) {
-        // Marked on the Sundays they are actually on, because a Sunday they
-        // have off is not the one anybody needs to look at.
-        if (day.slice(0, 7) === month && working(staff.id, day)) {
-          out.set(`${staff.id}|${day}`, over);
-        }
+        // ON EVERY SUNDAY OF THAT MONTH, INCLUDING THE ONES THEY ARE OFF. The
+        // whole point is to be told before deciding, and a mark that only
+        // appears once somebody is already on the shift arrives after the
+        // decision it was meant to inform. On an empty cell it reads as "this
+        // person has already done three of this month's Sundays", which is
+        // exactly what a planner about to fill it needs to know.
+        if (day.slice(0, 7) === month) out.set(`${staff.id}|${day}`, over);
       }
     }
   }
@@ -2642,6 +2650,11 @@ export async function clearRoster(ctx) {
 
   const mode = body.mode === 'off' ? 'off' : 'pattern';
   const alsoPublished = body.includePublished === true;
+  // A shift standing on a day with nobody on it is the shape of the week
+  // rather than an assignment: it is the record of what the day still needs.
+  // Clearing the people off a period must not quietly take that with them —
+  // it comes back as a week that has apparently stopped needing anybody.
+  const alsoSlots = body.includeSlots === true;
   const department = str(body.department, 'Department', { max: 60 }) || null;
   const tag = str(body.tag, 'Tag', { max: 60 }) || null;
 
@@ -2721,12 +2734,11 @@ export async function clearRoster(ctx) {
     }
   }
 
-  // Slots nobody was ever on belong to the period too: a shift standing on a
-  // day it is no longer wanted on is exactly what a clear is for. Only where
-  // the whole property is being cleared, because a slot belongs to no
-  // department and filtering by one cannot say anything about it.
+  // Only when it is asked for, and only where the whole property is being
+  // cleared: a slot belongs to no department, so filtering by one cannot say
+  // anything about whether it should go.
   let slots = 0;
-  if (!department && !tag) {
+  if (alsoSlots && !department && !tag) {
     const empty = days.flatMap((day) => (ds.slotsByDay.get(day) ?? []))
       .filter((row) => alsoPublished || !row.published);
     for (const row of empty) {

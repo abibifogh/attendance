@@ -210,24 +210,42 @@ test('a tag filter narrows it the same way', async () => {
   assert.deepEqual([...new Set(rows(raw).map((r) => r.staff_id))], [2]);
 });
 
-test('a shift standing on a day with nobody on it goes too', async () => {
+test('a shift standing on a day with nobody on it stays', async () => {
   const { db, raw } = setup();
   raw.prepare(
     "INSERT INTO att_roster (staff_id, day, shift_id) VALUES (NULL, '2026-09-07', 1)",
   ).run();
 
+  // It is the shape of the week rather than an assignment: the record of what
+  // the day still needs. Clearing the people off must not take it with them,
+  // or the week comes back apparently no longer needing anybody.
   const done = await clear(db, { from: '2026-09-07', to: '2026-09-09' });
+  assert.equal(done.slots, 0);
+  assert.equal(rows(raw).length, 1);
+});
+
+test('and goes when it is asked for', async () => {
+  const { db, raw } = setup();
+  raw.prepare(
+    "INSERT INTO att_roster (staff_id, day, shift_id) VALUES (NULL, '2026-09-07', 1)",
+  ).run();
+
+  const done = await clear(db, {
+    from: '2026-09-07', to: '2026-09-09', includeSlots: true,
+  });
   assert.equal(done.slots, 1);
   assert.equal(rows(raw).length, 0);
 });
 
-test('but not when the grid is filtered, because a slot belongs to nobody', async () => {
+test('but never when the grid is filtered, because a slot belongs to nobody', async () => {
   const { db, raw } = setup();
   raw.prepare(
     "INSERT INTO att_roster (staff_id, day, shift_id) VALUES (NULL, '2026-09-07', 1)",
   ).run();
 
-  const done = await clear(db, { from: '2026-09-07', to: '2026-09-09', department: 'Front' });
+  const done = await clear(db, {
+    from: '2026-09-07', to: '2026-09-09', department: 'Front', includeSlots: true,
+  });
   assert.equal(done.slots, 0);
   assert.equal(rows(raw).length, 1, 'a department filter says nothing about an unfilled shift');
 });

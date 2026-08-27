@@ -324,10 +324,14 @@ means. Clearing to nothing writes a day off on every day, which is what an empty
 period means; it skips a day that is already empty, so it never writes three
 hundred rows to say nothing happened.
 
-Published days are left alone unless it is asked for, because people have
-planned their lives around those. Approved leave is never touched. A department
-or tag filter narrows it to whoever was on screen, and every day cleared leaves
-its own entry in *What changed*.
+A shift standing on a day with nobody on it stays. That is the shape of the
+week rather than an assignment — the record of what the day still needs — and
+clearing the people off must not take it with them, or the week comes back
+apparently no longer needing anybody. There is a tick box for taking those off
+as well. Published days are likewise left alone unless it is asked for, because
+people have planned their lives around those. Approved leave is never touched.
+A department or tag filter narrows it to whoever was on screen, and every day
+cleared leaves its own entry in *What changed*.
 
 **Who works it** is a list rather than a dropdown. It had grown into a wall of
 sentences: a name, then every department and named shift that person is set up
@@ -382,6 +386,13 @@ time hid this completely: one Sunday on screen says nothing about the other
 three. So the count is taken over the whole calendar month a Sunday belongs to,
 however little of that month is open, and the cell says how many of them that
 person is on — `⊙ 3/5 Sundays`.
+
+**It is said on the empty Sundays too.** A mark that waits until somebody is
+already on the shift arrives after the decision it exists to inform. On a cell
+with nobody on it, it reads as *this person has already done three of this
+month's Sundays* — which is the thing worth knowing while the cell is still
+empty. Nothing here waits for Publish either: a rota is decided when it is
+saved. The same is true of the special-meal mark below.
 
 **It trips on Sundays worked, not on Sundays lost.** Asking whether anybody has
 been left without one at all only fires once every Sunday is gone, which is a

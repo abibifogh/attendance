@@ -101,8 +101,20 @@ test('somebody off last month’s meal is marked on this one', async () => {
   roster(raw, 2, [BEFORE]);
 
   const data = await look(db);
-  assert.deepEqual(cellOn(data, 'Adjoa', MEAL).missedMeal, { was: BEFORE });
+  const adjoa = cellOn(data, 'Adjoa', MEAL);
+  assert.equal(adjoa.shift_id, null,
+    'nobody has put her on this one yet, which is when the mark is worth having');
+  assert.deepEqual(adjoa.missedMeal, { was: BEFORE });
   assert.equal(cellOn(data, 'Kwesi', MEAL).missedMeal, null, 'Kwesi was there');
+});
+
+test('a draft day counts as having been there', async () => {
+  const { db, raw } = setup();
+  roster(raw, 1, [BEFORE]);
+  raw.prepare('UPDATE att_roster SET published = 0').run();
+
+  assert.equal(cellOn(await look(db), 'Adjoa', MEAL).missedMeal, null,
+    'nothing here waits for Publish');
 });
 
 test('the mark stays once they have been put on this one', async () => {

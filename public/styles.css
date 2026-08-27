@@ -1142,8 +1142,21 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   border-right-style: dashed;
   border-bottom-style: dashed;
   border-left-style: solid;         /* the colour edge stays readable */
+  /* Heavier than the solid one it sits beside. A hairline dash at this size
+     reads as a lighter version of the same thing rather than a different
+     thing, and the difference between "still being worked out" and "what
+     people are planning their lives around" is the one distinction on this
+     screen that has to survive being glanced at. */
+  border-top-width: 2px;
+  border-right-width: 2px;
+  border-bottom-width: 2px;
 }
 .rota-cellwrap.rota-set.rota-published { border-style: solid; }
+
+/* A cell following the standing pattern is dashed too, and for the same
+   reason: an assumption rather than a decision. Kept lighter than a draft,
+   because a draft is somebody's work and a pattern is nobody's. */
+.rota-cellwrap.rota-pattern { border-width: 1px; }
 
 td.rota-past { opacity: .55; }
 td.rota-past .rota-cell { pointer-events: auto; }   /* history can still be corrected */
@@ -1927,8 +1940,16 @@ tr.day-locked label.tickline { cursor: not-allowed; }
   border-left: 3px solid var(--shift);
 }
 
-/* Dashed until published, the same promise the people view draws. */
-.pos-card.rota-draft { border-style: dashed; border-left-style: solid; }
+/* Dashed until published, the same promise the people view draws, and the same
+   weight: a hairline dash beside a hairline solid is one thing in two shades
+   rather than two things. */
+.pos-card.rota-draft {
+  border-style: dashed;
+  border-left-style: solid;
+  border-top-width: 2px;
+  border-right-width: 2px;
+  border-bottom-width: 2px;
+}
 
 /* A shift nobody is on yet. Faint, because it is a question rather than a
    plan, and it has to be obviously different from a card with a name on it
