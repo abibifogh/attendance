@@ -480,13 +480,22 @@ export async function renderAttRota(params) {
     h('th', 'Pattern'),
     ...data.days.map((day) => h('th',
       { class: dayClass(day) },
-      h('div', new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })),
-      h('small.muted', fmtDayShort(day)),
+      h('div', new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', {
+        weekday: 'short', timeZone: 'UTC',
+      })),
+      // Squeezed, the month is what goes: fourteen columns of "7 Sept" is the
+      // same word thirteen times, and the row above already says which weeks
+      // these are.
+      h('small.muted', span > 7 ? String(Number(day.slice(8, 10))) : fmtDayShort(day)),
     )),
   );
 
-  const grid = h('div.table-wrap',
-    h('table.rota-table',
+  // A fortnight or a month asked for is a fortnight or a month somebody wants
+  // to look at, not scroll through. Past a week the grid drops to fixed
+  // columns and the cells give up everything the eye can do without: the hours
+  // line, the empty name button, half the padding.
+  const grid = h('div.table-wrap.rota-scroll',
+    h('table.rota-table', { class: span > 7 ? 'rota-tight' : null },
       h('thead', headRow),
       h('tbody', visible.map((row) => h('tr',
         h('td',
@@ -1021,14 +1030,14 @@ export async function renderAttRota(params) {
     }));
   }
 
-  const positionsGrid = h('div.table-wrap',
-    h('table.rota-table.rota-positions',
+  const positionsGrid = h('div.table-wrap.rota-scroll',
+    h('table.rota-table.rota-positions', { class: span > 7 ? 'rota-tight' : null },
       h('thead', h('tr',
         h('th', 'Position'),
         ...data.days.map((day) => h('th',
           { class: dayClass(day) },
           h('div', new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })),
-          h('small.muted', fmtDayShort(day)),
+          h('small.muted', span > 7 ? String(Number(day.slice(8, 10))) : fmtDayShort(day)),
         )),
       )),
       positionsBody,

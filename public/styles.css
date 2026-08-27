@@ -3566,3 +3566,97 @@ html { touch-action: manipulation; }
   min-width: 2.2rem;
   font-variant-numeric: tabular-nums;
 }
+
+/* ------------------------------------------- a fortnight in one screen -- */
+/* Asked for a fortnight, somebody wants to look at a fortnight rather than
+   scroll through one. Fixed columns and the cells give up everything the eye
+   can do without: the hours line, the empty name button, most of the padding.
+   The dropdowns still work — this is the same grid, wearing less. */
+.rota-table.rota-tight { table-layout: fixed; width: 100%; }
+.rota-table.rota-tight td { padding: .1rem; }
+
+.rota-table.rota-tight .rota-cellwrap {
+  min-width: 0;
+  padding: .2rem .25rem;
+  border-radius: 4px;
+  gap: 0;
+}
+.rota-table.rota-tight .rota-cell {
+  font-size: .68rem;
+  font-weight: 600;
+  /* The browser's arrow is a third of a narrow column. The card opening on a
+     click is hint enough at this size. */
+  appearance: none;
+  text-overflow: ellipsis;
+}
+/* The hours are on the cell's own tooltip and in the dialog behind it. Thirteen
+   more copies of 06:00–14:00 is not what the extra week was for. */
+.rota-table.rota-tight .rota-hours { display: none; }
+/* Only where somebody has actually named the day. "+ name" fourteen times a
+   row is a column of prompts nobody asked for. */
+.rota-table.rota-tight .rota-title.rota-title-empty { display: none; }
+.rota-table.rota-tight .rota-title { font-size: .62rem; padding: 0; }
+.rota-table.rota-tight .rota-avail { font-size: .6rem; }
+
+/* The first two columns carry names and buttons and cannot shrink with the
+   rest, so they are pinned and the fourteen days share what is left. */
+.rota-table.rota-tight th:first-child,
+.rota-table.rota-tight td:first-child { width: 10.5rem; }
+.rota-table.rota-tight th:nth-child(2),
+.rota-table.rota-tight td:nth-child(2) { width: 4.4rem; }
+.rota-table.rota-tight td:first-child small { font-size: .68rem; }
+.rota-table.rota-tight .rota-tags { display: none; }
+
+.rota-table.rota-tight thead th { padding: .2rem .1rem; font-size: .7rem; }
+.rota-table.rota-tight thead th small { font-size: .68rem; }
+
+/* ---------------------------------------------- the day row stays put -- */
+/* `th` has been sticky all along and never once stuck, because .table-wrap
+   carries overflow-x and a box that scrolls in one axis scrolls in both. That
+   makes the wrap the sticky ancestor, and a wrap with no height never scrolls
+   vertically, so the header had nothing to stick to. Giving the rota's wrap a
+   height of its own is what turns the rule back on: the grid scrolls inside
+   it, and the days stay at the top where somebody can read which column they
+   are in. */
+.rota-scroll {
+  max-height: calc(100vh - 15rem);
+  min-height: 18rem;
+  overflow: auto;
+  /* Room for the sticky row to sit against rather than over the card's edge. */
+  scroll-padding-top: 3rem;
+}
+.rota-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface);
+  /* A border on a sticky cell scrolls away with the table. A shadow does not. */
+  box-shadow: inset 0 -1px 0 var(--border);
+  border-bottom: 0;
+}
+
+/* A week has room to spare on a laptop and was overflowing by a hair, which
+   read as "a fortnight fits and a week does not". */
+.rota-table:not(.rota-tight) .rota-cellwrap { min-width: 7.1rem; }
+
+@media (max-width: 820px) {
+  /* On a handset the page is the thing that scrolls, and a box inside a box
+     is one scroll too many. */
+  .rota-scroll { max-height: none; overflow: visible; }
+  .rota-scroll thead th { position: static; box-shadow: none; }
+}
+
+/* The positions view squeezes the same way: the card keeps the name and who is
+   on it, and gives up the clock line the position column already carries. */
+.rota-positions.rota-tight .pos-stack { min-width: 0; gap: .12rem; }
+.rota-positions.rota-tight .pos-card { padding: .2rem .3rem; border-radius: 4px; }
+.rota-positions.rota-tight .pos-card-shift { font-size: .66rem; }
+.rota-positions.rota-tight .pos-card-who { font-size: .64rem; }
+.rota-positions.rota-tight .pos-card-title { font-size: .6rem; }
+.rota-positions.rota-tight .pos-card-clock { display: none; }
+/* The position column is the widest thing on the row and the one that has to
+   stay readable, so it keeps its room while the days share the rest. */
+.rota-positions.rota-tight th:first-child,
+.rota-positions.rota-tight td:first-child { width: 13rem; }
+.rota-positions.rota-tight th:nth-child(2),
+.rota-positions.rota-tight td:nth-child(2) { width: auto; }

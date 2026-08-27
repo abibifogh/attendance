@@ -443,6 +443,15 @@ export const GUIDE = [
         + 'access is told. Change a published day and it goes dashed again; the app offers to '
         + 'republish at once, and asks whether to ring the bell or do it quietly. Quietly is for '
         + 'a typo — a moved shift deserves the bell. Grey days are already behind you.' },
+      { sub: 'The days stay where you can see them' },
+      { p: 'Ask for a fortnight and you get a fortnight on one screen rather than one to scroll '
+        + 'sideways through. Past a week the cells give up what the eye can do without: the '
+        + 'hours line, the empty name button, most of the padding. Every dropdown still works, '
+        + 'and the hours are still on the cell\u2019s own tooltip and in the dialog behind it.' },
+      { p: 'The row of days is pinned. Scroll down twenty names and it stays at the top, so the '
+        + 'column you are in is still the column you think you are in. On a phone the page '
+        + 'scrolls as it always did, a box inside a box being one scroll too many.' },
+
       { sub: 'Two ways to read it' },
       { p: 'People view is rows of people — where you assign shifts. Positions view turns the '
         + 'same window sideways: rows are shifts, cells are who is on them, which answers "who '
