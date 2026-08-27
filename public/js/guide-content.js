@@ -460,8 +460,11 @@ export const GUIDE = [
         + 'to move it or to copy it, because the same gesture means both and guessing would '
         + 'quietly lose one you meant to keep. It works both ways round: across days on one '
         + 'person\u2019s row, or down onto somebody else\u2019s.' },
+      { p: 'A day that already has a shift on it keeps it. The one you drop lands beside it and '
+        + 'the day is marked as a double. Taking a shift off is its own action, on the card '
+        + 'itself, and dropping a shift somebody already has that day changes nothing.' },
       { note: 'It tells you what it is about to do before you choose \u2014 what the shift is, '
-        + 'whose day it is landing on, and what it would take the place of. Cancel or Escape '
+        + 'whose day it is landing on, and what it is going to sit beside. Cancel or Escape '
         + 'leaves everything where it was. Nothing is written until you press Save, the same as '
         + 'every other change here. On a phone use the dropdown in the cell; dragging across a '
         + 'grid this wide with a thumb is not worth anybody\u2019s time.' },

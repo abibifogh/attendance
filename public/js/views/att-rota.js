@@ -633,10 +633,17 @@ export async function renderAttRota(params) {
 
     syncHours();
     syncTitle();
-    cells.set(`${row.staff.id}|${entry.day}`, {
+    const drawn = {
       select,
       syncHours: () => { syncHours(); syncTitle(); },
-    });
+      // What this cell was drawn from. A second shift arriving is a new chip
+      // rather than a new value, and nothing in a sync of values can put one
+      // there, so the cell is rebuilt when the count changes.
+      row,
+      extras: (entry.extra ?? []).length,
+      node: null,
+    };
+    cells.set(`${row.staff.id}|${entry.day}`, drawn);
 
     const availWindow = avail?.from ? ` ${avail.from} to ${avail.to}` : '';
     // Element.append() writes the string "null" for a null child, unlike the
@@ -804,15 +811,40 @@ export async function renderAttRota(params) {
       accepts: (load) => !(String(load.staffId) === String(row.staff.id) && load.day === entry.day),
       onDrop: async (load, event) => {
         const landing = shiftById.get(String(select.value));
+        // The same shift again is not a second shift, it is the same promise
+        // written down twice. Counting the second shifts as well, or a day
+        // that already holds two picks up a third saying what one of them
+        // says.
+        const holding = [select.value, ...(entry.extra ?? []).map((x) => x.shift_id)]
+          .filter((x) => x !== '' && x != null).map(String);
+        const already = holding.includes(String(load.shiftId));
         const answer = await askDrop(event, {
           what: nameOf(load.shiftId, load.title),
           who: row.staff.name,
           onto: fmtDayShort(entry.day),
-          note: landing ? `Takes the place of ${landing.name}` : null,
+          note: already
+            ? `Already on ${shiftById.get(String(load.shiftId))?.name ?? 'that shift'} this day`
+            : (landing ? `Goes beside ${landing.name}, which stays` : null),
         });
         if (!answer) return;
 
-        putShift(row.staff.id, entry.day, load.shiftId, load.title);
+        if (!landing) {
+          putShift(row.staff.id, entry.day, load.shiftId, load.title);
+        } else if (!already) {
+          // A DAY THAT ALREADY HAS A SHIFT ON IT KEEPS IT. Dropping a second
+          // one beside it used to quietly take the first one off, which is a
+          // whole shift gone from the week for a gesture that says nothing
+          // about removing anything. A double is a real thing on a rota and
+          // it is marked as one; taking a shift off is its own action.
+          queue(`${row.staff.id}|${entry.day}|second:${pending.size}`, {
+            staffId: row.staff.id,
+            day: entry.day,
+            shiftId: load.shiftId,
+            title: load.title || null,
+            add: true,
+          });
+        }
+
         // Moved, so it is no longer where it was. The title goes with it,
         // because "Stock take" belonged to the shift rather than to the
         // Tuesday it happened to be on.
@@ -823,7 +855,9 @@ export async function renderAttRota(params) {
 
     // The card and the gap under it, so the gap is beside the box rather than
     // inside it. Everything else still hangs off the card itself.
-    return h('div.rota-cellstack', wrap, addSecond);
+    const stack = h('div.rota-cellstack', wrap, addSecond);
+    drawn.node = stack;
+    return stack;
   };
 
   /**
@@ -1243,22 +1277,33 @@ export async function renderAttRota(params) {
   };
 
   const syncPeopleCells = () => {
-    for (const [key, cell] of cells) {
+    for (const [key, was] of [...cells]) {
       const [staffId, day] = key.split('|');
       const entry = entryOf(staffId, day);
       if (!entry) continue;
+
+      // A second shift on the day is a chip beside the card, not a value in
+      // the dropdown, so the cell is built again when one arrives or goes.
+      let shown = was;
+      const extras = (entry.extra ?? []).length;
+      if (was.node?.isConnected && was.extras !== extras) {
+        was.node.replaceWith(cell(was.row, entry));
+        shown = cells.get(key);
+        if (!shown) continue;
+      }
+      const cellShown = shown;
 
       const shiftId = entry.shift_id;
       const chosen = shiftId == null ? null : shiftById.get(String(shiftId));
       // A shift from another department has no option in this cell's list, and
       // setting a value the list does not hold silently falls back to Off.
-      if (chosen && !cell.select.querySelector(`option[value="${shiftId}"]`)) {
-        cell.select.append(h('option', { value: chosen.id }, shiftLabel(chosen)));
+      if (chosen && !cellShown.select.querySelector(`option[value="${shiftId}"]`)) {
+        cellShown.select.append(h('option', { value: chosen.id }, shiftLabel(chosen)));
       }
       const wanted = shiftId == null ? '' : String(shiftId);
-      if (cell.select.value !== wanted) cell.select.value = wanted;
-      cell.select.classList.toggle('rota-dirty', pending.has(key) || touchedCells.has(key));
-      cell.syncHours();
+      if (cellShown.select.value !== wanted) cellShown.select.value = wanted;
+      cellShown.select.classList.toggle('rota-dirty', pending.has(key) || touchedCells.has(key));
+      cellShown.syncHours();
     }
   };
 

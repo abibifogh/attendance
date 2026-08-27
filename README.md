@@ -325,12 +325,19 @@ here now* and *another one of these, here as well*, and a tool that guesses is a
 tool that quietly loses a shift somebody meant to keep. So the answer is asked
 for at the point of the drop, in two words — Move it, Copy it — with what is
 about to happen said back first: what the shift is, whose day it is landing on,
-and what it would take the place of, or that it would make somebody's second
-shift of the day. Escape and Cancel leave everything where it was, and nothing is
+and what it is going to sit beside. Escape and Cancel leave everything where it was, and nothing is
 written until Save, the same as every other change here. It is a mouse gesture
 and nobody's only way of doing this: every cell still opens its dropdown and
 every card its dialog, which is what a phone uses, because dragging across a
 fourteen-column grid with a thumb is not a thing anybody wants to do.
+
+**A day that already has a shift keeps it.** Dropping a second shift on it puts
+the two side by side and marks the day as a double, rather than quietly taking
+the first one off. The gesture says *this one as well, here*; it says nothing
+about removing anything, and a whole shift disappearing from the week for it is
+not something anybody would ask for. Taking a shift off is its own action, on
+the card itself. Dropping a shift somebody already has that day changes nothing:
+that is the same promise written down twice.
 
 **A period can be taken back off.** Starting a fortnight again, undoing an
 import that came in wrong, emptying a month somebody built against the wrong
