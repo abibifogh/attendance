@@ -35,8 +35,8 @@
 
 import { addDays, dow, rangeDays, startOfWeek } from '../util/dates.js';
 import {
-  alternatesOf, altScope, alwaysOff, everyDays, maxDaysPerWeekFor, mayWork, onRota, runsOnDay,
-  scheduleFor,
+  alternatesOf, altScope, alwaysOff, everyDays, maxDaysPerWeekFor, mayWork, onlyStaff, onRota,
+  runsOnDay, scheduleFor, standingFor,
 } from './attendance.js';
 import { isNightShift, limitsFrom, shiftsInWindow } from './workload.js';
 
@@ -98,18 +98,17 @@ export function suggestRota({
   // that only runs when somebody is spare must not take a person on Monday who
   // is needed on Thursday, and it would if each day were finished in turn.
   //
-  // Within a pass, the shifts nobody else can work go first. A shift belonging
-  // to one person loses every race against a shift anybody can take: by the
-  // time it is reached its one person has been given something else, and it
-  // reads as unfillable when it was merely asked last.
-  const tightestFirst = (list) => [
-    ...list.filter((shift) => shift.only_staff_id != null),
-    ...list.filter((shift) => shift.only_staff_id == null),
-  ];
-
+  // A shift that names its people is settled across the whole window before
+  // any shift that does not, and that is stronger than it sounds. Housekeeping
+  // main is Linda and then Atsu; asked a day at a time it takes Linda for her
+  // five, and by the Saturday Atsu has spent his week on the laundry, so a
+  // shift with two people named for it ends up with neither. Going through all
+  // fourteen days of it first reserves them.
+  const required = shifts.filter((shift) => !shift.optional);
   const passes = [
-    tightestFirst(shifts.filter((shift) => !shift.optional)),
-    tightestFirst(shifts.filter((shift) => shift.optional)),
+    required.filter((shift) => onlyStaff(shift).length),
+    required.filter((shift) => !onlyStaff(shift).length),
+    shifts.filter((shift) => shift.optional),
   ].filter((list) => list.length);
 
   for (const pass of passes) {
@@ -194,8 +193,14 @@ export function suggestRota({
             // where it matters that the same three names do not carry every gap.
             habit: habit.get(`${c.person.id}|${shift.id}|${weekday}`) ?? 0,
             load: loadOf(ds, proposed, c.person.id, day),
+            // Where a shift names its people, the order they are named in is
+            // an instruction and outranks everything else. Nii and then
+            // Dorcas means Nii while Nii can, not whichever of them the last
+            // six weeks happened to use more.
+            standing: standingFor(c.person, shift),
           }))
-          .sort((a, b) => b.habit - a.habit
+          .sort((a, b) => a.standing - b.standing
+            || b.habit - a.habit
             || a.load - b.load
             || String(a.person.name).localeCompare(String(b.person.name)));
 
@@ -226,9 +231,7 @@ export function suggestRota({
 
         for (const candidate of ranked) {
           if (short <= 0) break;
-          place(candidate.person.id, candidate.habit
-            ? `Usually works ${shift.name} on this day`
-            : 'Free, and the lightest fortnight of anybody who is');
+          place(candidate.person.id, whyThem(candidate, shift, people));
         }
 
         // NOBODY WAS FREE. Before this shift is written off, two more goes.
@@ -305,10 +308,11 @@ export function suggestRota({
           // does not run. Nobody else can work it, so calling it a gap is
           // asking a planner to solve something with no solution, every week,
           // until they stop reading the list.
-          const theirs = shift.only_staff_id == null
-            ? null
-            : (people.find((p) => Number(p.id) === Number(shift.only_staff_id))?.name
-              ?? 'the person it belongs to');
+          const named = onlyStaff(shift);
+          const theirs = named.length
+            ? (named.map((id) => people.find((p) => Number(p.id) === id)?.name)
+              .filter(Boolean).join(' and ') || 'the people it belongs to')
+            : null;
 
           gaps.push({
             day,
@@ -803,6 +807,29 @@ function hoursInWeekOf(worked, day) {
   return worked
     .filter((w) => w.day >= monday && w.day <= sunday)
     .reduce((n, w) => n + w.hours, 0);
+}
+
+/**
+ * Why this person and not another, in the words somebody would use out loud.
+ *
+ * A shift that names its people gets said plainly, because the first choice
+ * being absent is the interesting half of it: a planner looking at Dorcas on a
+ * Tuesday wants to know she is there because Nii is not.
+ */
+function whyThem(candidate, shift, people) {
+  const named = onlyStaff(shift);
+  if (named.length) {
+    if (candidate.standing === 0) return `${shift.name} is theirs`;
+    const ahead = named.slice(0, candidate.standing)
+      .map((id) => people.find((p) => Number(p.id) === id)?.name)
+      .filter(Boolean);
+    return ahead.length
+      ? `Standing in, ${ahead.join(' and ')} not being free`
+      : `${shift.name} is theirs`;
+  }
+  return candidate.habit
+    ? `Usually works ${shift.name} on this day`
+    : 'Free, and the lightest fortnight of anybody who is';
 }
 
 /** The fortnight around a day, which is the window every limit is read over. */

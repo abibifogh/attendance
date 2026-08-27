@@ -1611,8 +1611,8 @@ export const GUIDE = [
             + 'proposed, and not counted as a gap either'],
           ['One of these runs a day', 'Give the five breakfasts the same group name. Once the '
             + 'day has settled on one, the rest are left alone'],
-          ['Whose shift it is', 'One person\u2019s and nobody else\u2019s. On a day they are '
-            + 'off it does not run at all, rather than becoming a gap nobody can fill'],
+          ['Whose shift it is', 'Named people only, first choice first. Nii and then Dorcas '
+            + 'means Nii while Nii can and Dorcas when he cannot, and nobody else ever'],
           ['Only if somebody is spare', 'Filled last, from whoever is left over, and never at '
             + 'the cost of a shift that has to be covered'],
           ['Days in between', 'Every other day, say. The deep clean is wanted often and not two '
@@ -1659,10 +1659,10 @@ export const GUIDE = [
         + 'is three hundred shift-days a fortnight, and no property that size has the people '
         + 'for it. Group the alternatives, close the days that are shut, and mark what is only '
         + 'wanted if somebody is spare.' },
-      { note: 'A shift belonging to one person is asked for first, before the ones anybody can '
-        + 'take. Asked last it would lose every race: by the time it came up its one person '
-        + 'would already have been given something else, and it would read as unfillable when '
-        + 'it was merely late.' },
+      { note: 'A shift that names its people is settled for the whole fortnight before any '
+        + 'shift that does not, which reserves them. Housekeeping main is Linda and then Atsu; '
+        + 'asked a day at a time it takes Linda for her five and by Saturday Atsu has spent his '
+        + 'week on the laundry, so a shift with two people named for it ends up with neither.' },
       { p: 'The draft splits what it could not do into two lists. Shifts that had to be covered '
         + 'and were not are the work; a shut day, a covered alternative, an optional shift '
         + 'nobody was spare for and a one-person shift on their day off are all reported '

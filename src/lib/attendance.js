@@ -283,13 +283,38 @@ export function worksShifts(staff) {
  * somebody with no department and nothing listed is unrestricted, because
  * refusing on the strength of a blank field is refusing on no evidence.
  */
+/**
+ * The people a shift belongs to, first choice first.
+ *
+ * "Nii, and Dorcas when Nii is not there" is one instruction, not two facts,
+ * and it is the order that carries it. Empty means the shift belongs to
+ * nobody in particular and its department answers instead.
+ */
+export function onlyStaff(shift) {
+  const listed = parseList(shift?.only_staff).map(Number).filter(Number.isFinite);
+  if (listed.length) return [...new Set(listed)];
+  const single = Number(shift?.only_staff_id);
+  return Number.isFinite(single) && single > 0 ? [single] : [];
+}
+
+/**
+ * Where somebody stands in the queue for a shift that names its people.
+ *
+ * Nought is first choice. Anybody the shift does not name is last, which is
+ * only ever reached for a shift that names nobody at all.
+ */
+export function standingFor(staff, shift) {
+  const named = onlyStaff(shift);
+  const at = named.indexOf(Number(staff?.id));
+  return at === -1 ? named.length : at;
+}
+
 export function mayWork(staff, shift) {
-  // A shift belonging to one person answers before anything else does, in both
-  // directions: it is theirs whatever their department says, and it is nobody
-  // else's however free they are.
-  if (shift?.only_staff_id != null) {
-    return Number(shift.only_staff_id) === Number(staff?.id);
-  }
+  // A shift belonging to named people answers before anything else does, in
+  // both directions: it is theirs whatever their department says, and it is
+  // nobody else's however free they are.
+  const theirs = onlyStaff(shift);
+  if (theirs.length) return theirs.includes(Number(staff?.id));
 
   const department = shift?.department || null;
   if (!department) return true;

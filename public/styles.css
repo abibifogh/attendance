@@ -3555,3 +3555,14 @@ html { touch-action: manipulation; }
 
 /* ------------------------------------------- a draft that bends a rule -- */
 .clean-day-breach { color: var(--bad); font-weight: 600; }
+
+/* ----------------------------------------------- whose shift it is, in order -- */
+.owner-picker { display: grid; gap: .3rem; }
+.owner-row { display: flex; align-items: center; gap: .5rem; }
+.owner-row select { flex: 1; min-width: 0; }
+.owner-rank {
+  font-size: .75rem;
+  color: var(--text-dim);
+  min-width: 2.2rem;
+  font-variant-numeric: tabular-nums;
+}

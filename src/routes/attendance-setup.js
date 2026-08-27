@@ -430,16 +430,29 @@ function shiftFields(body) {
     // Worth running when somebody is spare, not worth pulling anybody off
     // anything for.
     bool(body.optional, false) ? 1 : 0,
-    // Whose shift it is, where it is only ever one person's.
-    body.onlyStaffId == null || body.onlyStaffId === ''
-      ? null
-      : int(body.onlyStaffId, 'Whose shift', { min: 1 }),
+    // Whose shift it is, first choice first, where it belongs to named
+    // people rather than to a department.
+    readOnlyStaff(body.onlyStaff ?? body.onlyStaffId),
     // Days from one running of it to the next. Two is every other day, and
     // one is the ordinary case, stored as nothing.
     body.everyDays == null || body.everyDays === '' || Number(body.everyDays) <= 1
       ? null
       : int(body.everyDays, 'Days in between', { min: 2, max: 30 }),
   ];
+}
+
+/** The people a shift belongs to, in the order they should be asked. */
+function readOnlyStaff(value) {
+  if (value == null || value === '') return null;
+  const list = (Array.isArray(value) ? value : [value])
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  // Order matters, so this keeps the first mention of a name rather than
+  // sorting or taking the last.
+  const seen = [];
+  for (const id of list) if (!seen.includes(id)) seen.push(id);
+  if (seen.length > 10) throw badRequest('That is more people than a shift needs named.');
+  return seen.length ? JSON.stringify(seen) : null;
 }
 
 /** The weekdays a shift runs, as they arrive from a form. */
@@ -462,7 +475,7 @@ export async function createShift(ctx) {
                                grace_out_minutes, half_day_minutes, full_day_minutes,
                                overtime_after, colour, sort_order, active, department,
                                position, needed, runs_on, alt_group, alt_scope, optional,
-                               only_staff_id, every_days)
+                               only_staff, every_days)
        VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)
        RETURNING id`,
     ).bind(...shiftFields(body)).first();
@@ -495,7 +508,7 @@ export async function updateShift(ctx, id) {
                              full_day_minutes=?8, overtime_after=?9, colour=?10,
                              sort_order=?11, active=?12, department=?13, position=?14,
                              needed=?15, runs_on=?16, alt_group=?17, alt_scope=?18,
-                             optional=?19, only_staff_id=?20, every_days=?21
+                             optional=?19, only_staff=?20, every_days=?21
        WHERE id = ?22`,
     ).bind(...shiftFields(body), shiftId).run();
   } catch (err) {

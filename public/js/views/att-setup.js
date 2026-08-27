@@ -351,6 +351,15 @@ function readDayList(value) {
   }
 }
 
+/** The people a shift belongs to, first choice first. */
+function readOnlyStaff(shift) {
+  try {
+    const parsed = JSON.parse(shift?.only_staff ?? 'null');
+    if (Array.isArray(parsed)) return parsed.map(Number).filter(Number.isFinite);
+  } catch { /* falls through to the single-id form below */ }
+  return shift?.only_staff_id ? [Number(shift.only_staff_id)] : [];
+}
+
 /** The weekdays a shift is set to run, or null for every day. */
 function readRunsOn(shift) {
   const list = readDayList(shift?.runs_on);
@@ -744,6 +753,37 @@ async function shiftsTab(reload) {
     // in the same one rather than into a second spelling of it.
     const altGroups = [...new Set(shifts.map((sh) => sh.alt_group).filter(Boolean))].sort();
 
+    // Whose shift it is, in order. "Nii, and Dorcas when Nii is not there" is
+    // one instruction and the order is what carries it, so the rows are
+    // numbered and can be taken away rather than being a set of ticks.
+    const owners = readOnlyStaff(existing);
+    const ownerPicker = h('div.owner-picker');
+
+    const drawOwners = () => {
+      const row = (id, index) => h('div.owner-row',
+        h('span.owner-rank', index === 0 ? '1st' : index === 1 ? '2nd' : `${index + 1}th`),
+        h('select', {
+          onchange: (e) => {
+            const picked = Number(e.target.value);
+            if (picked) owners[index] = picked; else owners.splice(index, 1);
+            drawOwners();
+          },
+        },
+        h('option', { value: '' }, index === 0 ? 'Anybody set up for it' : 'Nobody after this'),
+        staff.map((p) => h('option', {
+          value: String(p.id),
+          selected: p.id === id,
+        }, p.department ? `${p.name} · ${p.department}` : p.name))));
+
+      mount(ownerPicker,
+        owners.map(row),
+        // One empty row at the end, and only where there is somebody to put in
+        // it. A shift with nobody named shows one; a shift with two shows a
+        // third waiting.
+        owners.length < staff.length ? row(null, owners.length) : null);
+    };
+    drawOwners();
+
     const done = await formDialog({
       title: existing ? `Edit ${existing.name}` : 'Add a shift',
       submitLabel: existing ? 'Save changes' : 'Add the shift',
@@ -813,14 +853,9 @@ async function shiftsTab(reload) {
               'For the whole week'),
           ), 'Two breakfasts clash for the morning. Two shifts that each run once a week clash '
             + 'for the week, whichever day either of them lands on'),
-          field('Whose shift it is', h('select', { name: 'onlyStaffId' },
-            h('option', { value: '', selected: existing?.only_staff_id == null }, 'Anybody set up for it'),
-            staff.map((p) => h('option', {
-              value: String(p.id),
-              selected: Number(existing?.only_staff_id) === p.id,
-            }, p.department ? `${p.name} · ${p.department}` : p.name)),
-          ), 'Where it is one person\u2019s shift and nobody else\u2019s. On a day they are off '
-            + 'it does not run at all, rather than becoming a gap nobody can fill'),
+          field('Whose shift it is', ownerPicker,
+            'Named people only, first choice first. On a day none of them is free it does not '
+            + 'run at all, rather than becoming a gap nobody can fill'),
           field('Only if somebody is spare', h('select', { name: 'optional' },
             h('option', { value: 'false', selected: !existing?.optional }, 'No, it has to be covered'),
             h('option', { value: 'true', selected: !!existing?.optional }, 'Yes, optional'),
@@ -856,7 +891,7 @@ async function shiftsTab(reload) {
         payload.runsOn = [...runsOn];
         payload.altGroup = readPosition(form, 'altGroup');
         payload.optional = form.get('optional') === 'true';
-        payload.onlyStaffId = form.get('onlyStaffId') || null;
+        payload.onlyStaff = [...owners];
         payload.everyDays = Number(form.get('everyDays')) || 1;
         payload.altScope = form.get('altScope') === 'week' ? 'week' : 'day';
         return existing ? api.attUpdateShift(existing.id, payload) : api.attCreateShift(payload);
@@ -914,7 +949,7 @@ async function shiftsTab(reload) {
         altGroup: row.alt_group || null,
         altScope: row.alt_scope || 'day',
         optional: Boolean(row.optional),
-        onlyStaffId: row.only_staff_id ?? null,
+        onlyStaff: readOnlyStaff(row),
         everyDays: row.every_days ?? 1,
         department: row.department || null,
         position: row.position || null,
@@ -1138,9 +1173,10 @@ async function shiftsTab(reload) {
                 ? h('small.muted', { style: { display: 'block' } },
                   r.every_days === 2 ? 'every other day' : `every ${r.every_days} days`)
                 : null,
-              r.only_staff_id
+              readOnlyStaff(r).length
                 ? h('small.muted', { style: { display: 'block' } },
-                  staff.find((p) => p.id === r.only_staff_id)?.name ?? 'one person only')
+                  readOnlyStaff(r).map((id) => staff.find((p) => p.id === id)?.name ?? '?')
+                    .join(', then '))
                 : null);
           },
         },

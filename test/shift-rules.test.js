@@ -7,7 +7,7 @@ import { createShift, listShifts, updateShift, updateStaff } from '../src/routes
 import { getRoster } from '../src/routes/attendance.js';
 import {
   alternatesOf, altScope, alwaysOff, everyDays, loadDataset, maxDaysPerWeekFor, mayWork,
-  offDays, runsOn, runsOnDay,
+  offDays, onlyStaff, runsOn, runsOnDay, standingFor,
 } from '../src/lib/attendance.js';
 import { canTake, suggestRota } from '../src/lib/suggest.js';
 import { limitsFrom } from '../src/lib/workload.js';
@@ -409,13 +409,32 @@ test('nobody else is drafted onto it to cover the day', async () => {
 test('whose shift it is survives a save and reaches the picker', async () => {
   const { db } = setup();
   await updateShift(ctx(db, {
-    body: { name: 'Craft', startsAt: '09:00', endsAt: '17:00', onlyStaffId: 3 },
+    body: { name: 'Craft', startsAt: '09:00', endsAt: '17:00', onlyStaff: [3, 2] },
   }), 3);
 
   const out = await (await listShifts(ctx(db))).json();
-  assert.equal(out.shifts.find((s) => s.id === 3).only_staff_id, 3);
+  assert.equal(out.shifts.find((s) => s.id === 3).only_staff, '[3,2]',
+    'and in the order they were named, first choice first');
   assert.equal(out.staff.length, 3, 'and the form has names to offer');
   assert.equal(out.staff[0].name, 'Ama', 'in alphabetical order');
+});
+
+test('a name given twice is kept once, where it was first mentioned', async () => {
+  const { db, raw } = setup();
+  await updateShift(ctx(db, {
+    body: { name: 'Craft', startsAt: '09:00', endsAt: '17:00', onlyStaff: [3, 2, 3, '2'] },
+  }), 3);
+  assert.equal(raw.prepare('SELECT only_staff FROM att_shifts WHERE id = 3').get().only_staff,
+    '[3,2]');
+});
+
+test('a shift named for one person still works the old way', async () => {
+  const { db, raw } = setup();
+  await updateShift(ctx(db, {
+    body: { name: 'Craft', startsAt: '09:00', endsAt: '17:00', onlyStaffId: 3 },
+  }), 3);
+  assert.equal(raw.prepare('SELECT only_staff FROM att_shifts WHERE id = 3').get().only_staff,
+    '[3]');
 });
 
 test('a one-person shift is asked before the ones anybody can take', async () => {
@@ -853,4 +872,65 @@ test('the migration puts the two named on six, and leaves anybody else alone', (
   ).all();
   assert.deepEqual(rows.map((r) => r.days_per_week), [6, 6, 7, 5],
     'the two named come down, a seven nobody named stays, and a five is untouched');
+});
+
+// ---------------------------------------------------------------------------
+// Whose shift it is, in order
+// ---------------------------------------------------------------------------
+
+test('the order a shift names its people in is an instruction', () => {
+  const shift = { id: 1, department: 'F&B', only_staff: '[15,16]' };
+  assert.deepEqual(onlyStaff(shift), [15, 16]);
+  assert.equal(standingFor({ id: 15 }, shift), 0, 'first choice');
+  assert.equal(standingFor({ id: 16 }, shift), 1, 'and who steps in');
+  assert.equal(mayWork({ id: 9 }, shift), false, 'and nobody else at all');
+});
+
+test('a shift named for one person the old way still reads', () => {
+  assert.deepEqual(onlyStaff({ only_staff_id: 7 }), [7]);
+  assert.deepEqual(onlyStaff({}), []);
+});
+
+test('the first choice works it, and the second only where the first cannot', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+  // Kofi first, Ama after him, and Kofi on a four-day week.
+  raw.prepare("UPDATE att_shifts SET only_staff = '[1,2]' WHERE id = 1").run();
+  raw.prepare('UPDATE att_staff SET days_per_week = 4 WHERE id = 1').run();
+  shortShift(raw);
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  const by = plan.entries.map((e) => e.staffId);
+  assert.deepEqual(by.slice(0, 4), [1, 1, 1, 1], 'the first choice for as long as he can');
+  assert.deepEqual([...new Set(by.slice(4))], [2], 'and then the one named after him');
+  assert.equal(plan.entries.length, 7, 'with the week covered between them');
+});
+
+test('it says whose shift it is, and when somebody is standing in', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
+  raw.prepare("UPDATE att_shifts SET only_staff = '[1,2]' WHERE id = 1").run();
+  raw.prepare('UPDATE att_staff SET days_per_week = 4 WHERE id = 1').run();
+  shortShift(raw);
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  assert.match(plan.entries[0].why, /is theirs/);
+  assert.match(plan.entries.find((e) => e.staffId === 2).why, /Standing in, Kofi not being free/);
+});
+
+test('a shift that names its people reserves them across the whole window', async () => {
+  const { db, raw } = setup();
+  // Two shifts. The first names Kofi and then Ama; the second takes anybody.
+  // Settled a day at a time the second would spend Ama's week before the
+  // first ever needed her, and the weekend would come out empty.
+  raw.prepare('DELETE FROM att_shifts WHERE id = 3').run();
+  raw.prepare("UPDATE att_shifts SET only_staff = '[1,2]' WHERE id = 1").run();
+  shortShift(raw);
+  raw.prepare("UPDATE att_shifts SET starts_at = '14:00', ends_at = '20:00' WHERE id = 2").run();
+
+  const plan = await draft(db, MONDAY, SUNDAY);
+  const named = plan.entries.filter((e) => e.shiftId === 1);
+  assert.equal(named.length, 7, 'the shift with people named for it is covered every day');
+  assert.deepEqual(named.slice(5).map((e) => e.staffId), [2, 2],
+    'Ama kept back for the two days Kofi cannot work');
 });
