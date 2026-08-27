@@ -325,11 +325,21 @@ here now* and *another one of these, here as well*, and a tool that guesses is a
 tool that quietly loses a shift somebody meant to keep. So the answer is asked
 for at the point of the drop, in two words — Move it, Copy it — with what is
 about to happen said back first: what the shift is, whose day it is landing on,
-and what it is going to sit beside. Escape and Cancel leave everything where it was, and nothing is
-written until Save, the same as every other change here. It is a mouse gesture
+and what it is going to sit beside. Escape and Cancel leave everything where it was, and
+answering the question writes it: Move it and Copy it save the change there
+and then, because somebody who has answered has decided, and a decision lost
+to a tab closing is the worst thing this screen can do to anybody. It is a mouse gesture
 and nobody's only way of doing this: every cell still opens its dropdown and
 every card its dialog, which is what a phone uses, because dragging across a
 fourteen-column grid with a thumb is not a thing anybody wants to do.
+
+**Saying yes to a question saves it.** Answering a drop with Move it or Copy
+it, and pressing Apply on a shift card, write the change immediately rather
+than holding it for a press further up the page. Saved is not published: the
+count on the Publish button goes up and one press at the end sends the week, so
+nothing reaches anybody's phone until it is meant to. Everything else still
+waits for Save, because filling a fortnight one dropdown at a time is a hundred
+round trips, and a bar at the bottom says how many changes are waiting.
 
 **A day that already has a shift keeps it.** Dropping a second shift on it puts
 the two side by side and marks the day as a double, rather than quietly taking

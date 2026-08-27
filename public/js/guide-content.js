@@ -465,9 +465,11 @@ export const GUIDE = [
         + 'itself, and dropping a shift somebody already has that day changes nothing.' },
       { note: 'It tells you what it is about to do before you choose \u2014 what the shift is, '
         + 'whose day it is landing on, and what it is going to sit beside. Cancel or Escape '
-        + 'leaves everything where it was. Nothing is written until you press Save, the same as '
-        + 'every other change here. On a phone use the dropdown in the cell; dragging across a '
-        + 'grid this wide with a thumb is not worth anybody\u2019s time.' },
+        + 'leaves everything where it was. Answering it saves the change there and then, as does '
+        + 'Apply on a shift card: saved is not published, so the week still goes out when you '
+        + 'press Publish and not before. Everything else waits for Save. On a phone use the '
+        + 'dropdown in the cell; dragging across a grid this wide with a thumb is not worth '
+        + 'anybody\u2019s time.' },
 
       { sub: 'Two ways to read it' },
       { p: 'People view is rows of people — where you assign shifts. Positions view turns the '

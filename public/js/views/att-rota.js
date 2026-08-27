@@ -103,6 +103,35 @@ export async function renderAttRota(params) {
 
   const saveBar = h('div.toolbar.rota-savebar', { style: { display: 'none' } });
 
+  /**
+   * Write everything staged, now.
+   *
+   * The Save bar presses this, and so does every edit that ends in somebody
+   * saying yes to a question: Apply on a card, Move it or Copy it on a drop.
+   * A decision already made and then lost to a browser tab closing is the
+   * worst thing this screen can do to somebody, and "did I press Save?" is a
+   * question nobody should be carrying around.
+   *
+   * Saved is not published. The count on the Publish button goes up and one
+   * press at the end sends the lot; asking after every edit is how a planner
+   * learns to press through a question without reading it.
+   */
+  const saveNow = async () => {
+    const count = pending.size;
+    if (!count) return true;
+    try {
+      await api.attSaveRoster({ entries: [...pending.values()] });
+      toast(`${count} change${count === 1 ? '' : 's'} saved. `
+        + 'Publish when you are happy with the week.', 'good');
+      pending.clear();
+      await reload();
+      return true;
+    } catch (err) {
+      toast(err.message, 'bad');
+      return false;
+    }
+  };
+
   const refreshSaveBar = () => {
     const count = pending.size;
     saveBar.style.display = count ? '' : 'none';
@@ -110,23 +139,7 @@ export async function renderAttRota(params) {
       h('strong', `${count} change${count === 1 ? '' : 's'} not saved`),
       h('div', { style: { flex: 1 } }),
       h('button.btn-sm', { onclick: () => reload() }, 'Discard'),
-      h('button.btn.btn-primary', {
-        onclick: async () => {
-          try {
-            await api.attSaveRoster({ entries: [...pending.values()] });
-            // Saved is not published. The count on the Publish button at the
-            // top of the page goes up, and one press at the end sends the lot.
-            // Asking after every single edit is how a planner learns to press
-            // through the question without reading it.
-            toast(`${pending.size} change${pending.size === 1 ? '' : 's'} saved. `
-              + 'Publish when you are happy with the week.', 'good');
-            pending.clear();
-            await reload();
-          } catch (err) {
-            toast(err.message, 'bad');
-          }
-        },
-      }, 'Save the rota'),
+      h('button.btn.btn-primary', { onclick: () => saveNow() }, 'Save the rota'),
     );
   };
 
@@ -850,6 +863,10 @@ export async function renderAttRota(params) {
         // Tuesday it happened to be on.
         if (answer === 'move') putShift(load.staffId, load.day, null, null);
         refreshSaveBar();
+        // Move it and Copy it are the answer to a question. Somebody who has
+        // answered one has decided, and the decision is written rather than
+        // left waiting on a second press further up the page.
+        await saveNow();
       },
     });
 
@@ -1534,6 +1551,7 @@ export async function renderAttRota(params) {
       // change that would have put it there.
       if (row == null) unqueue(card.id);
       else queue(`row:${row}`, { id: row, day: card.day, remove: true });
+      await saveNow();
       return;
     }
 
@@ -1550,18 +1568,23 @@ export async function renderAttRota(params) {
         queue(`${card.row.staff.id}|${card.day}`, {
           staffId: card.row.staff.id, day: card.day, shiftId: null, title: null,
         });
+        await saveNow();
         return;
       }
       queue(`${who}|${card.day}`, {
         staffId: who, day: card.day, shiftId: card.shiftId, title: done.title || null,
         add: String(who) !== String(card.row?.staff.id ?? ''),
       });
+      await saveNow();
       return;
     }
 
     queue(`row:${row}`, {
       id: row, day: card.day, staffId: who, title: done.title || null,
     });
+    // Apply is somebody saying yes to a question. It is written now rather
+    // than held for a press further up the page that they may never make.
+    await saveNow();
   };
 
   /**
