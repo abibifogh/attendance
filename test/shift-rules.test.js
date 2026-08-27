@@ -934,3 +934,25 @@ test('a shift that names its people reserves them across the whole window', asyn
   assert.deepEqual(named.slice(5).map((e) => e.staffId), [2, 2],
     'Ama kept back for the two days Kofi cannot work');
 });
+
+test('somebody can be named for one shift outside their department and keep it', async () => {
+  const { db, raw } = setup();
+  // A maintenance hand who does the reception night and nothing else there.
+  raw.prepare("UPDATE att_shifts SET department = 'Reception' WHERE id = 1").run();
+  raw.prepare("UPDATE att_shifts SET department = 'Maintenance' WHERE id IN (2, 3)").run();
+  raw.prepare(
+    `UPDATE att_staff SET department = 'Maintenance',
+                          works_in = '["Maintenance"]',
+                          works_shifts = '[1]' WHERE id = 1`,
+  ).run();
+
+  const ds = await loadDataset(db, { from: MONDAY, to: '2026-06-08' });
+  const night = ds.shiftById.get(1);
+  const theirs = ds.shiftById.get(2);
+  const kofi = ds.staffById.get(1);
+
+  assert.equal(mayWork(kofi, night), true, 'the one reception shift they were named for');
+  assert.equal(mayWork(kofi, theirs), true, 'and their own department, still');
+  assert.equal(mayWork(kofi, { id: 9, department: 'Reception' }), false,
+    'but not the rest of reception');
+});
