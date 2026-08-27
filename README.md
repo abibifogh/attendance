@@ -392,6 +392,22 @@ somebody who works every Sunday by pattern and has no roster rows at all is the
 plainest case and the one a count over the roster table alone would miss. Leave
 is a Sunday off.
 
+**Every card on the positions grid is the same height.** A card whose height
+depended on the length of somebody's name made a row that stepped up and down
+across the week, and the eye reads that as meaning something — it does not.
+"Francisca Etornam Gave" is three lines and "Chichi" is one, and the shift is
+the same shift. Each line now has a fixed allowance and anything longer is cut
+with an ellipsis, with the whole of it on the card's tooltip and in the dialog
+behind it. The allowance steps with the span like the type does: two lines each
+for the shift and the person where there is room, one each at four weeks, where
+a card is a colour block with a name on it.
+
+The one thing still allowed to change a card's height is the optional name
+somebody has given that shift, because that is a line the card would not
+otherwise have and its absence is the ordinary case. Measured across a week of
+real data: seven different card heights before, one after, plus the taller one
+carrying a name.
+
 The type steps with the span. A fortnight gives a day half the room a week
 does and four weeks a third of that again, so one size for "narrow" was always
 going to crush something: the position cards were being handed the fortnight's

@@ -1873,10 +1873,53 @@ tr.day-locked label.tickline { cursor: not-allowed; }
   cursor: pointer;
 }
 .pos-card:hover { border-color: var(--accent); }
+/* ---------------------------------------------------- every card the same --
+   A card whose height depends on the length of somebody's name is a row of
+   cards that step up and down across the week, and the eye reads that as
+   meaning something. It does not: "Francisca Etornam Gave" is three lines and
+   "Chichi" is one, and the shift is the same shift.
+
+   So each line gets a fixed allowance and anything longer is cut with an
+   ellipsis — the whole of it is on the card's own tooltip and in the dialog
+   behind it. The one thing still allowed to change a card's height is the
+   optional name somebody has given the shift, because that is a line the card
+   would not otherwise have and its absence is the ordinary case.
+
+   The allowance steps with the span, like the type does: two lines each where
+   there is room for two, one each at four weeks where a card is a colour block
+   with a name on it. */
 .pos-card-title { font-size: .68rem; font-weight: 650; color: var(--text-dim); }
-.pos-card-shift { font-size: .8rem; font-weight: 650; line-height: 1.2; }
-.pos-card-clock { font-size: .68rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.pos-card-who { font-size: .74rem; }
+.pos-card-shift {
+  font-size: .8rem;
+  font-weight: 650;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* Reserved, not merely capped. Capping alone still leaves a one-line name
+     shorter than a two-line one, which is the whole complaint. */
+  height: 2.4em;
+}
+.pos-card-clock {
+  font-size: .68rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  height: 1.25em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pos-card-who {
+  font-size: .74rem;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  height: 2.5em;
+}
 
 .pos-card[data-shift-colour]:not([data-shift-colour="0"]) {
   background: color-mix(in srgb, var(--shift) 20%, var(--surface));
@@ -3748,8 +3791,16 @@ html { touch-action: manipulation; }
    on it, and gives up the clock line the position column already carries. */
 .rota-positions.rota-tight .pos-stack { min-width: 0; gap: .12rem; }
 .rota-positions.rota-tight .pos-card { padding: .2rem .3rem; border-radius: 4px; }
-.rota-positions.rota-tight .pos-card-shift { font-size: .62rem; line-height: 1.15; }
-.rota-positions.rota-tight .pos-card-who { font-size: .6rem; line-height: 1.15; }
+.rota-positions.rota-tight .pos-card-shift {
+  font-size: .62rem;
+  line-height: 1.15;
+  height: 2.3em;
+}
+.rota-positions.rota-tight .pos-card-who {
+  font-size: .6rem;
+  line-height: 1.15;
+  height: 2.3em;
+}
 .rota-positions.rota-tight .pos-card-title { font-size: .58rem; }
 .rota-positions.rota-tight .pos-card-clock { display: none; }
 
@@ -3759,8 +3810,19 @@ html { touch-action: manipulation; }
    the whole card is on its own tooltip either way. */
 .rota-positions.rota-tightest .pos-stack { gap: .1rem; }
 .rota-positions.rota-tightest .pos-card { padding: .15rem .2rem; border-left-width: 2px; }
-.rota-positions.rota-tightest .pos-card-shift { font-size: .55rem; }
-.rota-positions.rota-tightest .pos-card-who { font-size: .53rem; }
+/* One line each. At a third of a fortnight's width a card is a colour block
+   with a name on it, and two reserved lines is a third of the screen given to
+   white space. */
+.rota-positions.rota-tightest .pos-card-shift {
+  font-size: .55rem;
+  -webkit-line-clamp: 1;
+  height: 1.15em;
+}
+.rota-positions.rota-tightest .pos-card-who {
+  font-size: .53rem;
+  -webkit-line-clamp: 1;
+  height: 1.15em;
+}
 .rota-positions.rota-tightest .pos-card-title { display: none; }
 .rota-positions.rota-tightest th:first-child,
 .rota-positions.rota-tightest td:first-child { width: 10rem; }

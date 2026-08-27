@@ -1355,7 +1355,11 @@ export async function renderAttRota(params) {
     : null,
   card.title ? h('span.pos-card-title', card.title) : null,
   h('span.pos-card-shift', shift.name),
-  h('span.pos-card-clock', `${shiftHours(shift)} · ${asHours(shiftMinutes(shift))}`),
+  // The times only. The duration was pushing this line past the width of a
+  // card that now has a fixed one, so "05:00–11:30 · 6h 30m" was reading as
+  // "05:00–11:30 · 6h …" — and the position's own row already carries it,
+  // as does the dialog behind the card.
+  h('span.pos-card-clock', shiftHours(shift)),
   h('span.pos-card-who', card.row ? card.row.staff.name : 'Empty'));
 
   /** Which of a position's shifts a dragged one lands on. */
