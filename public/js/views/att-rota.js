@@ -364,6 +364,26 @@ export async function renderAttRota(params) {
         title: 'A weekday this person never works, set under Setup → Staff',
       }, '✕ never works'));
     }
+    // A Sunday somebody is on in a month that will not leave them the Sundays
+    // off the house rule owes them. Counted over the whole month rather than
+    // over the week on screen, because one Sunday tells you nothing on its
+    // own — which is exactly why it was never visible here before.
+    if (entry.sundayOver) {
+      const { worked, of, owed } = entry.sundayOver;
+      const month = new Date(`${entry.day}T12:00:00Z`).toLocaleDateString('en-GB', {
+        month: 'long', timeZone: 'UTC',
+      });
+      wrap.classList.add('rota-sunday-over');
+      parts.push(h('small.rota-avail.rota-sunday-note', {
+        title: `On ${worked} of the ${of} Sundays in ${month}. `
+          + `The house rule is ${owed} Sunday${owed === 1 ? '' : 's'} off a month, `
+          + 'set under Setup → Workload.',
+      },
+      `⊙ ${worked}/${of}`,
+      // Squeezed into a fortnight the column has no room for the word, and
+      // the whole row above it says these are Sundays.
+      h('span.rota-sunday-word', ' Sundays')));
+    }
     if (avail) {
       parts.push(h('small.rota-avail', {
         class: avail.status === 'preferred' ? 'rota-avail-pref' : '',

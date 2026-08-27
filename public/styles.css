@@ -3605,6 +3605,18 @@ html { touch-action: manipulation; }
 .rota-table.rota-tight th:nth-child(2),
 .rota-table.rota-tight td:nth-child(2) { width: 4.4rem; }
 .rota-table.rota-tight td:first-child small { font-size: .68rem; }
+/* A fixed column and a nowrap `td` means the longest name on the payroll runs
+   over the buttons beside it. Names wrap; nothing else in the column needs
+   to. */
+.rota-table:not(.rota-positions) td:first-child { white-space: normal; }
+/* And the warning dot stays beside the name rather than being carried onto a
+   line of its own by the last word of it. */
+.rota-table:not(.rota-positions) td:first-child > div:first-of-type {
+  display: flex;
+  align-items: center;
+  gap: .1rem;
+}
+.rota-table:not(.rota-positions) td:first-child .rota-strain-wrap { flex: none; }
 .rota-table.rota-tight .rota-tags { display: none; }
 
 .rota-table.rota-tight thead th { padding: .2rem .1rem; font-size: .7rem; }
@@ -3635,9 +3647,92 @@ html { touch-action: manipulation; }
   border-bottom: 0;
 }
 
-/* A week has room to spare on a laptop and was overflowing by a hair, which
-   read as "a fortnight fits and a week does not". */
-.rota-table:not(.rota-tight) .rota-cellwrap { min-width: 7.1rem; }
+/* --------------------------------------- a Sunday they should have had -- */
+/* The house rule is one Sunday off a month, and a rota shown a week at a time
+   hid every breach of it: one Sunday on screen says nothing about the other
+   three. The count is taken over the whole month, and the Sundays somebody is
+   working in a month they will not get their day off in are marked here — the
+   warm edge so it is visible across a squeezed fortnight, the line under it so
+   somebody can see how many that is without hovering. */
+.rota-cellwrap.rota-sunday-over {
+  border-top-color: var(--warn);
+  border-right-color: var(--warn);
+  border-bottom-color: var(--warn);
+}
+.rota-sunday-note {
+  color: var(--warn);
+  font-weight: 650;
+  /* Everything else on this line is two words and fits. This one carries a
+     count, and a narrow column should wrap it rather than cut it off. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.rota-table.rota-tight .rota-sunday-word { display: none; }
+
+/* ------------------------------------------------ a week, on one screen -- */
+/* A fortnight fitting while a week did not was the wrong way round. The week
+   uses the same fixed columns as the fortnight, only with room to keep what a
+   week has room for: the hours line, readable text, the full padding. Seven
+   days share whatever the names and the buttons leave, so the grid never runs
+   off the side.
+
+   Below the handset breakpoint the columns go back to their own widths and
+   the page scrolls sideways, because seven columns squeezed into a phone is
+   seven columns nobody can read. */
+@media (min-width: 821px) {
+  .rota-table:not(.rota-tight) { table-layout: fixed; width: 100%; }
+  .rota-table:not(.rota-tight) .rota-cellwrap { min-width: 0; }
+  .rota-table:not(.rota-tight) .rota-cell { text-overflow: ellipsis; }
+  /* The name and the two row buttons cannot shrink with the days. The
+     positions grid has no second column, so it keeps out of this. */
+  .rota-table:not(.rota-tight):not(.rota-positions) th:first-child,
+  .rota-table:not(.rota-tight):not(.rota-positions) td:first-child { width: 11.5rem; }
+  .rota-table:not(.rota-tight):not(.rota-positions) th:nth-child(2),
+  .rota-table:not(.rota-tight):not(.rota-positions) td:nth-child(2) { width: 4.8rem; }
+  .rota-positions:not(.rota-tight) th:first-child,
+  .rota-positions:not(.rota-tight) td:first-child { width: 14rem; }
+  /* Nothing inside a fixed column may push it wider than its share. */
+  .rota-table:not(.rota-tight) .rota-hours { overflow-wrap: anywhere; }
+  .rota-table:not(.rota-tight) .pos-stack { min-width: 0; }
+  /* A grid item is as wide as its longest word unless it is told otherwise,
+     and "Breakfast 06:00–14:00" is longer than a seventh of the screen. Left
+     alone the card grows past its column and lands on the next day's. */
+  /* `td` is nowrap for every other table in the app, and a card inherits it,
+     so "Breakfast 06:00–14:00" ran straight over the next day's column. */
+  .rota-table:not(.rota-tight) .pos-card { min-width: 0; white-space: normal; }
+  /* The department strip spans every column, so on a fixed table its one long
+     nowrap line is what decides the width of all of them. */
+  .rota-table:not(.rota-tight) .rota-dept td { white-space: normal; }
+  .rota-table:not(.rota-tight) .pos-group { flex-wrap: wrap; }
+  .rota-table:not(.rota-tight) .pos-card > * { min-width: 0; overflow-wrap: anywhere; }
+  /* And the position's own name, which is the longest string on the row. */
+  .rota-positions:not(.rota-tight) td:first-child { white-space: normal; }
+  .rota-positions:not(.rota-tight) td:first-child > * { overflow-wrap: anywhere; }
+}
+
+/* A narrow laptop is still a whole screen, and the last thing that stops
+   fitting on one is the hours line: "17:30–06:30 +1" is wider than a seventh
+   of 1150 pixels. It loses a fraction of a point rather than the week losing
+   its shape. */
+@media (min-width: 821px) and (max-width: 1300px) {
+  .rota-table:not(.rota-tight) .rota-cell { font-size: .74rem; }
+  .rota-table:not(.rota-tight) .rota-hours { font-size: .62rem; }
+  .rota-table:not(.rota-tight) .rota-avail { font-size: .62rem; }
+  .rota-table:not(.rota-tight):not(.rota-positions) th:first-child,
+  .rota-table:not(.rota-tight):not(.rota-positions) td:first-child { width: 10.5rem; }
+  .rota-table:not(.rota-tight):not(.rota-positions) th:nth-child(2),
+  .rota-table:not(.rota-tight):not(.rota-positions) td:nth-child(2) { width: 4.4rem; }
+  /* The position column has no second column beside it and carries the
+     longest names on the screen, so it gives up less than the people grid. */
+  .rota-positions:not(.rota-tight) th:first-child,
+  .rota-positions:not(.rota-tight) td:first-child { width: 12rem; }
+}
+
+/* Narrower still and the Sunday count wraps onto a second line, which pushes
+   the whole row taller for one word the day column above already says. */
+@media (min-width: 821px) and (max-width: 1199px) {
+  .rota-table:not(.rota-tight) .rota-sunday-word { display: none; }
+}
 
 @media (max-width: 820px) {
   /* On a handset the page is the thing that scrolls, and a box inside a box

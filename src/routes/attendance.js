@@ -24,6 +24,7 @@ import { emailExceptions, pingExceptions } from '../lib/notify.js';
 import {
   addDays, diffDays, dow, isDay, isMonth, monthBounds, rangeDays, startOfWeek, todayIn,
 } from '../util/dates.js';
+import { SUNDAY_DOW, limitsFrom, sundaysOwedOff } from '../lib/workload.js';
 
 /**
  * Attendance: the API over what the terminal saw.
@@ -1687,6 +1688,79 @@ export async function addPunch(ctx) {
 // ---------------------------------------------------------------------------
 
 /** The rota as a grid: people down the side, days across, plus the standing pattern. */
+/**
+ * Who is over their Sundays, counted a calendar month at a time.
+ *
+ * "One Sunday off a month" only means anything over a month, and somebody
+ * looking at a week sees a single Sunday with no way of telling whether it is
+ * their first this month or their fourth. So the count is taken over the whole
+ * month each Sunday on screen belongs to, however little of that month the
+ * planner happens to have open, and the answer travels back with the day it
+ * belongs to.
+ *
+ * Standing patterns count. A person who works every Sunday by pattern and has
+ * no roster rows at all is the plainest case of the rule being broken, and a
+ * count that read only the roster table would miss exactly them.
+ */
+async function sundaysOver(db, ds, days, limits) {
+  const here = days.filter((day) => dow(day) === SUNDAY_DOW);
+  if (!here.length) return new Map();
+
+  // Every Sunday of every month the window touches, not only the ones shown.
+  const inMonth = new Map([...new Set(here.map((day) => day.slice(0, 7)))].map((month) => {
+    const { from, to } = monthBounds(month);
+    return [month, rangeDays(from, to).filter((day) => dow(day) === SUNDAY_DOW)];
+  }));
+
+  // The dataset already holds the roster across the window and every standing
+  // pattern there is. The Sundays outside the window are the only gap, and
+  // they are a handful of dates at most.
+  const shown = new Set(days);
+  const outside = [...inMonth.values()].flat().filter((day) => !shown.has(day));
+  const outsideBy = new Map();
+  if (outside.length) {
+    const marks = outside.map((_, i) => `?${i + 1}`).join(',');
+    const rows = await db.prepare(
+      `SELECT staff_id, day, shift_id FROM att_roster WHERE day IN (${marks})`,
+    ).bind(...outside).all().catch(() => ({ results: [] }));
+    for (const row of rows.results ?? []) {
+      const key = `${row.staff_id}|${row.day}`;
+      // Two shifts in one day is still one Sunday worked, and a blank row is
+      // somebody being given the day rather than no answer at all.
+      if (row.shift_id) outsideBy.set(key, true);
+      else if (!outsideBy.has(key)) outsideBy.set(key, false);
+    }
+  }
+
+  const working = (staffId, day) => {
+    if (ds.leaveBy.has(`${staffId}|${day}`)) return false;
+    const known = outsideBy.get(`${staffId}|${day}`);
+    if (known !== undefined) return known;
+    return Boolean(scheduleFor(ds, staffId, day).shift);
+  };
+
+  const out = new Map();
+  for (const staff of ds.staff) {
+    if (!onRota(staff)) continue;
+    for (const [month, all] of inMonth) {
+      const owed = sundaysOwedOff(all.length, limits);
+      if (!owed) continue;
+      const worked = all.filter((day) => working(staff.id, day)).length;
+      if (all.length - worked >= owed) continue;
+
+      const over = { worked, of: all.length, owed };
+      for (const day of here) {
+        // Marked on the Sundays they are actually on, because a Sunday they
+        // have off is the rule being kept, not broken.
+        if (day.slice(0, 7) === month && working(staff.id, day)) {
+          out.set(`${staff.id}|${day}`, over);
+        }
+      }
+    }
+  }
+  return out;
+}
+
 export async function getRoster(ctx) {
   const timezone = await timezoneOf(ctx.db);
   const from = startOfWeek(readDay(ctx.url.searchParams.get('from'), todayIn(timezone)));
@@ -1724,6 +1798,7 @@ export async function getRoster(ctx) {
   }
   const days = rangeDays(from, to);
   const shifts = ds.shifts.filter((s) => s.active);
+  const overSundays = await sundaysOver(ctx.db, ds, days, limitsFrom(ds.settings ?? {}));
 
   // How many people each shift has on each day. The number a rota is actually
   // built to answer — "is anybody on nights on Sunday" — and the one a grid of
@@ -1858,6 +1933,10 @@ export async function getRoster(ctx) {
           // A weekday they never work. Not the same as a ✕ on this date, so it
           // is sent apart from availability and marked apart on the grid.
           alwaysOff: alwaysOff(staff, day),
+          // A Sunday they are working in a month where they will not get the
+          // Sundays off the house rule owes them. Counted over the whole
+          // month, so it says the same thing whichever week is on screen.
+          sundayOver: overSundays.get(`${staff.id}|${day}`) ?? null,
           leave: ds.leaveBy.get(`${staff.id}|${day}`)?.reason_code ?? null,
           holiday: ds.holidayBy.get(day)?.name ?? null,
         };

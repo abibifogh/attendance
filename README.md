@@ -299,6 +299,23 @@ nothing approved, nothing spent — and rostering over it stays possible, with
 the mark staying put. Some conflicts are deliberate, and a grid that hides them
 is lying.
 
+**Sundays** are marked where somebody is over them. The house rule is one
+Sunday off a month, and a rota read a week at a time hid every breach of it: one
+Sunday on screen says nothing about the other three. So the count is taken over
+the whole calendar month a Sunday belongs to, however little of that month is
+open, and the cell says how many of them that person is on — `⊙ 5/5 Sundays`.
+Standing patterns count, because somebody who works every Sunday by pattern and
+has no roster rows at all is the plainest case of the rule going and the one a
+count over the roster table alone would miss. Leave is a Sunday off. Setting the
+rule to nothing under Setup → Workload takes the mark away with it.
+
+Both grids fit one screen. A week keeps its hours line and its larger text; a
+fortnight or four weeks drops to fixed columns and gives up what the eye can do
+without. Neither runs off the side of a laptop, and the day row stays pinned to
+the top of the grid while it scrolls. On a handset the columns go back to their
+own widths and the page scrolls sideways, because seven columns squeezed into a
+phone is seven columns nobody can read.
+
 **Tags** — keyholder, trainee, speaks French — are free-form on the person and
 filterable on the rota, because a fixed vocabulary would be somebody's guess at
 what matters on this property.

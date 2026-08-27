@@ -91,6 +91,23 @@ const NIGHT_TO = 5 * 60;     // five in the morning
 const SUNDAY = 6;
 const SUNDAYS_IN_A_MONTH = 4;
 
+/** Sunday, in the same numbering the rest of the app counts weekdays in. */
+export const SUNDAY_DOW = SUNDAY;
+
+/**
+ * How many Sundays off a stretch of `count` Sundays is owed.
+ *
+ * The house rule is written per month, so a shorter stretch gets its share of
+ * it and a week owes nothing. That is the right answer for a report on a week,
+ * and the reason anything asking "has this person had their Sunday" has to ask
+ * it a calendar month at a time rather than over whatever period is on screen.
+ */
+export function sundaysOwedOff(count, limits = LIMITS) {
+  const rule = Number(limits?.sundaysOffPerMonth?.value ?? 0);
+  if (!(rule > 0)) return 0;
+  return Math.floor((count / SUNDAYS_IN_A_MONTH) * rule);
+}
+
 export function isNightShift(shift) {
   const probe = '2000-01-03';
   const w = shiftWindow(shift, probe);
@@ -405,8 +422,7 @@ export function assessPerson(ds, staff, from, to, limits = limitsFrom(ds?.settin
   // Pro-rated from the house rule, so it only has anything to say about a
   // window long enough to have an opinion: one Sunday a month over a fortnight
   // works out at none owed, and the check stays quiet.
-  const sundaysOwed = Math.floor((sundays.length / SUNDAYS_IN_A_MONTH)
-    * limits.sundaysOffPerMonth.value);
+  const sundaysOwed = sundaysOwedOff(sundays.length, limits);
   if (sundaysOwed > 0 && sundaysOff < sundaysOwed) {
     findings.push(finding(WARN, 'sundays',
       sundaysOff === 0
