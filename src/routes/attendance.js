@@ -22,7 +22,8 @@ import { daysBetween, parseDays } from '../lib/signoff.js';
 import { refuseUnsettled } from './signoff.js';
 import { emailExceptions, pingExceptions } from '../lib/notify.js';
 import {
-  addDays, diffDays, dow, isDay, isMonth, monthBounds, rangeDays, startOfWeek, todayIn,
+  addDays, addMonths, diffDays, dow, isDay, isMonth, lastFridayOf, monthBounds, monthOf,
+  rangeDays, startOfWeek, todayIn,
 } from '../util/dates.js';
 import { SUNDAY_DOW, limitsFrom, sundaysWorkedCap } from '../lib/workload.js';
 
@@ -1708,6 +1709,77 @@ export async function addPunch(ctx) {
  * no roster rows at all is the plainest case of it going wrong, and a count
  * that read only the roster table would miss exactly them.
  */
+/**
+ * Was this person working, on days the loaded window does not cover?
+ *
+ * Both of the marks below ask about days outside what is on screen — the other
+ * Sundays of the month, last month's last Friday — and the dataset only holds
+ * the window. It already holds every standing pattern and all approved leave,
+ * so the roster rows for those handful of dates are the only gap.
+ *
+ * Standing patterns count. Somebody who works every Sunday by pattern and has
+ * no roster rows at all is the plainest case of what these marks are for, and
+ * a lookup that read only the roster table would miss exactly them.
+ */
+async function wasWorking(db, ds, days, outside) {
+  const shown = new Set(days);
+  const missing = [...new Set(outside)].filter((day) => !shown.has(day));
+  const known = new Map();
+
+  if (missing.length) {
+    const marks = missing.map((_, i) => `?${i + 1}`).join(',');
+    const rows = await db.prepare(
+      `SELECT staff_id, day, shift_id FROM att_roster WHERE day IN (${marks})`,
+    ).bind(...missing).all().catch(() => ({ results: [] }));
+    for (const row of rows.results ?? []) {
+      const key = `${row.staff_id}|${row.day}`;
+      // Two shifts in one day is still one day worked, and a blank row is
+      // somebody being given the day rather than no answer at all.
+      if (row.shift_id) known.set(key, true);
+      else if (!known.has(key)) known.set(key, false);
+    }
+  }
+
+  return (staffId, day) => {
+    if (ds.leaveBy.has(`${staffId}|${day}`)) return false;
+    const found = known.get(`${staffId}|${day}`);
+    if (found !== undefined) return found;
+    return Boolean(scheduleFor(ds, staffId, day).shift);
+  };
+}
+
+/**
+ * Who was off the last time the special meal came round.
+ *
+ * The last Friday of every month is the meal, which makes it the one day of
+ * the month worth knowing somebody missed. Marked on this month's meal for
+ * anybody who was off last month's, so the planner can put them on this one
+ * rather than the same people eating together every month.
+ *
+ * Marked whether or not they are currently down for it: it is a fact about
+ * last month, and it stays true after somebody has been rostered — the mark
+ * says why they are on, not that they are missing.
+ */
+async function missedTheMeal(db, ds, days) {
+  const meals = days.filter((day) => day === lastFridayOf(monthOf(day)));
+  if (!meals.length) return new Map();
+
+  const before = new Map(meals.map((day) => [day, lastFridayOf(addMonths(monthOf(day), -1))]));
+  const working = await wasWorking(db, ds, days, [...before.values()]);
+
+  const out = new Map();
+  for (const staff of ds.staff) {
+    if (!onRota(staff)) continue;
+    for (const [meal, last] of before) {
+      // Somebody who was not here last month has not missed anything.
+      if (staff.hired_on && last < staff.hired_on) continue;
+      if (working(staff.id, last)) continue;
+      out.set(`${staff.id}|${meal}`, { was: last });
+    }
+  }
+  return out;
+}
+
 async function sundaysOver(db, ds, days, limits) {
   const here = days.filter((day) => dow(day) === SUNDAY_DOW);
   if (!here.length) return new Map();
@@ -1718,32 +1790,7 @@ async function sundaysOver(db, ds, days, limits) {
     return [month, rangeDays(from, to).filter((day) => dow(day) === SUNDAY_DOW)];
   }));
 
-  // The dataset already holds the roster across the window and every standing
-  // pattern there is. The Sundays outside the window are the only gap, and
-  // they are a handful of dates at most.
-  const shown = new Set(days);
-  const outside = [...inMonth.values()].flat().filter((day) => !shown.has(day));
-  const outsideBy = new Map();
-  if (outside.length) {
-    const marks = outside.map((_, i) => `?${i + 1}`).join(',');
-    const rows = await db.prepare(
-      `SELECT staff_id, day, shift_id FROM att_roster WHERE day IN (${marks})`,
-    ).bind(...outside).all().catch(() => ({ results: [] }));
-    for (const row of rows.results ?? []) {
-      const key = `${row.staff_id}|${row.day}`;
-      // Two shifts in one day is still one Sunday worked, and a blank row is
-      // somebody being given the day rather than no answer at all.
-      if (row.shift_id) outsideBy.set(key, true);
-      else if (!outsideBy.has(key)) outsideBy.set(key, false);
-    }
-  }
-
-  const working = (staffId, day) => {
-    if (ds.leaveBy.has(`${staffId}|${day}`)) return false;
-    const known = outsideBy.get(`${staffId}|${day}`);
-    if (known !== undefined) return known;
-    return Boolean(scheduleFor(ds, staffId, day).shift);
-  };
+  const working = await wasWorking(db, ds, days, [...inMonth.values()].flat());
 
   const cap = sundaysWorkedCap(limits);
   if (!cap) return new Map();
@@ -1805,7 +1852,10 @@ export async function getRoster(ctx) {
   }
   const days = rangeDays(from, to);
   const shifts = ds.shifts.filter((s) => s.active);
-  const overSundays = await sundaysOver(ctx.db, ds, days, limitsFrom(ds.settings ?? {}));
+  const [overSundays, missedMeal] = await Promise.all([
+    sundaysOver(ctx.db, ds, days, limitsFrom(ds.settings ?? {})),
+    missedTheMeal(ctx.db, ds, days),
+  ]);
 
   // How many people each shift has on each day. The number a rota is actually
   // built to answer — "is anybody on nights on Sunday" — and the one a grid of
@@ -1944,6 +1994,11 @@ export async function getRoster(ctx) {
           // many as this property counts as enough. Over the whole month, so
           // it says the same thing whichever week is on screen.
           sundayOver: overSundays.get(`${staff.id}|${day}`) ?? null,
+          // The last Friday of the month is the special meal, and this person
+          // was off the last one. Said whether or not they are down for this
+          // one, because it is a fact about last month rather than a gap: on
+          // a rostered cell it is the reason they are on it.
+          missedMeal: missedMeal.get(`${staff.id}|${day}`) ?? null,
           leave: ds.leaveBy.get(`${staff.id}|${day}`)?.reason_code ?? null,
           holiday: ds.holidayBy.get(day)?.name ?? null,
         };

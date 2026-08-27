@@ -472,6 +472,16 @@ export const GUIDE = [
         + 'is opening on Saturday" without reading twenty-four rows. Show a week, a fortnight or '
         + 'four weeks; filter by department or tag; the date box opens a calendar and snaps to '
         + 'the Monday.' },
+      { sub: 'The special meal' },
+      { p: 'It is the last Friday of every month, and that column is marked on the grid so '
+        + 'you know which day you are looking at. On it, anybody who was off last month\u2019s '
+        + 'carries a mark of their own, so they go on this one instead of the same people '
+        + 'eating together every month.' },
+      { note: 'The mark stays after you have put them on. It is a fact about last month '
+        + 'rather than a gap \u2014 on a cell with a shift in it, it is the reason they are '
+        + 'on it. Leave and a rostered day off both count as having missed it; somebody who '
+        + 'was not hired yet has missed nothing.' },
+
       { sub: 'Choosing who works a shift' },
       { p: 'Open a card and the list of people is grouped by what stands in the way: free '
         + 'that day, already on something, not set up for that department, cannot work it. '

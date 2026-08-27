@@ -3951,3 +3951,40 @@ body.rota-dragging .pos-add { pointer-events: none; }
 .who-row.bad .who-note { color: var(--bad); }
 
 .who-none { margin: .6rem; font-size: .86rem; }
+
+/* --------------------------------------------------------------------------
+   The special meal
+   --------------------------------------------------------------------------
+   The last Friday of every month. The column is marked so the planner knows
+   which day they are looking at, and a cell is marked where that person was
+   off the last one — said whether or not they are already down for this one,
+   because on a rostered cell it is the reason they are on it rather than a
+   complaint that they are not.
+   -------------------------------------------------------------------------- */
+.rota-table th.rota-meal-day {
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+.rota-table th.rota-meal-day > div::after {
+  content: ' ◆';
+  color: var(--accent);
+  font-size: .8em;
+}
+
+.rota-cellwrap.rota-meal-owed {
+  border-top-color: var(--accent);
+  border-right-color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.rota-meal-note {
+  color: var(--accent);
+  font-weight: 650;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* Squeezed, the diamond carries it: the column above already says which day
+   this is, and the whole sentence is on the cell's own tooltip. */
+.rota-table.rota-tight .rota-meal-note { font-size: 0; }
+.rota-table.rota-tight .rota-meal-note::before {
+  content: '◆';
+  font-size: .62rem;
+}

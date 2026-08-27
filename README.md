@@ -362,6 +362,15 @@ staffed the draft says so and names the shift it goes with, so *Bistro shift 2
 is short* reads as *the split Bistro is short*, which is the question a planner
 has to answer.
 
+**The special meal** is on the last Friday of every month, and that column is
+marked so a planner knows which day they are looking at. On it, anybody who was
+off *last* month's is marked too — so they go on this one, rather than the same
+people eating together every month. The mark stays after they have been
+rostered: it is a fact about last month rather than a gap, and on a cell with a
+shift in it, it is the reason they are on it. A standing pattern counts as
+having been there, leave and a rostered day off both count as having missed it,
+and somebody who was not hired yet has missed nothing.
+
 **Availability** is the fact a planner needs before the dropdown: days somebody
 cannot work (or asked to work), with the reason, shown in the cell. Not leave —
 nothing approved, nothing spent — and rostering over it stays possible, with

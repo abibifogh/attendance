@@ -114,3 +114,23 @@ export function addMonths(month, n) {
   const d = new Date(Date.UTC(y, m - 1 + n, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
+
+/**
+ * The last Friday of a month, as a date.
+ *
+ * The property's special meal lands on it, which makes it the one day of the
+ * month worth knowing somebody missed. Counted back from the end rather than
+ * forward from the start, because "the last Friday" is a fact about the end of
+ * the month and a month can hold four Fridays or five.
+ */
+export function lastFridayOf(month) {
+  const { to } = monthBounds(month);
+  // dow() is Monday-first, so Friday is 4. Whatever the last day of the month
+  // is, walk back to the most recent Friday on or before it.
+  return addDays(to, -((dow(to) - 4 + 7) % 7));
+}
+
+/** Is this the last Friday of its month? */
+export function isLastFriday(day) {
+  return isDay(day) && lastFridayOf(monthOf(day)) === day;
+}

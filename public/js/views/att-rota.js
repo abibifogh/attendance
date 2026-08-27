@@ -562,6 +562,16 @@ export async function renderAttRota(params) {
     // this property counts as enough. Over the whole month rather than the
     // week on screen, because one Sunday tells you nothing on its own — which
     // is exactly why it was never visible here before.
+    // The special meal is the last Friday of the month, and this person was off
+    // the last one. Said on the cell whether or not they are down for this one,
+    // because on a rostered cell it is the reason they are on it.
+    if (entry.missedMeal) {
+      wrap.classList.add('rota-meal-owed');
+      parts.push(h('small.rota-avail.rota-meal-note', {
+        title: `Off for the special meal on ${fmtDayShort(entry.missedMeal.was)}. `
+          + 'This is the next one.',
+      }, '◆ missed the last'));
+    }
     if (entry.sundayOver) {
       const { worked, of, cap } = entry.sundayOver;
       const month = new Date(`${entry.day}T12:00:00Z`).toLocaleDateString('en-GB', {
@@ -698,6 +708,20 @@ export async function renderAttRota(params) {
     return true;
   });
 
+  /**
+   * The last Friday of the month, which is the property's special meal.
+   *
+   * Worked out here rather than sent, because it is arithmetic on a date and
+   * the answer is the same in every timezone the grid will ever be read in.
+   */
+  const isMealDay = (day) => {
+    const last = new Date(`${day}T12:00:00Z`);
+    last.setUTCMonth(last.getUTCMonth() + 1, 0);
+    // Friday is 5 in the browser's own numbering, where Sunday is 0.
+    last.setUTCDate(last.getUTCDate() - ((last.getUTCDay() - 5 + 7) % 7));
+    return last.toISOString().slice(0, 10) === day;
+  };
+
   const dayClass = (day) => [
     isWeekend(day) ? 'rota-weekend' : '',
     day < data.today ? 'rota-past' : '',
@@ -708,7 +732,8 @@ export async function renderAttRota(params) {
     h('th', 'Name'),
     h('th', 'Pattern'),
     ...data.days.map((day) => h('th',
-      { class: dayClass(day) },
+      { class: [dayClass(day), isMealDay(day) ? 'rota-meal-day' : ''].filter(Boolean).join(' '),
+        title: isMealDay(day) ? 'The special meal is on the last Friday of the month' : null },
       h('div', new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', {
         weekday: 'short', timeZone: 'UTC',
       })),
@@ -1508,7 +1533,8 @@ export async function renderAttRota(params) {
       h('thead', h('tr',
         h('th', 'Position'),
         ...data.days.map((day) => h('th',
-          { class: dayClass(day) },
+          { class: [dayClass(day), isMealDay(day) ? 'rota-meal-day' : ''].filter(Boolean).join(' '),
+            title: isMealDay(day) ? 'The special meal is on the last Friday of the month' : null },
           h('div', new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })),
           h('small.muted', span > 7 ? String(Number(day.slice(8, 10))) : fmtDayShort(day)),
         )),
