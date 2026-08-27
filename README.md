@@ -328,6 +328,17 @@ has no roster rows at all is the plainest case of the rule going and the one a
 count over the roster table alone would miss. Leave is a Sunday off. Setting the
 rule to nothing under Setup → Workload takes the mark away with it.
 
+The type steps with the span. A fortnight gives a day half the room a week
+does and four weeks a third of that again, so one size for "narrow" was always
+going to crush something: the position cards were being handed the fortnight's
+type at four weeks and printing one person's name over the next day's. Cards
+wrap inside their own box at every width now, and the size steps down as the
+columns do.
+
+Where the grid scrolls inside its own box, it keeps its place. Saving a change
+and being returned to the top is twenty names to scroll past again, and it was
+the row further down that somebody was working on.
+
 Both grids fit one screen. A week keeps its hours line and its larger text; a
 fortnight or four weeks drops to fixed columns and gives up what the eye can do
 without. Neither runs off the side of a laptop, and the day row stays pinned to

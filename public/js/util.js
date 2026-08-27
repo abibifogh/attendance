@@ -227,3 +227,35 @@ export function toast(message, kind = '') {
 export function confirmAction(message) {
   return window.confirm(message);
 }
+
+/**
+ * Where a scrolling box was, put back after the thing inside it is redrawn.
+ *
+ * A grid that scrolls inside its own box loses its place whenever the view
+ * around it is rebuilt, because what comes back is a different element that
+ * has never been scrolled. Pressing Save on a rota and being returned to the
+ * top of it is the same twenty names to scroll past again, every time, and it
+ * is the change further down the screen that somebody was working on.
+ *
+ * Call before the redraw, and call what it returns after. Restoring is done
+ * twice — once at once and once on the next frame — because a table that has
+ * not finished laying out has nothing to scroll yet, and setting scrollTop on
+ * a box shorter than its old position silently lands at the bottom instead.
+ */
+export function keepScroll(selector) {
+  const box = document.querySelector(selector);
+  const top = box?.scrollTop ?? 0;
+  const left = box?.scrollLeft ?? 0;
+
+  return () => {
+    if (!top && !left) return;
+    const put = () => {
+      const again = document.querySelector(selector);
+      if (!again) return;
+      if (top) again.scrollTop = top;
+      if (left) again.scrollLeft = left;
+    };
+    put();
+    requestAnimationFrame(put);
+  };
+}

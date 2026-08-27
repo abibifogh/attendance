@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import {
-  fmtDayShort, fmtSince, fmtStamp, h, mount, shiftDay, toast, todayISO,
+  fmtDayShort, fmtSince, fmtStamp, h, keepScroll, mount, shiftDay, toast, todayISO,
 } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import { holdRefresh, navigate, replaceParams } from '../app.js';
@@ -35,6 +35,12 @@ export async function renderAttRota(params) {
   // nothing else changes with it.
   const span = [7, 14, 28].includes(Number(params.span)) ? Number(params.span) : 7;
   const view = params.view === 'positions' ? 'positions' : 'people';
+
+  // How hard the grid has to squeeze. A fortnight halves the room a week has
+  // and four weeks halves it again, so one class for "narrow" was always going
+  // to be crushing something: the four-week columns are a third of the
+  // fortnight's and were being given the fortnight's type size.
+  const tightness = span > 14 ? 'rota-tight rota-tightest' : span > 7 ? 'rota-tight' : null;
   const from = mondayOf(params.from || todayISO());
   const to = shiftDay(from, span - 1);
 
@@ -59,7 +65,12 @@ export async function renderAttRota(params) {
       ...next,
     };
     replaceParams('att-rota', merged);
+    // Saving a change and being sent back to the top of the grid is twenty
+    // names to scroll past again, and it was the row further down that
+    // somebody was working on.
+    const putBack = keepScroll('.rota-scroll');
     mount(host, await renderAttRota(merged));
+    putBack();
   };
 
   if (!data.rows.length) {
@@ -714,7 +725,7 @@ export async function renderAttRota(params) {
   // columns and the cells give up everything the eye can do without: the hours
   // line, the empty name button, half the padding.
   const grid = h('div.table-wrap.rota-scroll',
-    h('table.rota-table', { class: span > 7 ? 'rota-tight' : null },
+    h('table.rota-table', { class: tightness },
       h('thead', headRow),
       h('tbody', visible.map((row) => h('tr',
         h('td',
@@ -1350,7 +1361,7 @@ export async function renderAttRota(params) {
   }
 
   const positionsGrid = h('div.table-wrap.rota-scroll',
-    h('table.rota-table.rota-positions', { class: span > 7 ? 'rota-tight' : null },
+    h('table.rota-table.rota-positions', { class: tightness },
       h('thead', h('tr',
         h('th', 'Position'),
         ...data.days.map((day) => h('th',

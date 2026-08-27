@@ -3693,21 +3693,24 @@ html { touch-action: manipulation; }
   .rota-positions:not(.rota-tight) td:first-child { width: 14rem; }
   /* Nothing inside a fixed column may push it wider than its share. */
   .rota-table:not(.rota-tight) .rota-hours { overflow-wrap: anywhere; }
-  .rota-table:not(.rota-tight) .pos-stack { min-width: 0; }
-  /* A grid item is as wide as its longest word unless it is told otherwise,
-     and "Breakfast 06:00–14:00" is longer than a seventh of the screen. Left
-     alone the card grows past its column and lands on the next day's. */
-  /* `td` is nowrap for every other table in the app, and a card inherits it,
-     so "Breakfast 06:00–14:00" ran straight over the next day's column. */
-  .rota-table:not(.rota-tight) .pos-card { min-width: 0; white-space: normal; }
+  .rota-table .pos-stack { min-width: 0; }
+  /* Two reasons a card runs over the day beside it, and both bite hardest
+     where there is least room. `td` is nowrap for every other table in the
+     app and a card inherits it, so "Breakfast 06:00–14:00" never breaks; and
+     a grid item is as wide as its longest word unless it is told otherwise,
+     so the card grows past its column rather than the text wrapping inside
+     it. These were written while fixing the week and scoped to it, which left
+     the fortnight and the four-week view — the two that need them — reading
+     as one name printed over the next. */
+  .rota-table .pos-card { min-width: 0; white-space: normal; }
   /* The department strip spans every column, so on a fixed table its one long
      nowrap line is what decides the width of all of them. */
-  .rota-table:not(.rota-tight) .rota-dept td { white-space: normal; }
-  .rota-table:not(.rota-tight) .pos-group { flex-wrap: wrap; }
-  .rota-table:not(.rota-tight) .pos-card > * { min-width: 0; overflow-wrap: anywhere; }
+  .rota-table .rota-dept td { white-space: normal; }
+  .rota-table .pos-group { flex-wrap: wrap; }
+  .rota-table .pos-card > * { min-width: 0; overflow-wrap: anywhere; }
   /* And the position's own name, which is the longest string on the row. */
-  .rota-positions:not(.rota-tight) td:first-child { white-space: normal; }
-  .rota-positions:not(.rota-tight) td:first-child > * { overflow-wrap: anywhere; }
+  .rota-positions td:first-child { white-space: normal; }
+  .rota-positions td:first-child > * { overflow-wrap: anywhere; }
 }
 
 /* A narrow laptop is still a whole screen, and the last thing that stops
@@ -3745,10 +3748,31 @@ html { touch-action: manipulation; }
    on it, and gives up the clock line the position column already carries. */
 .rota-positions.rota-tight .pos-stack { min-width: 0; gap: .12rem; }
 .rota-positions.rota-tight .pos-card { padding: .2rem .3rem; border-radius: 4px; }
-.rota-positions.rota-tight .pos-card-shift { font-size: .66rem; }
-.rota-positions.rota-tight .pos-card-who { font-size: .64rem; }
-.rota-positions.rota-tight .pos-card-title { font-size: .6rem; }
+.rota-positions.rota-tight .pos-card-shift { font-size: .62rem; line-height: 1.15; }
+.rota-positions.rota-tight .pos-card-who { font-size: .6rem; line-height: 1.15; }
+.rota-positions.rota-tight .pos-card-title { font-size: .58rem; }
 .rota-positions.rota-tight .pos-card-clock { display: none; }
+
+/* Four weeks gives a day a third of the room a fortnight does, and it was
+   being handed the fortnight's type. The size steps with the span now: a name
+   that will not fit is better small than printed over the day beside it, and
+   the whole card is on its own tooltip either way. */
+.rota-positions.rota-tightest .pos-stack { gap: .1rem; }
+.rota-positions.rota-tightest .pos-card { padding: .15rem .2rem; border-left-width: 2px; }
+.rota-positions.rota-tightest .pos-card-shift { font-size: .55rem; }
+.rota-positions.rota-tightest .pos-card-who { font-size: .53rem; }
+.rota-positions.rota-tightest .pos-card-title { display: none; }
+.rota-positions.rota-tightest th:first-child,
+.rota-positions.rota-tightest td:first-child { width: 10rem; }
+.rota-positions.rota-tightest .pos-add { font-size: .6rem; padding: 0; }
+
+/* The people grid squeezes the same way at four weeks. */
+.rota-table.rota-tightest .rota-cell { font-size: .6rem; }
+.rota-table.rota-tightest .rota-avail { font-size: .55rem; }
+.rota-table.rota-tightest th:first-child,
+.rota-table.rota-tightest td:first-child { width: 9rem; }
+.rota-table.rota-tightest th:nth-child(2),
+.rota-table.rota-tightest td:nth-child(2) { width: 3.8rem; }
 /* The position column is the widest thing on the row and the one that has to
    stay readable, so it keeps its room while the days share the rest. */
 .rota-positions.rota-tight th:first-child,

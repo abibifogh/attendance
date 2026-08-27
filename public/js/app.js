@@ -1,7 +1,7 @@
 import { api, onReachabilityChange, serverReachable, setUnauthorizedHandler } from './api.js';
 import { liveUp, onLive, startLive, stopLive } from './live.js';
 import { registerWorker, watchForInstall } from './install.js';
-import { h, mount } from './util.js';
+import { h, keepScroll, mount } from './util.js';
 import { renderLogin } from './views/login.js';
 import { alreadyWelcomed, markWelcomed, welcomePanel } from './views/welcome.js';
 import { openAccountDialog } from './views/account.js';
@@ -526,10 +526,14 @@ async function catchUp() {
   pending = false;
   const x = window.scrollX;
   const y = window.scrollY;
+  // The rota scrolls inside its own box rather than with the page, so keeping
+  // the page's place is only half of keeping somebody's place.
+  const putBack = keepScroll('.rota-scroll');
   await render();
   // render() replaces the whole shell, so the browser would otherwise put
   // somebody who was reading the bottom of a list back at the top of it.
   window.scrollTo(x, y);
+  putBack();
 }
 
 onLive((event) => {
