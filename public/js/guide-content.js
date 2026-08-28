@@ -463,8 +463,8 @@ export const GUIDE = [
         + 'also get the email; two messages about one rota is how people learn to ignore '
         + 'both. The dialog says afterwards how many were told, how many were texted, and '
         + 'how many could not be reached at all.' },
-      { note: 'Texts have to be set up first, under Setup → Notifications, and they cost '
-        + 'money each time. Numbers come from each person’s record under People.' },
+      { note: 'Texts have to be set up first, under Users & data → Notifications, and they '
+        + 'cost money each time. Numbers come from each person’s record under People.' },
       { sub: 'The days stay where you can see them' },
       { p: 'Ask for a fortnight and you get a fortnight on one screen rather than one to scroll '
         + 'sideways through. Past a week the cells give up what the eye can do without: the '
@@ -1179,7 +1179,7 @@ export const GUIDE = [
 
       { note: 'Every notice also goes out by email, to whoever it names — the person it is '
         + 'addressed to, or whoever holds the permission it is for. So a question raised while '
-        + 'you are away from your desk reaches you anyway. Setup → Notifications turns it '
+        + 'you are away from your desk reaches you anyway. Users & data → Notifications turns it '
         + 'off.' },
 
       { note: 'Whoever you last acted on is held at the top until you do something else, '

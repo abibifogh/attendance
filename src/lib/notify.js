@@ -525,7 +525,7 @@ export function renderNotice({ notice, propertyName, siteUrl }) {
           <p style="font:12px/1.5 system-ui,sans-serif;color:#8b939d;margin:22px 0 0;
                     border-top:1px solid #e6e9ed;padding-top:12px">
             You are receiving this because it is addressed to you in ${esc(propertyName)}.
-            Turn these off under Setup &rarr; Notifications.
+            Turn these off under Users &amp; data &rarr; Notifications.
           </p>
         </div>
       </div>`,

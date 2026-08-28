@@ -827,8 +827,8 @@ stored list of addresses. A stored list is a second copy of who works here, and
 the day somebody is promoted is the day the two stop agreeing. The mail is
 fired through `waitUntil`, so a provider having a bad afternoon can never slow
 a sign-off down or fail one; a send that does fail lands in the email log and
-nowhere else. The sender is `hive@niceoperation.com`, and one switch on Setup →
-Notifications turns the whole thing off.
+nowhere else. The sender is `hive@niceoperation.com`, and one switch on Users &
+data → Notifications turns the whole thing off.
 
 The morning digest is deliberately left as it was: one message, to the typed
 recipient list, and only when there is something to do about it. Emailing its
@@ -854,7 +854,7 @@ so. Now they get the text, since the number is on their record under People
 rather than on a login they do not have. Only the people with neither a login
 nor a number are counted as unreachable, and the dialog names how many.
 
-**Setting it up.** Setup → Notifications → *Text messages*. Pick the gateway —
+**Setting it up.** Users & data → Notifications → *Text messages*. Pick the gateway —
 Arkesel, mNotify or Hubtel, all three Ghanaian, all three over HTTP because a
 Worker cannot open an SMTP socket or anything like one. Add the key as a secret
 (`APP_SMS_API_KEY`, plus `APP_SMS_API_SECRET` for Hubtel, which wants two).
