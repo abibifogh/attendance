@@ -3936,110 +3936,216 @@ html { touch-action: manipulation; }
    A fortnight of fourteen columns will not fit on a phone and no amount of
    squeezing will make it. What was happening instead was worse than either:
    the whole page went as wide as the grid, so panning across to Thursday took
-   the top bar, the buttons and the person's own name off the screen with it,
-   and the only column anybody could read was the one with the names in.
+   the top bar, the buttons and the person's own name off the screen with it.
 
-   So the grid scrolls in its own box, sideways, with the names held against
-   the left edge. The page stays where it is. Three days fit at a time, which
-   is what a phone is for: reading who is on, not building a fortnight.
+   THE PEOPLE VIEW STOPS BEING A TABLE. Each person is a block: their name and
+   their hours on a line of their own, and the seven days underneath in a row
+   seven cells wide. It is the shape every rota app on a phone has settled on,
+   for the reason they all found: a name is read once per person, and a day is
+   read seven times, so the name is the thing that should give up its column.
+
+   A cell is the two ends of the shift, one over the other, on the shift's own
+   colour. The name of it does not fit in fifty pixels and the clock is the
+   half worth reading anyway — four shifts on this property are called some
+   variation of Housekeeper Helper and only the times tell them apart. Pressing
+   one opens the list of shifts, which is what the dropdown did on a desk.
    -------------------------------------------------------------------------- */
 @media (max-width: 620px) {
-  .rota-scroll {
-    max-height: calc(var(--vh, 100vh) - 13rem);
-    min-height: 14rem;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
-    /* No gutter inside the scroller. A sticky column is held against the
-       scrollport's padding edge, so any padding here is a strip down the left
-       where the days scroll past in full view beside the names. */
-    padding-left: 0;
-    padding-right: 0;
-    /* Days land whole rather than half under the names. */
-    scroll-snap-type: x proximity;
-    scroll-padding-left: 7.5rem;
-  }
-  .rota-scroll thead th:not(:first-child) { scroll-snap-align: start; }
-  /* The card gives its width to the grid instead. */
-  .rota-page > .card { padding-left: .4rem; padding-right: .4rem; }
-
-  /* The name stays put while the days go past it. Without this the row being
-     read is a row of shifts belonging to nobody in particular. */
-  .rota-table th:first-child,
-  .rota-table td:first-child {
-    position: sticky;
-    left: 0;
-    z-index: 2;
-    background: var(--surface);
-    width: 7.5rem;
-    min-width: 7.5rem;
-    max-width: 7.5rem;
-  }
-  .rota-scroll thead th:first-child { z-index: 5; }
-  /* The line down the right of it says where the frozen part ends. */
-  .rota-table td:first-child, .rota-table th:first-child {
-    box-shadow: 1px 0 0 var(--rota-line);
-  }
-
-  /* Two lines of name and then an ellipsis. Three lines of "Abdul Hamid
-     Iddrisu" makes every row on the screen as tall as the longest name on the
-     property. */
-  .rota-who-label {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    min-width: 0;
-    font-size: .78rem;
-    line-height: 1.2;
-  }
-
   /* The bar above it, in a size a phone can hold on three lines rather than
      five: the controls are the same controls, set smaller. */
   .rota-bar .seg button { padding: .3rem .55rem; font-size: .75rem; }
   .rota-bar select { min-width: 0; max-width: 9.5rem; font-size: .8rem; }
   .rota-bar input[type="date"] { min-width: 0; width: 9.5rem; font-size: .8rem; }
   .rota-bar .btn-sm { font-size: .78rem; }
-  .rota-face { width: 1.6rem; height: 1.6rem; font-size: .6rem; }
-  .rota-who-hours, .rota-who-dept { font-size: .62rem; }
+  .rota-page > .card { padding-left: .5rem; padding-right: .5rem; }
+  /* The page is what scrolls for the list below; the positions grid takes its
+     own box back further down. */
+  .rota-scroll {
+    max-height: none;
+    overflow: visible;
+    padding-left: 0;
+    padding-right: 0;
+  }
 
-  /* The standing pattern and "put one shift across the week" are desk work.
-     They are still there on anything wider than a phone; here they are two
-     buttons' worth of a screen that has three days on it. */
-  .rota-table:not(.rota-positions) th:nth-child(2),
-  .rota-table:not(.rota-positions) td:nth-child(2) { display: none; }
+  /* ---- the people view as a list ---- */
+  .rota-table:not(.rota-positions),
+  .rota-table:not(.rota-positions) thead,
+  .rota-table:not(.rota-positions) tbody,
+  .rota-table:not(.rota-positions) th,
+  .rota-table:not(.rota-positions) td { display: block; }
 
-  /* Narrow enough that three days show at once. */
-  .rota-table:not(.rota-tight) .rota-cellwrap { min-width: 6.4rem; }
-  .rota-table:not(.rota-tight) .rota-cell { font-size: .72rem; }
-  .rota-table:not(.rota-tight) .rota-hours { font-size: .62rem; }
-  .rota-table:not(.rota-tight) th, .rota-table:not(.rota-tight) td { padding: .2rem .25rem; }
-  /* The position column the same way: a name that will not fit is cut to two
-     lines rather than holding the column open at the width of "Breakfast
-     06:00–14:30" and leaving a phone one day of the week. */
+  .rota-table:not(.rota-positions) tr {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 3px;
+    border-top: 1px solid var(--rota-line);
+    padding-bottom: .5rem;
+  }
+  .rota-table:not(.rota-positions) thead tr {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--surface);
+    border-top: 0;
+    padding-bottom: .2rem;
+    box-shadow: inset 0 -1px 0 var(--border);
+  }
+  /* The row of dates is the header now, so the two label cells go. */
+  .rota-table:not(.rota-positions) thead th:first-child,
+  .rota-table:not(.rota-positions) thead th:nth-child(2) { display: none; }
+  .rota-table:not(.rota-positions) thead th {
+    text-align: center;
+    padding: .35rem .1rem;
+    font-size: .68rem;
+  }
+  .rota-table:not(.rota-positions) thead th { position: static; box-shadow: none; }
+  .rota-table:not(.rota-positions) thead th small { font-size: .62rem; }
+  .rota-table:not(.rota-positions) thead th .rota-today-mark { font-size: .52rem; }
+
+  /* The person's own line, across the width. */
+  .rota-table:not(.rota-positions) tbody td:first-child {
+    grid-column: 1 / -1;
+    border: 0;
+    padding: .5rem .1rem .3rem;
+  }
+  /* Setting a standing week is desk work, and here it was two buttons' worth
+     of a screen with seven days on it. */
+  .rota-table:not(.rota-positions) tbody td:nth-child(2) { display: none; }
+
+  .rota-who-in { align-items: center; gap: .5rem; }
+  .rota-who-text {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 .5rem;
+    min-width: 0;
+  }
+  .rota-who-label {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: .92rem;
+    font-weight: 650;
+  }
+  .rota-who-hours, .rota-table td:first-child small.muted { font-size: .7rem; }
+  .rota-face { width: 2.1rem; height: 2.1rem; font-size: .7rem; }
+  .rota-tags { display: none; }
+
+  /* ---- one day ---- */
+  .rota-cellwrap {
+    position: relative;
+    min-width: 0;
+    min-height: 3.3rem;
+    padding: .3rem .1rem;
+    border-radius: 5px;
+    justify-content: center;
+  }
+  /* The dropdown covers the cell and shows nothing: the times underneath are
+     what is read, and pressing anywhere on the cell opens the same list of
+     shifts the desk has. */
+  .rota-cell {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  /* The clock is the whole of a cell here, so a fortnight keeps it: the rule
+     that hides it when the columns are squeezed was written for a desk, where
+     the shift's name is still in the dropdown above it. */
+  .rota-table .rota-hours,
+  .rota-table.rota-tight .rota-hours {
+    display: grid;
+    justify-items: center;
+    line-height: 1.2;
+    font-size: .7rem;
+    font-weight: 650;
+    color: var(--text);
+  }
+  .rota-table.rota-tight .rota-hours, .rota-table.rota-tightest .rota-hours {
+    font-size: .62rem;
+  }
+  .rota-h-sep { display: none; }
+  .rota-h-to { color: var(--text-dim); font-weight: 550; }
+  /* A day with nothing on it is a place to put something. */
+  .rota-cellwrap[data-shift-colour="0"] .rota-hours::after {
+    content: "+";
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-faint);
+  }
+  /* Everything a cell says beside the clock needs more room than a seventh of
+     a phone has. It is all still on the day, on a wider screen and in the
+     card. */
+  .rota-cellwrap .rota-avail,
+  .rota-cellwrap .rota-sunday-note,
+  .rota-cellwrap .rota-meal-note,
+  .rota-cellwrap .rota-title,
+  .rota-cellwrap .rota-title-empty,
+  .rota-add { display: none; }
+  /* Except a double, which is the one thing on a cell somebody has to fix. */
+  .rota-clash { padding: 0; border: 0; background: none; }
+  .rota-clash-name, .rota-clash-drop { display: none; }
+  .rota-clash-mark { font-size: .75rem; }
+
+  /* Today is a cell rather than a column here, so it says so on both. */
+  .rota-table:not(.rota-positions) td.rota-today,
+  .rota-table:not(.rota-positions) th.rota-today {
+    border: 0;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border-radius: 6px;
+  }
+
+  /* The totals line under the grid keeps the same seven columns. */
+  .rota-total td:first-child { grid-column: 1 / -1; font-weight: 650; }
+
+  /* ---- the positions view keeps the grid, and scrolls in its own box ---- */
+  .rota-positions {
+    scroll-snap-type: x proximity;
+  }
+  .rota-page .rota-scroll:has(.rota-positions) {
+    max-height: calc(var(--vh, 100vh) - 13rem);
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-left: 0;
+    padding-right: 0;
+    scroll-snap-type: x proximity;
+    scroll-padding-left: 8.5rem;
+  }
+  .rota-positions thead th:not(:first-child) { scroll-snap-align: start; }
   .rota-positions th:first-child,
   .rota-positions td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
     width: 8.5rem;
     min-width: 8.5rem;
     max-width: 8.5rem;
     white-space: normal;
+    box-shadow: 1px 0 0 var(--rota-line);
   }
+  .rota-positions thead th:first-child { z-index: 5; }
   .rota-positions td.pos-shift .shift-key-item { min-width: 0; max-width: 100%; }
   .rota-positions td.pos-shift .shift-key-item span:last-child {
-    overflow-wrap: anywhere;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    overflow-wrap: anywhere;
     font-size: .74rem;
     line-height: 1.2;
   }
   .rota-positions td.pos-shift small { font-size: .6rem; }
-  /* The department strip spans the table, so it must not hold a width open. */
-  .rota-table tr.rota-dept td { position: static; width: auto; min-width: 0; max-width: none; }
-
-  /* The gap under a card is a hover affordance, and a phone has no hover. The
-     card dialog still puts a second shift on a day. */
-  .rota-add { display: none; }
+  .rota-positions tr.rota-dept td {
+    position: static;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
 }
 
 /* The positions view squeezes the same way: the card keeps the name and who is

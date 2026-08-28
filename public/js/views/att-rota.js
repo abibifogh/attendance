@@ -512,7 +512,19 @@ export async function renderAttRota(params) {
     const hours = h('small.rota-hours');
     const syncHours = () => {
       const chosen = shiftById.get(String(select.value));
-      hours.textContent = chosen ? shiftHours(chosen) : '';
+      // Written as two ends and a dash between them rather than one string, so
+      // a phone can put the start over the finish and read the pair in a
+      // column fifty pixels wide. On anything wider the three sit on one line
+      // and it is the same "08:00–17:00" it always was.
+      hours.textContent = '';
+      if (chosen) {
+        const overnight = chosen.ends_at <= chosen.starts_at;
+        hours.append(
+          h('span.rota-h-from', chosen.starts_at),
+          h('span.rota-h-sep', '–'),
+          h('span.rota-h-to', `${chosen.ends_at}${overnight ? ' +1' : ''}`),
+        );
+      }
       // A little moon for a shift that runs into the small hours, or up to
       // them. The "+1" says the same thing in arithmetic; this says it at a
       // glance, and a bar closing at midnight has no "+1" to say it with.

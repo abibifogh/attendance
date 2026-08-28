@@ -473,10 +473,12 @@ export const GUIDE = [
         + 'dropdown in the cell; dragging across a grid this wide with a thumb is not worth '
         + 'anybody\u2019s time.' },
 
-      { note: 'On a phone the grid scrolls sideways in its own box with the names held at the '
-        + 'left edge, three days at a time, and the whole-period tools \u2014 copy a week, clear '
-        + 'a period, import, what changed, suggest a draft, export \u2014 sit behind More. '
-        + 'Setting a standing pattern is a desk job and is not offered there.' },
+      { note: 'On a phone the people view is a list rather than a table: each person gets a '
+        + 'line with their name and hours, and their days underneath, seven across. A cell is '
+        + 'the start and finish of the shift on its own colour; press one to change it. The '
+        + 'whole-period tools \u2014 copy a week, clear a period, import, what changed, suggest '
+        + 'a draft, export \u2014 sit behind More, and setting a standing pattern is a desk job '
+        + 'that is not offered there.' },
 
       { sub: 'Two ways to read it' },
       { p: 'People view is rows of people — where you assign shifts. Positions view turns the '

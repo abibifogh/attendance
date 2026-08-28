@@ -668,23 +668,36 @@ sign-off screen signs off the wrong day. And the notch and the home bar are
 accounted for, since `viewport-fit=cover` is what lets the page paint under
 both.
 
-**The rota on a phone.** A fortnight of fourteen columns will not fit on a
-handset and no amount of squeezing will make it. What was happening instead was
-worse than either: the whole page went as wide as the grid, so panning across to
-Thursday took the top bar, the buttons and the person's own name off the screen
-with it, and the only column anybody could read was the one with the names in.
+**The rota on a phone: the people view stops being a table.** Fourteen columns
+will not fit on a handset and no amount of squeezing will make them. What was
+happening instead was worse than either: the whole page went as wide as the
+grid, so panning across to Thursday took the top bar, the buttons and the
+person's own name off the screen with it.
 
-The grid scrolls in its own box now, sideways, with the names held against the
-left edge and the days snapping into place beside them. The page itself stays
-put. Three days fit at a time, which is what a phone is for: reading who is on,
-not building a fortnight. A name that will not fit is cut to two lines rather
-than making every row as tall as the longest name on the property, and the
-standing-pattern buttons go, because setting somebody's usual week is desk work
-and on a phone it was two buttons' worth of a screen with three days on it.
-Everything a planner does to a whole stretch — copy a week, clear a period,
-import, what changed, suggest a draft, export — sits behind *More*. What stays
-in view is what somebody is meant to act on: the people the plan is overworking,
-and the days waiting on an answer.
+Each person is a block now. Their name, department and hours on a line of their
+own, and the days underneath in a row seven cells wide — a week on one screen, a
+fortnight as two rows of seven. It is the shape every rota app on a phone has
+settled on, for the reason they all found: a name is read once per person and a
+day is read seven times, so the name is the thing that should give up its
+column. A row of dates sits above it all and stays there as the list scrolls.
+
+A cell is the two ends of the shift, one over the other, on the shift's own
+colour, with the moon for one that runs into the night and a `+` on a day with
+nothing on it. The name of the shift does not fit in fifty pixels and the clock
+is the half worth reading anyway: four shifts on this property are called some
+variation of Housekeeper Helper and only the times tell them apart. Pressing a
+cell opens the same list of shifts the dropdown opens on a desk.
+
+The standing-pattern buttons go on a phone, because setting somebody's usual
+week is desk work. Everything a planner does to a whole stretch — copy a week,
+clear a period, import, what changed, suggest a draft, export — sits behind
+*More*. What stays in view is what somebody is meant to act on: the people the
+plan is overworking, and the days waiting on an answer. The positions view keeps
+its grid and scrolls sideways in its own box, with the position names held
+against the left edge.
+
+None of this touches anything wider than a handset: the desk keeps the table it
+had.
 
 **And the toolbar is one row, not three.** A screen accumulates outputs — save
 it, download the ones to deal with, the same across the week, the whole day as a
