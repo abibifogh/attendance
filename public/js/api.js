@@ -295,6 +295,8 @@ export const api = {
 
   attStaff: () => request('/api/att/staff'),
   attCreateStaff: (body) => request('/api/att/staff', { method: 'POST', body }),
+  attReadStaffImport: (text) => request('/api/att/staff/import/read', { method: 'POST', body: { text } }),
+  attApplyStaffImport: (text) => request('/api/att/staff/import', { method: 'POST', body: { text } }),
   attUpdateStaff: (id, body) => request(`/api/att/staff/${id}`, { method: 'PUT', body }),
   attDeleteStaff: (id) => request(`/api/att/staff/${id}`, { method: 'DELETE' }),
   attUnknown: () => request('/api/att/unknown'),

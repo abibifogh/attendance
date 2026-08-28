@@ -1319,6 +1319,77 @@ words that were signed, a fingerprint of those words, and a sequential log of
 every event — issued, link sent, link opened, document read, signed — each with
 a time, a network address and the device.
 
+### The register, out of a spreadsheet
+
+**Setup → Staff → From a spreadsheet.** A CSV of the property's staff, read
+line by line, shown in full, and only then written.
+
+**This is the only import in the app that creates people.** Every other one
+refuses a name it has not seen, on the grounds that a rota or a payroll sheet
+is about people somebody already decided to employ, and a file that can quietly
+invent one eventually does. That reasoning does not apply here: inventing
+people is the entire job. A property that has been running on a spreadsheet for
+six years should not have to type ninety names into a form one at a time.
+
+So the safeguard moves rather than disappearing. Everything the file would do
+sits on the screen first — who would be added, who would change and what about
+them, every line that could not be read, every column nobody recognised — and
+nothing at all is written until somebody has looked at that and pressed the
+button. The additions are listed separately from the changes, under a warning
+that says how many new people there are, because a staff number that matches
+nobody is read as somebody new and one typo therefore makes a duplicate.
+
+**Download the sheet** first. What comes down is the property's own people with
+their own figures in it, not a blank form with headings and nothing under them:
+change the lines that changed and send it back. A property with nobody on it
+yet gets one example row, so the columns are shown rather than described.
+
+**The columns.** Employee number and name are the two it needs; everything else
+is optional and matched on the words a staff list actually uses, so a column
+moved or missing changes nothing.
+
+| Column | Also accepted as |
+|---|---|
+| Employee no | employee number, staff no, staff id, emp no, id |
+| Name | full name, employee name, staff name |
+| Department | dept, section, unit |
+| Job title | title, position, role, designation |
+| Started | start date, hired, date employed, joined |
+| Left | leaving date, date left, exit date |
+| Annual leave days | leave days, leave entitlement |
+| Days a week | days per week, working days |
+| Here for | kind, type, on the rota |
+| Phone | mobile, telephone, contact number |
+| Email | e-mail, email address |
+| Basic salary | basic, salary, monthly salary, basic pay |
+| SSNIT | on ssnit, ssnit member |
+| Note | notes, remark, comment |
+
+*Here for* takes the same three answers the staff form does: `Rota`,
+`Never rostered`, `Payroll only`. A **basic salary** in this sheet is what puts
+somebody on the payroll, which is why most of these sheets exist in the first
+place; the month's figures afterwards go through Payroll → *From a
+spreadsheet*, which changes what people are paid and still creates nobody.
+
+**A blank cell leaves what is there alone.** It is not an instruction to clear a
+department or wipe a start date. Somebody sending back a sheet with two columns
+filled in means to set two things.
+
+**Matched on the employee number, never on the name.** Two people called Kwame
+Mensah are two people; the number is the only thing that is theirs. A line with
+no number is skipped and named, and the same number twice in one file is caught
+rather than applied twice.
+
+**Dates are read four ways**, because a spreadsheet hands back whatever the
+person's locale felt like: `2020-01-06`, `06/01/2020` (day first, as it is
+written here), `6 Jan 2020`, and the serial number Excel writes when a date
+column is exported as text. Anything else is reported against that line and the
+rest of the line still goes in.
+
+**A number invented for somebody who is only paid stays out of the terminal's
+matching**, exactly as it does when they are added by hand, so it can never
+claim the punches of whoever really holds that card.
+
 ### Somebody who is only ever paid
 
 A property has people on the payroll who never touch a terminal and never

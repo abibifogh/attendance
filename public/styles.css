@@ -3000,6 +3000,9 @@ html { touch-action: manipulation; }
 .pay-score { width: 4.5rem; text-align: right; }
 /* What a spreadsheet would do, before it does it. */
 .pay-import-list { display: grid; gap: .5rem; max-height: 24rem; overflow: auto; margin-top: .6rem; }
+/* Two lists in one dialog: a scrolling box inside a scrolling box is one
+   scroll too many, so these let the dialog do it. */
+.pay-import-list.import-open { max-height: none; overflow: visible; }
 .pay-import-row {
   border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .5rem .65rem;
 }

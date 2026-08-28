@@ -372,6 +372,149 @@ const readPosition = (form, name = 'position') => (
     ? (form.get(`${name}New`) || '').trim()
     : form.get(`${name}Pick`)) || null;
 
+/**
+ * The register, out of a spreadsheet.
+ *
+ * THE ONE IMPORT IN THE APP THAT CREATES PEOPLE. Every other one refuses a
+ * name it has not seen, because a rota or a payroll sheet is about people
+ * somebody already decided to employ. Here it is the whole point: a property
+ * that has been running on a spreadsheet for six years should not have to type
+ * ninety names into a form one at a time.
+ *
+ * So the safeguard moves. Everything the file would do sits on the screen —
+ * who is being added, who is changing, what about them, and every line that
+ * could not be read — and nothing is written until somebody has looked at it
+ * and pressed the button.
+ */
+function staffImportButton(reload) {
+  const picker = h('input', {
+    type: 'file',
+    accept: '.csv,text/csv',
+    style: { display: 'none' },
+    onchange: async (e) => {
+      const file = e.target.files?.[0];
+      // Cleared at once, so choosing the same file again after fixing
+      // something in it still fires a change.
+      e.target.value = '';
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const read = await api.attReadStaffImport(text);
+        await showStaffImport({ text, read, reload });
+      } catch (err) {
+        toast(err.message, 'bad');
+      }
+    },
+  });
+
+  return h('span',
+    picker,
+    h('button.btn-sm', {
+      title: 'A staff list as a CSV. Nothing is written until you have seen what it would do.',
+      onclick: () => picker.click(),
+    }, 'From a spreadsheet'));
+}
+
+/** What the file would do, and the button that does it. */
+async function showStaffImport({ text, read, reload }) {
+  const { tally } = read;
+
+  const line = (row) => h('div.pay-import-row',
+    h('div',
+      h('strong', row.name),
+      h('span.muted', ` · ${row.employeeNo}`),
+      row.adding ? h('span.pill.good', { style: { marginLeft: '.4rem' } }, 'new') : null,
+      row.changes.length
+        ? h('ul.pay-import-changes', row.changes.map((c) => h('li',
+          `${c.label}: `,
+          row.adding
+            ? h('strong', c.to)
+            : [h('span.muted', c.from ?? 'nothing'), ' to ', h('strong', c.to)])))
+        : null,
+      row.notes.length
+        ? h('ul.pay-import-notes', row.notes.map((n) => h('li', `${n.what}: ${n.why}`)))
+        : null));
+
+  const adding = read.lines.filter((r) => r.adding);
+  const changing = read.lines.filter((r) => !r.adding);
+
+  const sentence = tally.nothing
+    ? 'Nothing in that file is different from what is already here.'
+    : `${[
+      tally.adding ? `${tally.adding} ${tally.adding === 1 ? 'person' : 'people'} would be added`
+        : null,
+      tally.changes
+        ? `${tally.changes} detail${tally.changes === 1 ? '' : 's'} would change on `
+          + `${tally.changing} ${tally.changing === 1 ? 'person' : 'people'} already here`
+        : null,
+    ].filter(Boolean).join(', ')}. Nothing has been written yet.`;
+
+  const done = await formDialog({
+    title: 'Staff from a spreadsheet',
+    submitLabel: tally.nothing
+      ? 'Nothing to do'
+      : tally.adding
+        ? `Add ${tally.adding} and save the rest`
+        : `Change ${tally.changes} details`,
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.9rem', marginTop: 0 } }, sentence),
+
+      read.missingColumns.length
+        ? h('div.returns-warn', `The sheet needs ${read.missingColumns.join(' and ')}.`)
+        : null,
+
+      tally.adding
+        ? h('div.alert.warn',
+          h('span.alert-icon', '⚠️'),
+          h('div',
+            h('div.alert-title', `${tally.adding} new `
+              + `${tally.adding === 1 ? 'person' : 'people'}`),
+            h('div.alert-detail', 'This is the only import that adds people. Check the names '
+              + 'below are ones you meant to employ — a number that does not match anybody '
+              + 'here is read as somebody new, so one typo in a staff number makes a '
+              + 'duplicate.')))
+        : null,
+
+      read.unknown.length
+        ? h('div.returns-warn',
+          h('strong', 'Columns nobody recognised, so they were left alone'),
+          h('div', read.unknown.join(', ')))
+        : null,
+
+      read.skipped.length
+        ? h('div.returns-warn',
+          h('strong', `${read.skipped.length} line${read.skipped.length === 1 ? '' : 's'} skipped`),
+          h('ul', read.skipped.map((row) => h('li',
+            `Line ${row.at}: ${row.name || row.employeeNo || 'blank'} · ${row.why}`))))
+        : null,
+
+      adding.length
+        ? h('div',
+          h('div.stat-label', { style: { margin: '.8rem 0 .4rem' } }, 'Being added'),
+          h('div.pay-import-list.import-open', adding.map(line)))
+        : null,
+
+      changing.length
+        ? h('div',
+          h('div.stat-label', { style: { margin: '.8rem 0 .4rem' } }, 'Being changed'),
+          h('div.pay-import-list.import-open', changing.map(line)))
+        : null),
+
+    onSubmit: () => (tally.nothing
+      ? Promise.resolve({ added: 0, changed: 0, failed: [] })
+      : api.attApplyStaffImport(text)),
+  });
+
+  if (!done) return;
+  const bits = [];
+  if (done.added) bits.push(`${done.added} added`);
+  if (done.changed) bits.push(`${done.changed} changed`);
+  if (done.failed?.length) bits.push(`${done.failed.length} could not be saved`);
+  toast(bits.length ? bits.join(', ') + '.' : 'Nothing changed.',
+    done.failed?.length ? 'warn' : bits.length ? 'good' : 'warn');
+  await reload();
+}
+
 async function staffTab(reload) {
   const [{ staff, departments = [], shifts = [] }, { unknown }] = await Promise.all([
     api.attStaff(), api.attUnknown(),
@@ -691,7 +834,14 @@ async function staffTab(reload) {
           paid ? `${paid} payroll only` : null,
         ].filter(Boolean).join(', ');
       })(),
-      actions: h('button.btn.btn-primary', { onclick: () => edit(null) }, '+ Add somebody'),
+      actions: h('div.btn-row', { style: { margin: 0 } },
+        staffImportButton(reload),
+        h('a.btn.btn-sm', {
+          href: '/api/att/staff/template',
+          download: 'staff.csv',
+          title: 'The register as it stands, to change and send back',
+        }, 'Download the sheet'),
+        h('button.btn.btn-primary', { onclick: () => edit(null) }, '+ Add somebody')),
       wide: true,
     },
       table([

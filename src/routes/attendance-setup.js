@@ -1,7 +1,8 @@
 import { siteOrigin } from '../lib/site.js';
 import {
-  badRequest, bool, int, json, notFound, num, readJson, rethrowConstraint, str,
+  badRequest, bool, csvResponse, int, json, notFound, num, readJson, rethrowConstraint, str,
 } from '../lib/http.js';
+import { readStaffSheet, tallyOf } from '../lib/staff-import.js';
 import { ghanaHolidays, toMinutes } from '../lib/attendance.js';
 import { listeningHostSettings } from '../lib/push-events.js';
 import { claimOrphans, hashDeviceToken, recompute } from '../lib/attendance-ingest.js';
@@ -1274,4 +1275,248 @@ export async function companyLogo(ctx) {
       'Cache-Control': 'private, max-age=31536000, immutable',
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// The register, out of a spreadsheet
+// ---------------------------------------------------------------------------
+
+/** Who the property already knows, in the shape the reader wants them. */
+async function registerNow(db) {
+  const [staff, profiles, pay] = await Promise.all([
+    db.prepare('SELECT * FROM att_staff').all(),
+    db.prepare('SELECT staff_id, personal_phone, personal_email FROM hr_profile').all()
+      .catch(() => ({ results: [] })),
+    db.prepare('SELECT staff_id, basic, ssnit FROM pay_profile').all()
+      .catch(() => ({ results: [] })),
+  ]);
+
+  return {
+    staff: staff.results ?? [],
+    profiles: new Map((profiles.results ?? []).map((r) => [r.staff_id, r])),
+    pay: new Map((pay.results ?? []).map((r) => [r.staff_id, r])),
+  };
+}
+
+/** What the file would do, said before anything is done. */
+export async function readStaffImport(ctx) {
+  const body = await readJson(ctx.request);
+  const text = String(body.text ?? '');
+  if (!text.trim()) throw badRequest('There is nothing in that file.');
+
+  const read = readStaffSheet(text, await registerNow(ctx.db));
+  return json({ ...read, tally: tallyOf(read) });
+}
+
+/**
+ * And then do it.
+ *
+ * The file is read again here rather than trusting a list of changes posted
+ * back from a screen. Somebody may have been added by hand between the preview
+ * and the button, and the second read is the one that counts: it is what stops
+ * the same person arriving twice under two numbers.
+ */
+export async function applyStaffImport(ctx) {
+  const body = await readJson(ctx.request);
+  const text = String(body.text ?? '');
+  if (!text.trim()) throw badRequest('There is nothing in that file.');
+
+  const read = readStaffSheet(text, await registerNow(ctx.db));
+  if (read.missingColumns.length) {
+    throw badRequest(`The sheet needs ${read.missingColumns.join(' and ')}.`);
+  }
+
+  const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
+  let added = 0;
+  let changed = 0;
+  const failed = [];
+
+  for (const line of read.lines) {
+    const set = new Map(line.changes.map((c) => [c.kind, c.value]));
+
+    // The three fields that are one decision between them. A sheet saying
+    // payroll only must not leave somebody on the rota, and a sheet saying
+    // nothing must not quietly move anybody.
+    const tracking = set.get('tracking') ?? null;
+    const flags = tracking === 'payroll' ? { onClock: 0, onRota: 0 }
+      : tracking === 'no-rota' ? { onClock: 1, onRota: 0 }
+        : tracking === 'full' ? { onClock: 1, onRota: 1 }
+          : null;
+
+    try {
+      let staffId = line.staffId;
+
+      if (line.adding) {
+        const row = await ctx.db.prepare(
+          `INSERT INTO att_staff (employee_no, name, department, job_title, hired_on, left_on,
+                                  leave_days, days_per_week, note, on_rota, on_clock)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) RETURNING id`,
+        ).bind(
+          line.employeeNo,
+          set.get('name') ?? line.name,
+          set.get('department') ?? null,
+          set.get('jobTitle') ?? null,
+          set.get('hiredOn') ?? null,
+          set.get('leftOn') ?? null,
+          set.get('leaveDays') ?? null,
+          set.get('daysPerWeek') ?? null,
+          set.get('note') ?? null,
+          flags ? flags.onRota : 1,
+          flags ? flags.onClock : 1,
+        ).first();
+        staffId = row.id;
+        added += 1;
+
+        // Punches already held under that number are theirs, the same as when
+        // somebody is added by hand — unless they are only ever to be paid, in
+        // which case the number belongs to whoever really holds that card.
+        if (!flags || flags.onClock) {
+          const claimed = await claimOrphans(ctx.db, staffId, line.employeeNo);
+          if (claimed.claimed) {
+            await recompute(ctx.db, {
+              staffIds: [staffId], from: claimed.from, to: claimed.to,
+            });
+          }
+        }
+      } else {
+        const fields = [];
+        const binds = [];
+        const put = (column, value) => {
+          binds.push(value);
+          fields.push(`${column} = ?${binds.length}`);
+        };
+
+        if (set.has('name')) put('name', set.get('name'));
+        if (set.has('department')) put('department', set.get('department'));
+        if (set.has('jobTitle')) put('job_title', set.get('jobTitle'));
+        if (set.has('hiredOn')) put('hired_on', set.get('hiredOn'));
+        if (set.has('leftOn')) put('left_on', set.get('leftOn'));
+        if (set.has('leaveDays')) put('leave_days', set.get('leaveDays'));
+        if (set.has('daysPerWeek')) put('days_per_week', set.get('daysPerWeek'));
+        if (set.has('note')) put('note', set.get('note'));
+        if (flags) {
+          put('on_rota', flags.onRota);
+          put('on_clock', flags.onClock);
+        }
+
+        if (fields.length) {
+          binds.push(staffId);
+          await ctx.db.prepare(
+            `UPDATE att_staff SET ${fields.join(', ')} WHERE id = ?${binds.length}`,
+          ).bind(...binds).run();
+          changed += 1;
+        }
+
+        // Off the rota is off it properly, the same as the staff form does it:
+        // what they were down for from today onwards goes, or the grid keeps
+        // showing somebody the sheet just took off it.
+        if (flags && !flags.onRota) {
+          const timezone = (await ctx.db.prepare(
+            "SELECT value FROM settings WHERE key = 'timezone'",
+          ).first())?.value || 'UTC';
+          const today = todayIn(timezone);
+          await ctx.db.prepare(
+            'DELETE FROM att_roster WHERE staff_id = ?1 AND day >= ?2',
+          ).bind(staffId, today).run().catch(() => {});
+          await ctx.db.prepare('DELETE FROM att_patterns WHERE staff_id = ?')
+            .bind(staffId).run().catch(() => {});
+        }
+      }
+
+      // The two contact details, which live beside the record rather than in
+      // it. Written one column at a time so a sheet with only phone numbers on
+      // it cannot wipe an email address.
+      if (set.has('phone') || set.has('email')) {
+        await ctx.db.prepare(
+          'INSERT OR IGNORE INTO hr_profile (staff_id) VALUES (?)',
+        ).bind(staffId).run().catch(() => {});
+        if (set.has('phone')) {
+          await ctx.db.prepare('UPDATE hr_profile SET personal_phone = ?2 WHERE staff_id = ?1')
+            .bind(staffId, set.get('phone')).run().catch(() => {});
+        }
+        if (set.has('email')) {
+          await ctx.db.prepare('UPDATE hr_profile SET personal_email = ?2 WHERE staff_id = ?1')
+            .bind(staffId, set.get('email')).run().catch(() => {});
+        }
+      }
+
+      // And the payroll. A basic in a staff sheet is what puts somebody on the
+      // payroll, which is the whole reason half these sheets exist.
+      if (set.has('basic') || set.has('ssnit')) {
+        await ctx.db.prepare(
+          `INSERT INTO pay_profile (staff_id, basic, ssnit, set_by)
+           VALUES (?1, ?2, ?3, ?4)
+           ON CONFLICT (staff_id) DO UPDATE SET
+             basic = COALESCE(?5, pay_profile.basic),
+             ssnit = COALESCE(?6, pay_profile.ssnit),
+             set_by = ?4, set_at = datetime('now')`,
+        ).bind(
+          staffId,
+          set.get('basic') ?? 0,
+          set.get('ssnit') === false ? 0 : 1,
+          actor,
+          set.has('basic') ? set.get('basic') : null,
+          set.has('ssnit') ? (set.get('ssnit') ? 1 : 0) : null,
+        ).run().catch(() => {});
+      }
+    } catch (err) {
+      failed.push({ at: line.at, name: line.name, why: String(err.message).slice(0, 200) });
+    }
+  }
+
+  await audit(ctx, 'attendance.staff_import', null, {
+    added, changed, skipped: read.skipped.length, failed: failed.length,
+  });
+
+  return json({
+    ok: true, added, changed, failed, skipped: read.skipped,
+  });
+}
+
+/**
+ * The register as it stands, to change and send back.
+ *
+ * A blank template with headings and nothing under them is a form somebody has
+ * to work out; this is the property's own people with their own figures in it,
+ * which is both less typing and far less to get wrong. A property with nobody
+ * on it yet gets one example row, so the columns are shown rather than
+ * described.
+ */
+export async function staffTemplate(ctx) {
+  const { staff, profiles, pay } = await registerNow(ctx.db);
+
+  const head = ['Employee no', 'Name', 'Department', 'Job title', 'Started', 'Left',
+    'Annual leave days', 'Days a week', 'Here for', 'Phone', 'Email', 'Basic salary',
+    'SSNIT', 'Note'];
+
+  const rows = [head];
+  const alive = staff.filter((s) => s.active).sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const person of alive) {
+    const profile = profiles.get(person.id);
+    const money = pay.get(person.id);
+    rows.push([
+      person.employee_no,
+      person.name,
+      person.department ?? '',
+      person.job_title ?? '',
+      person.hired_on ?? '',
+      person.left_on ?? '',
+      person.leave_days ?? '',
+      person.days_per_week ?? '',
+      person.on_clock === 0 ? 'Payroll only' : person.on_rota === 0 ? 'Never rostered' : 'Rota',
+      profile?.personal_phone ?? '',
+      profile?.personal_email ?? '',
+      money ? Number(money.basic).toFixed(2) : '',
+      money ? (money.ssnit ? 'Yes' : 'No') : '',
+      person.note ?? '',
+    ]);
+  }
+
+  if (!alive.length) {
+    rows.push(['001', 'Kofi Mensah', 'Kitchen', 'Cook', '2024-03-01', '', '', '', 'Rota',
+      '024 123 4567', '', '1800.00', 'Yes', 'An example — change it or delete the line']);
+  }
+
+  return csvResponse('staff.csv', rows);
 }

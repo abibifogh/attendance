@@ -1685,6 +1685,26 @@ export const GUIDE = [
       { note: 'For one date only, keep using Days they cannot work on the rota. That is a fact '
         + 'about one week; this is a fact about them.' },
 
+      { sub: 'The register, out of a spreadsheet' },
+      { p: 'Setup → Staff → From a spreadsheet, for a property whose staff list already '
+        + 'exists somewhere else. Download the sheet first: what comes down is your own '
+        + 'people with their own figures in it, not a blank form. Change the lines that '
+        + 'changed and send it back.' },
+      { p: 'This is the only import in the app that adds people, and it is the only one '
+        + 'where adding them is the point. So everything the file would do is on the screen '
+        + 'before anything is written: who is being added, who is changing and what about '
+        + 'them, every line that could not be read, and every column nobody recognised. '
+        + 'The new people are listed on their own, because a staff number that matches '
+        + 'nobody is read as somebody new and one typo therefore makes a duplicate.' },
+      { p: 'Employee number and name are the two columns it needs. Everything else is '
+        + 'optional and matched on the words a staff list actually uses, so a column moved '
+        + 'or missing changes nothing: department, job title, started, left, leave days, '
+        + 'days a week, what they are here for, phone, email, basic salary, SSNIT, note. '
+        + 'A basic salary here is what puts somebody on the payroll.' },
+      { note: 'A blank cell leaves what is there alone, and people are matched on the '
+        + 'employee number rather than the name — two people called Kwame Mensah are two '
+        + 'people, and the number is the only thing that is theirs.' },
+
       { sub: 'Somebody who is never rostered' },
       { p: 'A director, a consultant, an owner: on the payroll, with a record and a payslip and '
         + 'a leave balance, and no business taking up a column on the grid. Setup → Staff, '

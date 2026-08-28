@@ -279,6 +279,13 @@ export const ROUTES = [
   ['POST', '/api/att/staff', 'att_setup', attSetup.createStaff],
   ['PUT', '/api/att/staff/:id', 'att_setup', attSetup.updateStaff],
   ['DELETE', '/api/att/staff/:id', 'att_setup', attSetup.deleteStaff],
+
+  // The register out of a spreadsheet. The one import in the app that creates
+  // people, because creating people is the whole job — so it is read, shown in
+  // full, and only then written.
+  ['GET', '/api/att/staff/template', 'att_setup', attSetup.staffTemplate],
+  ['POST', '/api/att/staff/import/read', 'att_setup', attSetup.readStaffImport],
+  ['POST', '/api/att/staff/import', 'att_setup', attSetup.applyStaffImport],
   ['GET', '/api/att/unknown', 'att_setup', attSetup.unknownEmployees],
 
   ['GET', '/api/att/shifts', ['att_setup', 'att_rota'], attSetup.listShifts],
