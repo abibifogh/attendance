@@ -45,8 +45,20 @@ function d1(db) {
 const AWAY = Math.max(-11, Math.min(13, 12 - new Date().getUTCHours()));
 const TZ = AWAY >= 0 ? `Etc/GMT-${AWAY}` : `Etc/GMT+${-AWAY}`;
 
-/** An instant, so many minutes from now. */
-const from = (minutes) => new Date(Date.now() + minutes * 60_000);
+/**
+ * One "now", read once, for the whole file.
+ *
+ * Every time in a fixture is an offset from this moment: the shift's start,
+ * the punch, and the "Clocked in at 06:14" the assertion expects. Read fresh
+ * each time, they are three different moments — and a run that happens to
+ * cross a minute boundary between two of them expects 06:14 and gets 06:15.
+ * That is a suite that fails once a fortnight for no reason anybody can find,
+ * which is worse than no suite: it teaches people to press the button again.
+ */
+const NOW = Date.now();
+
+/** An instant, so many minutes from that moment. */
+const from = (minutes) => new Date(NOW + minutes * 60_000);
 /** And what the property's own clock reads at that instant. */
 const clockAt = (minutes) => localStamp(from(minutes), TZ).slice(11, 16);
 
