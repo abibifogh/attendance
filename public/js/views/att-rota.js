@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import {
   fmtDayShort, fmtSince, fmtStamp, h, keepScroll, mount, shiftDay, toast, todayISO,
 } from '../util.js';
-import { card, emptyState, table } from './components.js';
+import { card, emptyState, moreActions, table } from './components.js';
 import { holdRefresh, navigate, replaceParams } from '../app.js';
 import {
   asHours, byDepartment, byPosition, earliestFirst, field, formDialog, nightMark, shiftColour,
@@ -1012,7 +1012,12 @@ export async function renderAttRota(params) {
           h('div.rota-who-in',
             faceOf(row.staff),
             h('div.rota-who-text',
-            h('div.rota-who-name', row.staff.name, strainMark(row.staff.id)),
+            // The name in a box of its own, so a narrow screen can cut it to
+            // two lines rather than making every row on the page as tall as
+            // the longest name on the property.
+            h('div.rota-who-name',
+              h('span.rota-who-label', row.staff.name),
+              strainMark(row.staff.id)),
             h('small.muted', row.staff.department || `No. ${row.staff.employee_no}`),
             // What this window already has them down for. The number a planner
             // is weighing every time they fill a cell, and it was on the
@@ -1988,7 +1993,12 @@ export async function renderAttRota(params) {
         onchange: (e) => e.target.value && reload({ from: mondayOf(e.target.value) }),
       }),
       h('button.btn-sm', { onclick: () => reload({ from: shiftDay(from, span) }) }, '›'),
-      h('button.btn-sm', { onclick: () => reload({ from: mondayOf(todayISO()) }) }, 'Today'),
+      // Only when it would go somewhere. On the week already on screen it is a
+      // button that does nothing, and on a handset it is the one that pushes
+      // the row onto a second line.
+      from === mondayOf(todayISO())
+        ? null
+        : h('button.btn-sm', { onclick: () => reload({ from: mondayOf(todayISO()) }) }, 'Today'),
 
       data.departments?.length
         ? h('select', {
@@ -2015,6 +2025,19 @@ export async function renderAttRota(params) {
           title: 'People this plan is overworking. The full picture is on Workload',
         }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`)
         : null,
+      data.asked
+        ? h('button.btn-sm', {
+          onclick: () => answerRequests(reload),
+          title: 'Days people have asked about that nobody has answered yet',
+        }, `⏳ ${data.asked} asked for`)
+        : null,
+
+      // Everything a planner does to a whole stretch of the rota. On a desk
+      // they sit along the bar as they always did; on a phone they were five
+      // rows of buttons above a grid nobody could read anyway, so they go
+      // behind one. What stays out is what somebody is meant to act on: the
+      // people this plan is overworking, and the days waiting on an answer.
+      moreActions(
       view === 'people'
         ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week')
         : null,
@@ -2027,12 +2050,6 @@ export async function renderAttRota(params) {
         title: 'The window on screen as a spreadsheet, draft days and all, each row saying '
           + 'whether it is published',
       }, 'Export'),
-      data.asked
-        ? h('button.btn-sm', {
-          onclick: () => answerRequests(reload),
-          title: 'Days people have asked about that nobody has answered yet',
-        }, `⏳ ${data.asked} asked for`)
-        : null,
       h('button.btn-sm', {
         onclick: () => clearPeriod(data, params, reload),
         title: 'Take a stretch of the rota back off, either to the standing pattern '
@@ -2058,6 +2075,7 @@ export async function renderAttRota(params) {
         title: 'Fill the blanks from what this property usually does. '
           + 'Nothing is published and nothing you have decided is touched',
       }, 'Suggest a draft'),
+      ),
       ),
     ),
 
