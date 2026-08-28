@@ -872,7 +872,12 @@ export async function renderAttRota(params) {
 
     // The card and the gap under it, so the gap is beside the box rather than
     // inside it. Everything else still hangs off the card itself.
-    const stack = h('div.rota-cellstack', wrap, addSecond);
+    // The class is mirrored onto the stack rather than left to `:has()` in the
+    // stylesheet. Safari only learned `:has()` in 15.4, and a phone that never
+    // saw that update is a phone somebody is still using on the floor.
+    const stack = h('div.rota-cellstack', {
+      class: entry.explicit ? 'rota-stack-set' : '',
+    }, wrap, addSecond);
     drawn.node = stack;
     return stack;
   };

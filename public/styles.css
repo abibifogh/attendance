@@ -137,7 +137,12 @@ p { margin: 0 0 .6rem; }
 a { color: var(--accent); }
 
 /* --------------------------------------------------------------- layout -- */
-.shell { min-height: 100dvh; display: flex; flex-direction: column; }
+.shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: var(--vh, 100vh);
+  display: flex; flex-direction: column;
+}
 
 .topbar {
   position: sticky; top: 0; z-index: 40;
@@ -183,7 +188,12 @@ a { color: var(--accent); }
   display: flex; align-items: center; justify-content: space-between; gap: .5rem;
   padding: .6rem .85rem; border-bottom: 1px solid var(--border); background: var(--surface-2);
 }
-.inbox-list { max-height: min(60dvh, 460px); overflow-y: auto; }
+.inbox-list {
+  max-height: min(60vh, 460px);
+  max-height: min(60dvh, 460px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .inbox-item {
   padding: .7rem .85rem; border-bottom: 1px solid var(--border); cursor: pointer;
   border-left: 3px solid transparent;
@@ -209,8 +219,11 @@ a { color: var(--accent); }
 .sidebar {
   position: sticky; top: var(--topbar-h); z-index: 30;
   flex: 0 0 208px; width: 208px;
+  max-height: calc(100vh - var(--topbar-h));
   max-height: calc(100dvh - var(--topbar-h));
+  max-height: calc(var(--vh, 100vh) - var(--topbar-h));
   overflow-y: auto; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: .8rem .6rem 1.2rem;
   border-right: 1px solid var(--border);
   background: var(--surface);
@@ -425,7 +438,12 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .toolbar input[type="date"], .toolbar input[type="month"], .toolbar select { width: auto; min-width: 150px; }
 
 /* --------------------------------------------------------------- login --- */
-.login-wrap { min-height: 100dvh; display: grid; place-items: center; padding: 1.5rem; }
+.login-wrap {
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: var(--vh, 100vh);
+  display: grid; place-items: center; padding: 1.5rem;
+}
 .login-card { width: 100%; max-width: 380px; text-align: center; }
 .pin-display {
   font-family: var(--mono); font-size: 1.8rem; letter-spacing: .5rem;
@@ -449,7 +467,9 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   justify-items: center; align-items: end; align-content: end;
   width: min(420px, calc(100vw - 2rem));
   height: fit-content;
+  max-height: calc(100vh - 2rem);
   max-height: calc(100dvh - 2rem);
+  max-height: calc(var(--vh, 100vh) - 2rem);
 }
 /* Lift toasts clear of the entry screen's fixed action bar. */
 /* Its own dark ground rather than the page's surface. On a handset a white
@@ -480,7 +500,12 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 
 /* ---------------------------------------------------------------- misc --- */
-.boot { min-height: 100dvh; display: grid; place-content: center; text-align: center; color: var(--text-dim); gap: .5rem; }
+.boot {
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: var(--vh, 100vh);
+  display: grid; place-content: center; text-align: center; color: var(--text-dim); gap: .5rem;
+}
 /* The same hexagon, drawn from the stylesheet rather than the markup so it is
    painted with the first frame instead of waiting for a module to load. */
 .boot-mark {
@@ -771,7 +796,9 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   left: 50%;
   transform: translateX(-50%);
   height: fit-content;
+  max-height: calc(100vh - 2rem);
   max-height: calc(100dvh - 2rem);
+  max-height: calc(var(--vh, 100vh) - 2rem);
   margin: 0;
   padding: 0;
   border: none;
@@ -2339,8 +2366,16 @@ html { touch-action: manipulation; }
      reach them. The plain vh line is the one those browsers keep. */
   max-height: 90vh;
   max-height: min(90dvh, 90vh);
+  /* And the last word: the height the browser itself reports, published by the
+     app as --vh. A vh on iOS Safari is measured with the address bar and the
+     toolbar hidden, so a dialog capped in vh on a phone that is showing both
+     is taller than the screen. It does not overflow, so it never becomes
+     scrollable — it just runs off the bottom, and the switch down there cannot
+     be reached at all. */
+  max-height: calc(var(--vh, 90vh) - 2rem);
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* The title and the buttons stay put while the middle scrolls.
@@ -2368,24 +2403,37 @@ html { touch-action: manipulation; }
   padding: .7rem var(--dlg-x) var(--dlg-y);
   border-top: 1px solid var(--border);
 }
+/* Nothing behind a dialog moves while it is open. A phone that scrolls the
+   page underneath instead of the dialog is a phone whose owner concludes the
+   dialog does not scroll. Only on a handset: a desk browser already holds the
+   page still for a modal, and taking its scrollbar away shifts the whole
+   layout sideways for as long as the dialog is open. */
+@media (max-width: 620px) {
+  html.has-modal, html.has-modal body { overflow: hidden; }
+}
+
 .app-dialog-narrow { max-width: 420px; }
 .app-dialog-wide { max-width: 620px; }
 
-/* On a handset it stops pretending to be a window and becomes a sheet: full
-   width, along the bottom where the thumb already is, and clear of whatever
-   the phone puts across the bottom of the screen. */
+/* On a handset it stops pretending to be a window and fills the width.
+   ANCHORED TO THE TOP, not the bottom. A sheet along the bottom is where the
+   thumb already is and it is the nicer place for one, but on iOS the bottom of
+   the viewport a dialog is laid out in sits *behind* Safari's toolbar: the
+   sheet reaches the bottom of a screen the reader cannot see the bottom of,
+   and the last thing in it — the switch that turns notifications on — cannot
+   be reached however hard anybody scrolls. From the top down, with a height no
+   greater than the screen really is, every part of it is on screen. */
 @media (max-width: 620px) {
   .app-dialog, .app-dialog-narrow, .app-dialog-wide {
     width: 100%;
     max-width: 100%;
-    margin: auto auto 0;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
+    margin: .5rem auto auto;
     --dlg-x: .9rem;
     --dlg-y: 1rem;
     padding: var(--dlg-y) var(--dlg-x);
     max-height: 92vh;
     max-height: min(92dvh, 92vh);
+    max-height: calc(var(--vh, 92vh) - 1rem);
   }
   /* Clear of whatever the phone puts across the bottom of the screen. The
      inset goes on the pinned bar rather than on the dialog, because the bar
@@ -2394,6 +2442,8 @@ html { touch-action: manipulation; }
   .app-dialog > form > .btn-row:last-child {
     padding-bottom: max(var(--dlg-y), env(safe-area-inset-bottom));
     margin-bottom: calc(var(--dlg-y) * -1);
+    border-bottom-left-radius: var(--radius);
+    border-bottom-right-radius: var(--radius);
   }
   .dialog-close { width: 2.75rem; height: 2.75rem; }
 
@@ -4274,7 +4324,7 @@ body.rota-dragging .pos-add { pointer-events: none; }
 /* Only under a shift. On a day with nothing on it, "add a second" is the
    dropdown that is already sitting there, and offering both would be two ways
    of saying one thing. */
-.rota-cellstack:not(:has(.rota-cellwrap.rota-set)) .rota-add { display: none; }
+.rota-cellstack:not(.rota-stack-set) .rota-add { display: none; }
 .rota-cellstack:hover .rota-add,
 .rota-add:focus-visible {
   border-color: var(--rota-line);

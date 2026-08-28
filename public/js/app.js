@@ -1,7 +1,7 @@
 import { api, onReachabilityChange, serverReachable, setUnauthorizedHandler } from './api.js';
 import { liveUp, onLive, startLive, stopLive } from './live.js';
 import { registerWorker, watchForInstall } from './install.js';
-import { h, keepScroll, mount } from './util.js';
+import { h, holdBehindDialogs, keepScroll, mount, watchScreenHeight } from './util.js';
 import { renderLogin } from './views/login.js';
 import { alreadyWelcomed, markWelcomed, welcomePanel } from './views/welcome.js';
 import { openAccountDialog } from './views/account.js';
@@ -632,6 +632,10 @@ window.addEventListener('online', () => { api.me().catch(() => {}); });
 
   registerWorker();
   watchForInstall();
+  // Before anything is drawn: every full-height thing on the page is measured
+  // against this.
+  watchScreenHeight();
+  holdBehindDialogs();
 
   try {
     const me = await api.me();

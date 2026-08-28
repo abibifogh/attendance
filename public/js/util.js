@@ -259,3 +259,55 @@ export function keepScroll(selector) {
     requestAnimationFrame(put);
   };
 }
+
+
+/**
+ * How tall the screen really is, right now, in pixels.
+ *
+ * `100vh` is not it. On iOS Safari a vh is a hundredth of the viewport with
+ * the browser's own bars *hidden*, so a dialog capped at 92vh on an iPhone
+ * with the address bar and the toolbar showing is taller than the part of the
+ * screen anybody can see. It does not overflow, so it never becomes
+ * scrollable; it simply runs off the bottom under the toolbar, and whatever is
+ * down there — the notifications switch, a Save button — cannot be reached at
+ * all. `dvh` was meant to answer this and only arrived in Safari 15.4, which
+ * is later than a good many phones still in pockets here.
+ *
+ * `window.innerHeight` is the honest number on every browser going back years:
+ * the visible height as it stands, bars and all. It is published as `--vh` and
+ * kept up to date, and the stylesheet uses it as the last word on how tall
+ * anything full-height may be. The on-screen keyboard does not move it, which
+ * is what we want: a dialog that resized itself while somebody typed into it
+ * would be its own kind of unusable.
+ */
+export function watchScreenHeight() {
+  const set = () => {
+    const px = Math.round(window.innerHeight || 0);
+    if (px > 0) document.documentElement.style.setProperty('--vh', `${px}px`);
+  };
+  set();
+  window.addEventListener('resize', set);
+  window.addEventListener('orientationchange', () => setTimeout(set, 250));
+  // Safari shrinks and grows its bars as the page scrolls, and the number
+  // changes with them.
+  window.addEventListener('pageshow', set);
+}
+
+/**
+ * Hold the page still while a dialog is open.
+ *
+ * A phone that scrolls the page behind a modal instead of the modal is a phone
+ * whose owner concludes the dialog does not scroll. Marked on the document
+ * rather than handled in each of the five places a dialog is opened, because
+ * the one that gets forgotten is the one somebody is stuck in.
+ */
+export function holdBehindDialogs() {
+  const sync = () => {
+    const open = Boolean(document.querySelector('dialog[open]'));
+    document.documentElement.classList.toggle('has-modal', open);
+  };
+  new MutationObserver(sync).observe(document.documentElement, {
+    childList: true, subtree: true, attributeFilter: ['open'],
+  });
+  sync();
+}

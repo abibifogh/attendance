@@ -668,6 +668,25 @@ sign-off screen signs off the wrong day. And the notch and the home bar are
 accounted for, since `viewport-fit=cover` is what lets the page paint under
 both.
 
+**A dialog is never taller than the screen actually is.** `100vh` on iOS Safari
+is measured with the address bar and the toolbar hidden, so a panel capped in
+`vh` on an iPhone showing both is taller than the part of the screen anybody can
+see. It does not overflow, so it never becomes scrollable: it simply runs off
+the bottom under the toolbar, and whatever is down there cannot be reached at
+all. That is how the switch that turns notifications on became unreachable on an
+iPhone 7 Plus. `dvh` was meant to answer this and arrived in Safari 15.4, which
+is later than a good many phones still in use here, so the app publishes
+`window.innerHeight` as `--vh` and keeps it up to date, and every full-height
+thing in the stylesheet is measured against that. The `vh` and `dvh` lines stay
+above it as fallbacks.
+
+On a handset a dialog is also anchored to the top of the screen rather than
+sitting along the bottom. A sheet along the bottom is the nicer place for a
+thumb, but the bottom of the viewport a dialog is laid out in is exactly where
+Safari puts its toolbar. Nothing behind an open dialog scrolls, either, on a
+phone: a page that moves under a modal is a page whose owner concludes the modal
+does not scroll.
+
 One bug fell out of looking at it: the name cell on three tables put the
 department straight after the name with no line break, so every row read
 *Abdul Hamid IddrisuSecurity*. That was true at every width, not just on a
