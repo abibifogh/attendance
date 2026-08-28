@@ -52,6 +52,15 @@ function setup() {
   return { raw, db: d1(raw) };
 }
 
+/** A login against Kofi's name, because a person with none cannot be told. */
+function giveKofiALogin(raw, id = 7) {
+  raw.prepare(
+    `INSERT INTO users (id, name, role, active, staff_id)
+     VALUES (?, 'Kofi', 'staff', 1, 1)`,
+  ).run(id);
+  return id;
+}
+
 const PLANNER = { user: { id: 2, name: 'Yaa', role: 'planner' }, permissions: ['att_rota'] };
 const ctx = (db, { body = null, query = '' } = {}) => ({
   db,
@@ -70,6 +79,7 @@ const WINDOW = '?from=2026-06-01&to=2026-06-14';
 
 test('a saved cell is a draft, and publishing turns it solid', async () => {
   const { db, raw } = setup();
+  const kofi = giveKofiALogin(raw);
 
   await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
 
@@ -89,10 +99,11 @@ test('a saved cell is a draft, and publishing turns it solid', async () => {
   assert.equal(log.changes, 1);
   assert.match(log.actor, /Yaa/);
 
-  // And the bell rang for everybody who can see attendance.
-  const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'rota.published'").get();
+  // And the bell rang for the one person it was about.
+  const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'rota.published.mine'").get();
   assert.ok(notice, 'a notice went out');
-  assert.equal(notice.audience, 'att_me');
+  assert.equal(notice.user_id, kofi, 'to him, not to the whole house');
+  assert.equal(notice.audience, null);
 });
 
 test('changing a published day makes it a draft again', async () => {
@@ -120,7 +131,7 @@ test('publishing quietly skips the bell, and the log says it was quiet', async (
 
   assert.equal(done.published, 1);
   assert.equal(done.notified, 'none');
-  assert.equal(raw.prepare("SELECT COUNT(*) c FROM app_notices WHERE kind = 'rota.published'").get().c, 0,
+  assert.equal(raw.prepare('SELECT COUNT(*) c FROM app_notices').get().c, 0,
     'nobody was told — that was the point');
   // But quiet is on the record, not invisible: whoever reads the log can see
   // a publication happened and that it chose not to ring.
@@ -215,15 +226,22 @@ test('a day carries an optional title of its own', async () => {
 
 test('telling everybody and telling the people it is about are different', async () => {
   const { db, raw } = setup();
+  const kofi = giveKofiALogin(raw);
 
   await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
   await publishRoster(ctx(db, {
     body: { from: '2026-06-01', to: '2026-06-14', notify: 'staff', message: 'Easter cover.' },
   }));
 
-  const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'rota.published'").get();
-  assert.equal(notice.audience, 'att_me');
-  assert.match(notice.body, /Easter cover/);
+  // The people it affects, and nobody else: there is no house announcement at
+  // all, only Kofi's own.
+  const mine = raw.prepare("SELECT * FROM app_notices WHERE kind = 'rota.published.mine'").get();
+  assert.equal(mine.user_id, kofi);
+  assert.match(mine.body, /Easter cover/);
+  assert.equal(
+    raw.prepare("SELECT COUNT(*) c FROM app_notices WHERE kind = 'rota.published'").get().c, 0,
+    'nothing went to the house',
+  );
 
   await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-04', shiftId: 1 }] } }));
   await publishRoster(ctx(db, {
@@ -234,4 +252,60 @@ test('telling everybody and telling the people it is about are different', async
     "SELECT * FROM app_notices WHERE kind = 'rota.published' ORDER BY id DESC",
   ).get();
   assert.equal(all.audience, null, 'everybody means everybody');
+  assert.equal(
+    raw.prepare("SELECT COUNT(*) c FROM app_notices WHERE kind = 'rota.published.mine'").get().c, 2,
+    'and Kofi still hears about his own day',
+  );
+});
+
+test('each person hears about their own week and nobody else hears about it', async () => {
+  const { db, raw } = setup();
+  const kofi = giveKofiALogin(raw);
+  raw.prepare(
+    `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
+     VALUES (2, '2', 'Ama', 'Kitchen', '2020-01-01'),
+            (3, '3', 'Yaw', 'Kitchen', '2020-01-01')`,
+  ).run();
+  raw.prepare(
+    "INSERT INTO users (id, name, role, active, staff_id) VALUES (8, 'Ama', 'staff', 1, 2)",
+  ).run();
+
+  await saveRoster(ctx(db, { body: { entries: [
+    { staffId: 1, day: '2026-06-02', shiftId: 1 },
+    { staffId: 1, day: '2026-06-03', shiftId: 1 },
+    // Yaw is on the rota and has no login. Nothing can reach him.
+    { staffId: 3, day: '2026-06-05', shiftId: 1 },
+  ] } }));
+
+  const done = await (await publishRoster(ctx(db, {
+    body: { from: '2026-06-01', to: '2026-06-14', notify: 'staff' },
+  }))).json();
+
+  assert.equal(done.told, 1, 'Kofi and Yaw are on it; only Kofi can be reached');
+  assert.equal(done.noLogin, 1, 'and the planner is told that Yaw was not');
+
+  const sent = raw.prepare(
+    "SELECT * FROM app_notices WHERE kind = 'rota.published.mine' ORDER BY id",
+  ).all();
+  assert.equal(sent.length, 1, 'Ama has nothing this fortnight and hears nothing');
+  assert.equal(sent[0].user_id, kofi);
+  assert.match(sent[0].title, /2 shifts/);
+  assert.match(sent[0].body, /Tue 2 Jun/, 'and it says when the first one is');
+});
+
+test('a day being remade says so, because somebody planned around the old one', async () => {
+  const { db, raw } = setup();
+  giveKofiALogin(raw);
+
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
+  await publishRoster(ctx(db, { body: { from: '2026-06-01', to: '2026-06-14' } }));
+
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: null }] } }));
+  await publishRoster(ctx(db, { body: { from: '2026-06-01', to: '2026-06-14' } }));
+
+  const last = raw.prepare(
+    "SELECT * FROM app_notices WHERE kind = 'rota.published.mine' ORDER BY id DESC",
+  ).get();
+  assert.match(last.body, /change to what you were told/);
+  assert.equal(last.level, 'warn', 'louder than a new day, which is only news');
 });

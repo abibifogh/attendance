@@ -442,8 +442,10 @@ export const GUIDE = [
 
       { sub: 'Draft, published, past' },
       { p: 'Dashed borders are a draft — you thinking out loud. Press Publish and they turn '
-        + 'solid: the version people plan their lives around, and everybody with attendance '
-        + 'access is told. Change a published day and it goes dashed again; the app offers to '
+        + 'solid: the version people plan their lives around. Everybody the window changed '
+        + 'something for is told on their phone, one message each, saying how many shifts they '
+        + 'have and when the first one is. Somebody with nothing that fortnight hears nothing. '
+        + 'Change a published day and it goes dashed again; the app offers to '
         + 'republish at once, and asks whether to ring the bell or do it quietly. Quietly is for '
         + 'a typo — a moved shift deserves the bell. Grey days are already behind you.' },
       { sub: 'The days stay where you can see them' },

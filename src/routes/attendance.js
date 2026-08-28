@@ -2289,6 +2289,95 @@ function sentenceFor(r) {
   return `${who} moved from ${was} to ${shift}`;
 }
 
+/** A day in the words somebody would read on their phone. */
+function sayDay(day) {
+  const at = new Date(`${day}T12:00:00Z`);
+  return at.toLocaleDateString('en-GB', {
+    weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC',
+  });
+}
+
+/**
+ * Tell each person what their own week says, one message at a time.
+ *
+ * A rota going out used to be one announcement to everybody: "the rota for
+ * these two weeks has been published". Everybody had to open the app and go
+ * looking to find out whether it meant them, and for most of them it did not.
+ * A notice that has to be checked is a notice people stop checking.
+ *
+ * So the message is about them. How many shifts they have, when the first one
+ * is, and whether any of it is a change to something they had already been
+ * told. Somebody with nothing in the window hears nothing at all.
+ *
+ * It buzzes. A published rota is the one thing staff genuinely need to be
+ * interrupted for: it is the difference between planning a week around a shift
+ * and finding out about it on the day. And it is push and the bell rather than
+ * an email each, because twenty-four emails every time a fortnight goes out is
+ * how a mailbox becomes something nobody opens.
+ */
+async function tellEachOfThem(ctx, { rows, from, to, actor, message }) {
+  const byStaff = new Map();
+  for (const row of rows) {
+    if (row.staff_id == null) continue;
+    const held = byStaff.get(row.staff_id) ?? {
+      userId: row.user_id ?? null, shifts: [], off: 0, again: 0,
+    };
+    if (row.shift_id) held.shifts.push(row);
+    else held.off += 1;
+    if (Number(row.ever_published)) held.again += 1;
+    byStaff.set(row.staff_id, held);
+  }
+
+  let told = 0;
+  let noLogin = 0;
+
+  for (const held of byStaff.values()) {
+    // No login is nothing to send to. Counted and handed back, because a
+    // planner who thinks the whole kitchen has been told should be told
+    // otherwise.
+    if (held.userId == null) { noLogin += 1; continue; }
+
+    held.shifts.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+    const [first] = held.shifts;
+    const count = held.shifts.length;
+
+    const what = count
+      ? `${count} shift${count === 1 ? '' : 's'}`
+      : `${held.off} day${held.off === 1 ? '' : 's'} off`;
+    const lines = [
+      `${what} for ${sayDay(from)} to ${sayDay(to)}.`,
+      first
+        ? `First: ${sayDay(first.day)}, ${first.shift_name ?? 'a shift'}`
+          + `${first.starts_at ? ` ${first.starts_at}–${first.ends_at}` : ''}.`
+        : null,
+      // A day being remade matters more than a new one: somebody may have
+      // arranged their week around the version this replaces.
+      held.again
+        ? `${held.again} of ${held.again === 1 ? 'them is' : 'them are'} a change to what you `
+          + 'were told before, so it is worth another look.'
+        : null,
+      message || null,
+    ].filter(Boolean);
+
+    await createNotice(ctx.db, {
+      kind: 'rota.published.mine',
+      level: held.again ? 'warn' : 'info',
+      title: count ? `Your shifts are out: ${what}` : 'Your rota is out',
+      body: lines.join(' '),
+      link: '#/att-me',
+      day: first?.day ?? from,
+      actor,
+      // To them and nobody else.
+      userId: held.userId,
+      push: true,
+      email: false,
+    }, ctx);
+    told += 1;
+  }
+
+  return { told, noLogin };
+}
+
 export async function publishRoster(ctx) {
   const body = await readJson(ctx.request);
   const from = readDay(body.from);
@@ -2332,6 +2421,20 @@ export async function publishRoster(ctx) {
   const message = str(body.message, 'Message', { max: 500 });
   const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
 
+  // Whose days these are, read before the update turns them into published
+  // rows and there is no way left to tell which ones went out just now.
+  const affected = told === 'none' ? { results: [] } : await ctx.db.prepare(
+    `SELECT r.staff_id, r.day, r.shift_id, r.ever_published,
+            sh.name AS shift_name, sh.starts_at, sh.ends_at,
+            (SELECT u.id FROM users u
+              WHERE u.staff_id = r.staff_id AND u.active = 1
+              ORDER BY u.id LIMIT 1) AS user_id
+       FROM att_roster r
+       LEFT JOIN att_shifts sh ON sh.id = r.shift_id
+      WHERE r.day BETWEEN ?1 AND ?2 AND r.published = 0 AND r.staff_id IS NOT NULL
+      ORDER BY r.day`,
+  ).bind(from, to).all().catch(() => ({ results: [] }));
+
   await ctx.db.batch([
     // Before the update, or there is nothing left that still reads as a draft
     // to write an entry about.
@@ -2355,7 +2458,19 @@ export async function publishRoster(ctx) {
     ).bind(actor, 'rota.publish', JSON.stringify({ from, to, fresh, again, notify: told })),
   ]);
 
+  // Everybody the rota just changed something for, told what their own week
+  // says rather than that a rota exists somewhere.
+  let sent = { told: 0, noLogin: 0 };
   if (told !== 'none') {
+    sent = await tellEachOfThem(ctx, {
+      rows: affected.results ?? [], from, to, actor, message,
+    });
+  }
+
+  // And the house announcement, where the answer was everybody. It carries no
+  // push of its own: the people it is actually about have already had one, and
+  // two buzzes for one rota is how somebody comes to turn them off.
+  if (told === 'everyone') {
     const what = [
       fresh ? `${fresh} new` : null,
       again ? `${again} changed` : null,
@@ -2369,18 +2484,23 @@ export async function publishRoster(ctx) {
         + (message ? `\n\n${message}` : ''),
       link: `#/att-rota?from=${from}&to=${to}`,
       actor,
-      // Everybody, or only the people the rota is about. Held as a permission
-      // rather than a list, so it still reaches somebody promoted tomorrow.
-      audience: told === 'everyone' ? null : 'att_me',
-      // And it buzzes. A published rota is the one thing staff genuinely need
-      // to be interrupted for: it is the difference between planning a week
-      // around a shift and finding out about it on the day.
-      push: true,
+      audience: null,
+      push: false,
     }, ctx);
   }
 
   return json({
-    ok: true, published: changes, fresh, again, from, to, notified: told,
+    ok: true,
+    published: changes,
+    fresh,
+    again,
+    from,
+    to,
+    notified: told,
+    // How many people actually heard, and how many could not because there is
+    // no login against their name.
+    told: sent.told,
+    noLogin: sent.noLogin,
   });
 }
 

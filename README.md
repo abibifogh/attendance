@@ -279,13 +279,30 @@ absence. Lateness rides along with it rather than triggering it.
 
 Saving and telling people were the same event, which meant a planner could not
 think out loud. Now a saved cell is a **draft** — dashed border — and *Publish*
-turns the window solid, logs who published what and when, and notifies everyone
-with attendance access. Changing a published day makes it a draft again
+turns the window solid, logs who published what and when, and tells each member
+of staff the rota just changed something for. Changing a published day makes it a draft again
 (somebody is planning around the old version, and a cell cannot change under
 them while claiming to be the version they saw), and the app immediately offers
 to republish — asking each time whether to notify or go quietly, because a
 quiet that becomes a default is how staff end up planning around a rota nobody
 told them changed. Past days are greyed.
+
+**Everybody it affects is told, one at a time, on their phone.** A rota going
+out used to be one announcement to the whole house: the rota for these two weeks
+has been published. Everybody then had to open the app and go looking to find
+out whether it meant them, and for most of them it did not, which is how a
+notice becomes a notice people stop reading. Each person now gets their own: how
+many shifts they have, when the first one is, and whether any of it is a change
+to something they had already been told, with whatever the planner wrote at the
+bottom. It pushes to their phone, because a published rota is the one thing
+staff genuinely need to be interrupted for. Somebody with nothing in that window
+hears nothing at all.
+
+*Tell everybody* adds the house announcement on top, and that one does not push:
+the people it is actually about have already had a buzz, and two for one rota is
+how somebody comes to turn them off. Anybody on the rota with no login cannot be
+reached, so the planner is told how many that was rather than left assuming the
+whole kitchen knows.
 
 Two views of the same window: **People** (rows are people — where assignment
 happens) and **Positions** (rows are shifts, cells are who is on them — "who is

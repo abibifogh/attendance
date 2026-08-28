@@ -1909,8 +1909,10 @@ export async function renderAttRota(params) {
 
         h('h3.publish-heading', 'Who is told'),
         h('div.answer-choices',
-          choice('staff', 'Tell the staff it affects', ' — the usual answer', true),
-          choice('everyone', 'Tell everybody', ' — managers and staff alike'),
+          choice('staff', 'Tell the staff it affects',
+            ' — each one is told what their own week says', true),
+          choice('everyone', 'Tell everybody',
+            ' — the same, and a note to the rest of the house'),
           choice('none', 'Publish quietly', ' — nobody is told; suits a corrected typo'),
         ),
 
@@ -1925,9 +1927,17 @@ export async function renderAttRota(params) {
     });
 
     if (!done) return;
+    const heard = Number(done.told ?? 0);
     toast(done.published
       ? `${done.published} shift${done.published === 1 ? '' : 's'} published`
-        + `${done.notified === 'none' ? ', quietly' : ' and people told'}.`
+        + (done.notified === 'none'
+          ? ', quietly.'
+          : `. ${heard} ${heard === 1 ? 'person' : 'people'} told.`)
+        // Somebody with no login cannot be told anything, and a planner who
+        // thinks the whole kitchen knows should hear that they do not.
+        + (done.noLogin
+          ? ` ${done.noLogin} without a login heard nothing — tell them yourself.`
+          : '')
       : 'Everything here was already published.', 'good');
     await reload();
   };
