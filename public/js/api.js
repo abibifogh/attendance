@@ -413,6 +413,7 @@ export const api = {
   notifications: () => request('/api/notifications'),
   updateNotifications: (body) => request('/api/notifications', { method: 'PUT', body }),
   testNotification: () => request('/api/notifications/test', { method: 'POST' }),
+  testText: (to) => request('/api/notifications/test-text', { method: 'POST', body: { to } }),
 
   notices: (limit = 20) => request(`/api/notices?limit=${limit}`),
   markNoticesSeen: (lastId) => request('/api/notices/seen', { method: 'POST', body: { lastId } }),

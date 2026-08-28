@@ -442,6 +442,7 @@ export const ROUTES = [
   ['GET', '/api/notifications', 'users', admin.getNotifications],
   ['PUT', '/api/notifications', 'users', admin.updateNotifications],
   ['POST', '/api/notifications/test', 'users', admin.testNotification],
+  ['POST', '/api/notifications/test-text', 'users', admin.testText],
 
   ['GET', '/api/data/summary', 'users', admin.dataSummary],
   ['POST', '/api/data/erase', 'users', admin.eraseData],

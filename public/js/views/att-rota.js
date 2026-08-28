@@ -2035,15 +2035,20 @@ export async function renderAttRota(params) {
 
     if (!done) return;
     const heard = Number(done.told ?? 0);
+    const texted = Number(done.texted ?? 0);
+    const silent = Number(done.silent ?? 0);
     toast(done.published
       ? `${done.published} shift${done.published === 1 ? '' : 's'} published`
         + (done.notified === 'none'
           ? ', quietly.'
-          : `. ${heard} ${heard === 1 ? 'person' : 'people'} told.`)
-        // Somebody with no login cannot be told anything, and a planner who
-        // thinks the whole kitchen knows should hear that they do not.
-        + (done.noLogin
-          ? ` ${done.noLogin} without a login heard nothing — tell them yourself.`
+          : `. ${heard} ${heard === 1 ? 'person' : 'people'} told in the app`
+            + (texted ? `, ${texted} texted.` : '.'))
+        // Somebody with no login and no number cannot be reached at all, and a
+        // planner who thinks the whole kitchen knows should hear that they do
+        // not.
+        + (silent
+          ? ` ${silent} could not be reached at all, no login and no phone number. `
+            + 'Tell them yourself.'
           : '')
       : 'Everything here was already published.', 'good');
     await reload();

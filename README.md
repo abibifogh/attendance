@@ -835,6 +835,58 @@ recipient list, and only when there is something to do about it. Emailing its
 notice as well would put two messages about the same morning in the same inbox,
 which is how people learn to ignore both.
 
+#### Texts, for the phones nothing else reaches
+
+Half the property is holding an iPhone 7 Plus. It stops at iOS 15, web push for
+a home-screen app needs 16.4, and no amount of work in the app will ever make
+one of them buzz. So a published rota now goes out three ways, in this order:
+
+1. **An alert**, to anybody whose phone has actually been set up for one. Free,
+   and it lands on the lock screen.
+2. **An email**, to anybody whose phone has not. The same message, to the
+   address on their login. Somebody who got the buzz does not also get the mail,
+   because two messages about one rota is how a mailbox stops being read.
+3. **A text**, to anybody the first two miss. It costs a few pesewas and it
+   arrives on every handset ever made.
+
+Somebody with no login at all used to hear nothing, and the publish dialog said
+so. Now they get the text, since the number is on their record under People
+rather than on a login they do not have. Only the people with neither a login
+nor a number are counted as unreachable, and the dialog names how many.
+
+**Setting it up.** Setup → Notifications → *Text messages*. Pick the gateway —
+Arkesel, mNotify or Hubtel, all three Ghanaian, all three over HTTP because a
+Worker cannot open an SMTP socket or anything like one. Add the key as a secret
+(`APP_SMS_API_KEY`, plus `APP_SMS_API_SECRET` for Hubtel, which wants two).
+Type the sender name, which is what the message shows it is from: eleven
+characters, letters and digits, and it has to be registered with the gateway
+first or the messages bounce. Then *Send a test*, which texts one number you
+type and costs one message.
+
+**What it costs.** By default only the phones an alert cannot reach get a text,
+which is both the cheaper answer and the reason the whole thing exists. The
+setting can be changed to text everybody whose week changed. Either way one
+publish is capped at 200 messages: nobody rosters two hundred people in one go,
+so a number that high means something has gone wrong upstream and should stop
+rather than spend.
+
+**The message.** Written to fit in one 160-character segment, because a gateway
+charges by the segment:
+
+> HIVE: your rota for Mon 1 Jun to Sun 7 Jun is out. 5 shifts. First Tue 2 Jun
+> 06:00. See staff.niceoperation.com
+
+The link is bare rather than a full URL — every phone adds the `https://` back
+itself, and that is nine characters of a segment.
+
+**Numbers are read however they were written down.** `024 123 4567`,
+`+233 24 123 4567` and `00233241234567` are the same phone and all three work.
+Anything that does not come out as a real Ghanaian number is skipped rather
+than guessed at, because a text sent to a wrong number is worse than one not
+sent. Sending happens last and cannot throw: a gateway with no credit left, or
+one having a bad afternoon, gets written to the text log and never leaves a
+rota half published.
+
 **The person you just acted on stays where you can see them.** The list is
 ordered worst first, which is right when you open it and wrong the moment you
 do anything: signing somebody's two worst days drops their count, so on the
@@ -1805,6 +1857,8 @@ Actions → New repository secret**:
 | `APP_SESSION_SECRET` | forty or more random characters. Never needs remembering. |
 | `APP_MANAGER_PIN` | six digits — your way in before any accounts exist, and your way back in if everybody is ever locked out. **Write it down.** |
 | `APP_RESEND_API_KEY` | only if you want the morning email digest |
+| `APP_SMS_API_KEY` | only if you want texts. The API key from Arkesel, mNotify or Hubtel |
+| `APP_SMS_API_SECRET` | Hubtel only. The other two need just the key |
 
 Then **Actions → Set the app's secrets → Run workflow**. It copies them onto the
 Worker and lists the names it set. Run it again any time you change one.

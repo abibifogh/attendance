@@ -22,6 +22,8 @@ import { notifyClockings } from '../lib/clock-alerts.js';
 import { daysBetween, parseDays } from '../lib/signoff.js';
 import { refuseUnsettled } from './signoff.js';
 import { emailExceptions, pingExceptions } from '../lib/notify.js';
+import { firstUsableNumber, sendTexts } from '../lib/sms.js';
+import { originOf } from '../lib/site.js';
 import {
   DOW_LABELS, addDays, addMonths, diffDays, dow, isDay, isMonth, lastFridayOf, monthBounds,
   monthOf, rangeDays, startOfWeek, todayIn,
@@ -2308,6 +2310,60 @@ function sayDay(day) {
   });
 }
 
+/** A handful of settings, read as one round trip. */
+async function readSettings(db, keys) {
+  const marks = keys.map((_, i) => `?${i + 1}`).join(',');
+  const rows = await db.prepare(
+    `SELECT key, value FROM settings WHERE key IN (${marks})`,
+  ).bind(...keys).all().catch(() => ({ results: [] }));
+  return Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
+}
+
+/**
+ * Which of these logins has a device that can actually show an alert.
+ *
+ * A subscription is the only honest answer to "can this person be reached
+ * without spending money". It is not a guess about the handset: it exists
+ * because somebody stood there, turned alerts on, and the browser handed us a
+ * key. No row means no alert, whatever the phone is.
+ */
+async function phonesThatCanBuzz(db, userIds) {
+  const ids = [...new Set(userIds.map(Number).filter((n) => Number.isFinite(n)))];
+  if (!ids.length) return new Set();
+  const marks = ids.map((_, i) => `?${i + 1}`).join(',');
+  const rows = await db.prepare(
+    `SELECT DISTINCT user_id FROM push_subscriptions WHERE user_id IN (${marks})`,
+  ).bind(...ids).all().catch(() => ({ results: [] }));
+  return new Set((rows.results ?? []).map((r) => Number(r.user_id)));
+}
+
+/**
+ * The whole rota, in one text.
+ *
+ * A gateway charges by the segment and a segment is 160 characters, so this is
+ * written to fit in one: who it is from, what they have, when the first one
+ * is, and where to look. The link is bare rather than a full URL because
+ * "https://" is nine characters that every phone adds back itself.
+ */
+function shortEnoughToText({ what, from, to, first, siteUrl, message }) {
+  const where = String(siteUrl ?? '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const said = [
+    `HIVE: your rota for ${sayDay(from)} to ${sayDay(to)} is out.`,
+    `${what[0].toUpperCase()}${what.slice(1)}.`,
+    first
+      ? `First ${sayDay(first.day)}${first.starts_at ? ` ${first.starts_at}` : ''}.`
+      : null,
+    where ? `See ${where}` : null,
+  ].filter(Boolean).join(' ');
+
+  // The planner's own note, but only if it still fits. A note that pushes this
+  // into a second segment doubles the bill for the whole property, and the
+  // people reading it by text are exactly the ones who cannot open the app to
+  // read the rest of it.
+  const note = String(message ?? '').trim();
+  return note && said.length + note.length + 1 <= 160 ? `${said} ${note}` : said;
+}
+
 /**
  * Tell each person what their own week says, one message at a time.
  *
@@ -2322,16 +2378,25 @@ function sayDay(day) {
  *
  * It buzzes. A published rota is the one thing staff genuinely need to be
  * interrupted for: it is the difference between planning a week around a shift
- * and finding out about it on the day. And it is push and the bell rather than
- * an email each, because twenty-four emails every time a fortnight goes out is
- * how a mailbox becomes something nobody opens.
+ * and finding out about it on the day.
+ *
+ * Three ways out, in that order of preference. A push is free and lands on the
+ * lock screen, so it goes to everybody whose phone can take one. Everybody
+ * else gets an email, if there is an address on their login. And a text goes
+ * to whoever the first two cannot reach, because half the property is on an
+ * iPhone 7 Plus that stopped at iOS 15 and will never show a web alert however
+ * long we wait.
  */
 async function tellEachOfThem(ctx, { rows, from, to, actor, message }) {
   const byStaff = new Map();
   for (const row of rows) {
     if (row.staff_id == null) continue;
     const held = byStaff.get(row.staff_id) ?? {
-      userId: row.user_id ?? null, shifts: [], off: 0, again: 0,
+      userId: row.user_id ?? null,
+      phone: firstUsableNumber(row.personal_phone, row.alt_phone),
+      shifts: [],
+      off: 0,
+      again: 0,
     };
     if (row.shift_id) held.shifts.push(row);
     else held.off += 1;
@@ -2339,15 +2404,22 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message }) {
     byStaff.set(row.staff_id, held);
   }
 
+  const [carrying, house] = await Promise.all([
+    phonesThatCanBuzz(
+      ctx.db,
+      [...byStaff.values()].map((one) => one.userId).filter((id) => id != null),
+    ),
+    readSettings(ctx.db, ['sms_reach', 'site_url']),
+  ]);
+  const everybodyGetsAText = house.sms_reach === 'all';
+  const siteUrl = originOf(house.site_url);
+  const texts = [];
+
   let told = 0;
   let noLogin = 0;
+  let silent = 0;
 
   for (const held of byStaff.values()) {
-    // No login is nothing to send to. Counted and handed back, because a
-    // planner who thinks the whole kitchen has been told should be told
-    // otherwise.
-    if (held.userId == null) { noLogin += 1; continue; }
-
     held.shifts.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
     const [first] = held.shifts;
     const count = held.shifts.length;
@@ -2355,6 +2427,26 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message }) {
     const what = count
       ? `${count} shift${count === 1 ? '' : 's'}`
       : `${held.off} day${held.off === 1 ? '' : 's'} off`;
+
+    // A phone that can show an alert has already had one by the time this
+    // finishes. Everybody else is only reachable another way.
+    const buzzed = held.userId != null && carrying.has(held.userId);
+    if (held.phone && (everybodyGetsAText || !buzzed)) {
+      texts.push({
+        to: held.phone,
+        text: shortEnoughToText({ what, from, to, first, siteUrl, message }),
+      });
+    }
+
+    // No login is nothing to ring a bell on. Counted and handed back, because
+    // a planner who thinks the whole kitchen has been told should be told
+    // otherwise. A text still went out above if there is a number on record.
+    if (held.userId == null) {
+      noLogin += 1;
+      if (!held.phone) silent += 1;
+      continue;
+    }
+
     const lines = [
       `${what} for ${sayDay(from)} to ${sayDay(to)}.`,
       first
@@ -2381,12 +2473,21 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message }) {
       // To them and nobody else.
       userId: held.userId,
       push: true,
-      email: false,
+      // Mail only where the alert cannot land. Somebody whose phone buzzed has
+      // been told; sending them the same thing again by email is how a
+      // fortnightly rota turns into a mailbox nobody opens.
+      email: !buzzed,
     }, ctx);
     told += 1;
   }
 
-  return { told, noLogin };
+  // Last, and never in the way. A gateway being unreachable must not leave a
+  // rota half published, so this cannot throw and its result is only counted.
+  const texted = await sendTexts(ctx.db, ctx.env, {
+    messages: texts, kind: 'rota.published', day: from,
+  }).catch(() => ({ sent: 0 }));
+
+  return { told, noLogin, silent, texted: texted.sent ?? 0 };
 }
 
 export async function publishRoster(ctx) {
@@ -2437,11 +2538,13 @@ export async function publishRoster(ctx) {
   const affected = told === 'none' ? { results: [] } : await ctx.db.prepare(
     `SELECT r.staff_id, r.day, r.shift_id, r.ever_published,
             sh.name AS shift_name, sh.starts_at, sh.ends_at,
+            hp.personal_phone, hp.alt_phone,
             (SELECT u.id FROM users u
               WHERE u.staff_id = r.staff_id AND u.active = 1
               ORDER BY u.id LIMIT 1) AS user_id
        FROM att_roster r
        LEFT JOIN att_shifts sh ON sh.id = r.shift_id
+       LEFT JOIN hr_profile hp ON hp.staff_id = r.staff_id
       WHERE r.day BETWEEN ?1 AND ?2 AND r.published = 0 AND r.staff_id IS NOT NULL
       ORDER BY r.day`,
   ).bind(from, to).all().catch(() => ({ results: [] }));
@@ -2471,7 +2574,7 @@ export async function publishRoster(ctx) {
 
   // Everybody the rota just changed something for, told what their own week
   // says rather than that a rota exists somewhere.
-  let sent = { told: 0, noLogin: 0 };
+  let sent = { told: 0, noLogin: 0, silent: 0, texted: 0 };
   if (told !== 'none') {
     sent = await tellEachOfThem(ctx, {
       rows: affected.results ?? [], from, to, actor, message,
@@ -2512,6 +2615,11 @@ export async function publishRoster(ctx) {
     // no login against their name.
     told: sent.told,
     noLogin: sent.noLogin,
+    // And how many were reached by text, which is the only thing that lands on
+    // a handset too old for alerts.
+    texted: sent.texted,
+    // The ones nothing could reach: no login to ring, and no number to text.
+    silent: sent.silent,
   });
 }
 

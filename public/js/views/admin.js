@@ -560,6 +560,9 @@ function openUserDialog({ existing, data, reload }) {
 // Notifications
 // ---------------------------------------------------------------------------
 
+/** What each gateway calls itself, so the list is not three lowercase words. */
+const GATEWAY_NAMES = { arkesel: 'Arkesel', mnotify: 'mNotify', hubtel: 'Hubtel' };
+
 async function alertsTab(reload) {
   const data = await api.notifications();
 
@@ -579,6 +582,20 @@ async function alertsTab(reload) {
   const inAppEnabled = h('input', { type: 'checkbox', checked: data.inAppEnabled });
   const noticeEmail = h('input', { type: 'checkbox', checked: data.noticeEmail });
 
+  const smsEnabled = h('input', { type: 'checkbox', checked: data.smsEnabled });
+  const smsProvider = h('select', ...(data.smsProviders ?? []).map((name) => h('option', {
+    value: name, selected: name === data.smsProvider,
+  }, GATEWAY_NAMES[name] ?? name)));
+  const smsSender = h('input', {
+    type: 'text', maxlength: 11, value: data.smsSender ?? '', placeholder: 'HIVE',
+  });
+  const smsReach = h('select',
+    h('option', { value: 'gap', selected: data.smsReach !== 'all' },
+      'Only phones that cannot show an alert'),
+    h('option', { value: 'all', selected: data.smsReach === 'all' },
+      'Everybody whose week changed'));
+  const testNumber = h('input', { type: 'tel', maxlength: 20, placeholder: '024 123 4567' });
+
   const save = async () => {
     try {
       await api.updateNotifications({
@@ -591,6 +608,10 @@ async function alertsTab(reload) {
         senderName: senderName.value.trim(),
         replyTo: replyTo.value.trim(),
         siteUrl: siteUrl.value.trim(),
+        smsEnabled: smsEnabled.checked,
+        smsProvider: smsProvider.value,
+        smsSender: smsSender.value.trim(),
+        smsReach: smsReach.value,
       });
       toast('Saved.', 'good');
       await reload();
@@ -603,6 +624,21 @@ async function alertsTab(reload) {
     try {
       const result = await api.testNotification();
       toast(result.ok ? 'Sent — check the inbox.' : `Not sent: ${result.result?.detail ?? 'see the log below'}`,
+        result.ok ? 'good' : 'bad');
+      await reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
+  const textOne = async () => {
+    if (!testNumber.value.trim()) {
+      toast('Type a mobile number to send the test to.', 'bad');
+      return;
+    }
+    try {
+      const result = await api.testText(testNumber.value.trim());
+      toast(result.ok ? 'Sent. Check the phone.' : `Not sent: ${result.reason ?? 'see the log below'}`,
         result.ok ? 'good' : 'bad');
       await reload();
     } catch (err) {
@@ -653,6 +689,37 @@ async function alertsTab(reload) {
       ),
     ),
 
+    card('Text messages', {
+      note: data.smsReady ? 'Ready to send' : `Not set up yet: ${(data.smsMissing ?? []).join(', ')}`,
+      wide: true,
+      actions: h('button.btn-sm', { onclick: textOne }, 'Send a test'),
+    },
+      h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
+        'An iPhone 7 Plus stops at iOS 15, and a home-screen app needs iOS 16.4 before it can '
+        + 'show an alert at all. Those phones will never buzz, however long we wait. A text '
+        + 'reaches every one of them, so a published rota goes out that way as well. Numbers '
+        + 'come from each person\'s record under People.'),
+      h('div.grid.grid-2',
+        h('div',
+          h('label.inline-check', { style: { marginBottom: '.75rem' } },
+            smsEnabled, h('span', 'Text staff when a rota is published')),
+          h('label.field', h('span', 'Who gets a text'), smsReach,
+            h('small.muted', 'Only the ones an alert cannot reach is the cheaper answer, and '
+              + 'the reason this exists')),
+        ),
+        h('div',
+          h('label.field', h('span', 'Gateway'), smsProvider,
+            h('small.muted', 'Set SMS_API_KEY as a Worker secret. Hubtel needs SMS_API_SECRET '
+              + 'as well')),
+          h('label.field', h('span', 'Sender name'), smsSender,
+            h('small.muted', 'What the message shows it is from. Eleven characters, letters and '
+              + 'digits, and it has to be registered with the gateway first')),
+          h('label.field', h('span', 'Send a test to'), testNumber,
+            h('small.muted', 'A real message at the usual price, so somebody can prove it works '
+              + 'without publishing anything')),
+        ),
+      )),
+
     h('div.btn-row', { style: { margin: '0 0 1rem' } },
       h('button.btn.btn-primary', { onclick: save }, 'Save notification settings')),
 
@@ -677,8 +744,8 @@ async function alertsTab(reload) {
         empty: 'None yet. Anybody can turn alerts on for their own device under "My account".',
       })),
 
-    card('What has been sent', { note: 'Email on the left, alerts on the right', wide: true },
-      h('div.grid.grid-2',
+    card('What has been sent', { note: 'Email, alerts and texts', wide: true },
+      h('div.grid.grid-3',
         h('div',
           h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Email'),
           table([
@@ -694,6 +761,14 @@ async function alertsTab(reload) {
             { key: 'sent', label: 'Devices', align: 'right' },
             { key: 'status', label: 'Result', format: (v) => h(`span.pill${v === 'sent' ? '.good' : v === 'skipped' ? '' : '.bad'}`, v) },
           ], data.pushLog.slice(0, 8), { empty: 'Nothing sent yet.' }),
+        ),
+        h('div',
+          h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Texts'),
+          table([
+            { key: 'at', label: 'When', format: (v) => h('small', v.slice(0, 16)) },
+            { key: 'sent', label: 'Sent', align: 'right' },
+            { key: 'status', label: 'Result', format: (v) => h(`span.pill${v === 'sent' ? '.good' : v === 'part sent' ? '' : '.bad'}`, v) },
+          ], (data.smsLog ?? []).slice(0, 8), { empty: 'Nothing sent yet.' }),
         ),
       )),
   );

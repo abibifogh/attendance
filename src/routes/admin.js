@@ -8,6 +8,7 @@ import {
 } from '../lib/permissions.js';
 import { listNotices, markSeen } from '../lib/notices.js';
 import { emailExceptions, isEmail, parseRecipients } from '../lib/notify.js';
+import { PROVIDERS, ghanaNumber, senderId, sendTexts, smsSetup } from '../lib/sms.js';
 import { isDay } from '../util/dates.js';
 
 /**
@@ -356,7 +357,7 @@ export async function getNotifications(ctx) {
   const rows = await ctx.db.prepare('SELECT key, value FROM settings').all();
   const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
 
-  const [recent, devices, pushLog] = await Promise.all([
+  const [recent, devices, pushLog, smsLog] = await Promise.all([
     ctx.db.prepare('SELECT * FROM email_log ORDER BY id DESC LIMIT 20').all()
       .catch(() => ({ results: [] })),
     ctx.db.prepare(
@@ -367,7 +368,11 @@ export async function getNotifications(ctx) {
     ).all().catch(() => ({ results: [] })),
     ctx.db.prepare('SELECT * FROM push_log ORDER BY at DESC LIMIT 10').all()
       .catch(() => ({ results: [] })),
+    ctx.db.prepare('SELECT * FROM sms_log ORDER BY at DESC LIMIT 10').all()
+      .catch(() => ({ results: [] })),
   ]);
+
+  const sms = smsSetup(settings, ctx.env);
 
   return json({
     // One digest a morning, and only when there is something to do about it.
@@ -391,8 +396,19 @@ export async function getNotifications(ctx) {
     siteUrl: originOf(settings.site_url) || '',
     // The key itself is never returned — only whether one is present.
     providerConfigured: Boolean(ctx.env.RESEND_API_KEY),
+    // Texts, which are the only thing that reaches a handset too old for
+    // alerts. The credentials themselves never come back, only whether they
+    // are there.
+    smsEnabled: sms.on,
+    smsProvider: sms.provider,
+    smsSender: settings.sms_sender ?? '',
+    smsReach: sms.reach,
+    smsProviders: PROVIDERS,
+    smsReady: sms.ready,
+    smsMissing: sms.missing,
     devices: devices.results ?? [],
     pushLog: pushLog.results ?? [],
+    smsLog: smsLog.results ?? [],
     log: recent.results ?? [],
   });
 }
@@ -431,10 +447,27 @@ export async function updateNotifications(ctx) {
   const current = await ctx.db.prepare('SELECT key, value FROM settings').all();
   const stored = Object.fromEntries((current.results ?? []).map((r) => [r.key, r.value]));
 
+  const smsProvider = PROVIDERS.includes(body.smsProvider)
+    ? body.smsProvider
+    : (PROVIDERS.includes(stored.sms_provider) ? stored.sms_provider : 'arkesel');
+
+  // A gateway registers a sender name of eleven characters, letters and digits
+  // only. Trimming it here rather than at the gateway means somebody finds out
+  // now instead of when the first text bounces.
+  const smsSender = senderId(
+    str(body.smsSender, 'Sender name', { max: 40, fallback: stored.sms_sender ?? '' }) ?? '',
+  );
+  const smsReach = body.smsReach === 'all' ? 'all' : (body.smsReach === 'gap' ? 'gap'
+    : (stored.sms_reach === 'all' ? 'all' : 'gap'));
+
   const emailEnabled = bool(body.emailEnabled, stored.att_email_enabled === '1') ? '1' : '0';
   const pushEnabled = bool(body.pushEnabled, stored.push_on_exception !== '0') ? '1' : '0';
   const inApp = bool(body.inAppEnabled, stored.notices_enabled !== '0') ? '1' : '0';
   const noticeEmail = bool(body.noticeEmail, stored.notice_email !== '0') ? '1' : '0';
+  const smsEnabled = bool(body.smsEnabled, stored.sms_enabled === '1') ? '1' : '0';
+  if (smsEnabled === '1' && !smsSender) {
+    throw badRequest('Texts need a sender name, which is what the message shows it is from.');
+  }
 
   await ctx.db.batch([
     setting(ctx.db, 'att_email_enabled', emailEnabled),
@@ -450,6 +483,10 @@ export async function updateNotifications(ctx) {
     setting(ctx.db, 'push_on_exception', pushEnabled),
     setting(ctx.db, 'notices_enabled', inApp),
     setting(ctx.db, 'notice_email', noticeEmail),
+    setting(ctx.db, 'sms_enabled', smsEnabled),
+    setting(ctx.db, 'sms_provider', smsProvider),
+    setting(ctx.db, 'sms_sender', smsSender),
+    setting(ctx.db, 'sms_reach', smsReach),
   ]);
 
   await audit(ctx, 'notifications.update', null, {
@@ -489,6 +526,36 @@ export async function testNotification(ctx) {
     'SELECT * FROM email_log ORDER BY id DESC LIMIT 1',
   ).first();
   return json({ ok: result?.status === 'sent', result });
+}
+
+/**
+ * Text one number now, so somebody can prove the gateway works.
+ *
+ * The number is typed in rather than taken from a record. Setting up an SMS
+ * account is fiddly, credit runs out quietly, and nobody should have to
+ * publish a real rota to find out whether any of it is working.
+ */
+export async function testText(ctx) {
+  const body = await readJson(ctx.request);
+  const to = ghanaNumber(body.to);
+  if (!to) {
+    throw badRequest('That does not look like a Ghanaian mobile number. Try 024 123 4567.');
+  }
+
+  const result = await sendTexts(ctx.db, ctx.env, {
+    messages: [{
+      to,
+      text: 'HIVE: this is a test message. If you can read it, texts are working.',
+    }],
+    kind: 'test',
+  });
+
+  await audit(ctx, 'sms.test', null, { to, sent: result.sent });
+  return json({
+    ok: (result.sent ?? 0) > 0,
+    sent: result.sent ?? 0,
+    reason: result.reason ?? result.detail ?? null,
+  });
 }
 
 // ---------------------------------------------------------------------------

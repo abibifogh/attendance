@@ -205,6 +205,10 @@ export const GUIDE = [
         + 'for Home Screen apps in iOS 16.4, and those phones stop at 15. My account says so on '
         + 'the phone itself rather than sending you to the Home Screen to find out. Everything '
         + 'still arrives in the bell at the top of the screen.' },
+      { p: 'And a published rota reaches those phones another way. If yours cannot show '
+        + 'alerts, the same message comes by email where your login has an address on it, '
+        + 'and by text to the number on your record. Whoever keeps the records can check '
+        + 'the number is right under People.' },
       { table: {
         head: ['What reaches you', 'When'],
         rows: [
@@ -452,6 +456,15 @@ export const GUIDE = [
         + 'Change a published day and it goes dashed again; the app offers to '
         + 'republish at once, and asks whether to ring the bell or do it quietly. Quietly is for '
         + 'a typo — a moved shift deserves the bell. Grey days are already behind you.' },
+      { p: 'Three ways out, so nobody is missed. An alert where the phone can take one. An '
+        + 'email where it cannot, to the address on their login. And a text to anybody the '
+        + 'first two miss, which is the only thing that reaches an old iPhone and the only '
+        + 'thing that reaches somebody with no login at all. Whoever got the alert does not '
+        + 'also get the email; two messages about one rota is how people learn to ignore '
+        + 'both. The dialog says afterwards how many were told, how many were texted, and '
+        + 'how many could not be reached at all.' },
+      { note: 'Texts have to be set up first, under Setup → Notifications, and they cost '
+        + 'money each time. Numbers come from each person’s record under People.' },
       { sub: 'The days stay where you can see them' },
       { p: 'Ask for a fortnight and you get a fortnight on one screen rather than one to scroll '
         + 'sideways through. Past a week the cells give up what the eye can do without: the '
