@@ -61,6 +61,11 @@
   /* Measured from the real header, which grows a second row when the tab
      bar cannot fit. Everything sticky below it hangs off this. */
   --topbar-h: 58px;
+  /* What the phone itself is using at the top of the screen: the status bar
+     on an installed app, the notch on the phones that have one. Zero in a
+     browser and on anything that is not a phone. Held as a token rather than
+     written out at each use, so a rule can be checked without a handset. */
+  --safe-top: env(safe-area-inset-top, 0px);
   --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 8px 24px -12px rgba(16, 24, 40, .18);
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --hex-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,7 87,28.5 87,71.5 50,93 13,71.5 13,28.5' fill='none' stroke='black' stroke-width='11' stroke-linejoin='round'/%3E%3C/svg%3E");
@@ -2453,13 +2458,16 @@ html { touch-action: manipulation; }
   .app-dialog, .app-dialog-narrow, .app-dialog-wide {
     width: 100%;
     max-width: 100%;
-    margin: .5rem auto auto;
+    /* Clear of the clock and the signal bars. Installed on a phone the page
+       paints under the status bar, so a sheet against the top of the screen
+       puts its own title and its ✕ underneath the time. */
+    margin: max(.5rem, calc(var(--safe-top) + .35rem)) auto auto;
     --dlg-x: .9rem;
     --dlg-y: 1rem;
     padding: var(--dlg-y) var(--dlg-x);
     max-height: 92vh;
     max-height: min(92dvh, 92vh);
-    max-height: calc(var(--vh, 92vh) - 1rem);
+    max-height: calc(var(--vh, 92vh) - 1rem - var(--safe-top));
   }
   /* Clear of whatever the phone puts across the bottom of the screen. The
      inset goes on the pinned bar rather than on the dialog, because the bar

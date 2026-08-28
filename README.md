@@ -741,7 +741,12 @@ thing in the stylesheet is measured against that. The `vh` and `dvh` lines stay
 above it as fallbacks.
 
 On a handset a dialog is also anchored to the top of the screen rather than
-sitting along the bottom. A sheet along the bottom is the nicer place for a
+sitting along the bottom, and it starts below whatever the phone is using up
+there. Installed on an iPhone the page paints under the status bar, so a sheet
+against the very top puts its own title and its ✕ underneath the clock and the
+signal bars. The inset is held as a token — `--safe-top` — rather than written
+out at each use, which also means the rule can be checked at a desk by setting
+the token to a phone's worth of status bar. A sheet along the bottom is the nicer place for a
 thumb, but the bottom of the viewport a dialog is laid out in is exactly where
 Safari puts its toolbar. Nothing behind an open dialog scrolls, either, on a
 phone: a page that moves under a modal is a page whose owner concludes the modal

@@ -217,8 +217,10 @@ export function openAccountDialog({
         'aria-label': 'Close', onclick: () => dialog.close(),
       }, '✕'),
     ),
-    h('p.muted', { style: { fontSize: '.85rem', marginTop: '-.4rem' } },
-      `Signed in as ${name}`),
+    // No negative margin. The head above this is sticky and carries its own
+    // background, so a line pulled up under it is a line with its top six
+    // pixels painted over — which is what "Signed in as Michael" was.
+    h('p.muted', { style: { fontSize: '.85rem' } }, `Signed in as ${name}`),
     body,
     installSection(),
     canSeeAlerts ? alertsSection() : null,
