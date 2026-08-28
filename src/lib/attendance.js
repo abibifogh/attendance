@@ -167,6 +167,17 @@ export function rotationWeekOf(day, rotationWeeks = 1, anchor = ROTATION_ANCHOR)
  */
 export const onRota = (staff) => Boolean(staff?.active) && staff?.on_rota !== 0;
 
+/**
+ * Whether attendance is about them at all.
+ *
+ * A director on the payroll never taps the terminal, so every day of theirs
+ * computes as an absence and every screen built on attendance carries them as
+ * somebody who has not turned up. Off the clock takes them out of all of it.
+ * Their record and their payslip are untouched: neither was ever about who
+ * came in this morning.
+ */
+export const onClock = (staff) => staff?.on_clock !== 0;
+
 /** A JSON array kept in a text column, read back without ever throwing. */
 export function parseList(value) {
   if (!value) return [];
@@ -1766,10 +1777,17 @@ export async function loadDataset(db, { from, to, now } = {}) {
 
 export function makeDataset(raw) {
   const settings = Object.fromEntries((raw.settings ?? []).map((r) => [r.key, r.value]));
-  const staff = raw.staff ?? [];
+  const everybody = raw.staff ?? [];
+  // Attendance is about the people attendance is about. Somebody kept purely
+  // on the payroll is dropped here, once, rather than being filtered out again
+  // in each of the twenty screens that walk this list — which is how one of
+  // them gets missed and a director appears on Today as absent.
+  const staff = everybody.filter(onClock);
   const shifts = raw.shifts ?? [];
 
-  const staffById = new Map(staff.map((s) => [s.id, s]));
+  // Looked up by id from everybody, though: an old record of theirs still has
+  // to be able to say whose it is.
+  const staffById = new Map(everybody.map((s) => [s.id, s]));
   const staffByEmployeeNo = new Map(staff.map((s) => [String(s.employee_no), s]));
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
   const reasonBy = new Map((raw.reasons ?? []).map((r) => [r.code, r]));

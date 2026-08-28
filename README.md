@@ -1319,6 +1319,44 @@ words that were signed, a fingerprint of those words, and a sequential log of
 every event — issued, link sent, link opened, document read, signed — each with
 a time, a network address and the device.
 
+### Somebody who is only ever paid
+
+A property has people on the payroll who never touch a terminal and never
+appear on a rota: a director, the owner, a consultant on a retainer, a driver
+on a fixed monthly wage. Adding them used to be the same thing as adding a
+kitchen porter, which meant they turned up on Today as absent every morning, on
+the sign-off list every week, and in the year's report as somebody who had not
+worked a single day.
+
+**Setup → Staff → Add somebody → What they are here for.** Three answers:
+
+| | What it means |
+|---|---|
+| **The rota and attendance** | Everybody normal. Nothing has changed for them. |
+| **Attendance, but never rostered** | They clock in and out, but no column is kept for them on the grid, the draft or the workload list. |
+| **Payroll only** | Nothing about attendance applies. No day is ever worked out for them, no screen counts them, nothing chases them. |
+
+Payroll only takes them off the rota as well, because a rota is a plan for who
+is coming in and there is no version of it that means anything for somebody who
+is only here to be paid. The form then stops asking the questions that do not
+apply: annual leave days, days a week, the days they never work, the
+departments they can be put on.
+
+What stays exactly as it was: their record under People, their payslip, their
+allowances, their advances, their medical claims, their letters and their
+birthday. None of that was ever about who came in this morning.
+
+**The employee number is still required**, and for them it is just a staff
+number for the payslip — invent one. It is deliberately kept out of the
+terminal's matching, so a number made up for a director can never claim the
+punches of whoever really holds that card.
+
+**Switching somebody over keeps their history.** The days already worked out
+for them are left alone rather than deleted, so putting them back on the clock
+gives them their year back instead of an empty one. What does go is the rota
+ahead of them: shifts from today onwards, and their standing pattern, exactly
+as they do for anybody taken off the rota.
+
 ### One link, whatever they still owe
 
 **People → open somebody → Send them a link.** It carries their details form,

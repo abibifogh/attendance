@@ -78,7 +78,10 @@ export async function renderPeople() {
           format: (v, r) => h('a.link-button', {
             href: `#/person?id=${r.id}`,
           }, h('div',
-            h('div', v),
+            h('div', v,
+              r.payrollOnly
+                ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'payroll only')
+                : null),
             h('small.muted', `${r.jobTitle || 'No job title'} · ${r.employeeNo}`),
           )),
         },

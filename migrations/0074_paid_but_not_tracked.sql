@@ -1,0 +1,14 @@
+-- Somebody who is only ever paid.
+--
+-- A property has people on the payroll who never touch the terminal and never
+-- appear on a rota: a director, an owner, a consultant on a retainer, a driver
+-- on a fixed monthly wage. There was already a way to keep somebody off the
+-- rota, but nothing kept them out of attendance, so they turned up on Today as
+-- absent every single morning, on the sign-off list every week, and in every
+-- report as a person who has not worked a day all year.
+--
+-- Off the clock means exactly that: no day is ever computed for them, no
+-- screen counts them, nothing chases them. Their record, their payslip, their
+-- advances and their letters carry on as before, because none of that was ever
+-- about attendance either.
+ALTER TABLE att_staff ADD COLUMN on_clock INTEGER NOT NULL DEFAULT 1;

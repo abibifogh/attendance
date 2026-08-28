@@ -161,13 +161,19 @@ export async function createStaff(ctx) {
   const employeeNo = str(body.employeeNo, 'Employee number', { required: true, max: 40 });
   const name = str(body.name, 'Name', { required: true, max: 120 });
 
+  // Somebody the clock is not about is never on the rota either. The rota is
+  // a plan for who is coming in, and there is no version of it that means
+  // anything for a director who is only here to be paid.
+  const onClock = bool(body.onClock, true);
+  const onRota = onClock && bool(body.onRota, true);
+
   let row;
   try {
     row = await ctx.db.prepare(
       `INSERT INTO att_staff (employee_no, name, department, job_title, hired_on, leave_days,
                               days_per_week, user_id, note, on_rota, works_in, works_shifts,
-                              off_days)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) RETURNING id`,
+                              off_days, on_clock)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) RETURNING id`,
     ).bind(
       employeeNo, name,
       str(body.department, 'Department', { max: 80 }),
@@ -177,10 +183,11 @@ export async function createStaff(ctx) {
       readDaysPerWeek(body.daysPerWeek),
       body.userId == null || body.userId === '' ? null : int(body.userId, 'Login', { min: 1 }),
       str(body.note, 'Note', { max: 300 }),
-      bool(body.onRota, true) ? 1 : 0,
+      onRota ? 1 : 0,
       readWorksIn(body.worksIn),
       readWorksShifts(body.worksShifts),
       readOffDays(body.offDays),
+      onClock ? 1 : 0,
     ).first();
   } catch (err) {
     rethrowConstraint(err, {
@@ -189,11 +196,17 @@ export async function createStaff(ctx) {
     });
   }
 
-  const claimed = await claimOrphans(ctx.db, row.id, employeeNo);
+  // Punches held under that number are theirs, unless the number was invented
+  // to give somebody a payslip — in which case it belongs to whoever really
+  // holds that card, and handing them a stranger's punches is the one mistake
+  // this would be hardest to notice.
+  const claimed = onClock
+    ? await claimOrphans(ctx.db, row.id, employeeNo)
+    : { claimed: 0 };
   if (claimed.claimed) {
     await recompute(ctx.db, { staffIds: [row.id], from: claimed.from, to: claimed.to });
   }
-  await audit(ctx, 'attendance.staff_create', row.id, { employeeNo, name });
+  await audit(ctx, 'attendance.staff_create', row.id, { employeeNo, name, onClock });
 
   return json({ ok: true, id: row.id, claimedPunches: claimed.claimed });
 }
@@ -205,14 +218,16 @@ export async function updateStaff(ctx, id) {
   if (!existing) throw notFound('No such member of staff.');
 
   const employeeNo = str(body.employeeNo, 'Employee number', { required: true, max: 40 });
-  const onRota = bool(body.onRota, true);
+  const onClock = bool(body.onClock, existing.on_clock !== 0);
+  const onRota = onClock && bool(body.onRota, true);
 
   try {
     await ctx.db.prepare(
       `UPDATE att_staff SET employee_no = ?1, name = ?2, department = ?3, job_title = ?4,
                             hired_on = ?5, left_on = ?6, leave_days = ?7, user_id = ?8,
                             active = ?9, note = ?10, days_per_week = ?12, on_rota = ?13,
-                            works_in = ?14, works_shifts = ?15, off_days = ?16
+                            works_in = ?14, works_shifts = ?15, off_days = ?16,
+                            on_clock = ?17
        WHERE id = ?11`,
     ).bind(
       employeeNo,
@@ -231,6 +246,7 @@ export async function updateStaff(ctx, id) {
       readWorksIn(body.worksIn),
       readWorksShifts(body.worksShifts),
       readOffDays(body.offDays),
+      onClock ? 1 : 0,
     ).run();
   } catch (err) {
     rethrowConstraint(err, {
@@ -275,13 +291,21 @@ export async function updateStaff(ctx, id) {
       .run().catch(() => {});
   }
 
-  await recompute(ctx.db, { staffIds: [staffId], from: addDays(today, -60), to: today });
+  // Taken off the clock, nothing is recomputed for them ever again, and every
+  // screen stops carrying them. What was already worked out is left where it
+  // is rather than deleted: it is what a report on last March was run against,
+  // and putting them back on the clock should give them their history back
+  // rather than an empty year.
+  if (onClock) {
+    await recompute(ctx.db, { staffIds: [staffId], from: addDays(today, -60), to: today });
+  }
   await audit(ctx, 'attendance.staff_update', staffId, {
     employeeNo,
     offRota: existing.on_rota && !onRota ? { cleared } : undefined,
+    offClock: existing.on_clock !== 0 && !onClock ? true : undefined,
   });
 
-  return json({ ok: true, clearedFromRota: cleared });
+  return json({ ok: true, clearedFromRota: cleared, offClock: !onClock });
 }
 
 /**

@@ -275,7 +275,12 @@ export async function ingestPunches(db, { device, events, timezone, source = 'po
     else skipped += 1;
   }
 
-  const staff = await db.prepare('SELECT id, employee_no FROM att_staff').all();
+  // Only people the clock is about. Somebody kept purely on the payroll has an
+  // employee number that was invented to give them a payslip, and it must not
+  // be allowed to claim a punch made by whoever holds that card for real.
+  const staff = await db.prepare(
+    'SELECT id, employee_no FROM att_staff WHERE on_clock = 1',
+  ).all();
   const staffByNo = new Map((staff.results ?? []).map((s) => [String(s.employee_no), s.id]));
 
   const statements = rows.map((row) => db.prepare(

@@ -137,6 +137,10 @@ export async function listPeople(ctx) {
       jobTitle: person.job_title,
       hiredOn: person.hired_on,
       active: Boolean(person.active),
+      // Kept purely to be paid: no rota, no attendance, nothing chasing them.
+      // Worth saying on the list, because their record looking thin is the
+      // point rather than something anybody needs to go and fix.
+      payrollOnly: person.on_clock === 0,
       phone: full ? profile?.personal_phone ?? null : null,
       missing: [
         ...gaps.map((g) => g.label),

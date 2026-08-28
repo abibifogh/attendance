@@ -1688,11 +1688,26 @@ export const GUIDE = [
       { sub: 'Somebody who is never rostered' },
       { p: 'A director, a consultant, an owner: on the payroll, with a record and a payslip and '
         + 'a leave balance, and no business taking up a column on the grid. Setup → Staff, '
-        + 'edit them, and set On the rota to No.' },
+        + 'edit them, and set What they are here for to Attendance, but never rostered.' },
       { p: 'They come off the grid, out of the workload list and out of the draft. Anything '
         + 'already rostered for them from today onwards is taken off, and their standing pattern '
         + 'goes with it, or it would put them straight back. What is already behind you is left '
         + 'alone, because it happened.' },
+
+      { sub: 'Somebody who is only ever paid' },
+      { p: 'The third answer on that same question is Payroll only, and it goes further. Some '
+        + 'people never touch the terminal at all, so working out a day for them produces an '
+        + 'absence and nothing else: they were on Today every morning, on the sign-off list '
+        + 'every week, and in the year as somebody who had not worked a day.' },
+      { p: 'Payroll only takes them out of attendance altogether. No day is worked out for '
+        + 'them, no screen counts them, nothing chases them, and they are off the rota as well. '
+        + 'Their record, their payslip, their allowances, their advances, their letters and '
+        + 'their birthday carry on exactly as before, because none of that was ever about who '
+        + 'came in this morning.' },
+      { note: 'They still need an employee number, and for them it is only a staff number for '
+        + 'the payslip, so invent one. It is kept out of the terminal\u2019s matching on '
+        + 'purpose: a number made up for a director can never claim the punches of whoever '
+        + 'really holds that card.' },
 
       { sub: 'Where somebody may be put on' },
       { p: 'Department says where a person sits. They can work in says where they may be '

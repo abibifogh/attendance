@@ -495,72 +495,113 @@ async function staffTab(reload) {
       : [h('small.muted', 'No departments set up yet. Add one on a shift or a person first.')];
     syncWarning();
 
+    // Three answers, not two. A director is on the payroll and nowhere else:
+    // rostering them means nothing, and neither does marking them absent every
+    // morning for never touching a terminal they have never stood in front of.
+    const tracking = h('select', { name: 'tracking' },
+      h('option', {
+        value: 'full',
+        selected: existing == null || (existing.on_clock !== 0 && existing.on_rota !== 0),
+      }, 'The rota and attendance'),
+      h('option', {
+        value: 'no-rota',
+        selected: existing != null && existing.on_clock !== 0 && existing.on_rota === 0,
+      }, 'Attendance, but never rostered'),
+      h('option', {
+        value: 'payroll',
+        selected: existing?.on_clock === 0,
+      }, 'Payroll only'),
+    );
+
+    const rotaOnly = h('div',
+      field('Never works', h('div.day-ticks', offBoxes),
+        'A standing rule, so it needs no ✕ on the rota every fortnight. For one date only, '
+        + 'use Days they cannot work on the rota instead'),
+
+      // Where they may be put on. Their own department answers for them until
+      // somebody ticks more, which is the truth for most of the staff and
+      // saves ticking one box twenty-four times.
+      field('They can work in', h('div.works-picker', worksInBoxes),
+        'Tick a whole department, or pick out single shifts within one. Leave everything '
+        + 'clear and their own department answers for them. Shifts that are not in a '
+        + 'department are open to everybody either way'));
+
+    // Nothing about a rota or a working week applies to somebody who is only
+    // paid, so the form stops asking. Left on screen and greyed they would
+    // still read as questions somebody has to answer.
+    const clockOnly = [];
+    // Hidden by style rather than by the hidden attribute: a field row is laid
+    // out as a grid, and a class that sets display beats the browser's own
+    // rule for [hidden] every time.
+    const show = (node, on) => { node.style.display = on ? '' : 'none'; };
+    const syncTracking = () => {
+      const paid = tracking.value === 'payroll';
+      show(rotaOnly, !paid && tracking.value !== 'no-rota');
+      for (const node of clockOnly) show(node, !paid);
+    };
+    tracking.addEventListener('change', syncTracking);
+
+    const remember = (node) => { clockOnly.push(node); return node; };
+
+    const body = h('div',
+      h('div.field-row',
+        field('Name', h('input', { type: 'text', name: 'name', required: true, maxlength: 120, value: existing?.name ?? '' })),
+        field(
+          'Employee number',
+          h('input', { type: 'text', name: 'employeeNo', required: true, maxlength: 40, value: existing?.employee_no ?? '' }),
+          'Exactly as it is on the terminal — this is what joins a face to a name. '
+          + 'For somebody only on the payroll, any staff number will do',
+        ),
+      ),
+      field('What they are here for', tracking,
+        'Never rostered takes them off the grid, the draft and the workload list. '
+        + 'Payroll only takes them out of attendance as well: no day is worked out for '
+        + 'them, nothing counts them absent, and nothing chases them'),
+      h('div.field-row',
+        field('Department', departmentPicker(departments, existing?.department ?? '')),
+        field('Job title', h('input', { type: 'text', name: 'jobTitle', maxlength: 80, value: existing?.job_title ?? '' })),
+      ),
+      h('div.field-row',
+        field('Started', h('input', { type: 'date', name: 'hiredOn', value: existing?.hired_on ?? '' }), 'Leave earns from this date'),
+        field('Left', h('input', { type: 'date', name: 'leftOn', value: existing?.left_on ?? '' }), 'They drop off the rota after this'),
+      ),
+      remember(h('div.field-row',
+        field(
+          'Annual leave days',
+          h('input', { type: 'number', name: 'leaveDays', min: 0, max: 365, step: 0.5, value: existing?.leave_days ?? '' }),
+          'Leave blank to use the property default',
+        ),
+        // What this person's week is worth. It decides what their month's
+        // over-or-under is measured against, so somebody on six shorter days
+        // is not permanently over and somebody on four long ones is not
+        // permanently under for doing exactly what their contract says.
+        field(
+          'Days a week',
+          h('input', { type: 'number', name: 'daysPerWeek', min: 0.5, max: 7, step: 0.5, value: existing?.days_per_week ?? '' }),
+          'What the month expects of them, and the most the rota will put them down for. '
+          + 'Blank uses the property default',
+        ),
+      )),
+      rotaOnly,
+
+      h('div.field-row',
+        isEdit
+          ? field('Status', h('select', { name: 'active' },
+            h('option', { value: 'true', selected: !!existing.active }, 'Active'),
+            h('option', { value: 'false', selected: !existing.active }, 'Not active'),
+          ))
+          : null,
+      ),
+      field('Note', h('input', { type: 'text', name: 'note', maxlength: 300, value: existing?.note ?? '' })));
+
+    // Once now, so an existing payroll-only record opens without the questions
+    // that do not apply to them, rather than showing them for a moment first.
+    syncTracking();
+
     const done = await formDialog({
       title: isEdit ? `Edit ${existing.name}` : 'Add somebody',
       submitLabel: isEdit ? 'Save changes' : 'Add them',
-      body: h('div',
-        h('div.field-row',
-          field('Name', h('input', { type: 'text', name: 'name', required: true, maxlength: 120, value: existing?.name ?? '' })),
-          field(
-            'Employee number',
-            h('input', { type: 'text', name: 'employeeNo', required: true, maxlength: 40, value: existing?.employee_no ?? '' }),
-            'Exactly as it is on the terminal — this is what joins a face to a name',
-          ),
-        ),
-        h('div.field-row',
-          field('Department', departmentPicker(departments, existing?.department ?? '')),
-          field('Job title', h('input', { type: 'text', name: 'jobTitle', maxlength: 80, value: existing?.job_title ?? '' })),
-        ),
-        h('div.field-row',
-          field('Started', h('input', { type: 'date', name: 'hiredOn', value: existing?.hired_on ?? '' }), 'Leave earns from this date'),
-          field('Left', h('input', { type: 'date', name: 'leftOn', value: existing?.left_on ?? '' }), 'They drop off the rota after this'),
-        ),
-        h('div.field-row',
-          field(
-            'Annual leave days',
-            h('input', { type: 'number', name: 'leaveDays', min: 0, max: 365, step: 0.5, value: existing?.leave_days ?? '' }),
-            'Leave blank to use the property default',
-          ),
-          // What this person's week is worth. It decides what their month's
-          // over-or-under is measured against, so somebody on six shorter days
-          // is not permanently over and somebody on four long ones is not
-          // permanently under for doing exactly what their contract says.
-          field(
-            'Days a week',
-            h('input', { type: 'number', name: 'daysPerWeek', min: 0.5, max: 7, step: 0.5, value: existing?.days_per_week ?? '' }),
-            'What the month expects of them, and the most the rota will put them down for. '
-            + 'Blank uses the property default',
-          ),
-        ),
-        field('Never works', h('div.day-ticks', offBoxes),
-          'A standing rule, so it needs no ✕ on the rota every fortnight. For one date only, '
-          + 'use Days they cannot work on the rota instead'),
-
-        // Where they may be put on. Their own department answers for them until
-        // somebody ticks more, which is the truth for most of the staff and
-        // saves ticking one box twenty-four times.
-        field('They can work in', h('div.works-picker', worksInBoxes),
-          'Tick a whole department, or pick out single shifts within one. Leave everything '
-          + 'clear and their own department answers for them. Shifts that are not in a '
-          + 'department are open to everybody either way'),
-
-        h('div.field-row',
-          isEdit
-            ? field('Status', h('select', { name: 'active' },
-              h('option', { value: 'true', selected: !!existing.active }, 'Active'),
-              h('option', { value: 'false', selected: !existing.active }, 'Not active'),
-            ))
-            : null,
-          // Somebody on the payroll who is never rostered: a director, a
-          // consultant, the owner. They keep their record and their payslip
-          // and simply stop taking up a column on the grid.
-          field('On the rota', h('select', { name: 'onRota' },
-            h('option', { value: 'true', selected: existing?.on_rota !== 0 }, 'Yes'),
-            h('option', { value: 'false', selected: existing?.on_rota === 0 }, 'No, never rostered'),
-          ), 'No takes them off the grid, the draft and the workload list'),
-        ),
-        field('Note', h('input', { type: 'text', name: 'note', maxlength: 300, value: existing?.note ?? '' })),
-      ),
+      body,
       onSubmit: async (form) => {
         const payload = {
           name: form.get('name'),
@@ -575,7 +616,8 @@ async function staffTab(reload) {
           daysPerWeek: form.get('daysPerWeek') || null,
           note: form.get('note') || null,
           active: form.get('active') !== 'false',
-          onRota: form.get('onRota') !== 'false',
+          onClock: form.get('tracking') !== 'payroll',
+          onRota: form.get('tracking') === 'full',
           offDays: [...never],
           worksIn: [...chosen],
           // A shift inside a ticked department is already covered by it, and
@@ -641,8 +683,13 @@ async function staffTab(reload) {
     card('Staff', {
       note: (() => {
         const active = staff.filter((s) => s.active).length;
-        const off = staff.filter((s) => s.active && s.on_rota === 0).length;
-        return off ? `${active} active, ${off} not on the rota` : `${active} active`;
+        const paid = staff.filter((s) => s.active && s.on_clock === 0).length;
+        const off = staff.filter((s) => s.active && s.on_clock !== 0 && s.on_rota === 0).length;
+        return [
+          `${active} active`,
+          off ? `${off} not on the rota` : null,
+          paid ? `${paid} payroll only` : null,
+        ].filter(Boolean).join(', ');
       })(),
       actions: h('button.btn.btn-primary', { onclick: () => edit(null) }, '+ Add somebody'),
       wide: true,
@@ -654,9 +701,11 @@ async function staffTab(reload) {
           format: (v, r) => h('div',
             h('div', v,
               r.active ? null : h('span.pill', { style: { marginLeft: '.4rem' } }, 'inactive'),
-              r.on_rota === 0
-                ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'not on rota')
-                : null),
+              r.on_clock === 0
+                ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'payroll only')
+                : r.on_rota === 0
+                  ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'not on rota')
+                  : null),
             h('small.muted', [r.job_title, r.department].filter(Boolean).join(' · ') || '—'),
             readDayList(r.off_days).length
               ? h('small.muted', { style: { display: 'block' } },
