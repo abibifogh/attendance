@@ -4116,6 +4116,17 @@ html { touch-action: manipulation; }
     font-size: .62rem;
   }
   .rota-h-sep { display: none; }
+  /* The "+1" goes with it. A cell is a seventh of the screen, "06:30 +1" is
+     wider than that, and it was printing over the day beside it — while the
+     moon under it was already saying the shift runs into the night. */
+  .rota-h-next { display: none; }
+  .rota-h-from, .rota-h-to { white-space: nowrap; }
+  /* And nothing in a cell reaches past it, whatever it turns out to say. */
+  .rota-cellwrap .rota-hours, .rota-positions .pos-card-clock {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
   .rota-h-to { color: var(--text-dim); font-weight: 550; }
   /* A day with nothing on it is a place to put something. */
   .rota-cellwrap[data-shift-colour="0"] .rota-hours::after {

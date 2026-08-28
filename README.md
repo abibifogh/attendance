@@ -712,7 +712,10 @@ go and scrolled away with everything else.
 
 A cell is the two ends of the shift, one over the other, on the shift's own
 colour, with the moon for one that runs into the night and a `+` on a day with
-nothing on it. The name of the shift does not fit in fifty pixels and the clock
+nothing on it. The `+1` on an overnight shift goes on a phone: "06:30 +1" is
+wider than a seventh of a handset and was printing over the day beside it, and
+the moon underneath is already saying the same thing. Nothing in a cell reaches
+past it now, whatever it turns out to say. The name of the shift does not fit in fifty pixels and the clock
 is the half worth reading anyway: four shifts on this property are called some
 variation of Housekeeper Helper and only the times tell them apart. Pressing a
 cell opens the same list of shifts the dropdown opens on a desk.

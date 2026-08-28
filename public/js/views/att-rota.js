@@ -522,7 +522,11 @@ export async function renderAttRota(params) {
         hours.append(
           h('span.rota-h-from', chosen.starts_at),
           h('span.rota-h-sep', '–'),
-          h('span.rota-h-to', `${chosen.ends_at}${overnight ? ' +1' : ''}`),
+          // The "+1" in a box of its own, because on a phone it is what makes
+          // the line wider than the cell and it is saying what the moon
+          // underneath it already says.
+          h('span.rota-h-to', chosen.ends_at,
+            overnight ? h('span.rota-h-next', ' +1') : null),
         );
       }
       // A little moon for a shift that runs into the small hours, or up to
@@ -1712,7 +1716,8 @@ export async function renderAttRota(params) {
   h('span.pos-card-clock',
     h('span.rota-h-from', shift.starts_at),
     h('span.rota-h-sep', '–'),
-    h('span.rota-h-to', `${shift.ends_at}${shift.ends_at <= shift.starts_at ? ' +1' : ''}`),
+    h('span.rota-h-to', shift.ends_at,
+      shift.ends_at <= shift.starts_at ? h('span.rota-h-next', ' +1') : null),
     nightMark(shift) ? ' ' : null,
     nightMark(shift)),
   h('span.pos-card-who', card.row ? card.row.staff.name : 'Empty'));
