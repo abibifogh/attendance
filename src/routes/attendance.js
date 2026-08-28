@@ -707,6 +707,79 @@ export async function week(ctx) {
 }
 
 /**
+ * The week as totals, everybody on one page.
+ *
+ * There is somebody at every property whose whole question is whether the week
+ * adds up: the person who does the wages, the owner on a Sunday night, whoever
+ * checks the hours against the money. They do not need to know that Kwesi was
+ * eleven minutes late on Tuesday, and handing them a screen that says so is
+ * handing them a screen full of things that are not their business.
+ *
+ * So this answers exactly one question and carries nothing else. Per person:
+ * the days they were down for and the days they worked, the hours the rota
+ * asked of them and the hours the clock recorded. No day-by-day rows, no clock
+ * times, no lateness, no leave balances, and nothing to press.
+ *
+ * The narrowness is the point, and it is enforced here rather than in the
+ * screen: a permission that hides a column but hands the whole week down the
+ * wire is not a permission, it is a curtain.
+ */
+export async function weekTotals(ctx) {
+  const timezone = await timezoneOf(ctx.db);
+  const today = todayIn(timezone);
+  const from = startOfWeek(readDay(ctx.url.searchParams.get('from'), today));
+  const to = addDays(from, 6);
+
+  // A day either side, because a night shift belongs to the day it starts on
+  // and the dataset has to hold both ends of it.
+  const ds = await loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) });
+  const days = rangeDays(from, to);
+
+  const rows = [];
+  for (const staff of ds.staff) {
+    // Somebody who had not started, or who has left, is not a row on a week
+    // they were never part of.
+    if (!days.some((day) => activeOn(staff, day))) continue;
+
+    const totals = summarise(daysFor(ds, staff.id, from, to), {
+      shifts: ds.shiftById,
+      reasons: ds.reasonBy,
+    });
+
+    rows.push({
+      staff: {
+        id: staff.id,
+        name: staff.name,
+        employee_no: staff.employee_no,
+        department: staff.department,
+      },
+      daysRostered: totals.scheduled,
+      daysWorked: totals.daysWorked,
+      expectedMinutes: totals.expectedMinutes,
+      workedMinutes: totals.workedMinutes,
+    });
+  }
+
+  rows.sort((a, b) => a.staff.name.localeCompare(b.staff.name));
+
+  const add = (key) => rows.reduce((n, row) => n + row[key], 0);
+
+  return json({
+    from,
+    to,
+    today,
+    rows,
+    totals: {
+      people: rows.length,
+      daysRostered: add('daysRostered'),
+      daysWorked: add('daysWorked'),
+      expectedMinutes: add('expectedMinutes'),
+      workedMinutes: add('workedMinutes'),
+    },
+  });
+}
+
+/**
  * One person over a period, with what it adds up to and what leave is left.
  *
  * The per-staff report, whether that period is a day, a week or a month — the

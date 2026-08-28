@@ -1084,6 +1084,33 @@ export const GUIDE = [
   },
 
   {
+    key: 'totals',
+    title: 'The week as totals',
+    permission: 'att_totals',
+    lede: 'Everybody on one page: days down for, days worked, hours asked for, hours recorded.',
+    blocks: [
+      { p: 'Totals answers one question — whether the week adds up — and carries nothing else. '
+        + 'Four numbers a person and a line for the whole week: the days they were down for, the '
+        + 'days they worked, the hours the rota asked of them and the hours the terminal '
+        + 'recorded. The last column is the difference between those two, which is usually the '
+        + 'thing being looked for.' },
+      { steps: [
+        'Totals. It opens on this week.',
+        'Step back a week with the arrow, or pick any Monday from the date box.',
+        'Read the line at the top for the property, and the table under it per person.',
+        'Save as PDF under More if somebody wants it on paper.',
+      ] },
+      { note: 'Hours rostered are what the rota asked for. Hours worked are what the terminal '
+        + 'recorded, so a day still waiting to be settled counts what it has so far \u2014 a '
+        + 'missing clock-out reads as short until somebody sorts it out.' },
+      { p: 'It is read only, and it is deliberately the whole of what somebody can be given. '
+        + 'Whoever holds it sees no day-by-day detail, no clock times, no lateness, no leave '
+        + 'balances and nothing about pay, and there is nothing on the screen to change. An '
+        + 'administrator hands it out under Users & data, either as the "Weekly totals only" '
+        + 'role or by ticking "Weekly totals" against somebody who already has other work here.' },
+    ],
+  },
+  {
     key: 'reports',
     title: 'Reports and the wages',
     permission: ['att_reports', 'att_rota'],

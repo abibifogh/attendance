@@ -2126,6 +2126,38 @@ tr:hover .pos-add, .pos-add:focus-visible {
 }
 .pos-add:hover { color: var(--accent); border-color: var(--accent); }
 
+/* ------------------------------------------------------- weekly totals --
+   Four numbers for the whole week, above the same four a person. Read before
+   the table rather than after it: whoever opens this screen is usually here
+   for the one line, and the names are the working out. */
+.tot-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem .9rem;
+  margin-bottom: .8rem;
+  padding-bottom: .7rem;
+  border-bottom: 1px solid var(--border);
+}
+.tot-line {
+  display: flex;
+  align-items: baseline;
+  gap: .35rem;
+  font-size: .9rem;
+}
+.tot-line strong { font-variant-numeric: tabular-nums; }
+.tot-table td { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 620px) {
+  /* Six columns of numbers is a wide table on a handset. Small type that
+     scrolls a little beats big type that scrolls a lot, and the line above the
+     table has already answered the question for anybody who only wants the
+     week's own figure. */
+  .tot-table th, .tot-table td { padding: .35rem .3rem; font-size: .76rem; }
+  .tot-table td:first-child { min-width: 7.5rem; }
+  .tot-table td small { font-size: .66rem; }
+  .tot-summary { gap: .3rem .8rem; font-size: .85rem; }
+}
+
 /* ------------------------------------------------ the mark beside a name --
    One character on the rota, with the whole reason under it on hover. The
    title attribute said the same thing, eventually, in the browser's own time

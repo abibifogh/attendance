@@ -124,6 +124,23 @@ chasing has to ask somebody else for a copy of what they are looking at.
 | **Person, any period** | The slip that gets handed over. A plain-English line at the top saying what happened and what to do differently, the clock times under it as evidence, and the leave balance beside it. Prints as a PDF. |
 | **Week** | Names down the side, Monday to Sunday across. Finds the pattern a daily list hides — the person late three Mondays running, the section short every weekend. |
 | **Month** | Days worked, hours, overtime, absences, leave taken and leave left, per person. The sheet that goes to whoever does the wages. Exports as CSV. |
+| **Totals** | The week as four numbers a person: days down for, days worked, hours the rota asked for, hours the terminal recorded, and the difference. Its own permission, and the only screen somebody holding it can open. |
+
+**Weekly totals, for somebody who may see nothing else.** There is a person at
+every property whose whole question is whether the week adds up: whoever does
+the wages, or the owner on a Sunday night. They do not need to know that Kwesi
+was eleven minutes late on Tuesday, and a screen that tells them anyway is a
+screen full of other people's business. *Totals* is four numbers a person and a
+line for the property, and nothing else — no day-by-day rows, no clock times, no
+lateness, no leave balances, and nothing on it to press.
+
+The narrowness is enforced in the answer rather than in the screen. A permission
+that hides a column while sending the whole week down the wire is a curtain, not
+a permission, so the endpoint behind this one carries the four numbers and stops
+there. `Weekly totals` is granted under *Users & data*, either as the *Weekly
+totals only* role or ticked against somebody who already does other work here,
+and it is a leaf: unlike every other attendance permission it does not drag the
+Today screen along behind it, for the same reason *My shifts* does not.
 
 Overtime is not shown anywhere on this report. It is measured from the shift end
 with no threshold behind it, so every evening somebody stays ten minutes past

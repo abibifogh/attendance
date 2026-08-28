@@ -21,6 +21,13 @@ export const PERMISSIONS = [
     detail: 'Days worked, hours, lateness, leave balances, exports',
   },
   {
+    key: 'att_totals',
+    label: 'Weekly totals',
+    detail: 'Read only, and the week as totals: what each person was down for and what they '
+      + 'worked, hours and days. No day-by-day detail, no clock times, no leave balances and '
+      + 'nothing to change. For whoever needs the week to add up and no more than that',
+  },
+  {
     key: 'att_rota',
     label: 'Rota & leave requests',
     detail: 'Set the rota and put leave in for people. No approvals, no balances',
@@ -136,6 +143,13 @@ export const ROLES = [
     defaults: ['att_view', 'att_reports'],
   },
   {
+    key: 'totals',
+    label: 'Weekly totals only',
+    detail: 'One screen: the week as totals, everybody on one page, hours and days. Reads '
+      + 'nothing else and changes nothing — for whoever checks that the week adds up.',
+    defaults: ['att_totals'],
+  },
+  {
     key: 'staff',
     label: 'Member of staff',
     detail: 'Sees their own shifts once they are published, their own attendance, and can ask '
@@ -230,10 +244,15 @@ export function effectivePermissions(user) {
   // that role changes nothing by definition, and signing off moves leave.
   if (list.includes('att_manage') && !list.includes('att_signoff')) list.push('att_signoff');
   // And anybody who can do anything here needs the screen the rest hangs off.
-  // Except a member of staff: "my shifts" is deliberately the whole of what
-  // they hold, and handing them the property's attendance screen with it would
-  // undo the point of the role.
-  const running = list.filter((p) => p.startsWith('att_') && p !== 'att_me');
+  //
+  // Two exceptions, and they are the same exception twice. "My shifts" is
+  // deliberately the whole of what a member of staff holds, and the weekly
+  // totals are deliberately the whole of what whoever checks the week holds:
+  // both are leaves rather than a way in, and handing either of them the
+  // property's attendance screen — who clocked in, who was late, what needs
+  // dealing with — would undo the point of giving them the narrow one.
+  const leaves = new Set(['att_me', 'att_totals']);
+  const running = list.filter((p) => p.startsWith('att_') && !leaves.has(p));
   if (running.length && !list.includes('att_view')) list.push('att_view');
   return list;
 }

@@ -73,6 +73,9 @@ export const ROUTES = [
   ['GET', '/api/att/staff/:id/day', 'att_view', att.staffDay],
 
   ['GET', '/api/att/week', 'att_reports', att.week],
+  // The same week as four numbers a person. Its own permission, because the
+  // whole point of it is somebody who may have this and not the week itself.
+  ['GET', '/api/att/totals', ['att_totals', 'att_reports'], att.weekTotals],
   // Reachable by whoever signs periods off, because that is where the days are
   // corrected. The leave balance is stripped from the answer for anybody
   // without the reports permission — see `staffReport`.
