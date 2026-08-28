@@ -3981,14 +3981,21 @@ html { touch-action: manipulation; }
     border-top: 1px solid var(--rota-line);
     padding-bottom: .5rem;
   }
-  .rota-table:not(.rota-positions) thead tr {
+  /* The row of dates stays on screen while the list goes past it. It is the
+     `thead` that is pinned rather than the row inside it: a sticky element can
+     only move within its own parent, and a `thead` is exactly as tall as the
+     one row in it, so the row had nowhere to go and scrolled away with
+     everything else. Pinned below the app's own bar, which is sticky too. */
+  .rota-table:not(.rota-positions) thead {
     position: sticky;
-    top: 0;
+    top: var(--topbar-h, 3.5rem);
     z-index: 3;
     background: var(--surface);
+    box-shadow: 0 1px 0 var(--border);
+  }
+  .rota-table:not(.rota-positions) thead tr {
     border-top: 0;
     padding-bottom: .2rem;
-    box-shadow: inset 0 -1px 0 var(--border);
   }
   /* The row of dates is the header now, so the two label cells go. */
   .rota-table:not(.rota-positions) thead th:first-child,
@@ -4116,14 +4123,16 @@ html { touch-action: manipulation; }
     border-top: 1px solid var(--rota-line);
     padding-bottom: .45rem;
   }
-  .rota-positions thead tr {
+  .rota-positions thead {
     position: sticky;
-    top: 0;
+    top: var(--topbar-h, 3.5rem);
     z-index: 3;
     background: var(--surface);
+    box-shadow: 0 1px 0 var(--border);
+  }
+  .rota-positions thead tr {
     border-top: 0;
     padding-bottom: .2rem;
-    box-shadow: inset 0 -1px 0 var(--border);
   }
   .rota-positions thead th:first-child { display: none; }
   .rota-positions thead th {

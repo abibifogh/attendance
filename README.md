@@ -679,7 +679,12 @@ own, and the days underneath in a row seven cells wide — a week on one screen,
 fortnight as two rows of seven. It is the shape every rota app on a phone has
 settled on, for the reason they all found: a name is read once per person and a
 day is read seven times, so the name is the thing that should give up its
-column. A row of dates sits above it all and stays there as the list scrolls.
+column. The row of dates is pinned under the app's own bar and stays there while
+the list goes past it, because a column of times twenty names down says nothing
+if you cannot see which day it is under. What is pinned is the `thead` rather
+than the row inside it: a sticky element can only move within its own parent,
+and a `thead` is exactly as tall as the one row in it, so the row had nowhere to
+go and scrolled away with everything else.
 
 A cell is the two ends of the shift, one over the other, on the shift's own
 colour, with the moon for one that runs into the night and a `+` on a day with
