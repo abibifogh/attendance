@@ -9,7 +9,6 @@ import { noticeBell } from './views/notices.js';
 import { renderAttToday } from './views/att-today.js';
 import { renderAttStaff } from './views/att-staff.js';
 import { renderAttOverview, renderAttWeek } from './views/att-reports.js';
-import { renderAttTotals } from './views/att-totals.js';
 import { renderAttRota } from './views/att-rota.js';
 import { renderAttWorkload } from './views/att-workload.js';
 import { renderAttMe } from './views/att-me.js';
@@ -76,10 +75,9 @@ const ROUTES = [
   // they may not see — how much leave anybody has left — comes out of the
   // answer, not just off the screen.
   { path: 'att-overview', label: 'Month', permission: ['att_reports', 'att_rota'], render: renderAttOverview, live: ['attendance', 'rota', 'leave'] },
-  // The week as totals and nothing else. Its own permission, because the point
-  // of it is somebody who holds this and none of the screens above.
-  { path: 'att-totals', label: 'Totals', permission: ['att_totals', 'att_reports'], render: renderAttTotals, live: ['attendance', 'rota', 'leave'] },
-  { path: 'att-rota', label: 'Rota', permission: 'att_rota', render: renderAttRota, live: ['rota', 'leave', 'attendance'] },
+  // Whoever builds it, and whoever only needs to know who is on. The screen
+  // itself is the same grid; a reader gets it with nothing on it to press.
+  { path: 'att-rota', label: 'Rota', permission: ['att_rota', 'att_rota_view'], render: renderAttRota, live: ['rota', 'leave', 'attendance'] },
   // Beside the rota, because it is read while the rota is being built.
   { path: 'att-workload', label: 'Workload', permission: ['att_rota', 'att_reports'], render: renderAttWorkload, live: ['rota', 'leave'] },
   { path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave, live: ['leave', 'rota'] },

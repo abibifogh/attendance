@@ -21,11 +21,11 @@ export const PERMISSIONS = [
     detail: 'Days worked, hours, lateness, leave balances, exports',
   },
   {
-    key: 'att_totals',
-    label: 'Weekly totals',
-    detail: 'Read only, and the week as totals: what each person was down for and what they '
-      + 'worked, hours and days. No day-by-day detail, no clock times, no leave balances and '
-      + 'nothing to change. For whoever needs the week to add up and no more than that',
+    key: 'att_rota_view',
+    label: 'See the rota',
+    detail: 'Read the rota for everybody, week by week, and nothing else: who is on what and '
+      + 'when. Cannot change a shift, publish, import or copy a week, and sees no clock times, '
+      + 'no lateness, no leave balances and nothing anybody has asked for',
   },
   {
     key: 'att_rota',
@@ -143,11 +143,12 @@ export const ROLES = [
     defaults: ['att_view', 'att_reports'],
   },
   {
-    key: 'totals',
-    label: 'Weekly totals only',
-    detail: 'One screen: the week as totals, everybody on one page, hours and days. Reads '
-      + 'nothing else and changes nothing — for whoever checks that the week adds up.',
-    defaults: ['att_totals'],
+    key: 'rota_reader',
+    label: 'Rota, read only',
+    detail: 'One screen: the rota for everybody, week by week, exactly as the planner left it. '
+      + 'Changes nothing and reads nothing else — for a head of department, an owner, or '
+      + 'whoever needs to know who is on without being able to move anybody.',
+    defaults: ['att_rota_view'],
   },
   {
     key: 'staff',
@@ -239,6 +240,9 @@ export function effectivePermissions(user) {
   // so anybody holding the larger permission holds the smaller one. Without
   // this every rota route would have to name both for the rest of time.
   if (list.includes('att_manage') && !list.includes('att_rota')) list.push('att_rota');
+  // And building it is strictly more than reading it, so no route has to name
+  // both for the rest of time.
+  if (list.includes('att_rota') && !list.includes('att_rota_view')) list.push('att_rota_view');
   // Settling a day and approving leave are both larger than closing a period
   // off, so anybody who can do those can do this. Reports-only does not get it:
   // that role changes nothing by definition, and signing off moves leave.
@@ -246,12 +250,12 @@ export function effectivePermissions(user) {
   // And anybody who can do anything here needs the screen the rest hangs off.
   //
   // Two exceptions, and they are the same exception twice. "My shifts" is
-  // deliberately the whole of what a member of staff holds, and the weekly
-  // totals are deliberately the whole of what whoever checks the week holds:
-  // both are leaves rather than a way in, and handing either of them the
-  // property's attendance screen — who clocked in, who was late, what needs
-  // dealing with — would undo the point of giving them the narrow one.
-  const leaves = new Set(['att_me', 'att_totals']);
+  // deliberately the whole of what a member of staff holds, and reading the
+  // rota is deliberately the whole of what a rota reader holds: both are
+  // leaves rather than a way in, and handing either of them the property's
+  // attendance screen — who clocked in, who was late, what needs dealing with
+  // — would undo the point of giving them the narrow one.
+  const leaves = new Set(['att_me', 'att_rota_view']);
   const running = list.filter((p) => p.startsWith('att_') && !leaves.has(p));
   if (running.length && !list.includes('att_view')) list.push('att_view');
   return list;

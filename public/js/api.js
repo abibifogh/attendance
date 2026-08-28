@@ -152,7 +152,6 @@ export const api = {
   attDay: (day) => request(`/api/att/day${day ? `?day=${day}` : ''}`),
   attStaffDay: (id, day) => request(`/api/att/staff/${id}/day${day ? `?day=${day}` : ''}`),
   attWeek: (from) => request(`/api/att/week${from ? `?from=${from}` : ''}`),
-  attTotals: (from) => request(`/api/att/totals${from ? `?from=${from}` : ''}`),
   attStaffReport: (id, from, to) => request(`/api/att/staff/${id}/report?${new URLSearchParams({
     ...(from ? { from } : {}), ...(to ? { to } : {}),
   })}`),

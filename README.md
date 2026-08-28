@@ -124,23 +124,6 @@ chasing has to ask somebody else for a copy of what they are looking at.
 | **Person, any period** | The slip that gets handed over. A plain-English line at the top saying what happened and what to do differently, the clock times under it as evidence, and the leave balance beside it. Prints as a PDF. |
 | **Week** | Names down the side, Monday to Sunday across. Finds the pattern a daily list hides — the person late three Mondays running, the section short every weekend. |
 | **Month** | Days worked, hours, overtime, absences, leave taken and leave left, per person. The sheet that goes to whoever does the wages. Exports as CSV. |
-| **Totals** | The week as four numbers a person: days down for, days worked, hours the rota asked for, hours the terminal recorded, and the difference. Its own permission, and the only screen somebody holding it can open. |
-
-**Weekly totals, for somebody who may see nothing else.** There is a person at
-every property whose whole question is whether the week adds up: whoever does
-the wages, or the owner on a Sunday night. They do not need to know that Kwesi
-was eleven minutes late on Tuesday, and a screen that tells them anyway is a
-screen full of other people's business. *Totals* is four numbers a person and a
-line for the property, and nothing else — no day-by-day rows, no clock times, no
-lateness, no leave balances, and nothing on it to press.
-
-The narrowness is enforced in the answer rather than in the screen. A permission
-that hides a column while sending the whole week down the wire is a curtain, not
-a permission, so the endpoint behind this one carries the four numbers and stops
-there. `Weekly totals` is granted under *Users & data*, either as the *Weekly
-totals only* role or ticked against somebody who already does other work here,
-and it is a leaf: unlike every other attendance permission it does not drag the
-Today screen along behind it, for the same reason *My shifts* does not.
 
 Overtime is not shown anywhere on this report. It is measured from the shift end
 with no threshold behind it, so every evening somebody stays ten minutes past
@@ -346,6 +329,27 @@ Clicking anywhere else on the card answers the other — *who is on this shift,
 and should it be somebody else* — with the same dialog the positions view
 opens. Reassigning from there moves the shift and marks both cells, the one it
 left and the one it went to, as unsaved.
+
+**Reading the rota without being able to touch it.** A head of department, an
+owner, whoever answers the phone on a Saturday: there are people who need to
+know who is on and have no business moving anybody. *See the rota* is that, and
+only that. It opens the same grid the planner builds on — both views, any span,
+the department filter, and *Save as PDF* to pin it up — with nothing on it that
+can be pressed. No dropdowns, no dragging, no publish, no copying a week, no
+importing, no standing patterns; the Pattern column is not even drawn.
+
+What it withholds is what a planner reads while deciding rather than the rota
+itself: availability and the reason somebody gave for it, the Sunday counts, the
+special-meal mark, the count of days waiting to be published and of requests
+waiting to be answered. That is stripped in the answer, not on the screen — the
+endpoint sends a reader the days, the shifts and the names and stops — because a
+permission that only hides is a curtain. Dashed and solid still mean draft and
+published, since "this may change" is exactly what a reader needs to know.
+
+It is granted under *Users & data*, either as the *Rota, read only* role or by
+ticking *See the rota*, and like *My shifts* it is a leaf: unlike every other
+attendance permission it does not drag the Today screen along behind it.
+Building the rota carries reading it, so a planner needs only the one they had.
 
 **A shift is dragged from one box to another.** Half of building a week is
 "that one, but on Wednesday" or "give Ama's Saturday to Kofi", and both used to

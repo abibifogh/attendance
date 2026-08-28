@@ -3,10 +3,11 @@ import {
   fmtDayShort, fmtSince, fmtStamp, h, keepScroll, mount, shiftDay, toast, todayISO,
 } from '../util.js';
 import { card, emptyState, moreActions, table } from './components.js';
-import { holdRefresh, navigate, replaceParams } from '../app.js';
+import { printButton } from '../print.js';
+import { can, holdRefresh, navigate, replaceParams } from '../app.js';
 import {
-  asHours, byDepartment, byPosition, earliestFirst, field, formDialog, nightMark, shiftColour,
-  shiftHours, shiftLabel, shiftMinutes, shiftSelect,
+  asHours, byDepartment, byPosition, earliestFirst, field, formDialog, nightMark,
+  runsIntoTheNight, shiftColour, shiftHours, shiftLabel, shiftMinutes, shiftSelect,
 } from './att-shared.js';
 
 /**
@@ -29,6 +30,17 @@ import {
  */
 export async function renderAttRota(params) {
   const host = h('div.rota-page');
+
+  // WHETHER THIS IS A ROTA OR A NOTICE BOARD.
+  //
+  // A head of department, an owner, whoever answers the phone on a Saturday:
+  // there are people at a property who need to know who is on and have no
+  // business moving anybody. They hold "See the rota" and nothing else, and
+  // for them this is the same grid with nothing on it that can be pressed —
+  // no dropdowns, no drag, no publish, no copying a week, and none of the
+  // things the planner reads while deciding: no lateness, no availability, no
+  // count of what anybody has asked for.
+  const mayEdit = can('att_rota');
 
   // One week to plan a busy weekend, a fortnight for the ordinary rhythm,
   // four weeks to see a rotation come round. The span is the window and
@@ -476,7 +488,55 @@ export async function renderAttRota(params) {
     });
   };
 
+  /**
+   * The same cell with nothing in it to press.
+   *
+   * Built separately rather than by turning half a dozen things off in the
+   * editable one: a card that carries a dropdown, a drag handle and four
+   * dialogs behind it, all of them disabled, is a card that goes wrong the
+   * first time somebody adds a fifth. This one has a name, a clock and a
+   * colour, and that is the whole of it.
+   */
+  const readOnlyCell = (row, entry) => {
+    if (entry.leave) return h('div.rota-locked', { title: 'Approved leave' }, 'Leave');
+
+    const shift = entry.shift_id == null ? null : shiftById.get(String(entry.shift_id));
+    const wrap = h('div.rota-cellwrap.rota-cell-read', {
+      class: [
+        'rota-cellwrap', 'rota-cell-read',
+        entry.explicit ? 'rota-set rota-stack-set' : 'rota-pattern',
+        entry.explicit ? (entry.published ? 'rota-published' : 'rota-draft') : '',
+      ].filter(Boolean).join(' '),
+      'data-shift-colour': shift ? String(shiftColour(shift)) : '0',
+      title: shift
+        ? `${shift.name}, ${shiftHours(shift)}${entry.published ? '' : ' — not published yet'}`
+        : 'Off',
+    },
+    h('div.rota-cell.rota-cell-static', shift ? shift.name : 'Off'),
+    shift
+      ? h('small.rota-hours',
+        h('span.rota-h-from', shift.starts_at),
+        h('span.rota-h-sep', '–'),
+        h('span.rota-h-to', shift.ends_at,
+          runsIntoTheNight(shift) ? h('span.rota-h-next', ' +1') : null),
+        nightMark(shift) ? ' ' : null,
+        nightMark(shift))
+      : null,
+    entry.title ? h('small.rota-title', entry.title) : null,
+    // A double is worth seeing even here: somebody reading the board should
+    // know a name appears twice on one day.
+    (entry.extra ?? []).map((extra) => {
+      const other = shiftById.get(String(extra.shift_id));
+      return h('div.rota-clash',
+        h('span.rota-clash-mark', '⚠'),
+        h('span.rota-clash-name', other ? other.name : 'Another shift'));
+    }));
+
+    return h('div.rota-cellstack', { class: entry.explicit ? 'rota-stack-set' : '' }, wrap);
+  };
+
   const cell = (row, entry) => {
+    if (!mayEdit) return readOnlyCell(row, entry);
     if (entry.leave) {
       return h('div.rota-locked', { title: 'Approved leave' }, 'Leave');
     }
@@ -1001,7 +1061,10 @@ export async function renderAttRota(params) {
 
   const headRow = h('tr',
     h('th', 'Name'),
-    h('th', 'Pattern'),
+    // The standing pattern is a planner's column: the two buttons in it are
+    // the only thing it holds, and an empty column with a heading over it is a
+    // column somebody wonders about.
+    mayEdit ? h('th', 'Pattern') : null,
     ...data.days.map((day) => h('th',
       { class: [dayClass(day), isMealDay(day) ? 'rota-meal-day' : ''].filter(Boolean).join(' '),
         title: isMealDay(day) ? 'The special meal is on the last Friday of the month' : null },
@@ -1021,7 +1084,10 @@ export async function renderAttRota(params) {
   // columns and the cells give up everything the eye can do without: the hours
   // line, the empty name button, half the padding.
   const grid = h('div.table-wrap.rota-scroll',
-    h('table.rota-table', { class: tightness },
+    // `rota-read` says the Pattern column is not there, which two width rules
+    // and one phone rule need to know: without it they are talking about
+    // Monday.
+    h('table.rota-table', { class: [tightness, mayEdit ? '' : 'rota-read'].filter(Boolean).join(' ') || null },
       h('thead', headRow),
       h('tbody', visible.map((row) => h('tr',
         h('td.rota-who',
@@ -1048,7 +1114,7 @@ export async function renderAttRota(params) {
             ),
           ),
         ),
-        h('td',
+        !mayEdit ? null : h('td',
           h('div.btn-row',
             h('button.btn-sm', {
               title: 'What this person normally works each week',
@@ -1058,8 +1124,7 @@ export async function renderAttRota(params) {
               title: 'Put one shift across every day shown',
               onclick: () => fillRow(row),
             }, '⇢'),
-          ),
-        ),
+          )),
         ...row.days.map((entry) => h('td', { class: dayClass(entry.day) }, cell(row, entry))),
       ))),
     ),
@@ -1675,6 +1740,8 @@ export async function renderAttRota(params) {
   /** One card on one shift on one day, filled or not. */
   const shiftCard = (shift, card) => {
     const node = posCard(shift, card);
+    // Nothing to pick up on a board somebody is only reading.
+    if (!mayEdit) return node;
     pickUpFrom(node, {}, () => ({
       cardId: card.id,
       day: card.day,
@@ -1688,6 +1755,7 @@ export async function renderAttRota(params) {
 
   const posCard = (shift, card) => h('button.pos-card', {
     type: 'button',
+    disabled: !mayEdit,
     class: [
       card.published === false ? 'rota-draft' : 'rota-published',
       card.row ? '' : 'pos-card-empty',
@@ -1697,7 +1765,7 @@ export async function renderAttRota(params) {
     title: card.row
       ? `${card.row.staff.name} — ${shift.name}, ${shiftHours(shift)}`
       : `${shift.name}, ${shiftHours(shift)} — nobody on it yet`,
-    onclick: () => editCard(card),
+    onclick: mayEdit ? () => editCard(card) : null,
   },
   card.clash
     ? h('span.pos-card-clash-mark', {
@@ -1871,11 +1939,15 @@ export async function renderAttRota(params) {
               on.map((card) => shiftCard(
                 shiftById.get(String(card.shiftId)) ?? position.shifts[0], card,
               )),
-              h('button.pos-add', {
-                type: 'button',
-                title: `Put a shift on ${position.name} on ${fmtDayShort(day)}`,
-                onclick: () => addToCell(position, day),
-              }, '+'));
+              mayEdit
+                ? h('button.pos-add', {
+                  type: 'button',
+                  title: `Put a shift on ${position.name} on ${fmtDayShort(day)}`,
+                  onclick: () => addToCell(position, day),
+                }, '+')
+                : null);
+
+            if (!mayEdit) return h('td', { class: dayClass(day) }, stack);
 
             dropOnto(stack, {
               // Everywhere except back where it came from. A position holding
@@ -1980,7 +2052,7 @@ export async function renderAttRota(params) {
   // Top right of the page, beside the title, and it stays there. A planner
   // works down the grid and the running count of what is not yet promised is
   // the one number they need in view the whole time.
-  const publishButton = h('button.btn.btn-primary.rota-publish', {
+  const publishButton = !mayEdit ? null : h('button.btn.btn-primary.rota-publish', {
     onclick: publish,
     disabled: !unpublished,
     title: unpublished
@@ -2044,13 +2116,16 @@ export async function renderAttRota(params) {
       ),
 
       h('div.rota-bar-group',
-      conflicts
-        ? h('button.btn-sm', {
+      // Everything in this group is either a decision or a reading a planner
+      // takes while deciding. A reader gets none of it: the workload chip is
+      // about people rather than the week, and the rest changes the rota.
+      !mayEdit || !conflicts
+        ? null
+        : h('button.btn-sm', {
           onclick: () => navigate('att-workload', { from, to }),
           title: 'People this plan is overworking. The full picture is on Workload',
-        }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`)
-        : null,
-      data.asked
+        }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`),
+      mayEdit && data.asked
         ? h('button.btn-sm', {
           onclick: () => answerRequests(reload),
           title: 'Days people have asked about that nobody has answered yet',
@@ -2063,25 +2138,34 @@ export async function renderAttRota(params) {
       // behind one. What stays out is what somebody is meant to act on: the
       // people this plan is overworking, and the days waiting on an answer.
       moreActions(
-      view === 'people'
+      mayEdit && view === 'people'
         ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week')
         : null,
-      // A rota being built gets printed, pinned up and argued over. Until now
-      // the only way to get one off the screen was a photograph of the screen.
-      h('a.btn-sm', {
+      // A rota gets printed, pinned up and argued over, and that is as true
+      // for whoever is only reading it. The spreadsheet is the planner's — it
+      // carries who set each day and what they wrote against it — so a reader
+      // gets the page itself instead.
+      !mayEdit
+        ? printButton({
+          title: 'Rota',
+          subtitle: `${fmtDayShort(from)} to ${fmtDayShort(to)}`,
+          footer: 'Dashed shifts are still a draft and may change.',
+        })
+        : null,
+      !mayEdit ? null : h('a.btn-sm', {
         href: `/api/att/roster/export?from=${from}&to=${to}`
           + `${params.department ? `&department=${encodeURIComponent(params.department)}` : ''}`
           + `${params.tag ? `&tag=${encodeURIComponent(params.tag)}` : ''}`,
         title: 'The window on screen as a spreadsheet, draft days and all, each row saying '
           + 'whether it is published',
       }, 'Export'),
-      h('button.btn-sm', {
+      !mayEdit ? null : h('button.btn-sm', {
         onclick: () => clearPeriod(data, params, reload),
         title: 'Take a stretch of the rota back off, either to the standing pattern '
           + 'or to nothing at all',
       }, 'Clear a period'),
-      view === 'people' ? importButton(reload) : null,
-      h('button.btn-sm', {
+      mayEdit && view === 'people' ? importButton(reload) : null,
+      !mayEdit ? null : h('button.btn-sm', {
         onclick: () => formDialog({
           title: 'What has changed on this rota',
           submitLabel: 'Close',
@@ -2095,7 +2179,7 @@ export async function renderAttRota(params) {
         }),
         title: 'Who changed what on this rota, and when',
       }, 'What changed'),
-      h('button.btn-sm', {
+      !mayEdit ? null : h('button.btn-sm', {
         onclick: () => suggest(from, to, reload),
         title: 'Fill the blanks from what this property usually does. '
           + 'Nothing is published and nothing you have decided is touched',
@@ -2115,9 +2199,11 @@ export async function renderAttRota(params) {
       { wide: true, cls: 'rota-card' },
       view === 'people' ? grid : positionsGrid,
     ),
-    h('p.muted', { style: { fontSize: '.82rem' } },
-      'Off means a rostered rest day. Days on approved leave are locked here; cancel the leave first. '
-      + 'Drag a shift onto another box to move or copy it.'),
+    h('p.muted', { style: { fontSize: '.82rem' } }, mayEdit
+      ? 'Off means a rostered rest day. Days on approved leave are locked here; cancel the '
+        + 'leave first. Drag a shift onto another box to move or copy it.'
+      : 'Off means a rostered rest day. A dashed shift is still a draft and may change; a '
+        + 'solid one has been published.'),
     // Asked at the point of the drop, so it sits above the grid rather than
     // inside the box that scrolls.
     dropMenu,

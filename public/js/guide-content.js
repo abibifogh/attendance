@@ -1084,30 +1084,28 @@ export const GUIDE = [
   },
 
   {
-    key: 'totals',
-    title: 'The week as totals',
-    permission: 'att_totals',
-    lede: 'Everybody on one page: days down for, days worked, hours asked for, hours recorded.',
+    key: 'rota-read',
+    title: 'Reading the rota',
+    permission: 'att_rota_view',
+    lede: 'Who is on, week by week, for everybody. Nothing on it can be changed.',
     blocks: [
-      { p: 'Totals answers one question — whether the week adds up — and carries nothing else. '
-        + 'Four numbers a person and a line for the whole week: the days they were down for, the '
-        + 'days they worked, the hours the rota asked of them and the hours the terminal '
-        + 'recorded. The last column is the difference between those two, which is usually the '
-        + 'thing being looked for.' },
+      { p: 'The Rota tab shows the same grid the planner builds on: people down the side, days '
+        + 'across, and a shift in each cell with its hours. Switch to Positions to read it the '
+        + 'other way round \u2014 rows are shifts, and each cell says who is on. A week, a '
+        + 'fortnight or four weeks at a time, and the department box narrows it to one section.' },
       { steps: [
-        'Totals. It opens on this week.',
-        'Step back a week with the arrow, or pick any Monday from the date box.',
-        'Read the line at the top for the property, and the table under it per person.',
-        'Save as PDF under More if somebody wants it on paper.',
+        'Rota. It opens on this week.',
+        'Step with the arrows, or pick any Monday from the date box.',
+        'People or Positions, whichever question you are asking.',
+        'Save as PDF under More to pin it up.',
       ] },
-      { note: 'Hours rostered are what the rota asked for. Hours worked are what the terminal '
-        + 'recorded, so a day still waiting to be settled counts what it has so far \u2014 a '
-        + 'missing clock-out reads as short until somebody sorts it out.' },
-      { p: 'It is read only, and it is deliberately the whole of what somebody can be given. '
-        + 'Whoever holds it sees no day-by-day detail, no clock times, no lateness, no leave '
-        + 'balances and nothing about pay, and there is nothing on the screen to change. An '
-        + 'administrator hands it out under Users & data, either as the "Weekly totals only" '
-        + 'role or by ticking "Weekly totals" against somebody who already has other work here.' },
+      { note: 'A dashed shift is still a draft \u2014 the planner is thinking, and it may '
+        + 'change. A solid one has been published and is the version to plan around.' },
+      { p: 'It is read only, and deliberately the whole of what somebody can be given. There is '
+        + 'nothing on the screen to press: no dropdowns, no dragging a shift across, no publish, '
+        + 'no copying a week. It carries no clock times, no lateness, no leave balances and '
+        + 'nothing anybody has asked for. An administrator hands it out under Users & data, '
+        + 'either as the "Rota, read only" role or by ticking "See the rota".' },
     ],
   },
   {

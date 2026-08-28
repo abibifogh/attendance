@@ -707,79 +707,6 @@ export async function week(ctx) {
 }
 
 /**
- * The week as totals, everybody on one page.
- *
- * There is somebody at every property whose whole question is whether the week
- * adds up: the person who does the wages, the owner on a Sunday night, whoever
- * checks the hours against the money. They do not need to know that Kwesi was
- * eleven minutes late on Tuesday, and handing them a screen that says so is
- * handing them a screen full of things that are not their business.
- *
- * So this answers exactly one question and carries nothing else. Per person:
- * the days they were down for and the days they worked, the hours the rota
- * asked of them and the hours the clock recorded. No day-by-day rows, no clock
- * times, no lateness, no leave balances, and nothing to press.
- *
- * The narrowness is the point, and it is enforced here rather than in the
- * screen: a permission that hides a column but hands the whole week down the
- * wire is not a permission, it is a curtain.
- */
-export async function weekTotals(ctx) {
-  const timezone = await timezoneOf(ctx.db);
-  const today = todayIn(timezone);
-  const from = startOfWeek(readDay(ctx.url.searchParams.get('from'), today));
-  const to = addDays(from, 6);
-
-  // A day either side, because a night shift belongs to the day it starts on
-  // and the dataset has to hold both ends of it.
-  const ds = await loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) });
-  const days = rangeDays(from, to);
-
-  const rows = [];
-  for (const staff of ds.staff) {
-    // Somebody who had not started, or who has left, is not a row on a week
-    // they were never part of.
-    if (!days.some((day) => activeOn(staff, day))) continue;
-
-    const totals = summarise(daysFor(ds, staff.id, from, to), {
-      shifts: ds.shiftById,
-      reasons: ds.reasonBy,
-    });
-
-    rows.push({
-      staff: {
-        id: staff.id,
-        name: staff.name,
-        employee_no: staff.employee_no,
-        department: staff.department,
-      },
-      daysRostered: totals.scheduled,
-      daysWorked: totals.daysWorked,
-      expectedMinutes: totals.expectedMinutes,
-      workedMinutes: totals.workedMinutes,
-    });
-  }
-
-  rows.sort((a, b) => a.staff.name.localeCompare(b.staff.name));
-
-  const add = (key) => rows.reduce((n, row) => n + row[key], 0);
-
-  return json({
-    from,
-    to,
-    today,
-    rows,
-    totals: {
-      people: rows.length,
-      daysRostered: add('daysRostered'),
-      daysWorked: add('daysWorked'),
-      expectedMinutes: add('expectedMinutes'),
-      workedMinutes: add('workedMinutes'),
-    },
-  });
-}
-
-/**
  * One person over a period, with what it adds up to and what leave is left.
  *
  * The per-staff report, whether that period is a day, a week or a month — the
@@ -2042,14 +1969,25 @@ export async function getRoster(ctx) {
   if (diffDays(from, to) > 62) throw badRequest('Choose a shorter period — two months at most.');
   const today = todayIn(timezone);
 
+  // Whether this is the planner's screen or somebody's notice board.
+  //
+  // A rota reader gets the rota: who is on what, and when. Not the things a
+  // planner reads while deciding — what somebody has asked for, who is over
+  // their Sundays, what is still waiting to be published. Stripped here rather
+  // than in the screen, because the screen is a courtesy and this is the gate.
+  const reader = !allows('att_rota', ctx.session.permissions);
+
   const [ds, availability] = await Promise.all([
     loadDataset(ctx.db, { from, to }),
     // When somebody said they cannot work. Not leave — nothing is approved and
     // nothing is spent — just a fact the planner should see in the cell before
-    // rostering over it.
-    ctx.db.prepare(
-      'SELECT * FROM att_availability WHERE day BETWEEN ?1 AND ?2',
-    ).bind(from, to).all().catch(() => ({ results: [] })),
+    // rostering over it. Somebody's reason for not being able to work a
+    // Tuesday is theirs, and a reader has no business with it.
+    reader
+      ? { results: [] }
+      : ctx.db.prepare(
+        'SELECT * FROM att_availability WHERE day BETWEEN ?1 AND ?2',
+      ).bind(from, to).all().catch(() => ({ results: [] })),
   ]);
 
   const availabilityBy = new Map(
@@ -2059,7 +1997,7 @@ export async function getRoster(ctx) {
   // What pressing Publish would actually do, counted over the window rather
   // than over the rows on screen: Publish covers the window, and a count that
   // moved when somebody changed a department filter would be lying about it.
-  const waiting = await ctx.db.prepare(
+  const waiting = reader ? { results: [] } : await ctx.db.prepare(
     `SELECT ever_published AS was, COUNT(*) AS n FROM att_roster
       WHERE day BETWEEN ?1 AND ?2 AND published = 0
       GROUP BY ever_published`,
@@ -2068,7 +2006,7 @@ export async function getRoster(ctx) {
   // How many days people have asked about that nobody has answered. Counted
   // over everything rather than over the window: a request for next month is
   // still waiting on somebody while they look at this week.
-  const asked = await ctx.db.prepare(
+  const asked = reader ? { n: 0 } : await ctx.db.prepare(
     "SELECT COUNT(*) AS n FROM att_availability WHERE decision = 'waiting'",
   ).first().catch(() => ({ n: 0 }));
 
@@ -2080,8 +2018,8 @@ export async function getRoster(ctx) {
   const days = rangeDays(from, to);
   const shifts = ds.shifts.filter((s) => s.active);
   const [overSundays, missedMeal, faces] = await Promise.all([
-    sundayCount(ctx.db, ds, days, limitsFrom(ds.settings ?? {})),
-    missedTheMeal(ctx.db, ds, days),
+    reader ? new Map() : sundayCount(ctx.db, ds, days, limitsFrom(ds.settings ?? {})),
+    reader ? new Map() : missedTheMeal(ctx.db, ds, days),
     // Who has a photograph, not the photographs themselves. Twenty-four blobs
     // in a rota payload would be megabytes on every draw; twenty-four ids is
     // one row, and the grid asks for the ones it is going to show.
