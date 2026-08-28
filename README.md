@@ -615,8 +615,15 @@ in. It never refreshes while somebody is in the middle of something — a dialog
 open, a cursor in a box, a rota holding staged edits — and comes back to it when
 the screen is free rather than taking the work with it. It does nothing while
 the tab is hidden, and puts up what arrived the moment somebody looks again. And
-it is silent: the view is rebuilt in place and keeps its scroll position, so
-somebody reading the bottom of a list stays at the bottom of it. The tab that
+it is silent: the new view is built before anything on screen is touched and
+swapped in when it is ready, so the page never empties and keeps its scroll
+position — somebody reading the bottom of a list stays at the bottom of it. That
+last part was written down here long before it was true. What the code actually
+did was rebuild the whole shell and drop a loading skeleton in place of the
+screen while the request was out, so every update anybody made anywhere blanked
+everybody else's page for as long as the fetch took, which on a phone is a
+second or two. The skeleton belongs to a first paint and a change of screen,
+where there is nothing on the page yet to keep. The tab that
 made the change is left out of its own announcement, because it has already
 redrawn itself off the answer to its own save — the same person's *other*
 screens are told, on purpose, since a rota open on the office computer and on a

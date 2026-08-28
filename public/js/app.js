@@ -372,7 +372,25 @@ function toggleTheme() {
   localStorage.setItem('att.theme', next);
 }
 
-export async function render() {
+/**
+ * The screen currently mounted in the shell.
+ *
+ * Held so a live update can put a fresh view straight into it rather than
+ * rebuilding the page around it.
+ */
+let screen = null;
+
+/**
+ * Draw the route.
+ *
+ * `quiet` is for an update nobody asked for. A first paint and a change of
+ * screen both want the skeleton — something has to be on the page while the
+ * first request is out — but a live update has a perfectly good screen up
+ * already, and replacing it with a grey box for as long as the fetch takes is
+ * two seconds of nothing on a phone, several times an hour. Quiet builds the
+ * new view first and swaps it in when it is ready, so the page never empties.
+ */
+export async function render({ quiet = false } = {}) {
   root.classList.remove('app-loading');
 
   if (!state.role) {
@@ -400,13 +418,24 @@ export async function render() {
   holds = [];
   pending = false;
 
-  const container = h('div');
-  mount(root, shell(container));
-  trackTopbarHeight();
-  mount(container, h('div.card', h('div.skeleton', { style: { height: '120px' } })));
+  // A live update is not a new screen. The shell stays where it is — the bell
+  // keeps its own count up to date and the menu has not changed — and what is
+  // on the page stays on the page until there is something to put in its
+  // place.
+  const inPlace = quiet && screen?.isConnected;
+  const container = inPlace ? screen : h('div');
+  if (!inPlace) {
+    mount(root, shell(container));
+    trackTopbarHeight();
+    mount(container, h('div.card', h('div.skeleton', { style: { height: '120px' } })));
+  }
+  screen = container;
 
   try {
-    mount(container, await route.render(routeParams()));
+    // Built before anything on screen is touched, which is what makes a quiet
+    // update quiet: the old view is still there while this is in the air.
+    const view = await route.render(routeParams());
+    mount(container, view);
     // The greeting goes above whatever they landed on, once for the session.
     // Anywhere else and it would be a banner somebody learns to scroll past.
     if (!alreadyWelcomed()) {
@@ -529,9 +558,9 @@ async function catchUp() {
   // The rota scrolls inside its own box rather than with the page, so keeping
   // the page's place is only half of keeping somebody's place.
   const putBack = keepScroll('.rota-scroll');
-  await render();
-  // render() replaces the whole shell, so the browser would otherwise put
-  // somebody who was reading the bottom of a list back at the top of it.
+  await render({ quiet: true });
+  // The shell stays put now, but the view inside it is replaced and a taller
+  // or shorter one moves the page under somebody who was reading it.
   window.scrollTo(x, y);
   putBack();
 }
