@@ -4,6 +4,7 @@ import { h, mount, toast } from '../util.js';
 import { canPrompt, isApple, isInstalled, onInstallChange, promptInstall } from '../install.js';
 import {
   currentSubscription, disablePush, enablePush, needsHomeScreen, pushSupported, testPush,
+  tooOldForAlerts,
 } from '../push.js';
 
 /**
@@ -309,21 +310,30 @@ export function openAccountDialog({
       { style: { fontSize: '.95rem', marginBottom: '.35rem' } }, 'Alerts on this device');
 
     // Nothing this browser can do. Which browser it is decides what is worth
-    // saying: an iPhone wants the Home Screen instruction, anything else wants
-    // to be told plainly so nobody spends an afternoon looking for a switch.
+    // saying, and the order matters: a phone that can never do it must not be
+    // sent to the Home Screen to find out.
     if (!pushSupported()) {
       mount(host,
         heading(),
-        needsHomeScreen()
-          ? h('div.guide-note.warn', { style: { marginTop: 0, fontSize: '.83rem' } },
-            h('strong', 'Add HIVE to your Home Screen first. '),
-            'Tap Share, then Add to Home Screen, and open HIVE from the icon. Apple only lets '
-            + 'a site send alerts once it has been added that way, so there is no switch here '
-            + 'until you have.')
-          : h('p.muted', { style: { fontSize: '.85rem' } },
-            'This browser cannot show alerts. Chrome, Edge, Firefox and Safari all can, on an '
-            + 'up-to-date phone or computer. On an iPhone or iPad, add HIVE to the Home Screen '
-            + 'and open it from there.'),
+        tooOldForAlerts()
+          ? h('div.guide-note', { style: { marginTop: 0, fontSize: '.83rem' } },
+            h('strong', 'This iPhone cannot show alerts, and nothing here will change that. '),
+            'Apple added them for apps on the Home Screen in iOS 16.4, and this phone does not '
+            + 'go that far. Adding HIVE to the Home Screen is still worth doing — it opens '
+            + 'faster and works without a signal — but the alerts are not coming.',
+            h('p', { style: { margin: '.5rem 0 0' } },
+              'Everything they would have said is in the bell at the top of the screen, and it '
+              + 'is worth a look when you start and when you finish.'))
+          : needsHomeScreen()
+            ? h('div.guide-note.warn', { style: { marginTop: 0, fontSize: '.83rem' } },
+              h('strong', 'Add HIVE to your Home Screen first. '),
+              'Tap Share, then Add to Home Screen, and open HIVE from the icon. Apple only lets '
+              + 'a site send alerts once it has been added that way, so there is no switch here '
+              + 'until you have.')
+            : h('p.muted', { style: { fontSize: '.85rem' } },
+              'This browser cannot show alerts. Chrome, Edge, Firefox and Safari all can, on an '
+              + 'up-to-date phone or computer. On an iPhone or iPad, add HIVE to the Home Screen '
+              + 'and open it from there.'),
       );
       return host;
     }

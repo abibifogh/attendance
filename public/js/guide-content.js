@@ -201,6 +201,10 @@ export const GUIDE = [
       { p: 'Turn them on under My account, on each device you want them on: a phone and a '
         + 'computer are two separate permissions, and Apple only allows them at all once the '
         + 'site has been added to your Home Screen.' },
+      { note: 'An iPhone older than the XS cannot show them at all \u2014 Apple added alerts '
+        + 'for Home Screen apps in iOS 16.4, and those phones stop at 15. My account says so on '
+        + 'the phone itself rather than sending you to the Home Screen to find out. Everything '
+        + 'still arrives in the bell at the top of the screen.' },
       { table: {
         head: ['What reaches you', 'When'],
         rows: [

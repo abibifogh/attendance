@@ -27,6 +27,43 @@ export function needsHomeScreen() {
   return iOS && !standalone;
 }
 
+/**
+ * An Apple device too old to show an alert at all.
+ *
+ * Apple only added notifications for a web app on the Home Screen in iOS 16.4,
+ * in March 2023. Every iPhone before the XS — a 7, a 7 Plus, an 8 — stops at
+ * iOS 15 and can never have them, and that is a good few of the phones in
+ * pockets here. Telling somebody on one of those to add HIVE to the Home
+ * Screen sends them to do a thing that cannot work, twice, before they give up
+ * and assume the app is broken.
+ *
+ * The version comes out of the user agent, which is where the only honest
+ * answer lives: there is nothing to feature-detect, because the thing to
+ * detect is missing.
+ */
+export function tooOldForAlerts() {
+  const ua = navigator.userAgent || '';
+  const apple = /iPad|iPhone|iPod/.test(ua)
+    || (/Macintosh/.test(ua) && (navigator.maxTouchPoints ?? 0) > 1);
+  if (!apple) return false;
+
+  // Two places the version hides, and which one is there depends on how the
+  // app was opened. A tab carries "OS 15_8"; the same phone with HIVE on the
+  // Home Screen drops that and carries Safari's own "Version/15.6", which on
+  // iOS tracks the system anyway. An iPad claims to be a Macintosh and gives
+  // the Mac's version in the first, so the second is the one worth reading
+  // there.
+  const found = /OS (\d+)[._](\d+) like Mac OS X/.exec(ua)
+    || /Version\/(\d+)\.(\d+)/.exec(ua);
+  // No version to read is no claim either way: the general message is the
+  // safer one.
+  if (!found) return false;
+
+  const major = Number(found[1]);
+  const minor = Number(found[2]);
+  return major < 16 || (major === 16 && minor < 4);
+}
+
 let registration = null;
 async function ready() {
   if (!registration) registration = await navigator.serviceWorker.register('/sw.js');

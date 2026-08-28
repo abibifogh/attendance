@@ -669,6 +669,23 @@ has learned to dismiss. iPhone has no such prompt at all, so there it prints
 the steps instead: Share → Add to Home Screen, which is the half nobody
 guesses.
 
+**And some phones can never have alerts, so they are told so.** Apple added
+notifications for a web app on the Home Screen in iOS 16.4, in March 2023. Every
+iPhone before the XS — a 7, a 7 Plus, an 8 — stops at iOS 15 and can never have
+them, and a good few of those are in pockets here. What the screen used to say
+on one was "add HIVE to the Home Screen and open it from there", so somebody did
+that, came back, found no switch, and concluded the app was broken. It now says
+the phone cannot show them, that nothing on the screen will change it, and that
+the bell at the top of HIVE has everything the alerts would have said. Installing
+is still offered, because opening fast and working without a signal are worth
+having on their own.
+
+The version is read out of the user agent, which is where the only honest answer
+lives — there is nothing to feature-detect, because the thing to detect is
+missing — and out of either half of it: a browser tab carries `OS 15_8`, while
+the same phone with HIVE on the Home Screen drops that and carries Safari's own
+`Version/15.6`.
+
 **What the worker caches, and what it must never cache.** The shell — the page,
 the stylesheet, the scripts — network first, so a deploy is picked up the
 moment there is a signal to pick it up with and the cache is only ever the
