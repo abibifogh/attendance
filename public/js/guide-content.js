@@ -478,7 +478,8 @@ export const GUIDE = [
         + 'the start and finish of the shift on its own colour; press one to change it. The '
         + 'whole-period tools \u2014 copy a week, clear a period, import, what changed, suggest '
         + 'a draft, export \u2014 sit behind More, and setting a standing pattern is a desk job '
-        + 'that is not offered there.' },
+        + 'that is not offered there. Positions view reads the same way: the position on a line '
+        + 'of its own, its days seven across underneath.' },
 
       { sub: 'Two ways to read it' },
       { p: 'People view is rows of people — where you assign shifts. Positions view turns the '

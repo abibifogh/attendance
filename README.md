@@ -688,13 +688,17 @@ is the half worth reading anyway: four shifts on this property are called some
 variation of Housekeeper Helper and only the times tell them apart. Pressing a
 cell opens the same list of shifts the dropdown opens on a desk.
 
+**The positions view takes the same shape.** The position's name and its hours
+on a line of their own, then its days seven across, each one holding the shifts
+standing on it: the clock, whose it is, and a `+` on a day that still needs
+somebody. The shift's name is the heading two lines above it and is not printed
+again in a cell fifty pixels wide.
+
 The standing-pattern buttons go on a phone, because setting somebody's usual
 week is desk work. Everything a planner does to a whole stretch — copy a week,
 clear a period, import, what changed, suggest a draft, export — sits behind
 *More*. What stays in view is what somebody is meant to act on: the people the
-plan is overworking, and the days waiting on an answer. The positions view keeps
-its grid and scrolls sideways in its own box, with the position names held
-against the left edge.
+plan is overworking, and the days waiting on an answer.
 
 None of this touches anything wider than a handset: the desk keeps the table it
 had.

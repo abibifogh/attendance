@@ -1706,7 +1706,15 @@ export async function renderAttRota(params) {
   // card that now has a fixed one, so "05:00–11:30 · 6h 30m" was reading as
   // "05:00–11:30 · 6h …" — and the position's own row already carries it,
   // as does the dialog behind the card.
-  h('span.pos-card-clock', shiftHours(shift), nightMark(shift) ? ' ' : null, nightMark(shift)),
+  // The two ends and a separator between them rather than one string, so a
+  // phone can stack them in a cell a seventh of the screen wide. On a desk the
+  // three sit on one line and read exactly as they did.
+  h('span.pos-card-clock',
+    h('span.rota-h-from', shift.starts_at),
+    h('span.rota-h-sep', '–'),
+    h('span.rota-h-to', `${shift.ends_at}${shift.ends_at <= shift.starts_at ? ' +1' : ''}`),
+    nightMark(shift) ? ' ' : null,
+    nightMark(shift)),
   h('span.pos-card-who', card.row ? card.row.staff.name : 'Empty'));
 
   /** Which of a position's shifts a dragged one lands on. */
