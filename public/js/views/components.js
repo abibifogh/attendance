@@ -147,7 +147,42 @@ export function periodNav({ label, onPrev, onNext, onToday, nextDisabled, input 
 }
 
 export function exportButton(href, label = 'Export CSV') {
-  return h('a.btn.btn-sm', { href, download: '' }, '⬇ ', label);
+  // A plain arrow rather than the emoji one. On a phone the emoji is drawn in
+  // full colour at the height of the words beside it, and a row of them turns
+  // a toolbar into a sticker album.
+  return h('a.btn.btn-sm', { href, download: '' }, '↓ ', label);
+}
+
+/**
+ * The buttons on a toolbar that are not the main thing it does.
+ *
+ * A screen accumulates outputs — save it, download the ones to deal with, the
+ * same across the week, the whole day as a file — and on a desk they sit along
+ * the toolbar and cost nothing. On a phone the same four wrap onto three rows
+ * and push the day's list below the fold, so what a supervisor sees when they
+ * open the app in a corridor is a page of buttons.
+ *
+ * On a desk nothing changes: the wrapper carries no box of its own and the
+ * buttons sit in the toolbar exactly where they were. On a phone they are
+ * behind More, which is one button, and they come back in a block under the
+ * toolbar when it is pressed.
+ */
+export function moreActions(...items) {
+  const real = items.flat().filter(Boolean);
+  if (!real.length) return null;
+
+  const box = h('div.toolbar-more', ...real);
+  const button = h('button.btn-sm.toolbar-more-btn', {
+    type: 'button',
+    'aria-expanded': 'false',
+    onclick: () => {
+      const open = box.classList.toggle('open');
+      button.setAttribute('aria-expanded', String(open));
+      button.textContent = open ? 'Fewer' : `More (${real.length})`;
+    },
+  }, `More (${real.length})`);
+
+  return h('div.toolbar-more-wrap', button, box);
 }
 
 export function emptyState(title, detail) {

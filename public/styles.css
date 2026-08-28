@@ -437,6 +437,13 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
 .toolbar input[type="date"], .toolbar input[type="month"], .toolbar select { width: auto; min-width: 150px; }
 
+/* The buttons on a toolbar that are not the main thing it does. On a desk they
+   sit along it exactly as they always did: the two wrappers carry no box of
+   their own, so their children are the toolbar's own items and the More button
+   is not there at all. */
+.toolbar-more-wrap, .toolbar-more { display: contents; }
+.toolbar-more-btn { display: none; }
+
 /* --------------------------------------------------------------- login --- */
 .login-wrap {
   min-height: 100vh;
@@ -691,6 +698,25 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   /* Restated after the safe-area block so the tighter phone padding wins on a
      phone without a notch as well as one with. */
   .main { padding-top: .7rem; }
+}
+
+/* On a phone the same four buttons wrap onto three rows and push the morning's
+   list off the bottom of the screen, so what somebody opening the app in a
+   corridor sees is a page of buttons. They go behind one, and come back in a
+   block under the toolbar when it is pressed. */
+@media (max-width: 620px) {
+  .toolbar-more-btn { display: inline-flex; align-items: center; }
+  .toolbar-more { display: none; }
+  .toolbar-more.open {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    width: 100%;
+    padding-top: .1rem;
+  }
+  /* Full width apiece, in the order they are written: a stack of buttons at
+     thumb height reads as a menu, which is what it is. */
+  .toolbar-more.open > * { flex: 1 1 100%; justify-content: center; }
 }
 
 /* Which of a control's two faces is showing. An icon on a phone, words on a

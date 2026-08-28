@@ -89,5 +89,7 @@ export function printButton({ title, subtitle, note, footer, label, onePage }) {
   return h('button.btn-sm', {
     title: 'Opens your print dialog — choose “Save as PDF” as the destination',
     onclick: () => printReport({ title, subtitle, note, footer, onePage }),
-  }, label || '📄 Save as PDF');
+    // No emoji on the label. A phone draws it in full colour and it reads as
+    // decoration on a button that is doing a job.
+  }, label || 'Save as PDF');
 }

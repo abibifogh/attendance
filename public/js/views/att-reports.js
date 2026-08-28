@@ -3,7 +3,7 @@ import { can, navigate, replaceParams } from '../app.js';
 import {
   fmtDay, fmtDayShort, fmtNum, h, monthOf, mount, shiftDay, shiftMonth, todayISO,
 } from '../util.js';
-import { card, emptyState, exportButton, table } from './components.js';
+import { card, emptyState, exportButton, moreActions, table } from './components.js';
 import { printButton } from '../print.js';
 import { daysCell, lateBy, totalsLine } from './att-shared.js';
 
@@ -25,20 +25,36 @@ export async function renderAttWeek(params) {
   };
 
   const nav = h('div.toolbar',
-    h('button.btn-sm', { onclick: () => reload(shiftDay(data.from, -7)) }, '‹ Previous week'),
+    // Arrows on a phone, words on a desk: the month view beside this one has
+    // always read that way, and either side of a date field the words are
+    // saying twice what the field already says.
+    h('button.btn-sm', {
+      onclick: () => reload(shiftDay(data.from, -7)),
+      'aria-label': 'The week before',
+    }, '‹', h('span.only-desk', ' Previous week')),
     h('input', {
       type: 'date', value: data.from,
       onchange: (e) => e.target.value && reload(mondayOf(e.target.value)),
     }),
-    h('button.btn-sm', { onclick: () => reload(shiftDay(data.from, 7)) }, 'Next week ›'),
-    h('button.btn-sm', { onclick: () => reload(mondayOf(todayISO())) }, 'This week'),
+    h('button.btn-sm', {
+      onclick: () => reload(shiftDay(data.from, 7)),
+      'aria-label': 'The week after',
+    }, h('span.only-desk', 'Next week '), '›'),
+    // Only when it is not the week already on screen. A button that does
+    // nothing is still a button somebody reads, and on a handset it is the one
+    // that pushes the row onto a second line.
+    data.from === mondayOf(todayISO())
+      ? null
+      : h('button.btn-sm', { onclick: () => reload(mondayOf(todayISO())) }, 'This week'),
     h('div', { style: { flex: 1 } }),
-    printButton({
-      title: 'Attendance — week',
-      subtitle: `${fmtDay(data.from, { withYear: true })} to ${fmtDay(data.to, { withYear: true })}`,
-      footer: PRINT_FOOTER,
-    }),
-    exportButton(api.attExportUrl(data.from, data.to), 'Export week'),
+    moreActions(
+      printButton({
+        title: 'Attendance — week',
+        subtitle: `${fmtDay(data.from, { withYear: true })} to ${fmtDay(data.to, { withYear: true })}`,
+        footer: PRINT_FOOTER,
+      }),
+      exportButton(api.attExportUrl(data.from, data.to), 'Export week'),
+    ),
   );
 
   if (!data.rows.length) {
@@ -176,15 +192,17 @@ export async function renderAttOverview(params) {
       disabled: data.month >= monthOf(todayISO()),
     }, '›'),
     h('div', { style: { flex: 1 } }),
-    printButton({
-      title: `Attendance — ${label}`,
-      subtitle: `${data.rows.length} people · ${fmtDay(data.from)} to ${fmtDay(data.to)}`,
-      footer: PRINT_FOOTER,
-    }),
-    // The export carries the balances, so it stays behind the permission that
-    // may see them rather than handing a planner a file with the column the
-    // screen just took out.
-    can('att_reports') ? exportButton(api.attExportUrl(data.from, data.to), 'Export month') : null,
+    moreActions(
+      printButton({
+        title: `Attendance — ${label}`,
+        subtitle: `${data.rows.length} people · ${fmtDay(data.from)} to ${fmtDay(data.to)}`,
+        footer: PRINT_FOOTER,
+      }),
+      // The export carries the balances, so it stays behind the permission
+      // that may see them rather than handing a planner a file with the column
+      // the screen just took out.
+      can('att_reports') ? exportButton(api.attExportUrl(data.from, data.to), 'Export month') : null,
+    ),
   );
 
   if (!data.rows.length) {

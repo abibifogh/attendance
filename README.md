@@ -668,6 +668,19 @@ sign-off screen signs off the wrong day. And the notch and the home bar are
 accounted for, since `viewport-fit=cover` is what lets the page paint under
 both.
 
+**And the toolbar is one row, not three.** A screen accumulates outputs — save
+it, download the ones to deal with, the same across the week, the whole day as a
+file — and on a desk they sit along the toolbar and cost nothing. On a phone the
+same four wrapped onto three rows and pushed the morning's list below the fold,
+so what a supervisor opening the app in a corridor saw was a page of buttons.
+They are behind *More* now, which is one button and opens them as a block; on a
+desk nothing moved. The day and week arrows lost their words for the same reason
+— "‹ Previous day" and "Next day ›" either side of a date field is wider than a
+handset, and it says twice what the field already says — and *This week* only
+appears when the week on screen is not this one. The two emoji on those buttons
+are gone as well: a phone draws them in full colour and they read as decoration
+on a button that is doing a job.
+
 **A dialog is never taller than the screen actually is.** `100vh` on iOS Safari
 is measured with the address bar and the toolbar hidden, so a panel capped in
 `vh` on an iPhone showing both is taller than the part of the screen anybody can

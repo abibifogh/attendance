@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { can, navigate, replaceParams } from '../app.js';
 import { fmtDay, fmtNum, h, mount, shiftDay, toast, todayISO } from '../util.js';
-import { alertList, card, emptyState, exportButton, table } from './components.js';
+import { alertList, card, emptyState, exportButton, moreActions, table } from './components.js';
 import { printButton } from '../print.js';
 import { birthdayStrip } from './birthday.js';
 import {
@@ -46,7 +46,14 @@ export async function renderAttToday(params) {
   const issues = [...needing, ...absent, ...flagged];
 
   const nav = h('div.toolbar',
-    h('button.btn-sm', { onclick: () => reload(shiftDay(day, -1)) }, '‹ Previous day'),
+    // Arrows on a phone, words on a desk. The date sits between them and the
+    // three of them take one row: "‹ Previous day" and "Next day ›" either
+    // side of a date field is wider than a handset, and what it costs is a
+    // whole row of the screen to say twice what the field already says.
+    h('button.btn-sm', {
+      onclick: () => reload(shiftDay(day, -1)),
+      'aria-label': 'The day before',
+    }, '‹', h('span.only-desk', ' Previous day')),
     h('input', {
       type: 'date', value: day, max: data.today,
       onchange: (e) => e.target.value && reload(e.target.value),
@@ -54,36 +61,43 @@ export async function renderAttToday(params) {
     h('button.btn-sm', {
       onclick: () => reload(shiftDay(day, 1)),
       disabled: day >= data.today,
-    }, 'Next day ›'),
+      'aria-label': 'The day after',
+    }, h('span.only-desk', 'Next day '), '›'),
     day !== data.today ? h('button.btn-sm', { onclick: () => reload(data.today) }, 'Today') : null,
     h('div', { style: { flex: 1 } }),
-    printButton({
-      title: `Attendance — ${fmtDay(day, { withYear: true })}`,
-      subtitle: totalsLine(data.totals),
-      footer: PRINT_FOOTER,
-    }),
 
-    // Just the ones needing somebody, as a file. The full export is the
-    // payroll extract and answers a different question at the wrong length:
-    // whoever is about to walk round the building wants the eight names with
-    // something against them, not the ninety who turned up.
-    //
-    // Offered to anybody who can open this screen. Everything in the file is
-    // already on it.
-    issues.length
-      ? exportButton(api.attIssuesUrl({ day }),
-        `Download the ${issues.length} to deal with`)
-      : null,
-    // And the same thing across the week, for whoever comes back on a Monday
-    // to a Friday nobody settled.
-    issues.length
-      ? h('a.btn.btn-sm', {
-        href: api.attIssuesUrl({ from: shiftDay(day, -6), to: day }),
-        download: '',
-        title: 'Everything with something wrong with it, over the last seven days',
-      }, 'Last 7 days')
-      : null,
-    can('att_reports') ? exportButton(api.attExportUrl(day, day), 'Export this day') : null,
+    // Everything that makes a file. On a desk they sit along the toolbar as
+    // they always did; on a phone they are one More button, because four of
+    // them wrap onto three rows and push the morning's list off the screen.
+    moreActions(
+      printButton({
+        title: `Attendance — ${fmtDay(day, { withYear: true })}`,
+        subtitle: totalsLine(data.totals),
+        footer: PRINT_FOOTER,
+      }),
+
+      // Just the ones needing somebody, as a file. The full export is the
+      // payroll extract and answers a different question at the wrong length:
+      // whoever is about to walk round the building wants the eight names with
+      // something against them, not the ninety who turned up.
+      //
+      // Offered to anybody who can open this screen. Everything in the file is
+      // already on it.
+      issues.length
+        ? exportButton(api.attIssuesUrl({ day }),
+          `Download the ${issues.length} to deal with`)
+        : null,
+      // And the same thing across the week, for whoever comes back on a Monday
+      // to a Friday nobody settled.
+      issues.length
+        ? h('a.btn.btn-sm', {
+          href: api.attIssuesUrl({ from: shiftDay(day, -6), to: day }),
+          download: '',
+          title: 'Everything with something wrong with it, over the last seven days',
+        }, 'Last 7 days')
+        : null,
+      can('att_reports') ? exportButton(api.attExportUrl(day, day), 'Export this day') : null,
+    ),
   );
 
   if (!data.rows.length) {
