@@ -619,3 +619,113 @@ test('a closed month refuses to have anything copied into it', async () => {
     /closed/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// How a grossed-up bonus reads on a payslip
+// ---------------------------------------------------------------------------
+
+/**
+ * A bonus is agreed net: somebody is promised four hundred and gets four
+ * hundred, and the property carries the tax that makes that true. So the
+ * grossed-up figure is not a number anybody was offered, and a payslip saying
+ * it invites the one question it cannot answer.
+ */
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+const withBonus = (allowances, over = {}) => computeLine({
+  staff: { id: 1, name: 'Kofi Mensah' },
+  basic: 2000,
+  allowances,
+  schemes: [{ id: 1, name: 'Nkosoɔ', amount: 400, score: 100 }],
+  ssnit: true,
+  rates,
+  ...over,
+});
+
+const addsUp = (line) => round2(
+  line.basic
+  + line.slip.allowances.reduce((n, a) => n + a.amount, 0)
+  + line.slip.bonus,
+);
+
+test('the bonus on a payslip is the figure that was agreed', () => {
+  const line = withBonus([{ name: 'Allowance', amount: 500, taxable: 1 }]);
+  assert.equal(line.slip.bonus, 400, 'not the 421.05 it had to be grossed to');
+  assert.equal(line.bonus.net, 400);
+  assert.ok(line.bonus.gross > 400, 'the grossing up still happens');
+});
+
+test('and the tax carried on it goes in with the allowance', () => {
+  const line = withBonus([{ name: 'Allowance', amount: 500, taxable: 1 }]);
+  const carried = round2(line.bonus.gross - line.bonus.net);
+
+  assert.equal(line.slip.carried, carried);
+  assert.deepEqual(line.slip.allowances, [
+    { name: 'Allowance', amount: round2(500 + carried), taxable: true, carries: carried },
+  ]);
+  assert.deepEqual(line.allowances, [{ name: 'Allowance', amount: 500, taxable: true }],
+    'and what the property agreed to pay is left as it is');
+});
+
+test('the earnings column still adds to the same gross', () => {
+  for (const allowances of [
+    [{ name: 'Allowance', amount: 500, taxable: 1 }],
+    [{ name: 'Transport', amount: 500, taxable: 1 }],
+    [{ name: 'Transport', amount: 300, taxable: 1 }, { name: 'Allowance', amount: 200, taxable: 1 }],
+    [{ name: 'Transport', amount: 300, taxable: 1 }, { name: 'Housing', amount: 200, taxable: 1 }],
+    [{ name: 'Lunch', amount: 200, taxable: 0 }],
+    [],
+  ]) {
+    const line = withBonus(allowances);
+    assert.equal(addsUp(line), line.gross, JSON.stringify(allowances));
+  }
+});
+
+test('it joins the one called Allowance where there are several', () => {
+  const line = withBonus([
+    { name: 'Transport', amount: 300, taxable: 1 },
+    { name: 'Allowance', amount: 200, taxable: 1 },
+  ]);
+  assert.equal(line.slip.allowances.find((a) => a.name === 'Transport').amount, 300);
+  assert.ok(line.slip.allowances.find((a) => a.name === 'Allowance').carries > 0);
+});
+
+test('and the only one where none of them is called that', () => {
+  const line = withBonus([{ name: 'Transport', amount: 500, taxable: 1 }]);
+  assert.ok(line.slip.allowances[0].carries > 0, 'one allowance is the one it belongs to');
+});
+
+test('but never onto whichever happened to be first', () => {
+  const line = withBonus([
+    { name: 'Transport', amount: 300, taxable: 1 },
+    { name: 'Housing', amount: 200, taxable: 1 },
+  ]);
+  assert.equal(line.slip.allowances[0].amount, 300);
+  assert.equal(line.slip.allowances[1].amount, 200);
+  assert.equal(line.slip.allowances[2].name, 'Allowance', 'it gets a line of its own instead');
+  assert.equal(line.slip.allowances[2].amount, line.slip.carried);
+});
+
+test('a month with no bonus reads exactly as it always did', () => {
+  const line = computeLine({
+    staff: { id: 1, name: 'Kofi Mensah' },
+    basic: 2000,
+    allowances: [{ name: 'Allowance', amount: 500, taxable: 1 }],
+    schemes: [],
+    ssnit: true,
+    rates,
+  });
+  assert.equal(line.slip.carried, 0);
+  assert.equal(line.slip.bonus, 0);
+  assert.deepEqual(line.slip.allowances, [{ name: 'Allowance', amount: 500, taxable: true }]);
+});
+
+test('net pay is untouched by any of this', () => {
+  const line = withBonus([{ name: 'Allowance', amount: 500, taxable: 1 }]);
+  // Gross less SSNIT less PAYE. The rearranging is a payslip reading the same
+  // money differently, not a different amount of money.
+  assert.equal(
+    line.net,
+    round2(line.gross - line.ssnit.employee - line.paye.total),
+  );
+});

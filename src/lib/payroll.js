@@ -96,12 +96,56 @@ export function computeLine({
   const net = round2(gross - contributions.employee - tax - loanDue);
   const cost = round2(gross + contributions.employer);
 
+  // ---- how it reads on a payslip ---------------------------------------
+  //
+  // A bonus here is agreed net: somebody is promised four hundred and gets
+  // four hundred, and the property carries the tax that makes that true. So
+  // the grossed-up figure is not a number anybody was offered, and putting it
+  // on a payslip under Bonus invites the one question it cannot answer —
+  // "why does this say 470 when we agreed 400".
+  //
+  // The cost still has to be somewhere, because gross pay has to add up. It
+  // goes where it belongs: with the allowances, which is what it is. The
+  // person sees the bonus they agreed and an allowance line that includes what
+  // the property put in, and the column still totals to the same gross.
+  const carried = round2(grossed.gross - bonusNet);
+  const onSlip = allowances.map((a) => ({
+    name: a.name, amount: round2(a.amount), taxable: a.taxable !== false && a.taxable !== 0,
+  }));
+
+  if (carried > 0) {
+    // The allowance it joins. A property that calls its one allowance
+    // "Allowance" means that one; a property with a single allowance under any
+    // name means that one too. Where there are several and none of them is the
+    // obvious one, it goes on a line of its own rather than being added to
+    // whichever happened to be first.
+    const named = onSlip.find((a) => /^allowances?$/i.test(String(a.name).trim()));
+    const only = onSlip.length === 1 ? onSlip[0] : null;
+    const target = named ?? only;
+
+    if (target) {
+      target.amount = round2(target.amount + carried);
+      target.carries = carried;
+    } else {
+      onSlip.push({ name: 'Allowance', amount: carried, taxable: true, carries: carried });
+    }
+  }
+
   return {
     staff,
     basic: pay,
     allowances: allowances.map((a) => ({
       name: a.name, amount: round2(a.amount), taxable: a.taxable !== false && a.taxable !== 0,
     })),
+    // The same money, arranged the way a payslip says it. Kept apart from the
+    // list above, which is what the property actually agreed to pay and is
+    // what the journal, the GRA schedule and every export are drawn from.
+    slip: {
+      allowances: onSlip,
+      allowanceTotal: round2(onSlip.reduce((n, a) => n + a.amount, 0)),
+      bonus: bonusNet,
+      carried,
+    },
     allowanceTotal: round2(taxableAllowance + freeAllowance),
     taxableAllowance,
     freeAllowance,
@@ -159,6 +203,12 @@ export function totalsOf(lines) {
     people: lines.length,
     basic: add('basic'),
     allowances: add(null, (l) => l.allowanceTotal),
+    // The same money the way a payslip says it: the tax the property carried
+    // on the bonuses counted with the allowances rather than with the bonus.
+    // A totals row that split it the other way to the rows above it is a
+    // column somebody has to reconcile before they can trust either.
+    allowancesOnSlip: add(null, (l) => l.slip?.allowanceTotal ?? l.allowanceTotal),
+    carriedOnBonus: add(null, (l) => l.slip?.carried ?? 0),
     bonusNet: add(null, (l) => l.bonus.net),
     bonusGross: add(null, (l) => l.bonus.gross),
     gross: add('gross'),

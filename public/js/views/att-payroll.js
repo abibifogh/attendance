@@ -226,10 +226,21 @@ export async function renderAttPayroll(params) {
             h('small.muted', line.staff.department || `No. ${line.staff.employeeNo ?? ''}`),
             !line.ssnit.qualifies ? h('small.pill', 'no SSNIT') : null),
           h('td.num', cash(line.basic)),
-          h('td.num', line.allowanceTotal ? cash(line.allowanceTotal) : h('span.muted', '—')),
-          h('td.num', line.bonus.gross
+          // The allowances and the bonus as the payslip says them: the bonus is
+          // what was agreed, and the tax the property carried on it sits with
+          // the allowances. The row still adds to the same gross either way,
+          // and a screen that disagreed with the payslip is a question nobody
+          // should have to answer twice.
+          h('td.num', line.slip?.allowanceTotal || line.allowanceTotal
             ? h('div',
-              cash(line.bonus.gross),
+              cash(line.slip?.allowanceTotal ?? line.allowanceTotal),
+              line.slip?.carried
+                ? h('small.muted', ` with ${cash(line.slip.carried)} on the bonus`)
+                : null)
+            : h('span.muted', '—')),
+          h('td.num', line.bonus.net
+            ? h('div',
+              cash(line.bonus.net),
               line.bonus.docked ? h('small.muted', ` less ${cash(line.bonus.docked)}`) : null)
             : h('span.muted', '—')),
           h('td.num', h('strong', cash(line.gross))),
@@ -242,8 +253,8 @@ export async function renderAttPayroll(params) {
           h('tr.pay-total',
             h('td', h('strong', 'Everybody')),
             h('td.num', cash(data.totals.basic)),
-            h('td.num', cash(data.totals.allowances)),
-            h('td.num', cash(data.totals.bonusGross)),
+            h('td.num', cash(data.totals.allowancesOnSlip ?? data.totals.allowances)),
+            h('td.num', cash(data.totals.bonusNet)),
             h('td.num', h('strong', cash(data.totals.gross))),
             h('td.num', cash(data.totals.ssnitEmployee)),
             h('td.num', cash(data.totals.paye)),

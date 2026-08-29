@@ -1176,6 +1176,19 @@ export const GUIDE = [
       { p: 'How a scheme pays is set when it is made, and it decides one thing: what somebody '
         + 'is asked to type each month. The money lands on the payslip the same way whichever '
         + 'it is \u2014 one bonus line, taxed and grossed up by the property.' },
+      { p: 'Every bonus here is a net figure. Somebody promised four hundred receives four '
+        + 'hundred, and the property carries the tax that makes that true. So the grossed-up '
+        + 'figure is not a number anybody was offered, and the payslip does not show it as one: '
+        + 'the bonus line says what was agreed, and the tax carried on it is in the allowance '
+        + 'line above. The column still adds to the same gross, because it is the same money '
+        + 'read a different way, and the month\u2019s table on this screen says it the same way '
+        + 'so the two can never disagree.' },
+      { note: 'Where somebody has one allowance, that is the line it joins. Where there are '
+        + 'several and one of them is called Allowance, it joins that one. Where there are '
+        + 'several and none of them is the obvious one, it goes on a line of its own rather '
+        + 'than onto whichever happened to be first. What the property agreed to pay is left '
+        + 'as it is underneath, and that is what the journal and the GRA schedule are drawn '
+        + 'from.' },
       { list: [
         'Scored out of a hundred. The scheme is worth one figure and somebody scores a share '
           + 'of it. Half a scheme is half the money. Right for a scheme about how well '

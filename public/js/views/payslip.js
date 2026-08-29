@@ -53,6 +53,9 @@ const join = (parts, sep = ' · ') => parts.filter(Boolean).join(sep);
 export function payslipPage({ line, data, month, company = companyOf() }) {
   const cash = (n) => money(n, data.currency);
   const b = line.bonus ?? { schemes: [] };
+  // How the earnings column reads. Older payslips saved before this was worked
+  // out do not carry it, so the agreed allowances stand in.
+  const slip = line.slip ?? {};
   const rates = data.rates ?? {};
 
   const sum = (label, value) => h('tr.slip-sum',
@@ -124,9 +127,17 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
           h('h3.slip-col-head', 'Earnings'),
           h('table.slip-table', h('tbody',
             row('Basic salary', cash(line.basic)),
-            ...(line.allowances ?? []).map((a) => row(a.name, cash(a.amount),
-              a.taxable ? null : 'not taxed')),
-            b.gross ? row('Bonus', cash(b.gross), `${cash(b.net)} in hand, grossed up`) : null,
+            // The allowances as they read here, which is the agreed figures
+            // with the tax the property carried on the bonus folded in. The
+            // list the property actually agreed to pay is line.allowances, and
+            // that is what the journal and the GRA schedule are drawn from.
+            ...(slip.allowances ?? line.allowances ?? []).map((a) => row(a.name, cash(a.amount),
+              a.taxable === false ? 'not taxed' : null)),
+            // The bonus somebody was promised, and nothing else. A grossed-up
+            // figure here is a number nobody was offered, and it invites the
+            // one question a payslip cannot answer: why does this say 470 when
+            // we agreed 400.
+            b.net ? row('Bonus', cash(b.net)) : null,
             sum('Gross pay', cash(line.gross))))),
 
         h('section.slip-col',
@@ -153,8 +164,14 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
               b.notTaken
                 ? row('More was docked than the bonus could carry', cash(b.notTaken))
                 : null,
-              row('Bonus in hand', cash(b.net)),
-              sum('Grossed up to', cash(b.gross)))))
+              sum('Bonus paid', cash(b.net)))),
+            // Outside the table, because a sentence in a two-column money
+            // table is a sentence sitting on top of the figures.
+            b.tax
+              ? h('p.slip-note',
+                `Agreed as what you receive. The ${cash(b.tax)} of tax on it is carried by the `
+                + 'property, and is in the allowance above.')
+              : null)
           : null,
 
         h('section.slip-col',
@@ -168,7 +185,7 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
               `${cash(step.amount)} at ${fmtNum(step.rate * 100, step.rate * 100 % 1 ? 1 : 0)}%`,
               cash(step.tax))),
             b.finalTax
-              ? row(`Bonus of ${cash(b.atFinalRate)} at `
+              ? row(`Bonus grossed to ${cash(b.atFinalRate)}, at `
                 + `${fmtNum((rates.bonusFinalRate ?? 0) * 100, 0)}% final tax`, cash(b.finalTax))
               : null,
             sum('PAYE', cash(line.paye.total)))))),
