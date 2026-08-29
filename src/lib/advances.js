@@ -441,3 +441,97 @@ export function accountFor(advances = [], entriesBy = new Map(), { asOfMonth = n
 
   return rows;
 }
+
+/**
+ * What it would take to make the account read the way the paper ledger does.
+ *
+ * A property that has been lending money for years does not start with an
+ * empty book. It starts with a notebook, and the months in it disagree with
+ * anything the app can work out — a deduction of seven hundred where the
+ * agreement says five, a top-up handed over in June that nobody recorded, a
+ * month where nothing came off and nobody wrote why.
+ *
+ * So the months that have already ended can be typed in. This works out what
+ * writing them would mean, and it is deliberately a plan rather than a write:
+ * an addition somebody types is an advance being created, and this app does
+ * not create things without saying so first.
+ *
+ * TWO THINGS IT WILL NOT DO. It will not take an addition back down, because
+ * money that was handed over was handed over and the way to fix a wrong figure
+ * is to correct the record it is on. And it will not put a repayment against a
+ * month with nothing running, because there is nothing for it to have come off.
+ */
+export function reconcilePlan(advances = [], entriesBy = new Map(), wanted = [], {
+  asOfMonth = null,
+} = {}) {
+  const live = advances.filter((a) => ['approved', 'settled'].includes(a.status));
+
+  const takenIn = new Map();
+  const repaidIn = new Map();
+  const answered = new Map();
+  for (const advance of live) {
+    const month = monthOf(advance.taken_on) || advance.start_month;
+    if (month) takenIn.set(month, round2((takenIn.get(month) ?? 0) + round2(advance.amount)));
+    for (const entry of entriesBy.get(advance.id) ?? []) {
+      repaidIn.set(entry.month, round2((repaidIn.get(entry.month) ?? 0) + round2(entry.amount)));
+      if (['repayment', 'skipped'].includes(entry.kind)) answered.set(entry.month, true);
+    }
+  }
+
+  const changes = [];
+  const refused = [];
+
+  for (const row of wanted) {
+    const month = String(row.month ?? '');
+    if (!/^\d{4}-\d{2}$/.test(month)) continue;
+    if (asOfMonth && month >= asOfMonth) {
+      refused.push({ month, why: 'that month has not finished yet' });
+      continue;
+    }
+
+    if (row.taken != null && row.taken !== '') {
+      const want = round2(row.taken);
+      const has = round2(takenIn.get(month) ?? 0);
+      if (want < has) {
+        refused.push({
+          month,
+          why: `${has} was handed over in that month and money cannot be un-handed. Correct the `
+            + 'advance it is on instead',
+        });
+      } else if (want > has) {
+        changes.push({ month, kind: 'advance', amount: round2(want - has), was: has, now: want });
+      }
+    }
+
+    if (row.repaid != null && row.repaid !== '') {
+      const want = round2(row.repaid);
+      const has = round2(repaidIn.get(month) ?? 0);
+      // The advance that was running that month, oldest first. A correction
+      // belongs on the agreement it came off, not on whichever is newest.
+      const against = live
+        .filter((a) => (a.start_month || monthOf(a.taken_on) || '9999-99') <= month)
+        .sort((a, b) => String(a.start_month).localeCompare(String(b.start_month)))[0];
+
+      if (!against) {
+        refused.push({ month, why: 'nothing was running that month for it to come off' });
+      } else if (want !== has) {
+        changes.push({
+          month,
+          kind: 'movement',
+          advanceId: against.id,
+          amount: round2(want - has),
+          was: has,
+          now: want,
+        });
+      } else if (want === 0 && !answered.get(month)) {
+        // Nought, and nobody had said so. That is an answer worth writing:
+        // it is the difference between a month let go and a month missed.
+        changes.push({ month, kind: 'letGo', advanceId: against.id, amount: 0, was: has, now: 0 });
+      }
+    }
+  }
+
+  changes.sort((a, b) => a.month.localeCompare(b.month));
+  refused.sort((a, b) => a.month.localeCompare(b.month));
+  return { changes, refused };
+}

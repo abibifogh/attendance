@@ -478,7 +478,7 @@ function personRows(person, { data, reload, cash }) {
       // not off a differently arranged one.
       h('div.btn-row', { style: { marginBottom: '.6rem' } },
         h('button.btn-sm', {
-          onclick: () => showStatement(person, cash),
+          onclick: () => showStatement(person, { data, reload, cash }),
         }, `See ${person.staff.name.split(' ')[0]}\u2019s account`)),
       person.advances.map((advance) => advanceBlock(advance, { person, data, reload, cash }))));
 
@@ -615,20 +615,148 @@ const term = (label, value) => h('div.adv-term', h('small.muted', label), h('div
  * looking at one table, not at two arrangements of the same numbers that have
  * to be reconciled out loud.
  */
-async function showStatement(person, cash) {
-  const data = await api.advanceStaff(person.staff.id).catch(() => null);
-  if (!data) { toast('That did not load.', 'bad'); return; }
+async function showStatement(person, { data, reload, cash }) {
+  const mine = await api.advanceStaff(person.staff.id).catch(() => null);
+  if (!mine) { toast('That did not load.', 'bad'); return; }
 
-  showSheet({
-    title: `${data.staff.name}\u2019s account`,
+  const sheet = showSheet({
+    title: `${mine.staff.name}\u2019s account`,
     body: h('div',
       h('p.muted', { style: { fontSize: '.85rem' } },
         'This is the page they see on their own phone. The months behind are what was '
         + 'recorded; the ones ahead are what is expected, and they move whenever anything '
         + 'does.'),
-      advanceStatement(data.account, cash, { title: null })
-        ?? h('p.muted', 'Nothing has been borrowed.')),
+      advanceStatement(mine.account, cash, { title: null })
+        ?? h('p.muted', 'Nothing has been borrowed.'),
+      // Only where there is a history to put right, and only for somebody who
+      // may. Retyping what came off last April moves what a person owes.
+      data?.canEdit && mine.account?.some((row) => row.done)
+        ? h('div.btn-row', { style: { marginTop: '.8rem' } },
+          h('button.btn-sm', {
+            onclick: () => { sheet.close(); putHistoryRight(person, mine, { reload, cash }); },
+          }, 'Put the old months right'))
+        : null),
   });
+}
+
+/**
+ * The months that have already gone, typed the way the notebook has them.
+ *
+ * The property was lending money long before any of this existed, and the
+ * figures for last April are whatever is written in the book. Nothing else in
+ * the app can put them in: the month-end close only ever asks about the month
+ * it is in, and a correction against one advance cannot say that a top-up was
+ * handed over in June and never recorded.
+ *
+ * Two columns, and only for months that have ended. What gets written is
+ * ordinary records, so the closing balances and the last instalment work
+ * themselves out from here rather than being typed as well and then having to
+ * be kept in step.
+ */
+async function putHistoryRight(person, mine, { reload, cash }) {
+  const past = (mine.account ?? []).filter((row) => row.done);
+  if (!past.length) { toast('There is no history to put right yet.', 'warn'); return; }
+
+  const boxes = past.map((row) => {
+    const taken = h('input.adv-hist-in', {
+      type: 'number', step: '0.01', min: '0', value: row.additions || '',
+      placeholder: '\u2014',
+    });
+    const repaid = h('input.adv-hist-in', {
+      type: 'number', step: '0.01', min: '0', value: row.repayment || '',
+      placeholder: '\u2014',
+    });
+    // The closing figure, redrawn as the figures above it are typed. A grid
+    // that shows what a change does to the balance is the whole reason for
+    // typing into a grid rather than into four separate forms.
+    const closing = h('td.num.muted', cash(row.closing));
+    return { row, taken, repaid, closing };
+  });
+
+  const redraw = () => {
+    let opening = past[0].opening;
+    for (const box of boxes) {
+      // Blank leaves a month alone, so blank reads as what is already there.
+      const num = (input, fallback) => (input.value === '' ? fallback : Number(input.value) || 0);
+      const added = num(box.taken, box.row.additions);
+      const off = num(box.repaid, box.row.repayment);
+      const close = Math.round((opening + added - off) * 100) / 100;
+      box.closing.textContent = cash(close);
+      box.closing.classList.toggle('bad-text', close < 0);
+      opening = close;
+    }
+  };
+  for (const box of boxes) {
+    box.taken.addEventListener('input', redraw);
+    box.repaid.addEventListener('input', redraw);
+  }
+
+  const running = mine.advances?.find((a) => a.status === 'approved');
+
+  const done = await formDialog({
+    title: `${person.staff.name}\u2019s months before this one`,
+    submitLabel: 'Put them right',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Type what was actually handed over and what actually came off, month by month. A '
+        + 'month left blank is left alone. The closing balance moves as you type, and when the '
+        + 'last instalment falls is worked out from these once it is saved, so there is nothing '
+        + 'else to put right afterwards.'),
+
+      h('div.table-wrap', h('table.adv-statement.adv-hist',
+        h('thead', h('tr',
+          h('th', 'Month'),
+          h('th.num', 'Taken'),
+          h('th.num', 'Repaid'),
+          h('th.num', 'Closed at'))),
+        h('tbody', boxes.map(({ row, taken, repaid, closing }) => h('tr',
+          h('td', niceMonth(row.month)),
+          h('td.num', taken),
+          h('td.num', repaid),
+          closing))))),
+
+      field('A month, for anything it has to record', h('input', {
+        type: 'number', name: 'monthly', step: '0.01', min: '1',
+        value: running?.monthly ?? '',
+      }), 'A figure typed under Taken is money that was handed over and never written down, so '
+        + 'it goes in as an advance of its own. This is what it comes off at'),
+
+      h('div.alert.warn',
+        h('span.alert-icon', '\u26a0\ufe0f'),
+        h('div',
+          h('div.alert-title', 'This moves what they owe'),
+          h('div.alert-detail', 'They are told, and every line of it goes in the log with your '
+            + 'name on it. A figure typed under Taken cannot go down \u2014 money that was '
+            + 'handed over was handed over, and a wrong amount is put right on the advance '
+            + 'itself with Correct the record.'))),
+
+      field('Why', h('input', {
+        type: 'text', name: 'note', maxlength: 300,
+        placeholder: 'Typed up from the office ledger',
+      }))),
+
+    onSubmit: (form) => api.advanceHistory(person.staff.id, {
+      rows: boxes.map(({ row, taken, repaid }) => ({
+        month: row.month,
+        taken: taken.value,
+        repaid: repaid.value,
+      })),
+      monthly: form.get('monthly'),
+      note: form.get('note'),
+    }),
+  });
+  if (!done) return;
+
+  const bits = [];
+  if (done.corrected) bits.push(`${done.corrected} month${done.corrected === 1 ? '' : 's'} put right`);
+  if (done.made?.length) bits.push(`${done.made.length} recorded as handed over`);
+  toast(bits.length ? `${bits.join(', ')}.` : 'Nothing was different.', bits.length ? 'good' : 'warn');
+
+  // What it would not write, said rather than left as an absence.
+  if (done.refused?.length) {
+    toast(done.refused.map((r) => `${niceMonth(r.month)}: ${r.why}`).join('. '), 'warn');
+  }
+  await reload();
 }
 
 /**

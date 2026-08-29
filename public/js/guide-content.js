@@ -918,6 +918,31 @@ export const GUIDE = [
         + 'along by one whether or not anybody has answered for it, which is what actually '
         + 'happens on a payslip.' },
 
+      { sub: 'The months before the app' },
+      { p: 'A property that has been lending money for years does not start with an empty book, '
+        + 'and the months in the notebook do not agree with anything the app can work out. Put '
+        + 'the old months right, on somebody\u2019s account, opens those months to be typed: '
+        + 'what was actually handed over and what actually came off, a line each. '
+        + 'Administrators only, and every line of it goes in the log.' },
+      { list: [
+        'Only months that have ended. The month running has not happened yet.',
+        'A month left blank is left alone. Only what you type is written.',
+        'The closing balance moves as you type, and when the last instalment falls follows '
+          + 'once it is saved. Neither is stored anywhere, so there is nothing else to correct '
+          + 'afterwards.',
+        'A figure under Taken is money that was handed over and never written down, so it goes '
+          + 'in as an advance of its own, dated that month. The box underneath says what it '
+          + 'comes off at.',
+        'Taken cannot go down. Money that was handed over was handed over, and a figure keyed '
+          + 'wrong is put right on the advance itself with Correct the record.',
+        'A nought under Repaid against a month nobody answered records it as a month let go, '
+          + 'which is the same thing as ticking it under Say which were skipped.',
+      ] },
+      { warn: 'Retyping what came off somebody\u2019s pay moves what they owe without them '
+        + 'agreeing to it. They are told when it happens, and what it would not write \u2014 a '
+        + 'month with nothing running, an addition going down \u2014 comes back on the screen '
+        + 'rather than being dropped.' },
+
       { sub: 'Requests, and what may be asked for' },
       { p: 'Somebody can ask through the app, and it waits at the top of this screen. '
         + 'Approving is also where the terms are settled: what was asked for and what the '

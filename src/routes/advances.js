@@ -7,7 +7,7 @@ import { readFile, storeFile } from './people.js';
 import {
   PURPOSES, accountFor, balanceOf, checkRequest, dueThisMonth, finishesOn, firstMonthFor,
   instalmentFor, isMonthEnd, isOpen, monthsLeft, purposeOf, purposesFor, repaidOf, round2,
-  scheduleFor, summarise, unansweredMonths,
+  reconcilePlan, scheduleFor, summarise, unansweredMonths,
 } from '../lib/advances.js';
 import { isAdmin } from '../lib/payroll-access.js';
 import { addMonths, isDay, isMonth, monthOf, todayIn } from '../util/dates.js';
@@ -643,6 +643,111 @@ export async function markSkipped(ctx, idParam) {
   await audit(ctx, 'advance.catch_up', id, { months, refused, note });
 
   return json({ ok: true, marked: months, refused });
+}
+
+/**
+ * Type the months that have already gone the way the ledger has them.
+ *
+ * A property that has been lending money for years does not start with an
+ * empty book, and nothing in this app could put the old book into it. The
+ * figures for last April are whatever the notebook says: seven hundred came
+ * off where the agreement says five, a top-up was handed over in June that
+ * nobody wrote down, a month went by with nothing.
+ *
+ * So the months that have ended can be typed. What is written is ordinary
+ * records — a correction against the advance that was running, an advance for
+ * a top-up that was never recorded — and everything downstream follows from
+ * them on its own. The closing balances and when the last instalment falls are
+ * worked out, never stored, so there is nothing else to put right.
+ *
+ * ADMINISTRATOR ONLY, and every line of it is logged. Retyping what came off
+ * somebody's pay last April moves what they owe without them agreeing to it,
+ * which is not a thing to leave lying around on a screen.
+ *
+ * NOTHING IS CREATED QUIETLY. An addition somebody types is an advance, and
+ * the answer says which ones it made so the screen can name them.
+ */
+export async function bringHistoryAcross(ctx, idParam) {
+  if (!isAdmin(ctx.session)) {
+    throw forbidden('Only an administrator can retype months that have already gone.');
+  }
+
+  const staffId = int(idParam, 'Who', { required: true, min: 1 });
+  const body = await readJson(ctx.request);
+  const { timezone, currency } = await settingsOf(ctx.db);
+  const thisMonth = monthOf(todayIn(timezone));
+
+  const person = await ctx.db.prepare(
+    `SELECT s.id, s.name, u.id AS user_id
+       FROM att_staff s LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
+      WHERE s.id = ?`,
+  ).bind(staffId).first();
+  if (!person) throw notFound('No such member of staff.');
+
+  const { advances: rows, entriesBy } = await ledger(ctx.db, { staffId });
+  const wanted = Array.isArray(body.rows) ? body.rows : [];
+  if (!wanted.length) throw badRequest('Nothing was typed.');
+
+  const { changes, refused } = reconcilePlan(rows, entriesBy, wanted, { asOfMonth: thisMonth });
+  const note = str(body.note, 'Why', { max: 300 })
+    || 'Brought into line with what actually happened';
+
+  // What a top-up handed over back then comes off at. The instalment somebody
+  // is already used to, unless the form says otherwise, because an advance
+  // from last June is not a new arrangement — it is part of the one running.
+  const running = rows.find((r) => isOpen(r));
+  const monthly = body.monthly != null && body.monthly !== ''
+    ? round2(num(body.monthly, 'A month', { min: 1, max: 1_000_000 }))
+    : round2(running?.monthly ?? 0);
+
+  const made = [];
+  let corrected = 0;
+
+  for (const change of changes) {
+    if (change.kind === 'advance') {
+      const taken = `${change.month}-01`;
+      const each = monthly > 0 ? Math.min(monthly, change.amount) : change.amount;
+      const over = Math.max(1, Math.ceil(change.amount / each));
+      const written = await ctx.db.prepare(
+        `INSERT INTO hr_advance
+           (staff_id, amount, months, monthly, currency, reason, status, taken_on, start_month,
+            asked_by, decided_by, decided_at, decision)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'approved', ?7, ?8, ?9, ?9, datetime('now'), ?10)
+         RETURNING id`,
+      ).bind(
+        staffId, change.amount, over, each, currency, note, taken, change.month,
+        actorOf(ctx), 'Brought across from the ledger',
+      ).first();
+      made.push({ id: written?.id ?? null, month: change.month, amount: change.amount });
+      continue;
+    }
+
+    const advance = rows.find((r) => r.id === change.advanceId);
+    if (!advance) continue;
+    await write(ctx, advance, {
+      month: change.month,
+      kind: change.kind === 'letGo' ? 'skipped' : 'adjustment',
+      amount: change.amount,
+      note,
+    });
+    corrected += 1;
+  }
+
+  await audit(ctx, 'advance.history', staffId, { changes, refused, made, note });
+
+  // Only where what they owe actually moved. Somebody writing down that
+  // nothing came off in June is tidying a record, not changing their money.
+  if (made.length || corrected) {
+    await tell(ctx, person, {
+      kind: 'advance.changed',
+      title: 'Your advance record has been brought into line with the office ledger',
+      body: 'The months before this one have been retyped from what was actually handed over '
+        + `and what actually came off. ${note} Check your account and say so if a month is `
+        + 'wrong.',
+    });
+  }
+
+  return json({ ok: true, changes, refused, made, corrected });
 }
 
 /** Take a movement back off the record. */

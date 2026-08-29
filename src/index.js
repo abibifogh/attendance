@@ -195,6 +195,8 @@ export const ROUTES = [
   ['POST', '/api/advances/import/read', 'hr_pay', advance.readAdvanceImport],
   ['POST', '/api/advances/import', 'hr_pay', advance.applyAdvanceImport],
   ['GET', '/api/advances/staff/:id', 'hr_pay', advance.staffAdvances],
+  // Typing the old notebook in. Administrator only, checked in the handler.
+  ['POST', '/api/advances/staff/:id/history', 'hr_pay', advance.bringHistoryAcross],
   ['POST', '/api/advances/:id/decide', 'hr_pay', advance.decideAdvance],
   ['PATCH', '/api/advances/:id', 'hr_pay', advance.adjustAdvance],
   // Correcting the record rather than the arrangement. Admin only, checked

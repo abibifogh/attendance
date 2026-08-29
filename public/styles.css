@@ -2928,6 +2928,14 @@ html { touch-action: manipulation; }
    it with, so it is ruled off rather than left as one row among many. */
 .adv-statement tbody tr:last-child td { border-top-width: 2px; }
 
+/* Typing the old months in. Narrow boxes, right-aligned like the figures they
+   are replacing, so a column of them still reads as a column. */
+.adv-hist-in {
+  width: 6.5rem; text-align: right; padding: .25rem .4rem;
+  font-variant-numeric: tabular-nums;
+}
+.adv-hist td { padding: .3rem .45rem; }
+
 /* The months nobody answered for, ticked off one at a time. */
 .adv-catchup {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
