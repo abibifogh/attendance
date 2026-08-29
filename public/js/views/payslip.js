@@ -181,14 +181,14 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
         // print along the bottom, which is where a reader's eye goes last and
         // where two real figures do not belong.
         h('section.slip-col',
-          h('h3.slip-col-head', 'What it cost the property'),
+          h('h3.slip-col-head', 'What it cost the company'),
           h('table.slip-table', h('tbody',
             row('Gross pay', cash(line.gross)),
             line.ssnit?.qualifies
               ? row('Employer SSNIT', cash(line.ssnit.employer),
                 `${fmtNum((rates.ssnitEmployer ?? 0) * 100, 0)}% of basic`)
               : null,
-            sum('Cost to the property', cash(line.employerCost)))))),
+            sum('Cost to the company', cash(line.employerCost)))))),
 
       // ----------------------------------------------------------- the cost
       h('footer.slip-foot',
