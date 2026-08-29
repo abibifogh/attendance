@@ -2895,6 +2895,25 @@ html { touch-action: manipulation; }
 .btn-ghost.danger { color: var(--bad); }
 .btn-ghost.danger:hover { background: color-mix(in srgb, var(--bad) 10%, transparent); }
 
+/* Advances that are finished, folded under the ones that are not. A property
+   two years into lending has a dozen of these against somebody, and opening a
+   row to see what they owe should not mean scrolling past all of them. */
+.adv-done { margin-top: .6rem; }
+.adv-done-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .8rem;
+  padding: .3rem 0 .35rem; border-top: 1px solid var(--border-strong);
+  font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-dim); cursor: pointer; list-style: none;
+}
+.adv-done-head::-webkit-details-marker { display: none; }
+.adv-done-head > span::before {
+  content: '\25b8'; margin-right: .45rem; font-size: .9em; color: var(--text-faint);
+}
+.adv-done[open] .adv-done-head > span::before { content: '\25be'; }
+.adv-done[open] .adv-done-head { margin-bottom: .5rem; }
+.adv-done-head:hover { color: var(--text); }
+.adv-done-head small { font-weight: 400; letter-spacing: 0; text-transform: none; }
+
 .adv-moves { width: 100%; font-size: .88rem; }
 .adv-moves td { padding: .3rem .4rem; border-top: 1px solid var(--border); }
 

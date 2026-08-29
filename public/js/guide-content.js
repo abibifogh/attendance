@@ -854,6 +854,12 @@ export const GUIDE = [
         + 'took it is a ledger that disagrees with the payslips, and by the third month nobody '
         + 'believes either of them.' },
 
+      { p: 'Opening somebody\u2019s row shows what is still running. Anything paid off is '
+        + 'folded under it \u2014 "3 paid off, GHS 1,200 in all" \u2014 and opens when you '
+        + 'want it. Two years of lending is a dozen finished advances against one person, and '
+        + 'scrolling past all of them to reach the one still costing money is the wrong way '
+        + 'round. The history is kept; it is just not in the way.' },
+
       { sub: 'Changing things' },
       { list: [
         'Change the terms: what comes off each month from here on. It does not change what is '

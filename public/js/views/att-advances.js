@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import {
-  confirmAction, fmtDay, h, money, monthOf, mount, shiftMonth, toast, todayISO,
+  confirmAction, fmtDay, h, keepPlace, money, monthOf, mount, shiftMonth, toast, todayISO,
 } from '../util.js';
 import { bulkUpload, card, emptyState } from './components.js';
 import { advanceStatement, field, formDialog, niceMonth, showSheet } from './att-shared.js';
@@ -137,8 +137,14 @@ export async function renderAttAdvances(params) {
 
   const reload = async (next = {}) => {
     const merged = { ...params, month, ...next };
+    // Called with no arguments after a save: the reader has not moved, so
+    // neither should the page. Called with arguments because a control was
+    // pressed, and then the top of a fresh month is where to be.
+    const stayed = Object.keys(next).length === 0;
+    const putBack = stayed ? keepPlace() : null;
     replaceParams('att-advances', merged);
     mount(host, await renderAttAdvances(merged));
+    if (putBack) putBack();
   };
 
   const cash = (n) => money(n, data.currency);
@@ -469,8 +475,28 @@ async function addOne(data, reload) {
 // One person
 // --------------------------------------------------------------------------
 
+/**
+ * Whose row is opened out, and whose paid-off advances are showing.
+ *
+ * Kept out here so a redraw does not fold everything away. Saving a figure
+ * redraws this screen, and closing the person somebody was working on every
+ * time they save is how a screen makes a person do their work twice.
+ */
+const openedOut = new Set();
+const showingDone = new Set();
+
 function personRows(person, { data, reload, cash }) {
   const open = person.advances.filter((a) => a.status === 'approved');
+
+  // What is finished is folded away. A property that has been lending for two
+  // years has a dozen paid-off advances against somebody, and opening their
+  // row to answer "what do they owe" should not mean scrolling past every one
+  // of them to reach the one still running. They are kept, because the
+  // history is the whole point of the ledger, and they are one press away.
+  const done = person.advances.filter((a) => a.status === 'settled');
+  const live = person.advances.filter((a) => a.status !== 'settled');
+  const paidOff = done.reduce((n, a) => n + a.amount, 0);
+
   const detail = h('tr.adv-detail', { style: { display: 'none' } },
     h('td', { colspan: 7 },
       // Their own screen, opened from here. Somebody being asked "why has this
@@ -480,18 +506,44 @@ function personRows(person, { data, reload, cash }) {
         h('button.btn-sm', {
           onclick: () => showStatement(person, { data, reload, cash }),
         }, `See ${person.staff.name.split(' ')[0]}\u2019s account`)),
-      person.advances.map((advance) => advanceBlock(advance, { person, data, reload, cash }))));
+
+      live.length
+        ? live.map((advance) => advanceBlock(advance, { person, data, reload, cash }))
+        : (done.length
+          ? h('p.muted', { style: { fontSize: '.85rem' } },
+            'Nothing running. Everything they have had is paid off.')
+          : null),
+
+      done.length
+        ? h('details.adv-done', {
+          open: showingDone.has(person.staff.id),
+          ontoggle: (e) => {
+            if (e.target.open) showingDone.add(person.staff.id);
+            else showingDone.delete(person.staff.id);
+          },
+        },
+        h('summary.adv-done-head',
+            h('span', `${done.length} paid off`),
+            h('small.muted', `${cash(paidOff)} in all`)),
+        done.map((advance) => advanceBlock(advance, { person, data, reload, cash })))
+        : null));
+
+  // Opened already, because they were opened before the redraw.
+  const wasOpen = openedOut.has(person.staff.id);
+  if (wasOpen) detail.style.display = '';
 
   const toggle = () => {
     const showing = detail.style.display !== 'none';
     detail.style.display = showing ? 'none' : '';
     main.setAttribute('aria-expanded', String(!showing));
+    if (showing) openedOut.delete(person.staff.id);
+    else openedOut.add(person.staff.id);
   };
 
   const main = h('tr.adv-row', {
     tabindex: 0,
     role: 'button',
-    'aria-expanded': 'false',
+    'aria-expanded': String(wasOpen),
     onclick: toggle,
     onkeydown: (e) => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }

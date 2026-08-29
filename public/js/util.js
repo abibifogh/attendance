@@ -209,6 +209,27 @@ export function watchForm(form) {
   };
 }
 
+/**
+ * Hold the reader's place across a redraw.
+ *
+ * A screen that redraws itself after a save throws the reader back to the top
+ * of it. On a page of thirty people that means finding your way back to the
+ * one you were working on, every single time, and the longer the screen the
+ * worse it gets — so a save on the last row is punished hardest.
+ *
+ * Called before the redraw; the function it hands back puts the page back
+ * where it was. Two frames, because the first one is the browser laying the
+ * new content out and the height it will scroll within does not exist yet.
+ */
+export function keepPlace() {
+  const top = window.scrollY;
+  return () => requestAnimationFrame(() => requestAnimationFrame(() => {
+    // Not where a redraw made the page shorter than where we were.
+    const most = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    window.scrollTo({ top: Math.min(top, most) });
+  }));
+}
+
 export const PALETTE = ['--c1', '--c2', '--c3', '--c4', '--c5', '--c6', '--c7', '--c8'];
 export function paletteColor(index) {
   return `var(${PALETTE[index % PALETTE.length]})`;

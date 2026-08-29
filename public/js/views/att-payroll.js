@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import {
-  confirmAction, deltaBadge, fmtNum, h, money, monthOf, mount, shiftMonth, toast, todayISO,
+  confirmAction, deltaBadge, fmtNum, h, keepPlace, money, monthOf, mount, shiftMonth, toast,
+  todayISO,
 } from '../util.js';
 import { bulkUpload, card, emptyState } from './components.js';
 import {
@@ -47,6 +48,15 @@ export async function renderAttPayrollTab(params) {
   return renderAttPayroll(params);
 }
 
+/**
+ * Which department groups are open, kept across a redraw.
+ *
+ * Saving scores redraws the whole screen. Folding every department away each
+ * time means opening them again before the next figure can be typed, on a
+ * screen whose whole job is typing figures.
+ */
+const openGroups = new Set();
+
 export async function renderAttPayroll(params) {
   const host = h('div');
   const month = /^\d{4}-\d{2}$/.test(params.month) ? params.month : monthOf(todayISO());
@@ -67,8 +77,14 @@ export async function renderAttPayroll(params) {
 
   const reload = async (next = {}) => {
     const merged = { ...params, month, ...next };
+    // Called with no arguments after a save: whoever pressed it has not moved,
+    // so the page should not either. Called with arguments because a control
+    // was pressed, and a fresh month starts at the top.
+    const stayed = Object.keys(next).length === 0;
+    const putBack = stayed ? keepPlace() : null;
     replaceParams('att-payroll', merged);
     mount(host, await renderAttPayroll(merged));
+    if (putBack) putBack();
   };
 
   const onPayroll = data.staff.filter((s) => s.onPayroll);
@@ -1059,7 +1075,15 @@ function schemesCard(data, month, closed, reload, cash) {
   data.schemes.length
     // Folded. A property with nine schemes across four departments opened on a
     // page of score boxes, and the month's figures were three screens down.
-    ? schemesByDepartment(data.schemes).map((group) => h('details.pay-scheme-group',
+    ? schemesByDepartment(data.schemes).map((group) => h('details.pay-scheme-group', {
+      // Folded or not as it was left. Saving a page of scores redraws this
+      // screen, and folding every department away each time means opening
+      // them again before the next figure can be typed.
+      open: openGroups.has(group.name),
+      ontoggle: (e) => {
+        if (e.target.open) openGroups.add(group.name); else openGroups.delete(group.name);
+      },
+    },
     h('summary.pay-scheme-dept',
       h('span', group.name),
       h('small.muted', `${group.schemes.length} scheme${group.schemes.length === 1 ? '' : 's'}`)),
