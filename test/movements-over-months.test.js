@@ -289,3 +289,101 @@ test('a movement belonging to another advance is not reachable', async () => {
     /No such movement/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// Putting one on the advance it really came off
+// ---------------------------------------------------------------------------
+
+test('a movement can be moved onto another of their advances', async () => {
+  const { raw, db } = setup();
+  const first = await give(db);
+  const second = await read(await addAdvance(ctx(db, WAGES, {
+    body: {
+      staffId: 1, amount: 900, months: 2, monthly: 450,
+      takenOn: '2024-05-02', startMonth: '2024-06', reason: 'The second one',
+    },
+  })));
+  const entry = await oneMovement(db, first);
+
+  const done = await read(await editEntry(ctx(db, WAGES, {
+    body: { advanceId: second.id },
+  }), String(first), String(entry.id)));
+
+  assert.equal(done.moved, true);
+  assert.equal(done.advanceId, second.id);
+  assert.equal(done.balance, 400, 'nine hundred less the five hundred that moved onto it');
+  assert.deepEqual(moves(raw, first), [], 'and it is off the one it was wrongly on');
+  assert.equal(moves(raw, second.id).length, 1);
+  assert.equal(moves(raw, second.id)[0].note, 'April payslip', 'with its note');
+});
+
+test('moving one settles the end it lands on and reopens the end it left', async () => {
+  const { raw, db } = setup();
+  const first = await give(db);
+  const second = await read(await addAdvance(ctx(db, WAGES, {
+    body: { staffId: 1, amount: 500, months: 1, monthly: 500, takenOn: '2024-05-02' },
+  })));
+  // Everything came off the first one, paying it off.
+  const entry = await oneMovement(db, first, { amount: 3000 });
+  assert.equal(rowOf(raw, first).status, 'settled');
+
+  await editEntry(ctx(db, WAGES, { body: { advanceId: second.id, amount: 500 } }),
+    String(first), String(entry.id));
+
+  assert.equal(rowOf(raw, first).status, 'approved', 'it owes again');
+  assert.equal(rowOf(raw, first).settled_at, null);
+  assert.equal(rowOf(raw, second.id).status, 'settled', 'and the other is paid off');
+});
+
+test('it cannot be moved onto somebody else\u2019s advance', async () => {
+  const { raw, db } = setup();
+  raw.prepare(
+    `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
+     VALUES (2, '2', 'Ama Boateng', 'Kitchen', '2020-01-01')`,
+  ).run();
+  const mine = await give(db);
+  const theirs = await read(await addAdvance(ctx(db, WAGES, {
+    body: { staffId: 2, amount: 500, months: 2, monthly: 250, takenOn: '2024-05-02' },
+  })));
+  const entry = await oneMovement(db, mine);
+
+  await assert.rejects(
+    () => editEntry(ctx(db, WAGES, { body: { advanceId: theirs.id } }), String(mine), String(entry.id)),
+    /belongs to somebody else/i,
+  );
+  assert.equal(moves(raw, mine).length, 1, 'and it stays where it was');
+});
+
+test('and not onto a month that advance has already answered', async () => {
+  const { raw, db } = setup();
+  const first = await give(db);
+  const second = await read(await addAdvance(ctx(db, WAGES, {
+    body: { staffId: 1, amount: 900, months: 2, monthly: 450, takenOn: '2024-03-02', startMonth: '2024-04' },
+  })));
+  await addEntry(ctx(db, WAGES, {
+    body: { month: '2024-04', kind: 'repayment', amount: 450 },
+  }), String(second.id));
+  const entry = await oneMovement(db, first);
+
+  await assert.rejects(
+    () => editEntry(ctx(db, WAGES, { body: { advanceId: second.id } }), String(first), String(entry.id)),
+    /already has an answer/i,
+  );
+  assert.equal(moves(raw, first).length, 1);
+});
+
+test('what moved and where it came from are both in the log', async () => {
+  const { raw, db } = setup();
+  const first = await give(db);
+  const second = await read(await addAdvance(ctx(db, WAGES, {
+    body: { staffId: 1, amount: 900, months: 2, monthly: 450, takenOn: '2024-05-02' },
+  })));
+  const entry = await oneMovement(db, first);
+
+  await editEntry(ctx(db, WAGES, { body: { advanceId: second.id } }), String(first), String(entry.id));
+
+  const log = raw.prepare("SELECT * FROM audit_log WHERE action = 'advance.entry_edit'").get();
+  const detail = JSON.parse(log.detail);
+  assert.equal(detail.was.advanceId, first);
+  assert.equal(detail.now.advanceId, second.id);
+});

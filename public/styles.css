@@ -2889,6 +2889,12 @@ html { touch-action: manipulation; }
 /* The picker on the payroll screen. Wide enough for "10 — GHS 250". */
 .pay-tier { min-width: 11rem; }
 
+/* A button that takes something away for good. Coloured, not shouted: it sits
+   beside the ordinary ones and has to look different without looking alarming
+   every time somebody opens the screen. */
+.btn-ghost.danger { color: var(--bad); }
+.btn-ghost.danger:hover { background: color-mix(in srgb, var(--bad) 10%, transparent); }
+
 .adv-moves { width: 100%; font-size: .88rem; }
 .adv-moves td { padding: .3rem .4rem; border-top: 1px solid var(--border); }
 

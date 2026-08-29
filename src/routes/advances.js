@@ -835,13 +835,30 @@ export async function editEntry(ctx, idParam, entryParam) {
     ? body.kind : entry.kind;
   const month = isMonth(body.month) ? String(body.month) : entry.month;
 
+  // Which advance it came off. A person with several running has one payslip
+  // deduction covering them all, and putting the whole of it on one leaves
+  // that one paid off twice over while the rest read as untouched. Moving it
+  // by hand is how somebody puts that right without unpicking the lot.
+  let onto = advance;
+  const wantsMove = body.advanceId != null && body.advanceId !== ''
+    && int(body.advanceId, 'Advance') !== id;
+  if (wantsMove) {
+    const moveTo = int(body.advanceId, 'Advance', { required: true, min: 1 });
+    onto = await ctx.db.prepare('SELECT * FROM hr_advance WHERE id = ?').bind(moveTo).first();
+    if (!onto) throw notFound('No such advance to move it to.');
+    if (onto.staff_id !== advance.staff_id) {
+      throw badRequest('That advance belongs to somebody else. A payment cannot move between '
+        + 'two people\u2019s records.');
+    }
+  }
+
   // A month can only be answered once, so moving one onto a month that is
-  // already answered would make two of them.
-  if (month !== entry.month && ['repayment', 'skipped'].includes(kind)) {
+  // already answered — on whichever advance it lands on — would make two.
+  if ((month !== entry.month || onto.id !== id) && ['repayment', 'skipped'].includes(kind)) {
     const clash = await ctx.db.prepare(
       `SELECT id FROM hr_advance_entry
         WHERE advance_id = ? AND month = ? AND id <> ? AND kind IN ('repayment','skipped')`,
-    ).bind(id, month, entryId).first();
+    ).bind(onto.id, month, entryId).first();
     if (clash) {
       throw badRequest(`${month} already has an answer against it. Take that one off first, or `
         + 'put this one right where it is.');
@@ -860,32 +877,44 @@ export async function editEntry(ctx, idParam, entryParam) {
     : str(body.note, 'Note', { max: 300 });
 
   await ctx.db.prepare(
-    'UPDATE hr_advance_entry SET month = ?2, kind = ?3, amount = ?4, note = ?5 WHERE id = ?1',
-  ).bind(entryId, month, kind, amount, note).run();
+    'UPDATE hr_advance_entry SET advance_id = ?2, month = ?3, kind = ?4, amount = ?5, note = ?6 '
+    + 'WHERE id = ?1',
+  ).bind(entryId, onto.id, month, kind, amount, note).run();
 
   await audit(ctx, 'advance.entry_edit', id, {
     entryId,
-    was: { month: entry.month, kind: entry.kind, amount: round2(entry.amount), note: entry.note },
-    now: { month, kind, amount, note },
+    was: {
+      advanceId: id, month: entry.month, kind: entry.kind, amount: round2(entry.amount),
+      note: entry.note,
+    },
+    now: { advanceId: onto.id, month, kind, amount, note },
   });
 
-  // What is owed has moved, so whether this is finished may have moved with it.
-  const entries = await entriesFor(ctx.db, id);
-  const left = balanceOf(advance, entries);
-  const settled = left <= 0.009;
-  if (settled && advance.status === 'approved') {
-    await ctx.db.prepare(
-      "UPDATE hr_advance SET status = 'settled', settled_at = datetime('now') WHERE id = ?",
-    ).bind(id).run();
-  } else if (!settled && advance.status === 'settled') {
-    await ctx.db.prepare(
-      "UPDATE hr_advance SET status = 'approved', settled_at = NULL WHERE id = ?",
-    ).bind(id).run();
+  // What is owed has moved, so whether one is finished may have moved with it.
+  // Both ends of a move: the one it left may be running again, and the one it
+  // landed on may now be paid off.
+  const touched = onto.id === id ? [advance] : [advance, onto];
+  let left = 0;
+  let settled = false;
+  for (const one of touched) {
+    const entries = await entriesFor(ctx.db, one.id);
+    const owes = balanceOf(one, entries);
+    const done = owes <= 0.009;
+    if (one.id === onto.id) { left = owes; settled = done; }
+    if (done && one.status === 'approved') {
+      await ctx.db.prepare(
+        "UPDATE hr_advance SET status = 'settled', settled_at = datetime('now') WHERE id = ?",
+      ).bind(one.id).run();
+    } else if (!done && one.status === 'settled') {
+      await ctx.db.prepare(
+        "UPDATE hr_advance SET status = 'approved', settled_at = NULL WHERE id = ?",
+      ).bind(one.id).run();
+    }
   }
 
   // Only where the figure moved. A corrected note is not news, and this
   // screen already tells people more than most.
-  if (amount !== round2(entry.amount)) {
+  if (amount !== round2(entry.amount) && onto.id === id) {
     const person = await ctx.db.prepare(
       `SELECT s.id, s.name, u.id AS user_id
          FROM att_staff s LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
@@ -900,7 +929,89 @@ export async function editEntry(ctx, idParam, entryParam) {
     });
   }
 
-  return json({ ok: true, amount, month, kind, balance: round2(Math.max(0, left)), settled });
+  return json({
+    ok: true, amount, month, kind, advanceId: onto.id, moved: onto.id !== id,
+    balance: round2(Math.max(0, left)), settled,
+  });
+}
+
+/**
+ * Take the whole advance off the books.
+ *
+ * Correcting one puts a wrong figure right and keeps everything recorded
+ * against it. This is the other case: the record should never have existed.
+ * A duplicate keyed twice, a top-up the ledger turned out to already have,
+ * an advance put on the wrong person after money has come off so it cannot
+ * simply be moved. Until now the only way out was to write it off, which
+ * leaves a settled advance on the screen saying the property gave somebody
+ * money and forgave it, and that is a different thing to have on a record.
+ *
+ * ADMINISTRATOR ONLY, and the whole of it goes in the log first — the terms,
+ * every movement, and what was still owed — so what was deleted can still be
+ * read back and keyed again if this turns out to have been the wrong one.
+ *
+ * The movements go with it. That is the point: an advance with its payments
+ * left behind is rows pointing at nothing.
+ */
+export async function removeAdvance(ctx, idParam) {
+  if (!isAdmin(ctx.session)) {
+    throw forbidden('Only an administrator can delete an advance record.');
+  }
+
+  const id = int(idParam, 'Advance', { required: true, min: 1 });
+  const advance = await ctx.db.prepare('SELECT * FROM hr_advance WHERE id = ?').bind(id).first();
+  if (!advance) throw notFound('No such advance.');
+
+  const entries = await entriesFor(ctx.db, id);
+  const owed = balanceOf(advance, entries);
+  const note = str(new URL(ctx.request.url).searchParams.get('note'), 'Why', { max: 300 });
+
+  // Written down before it goes, and in full. A deletion nobody can read back
+  // is the one act on this screen with no way home.
+  await audit(ctx, 'advance.delete', id, {
+    note,
+    advance: {
+      staffId: advance.staff_id,
+      amount: round2(advance.amount),
+      months: advance.months,
+      monthly: round2(advance.monthly),
+      currency: advance.currency,
+      status: advance.status,
+      takenOn: advance.taken_on,
+      startMonth: advance.start_month,
+      purpose: advance.purpose ?? null,
+      reason: advance.reason,
+      askedBy: advance.asked_by,
+      decidedBy: advance.decided_by,
+    },
+    entries: entries.map((e) => ({
+      month: e.month, kind: e.kind, amount: round2(e.amount), note: e.note, actor: e.actor,
+    })),
+    owed,
+  });
+
+  // The movements go with it, by the cascade the table was built with.
+  await ctx.db.prepare('DELETE FROM hr_advance WHERE id = ?').bind(id).run();
+
+  // Only where they were still paying it back. Deleting one that was settled
+  // years ago is bookkeeping; deleting one that was coming off next payday is
+  // news, and good news.
+  if (isOpen(advance) && owed > 0) {
+    const person = await ctx.db.prepare(
+      `SELECT s.id, s.name, u.id AS user_id
+         FROM att_staff s LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
+        WHERE s.id = ?`,
+    ).bind(advance.staff_id).first();
+    await tell(ctx, person, {
+      kind: 'advance.changed',
+      title: 'A salary advance has been taken off your record',
+      body: `${money(round2(advance.amount), advance.currency)} from `
+        + `${advance.taken_on || 'earlier'}, with ${money(owed, advance.currency)} outstanding. `
+        + `Nothing more comes off your pay for it.${note ? ` ${note}` : ''}`,
+    });
+  }
+
+  return json({ ok: true, id, owed, movements: entries.length });
 }
 
 /** Take a movement back off the record. */

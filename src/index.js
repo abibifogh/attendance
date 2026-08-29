@@ -202,6 +202,9 @@ export const ROUTES = [
   // Correcting the record rather than the arrangement. Admin only, checked
   // inside the handler, because hr_pay is what gets somebody this far.
   ['PUT', '/api/advances/:id', 'hr_pay', advance.editAdvance],
+  // Taking the whole record off. Admin only, checked in the handler, and the
+  // whole of it is written to the log before it goes.
+  ['DELETE', '/api/advances/:id', 'hr_pay', advance.removeAdvance],
   ['POST', '/api/advances/:id/entry', 'hr_pay', advance.addEntry],
   // Catching up months nobody answered. The same act as unticking somebody
   // at the month end, so the same permission does it.

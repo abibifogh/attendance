@@ -547,6 +547,15 @@ function advanceBlock(advance, { person, data, reload, cash }) {
             title: 'The record is wrong: the amount, the date, what it was for',
             onclick: () => editRecord(advance, { person, data, reload, cash }),
           }, 'Correct the record')
+          : null,
+        // The one for a record that should never have existed. Correcting is
+        // for a wrong figure; this is for a duplicate, or a top-up the ledger
+        // turned out to already have.
+        data?.canEdit
+          ? h('button.btn-ghost.btn-sm.danger', {
+            title: 'Take the whole record off the books',
+            onclick: () => removeRecord(advance, { person, reload, cash }),
+          }, 'Delete')
           : null)),
 
     advance.reason ? h('div.adv-reason', advance.reason) : null,
@@ -849,6 +858,62 @@ async function adjust(advance, reload, cash) {
 }
 
 /**
+ * The record should never have existed.
+ *
+ * Not the same as writing one off. Writing off leaves a settled advance on the
+ * screen saying the property handed somebody money and forgave it, which is a
+ * thing to have on a record and is often not what happened. This is for a
+ * duplicate, or a top-up the ledger turned out to already have, or one put on
+ * the wrong person after money came off so it cannot simply be moved.
+ *
+ * The movements go with it, which is the point, and the whole of it goes in
+ * the log first so it can be read back and keyed again.
+ */
+async function removeRecord(advance, { person, reload, cash }) {
+  const owed = advance.balance;
+  const moves = advance.entries.length;
+
+  const done = await formDialog({
+    title: `Delete ${person.staff.name}\u2019s ${cash(advance.amount)} advance`,
+    submitLabel: 'Delete it',
+    body: h('div',
+      h('div.alert.warn',
+        h('span.alert-icon', '\u26a0\ufe0f'),
+        h('div',
+          h('div.alert-title', 'This takes the whole record off, movements and all'),
+          h('div.alert-detail', moves
+            ? `${moves} movement${moves === 1 ? '' : 's'} recorded against it `
+              + `${moves === 1 ? 'goes' : 'go'} with it, and `
+              + `${owed > 0 ? `${cash(owed)} stops being owed` : 'nothing is left owing on it'}.`
+            : 'Nothing has been recorded against it yet.'))),
+
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'For a record that should never have existed \u2014 a duplicate, or one already in the '
+        + 'ledger. Where the money was real and the property is letting it go, close this and '
+        + 'add a movement written off instead, so the record says what happened.'),
+
+      owed > 0
+        ? h('p.muted', { style: { fontSize: '.85rem' } },
+          `${person.staff.name.split(' ')[0]} is told, because ${cash(owed)} was coming off `
+          + 'their pay and now is not.')
+        : null,
+
+      field('Why', h('input', {
+        type: 'text', name: 'note', maxlength: 300, required: true,
+        placeholder: 'Keyed twice on the same day',
+      }), 'Goes in the log with the whole record, so this can be read back')),
+
+    onSubmit: (form) => api.advanceRemove(advance.id, form.get('note')),
+  });
+  if (!done) return;
+
+  toast(done.movements
+    ? `Deleted, with ${done.movements} movement${done.movements === 1 ? '' : 's'}.`
+    : 'Deleted.', 'good');
+  await reload();
+}
+
+/**
  * The record is wrong. Put it right.
  *
  * Not the same act as changing the terms, and kept apart from it on purpose.
@@ -936,6 +1001,11 @@ async function editRecord(advance, { person, data, reload, cash }) {
  * a payment up can pay the advance off, putting one down brings it back.
  */
 async function editMovement(advance, entry, { person, reload, cash }) {
+  // Everything else this person is paying back, so a movement can be put on
+  // the one it belongs to.
+  const others = (person.advances ?? [])
+    .filter((a) => a.id !== advance.id && ['approved', 'settled'].includes(a.status));
+
   const done = await formDialog({
     title: `${niceMonth(entry.month)} for ${person.staff.name}`,
     submitLabel: 'Put it right',
@@ -950,6 +1020,20 @@ async function editMovement(advance, entry, { person, reload, cash }) {
           h('option', { value: 'adjustment', selected: entry.kind === 'adjustment' }, 'Paid another way, or a correction'),
           h('option', { value: 'skipped', selected: entry.kind === 'skipped' }, 'Nothing taken this month'),
           h('option', { value: 'writeoff', selected: entry.kind === 'writeoff' }, 'Written off')))),
+
+      // Which advance it came off. One payslip deduction covers everything a
+      // person is paying back, so a figure entered against the wrong one
+      // leaves that one paid off twice over and the rest reading as untouched.
+      others.length
+        ? field('Which advance it came off', h('select', { name: 'advanceId' },
+          [{ id: advance.id, ...advance }, ...others].map((one) => h('option', {
+            value: one.id, selected: one.id === advance.id,
+          }, `${cash(one.amount)} from ${one.takenOn ? fmtDay(one.takenOn) : 'earlier'}`
+            + `${one.reason ? ` \u00b7 ${one.reason}` : ''}`
+            + ` \u2014 ${cash(one.balance)} left`))),
+        'Move it onto the one it really came off. What is owed follows it, and both ends '
+        + 'settle or come back as they should')
+        : null,
       field('Amount', h('input', {
         type: 'number', name: 'amount', step: '0.01', value: entry.amount,
       }), 'Nothing taken this month ignores whatever is in here'),
@@ -964,9 +1048,13 @@ async function editMovement(advance, entry, { person, reload, cash }) {
   });
   if (!done) return;
 
-  toast(done.settled
-    ? 'Put right, and that pays it off.'
-    : `Put right. ${cash(done.balance)} is left.`, 'good');
+  toast(done.moved
+    ? (done.settled
+      ? 'Moved, and that pays it off.'
+      : `Moved. ${cash(done.balance)} is left on the one it went to.`)
+    : (done.settled
+      ? 'Put right, and that pays it off.'
+      : `Put right. ${cash(done.balance)} is left.`), 'good');
   await reload();
 }
 

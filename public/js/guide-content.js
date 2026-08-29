@@ -864,11 +864,22 @@ export const GUIDE = [
           + 'rather than three. It leaves a month that has already been answered alone rather '
           + 'than answering it twice, stops at the month the advance is paid off, and says '
           + 'afterwards what it did and what it left.',
+        'Delete takes the whole record off, movements and all. For one that should never '
+          + 'have existed \u2014 a duplicate, or a top-up already in the ledger. '
+          + 'Administrators only, a reason is required, and the whole of it goes in the log '
+          + 'first so it can be read back and keyed again. Where the money was real and the '
+          + 'property is letting it go, add a movement written off instead, so the record says '
+          + 'what happened.',
         'The \u270e beside a movement puts that figure right where it stands \u2014 five '
           + 'hundred typed where seven hundred came off, or a column of already-repaid out by '
           + 'a decimal place. Better than taking it off and adding it again, which loses the '
           + 'note that explained it. What is owed follows the figure both ways: putting one up '
           + 'can pay the advance off, putting one down brings back one that was finished.',
+        'The same \u270e moves a movement onto another of their advances. One payslip '
+          + 'deduction covers everything a person is paying back, so a figure entered against '
+          + 'the wrong one leaves that one paid off twice over and the rest reading as '
+          + 'untouched. Both ends follow: the one it left owes again, the one it landed on may '
+          + 'now be settled.',
         'The ✕ beside a movement takes it back off, and what is owed goes back up. Use it for '
           + 'something entered wrongly rather than for something that did not happen — those '
           + 'are two different records.',
