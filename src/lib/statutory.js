@@ -207,7 +207,14 @@ export function payeSchedule({ lines = [], people = new Map() }) {
       ssnitNumber: record.ssnit_number || '',
       basic: round2(line.basic),
       allowances,
-      totalCash: round2(line.basic + allowances + (line.bonus?.gross ?? 0)),
+      // Basic, allowances and the part of the bonus past the ceiling — the
+      // GRA form's column 15 is 6 + 11 + 14, and it leaves out the bonus
+      // taxed at the 5% final rate on purpose: that is not assessable income,
+      // it is settled separately in columns 12 and 13. Adding it in here made
+      // the column read higher than the form wants and stopped the page
+      // reconciling downwards, even though the chargeable income and the tax
+      // beside it were right.
+      totalCash: round2(line.basic + allowances + (line.bonus?.atGraduated ?? 0)),
       ssf: round2(line.ssnit?.employee ?? 0),
       // Reliefs live on a certificate the GRA issues, not in a payroll.
       relief: null,

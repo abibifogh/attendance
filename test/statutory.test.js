@@ -227,11 +227,13 @@ test('a bonus past the 15% ceiling is split on the schedule', () => {
   // beside it. Salary chargeable is 2,000 less 110 of SSNIT.
   assert.equal(row.chargeable, round2(1890 + row.excessBonus));
 
-  // The whole row reconciles down the page, which is what a return is for:
-  // everything paid, less the part taxed separately, less the contribution,
-  // is what the graduated bands were applied to.
-  assert.equal(row.totalCash, round2(row.basic + row.allowances + row.bonus + row.excessBonus));
-  assert.equal(row.chargeable, round2(row.totalCash - row.bonus - row.ssf));
+  // The whole row reconciles down the page, which is what a return is for.
+  // Total cash emoluments is the form's column 15 — basic, allowances and the
+  // excess bonus — and it leaves out the bonus taxed at the final rate,
+  // because that is settled in its own two columns rather than assessed here.
+  assert.equal(row.totalCash, round2(row.basic + row.allowances + row.excessBonus));
+  assert.equal(row.chargeable, round2(row.totalCash - row.ssf),
+    'less the contribution is what the graduated bands were applied to');
   assert.equal(row.total, round2(row.tax + row.bonusTax));
 });
 
