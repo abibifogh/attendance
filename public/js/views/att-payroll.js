@@ -540,7 +540,11 @@ async function showImport({ month, text, read, reload }) {
           `${c.label}: `,
           h('span.muted', c.from === null ? 'nothing' : String(c.from)),
           ' to ',
-          h('strong', String(c.to)))))
+          h('strong', String(c.to)),
+          c.kind === 'allowance' && c.taxable === false ? h('span.muted', ', not taxed') : null,
+          // Introducing an allowance is a bigger thing than changing a figure
+          // in one, so the line says which it is.
+          c.isNew ? h('span.pill.good', { style: { marginLeft: '.4rem' } }, 'new') : null)))
         : null,
       line.notes.length
         ? h('ul.pay-import-notes', line.notes.map((n) => h('li', `${n.what}: ${n.why}`)))

@@ -1007,18 +1007,25 @@ export const GUIDE = [
       ] },
 
       { sub: 'From a spreadsheet' },
-      { p: 'A month\u2019s figures can come in from a sheet instead of being typed. Download '
-        + 'the sheet gives you this month as it stands, not a blank form: a row per person, '
-        + 'and a column for the basic, each allowance the property uses, and a score against '
-        + 'each scheme somebody is under. Change what changed and send it back '
-        + 'with From a spreadsheet.' },
+      { p: 'A month\u2019s figures can come in from a sheet instead of being typed. Bulk '
+        + 'upload \u2192 Download template gives you this month as it stands, not a blank '
+        + 'form: a row per person, and a column for the basic, each allowance the property '
+        + 'uses, and a score against each scheme somebody is under. Change what changed and '
+        + 'send it back with Upload a file.' },
       { p: 'What it would do sits on the screen until you agree to it, person by person and '
         + 'figure by figure. Nothing is written before you press the button.' },
       { list: [
         'Rows are matched on employee number, or on the name where there is no number. A name '
           + 'the register does not know is skipped and listed; nobody is created from a sheet.',
-        'A column has to be one of your own allowances or schemes. Anything else is named back '
-          + 'and left alone rather than making a new one.',
+        'A scheme column has to be one of your own. Anything else is named back and left '
+          + 'alone rather than making a new one.',
+        'An allowance column can introduce one the property has not used before, as long as '
+          + 'the heading says what it is: "Allowance: Transport", or "Allowance: Transport '
+          + '(not taxable)" for a reimbursement. A bare heading is never turned into money on '
+          + 'a payslip \u2014 it is named back like any other column nobody recognised.',
+        'An allowance for somebody who is not on the payroll yet is reported rather than set. '
+          + 'It would never reach a payslip, so setting it would look like it worked and do '
+          + 'nothing.',
         'A blank cell leaves a figure alone. A nought is a nought, so a nought against an '
           + 'allowance takes it away.',
         'A score against a scheme somebody is not under is refused, and so is one outside 0 to '
@@ -1716,6 +1723,10 @@ export const GUIDE = [
         + 'or missing changes nothing: department, job title, started, left, leave days, '
         + 'days a week, what they are here for, phone, email, basic salary, SSNIT, note. '
         + 'A basic salary here is what puts somebody on the payroll.' },
+      { p: 'Allowances get a column each, headed "Allowance: Transport", with "(not taxable)" '
+        + 'on the end for a genuine reimbursement. So a property can arrive with its people, '
+        + 'their salaries and their allowances in one sheet rather than typing twenty '
+        + 'allowances into a dialog one person at a time.' },
       { note: 'A blank cell leaves what is there alone, and people are matched on the '
         + 'employee number rather than the name — two people called Kwame Mensah are two '
         + 'people, and the number is the only thing that is theirs.' },

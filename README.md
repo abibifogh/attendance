@@ -1372,13 +1372,26 @@ moved or missing changes nothing.
 | Email | e-mail, email address |
 | Basic salary | basic, salary, monthly salary, basic pay |
 | SSNIT | on ssnit, ssnit member |
+| `Allowance: <name>` | one column per allowance — see below |
 | Note | notes, remark, comment |
 
 *Here for* takes the same three answers the staff form does: `Rota`,
 `Never rostered`, `Payroll only`. A **basic salary** in this sheet is what puts
 somebody on the payroll, which is why most of these sheets exist in the first
-place; the month's figures afterwards go through Payroll → *From a
-spreadsheet*, which changes what people are paid and still creates nobody.
+place; the month's figures afterwards go through Payroll → **Bulk upload**,
+which changes what people are paid and still creates nobody.
+
+**Allowances get a column each**, headed `Allowance: Transport`. The prefix is
+the safeguard and it is not decoration: a bare column called Transport stays
+unrecognised and is reported back, so nothing turns into money on a payslip by
+accident, but a heading that says outright what it is can introduce an
+allowance the property has never used. Add `(not taxable)` — or `(tax free)` —
+for a genuine reimbursement; without it the allowance is taxable, which is what
+most of them are. Nought takes an allowance off; a blank cell leaves it alone.
+The same columns work on the **month's** sheet under Payroll, where they used
+to be limited to allowances already in use, and an allowance for somebody who
+is not on the payroll yet is reported rather than set, because it would never
+reach a payslip.
 
 **A blank cell leaves what is there alone.** It is not an instruction to clear a
 department or wipe a start date. Somebody sending back a sheet with two columns

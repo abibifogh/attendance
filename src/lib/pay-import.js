@@ -55,6 +55,41 @@ export function readScore(value) {
 }
 
 /**
+ * An allowance column, read out of its heading.
+ *
+ * `Allowance: Transport` names one. The prefix is what makes it safe to accept
+ * a name the property has never used: a stray column called Transport stays
+ * unknown and is reported, but a heading that says outright what it is can
+ * introduce the allowance. Nothing about a person is invented either way — an
+ * allowance is a label on a line of a payslip, not somebody's employment.
+ *
+ * Taxability rides in brackets: `Allowance: Transport (not taxable)`. Taxable
+ * is the default, because most of them are and getting it wrong the other way
+ * understates the tax.
+ */
+export function readAllowanceHeading(raw) {
+  const text = String(raw ?? '').trim();
+  const found = /^(?:allowance)\s*[:\-]\s*(.+)$/i.exec(text);
+  if (!found) return null;
+
+  let name = found[1].trim();
+  let taxable = true;
+
+  const bracket = /\(([^)]*)\)\s*$/.exec(name);
+  if (bracket) {
+    const said = norm(bracket[1]);
+    if (['not taxable', 'tax free', 'non taxable', 'untaxed', 'exempt'].includes(said)) {
+      taxable = false;
+      name = name.slice(0, bracket.index).trim();
+    } else if (['taxable', 'taxed'].includes(said)) {
+      name = name.slice(0, bracket.index).trim();
+    }
+  }
+
+  return name ? { name, taxable } : null;
+}
+
+/**
  * What the sheet's columns mean.
  *
  * Matched on the property's own words rather than on position, so a column
@@ -97,10 +132,27 @@ export function readColumns(header, { allowances = [], schemes = [] } = {}) {
       columns.push({ index, kind: 'score', scheme: byScheme.get(norm(scored[1])) });
       return;
     }
-    const allowance = key.match(/^(?:allowance)\s*[:\-]\s*(.+)$/);
-    const allowanceName = allowance ? norm(allowance[1]) : key;
+    const allowance = readAllowanceHeading(raw);
+    const allowanceName = allowance ? norm(allowance.name) : key;
     if (byAllowance.has(allowanceName)) {
-      columns.push({ index, kind: 'allowance', name: byAllowance.get(allowanceName) });
+      columns.push({
+        index,
+        kind: 'allowance',
+        name: byAllowance.get(allowanceName),
+        // A heading that says taxable or not overrules what the existing rows
+        // hold, because somebody wrote it down on purpose.
+        taxable: allowance ? allowance.taxable : null,
+      });
+      return;
+    }
+
+    // Named as an allowance, and one the property has not used before. The
+    // prefix is the whole safeguard: a bare column heading can never turn into
+    // an allowance by accident.
+    if (allowance) {
+      columns.push({
+        index, kind: 'allowance', name: allowance.name, taxable: allowance.taxable, isNew: true,
+      });
       return;
     }
 
@@ -199,14 +251,30 @@ export function readSheet(text, {
           line.notes.push({ what: col.name, why: 'not a figure' });
           continue;
         }
+        // An allowance on somebody with no basic never reaches a payslip, so
+        // setting one would look like it worked and do nothing.
+        if (profiles.get(person.id)?.basic == null) {
+          line.notes.push({ what: col.name, why: 'not on the payroll yet' });
+          continue;
+        }
+
         const now = (allowanceBy.get(person.id) ?? [])
           .find((a) => norm(a.name) === norm(col.name));
         const from = now ? round2(now.amount) : null;
-        if (from !== value) {
+        // The heading wins where it said so, then whatever the person already
+        // has, then taxable — which is what most of them are.
+        const taxable = col.taxable == null ? (now ? now.taxable !== 0 : true) : col.taxable;
+
+        if (from !== value || (now && (now.taxable !== 0) !== taxable)) {
           line.changes.push({
-            kind: 'allowance', name: col.name, label: col.name, from, to: value,
-            taxable: now ? now.taxable !== 0 : true,
+            kind: 'allowance', name: col.name, label: col.name, from, to: value, taxable,
+            // Only where it is one, because introducing an allowance is a
+            // bigger thing than changing a figure in one and the screen says so.
+            ...(col.isNew ? { isNew: true } : {}),
           });
+          if (col.isNew && value > 0) {
+            line.notes.push({ what: col.name, why: 'an allowance the property has not used before' });
+          }
         }
         continue;
       }

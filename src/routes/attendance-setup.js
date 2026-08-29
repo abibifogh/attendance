@@ -1286,18 +1286,27 @@ export async function companyLogo(ctx) {
 
 /** Who the property already knows, in the shape the reader wants them. */
 async function registerNow(db) {
-  const [staff, profiles, pay] = await Promise.all([
+  const [staff, profiles, pay, allowances] = await Promise.all([
     db.prepare('SELECT * FROM att_staff').all(),
     db.prepare('SELECT staff_id, personal_phone, personal_email FROM hr_profile').all()
       .catch(() => ({ results: [] })),
     db.prepare('SELECT staff_id, basic, ssnit FROM pay_profile').all()
       .catch(() => ({ results: [] })),
+    db.prepare('SELECT staff_id, name, amount, taxable FROM pay_allowance WHERE active = 1').all()
+      .catch(() => ({ results: [] })),
   ]);
+
+  const allowanceBy = new Map();
+  for (const row of allowances.results ?? []) {
+    if (!allowanceBy.has(row.staff_id)) allowanceBy.set(row.staff_id, []);
+    allowanceBy.get(row.staff_id).push(row);
+  }
 
   return {
     staff: staff.results ?? [],
     profiles: new Map((profiles.results ?? []).map((r) => [r.staff_id, r])),
     pay: new Map((pay.results ?? []).map((r) => [r.staff_id, r])),
+    allowanceBy,
   };
 }
 
@@ -1335,7 +1344,13 @@ export async function applyStaffImport(ctx) {
   const failed = [];
 
   for (const line of read.lines) {
-    const set = new Map(line.changes.map((c) => [c.kind, c.value]));
+    // Allowances are a list, one per column, so they cannot share the map the
+    // single-value columns use: keyed on kind, a second Transport column would
+    // overwrite the first.
+    const allowanceChanges = line.changes.filter((c) => c.kind === 'allowance');
+    const set = new Map(line.changes
+      .filter((c) => c.kind !== 'allowance')
+      .map((c) => [c.kind, c.value]));
 
     // The three fields that are one decision between them. A sheet saying
     // payroll only must not leave somebody on the rota, and a sheet saying
@@ -1407,8 +1422,12 @@ export async function applyStaffImport(ctx) {
           await ctx.db.prepare(
             `UPDATE att_staff SET ${fields.join(', ')} WHERE id = ?${binds.length}`,
           ).bind(...binds).run();
-          changed += 1;
         }
+
+        // Counted per person, not per table. A sheet that only moved somebody's
+        // salary and allowances touched no column on their record, and the
+        // screen said "1 added" about a run that changed three figures.
+        if (line.changes.length) changed += 1;
 
         // Off the rota is off it properly, the same as the staff form does it:
         // what they were down for from today onwards goes, or the grid keeps
@@ -1440,6 +1459,20 @@ export async function applyStaffImport(ctx) {
         if (set.has('email')) {
           await ctx.db.prepare('UPDATE hr_profile SET personal_email = ?2 WHERE staff_id = ?1')
             .bind(staffId, set.get('email')).run().catch(() => {});
+        }
+      }
+
+      // The allowances, a line each because a payslip has to say what the
+      // money was for. One row per name, so a sheet run twice does not leave
+      // two Transports on somebody's payslip.
+      for (const change of allowanceChanges) {
+        await ctx.db.prepare('DELETE FROM pay_allowance WHERE staff_id = ?1 AND name = ?2')
+          .bind(staffId, change.name).run().catch(() => {});
+        if (change.value.amount > 0) {
+          await ctx.db.prepare(
+            'INSERT INTO pay_allowance (staff_id, name, amount, taxable) VALUES (?1, ?2, ?3, ?4)',
+          ).bind(staffId, change.name, change.value.amount, change.value.taxable ? 1 : 0)
+            .run().catch(() => {});
         }
       }
 
@@ -1486,11 +1519,26 @@ export async function applyStaffImport(ctx) {
  * described.
  */
 export async function staffTemplate(ctx) {
-  const { staff, profiles, pay } = await registerNow(ctx.db);
+  const { staff, profiles, pay, allowanceBy } = await registerNow(ctx.db);
+
+  // A column for each allowance the property actually uses, written the way
+  // the payroll sheet writes them. A property with none yet gets one named
+  // example, because a column somebody can see is easier than a paragraph
+  // explaining that the heading has to start with "Allowance:".
+  const inUse = new Map();
+  for (const rows of allowanceBy.values()) {
+    for (const row of rows) {
+      if (!inUse.has(row.name)) inUse.set(row.name, row.taxable !== 0);
+    }
+  }
+  const allowances = [...inUse.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const columns = allowances.length
+    ? allowances.map(([name, taxable]) => `Allowance: ${name}${taxable ? '' : ' (not taxable)'}`)
+    : ['Allowance: Transport'];
 
   const head = ['Employee no', 'Name', 'Department', 'Job title', 'Started', 'Left',
     'Annual leave days', 'Days a week', 'Here for', 'Phone', 'Email', 'Basic salary',
-    'SSNIT', 'Note'];
+    'SSNIT', ...columns, 'Note'];
 
   const rows = [head];
   const alive = staff.filter((s) => s.active).sort((a, b) => a.name.localeCompare(b.name));
@@ -1498,6 +1546,7 @@ export async function staffTemplate(ctx) {
   for (const person of alive) {
     const profile = profiles.get(person.id);
     const money = pay.get(person.id);
+    const mine = allowanceBy.get(person.id) ?? [];
     rows.push([
       person.employee_no,
       person.name,
@@ -1512,13 +1561,19 @@ export async function staffTemplate(ctx) {
       profile?.personal_email ?? '',
       money ? Number(money.basic).toFixed(2) : '',
       money ? (money.ssnit ? 'Yes' : 'No') : '',
+      ...allowances.map(([name]) => {
+        const held = mine.find((a) => a.name === name);
+        return held ? Number(held.amount).toFixed(2) : '';
+      }),
+      ...(allowances.length ? [] : ['']),
       person.note ?? '',
     ]);
   }
 
   if (!alive.length) {
     rows.push(['001', 'Kofi Mensah', 'Kitchen', 'Cook', '2024-03-01', '', '', '', 'Rota',
-      '024 123 4567', '', '1800.00', 'Yes', 'An example — change it or delete the line']);
+      '024 123 4567', '', '1800.00', 'Yes', '200.00',
+      'An example — change it or delete the line']);
   }
 
   return csvResponse('staff.csv', rows);

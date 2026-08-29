@@ -1,4 +1,5 @@
 import { parseCsv } from './roster-import.js';
+import { readAllowanceHeading } from './pay-import.js';
 import { isDay } from '../util/dates.js';
 
 /**
@@ -162,10 +163,28 @@ export function readColumns(header) {
   const columns = [];
   const unknown = [];
   const taken = new Set();
+  const allowances = new Set();
 
   header.forEach((raw, index) => {
     const key = norm(raw);
     if (!key) return;
+
+    // "Allowance: Transport", the same words the payroll sheet uses. Written
+    // out like that rather than as a bare name, so a column nobody recognises
+    // can never quietly turn into money on a payslip.
+    const allowance = readAllowanceHeading(raw);
+    if (allowance) {
+      if (allowances.has(norm(allowance.name))) {
+        unknown.push(text(raw));
+        return;
+      }
+      allowances.add(norm(allowance.name));
+      columns.push({
+        index, kind: 'allowance', name: allowance.name, taxable: allowance.taxable,
+      });
+      return;
+    }
+
     const kind = known.get(key);
     // Only the first column of a kind counts. A sheet with Name twice is a
     // sheet somebody pasted badly, and reading both would have the second
@@ -208,9 +227,10 @@ const TRACKING_SAID = {
 };
 
 /** What somebody's record currently says, in the shape a cell would set. */
-function standing(person, profile, pay) {
-  if (!person) return {};
+function standing(person, profile, pay, allowances = []) {
+  if (!person) return { allowanceBy: new Map() };
   return {
+    allowanceBy: new Map(allowances.map((a) => [norm(a.name), a])),
     name: person.name ?? null,
     department: person.department ?? null,
     jobTitle: person.job_title ?? null,
@@ -242,7 +262,9 @@ const said = (kind, value) => {
  * change them and exactly what about them, plus the lines nothing could be
  * done with. Nothing is written; the caller decides whether to.
  */
-export function readStaffSheet(sheet, { staff = [], profiles = new Map(), pay = new Map() } = {}) {
+export function readStaffSheet(sheet, {
+  staff = [], profiles = new Map(), pay = new Map(), allowanceBy = new Map(),
+} = {}) {
   const rows = parseCsv(sheet);
   if (!rows.length) {
     return {
@@ -292,7 +314,9 @@ export function readStaffSheet(sheet, { staff = [], profiles = new Map(), pay = 
       return;
     }
 
-    const now = standing(person, profiles.get(person?.id), pay.get(person?.id));
+    const now = standing(
+      person, profiles.get(person?.id), pay.get(person?.id), allowanceBy.get(person?.id) ?? [],
+    );
     const line = {
       at,
       staffId: person?.id ?? null,
@@ -308,6 +332,28 @@ export function readStaffSheet(sheet, { staff = [], profiles = new Map(), pay = 
       if (kind === 'employeeNo') continue;
       const cell = cells[col.index];
       if (text(cell) === '') continue;
+
+      if (kind === 'allowance') {
+        const amount = readNumber(cell);
+        if (Number.isNaN(amount) || amount < 0) {
+          line.notes.push({ what: col.name, why: `“${text(cell)}” is not a figure` });
+          continue;
+        }
+        const held = now.allowanceBy.get(norm(col.name));
+        const was = held ? Number(held.amount) : null;
+        const wasTaxable = held ? held.taxable !== 0 : null;
+        if (was !== null && Math.abs(was - amount) < 0.005 && wasTaxable === col.taxable) continue;
+
+        line.changes.push({
+          kind: 'allowance',
+          name: col.name,
+          label: `${col.name} allowance`,
+          from: was === null ? null : was.toFixed(2),
+          to: amount.toFixed(2) + (col.taxable ? '' : ', not taxed'),
+          value: { amount, taxable: col.taxable },
+        });
+        continue;
+      }
 
       let value;
       if (kind === 'hiredOn' || kind === 'leftOn') value = readDate(cell);

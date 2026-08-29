@@ -470,7 +470,10 @@ async function showStaffImport({ text, read, reload }) {
       read.unknown.length
         ? h('div.returns-warn',
           h('strong', 'Columns nobody recognised, so they were left alone'),
-          h('div', read.unknown.join(', ')))
+          h('div', read.unknown.join(', ')),
+          h('div.muted', 'An allowance column has to say so: “Allowance: Transport”, or '
+            + '“Allowance: Transport (not taxable)”. A bare heading is never turned into '
+            + 'money on a payslip.'))
         : null,
 
       read.skipped.length
