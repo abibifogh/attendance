@@ -741,6 +741,10 @@ export async function bringHistoryAcross(ctx, idParam) {
     : round2(running?.monthly ?? 0);
 
   const made = [];
+  // An advance this run is about to create, by the month it was handed over.
+  // A repayment can be spread onto one, and until it exists it is named by
+  // its month rather than by a number nothing has yet.
+  const madeFor = new Map();
   let corrected = 0;
 
   for (const change of changes) {
@@ -759,10 +763,21 @@ export async function bringHistoryAcross(ctx, idParam) {
         actorOf(ctx), 'Brought across from the ledger',
       ).first();
       made.push({ id: written?.id ?? null, month: change.month, amount: change.amount });
+      if (written?.id) {
+        // Read back rather than assembled by hand, because a repayment spread
+        // onto it goes through the same write() every other movement does and
+        // that wants the whole row.
+        const row = await ctx.db.prepare('SELECT * FROM hr_advance WHERE id = ?')
+          .bind(written.id).first();
+        if (row) madeFor.set(change.month, row);
+      }
       continue;
     }
 
-    const advance = rows.find((r) => r.id === change.advanceId);
+    const wanted_ = typeof change.advanceId === 'string' && change.advanceId.startsWith('new:')
+      ? madeFor.get(change.advanceId.slice(4))
+      : rows.find((r) => r.id === change.advanceId);
+    const advance = wanted_;
     if (!advance) continue;
     await write(ctx, advance, {
       month: change.month,

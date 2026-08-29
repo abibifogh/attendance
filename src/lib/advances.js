@@ -420,7 +420,16 @@ export function accountFor(advances = [], entriesBy = new Map(), { asOfMonth = n
     // A month that has been answered stands on what was answered. Only a month
     // nobody has reached yet falls back to what is expected.
     const done = movements.has(month) || additions.has(month) ? (movements.get(month) ?? 0) : null;
-    const repaid = round2(done ?? ahead.get(month) ?? 0);
+    let repaid = round2(done ?? ahead.get(month) ?? 0);
+
+    // NEVER MORE THAN IS OWED. The months ahead are projected one advance at a
+    // time, and an advance somebody has overpaid stops projecting while the
+    // rest carry on at full instalment — so the sum of them can be more than
+    // the person actually owes, and the account walks off into a balance the
+    // property owes them. History stands whatever it says; a forecast is
+    // capped at what is left.
+    if (done === null) repaid = Math.max(0, Math.min(repaid, round2(opening + added)));
+
     const closing = round2(opening + added - repaid);
     rows.push({
       month,
@@ -437,6 +446,15 @@ export function accountFor(advances = [], entriesBy = new Map(), { asOfMonth = n
     opening = closing;
     month = addMonths(month, 1);
     guard += 1;
+  }
+
+  // And nothing after it is settled. Capping leaves a tail of months with
+  // nought coming off and nought owed, which is a statement telling somebody
+  // about six months in which nothing happens.
+  while (rows.length > 1) {
+    const tail = rows[rows.length - 1];
+    if (tail.done || tail.additions || tail.repayment || tail.closing > 0) break;
+    rows.pop();
   }
 
   return rows;
@@ -481,7 +499,23 @@ export function reconcilePlan(advances = [], entriesBy = new Map(), wanted = [],
   const changes = [];
   const refused = [];
 
-  for (const row of wanted) {
+  // What each advance still has to come back, walked forward as the plan is
+  // worked out. A month's repayment is spread across the advances that were
+  // running, oldest first and never past what one of them owes — because
+  // putting every corrected figure on the oldest one pays it off twice over
+  // and leaves the newer ones untouched, which reads as the property owing
+  // the person money and the account walking off into a negative balance.
+  const owedBy = new Map(live.map((a) => [
+    a.id, balanceOf(a, entriesBy.get(a.id) ?? []),
+  ]));
+  const startOf = (a) => a.start_month || monthOf(a.taken_on) || '9999-99';
+  const inOrder = [...live].sort((a, b) => startOf(a).localeCompare(startOf(b)));
+
+  // Sorted, because spreading a repayment depends on what the months before
+  // it have already paid off.
+  const asked = [...wanted].sort((a, b) => String(a.month ?? '').localeCompare(String(b.month ?? '')));
+
+  for (const row of asked) {
     const month = String(row.month ?? '');
     if (!/^\d{4}-\d{2}$/.test(month)) continue;
     if (asOfMonth && month >= asOfMonth) {
@@ -500,33 +534,63 @@ export function reconcilePlan(advances = [], entriesBy = new Map(), wanted = [],
         });
       } else if (want > has) {
         changes.push({ month, kind: 'advance', amount: round2(want - has), was: has, now: want });
+        // What it would make is owed from the month it was handed over, so
+        // the repayments below can be spread onto it.
+        const made = { id: `new:${month}`, start_month: month, taken_on: `${month}-01` };
+        owedBy.set(made.id, round2(want - has));
+        inOrder.push(made);
+        inOrder.sort((a, b) => startOf(a).localeCompare(startOf(b)));
       }
     }
 
     if (row.repaid != null && row.repaid !== '') {
       const want = round2(row.repaid);
       const has = round2(repaidIn.get(month) ?? 0);
-      // The advance that was running that month, oldest first. A correction
-      // belongs on the agreement it came off, not on whichever is newest.
-      const against = live
-        .filter((a) => (a.start_month || monthOf(a.taken_on) || '9999-99') <= month)
-        .sort((a, b) => String(a.start_month).localeCompare(String(b.start_month)))[0];
+      // Everything that was running that month, oldest first. A correction
+      // belongs on the agreements it came off, not on whichever is oldest.
+      const running = inOrder.filter((a) => startOf(a) <= month);
 
-      if (!against) {
+      if (!running.length) {
         refused.push({ month, why: 'nothing was running that month for it to come off' });
       } else if (want !== has) {
-        changes.push({
-          month,
-          kind: 'movement',
-          advanceId: against.id,
-          amount: round2(want - has),
-          was: has,
-          now: want,
-        });
+        let left = round2(want - has);
+
+        if (left < 0) {
+          // Taking a figure back down. It comes off the oldest thing running,
+          // which is where it most likely went in.
+          changes.push({
+            month, kind: 'movement', advanceId: running[0].id, amount: left, was: has, now: want,
+          });
+          owedBy.set(running[0].id, round2((owedBy.get(running[0].id) ?? 0) - left));
+        } else {
+          for (const advance of running) {
+            if (left <= 0.009) break;
+            const owes = round2(owedBy.get(advance.id) ?? 0);
+            if (owes <= 0.009) continue;
+            const take = round2(Math.min(left, owes));
+            changes.push({
+              month, kind: 'movement', advanceId: advance.id, amount: take, was: has, now: want,
+            });
+            owedBy.set(advance.id, round2(owes - take));
+            left = round2(left - take);
+          }
+          // More came off than anything owed. Somebody has typed a figure the
+          // books cannot account for, and inventing an advance to hang it on
+          // would be worse than saying so.
+          if (left > 0.009) {
+            refused.push({
+              month,
+              why: `${round2(want)} is more than was owed that month by ${left}. `
+                + 'Check the figure, or add what was handed over under Taken first',
+            });
+          }
+        }
       } else if (want === 0 && !answered.get(month)) {
         // Nought, and nobody had said so. That is an answer worth writing:
         // it is the difference between a month let go and a month missed.
-        changes.push({ month, kind: 'letGo', advanceId: against.id, amount: 0, was: has, now: 0 });
+        changes.push({
+          month, kind: 'letGo', advanceId: running[0].id, amount: 0, was: has, now: 0,
+        });
       }
     }
   }

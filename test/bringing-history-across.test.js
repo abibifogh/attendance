@@ -304,6 +304,69 @@ test('every line of it is in the log', async () => {
   assert.match(entry.actor, /Yaa/);
 });
 
+test('a whole year of it comes out balancing, and never in credit', async () => {
+  const { raw, db } = setup();
+  // Johnson's book: five thousand in December, top-ups most months after, and
+  // the deductions that were actually taken.
+  await addAdvance(ctx(db, ADMIN, {
+    body: {
+      staffId: 1, amount: 5000, months: 20, monthly: 250,
+      takenOn: '2025-12-04', startMonth: '2026-01', reason: 'The first one',
+    },
+  }));
+
+  const done = await read(await bringHistoryAcross(ctx(db, ADMIN, {
+    body: {
+      monthly: 250,
+      rows: [
+        { month: '2026-01', taken: 200, repaid: 700 },
+        { month: '2026-02', taken: 200, repaid: 700 },
+        { month: '2026-03', taken: 900, repaid: 1400 },
+        { month: '2026-04', taken: 700, repaid: 1200 },
+        { month: '2026-05', taken: 800, repaid: 1300 },
+        { month: '2026-06', taken: 900, repaid: 1400 },
+        { month: '2026-07', taken: 2000, repaid: 0 },
+      ],
+    },
+  }), '1'));
+  assert.deepEqual(done.refused, []);
+
+  const rows = await account(db);
+  const upTo = (m) => at(rows, m);
+  assert.equal(upTo('2025-12').closing, 5000);
+  assert.equal(upTo('2026-01').closing, 4500);
+  assert.equal(upTo('2026-04').closing, 3000);
+  assert.equal(upTo('2026-07').closing, 4000, 'the July top-up puts it back up');
+
+  // The whole point: nothing after July says the property owes them money.
+  for (const row of rows) {
+    assert.ok(row.closing >= 0, `${row.month} closes at ${row.closing}`);
+  }
+  assert.equal(rows[rows.length - 1].closing, 0, 'and it ends at nothing owed');
+
+  // And no single advance has been paid off twice over.
+  const each = raw.prepare(
+    `SELECT a.id, a.amount, COALESCE(SUM(e.amount), 0) AS paid
+       FROM hr_advance a LEFT JOIN hr_advance_entry e ON e.advance_id = a.id
+      GROUP BY a.id`,
+  ).all();
+  for (const one of each) {
+    assert.ok(one.paid <= one.amount + 0.009,
+      `advance ${one.id} took ${one.paid} against ${one.amount}`);
+  }
+});
+
+test('more repaid than anything owed is refused rather than hung on nothing', async () => {
+  const { db } = setup();
+  await give(db);
+
+  const done = await read(await bringHistoryAcross(ctx(db, ADMIN, {
+    body: { rows: [{ month: '2024-04', repaid: 99999 }] },
+  }), '1'));
+
+  assert.match(done.refused[0].why, /more than was owed/);
+});
+
 test('an empty form is refused rather than treated as a clean sheet', async () => {
   const { db } = setup();
   await give(db);
