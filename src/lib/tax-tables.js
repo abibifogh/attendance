@@ -50,6 +50,7 @@ export function tableToRates(row) {
       ssnitEmployer: number(row.ssnit_employer, RATES.ssnitEmployer),
       bonusFinalRate: number(row.bonus_rate, RATES.bonusFinalRate),
       bonusShareOfBasic: number(row.bonus_share, RATES.bonusShareOfBasic),
+      bonusCapBasis: row.bonus_cap_basis === 'annual' ? 'annual' : RATES.bonusCapBasis,
       label: String(row.label ?? ''),
     },
     tiers: {

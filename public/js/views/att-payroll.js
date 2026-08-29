@@ -1504,8 +1504,14 @@ async function editPeople(data, reload) {
     onPayroll: s.onPayroll,
     basic: s.basic ?? 0,
     ssnit: s.ssnit,
+    bonusOpening: s.bonusOpening ?? 0,
     allowances: s.allowances.map((a) => ({ ...a })),
   }]));
+  const year = String(data.month ?? '').slice(0, 4);
+  // Only worth asking about where the 15% is read across the year. Read
+  // against the month being paid there is no running total, so there is
+  // nothing a figure from before this app could tell it.
+  const yearly = data.rates?.bonusCapBasis === 'annual';
 
   const rows = data.staff.map((person) => {
     const mine = state.get(person.id);
@@ -1522,6 +1528,18 @@ async function editPeople(data, reload) {
     });
     const allowanceCount = h('span.muted',
       mine.allowances.length ? `${mine.allowances.length}` : 'none');
+
+    // What they have already had as bonus this year, before this app was
+    // keeping it. The 5% rate is capped at 15% of the year's basic and the
+    // cap is a running total, so a property that starts here in August has
+    // seven months the ceiling knows nothing about.
+    const opening = yearly
+      ? h('input.med-amount', {
+        type: 'number', step: '0.01', min: '0', value: mine.bonusOpening || '',
+        'aria-label': `Bonus ${person.name} has already had in ${year}`,
+        onchange: (e) => { mine.bonusOpening = Number(e.target.value) || 0; },
+      })
+      : null;
 
     const tick = h('input', {
       type: 'checkbox', checked: mine.onPayroll,
@@ -1540,6 +1558,7 @@ async function editPeople(data, reload) {
       h('td', h('label.tickline', tick, h('span', person.name))),
       h('td.num', basic),
       h('td', h('label.tickline', ssnit, h('span', 'SSNIT'))),
+      yearly ? h('td.num', opening) : null,
       h('td.num',
         allowanceCount,
         h('button.btn-sm', {
@@ -1563,9 +1582,18 @@ async function editPeople(data, reload) {
         'Tick everybody the payroll covers and give their monthly basic. SSNIT is 5.5% from '
         + 'them and 13% from the property, on basic salary alone — untick it for anybody it '
         + 'does not apply to.'),
+      yearly
+        ? h('p.muted', { style: { fontSize: '.85rem' } },
+          `Bonus already had in ${year} is for months this app did not run. The 5% rate on a `
+          + `bonus reaches 15% of the year's basic and the rest goes through the bands, so the `
+          + 'ceiling has to know what was paid before it. Leave it at nothing where every '
+          + 'month of the year was done here.')
+        : null,
       h('div.table-wrap.med-set-wrap', h('table.med-set',
         h('thead', h('tr',
-          h('th', 'On the payroll'), h('th.num', 'Basic'), h('th', ''), h('th.num', 'Allowances'),
+          h('th', 'On the payroll'), h('th.num', 'Basic'), h('th', ''),
+          yearly ? h('th.num', `Bonus already had in ${year}`) : null,
+          h('th.num', 'Allowances'),
         )),
         h('tbody', rows)))),
     onSubmit: async () => api.payrollProfiles({
@@ -1574,6 +1602,8 @@ async function editPeople(data, reload) {
         onPayroll: v.onPayroll,
         basic: v.basic,
         ssnit: v.ssnit,
+        bonusOpening: v.bonusOpening,
+        bonusOpeningYear: year,
         allowances: v.allowances,
       })),
     }),

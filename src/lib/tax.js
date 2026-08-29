@@ -57,8 +57,13 @@ export const RATES = {
   ssnitEmployee: 0.055,
   ssnitEmployer: 0.13,
   bonusFinalRate: 0.05,
-  // The share of annual basic that the 5% final rate reaches.
+  // The share of basic salary that the 5% final rate reaches.
   bonusShareOfBasic: 0.15,
+  // And what that share is of. The Act frames it as the annual basic; salaries
+  // are paid monthly and the practice here is to read the same share against
+  // the month being paid, which needs no running total and so has nothing to
+  // be out of date about.
+  bonusCapBasis: 'monthly',
 };
 
 /**
@@ -80,6 +85,7 @@ export function ratesFrom(settings = {}) {
     ssnitEmployer: number('pay_ssnit_employer', RATES.ssnitEmployer),
     bonusFinalRate: number('pay_bonus_rate', RATES.bonusFinalRate),
     bonusShareOfBasic: number('pay_bonus_share', RATES.bonusShareOfBasic),
+    bonusCapBasis: settings.pay_bonus_cap_basis === 'annual' ? 'annual' : RATES.bonusCapBasis,
     // Stamped on every payslip, so a slip printed in March can be told from
     // one printed in April on different figures.
     label: String(settings.pay_bands_label ?? 'GRA monthly bands, 2026'),
@@ -147,15 +153,20 @@ export function ssnitOn(basic, { qualifies = true, rates = RATES } = {}) {
  * in, which is why this needs the salary's chargeable income to work from.
  */
 export function bonusTaxOn(gross, {
-  chargeable = 0, annualBasic = 0, alreadyPaid = 0, rates = RATES,
+  chargeable = 0, annualBasic = 0, alreadyPaid = 0, rates = RATES, ceiling = null,
 } = {}) {
   const amount = Math.max(0, round2(gross));
   if (!amount) {
     return { tax: 0, atFinalRate: 0, atGraduated: 0, headroom: 0, final: 0, graduated: 0 };
   }
 
-  const ceiling = round2(round2(annualBasic) * rates.bonusShareOfBasic);
-  const headroom = Math.max(0, round2(ceiling - round2(alreadyPaid)));
+  // What the five per cent rate stretches to. Given outright where the caller
+  // has worked it out, because the share is of basic salary and whether that
+  // means the year's or the month's is a decision above this function.
+  const cap = ceiling == null
+    ? round2(round2(annualBasic) * rates.bonusShareOfBasic)
+    : Math.max(0, round2(ceiling));
+  const headroom = Math.max(0, round2(cap - round2(alreadyPaid)));
 
   const atFinalRate = Math.min(amount, headroom);
   const atGraduated = round2(amount - atFinalRate);

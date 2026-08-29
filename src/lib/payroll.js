@@ -72,10 +72,21 @@ export function computeLine({
 
   // ---- the bonus, grossed up against that ------------------------------
   const yearBasic = annualBasic == null ? round2(pay * 12) : round2(annualBasic);
+
+  // How far the 5% final rate reaches. The Act frames the 15% against the
+  // annual basic; salaries are paid monthly, and read against the month it
+  // needs no running total across the year — which matters, because a running
+  // total is only as good as the months it has seen, and a property in its
+  // first year here has months this app never worked.
+  const monthly = rates.bonusCapBasis !== 'annual';
+  const ceiling = round2((monthly ? pay : yearBasic) * (rates.bonusShareOfBasic ?? 0));
+  // Nothing to carry where each month stands on its own.
+  const spent = monthly ? 0 : round2(bonusPaidThisYear);
+
   const bonusContext = {
     chargeable: salaryChargeable,
-    annualBasic: yearBasic,
-    alreadyPaid: round2(bonusPaidThisYear),
+    ceiling,
+    alreadyPaid: spent,
     rates,
   };
   const grossed = bonusNet > 0
@@ -163,6 +174,15 @@ export function computeLine({
       atFinalRate: grossed.atFinalRate,
       atGraduated: grossed.atGraduated,
       headroom: grossed.headroom,
+      // The 15% ceiling itself, and how much of it has gone. Said rather than
+      // left to be worked back out of a tax figure: whether the five per cent
+      // rate still applies is the one thing about a bonus somebody wants to
+      // check, and the only way to see it before was to notice the tax was
+      // more than a twentieth.
+      ceiling,
+      capBasis: monthly ? 'monthly' : 'annual',
+      paidThisYear: spent,
+      annualBasic: yearBasic,
       finalTax: grossed.final,
       graduatedTax: grossed.graduated,
     },

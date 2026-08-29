@@ -192,8 +192,9 @@ test('a bonus is its own two columns on the schedule', () => {
   })];
   const [row] = payeSchedule({ lines }).rows;
 
-  assert.ok(row.bonus > 500, 'grossed up, because the property carries the tax');
+  assert.ok(row.bonus > 0, 'the part of it the 5% final rate reached');
   assert.ok(row.bonusTax > 0);
+  assert.equal(row.bonusTax, round2(row.bonus * 0.05));
   // The whole PAYE is the salary tax and the bonus tax added up.
   assert.equal(row.total, Math.round((row.tax + row.bonusTax) * 100) / 100);
 });
@@ -205,9 +206,10 @@ test('the published rates are still the published rates', () => {
 
 
 test('a bonus past the 15% ceiling is split on the schedule', () => {
-  // 15% of 24,000 of annual basic is 3,600, so a bonus larger than that has an
-  // excess: the first 3,600 at the 5% final rate, the rest added to income and
-  // taxed on the graduated bands like any other pay.
+  // The 5% final rate reaches 15% of basic, read against the month being paid:
+  // 300 on a 2,000 basic. A bonus larger than that has an excess — the first
+  // 300 at the final rate, the rest added to income and taxed on the graduated
+  // bands like any other pay.
   const lines = [computeLine({
     staff: { id: 1, name: 'Ama Boateng' },
     basic: 2000,
@@ -217,8 +219,8 @@ test('a bonus past the 15% ceiling is split on the schedule', () => {
   })];
   const [row] = payeSchedule({ lines }).rows;
 
-  assert.equal(row.bonus, 3600, 'the ceiling, at the final rate');
-  assert.equal(row.bonusTax, 180, '5% of 3,600');
+  assert.equal(row.bonus, 300, 'the ceiling, at the final rate');
+  assert.equal(row.bonusTax, 15, '5% of 300');
   assert.ok(row.excessBonus > 0, 'and the rest is excess');
 
   // The excess is income, so it is inside the chargeable figure rather than
@@ -234,11 +236,13 @@ test('a bonus past the 15% ceiling is split on the schedule', () => {
 });
 
 test('a bonus inside the ceiling has no excess at all', () => {
+  // 200 net on a 2,000 basic grosses to about 210, which is well inside the
+  // 300 the final rate reaches.
   const lines = [computeLine({
     staff: { id: 1, name: 'Ama Boateng' },
     basic: 2000,
     ssnit: true,
-    schemes: [{ id: 1, name: 'Service', amount: 500, score: 100 }],
+    schemes: [{ id: 1, name: 'Service', amount: 200, score: 100 }],
     rates,
   })];
   const [row] = payeSchedule({ lines }).rows;

@@ -178,8 +178,24 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
           h('h3.slip-col-head', 'How the tax was worked out'),
           h('p.slip-note',
             `Chargeable income ${cash(line.chargeable)}: gross pay less the SSNIT contribution`
-            + (b.atGraduated ? ', with the part of the bonus above the year’s 15% ceiling added' : '')
+            + (b.atGraduated ? ', with the part of the bonus above the 15% ceiling added' : '')
             + `. ${rates.label ?? ''}`),
+          // What the ceiling is and how much of it has gone. Whether the five
+          // per cent rate still applies is the thing anybody wants to check
+          // about a bonus, and working it back out of a tax figure is not a
+          // check, it is arithmetic homework.
+          b.ceiling
+            ? h('p.slip-note',
+              `Bonus at 5% reaches 15% of ${b.capBasis === 'annual' ? 'the year’s' : 'the month’s'}`
+              + ` basic, which is ${cash(b.ceiling)}`
+              + (b.capBasis === 'annual' && b.paidThisYear
+                ? `, and ${cash(b.paidThisYear)} of it has already gone this year`
+                : '')
+              + (b.atGraduated
+                ? `. ${cash(b.atGraduated)} of this one is over that, so it goes through the `
+                  + 'bands with the rest of the pay.'
+                : '.'))
+            : null,
           h('table.slip-table', h('tbody',
             ...(line.paye.steps ?? []).map((step) => row(
               `${cash(step.amount)} at ${fmtNum(step.rate * 100, step.rate * 100 % 1 ? 1 : 0)}%`,

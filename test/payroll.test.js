@@ -168,19 +168,28 @@ test('a month, worked out end to end', () => {
   assert.equal(line.bonus.earned, 400);
   assert.equal(line.bonus.docked, 100);
   assert.equal(line.bonus.net, 300);
-  assert.equal(line.bonus.gross, 315.79, 'grossed up at the 5% final rate');
 
-  // The salary: 2,500 gross, 110 to SSNIT, 2,390 chargeable, 309 of PAYE.
-  assert.equal(line.gross, 2815.79);
+  // The 5% rate reaches 15% of the month's basic, which is 300. Grossing 300
+  // up puts a little of it over that line, so the last 18.18 goes through the
+  // bands rather than at 5%.
+  assert.equal(line.bonus.ceiling, 300);
+  assert.equal(line.bonus.atFinalRate, 300);
+  assert.equal(line.bonus.atGraduated, 18.18);
+  assert.equal(line.bonus.gross, 318.18);
+
+  // The salary: 2,500 gross, 110 to SSNIT, 309 of PAYE on it.
+  assert.equal(line.gross, 2818.18);
   assert.equal(line.ssnit.employee, 110);
-  assert.equal(line.chargeable, 2390);
+  assert.equal(line.chargeable, 2408.18, '2,390 of salary and the bonus over the ceiling');
   assert.equal(line.paye.onSalary, 309);
-  assert.equal(line.paye.total, 324.79);
+  assert.equal(line.paye.total, 327.18);
 
   // And what is left: salary net 2,081, plus the 300 bonus, less the advance.
+  // The person gets what they were promised whatever the ceiling does; it is
+  // the property's cost that moves.
   assert.equal(line.net, 2181);
   assert.equal(line.ssnit.employer, 260);
-  assert.equal(line.employerCost, 3075.79);
+  assert.equal(line.employerCost, 3078.18);
 });
 
 test('the person gets the bonus they were promised, whatever the tax does', () => {
@@ -306,7 +315,10 @@ test('a scheme is scored per person and paid as a share of what it is worth', as
   const kofi = out.lines.find((l) => l.staff.id === 2);
 
   assert.equal(ama.bonus.earned, 400, '500 at 80 per cent');
-  assert.equal(ama.bonus.gross, 421.05);
+  // A 2,000 basic reaches 300 at the 5% rate, so the rest of the 400 goes
+  // through the bands and the grossing up costs more than a twentieth.
+  assert.equal(ama.bonus.ceiling, 300);
+  assert.equal(ama.bonus.gross, 439.39);
   assert.equal(kofi.bonus.earned, 0, 'a score of nothing pays nothing');
 });
 
@@ -728,4 +740,82 @@ test('net pay is untouched by any of this', () => {
     line.net,
     round2(line.gross - line.ssnit.employee - line.paye.total),
   );
+});
+
+// ---------------------------------------------------------------------------
+// How far the 5% final rate reaches
+// ---------------------------------------------------------------------------
+
+/**
+ * The Act frames the cap as 15% of the annual basic salary. Salaries are paid
+ * monthly, and the practice here is to read the same share against the month
+ * being paid. Read against the month there is no running total to keep, and so
+ * nothing that can be out of date; read against the year the ceiling is only
+ * as good as the months this app has actually closed.
+ */
+const capped = (over = {}) => computeLine({
+  staff: { id: 1, name: 'Ama' },
+  basic: 2000,
+  allowances: [],
+  ssnit: true,
+  schemes: [{ id: 1, name: 'Service', amount: 400, score: 100 }],
+  rates,
+  ...over,
+});
+
+test('the 5% rate reaches 15% of the month being paid', () => {
+  const line = capped();
+  assert.equal(line.bonus.capBasis, 'monthly');
+  assert.equal(line.bonus.ceiling, 300, '15% of a 2,000 basic');
+});
+
+test('and anything over it goes through the graduated bands', () => {
+  const line = capped();
+  assert.equal(line.bonus.atFinalRate, 300);
+  assert.equal(line.bonus.atGraduated, round2(line.bonus.gross - 300));
+  assert.ok(line.bonus.atGraduated > 0, 'a 400 net bonus does not fit inside 300');
+  assert.equal(line.bonus.finalTax, 15, '5% of the 300');
+  assert.ok(line.bonus.graduatedTax > 0);
+});
+
+test('a bonus that fits inside the month is all at the final rate', () => {
+  const line = capped({ schemes: [{ id: 1, name: 'Service', amount: 200, score: 100 }] });
+  assert.equal(line.bonus.atGraduated, 0);
+  assert.equal(line.bonus.tax, round2(line.bonus.gross * 0.05));
+});
+
+test('the ceiling moves with the basic, not with the calendar', () => {
+  assert.equal(capped({ basic: 1000 }).bonus.ceiling, 150);
+  assert.equal(capped({ basic: 4000 }).bonus.ceiling, 600);
+});
+
+test('nothing is carried between months, so a month cannot be out of date', () => {
+  const fresh = capped();
+  const later = capped({ bonusPaidThisYear: 9999 });
+  assert.equal(later.bonus.ceiling, fresh.bonus.ceiling);
+  assert.equal(later.bonus.atFinalRate, fresh.bonus.atFinalRate,
+    'what was paid in June is June’s business');
+  assert.equal(later.bonus.paidThisYear, 0);
+});
+
+test('the annual reading is still there for a property that wants it', () => {
+  const yearly = ratesFrom({ pay_bonus_cap_basis: 'annual' });
+  const line = capped({ rates: yearly });
+  assert.equal(line.bonus.capBasis, 'annual');
+  assert.equal(line.bonus.ceiling, 3600, '15% of 24,000');
+  assert.equal(line.bonus.atGraduated, 0, 'a 400 bonus is well inside a year’s worth');
+
+  // And it still counts what has gone before.
+  const late = capped({ rates: yearly, bonusPaidThisYear: 3400 });
+  assert.equal(late.bonus.headroom, 200);
+  assert.ok(late.bonus.atGraduated > 0);
+});
+
+test('the person receives what was agreed under either reading', () => {
+  for (const basis of ['monthly', 'annual']) {
+    const at = ratesFrom({ pay_bonus_cap_basis: basis });
+    const without = computeLine({ basic: 2000, allowances: [], ssnit: true, rates: at });
+    const with400 = capped({ rates: at });
+    assert.equal(round2(with400.net - without.net), 400, basis);
+  }
 });

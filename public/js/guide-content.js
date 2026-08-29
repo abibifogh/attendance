@@ -1183,6 +1183,18 @@ export const GUIDE = [
         + 'line above. The column still adds to the same gross, because it is the same money '
         + 'read a different way, and the month\u2019s table on this screen says it the same way '
         + 'so the two can never disagree.' },
+      { p: 'Tax on a bonus is 5% as a final tax, but only up to 15% of the basic salary. '
+        + 'Anything over that is added to the rest of the pay and taxed on the graduated bands '
+        + 'like any other money. The Act frames the 15% against the annual basic; salaries here '
+        + 'are paid monthly and the ceiling is read against the month being paid, so a 2,000 '
+        + 'basic reaches 300 of bonus at 5% in any month and the rest of that month\u2019s '
+        + 'bonus goes through the bands.' },
+      { note: 'Read against the month there is nothing to carry from one month to the next, '
+        + 'which is the point: a running total across the year is only as good as the months '
+        + 'this app has closed, and a property in its first year here has months it never '
+        + 'worked. The payslip says what the ceiling is and how much of this bonus went over '
+        + 'it, so it can be checked rather than worked back out of a tax figure.' },
+
       { note: 'Where somebody has one allowance, that is the line it joins. Where there are '
         + 'several and one of them is called Allowance, it joins that one. Where there are '
         + 'several and none of them is the obvious one, it goes on a line of its own rather '
