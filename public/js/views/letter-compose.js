@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { confirmAction, h, mount, toast } from '../util.js';
 import { emptyState } from './components.js';
-import { holdRefresh, navigate } from '../app.js';
+import { holdRefresh, navigate, warnBeforeLeaving } from '../app.js';
 import { field, formDialog } from './att-shared.js';
 import { PAGE_H, PAGE_W, faceCss, lastPage, paperPage } from './letter-paper.js';
 
@@ -69,6 +69,11 @@ export async function renderLetterCompose(params) {
   // them, saved or not: even between autosaves the cursor and the selection
   // are work.
   holdRefresh(() => true);
+  // It autosaves, so what is unsaved is only ever the gap between the last
+  // keystroke and the next save landing. That gap is still somebody's words.
+  warnBeforeLeaving(() => (state.dirty || state.saving
+    ? 'The letter has not finished saving'
+    : null), { key: 'letter-compose' });
 
   const canvas = h('div.compose-canvas');
   const bar = h('div.compose-bar');

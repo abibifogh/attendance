@@ -6,7 +6,7 @@ import { bulkUpload, card, emptyState } from './components.js';
 import {
   GENERAL, field, formDialog, sayDepartments, schemeDepartments, schemesByDepartment, showSheet,
 } from './att-shared.js';
-import { replaceParams } from '../app.js';
+import { replaceParams, warnBeforeLeaving } from '../app.js';
 import { printReport } from '../print.js';
 import { niceMonth } from './att-advances.js';
 import { companyOf, payslipPage, showPayslips } from './payslip.js';
@@ -150,7 +150,13 @@ export async function renderAttPayroll(params) {
     onPayroll.length
       ? card('The month', {
         wide: true,
-        note: closed ? 'closed' : 'a draft — it moves when anything behind it moves',
+        // Which state the month is in, in a colour rather than a sentence. It
+        // is the one thing about this card somebody checks at a glance, and
+        // the sentence explaining what a draft is was explaining it every
+        // month to people who found out in the first one.
+        note: closed
+          ? h('span.pill.good', 'Closed')
+          : h('span.pill.warn', 'Draft'),
         actions: h('div.btn-row',
           comparePicker(data, month, reload),
           h('button.btn-sm', { onclick: () => printReport({
@@ -781,7 +787,7 @@ function wholeMonthAgainst(data) {
  * Different people did different amounts of the thing the scheme is about, so
  * each of them gets their own figure.
  */
-function perPersonScores(scheme, data, scored, closed, cash) {
+function perPersonScores(scheme, data, scored, typed, closed, cash) {
   const rows = scheme.staffIds.map((staffId) => {
     const person = data.staff.find((s) => s.id === staffId);
     const now = scheme.scores.find((x) => x.staffId === staffId)?.score ?? 0;
@@ -794,6 +800,7 @@ function perPersonScores(scheme, data, scored, closed, cash) {
       oninput: (e) => {
         const value = Math.max(0, Math.min(100, Number(e.target.value) || 0));
         scored.set(`${scheme.id}|${staffId}`, value);
+        typed.add(`${scheme.id}|${staffId}`);
         out.textContent = cash(scheme.amount * (value / 100));
       },
     });
@@ -821,7 +828,7 @@ function perPersonScores(scheme, data, scored, closed, cash) {
  * set one, because most of them are the same and typing the usual figure
  * fifteen times is fifteen chances to slip.
  */
-function perPersonAmounts(scheme, data, scored, closed, cash) {
+function perPersonAmounts(scheme, data, scored, typed, closed, cash) {
   const rows = scheme.staffIds.map((staffId) => {
     const person = data.staff.find((s) => s.id === staffId);
     const held = scheme.scores.find((x) => x.staffId === staffId);
@@ -833,6 +840,7 @@ function perPersonAmounts(scheme, data, scored, closed, cash) {
       'aria-label': `What ${person?.name ?? 'somebody'} gets on ${scheme.name}`,
       oninput: (e) => {
         scored.set(`${scheme.id}|${staffId}`, Math.max(0, Number(e.target.value) || 0));
+        typed.add(`${scheme.id}|${staffId}`);
       },
     });
 
@@ -865,7 +873,7 @@ function perPersonAmounts(scheme, data, scored, closed, cash) {
  * Guessing which of them was meant, or quietly flattening them to the first
  * one, would change what somebody is paid without anybody deciding to.
  */
-function sharedScore(scheme, data, scored, closed, cash) {
+function sharedScore(scheme, data, scored, typed, closed, cash) {
   const ids = scheme.staffIds;
   if (!ids.length) {
     return h('p.muted', { style: { fontSize: '.85rem' } }, 'Nobody is under this one yet.');
@@ -886,7 +894,10 @@ function sharedScore(scheme, data, scored, closed, cash) {
     'aria-label': `Everybody on ${scheme.name}`,
     oninput: (e) => {
       const value = Math.max(0, Math.min(100, Number(e.target.value) || 0));
-      for (const id of ids) scored.set(`${scheme.id}|${id}`, value);
+      for (const id of ids) {
+        scored.set(`${scheme.id}|${id}`, value);
+        typed.add(`${scheme.id}|${id}`);
+      }
       out.textContent = cash(scheme.amount * (value / 100));
       each.textContent = 'each, to all of them';
     },
@@ -915,6 +926,18 @@ function sharedScore(scheme, data, scored, closed, cash) {
 
 function schemesCard(data, month, closed, reload, cash) {
   const scored = new Map();
+  // What a person actually typed, as against what the boxes were opened
+  // holding. A scheme that pays a set figure fills its boxes with the usual
+  // amount so Save writes what is on screen, and that must not read as
+  // unsaved work somebody would be sorry to lose.
+  const typed = new Set();
+
+  // Keyed, because the payroll redraws itself when the month changes without
+  // going near the router. Without it every month somebody looked at would
+  // leave a guard behind holding a map that can never empty.
+  warnBeforeLeaving(() => (typed.size && !closed
+    ? `${typed.size} bonus figure${typed.size === 1 ? '' : 's'} are not saved`
+    : null), { key: 'payroll-scores' });
 
   return card('Bonus schemes', {
     wide: true,
@@ -942,10 +965,10 @@ function schemesCard(data, month, closed, reload, cash) {
       const everybody = schemeDepartments(scheme).length === 0;
 
       const body = scheme.kind === 'amount'
-        ? perPersonAmounts(scheme, data, scored, closed, cash)
+        ? perPersonAmounts(scheme, data, scored, typed, closed, cash)
         : everybody
-          ? sharedScore(scheme, data, scored, closed, cash)
-          : perPersonScores(scheme, data, scored, closed, cash);
+          ? sharedScore(scheme, data, scored, typed, closed, cash)
+          : perPersonScores(scheme, data, scored, typed, closed, cash);
 
       return h('div.pay-scheme',
         h('div.pay-scheme-head',

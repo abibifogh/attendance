@@ -418,6 +418,7 @@ export async function render({ quiet = false } = {}) {
   // Whatever the last view asked us not to interrupt went with it, and a
   // change waiting for the old screen has been answered by drawing this one.
   holds = [];
+  unsaved = [];
   pending = false;
 
   // A live update is not a new screen. The shell stays where it is — the bell
@@ -518,6 +519,44 @@ let holds = [];
  */
 export function holdRefresh(check) {
   holds.push(check);
+}
+
+/** What is on the screen and not yet saved. Cleared on every render. */
+let unsaved = [];
+
+/**
+ * "Ask before you take this away."
+ *
+ * A view with work somebody has done and not saved registers one of these: a
+ * function returning what would be lost, or nothing when there is nothing to
+ * lose. It is asked when the screen is about to be replaced and when the tab
+ * is about to close.
+ *
+ * Asked rather than told, the same as holdRefresh, so a view that has since
+ * been replaced simply stops being asked — and so a screen cannot leave a
+ * warning behind after its work has been saved.
+ */
+export function warnBeforeLeaving(what, { key = null } = {}) {
+  // A key replaces rather than adds. A screen that redraws part of itself
+  // without the router — switching a tab, changing a month — would otherwise
+  // leave the guard for the half it has just thrown away still answering.
+  if (key) unsaved = unsaved.filter((c) => c.key !== key);
+  const check = () => what();
+  check.key = key;
+  unsaved.push(check);
+}
+
+/** The first thing that would be lost, said in words somebody can act on. */
+function wouldBeLost() {
+  for (const check of unsaved) {
+    try {
+      const said = check();
+      if (said) return typeof said === 'string' ? said : 'Changes you have not saved';
+    } catch {
+      // A view mid-teardown is not a reason to trap somebody on a screen.
+    }
+  }
+  return null;
 }
 
 const busy = () => {
@@ -637,7 +676,41 @@ setUnauthorizedHandler(() => {
   render();
 });
 
-window.addEventListener('hashchange', render);
+/**
+ * Leaving a screen with work on it that has not been saved.
+ *
+ * The screen is about to be replaced and whatever is staged on it goes with
+ * it. Somebody who has typed fifteen figures and pressed a menu item by
+ * mistake should be asked, not simply have the afternoon taken away.
+ *
+ * The hash has already moved by the time this runs, so saying no means putting
+ * it back — and putting it back fires another hashchange, which the flag
+ * swallows.
+ */
+let hereNow = location.hash;
+let goingBack = false;
+
+window.addEventListener('hashchange', async () => {
+  if (goingBack) { goingBack = false; return; }
+
+  const said = wouldBeLost();
+  if (said && !window.confirm(`${said}. Leave this screen anyway?`)) {
+    goingBack = true;
+    location.hash = hereNow;
+    return;
+  }
+
+  hereNow = location.hash;
+  await render();
+});
+
+// And the tab itself. The browser shows its own words rather than ours, but it
+// will not show them at all unless the page says there is something to lose.
+window.addEventListener('beforeunload', (e) => {
+  if (!wouldBeLost()) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 // Shown and hidden in place rather than by redrawing the page: losing what
 // somebody had half-filled in because a lift went past is its own small

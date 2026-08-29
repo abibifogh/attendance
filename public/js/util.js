@@ -187,6 +187,28 @@ export function deltaBadge(value, { higherIsBetter = false, suffix = '%', places
   return h(`span.delta.${cls}`, `${arrow} ${fmtNum(Math.abs(n), places)}${suffix}`);
 }
 
+/**
+ * Whether anything on a form has been changed since it was drawn.
+ *
+ * A snapshot of every value rather than a listener on every field, because a
+ * field can be changed by the screen as well as by a person — a band added, a
+ * figure worked out — and what matters is only whether what is on the form now
+ * is what was on it when it opened.
+ */
+export function watchForm(form) {
+  const snapshot = () => [...form.querySelectorAll('input, select, textarea')]
+    .map((el) => (el.type === 'checkbox' || el.type === 'radio' ? String(el.checked) : el.value))
+    .join('\u0000');
+
+  let was = snapshot();
+  return {
+    changed: () => snapshot() !== was,
+    // Called once whatever was on it has been written down, so leaving is no
+    // longer losing anything.
+    saved: () => { was = snapshot(); },
+  };
+}
+
 export const PALETTE = ['--c1', '--c2', '--c3', '--c4', '--c5', '--c6', '--c7', '--c8'];
 export function paletteColor(index) {
   return `var(${PALETTE[index % PALETTE.length]})`;

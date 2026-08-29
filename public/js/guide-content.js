@@ -197,6 +197,12 @@ export const GUIDE = [
       { warn: 'It changes nothing on your record. The terminal still decides what time you '
         + 'arrived, and pressing this is a message rather than an excuse note.' },
 
+      { sub: 'Leaving something half-done' },
+      { p: 'Anywhere you have typed something and not saved it \u2014 a rota you have moved '
+        + 'shifts on, bonus figures, a page of settings \u2014 the app asks before it takes '
+        + 'the screen away. Pressing a menu item by mistake should not cost you an '
+        + 'afternoon.' },
+
       { sub: 'Alerts on your phone' },
       { p: 'Turn them on under My account, on each device you want them on: a phone and a '
         + 'computer are two separate permissions, and Apple only allows them at all once the '

@@ -4,7 +4,7 @@ import {
 } from '../util.js';
 import { bulkUpload, card, emptyState, moreActions, table } from './components.js';
 import { printButton } from '../print.js';
-import { can, holdRefresh, navigate, replaceParams } from '../app.js';
+import { can, holdRefresh, navigate, replaceParams, warnBeforeLeaving } from '../app.js';
 import {
   asHours, byDepartment, byPosition, earliestFirst, field, formDialog, nightMark,
   runsIntoTheNight, shiftColour, shiftHours, shiftLabel, shiftMinutes, shiftSelect,
@@ -112,6 +112,11 @@ export async function renderAttRota(params) {
   // And the page does not refresh itself out from under them. Somebody who has
   // spent five minutes filling in a fortnight must not lose it to a clock.
   holdRefresh(() => pending.size > 0);
+  // And do not take the grid away with them on it. Somebody who has moved six
+  // shifts and pressed Workload by mistake loses the lot otherwise.
+  warnBeforeLeaving(() => (pending.size
+    ? `${pending.size} change${pending.size === 1 ? '' : 's'} to the rota are not saved`
+    : null), { key: 'rota' });
 
   const saveBar = h('div.toolbar.rota-savebar', { style: { display: 'none' } });
 

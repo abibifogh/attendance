@@ -1,6 +1,8 @@
 import { api } from '../api.js';
-import { replaceParams } from '../app.js';
-import { confirmAction, fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
+import { replaceParams, warnBeforeLeaving } from '../app.js';
+import {
+  confirmAction, fmtDay, fmtNum, h, mount, toast, todayISO, watchForm,
+} from '../util.js';
 import { bulkUpload, card, emptyState, table } from './components.js';
 import {
   byPosition, field, formDialog, fullDayIsOwn, shiftColour, shiftColourPicker, shiftMinutes,
@@ -36,8 +38,17 @@ export async function renderAttSetup(params) {
     mount(host, await renderAttSetup({ tab: next }));
   };
 
+  // Switching a tab throws away whatever is half-typed on this one, and it
+  // does not go through the router, so the router's own guard never sees it.
   const tabs = h('div.seg.seg-wrap', TABS.map(([key, label]) =>
-    h('button', { class: tab === key ? 'active' : '', onclick: () => reload(key) }, label)));
+    h('button', {
+      class: tab === key ? 'active' : '',
+      onclick: () => {
+        if (key !== tab && guard?.changed()
+          && !confirmAction('Changes on this form are not saved. Leave them?')) return;
+        reload(key);
+      },
+    }, label)));
 
   const body = await {
     company: companyTab,
@@ -50,6 +61,19 @@ export async function renderAttSetup(params) {
     workload: workloadTab,
     tax: taxTab,
   }[tab](reload);
+
+  // The forms under Setup are the ones somebody types a page of figures into
+  // and then walks away from. Watched as a whole rather than field by field:
+  // what matters is only whether what is on the form now is what was on it
+  // when it opened.
+  const formEl = body?.matches?.('form.att-rules')
+    ? body
+    : body?.querySelector?.('form.att-rules');
+  const guard = formEl ? watchForm(formEl) : null;
+  warnBeforeLeaving(
+    () => (guard?.changed() ? 'Changes on this form are not saved' : null),
+    { key: 'att-setup' },
+  );
 
   mount(host,
     h('div.page-head',
@@ -2487,10 +2511,35 @@ async function taxTab(reload) {
   // Which month these figures start in. A tax table is a fact about a period,
   // not about the property: the bands that applied in January are the January
   // bands however many budgets have happened since.
+  //
+  // IT OPENS ON THE TABLE THAT IS ON SCREEN, not on today. The figures shown
+  // are the newest dated table's, so the month has to be that table's month or
+  // the two halves of the form disagree — somebody dated a table January,
+  // saved, and the box came back saying August, which reads as the change
+  // having been thrown away. Worse, the next save would then quietly make a
+  // second table starting in August.
+  const dated = (history.tables ?? []).filter((t) => t.fromMonth !== '0000-01');
   const thisMonth = new Date().toISOString().slice(0, 7);
   const fromMonth = h('input', {
-    type: 'month', name: 'fromMonth', required: true, value: thisMonth,
+    type: 'month',
+    name: 'fromMonth',
+    required: true,
+    value: dated[0]?.fromMonth ?? thisMonth,
   });
+
+  // Said under the box, so changing an existing table does not look like
+  // adding one.
+  const startNote = h('small.muted');
+  const sayStart = () => {
+    const already = dated.some((t) => t.fromMonth === fromMonth.value);
+    startNote.textContent = already
+      ? 'Changes the table that already starts then. Months before it keep whatever was in '
+        + 'force, and a month already closed keeps its payslips either way'
+      : 'A new table from that month on. Months before it keep whatever was in force then, '
+        + 'and a month already closed keeps its payslips either way';
+  };
+  fromMonth.addEventListener('input', sayStart);
+  sayStart();
 
   const form = h('form.att-rules');
   form.addEventListener('submit', async (event) => {
@@ -2548,8 +2597,7 @@ async function taxTab(reload) {
         h('label.field',
           h('span', 'These figures start in'),
           fromMonth,
-          h('small.muted', 'Months before this keep whatever was in force then. A month '
-            + 'already closed keeps its payslips either way'))),
+          startNote)),
       h('div.table-wrap', h('table.med-set',
         h('thead', h('tr',
           h('th', ''), h('th.num', 'How much'), h('th.num', 'At'), h('th', ''),
