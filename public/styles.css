@@ -3677,13 +3677,10 @@ html { touch-action: manipulation; }
 .slip-working { font-size: .9em; }
 .slip-note { margin: 0 0 .4em; font-size: .92em; color: #4b5563; }
 
-/* What it cost, and the sentence at the bottom */
+/* The sentence at the bottom. What it cost the property used to sit here too,
+   in small print along the edge, which is where a reader's eye goes last. */
 .slip-foot { margin-top: auto; border-top: 1px solid #d5d9e0; padding-top: .6em; }
-.slip-cost {
-  display: flex; gap: 1.6em; flex-wrap: wrap;
-  font-size: .92em; font-variant-numeric: tabular-nums;
-}
-.slip-small { margin: .45em 0 0; font-size: .82em; color: #6b7280; }
+.slip-small { margin: 0; font-size: .82em; color: #6b7280; }
 
 /* The company tab: four cards, two by two, so the logo does not sit alone on
    a row of its own. */

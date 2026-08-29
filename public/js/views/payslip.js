@@ -70,8 +70,11 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
       ? row(`SSNIT`, cash(line.ssnit.employee),
         `${fmtNum((rates.ssnitEmployee ?? 0) * 100, 1)}% of basic`)
       : null,
-    row('PAYE', cash(line.paye.total),
-      b.gross ? `${cash(line.paye.onSalary)} on pay, ${cash(line.paye.onBonus)} on the bonus` : null),
+    // No breakdown beside it. Splitting the PAYE into a part on pay and a part
+    // on the bonus is the property's working, not the reader's: what came off
+    // is one figure, and the second one only invites the question of why a
+    // bonus of four hundred carried tax of eighty-seven.
+    row('PAYE', cash(line.paye.total)),
     ...(line.loans ?? []).map((l) => row('Salary advance', cash(l.amount),
       l.left ? `${cash(l.left)} still to run` : 'last instalment')),
   ].filter(Boolean);
@@ -174,46 +177,21 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
               : null)
           : null,
 
+        // What the month cost on top of the pay. It used to be a line of small
+        // print along the bottom, which is where a reader's eye goes last and
+        // where two real figures do not belong.
         h('section.slip-col',
-          h('h3.slip-col-head', 'How the tax was worked out'),
-          h('p.slip-note',
-            `Chargeable income ${cash(line.chargeable)}: gross pay less the SSNIT contribution`
-            + (b.atGraduated ? ', with the part of the bonus above the 15% ceiling added' : '')
-            + `. ${rates.label ?? ''}`),
-          // What the ceiling is and how much of it has gone. Whether the five
-          // per cent rate still applies is the thing anybody wants to check
-          // about a bonus, and working it back out of a tax figure is not a
-          // check, it is arithmetic homework.
-          b.ceiling
-            ? h('p.slip-note',
-              `Bonus at 5% reaches 15% of ${b.capBasis === 'annual' ? 'the year’s' : 'the month’s'}`
-              + ` basic, which is ${cash(b.ceiling)}`
-              + (b.capBasis === 'annual' && b.paidThisYear
-                ? `, and ${cash(b.paidThisYear)} of it has already gone this year`
-                : '')
-              + (b.atGraduated
-                ? `. ${cash(b.atGraduated)} of this one is over that, so it goes through the `
-                  + 'bands with the rest of the pay.'
-                : '.'))
-            : null,
+          h('h3.slip-col-head', 'What it cost the property'),
           h('table.slip-table', h('tbody',
-            ...(line.paye.steps ?? []).map((step) => row(
-              `${cash(step.amount)} at ${fmtNum(step.rate * 100, step.rate * 100 % 1 ? 1 : 0)}%`,
-              cash(step.tax))),
-            b.finalTax
-              ? row(`Bonus grossed to ${cash(b.atFinalRate)}, at `
-                + `${fmtNum((rates.bonusFinalRate ?? 0) * 100, 0)}% final tax`, cash(b.finalTax))
+            row('Gross pay', cash(line.gross)),
+            line.ssnit?.qualifies
+              ? row('Employer SSNIT', cash(line.ssnit.employer),
+                `${fmtNum((rates.ssnitEmployer ?? 0) * 100, 0)}% of basic`)
               : null,
-            sum('PAYE', cash(line.paye.total)))))),
+            sum('Cost to the property', cash(line.employerCost)))))),
 
       // ----------------------------------------------------------- the cost
       h('footer.slip-foot',
-        h('div.slip-cost',
-          line.ssnit?.qualifies
-            ? h('span', `Employer SSNIT `
-              + `(${fmtNum((rates.ssnitEmployer ?? 0) * 100, 0)}% of basic) ${cash(line.ssnit.employer)}`)
-            : null,
-          h('span', `Cost to the property ${cash(line.employerCost)}`)),
         h('p.slip-small',
           data.status === 'final'
             ? `${month.nice} is closed, so this payslip is a record and will not change. `

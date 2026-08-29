@@ -1338,8 +1338,13 @@ export const GUIDE = [
         'Cost to the property: gross pay plus the employer’s SSNIT.',
       ] },
       { p: 'All of those figures are under Setup → Tax and SSNIT, including the band table '
-        + 'itself. They change with the budget, and the table used is printed on every payslip '
-        + 'so a slip can be checked against the figures it was worked out on.' },
+        + 'itself. They change with the budget, and a month is worked by the table that was in '
+        + 'force when it was worked.' },
+      { note: 'A payslip is what somebody was paid and what came off it, and no more than '
+        + 'that. The band-by-band working is not on it: a person reading their own pay wants '
+        + 'four figures, and a page of arithmetic they did not ask for makes those four harder '
+        + 'to find. The whole working is on the payroll screen, under Journal and PAYE, for '
+        + 'whoever has to file it.' },
       { sub: 'When the figures change' },
       { p: 'A tax table is a fact about a period, not about the property: the bands that '
         + 'applied in January are the January bands however many budgets have happened since. '
