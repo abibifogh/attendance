@@ -127,7 +127,12 @@ export function readColumns(header, { allowances = [], schemes = [] } = {}) {
     // "Score: Front of house" is how the template writes a scheme, because a
     // scheme called Transport and an allowance called Transport are two
     // different columns and a bare name could not tell them apart.
-    const scored = key.match(/^(?:score|bonus)\s*[:\-]\s*(.+)$/);
+    //
+    // The word is not what decides how the cell is read. A scheme that pays a
+    // set figure holds money and one that is scored holds a percentage, and
+    // the scheme itself knows which it is — so somebody who writes Score above
+    // a column of amounts gets what they meant rather than a refusal.
+    const scored = key.match(/^(?:score|bonus|amount)\s*[:\-]\s*(.+)$/);
     if (scored && byScheme.has(norm(scored[1]))) {
       columns.push({ index, kind: 'score', scheme: byScheme.get(norm(scored[1])) });
       return;
@@ -171,7 +176,8 @@ export function readColumns(header, { allowances = [], schemes = [] } = {}) {
  */
 export function readSheet(text, {
   staff = [], allowances = [], schemes = [], profiles = new Map(),
-  allowanceBy = new Map(), scoreBy = new Map(), memberOf = new Map(), advanceDue = new Map(),
+  allowanceBy = new Map(), scoreBy = new Map(), awardBy = new Map(),
+  memberOf = new Map(), advanceDue = new Map(),
 } = {}) {
   const rows = parseCsv(text);
   if (!rows.length) {
@@ -280,21 +286,36 @@ export function readSheet(text, {
       }
 
       if (col.kind === 'score') {
-        const value = readScore(cell);
+        const paysAmount = col.scheme.kind === 'amount';
+        const value = paysAmount ? readMoney(cell) : readScore(cell);
         if (value === null) continue;
-        if (Number.isNaN(value) || value < 0 || value > 100) {
-          line.notes.push({ what: col.scheme.name, why: 'a score is 0 to 100' });
+
+        if (Number.isNaN(value) || value < 0 || (!paysAmount && value > 100)) {
+          line.notes.push({
+            what: col.scheme.name,
+            why: paysAmount ? 'not a figure' : 'a score is 0 to 100',
+          });
           continue;
         }
         if (!(memberOf.get(person.id) ?? []).includes(col.scheme.id)) {
           line.notes.push({ what: col.scheme.name, why: 'not under this scheme' });
           continue;
         }
-        const from = round2(scoreBy.get(`${col.scheme.id}|${person.id}`) ?? 0);
+
+        // A scheme that pays a set figure is compared against the figure this
+        // person is down for, and one that is scored against their score.
+        const from = paysAmount
+          ? (awardBy.get(`${col.scheme.id}|${person.id}`) ?? null)
+          : round2(scoreBy.get(`${col.scheme.id}|${person.id}`) ?? 0);
+
         if (from !== value) {
           line.changes.push({
-            kind: 'score', schemeId: col.scheme.id, label: `${col.scheme.name} score`,
-            from, to: value,
+            kind: 'score',
+            schemeId: col.scheme.id,
+            label: paysAmount ? col.scheme.name : `${col.scheme.name} score`,
+            from,
+            to: value,
+            ...(paysAmount ? { paysAmount: true } : {}),
           });
         }
         continue;

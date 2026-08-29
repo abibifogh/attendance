@@ -1006,6 +1006,9 @@ export const GUIDE = [
       { note: 'A figure agreed with somebody does not reset itself. Start from last month and '
         + 'each person\u2019s own figure comes across. A scored scheme still forgets its '
         + 'award, so a scheme whose worth has changed pays the new figure at the same score.' },
+      { p: 'The figures come in from a spreadsheet as well. The month\u2019s sheet carries a '
+        + 'money column per amount scheme, so fifteen agreed figures are a column somebody '
+        + 'pastes rather than fifteen boxes somebody types.' },
 
       { note: 'A scheme with no department at all covers the whole property and sits under General. '
         + 'Those are scored once: whether the year was a good one is the same answer for '
@@ -1083,6 +1086,10 @@ export const GUIDE = [
           + 'allowance takes it away.',
         'A score against a scheme somebody is not under is refused, and so is one outside 0 to '
           + '100.',
+        'A scheme that pays a set figure gets a money column, headed Bonus rather than Score, '
+          + 'and each cell is what that person gets. The word above it is not what decides: '
+          + 'the scheme is found by name and its own kind says whether the cell is a figure '
+          + 'or a percentage, so writing the wrong one gets you what you meant.',
       ] },
       { warn: 'The advance column is read and checked, never written. An advance is an '
         + 'agreement with a balance behind it and the payroll takes the instalment that '

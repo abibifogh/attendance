@@ -257,3 +257,158 @@ test('a scheme can be turned from scored into a set figure and back', async () =
   }));
   assert.equal(raw.prepare('SELECT kind FROM pay_scheme').get().kind, 'score');
 });
+
+// ---------------------------------------------------------------------------
+// Out of the month's spreadsheet
+// ---------------------------------------------------------------------------
+
+const { readColumns, readSheet } = await import('../src/lib/pay-import.js');
+const { applyInput, inputTemplate, readInput } = await import('../src/routes/payroll.js');
+
+const HOUSING = { id: 7, name: 'Housing', kind: 'amount' };
+const SCORED = { id: 8, name: 'Guest scores', kind: 'score' };
+const ONE = [{ id: 1, employee_no: '1', name: 'Kofi', active: 1 }];
+const PAID = new Map([[1, { staff_id: 1, basic: 2000, ssnit: 1 }]]);
+const UNDER = new Map([[1, [7, 8]]]);
+
+test('a scheme column is found by name, whatever word is above it', () => {
+  for (const word of ['Score', 'Bonus', 'Amount']) {
+    const { columns } = readColumns(['Employee no', `${word}: Housing`], { schemes: [HOUSING] });
+    assert.equal(columns[1]?.kind, 'score', word);
+    assert.equal(columns[1].scheme.id, 7);
+  }
+});
+
+test('a set figure is read as money, not as a percentage', () => {
+  const read = readSheet('Employee no,Bonus: Housing\n1,350', {
+    staff: ONE, profiles: PAID, schemes: [HOUSING], memberOf: UNDER,
+  });
+
+  const [change] = read.lines[0].changes;
+  assert.equal(change.to, 350);
+  assert.equal(change.from, null, 'nothing set for them yet');
+  assert.equal(change.paysAmount, true);
+  assert.equal(change.label, 'Housing', 'not "Housing score", which it is not');
+});
+
+test('a figure over a hundred is a figure, not an impossible score', () => {
+  const read = readSheet('Employee no,Bonus: Housing\n1,1500', {
+    staff: ONE, profiles: PAID, schemes: [HOUSING], memberOf: UNDER,
+  });
+  assert.equal(read.lines[0].changes[0].to, 1500);
+  assert.deepEqual(read.lines[0].notes, []);
+});
+
+test('a score over a hundred is still refused', () => {
+  const read = readSheet('Employee no,Score: Guest scores\n1,150', {
+    staff: ONE, profiles: PAID, schemes: [SCORED], memberOf: UNDER,
+  });
+  assert.deepEqual(read.lines[0].changes, []);
+  assert.match(read.lines[0].notes[0].why, /0 to 100/);
+});
+
+test('the figure somebody already has is not a change', () => {
+  const read = readSheet('Employee no,Bonus: Housing\n1,350', {
+    staff: ONE,
+    profiles: PAID,
+    schemes: [HOUSING],
+    memberOf: UNDER,
+    awardBy: new Map([['7|1', 350]]),
+  });
+  assert.equal(read.lines.length, 0);
+});
+
+test('a figure against a scheme somebody is not under is refused', () => {
+  const read = readSheet('Employee no,Bonus: Housing\n1,350', {
+    staff: ONE, profiles: PAID, schemes: [HOUSING], memberOf: new Map(),
+  });
+  assert.deepEqual(read.lines[0].changes, []);
+  assert.match(read.lines[0].notes[0].why, /not under this scheme/);
+});
+
+test('the sheet writes the figure through, and it lands as an award', async () => {
+  const { raw, db } = setup();
+  await onPayroll(db);
+  const scheme = await housing(db, { staffIds: [1, 2] });
+
+  await applyInput(ctx(db, {
+    body: {
+      month: MONTH,
+      text: `Employee no,Bonus: Housing\n1,350\n2,500`,
+    },
+  }));
+
+  const stored = raw.prepare('SELECT staff_id, score, amount FROM pay_score ORDER BY staff_id').all();
+  assert.deepEqual(stored.map((r) => [r.staff_id, r.score, r.amount]), [[1, 100, 350], [2, 100, 500]]);
+
+  const out = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(out.lines.find((l) => l.staff.name === 'Kofi').bonus.earned, 350);
+  assert.equal(out.schemes.find((s) => s.id === scheme.id).scores.find((x) => x.staffId === 2).award, 500);
+});
+
+test('a scored scheme is still written as a score', async () => {
+  const { raw, db } = setup();
+  await onPayroll(db);
+  await saveScheme(ctx(db, { body: { name: 'Guest scores', amount: 500, staffIds: [1] } }));
+
+  await applyInput(ctx(db, {
+    body: { month: MONTH, text: 'Employee no,Score: Guest scores\n1,80' },
+  }));
+
+  const row = raw.prepare('SELECT score, amount FROM pay_score').get();
+  assert.equal(row.score, 80);
+  assert.equal(row.amount, null, 'so the scheme’s worth today is what applies');
+});
+
+test('the template offers money for one and a score for the other', async () => {
+  const { db } = setup();
+  await onPayroll(db);
+  const scheme = await housing(db, { staffIds: [1] });
+  await saveScheme(ctx(db, { body: { name: 'Guest scores', amount: 500, staffIds: [1] } }));
+  await setScores(ctx(db, {
+    body: { month: MONTH, rows: [{ schemeId: scheme.id, staffId: 1, amount: 350 }] },
+  }));
+
+  const body = await (await inputTemplate(ctx(db, { query: `?month=${MONTH}` }))).text();
+  const lines = body.trim().split('\n');
+  assert.match(lines[0], /Bonus: Housing/);
+  assert.match(lines[0], /Score: Guest scores/);
+  assert.match(lines.find((l) => l.startsWith('1,Kofi')), /350\.00/);
+  assert.ok(lines.find((l) => l.startsWith('2,Ama')).includes(',,'),
+    'blank against a scheme Ama is not under');
+});
+
+test('a round trip through the month’s template changes nothing', async () => {
+  const { db } = setup();
+  await onPayroll(db);
+  const scheme = await housing(db, { staffIds: [1, 2] });
+  await setScores(ctx(db, {
+    body: {
+      month: MONTH,
+      rows: [
+        { schemeId: scheme.id, staffId: 1, amount: 350 },
+        { schemeId: scheme.id, staffId: 2, amount: 500 },
+      ],
+    },
+  }));
+
+  const sheet = await (await inputTemplate(ctx(db, { query: `?month=${MONTH}` }))).text();
+  const out = await read(await readInput(ctx(db, { body: { month: MONTH, text: sheet } })));
+  assert.equal(out.tally.changes, 0, 'what came down is what is already here');
+});
+
+test('a blank cell leaves somebody’s figure alone', async () => {
+  const { raw, db } = setup();
+  await onPayroll(db);
+  const scheme = await housing(db, { staffIds: [1, 2] });
+  await setScores(ctx(db, {
+    body: { month: MONTH, rows: [{ schemeId: scheme.id, staffId: 1, amount: 350 }] },
+  }));
+
+  await applyInput(ctx(db, {
+    body: { month: MONTH, text: 'Employee no,Bonus: Housing\n1,\n2,500' },
+  }));
+
+  const kofi = raw.prepare('SELECT amount FROM pay_score WHERE staff_id = 1').get();
+  assert.equal(kofi.amount, 350);
+});

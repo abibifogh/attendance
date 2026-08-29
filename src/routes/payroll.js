@@ -479,10 +479,17 @@ async function sheetContext(ctx, month) {
     month,
     staff: data.staff,
     allowances: [...names.values()].sort((a, b) => a.localeCompare(b)),
-    schemes: data.schemes.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name })),
+    schemes: data.schemes.filter((s) => s.active).map((s) => ({
+      id: s.id, name: s.name, kind: s.kind === 'amount' ? 'amount' : 'score',
+    })),
     profiles: data.profileBy,
     allowanceBy: data.allowanceBy,
     scoreBy: new Map(data.scores.map((r) => [`${r.scheme_id}|${r.staff_id}`, r.score])),
+    // What each person is down for on a scheme that pays a set figure, which
+    // is the cell the sheet holds rather than a percentage.
+    awardBy: new Map(data.scores
+      .filter((r) => r.amount != null)
+      .map((r) => [`${r.scheme_id}|${r.staff_id}`, round2(r.amount)])),
     memberOf,
     advanceDue,
   };
@@ -504,7 +511,10 @@ export async function inputTemplate(ctx) {
   const header = [
     'Employee no', 'Name', 'Basic',
     ...c.allowances.map((name) => `Allowance: ${name}`),
-    ...c.schemes.map((s) => `Score: ${s.name}`),
+    // A scheme that pays a set figure holds money, so the column says Bonus
+    // rather than Score. Reading it back does not depend on the word: the
+    // scheme is found by name and its own kind decides what the cell means.
+    ...c.schemes.map((s) => `${s.kind === 'amount' ? 'Bonus' : 'Score'}: ${s.name}`),
     'Advance',
   ];
 
@@ -527,9 +537,14 @@ export async function inputTemplate(ctx) {
       }),
       // Blank against a scheme somebody is not under, so nobody scores
       // somebody on something they are not on.
-      ...c.schemes.map((s) => (under.includes(s.id)
-        ? round2(c.scoreBy.get(`${s.id}|${person.id}`) ?? 0).toFixed(2)
-        : '')),
+      ...c.schemes.map((s) => {
+        if (!under.includes(s.id)) return '';
+        if (s.kind !== 'amount') return round2(c.scoreBy.get(`${s.id}|${person.id}`) ?? 0).toFixed(2);
+        // Blank where nobody has been set a figure yet, rather than nought,
+        // which would read as a deliberate nothing.
+        const award = c.awardBy.get(`${s.id}|${person.id}`);
+        return award == null ? '' : round2(award).toFixed(2);
+      }),
       round2(c.advanceDue.get(person.id) ?? 0).toFixed(2),
     ]);
   }
@@ -600,10 +615,17 @@ export async function applyInput(ctx) {
         continue;
       }
       if (change.kind === 'score') {
+        // A scheme that pays a set figure stores the figure as the award and a
+        // hundred as the score, the same as typing it on the screen does.
+        // Everything downstream works the award out as the award scaled by the
+        // score, so both kinds land as one line on a payslip.
+        const score = change.paysAmount ? 100 : change.to;
+        const award = change.paysAmount ? change.to : null;
         await ctx.db.prepare(
-          `INSERT INTO pay_score (run_id, scheme_id, staff_id, score) VALUES (?1, ?2, ?3, ?4)
-           ON CONFLICT (run_id, scheme_id, staff_id) DO UPDATE SET score = ?4, amount = NULL`,
-        ).bind(run.id, change.schemeId, line.staffId, change.to).run();
+          `INSERT INTO pay_score (run_id, scheme_id, staff_id, score, amount)
+           VALUES (?1, ?2, ?3, ?4, ?5)
+           ON CONFLICT (run_id, scheme_id, staff_id) DO UPDATE SET score = ?4, amount = ?5`,
+        ).bind(run.id, change.schemeId, line.staffId, score, award).run();
         scores += 1;
       }
     }

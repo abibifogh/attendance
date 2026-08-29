@@ -1393,6 +1393,14 @@ to be limited to allowances already in use, and an allowance for somebody who
 is not on the payroll yet is reported rather than set, because it would never
 reach a payslip.
 
+**A bonus scheme gets a column too.** A scored one is headed `Score: <name>`
+and holds a percentage; one that pays a set figure is headed `Bonus: <name>`
+and holds money, so fifteen agreed figures are a column somebody pastes rather
+than fifteen boxes somebody types. The word above the column is not what
+decides which it is: the scheme is found by name and its own kind says how the
+cell is read, so writing `Score` above a column of amounts gets you what you
+meant. A cell against a scheme somebody is not under is refused either way.
+
 **A blank cell leaves what is there alone.** It is not an instruction to clear a
 department or wipe a start date. Somebody sending back a sheet with two columns
 filled in means to set two things.
