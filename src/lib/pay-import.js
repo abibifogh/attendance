@@ -67,9 +67,23 @@ export function readScore(value) {
  * is the default, because most of them are and getting it wrong the other way
  * understates the tax.
  */
+/**
+ * Whether a heading is the allowances adding up rather than one of them.
+ *
+ * Written half a dozen ways depending on who built the sheet, and all of them
+ * mean the same thing: this column is the sum of the ones beside it.
+ */
+export function isAllowanceTotal(raw) {
+  const key = norm(raw).replace(/[:\-]/g, ' ').replace(/\s+/g, ' ').trim();
+  return [
+    'allowance total', 'allowances total', 'total allowance', 'total allowances',
+    'allowance totals', 'allowances totals', 'sum of allowances', 'allowances sum',
+  ].includes(key);
+}
+
 export function readAllowanceHeading(raw) {
   const text = String(raw ?? '').trim();
-  const found = /^(?:allowance)\s*[:\-]\s*(.+)$/i.exec(text);
+  const found = /^(?:allowances?)\s*[:\-]\s*(.+)$/i.exec(text);
   if (!found) return null;
 
   let name = found[1].trim();
@@ -162,6 +176,15 @@ export function readColumns(header, { allowances = [], schemes = [] } = {}) {
       });
       return;
     }
+    // "Allowances: Total" is not an allowance called Total. It is the line
+    // adding itself up, and a sheet that carries one is a sheet somebody has
+    // been checking by hand. Read as a total it is worth something; read as an
+    // allowance it puts a second copy of everybody's allowances on a payslip.
+    if (isAllowanceTotal(raw)) {
+      columns.push({ index, kind: 'allowanceTotal' });
+      return;
+    }
+
     const allowance = readAllowanceHeading(raw);
     const allowanceName = allowance ? norm(allowance.name) : key;
     if (byAllowance.has(allowanceName)) {
@@ -188,6 +211,22 @@ export function readColumns(header, { allowances = [], schemes = [] } = {}) {
 
     unknown.push(String(raw).trim());
   });
+
+  // A total with nothing behind it, on a property that runs one allowance, is
+  // not a total at all — it is that allowance, written the way somebody who
+  // only has one would write it. There is exactly one thing it can mean, so
+  // it sets rather than checks. Anywhere else a total stays a total: it cannot
+  // say how it splits, and guessing puts made-up figures on a payslip.
+  const alone = !columns.some((c) => c.kind === 'allowance');
+  if (alone && allowances.length === 1) {
+    for (const col of columns) {
+      if (col.kind !== 'allowanceTotal') continue;
+      col.kind = 'allowance';
+      col.name = allowances[0];
+      col.taxable = null;
+      col.fromTotal = true;
+    }
+  }
 
   return { columns, unknown };
 }
@@ -399,6 +438,49 @@ export function readSheet(text, {
               : `the sheet says ${value.toFixed(2)}, but no advance is recorded for them. `
                 + 'Record it under Advances and the payroll will take it';
           line.notes.push({ what: 'Advance', why });
+        }
+      }
+    }
+
+    // The line adding itself up, checked once every allowance on it has been
+    // read. It sets nothing: a total cannot say which allowance it belongs to,
+    // and a sheet that carries one carries the columns behind it as well.
+    // What it is worth is catching the disagreement — a column somebody added
+    // up by hand against what the payroll is actually going to pay.
+    const totalCol = columns.find((c) => c.kind === 'allowanceTotal');
+    if (totalCol) {
+      const said = readMoney(cells[totalCol.index]);
+      if (said !== null && Number.isNaN(said)) {
+        line.notes.push({ what: 'Allowances', why: 'the total is not a figure' });
+      } else if (said !== null) {
+        // What they will come to once this sheet has gone in: what the person
+        // has now, with anything this line changes replacing it.
+        const moved = new Map(line.changes
+          .filter((c) => c.kind === 'allowance')
+          .map((c) => [norm(c.name), c.to]));
+        let willBe = 0;
+        for (const held of allowanceBy.get(person.id) ?? []) {
+          willBe = round2(willBe + (moved.has(norm(held.name))
+            ? moved.get(norm(held.name))
+            : round2(held.amount)));
+          moved.delete(norm(held.name));
+        }
+        for (const amount of moved.values()) willBe = round2(willBe + amount);
+
+        if (said !== willBe) {
+          // Where the sheet has no allowance columns at all, the disagreement
+          // is not a slip in the arithmetic — it is a sheet that has not said
+          // what the total is made of.
+          const bare = !columns.some((c) => c.kind === 'allowance');
+          line.notes.push({
+            what: 'Allowances',
+            why: `the sheet totals ${said.toFixed(2)}, the payroll will pay `
+              + `${willBe.toFixed(2)}`
+              + (bare
+                ? '. A total cannot say how it splits, so give the sheet a column per '
+                  + 'allowance — "Allowance: Transport" — and this one will check them'
+                : ''),
+          });
         }
       }
     }

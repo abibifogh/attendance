@@ -1,5 +1,5 @@
 import { parseCsv } from './roster-import.js';
-import { readAllowanceHeading } from './pay-import.js';
+import { isAllowanceTotal, readAllowanceHeading } from './pay-import.js';
 import { isDay } from '../util/dates.js';
 
 /**
@@ -172,6 +172,15 @@ export function readColumns(header) {
     // "Allowance: Transport", the same words the payroll sheet uses. Written
     // out like that rather than as a bare name, so a column nobody recognises
     // can never quietly turn into money on a payslip.
+    // A column of allowances added up. The month sheet checks one against the
+    // columns beside it; here there is nothing to check it against and no way
+    // to split it, and reading it as an allowance would put a payslip line
+    // called Total in front of everybody.
+    if (isAllowanceTotal(raw)) {
+      unknown.push(text(raw));
+      return;
+    }
+
     const allowance = readAllowanceHeading(raw);
     if (allowance) {
       if (allowances.has(norm(allowance.name))) {

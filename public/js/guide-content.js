@@ -1178,6 +1178,13 @@ export const GUIDE = [
           + 'the heading says what it is: "Allowance: Transport", or "Allowance: Transport '
           + '(not taxable)" for a reimbursement. A bare heading is never turned into money on '
           + 'a payslip \u2014 it is named back like any other column nobody recognised.',
+        'A column headed "Allowances: Total" is the line adding itself up, not an allowance '
+          + 'called Total. It sets nothing \u2014 a total cannot say how it splits \u2014 but '
+          + 'it is checked against what the payroll will actually pay that person, and it says '
+          + 'so where the two disagree. Written "Total allowances" or "Allowance: Total" it '
+          + 'reads the same. The one exception is a property running a single allowance whose '
+          + 'sheet has no column for it: then there is only one thing the total can mean, so '
+          + 'it sets that one.',
         'An allowance for somebody who is not on the payroll yet is reported rather than set. '
           + 'It would never reach a payslip, so setting it would look like it worked and do '
           + 'nothing.',

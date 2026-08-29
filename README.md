@@ -1400,6 +1400,19 @@ to be limited to allowances already in use, and an allowance for somebody who
 is not on the payroll yet is reported rather than set, because it would never
 reach a payslip.
 
+**A column that adds them up is read as one.** `Allowances: Total` — or
+`Total allowances`, or `Allowance: Total` — is the line totalling itself, and
+the month sheet checks it rather than setting anything from it: a total cannot
+say how it splits, and reading it as an allowance called Total would put a
+second copy of everybody's allowances on a payslip under that name. What it is
+worth is the disagreement, said against the line it is on: *the sheet totals
+900.00, the payroll will pay 400.00*. That compares against what the person
+will actually be paid, not against the sheet alone, so an allowance the sheet
+never mentions still counts. The one exception is a property running a single
+allowance whose sheet has no column for it, where there is exactly one thing
+the total can mean and it sets that one. The staff sheet has nothing to check a
+total against, so it reports one back.
+
 **A bonus scheme gets a column too.** A scored one is headed `Score: <name>`
 and holds a percentage; one that pays a set figure is headed `Bonus: <name>`
 and holds money, so fifteen agreed figures are a column somebody pastes rather
