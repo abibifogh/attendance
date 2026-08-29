@@ -4,7 +4,7 @@ import {
 } from '../util.js';
 import { bulkUpload, card, emptyState } from './components.js';
 import {
-  GENERAL, field, formDialog, schemeDepartment, schemesByDepartment, showSheet,
+  GENERAL, field, formDialog, sayDepartments, schemeDepartments, schemesByDepartment, showSheet,
 } from './att-shared.js';
 import { replaceParams } from '../app.js';
 import { printReport } from '../print.js';
@@ -766,9 +766,9 @@ function schemesCard(data, month, closed, reload, cash) {
     + 'they get that share of it. Somebody can be under several schemes or under none.'),
 
   data.schemes.length
-    ? schemesByDepartment(data.schemes).map((group) => h('details.pay-scheme-group', {
-      open: true,
-    },
+    // Folded. A property with nine schemes across four departments opened on a
+    // page of score boxes, and the month's figures were three screens down.
+    ? schemesByDepartment(data.schemes).map((group) => h('details.pay-scheme-group',
     h('summary.pay-scheme-dept',
       h('span', group.name),
       h('small.muted', `${group.schemes.length} scheme${group.schemes.length === 1 ? '' : 's'}`)),
@@ -776,7 +776,7 @@ function schemesCard(data, month, closed, reload, cash) {
       // A scheme that covers the whole property is scored once. It is not
       // twenty people who happen to agree; it is one figure about the
       // property, and typing it twenty times is twenty chances to differ.
-      const everybody = schemeDepartment(scheme) === GENERAL;
+      const everybody = schemeDepartments(scheme).length === 0;
 
       const body = everybody
         ? sharedScore(scheme, data, scored, closed, cash)
@@ -831,19 +831,29 @@ async function editScheme(scheme, data, reload) {
   const picked = new Set(scheme?.staffIds ?? []);
 
   // The departments the property already has, off the staff list, plus
-  // whatever this scheme is under in case that department has since emptied.
+  // whatever this scheme is under in case those have since emptied.
   const departments = [...new Set([
     ...data.staff.map((person) => person.department).filter(Boolean),
-    ...(scheme?.department ? [scheme.department] : []),
+    ...schemeDepartments(scheme),
   ])].sort((a, b) => a.localeCompare(b));
 
-  const current = scheme?.department || '';
-  const departmentPick = h('select', {
-    name: 'department',
-    onchange: () => drawList(),
-  },
-  h('option', { value: '', selected: !current }, `${GENERAL}, the whole property`),
-  departments.map((name) => h('option', { value: name, selected: name === current }, name)));
+  // Ticks rather than a dropdown, because a scheme can cover two: the kitchen
+  // and the bistro share a service bonus, and filing it under one of them left
+  // the other half of the staff ticked in as strays.
+  const chosen = new Set(schemeDepartments(scheme));
+  const departmentPick = h('div.works-picker', departments.length
+    ? departments.map((name) => h('label.tickline',
+      h('input', {
+        type: 'checkbox',
+        checked: chosen.has(name),
+        onchange: (e) => {
+          if (e.target.checked) chosen.add(name); else chosen.delete(name);
+          drawList();
+        },
+      }),
+      h('span', name)))
+    : h('p.muted', { style: { fontSize: '.85rem', margin: 0 } },
+      'No departments on the staff list yet, so this one covers everybody.'));
 
   const list = h('div.pos-edit-list');
   const note = h('p.muted.scheme-who-note', { style: { fontSize: '.8rem' } });
@@ -862,16 +872,15 @@ async function editScheme(scheme, data, reload) {
    * from somewhere else.
    */
   function drawList() {
-    const want = departmentPick.value;
-    const shown = data.staff.filter((person) => !want
-      || person.department === want
-      || picked.has(person.id));
+    const want = [...chosen];
+    const covers = (person) => !want.length || want.includes(person.department);
+    const shown = data.staff.filter((person) => covers(person) || picked.has(person.id));
 
-    const strays = shown.filter((p) => want && p.department !== want).length;
+    const strays = shown.filter((p) => want.length && !covers(p)).length;
 
     list.replaceChildren(...(shown.length
       ? shown.map((person) => {
-        const elsewhere = want && person.department !== want;
+        const elsewhere = want.length && !covers(person);
         return h('label.tickline', { class: elsewhere ? 'is-elsewhere' : '' },
           h('input', {
             type: 'checkbox',
@@ -884,14 +893,14 @@ async function editScheme(scheme, data, reload) {
             person.department ? h('small.muted', ` · ${person.department}`) : null));
       })
       : [h('p.muted', { style: { fontSize: '.85rem', margin: 0 } },
-        `Nobody is in ${want} at the moment.`)]));
+        `Nobody is in ${sayDepartments(want)} at the moment.`)]));
 
-    note.textContent = want
+    note.textContent = want.length
       ? (strays
-        ? `${want} only, and ${strays} already under it from elsewhere. Untick anybody who `
-          + 'should not be.'
-        : `${want} only. Move the scheme to General to put the whole property under it.`)
-      : 'Everybody, because a General scheme covers the whole property.';
+        ? `${sayDepartments(want)} only, and ${strays} already under it from elsewhere. `
+          + 'Untick anybody who should not be.'
+        : `${sayDepartments(want)} only. Tick nothing to put the whole property under it.`)
+      : 'Everybody, because a scheme with no department covers the whole property.';
   }
   drawList();
 
@@ -912,8 +921,9 @@ async function editScheme(scheme, data, reload) {
       field('What it is for', h('input', {
         type: 'text', name: 'note', maxlength: 300, value: scheme?.note ?? '',
       })),
-      field('Department', departmentPick,
-        'Groups the list. One that covers everybody belongs under General'),
+      field('Departments', departmentPick,
+        'Tick every one it covers, and more than one is fine. Tick nothing and it covers the '
+        + `whole property, where it is grouped under ${GENERAL} and scored once`),
       h('p.muted', { style: { fontSize: '.85rem', marginBottom: '.2rem' } }, 'Who is under it'),
       note,
       list),
@@ -922,7 +932,7 @@ async function editScheme(scheme, data, reload) {
       name: form.get('name'),
       amount: form.get('amount'),
       note: form.get('note'),
-      department: form.get('department') || null,
+      departments: [...chosen],
       staffIds: [...picked],
     }),
   });

@@ -960,14 +960,16 @@ export const GUIDE = [
           + 'Untick "taxable" for a genuine reimbursement.',
         'New scheme: what a bonus scheme is worth at a hundred per cent, and who is under it. '
           + 'Somebody can be under several or under none.',
-        'Put the scheme under a department. The list groups on it, and each department folds '
-          + 'away so scoring one is not a scroll past the other five.',
+        'Tick every department the scheme covers, and more than one is fine: the kitchen '
+          + 'and the bistro can share one service bonus. The list groups on what a scheme '
+          + 'covers, and every group starts folded so scoring one is not a scroll past the '
+          + 'other five.',
       ] },
-      { note: 'Put a scheme under a department and only that department\u2019s people are '
-        + 'offered when you say who is under it. Anybody already ticked from somewhere else '
+      { note: 'Tick a department and only its people are offered when you say who is under '
+        + 'the scheme; tick two and you get both. Anybody already ticked from somewhere else '
         + 'stays on the list, marked, so moving a scheme never quietly takes somebody\u2019s '
         + 'bonus away.' },
-      { note: 'A scheme with no department covers the whole property and sits under General. '
+      { note: 'A scheme with no department at all covers the whole property and sits under General. '
         + 'Those are scored once: whether the year was a good one is the same answer for '
         + 'everybody it covers, so it is asked once and everybody under it gets it. A scheme '
         + 'that belongs to a department is still scored person by person, because different '

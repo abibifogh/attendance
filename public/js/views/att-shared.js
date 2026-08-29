@@ -263,22 +263,66 @@ export function sortDepartments(names) {
  * property-wide scheme belongs after the ones that are somebody's own.
  */
 export const GENERAL = 'General';
-export const schemeDepartment = (scheme) => (String(scheme?.department ?? '').trim() || GENERAL);
 
-/** Bonus schemes in departments, in the order they should be read. */
+/**
+ * The departments a bonus scheme covers.
+ *
+ * A list rather than one name, because a property runs schemes that genuinely
+ * span two: the kitchen and the bistro share a service bonus, front office and
+ * reservations share an upsell one. Empty means the whole property, which is a
+ * real answer and not a gap somebody forgot to fill in.
+ *
+ * The single `department` is still read for a row written before schemes could
+ * span more than one.
+ */
+export function schemeDepartments(scheme) {
+  const many = scheme?.departments;
+  const list = Array.isArray(many)
+    ? many
+    : (() => {
+      if (typeof many !== 'string' || !many.trim()) return null;
+      try {
+        const parsed = JSON.parse(many);
+        return Array.isArray(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    })();
+
+  const names = (list ?? [scheme?.department])
+    .map((name) => String(name ?? '').trim())
+    .filter(Boolean);
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+}
+
+/** 'Kitchen', 'Kitchen and F&B', 'Kitchen, F&B and Bar'. */
+export function sayDepartments(names) {
+  if (!names.length) return GENERAL;
+  if (names.length === 1) return names[0];
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
+ * Bonus schemes in departments, in the order they should be read.
+ *
+ * Grouped on the whole set a scheme covers rather than listed once under each
+ * of them. A scheme shown twice is two sets of score boxes for one scheme, and
+ * whichever was typed into last would win without anybody being told.
+ */
 export function schemesByDepartment(schemes) {
   const groups = new Map();
   for (const scheme of schemes ?? []) {
-    const key = schemeDepartment(scheme);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(scheme);
+    const names = schemeDepartments(scheme);
+    const key = names.length ? names.join('\u0000') : GENERAL;
+    if (!groups.has(key)) groups.set(key, { name: sayDepartments(names), schemes: [] });
+    groups.get(key).schemes.push(scheme);
   }
-  const names = [...groups.keys()].sort((a, b) => {
-    if (a === GENERAL) return 1;
-    if (b === GENERAL) return -1;
-    return a.localeCompare(b);
+
+  return [...groups.values()].sort((a, b) => {
+    if (a.name === GENERAL) return 1;
+    if (b.name === GENERAL) return -1;
+    return a.name.localeCompare(b.name);
   });
-  return names.map((name) => ({ name, schemes: groups.get(name) }));
 }
 
 /** Shifts in departments, in the order a list of them should appear. */

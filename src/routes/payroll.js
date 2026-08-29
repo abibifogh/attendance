@@ -140,6 +140,32 @@ async function gather(ctx, month) {
   };
 }
 
+/**
+ * The departments a scheme covers, however the row stores them.
+ *
+ * A row written before schemes could span more than one has the single column
+ * filled in and the list empty, and it means the same thing.
+ */
+function readDepartments(scheme) {
+  const raw = scheme?.departments;
+  let list = null;
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) list = parsed;
+    } catch {
+      list = null;
+    }
+  } else if (Array.isArray(raw)) {
+    list = raw;
+  }
+
+  const names = (list ?? [scheme?.department])
+    .map((name) => String(name ?? '').trim())
+    .filter(Boolean);
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+}
+
 const group = (rows, key) => {
   const out = new Map();
   for (const row of rows) {
@@ -285,6 +311,9 @@ export async function payroll(ctx) {
       name: scheme.name,
       note: scheme.note,
       department: scheme.department || null,
+      // The whole set it covers. A scheme can span two departments, and the
+      // single name above is only what a row written before that says.
+      departments: readDepartments(scheme),
       amount: round2(scheme.amount),
       active: Boolean(scheme.active),
       staffIds: (data.memberBy.get(scheme.id) ?? []).map((m) => m.staff_id),
@@ -658,7 +687,22 @@ export async function saveScheme(ctx) {
   const name = str(body.name, 'Name', { required: true, max: 80 });
   const amount = round2(num(body.amount, 'What it is worth', { required: true, min: 0, max: 1_000_000 }));
   const note = str(body.note, 'Note', { max: 300 });
-  const department = str(body.department, 'Department', { max: 60 }) || null;
+  // A list, because a scheme can cover the kitchen and the bistro at once.
+  // Nothing ticked means the whole property, which is a real answer.
+  const departments = [...new Set((Array.isArray(body.departments)
+    ? body.departments
+    : [body.department])
+    .map((name) => String(name ?? '').trim())
+    .filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+  if (departments.length > 40) throw badRequest('That is more departments than a property has.');
+  for (const name of departments) str(name, 'Department', { max: 60 });
+
+  // The single column is kept in step for the one row it still answers for:
+  // exactly one department reads back the same either way, and more than one
+  // has no single answer to give.
+  const department = departments.length === 1 ? departments[0] : null;
+  const departmentList = departments.length ? JSON.stringify(departments) : null;
   const staffIds = Array.isArray(body.staffIds)
     ? [...new Set(body.staffIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
     : [];
@@ -668,14 +712,15 @@ export async function saveScheme(ctx) {
     const found = await ctx.db.prepare('SELECT id FROM pay_scheme WHERE id = ?').bind(id).first();
     if (!found) throw notFound('No such scheme.');
     await ctx.db.prepare(
-      'UPDATE pay_scheme SET name = ?2, amount = ?3, note = ?4, active = ?5, department = ?6 '
-      + 'WHERE id = ?1',
-    ).bind(id, name, amount, note, body.active === false ? 0 : 1, department).run();
+      'UPDATE pay_scheme SET name = ?2, amount = ?3, note = ?4, active = ?5, department = ?6, '
+      + 'departments = ?7 WHERE id = ?1',
+    ).bind(id, name, amount, note, body.active === false ? 0 : 1, department, departmentList)
+      .run();
   } else {
     const made = await ctx.db.prepare(
-      'INSERT INTO pay_scheme (name, amount, note, department) VALUES (?1, ?2, ?3, ?4) '
-      + 'RETURNING id',
-    ).bind(name, amount, note, department).first();
+      'INSERT INTO pay_scheme (name, amount, note, department, departments) '
+      + 'VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id',
+    ).bind(name, amount, note, department, departmentList).first();
     id = made?.id ?? null;
   }
 
@@ -686,7 +731,9 @@ export async function saveScheme(ctx) {
     ).bind(id, staffId).run();
   }
 
-  await audit(ctx, 'payroll.scheme', id, { name, amount, department, people: staffIds.length });
+  await audit(ctx, 'payroll.scheme', id, {
+    name, amount, departments, people: staffIds.length,
+  });
   return json({ ok: true, id, name, people: staffIds.length });
 }
 
