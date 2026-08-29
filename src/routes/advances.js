@@ -5,10 +5,11 @@ import { readAdvanceSheet, tallyOf } from '../lib/advance-import.js';
 import { createNotice } from '../lib/notices.js';
 import { readFile, storeFile } from './people.js';
 import {
-  PURPOSES, balanceOf, checkRequest, dueThisMonth, finishesOn, firstMonthFor, instalmentFor,
-  isMonthEnd, isOpen, monthsLeft, purposeOf, purposesFor, repaidOf, round2, scheduleFor,
-  summarise,
+  PURPOSES, accountFor, balanceOf, checkRequest, dueThisMonth, finishesOn, firstMonthFor,
+  instalmentFor, isMonthEnd, isOpen, monthsLeft, purposeOf, purposesFor, repaidOf, round2,
+  scheduleFor, summarise, unansweredMonths,
 } from '../lib/advances.js';
+import { isAdmin } from '../lib/payroll-access.js';
 import { addMonths, isDay, isMonth, monthOf, todayIn } from '../util/dates.js';
 
 /**
@@ -62,7 +63,7 @@ async function ledger(db, { staffId = null } = {}) {
 }
 
 /** One advance, dressed for a screen. */
-function shape(advance, entries, { withSchedule = false } = {}) {
+function shape(advance, entries, { withSchedule = false, asOfMonth = null } = {}) {
   const balance = balanceOf(advance, entries);
   return {
     id: advance.id,
@@ -86,12 +87,15 @@ function shape(advance, entries, { withSchedule = false } = {}) {
     repaid: repaidOf(entries),
     balance,
     left: isOpen(advance) ? monthsLeft(balance, advance.monthly) : 0,
-    finishes: isOpen(advance) ? finishesOn(advance, entries) : null,
+    finishes: isOpen(advance) ? finishesOn(advance, entries, { asOfMonth }) : null,
     entries: entries.map((e) => ({
       id: e.id, month: e.month, kind: e.kind, amount: round2(e.amount), note: e.note,
       actor: e.actor, at: e.at,
     })),
-    ...(withSchedule ? { schedule: scheduleFor(advance, entries) } : {}),
+    // Months that have been and gone with nothing recorded against them. Not
+    // a skip and not a payment: nobody answered.
+    unanswered: unansweredMonths(advance, entries, { asOfMonth }),
+    ...(withSchedule ? { schedule: scheduleFor(advance, entries, { asOfMonth }) } : {}),
   };
 }
 
@@ -112,6 +116,10 @@ export async function advances(ctx) {
   const today = todayIn(timezone);
   const asked = ctx.url.searchParams.get('month');
   const month = isMonth(asked) ? asked : monthOf(today);
+  // The month being closed off can be walked back to April; what is left to
+  // pay still comes off from now on, so the projection follows the clock
+  // rather than the picker.
+  const thisMonth = monthOf(today);
 
   const { advances: rows, entriesBy } = await ledger(ctx.db);
   const staff = await ctx.db.prepare('SELECT id, name, department, employee_no, active FROM att_staff')
@@ -134,12 +142,14 @@ export async function advances(ctx) {
         advances: [],
       });
     }
-    people.get(advance.staff_id).advances.push(shape(advance, entriesBy.get(advance.id) ?? []));
+    people.get(advance.staff_id).advances.push(
+      shape(advance, entriesBy.get(advance.id) ?? [], { asOfMonth: thisMonth }),
+    );
   }
 
   const list = [...people.values()].map((person) => {
     const raw = rows.filter((r) => r.staff_id === person.staff.id);
-    return { ...person, totals: summarise(raw, entriesBy) };
+    return { ...person, totals: summarise(raw, entriesBy, { asOfMonth: thisMonth }) };
   }).sort((a, b) => b.totals.owed - a.totals.owed
     || a.staff.name.localeCompare(b.staff.name));
 
@@ -175,11 +185,14 @@ export async function advances(ctx) {
     // The end of the month is when the asking happens, and a month left
     // unanswered keeps being asked about afterwards.
     monthEnd: isMonthEnd(today),
+    // Whether this pair of eyes may correct a record rather than only agree a
+    // change to one. The screen asks so it can leave the button off.
+    canEdit: isAdmin(ctx.session),
     closed: closed ? { by: closed.closed_by, at: closed.closed_at, note: closed.note } : null,
     due,
     people: list,
     requests: rows.filter((r) => r.status === 'requested').map((r) => ({
-      ...shape(r, entriesBy.get(r.id) ?? []),
+      ...shape(r, entriesBy.get(r.id) ?? [], { asOfMonth: thisMonth }),
       staffName: staffById.get(r.staff_id)?.name ?? 'Somebody',
     })),
     totals: {
@@ -196,7 +209,8 @@ export async function advances(ctx) {
 /** One person's advances, with the schedule drawn out. */
 export async function staffAdvances(ctx, idParam) {
   const staffId = int(idParam, 'Who', { required: true, min: 1 });
-  const { currency } = await settingsOf(ctx.db);
+  const { timezone, currency } = await settingsOf(ctx.db);
+  const thisMonth = monthOf(todayIn(timezone));
   const person = await ctx.db.prepare('SELECT id, name FROM att_staff WHERE id = ?')
     .bind(staffId).first();
   if (!person) throw notFound('No such member of staff.');
@@ -204,9 +218,15 @@ export async function staffAdvances(ctx, idParam) {
   const { advances: rows, entriesBy } = await ledger(ctx.db, { staffId });
   return json({
     currency,
+    canEdit: isAdmin(ctx.session),
     staff: { id: person.id, name: person.name },
-    totals: summarise(rows, entriesBy),
-    advances: rows.map((r) => shape(r, entriesBy.get(r.id) ?? [], { withSchedule: true })),
+    // The same statement the person sees on their own screen, so whoever is
+    // being asked about it is reading the page they are being asked about.
+    account: accountFor(rows, entriesBy, { asOfMonth: thisMonth }),
+    totals: summarise(rows, entriesBy, { asOfMonth: thisMonth }),
+    advances: rows.map((r) => shape(r, entriesBy.get(r.id) ?? [], {
+      withSchedule: true, asOfMonth: thisMonth,
+    })),
   });
 }
 
@@ -414,6 +434,144 @@ export async function adjustAdvance(ctx, idParam) {
   return json({ ok: true, monthly, months });
 }
 
+/**
+ * Correct the record itself, not the arrangement.
+ *
+ * "Change the terms" is an agreement being changed: it is still true that
+ * 4,000 was handed over on the 3rd, and what moves is what comes off each
+ * month from here. This is the other thing entirely — the record is wrong.
+ * Somebody typed 400 for 4,000, or dated it in the wrong month, or put it
+ * against the wrong purpose, and until now the only way out was to delete the
+ * whole thing and key it again, which loses every movement recorded against
+ * it and every note explaining them.
+ *
+ * Administrator only, and it says so in the log. Editing the amount of an
+ * advance moves what somebody owes without anybody agreeing to it, which is
+ * exactly the power the rest of this screen is careful not to hand out.
+ *
+ * Two things it still will not do. The amount cannot go below what has
+ * already come back, because that is a balance owed to the member of staff
+ * and this screen has nowhere to put one. And it cannot be moved to somebody
+ * else once a payment has been recorded, because those payments came off a
+ * real payslip belonging to the person it is on now.
+ */
+export async function editAdvance(ctx, idParam) {
+  if (!isAdmin(ctx.session)) {
+    throw forbidden('Only an administrator can correct an advance record.');
+  }
+
+  const id = int(idParam, 'Advance', { required: true, min: 1 });
+  const body = await readJson(ctx.request);
+  const { timezone } = await settingsOf(ctx.db);
+
+  const advance = await ctx.db.prepare('SELECT * FROM hr_advance WHERE id = ?').bind(id).first();
+  if (!advance) throw notFound('No such advance.');
+
+  const entries = await entriesFor(ctx.db, id);
+  const repaid = repaidOf(entries);
+
+  const keep = (value, fallback) => (value == null || value === '' ? fallback : value);
+
+  const amount = round2(num(keep(body.amount, advance.amount), 'Amount',
+    { required: true, min: 1, max: 1_000_000 }));
+  if (amount < repaid) {
+    throw badRequest(`${money(repaid, advance.currency)} has already come back against this `
+      + 'advance, so it cannot be worth less than that. Take the movements off first.');
+  }
+
+  const months = int(keep(body.months, advance.months), 'Months to repay over',
+    { min: 1, max: 60 });
+  const monthly = round2(num(keep(body.monthly, advance.monthly), 'Monthly deduction',
+    { min: 1, max: 1_000_000 }));
+
+  const takenOn = isDay(String(body.takenOn ?? '')) ? String(body.takenOn) : advance.taken_on;
+  const startMonth = isMonth(body.startMonth) ? String(body.startMonth) : advance.start_month;
+
+  // A purpose can be cleared as well as changed, so an empty string means
+  // "none of them" rather than "leave it".
+  const purpose = body.purpose === undefined
+    ? advance.purpose ?? null
+    : purposeOf(body.purpose)?.key ?? null;
+  const reason = body.reason === undefined
+    ? advance.reason
+    : str(body.reason, 'What it is for', { max: 300 });
+
+  // Whose it is. Only while nothing has come off, and only to somebody who
+  // is still here.
+  let staffId = advance.staff_id;
+  const asked = body.staffId == null || body.staffId === ''
+    ? advance.staff_id
+    : int(body.staffId, 'Who', { required: true, min: 1 });
+  if (asked !== advance.staff_id) {
+    if (entries.length) {
+      throw badRequest('There are movements recorded against this advance, so it cannot be '
+        + 'moved to somebody else. Take them off first, or write this one off and record a '
+        + 'new one.');
+    }
+    const moving = await ctx.db.prepare('SELECT id FROM att_staff WHERE id = ? AND active = 1')
+      .bind(asked).first();
+    if (!moving) throw notFound('No such member of staff.');
+    staffId = asked;
+  }
+
+  const note = str(body.note, 'Why', { max: 300 });
+
+  await ctx.db.prepare(
+    `UPDATE hr_advance
+        SET staff_id = ?2, amount = ?3, months = ?4, monthly = ?5, taken_on = ?6,
+            start_month = ?7, purpose = ?8, reason = ?9
+      WHERE id = ?1`,
+  ).bind(id, staffId, amount, months, monthly, takenOn, startMonth, purpose, reason).run();
+
+  // A corrected amount can finish something that was still running, or bring
+  // back something that was marked paid off. Neither should need a second act.
+  let status = advance.status;
+  if (['approved', 'settled'].includes(advance.status)) {
+    const settled = round2(amount - repaid) <= 0;
+    status = settled ? 'settled' : 'approved';
+    if (status !== advance.status) {
+      await ctx.db.prepare(
+        `UPDATE hr_advance
+            SET status = ?2, settled_at = CASE WHEN ?2 = 'settled' THEN datetime('now') END
+          WHERE id = ?1`,
+      ).bind(id, status).run();
+    }
+  }
+
+  const was = {
+    staffId: advance.staff_id,
+    amount: round2(advance.amount),
+    months: advance.months,
+    monthly: round2(advance.monthly),
+    takenOn: advance.taken_on,
+    startMonth: advance.start_month,
+    purpose: advance.purpose ?? null,
+    reason: advance.reason,
+  };
+  const now = { staffId, amount, months, monthly, takenOn, startMonth, purpose, reason };
+  const changed = Object.keys(now).filter((k) => now[k] !== was[k]);
+
+  await audit(ctx, 'advance.edit', id, { was, now, changed, note });
+
+  // Only when what they owe or what comes off their pay has moved. A
+  // corrected spelling in the reason is not worth a notification.
+  if (changed.includes('amount') || changed.includes('monthly')) {
+    const person = await ctx.db.prepare(
+      `SELECT s.id, s.name, u.id AS user_id
+         FROM att_staff s LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
+        WHERE s.id = ?`,
+    ).bind(staffId).first();
+    await tell(ctx, person, {
+      kind: 'advance.changed',
+      title: 'Your salary advance record has been corrected',
+      body: `${money(amount, advance.currency)} in all, `
+        + `${money(monthly, advance.currency)} a month.${note ? ` ${note}` : ''}`,
+    });
+  }
+
+  return json({ ok: true, id, status, changed });
+}
+
 /** Record one movement — a deduction taken, a month let go, a correction. */
 export async function addEntry(ctx, idParam) {
   const id = int(idParam, 'Advance', { required: true, min: 1 });
@@ -433,6 +591,58 @@ export async function addEntry(ctx, idParam) {
 
   await write(ctx, advance, { month, kind, amount, note: str(body.note, 'Note', { max: 300 }) });
   return json({ ok: true });
+}
+
+/**
+ * Catch up the months nobody answered.
+ *
+ * The month-end question is asked on the last day of the month and again on
+ * the 7th and the 14th, and a property that is busy still misses it. Three
+ * months later what is on the screen is a balance that is right and a finish
+ * date that is wrong, because nothing was ever written for June and July and
+ * the projection went on assuming they were paid.
+ *
+ * This is the way back. The screen works out which months have gone by with
+ * nothing recorded, and whoever runs the wages says which of them were let go.
+ * A month ticked here is a month deliberately skipped, exactly as if it had
+ * been unticked at the time — what is owed does not move, and the finish date
+ * goes out by one.
+ *
+ * A month somebody actually paid in is not this. That is a movement with a
+ * figure on it, and it goes in as one.
+ */
+export async function markSkipped(ctx, idParam) {
+  const id = int(idParam, 'Advance', { required: true, min: 1 });
+  const body = await readJson(ctx.request);
+
+  const advance = await ctx.db.prepare('SELECT * FROM hr_advance WHERE id = ?').bind(id).first();
+  if (!advance) throw notFound('No such advance.');
+  if (!isOpen(advance)) throw badRequest('That advance is not running.');
+
+  const { timezone } = await settingsOf(ctx.db);
+  const thisMonth = monthOf(todayIn(timezone));
+
+  const asked = (Array.isArray(body.months) ? body.months : [])
+    .map((m) => String(m))
+    .filter((m) => isMonth(m));
+  if (!asked.length) throw badRequest('Say which months were skipped.');
+
+  // Only months this advance is actually behind on. A month in the future, or
+  // one already answered, is not somebody catching up — it is a typo, and
+  // writing it would put a skip somewhere nobody could explain.
+  const entries = await entriesFor(ctx.db, id);
+  const behind = new Set(unansweredMonths(advance, entries, { asOfMonth: thisMonth }));
+  const months = [...new Set(asked)].filter((m) => behind.has(m)).sort();
+  const refused = [...new Set(asked)].filter((m) => !behind.has(m)).sort();
+
+  const note = str(body.note, 'Note', { max: 300 });
+  for (const month of months) {
+    await write(ctx, advance, { month, kind: 'skipped', amount: 0, note });
+  }
+
+  await audit(ctx, 'advance.catch_up', id, { months, refused, note });
+
+  return json({ ok: true, marked: months, refused });
 }
 
 /** Take a movement back off the record. */
@@ -530,7 +740,8 @@ export async function myAdvances(ctx) {
     });
   }
 
-  const { currency } = await settingsOf(ctx.db);
+  const { timezone, currency } = await settingsOf(ctx.db);
+  const thisMonth = monthOf(todayIn(timezone));
   const { advances: rows, entriesBy } = await ledger(ctx.db, { staffId });
 
   const hasOpen = rows.some((r) => isOpen(r) && balanceOf(r, entriesBy.get(r.id) ?? []) > 0);
@@ -538,8 +749,11 @@ export async function myAdvances(ctx) {
   return json({
     linked: true,
     currency,
-    totals: summarise(rows, entriesBy),
-    advances: rows.map((r) => shape(r, entriesBy.get(r.id) ?? [], { withSchedule: true })),
+    account: accountFor(rows, entriesBy, { asOfMonth: thisMonth }),
+    totals: summarise(rows, entriesBy, { asOfMonth: thisMonth }),
+    advances: rows.map((r) => shape(r, entriesBy.get(r.id) ?? [], {
+      withSchedule: true, asOfMonth: thisMonth,
+    })),
     // The rules, sent rather than repeated in the screen, so the form and the
     // route cannot come to disagree about what may be asked for.
     hasOpen,

@@ -3,7 +3,7 @@ import {
   confirmAction, fmtDay, h, money, monthOf, mount, shiftMonth, toast, todayISO,
 } from '../util.js';
 import { bulkUpload, card, emptyState } from './components.js';
-import { field, formDialog } from './att-shared.js';
+import { advanceStatement, field, formDialog, niceMonth, showSheet } from './att-shared.js';
 import { navigate, replaceParams } from '../app.js';
 
 /**
@@ -473,7 +473,14 @@ function personRows(person, { data, reload, cash }) {
   const open = person.advances.filter((a) => a.status === 'approved');
   const detail = h('tr.adv-detail', { style: { display: 'none' } },
     h('td', { colspan: 7 },
-      person.advances.map((advance) => advanceBlock(advance, { person, reload, cash }))));
+      // Their own screen, opened from here. Somebody being asked "why has this
+      // not finished" should be answered off the page they are looking at,
+      // not off a differently arranged one.
+      h('div.btn-row', { style: { marginBottom: '.6rem' } },
+        h('button.btn-sm', {
+          onclick: () => showStatement(person, cash),
+        }, `See ${person.staff.name.split(' ')[0]}\u2019s account`)),
+      person.advances.map((advance) => advanceBlock(advance, { person, data, reload, cash }))));
 
   const toggle = () => {
     const showing = detail.style.display !== 'none';
@@ -508,7 +515,7 @@ function personRows(person, { data, reload, cash }) {
 }
 
 /** One agreement: its terms, its movements, and the ways to correct it. */
-function advanceBlock(advance, { person, reload, cash }) {
+function advanceBlock(advance, { person, data, reload, cash }) {
   const badge = {
     approved: ['', 'running'],
     settled: ['good', 'paid off'],
@@ -524,13 +531,41 @@ function advanceBlock(advance, { person, reload, cash }) {
         advance.purposeLabel ? h('span.muted', ` for ${advance.purposeLabel.toLowerCase()}`) : null,
         h('span.muted', ` handed over ${advance.takenOn ? fmtDay(advance.takenOn) : 'at some point'}`),
         h('span.pill' + (badge[0] ? `.${badge[0]}` : ''), { style: { marginLeft: '.4rem' } }, badge[1])),
-      advance.status === 'approved'
-        ? h('div.btn-row',
-          h('button.btn-sm', { onclick: () => adjust(advance, reload, cash) }, 'Change the terms'),
-          h('button.btn-sm', { onclick: () => addMovement(advance, reload) }, 'Add a movement'))
-        : null),
+      h('div.btn-row',
+        advance.status === 'approved'
+          ? h('button.btn-sm', { onclick: () => adjust(advance, reload, cash) }, 'Change the terms')
+          : null,
+        advance.status === 'approved'
+          ? h('button.btn-sm', { onclick: () => addMovement(advance, reload) }, 'Add a movement')
+          : null,
+        // Offered on a finished one as well. A figure keyed wrong is usually
+        // noticed when somebody asks why the deductions stopped early.
+        data?.canEdit && ['approved', 'settled'].includes(advance.status)
+          ? h('button.btn-ghost.btn-sm', {
+            title: 'The record is wrong: the amount, the date, what it was for',
+            onclick: () => editRecord(advance, { person, data, reload, cash }),
+          }, 'Correct the record')
+          : null)),
 
     advance.reason ? h('div.adv-reason', advance.reason) : null,
+
+    // The gap between what the schedule assumes and what the books have seen.
+    // Left alone it hides: the balance is right, because nothing was written,
+    // while the finish date goes on counting months that were never taken.
+    advance.unanswered?.length
+      ? h('div.alert.warn',
+        h('span.alert-icon', '\u26a0\ufe0f'),
+        h('div',
+          h('div.alert-title', `${advance.unanswered.length} month`
+            + `${advance.unanswered.length === 1 ? '' : 's'} with nothing recorded`),
+          h('div.alert-detail', `${advance.unanswered.map(niceMonth).join(', ')}. Nothing was `
+            + 'written for them either way, so if money did come off in one it is still showing '
+            + 'as owed.'),
+          h('button.btn-sm', {
+            style: { marginTop: '.45rem' },
+            onclick: () => catchUp(advance, { person, reload, cash }),
+          }, 'Say which were skipped')))
+      : null,
 
     h('div.adv-terms',
       term('A month', cash(advance.monthly)),
@@ -572,6 +607,83 @@ const MOVEMENT = {
 
 const term = (label, value) => h('div.adv-term', h('small.muted', label), h('div', value));
 
+/**
+ * Their account, as they see it.
+ *
+ * The same statement their own screen draws, from the same figures. A manager
+ * answering "why is this still running" and the person asking it should be
+ * looking at one table, not at two arrangements of the same numbers that have
+ * to be reconciled out loud.
+ */
+async function showStatement(person, cash) {
+  const data = await api.advanceStaff(person.staff.id).catch(() => null);
+  if (!data) { toast('That did not load.', 'bad'); return; }
+
+  showSheet({
+    title: `${data.staff.name}\u2019s account`,
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'This is the page they see on their own phone. The months behind are what was '
+        + 'recorded; the ones ahead are what is expected, and they move whenever anything '
+        + 'does.'),
+      advanceStatement(data.account, cash, { title: null })
+        ?? h('p.muted', 'Nothing has been borrowed.')),
+  });
+}
+
+/**
+ * Months that went by with nobody answering for them.
+ *
+ * The books say a thousand came back and eight months have gone since it
+ * started, at two hundred a month. Those two do not agree, and the difference
+ * is months nobody was asked about. This is where somebody says which of them
+ * were let go — and the ones left unticked stay outstanding, because "we did
+ * not get round to answering" and "nothing was taken" are two different
+ * things and only one of them moves the finish date.
+ */
+async function catchUp(advance, { person, reload, cash }) {
+  const ticks = new Map(advance.unanswered.map((month) => [month, h('input', { type: 'checkbox' })]));
+  const owed = advance.monthly * advance.unanswered.length;
+
+  const done = await formDialog({
+    title: `Months with nothing recorded for ${person.staff.name}`,
+    submitLabel: 'Record them as skipped',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        `${advance.unanswered.length} month`
+        + `${advance.unanswered.length === 1 ? ' has' : 's have'} gone by without an answer. At `
+        + `${cash(advance.monthly)} a month, that is ${cash(owed)} the books have never seen `
+        + 'either way. Tick the ones where nothing came off.'),
+
+      h('div.adv-catchup', [...ticks].map(([month, tick]) => h('label.tickline',
+        tick, h('span', niceMonth(month))))),
+
+      h('div.alert.warn',
+        h('span.alert-icon', '\u26a0\ufe0f'),
+        h('div',
+          h('div.alert-title', 'A month somebody actually paid in is not this'),
+          h('div.alert-detail', 'Ticking a month says nothing came off it, so what is owed '
+            + 'does not change. Where money did come off and was never written down, close '
+            + 'this and add it as a movement with the figure on it instead \u2014 otherwise '
+            + 'they are being asked for it twice.'))),
+
+      field('Why', h('input', {
+        type: 'text', name: 'note', maxlength: 300,
+        placeholder: 'Nobody closed the month off at the time',
+      }))),
+
+    onSubmit: (form) => {
+      const months = [...ticks].filter(([, tick]) => tick.checked).map(([month]) => month);
+      if (!months.length) throw new Error('Tick at least one month, or close this.');
+      return api.advanceMarkSkipped(advance.id, { months, note: form.get('note') });
+    },
+  });
+  if (!done) return;
+
+  toast(`${done.marked.length} month${done.marked.length === 1 ? '' : 's'} recorded as skipped.`, 'good');
+  await reload();
+}
+
 /** Change what comes off each month from here on. */
 async function adjust(advance, reload, cash) {
   const done = await formDialog({
@@ -596,6 +708,84 @@ async function adjust(advance, reload, cash) {
   });
   if (!done) return;
   toast('Changed.', 'good');
+  await reload();
+}
+
+/**
+ * The record is wrong. Put it right.
+ *
+ * Not the same act as changing the terms, and kept apart from it on purpose.
+ * Changing the terms leaves the facts standing and moves what comes off from
+ * here on; this says the facts themselves were written down wrong. Only an
+ * administrator sees it, and every field is logged as it was and as it is.
+ */
+async function editRecord(advance, { person, data, reload, cash }) {
+  const moved = advance.entries.length > 0;
+
+  const who = h('select', { name: 'staffId', disabled: moved || undefined },
+    (data.staff ?? []).map((s) => h('option', {
+      value: s.id, selected: s.id === advance.staffId,
+    }, `${s.name}${s.department ? ` \u00b7 ${s.department}` : ''}`)));
+
+  // A person who has left is not in the list to pick, but the advance may
+  // still be theirs, so their name has to be somewhere on the form.
+  if (![...who.options].some((o) => Number(o.value) === advance.staffId)) {
+    who.prepend(h('option', { value: advance.staffId, selected: true }, person.staff.name));
+  }
+
+  const done = await formDialog({
+    title: `Correct ${person.staff.name}\u2019s advance`,
+    submitLabel: 'Put it right',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        `${cash(advance.repaid)} has come back so far, and the movements behind it are kept `
+        + 'whatever you change here. Changing the amount or what comes off each month tells '
+        + 'them; correcting a date or a spelling does not.'),
+
+      field('Whose it is', who, moved
+        ? 'There are movements against this one, so it cannot be moved to somebody else'
+        : 'Nothing has come off yet, so it can still be put against the right person'),
+
+      h('div.field-row',
+        field('How much', h('input', {
+          type: 'number', name: 'amount', step: '0.01', min: '1', required: true,
+          value: advance.amount,
+        }), advance.repaid ? `Not less than the ${cash(advance.repaid)} already repaid` : null),
+        field('Over how many months', h('input', {
+          type: 'number', name: 'months', min: '1', max: '60', value: advance.months,
+        })),
+        field('A month', h('input', {
+          type: 'number', name: 'monthly', step: '0.01', min: '1', value: advance.monthly,
+        }))),
+
+      h('div.field-row',
+        field('Handed over on', h('input', {
+          type: 'date', name: 'takenOn', value: advance.takenOn ?? '',
+        })),
+        field('First deduction', h('input', {
+          type: 'month', name: 'startMonth', value: advance.startMonth ?? '',
+        }))),
+
+      field('What it is for', h('select', { name: 'purpose' },
+        h('option', { value: '', selected: !advance.purpose }, 'Not saying'),
+        h('option', { value: 'school_fees', selected: advance.purpose === 'school_fees' }, 'School fees'),
+        h('option', { value: 'rent', selected: advance.purpose === 'rent' }, 'Rent'),
+        h('option', { value: 'other', selected: advance.purpose === 'other' }, 'Something else'))),
+
+      field('The note on it', h('input', {
+        type: 'text', name: 'reason', maxlength: 300, value: advance.reason ?? '',
+      })),
+
+      field('Why it is being corrected', h('input', { type: 'text', name: 'note', maxlength: 300 }),
+        'Goes in the log beside what changed')),
+
+    onSubmit: (form) => api.advanceEdit(advance.id, Object.fromEntries(form.entries())),
+  });
+  if (!done) return;
+
+  toast(done.changed?.length
+    ? `Put right: ${done.changed.length} thing${done.changed.length === 1 ? '' : 's'} changed.`
+    : 'Nothing was different.', done.changed?.length ? 'good' : 'warn');
   await reload();
 }
 
@@ -630,10 +820,6 @@ const tile = (label, value, sub) => h('div.stat',
   h('div.stat-value', value),
   h('div.stat-sub', sub));
 
-/** 'August 2026' from '2026-08'. */
-export function niceMonth(month) {
-  const text = String(month ?? '');
-  if (!/^\d{4}-\d{2}$/.test(text)) return text;
-  return new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' })
-    .format(new Date(`${text}-01T12:00:00Z`));
-}
+// It lives next door now, with the statement that uses it. Passed on from here
+// because two other screens have always asked this file for it.
+export { niceMonth };

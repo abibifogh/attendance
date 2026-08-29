@@ -863,7 +863,60 @@ export const GUIDE = [
         'The ✕ beside a movement takes it back off, and what is owed goes back up. Use it for '
           + 'something entered wrongly rather than for something that did not happen — those '
           + 'are two different records.',
+        'Correct the record: the amount, the date, what it was for, the note. Administrators '
+          + 'only. This is for a record that was written down wrong \u2014 400 keyed for 4,000, or '
+          + 'the wrong month \u2014 rather than for an agreement that has changed. Every movement '
+          + 'recorded against it is kept, which is the whole reason it exists.',
       ] },
+      { p: 'The two are easy to mix up and they are not the same thing. Change the terms says '
+        + 'the record is right and the arrangement is moving. Correct the record says the '
+        + 'record itself is wrong. It shows on a finished advance as well, because a figure '
+        + 'keyed wrong is usually noticed when somebody asks why the deductions stopped '
+        + 'early, and putting the amount back up starts it running again on its own.' },
+      { list: [
+        'It cannot be made worth less than what has already come back. That would leave the '
+          + 'property owing them, and this screen has nowhere to put that. Take the movements '
+          + 'off first.',
+        'It can be moved to the right person only while nothing has come off. After that the '
+          + 'payments against it came off somebody\u2019s real payslip, and they belong where '
+          + 'they are.',
+        'They are told when the amount or the monthly deduction changes, and not when a date '
+          + 'or a spelling does. What it was and what it is now both go in the log, with who '
+          + 'did it and the reason they gave.',
+      ] },
+
+      { sub: 'The account' },
+      { p: 'Everything a person has borrowed and everything that has come back, on one running '
+        + 'account: opening, taken, repaid, closing, a line a month. It is the page they see on '
+        + 'their own phone, and See their account on this screen opens the same one, so a '
+        + 'question about it is answered off the page it is about.' },
+      { list: [
+        'Per person, not per advance. Somebody paying back four hundred who takes another two '
+          + 'hundred in June sees the two hundred in the Taken column and both deductions added '
+          + 'together in Repaid. Asking them to add up two tables to find out what they owe is '
+          + 'asking them to take the app\u2019s word for it.',
+        'Every line balances against the one above. Opening plus taken less repaid is the '
+          + 'closing, and the closing is the next month\u2019s opening.',
+        'The months ahead are in it too, greyed. They are what is expected and they move '
+          + 'whenever anything does.',
+      ] },
+
+      { sub: 'Months nobody answered for' },
+      { p: 'The month-end question gets missed. A month that goes by with nothing recorded is '
+        + 'invisible everywhere else, because the balance is still right \u2014 nothing was '
+        + 'written \u2014 and the balance is what every screen shows. The advance says so '
+        + 'itself now, and Say which were skipped is where somebody catches it up.' },
+      { list: [
+        'Ticking a month says nothing came off it. What is owed does not change; the record '
+          + 'just stops having a hole in it.',
+        'Where money did come off and was never written down, do not tick it. Add it as a '
+          + 'movement with the figure on it, or the person is being asked for it twice.',
+        'The month running is never in the list. It is not late until it is over.',
+      ] },
+      { note: 'When the last instalment falls is worked out from this month forward, not from '
+        + 'the last thing recorded. A month that goes by without a deduction moves the end '
+        + 'along by one whether or not anybody has answered for it, which is what actually '
+        + 'happens on a payslip.' },
 
       { sub: 'Requests, and what may be asked for' },
       { p: 'Somebody can ask through the app, and it waits at the top of this screen. '

@@ -748,3 +748,61 @@ export function monthLabel(month) {
     month: 'long', year: 'numeric', timeZone: 'UTC',
   });
 }
+
+/**
+ * Somebody's borrowing, drawn as a statement.
+ *
+ * Opening, taken, repaid, closing — the shape a bookkeeper writes it in, and
+ * the reason for that shape is that every line balances against the one above
+ * it. A list of movements says what happened; this says what it added up to,
+ * which is the question anybody actually has.
+ *
+ * One table for the person and everything they have borrowed, not one per
+ * advance. Somebody paying back four hundred who takes another two hundred in
+ * June should not have to add two tables together to find out what they owe.
+ *
+ * The months ahead are in it too, greyed. They are a forecast and they move,
+ * and a person deciding whether they can ask for anything else needs to see
+ * how long the current one has to run.
+ */
+export function advanceStatement(account, cash, { title = 'Month by month' } = {}) {
+  const rows = account ?? [];
+  if (!rows.length) return null;
+
+  const last = rows[rows.length - 1];
+
+  return h('div',
+    title ? h('h3.adv-sub', title) : null,
+    h('div.table-wrap', h('table.adv-statement',
+      h('thead', h('tr',
+        h('th', 'Month'),
+        h('th.num', 'Opening'),
+        h('th.num', 'Taken'),
+        h('th.num', 'Repaid'),
+        h('th.num', 'Closing'))),
+      h('tbody', rows.map((row) => h(`tr${row.done ? '' : '.adv-ahead'}`,
+        h('td', niceMonth(row.month)),
+        h('td.num.muted', cash(row.opening)),
+        h('td.num', row.additions ? cash(row.additions) : h('span.muted', '—')),
+        // Three different blanks, and telling them apart is most of what
+        // somebody opens this for. A month deliberately let go says so; a
+        // month nobody answered for is a bare dash; a month ahead carries
+        // what is expected.
+        h('td.num', row.repayment
+          ? cash(row.repayment)
+          : h('span.muted', row.letGo ? 'nothing taken' : '—')),
+        h('td.num.strong', cash(row.closing)))))),
+    ),
+    last.closing > 0
+      ? h('p.muted', { style: { fontSize: '.82rem' } },
+        `${cash(last.closing)} is still expected after ${niceMonth(last.month)}.`)
+      : null);
+}
+
+/** 'August 2026' from '2026-08'. */
+export function niceMonth(month) {
+  const text = String(month ?? '');
+  if (!/^\d{4}-\d{2}$/.test(text)) return text;
+  return new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' })
+    .format(new Date(`${text}-01T12:00:00Z`));
+}

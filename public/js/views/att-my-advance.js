@@ -1,8 +1,7 @@
 import { api } from '../api.js';
 import { confirmAction, fmtDay, h, money, mount, toast } from '../util.js';
 import { card, emptyState } from './components.js';
-import { field, formDialog } from './att-shared.js';
-import { niceMonth } from './att-advances.js';
+import { advanceStatement, field, formDialog, niceMonth } from './att-shared.js';
 
 /**
  * My salary advance.
@@ -62,6 +61,21 @@ export async function renderAttMyAdvance() {
         h('p.muted', 'You have no advance running. If you need one, ask and somebody will '
           + 'decide.'))),
 
+    // Everything borrowed and everything paid back, on one running account.
+    // Two advances at once is two deductions on one payslip, and adding up two
+    // separate tables to find out what is left is asking somebody to take the
+    // app's word for it.
+    data.account?.length
+      ? card('Your account', {
+        note: 'every month, and what it left owing',
+      },
+      advanceStatement(data.account, cash, { title: null }),
+      h('p.muted', { style: { fontSize: '.82rem' } },
+        'The months behind you are what actually came off. The ones ahead are what is '
+        + 'expected, and they move if anything changes. If a month here does not match '
+        + 'your payslip, say so.'))
+      : null,
+
     // Only worth showing where there is something to show. A permanent "no
     // history" heading is a row of a phone screen given over to saying nothing.
     done.length
@@ -118,7 +132,6 @@ function waitingCard(advance, reload, cash) {
 function runningCard(advance, cash) {
   const paid = Math.max(0, advance.amount - advance.balance);
   const share = advance.amount > 0 ? Math.min(1, paid / advance.amount) : 0;
-  const ahead = advance.schedule.filter((row) => !row.done);
   const behind = advance.schedule.filter((row) => row.done);
 
   return card('What is left', {
@@ -149,29 +162,11 @@ function runningCard(advance, cash) {
       h('div.stat-value', cash(paid)),
       h('div.stat-sub', `${behind.length} month${behind.length === 1 ? '' : 's'} in`))),
 
-  h('h3.adv-sub', 'Month by month'),
-  h('p.muted', { style: { fontSize: '.85rem', marginTop: '-.4rem' } },
-    'The months behind you are what actually came off. The ones ahead are what is expected, and '
-    + 'they move if anything changes.'),
-
-  h('div.table-wrap', h('table.adv-schedule',
-    h('tbody',
-      behind.map((row) => h('tr',
-        h('td', niceMonth(row.month)),
-        h('td', row.skipped
-          ? h('span.pill.warn', 'nothing taken')
-          : h('span.pill.good', 'taken')),
-        h('td.num', row.skipped ? h('span.muted', '—') : cash(row.paid)),
-        h('td.num.muted', `${cash(row.balance)} left`))),
-      ahead.map((row) => h('tr.adv-ahead',
-        h('td', niceMonth(row.month)),
-        h('td', h('span.muted', 'to come')),
-        h('td.num', cash(row.paid)),
-        h('td.num.muted', `${cash(row.balance)} left`)))))),
-
-  h('p.muted', { style: { fontSize: '.82rem' } },
-    'If a month here does not match your payslip, say so — the figures are kept by hand and a '
-    + 'mistake is worth catching in the same month it happened.'));
+  // The month-by-month working used to sit here, one table per advance. It
+  // says the same thing as the account below it and says it a second time for
+  // anybody with two advances running, which on a phone is a screen of
+  // figures somebody has to reconcile by scrolling.
+  );
 }
 
 /**

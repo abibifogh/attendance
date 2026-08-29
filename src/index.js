@@ -197,7 +197,13 @@ export const ROUTES = [
   ['GET', '/api/advances/staff/:id', 'hr_pay', advance.staffAdvances],
   ['POST', '/api/advances/:id/decide', 'hr_pay', advance.decideAdvance],
   ['PATCH', '/api/advances/:id', 'hr_pay', advance.adjustAdvance],
+  // Correcting the record rather than the arrangement. Admin only, checked
+  // inside the handler, because hr_pay is what gets somebody this far.
+  ['PUT', '/api/advances/:id', 'hr_pay', advance.editAdvance],
   ['POST', '/api/advances/:id/entry', 'hr_pay', advance.addEntry],
+  // Catching up months nobody answered. The same act as unticking somebody
+  // at the month end, so the same permission does it.
+  ['POST', '/api/advances/:id/skips', 'hr_pay', advance.markSkipped],
   ['DELETE', '/api/advances/:id/entry/:entryId', 'hr_pay', advance.removeEntry],
   // The bill or the tenancy agreement behind a request. Readable by whoever
   // decides it and by whoever attached it — see `paper`.

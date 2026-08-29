@@ -2909,11 +2909,35 @@ html { touch-action: manipulation; }
   margin-top: .3rem; font-size: .8rem; color: var(--text-faint);
 }
 .adv-sub { font-size: 1rem; margin: 1rem 0 .5rem; }
-.adv-schedule { width: 100%; font-size: .9rem; }
-.adv-schedule td { padding: .4rem .3rem; border-top: 1px solid var(--border); }
 /* Months that have not happened. Lighter, so the record and the forecast are
    never mistaken for each other. */
 .adv-ahead td { color: var(--text-faint); }
+
+/* The running account: opening, taken, repaid, closing. Ruled like a ledger
+   because that is what it is, and the closing column is the one people read. */
+.adv-statement { width: 100%; font-size: .9rem; border-collapse: collapse; }
+.adv-statement th {
+  padding: .35rem .45rem; text-align: left; font-size: .74rem; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--text-faint); border-bottom: 1px solid var(--border);
+}
+.adv-statement td { padding: .4rem .45rem; border-top: 1px solid var(--border); }
+.adv-statement .num { text-align: right; font-variant-numeric: tabular-nums; }
+.adv-statement th.num { text-align: right; }
+.adv-statement td.strong { font-weight: 600; }
+/* The last line of a statement is the answer to the question somebody opened
+   it with, so it is ruled off rather than left as one row among many. */
+.adv-statement tbody tr:last-child td { border-top-width: 2px; }
+
+/* The months nobody answered for, ticked off one at a time. */
+.adv-catchup {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: .3rem .8rem; margin-bottom: .7rem;
+}
+
+@media (max-width: 640px) {
+  /* Opening is the closing above it. On a phone it is the column to lose. */
+  .adv-statement th:nth-child(2), .adv-statement td:nth-child(2) { display: none; }
+}
 
 @media (max-width: 640px) {
   .adv-table th:nth-child(n+3), .adv-table td:nth-child(n+3) { display: none; }
@@ -2922,7 +2946,6 @@ html { touch-action: manipulation; }
   .adv-amount { width: 5.5rem; }
   /* The running balance goes. It is the headline figure at the top of the
      card, and repeating it in a fourth column pushes the month off a handset. */
-  .adv-schedule td:nth-child(4) { display: none; }
 }
 
 /* --------------------------------------------------------------------------

@@ -229,7 +229,10 @@ export const api = {
   advancesFor: (staffId) => request(`/api/advances/staff/${staffId}`),
   advanceDecide: (id, body) => request(`/api/advances/${id}/decide`, { method: 'POST', body }),
   advanceAdjust: (id, body) => request(`/api/advances/${id}`, { method: 'PATCH', body }),
+  advanceEdit: (id, body) => request(`/api/advances/${id}`, { method: 'PUT', body }),
+  advanceStaff: (staffId) => request(`/api/advances/staff/${staffId}`),
   advanceEntry: (id, body) => request(`/api/advances/${id}/entry`, { method: 'POST', body }),
+  advanceMarkSkipped: (id, body) => request(`/api/advances/${id}/skips`, { method: 'POST', body }),
   advanceRemoveEntry: (id, entryId) => request(`/api/advances/${id}/entry/${entryId}`, { method: 'DELETE' }),
   advancePaperUrl: (id) => `/api/advances/${id}/paper`,
 
