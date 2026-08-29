@@ -810,6 +810,50 @@ function perPersonScores(scheme, data, scored, closed, cash) {
 }
 
 /**
+ * A scheme that pays a set figure: what each person gets, in money.
+ *
+ * Not everything a property pays as a bonus is about how well something was
+ * done. Housing money for four supervisors at three different figures is an
+ * agreement with each of them, and asking what per cent of 500 comes to 350 is
+ * arithmetic nobody should be doing at a desk.
+ *
+ * The scheme's own worth is the figure offered to somebody who has never been
+ * set one, because most of them are the same and typing the usual figure
+ * fifteen times is fifteen chances to slip.
+ */
+function perPersonAmounts(scheme, data, scored, closed, cash) {
+  const rows = scheme.staffIds.map((staffId) => {
+    const person = data.staff.find((s) => s.id === staffId);
+    const held = scheme.scores.find((x) => x.staffId === staffId);
+    const now = held?.award ?? scheme.amount;
+
+    const input = h('input.med-amount', {
+      type: 'number', min: '0', step: '0.01', value: now,
+      disabled: closed,
+      'aria-label': `What ${person?.name ?? 'somebody'} gets on ${scheme.name}`,
+      oninput: (e) => {
+        scored.set(`${scheme.id}|${staffId}`, Math.max(0, Number(e.target.value) || 0));
+      },
+    });
+
+    // Set at once rather than only when somebody types, so pressing Save
+    // writes the figure on screen. Otherwise a person shown the scheme's usual
+    // amount but never touched would be saved as whatever they had before.
+    scored.set(`${scheme.id}|${staffId}`, Math.max(0, Number(now) || 0));
+
+    return h('tr',
+      h('td', person?.name ?? `Staff ${staffId}`,
+        held?.award == null ? h('small.muted', ' · not set yet') : null),
+      h('td.num', input),
+      h('td.num'));
+  });
+
+  return rows.length
+    ? h('table.pay-scores', h('tbody', rows))
+    : h('p.muted', { style: { fontSize: '.85rem' } }, 'Nobody is under this one yet.');
+}
+
+/**
  * A General scheme: one score, and everybody under it gets it.
  *
  * A scheme with no department is about the property rather than about a
@@ -880,8 +924,9 @@ function schemesCard(data, month, closed, reload, cash) {
     }, 'New scheme'),
   },
   h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
-    'A scheme is worth so much in somebody’s hand at a hundred per cent. Score each person and '
-    + 'they get that share of it. Somebody can be under several schemes or under none.'),
+    'A scheme either pays a share of one figure, scored per person, or a set figure agreed '
+    + 'with each of them. Both are net: what somebody actually receives, with the tax on it '
+    + 'carried by the property. Somebody can be under several schemes or under none.'),
 
   data.schemes.length
     // Folded. A property with nine schemes across four departments opened on a
@@ -896,15 +941,19 @@ function schemesCard(data, month, closed, reload, cash) {
       // property, and typing it twenty times is twenty chances to differ.
       const everybody = schemeDepartments(scheme).length === 0;
 
-      const body = everybody
-        ? sharedScore(scheme, data, scored, closed, cash)
-        : perPersonScores(scheme, data, scored, closed, cash);
+      const body = scheme.kind === 'amount'
+        ? perPersonAmounts(scheme, data, scored, closed, cash)
+        : everybody
+          ? sharedScore(scheme, data, scored, closed, cash)
+          : perPersonScores(scheme, data, scored, closed, cash);
 
       return h('div.pay-scheme',
         h('div.pay-scheme-head',
           h('div',
             h('strong', scheme.name),
-            h('span.muted', ` · ${cash(scheme.amount)} at 100%`),
+            h('span.muted', scheme.kind === 'amount'
+              ? ` · ${cash(scheme.amount)} unless somebody is set a different figure`
+              : ` · ${cash(scheme.amount)} at 100%`),
             scheme.note ? h('div.muted', scheme.note) : null),
           h('div.btn-row',
             h('button.btn-sm', { onclick: () => editScheme(scheme, data, reload) }, 'Edit'),
@@ -926,22 +975,27 @@ function schemesCard(data, month, closed, reload, cash) {
     ? h('div.btn-row', { style: { marginTop: '.6rem' } },
       h('button.btn.btn-primary', {
         onclick: async (e) => {
-          const rows = [...scored.entries()].map(([key, score]) => {
+          // One box per person either way. What it holds is a score on a
+          // scored scheme and money on one that pays a set figure, so both go
+          // and the server reads whichever its scheme calls for.
+          const rows = [...scored.entries()].map(([key, value]) => {
             const [schemeId, staffId] = key.split('|').map(Number);
-            return { schemeId, staffId, score };
+            return { schemeId, staffId, score: value, amount: value };
           });
-          if (!rows.length) { toast('Nothing has been scored yet.', 'warn'); return; }
+          if (!rows.length) { toast('Nothing has been entered yet.', 'warn'); return; }
           e.target.disabled = true;
           try {
             await api.payrollScores({ month, rows });
-            toast(`${rows.length} score${rows.length === 1 ? '' : 's'} saved.`, 'good');
+            toast(`${rows.length} saved.`, 'good');
             await reload();
           } catch (err) {
             e.target.disabled = false;
             toast(err.message, 'bad');
           }
         },
-      }, 'Save the scores'))
+        // Named for what is actually on the screen. A property whose only
+        // schemes pay a set figure has not scored anything.
+      }, data.schemes.every((s) => s.kind === 'amount') ? 'Save the figures' : 'Save the scores'))
     : null);
 }
 
@@ -972,6 +1026,28 @@ async function editScheme(scheme, data, reload) {
       h('span', name)))
     : h('p.muted', { style: { fontSize: '.85rem', margin: 0 } },
       'No departments on the staff list yet, so this one covers everybody.'));
+
+  // Scored, or a set figure each. Two genuinely different things, and the
+  // second was being forced through the first: somebody working out what per
+  // cent of 500 comes to 350 so that four supervisors could be paid what they
+  // were promised.
+  const kindPick = h('select', { name: 'kind' },
+    h('option', { value: 'score', selected: scheme?.kind !== 'amount' },
+      'Scored out of a hundred'),
+    h('option', { value: 'amount', selected: scheme?.kind === 'amount' },
+      'A set figure for each person'));
+
+  const worth = h('span', scheme?.kind === 'amount' ? 'The usual figure' : 'Worth at 100%');
+  const worthNote = h('small.muted', scheme?.kind === 'amount'
+    ? 'Offered to anybody who has not been set their own. Change theirs on the payroll screen'
+    : 'What somebody gets at a hundred per cent');
+  kindPick.addEventListener('change', () => {
+    const paid = kindPick.value === 'amount';
+    worth.textContent = paid ? 'The usual figure' : 'Worth at 100%';
+    worthNote.textContent = paid
+      ? 'Offered to anybody who has not been set their own. Change theirs on the payroll screen'
+      : 'What somebody gets at a hundred per cent';
+  });
 
   const list = h('div.pos-edit-list');
   const note = h('p.muted.scheme-who-note', { style: { fontSize: '.8rem' } });
@@ -1032,10 +1108,15 @@ async function editScheme(scheme, data, reload) {
       field('Called', h('input', {
         type: 'text', name: 'name', maxlength: 80, required: true, value: scheme?.name ?? '',
       })),
-      field('Worth at 100%', h('input', {
+      field('How it pays', kindPick,
+        'Scored is a share of one figure, worked out from how well somebody did. A set '
+        + 'figure is money agreed with each person and nothing to do with performance'),
+      // Built by hand rather than through field(), because both the label and
+      // the hint change when the kind above does.
+      h('label.field', worth, h('input', {
         type: 'number', name: 'amount', step: '0.01', min: '0', required: true,
         value: scheme?.amount ?? '',
-      })),
+      }), worthNote),
       field('What it is for', h('input', {
         type: 'text', name: 'note', maxlength: 300, value: scheme?.note ?? '',
       })),
@@ -1049,6 +1130,7 @@ async function editScheme(scheme, data, reload) {
       id: scheme?.id ?? null,
       name: form.get('name'),
       amount: form.get('amount'),
+      kind: form.get('kind'),
       note: form.get('note'),
       departments: [...chosen],
       staffIds: [...picked],

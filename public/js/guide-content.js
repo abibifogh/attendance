@@ -981,8 +981,8 @@ export const GUIDE = [
           + 'and untick SSNIT for anybody the scheme does not cover.',
         'Allowances are a line each, because a payslip has to say what the money was for. '
           + 'Untick "taxable" for a genuine reimbursement.',
-        'New scheme: what a bonus scheme is worth at a hundred per cent, and who is under it. '
-          + 'Somebody can be under several or under none.',
+        'New scheme: how it pays, what it is worth, and who is under it. Somebody can be '
+          + 'under several or under none.',
         'Tick every department the scheme covers, and more than one is fine: the kitchen '
           + 'and the bistro can share one service bonus. The list groups on what a scheme '
           + 'covers, and every group starts folded so scoring one is not a scroll past the '
@@ -992,6 +992,21 @@ export const GUIDE = [
         + 'the scheme; tick two and you get both. Anybody already ticked from somewhere else '
         + 'stays on the list, marked, so moving a scheme never quietly takes somebody\u2019s '
         + 'bonus away.' },
+      { sub: 'Scored, or a set figure' },
+      { p: 'A scheme is worth so much at a hundred per cent and each person is scored against '
+        + 'it. That is right for a scheme about how well something was done. It is the wrong '
+        + 'shape for the other kind: a fixed amount agreed with each person, different for '
+        + 'each of them, and nothing to do with performance. Housing money for four '
+        + 'supervisors at three different figures is not a score.' },
+      { p: 'How it pays, on the scheme, is the answer to that. A set figure asks for money '
+        + 'against each name instead of a percentage, and the scheme\u2019s own worth becomes '
+        + 'the figure offered to anybody who has not been given their own. Everything after '
+        + 'that is the same: it is net, the tax is carried by the property, and it shows as '
+        + 'one line on the payslip.' },
+      { note: 'A figure agreed with somebody does not reset itself. Start from last month and '
+        + 'each person\u2019s own figure comes across. A scored scheme still forgets its '
+        + 'award, so a scheme whose worth has changed pays the new figure at the same score.' },
+
       { note: 'A scheme with no department at all covers the whole property and sits under General. '
         + 'Those are scored once: whether the year was a good one is the same answer for '
         + 'everybody it covers, so it is asked once and everybody under it gets it. A scheme '

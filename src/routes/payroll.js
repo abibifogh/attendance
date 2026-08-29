@@ -358,6 +358,9 @@ export async function payroll(ctx) {
     }
   }
   const scoreBy = new Map(data.scores.map((r) => [`${r.scheme_id}|${r.staff_id}`, r.score]));
+  // The award as it stood when the score was given. On a scheme that pays a
+  // set figure this is the figure itself, which is what the screen edits.
+  const awardBy = new Map(data.scores.map((r) => [`${r.scheme_id}|${r.staff_id}`, r.amount]));
 
   return json({
     month,
@@ -398,13 +401,21 @@ export async function payroll(ctx) {
       // The whole set it covers. A scheme can span two departments, and the
       // single name above is only what a row written before that says.
       departments: readDepartments(scheme),
+      // 'score' is scored out of a hundred; 'amount' is a figure a person.
+      kind: scheme.kind === 'amount' ? 'amount' : 'score',
       amount: round2(scheme.amount),
       active: Boolean(scheme.active),
       staffIds: (data.memberBy.get(scheme.id) ?? []).map((m) => m.staff_id),
-      scores: (data.memberBy.get(scheme.id) ?? []).map((m) => ({
-        staffId: m.staff_id,
-        score: round2(scoreBy.get(`${scheme.id}|${m.staff_id}`) ?? 0),
-      })),
+      scores: (data.memberBy.get(scheme.id) ?? []).map((m) => {
+        const award = awardBy.get(`${scheme.id}|${m.staff_id}`);
+        return {
+          staffId: m.staff_id,
+          score: round2(scoreBy.get(`${scheme.id}|${m.staff_id}`) ?? 0),
+          // Null where nothing has been set for them this month, so a screen
+          // can tell "nought" from "not answered yet".
+          award: award == null ? null : round2(award),
+        };
+      }),
     })),
     penalties: data.penalties.map((p) => ({
       id: p.id, staffId: p.staff_id, amount: round2(p.amount), reason: p.reason, at: p.at,
@@ -787,6 +798,11 @@ export async function saveScheme(ctx) {
   // has no single answer to give.
   const department = departments.length === 1 ? departments[0] : null;
   const departmentList = departments.length ? JSON.stringify(departments) : null;
+
+  // Scored, or a set figure each. A figure is just an award scored at a
+  // hundred, so nothing downstream has to know the difference — what changes is
+  // what somebody is asked to type.
+  const kind = body.kind === 'amount' ? 'amount' : 'score';
   const staffIds = Array.isArray(body.staffIds)
     ? [...new Set(body.staffIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
     : [];
@@ -797,14 +813,14 @@ export async function saveScheme(ctx) {
     if (!found) throw notFound('No such scheme.');
     await ctx.db.prepare(
       'UPDATE pay_scheme SET name = ?2, amount = ?3, note = ?4, active = ?5, department = ?6, '
-      + 'departments = ?7 WHERE id = ?1',
-    ).bind(id, name, amount, note, body.active === false ? 0 : 1, department, departmentList)
+      + 'departments = ?7, kind = ?8 WHERE id = ?1',
+    ).bind(id, name, amount, note, body.active === false ? 0 : 1, department, departmentList, kind)
       .run();
   } else {
     const made = await ctx.db.prepare(
-      'INSERT INTO pay_scheme (name, amount, note, department, departments) '
-      + 'VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id',
-    ).bind(name, amount, note, department, departmentList).first();
+      'INSERT INTO pay_scheme (name, amount, note, department, departments, kind) '
+      + 'VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING id',
+    ).bind(name, amount, note, department, departmentList, kind).first();
     id = made?.id ?? null;
   }
 
@@ -816,7 +832,7 @@ export async function saveScheme(ctx) {
   }
 
   await audit(ctx, 'payroll.scheme', id, {
-    name, amount, departments, people: staffIds.length,
+    name, amount, kind, departments, people: staffIds.length,
   });
   return json({ ok: true, id, name, people: staffIds.length });
 }
@@ -863,20 +879,27 @@ export async function copyRun(ctx) {
   // scheme since last month is not scored on it, and a scheme that has gone
   // has nothing to score.
   const carried = await ctx.db.prepare(
-    `SELECT s.scheme_id, s.staff_id, s.score
+    `SELECT s.scheme_id, s.staff_id, s.score, s.amount, sc.kind
        FROM pay_score s
        JOIN pay_scheme_staff m
          ON m.scheme_id = s.scheme_id AND m.staff_id = s.staff_id
+       JOIN pay_scheme sc ON sc.id = s.scheme_id
        JOIN att_staff p ON p.id = s.staff_id AND p.active = 1
       WHERE s.run_id = ?1`,
   ).bind(source.id).all();
 
   let scores = 0;
   for (const row of carried.results ?? []) {
+    // A scored scheme carries the score and forgets the award, so a scheme
+    // whose worth has changed since pays the new figure. A scheme that pays a
+    // set amount carries the amount, because that amount is the whole answer
+    // and it is different for each person.
+    const award = row.kind === 'amount' && row.amount != null ? round2(row.amount) : null;
     await ctx.db.prepare(
-      `INSERT INTO pay_score (run_id, scheme_id, staff_id, score) VALUES (?1, ?2, ?3, ?4)
-       ON CONFLICT (run_id, scheme_id, staff_id) DO UPDATE SET score = ?4, amount = NULL`,
-    ).bind(run.id, row.scheme_id, row.staff_id, round2(row.score)).run();
+      `INSERT INTO pay_score (run_id, scheme_id, staff_id, score, amount)
+       VALUES (?1, ?2, ?3, ?4, ?5)
+       ON CONFLICT (run_id, scheme_id, staff_id) DO UPDATE SET score = ?4, amount = ?5`,
+    ).bind(run.id, row.scheme_id, row.staff_id, round2(row.score), award).run();
     scores += 1;
   }
 
@@ -916,17 +939,28 @@ export async function setScores(ctx) {
   for (const line of rows) {
     const schemeId = int(line.schemeId, 'Scheme', { required: true, min: 1 });
     const staffId = int(line.staffId, 'Who', { required: true, min: 1 });
-    const score = round2(num(line.score, 'Score', { min: 0, max: 100 }));
 
-    const scheme = await ctx.db.prepare('SELECT amount FROM pay_scheme WHERE id = ?')
+    const scheme = await ctx.db.prepare('SELECT amount, kind FROM pay_scheme WHERE id = ?')
       .bind(schemeId).first();
     if (!scheme) continue;
+
+    // A scheme that pays a set figure stores the figure as the award and a
+    // hundred as the score, because the award is worked out downstream as the
+    // award scaled by the score. Half of nothing new to learn, and one figure
+    // on the payslip either way.
+    const paysAmount = scheme.kind === 'amount';
+    const score = paysAmount
+      ? 100
+      : round2(num(line.score, 'Score', { min: 0, max: 100 }));
+    const award = paysAmount
+      ? round2(num(line.amount, 'How much', { min: 0, max: 1_000_000 }))
+      : round2(scheme.amount);
 
     await ctx.db.prepare(
       `INSERT INTO pay_score (run_id, scheme_id, staff_id, score, amount)
        VALUES (?1, ?2, ?3, ?4, ?5)
        ON CONFLICT (run_id, scheme_id, staff_id) DO UPDATE SET score = ?4, amount = ?5`,
-    ).bind(run.id, schemeId, staffId, score, round2(scheme.amount)).run();
+    ).bind(run.id, schemeId, staffId, score, award).run();
     set += 1;
   }
 

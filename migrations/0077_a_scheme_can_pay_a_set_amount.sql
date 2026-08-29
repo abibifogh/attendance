@@ -1,0 +1,13 @@
+-- A bonus scheme can pay a set figure instead of a score.
+--
+-- Every scheme was worth so much at a hundred per cent, and each person was
+-- scored against it. That is right for a scheme about how well something was
+-- done. It is the wrong shape for the other kind a property runs: a fixed
+-- amount agreed per person, different for each of them, and nothing to do with
+-- how anybody performed. Housing money for four supervisors at three different
+-- figures is not a score, and forcing it through one meant working out what
+-- per cent of 500 came to 350.
+--
+-- The award still lands the same way, because a figure is just an award scored
+-- at a hundred: what changes is what somebody is asked to type.
+ALTER TABLE pay_scheme ADD COLUMN kind TEXT NOT NULL DEFAULT 'score';
