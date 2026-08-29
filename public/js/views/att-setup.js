@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { replaceParams } from '../app.js';
 import { confirmAction, fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
-import { card, emptyState, table } from './components.js';
+import { bulkUpload, card, emptyState, table } from './components.js';
 import {
   byPosition, field, formDialog, fullDayIsOwn, shiftColour, shiftColourPicker, shiftMinutes,
 } from './att-shared.js';
@@ -387,16 +387,15 @@ const readPosition = (form, name = 'position') => (
  * and pressed the button.
  */
 function staffImportButton(reload) {
-  const picker = h('input', {
-    type: 'file',
+  return bulkUpload({
     accept: '.csv,text/csv',
-    style: { display: 'none' },
-    onchange: async (e) => {
-      const file = e.target.files?.[0];
-      // Cleared at once, so choosing the same file again after fixing
-      // something in it still fires a change.
-      e.target.value = '';
-      if (!file) return;
+    title: 'A staff list as a CSV. Nothing is written until you have seen what it would do.',
+    template: {
+      href: '/api/att/staff/template',
+      download: 'staff.csv',
+      label: 'Download template',
+    },
+    onFile: async (file) => {
       try {
         const text = await file.text();
         const read = await api.attReadStaffImport(text);
@@ -406,13 +405,6 @@ function staffImportButton(reload) {
       }
     },
   });
-
-  return h('span',
-    picker,
-    h('button.btn-sm', {
-      title: 'A staff list as a CSV. Nothing is written until you have seen what it would do.',
-      onclick: () => picker.click(),
-    }, 'From a spreadsheet'));
 }
 
 /** What the file would do, and the button that does it. */
@@ -836,11 +828,6 @@ async function staffTab(reload) {
       })(),
       actions: h('div.btn-row', { style: { margin: 0 } },
         staffImportButton(reload),
-        h('a.btn.btn-sm', {
-          href: '/api/att/staff/template',
-          download: 'staff.csv',
-          title: 'The register as it stands, to change and send back',
-        }, 'Download the sheet'),
         h('button.btn.btn-primary', { onclick: () => edit(null) }, '+ Add somebody')),
       wide: true,
     },
@@ -2433,8 +2420,16 @@ const WORKLOAD_LIMITS = [
  * a line of JSON: a comma in the wrong place would be a wrong figure on every
  * payslip in the property.
  */
+/** 'YYYY-MM' as somebody would say it. */
+function sayMonth(value) {
+  if (!value || value === '0000-01') return 'Everything before that';
+  const [year, month] = String(value).split('-');
+  const at = new Date(Date.UTC(Number(year), Number(month) - 1, 1));
+  return at.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
 async function taxTab(reload) {
-  const data = await api.attBootstrap();
+  const [data, history] = await Promise.all([api.attBootstrap(), api.attTaxTables()]);
   const s = data.settings;
 
   let bands;
@@ -2486,6 +2481,14 @@ async function taxTab(reload) {
   for (const band of bands) addRow(band);
   draw();
 
+  // Which month these figures start in. A tax table is a fact about a period,
+  // not about the property: the bands that applied in January are the January
+  // bands however many budgets have happened since.
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const fromMonth = h('input', {
+    type: 'month', name: 'fromMonth', required: true, value: thisMonth,
+  });
+
   const form = h('form.att-rules');
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -2494,11 +2497,22 @@ async function taxTab(reload) {
         width: row.width.value === '' ? null : Number(row.width.value),
         rate: (Number(row.rate.value) || 0) / 100,
       }));
-      await api.attUpdateSettings({
-        ...Object.fromEntries(new FormData(form).entries()),
-        pay_bands: JSON.stringify(table),
+      const asked = Object.fromEntries(new FormData(form).entries());
+      const share = (key) => (asked[key] === '' || asked[key] == null
+        ? null
+        : Number(asked[key]) / 100);
+
+      await api.attSaveTaxTable({
+        fromMonth: fromMonth.value,
+        label: asked.pay_bands_label,
+        bands: table,
+        ssnitEmployee: share('pay_ssnit_employee'),
+        ssnitEmployer: share('pay_ssnit_employer'),
+        bonusRate: share('pay_bonus_rate'),
+        bonusShare: share('pay_bonus_share'),
       });
-      toast('Saved. Payrolls from now on use these figures.', 'good');
+      toast(`Saved. Payrolls from ${sayMonth(fromMonth.value)} on use these figures; `
+        + 'earlier months keep the table that was in force then.', 'good');
       await reload('tax');
     } catch (err) {
       toast(err.message, 'bad');
@@ -2519,14 +2533,20 @@ async function taxTab(reload) {
         'Monthly chargeable income, band by band, exactly as the GRA publishes them: so much '
         + 'at nothing, then the next so much at five per cent, and so on. The last band has no '
         + 'width — everything above it is taxed at that rate.'),
-      h('label.field',
-        h('span', 'What to call this table'),
-        h('input', {
-          type: 'text', name: 'pay_bands_label', maxlength: 80,
-          value: s.pay_bands_label ?? 'GRA monthly bands',
-        }),
-        h('small.muted', 'Printed on every payslip, so a slip can be checked against the '
-          + 'table it was worked out on')),
+      h('div.field-row',
+        h('label.field',
+          h('span', 'What to call this table'),
+          h('input', {
+            type: 'text', name: 'pay_bands_label', maxlength: 80,
+            value: s.pay_bands_label ?? 'GRA monthly bands',
+          }),
+          h('small.muted', 'Printed on every payslip, so a slip can be checked against the '
+            + 'table it was worked out on')),
+        h('label.field',
+          h('span', 'These figures start in'),
+          fromMonth,
+          h('small.muted', 'Months before this keep whatever was in force then. A month '
+            + 'already closed keeps its payslips either way'))),
       h('div.table-wrap', h('table.med-set',
         h('thead', h('tr',
           h('th', ''), h('th.num', 'How much'), h('th.num', 'At'), h('th', ''),
@@ -2560,9 +2580,74 @@ async function taxTab(reload) {
           'per cent of a year’s basic salary'))),
 
     h('div.btn-row', h('button.btn.btn-primary', { type: 'submit' }, 'Save the figures')),
+
+    taxHistoryCard(history, reload),
   );
 
   return form;
+}
+
+/**
+ * Every set of figures the property has used, and the month each started.
+ *
+ * Worth showing rather than only storing: somebody asked in November why
+ * March came to what it did, and the answer is a row on this list.
+ */
+function taxHistoryCard(history, reload) {
+  const tables = history.tables ?? [];
+  if (!tables.length) {
+    return card('Tables by date', { note: 'Nothing dated yet', wide: true },
+      h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+        'One set of figures so far, used for every month. Save a change above with a month '
+        + 'against it and what you are using now is kept as its own table, so months behind '
+        + 'the change keep the rates that were in force then.'));
+  }
+
+  return card('Tables by date', { note: `${tables.length}`, wide: true },
+    table([
+      {
+        key: 'fromMonth',
+        label: 'From',
+        format: (v) => (v === '0000-01'
+          ? h('span.muted', 'Everything before')
+          : h('strong', sayMonth(v))),
+      },
+      { key: 'label', label: 'Called' },
+      {
+        key: 'ssnitEmployee',
+        label: 'SSNIT',
+        align: 'right',
+        format: (v, r) => h('small', `${(v * 100).toFixed(1)}% + ${(r.ssnitEmployer * 100).toFixed(1)}%`),
+      },
+      {
+        key: 'bands',
+        label: 'Bands',
+        align: 'right',
+        format: (v) => h('small.muted', `${(v ?? []).length}`),
+      },
+      {
+        key: 'setBy',
+        label: 'Set by',
+        format: (v, r) => h('small.muted', `${v ?? 'somebody'} · ${String(r.setAt ?? '').slice(0, 10)}`),
+      },
+      {
+        key: 'actions',
+        label: '',
+        format: (v, r) => (r.fromMonth === '0000-01' ? null : h('button.btn-sm', {
+          onclick: async () => {
+            if (!window.confirm(`Take the table starting ${sayMonth(r.fromMonth)} off? `
+              + 'Those months go back to whatever was in force before it.')) return;
+            try {
+              await api.attRemoveTaxTable(r.id);
+              toast('Removed.', 'good');
+              await reload('tax');
+            } catch (err) {
+              toast(err.message, 'bad');
+            }
+          },
+        }, 'Remove')),
+      },
+    ], tables, { empty: 'Nothing dated yet.' }));
 }
 
 async function workloadTab(reload) {

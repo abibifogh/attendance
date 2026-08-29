@@ -4,6 +4,7 @@ import { balanceOf, dueThisMonth } from '../lib/advances.js';
 import { computeLine, totalsOf } from '../lib/payroll.js';
 import { ratesFrom, round2 } from '../lib/tax.js';
 import { PAYE_COLUMNS, journalFor, payeSchedule, tiersFrom } from '../lib/statutory.js';
+import { ratesOn } from '../lib/tax-tables.js';
 import { readSheet, tallyOf } from '../lib/pay-import.js';
 import { isAdmin } from '../lib/payroll-access.js';
 import { addMonths, isMonth, monthOf, todayIn } from '../util/dates.js';
@@ -43,6 +44,9 @@ async function settingsOf(db) {
     property: map.property_name || null,
     rates: ratesFrom(map),
     tiers: tiersFrom(map),
+    // Handed back whole as well, so a caller that needs the figures for one
+    // particular month can work them out rather than taking today's.
+    settings: map,
   };
 }
 
@@ -66,7 +70,15 @@ async function runFor(db, month, actor) {
  * under, what they scored, what came off, and what they are repaying.
  */
 async function gather(ctx, month) {
-  const { rates, tiers, currency, property } = await settingsOf(ctx.db);
+  const { currency, property, settings } = await settingsOf(ctx.db);
+
+  // The figures that were in force in that month, not the ones in force today.
+  // A budget moves the bands in April; March is still a March payroll, and a
+  // month reopened in July to fix one allowance must not come back retaxed.
+  const tables = await ctx.db.prepare('SELECT * FROM pay_rates').all()
+    .catch(() => ({ results: [] }));
+  const { rates, tiers, from: ratesFrom_ } = ratesOn(month, tables.results ?? [], settings);
+
   const run = await runFor(ctx.db, month, actorOf(ctx));
 
   const [staff, profiles, allowances, schemes, members, scores, penalties, advances, entries, slips]
@@ -108,6 +120,10 @@ async function gather(ctx, month) {
     run,
     rates,
     tiers,
+    // Which dated table answered for this month, so a screen can say so. Null
+    // means the property has never dated one and there is only ever the set of
+    // figures it is using now.
+    ratesFrom: ratesFrom_,
     currency,
     property,
     staff: (staff.results ?? []),
@@ -204,6 +220,7 @@ function linesFrom(data, month) {
       annualBasic: round2(profile.basic * 12),
       bonusPaidThisYear: data.paidBy.get(person.id) ?? 0,
       rates: data.rates,
+      tiers: data.tiers,
     }));
   }
 
@@ -253,6 +270,10 @@ export async function payroll(ctx) {
       bonusFinalRate: data.rates.bonusFinalRate,
       bonusShareOfBasic: data.rates.bonusShareOfBasic,
       bands: data.rates.bands,
+      // The month a dated table started. Null where the property has never
+      // dated one, which means the figures it is using now are the only ones
+      // it has ever used.
+      from: data.ratesFrom,
     },
     // Everything the table needs, and for anybody but an administrator nothing
     // the payslip would have added.

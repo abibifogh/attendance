@@ -1093,6 +1093,17 @@ export const GUIDE = [
       { p: 'All of those figures are under Setup → Tax and SSNIT, including the band table '
         + 'itself. They change with the budget, and the table used is printed on every payslip '
         + 'so a slip can be checked against the figures it was worked out on.' },
+      { sub: 'When the figures change' },
+      { p: 'A tax table is a fact about a period, not about the property: the bands that '
+        + 'applied in January are the January bands however many budgets have happened since. '
+        + 'So a change is saved with the month it starts in, and everything behind that month '
+        + 'keeps whatever was in force then. Tables by date, at the bottom of the same screen, '
+        + 'lists every set of figures the property has used.' },
+      { p: 'A closed month never moves whatever you change: closing writes every payslip out '
+        + 'in full and the screen, the payslip, the journal and the GRA schedule all read '
+        + 'those afterwards. A month still open, and one reopened to correct something, uses '
+        + 'the table that was in force for that month rather than today\u2019s — so reopening '
+        + 'January in July gives it January\u2019s figures back.' },
       { warn: 'What is not in here: the overtime tax for qualifying junior staff, personal '
         + 'reliefs claimed on a tax credit certificate, and tier-three voluntary contributions. '
         + 'Each is a rule about one person’s circumstances, and guessing at them would put a '
@@ -1686,10 +1697,12 @@ export const GUIDE = [
         + 'about one week; this is a fact about them.' },
 
       { sub: 'The register, out of a spreadsheet' },
-      { p: 'Setup → Staff → From a spreadsheet, for a property whose staff list already '
-        + 'exists somewhere else. Download the sheet first: what comes down is your own '
-        + 'people with their own figures in it, not a blank form. Change the lines that '
-        + 'changed and send it back.' },
+      { p: 'Setup → Staff → Bulk upload, for a property whose staff list already exists '
+        + 'somewhere else. The button opens a small menu: take Download template first, '
+        + 'because what comes down is your own people with their own figures in it rather '
+        + 'than a blank form. Change the lines that changed and send it back with Upload a '
+        + 'file. The same button is on Payroll for a month\u2019s figures and on the rota '
+        + 'for a week.' },
       { p: 'This is the only import in the app that adds people, and it is the only one '
         + 'where adding them is the point. So everything the file would do is on the screen '
         + 'before anything is written: who is being added, who is changing and what about '

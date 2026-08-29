@@ -446,6 +446,47 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
    sit along it exactly as they always did: the two wrappers carry no box of
    their own, so their children are the toolbar's own items and the More button
    is not there at all. */
+/* Bulk upload: one button, and the template behind it. Uploading a sheet and
+   downloading the one to fill in are the same job in two directions, so they
+   are one control rather than two buttons that read as unrelated. */
+.bulk-wrap { position: relative; display: inline-flex; }
+.bulk-caret { margin-left: .35rem; font-size: .7em; opacity: .7; }
+.bulk-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + .35rem);
+  right: 0;
+  z-index: 40;
+  min-width: 12rem;
+  padding: .25rem;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+}
+.bulk-wrap.open .bulk-menu { display: grid; }
+.bulk-item {
+  display: block;
+  width: 100%;
+  padding: .5rem .6rem;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.bulk-item:hover, .bulk-item:focus-visible { background: var(--surface-2, #f2f4f7); }
+
+/* On a handset the button is narrower than the menu, so the menu hangs off its
+   left edge rather than being squeezed to the button's width — which wrapped
+   "Download template" onto two lines. */
+@media (max-width: 620px) {
+  .bulk-menu { left: 0; right: auto; min-width: 12rem; }
+}
+
 .toolbar-more-wrap, .toolbar-more { display: contents; }
 .toolbar-more-btn { display: none; }
 

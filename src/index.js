@@ -283,6 +283,12 @@ export const ROUTES = [
   // The register out of a spreadsheet. The one import in the app that creates
   // people, because creating people is the whole job — so it is read, shown in
   // full, and only then written.
+  // The tax tables, each stamped with the month it starts. A month is worked
+  // out on the figures that were in force then, not on today's.
+  ['GET', '/api/att/tax-tables', 'att_setup', attSetup.listTaxTables],
+  ['POST', '/api/att/tax-tables', 'att_setup', attSetup.saveTaxTable],
+  ['DELETE', '/api/att/tax-tables/:id', 'att_setup', attSetup.removeTaxTable],
+
   ['GET', '/api/att/staff/template', 'att_setup', attSetup.staffTemplate],
   ['POST', '/api/att/staff/import/read', 'att_setup', attSetup.readStaffImport],
   ['POST', '/api/att/staff/import', 'att_setup', attSetup.applyStaffImport],

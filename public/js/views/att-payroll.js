@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import {
   confirmAction, fmtNum, h, money, monthOf, mount, shiftMonth, toast, todayISO,
 } from '../util.js';
-import { card, emptyState } from './components.js';
+import { bulkUpload, card, emptyState } from './components.js';
 import {
   GENERAL, field, formDialog, schemeDepartment, schemesByDepartment, showSheet,
 } from './att-shared.js';
@@ -76,7 +76,13 @@ export async function renderAttPayroll(params) {
     h('div.page-head',
       h('div',
         h('h1', 'Payroll'),
-        h('div.sub', `${niceMonth(month)} · ${data.rates.label}`),
+        // Which table this month is worked out on, and where it started. A
+        // payroll run after a budget change is exactly when somebody needs to
+        // see that March is still on March's figures.
+        h('div.sub', `${niceMonth(month)} · ${data.rates.label}`,
+          data.rates.from && data.rates.from !== '0000-01'
+            ? h('span.muted', ` · in force from ${niceMonth(data.rates.from)}`)
+            : null),
       ),
       h('div.btn-row',
         // The month and its two arrows stay together: wrapping between them
@@ -501,16 +507,16 @@ function niceStamp(value) {
  * is one nobody dares run a second time.
  */
 function importButton(month, reload) {
-  const picker = h('input', {
-    type: 'file',
+  return bulkUpload({
     accept: '.csv,text/csv',
-    style: { display: 'none' },
-    onchange: async (e) => {
-      const file = e.target.files?.[0];
-      // Cleared at once, so choosing the same file again after fixing
-      // something in it still fires a change.
-      e.target.value = '';
-      if (!file) return;
+    title: 'Take the month down as a spreadsheet, or send one back. Nothing is written '
+      + 'until you agree to it.',
+    template: {
+      href: `/api/payroll/input/template?month=${encodeURIComponent(month)}`,
+      download: `payroll-${month}.csv`,
+      label: 'Download template',
+    },
+    onFile: async (file) => {
       try {
         const text = await file.text();
         const read = await api.payrollReadInput({ month, text });
@@ -520,19 +526,6 @@ function importButton(month, reload) {
       }
     },
   });
-
-  return h('span',
-    picker,
-    h('button.btn-sm', {
-      title: 'Take the month down as a spreadsheet, or send one back. Nothing is written '
-        + 'until you agree to it.',
-      onclick: () => picker.click(),
-    }, 'From a spreadsheet'),
-    h('a.btn.btn-sm', {
-      href: `/api/payroll/input/template?month=${encodeURIComponent(month)}`,
-      download: `payroll-${month}.csv`,
-      title: 'This month as it stands, to change and send back',
-    }, 'Download the sheet'));
 }
 
 /** What the file would do, and the button that does it. */

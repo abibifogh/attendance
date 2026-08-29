@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import {
   fmtDayShort, fmtSince, fmtStamp, h, keepScroll, mount, shiftDay, toast, todayISO,
 } from '../util.js';
-import { card, emptyState, moreActions, table } from './components.js';
+import { bulkUpload, card, emptyState, moreActions, table } from './components.js';
 import { printButton } from '../print.js';
 import { can, holdRefresh, navigate, replaceParams } from '../app.js';
 import {
@@ -2169,7 +2169,7 @@ export async function renderAttRota(params) {
         title: 'Take a stretch of the rota back off, either to the standing pattern '
           + 'or to nothing at all',
       }, 'Clear a period'),
-      mayEdit && view === 'people' ? importButton(reload) : null,
+      mayEdit && view === 'people' ? importButton(reload, { from, to, params }) : null,
       !mayEdit ? null : h('button.btn-sm', {
         onclick: () => formDialog({
           title: 'What has changed on this rota',
@@ -2640,6 +2640,20 @@ function isWeekend(day) {
  * Discarding costs nothing, which is what makes trying it safe.
  */
 /** One shared file picker: reads the export, holds it as a draft. */
+async function readRotaFile(file, reload) {
+  const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+  try {
+    const payload = isPdf
+      ? { pdf: await asBase64(file), filename: file.name }
+      : { csv: await file.text(), filename: file.name };
+    await api.attRotaImportPreview(payload);
+    toast('File read. Check the draft before confirming it.', 'good');
+    await reload();
+  } catch (err) {
+    toast(err.message, 'bad');
+  }
+}
+
 function importPicker(reload) {
   return h('input', {
     type: 'file',
@@ -2650,19 +2664,7 @@ function importPicker(reload) {
       // Cleared straight away, so choosing the same file twice after fixing
       // something in it still fires a change.
       e.target.value = '';
-      if (!file) return;
-
-      const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
-      try {
-        const payload = isPdf
-          ? { pdf: await asBase64(file), filename: file.name }
-          : { csv: await file.text(), filename: file.name };
-        await api.attRotaImportPreview(payload);
-        toast('File read. Check the draft before confirming it.', 'good');
-        await reload();
-      } catch (err) {
-        toast(err.message, 'bad');
-      }
+      if (file) await readRotaFile(file, reload);
     },
   });
 }
@@ -2671,15 +2673,24 @@ function importPicker(reload) {
  * The way in for a CSV or PDF export. A button, not a card: the card version
  * spent two paragraphs above the rota describing a file picker.
  */
-function importButton(reload) {
-  const picker = importPicker(reload);
-  return h('span',
-    picker,
-    h('button.btn-sm', {
-      title: 'CSV or PDF from the scheduling export. Nothing is written until you confirm the draft.',
-      onclick: () => picker.click(),
-    }, 'Import'),
-  );
+function importButton(reload, { from, to, params = {} } = {}) {
+  const query = `from=${from}&to=${to}`
+    + `${params.department ? `&department=${encodeURIComponent(params.department)}` : ''}`
+    + `${params.tag ? `&tag=${encodeURIComponent(params.tag)}` : ''}`;
+
+  return bulkUpload({
+    accept: '.csv,.pdf,text/csv,application/pdf',
+    title: 'CSV or PDF from a scheduling export. Nothing is written until you confirm the draft.',
+    // The window on screen, in the shape the reader takes back. It is the same
+    // file Export writes, which is what makes it usable as a starting point
+    // rather than something somebody has to build a header row for.
+    template: {
+      href: `/api/att/roster/export?${query}`,
+      download: `rota-${from}.csv`,
+      label: 'Download template',
+    },
+    onFile: (file) => readRotaFile(file, reload),
+  });
 }
 
 function importCard(draft, staff, reload) {

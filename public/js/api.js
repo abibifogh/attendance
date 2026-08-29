@@ -295,6 +295,9 @@ export const api = {
 
   attStaff: () => request('/api/att/staff'),
   attCreateStaff: (body) => request('/api/att/staff', { method: 'POST', body }),
+  attTaxTables: () => request('/api/att/tax-tables'),
+  attSaveTaxTable: (body) => request('/api/att/tax-tables', { method: 'POST', body }),
+  attRemoveTaxTable: (id) => request(`/api/att/tax-tables/${id}`, { method: 'DELETE' }),
   attReadStaffImport: (text) => request('/api/att/staff/import/read', { method: 'POST', body: { text } }),
   attApplyStaffImport: (text) => request('/api/att/staff/import', { method: 'POST', body: { text } }),
   attUpdateStaff: (id, body) => request(`/api/att/staff/${id}`, { method: 'PUT', body }),

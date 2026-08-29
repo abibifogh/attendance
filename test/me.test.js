@@ -50,7 +50,7 @@ function setup() {
             DELETE FROM att_patterns; DELETE FROM att_shifts; DELETE FROM att_staff;
             DELETE FROM att_leave; DELETE FROM att_availability; DELETE FROM app_notices;
             DELETE FROM users;`);
-  raw.exec("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'");
+  raw.exec(`UPDATE settings SET value = '${MIDDAY_ZONE}' WHERE key = 'timezone'`);
   raw.prepare(
     `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes)
      VALUES (1, 'Early', '06:00', '14:00', 0)`,
@@ -361,9 +361,41 @@ test('a month that has not started yet says so rather than counting absences', a
  * kept inside the day so a window running past midnight does not turn the test
  * into a different test between eight and nine in the evening.
  */
+/**
+ * A property where it is currently the middle of the day.
+ *
+ * These tests build a shift around the clock and then ask the app what is
+ * happening now, so they read the clock twice: once here, and once inside the
+ * route a fraction of a second later. In UTC that is fine for all but a few
+ * minutes a day — a run starting at 23:59:59 builds a window on the 28th and
+ * is answered about the 29th, and three tests fail for no reason anybody can
+ * reproduce in the morning.
+ *
+ * Putting the property in whichever fixed zone makes it about midday takes the
+ * problem away rather than narrowing it: no window is anywhere near local
+ * midnight, so the second read of the clock cannot land on a different day.
+ */
+/** How far ahead of UTC a zone is, in minutes. */
+function offsetOf(zone) {
+  if (zone === 'UTC') return 0;
+  const m = /^Etc\/GMT([+-])(\d+)$/.exec(zone);
+  if (!m) return 0;
+  // Etc/GMT-5 is UTC+5, so the sign flips.
+  return (m[1] === '-' ? 1 : -1) * Number(m[2]) * 60;
+}
+
+const MIDDAY_ZONE = (() => {
+  // POSIX has the sign the other way round: Etc/GMT-5 is UTC+5.
+  const shift = ((12 - new Date().getUTCHours()) % 24 + 24) % 24;
+  const ahead = shift <= 12 ? shift : shift - 24;
+  if (ahead === 0) return 'UTC';
+  return ahead > 0 ? `Etc/GMT-${ahead}` : `Etc/GMT+${-ahead}`;
+})();
+
 function nowWindow() {
   const now = new Date();
-  const mins = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const shifted = new Date(now.getTime() + offsetOf(MIDDAY_ZONE) * 60_000);
+  const mins = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
   const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
   // Ninety minutes either side of now, pushed off the ends of the day. The
@@ -372,7 +404,7 @@ function nowWindow() {
   const start = Math.min(Math.max(mins - 90, 60), 24 * 60 - 200);
   const end = Math.max(Math.min(mins + 90, 24 * 60 - 1), start + 120);
   return {
-    day: now.toISOString().slice(0, 10),
+    day: shifted.toISOString().slice(0, 10),
     startsAt: clock(start),
     endsAt: clock(end),
     // How many minutes after the start they walked in.

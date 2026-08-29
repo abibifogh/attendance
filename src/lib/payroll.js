@@ -1,4 +1,5 @@
 import { bonusTaxOn, grossUpBonus, payeOn, round2, ssnitOn } from './tax.js';
+import { TIERS, tierSplit } from './statutory.js';
 
 /**
  * One person's month, worked out.
@@ -34,6 +35,7 @@ export function computeLine({
   annualBasic = null,
   bonusPaidThisYear = 0,
   rates,
+  tiers = TIERS,
 }) {
   const pay = round2(basic);
   const taxableAllowances = allowances.filter((a) => a.taxable !== false && a.taxable !== 0);
@@ -63,6 +65,7 @@ export function computeLine({
 
   // ---- SSNIT, which is on basic alone and comes off before tax ----------
   const contributions = ssnitOn(pay, { qualifies: ssnit, rates });
+  const split = tierSplit(pay, { qualifies: Boolean(ssnit), rates, tiers });
 
   const salaryGross = round2(pay + taxableAllowance);
   const salaryChargeable = Math.max(0, round2(salaryGross - contributions.employee));
@@ -126,6 +129,13 @@ export function computeLine({
       qualifies: Boolean(ssnit),
       employee: contributions.employee,
       employer: contributions.employer,
+      // The tier 1 / tier 2 split, worked out here and kept with the line
+      // rather than left to whoever draws the journal later. A closed month's
+      // journal is read months afterwards, and it must say what was actually
+      // paid over, not what today's percentages would come to.
+      tier1: split.tier1,
+      tier2: split.tier2,
+      unallocated: split.unallocated,
     },
     paye: {
       total: tax,

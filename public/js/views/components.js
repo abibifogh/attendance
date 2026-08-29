@@ -185,6 +185,86 @@ export function moreActions(...items) {
   return h('div.toolbar-more-wrap', button, box);
 }
 
+/**
+ * One way in for a file of data, with the template behind it.
+ *
+ * Uploading a sheet and downloading the one to fill in were two buttons side by
+ * side on three different screens, which reads as two unrelated things and puts
+ * the one nobody wants first. They are the same job in two directions: you take
+ * the sheet, you change it, you send it back.
+ *
+ * So it is one button that opens a small menu. The upload is the first item
+ * because it is what somebody came for, and the template sits under it for the
+ * first time they do this.
+ */
+export function bulkUpload({
+  accept = '.csv,text/csv',
+  onFile,
+  template = null,
+  label = 'Bulk upload',
+  title = null,
+} = {}) {
+  const picker = h('input', {
+    type: 'file',
+    accept,
+    style: { display: 'none' },
+    onchange: async (e) => {
+      const file = e.target.files?.[0];
+      // Cleared at once, so choosing the same file again after fixing
+      // something in it still fires a change.
+      e.target.value = '';
+      if (file) await onFile(file);
+    },
+  });
+
+  const menu = h('div.bulk-menu', { role: 'menu' },
+    h('button.bulk-item', {
+      type: 'button',
+      role: 'menuitem',
+      onclick: () => { close(); picker.click(); },
+    }, 'Upload a file'),
+    template
+      ? h('a.bulk-item', {
+        role: 'menuitem',
+        href: template.href,
+        download: template.download ?? 'template.csv',
+        onclick: () => close(),
+      }, template.label ?? 'Download template')
+      : null);
+
+  const button = h('button.btn-sm.bulk-btn', {
+    type: 'button',
+    'aria-expanded': 'false',
+    'aria-haspopup': 'menu',
+    title: title ?? 'Send a sheet of data in, or take the template to fill in',
+    onclick: (e) => { e.stopPropagation(); toggle(); },
+  }, label, h('span.bulk-caret', '▾'));
+
+  const wrap = h('div.bulk-wrap', picker, button, menu);
+
+  function close() {
+    wrap.classList.remove('open');
+    button.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', away);
+    document.removeEventListener('keydown', escape);
+  }
+
+  // Anywhere else on the page closes it, and so does Escape. Without both, a
+  // menu left open sits over whatever somebody moved on to look at.
+  const away = (e) => { if (!wrap.contains(e.target)) close(); };
+  const escape = (e) => { if (e.key === 'Escape') close(); };
+
+  function toggle() {
+    if (wrap.classList.contains('open')) { close(); return; }
+    wrap.classList.add('open');
+    button.setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', away);
+    document.addEventListener('keydown', escape);
+  }
+
+  return wrap;
+}
+
 export function emptyState(title, detail) {
   return h('div.card.empty', h('h3', title), h('p', detail));
 }

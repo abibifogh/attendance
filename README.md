@@ -1321,7 +1321,7 @@ a time, a network address and the device.
 
 ### The register, out of a spreadsheet
 
-**Setup → Staff → From a spreadsheet.** A CSV of the property's staff, read
+**Setup → Staff → Bulk upload.** A CSV of the property's staff, read
 line by line, shown in full, and only then written.
 
 **This is the only import in the app that creates people.** Every other one
@@ -1339,10 +1339,19 @@ button. The additions are listed separately from the changes, under a warning
 that says how many new people there are, because a staff number that matches
 nobody is read as somebody new and one typo therefore makes a duplicate.
 
-**Download the sheet** first. What comes down is the property's own people with
-their own figures in it, not a blank form with headings and nothing under them:
-change the lines that changed and send it back. A property with nobody on it
-yet gets one example row, so the columns are shown rather than described.
+**One button, and the template behind it.** Every screen that takes a file of
+data has the same control: **Bulk upload**, which opens a small menu with
+*Upload a file* and *Download template*. Take the template first — what comes
+down is the property's own people with their own figures in it, not a blank
+form with headings and nothing under them. Change the lines that changed and
+send it back. A property with nobody on it yet gets one example row, so the
+columns are shown rather than described.
+
+The same control is on **Payroll** for a month's figures and on the **rota**
+for a week, so the way in is the same wherever a sheet is involved. Uploading a
+sheet and downloading the one to fill in are the same job in two directions,
+and as two buttons side by side they read as two unrelated things with the one
+nobody wants first.
 
 **The columns.** Employee number and name are the two it needs; everything else
 is optional and matched on the words a staff list actually uses, so a column
@@ -1389,6 +1398,46 @@ rest of the line still goes in.
 **A number invented for somebody who is only paid stays out of the terminal's
 matching**, exactly as it does when they are added by hand, so it can never
 claim the punches of whoever really holds that card.
+
+### A tax table has a date it starts on
+
+The bands were one setting, so there was one table and it was always the
+current one. That is right until the day it changes: GRA moves the bands in the
+budget, somebody types the new ones in, and every month still open — including
+one being reopened to correct a single allowance — is quietly retaxed at rates
+that were not in force when it was worked.
+
+**Setup → Tax and SSNIT → These figures start in.** Save the change with a
+month against it and the figures apply from that month on. Everything behind it
+keeps whatever was in force then. The first time a property dates a table, what
+it was using until then is kept as its own row, so the history is complete from
+the start rather than from the second change.
+
+**Tables by date**, at the bottom of the same screen, lists every set of
+figures the property has used and the month each one started. Somebody asks in
+November why March came to what it did, and the answer is a row on that list.
+The captured row cannot be removed: taking it off would leave every month
+before the first dated change with no figures at all.
+
+**What is and is not retrospective**, since this is the question that gets
+asked:
+
+| | |
+|---|---|
+| A **closed** month | Never moves. Closing writes every payslip out in full, and the screen, the payslip, the journal and the GRA schedule all read those afterwards. |
+| An **open** month | Uses the table in force for *that* month, not today's. It recomputes, but at the right figures. |
+| A **reopened** month | The same: reopening January in July gives it January's table back, not July's. |
+
+The payslip carries the name of the table it was worked out on, so a slip
+printed in March can be told from one printed in April, and the payroll header
+says which table answered for the month and when it started.
+
+**The pension split is kept with the payslip**, not worked out again when
+somebody draws the journal. It used to be recomputed from today's SSNIT
+percentages, so changing them would have a closed month's journal show a new
+tier 1 / tier 2 split against the PAYE it was actually closed on. Payslips
+written before this keep working: they fall back to computing it, which is what
+they always did.
 
 ### Somebody who is only ever paid
 

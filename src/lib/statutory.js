@@ -77,9 +77,21 @@ export function tierSplit(basic, { qualifies = true, rates, tiers = TIERS } = {}
  */
 export function journalFor({ lines = [], totals, rates, tiers = TIERS }) {
   const pension = lines.reduce((acc, line) => {
-    const split = tierSplit(line.basic, {
-      qualifies: line.ssnit?.qualifies !== false, rates, tiers,
-    });
+    // The split the line was worked out with, wherever it has one. A closed
+    // month is read out of payslips written months ago, and recomputing their
+    // pension at today's percentages would have the journal disagree with what
+    // was actually paid over — and with the PAYE on the line beside it, which
+    // does come from the payslip. Lines written before the split was kept fall
+    // back to working it out, which is what they always did.
+    const split = line.ssnit?.tier1 == null
+      ? tierSplit(line.basic, { qualifies: line.ssnit?.qualifies !== false, rates, tiers })
+      : {
+        employee: line.ssnit.employee ?? 0,
+        employer: line.ssnit.employer ?? 0,
+        tier1: line.ssnit.tier1 ?? 0,
+        tier2: line.ssnit.tier2 ?? 0,
+        unallocated: line.ssnit.unallocated ?? 0,
+      };
     return {
       employee: round2(acc.employee + split.employee),
       employer: round2(acc.employer + split.employer),

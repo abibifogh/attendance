@@ -93,8 +93,12 @@ function headerIndex(header) {
     position: find('position', 'role', 'department'),
     startDate: find('startdate', 'date', 'day'),
     endDate: find('enddate'),
-    startTime: find('starttime', 'start'),
-    endTime: find('endtime', 'end'),
+    // `starts` and `ends` are this app's own export. Without them a rota taken
+    // out of HIVE and handed straight back came in as "that does not look like
+    // a rota export", which is a strange thing for it to say about a file it
+    // wrote itself.
+    startTime: find('starttime', 'start', 'starts'),
+    endTime: find('endtime', 'end', 'ends'),
     title: find('title', 'shift'),
     note: find('note', 'notes', 'comment'),
   };

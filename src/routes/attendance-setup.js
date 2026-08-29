@@ -3,6 +3,9 @@ import {
   badRequest, bool, csvResponse, int, json, notFound, num, readJson, rethrowConstraint, str,
 } from '../lib/http.js';
 import { readStaffSheet, tallyOf } from '../lib/staff-import.js';
+import { ratesFrom } from '../lib/tax.js';
+import { tiersFrom } from '../lib/statutory.js';
+import { EARLIEST } from '../lib/tax-tables.js';
 import { ghanaHolidays, toMinutes } from '../lib/attendance.js';
 import { listeningHostSettings } from '../lib/push-events.js';
 import { claimOrphans, hashDeviceToken, recompute } from '../lib/attendance-ingest.js';
@@ -1519,4 +1522,162 @@ export async function staffTemplate(ctx) {
   }
 
   return csvResponse('staff.csv', rows);
+}
+
+// ---------------------------------------------------------------------------
+// Tax tables, and the month each one starts
+// ---------------------------------------------------------------------------
+
+/** Every dated table, newest first, with the live figures alongside. */
+export async function listTaxTables(ctx) {
+  const [rows, settings] = await Promise.all([
+    ctx.db.prepare('SELECT * FROM pay_rates ORDER BY from_month DESC').all()
+      .catch(() => ({ results: [] })),
+    ctx.db.prepare('SELECT key, value FROM settings').all(),
+  ]);
+  const map = Object.fromEntries((settings.results ?? []).map((r) => [r.key, r.value]));
+
+  return json({
+    tables: (rows.results ?? []).map((row) => ({
+      id: row.id,
+      fromMonth: row.from_month,
+      label: row.label,
+      bands: (() => { try { return JSON.parse(row.bands); } catch { return []; } })(),
+      ssnitEmployee: row.ssnit_employee,
+      ssnitEmployer: row.ssnit_employer,
+      tier1: row.tier1,
+      tier2: row.tier2,
+      bonusRate: row.bonus_rate,
+      bonusShare: row.bonus_share,
+      setBy: row.set_by,
+      setAt: row.set_at,
+    })),
+    // What is in force right now, which is what the form opens on.
+    current: { ...ratesFrom(map), ...tiersFrom(map) },
+  });
+}
+
+/**
+ * Store a set of figures, and say which month they start in.
+ *
+ * The first time a property dates a table, whatever it was using until then is
+ * captured as its own row stamped before every real month. Without that, every
+ * month behind the change would fall through to the new figures — which is the
+ * whole thing this was built to stop.
+ */
+export async function saveTaxTable(ctx) {
+  const body = await readJson(ctx.request);
+  const fromMonth = String(body.fromMonth ?? '').trim();
+  if (!/^\d{4}-\d{2}$/.test(fromMonth)) {
+    throw badRequest('Say which month these figures start in, as YYYY-MM.');
+  }
+  if (Number(fromMonth.slice(5)) < 1 || Number(fromMonth.slice(5)) > 12) {
+    throw badRequest('That is not a month.');
+  }
+
+  // Already JSON: readBands hands back the stored form, which is what goes
+  // into the column. Stringifying it again would store a string of a string,
+  // and the month would read back no bands at all and fall through to the
+  // published table without a word.
+  const bands = readBands(body.bands);
+  const label = str(body.label, 'What the table is called', { max: 80 }) || 'Tax table';
+  const rate = (value, what, fallback) => (value == null || value === ''
+    ? fallback
+    : num(value, what, { min: 0, max: 1 }));
+
+  const rows = await ctx.db.prepare('SELECT key, value FROM settings').all();
+  const map = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
+  const now = { ...ratesFrom(map), ...tiersFrom(map) };
+
+  const figures = {
+    ssnitEmployee: rate(body.ssnitEmployee, 'Worker SSNIT', now.ssnitEmployee),
+    ssnitEmployer: rate(body.ssnitEmployer, 'Employer SSNIT', now.ssnitEmployer),
+    tier1: rate(body.tier1, 'Tier 1', now.tier1),
+    tier2: rate(body.tier2, 'Tier 2', now.tier2),
+    bonusRate: rate(body.bonusRate, 'Bonus rate', now.bonusFinalRate),
+    bonusShare: rate(body.bonusShare, 'Share of basic at the bonus rate', now.bonusShareOfBasic),
+  };
+
+  // The capture. Only ever written once, and only when there is nothing dated
+  // yet: after this the property's history is complete and everything before
+  // the first dated change answers from here.
+  const held = await ctx.db.prepare('SELECT COUNT(*) AS n FROM pay_rates').first()
+    .catch(() => ({ n: 0 }));
+  if (!Number(held?.n ?? 0)) {
+    await ctx.db.prepare(
+      `INSERT INTO pay_rates (from_month, label, bands, ssnit_employee, ssnit_employer,
+                              tier1, tier2, bonus_rate, bonus_share, set_by)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+    ).bind(
+      EARLIEST,
+      now.label || 'The table before this one',
+      JSON.stringify(now.bands),
+      now.ssnitEmployee, now.ssnitEmployer, now.tier1, now.tier2,
+      now.bonusFinalRate, now.bonusShareOfBasic,
+      `${ctx.session.user.name} (${ctx.session.user.role})`,
+    ).run().catch(() => {});
+  }
+
+  await ctx.db.prepare(
+    `INSERT INTO pay_rates (from_month, label, bands, ssnit_employee, ssnit_employer,
+                            tier1, tier2, bonus_rate, bonus_share, set_by)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+     ON CONFLICT (from_month) DO UPDATE SET
+       label = ?2, bands = ?3, ssnit_employee = ?4, ssnit_employer = ?5,
+       tier1 = ?6, tier2 = ?7, bonus_rate = ?8, bonus_share = ?9,
+       set_by = ?10, set_at = datetime('now')`,
+  ).bind(
+    fromMonth, label, bands,
+    figures.ssnitEmployee, figures.ssnitEmployer, figures.tier1, figures.tier2,
+    figures.bonusRate, figures.bonusShare,
+    `${ctx.session.user.name} (${ctx.session.user.role})`,
+  ).run();
+
+  await syncLiveRates(ctx.db);
+  await audit(ctx, 'payroll.tax_table', fromMonth, { label });
+  return listTaxTables(ctx);
+}
+
+/** Take a dated table off again. The captured one stays: it is the history. */
+export async function removeTaxTable(ctx, id) {
+  const row = await ctx.db.prepare('SELECT * FROM pay_rates WHERE id = ?').bind(Number(id)).first();
+  if (!row) throw notFound('No such tax table.');
+  if (row.from_month === EARLIEST) {
+    throw badRequest('That one is what the property used before it started dating them. '
+      + 'Removing it would leave every earlier month with no figures at all.');
+  }
+
+  await ctx.db.prepare('DELETE FROM pay_rates WHERE id = ?').bind(Number(id)).run();
+  await syncLiveRates(ctx.db);
+  await audit(ctx, 'payroll.tax_table_remove', row.from_month, { label: row.label });
+  return listTaxTables(ctx);
+}
+
+/**
+ * Keep the settings in step with the newest dated table.
+ *
+ * Every screen that shows "the figures" reads the settings, and so does a
+ * property that has never dated anything. Rather than teaching all of them
+ * about dates, the newest table is copied back here whenever the list changes.
+ */
+async function syncLiveRates(db) {
+  const newest = await db.prepare(
+    'SELECT * FROM pay_rates ORDER BY from_month DESC LIMIT 1',
+  ).first().catch(() => null);
+  if (!newest) return;
+
+  const put = (key, value) => db.prepare(
+    'INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2',
+  ).bind(key, String(value));
+
+  await db.batch([
+    put('pay_bands', newest.bands),
+    put('pay_bands_label', newest.label),
+    put('pay_ssnit_employee', newest.ssnit_employee),
+    put('pay_ssnit_employer', newest.ssnit_employer),
+    put('pay_tier1', newest.tier1),
+    put('pay_tier2', newest.tier2),
+    put('pay_bonus_rate', newest.bonus_rate),
+    put('pay_bonus_share', newest.bonus_share),
+  ]);
 }
