@@ -206,6 +206,9 @@ export const ROUTES = [
   // Catching up months nobody answered. The same act as unticking somebody
   // at the month end, so the same permission does it.
   ['POST', '/api/advances/:id/skips', 'hr_pay', advance.markSkipped],
+  // Putting a figure right rather than taking it off and adding it again,
+  // which loses the note that explained it.
+  ['PATCH', '/api/advances/:id/entry/:entryId', 'hr_pay', advance.editEntry],
   ['DELETE', '/api/advances/:id/entry/:entryId', 'hr_pay', advance.removeEntry],
   // The bill or the tenancy agreement behind a request. Readable by whoever
   // decides it and by whoever attached it — see `paper`.

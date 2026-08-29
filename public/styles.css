@@ -2872,6 +2872,13 @@ html { touch-action: manipulation; }
 .adv-term small { display: block; text-transform: uppercase; letter-spacing: .05em; font-size: .68rem; }
 .adv-term > div { font-weight: 600; font-variant-numeric: tabular-nums; }
 
+/* What the boxes above it add up to, said back before anything is written.
+   Its own line and its own weight, because it is the sentence to check. */
+.adv-sum:not(:empty) {
+  margin: .1rem 0 .6rem; font-size: .85rem; font-weight: 600;
+  color: var(--text);
+}
+
 .adv-moves { width: 100%; font-size: .88rem; }
 .adv-moves td { padding: .3rem .4rem; border-top: 1px solid var(--border); }
 

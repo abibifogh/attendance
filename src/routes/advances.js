@@ -588,9 +588,49 @@ export async function addEntry(ctx, idParam) {
   const amount = kind === 'skipped'
     ? 0
     : round2(num(body.amount, 'Amount', { required: true, min: -1_000_000, max: 1_000_000 }));
+  const note = str(body.note, 'Note', { max: 300 });
 
-  await write(ctx, advance, { month, kind, amount, note: str(body.note, 'Note', { max: 300 }) });
-  return json({ ok: true });
+  // The same figure, month after month. Somebody catching up a quarter of
+  // deductions was doing this four times over, and the fourth one is the one
+  // that gets a month wrong or never happens at all.
+  const over = body.months == null || body.months === ''
+    ? 1
+    : int(body.months, 'How many months', { min: 1, max: 60 });
+
+  const written = [];
+  const already = [];
+  let cleared = null;
+
+  for (let i = 0; i < over; i += 1) {
+    const on = addMonths(month, i);
+
+    // A month already answered is not answered again. Two deductions for one
+    // month is the mistake this is most likely to make, and it is the one
+    // that takes money off somebody twice.
+    if (['repayment', 'skipped'].includes(kind)) {
+      const said = await ctx.db.prepare(
+        `SELECT id FROM hr_advance_entry
+          WHERE advance_id = ? AND month = ? AND kind IN ('repayment','skipped')`,
+      ).bind(id, on).first();
+      if (said) { already.push(on); continue; }
+    }
+
+    // And never past the end of it. Three months of seven hundred against
+    // fifteen hundred owed is two payments and a short one, exactly as it
+    // would be on the payslips.
+    let take = amount;
+    if (amount > 0) {
+      const entries = await entriesFor(ctx.db, id);
+      const left = balanceOf(advance, entries);
+      if (left <= 0.009) { cleared = on; break; }
+      take = round2(Math.min(amount, left));
+    }
+
+    await write(ctx, advance, { month: on, kind, amount: take, note });
+    written.push({ month: on, amount: take });
+  }
+
+  return json({ ok: true, written, already, cleared });
 }
 
 /**
@@ -748,6 +788,104 @@ export async function bringHistoryAcross(ctx, idParam) {
   }
 
   return json({ ok: true, changes, refused, made, corrected });
+}
+
+/**
+ * Put a figure right that is already on the record.
+ *
+ * Five hundred was typed where seven hundred came off, or a sheet of "already
+ * repaid" came in with a column out by a decimal place. Until now the only way
+ * back was the ✕ and then adding it again, which loses the note explaining it
+ * and, on a month that has since been closed off, is two acts where somebody
+ * only meant one.
+ *
+ * The balance follows the figure, both ways. Putting a payment up can pay an
+ * advance off; putting one down can bring back one that was marked finished.
+ * Neither should need a second thing doing to it.
+ */
+export async function editEntry(ctx, idParam, entryParam) {
+  const id = int(idParam, 'Advance', { required: true, min: 1 });
+  const entryId = int(entryParam, 'Movement', { required: true, min: 1 });
+  const body = await readJson(ctx.request);
+
+  const advance = await ctx.db.prepare('SELECT * FROM hr_advance WHERE id = ?').bind(id).first();
+  if (!advance) throw notFound('No such advance.');
+
+  const entry = await ctx.db.prepare(
+    'SELECT * FROM hr_advance_entry WHERE id = ? AND advance_id = ?',
+  ).bind(entryId, id).first();
+  if (!entry) throw notFound('No such movement.');
+
+  const kind = ['repayment', 'skipped', 'adjustment', 'writeoff'].includes(body.kind)
+    ? body.kind : entry.kind;
+  const month = isMonth(body.month) ? String(body.month) : entry.month;
+
+  // A month can only be answered once, so moving one onto a month that is
+  // already answered would make two of them.
+  if (month !== entry.month && ['repayment', 'skipped'].includes(kind)) {
+    const clash = await ctx.db.prepare(
+      `SELECT id FROM hr_advance_entry
+        WHERE advance_id = ? AND month = ? AND id <> ? AND kind IN ('repayment','skipped')`,
+    ).bind(id, month, entryId).first();
+    if (clash) {
+      throw badRequest(`${month} already has an answer against it. Take that one off first, or `
+        + 'put this one right where it is.');
+    }
+  }
+
+  const amount = kind === 'skipped'
+    ? 0
+    : round2(
+      body.amount == null || body.amount === ''
+        ? entry.amount
+        : num(body.amount, 'Amount', { required: true, min: -1_000_000, max: 1_000_000 }),
+    );
+  const note = body.note === undefined
+    ? entry.note
+    : str(body.note, 'Note', { max: 300 });
+
+  await ctx.db.prepare(
+    'UPDATE hr_advance_entry SET month = ?2, kind = ?3, amount = ?4, note = ?5 WHERE id = ?1',
+  ).bind(entryId, month, kind, amount, note).run();
+
+  await audit(ctx, 'advance.entry_edit', id, {
+    entryId,
+    was: { month: entry.month, kind: entry.kind, amount: round2(entry.amount), note: entry.note },
+    now: { month, kind, amount, note },
+  });
+
+  // What is owed has moved, so whether this is finished may have moved with it.
+  const entries = await entriesFor(ctx.db, id);
+  const left = balanceOf(advance, entries);
+  const settled = left <= 0.009;
+  if (settled && advance.status === 'approved') {
+    await ctx.db.prepare(
+      "UPDATE hr_advance SET status = 'settled', settled_at = datetime('now') WHERE id = ?",
+    ).bind(id).run();
+  } else if (!settled && advance.status === 'settled') {
+    await ctx.db.prepare(
+      "UPDATE hr_advance SET status = 'approved', settled_at = NULL WHERE id = ?",
+    ).bind(id).run();
+  }
+
+  // Only where the figure moved. A corrected note is not news, and this
+  // screen already tells people more than most.
+  if (amount !== round2(entry.amount)) {
+    const person = await ctx.db.prepare(
+      `SELECT s.id, s.name, u.id AS user_id
+         FROM att_staff s LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
+        WHERE s.id = ?`,
+    ).bind(advance.staff_id).first();
+    await tell(ctx, person, {
+      kind: 'advance.changed',
+      title: 'A payment against your salary advance has been put right',
+      body: `${month}: ${money(amount, advance.currency)} rather than `
+        + `${money(round2(entry.amount), advance.currency)}. `
+        + `${money(Math.max(0, left), advance.currency)} is left.`,
+    });
+  }
+
+  return json({ ok: true, amount, month, kind, balance: round2(Math.max(0, left)), settled });
 }
 
 /** Take a movement back off the record. */

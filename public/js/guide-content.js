@@ -859,7 +859,16 @@ export const GUIDE = [
         'Change the terms: what comes off each month from here on. It does not change what is '
           + 'owed, only how long it takes, and the person is told.',
         'Add a movement: a payment made in cash, a correction, a month deliberately let go, or '
-          + 'the rest of it written off.',
+          + 'the rest of it written off. For how many months puts the same figure in month '
+          + 'after month, which is how a quarter of deductions gets caught up in one sitting '
+          + 'rather than three. It leaves a month that has already been answered alone rather '
+          + 'than answering it twice, stops at the month the advance is paid off, and says '
+          + 'afterwards what it did and what it left.',
+        'The \u270e beside a movement puts that figure right where it stands \u2014 five '
+          + 'hundred typed where seven hundred came off, or a column of already-repaid out by '
+          + 'a decimal place. Better than taking it off and adding it again, which loses the '
+          + 'note that explained it. What is owed follows the figure both ways: putting one up '
+          + 'can pay the advance off, putting one down brings back one that was finished.',
         'The ✕ beside a movement takes it back off, and what is owed goes back up. Use it for '
           + 'something entered wrongly rather than for something that did not happen — those '
           + 'are two different records.',

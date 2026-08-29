@@ -234,6 +234,7 @@ export const api = {
   advanceHistory: (staffId, body) => request(`/api/advances/staff/${staffId}/history`, { method: 'POST', body }),
   advanceEntry: (id, body) => request(`/api/advances/${id}/entry`, { method: 'POST', body }),
   advanceMarkSkipped: (id, body) => request(`/api/advances/${id}/skips`, { method: 'POST', body }),
+  advanceEditEntry: (id, entryId, body) => request(`/api/advances/${id}/entry/${entryId}`, { method: 'PATCH', body }),
   advanceRemoveEntry: (id, entryId) => request(`/api/advances/${id}/entry/${entryId}`, { method: 'DELETE' }),
   advancePaperUrl: (id) => `/api/advances/${id}/paper`,
 

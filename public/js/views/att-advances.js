@@ -536,7 +536,9 @@ function advanceBlock(advance, { person, data, reload, cash }) {
           ? h('button.btn-sm', { onclick: () => adjust(advance, reload, cash) }, 'Change the terms')
           : null,
         advance.status === 'approved'
-          ? h('button.btn-sm', { onclick: () => addMovement(advance, reload) }, 'Add a movement')
+          ? h('button.btn-sm', {
+            onclick: () => addMovement(advance, { person, reload, cash }),
+          }, 'Add a movement')
           : null,
         // Offered on a finished one as well. A figure keyed wrong is usually
         // noticed when somebody asks why the deductions stopped early.
@@ -581,6 +583,13 @@ function advanceBlock(advance, { person, data, reload, cash }) {
           h('td', MOVEMENT[entry.kind] ?? entry.kind),
           h('td.num', entry.kind === 'skipped' ? h('span.muted', 'nothing') : cash(entry.amount)),
           h('td.muted', entry.note || ''),
+          // Putting a figure right, rather than taking it off and adding it
+          // again. A five hundred typed where seven hundred came off, or a
+          // column of already-repaid out by a decimal place, is one act.
+          h('td.num', h('button.btn-ghost.btn-sm', {
+            title: 'Put this figure right',
+            onclick: () => editMovement(advance, entry, { person, reload, cash }),
+          }, '✎')),
           h('td.num', h('button.btn-ghost.btn-sm', {
             title: 'Take this off the record',
             onclick: async () => {
@@ -918,26 +927,112 @@ async function editRecord(advance, { person, data, reload, cash }) {
 }
 
 /** A movement outside the month-end run: a correction, a lump sum, a write-off. */
-async function addMovement(advance, reload) {
+/**
+ * A figure already on the record, put right.
+ *
+ * Not the same as taking it off and adding it again. That loses the note
+ * explaining it, and on a month somebody has since closed off it is two acts
+ * where only one was meant. What is owed follows the figure both ways: putting
+ * a payment up can pay the advance off, putting one down brings it back.
+ */
+async function editMovement(advance, entry, { person, reload, cash }) {
   const done = await formDialog({
-    title: 'Add a movement',
+    title: `${niceMonth(entry.month)} for ${person.staff.name}`,
+    submitLabel: 'Put it right',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        `${cash(advance.balance)} is owed with this figure as it stands. Change it and what is `
+        + 'owed moves with it, and they are told.'),
+      h('div.field-row',
+        field('Month', h('input', { type: 'month', name: 'month', value: entry.month })),
+        field('What happened', h('select', { name: 'kind' },
+          h('option', { value: 'repayment', selected: entry.kind === 'repayment' }, 'Deducted from pay'),
+          h('option', { value: 'adjustment', selected: entry.kind === 'adjustment' }, 'Paid another way, or a correction'),
+          h('option', { value: 'skipped', selected: entry.kind === 'skipped' }, 'Nothing taken this month'),
+          h('option', { value: 'writeoff', selected: entry.kind === 'writeoff' }, 'Written off')))),
+      field('Amount', h('input', {
+        type: 'number', name: 'amount', step: '0.01', value: entry.amount,
+      }), 'Nothing taken this month ignores whatever is in here'),
+      field('Note', h('input', {
+        type: 'text', name: 'note', maxlength: 300, value: entry.note ?? '',
+      })),
+      entry.actor
+        ? h('p.muted', { style: { fontSize: '.8rem' } },
+          `Put in by ${entry.actor}${entry.at ? ` on ${String(entry.at).slice(0, 10)}` : ''}.`)
+        : null),
+    onSubmit: (form) => api.advanceEditEntry(advance.id, entry.id, Object.fromEntries(form.entries())),
+  });
+  if (!done) return;
+
+  toast(done.settled
+    ? 'Put right, and that pays it off.'
+    : `Put right. ${cash(done.balance)} is left.`, 'good');
+  await reload();
+}
+
+async function addMovement(advance, { person, reload, cash }) {
+  const month = h('input', {
+    type: 'month', name: 'month', value: monthOf(todayISO()), required: true,
+  });
+  const amount = h('input', {
+    type: 'number', name: 'amount', step: '0.01', value: advance.monthly,
+  });
+  const over = h('input', { type: 'number', name: 'months', min: '1', max: '60', value: 1 });
+
+  // What the figures in the boxes add up to, said back before anything is
+  // written. Three months of seven hundred is a sentence somebody can check;
+  // three rows appearing afterwards is not.
+  const sum = h('div.adv-sum');
+  const say = () => {
+    const each = Number(amount.value) || 0;
+    const n = Math.max(1, Number(over.value) || 1);
+    sum.textContent = n === 1
+      ? ''
+      : `${cash(each)} in each of ${n} months, from ${niceMonth(month.value)}`
+        + `${each > 0 ? `, up to ${cash(Math.min(each * n, advance.balance))}` : ''}.`;
+  };
+  for (const box of [month, amount, over]) box.addEventListener('input', say);
+  say();
+
+  const done = await formDialog({
+    title: `Add a movement for ${person.staff.name}`,
     submitLabel: 'Add it',
     body: h('div',
       h('div.field-row',
-        field('Month', h('input', {
-          type: 'month', name: 'month', value: monthOf(todayISO()), required: true,
-        })),
+        field('From which month', month),
         field('What happened', h('select', { name: 'kind' },
           h('option', { value: 'repayment' }, 'Deducted from pay'),
           h('option', { value: 'adjustment' }, 'Paid another way, or a correction'),
           h('option', { value: 'skipped' }, 'Nothing taken this month'),
           h('option', { value: 'writeoff' }, 'Written off')))),
-      field('Amount', h('input', { type: 'number', name: 'amount', step: '0.01', value: advance.monthly })),
+      h('div.field-row',
+        field('Amount', amount, 'For each month, not the total'),
+        field('For how many months', over,
+          'The same figure, month after month, starting with the one above')),
+      sum,
+      h('p.muted', { style: { fontSize: '.82rem' } },
+        'A month that has already been answered is left as it is rather than answered twice, '
+        + 'and it stops the month the advance is paid off. What it did and what it left is on '
+        + 'the screen afterwards.'),
       field('Note', h('input', { type: 'text', name: 'note', maxlength: 300 }))),
     onSubmit: (form) => api.advanceEntry(advance.id, Object.fromEntries(form.entries())),
   });
   if (!done) return;
-  toast('Added.', 'good');
+
+  const n = done.written?.length ?? 0;
+  toast(n === 1 || !n
+    ? (n ? 'Added.' : 'Nothing was added.')
+    : `Added for ${n} months, ${niceMonth(done.written[0].month)} to `
+      + `${niceMonth(done.written[n - 1].month)}.`, n ? 'good' : 'warn');
+
+  // The months it would not write over, and the month it stopped at. Both are
+  // absences somebody would otherwise have to notice for themselves.
+  if (done.already?.length) {
+    toast(`Already answered, so left alone: ${done.already.map(niceMonth).join(', ')}.`, 'warn');
+  }
+  if (done.cleared) {
+    toast(`It was paid off by ${niceMonth(done.cleared)}, so nothing went in after that.`, 'warn');
+  }
   await reload();
 }
 
