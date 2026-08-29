@@ -209,6 +209,13 @@ Ticking three days of a fortnight and being handed the fortnight's over/under is
 how eleven days of somebody's leave move by accident, because almost nobody
 edits a number the screen looks confident about.
 
+**A flag says what it means on hovering it.** The counts on a question read
+`3 under`, `1 over`, and four of them fit on one line because of it, but nobody
+new to the screen can tell what "under" is. Hovering one gives the word and the
+sentence behind it — *Whole shift missed: counts against them when the period is
+signed* — from the same list the day rows are flagged against, so the two can
+never drift apart.
+
 **The list is three lists**: what has been answered and is back with you, what
 there is to do, and — collapsed at the bottom — what is waiting on somebody
 else. The grouping is **by day, not by person**: asking about a Thursday nobody
@@ -1385,8 +1392,8 @@ which changes what people are paid and still creates nobody.
 the safeguard and it is not decoration: a bare column called Transport stays
 unrecognised and is reported back, so nothing turns into money on a payslip by
 accident, but a heading that says outright what it is can introduce an
-allowance the property has never used. Add `(not taxable)` — or `(tax free)` —
-for a genuine reimbursement; without it the allowance is taxable, which is what
+allowance the property has never used, once somebody ticks to allow it. Add
+`(not taxable)` — or `(tax free)` — for a genuine reimbursement; without it the allowance is taxable, which is what
 most of them are. Nought takes an allowance off; a blank cell leaves it alone.
 The same columns work on the **month's** sheet under Payroll, where they used
 to be limited to allowances already in use, and an allowance for somebody who
@@ -1400,6 +1407,17 @@ than fifteen boxes somebody types. The word above the column is not what
 decides which it is: the scheme is found by name and its own kind says how the
 cell is read, so writing `Score` above a column of amounts gets you what you
 meant. A cell against a scheme somebody is not under is refused either way.
+
+**A name the property has not got is offered rather than refused.** The preview
+lists what the file would introduce and puts a tick beside it, and nothing is
+made unless that tick is on. Leave it off and the sheet still goes in, with the
+new names listed back as the one thing it left alone. `Bonus: Housing` against
+a scheme nobody has heard of offers to make a set-figure scheme, because the
+column is the money and there is nothing left to guess; everybody with a figure
+in it goes under the scheme as it is made. `Score: Housing` cannot do the same
+and is still named back on its own, because a column of percentages is a share
+of a worth and nothing in it says what that worth is. A scheme that was made
+once and later retired is matched, not made a second time.
 
 **A blank cell leaves what is there alone.** It is not an instruction to clear a
 department or wipe a start date. Somebody sending back a sheet with two columns

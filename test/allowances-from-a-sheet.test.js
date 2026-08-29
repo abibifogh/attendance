@@ -204,6 +204,9 @@ test('the month sheet can introduce one too', async () => {
   await applyInput(ctx(db, {
     month: '2026-06',
     text: 'Employee no,Allowance: Transport\n1,250',
+    // An allowance the property has not got is made only when somebody says
+    // so. The screen asks; this is the answer.
+    create: true,
   }));
 
   const row = raw.prepare('SELECT * FROM pay_allowance').get();

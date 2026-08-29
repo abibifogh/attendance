@@ -163,7 +163,11 @@ test('a basic for somebody not on the payroll is refused', () => {
   ]), { ...CONTEXT, profiles: new Map() });
 
   assert.deepEqual(read.lines[0].changes, []);
-  assert.deepEqual(read.lines[0].notes, [{ what: 'Basic', why: 'not on the payroll yet' }]);
+  assert.equal(read.lines[0].notes[0].what, 'Basic');
+  // And it says where to do it, because "not on the payroll yet" left somebody
+  // looking at a line that had quietly done nothing.
+  assert.match(read.lines[0].notes[0].why, /not on the payroll yet/);
+  assert.match(read.lines[0].notes[0].why, /Who is on the payroll|staff sheet/);
 });
 
 test('nonsense in a cell is named rather than turned into a figure', () => {
@@ -217,10 +221,34 @@ test('the advance column is checked against the books and never written to them'
   // Ama's matches, so there is nothing to say.
   assert.equal(read.lines.find((l) => l.staffId === 1), undefined);
   // Kofi's does not, and nobody is repaying anything, so the sheet is wrong
-  // about him and says so instead of creating an advance.
+  // about him and says so instead of creating an advance — and says why, since
+  // an advance nobody recorded and one that finished last month are the same
+  // nought and two different things to go and do.
   const kofi = read.lines.find((l) => l.staffId === 2);
   assert.equal(kofi.changes.length, 0);
-  assert.match(kofi.notes[0].why, /the sheet says 400.00, the payroll will take 0.00/);
+  assert.match(kofi.notes[0].why, /the sheet says 400\.00/);
+  assert.match(kofi.notes[0].why, /no advance is recorded for them/);
+});
+
+test('an advance that exists but is not due this month says so differently', () => {
+  const read = readSheet(sheet([
+    ['Employee no', 'Advance'],
+    ['1002', '400.00'],
+  ]), { ...CONTEXT, advanceHeld: new Set([2]) });
+
+  const kofi = read.lines.find((l) => l.staffId === 2);
+  assert.match(kofi.notes[0].why, /nothing of theirs is due this month/);
+  assert.match(kofi.notes[0].why, /settled, or not started yet/);
+});
+
+test('a figure that disagrees with a real instalment names both', () => {
+  const read = readSheet(sheet([
+    ['Employee no', 'Advance'],
+    ['1002', '400.00'],
+  ]), { ...CONTEXT, advanceHeld: new Set([2]), advanceDue: new Map([[2, 250]]) });
+
+  const kofi = read.lines.find((l) => l.staffId === 2);
+  assert.match(kofi.notes[0].why, /the sheet says 400\.00, the books say 250\.00 this month/);
 });
 
 test('a file with no way of telling who anybody is says so', () => {

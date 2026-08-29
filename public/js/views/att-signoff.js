@@ -75,7 +75,6 @@ export async function renderAttSignoff(params) {
     h('div.page-head',
       h('div',
         h('h1', 'Sign-off'),
-        h('div.sub', 'Settle up as you go — a day at a time, not a month at a time'),
       ),
     ),
     h('div.toolbar', tabs),
@@ -782,6 +781,7 @@ async function raise(row, chosen, reload) {
       row.issues.list.length
         ? h('div.chip-row', { style: { marginBottom: '.6rem' } },
           row.issues.list.map((i) => h(`span.pill.${ISSUE_PILL[i.key] ?? ''}`,
+            { title: i.detail ?? '' },
             `${i.count} ${i.label.toLowerCase()}`)))
         : null,
 
@@ -1242,8 +1242,14 @@ function queryCard(q, data, reload) {
   },
     q.issues && Object.keys(q.issues).length
       ? h('div.chip-row', { style: { marginBottom: '.6rem' } },
-        Object.entries(q.issues).map(([key, n]) =>
-          h(`span.pill.${ISSUE_PILL[key] ?? ''}`, `${n} ${key}`)))
+        Object.entries(q.issues).map(([key, n]) => {
+          // "3 under" is short enough to fit four of them on one line and
+          // says nothing on its own, so what it means is on hovering it.
+          const issue = (data.issues ?? []).find((i) => i.key === key);
+          return h(`span.pill.${ISSUE_PILL[key] ?? ''}`,
+            { title: issue ? `${issue.label} — ${issue.detail}` : '' },
+            `${n} ${key}`);
+        }))
       : null,
 
     h('div.thread', q.notes.map((note) => h('div.thread-note',

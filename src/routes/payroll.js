@@ -461,7 +461,12 @@ async function sheetContext(ctx, month) {
   }
 
   const advanceDue = new Map();
+  // Who has one at all, which is a different question from what is due this
+  // month: an advance can be settled, or not due to start until August, and
+  // "nothing due" for those two reasons wants two different sentences.
+  const advanceHeld = new Set();
   for (const advance of data.advances) {
+    advanceHeld.add(advance.staff_id);
     const due = dueThisMonth(advance, data.entriesBy.get(advance.id) ?? [], month);
     if (!due) continue;
     advanceDue.set(advance.staff_id, round2((advanceDue.get(advance.staff_id) ?? 0) + due));
@@ -479,8 +484,15 @@ async function sheetContext(ctx, month) {
     month,
     staff: data.staff,
     allowances: [...names.values()].sort((a, b) => a.localeCompare(b)),
-    schemes: data.schemes.filter((s) => s.active).map((s) => ({
-      id: s.id, name: s.name, kind: s.kind === 'amount' ? 'amount' : 'score',
+    // Retired ones too, so a column named after one is matched rather than
+    // read as a scheme the property has not got. Setting a figure on a retired
+    // scheme pays nothing, and being told that is better than being quietly
+    // handed a second scheme with the same name.
+    schemes: data.schemes.map((s) => ({
+      id: s.id,
+      name: s.name,
+      kind: s.kind === 'amount' ? 'amount' : 'score',
+      active: Boolean(s.active),
     })),
     profiles: data.profileBy,
     allowanceBy: data.allowanceBy,
@@ -492,6 +504,7 @@ async function sheetContext(ctx, month) {
       .map((r) => [`${r.scheme_id}|${r.staff_id}`, round2(r.amount)])),
     memberOf,
     advanceDue,
+    advanceHeld,
   };
 }
 
@@ -588,9 +601,44 @@ export async function applyInput(ctx) {
   const read = readSheet(text, c);
   const run = await runFor(ctx.db, month, actorOf(ctx));
   const actor = actorOf(ctx);
+
+  // An allowance or a bonus scheme the property has not got is made only when
+  // somebody has said so. The preview names each one; this is the answer to
+  // it, and without it those columns are left alone exactly as they were.
+  const make = body.create === true;
+  const wanted = read.willCreate ?? { allowances: [], schemes: [] };
+  const made = { allowances: [], schemes: [] };
+
+  // A scheme has to exist before a figure can be set against it, and it has to
+  // know who is under it — everybody the file names a figure for.
+  const schemeIdByName = new Map();
+  if (make) {
+    for (const scheme of wanted.schemes) {
+      const under = [...new Set(read.lines
+        .filter((l) => l.changes.some((ch) => ch.isNew && ch.schemeName === scheme.name))
+        .map((l) => l.staffId))];
+
+      const row = await ctx.db.prepare(
+        `INSERT INTO pay_scheme (name, amount, note, kind) VALUES (?1, 0, ?2, ?3)
+         ON CONFLICT (name) DO UPDATE SET name = name
+         RETURNING id`,
+      ).bind(scheme.name, 'Brought in from a spreadsheet', scheme.kind).first().catch(() => null);
+      if (!row?.id) continue;
+
+      schemeIdByName.set(scheme.name, row.id);
+      for (const staffId of under) {
+        await ctx.db.prepare(
+          'INSERT OR IGNORE INTO pay_scheme_staff (scheme_id, staff_id) VALUES (?1, ?2)',
+        ).bind(row.id, staffId).run().catch(() => {});
+      }
+      made.schemes.push({ name: scheme.name, people: under.length });
+    }
+  }
+
   let basics = 0;
   let allowances = 0;
   let scores = 0;
+  const notMade = [];
 
   for (const line of read.lines) {
     for (const change of line.changes) {
@@ -602,6 +650,13 @@ export async function applyInput(ctx) {
         continue;
       }
       if (change.kind === 'allowance') {
+        if (change.isNew && !make) {
+          if (!notMade.includes(change.name)) notMade.push(change.name);
+          continue;
+        }
+        if (change.isNew && !made.allowances.includes(change.name)) {
+          made.allowances.push(change.name);
+        }
         // One line per name, so a sheet run twice does not leave two
         // Transports on somebody's payslip.
         await ctx.db.prepare('DELETE FROM pay_allowance WHERE staff_id = ?1 AND name = ?2')
@@ -615,6 +670,11 @@ export async function applyInput(ctx) {
         continue;
       }
       if (change.kind === 'score') {
+        const schemeId = change.schemeId ?? schemeIdByName.get(change.schemeName) ?? null;
+        if (!schemeId) {
+          if (!notMade.includes(change.schemeName)) notMade.push(change.schemeName);
+          continue;
+        }
         // A scheme that pays a set figure stores the figure as the award and a
         // hundred as the score, the same as typing it on the screen does.
         // Everything downstream works the award out as the award scaled by the
@@ -625,17 +685,26 @@ export async function applyInput(ctx) {
           `INSERT INTO pay_score (run_id, scheme_id, staff_id, score, amount)
            VALUES (?1, ?2, ?3, ?4, ?5)
            ON CONFLICT (run_id, scheme_id, staff_id) DO UPDATE SET score = ?4, amount = ?5`,
-        ).bind(run.id, change.schemeId, line.staffId, score, award).run();
+        ).bind(run.id, schemeId, line.staffId, score, award).run();
         scores += 1;
       }
     }
   }
 
   await audit(ctx, 'payroll.input', month, {
-    basics, allowances, scores, skipped: read.skipped.length,
+    basics, allowances, scores, skipped: read.skipped.length, made,
   });
   return json({
-    ok: true, month, basics, allowances, scores, skipped: read.skipped, notes: read.lines,
+    ok: true,
+    month,
+    basics,
+    allowances,
+    scores,
+    // What the file made, and what it named and was not allowed to make.
+    made,
+    notMade,
+    skipped: read.skipped,
+    notes: read.lines,
   });
 }
 

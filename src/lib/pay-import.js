@@ -132,9 +132,34 @@ export function readColumns(header, { allowances = [], schemes = [] } = {}) {
     // set figure holds money and one that is scored holds a percentage, and
     // the scheme itself knows which it is — so somebody who writes Score above
     // a column of amounts gets what they meant rather than a refusal.
-    const scored = key.match(/^(?:score|bonus|amount)\s*[:\-]\s*(.+)$/);
-    if (scored && byScheme.has(norm(scored[1]))) {
-      columns.push({ index, kind: 'score', scheme: byScheme.get(norm(scored[1])) });
+    const scored = key.match(/^(score|bonus|amount)\s*[:\-]\s*(.+)$/);
+    if (scored && byScheme.has(norm(scored[2]))) {
+      columns.push({ index, kind: 'score', scheme: byScheme.get(norm(scored[2])) });
+      return;
+    }
+
+    // A scheme the property has not got. A column of money carries everything
+    // a scheme of that kind needs — the figure is the award — so it can offer
+    // to make one. A column of percentages does not: a scored scheme is a
+    // share of a worth, and nothing in a column of shares says what that worth
+    // is. So that one is still named back rather than guessed at.
+    if (scored) {
+      // The heading as it was typed, not the flattened one, so the scheme it
+      // makes is spelt the way the person spelt it.
+      const written = String(raw).match(/^\s*(?:score|bonus|amount)\s*[:\-]\s*(.+)$/i);
+      const named = String(written ? written[1] : scored[2]).trim();
+      // The whole heading, not the name inside it, so somebody reading the
+      // list back sees what they wrote.
+      if (scored[1] === 'score') {
+        unknown.push(String(raw).trim());
+        return;
+      }
+      columns.push({
+        index,
+        kind: 'score',
+        scheme: { id: null, name: named, kind: 'amount' },
+        isNew: true,
+      });
       return;
     }
     const allowance = readAllowanceHeading(raw);
@@ -177,11 +202,18 @@ export function readColumns(header, { allowances = [], schemes = [] } = {}) {
 export function readSheet(text, {
   staff = [], allowances = [], schemes = [], profiles = new Map(),
   allowanceBy = new Map(), scoreBy = new Map(), awardBy = new Map(),
-  memberOf = new Map(), advanceDue = new Map(),
+  memberOf = new Map(), advanceDue = new Map(), advanceHeld = new Set(),
 } = {}) {
   const rows = parseCsv(text);
   if (!rows.length) {
-    return { columns: [], unknown: [], lines: [], skipped: [], missingColumns: ['a header row'] };
+    return {
+      columns: [],
+      unknown: [],
+      lines: [],
+      skipped: [],
+      missingColumns: ['a header row'],
+      willCreate: { allowances: [], schemes: [] },
+    };
   }
 
   const [header, ...body] = rows;
@@ -239,9 +271,15 @@ export function readSheet(text, {
         }
         const now = profiles.get(person.id)?.basic;
         if (now == null) {
-          // Somebody the property has not put on the payroll. Setting a basic
-          // from a spreadsheet is putting them on it, which is a decision.
-          line.notes.push({ what: 'Basic', why: 'not on the payroll yet' });
+          // Somebody the property has not put on the payroll. Putting them on
+          // it is a decision, and this is the sheet for a month rather than
+          // the one that says who works here — so it says where to do it
+          // rather than doing it quietly.
+          line.notes.push({
+            what: 'Basic',
+            why: 'they are not on the payroll yet, so this is not set. Put them on it under '
+              + 'Who is on the payroll, or give them a basic in the staff sheet',
+          });
           continue;
         }
         if (round2(now) !== value) {
@@ -287,6 +325,10 @@ export function readSheet(text, {
 
       if (col.kind === 'score') {
         const paysAmount = col.scheme.kind === 'amount';
+        // A scheme that does not exist yet has nobody under it, so membership
+        // cannot be the test. Everybody with a figure in the column is who it
+        // would cover.
+        const isNew = Boolean(col.isNew);
         const value = paysAmount ? readMoney(cell) : readScore(cell);
         if (value === null) continue;
 
@@ -297,25 +339,38 @@ export function readSheet(text, {
           });
           continue;
         }
-        if (!(memberOf.get(person.id) ?? []).includes(col.scheme.id)) {
+        if (!isNew && col.scheme.active === false) {
+          line.notes.push({
+            what: col.scheme.name,
+            why: 'that scheme is retired, so nothing would be paid on it',
+          });
+          continue;
+        }
+        if (!isNew && !(memberOf.get(person.id) ?? []).includes(col.scheme.id)) {
           line.notes.push({ what: col.scheme.name, why: 'not under this scheme' });
           continue;
         }
 
         // A scheme that pays a set figure is compared against the figure this
         // person is down for, and one that is scored against their score.
-        const from = paysAmount
-          ? (awardBy.get(`${col.scheme.id}|${person.id}`) ?? null)
-          : round2(scoreBy.get(`${col.scheme.id}|${person.id}`) ?? 0);
+        const from = isNew
+          ? null
+          : paysAmount
+            ? (awardBy.get(`${col.scheme.id}|${person.id}`) ?? null)
+            : round2(scoreBy.get(`${col.scheme.id}|${person.id}`) ?? 0);
 
         if (from !== value) {
           line.changes.push({
             kind: 'score',
             schemeId: col.scheme.id,
+            // Named as well as numbered, because a scheme this file would make
+            // has no number until it has been made.
+            schemeName: col.scheme.name,
             label: paysAmount ? col.scheme.name : `${col.scheme.name} score`,
             from,
             to: value,
             ...(paysAmount ? { paysAmount: true } : {}),
+            ...(isNew ? { isNew: true } : {}),
           });
         }
         continue;
@@ -333,10 +388,17 @@ export function readSheet(text, {
         if (Number.isNaN(value)) {
           line.notes.push({ what: 'Advance', why: 'not a figure' });
         } else if (value !== due) {
-          line.notes.push({
-            what: 'Advance',
-            why: `the sheet says ${value.toFixed(2)}, the payroll will take ${due.toFixed(2)}`,
-          });
+          // Why nothing is due matters more than that nothing is due. An
+          // advance nobody has recorded and one that finished last month are
+          // the same nought and two entirely different things to go and do.
+          const why = due > 0
+            ? `the sheet says ${value.toFixed(2)}, the books say ${due.toFixed(2)} this month`
+            : advanceHeld.has(person.id)
+              ? `the sheet says ${value.toFixed(2)}, but nothing of theirs is due this month — `
+                + 'it may be settled, or not started yet'
+              : `the sheet says ${value.toFixed(2)}, but no advance is recorded for them. `
+                + 'Record it under Advances and the payroll will take it';
+          line.notes.push({ what: 'Advance', why });
         }
       }
     }
@@ -344,7 +406,20 @@ export function readSheet(text, {
     if (line.changes.length || line.notes.length) lines.push(line);
   });
 
-  return { columns, unknown, lines, skipped, missingColumns };
+  // What the property has not got yet, named once rather than per line. An
+  // allowance or a scheme is a thing the property decides on, so it is asked
+  // about before it is made — but a file naming one is the ordinary way a
+  // property that already runs it gets it in.
+  const willCreate = {
+    allowances: [...new Set(columns
+      .filter((c) => c.kind === 'allowance' && c.isNew)
+      .map((c) => c.name))],
+    schemes: [...new Map(columns
+      .filter((c) => c.kind === 'score' && c.isNew)
+      .map((c) => [c.scheme.name, { name: c.scheme.name, kind: c.scheme.kind }])).values()],
+  };
+
+  return { columns, unknown, lines, skipped, missingColumns, willCreate };
 }
 
 /** What a run of the file comes to, for the sentence above the Apply button. */
@@ -353,11 +428,14 @@ export function tallyOf(read) {
   for (const line of read.lines) {
     for (const change of line.changes) counts[change.kind] += 1;
   }
+  const create = read.willCreate ?? { allowances: [], schemes: [] };
   return {
     people: read.lines.filter((l) => l.changes.length).length,
     ...counts,
     changes: counts.basic + counts.allowance + counts.score,
     notes: read.lines.reduce((n, l) => n + l.notes.length, 0),
     skipped: read.skipped.length,
+    // How many things it would make. Nothing is made unless somebody says so.
+    creating: create.allowances.length + create.schemes.length,
   };
 }

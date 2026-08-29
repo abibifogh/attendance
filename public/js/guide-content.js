@@ -1079,8 +1079,14 @@ export const GUIDE = [
       { list: [
         'Rows are matched on employee number, or on the name where there is no number. A name '
           + 'the register does not know is skipped and listed; nobody is created from a sheet.',
-        'A scheme column has to be one of your own. Anything else is named back and left '
-          + 'alone rather than making a new one.',
+        'A name the property has not got is offered rather than refused. The preview lists '
+          + 'what the file would introduce, with a tick beside it, and nothing is made unless '
+          + 'that tick is on. Leave it off and the rest of the sheet still goes in, with those '
+          + 'names listed back as what it left alone.',
+        'A money column against a scheme nobody has heard of \u2014 "Bonus: Housing" \u2014 '
+          + 'offers to make a set-figure scheme, and everybody with a figure in that column '
+          + 'goes under it. A "Score:" column cannot: a column of percentages is a share of a '
+          + 'worth, and nothing in it says what that worth is, so it is named back on its own.',
         'An allowance column can introduce one the property has not used before, as long as '
           + 'the heading says what it is: "Allowance: Transport", or "Allowance: Transport '
           + '(not taxable)" for a reimbursement. A bare heading is never turned into money on '

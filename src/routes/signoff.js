@@ -692,6 +692,9 @@ export async function listQueries(ctx) {
     canDecide: decides,
     mine: meName,
     myId: meId,
+    // What each flag on a question means. The question stores its counts by
+    // key, and a key on its own reads as jargon on the screen.
+    issues: ISSUES,
   });
 }
 

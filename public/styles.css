@@ -629,6 +629,9 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
    remember to open afterwards. */
 .rota-strain { border: none; background: none; padding: 0 0 0 .35rem; font-size: .9rem; cursor: help; }
 
+/* A pill that carries its meaning in its title, so the pointer says to hover it. */
+.pill[title]:not([title=""]) { cursor: help; }
+
 /* No signal. Loud on purpose: the app opens from a home screen whether or not
    there is a connection, and a screen that opens is a screen somebody believes.
    Sits under the header so it is the first thing read on every page. */

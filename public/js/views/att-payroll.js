@@ -6,7 +6,7 @@ import { bulkUpload, card, emptyState } from './components.js';
 import {
   GENERAL, field, formDialog, sayDepartments, schemeDepartments, schemesByDepartment, showSheet,
 } from './att-shared.js';
-import { replaceParams, warnBeforeLeaving } from '../app.js';
+import { holdRefresh, replaceParams, warnBeforeLeaving } from '../app.js';
 import { printReport } from '../print.js';
 import { niceMonth } from './att-advances.js';
 import { companyOf, payslipPage, showPayslips } from './payslip.js';
@@ -542,6 +542,12 @@ function importButton(month, reload) {
 /** What the file would do, and the button that does it. */
 async function showImport({ month, text, read, reload }) {
   const { tally } = read;
+  const wanted = read.willCreate ?? { allowances: [], schemes: [] };
+
+  // An allowance or a bonus scheme the property has not got. A file naming one
+  // is the ordinary way a property that already runs it gets it in, but making
+  // it is a decision — so it is named, and off until somebody ticks it.
+  const make = h('input', { type: 'checkbox' });
 
   const lines = read.lines.map((line) => h('div.pay-import-row',
     h('div',
@@ -576,12 +582,31 @@ async function showImport({ month, text, read, reload }) {
         ? h('div.returns-warn', `The sheet needs ${read.missingColumns.join(' and ')}.`)
         : null,
 
+      tally.creating
+        ? h('div.alert.warn',
+          h('span.alert-icon', '⚠️'),
+          h('div',
+            h('div.alert-title', `${tally.creating} new `
+              + `${tally.creating === 1 ? 'thing' : 'things'} this file names`),
+            h('ul.pay-import-changes',
+              wanted.allowances.map((name) => h('li', h('strong', name), ' — an allowance')),
+              wanted.schemes.map((s) => h('li', h('strong', s.name),
+                ' — a bonus scheme paying a set figure, covering everybody the file gives a '
+                + 'figure for'))),
+            h('label.tickline', { style: { marginTop: '.4rem' } }, make,
+              h('span', 'Make them')),
+            h('div.alert-detail', 'Leave it unticked and those columns are left alone, the '
+              + 'same as any column nobody recognised.')))
+        : null,
+
       read.unknown.length
         ? h('div.returns-warn',
           h('strong', 'Columns nobody recognised, so they were left alone'),
           h('div', read.unknown.join(', ')),
-          h('div.muted', 'An allowance or a scheme has to exist here before a column can set '
-            + 'it. Nothing is made from a spreadsheet.'))
+          h('div.muted', 'An allowance column has to say so: “Allowance: Transport”. A bonus '
+            + 'column names the scheme: “Bonus: Housing” for a set figure, or “Score: Guest '
+            + 'scores” for one that is scored. A scored scheme cannot be made from a sheet, '
+            + 'because a column of percentages does not say what the scheme is worth.'))
         : null,
 
       read.skipped.length
@@ -594,15 +619,22 @@ async function showImport({ month, text, read, reload }) {
       lines.length ? h('div.pay-import-list', lines) : null),
 
     onSubmit: () => (tally.changes
-      ? api.payrollApplyInput({ month, text })
+      ? api.payrollApplyInput({ month, text, create: make.checked })
       : Promise.resolve({ basics: 0, allowances: 0, scores: 0 })),
   });
 
   if (!done) return;
   const bits = [];
+  const created = (done.made?.allowances?.length ?? 0) + (done.made?.schemes?.length ?? 0);
+  if (created) bits.push(`${created} made`);
   if (done.basics) bits.push(`${done.basics} salaries`);
   if (done.allowances) bits.push(`${done.allowances} allowances`);
   if (done.scores) bits.push(`${done.scores} scores`);
+  // What it named and was not allowed to make, so an untouched column is never
+  // just an absence somebody has to notice.
+  if (done.notMade?.length) {
+    toast(`Left alone, nothing was made for them: ${done.notMade.join(', ')}.`, 'warn');
+  }
   toast(bits.length ? `Set: ${bits.join(', ')}.` : 'Nothing changed.', bits.length ? 'good' : 'warn');
   await reload();
 }
@@ -852,7 +884,9 @@ function perPersonAmounts(scheme, data, scored, typed, closed, cash) {
     return h('tr',
       h('td', person?.name ?? `Staff ${staffId}`,
         held?.award == null ? h('small.muted', ' · not set yet') : null),
-      h('td.num', input),
+      // The currency in front of the box, because the box beside it on another
+      // scheme wants a percentage and the two look identical otherwise.
+      h('td.num', h('span.muted', `${data.currency ?? 'GHS'} `), input),
       h('td.num'));
   });
 
@@ -932,9 +966,18 @@ function schemesCard(data, month, closed, reload, cash) {
   // unsaved work somebody would be sorry to lose.
   const typed = new Set();
 
-  // Keyed, because the payroll redraws itself when the month changes without
-  // going near the router. Without it every month somebody looked at would
-  // leave a guard behind holding a map that can never empty.
+  // NOT WHILE SOMEBODY IS TYPING INTO IT. This screen watches attendance as
+  // well as pay, so on a busy morning every clock-in was a live update, and a
+  // live update redraws the view — taking a page of half-typed scores with it.
+  // Somebody would enter fifteen figures, press Save, and find one of them had
+  // survived. The rota has held itself against this from the beginning; the
+  // payroll never did.
+  holdRefresh(() => typed.size > 0);
+
+  // And the same for leaving the screen. Keyed, because the payroll redraws
+  // itself when the month changes without going near the router, and without
+  // a key every month somebody looked at would leave a guard behind holding a
+  // map that can never empty.
   warnBeforeLeaving(() => (typed.size && !closed
     ? `${typed.size} bonus figure${typed.size === 1 ? '' : 's'} are not saved`
     : null), { key: 'payroll-scores' });
@@ -974,6 +1017,13 @@ function schemesCard(data, month, closed, reload, cash) {
         h('div.pay-scheme-head',
           h('div',
             h('strong', scheme.name),
+            // Which kind it is, said in a word rather than left to be worked
+            // out from the sentence beside it. Typing money into a box that
+            // wants a percentage is capped at a hundred and reads as the
+            // screen ignoring what was typed.
+            scheme.kind === 'amount'
+              ? h('span.pill.info', { style: { marginLeft: '.4rem' } }, 'A set figure each')
+              : h('span.pill', { style: { marginLeft: '.4rem' } }, 'Scored out of 100'),
             h('span.muted', scheme.kind === 'amount'
               ? ` · ${cash(scheme.amount)} unless somebody is set a different figure`
               : ` · ${cash(scheme.amount)} at 100%`),
