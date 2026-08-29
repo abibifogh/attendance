@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import {
   confirmAction, fmtDay, h, money, monthOf, mount, shiftMonth, toast, todayISO,
 } from '../util.js';
-import { card, emptyState } from './components.js';
+import { bulkUpload, card, emptyState } from './components.js';
 import { field, formDialog } from './att-shared.js';
 import { navigate, replaceParams } from '../app.js';
 
@@ -28,6 +28,108 @@ import { navigate, replaceParams } from '../app.js';
  * possible.
  */
 
+/**
+ * Advances already running somewhere else, brought in as a sheet.
+ *
+ * A property arriving with eleven of them has them on a spreadsheet, and
+ * typing those into a dialog one at a time is both an afternoon and eleven
+ * chances to mistype a balance.
+ */
+function advanceImportButton(reload) {
+  return bulkUpload({
+    accept: '.csv,text/csv',
+    title: 'Advances as a CSV. Nothing is written until you have seen what it would do.',
+    template: {
+      href: '/api/advances/template',
+      download: 'advances.csv',
+      label: 'Download template',
+    },
+    onFile: async (file) => {
+      try {
+        const text = await file.text();
+        const read = await api.advanceReadImport(text);
+        await showAdvanceImport({ text, read, reload });
+      } catch (err) {
+        toast(err.message, 'bad');
+      }
+    },
+  });
+}
+
+/** What the file would do, and the button that does it. */
+async function showAdvanceImport({ text, read, reload }) {
+  const { tally } = read;
+  const cash = (n) => money(n, 'GHS');
+
+  const line = (row) => h('div.pay-import-row',
+    h('div',
+      h('strong', row.name),
+      h('span.muted', ` · ${row.employeeNo}`),
+      h('ul.pay-import-changes',
+        h('li', 'Amount: ', h('strong', cash(row.amount)),
+          row.repaid ? h('span.muted', ` · ${cash(row.repaid)} already repaid`) : null),
+        h('li', `${cash(row.monthly)} a month for ${row.months} `
+          + `month${row.months === 1 ? '' : 's'}, from ${niceMonth(row.startMonth)}`),
+        h('li', 'Left to take: ', h('strong', cash(row.outstanding)))),
+      row.notes.length
+        ? h('ul.pay-import-notes', row.notes.map((n) => h('li', `${n.what}: ${n.why}`)))
+        : null));
+
+  const done = await formDialog({
+    title: 'Advances from a spreadsheet',
+    submitLabel: tally.nothing ? 'Nothing to record' : `Record ${tally.adding}`,
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.9rem', marginTop: 0 } },
+        tally.nothing
+          ? 'Nothing in that file is new. Anything already on the books to the pesewa and the '
+            + 'day is left where it is.'
+          : `${tally.adding} advance${tally.adding === 1 ? '' : 's'} would be recorded, `
+            + `${cash(tally.money)} in all with ${cash(tally.outstanding)} still to come off. `
+            + 'Nothing has been written yet.'),
+
+      read.missingColumns.length
+        ? h('div.returns-warn', `The sheet needs ${read.missingColumns.join(' and ')}.`)
+        : null,
+
+      tally.adding
+        ? h('div.alert.warn',
+          h('span.alert-icon', '⚠️'),
+          h('div',
+            h('div.alert-title', 'Nobody is told'),
+            h('div.alert-detail', 'Recording an advance by hand sends the person a message, '
+              + 'because money has just been agreed. These have been running since before HIVE '
+              + 'saw them, so no message goes out. Tell anybody who needs to hear it yourself.')))
+        : null,
+
+      read.unknown.length
+        ? h('div.returns-warn',
+          h('strong', 'Columns nobody recognised, so they were left alone'),
+          h('div', read.unknown.join(', ')))
+        : null,
+
+      read.skipped.length
+        ? h('div.returns-warn',
+          h('strong', `${read.skipped.length} line${read.skipped.length === 1 ? '' : 's'} skipped`),
+          h('ul', read.skipped.map((row) => h('li',
+            `Line ${row.at}: ${row.name || row.employeeNo || 'blank'} · ${row.why}`))))
+        : null,
+
+      read.lines.length ? h('div.pay-import-list.import-open', read.lines.map(line)) : null),
+
+    onSubmit: () => (tally.nothing
+      ? Promise.resolve({ added: 0, failed: [] })
+      : api.advanceApplyImport(text)),
+  });
+
+  if (!done) return;
+  const bits = [];
+  if (done.added) bits.push(`${done.added} recorded`);
+  if (done.failed?.length) bits.push(`${done.failed.length} could not be saved`);
+  toast(bits.length ? `${bits.join(', ')}.` : 'Nothing recorded.',
+    done.failed?.length ? 'warn' : bits.length ? 'good' : 'warn');
+  await reload();
+}
+
 export async function renderAttAdvances(params) {
   const host = h('div');
   const month = /^\d{4}-\d{2}$/.test(params.month) ? params.month : monthOf(todayISO());
@@ -47,7 +149,9 @@ export async function renderAttAdvances(params) {
         h('h1', 'Salary advances'),
         h('div.sub', 'What was lent, what has come back, and what is left'),
       ),
-      h('button.btn-sm.btn-primary', { onclick: () => addOne(data, reload) }, 'Give an advance'),
+      h('div.btn-row',
+        advanceImportButton(reload),
+        h('button.btn-sm.btn-primary', { onclick: () => addOne(data, reload) }, 'Give an advance')),
     ),
 
     data.requests.length ? requestsCard(data, reload, cash) : null,

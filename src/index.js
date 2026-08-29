@@ -187,6 +187,13 @@ export const ROUTES = [
   ['GET', '/api/advances', 'hr_pay', advance.advances],
   ['POST', '/api/advances', 'hr_pay', advance.addAdvance],
   ['POST', '/api/advances/close', 'hr_pay', advance.closeMonth],
+
+  // Advances already running somewhere else, brought in as a sheet. It creates
+  // nobody, records nothing twice, and tells nobody: a file of advances that
+  // have been running since March is not news to the people paying them back.
+  ['GET', '/api/advances/template', 'hr_pay', advance.advanceTemplate],
+  ['POST', '/api/advances/import/read', 'hr_pay', advance.readAdvanceImport],
+  ['POST', '/api/advances/import', 'hr_pay', advance.applyAdvanceImport],
   ['GET', '/api/advances/staff/:id', 'hr_pay', advance.staffAdvances],
   ['POST', '/api/advances/:id/decide', 'hr_pay', advance.decideAdvance],
   ['PATCH', '/api/advances/:id', 'hr_pay', advance.adjustAdvance],

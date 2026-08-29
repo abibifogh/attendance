@@ -816,6 +816,29 @@ export const GUIDE = [
         + 'their own screen with the whole schedule. Money coming off a payslip that nobody '
         + 'mentioned is how this arrangement loses people’s trust.' },
 
+      { sub: 'Ones that were already running' },
+      { p: 'Bulk upload takes a sheet of advances a property was already running before HIVE '
+        + 'saw them. Download template first: what comes down is whatever is on the books '
+        + 'already, so a correction is a changed cell rather than a file somebody builds. '
+        + 'Employee number and amount are the two columns it needs; months, the monthly '
+        + 'deduction, the date it was taken, the month repayment starts, the purpose and what '
+        + 'it was for are all optional and worked out where the sheet does not say.' },
+      { p: 'Already repaid is the column that matters most. A running advance has had money '
+        + 'come off it, and without that figure the app would set about recovering the whole '
+        + 'thing again. It goes on as one adjustment rather than as invented monthly '
+        + 'repayments: the property knows what it has recovered, it does not necessarily know '
+        + 'which months it came out of, and writing months nobody can vouch for puts figures '
+        + 'in the ledger that nothing supports.' },
+      { note: 'Nobody is told. Recording an advance by hand sends the person a message because '
+        + 'money has just been agreed; a sheet of advances running since March is not news to '
+        + 'anybody, and eleven of those messages in one afternoon is how people learn to '
+        + 'ignore the app.' },
+      { note: 'It creates nobody, and it records nothing twice. A staff number the register '
+        + 'does not know is skipped and named. One person, one amount and one date is taken to '
+        + 'be the same advance, so a sheet run again after a correction adds what is new and '
+        + 'leaves the rest alone — without that, a second run of a twelve-line file doubles '
+        + 'everybody\u2019s deductions and nobody finds out until payday.' },
+
       { sub: 'The end of the month' },
       { p: 'On the last day of every month the app asks whether the deductions were actually '
         + 'taken. Everybody is ticked to start with, since that is the ordinary month: untick '

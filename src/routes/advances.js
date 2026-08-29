@@ -1,6 +1,7 @@
 import {
-  badRequest, forbidden, int, json, notFound, num, readJson, str,
+  badRequest, csvResponse, forbidden, int, json, notFound, num, readJson, str,
 } from '../lib/http.js';
+import { readAdvanceSheet, tallyOf } from '../lib/advance-import.js';
 import { createNotice } from '../lib/notices.js';
 import { readFile, storeFile } from './people.js';
 import {
@@ -826,3 +827,151 @@ const money = (amount, currency = 'GHS') => {
     maximumFractionDigits: 2,
   })}`;
 };
+
+// ---------------------------------------------------------------------------
+// Advances, out of a spreadsheet
+// ---------------------------------------------------------------------------
+
+/** Who the property knows, and what is already on the books. */
+async function booksNow(db) {
+  const [staff, open] = await Promise.all([
+    db.prepare('SELECT id, employee_no, name, active FROM att_staff').all(),
+    db.prepare("SELECT staff_id, amount, taken_on FROM hr_advance WHERE status <> 'declined'")
+      .all().catch(() => ({ results: [] })),
+  ]);
+  return { staff: staff.results ?? [], open: open.results ?? [] };
+}
+
+/** What the file would do, said before anything is done. */
+export async function readAdvanceImport(ctx) {
+  const body = await readJson(ctx.request);
+  const text = String(body.text ?? '');
+  if (!text.trim()) throw badRequest('There is nothing in that file.');
+
+  const { timezone } = await settingsOf(ctx.db);
+  const read = readAdvanceSheet(text, { ...(await booksNow(ctx.db)), today: todayIn(timezone) });
+  return json({ ...read, tally: tallyOf(read) });
+}
+
+/**
+ * And then do it.
+ *
+ * The file is read again here rather than trusting a list posted back from the
+ * screen. Somebody may have recorded one of these by hand between the preview
+ * and the button, and the second read is what stops it going on twice.
+ *
+ * NOBODY IS TOLD. Recording an advance by hand sends the person a message,
+ * because it is news: money has just been agreed. A sheet of advances that
+ * have been running since March is not news to anybody, and eleven of those
+ * messages on one afternoon is how people learn to ignore the app. The screen
+ * says so before the button is pressed.
+ */
+export async function applyAdvanceImport(ctx) {
+  const body = await readJson(ctx.request);
+  const text = String(body.text ?? '');
+  if (!text.trim()) throw badRequest('There is nothing in that file.');
+
+  const { timezone, currency } = await settingsOf(ctx.db);
+  const read = readAdvanceSheet(text, { ...(await booksNow(ctx.db)), today: todayIn(timezone) });
+  if (read.missingColumns.length) {
+    throw badRequest(`The sheet needs ${read.missingColumns.join(' and ')}.`);
+  }
+
+  const actor = actorOf(ctx);
+  let added = 0;
+  let opened = 0;
+  const failed = [];
+
+  for (const line of read.lines) {
+    try {
+      const row = await ctx.db.prepare(
+        `INSERT INTO hr_advance
+           (staff_id, amount, months, monthly, currency, reason, status, taken_on, start_month,
+            asked_by, decided_by, decided_at, decision, purpose)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'approved', ?7, ?8, ?9, ?9, datetime('now'), ?10, ?11)
+         RETURNING id`,
+      ).bind(
+        line.staffId, line.amount, line.months, line.monthly, currency, line.reason,
+        line.takenOn, line.startMonth, actor, 'Brought in from a spreadsheet', line.purpose,
+      ).first();
+      added += 1;
+
+      // What has already come off, as one adjustment rather than a month of
+      // invented repayments. The property knows the total it has recovered; it
+      // does not necessarily know which months it came out of, and writing
+      // months nobody can vouch for would put figures in the ledger that
+      // nothing supports.
+      if (line.repaid > 0) {
+        await ctx.db.prepare(
+          `INSERT INTO hr_advance_entry (advance_id, month, kind, amount, note, actor, source)
+           VALUES (?1, ?2, 'adjustment', ?3, ?4, ?5, 'import')`,
+        ).bind(
+          row.id,
+          line.startMonth ?? monthOf(line.takenOn),
+          line.repaid,
+          'Already repaid before this was brought into HIVE',
+          actor,
+        ).run().catch(() => {});
+      }
+
+      if (line.outstanding > 0.009) opened += 1;
+      else {
+        await ctx.db.prepare(
+          "UPDATE hr_advance SET status = 'settled', settled_at = datetime('now') WHERE id = ?",
+        ).bind(row.id).run().catch(() => {});
+      }
+    } catch (err) {
+      failed.push({ at: line.at, name: line.name, why: String(err.message).slice(0, 200) });
+    }
+  }
+
+  await audit(ctx, 'advance.import', null, {
+    added, opened, skipped: read.skipped.length, failed: failed.length,
+  });
+
+  return json({
+    ok: true, added, opened, failed, skipped: read.skipped,
+  });
+}
+
+/**
+ * A sheet to fill in, with the property's own running advances already on it.
+ *
+ * The same shape as everywhere else: what comes down is what is already here,
+ * so a correction is a changed cell rather than a file somebody builds. A
+ * property with none yet gets one example row.
+ */
+export async function advanceTemplate(ctx) {
+  const { staff } = await booksNow(ctx.db);
+  const byId = new Map(staff.map((s) => [s.id, s]));
+  const { advances, entriesBy } = await ledger(ctx.db);
+
+  const head = ['Employee no', 'Name', 'Amount', 'Months', 'Monthly', 'Taken on', 'Starts',
+    'Purpose', 'What it is for', 'Already repaid'];
+  const rows = [head];
+
+  for (const advance of advances) {
+    if (!isOpen(advance)) continue;
+    const person = byId.get(advance.staff_id);
+    if (!person) continue;
+    rows.push([
+      person.employee_no,
+      person.name,
+      round2(advance.amount).toFixed(2),
+      advance.months,
+      round2(advance.monthly).toFixed(2),
+      advance.taken_on ?? '',
+      advance.start_month ?? '',
+      purposeOf(advance.purpose)?.label ?? '',
+      advance.reason ?? '',
+      round2(repaidOf(entriesBy.get(advance.id) ?? [])).toFixed(2),
+    ]);
+  }
+
+  if (rows.length === 1) {
+    rows.push(['001', 'Kofi Mensah', '1200.00', '6', '200.00', '2026-03-01', '2026-04',
+      'Something else', 'An example — change it or delete the line', '400.00']);
+  }
+
+  return csvResponse('advances.csv', rows);
+}
