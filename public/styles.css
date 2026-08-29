@@ -3053,6 +3053,11 @@ html { touch-action: manipulation; }
 .pay-month-pick { flex-wrap: nowrap; }
 .pay-month-pick input { min-width: 9rem; }
 
+/* The month a net is read against. Narrower than the month being run, because
+   it is a comparison rather than the thing on screen. */
+.pay-compare { min-width: 8.5rem; font-size: .85rem; }
+.pay-table .delta { white-space: nowrap; }
+
 /* Schemes under the department they belong to, with the property-wide ones
    last under General. A flat run of cards was unreadable past about six. */
 .pay-scheme-group { margin-bottom: 1rem; }

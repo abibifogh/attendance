@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import {
-  confirmAction, fmtNum, h, money, monthOf, mount, shiftMonth, toast, todayISO,
+  confirmAction, deltaBadge, fmtNum, h, money, monthOf, mount, shiftMonth, toast, todayISO,
 } from '../util.js';
 import { bulkUpload, card, emptyState } from './components.js';
 import {
@@ -60,7 +60,7 @@ export async function renderAttPayroll(params) {
     return host;
   }
 
-  const data = await api.payroll(month);
+  const data = await api.payroll(month, params.compare || null);
   const cash = (n) => money(n, data.currency);
   const closed = data.status === 'final';
 
@@ -152,6 +152,7 @@ export async function renderAttPayroll(params) {
         wide: true,
         note: closed ? 'closed' : 'a draft — it moves when anything behind it moves',
         actions: h('div.btn-row',
+          comparePicker(data, month, reload),
           h('button.btn-sm', { onclick: () => printReport({
             title: `Payroll, ${niceMonth(month)}`,
             subtitle: data.property || '',
@@ -181,6 +182,7 @@ export async function renderAttPayroll(params) {
             h('th.num', 'PAYE'),
             h('th.num', 'Advance'),
             h('th.num', 'Net'),
+            h('th.num', compareHead(data)),
             h('th.num', 'Cost'),
           )),
           h('tbody', data.lines.map((line) => h('tr.pay-row', {
@@ -212,6 +214,7 @@ export async function renderAttPayroll(params) {
           h('td.num', cash(line.paye.total)),
           h('td.num', line.loanTotal ? cash(line.loanTotal) : h('span.muted', '—')),
           h('td.num', h('strong', cash(line.net))),
+          h('td.num', movementCell(line.against, cash)),
           h('td.num.off-phone', cash(line.employerCost)))),
           h('tr.pay-total',
             h('td', h('strong', 'Everybody')),
@@ -223,7 +226,9 @@ export async function renderAttPayroll(params) {
             h('td.num', cash(data.totals.paye)),
             h('td.num', cash(data.totals.loans)),
             h('td.num', h('strong', cash(data.totals.net))),
+            h('td.num', movementCell(wholeMonthAgainst(data), cash)),
             h('td.num.off-phone', cash(data.totals.cost)))))),
+        compareNote(data),
         h('p.muted', { style: { fontSize: '.85rem' } }, data.slips
           ? 'Press a row for the payslip behind it.'
           : 'Payslips are an administrator\u2019s to open. The figures here are what the '
@@ -655,6 +660,115 @@ function openAllSlips(data, month) {
     title: `${data.lines.length} payslips`,
     subtitle: `${niceMonth(month)} · one page each`,
   });
+}
+
+/**
+ * How far somebody's net pay has moved since another month.
+ *
+ * A column of net figures says what everybody is being paid and nothing about
+ * which of them is worth a second look. Somebody's net moves for a dozen
+ * reasons — a bonus month, an advance that has finished, three days of unpaid
+ * leave, a rate change — and a per cent against last month is the one number
+ * that finds the lines to check before the month is closed.
+ */
+function movementCell(against, cash) {
+  if (!against) return h('span.muted', '—');
+  if (against.percent === null) {
+    // Nothing to be a per cent of. An infinite rise is not a number anybody
+    // can act on, so it says what actually happened instead.
+    return h('div',
+      h('span.delta.up', '↑ new'),
+      h('small.muted', { style: { display: 'block' } }, `was ${cash(against.was)}`));
+  }
+  return h('div',
+    deltaBadge(against.percent, { higherIsBetter: true }),
+    h('small.muted', { style: { display: 'block' } }, cash(against.was)));
+}
+
+/** Said under the table when the month being compared against is not settled. */
+function compareNote(data) {
+  const other = data.compare?.month;
+  const status = data.compare?.status;
+  if (!other || status === 'final') return null;
+
+  return h('p.muted', { style: { fontSize: '.85rem' } },
+    status === 'none'
+      ? `${niceMonth(other)} was never run, so there is nothing to read this month against. `
+        + 'Pick another month with the box above the table.'
+      : `* ${niceMonth(other)} is still a draft, so the per cents are against figures that `
+        + 'can still move. Close it and they settle.');
+}
+
+/**
+ * Which month the net figures are read against.
+ *
+ * Last month by default, because that is the comparison somebody makes without
+ * being asked. But the useful one is often further back: the same month last
+ * year, or the month before a pay review, and a screen that can only ever
+ * answer "last month" sends somebody to a spreadsheet.
+ */
+function comparePicker(data, month, reload) {
+  const other = data.compare?.month ?? shiftMonth(month, -1);
+  const box = h('input.pay-compare', {
+    type: 'month',
+    value: other,
+    max: shiftMonth(month, -1),
+    'aria-label': 'Compare each net with this month',
+    onchange: (e) => {
+      if (!e.target.value || e.target.value === month) return;
+      reload({ compare: e.target.value });
+    },
+  });
+
+  return h('div.btn-row.pay-month-pick',
+    h('span.muted', { style: { fontSize: '.85rem' } }, 'vs'),
+    box,
+    other === shiftMonth(month, -1)
+      ? null
+      : h('button.btn-ghost.btn-sm', {
+        title: 'Back to the month before this one',
+        onclick: () => reload({ compare: null }),
+      }, '↺'));
+}
+
+/** The heading over that column, saying which month it is against. */
+function compareHead(data) {
+  const other = data.compare?.month;
+  if (!other) return 'vs.';
+
+  const status = data.compare?.status;
+  const said = status === 'none'
+    ? `${niceMonth(other)} was never run, so there is nothing to read these against`
+    : status === 'final'
+      ? `Each net beside what ${niceMonth(other)} actually paid`
+      : `Each net beside ${niceMonth(other)}, which is still a draft and can move`;
+
+  return h('span', { title: said },
+    'vs ', h('span.muted', niceMonth(other)),
+    // A draft is not what anybody was paid, and the column should not be read
+    // as though it were.
+    status && status !== 'final' ? h('span.muted', ' *') : null);
+}
+
+/**
+ * The same figure for the whole month, worked out from the lines rather than
+ * asked for separately.
+ *
+ * Only over the people who were on both months. A property that took on four
+ * people would otherwise read as a rise in everybody's pay.
+ */
+function wholeMonthAgainst(data) {
+  const both = (data.lines ?? []).filter((line) => line.against);
+  if (!both.length) return null;
+
+  const was = both.reduce((n, line) => n + (line.against.was ?? 0), 0);
+  const now = both.reduce((n, line) => n + line.net, 0);
+  if (Math.abs(was) < 0.005) return null;
+  return {
+    was: Math.round(was * 100) / 100,
+    change: Math.round((now - was) * 100) / 100,
+    percent: Math.round(((now - was) / Math.abs(was)) * 1000) / 10,
+  };
 }
 
 // --------------------------------------------------------------------------

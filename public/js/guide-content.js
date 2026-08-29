@@ -1006,6 +1006,21 @@ export const GUIDE = [
           + 'into the month are replaced rather than added to.',
       ] },
 
+      { sub: 'Whose pay moved, and by how much' },
+      { p: 'Beside every net figure is what that person was paid in another month and the per '
+        + 'cent between the two. Last month unless you pick a different one with the box above '
+        + 'the table \u2014 the same month last year, or the month before a pay review. A '
+        + 'column of net figures says what everybody is being paid and nothing about which of '
+        + 'them is worth a second look; the per cent is what finds those lines before the '
+        + 'month is closed.' },
+      { p: 'The bottom row does the same for the whole month, over the people who were on '
+        + 'both. A property that took on four people would otherwise read as a rise in '
+        + 'everybody\u2019s pay.' },
+      { note: 'A closed month is compared on what it actually paid. A month still open is '
+        + 'compared on what it comes to today, marked with a star, because those figures can '
+        + 'still move. A month nobody ever ran has nothing to compare against and says so, '
+        + 'rather than answering "nothing has changed" about a month nobody was paid in.' },
+
       { sub: 'From a spreadsheet' },
       { p: 'A month\u2019s figures can come in from a sheet instead of being typed. Bulk '
         + 'upload \u2192 Download template gives you this month as it stands, not a blank '

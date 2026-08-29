@@ -240,7 +240,12 @@ export const api = {
   medicalReceiptUrl: (id) => `/api/medical/receipt/${id}`,
 
   // ------------------------------------------------------------- payroll --
-  payroll: (month) => request(`/api/payroll${month ? `?month=${month}` : ''}`),
+  payroll: (month, compare) => {
+    const q = new URLSearchParams();
+    if (month) q.set('month', month);
+    if (compare) q.set('compare', compare);
+    return request(`/api/payroll${q.toString() ? `?${q}` : ''}`);
+  },
   payslip: (staffId, month) => request(`/api/payroll/slip/${staffId}${month ? `?month=${month}` : ''}`),
   payrollProfiles: (body) => request('/api/payroll/profiles', { method: 'POST', body }),
   payrollScheme: (body) => request('/api/payroll/schemes', { method: 'POST', body }),

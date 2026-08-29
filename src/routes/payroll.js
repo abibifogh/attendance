@@ -55,10 +55,17 @@ const monthFrom = (url, timezone) => {
   return isMonth(asked) ? asked : monthOf(todayIn(timezone));
 };
 
-/** The run for a month, made if it is not there yet. */
-async function runFor(db, month, actor) {
+/**
+ * The run for a month, made if it is not there yet.
+ *
+ * `open: false` looks without touching. Reading last month to compare it with
+ * this one must not open last month's payroll, which would put a draft run on
+ * the books for a month nobody has been near.
+ */
+async function runFor(db, month, actor, { open = true } = {}) {
   const found = await db.prepare('SELECT * FROM pay_run WHERE month = ?').bind(month).first();
   if (found) return found;
+  if (!open) return { id: -1, month, status: 'draft' };
 
   await db.prepare('INSERT OR IGNORE INTO pay_run (month, opened_by) VALUES (?1, ?2)')
     .bind(month, actor).run();
@@ -69,7 +76,7 @@ async function runFor(db, month, actor) {
  * Everything one month needs, indexed: who is on the payroll, what they are
  * under, what they scored, what came off, and what they are repaying.
  */
-async function gather(ctx, month) {
+async function gather(ctx, month, { open = true } = {}) {
   const { currency, property, settings } = await settingsOf(ctx.db);
 
   // The figures that were in force in that month, not the ones in force today.
@@ -79,7 +86,7 @@ async function gather(ctx, month) {
     .catch(() => ({ results: [] }));
   const { rates, tiers, from: ratesFrom_ } = ratesOn(month, tables.results ?? [], settings);
 
-  const run = await runFor(ctx.db, month, actorOf(ctx));
+  const run = await runFor(ctx.db, month, actorOf(ctx), { open });
 
   const [staff, profiles, allowances, schemes, members, scores, penalties, advances, entries, slips]
     = await Promise.all([
@@ -257,6 +264,74 @@ function linesFrom(data, month) {
 // The month
 // --------------------------------------------------------------------------
 
+/**
+ * A month's lines, however that month stands.
+ *
+ * A closed month answers from what was written down, an open one from what the
+ * figures say today. The same rule wherever a month is read, so a comparison
+ * against March cannot disagree with the March screen.
+ */
+function linesOf(data, month) {
+  return data.run.status === 'final'
+    ? data.staff
+      .map((person) => data.slipBy.get(person.id))
+      .filter(Boolean)
+      .map((slip) => JSON.parse(slip.detail))
+    : linesFrom(data, month);
+}
+
+/**
+ * What each person's net pay was in another month, and how far this one has
+ * moved from it.
+ *
+ * Somebody's net moves for a dozen reasons — a bonus month, an advance that
+ * finished, a rate change, three days of unpaid leave — and the payroll screen
+ * showed a column of figures with nothing to read them against. A per cent
+ * against last month is the one number that says which lines are worth
+ * looking at before the month is closed.
+ *
+ * Nothing is opened by asking: the month being compared against is read
+ * without a run being made for it.
+ */
+async function against(ctx, month, asked) {
+  const other = isMonth(asked) ? asked : addMonths(month, -1);
+  if (other === month) return { month: other, netBy: new Map(), status: null };
+
+  const data = await gather(ctx, other, { open: false });
+
+  // A month nobody ever opened has no payroll to compare with. Working one out
+  // from today's standing figures would answer "nothing has changed" about a
+  // month nobody was paid in — and against a month two years back, where every
+  // salary has moved since, that reading is not just useless but wrong.
+  if (data.run.id === -1) return { month: other, netBy: new Map(), status: 'none' };
+
+  const netBy = new Map(linesOf(data, other).map((line) => [line.staff.id, round2(line.net)]));
+  return {
+    month: other,
+    netBy,
+    // Whether the figures being compared against are settled or still moving.
+    status: data.run.status,
+  };
+}
+
+/** This month's net beside another month's, as a per cent. */
+export function movement(now, before) {
+  if (before == null) return null;
+  const was = round2(before);
+  const net = round2(now);
+  if (Math.abs(was) < 0.005) {
+    // Nothing to be a per cent of. Said as new rather than as an infinite
+    // rise, which is a number nobody can act on.
+    return { was, change: net, percent: null, from: 'nothing' };
+  }
+  return {
+    was,
+    change: round2(net - was),
+    percent: round2(((net - was) / Math.abs(was)) * 100),
+    from: null,
+  };
+}
+
 /** The whole month: the people, the schemes, the figures and the totals. */
 export async function payroll(ctx) {
   const { timezone } = await settingsOf(ctx.db);
@@ -266,12 +341,14 @@ export async function payroll(ctx) {
   // A closed month answers from what was written down, not from what the
   // figures happen to say today.
   const closed = data.run.status === 'final';
-  const lines = closed
-    ? data.staff
-      .map((person) => data.slipBy.get(person.id))
-      .filter(Boolean)
-      .map((slip) => JSON.parse(slip.detail))
-    : linesFrom(data, month);
+  const lines = linesOf(data, month);
+
+  // Against another month, so a figure has something to be read beside. Last
+  // month unless somebody asked for a different one.
+  const compare = await against(ctx, month, ctx.url.searchParams.get('compare'));
+  for (const line of lines) {
+    line.against = movement(line.net, compare.netBy.get(line.staff.id));
+  }
 
   const memberOf = new Map();
   for (const [schemeId, rows] of data.memberBy.entries()) {
@@ -300,6 +377,13 @@ export async function payroll(ctx) {
       // dated one, which means the figures it is using now are the only ones
       // it has ever used.
       from: data.ratesFrom,
+    },
+    // Which month the per cent beside each net is measured against, and how
+    // settled those figures are.
+    compare: {
+      month: compare.month,
+      status: compare.status,
+      people: compare.netBy.size,
     },
     // Everything the table needs, and for anybody but an administrator nothing
     // the payslip would have added.
