@@ -1421,6 +1421,21 @@ decides which it is: the scheme is found by name and its own kind says how the
 cell is read, so writing `Score` above a column of amounts gets you what you
 meant. A cell against a scheme somebody is not under is refused either way.
 
+**A scheme can also pay by tier.** Nkosoɔ is scored one to ten and every score
+is worth a stated amount — a 1 is seventy cedis, a 4 is a hundred and thirty, a
+10 is two hundred and fifty. Neither of the other two shapes holds that:
+scored out of a hundred it means working out what per cent of 250 comes to 130,
+every month, for everybody, and as a set figure each it means typing the money
+when the score is the thing the property actually decides. So the table belongs
+to the scheme and somebody picks a score. The rungs are written out rather than
+stored as a start and a step, because every one of these stops being even
+eventually and a scheme that cannot hold what was agreed gets worked around in
+somebody's head. A score not on the table is refused rather than rounded to the
+nearest, and what a rung was worth is copied onto the payslip when the score is
+given, so moving the table in December does not rewrite what somebody was paid
+in June. Its column on the month sheet holds the score itself, a 4 rather than
+a percentage or the money.
+
 **A name the property has not got is offered rather than refused.** The preview
 lists what the file would introduce and puts a tick beside it, and nothing is
 made unless that tick is on. Leave it off and the sheet still goes in, with the

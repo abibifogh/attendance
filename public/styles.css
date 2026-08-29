@@ -2879,6 +2879,16 @@ html { touch-action: manipulation; }
   color: var(--text);
 }
 
+/* A bonus scheme's ladder: a score, and what that score pays. One row each,
+   because the rungs are the agreement and a formula cannot hold a top tier
+   that jumps or a bottom one that pays nothing. */
+.tier-rows { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .4rem; }
+.tier-row { display: flex; align-items: center; gap: .45rem; }
+.tier-in { width: 6rem; text-align: right; padding: .25rem .4rem; font-variant-numeric: tabular-nums; }
+.tier-row .muted { font-size: .82rem; }
+/* The picker on the payroll screen. Wide enough for "10 — GHS 250". */
+.pay-tier { min-width: 11rem; }
+
 .adv-moves { width: 100%; font-size: .88rem; }
 .adv-moves td { padding: .3rem .4rem; border-top: 1px solid var(--border); }
 

@@ -528,7 +528,8 @@ test('a month starts from the one before it, scores and all', async () => {
     carried.sort((a, b) => a.staffId - b.staffId),
     // `award` is what a scheme paying a set figure carries; a scored one
     // forgets it, so the scheme's worth today is what applies.
-    [{ staffId: 1, score: 80, award: null }, { staffId: 2, score: 40, award: null }],
+    [{ staffId: 1, score: 80, award: null, tier: null },
+      { staffId: 2, score: 40, award: null, tier: null }],
   );
   assert.deepEqual(now.penalties, []);
 });
@@ -567,7 +568,7 @@ test('somebody taken off a scheme since is not scored on it again', async () => 
 
   const now = await read(await payroll(ctx(db, WAGES, { query: `?month=${MONTH}` })));
   assert.deepEqual(now.schemes.find((s) => s.id === scheme.id).scores,
-    [{ staffId: 1, score: 80, award: null }]);
+    [{ staffId: 1, score: 80, award: null, tier: null }]);
 });
 
 test('what is already scored this month is replaced, not added to', async () => {

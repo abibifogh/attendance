@@ -7,6 +7,7 @@ import { PAYE_COLUMNS, journalFor, payeSchedule, tiersFrom } from '../lib/statut
 import { ratesOn } from '../lib/tax-tables.js';
 import { readSheet, tallyOf } from '../lib/pay-import.js';
 import { isAdmin } from '../lib/payroll-access.js';
+import { hasTiers, readTiers, tierAmount } from '../lib/pay-tiers.js';
 import { addMonths, isMonth, monthOf, todayIn } from '../util/dates.js';
 
 /**
@@ -361,6 +362,8 @@ export async function payroll(ctx) {
   // The award as it stood when the score was given. On a scheme that pays a
   // set figure this is the figure itself, which is what the screen edits.
   const awardBy = new Map(data.scores.map((r) => [`${r.scheme_id}|${r.staff_id}`, r.amount]));
+  // Which rung of a tiered scheme somebody was put on. Null everywhere else.
+  const tierBy = new Map(data.scores.map((r) => [`${r.scheme_id}|${r.staff_id}`, r.tier]));
 
   return json({
     month,
@@ -401,19 +404,23 @@ export async function payroll(ctx) {
       // The whole set it covers. A scheme can span two departments, and the
       // single name above is only what a row written before that says.
       departments: readDepartments(scheme),
-      // 'score' is scored out of a hundred; 'amount' is a figure a person.
-      kind: scheme.kind === 'amount' ? 'amount' : 'score',
+      // 'score' is scored out of a hundred; 'amount' is a figure a person;
+      // 'tier' is a score off a ladder that says what each one is worth.
+      kind: ['amount', 'tier'].includes(scheme.kind) ? scheme.kind : 'score',
       amount: round2(scheme.amount),
+      tiers: readTiers(scheme.tiers),
       active: Boolean(scheme.active),
       staffIds: (data.memberBy.get(scheme.id) ?? []).map((m) => m.staff_id),
       scores: (data.memberBy.get(scheme.id) ?? []).map((m) => {
         const award = awardBy.get(`${scheme.id}|${m.staff_id}`);
+        const tier = tierBy.get(`${scheme.id}|${m.staff_id}`);
         return {
           staffId: m.staff_id,
           score: round2(scoreBy.get(`${scheme.id}|${m.staff_id}`) ?? 0),
           // Null where nothing has been set for them this month, so a screen
           // can tell "nought" from "not answered yet".
           award: award == null ? null : round2(award),
+          tier: tier == null ? null : round2(tier),
         };
       }),
     })),
@@ -491,12 +498,18 @@ async function sheetContext(ctx, month) {
     schemes: data.schemes.map((s) => ({
       id: s.id,
       name: s.name,
-      kind: s.kind === 'amount' ? 'amount' : 'score',
+      kind: ['amount', 'tier'].includes(s.kind) ? s.kind : 'score',
+      tiers: readTiers(s.tiers),
       active: Boolean(s.active),
     })),
     profiles: data.profileBy,
     allowanceBy: data.allowanceBy,
     scoreBy: new Map(data.scores.map((r) => [`${r.scheme_id}|${r.staff_id}`, r.score])),
+    // The rung somebody is on, which is the cell a tiered scheme's column
+    // holds rather than a percentage or a figure.
+    tierBy: new Map(data.scores
+      .filter((r) => r.tier != null)
+      .map((r) => [`${r.scheme_id}|${r.staff_id}`, round2(r.tier)])),
     // What each person is down for on a scheme that pays a set figure, which
     // is the cell the sheet holds rather than a percentage.
     awardBy: new Map(data.scores
@@ -552,6 +565,12 @@ export async function inputTemplate(ctx) {
       // somebody on something they are not on.
       ...c.schemes.map((s) => {
         if (!under.includes(s.id)) return '';
+        // A tiered scheme's column is the rung, blank where nobody has picked
+        // one, because a nought would read as a deliberate bottom score.
+        if (s.kind === 'tier') {
+          const tier = c.tierBy.get(`${s.id}|${person.id}`);
+          return tier == null ? '' : String(tier);
+        }
         if (s.kind !== 'amount') return round2(c.scoreBy.get(`${s.id}|${person.id}`) ?? 0).toFixed(2);
         // Blank where nobody has been set a figure yet, rather than nought,
         // which would read as a deliberate nothing.
@@ -676,16 +695,19 @@ export async function applyInput(ctx) {
           continue;
         }
         // A scheme that pays a set figure stores the figure as the award and a
-        // hundred as the score, the same as typing it on the screen does.
+        // hundred as the score, the same as typing it on the screen does. A
+        // tiered one stores the rung and the money that rung is worth.
         // Everything downstream works the award out as the award scaled by the
-        // score, so both kinds land as one line on a payslip.
-        const score = change.paysAmount ? 100 : change.to;
-        const award = change.paysAmount ? change.to : null;
+        // score, so all three kinds land as one line on a payslip.
+        const score = change.paysAmount || change.byTier ? 100 : change.to;
+        const award = change.paysAmount ? change.to : (change.byTier ? change.worth : null);
+        const tier = change.byTier ? change.to : null;
         await ctx.db.prepare(
-          `INSERT INTO pay_score (run_id, scheme_id, staff_id, score, amount)
-           VALUES (?1, ?2, ?3, ?4, ?5)
-           ON CONFLICT (run_id, scheme_id, staff_id) DO UPDATE SET score = ?4, amount = ?5`,
-        ).bind(run.id, schemeId, line.staffId, score, award).run();
+          `INSERT INTO pay_score (run_id, scheme_id, staff_id, score, amount, tier)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+           ON CONFLICT (run_id, scheme_id, staff_id)
+           DO UPDATE SET score = ?4, amount = ?5, tier = ?6`,
+        ).bind(run.id, schemeId, line.staffId, score, award, tier).run();
         scores += 1;
       }
     }
@@ -893,7 +915,14 @@ export async function saveScheme(ctx) {
   // Scored, or a set figure each. A figure is just an award scored at a
   // hundred, so nothing downstream has to know the difference — what changes is
   // what somebody is asked to type.
-  const kind = body.kind === 'amount' ? 'amount' : 'score';
+  // Three shapes. Scored out of a hundred; a set figure each; or a ladder of
+  // scores with a stated amount on every rung.
+  const kind = ['amount', 'tier'].includes(body.kind) ? body.kind : 'score';
+  const tiers = readTiers(body.tiers);
+  if (kind === 'tier' && !tiers.length) {
+    throw badRequest('A tiered scheme needs its scores and what each one is worth.');
+  }
+  const tierList = tiers.length ? JSON.stringify(tiers) : null;
   const staffIds = Array.isArray(body.staffIds)
     ? [...new Set(body.staffIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
     : [];
@@ -904,14 +933,16 @@ export async function saveScheme(ctx) {
     if (!found) throw notFound('No such scheme.');
     await ctx.db.prepare(
       'UPDATE pay_scheme SET name = ?2, amount = ?3, note = ?4, active = ?5, department = ?6, '
-      + 'departments = ?7, kind = ?8 WHERE id = ?1',
-    ).bind(id, name, amount, note, body.active === false ? 0 : 1, department, departmentList, kind)
-      .run();
+      + 'departments = ?7, kind = ?8, tiers = ?9 WHERE id = ?1',
+    ).bind(
+      id, name, amount, note, body.active === false ? 0 : 1, department, departmentList,
+      kind, tierList,
+    ).run();
   } else {
     const made = await ctx.db.prepare(
-      'INSERT INTO pay_scheme (name, amount, note, department, departments, kind) '
-      + 'VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING id',
-    ).bind(name, amount, note, department, departmentList, kind).first();
+      'INSERT INTO pay_scheme (name, amount, note, department, departments, kind, tiers) '
+      + 'VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) RETURNING id',
+    ).bind(name, amount, note, department, departmentList, kind, tierList).first();
     id = made?.id ?? null;
   }
 
@@ -923,7 +954,7 @@ export async function saveScheme(ctx) {
   }
 
   await audit(ctx, 'payroll.scheme', id, {
-    name, amount, kind, departments, people: staffIds.length,
+    name, amount, kind, tiers, departments, people: staffIds.length,
   });
   return json({ ok: true, id, name, people: staffIds.length });
 }
@@ -970,7 +1001,7 @@ export async function copyRun(ctx) {
   // scheme since last month is not scored on it, and a scheme that has gone
   // has nothing to score.
   const carried = await ctx.db.prepare(
-    `SELECT s.scheme_id, s.staff_id, s.score, s.amount, sc.kind
+    `SELECT s.scheme_id, s.staff_id, s.score, s.amount, s.tier, sc.kind, sc.tiers
        FROM pay_score s
        JOIN pay_scheme_staff m
          ON m.scheme_id = s.scheme_id AND m.staff_id = s.staff_id
@@ -985,12 +1016,28 @@ export async function copyRun(ctx) {
     // whose worth has changed since pays the new figure. A scheme that pays a
     // set amount carries the amount, because that amount is the whole answer
     // and it is different for each person.
-    const award = row.kind === 'amount' && row.amount != null ? round2(row.amount) : null;
+    //
+    // A tiered one carries the rung and looks the money up again, which is the
+    // scored rule rather than the set-figure one: a table moved since last
+    // month is the property having decided a 4 is worth more now, and the
+    // month being started is the one that should pay it.
+    let award = row.kind === 'amount' && row.amount != null ? round2(row.amount) : null;
+    let tier = null;
+    if (row.kind === 'tier' && row.tier != null) {
+      const worth = tierAmount(row.tiers, row.tier);
+      // A rung that has gone from the table since carries nothing. Guessing
+      // what a score nobody offers any more is worth is not the app's to do.
+      if (worth == null) continue;
+      tier = round2(row.tier);
+      award = worth;
+    }
+
     await ctx.db.prepare(
-      `INSERT INTO pay_score (run_id, scheme_id, staff_id, score, amount)
-       VALUES (?1, ?2, ?3, ?4, ?5)
-       ON CONFLICT (run_id, scheme_id, staff_id) DO UPDATE SET score = ?4, amount = ?5`,
-    ).bind(run.id, row.scheme_id, row.staff_id, round2(row.score), award).run();
+      `INSERT INTO pay_score (run_id, scheme_id, staff_id, score, amount, tier)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+       ON CONFLICT (run_id, scheme_id, staff_id)
+       DO UPDATE SET score = ?4, amount = ?5, tier = ?6`,
+    ).bind(run.id, row.scheme_id, row.staff_id, round2(row.score), award, tier).run();
     scores += 1;
   }
 
@@ -1031,7 +1078,7 @@ export async function setScores(ctx) {
     const schemeId = int(line.schemeId, 'Scheme', { required: true, min: 1 });
     const staffId = int(line.staffId, 'Who', { required: true, min: 1 });
 
-    const scheme = await ctx.db.prepare('SELECT amount, kind FROM pay_scheme WHERE id = ?')
+    const scheme = await ctx.db.prepare('SELECT amount, kind, tiers FROM pay_scheme WHERE id = ?')
       .bind(schemeId).first();
     if (!scheme) continue;
 
@@ -1039,19 +1086,41 @@ export async function setScores(ctx) {
     // hundred as the score, because the award is worked out downstream as the
     // award scaled by the score. Half of nothing new to learn, and one figure
     // on the payslip either way.
+    //
+    // A tiered one is the same trick with a lookup in front of it: the score
+    // picks a rung, the rung says the money, and the money is stored as the
+    // award. The rung is kept beside it rather than worked back out of the
+    // figure, because two rungs worth the same are still two different things
+    // to have said about somebody, and a table that moves next year must not
+    // rewrite what was decided this one.
     const paysAmount = scheme.kind === 'amount';
-    const score = paysAmount
-      ? 100
-      : round2(num(line.score, 'Score', { min: 0, max: 100 }));
-    const award = paysAmount
-      ? round2(num(line.amount, 'How much', { min: 0, max: 1_000_000 }))
-      : round2(scheme.amount);
+    const byTier = scheme.kind === 'tier';
+
+    let tier = null;
+    let score;
+    let award;
+
+    if (byTier) {
+      tier = round2(num(line.score ?? line.tier, 'Score', { required: true, min: 0, max: 1000 }));
+      const worth = tierAmount(scheme.tiers, tier);
+      if (worth == null) {
+        throw badRequest(`${tier} is not one of the scores that scheme pays for.`);
+      }
+      score = 100;
+      award = worth;
+    } else {
+      score = paysAmount ? 100 : round2(num(line.score, 'Score', { min: 0, max: 100 }));
+      award = paysAmount
+        ? round2(num(line.amount, 'How much', { min: 0, max: 1_000_000 }))
+        : round2(scheme.amount);
+    }
 
     await ctx.db.prepare(
-      `INSERT INTO pay_score (run_id, scheme_id, staff_id, score, amount)
-       VALUES (?1, ?2, ?3, ?4, ?5)
-       ON CONFLICT (run_id, scheme_id, staff_id) DO UPDATE SET score = ?4, amount = ?5`,
-    ).bind(run.id, schemeId, staffId, score, award).run();
+      `INSERT INTO pay_score (run_id, scheme_id, staff_id, score, amount, tier)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+       ON CONFLICT (run_id, scheme_id, staff_id)
+       DO UPDATE SET score = ?4, amount = ?5, tier = ?6`,
+    ).bind(run.id, schemeId, staffId, score, award, tier).run();
     set += 1;
   }
 

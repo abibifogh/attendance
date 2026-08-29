@@ -1155,6 +1155,32 @@ export const GUIDE = [
         + 'still move. A month nobody ever ran has nothing to compare against and says so, '
         + 'rather than answering "nothing has changed" about a month nobody was paid in.' },
 
+      { sub: 'The three kinds of scheme' },
+      { p: 'How a scheme pays is set when it is made, and it decides one thing: what somebody '
+        + 'is asked to type each month. The money lands on the payslip the same way whichever '
+        + 'it is \u2014 one bonus line, taxed and grossed up by the property.' },
+      { list: [
+        'Scored out of a hundred. The scheme is worth one figure and somebody scores a share '
+          + 'of it. Half a scheme is half the money. Right for a scheme about how well '
+          + 'something was done.',
+        'A set figure each. Money agreed person by person and nothing to do with performance '
+          + '\u2014 housing for four supervisors at three different figures. The box holds the '
+          + 'money.',
+        'A score off a table, each worth a stated amount. Nkoso\u0254 is scored one to ten and '
+          + 'a 1 is seventy cedis, a 4 is a hundred and thirty, a 10 is two hundred and fifty. '
+          + 'Pick the score and the table says the money.',
+      ] },
+      { p: 'The table is written out a rung at a time rather than as a start and a step, '
+        + 'because these stop being even eventually \u2014 a top score that jumps, a bottom '
+        + 'one that pays nothing \u2014 and a scheme that cannot hold what was agreed gets '
+        + 'worked around in somebody\u2019s head. Add a score fills in the next one at the '
+        + 'same step as the last two took, so ten rungs are a few presses.' },
+      { note: 'A score not on the table is refused rather than rounded to the nearest, and '
+        + 'what a rung was worth is copied onto the payslip when the score is given. Moving '
+        + 'the table in December does not rewrite what somebody was paid in June; it says what '
+        + 'a score is worth from now on. Starting a month from the one before carries the '
+        + 'score and looks the money up again, so a table that has moved pays the new figure.' },
+
       { sub: 'From a spreadsheet' },
       { p: 'A month\u2019s figures can come in from a sheet instead of being typed. Bulk '
         + 'upload \u2192 Download template gives you this month as it stands, not a blank '
@@ -1192,6 +1218,10 @@ export const GUIDE = [
           + 'allowance takes it away.',
         'A score against a scheme somebody is not under is refused, and so is one outside 0 to '
           + '100.',
+        'A tiered scheme gets a Score column holding the score itself \u2014 a 4, not a '
+          + 'percentage and not the money. The table says what a 4 is worth. A number the '
+          + 'table does not pay for is named back with the scores it does pay for, rather '
+          + 'than rounded to the nearest one.',
         'A scheme that pays a set figure gets a money column, headed Bonus rather than Score, '
           + 'and each cell is what that person gets. The word above it is not what decides: '
           + 'the scheme is found by name and its own kind says whether the cell is a figure '

@@ -806,3 +806,25 @@ export function niceMonth(month) {
   return new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' })
     .format(new Date(`${text}-01T12:00:00Z`));
 }
+
+/**
+ * A tier table in a sentence, for a card with one line to say it in.
+ *
+ * The ends and the count. The rungs between them are on the screen underneath,
+ * and repeating all ten in a summary helps nobody.
+ *
+ * The worker has the same sentence, because the sheet template writes it too
+ * and neither side can import the other. It is a label, not a figure: what a
+ * rung is worth is worked out in one place and sent here already decided.
+ */
+export function sayTiers(tiers, cash = (n) => String(n)) {
+  const table = (tiers ?? []).filter((t) => t && Number.isFinite(Number(t.score)));
+  if (!table.length) return 'no scores set yet';
+  if (table.length === 1) {
+    return `one score, ${table[0].score}, worth ${cash(table[0].amount)}`;
+  }
+  const first = table[0];
+  const last = table[table.length - 1];
+  return `${table.length} scores, ${first.score} at ${cash(first.amount)} `
+    + `up to ${last.score} at ${cash(last.amount)}`;
+}

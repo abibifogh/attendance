@@ -1,5 +1,6 @@
 import { parseCsv } from './roster-import.js';
 import { round2 } from './tax.js';
+import { tierAmount, tierScores } from './pay-tiers.js';
 
 /**
  * A month's payroll input, read out of a spreadsheet.
@@ -240,7 +241,7 @@ export function readColumns(header, { allowances = [], schemes = [] } = {}) {
  */
 export function readSheet(text, {
   staff = [], allowances = [], schemes = [], profiles = new Map(),
-  allowanceBy = new Map(), scoreBy = new Map(), awardBy = new Map(),
+  allowanceBy = new Map(), scoreBy = new Map(), awardBy = new Map(), tierBy = new Map(),
   memberOf = new Map(), advanceDue = new Map(), advanceHeld = new Set(),
 } = {}) {
   const rows = parseCsv(text);
@@ -364,6 +365,7 @@ export function readSheet(text, {
 
       if (col.kind === 'score') {
         const paysAmount = col.scheme.kind === 'amount';
+        const byTier = col.scheme.kind === 'tier';
         // A scheme that does not exist yet has nobody under it, so membership
         // cannot be the test. Everybody with a figure in the column is who it
         // would cover.
@@ -371,10 +373,21 @@ export function readSheet(text, {
         const value = paysAmount ? readMoney(cell) : readScore(cell);
         if (value === null) continue;
 
-        if (Number.isNaN(value) || value < 0 || (!paysAmount && value > 100)) {
+        if (Number.isNaN(value) || value < 0 || (!paysAmount && !byTier && value > 100)) {
           line.notes.push({
             what: col.scheme.name,
             why: paysAmount ? 'not a figure' : 'a score is 0 to 100',
+          });
+          continue;
+        }
+        // A tiered scheme's column holds a rung, and the rungs are the whole
+        // agreement. A number that is not one of them is not a low score, it
+        // is a score the scheme has never heard of.
+        if (byTier && tierAmount(col.scheme.tiers, value) == null) {
+          line.notes.push({
+            what: col.scheme.name,
+            why: `${value} is not one of its scores. It pays for `
+              + `${tierScores(col.scheme.tiers).join(', ') || 'none yet'}`,
           });
           continue;
         }
@@ -396,7 +409,9 @@ export function readSheet(text, {
           ? null
           : paysAmount
             ? (awardBy.get(`${col.scheme.id}|${person.id}`) ?? null)
-            : round2(scoreBy.get(`${col.scheme.id}|${person.id}`) ?? 0);
+            : byTier
+              ? (tierBy.get(`${col.scheme.id}|${person.id}`) ?? null)
+              : round2(scoreBy.get(`${col.scheme.id}|${person.id}`) ?? 0);
 
         if (from !== value) {
           line.changes.push({
@@ -408,6 +423,9 @@ export function readSheet(text, {
             label: paysAmount ? col.scheme.name : `${col.scheme.name} score`,
             from,
             to: value,
+            // What that rung is worth, so the preview says the money as well
+            // as the score. A 4 on its own tells nobody what it costs.
+            ...(byTier ? { byTier: true, worth: tierAmount(col.scheme.tiers, value) } : {}),
             ...(paysAmount ? { paysAmount: true } : {}),
             ...(isNew ? { isNew: true } : {}),
           });

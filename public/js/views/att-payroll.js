@@ -4,7 +4,8 @@ import {
 } from '../util.js';
 import { bulkUpload, card, emptyState } from './components.js';
 import {
-  GENERAL, field, formDialog, sayDepartments, schemeDepartments, schemesByDepartment, showSheet,
+  GENERAL, field, formDialog, sayDepartments, sayTiers, schemeDepartments, schemesByDepartment,
+  showSheet,
 } from './att-shared.js';
 import { holdRefresh, replaceParams, warnBeforeLeaving } from '../app.js';
 import { printReport } from '../print.js';
@@ -860,6 +861,67 @@ function perPersonScores(scheme, data, scored, typed, closed, cash) {
  * set one, because most of them are the same and typing the usual figure
  * fifteen times is fifteen chances to slip.
  */
+/**
+ * A rung each, off the scheme's own ladder.
+ *
+ * A list rather than a box, because the scores are the agreement: Nkosoɔ pays
+ * for a 1 through a 10 and nothing else, and a box would let somebody type a
+ * 12 and find out it was refused after they had done twenty of them. Picking
+ * shows the money beside the score, which is the pair somebody is actually
+ * deciding between.
+ */
+function perPersonTiers(scheme, data, scored, typed, closed, cash) {
+  const rungs = scheme.tiers ?? [];
+  if (!rungs.length) {
+    return h('p.muted', { style: { fontSize: '.85rem' } },
+      'This one has no scores set yet. Edit it and say what each score is worth.');
+  }
+
+  const rows = scheme.staffIds.map((staffId) => {
+    const person = data.staff.find((s) => s.id === staffId);
+    const held = scheme.scores.find((x) => x.staffId === staffId);
+    const now = held?.tier ?? null;
+
+    const worth = h('span.muted');
+    const say = (value) => {
+      const rung = rungs.find((t) => t.score === Number(value));
+      worth.textContent = rung ? cash(rung.amount) : '';
+    };
+
+    const pick = h('select.pay-tier', {
+      disabled: closed,
+      'aria-label': `What ${person?.name ?? 'somebody'} scored on ${scheme.name}`,
+      onchange: (e) => {
+        const value = e.target.value === '' ? null : Number(e.target.value);
+        if (value == null) scored.delete(`${scheme.id}|${staffId}`);
+        else scored.set(`${scheme.id}|${staffId}`, value);
+        typed.add(`${scheme.id}|${staffId}`);
+        say(e.target.value);
+      },
+    },
+    h('option', { value: '', selected: now == null }, 'Not scored yet'),
+    rungs.map((t) => h('option', {
+      value: t.score, selected: now != null && Number(now) === t.score,
+    }, `${t.score} — ${cash(t.amount)}`)));
+
+    // Only where a rung has actually been picked. Setting every unscored
+    // person to the bottom rung on opening the screen would pay everybody
+    // seventy cedis for having been looked at.
+    if (now != null) scored.set(`${scheme.id}|${staffId}`, Number(now));
+    say(now ?? '');
+
+    return h('tr',
+      h('td', person?.name ?? `Staff ${staffId}`,
+        now == null ? h('small.muted', ' \u00b7 not scored yet') : null),
+      h('td', pick),
+      h('td.num', worth));
+  });
+
+  return rows.length
+    ? h('table.pay-scores', h('tbody', rows))
+    : h('p.muted', { style: { fontSize: '.85rem' } }, 'Nobody is under this one yet.');
+}
+
 function perPersonAmounts(scheme, data, scored, typed, closed, cash) {
   const rows = scheme.staffIds.map((staffId) => {
     const person = data.staff.find((s) => s.id === staffId);
@@ -1009,9 +1071,13 @@ function schemesCard(data, month, closed, reload, cash) {
 
       const body = scheme.kind === 'amount'
         ? perPersonAmounts(scheme, data, scored, typed, closed, cash)
-        : everybody
-          ? sharedScore(scheme, data, scored, typed, closed, cash)
-          : perPersonScores(scheme, data, scored, typed, closed, cash);
+        : scheme.kind === 'tier'
+          // Always a rung each, even where the scheme covers the property.
+          // A tier is a thing said about a person, not about the year.
+          ? perPersonTiers(scheme, data, scored, typed, closed, cash)
+          : everybody
+            ? sharedScore(scheme, data, scored, typed, closed, cash)
+            : perPersonScores(scheme, data, scored, typed, closed, cash);
 
       return h('div.pay-scheme',
         h('div.pay-scheme-head',
@@ -1023,10 +1089,14 @@ function schemesCard(data, month, closed, reload, cash) {
             // screen ignoring what was typed.
             scheme.kind === 'amount'
               ? h('span.pill.info', { style: { marginLeft: '.4rem' } }, 'A set figure each')
-              : h('span.pill', { style: { marginLeft: '.4rem' } }, 'Scored out of 100'),
+              : scheme.kind === 'tier'
+                ? h('span.pill.good', { style: { marginLeft: '.4rem' } }, 'Scored by tier')
+                : h('span.pill', { style: { marginLeft: '.4rem' } }, 'Scored out of 100'),
             h('span.muted', scheme.kind === 'amount'
               ? ` · ${cash(scheme.amount)} unless somebody is set a different figure`
-              : ` · ${cash(scheme.amount)} at 100%`),
+              : scheme.kind === 'tier'
+                ? ` · ${sayTiers(scheme.tiers, cash)}`
+                : ` · ${cash(scheme.amount)} at 100%`),
             scheme.note ? h('div.muted', scheme.note) : null),
           h('div.btn-row',
             h('button.btn-sm', { onclick: () => editScheme(scheme, data, reload) }, 'Edit'),
@@ -1105,22 +1175,99 @@ async function editScheme(scheme, data, reload) {
   // cent of 500 comes to 350 so that four supervisors could be paid what they
   // were promised.
   const kindPick = h('select', { name: 'kind' },
-    h('option', { value: 'score', selected: scheme?.kind !== 'amount' },
+    h('option', { value: 'score', selected: !['amount', 'tier'].includes(scheme?.kind) },
       'Scored out of a hundred'),
     h('option', { value: 'amount', selected: scheme?.kind === 'amount' },
-      'A set figure for each person'));
+      'A set figure for each person'),
+    h('option', { value: 'tier', selected: scheme?.kind === 'tier' },
+      'A score off a table, each worth a stated amount'));
 
-  const worth = h('span', scheme?.kind === 'amount' ? 'The usual figure' : 'Worth at 100%');
-  const worthNote = h('small.muted', scheme?.kind === 'amount'
-    ? 'Offered to anybody who has not been set their own. Change theirs on the payroll screen'
-    : 'What somebody gets at a hundred per cent');
-  kindPick.addEventListener('change', () => {
-    const paid = kindPick.value === 'amount';
-    worth.textContent = paid ? 'The usual figure' : 'Worth at 100%';
-    worthNote.textContent = paid
-      ? 'Offered to anybody who has not been set their own. Change theirs on the payroll screen'
-      : 'What somebody gets at a hundred per cent';
+  const WORTH = {
+    score: ['Worth at 100%', 'What somebody gets at a hundred per cent'],
+    amount: ['The usual figure',
+      'Offered to anybody who has not been set their own. Change theirs on the payroll screen'],
+  };
+  const worth = h('span', WORTH[scheme?.kind ?? 'score']?.[0] ?? WORTH.score[0]);
+  const worthNote = h('small.muted', WORTH[scheme?.kind ?? 'score']?.[1] ?? WORTH.score[1]);
+  const worthInput = h('input', {
+    type: 'number', name: 'amount', step: '0.01', min: '0', required: true,
+    value: scheme?.amount ?? '',
   });
+
+  // The ladder: a score and what it pays, a row each. Written out rather than
+  // worked out from a start and a step, because every one of these stops being
+  // even eventually and a scheme that cannot hold what was agreed gets worked
+  // around in somebody's head.
+  const rungs = h('div.tier-rows');
+  const tiers = (scheme?.tiers ?? []).map((t) => ({ score: t.score, amount: t.amount }));
+
+  const drawRungs = () => {
+    rungs.replaceChildren(...(tiers.length
+      ? tiers.map((row, at) => h('div.tier-row',
+        h('input.tier-in', {
+          type: 'number', step: '1', min: '0', value: row.score, 'aria-label': 'Score',
+          oninput: (e) => { tiers[at].score = Number(e.target.value); },
+        }),
+        h('span.muted', 'is worth'),
+        h('input.tier-in', {
+          type: 'number', step: '0.01', min: '0', value: row.amount, 'aria-label': 'Bonus amount',
+          oninput: (e) => { tiers[at].amount = Number(e.target.value); },
+        }),
+        h('button.btn-ghost.btn-sm', {
+          type: 'button',
+          title: 'Take this score off the table',
+          onclick: () => { tiers.splice(at, 1); drawRungs(); },
+        }, '\u2715')))
+      : [h('p.muted', { style: { fontSize: '.85rem', margin: 0 } },
+        'No scores yet. Add the first one, or fill in ten at once.')]));
+  };
+  drawRungs();
+
+  const addRung = h('button.btn-sm', {
+    type: 'button',
+    onclick: () => {
+      const last = tiers[tiers.length - 1];
+      // The next score up, and the same step in money as the last two rungs
+      // took, because these are nearly always a ladder and typing seventy,
+      // ninety, a hundred and ten by hand is ten chances to fat-finger one.
+      const step = tiers.length > 1
+        ? Math.round((last.amount - tiers[tiers.length - 2].amount) * 100) / 100
+        : 0;
+      tiers.push({
+        score: last ? Number(last.score) + 1 : 1,
+        amount: last ? Math.max(0, Math.round((last.amount + step) * 100) / 100) : 0,
+      });
+      drawRungs();
+    },
+  }, 'Add a score');
+
+  const tierBox = h('div',
+    h('div.btn-row', { style: { marginBottom: '.4rem' } }, addRung),
+    rungs,
+    h('small.muted', 'A score not on this table is refused rather than rounded to the nearest, '
+      + 'because a 5 paid what a 6 was promised is worse than being told to look again.'));
+
+  const tierField = field('What each score pays', tierBox);
+  const worthField = h('label.field', worth, worthInput, worthNote);
+
+  const showKind = () => {
+    const kind = kindPick.value;
+    const byTier = kind === 'tier';
+    // On a tiered scheme the table is the whole answer, so there is no single
+    // figure to ask for. What the scheme is worth is its top rung, filled in
+    // on saving rather than typed twice and left to disagree with itself.
+    tierField.hidden = !byTier;
+    worthField.hidden = byTier;
+    // A hidden required box stops a form submitting with nothing on screen to
+    // say why.
+    worthInput.required = !byTier;
+    if (!byTier) {
+      worth.textContent = WORTH[kind][0];
+      worthNote.textContent = WORTH[kind][1];
+    }
+  };
+  kindPick.addEventListener('change', showKind);
+  showKind();
 
   const list = h('div.pos-edit-list');
   const note = h('p.muted.scheme-who-note', { style: { fontSize: '.8rem' } });
@@ -1185,11 +1332,10 @@ async function editScheme(scheme, data, reload) {
         'Scored is a share of one figure, worked out from how well somebody did. A set '
         + 'figure is money agreed with each person and nothing to do with performance'),
       // Built by hand rather than through field(), because both the label and
-      // the hint change when the kind above does.
-      h('label.field', worth, h('input', {
-        type: 'number', name: 'amount', step: '0.01', min: '0', required: true,
-        value: scheme?.amount ?? '',
-      }), worthNote),
+      // the hint change when the kind above does, and the whole thing goes
+      // away on a tiered scheme where the table is the answer.
+      worthField,
+      tierField,
       field('What it is for', h('input', {
         type: 'text', name: 'note', maxlength: 300, value: scheme?.note ?? '',
       })),
@@ -1202,9 +1348,14 @@ async function editScheme(scheme, data, reload) {
     onSubmit: (form) => api.payrollScheme({
       id: scheme?.id ?? null,
       name: form.get('name'),
-      amount: form.get('amount'),
+      // A tiered scheme is worth its top rung. Nobody should have to type
+      // that twice and keep the two in step.
+      amount: form.get('kind') === 'tier'
+        ? (tiers.length ? Math.max(...tiers.map((t) => Number(t.amount) || 0)) : 0)
+        : form.get('amount'),
       kind: form.get('kind'),
       note: form.get('note'),
+      tiers: form.get('kind') === 'tier' ? tiers : null,
       departments: [...chosen],
       staffIds: [...picked],
     }),
