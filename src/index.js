@@ -18,6 +18,7 @@ import * as people from './routes/people.js';
 import * as invite from './routes/invite.js';
 import * as rec from './routes/recruitment.js';
 import * as hiring from './routes/hiring.js';
+import * as places from './routes/places.js';
 import * as corr from './routes/correspondence.js';
 import * as signoff from './routes/signoff.js';
 import * as workload from './routes/workload.js';
@@ -430,6 +431,15 @@ export const ROUTES = [
   ['POST', '/api/rec/invites/:id/revoke', 'rec_manage', rec.revokeInvite],
   ['POST', '/api/rec/candidates/:id/hire', 'rec_manage', rec.hire],
   ['POST', '/api/rec/slots', 'rec_manage', rec.addSlots],
+
+  // Asking Google where somewhere is, on the browser's behalf, so the billable
+  // key stays on the server. Behind a permission because every call costs the
+  // property money.
+  // Whether a key is set is also whoever sets the property up's business,
+  // since that is the screen it is pasted into.
+  ['GET', '/api/places', ['rec_manage', 'att_setup'], places.placesReady],
+  ['GET', '/api/places/suggest', 'rec_manage', places.suggest],
+  ['GET', '/api/places/details/:id', 'rec_manage', places.details],
   ['POST', '/api/rec/slots/:id/remove', 'rec_manage', rec.removeSlot],
   ['POST', '/api/rec/slots/:id/book', 'rec_manage', rec.bookSlot],
 

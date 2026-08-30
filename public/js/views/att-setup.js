@@ -2316,6 +2316,7 @@ async function rulesTab(reload) {
 
   return h('div',
     form,
+    await mapsCard(reload),
     card('Rebuild', { note: 'Should never be necessary', wide: true },
       h('p.muted',
         'Everything that changes a verdict works the affected days out again on its own. This is here '
@@ -2450,6 +2451,93 @@ const WORKLOAD_LIMITS = [
  * payslip in the property.
  */
 /** 'YYYY-MM' as somebody would say it. */
+/**
+ * The key that lets an address box find a real place.
+ *
+ * ITS OWN FORM, ON PURPOSE. Everything else on this tab is one form with one
+ * Save, and a key in it would be cleared every time somebody saved the rules
+ * for an unrelated reason — a blank box being read as "take it off". So this
+ * one saves itself and is never touched by the button above it.
+ *
+ * THE KEY IS NEVER SHOWN BACK. It is not carried in any answer the browser
+ * gets: the screen is told whether one is set and where it came from, and
+ * nothing more. Somebody who has lost it makes another at Google, which is
+ * what they would have to do anyway.
+ */
+async function mapsCard(reload) {
+  const ready = await api.placesReady().catch(() => ({ ready: false, from: null }));
+  const bySecret = ready.from === 'secret';
+
+  const form = h('form.maps-form');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(form).entries());
+    // Blank means leave it alone, not take it off. Removing one is its own
+    // button, because it should take a decision rather than an empty box.
+    if (!String(values.maps_key ?? '').trim()) delete values.maps_key;
+    try {
+      await api.attUpdateSettings(values);
+      toast('Saved.', 'good');
+      await reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  });
+
+  form.append(
+    h('label.field',
+      h('span', 'Google maps key'),
+      h('input', {
+        type: 'password', name: 'maps_key', maxlength: 200, autocomplete: 'off',
+        placeholder: ready.ready ? 'One is set. Type a new one to replace it' : 'Paste it here',
+        disabled: bySecret,
+      }),
+      h('small.muted', bySecret
+        ? 'Set as a Worker secret, which beats anything typed here. Change it with '
+          + 'wrangler secret put GOOGLE_MAPS_KEY.'
+        : 'From a Google Cloud project with the Places API (New) turned on and billing '
+          + 'enabled. It is never shown again and never sent to a browser.')),
+
+    h('label.field',
+      h('span', 'Offer places in'),
+      h('input', {
+        type: 'text', name: 'maps_region', maxlength: 2, value: ready.region ?? '',
+        placeholder: 'gh', style: { maxWidth: '6rem' },
+      }),
+      h('small.muted', 'Two letters, like gh for Ghana. Blank offers places anywhere.')),
+
+    h('div.btn-row',
+      h('button.btn.btn-primary', { type: 'submit', disabled: bySecret && !ready.region },
+        'Save'),
+      ready.ready && !bySecret
+        ? h('button.btn-sm', {
+          type: 'button',
+          onclick: async () => {
+            if (!confirmAction('Take the key off? Address boxes go back to being plain '
+              + 'text and candidates stop getting directions.')) return;
+            await api.attUpdateSettings({ maps_key: '' });
+            toast('Taken off.', 'good');
+            await reload();
+          },
+        }, 'Take it off')
+        : null),
+  );
+
+  return card('Finding places on a map', {
+    note: ready.ready ? (bySecret ? 'On, from a secret' : 'On') : 'Off',
+    wide: true,
+  },
+  h('p.muted',
+    'With a key set, the Where box when publishing interview times finds real places as '
+    + 'somebody types, and what they pick becomes a directions link on the candidate’s own '
+    + 'page. Without one, that box is an ordinary line of text and nothing else changes.'),
+  h('p.muted', { style: { fontSize: '.85rem' } },
+    'The key stays on the server. The usual way of doing this puts it in the source of '
+    + 'every page that has an address box; here the browser asks this app and this app asks '
+    + 'Google, so there is nothing in a page to copy.'),
+  form);
+}
+
 function sayMonth(value) {
   if (!value || value === '0000-01') return 'Everything before that';
   const [year, month] = String(value).split('-');

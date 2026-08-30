@@ -5278,3 +5278,59 @@ body.rota-dragging .pos-add { pointer-events: none; }
 .hire-when { font-size: 1.1rem; margin: .2rem 0 .4rem; line-height: 1.35; }
 .hire-sent { list-style: none; margin: 0 0 .7rem; padding: 0; display: grid; gap: .3rem; }
 .hire-sent li { display: flex; justify-content: space-between; gap: 1rem; font-size: .88rem; }
+
+/* ------------------------------------------------------- finding a place --
+   A box that suggests real places while somebody types in it. The list sits
+   over what follows rather than pushing it down: a form that jumps as
+   suggestions arrive is a form somebody submits by accident.
+   ------------------------------------------------------------------------ */
+
+.place-field { position: relative; }
+
+.place-list {
+  position: absolute;
+  z-index: 40;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: .15rem 0 0;
+  padding: .25rem;
+  list-style: none;
+  max-height: 15rem;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.place-option {
+  display: grid;
+  gap: .1rem;
+  width: 100%;
+  text-align: left;
+  /* A button whose display is changed to grid still has the browser's own
+     centring on it, and text-align alone does not undo that: the tracks
+     themselves are packed to the middle. Both of these are needed, and the
+     symptom without them is a suggestion list that reads as centred for no
+     reason anybody can find in the rule that says left. */
+  justify-items: start;
+  justify-content: start;
+  padding: .45rem .55rem;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  font-weight: 400;
+}
+.place-option strong { font-size: .92rem; font-weight: 600; }
+.place-option small { font-size: .78rem; }
+.place-option:hover, .place-option.is-at { background: var(--surface-2); }
+
+.place-note { display: block; margin-top: .25rem; min-height: 1em; line-height: 1.3; }
+
+/* A place that is on the map, wherever one is shown. Underlined rather than
+   coloured like a button: it is a fact with a link on it, not an action. */
+.rec-slot-map { font-size: .75rem; color: var(--text-dim); text-decoration: underline; }
+.rec-slot-map:hover { color: var(--accent); }
+
+.hire-directions { margin: .3rem 0 .6rem; }

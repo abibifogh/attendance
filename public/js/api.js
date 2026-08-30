@@ -164,6 +164,13 @@ export const api = {
   recRevokeInvite: (id) => request(`/api/rec/invites/${id}/revoke`, { method: 'POST' }),
   recHire: (id, body) => request(`/api/rec/candidates/${id}/hire`, { method: 'POST', body }),
   recAddSlots: (body) => request('/api/rec/slots', { method: 'POST', body }),
+  // Finding a place on the map. The key stays on the server; the browser asks
+  // this app, which asks Google.
+  placesReady: () => request('/api/places'),
+  placeSuggest: (q, session) => request(
+    `/api/places/suggest?q=${encodeURIComponent(q)}&session=${encodeURIComponent(session ?? '')}`),
+  placeDetails: (id, session) => request(
+    `/api/places/details/${encodeURIComponent(id)}?session=${encodeURIComponent(session ?? '')}`),
   recRemoveSlot: (id) => request(`/api/rec/slots/${id}/remove`, { method: 'POST' }),
   recBookSlot: (id, candidateId) => request(`/api/rec/slots/${id}/book`, { method: 'POST', body: { candidateId } }),
 

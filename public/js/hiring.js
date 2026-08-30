@@ -191,6 +191,14 @@ function chosenCard() {
       h('strong', longDay(slot.day)),
       h('span', ` at ${slot.at}`)),
     slot.place ? h('p.muted', `Where: ${slot.place}`) : null,
+    // The one thing on this page somebody actually needs on the morning: a way
+    // of getting there. Opens the Maps app where there is one and the website
+    // where there is not.
+    slot.directions
+      ? h('a.btn.btn-wide.hire-directions', {
+        href: slot.directions, target: '_blank', rel: 'noopener',
+      }, 'Get directions')
+      : null,
     h('p.muted', `It should take about ${minutesBetween(slot.at, slot.ends)} minutes. `
       + 'Please come a few minutes early.'),
 

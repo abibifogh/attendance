@@ -1336,6 +1336,42 @@ fit is not published: a half-hour interview starting at 12:45 when the morning
 ends at one o'clock is fifteen minutes, which is not an interview. Publishing
 the same morning twice adds only what was missing rather than doubling it.
 
+**The Where box finds real places as you type it**, when a Google maps key is
+set. Type a few letters, pick the place off the list, and what goes on the slot
+is the full address, which place it was, and where on the earth it is.
+
+That last part is the point, and the autocomplete is only the means. A place
+picked off the map becomes a **Get directions** button on the candidate's own
+page — one that opens the Maps app where there is one and the website where
+there is not. "The office, main building" reads perfectly to whoever wrote it
+and is not somewhere a candidate at the other end of Accra can navigate to.
+
+It stays a text box either way. Whatever is typed stands, nobody is made to
+pick a suggestion, a property with no key set sees no difference at all, and a
+lookup that fails leaves the typing alone. A field that will not accept "the
+office" because Google has not heard of it is a field that stops people
+publishing interview times. Where nothing was picked off the map, the
+directions link still searches Maps for the words.
+
+The place you pick is remembered as the default, so a property that picks its
+own front desk once never picks it again.
+
+> **The key never reaches a browser.** The ordinary way to do this loads
+> Google's own script into the page with the key in the URL, restricted by
+> referrer — which puts a billable key in the source of every page that has an
+> address box, and a referrer restriction is a request rather than a wall. Here
+> the browser asks this app and this app asks Google. Set it as a Worker secret
+> (`wrangler secret put GOOGLE_MAPS_KEY`) or paste one in under
+> **Setup → Rules → Finding places on a map**; the secret wins where both
+> exist, and neither is ever shown back. It needs a Google Cloud project with
+> the **Places API (New)** turned on and billing enabled.
+>
+> Google bills autocomplete by the session rather than the keystroke when a
+> token is carried from the first letter through to the pick, so one is, and a
+> nine-letter address is one billable lookup rather than seven. The box also
+> waits a quarter of a second after somebody stops typing, and never asks about
+> fewer than three letters.
+
 Then **make the candidate a link**. They open it on their phone, see the times
 grouped by day, and tap one. You are told the moment they do. They can change
 their mind or give the time back, which frees it for somebody else rather than
@@ -2736,6 +2772,16 @@ It is off unless configured. Two secrets switch it on:
 wrangler secret put INSIGHT_SSO_URL      # https://<insight>/api/sso/redeem
 wrangler secret put INSIGHT_SSO_SECRET   # the same value as SSO_SECRET_ATTENDANCE there
 ```
+
+One more is optional, and switches on the address box that finds real places:
+
+```bash
+wrangler secret put GOOGLE_MAPS_KEY      # a project with Places API (New) and billing on
+```
+
+Without it every address box is an ordinary line of text, which is what they
+all were before. It can also be pasted in under **Setup → Rules** by anybody
+who would rather not deploy to change it; the secret wins where both exist.
 
 Without them `/sso` says so rather than failing blank, and PIN and password
 sign-in are unaffected either way. The protocol is in

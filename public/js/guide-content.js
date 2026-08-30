@@ -1631,6 +1631,16 @@ export const GUIDE = [
         + 'shows who else applied, who is on the panel, or anything anybody has written about '
         + 'them.' },
 
+      { sub: 'Where it is' },
+      { p: 'With a Google maps key set, the Where box finds real places as you type and what '
+        + 'you pick becomes a Get directions button on the candidate\u2019s own page. That is '
+        + 'the point of it: "the office, main building" reads perfectly to whoever wrote it and '
+        + 'is not somewhere a candidate at the other end of Accra can navigate to.' },
+      { note: 'It is a text box either way. Whatever you type stands, you are never made to '
+        + 'pick a suggestion, and a property with no key set sees no difference. An '
+        + 'administrator sets the key under Setup \u2192 Rules; it stays on the server and is '
+        + 'never shown back.' },
+
       { sub: 'Nothing is emailed from here' },
       { p: 'You get a link and a message written out ready to paste, and you send it however you '
         + 'already talk to that person. There is a WhatsApp button beside it. An app that '

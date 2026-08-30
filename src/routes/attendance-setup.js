@@ -970,6 +970,9 @@ export async function deleteDevice(ctx, id) {
 const CLEARABLE = new Set([
   'property_address', 'company_legal_name', 'company_phone', 'company_email',
   'company_website', 'company_tin', 'company_ssnit',
+  // Taking a maps key off has to be possible, and blank is the way anybody
+  // would try to do it.
+  'maps_key', 'maps_region',
 ]);
 
 const SETTINGS = new Map([
@@ -1030,6 +1033,18 @@ const SETTINGS = new Map([
   // Whether somebody's own phone tells them their clock-in and clock-out
   // landed, and at what time. To them and nobody else.
   ['att_clock_push', (v) => (v === '0' || v === 'false' ? '0' : '1')],
+
+  // Finding a place on the map. The key is billed, so it lives here rather
+  // than in a page: nothing under this prefix is sent to a browser, and the
+  // screens are told only whether one is set.
+  ['maps_key', (v) => str(v, 'Google maps key', { max: 200, fallback: '' })],
+  ['maps_region', (v) => {
+    const code = String(v ?? '').trim().toLowerCase();
+    if (code && !/^[a-z]{2}$/.test(code)) {
+      throw badRequest('A country is two letters, like gh for Ghana. Leave it blank for anywhere.');
+    }
+    return code;
+  }],
 
   // Birthdays. The wording is the point of these being here: it is the one
   // message this app sends that is not about hours or money, and it should

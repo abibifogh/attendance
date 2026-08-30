@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { navigate } from '../app.js';
 import { confirmAction, fmtDay, h, mount, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
-import { field, formDialog } from './att-shared.js';
+import { field, formDialog, placeField } from './att-shared.js';
 
 /**
  * Recruitment: the half of somebody's history that happens before People.
@@ -70,7 +70,7 @@ export async function renderRec(params) {
     h('div.grid.grid-4',
       tile('Vacancies open', openRoles.length,
         openRoles.length
-          ? `${openRoles.reduce((n, r) => n + Math.max(1, r.headcount), 0)} people wanted`
+          ? sayPeople(openRoles.reduce((n, r) => n + Math.max(1, r.headcount), 0))
           : 'nothing being filled'),
       tile('In the running', live.length, live.length ? 'across every stage' : 'nobody'),
       tile('Interviews booked', booked.length,
@@ -105,6 +105,8 @@ function tile(label, value, sub, accent) {
     h('div.stat-sub', h('span', sub)),
   );
 }
+
+const sayPeople = (n) => `${n} ${n === 1 ? 'person' : 'people'} wanted`;
 
 const nextOne = (booked) => {
   const soonest = [...booked].sort((a, b) => `${a.day}${a.at}`.localeCompare(`${b.day}${b.at}`))[0];
@@ -546,7 +548,14 @@ function diary(data, reload) {
             : h('span.rec-slot-free', 'Free'),
           h('div.rec-slot-meta',
             slot.roleTitle ? h('small', slot.roleTitle) : h('small.muted', 'any vacancy'),
-            slot.place ? h('small.muted', slot.place) : null),
+            slot.place
+              ? (slot.directions
+                ? h('a.rec-slot-map', {
+                  href: slot.directions, target: '_blank', rel: 'noopener',
+                  title: 'Open in Maps',
+                }, slot.place)
+                : h('small.muted', slot.place))
+              : null),
           data.canManage
             ? h('button.rec-slot-x', {
               type: 'button',
@@ -561,6 +570,15 @@ function diary(data, reload) {
 }
 
 async function publishSlots(data, reload) {
+  // The Where box, which finds a real place while somebody types in it. Where
+  // no key is set it is an ordinary text box and nobody sees a difference.
+  const where = placeField({
+    name: 'place',
+    value: data.place || '',
+    placeholder: 'The office, main building',
+    enabled: data.canFindPlaces,
+  });
+
   const done = await formDialog({
     title: 'Publish interview times',
     submitLabel: 'Publish them',
@@ -579,19 +597,29 @@ async function publishSlots(data, reload) {
       field('For which vacancy', rolePicker(data, null),
         'A candidate is only ever offered times published for their own vacancy, '
         + 'or for none.'),
-      h('div.grid.grid-2',
-        field('Where', h('input', {
-          type: 'text', name: 'place', maxlength: 160, value: data.place || '',
-          placeholder: 'The office, main building',
-        })),
-        field('Who is interviewing', h('input', {
-          type: 'text', name: 'interviewer', maxlength: 120,
-        }))),
+
+      field('Where', where.el, data.canFindPlaces
+        ? 'Start typing and pick it off the map. What you pick becomes a directions link on '
+          + 'the candidate’s own page, which is the difference between them finding the '
+          + 'place and ringing to ask.'
+        : 'Typed as it is. To have this find real places and give candidates directions, '
+          + 'set a Google maps key under Setup → Rules.'),
+
+      field('Who is interviewing', h('input', {
+        type: 'text', name: 'interviewer', maxlength: 120,
+      })),
       h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
         'Where is printed on the candidate’s page. Who is not: whoever is on the panel is '
         + 'the property’s business.'),
     ),
-    onSubmit: async (form) => api.recAddSlots(Object.fromEntries(form.entries())),
+    onSubmit: async (form) => api.recAddSlots({
+      ...Object.fromEntries(form.entries()),
+      place: where.value,
+      // Only where the words and the pin still agree. Somebody who picks a
+      // place and then edits the text has an address that is theirs, not
+      // Google's, and a coordinate from the old one would be a lie.
+      ...where.place,
+    }),
   });
   if (!done) return;
   toast(done.skipped

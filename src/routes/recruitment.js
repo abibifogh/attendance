@@ -8,6 +8,7 @@ import { createNotice } from '../lib/notices.js';
 import { fromBase64 } from '../lib/files.js';
 import { claimOrphans, recompute } from '../lib/attendance-ingest.js';
 import { todayIn } from '../util/dates.js';
+import { mapLink, mapsKey } from '../lib/places.js';
 import {
   CLOSED_STAGES, EMPLOYMENT, FILE_KINDS, LIVE_STAGES, SOURCES, STAGES, cutIntoSlots,
   endsAt, howItIsGoing, isFileKind, isStage, offerable, readCandidateList, staffDocumentKind,
@@ -133,6 +134,16 @@ export async function board(ctx) {
     fileKinds: FILE_KINDS,
     departments: (await setting(ctx.db, 'att_departments', '')).split('\n').filter(Boolean),
     place: await setting(ctx.db, 'rec_place', ''),
+    // The default, as a place rather than a line of text, so a property that
+    // picked its own front desk once never picks it again.
+    placeAt: {
+      id: await setting(ctx.db, 'rec_place_id', '') || null,
+      lat: numberOrNull(await setting(ctx.db, 'rec_place_lat', '')),
+      lng: numberOrNull(await setting(ctx.db, 'rec_place_lng', '')),
+    },
+    // Whether the Where box can offer suggestions. Never the key itself: this
+    // answer is a yes or a no, and a key is money.
+    canFindPlaces: Boolean((await mapsKey(ctx.env, ctx.db)).key),
     slotMinutes: Number(await setting(ctx.db, 'rec_slot_minutes', 30)) || 30,
     roles: (roles.results ?? []).map((role) => {
       const mine = byRole.get(role.id) ?? [];
@@ -196,6 +207,14 @@ const shapeCandidate = (row) => ({
 
 const shapeSlot = (slot) => ({
   id: slot.id,
+  placeId: slot.place_id ?? null,
+  lat: slot.place_lat ?? null,
+  lng: slot.place_lng ?? null,
+  // Built here rather than on three screens, so a link that stops working
+  // stops working in one place.
+  directions: mapLink({
+    placeId: slot.place_id, lat: slot.place_lat, lng: slot.place_lng, label: slot.place,
+  }),
   roleId: slot.role_id,
   roleTitle: slot.role_title ?? null,
   day: slot.day,
@@ -290,6 +309,13 @@ const readSource = (value) => {
   if (!SOURCES.some(([k]) => k === key)) throw badRequest('That is not one of the ways people find us.');
   return key;
 };
+
+/** A coordinate, or nothing. A blank setting is not the equator. */
+function numberOrNull(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
 
 function readDayOrNull(value, label) {
   if (value == null || value === '') return null;
@@ -742,6 +768,11 @@ export async function addSlots(ctx) {
   const place = str(body.place, 'Where', {
     max: 160, fallback: await setting(ctx.db, 'rec_place', '') || null,
   });
+  // What was picked off the map, where anything was. All three are optional
+  // and travel together: half a coordinate is not a place.
+  const placeId = str(body.placeId, 'Place', { max: 300 }) || null;
+  const lat = numberOrNull(body.lat);
+  const lng = numberOrNull(body.lng);
   const interviewer = str(body.interviewer, 'Who is interviewing', {
     max: 120, fallback: ctx.session?.user?.name ?? null,
   });
@@ -758,13 +789,29 @@ export async function addSlots(ctx) {
   for (const slot of cut) {
     if (already.has(slot.startsAt)) continue;
     await ctx.db.prepare(
-      `INSERT INTO rec_slot (role_id, day, starts_at, minutes, place, interviewer, created_by)
-       VALUES (?1,?2,?3,?4,?5,?6,?7)`,
-    ).bind(roleId, slot.day, slot.startsAt, slot.minutes, place, interviewer, actorOf(ctx)).run();
+      `INSERT INTO rec_slot (role_id, day, starts_at, minutes, place, place_id, place_lat,
+                             place_lng, interviewer, created_by)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)`,
+    ).bind(roleId, slot.day, slot.startsAt, slot.minutes, place, placeId,
+      lat, lng, interviewer, actorOf(ctx)).run();
     added += 1;
   }
 
-  await audit(ctx, 'recruitment.slots', roleId, { day, added, minutes });
+  // Remembered as the default for next time. Somebody who picks the front desk
+  // off the map in September should find it already filled in come November.
+  if (place && bool(body.remember, true)) {
+    for (const [key, value] of [
+      ['rec_place', place], ['rec_place_id', placeId ?? ''],
+      ['rec_place_lat', lat == null ? '' : String(lat)],
+      ['rec_place_lng', lng == null ? '' : String(lng)],
+    ]) {
+      await ctx.db.prepare(
+        'INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2',
+      ).bind(key, value).run().catch(() => {});
+    }
+  }
+
+  await audit(ctx, 'recruitment.slots', roleId, { day, added, minutes, mapped: Boolean(placeId) });
   return json({ ok: true, added, skipped: cut.length - added });
 }
 

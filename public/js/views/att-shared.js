@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { fmtDay, fmtNum, h } from '../util.js';
+import { fmtDay, fmtNum, h, mount } from '../util.js';
 
 /**
  * The bits every attendance screen needs.
@@ -848,4 +848,161 @@ export function sayTiers(tiers, cash = (n) => String(n)) {
   const last = table[table.length - 1];
   return `${table.length} scores, ${first.score} at ${cash(first.amount)} `
     + `up to ${last.score} at ${cash(last.amount)}`;
+}
+
+/**
+ * A box that finds a real place while somebody types in it.
+ *
+ * WHY THIS EXISTS AT ALL. An address typed by whoever already knows where it is
+ * reads perfectly to them and is no use to anybody else. "The office, main
+ * building" is not somewhere a candidate at the other end of Accra can
+ * navigate to. So the box asks Google what somebody means, and what comes back
+ * carries an address and a pair of coordinates — which become a directions
+ * link on the page of somebody who has never been here. The autocomplete is
+ * the means; the link is the point.
+ *
+ * IT IS STILL A TEXT BOX. Whatever is typed stands: nobody is forced to pick a
+ * suggestion, a property with no key set sees no difference at all, and a
+ * lookup that fails leaves the typing alone rather than clearing it. A field
+ * that will not accept "the office" because Google has not heard of it is a
+ * field that stops people publishing interview times.
+ *
+ * ONE BILLABLE SESSION PER ADDRESS. Google charges per session of typing when
+ * a token is carried from the first letter through to the pick, and per
+ * request when it is not. So a token is made here, sent on every call, and
+ * replaced once something is chosen.
+ */
+export function placeField({
+  value = '', placeholder = '', name = 'place', enabled = true, onPick = null,
+} = {}) {
+  const input = h('input', {
+    type: 'text', name, maxlength: 160, value, placeholder,
+    autocomplete: 'off', role: 'combobox', 'aria-expanded': 'false', 'aria-autocomplete': 'list',
+  });
+  const list = h('ul.place-list', { role: 'listbox', hidden: true });
+  const note = h('small.muted.place-note');
+  const box = h('div.place-field', input, list, note);
+
+  // What was picked, if anything. Read back by whoever built the field.
+  let chosen = { placeId: null, lat: null, lng: null };
+  let session = newSession();
+  let at = -1;
+  let timer = null;
+  let seq = 0;
+
+  const state = {
+    el: box,
+    input,
+    get value() { return input.value; },
+    // Only where the text still matches what was picked. Editing the box after
+    // choosing a place makes the coordinates a lie about the words beside them.
+    get place() {
+      return chosen.placeId && input.value === chosen.label
+        ? { placeId: chosen.placeId, lat: chosen.lat, lng: chosen.lng }
+        : { placeId: null, lat: null, lng: null };
+    },
+  };
+
+  if (!enabled) {
+    note.textContent = '';
+    return state;
+  }
+
+  const close = () => {
+    mount(list, []);
+    list.hidden = true;
+    input.setAttribute('aria-expanded', 'false');
+    at = -1;
+  };
+
+  const pick = async (place) => {
+    close();
+    note.textContent = 'Looking it up…';
+    try {
+      const found = await api.placeDetails(place.id, session);
+      input.value = found.label;
+      chosen = {
+        placeId: found.id, lat: found.lat, lng: found.lng, label: found.label,
+      };
+      note.textContent = found.lat != null
+        ? 'Found on the map. Whoever you send this to gets directions.'
+        : 'Found, but with no pin on the map.';
+      // A new session: the next address somebody types is a separate one, and
+      // reusing the token would bill it as part of this.
+      session = newSession();
+      onPick?.(found);
+    } catch (err) {
+      note.textContent = err.message;
+    }
+  };
+
+  const draw = (places) => {
+    if (!places.length) return close();
+    at = -1;
+    mount(list, places.map((place, i) => h('li',
+      h('button.place-option', {
+        type: 'button',
+        role: 'option',
+        onmousedown: (event) => { event.preventDefault(); pick(place); },
+        onclick: () => pick(place),
+        'data-at': String(i),
+      },
+      h('strong', place.name),
+      place.address ? h('small.muted', place.address) : null))));
+    list.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+  };
+
+  const look = async () => {
+    const q = input.value.trim();
+    if (q.length < 3) { close(); note.textContent = ''; return; }
+
+    const mine = ++seq;
+    try {
+      const found = await api.placeSuggest(q, session);
+      // A slower answer to an earlier keystroke must not overwrite a faster
+      // answer to a later one.
+      if (mine !== seq) return;
+      note.textContent = found.problem ?? '';
+      draw(found.places ?? []);
+    } catch {
+      if (mine !== seq) return;
+      // Silent on purpose. The box still works; it just is not helping.
+      close();
+    }
+  };
+
+  input.addEventListener('input', () => {
+    chosen = { placeId: null, lat: null, lng: null };
+    note.textContent = '';
+    clearTimeout(timer);
+    // A quarter of a second after somebody stops, not on every letter. Each
+    // call is a request to Google and Google is billed.
+    timer = setTimeout(look, 250);
+  });
+
+  input.addEventListener('keydown', (event) => {
+    const options = [...list.querySelectorAll('.place-option')];
+    if (!options.length) return;
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      at = (at + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+      options.forEach((o, i) => o.classList.toggle('is-at', i === at));
+      options[at].scrollIntoView({ block: 'nearest' });
+    } else if (event.key === 'Enter' && at >= 0) {
+      event.preventDefault();
+      options[at].click();
+    } else if (event.key === 'Escape') {
+      close();
+    }
+  });
+
+  input.addEventListener('blur', () => setTimeout(close, 150));
+  return state;
+}
+
+/** A token tying one session of typing to the one place picked at the end. */
+function newSession() {
+  return crypto.randomUUID?.() ?? String(Math.random()).slice(2);
 }

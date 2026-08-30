@@ -5,6 +5,7 @@ import { getPepper, throttleCheck, throttleFail } from '../lib/auth.js';
 import { createNotice } from '../lib/notices.js';
 import { fromBase64 } from '../lib/files.js';
 import { endsAt, offerable } from '../lib/recruitment.js';
+import { mapLink } from '../lib/places.js';
 import { claimSlot, hashRecPin, hashRecToken, trail } from './recruitment.js';
 import { todayIn } from '../util/dates.js';
 
@@ -166,6 +167,11 @@ async function chosenBy(db, candidateId) {
     at: slot.starts_at,
     ends: endsAt(slot),
     place: slot.place,
+    // The reason for asking Google at all. "The office, main building" is not
+    // somewhere a candidate at the other end of Accra can navigate to; this is.
+    directions: mapLink({
+      placeId: slot.place_id, lat: slot.place_lat, lng: slot.place_lng, label: slot.place,
+    }),
     interviewer: slot.interviewer,
   };
 }
@@ -195,6 +201,9 @@ async function freeFor(db, candidate) {
       ends: endsAt(slot),
       minutes: Number(slot.minutes) || 30,
       place: slot.place,
+      directions: mapLink({
+        placeId: slot.place_id, lat: slot.place_lat, lng: slot.place_lng, label: slot.place,
+      }),
       // Not the interviewer's name. Whoever is on the panel is the property's
       // business, and a name on the page is a name somebody looks up.
       mine: slot.candidate_id === candidate.id,
