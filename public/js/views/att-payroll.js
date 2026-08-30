@@ -245,7 +245,7 @@ export async function renderAttPayroll(params) {
           h('td.num', line.loanTotal ? cash(line.loanTotal) : h('span.muted', '—')),
           h('td.num', h('strong', cash(line.net))),
           h('td.num', movementCell(line.against, cash)),
-          h('td.num.off-phone', cash(line.employerCost)))),
+          h('td.num.off-phone', costCell(line.employerCost, line.againstCost, cash)))),
           h('tr.pay-total',
             h('td', h('strong', 'Everybody')),
             h('td.num', cash(data.totals.basic)),
@@ -257,7 +257,8 @@ export async function renderAttPayroll(params) {
             h('td.num', cash(data.totals.loans)),
             h('td.num', h('strong', cash(data.totals.net))),
             h('td.num', movementCell(wholeMonthAgainst(data), cash)),
-            h('td.num.off-phone', cash(data.totals.cost)))))),
+            h('td.num.off-phone',
+              costCell(data.totals.cost, wholeMonthAgainst(data, 'cost'), cash)))))),
         compareNote(data),
         h('p.muted', { style: { fontSize: '.85rem' } }, data.slips
           ? 'Press a row for the payslip behind it.'
@@ -787,6 +788,27 @@ function movementCell(against, cash) {
     h('small.muted', { style: { display: 'block' } }, cash(against.was)));
 }
 
+/**
+ * What the month cost, and whether it cost more than the last one.
+ *
+ * The net and the cost move apart, which is the point of showing both: paying
+ * a bonus gross rather than net, or taking somebody off SSNIT, costs the
+ * property less without changing anybody's pay. A wage bill read only through
+ * the net never shows that.
+ *
+ * Down is the good direction here, which is the opposite of the net beside it,
+ * so the arrow is coloured the other way round.
+ */
+function costCell(now, against, cash) {
+  if (!against || against.percent === null) return cash(now);
+  return h('div',
+    h('div', cash(now)),
+    h('small.muted', { style: { display: 'block' } },
+      deltaBadge(against.percent, { higherIsBetter: false }),
+      ' ',
+      cash(against.was)));
+}
+
 /** Said under the table when the month being compared against is not settled. */
 function compareNote(data) {
   const other = data.compare?.month;
@@ -859,12 +881,14 @@ function compareHead(data) {
  * Only over the people who were on both months. A property that took on four
  * people would otherwise read as a rise in everybody's pay.
  */
-function wholeMonthAgainst(data) {
-  const both = (data.lines ?? []).filter((line) => line.against);
+function wholeMonthAgainst(data, what = 'net') {
+  const key = what === 'cost' ? 'againstCost' : 'against';
+  const figure = (line) => (what === 'cost' ? line.employerCost : line.net);
+  const both = (data.lines ?? []).filter((line) => line[key]);
   if (!both.length) return null;
 
-  const was = both.reduce((n, line) => n + (line.against.was ?? 0), 0);
-  const now = both.reduce((n, line) => n + line.net, 0);
+  const was = both.reduce((n, line) => n + (line[key].was ?? 0), 0);
+  const now = both.reduce((n, line) => n + figure(line), 0);
   if (Math.abs(was) < 0.005) return null;
   return {
     was: Math.round(was * 100) / 100,
@@ -1574,6 +1598,10 @@ async function addPenalty(data, month, reload) {
 // Who is on the payroll
 // --------------------------------------------------------------------------
 
+// Folded or not as it was left. Saving the payroll redraws this screen, and
+// folding it away again each time means opening it before the next look.
+let peopleOpen = false;
+
 function peopleCard(data, reload, cash) {
   const on = data.staff.filter((s) => s.onPayroll);
 
@@ -1583,7 +1611,18 @@ function peopleCard(data, reload, cash) {
     actions: h('button.btn-sm', { onclick: () => editPeople(data, reload) }, 'Set pay and allowances'),
   },
   on.length
-    ? h('div.table-wrap', h('table',
+    // Folded. It is a row per person and it never changes from one month to
+    // the next, so it sat at the bottom of the page taking up a screen and a
+    // half of somewhere nobody was going. Open it when somebody is checking
+    // what it says, which is the only time it is worth reading.
+    ? h('details.pay-people', {
+      open: peopleOpen,
+      ontoggle: (e) => { peopleOpen = e.target.open; },
+    },
+    h('summary.pay-people-head',
+      h('span', 'What each of them is paid'),
+      h('small.muted', `${on.length} on the payroll`)),
+    h('div.table-wrap', h('table',
       h('thead', h('tr',
         h('th', 'Name'), h('th.num', 'Basic'), h('th', 'Allowances'), h('th', 'SSNIT'),
         h('th', 'Bonus'),
@@ -1599,7 +1638,7 @@ function peopleCard(data, reload, cash) {
           ? h('span.pill', { title: 'Their bonus figures are already gross. Tax comes out of the '
               + 'bonus, so the property adds nothing on top.' }, 'gross')
           : h('span.pill.good', { title: 'Their bonus figures are what they receive. The property '
-              + 'carries the tax and it goes into their allowance.' }, 'net')))))))
+              + 'carries the tax and it goes into their allowance.' }, 'net'))))))))
     : h('p.muted', 'Nobody yet.'));
 }
 

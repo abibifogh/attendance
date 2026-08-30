@@ -215,6 +215,7 @@ export const api = {
   myWithdrawLeave: (id) => request(`/api/me/leave/${id}/withdraw`, { method: 'POST', body: {} }),
   mySetAvailability: (body) => request('/api/me/availability', { method: 'POST', body }),
   myRunningLate: (body) => request('/api/me/running-late', { method: 'POST', body }),
+  myPayslips: (month) => request(`/api/me/payslips${month ? `?month=${encodeURIComponent(month)}` : ''}`),
   myAdvances: () => request('/api/me/advances'),
   myMedical: (year) => request(`/api/me/medical${year ? `?year=${year}` : ''}`),
   myMedicalClaim: (body) => request('/api/me/medical', { method: 'POST', body }),

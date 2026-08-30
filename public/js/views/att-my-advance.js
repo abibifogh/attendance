@@ -69,7 +69,7 @@ export async function renderAttMyAdvance() {
       ? card('Your account', {
         note: 'every month, and what it left owing',
       },
-      advanceStatement(data.account, cash, { title: null }),
+      advanceStatement(data.account, cash, { title: null, currency: data.currency }),
       h('p.muted', { style: { fontSize: '.82rem' } },
         'The months behind you are what actually came off. The ones ahead are what is '
         + 'expected, and they move if anything changes. If a month here does not match '

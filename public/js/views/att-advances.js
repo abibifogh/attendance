@@ -696,7 +696,7 @@ async function showStatement(person, { data, reload, cash }) {
         'This is the page they see on their own phone. The months behind are what was '
         + 'recorded; the ones ahead are what is expected, and they move whenever anything '
         + 'does.'),
-      advanceStatement(mine.account, cash, { title: null })
+      advanceStatement(mine.account, cash, { title: null, currency: data.currency })
         ?? h('p.muted', 'Nothing has been borrowed.'),
       // Only where there is a history to put right, and only for somebody who
       // may. Retyping what came off last April moves what a person owes.

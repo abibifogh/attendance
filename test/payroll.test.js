@@ -819,3 +819,34 @@ test('the person receives what was agreed under either reading', () => {
     assert.equal(round2(with400.net - without.net), 400, basis);
   }
 });
+
+test('the cost is compared to the month before, as well as the net', async () => {
+  const { db } = setup();
+  const pay = (basic) => setProfiles(ctx(db, WAGES, {
+    body: { rows: [{ staffId: 1, onPayroll: true, basic, ssnit: true, allowances: [] }] } },
+  ));
+  await pay(2000);
+  await closeRun(ctx(db, WAGES, { body: { month: '2026-06' } }));
+
+  // A rise in basic moves both, and by different per cents: the employer's
+  // 13% rides on the basic while the tax rides on the whole.
+  await pay(2400);
+  const data = await read(await payroll(ctx(db, WAGES, { query: '?month=2026-07&compare=2026-06' })));
+  const [line] = data.lines;
+
+  assert.ok(line.against, 'the net still has one');
+  assert.ok(line.againstCost, 'and the cost now has one too');
+  assert.equal(line.againstCost.was, 2260, '2,000 and 13% of it');
+  assert.equal(line.againstCost.change, Math.round((line.employerCost - 2260) * 100) / 100);
+  assert.ok(line.againstCost.percent > 0, 'it cost more');
+});
+
+test('a month with nothing to read against leaves both empty', async () => {
+  const { db } = setup();
+  await setProfiles(ctx(db, WAGES, {
+    body: { rows: [{ staffId: 1, onPayroll: true, basic: 2000, ssnit: true, allowances: [] }] },
+  }));
+  const data = await read(await payroll(ctx(db, WAGES, { query: '?month=2026-07&compare=2026-01' })));
+  assert.equal(data.lines[0].against, null);
+  assert.equal(data.lines[0].againstCost, null);
+});

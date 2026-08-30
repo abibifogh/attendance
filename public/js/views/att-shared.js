@@ -768,38 +768,56 @@ export function monthLabel(month) {
  * and a person deciding whether they can ask for anything else needs to see
  * how long the current one has to run.
  */
-export function advanceStatement(account, cash, { title = 'Month by month' } = {}) {
+export function advanceStatement(account, cash, { title = 'Month by month', currency = 'GHS' } = {}) {
   const rows = account ?? [];
   if (!rows.length) return null;
 
   const last = rows[rows.length - 1];
+  // The currency once, in the heading, rather than on every figure in every
+  // row. Five columns of "GHS" is what pushed this off the side of a phone,
+  // and a running account is read down a column, not one cell at a time.
+  const figure = (n) => new Intl.NumberFormat('en-GB', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  }).format(Number(n) || 0);
 
   return h('div',
     title ? h('h3.adv-sub', title) : null,
-    h('div.table-wrap', h('table.adv-statement',
+    h('table.adv-statement',
       h('thead', h('tr',
         h('th', 'Month'),
         h('th.num', 'Opening'),
         h('th.num', 'Taken'),
         h('th.num', 'Repaid'),
-        h('th.num', 'Closing'))),
+        h('th.num', `Closing ${currency}`))),
       h('tbody', rows.map((row) => h(`tr${row.done ? '' : '.adv-ahead'}`,
-        h('td', niceMonth(row.month)),
-        h('td.num.muted', cash(row.opening)),
-        h('td.num', row.additions ? cash(row.additions) : h('span.muted', '—')),
+        // Both spellings of the month, and the stylesheet picks. A phone gets
+        // Aug 26 and everything else gets August 2026, without the screen
+        // having to watch for a resize to change its mind.
+        h('td.adv-when',
+          h('span.adv-when-long', niceMonth(row.month)),
+          h('span.adv-when-short', shortMonth(row.month))),
+        h('td.num.muted', figure(row.opening)),
+        h('td.num', row.additions ? figure(row.additions) : h('span.muted', '—')),
         // Three different blanks, and telling them apart is most of what
         // somebody opens this for. A month deliberately let go says so; a
         // month nobody answered for is a bare dash; a month ahead carries
         // what is expected.
         h('td.num', row.repayment
-          ? cash(row.repayment)
+          ? figure(row.repayment)
           : h('span.muted', row.letGo ? 'nothing taken' : '—')),
-        h('td.num.strong', cash(row.closing)))))),
-    ),
+        h('td.num.strong', figure(row.closing)))))),
     last.closing > 0
       ? h('p.muted', { style: { fontSize: '.82rem' } },
         `${cash(last.closing)} is still expected after ${niceMonth(last.month)}.`)
       : null);
+}
+
+/** 'Aug 26' from '2026-08', for a column too narrow for the long one. */
+export function shortMonth(month) {
+  const [year, mm] = String(month ?? '').split('-');
+  if (!year || !mm) return String(month ?? '');
+  const at = new Date(Date.UTC(Number(year), Number(mm) - 1, 1));
+  return `${at.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })} ${year.slice(2)}`;
 }
 
 /** 'August 2026' from '2026-08'. */

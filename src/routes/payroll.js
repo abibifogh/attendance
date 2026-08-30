@@ -322,7 +322,9 @@ function linesOf(data, month) {
  */
 async function against(ctx, month, asked) {
   const other = isMonth(asked) ? asked : addMonths(month, -1);
-  if (other === month) return { month: other, netBy: new Map(), status: null };
+  if (other === month) {
+    return { month: other, netBy: new Map(), costBy: new Map(), status: null };
+  }
 
   const data = await gather(ctx, other, { open: false });
 
@@ -330,12 +332,21 @@ async function against(ctx, month, asked) {
   // from today's standing figures would answer "nothing has changed" about a
   // month nobody was paid in — and against a month two years back, where every
   // salary has moved since, that reading is not just useless but wrong.
-  if (data.run.id === -1) return { month: other, netBy: new Map(), status: 'none' };
+  if (data.run.id === -1) {
+    return { month: other, netBy: new Map(), costBy: new Map(), status: 'none' };
+  }
 
-  const netBy = new Map(linesOf(data, other).map((line) => [line.staff.id, round2(line.net)]));
+  const then = linesOf(data, other);
+  const netBy = new Map(then.map((line) => [line.staff.id, round2(line.net)]));
+  // What the month cost as well as what went out in it. They move apart:
+  // taking somebody off SSNIT or paying a bonus gross costs the property less
+  // without changing anybody's pay, and a wage bill that reads only the net
+  // never shows it.
+  const costBy = new Map(then.map((line) => [line.staff.id, round2(line.employerCost)]));
   return {
     month: other,
     netBy,
+    costBy,
     // Whether the figures being compared against are settled or still moving.
     status: data.run.status,
   };
@@ -375,6 +386,7 @@ export async function payroll(ctx) {
   const compare = await against(ctx, month, ctx.url.searchParams.get('compare'));
   for (const line of lines) {
     line.against = movement(line.net, compare.netBy.get(line.staff.id));
+    line.againstCost = movement(line.employerCost, compare.costBy.get(line.staff.id));
   }
 
   const memberOf = new Map();
@@ -1079,6 +1091,77 @@ export async function payslip(ctx, staffParam) {
     status: data.run.status,
     closedAt: data.run.closed_at,
     line,
+  });
+}
+
+/**
+ * Somebody's own payslips.
+ *
+ * There was no way for a member of staff to see one at all. The only route to
+ * a payslip is the payroll's, and that wants the payroll permission, a PIN, and
+ * an administrator on top — which is right for reading a colleague's and is
+ * the wrong end of the building for reading your own. So people were being
+ * handed paper, or asking.
+ *
+ * ONLY CLOSED MONTHS. A draft moves: a score gets changed, an allowance is
+ * corrected, and a figure somebody has already written down stops being true.
+ * Payslips are written out in full when a month is closed, and this reads those
+ * and nothing else, so what somebody sees is what they were paid.
+ *
+ * WHOSE IS NEVER ASKED. The person comes from the session and there is no
+ * parameter to pass, so there is nothing here that could be pointed at
+ * somebody else however the address is typed.
+ */
+export async function myPayslips(ctx) {
+  const staffId = Number(ctx.session.user.staff_id) || 0;
+  const { currency, property, settings } = await settingsOf(ctx.db);
+
+  // A login that is nobody in particular: real, and with no pay to show. Said
+  // rather than answered with an empty list, because the two are different and
+  // only one of them is worth telling somebody about.
+  if (!staffId) return json({ linked: false, currency, property, months: [], line: null });
+
+  const rows = await ctx.db.prepare(
+    `SELECT r.month, r.closed_at, s.detail, s.gross, s.net
+       FROM pay_slip s JOIN pay_run r ON r.id = s.run_id
+      WHERE s.staff_id = ?1 AND r.status = 'final'
+      ORDER BY r.month DESC`,
+  ).bind(staffId).all();
+
+  const slips = rows.results ?? [];
+  const asked = ctx.url.searchParams.get('month');
+  const wanted = slips.find((r) => r.month === asked) ?? slips[0] ?? null;
+
+  return json({
+    linked: true,
+    currency,
+    property,
+    // Always final. Nothing else is ever returned from here, and the paper
+    // reads the status to decide whether to stamp itself DRAFT and warn that
+    // the figures can still move. Left unsaid it defaulted to draft, and told
+    // somebody their closed payslip was provisional.
+    status: 'final',
+    // The table the month was worked out on, so the slip reads the same as the
+    // one that was issued rather than at today's percentages.
+    rates: wanted
+      ? (() => {
+        const line = JSON.parse(wanted.detail);
+        return line.rates ?? null;
+      })()
+      : null,
+    months: slips.map((r) => ({
+      month: r.month,
+      closedAt: r.closed_at,
+      gross: round2(r.gross),
+      net: round2(r.net),
+    })),
+    month: wanted?.month ?? null,
+    closedAt: wanted?.closed_at ?? null,
+    line: wanted ? JSON.parse(wanted.detail) : null,
+    company: {
+      legalName: settings.company_legal_name ?? '',
+      tin: settings.company_tin ?? '',
+    },
   });
 }
 

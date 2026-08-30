@@ -13,6 +13,7 @@ import { renderAttRota } from './views/att-rota.js';
 import { renderAttWorkload } from './views/att-workload.js';
 import { renderAttMe } from './views/att-me.js';
 import { renderAttMyReport } from './views/att-my-report.js';
+import { renderAttMyPayslips } from './views/att-my-payslips.js';
 import { renderAttMyAdvance } from './views/att-my-advance.js';
 import { renderAttAdvances } from './views/att-advances.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
@@ -69,6 +70,7 @@ const ROUTES = [
   // somebody looks when they are working out what they will be paid.
   { path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
   { path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
+  { path: 'att-my-payslips', label: 'My payslips', permission: 'att_me', render: renderAttMyPayslips, live: ['pay'] },
   { path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday, live: ['attendance', 'rota', 'leave'] },
   { path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek, live: ['attendance', 'rota', 'leave'] },
   // The planner reads the month before building the next one. The one thing

@@ -161,6 +161,7 @@ export const ROUTES = [
   ['POST', '/api/me/photo', 'att_me', mine.setMyPhoto],
   ['DELETE', '/api/me/photo', 'att_me', mine.clearMyPhoto],
   ['POST', '/api/me/running-late', 'att_me', mine.tellThemImLate],
+  ['GET', '/api/me/payslips', 'att_me', payroll.myPayslips],
   ['GET', '/api/me/advances', 'att_me', advance.myAdvances],
   ['POST', '/api/me/advances', 'att_me', advance.askForAdvance],
   ['POST', '/api/me/advances/:id/withdraw', 'att_me', advance.withdrawMyAdvance],

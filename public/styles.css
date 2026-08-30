@@ -2988,9 +2988,29 @@ html { touch-action: manipulation; }
   gap: .3rem .8rem; margin-bottom: .7rem;
 }
 
+/* The month, in whichever spelling fits. */
+.adv-when-short { display: none; }
+
 @media (max-width: 640px) {
-  /* Opening is the closing above it. On a phone it is the column to lose. */
+  /* It has to fit a handset outright: a running account read by swiping it
+     sideways is one where the closing column, which is the whole point, is the
+     column nobody sees. Three things get it there and all three are needed.
+     Opening goes, because it is the closing on the line above. The month goes
+     short. And the table is given its widths rather than left to be pushed
+     wide by the longest figure in it. */
   .adv-statement th:nth-child(2), .adv-statement td:nth-child(2) { display: none; }
+  .adv-when-long { display: none; }
+  .adv-when-short { display: inline; }
+
+  .adv-statement { table-layout: fixed; font-size: .82rem; }
+  .adv-statement th, .adv-statement td { padding: .4rem .25rem; }
+  .adv-statement th:first-child, .adv-statement td:first-child { width: 22%; }
+  .adv-statement th:nth-child(n+3), .adv-statement td:nth-child(n+3) { width: 26%; }
+  /* A figure too long for its column is wrapped rather than allowed to widen
+     it. At these amounts it never is; the rule is there so an unusual one
+     cannot take the layout with it. */
+  .adv-statement td.num { overflow-wrap: anywhere; }
+  .adv-statement th.num { font-size: .64rem; letter-spacing: .02em; }
 }
 
 @media (max-width: 640px) {
@@ -4845,3 +4865,41 @@ body.rota-dragging .pos-add { pointer-events: none; }
 
 /* A mark nobody has answered yet reads as a question rather than a fact. */
 .rota-avail-waiting { color: var(--warn); }
+
+/* --------------------------------------------------------------------------
+   My payslips
+   -------------------------------------------------------------------------- */
+
+/* The months down one side and the slip beside them. On a phone the list goes
+   above, because the slip is tall and a list underneath it is a list nobody
+   finds. */
+.slip-mine { display: grid; grid-template-columns: 16rem 1fr; gap: 1rem; align-items: start; }
+.slip-mine-paper { display: flex; justify-content: center; overflow-x: auto; }
+.slip-mine-months { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem; }
+.slip-mine-month {
+  width: 100%; justify-content: space-between; text-align: left;
+  padding: .5rem .6rem; font-size: .85rem;
+}
+.slip-mine-month.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.slip-mine-when { color: var(--text-dim); }
+.slip-mine-month.is-on .slip-mine-when { color: var(--text); }
+.slip-mine-net { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 900px) {
+  .slip-mine { grid-template-columns: 1fr; }
+  /* Wide enough to need scrolling on a handset, so it scrolls in its own box
+     rather than taking the page sideways with it. */
+  .slip-mine-paper { justify-content: flex-start; }
+}
+
+/* The pay table, folded away until somebody is checking it. */
+.pay-people-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .6rem;
+  cursor: pointer; list-style: none; padding: .35rem 0; font-weight: 600;
+}
+.pay-people-head::-webkit-details-marker { display: none; }
+.pay-people-head > span::before { content: '\25be'; margin-right: .4rem; color: var(--text-faint); }
+.pay-people:not([open]) .pay-people-head > span::before { content: '\25b8'; }
