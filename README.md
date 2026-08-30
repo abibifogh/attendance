@@ -1326,6 +1326,31 @@ words that were signed, a fingerprint of those words, and a sequential log of
 every event — issued, link sent, link opened, document read, signed — each with
 a time, a network address and the device.
 
+### Folded under departments, and a box to type a name into
+
+The list started at twenty-odd names and read as a list. It is now a page
+somebody scrolls past to reach the housekeeper they came for, so **People**
+opens as its departments rather than its names: each one a band with a count,
+and the names under it when you press it.
+
+Three things sit above it.
+
+**A search box** that takes a name, an employee number or a job title and
+narrows the list as you type rather than when you leave the box. Every record
+is already in the browser, so nothing is fetched and nothing waits.
+
+**Which department**, which is the question anybody arrives with.
+
+**What state the record is in** — on the books, everybody including people who
+have left, records with something still missing, contracts sent and not signed,
+or only the people who have left. The middle two are the two lists somebody
+actually walks round the building with.
+
+The bands open on their own the moment any of the three is used: a search that
+finds three people and hides them behind three lids has not found anybody.
+**Open them all** is there for reading the whole list at once, and **Clear**
+puts it back.
+
 ### The register, out of a spreadsheet
 
 **Setup → Staff → Bulk upload.** A CSV of the property's staff, read
@@ -1505,6 +1530,52 @@ percentages, so changing them would have a closed month's journal show a new
 tier 1 / tier 2 split against the PAYE it was actually closed on. Payslips
 written before this keep working: they fall back to computing it, which is what
 they always did.
+
+### The birthday message is yours to write, or to switch off
+
+The one message this app sends that is not about hours, lateness or money was
+written into the code, which made it the one message nobody here could change.
+A property that wanted to say something in its own voice had no way to, and a
+property that would rather a person said it out loud and the app stayed out of
+it had no way to do that either.
+
+**Setup → Birthdays.**
+
+Two messages, kept apart on purpose. **What the person gets** is warm and
+addressed to them: a heading and a line, with `{name}` where their name goes
+and `{property}` where this place's name goes. `{name}` becomes their preferred
+name where they have given one. **What whoever runs the floor gets** is a
+prompt rather than a wish, because what somebody actually remembers about their
+birthday is a colleague saying it out loud, and an app that only sends an
+automatic message has replaced that rather than prompted it.
+
+Either can be switched off on its own. With both off nothing goes out at all,
+and nothing is marked as sent, so turning it back on tomorrow is not a day
+somebody was quietly skipped. You also choose whether it reaches their phone or
+waits in the bell, and how far ahead the coming-up list on Today looks.
+
+**How it reads** shows both messages as they will actually arrive, against the
+first name of whoever's birthday is next. It redraws as you type. A preview
+against "John Smith" reads as a preview; the same sentence with a real name in
+it is the thing itself, which is what makes a clumsy line obvious.
+
+Underneath are the two lists that make this a screen rather than a form.
+
+**Nobody knows when these birthdays are** is the one that matters. A birthday
+the app has never been told about looks exactly like a birthday nobody has, and
+nothing else in the app tells them apart. It is a chase list, so it is folded
+by department and each name links to the record where the date goes.
+
+**The year** is all twelve months with everybody under the one they fall in,
+which is the only list of it anywhere in the app. **What has gone out** is the
+last thirty birthday messages and who each went to, so a change to the wording
+can be checked against something real rather than taken on trust.
+
+The card on the Today screen opens with whatever the wish says, so a card
+somebody sends by hand and the message the app sent an hour earlier are not two
+properties talking. Nothing here ever reads a birth year out loud: the record
+holds a full date because payroll and contracts need one, and a card announcing
+that somebody is fifty-three is not a kindness.
 
 ### A member of staff sees their own screens, even before they are linked
 

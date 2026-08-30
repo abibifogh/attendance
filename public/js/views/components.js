@@ -66,10 +66,17 @@ export function card(title, { note, actions, wide, id, cls } = {}, ...children) 
  * `groupNoun` is what the band counts. A list of shifts announcing "5 people"
  * is the sort of small wrongness that makes somebody stop trusting the rest of
  * the screen.
+ *
+ * `fold` makes each band a lid. Opt-in, because folding is only worth the
+ * click on a list long enough to lose your place in: on a screen with three
+ * groups of four it is a control that costs more than it saves. Pass
+ * `'closed'` to start with everything shut, which is right where somebody
+ * comes to the screen looking for one department rather than reading all of
+ * them.
  */
 export function table(columns, rows, {
   rowClass = null, empty = 'No data yet.', groupBy = null, groupSummary = null,
-  groupNoun = ['person', 'people'],
+  groupNoun = ['person', 'people'], fold = false,
 } = {}) {
   if (!rows?.length) return h('div.empty', h('p', empty));
 
@@ -87,13 +94,13 @@ export function table(columns, rows, {
       h('thead', h('tr', columns.map((c) =>
         h(`th${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, c.label)))),
       h('tbody', groupBy
-        ? groupedBody(rows, groupBy, groupSummary, columns.length, rowEl, groupNoun)
+        ? groupedBody(rows, groupBy, groupSummary, columns.length, rowEl, groupNoun, fold)
         : rows.map(rowEl)),
     ),
   );
 }
 
-function groupedBody(rows, groupBy, groupSummary, span, rowEl, noun) {
+function groupedBody(rows, groupBy, groupSummary, span, rowEl, noun, fold) {
   const groups = new Map();
   for (const row of rows) {
     const label = groupBy(row) || UNGROUPED;
@@ -102,14 +109,44 @@ function groupedBody(rows, groupBy, groupSummary, span, rowEl, noun) {
   }
 
   const out = [];
+  const shut = fold === 'closed';
+
   for (const label of sortGroups([...groups.keys()])) {
     const group = groups.get(label);
-    out.push(h('tr.row-group', h('td', { colspan: span },
-      h('span.row-group-name', label),
-      h('span.row-group-meta', `${group.length} ${group.length === 1 ? noun[0] : noun[1]}`),
-      groupSummary ? h('span.row-group-meta', groupSummary(group)) : null,
-    )));
-    out.push(...group.map(rowEl));
+    const body = group.map(rowEl);
+
+    const heading = h(`tr.row-group${fold ? '.is-foldable' : ''}`,
+      h('td', { colspan: span },
+        fold ? h('span.row-group-caret', shut ? '\u25b8' : '\u25be') : null,
+        h('span.row-group-name', label),
+        h('span.row-group-meta', `${group.length} ${group.length === 1 ? noun[0] : noun[1]}`),
+        groupSummary ? h('span.row-group-meta', groupSummary(group)) : null,
+      ));
+
+    if (fold) {
+      // The rows themselves carry the state rather than a wrapper element:
+      // a tbody cannot hold a div, and wrapping each group in its own tbody
+      // would break the striping and the border between the last row of one
+      // group and the heading of the next.
+      let open = !shut;
+      const apply = () => {
+        for (const row of body) row.hidden = !open;
+        heading.querySelector('.row-group-caret').textContent = open ? '\u25be' : '\u25b8';
+        heading.setAttribute('aria-expanded', String(open));
+      };
+      heading.setAttribute('role', 'button');
+      heading.setAttribute('tabindex', '0');
+      heading.addEventListener('click', () => { open = !open; apply(); });
+      heading.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        open = !open;
+        apply();
+      });
+      apply();
+    }
+
+    out.push(heading, ...body);
   }
   return out;
 }

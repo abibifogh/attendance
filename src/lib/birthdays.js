@@ -107,25 +107,60 @@ export function daysUntil(monthDayText, from) {
   return null;
 }
 
+/** The wording as it ships, before anybody has edited it. */
+export const WORDING = {
+  title: 'Happy birthday, {name}',
+  line: 'Everybody at {property} hopes you have a lovely day.',
+  prompt: 'They have been told. What they will remember is somebody saying it out loud, '
+    + 'and there is a card ready to send on the Today screen.',
+};
+
+/**
+ * Put the names into the wording.
+ *
+ * Two placeholders and no more. A template language in a birthday message is
+ * a thing to debug on somebody's birthday, and the two things a wish ever
+ * needs to say are who it is for and where it is from.
+ *
+ * A property with no name set would otherwise send "Everybody at hopes you
+ * have a lovely day", so the fallback is a word rather than a blank.
+ */
+export function fill(text, { name = '', property = '' } = {}) {
+  return String(text ?? '')
+    .replace(/\{name\}/g, String(name || 'you'))
+    .replace(/\{property\}/g, String(property || 'work'))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
  * What the card says.
  *
  * Written here rather than in the screen so the notice, the email and the card
- * itself cannot end up wishing somebody three different things. Deliberately
- * short: a long message on a birthday card is a message about whoever wrote it.
+ * itself cannot end up wishing somebody three different things. The words
+ * themselves come off the setup screen; what is here is the shape and the
+ * fallback, so a property that has never opened that screen still says
+ * something sensible.
+ *
+ * Deliberately short: a long message on a birthday card is a message about
+ * whoever wrote it.
  */
-export function greeting(name, { property = null } = {}) {
+export function greeting(name, { property = null, title = null, line = null } = {}) {
   const first = String(name ?? '').trim().split(/\s+/)[0] || 'you';
+  const named = { name: first, property };
   return {
-    title: `Happy birthday, ${first}`,
-    line: property
-      ? `Everybody at ${property} hopes you have a lovely day.`
-      : 'Everybody here hopes you have a lovely day.',
+    title: fill(title || WORDING.title, named),
+    line: fill(line || WORDING.line, named),
   };
 }
 
-/** What whoever runs the floor is told, which is a prompt rather than a wish. */
-export function prompt(names) {
+/**
+ * What whoever runs the floor is told, which is a prompt rather than a wish.
+ *
+ * The body comes off the setup screen for the same reason the wish does. The
+ * title is built here: it has to agree with itself about one name or three.
+ */
+export function prompt(names, { body = null } = {}) {
   const list = [...names];
   if (!list.length) return null;
 
@@ -137,8 +172,7 @@ export function prompt(names) {
     title: list.length === 1
       ? `It is ${who}'s birthday today`
       : `It is ${who}'s birthdays today`,
-    body: 'They have been told. What they will remember is somebody saying it out loud — '
-      + 'there is a card ready to send on the Today screen.',
+    body: fill(body || WORDING.prompt),
   };
 }
 

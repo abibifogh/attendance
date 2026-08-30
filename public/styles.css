@@ -378,6 +378,26 @@ tbody tr.row-group td, tbody tr.row-group:hover td {
 }
 .row-group-meta { font-size: .75rem; color: var(--text-faint); margin-left: .6rem; }
 
+/* A band that is also a lid. The caret is the only thing added to the heading:
+   a band that already reads as a heading does not need a button drawn on it to
+   look pressable, and one more control on every group is one more thing between
+   somebody and the names they came for. */
+tbody tr.row-group.is-foldable { cursor: pointer; }
+tbody tr.row-group.is-foldable:hover td { background: var(--surface-3, var(--surface-2)); }
+tbody tr.row-group.is-foldable:focus-visible td {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.row-group-caret {
+  display: inline-block;
+  width: .9rem;
+  font-size: .7rem;
+  color: var(--text-faint);
+}
+/* A row hidden by a fold. Spelled out because a `tr` carries a display of its
+   own and the two rules are otherwise a coin toss. */
+tr[hidden] { display: none; }
+
 /* ------------------------------------------------------------- controls -- */
 button, .btn {
   font: inherit; font-weight: 600; font-size: .88rem;
@@ -2796,6 +2816,65 @@ html { touch-action: manipulation; }
   height: auto;
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+}
+
+/* The setup screen: the wording, and how it will read.
+
+   The preview is two message cards side by side because that is what the two
+   settings above them produce - one to the person, one to whoever runs the
+   floor. Seeing them together is what stops somebody writing the same sentence
+   twice. */
+.bd-set-preview { display: grid; gap: .8rem; }
+.bd-set-note { font-size: .82rem; color: var(--text-dim); }
+.bd-set-cards { display: grid; gap: .8rem; }
+
+.bd-set-card {
+  padding: .8rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--c8) 40%, var(--border));
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--c8) 8%, var(--surface));
+  line-height: 1.4;
+}
+.bd-set-card strong { display: block; margin-bottom: .2rem; }
+.bd-set-card p { margin: 0; font-size: .9rem; color: var(--text-dim); }
+.bd-set-card-prompt {
+  border-color: var(--border);
+  background: var(--surface-2, var(--surface));
+}
+
+@media (min-width: 40rem) {
+  .bd-set-preview { grid-template-columns: 1fr 1fr; align-items: start; }
+  .bd-set-note { grid-column: 1 / -1; }
+}
+
+/* The year. Twelve months as twelve short lists, because the question anybody
+   asks of a year of birthdays is "who is in March" rather than "what is the
+   next one". */
+.bd-year {
+  display: grid;
+  gap: 1rem 1.4rem;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+}
+.bd-year-month h3 {
+  margin: 0 0 .35rem;
+  font-size: .78rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: .25rem;
+}
+.bd-year-month ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .2rem; }
+.bd-year-month li { display: flex; gap: .5rem; font-size: .88rem; align-items: baseline; }
+.bd-year-month li.is-today { font-weight: 600; }
+.bd-year-month li.is-today::after { content: 'today'; font-size: .72rem; color: var(--text-dim); }
+.bd-year-month p { margin: .1rem 0 0; font-size: .85rem; }
+.bd-year-day {
+  min-width: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  font-size: .82rem;
 }
 
 /* --------------------------------------------------------------------------

@@ -149,6 +149,7 @@ export const api = {
 
   // ------------------------------------------------------------ attendance --
   attBootstrap: () => request('/api/att/bootstrap'),
+  attBirthdayManage: () => request('/api/att/birthdays/manage'),
   attDay: (day) => request(`/api/att/day${day ? `?day=${day}` : ''}`),
   attStaffDay: (id, day) => request(`/api/att/staff/${id}/day${day ? `?day=${day}` : ''}`),
   attWeek: (from) => request(`/api/att/week${from ? `?from=${from}` : ''}`),

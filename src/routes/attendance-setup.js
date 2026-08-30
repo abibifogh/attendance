@@ -1031,6 +1031,17 @@ const SETTINGS = new Map([
   // landed, and at what time. To them and nobody else.
   ['att_clock_push', (v) => (v === '0' || v === 'false' ? '0' : '1')],
 
+  // Birthdays. The wording is the point of these being here: it is the one
+  // message this app sends that is not about hours or money, and it should
+  // sound like the property rather than like a system.
+  ['att_bd_wish', (v) => (v === '0' || v === 'false' ? '0' : '1')],
+  ['att_bd_push', (v) => (v === '0' || v === 'false' ? '0' : '1')],
+  ['att_bd_prompt', (v) => (v === '0' || v === 'false' ? '0' : '1')],
+  ['att_bd_title', (v) => str(v, 'What the birthday message is headed', { max: 120 })],
+  ['att_bd_line', (v) => str(v, 'What the birthday message says', { max: 300 })],
+  ['att_bd_prompt_body', (v) => str(v, 'What the prompt says', { max: 300 })],
+  ['att_bd_ahead', (v) => String(int(v, 'How far ahead to look', { min: 0, max: 365 }))],
+
   // Whether a public holiday counts towards what a member of staff reads on
   // their own monthly report. A property that pays for them wants them in the
   // figure; one that treats them as ordinary rest days does not, and a day

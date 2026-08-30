@@ -148,6 +148,10 @@ export const ROUTES = [
   // The one thing here that is not about hours, lateness or money.
   ['GET', '/api/att/birthdays', 'att_view', birthday.birthdays],
   ['POST', '/api/att/birthdays/card', 'att_view', birthday.sendBirthdayCard],
+  // The year, who has no date on file, and what has gone out. Behind setup
+  // rather than att_view: it is a list of everybody's date of birth in one
+  // place, which the morning strip deliberately is not.
+  ['GET', '/api/att/birthdays/manage', 'att_setup', birthday.birthdayAdmin],
 
   // A member of staff, looking at their own. Every route resolves who they are
   // from the session, so none of them takes a staff id and none of them has a

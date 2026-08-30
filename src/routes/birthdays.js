@@ -1,6 +1,6 @@
 import { badRequest, int, json, notFound, readJson, str } from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
-import { ageOn, birthdaysOn, greeting, prompt, upcoming } from '../lib/birthdays.js';
+import { WORDING, ageOn, birthdaysOn, greeting, monthDay, prompt, upcoming } from '../lib/birthdays.js';
 import { todayIn } from '../util/dates.js';
 
 /**
@@ -12,6 +12,39 @@ import { todayIn } from '../util/dates.js';
  */
 
 const actorOf = (ctx) => `${ctx.session.user.name} (${ctx.session.user.role})`;
+
+const on = (value, fallback = true) => (value == null || value === ''
+  ? fallback
+  : !(value === '0' || value === 'false'));
+
+/**
+ * How this property words it, and whether it says anything at all.
+ *
+ * Read on every send rather than cached. It is a handful of rows once a day,
+ * and a wish that goes out in wording somebody changed last week and cannot
+ * see the effect of is worse than a query.
+ */
+export async function wording(db) {
+  const rows = await db.prepare(
+    `SELECT key, value FROM settings
+      WHERE key IN ('att_bd_wish', 'att_bd_title', 'att_bd_line', 'att_bd_push',
+                    'att_bd_prompt', 'att_bd_prompt_body', 'att_bd_ahead',
+                    'property_name', 'timezone')`,
+  ).all().catch(() => ({ results: [] }));
+  const s = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
+
+  return {
+    wish: on(s.att_bd_wish),
+    title: s.att_bd_title || WORDING.title,
+    line: s.att_bd_line || WORDING.line,
+    push: on(s.att_bd_push),
+    prompt: on(s.att_bd_prompt),
+    promptBody: s.att_bd_prompt_body || WORDING.prompt,
+    ahead: Math.min(365, Math.max(0, Number(s.att_bd_ahead ?? 30) || 0)),
+    property: s.property_name || null,
+    timezone: s.timezone || 'UTC',
+  };
+}
 
 /** Everybody on the books with a date of birth against them. */
 async function peopleWithBirthdays(db) {
@@ -34,13 +67,11 @@ async function peopleWithBirthdays(db) {
  * birthday and remembering it on the day it has already passed.
  */
 export async function birthdays(ctx) {
-  const timezone = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'timezone'")
-    .first())?.value || 'UTC';
-  const today = todayIn(timezone);
+  const set = await wording(ctx.db);
+  const today = todayIn(set.timezone);
 
   const people = await peopleWithBirthdays(ctx.db);
-  const property = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'property_name'")
-    .first())?.value || null;
+  const property = set.property;
 
   const sentRows = await ctx.db.prepare(
     "SELECT staff_id FROM att_nudge WHERE day = ?1 AND kind = 'birthday_card'",
@@ -63,10 +94,13 @@ export async function birthdays(ctx) {
     today,
     property,
     todays: birthdaysOn(people, today).map(shape),
-    soon: upcoming(people, today, 30)
+    soon: upcoming(people, today, set.ahead)
       .filter((p) => p.inDays > 0)
       .slice(0, 8)
       .map((p) => ({ ...shape(p), inDays: p.inDays })),
+    // The card's opening line, so the screen offers what the setup screen says
+    // rather than a second wording nobody knows is there.
+    wording: greeting('{name}', { property, title: set.title, line: set.line }),
     // Said plainly, because a screen that shows two birthdays out of
     // twenty-four people should say why it is not showing the other
     // twenty-two rather than let somebody assume nobody else has one.
@@ -90,9 +124,8 @@ export async function sendBirthdayCard(ctx) {
   const message = str(body.message, 'Message', { max: 300 });
   const tellEverybody = body.everybody !== false;
 
-  const timezone = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'timezone'")
-    .first())?.value || 'UTC';
-  const today = todayIn(timezone);
+  const set = await wording(ctx.db);
+  const today = todayIn(set.timezone);
 
   const person = await ctx.db.prepare(
     `SELECT s.id, s.name, p.preferred_name, p.date_of_birth, u.id AS user_id
@@ -110,9 +143,9 @@ export async function sendBirthdayCard(ctx) {
     throw badRequest('A card has already gone out for them today.');
   }
 
-  const property = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'property_name'")
-    .first())?.value || null;
-  const wish = greeting(person.preferred_name || person.name, { property });
+  const property = set.property;
+  const wish = greeting(person.preferred_name || person.name,
+    { property, title: set.title, line: set.line });
 
   // To them, if they have a way of being reached.
   if (person.user_id) {
@@ -125,7 +158,7 @@ export async function sendBirthdayCard(ctx) {
       day: today,
       actor: property || 'HIVE',
       userId: person.user_id,
-      push: true,
+      push: set.push,
       email: false,
     }, ctx);
   }
@@ -171,13 +204,17 @@ export async function sendBirthdayCard(ctx) {
  * that sends it automatically has taken the gesture rather than prompted it.
  */
 export async function wishThem(db, { timezone = 'UTC', ctx = null } = {}) {
-  const today = todayIn(timezone);
+  const set = await wording(db);
+  const today = todayIn(set.timezone || timezone);
   const people = await peopleWithBirthdays(db);
   const whose = birthdaysOn(people, today);
   if (!whose.length) return { wished: 0 };
 
-  const property = (await db.prepare("SELECT value FROM settings WHERE key = 'property_name'")
-    .first().catch(() => null))?.value || null;
+  // Turned off means turned off, for both messages. A property that would
+  // rather a person said it has a right to an app that stays quiet, and one
+  // that says nothing but still rings the manager's bell has not been turned
+  // off, it has been half turned off.
+  if (!set.wish && !set.prompt) return { wished: 0, day: today, off: true };
 
   let wished = 0;
   for (const person of whose) {
@@ -186,8 +223,9 @@ export async function wishThem(db, { timezone = 'UTC', ctx = null } = {}) {
     ).bind(person.id, today, 'birthday').run().catch(() => null);
     if (!Number(claimed?.meta?.changes ?? 0)) continue;
 
-    if (person.user_id) {
-      const wish = greeting(person.preferred_name || person.name, { property });
+    if (set.wish && person.user_id) {
+      const wish = greeting(person.preferred_name || person.name,
+        { property: set.property, title: set.title, line: set.line });
       await createNotice(db, {
         kind: 'birthday.wish',
         level: 'info',
@@ -195,17 +233,20 @@ export async function wishThem(db, { timezone = 'UTC', ctx = null } = {}) {
         body: wish.line,
         link: '#/att-me',
         day: today,
-        actor: property || 'HIVE',
+        actor: set.property || 'HIVE',
         userId: person.user_id,
-        push: true,
+        push: set.push,
         email: false,
       }, ctx);
     }
     wished += 1;
   }
 
-  if (wished) {
-    const said = prompt(whose.map((p) => p.preferred_name || p.name.split(' ')[0]));
+  if (wished && set.prompt) {
+    const said = prompt(
+      whose.map((p) => p.preferred_name || p.name.split(' ')[0]),
+      { body: set.promptBody },
+    );
     await createNotice(db, {
       kind: 'birthday.prompt',
       level: 'info',
@@ -215,10 +256,122 @@ export async function wishThem(db, { timezone = 'UTC', ctx = null } = {}) {
       day: today,
       actor: 'HIVE',
       audience: 'att_view',
-      push: true,
+      push: set.push,
       email: false,
     }, ctx);
   }
 
   return { wished, day: today };
+}
+
+/**
+ * The year, for whoever is setting the wording.
+ *
+ * Three things a setup screen has to answer that the morning strip cannot.
+ *
+ * WHOSE BIRTHDAY IS WHEN, all twelve months of it, because somebody editing
+ * the message wants to see who it will reach and there is no other list of it
+ * anywhere in the app.
+ *
+ * WHO HAS NO DATE ON FILE. This is the one that matters. A birthday the app
+ * never mentions looks exactly like a birthday nobody has, and the only way to
+ * tell them apart is a list of the people it knows nothing about. It is a
+ * chase list, so it carries the department and links to the record.
+ *
+ * AND WHAT HAS ACTUALLY GONE OUT, so a wording change can be checked against
+ * something real rather than trusted.
+ */
+export async function birthdayAdmin(ctx) {
+  const set = await wording(ctx.db);
+  const today = todayIn(set.timezone);
+  const people = await peopleWithBirthdays(ctx.db);
+
+  const missing = await ctx.db.prepare(
+    `SELECT s.id, s.name, s.department, s.employee_no
+       FROM att_staff s
+       LEFT JOIN hr_profile p ON p.staff_id = s.id
+      WHERE s.active = 1
+        AND (p.staff_id IS NULL OR p.date_of_birth IS NULL OR p.date_of_birth = '')
+      ORDER BY s.department, s.name`,
+  ).all().catch(() => ({ results: [] }));
+
+  const sent = await ctx.db.prepare(
+    `SELECT id, at, kind, title, body, day, audience
+       FROM app_notices
+      WHERE kind IN ('birthday.wish', 'birthday.today', 'birthday.prompt')
+      ORDER BY id DESC LIMIT 30`,
+  ).all().catch(() => ({ results: [] }));
+
+  // Grouped by the month it falls in rather than listed by date, because the
+  // question a manager asks of a year of birthdays is "who is in March".
+  const months = Array.from({ length: 12 }, (_, i) => ({
+    month: i + 1,
+    people: [],
+  }));
+  for (const person of people) {
+    const born = monthDay(person.date_of_birth);
+    if (!born) continue;
+    const [month, day] = born.split('-').map(Number);
+    months[month - 1].people.push({
+      id: person.id,
+      name: person.name,
+      preferred: person.preferred_name || null,
+      department: person.department || null,
+      day,
+      isToday: born === today.slice(5),
+    });
+  }
+  for (const month of months) month.people.sort((a, b) => a.day - b.day || a.name.localeCompare(b.name));
+
+  return json({
+    today,
+    property: set.property,
+    settings: {
+      wish: set.wish,
+      title: set.title,
+      line: set.line,
+      push: set.push,
+      prompt: set.prompt,
+      promptBody: set.promptBody,
+      ahead: set.ahead,
+    },
+    // What a real person would receive, worked out on the server so the
+    // preview and the message cannot drift apart.
+    preview: sample(people, today, set),
+    withDates: people.length,
+    missing: missing.results ?? [],
+    months,
+    sent: (sent.results ?? []).map((n) => ({
+      id: n.id,
+      at: n.at,
+      kind: n.kind,
+      title: n.title,
+      body: n.body,
+      day: n.day,
+      // Who it went to, said in words rather than as a permission name.
+      to: n.kind === 'birthday.wish' ? 'The person'
+        : (n.audience ? 'Whoever runs the floor' : 'Everybody'),
+    })),
+  });
+}
+
+/**
+ * The wording as somebody would actually receive it.
+ *
+ * Against a real name off the books where there is one. A preview against
+ * "John Smith" reads as a preview; a preview against somebody's actual first
+ * name is the thing itself, which is what makes a clumsy sentence obvious.
+ */
+function sample(people, today, set) {
+  const soon = upcoming(people, today, 366)[0] ?? people[0] ?? null;
+  const name = soon ? (soon.preferred_name || soon.name) : 'Ama Mensah';
+  const wish = greeting(name, { property: set.property, title: set.title, line: set.line });
+  const said = prompt([String(name).split(/\s+/)[0]], { body: set.promptBody });
+
+  return {
+    name,
+    real: Boolean(soon),
+    wish,
+    prompt: said,
+  };
 }

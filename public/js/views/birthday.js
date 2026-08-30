@@ -81,6 +81,15 @@ export async function birthdayStrip() {
 
 const firstName = (person) => (person.preferred || person.name).split(/\s+/)[0];
 
+/** The wording off the setup screen, with the two placeholders filled in. */
+function fillFor(text, person, property) {
+  const fallback = `Everybody at ${property || 'work'} hopes you have a lovely day.`;
+  return String(text || fallback)
+    .replace(/\{name\}/g, firstName(person))
+    .replace(/\{property\}/g, property || 'work')
+    .trim();
+}
+
 /**
  * Draw the card, and offer the two things anybody actually does with one.
  *
@@ -93,7 +102,10 @@ export function openCard(person, state, reload) {
   const line = h('input', {
     type: 'text',
     maxlength: 120,
-    value: `Everybody at ${state.property || 'work'} hopes you have a lovely day.`,
+    // Whatever the setup screen says the wish is, with this person's name
+    // already in it. A card that opens with a different sentence from the one
+    // the app sent them an hour ago is two properties talking.
+    value: fillFor(state.wording?.line, person, state.property),
     placeholder: 'Say something',
   });
 

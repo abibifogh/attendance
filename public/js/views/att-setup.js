@@ -27,6 +27,7 @@ const TABS = [
   ['rules', 'Rules'],
   ['workload', 'Workload'],
   ['tax', 'Tax and SSNIT'],
+  ['birthdays', 'Birthdays'],
 ];
 
 export async function renderAttSetup(params) {
@@ -60,6 +61,7 @@ export async function renderAttSetup(params) {
     rules: rulesTab,
     workload: workloadTab,
     tax: taxTab,
+    birthdays: birthdaysTab,
   }[tab](reload);
 
   // The forms under Setup are the ones somebody types a page of figures into
@@ -2776,3 +2778,199 @@ async function workloadTab(reload) {
 
   return form;
 }
+
+// ---------------------------------------------------------------------------
+// Birthdays
+// ---------------------------------------------------------------------------
+
+/**
+ * The one message this app sends that is not about hours, lateness or money.
+ *
+ * It was written into the code, which made it the one message nobody here
+ * could change. A property that wants to say something in its own voice had no
+ * way to, and a property that would rather a person said it out loud and the
+ * app stayed out of it had no way to turn it off either.
+ *
+ * WHAT IS ON THIS SCREEN AND WHY. The wording, obviously. But the two lists
+ * under it are what makes it a screen rather than a form: who has no date of
+ * birth on file, because a birthday the app never mentions looks exactly like a
+ * birthday nobody has and nothing else in the app tells them apart; and what
+ * has actually gone out, so a change to the wording can be checked against
+ * something real rather than taken on trust.
+ *
+ * The preview is against a real first name off the books. A preview against
+ * "John Smith" reads as a preview; the same sentence with somebody's actual
+ * name in it is the thing itself, which is what makes a clumsy line obvious.
+ */
+async function birthdaysTab(reload) {
+  const data = await api.attBirthdayManage();
+  const s = data.settings;
+  const property = data.property || 'work';
+
+  const form = h('form.att-rules');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await api.attUpdateSettings(Object.fromEntries(new FormData(form).entries()));
+      toast('Saved.', 'good');
+      await reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  });
+
+  const title = h('input', {
+    type: 'text', name: 'att_bd_title', maxlength: 120, value: s.title,
+  });
+  const line = h('textarea', { name: 'att_bd_line', rows: 3, maxlength: 300 }, s.line);
+  const promptBody = h('textarea',
+    { name: 'att_bd_prompt_body', rows: 3, maxlength: 300 }, s.promptBody);
+
+  // What a real person would receive, redrawn on every keystroke. The name is
+  // whoever's birthday is next, so somebody editing this is reading the
+  // sentence that is actually about to go out.
+  const preview = h('div.bd-set-preview');
+  const drawPreview = () => {
+    const first = String(data.preview.name).trim().split(/\s+/)[0];
+    mount(preview,
+      h('div.bd-set-note', data.preview.real
+        ? `As ${data.preview.name} will read it`
+        : 'Nobody has a date on file yet, so this is a stand-in name'),
+      h('div.bd-set-card',
+        h('strong', fillWording(title.value, first, property)),
+        h('p', fillWording(line.value, first, property))),
+      h('div.bd-set-card.bd-set-card-prompt',
+        h('strong', `It is ${first}'s birthday today`),
+        h('p', fillWording(promptBody.value, first, property))),
+    );
+  };
+  [title, line, promptBody].forEach((el) => el.addEventListener('input', drawPreview));
+  drawPreview();
+
+  form.append(
+    h('div.grid.grid-2',
+      card('What they get', { note: 'On the day, once' },
+        h('label.field',
+          h('span', 'Wish them'),
+          h('select', { name: 'att_bd_wish' },
+            h('option', { value: '1', selected: s.wish }, 'Send them a message on the day'),
+            h('option', { value: '0', selected: !s.wish }, 'Say nothing'),
+          )),
+        field('Headed', title),
+        field('And it says', line),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'Write {name} where their name goes and {property} where this place’s name goes. '
+          + `{name} becomes their preferred name if they have given one, and {property} is `
+          + `“${property}”.`),
+        h('label.field',
+          h('span', 'How it reaches them'),
+          h('select', { name: 'att_bd_push' },
+            h('option', { value: '1', selected: s.push }, 'Push it to their phone'),
+            h('option', { value: '0', selected: !s.push }, 'Leave it in the bell for them'),
+          )),
+        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+          'A wish that is read three days later is not a wish. Pushing needs notifications '
+          + 'turned on in the browser on their phone; where they are not, it waits in the bell '
+          + 'either way.'),
+      ),
+
+      card('What whoever runs the floor gets', { note: 'A prompt, not a wish' },
+        h('label.field',
+          h('span', 'Tell them'),
+          h('select', { name: 'att_bd_prompt' },
+            h('option', { value: '1', selected: s.prompt }, 'Prompt them on the day'),
+            h('option', { value: '0', selected: !s.prompt }, 'Say nothing'),
+          )),
+        field('And it says', promptBody),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'Deliberately a different message. What somebody actually remembers about their '
+          + 'birthday is a colleague saying it out loud, and an app that only sends an automatic '
+          + 'message has replaced that rather than prompted it.'),
+        h('label.field',
+          h('span', 'Show birthdays coming up within'),
+          h('input', {
+            type: 'number', name: 'att_bd_ahead', min: 0, max: 365, value: s.ahead,
+          })),
+        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+          'Days. It fills the coming-up list on the Today screen, where a card gets made the '
+          + 'day before. Nought hides the list and leaves only the day itself.'),
+      ),
+    ),
+
+    card('How it reads', { wide: true }, preview),
+
+    h('div.btn-row', { style: { marginTop: '1rem' } },
+      h('button.btn.btn-primary', { type: 'submit' }, 'Save the wording'),
+      h('span.muted', { style: { alignSelf: 'center', fontSize: '.85rem' } },
+        `${data.withDates} ${data.withDates === 1 ? 'person has' : 'people have'} a date on file`),
+    ),
+  );
+
+  return h('div',
+    form,
+
+    // The chase list, and the reason this screen exists at all beyond the
+    // wording. Absent entirely when there is nobody to chase.
+    data.missing.length
+      ? card('Nobody knows when these birthdays are', {
+        note: `${data.missing.length}`,
+        wide: true,
+      },
+      h('p.muted',
+        'The app cannot mention a birthday it has never been told about, and a birthday it '
+        + 'has never been told about looks exactly like a birthday nobody has. Their date of '
+        + 'birth goes on their record, under People.'),
+      table([
+        { key: 'name',
+          label: 'Name',
+          format: (v, row) => h('a', { href: `#/person?id=${row.id}` }, v) },
+        { key: 'employee_no', label: 'Number' },
+        { key: 'department', label: 'Department', format: (v) => v || h('span.muted', '—') },
+      ], data.missing, {
+        empty: 'Everybody has one.',
+        groupBy: (r) => r.department || null,
+        groupNoun: ['person', 'people'],
+        // Grouped and foldable because this is a list somebody walks round the
+        // building with, and they walk round it one department at a time.
+        fold: true,
+      }))
+      : null,
+
+    card('The year', { note: `${data.withDates}`, wide: true },
+      data.withDates
+        ? h('div.bd-year', data.months.map((month) => h('div.bd-year-month',
+          h('h3', MONTH_NAMES[month.month - 1]),
+          month.people.length
+            ? h('ul', month.people.map((p) => h('li',
+              { class: p.isToday ? 'is-today' : '' },
+              h('span.bd-year-day', String(p.day).padStart(2, '0')),
+              h('a', { href: `#/att-staff?id=${p.id}` }, p.preferred || p.name))))
+            : h('p.muted', 'Nobody'))))
+        : emptyState('No dates on file yet',
+          'Every birthday in here comes off a date of birth on somebody’s record.')),
+
+    card('What has gone out', { note: data.sent.length ? `${data.sent.length}` : 'Nothing yet', wide: true },
+      data.sent.length
+        ? table([
+          { key: 'at', label: 'When', format: (v) => fmtDay(String(v).slice(0, 10)) },
+          { key: 'to', label: 'To' },
+          { key: 'title', label: 'Said' },
+          { key: 'body', label: 'And', format: (v) => h('span.muted', v || '—') },
+        ], data.sent, { empty: 'Nothing yet.' })
+        : emptyState('Nothing has gone out yet',
+          'The daily run sends these first thing. Nothing appears here until somebody on the '
+          + 'books has a birthday.')),
+  );
+}
+
+/** The same two placeholders the server fills, so the preview cannot lie. */
+function fillWording(text, name, property) {
+  return String(text ?? '')
+    .replace(/\{name\}/g, name || 'you')
+    .replace(/\{property\}/g, property || 'work')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
