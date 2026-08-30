@@ -3,7 +3,7 @@ import {
   confirmAction, deltaBadge, fmtNum, h, keepPlace, money, monthOf, mount, shiftMonth, toast,
   todayISO,
 } from '../util.js';
-import { bulkUpload, card, emptyState } from './components.js';
+import { bulkUpload, card, dropdownMenu, emptyState } from './components.js';
 import {
   GENERAL, field, formDialog, sayDepartments, sayTiers, schemeDepartments, schemesByDepartment,
   showSheet,
@@ -176,25 +176,13 @@ export async function renderAttPayroll(params) {
           : h('span.pill.warn', 'Draft'),
         actions: h('div.btn-row',
           comparePicker(data, month, reload),
-          h('button.btn-sm', { onclick: () => printReport({
-            title: `Payroll, ${niceMonth(month)}`,
-            subtitle: data.property || '',
-            note: `${data.rates.label}. ${closed ? 'Closed' : 'Draft'}.`,
-          }) }, 'Print this table'),
+          exportButton(data, month, closed),
           data.slips
             ? h('button.btn-sm', { onclick: () => openAllSlips(data, month) },
-              `All ${data.lines.length} payslips`)
+              'Download slips')
             : null,
           h('button.btn-sm', { onclick: () => openReturns(month) },
             'Journal and PAYE'),
-          // A link rather than a button, so the browser saves the file itself.
-          // Fetching it and making a blob works too and gives you a spinner
-          // nobody asked for and a filename you have to invent twice.
-          h('a.btn.btn-sm', {
-            href: `/api/payroll/book?month=${encodeURIComponent(month)}`,
-            download: '',
-            title: 'The month, the journal and the GRA schedule as one workbook',
-          }, 'Excel'),
           closed ? null : importButton(month, reload),
           closed
             ? null
@@ -281,6 +269,7 @@ export async function renderAttPayroll(params) {
 
     schemesCard(data, month, closed, reload, cash),
     penaltiesCard(data, month, closed, reload, cash),
+    severanceCard(data, month, closed, reload, cash),
     peopleCard(data, reload, cash),
   );
 
@@ -553,6 +542,38 @@ function niceStamp(value) {
  * what people are paid, so an import that writes first and reports afterwards
  * is one nobody dares run a second time.
  */
+/**
+ * The two ways a month leaves the app, under one button.
+ *
+ * They were side by side on the bar as Print this table and Excel, which reads
+ * as two unrelated things when they are one job with a choice of file. PDF is
+ * the browser's own print dialog, because Save as PDF is a destination in it
+ * on every platform and a second way of making one would only disagree with
+ * the first.
+ */
+function exportButton(data, month, closed) {
+  return dropdownMenu({
+    label: 'Export',
+    title: 'Take the month away as a file',
+    items: [
+      {
+        label: 'PDF',
+        title: 'Opens the print dialog, where Save as PDF is one of the destinations',
+        onClick: () => printReport({
+          title: `Payroll, ${niceMonth(month)}`,
+          subtitle: data.property || '',
+          note: `${data.rates.label}. ${closed ? 'Closed' : 'Draft'}.`,
+        }),
+      },
+      {
+        label: 'Excel',
+        title: 'The month, the journal and the GRA schedule as one workbook',
+        href: `/api/payroll/book?month=${encodeURIComponent(month)}`,
+      },
+    ],
+  });
+}
+
 function importButton(month, reload) {
   return bulkUpload({
     accept: '.csv,text/csv',
@@ -698,11 +719,14 @@ async function openReturns(month) {
       h('strong', 'Journal and PAYE schedule'),
       h('span.muted', `${niceMonth(month)} · ${data.status === 'final' ? 'closed' : 'draft'}`),
       h('div.btn-row',
-        h('button.btn-sm', { onclick: () => window.print() }, 'Print or save as PDF'),
-        h('a.btn.btn-sm', {
-          href: `/api/payroll/book?month=${encodeURIComponent(month)}`,
-          download: '',
-        }, 'Download as Excel'),
+        dropdownMenu({
+          label: 'Export',
+          title: 'Take the journal and the schedule away',
+          items: [
+            { label: 'PDF', onClick: () => window.print(), title: 'Opens the print dialog, where Save as PDF is one of the destinations' },
+            { label: 'Excel', href: `/api/payroll/book?month=${encodeURIComponent(month)}`, title: 'The month, the journal and the GRA schedule as one workbook' },
+          ],
+        }),
         h('button.btn-sm', { onclick: () => shade.remove() }, 'Close'))),
     h('div.preview-pages', h('div.returns-sheet', returnsSheet(data, niceMonth(month))))));
 
@@ -1450,6 +1474,75 @@ function penaltiesCard(data, month, closed, reload, cash) {
     : null);
 }
 
+/**
+ * What somebody was paid off with, for the month it went out in.
+ *
+ * Column 26 of the GRA form asks for it and nothing else on the form moves
+ * because of it: what severance costs in tax depends on what it was for, and
+ * that is a decision above a payroll. Kept against the month rather than the
+ * person, because it happens once, and on a profile it would quietly repeat.
+ */
+function severanceCard(data, month, closed, reload, cash) {
+  const rows = data.severances ?? [];
+  return card('Severance paid', {
+    wide: true,
+    note: rows.length ? `${rows.length} this month` : 'nothing this month',
+    actions: closed ? null : h('button.btn-sm', {
+      onclick: () => addSeverance(data, month, reload),
+    }, 'Record severance'),
+  },
+  h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
+    'What somebody was paid off with when they left. It goes in column 26 of the GRA schedule '
+    + 'for the month it went out in, and nothing else moves: it is not put through the tax '
+    + 'here, because what it costs depends on what it was for.'),
+
+  rows.length
+    ? h('ul.adv-requests', rows.map((v) => {
+      const person = data.staff.find((s) => s.id === v.staffId);
+      return h('li',
+        h('div',
+          h('div.adv-who', person?.name ?? `Staff ${v.staffId}`),
+          v.note ? h('div.muted', v.note) : null),
+        h('div.btn-row',
+          h('strong', cash(v.amount)),
+          closed ? null : h('button.btn-ghost.btn-sm', {
+            title: 'Take it back off the return',
+            onclick: async () => {
+              await api.payrollRemoveSeverance(v.id);
+              toast('Taken off.', 'good');
+              await reload();
+            },
+          }, '✕')));
+    }))
+    : null);
+}
+
+async function addSeverance(data, month, reload) {
+  const done = await formDialog({
+    title: 'Record severance',
+    submitLabel: 'Record it',
+    body: h('div',
+      field('Who', h('select', { name: 'staffId', required: true },
+        h('option', { value: '' }, 'Choose somebody'),
+        data.staff.map((s) => h('option', { value: s.id }, s.name)))),
+      field('How much', h('input', {
+        type: 'number', name: 'amount', step: '0.01', min: '0.01', required: true,
+      }), 'What was paid off, in full'),
+      field('What it was for', h('input', {
+        type: 'text', name: 'note', maxlength: 300,
+      }), 'For your own record. It does not go to the GRA')),
+    onSubmit: (form) => api.payrollSeverance({
+      month,
+      staffId: form.get('staffId'),
+      amount: form.get('amount'),
+      note: form.get('note'),
+    }),
+  });
+  if (!done) return;
+  toast('Recorded. It is on the schedule for this month.', 'good');
+  await reload();
+}
+
 async function addPenalty(data, month, reload) {
   const done = await formDialog({
     title: 'Take money off a bonus',
@@ -1525,6 +1618,12 @@ async function editPeople(data, reload) {
     ssnit: s.ssnit,
     bonusIsNet: s.bonusIsNet !== false,
     bonusOpening: s.bonusOpening ?? 0,
+    // What the GRA form says about them. Blank means nobody has said, and the
+    // form still falls back to their job title and to resident and full time.
+    graPosition: s.graPosition ?? '',
+    graResidency: s.graResidency ?? '',
+    graRelief: s.graRelief ?? 0,
+    jobTitle: s.jobTitle ?? null,
     allowances: s.allowances.map((a) => ({ ...a })),
   }]));
   const year = String(data.month ?? '').slice(0, 4);
@@ -1555,6 +1654,9 @@ async function editPeople(data, reload) {
     });
     const allowanceCount = h('span.muted',
       mine.allowances.length ? `${mine.allowances.length}` : 'none');
+    // What the return will say about them, so somebody can see at a glance
+    // which rows are still on the fallback.
+    const returnSummary = h('span.muted', sayReturn(mine));
 
     // What they have already had as bonus this year, before this app was
     // keeping it. The 5% rate is capped at 15% of the year's basic and the
@@ -1603,14 +1705,26 @@ async function editPeople(data, reload) {
             mine.allowances = next;
             allowanceCount.textContent = next.length ? `${next.length}` : 'none';
           },
-        }, 'Allowances')));
+        }, 'Allowances')),
+      h('td.num',
+        returnSummary,
+        h('button.btn-sm', {
+          type: 'button',
+          style: { marginLeft: '.4rem' },
+          onclick: async () => {
+            const next = await editForReturn(person, mine, data);
+            if (!next) return;
+            Object.assign(mine, next);
+            returnSummary.textContent = sayReturn(mine);
+          },
+        }, 'Return')));
     return line;
   });
 
   const done = await formDialog({
     title: 'Pay and allowances',
     submitLabel: 'Save the payroll',
-    wide: true,
+    wide: 'xl',
     body: h('div',
       h('p.muted', { style: { fontSize: '.85rem' } },
         'Tick everybody the payroll covers and give their monthly basic. SSNIT is 5.5% from '
@@ -1620,6 +1734,10 @@ async function editPeople(data, reload) {
         'Bonus is net where the figures agreed are what the person receives. The property then '
         + 'carries the tax on top and it shows in their allowance. Untick it for anybody whose '
         + 'bonus figures were worked out gross already, or the tax gets paid twice.'),
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'GRA return is the grade, the residency and any reliefs the form asks about somebody. '
+        + 'Left alone, the form uses their job title and puts them down as resident and full '
+        + 'time, which is right for most people. Change it here when it changes for them.'),
       yearly
         ? h('p.muted', { style: { fontSize: '.85rem' } },
           `Bonus already had in ${year} is for months this app did not run. The 5% rate on a `
@@ -1631,7 +1749,7 @@ async function editPeople(data, reload) {
         h('thead', h('tr',
           h('th', 'On the payroll'), h('th.num', 'Basic'), h('th', ''),
           yearly ? h('th.num', `Bonus already had in ${year}`) : null,
-          h('th.num', 'Allowances'),
+          h('th.num', 'Allowances'), h('th.num', 'GRA return'),
         )),
         h('tbody', rows)))),
     onSubmit: async () => api.payrollProfiles({
@@ -1641,6 +1759,9 @@ async function editPeople(data, reload) {
         basic: v.basic,
         ssnit: v.ssnit,
         bonusIsNet: v.bonusIsNet,
+        graPosition: v.graPosition,
+        graResidency: v.graResidency,
+        graRelief: v.graRelief,
         bonusOpening: v.bonusOpening,
         bonusOpeningYear: year,
         allowances: v.allowances,
@@ -1650,6 +1771,73 @@ async function editPeople(data, reload) {
   if (!done) return;
   toast(`${done.set} on the payroll.`, 'good');
   await reload();
+}
+
+/** The three things the GRA form asks, in a line short enough for a cell. */
+function sayReturn(mine) {
+  const bits = [];
+  bits.push(mine.graPosition || (mine.jobTitle ? `${mine.jobTitle}*` : 'job title*'));
+  if (mine.graResidency && mine.graResidency !== 'Resident-Full-Time') {
+    bits.push(mine.graResidency.replace('Resident-', ''));
+  }
+  if (Number(mine.graRelief) > 0) bits.push(`relief ${mine.graRelief}`);
+  return bits.join(' · ');
+}
+
+/**
+ * What the return says about one person.
+ *
+ * Three columns of the GRA form that a payroll cannot work out: the grade,
+ * whether somebody is here full time, and any relief they hold a certificate
+ * for. All three change over somebody's time here, so they are set against the
+ * person and can be changed again the month they change.
+ *
+ * Leaving any of them empty keeps the reading the form had before anybody
+ * could set them, which is right for almost everybody, so nobody has to fill
+ * in twenty-five rows to file a return.
+ */
+async function editForReturn(person, mine, data) {
+  const positions = (data.positions ?? ['MANAGEMENT', 'SENIOR', 'JUNIOR']);
+  const residencies = (data.residencies ?? ['Resident-Full-Time']);
+
+  const position = h('input', {
+    type: 'text', value: mine.graPosition || '', maxlength: 40, list: 'gra-positions',
+    placeholder: mine.jobTitle || person.department || 'From their job title',
+  });
+  const residency = h('select',
+    residencies.map((r) => h('option', {
+      value: r,
+      selected: (mine.graResidency || 'Resident-Full-Time') === r,
+    }, r)));
+  const relief = h('input', {
+    type: 'number', step: '0.01', min: '0', value: mine.graRelief || '',
+    placeholder: '0.00',
+  });
+
+  const done = await formDialog({
+    title: `${person.name} on the GRA return`,
+    submitLabel: 'Keep it',
+    body: h('div',
+      // h() reads .class out of a selector and nothing else, so the id goes in
+      // as a property. As a selector it becomes the tag name and createElement
+      // throws on the hash.
+      h('datalist', { id: 'gra-positions' }, positions.map((v) => h('option', { value: v }))),
+      field('Position', position,
+        'Column 4. The grade on the form, not the job. Leave it empty to use their job title.'),
+      field('Residency', residency,
+        'Column 5. Resident and full time unless they are here on some other footing.'),
+      field('Deductible reliefs', relief,
+        'Column 20. Only what they hold a certificate from the GRA for. Nought for almost '
+        + 'everybody.')),
+    onSubmit: () => true,
+  });
+  if (!done) return null;
+
+  return {
+    graPosition: position.value.trim(),
+    graResidency: residency.value,
+    graRelief: Number(relief.value) || 0,
+  };
 }
 
 /** One person's allowances, added a line at a time. */

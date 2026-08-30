@@ -192,6 +192,19 @@ const pct = (rate) => `${round2(Number(rate) * 100)}%`;
  * rearranged wrong. `no` is the number printed above each column on the form,
  * and it is not always the position: the form numbers two columns 26.
  */
+/**
+ * What column 5 will take.
+ *
+ * The form prints the three parts on one line with slashes and expects one of
+ * the combinations back, not all three.
+ */
+export const RESIDENCIES = [
+  'Resident-Full-Time', 'Resident-Part-Time', 'Resident-Casual', 'Non-Resident',
+];
+
+/** What the form's column 4 is usually one of here. */
+export const POSITIONS = ['MANAGEMENT', 'SENIOR', 'JUNIOR'];
+
 export const PAYE_COLUMNS = [
   { no: '1', key: 'no', label: 'Ser. No', width: 7 },
   { no: '2', key: 'tin', label: 'TIN / GH. CARD NO.', text: true, width: 20 },
@@ -252,7 +265,10 @@ export function payeSchedule({ lines = [], people = new Map() }) {
     // is the mandatory scheme in column 9; column 10 is a third-tier scheme on
     // top of it, which is voluntary and which nothing here runs.
     const thirdTier = 0;
-    const relief = 0;
+    // Off the line before the bands were applied, so the figure here is the
+    // one the tax beside it was actually worked out with. Nought rather than
+    // blank: column 21 is 9 + 10 + 20 and it has to add up.
+    const relief = round2(line.relief ?? record.relief ?? 0);
     const bonusTax = round2(line.paye?.finalOnBonus ?? 0);
     const tax = round2((line.paye?.total ?? 0) - bonusTax);
 
@@ -265,7 +281,10 @@ export function payeSchedule({ lines = [], people = new Map() }) {
       tin: record.tin_number || record.ghana_card || '',
       ssnitNumber: record.ssnit_number || '',
       name: line.staff?.name ?? '',
-      position: record.position || line.staff?.department || '',
+      // Said against the person where somebody has said it. Where nobody has,
+      // the reading the form had before: the job title, then the department,
+      // and resident and full time, which is what almost everybody is.
+      position: record.position || record.job_title || line.staff?.department || '',
       residency: record.residency || 'Resident-Full-Time',
       basic: round2(line.basic),
       secondary: 'N',
@@ -292,7 +311,9 @@ export function payeSchedule({ lines = [], people = new Map() }) {
       overtime: 0,
       overtimeTax: 0,
       total: round2(line.paye?.total ?? 0),
-      severance: 0,
+      // Reported, not taxed. What severance costs in tax depends on what it
+      // was for, and that is a decision above a payroll.
+      severance: round2(record.severance ?? 0),
       remarks: '',
     };
   });

@@ -251,6 +251,8 @@ export const ROUTES = [
   ['POST', '/api/payroll/scores', 'hr_pay', payroll.setScores],
   ['POST', '/api/payroll/penalties', 'hr_pay', payroll.addPenalty],
   ['DELETE', '/api/payroll/penalties/:id', 'hr_pay', payroll.removePenalty],
+  ['POST', '/api/payroll/severance', 'hr_pay', payroll.addSeverance],
+  ['DELETE', '/api/payroll/severance/:id', 'hr_pay', payroll.removeSeverance],
   // Where somebody stands with the lock, and the code that opens it. Outside
   // the lock by necessity: a screen that cannot ask for the code is a screen
   // nobody can get into.

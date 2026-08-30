@@ -458,7 +458,10 @@ export function formDialog({ title, body, submitLabel = 'Save', onSubmit, wide =
     // Styled by class rather than inline, so the phone rules can win. An
     // inline width beats any stylesheet, which is how a dialog ended up 92% of
     // a handset with its buttons off the bottom.
-    const dialog = h(`dialog.app-dialog${wide ? '.app-dialog-wide' : ''}`,
+    // `wide` for a form with a table in it, 'xl' where that table has more
+    // columns than the wide one holds.
+    const room = wide === 'xl' ? '.app-dialog-xl' : (wide ? '.app-dialog-wide' : '');
+    const dialog = h(`dialog.app-dialog${room}`,
       h('div.dialog-head',
         h('h2', title),
         h('button.dialog-close', {

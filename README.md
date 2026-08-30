@@ -1519,19 +1519,36 @@ tax office and the month as MM/YYYY. Column 15 is 6 + 11 + 14, column 19 is
 15 + 16 + 17 + 18, column 21 is 9 + 10 + 20, column 22 is 19 minus 21 and
 column 26 is 13 + 23 + 25, because that is what the form says they are.
 
-Three columns are filled in from outside the payroll:
+Some columns are filled in from outside the payroll:
 
 | Column | Where it comes from |
 |---|---|
 | 2, TIN / GH. Card | The TIN on somebody's record, or their Ghana Card number where there is no TIN. The column asks for either. |
-| 4, Position | Their job title, or their department where there is no job title. |
-| 5, Residency | Resident-Full-Time for everybody. |
+| 4, Position | Set against the person. Their job title, then their department, where nobody has set one. |
+| 5, Residency | Set against the person. Resident-Full-Time where nobody has set one. |
+| 20, Deductible reliefs | Set against the person. Nought for almost everybody. |
+| 26, Severance pay paid | Recorded against the month it went out in. |
 
-Deductible reliefs are nought rather than blank: they are claimed on a
-certificate the GRA issues to the person, and column 21 has to add up.
+**Payroll → Set pay and allowances → Return** sets the first three, one person
+at a time, and they can be changed again the month they change. Leave any of
+them alone and the form uses the reading in the table above, which is right for
+almost everybody, so nobody has to fill in twenty-five rows to file a return.
 
-**Download as Excel** on that screen, or the **Excel** button beside it on the
-payroll page, gives the whole month as one workbook of three sheets: the
+A relief is not just reported. It comes off before the graduated bands, the
+same as the pension does, so it lowers the tax and raises what the person takes
+home. It has to: on the form, column 22 is 19 minus 21, and 21 includes it.
+
+**Severance** is on a card of its own on the payroll page, because it happens
+once when somebody leaves rather than every month. On a profile it would
+quietly repeat until somebody noticed, which is the sort of figure that gets
+filed three times. It goes in the column that asks for it and nothing else
+moves: what severance costs in tax depends on what it was for, and that is a
+decision above a payroll.
+
+**Export** on the payroll page and over the return offers **PDF** and
+**Excel**. PDF is the browser's own print dialog, where Save as PDF is a
+destination on every platform. Excel gives the whole month as one workbook of
+three sheets: the
 payroll table, the journal, and the PAYE schedule laid out as the form. It is
 written without a library, because a Worker has no zip in it and an .xlsx is a
 zip of XML; the parts go in uncompressed, which every spreadsheet program

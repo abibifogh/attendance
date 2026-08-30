@@ -3,7 +3,9 @@ import { createNotice } from '../lib/notices.js';
 import { balanceOf, dueThisMonth } from '../lib/advances.js';
 import { computeLine, totalsOf } from '../lib/payroll.js';
 import { ratesFrom, round2 } from '../lib/tax.js';
-import { PAYE_COLUMNS, journalFor, payeSchedule, tiersFrom } from '../lib/statutory.js';
+import {
+  PAYE_COLUMNS, POSITIONS, RESIDENCIES, journalFor, payeSchedule, tiersFrom,
+} from '../lib/statutory.js';
 import { ratesOn } from '../lib/tax-tables.js';
 import { readSheet, tallyOf } from '../lib/pay-import.js';
 import { isAdmin } from '../lib/payroll-access.js';
@@ -90,9 +92,10 @@ async function gather(ctx, month, { open = true } = {}) {
 
   const run = await runFor(ctx.db, month, actorOf(ctx), { open });
 
-  const [staff, profiles, allowances, schemes, members, scores, penalties, advances, entries, slips]
+  const [staff, profiles, allowances, schemes, members, scores, penalties, severances,
+    advances, entries, slips]
     = await Promise.all([
-      ctx.db.prepare('SELECT id, name, department, employee_no, active FROM att_staff ORDER BY name').all(),
+      ctx.db.prepare('SELECT id, name, department, job_title, employee_no, active FROM att_staff ORDER BY name').all(),
       ctx.db.prepare('SELECT * FROM pay_profile').all(),
       ctx.db.prepare('SELECT * FROM pay_allowance WHERE active = 1').all(),
       ctx.db.prepare(
@@ -103,6 +106,8 @@ async function gather(ctx, month, { open = true } = {}) {
       ctx.db.prepare('SELECT * FROM pay_scheme_staff').all(),
       ctx.db.prepare('SELECT * FROM pay_score WHERE run_id = ?').bind(run.id).all(),
       ctx.db.prepare('SELECT * FROM pay_penalty WHERE run_id = ? ORDER BY id').bind(run.id).all(),
+      ctx.db.prepare('SELECT * FROM pay_severance WHERE run_id = ? ORDER BY id').bind(run.id).all()
+        .catch(() => ({ results: [] })),
       ctx.db.prepare("SELECT * FROM hr_advance WHERE status = 'approved'").all()
         .catch(() => ({ results: [] })),
       ctx.db.prepare('SELECT * FROM hr_advance_entry').all().catch(() => ({ results: [] })),
@@ -149,6 +154,7 @@ async function gather(ctx, month, { open = true } = {}) {
     memberBy: group(members.results ?? [], 'scheme_id'),
     scores: scores.results ?? [],
     penalties: penalties.results ?? [],
+    severances: severances.results ?? [],
     advances: advances.results ?? [],
     entriesBy,
     slipBy: new Map((slips.results ?? []).map((s) => [s.staff_id, s])),
@@ -270,6 +276,9 @@ function linesFrom(data, month) {
       // Older profiles have nothing written here and every figure in them was
       // entered as a net promise, so the absence reads as net.
       bonusIsNet: profile.bonus_is_net == null ? true : Boolean(profile.bonus_is_net),
+      // What the GRA has issued them a certificate for. Off before the bands,
+      // like the pension, and nought for almost everybody.
+      relief: round2(profile.gra_relief ?? 0),
       rates: data.rates,
       tiers: data.tiers,
     }));
@@ -444,8 +453,15 @@ export async function payroll(ctx) {
         };
       }),
     })),
+    // What the GRA form will take in its two columns that are a choice rather
+    // than a figure. Sent from here so the screen and the return cannot drift.
+    positions: POSITIONS,
+    residencies: RESIDENCIES,
     penalties: data.penalties.map((p) => ({
       id: p.id, staffId: p.staff_id, amount: round2(p.amount), reason: p.reason, at: p.at,
+    })),
+    severances: (data.severances ?? []).map((v) => ({
+      id: v.id, staffId: v.staff_id, amount: round2(v.amount), note: v.note, at: v.at,
     })),
     // Everybody, for the screens that set things up: who is on the payroll and
     // who is not yet.
@@ -460,6 +476,12 @@ export async function payroll(ctx) {
         ssnit: profile ? Boolean(profile.ssnit) : true,
         // Whether their bonus figures are what they receive or what is taxed.
         bonusIsNet: profile ? profile.bonus_is_net == null || Boolean(profile.bonus_is_net) : true,
+        // What the GRA form says about them. Empty means nobody has said, and
+        // the form falls back to the job title and to resident and full time.
+        graPosition: profile?.gra_position ?? '',
+        graResidency: profile?.gra_residency ?? '',
+        graRelief: round2(profile?.gra_relief ?? 0),
+        jobTitle: person.job_title ?? null,
         // What they had as bonus before this app was keeping the year's
         // running total. Nought where it was written against another year,
         // so it stops counting on its own.
@@ -813,9 +835,11 @@ async function monthReturn(ctx) {
   // form.
   const records = await ctx.db.prepare(
     `SELECT s.id AS staff_id, s.job_title, s.department,
-            p.tin_number, p.ssnit_number, p.id_type, p.id_number
+            p.tin_number, p.ssnit_number, p.id_type, p.id_number,
+            w.gra_position, w.gra_residency, w.gra_relief
        FROM att_staff s
-       LEFT JOIN hr_profile p ON p.staff_id = s.id`,
+       LEFT JOIN hr_profile p ON p.staff_id = s.id
+       LEFT JOIN pay_profile w ON w.staff_id = s.id`,
   ).all().catch(() => ({ results: [] }));
 
   const people = new Map((records.results ?? []).map((r) => [Number(r.staff_id), {
@@ -827,8 +851,21 @@ async function monthReturn(ctx) {
     ghana_card: /ghana\s*card/i.test(String(r.id_type ?? '')) || /^GHA-/i.test(String(r.id_number ?? ''))
       ? r.id_number
       : '',
-    position: r.job_title || r.department || '',
+    // Said against the person on their pay profile where somebody has said it.
+    // The job title and the department are what the form fell back to before
+    // anybody could, and they still are where nobody has.
+    position: r.gra_position || r.job_title || r.department || '',
+    residency: r.gra_residency || '',
+    relief: round2(r.gra_relief ?? 0),
   }]));
+
+  // What was paid off in this month, against the person it went to. Column 26
+  // asks for it and nothing else on the form moves because of it.
+  const severanceBy = new Map();
+  for (const row of data.severances ?? []) {
+    severanceBy.set(Number(row.staff_id), round2((severanceBy.get(Number(row.staff_id)) ?? 0) + row.amount));
+  }
+  for (const [id, record] of people) record.severance = severanceBy.get(id) ?? 0;
 
   const totals = totalsOf(lines);
   const journal = journalFor({ lines, totals, rates: data.rates, tiers: data.tiers });
@@ -1094,18 +1131,35 @@ export async function setProfiles(ctx) {
     // quietly put everybody back to net.
     const netBonus = line.bonusIsNet == null ? null : (line.bonusIsNet === false ? 0 : 1);
 
+    // The three things the GRA form asks about somebody that the payroll does
+    // not otherwise know. Left alone when the form says nothing, so a screen
+    // that does not ask about them cannot wipe what was set.
+    const graPosition = line.graPosition == null ? null : str(line.graPosition, 'Position', { max: 40 });
+    const graResidency = line.graResidency == null
+      ? null
+      : str(line.graResidency, 'Residency', { max: 40 });
+    const graRelief = line.graRelief == null || line.graRelief === ''
+      ? null
+      : round2(num(line.graRelief, 'Deductible reliefs', { min: 0, max: 1_000_000 }));
+
     await ctx.db.prepare(
       `INSERT INTO pay_profile (staff_id, basic, ssnit, note, set_by, bonus_opening,
-                                bonus_opening_year, bonus_is_net)
-       VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(?6, 0), ?7, COALESCE(?8, 1))
+                                bonus_opening_year, bonus_is_net,
+                                gra_position, gra_residency, gra_relief)
+       VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(?6, 0), ?7, COALESCE(?8, 1),
+               ?9, ?10, COALESCE(?11, 0))
        ON CONFLICT (staff_id) DO UPDATE
          SET basic = ?2, ssnit = ?3, note = ?4, set_by = ?5, set_at = datetime('now'),
              bonus_opening = COALESCE(?6, bonus_opening),
              bonus_opening_year = COALESCE(?7, bonus_opening_year),
-             bonus_is_net = COALESCE(?8, bonus_is_net)`,
+             bonus_is_net = COALESCE(?8, bonus_is_net),
+             gra_position = COALESCE(?9, gra_position),
+             gra_residency = COALESCE(?10, gra_residency),
+             gra_relief = COALESCE(?11, gra_relief)`,
     ).bind(staffId, basic, line.ssnit === false ? 0 : 1,
       str(line.note, 'Note', { max: 300 }), actorOf(ctx),
-      opening, said ? openingYear : null, netBonus).run();
+      opening, said ? openingYear : null, netBonus,
+      graPosition, graResidency, graRelief).run();
 
     if (Array.isArray(line.allowances)) {
       await ctx.db.prepare('DELETE FROM pay_allowance WHERE staff_id = ?').bind(staffId).run();
@@ -1366,6 +1420,46 @@ export async function setScores(ctx) {
 }
 
 /** Money off somebody's bonus, with the reason it came off. */
+/**
+ * What somebody was paid off with, for the month it went out in.
+ *
+ * Column 26 of the return asks for it. Nothing else on the form moves: what
+ * severance costs in tax depends on what it was for, and that is a decision
+ * above a payroll. So it is recorded, reported, and left alone.
+ */
+export async function addSeverance(ctx) {
+  const body = await readJson(ctx.request);
+  const { timezone } = await settingsOf(ctx.db);
+  const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
+  const run = await runFor(ctx.db, month, actorOf(ctx));
+  if (run.status === 'final') throw badRequest('That month is closed. Reopen it first.');
+
+  const staffId = int(body.staffId, 'Who', { required: true, min: 1 });
+  const amount = round2(num(body.amount, 'How much', { required: true, min: 0.01, max: 10_000_000 }));
+  const note = str(body.note, 'What it was for', { max: 300 });
+
+  await ctx.db.prepare(
+    'INSERT INTO pay_severance (run_id, staff_id, amount, note, actor) VALUES (?1, ?2, ?3, ?4, ?5)',
+  ).bind(run.id, staffId, amount, note, actorOf(ctx)).run();
+
+  await audit(ctx, 'payroll.severance', staffId, { month, amount, note });
+  return json({ ok: true });
+}
+
+/** Taking one back off, for a month still open. */
+export async function removeSeverance(ctx, idParam) {
+  const id = int(idParam, 'Which one', { required: true, min: 1 });
+  const row = await ctx.db.prepare(
+    'SELECT v.*, r.status FROM pay_severance v JOIN pay_run r ON r.id = v.run_id WHERE v.id = ?',
+  ).bind(id).first();
+  if (!row) throw notFound('No such severance.');
+  if (row.status === 'final') throw badRequest('That month is closed. Reopen it first.');
+
+  await ctx.db.prepare('DELETE FROM pay_severance WHERE id = ?').bind(id).run();
+  await audit(ctx, 'payroll.severance.removed', row.staff_id, { amount: row.amount });
+  return json({ ok: true });
+}
+
 export async function addPenalty(ctx) {
   const body = await readJson(ctx.request);
   const { timezone, currency } = await settingsOf(ctx.db);

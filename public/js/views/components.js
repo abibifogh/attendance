@@ -186,61 +186,42 @@ export function moreActions(...items) {
 }
 
 /**
- * One way in for a file of data, with the template behind it.
+ * A button that opens a small menu under itself.
  *
- * Uploading a sheet and downloading the one to fill in were two buttons side by
- * side on three different screens, which reads as two unrelated things and puts
- * the one nobody wants first. They are the same job in two directions: you take
- * the sheet, you change it, you send it back.
+ * Two or three buttons doing variations of one job read as unrelated things
+ * and put the one nobody wants first. One button that says the job, with the
+ * variations under it, says what it is and takes one place on the bar.
  *
- * So it is one button that opens a small menu. The upload is the first item
- * because it is what somebody came for, and the template sits under it for the
- * first time they do this.
+ * Each item is `{ label, onClick }` or `{ label, href, download }`. A link
+ * item is a real anchor, so the browser saves the file itself rather than us
+ * inventing a spinner and a filename twice.
  */
-export function bulkUpload({
-  accept = '.csv,text/csv',
-  onFile,
-  template = null,
-  label = 'Bulk upload',
-  title = null,
-} = {}) {
-  const picker = h('input', {
-    type: 'file',
-    accept,
-    style: { display: 'none' },
-    onchange: async (e) => {
-      const file = e.target.files?.[0];
-      // Cleared at once, so choosing the same file again after fixing
-      // something in it still fires a change.
-      e.target.value = '';
-      if (file) await onFile(file);
-    },
-  });
-
-  const menu = h('div.bulk-menu', { role: 'menu' },
-    h('button.bulk-item', {
-      type: 'button',
-      role: 'menuitem',
-      onclick: () => { close(); picker.click(); },
-    }, 'Upload a file'),
-    template
-      ? h('a.bulk-item', {
+export function dropdownMenu({ label, title = null, items = [], extra = null } = {}) {
+  const menu = h('div.menu-drop', { role: 'menu' },
+    items.filter(Boolean).map((item) => (item.href
+      ? h('a.menu-item', {
         role: 'menuitem',
-        href: template.href,
-        download: template.download ?? 'template.csv',
+        href: item.href,
+        download: item.download ?? '',
+        title: item.title ?? null,
         onclick: () => close(),
-      }, template.label ?? 'Download template')
-      : null);
+      }, item.label)
+      : h('button.menu-item', {
+        type: 'button',
+        role: 'menuitem',
+        title: item.title ?? null,
+        onclick: () => { close(); item.onClick?.(); },
+      }, item.label))));
 
-  const button = h('button.btn-sm.bulk-btn', {
+  const button = h('button.btn-sm.menu-btn', {
     type: 'button',
     'aria-expanded': 'false',
     'aria-haspopup': 'menu',
-    title: title ?? 'Send a sheet of data in, or take the template to fill in',
+    title,
     onclick: (e) => { e.stopPropagation(); toggle(); },
-  }, label, h('span.bulk-caret', '▾'));
+  }, label, h('span.menu-caret', '▾'));
 
-  const wrap = h('div.bulk-wrap', picker, button, menu);
+  const wrap = h('div.menu-wrap', extra, button, menu);
 
   function close() {
     wrap.classList.remove('open');
@@ -263,6 +244,53 @@ export function bulkUpload({
   }
 
   return wrap;
+}
+
+/**
+ * One way in for a file of data, with the template behind it.
+ *
+ * Uploading a sheet and downloading the one to fill in were two buttons side by
+ * side on three different screens, which reads as two unrelated things and puts
+ * the one nobody wants first. They are the same job in two directions: you take
+ * the sheet, you change it, you send it back.
+ */
+export function bulkUpload({
+  accept = '.csv,text/csv',
+  onFile,
+  template = null,
+  label = 'Bulk upload',
+  title = null,
+} = {}) {
+  const picker = h('input', {
+    type: 'file',
+    accept,
+    style: { display: 'none' },
+    onchange: async (e) => {
+      const file = e.target.files?.[0];
+      // Cleared at once, so choosing the same file again after fixing
+      // something in it still fires a change.
+      e.target.value = '';
+      if (file) await onFile(file);
+    },
+  });
+
+  return dropdownMenu({
+    label,
+    title: title ?? 'Send a sheet of data in, or take the template to fill in',
+    extra: picker,
+    items: [
+      // The upload first, because it is what somebody came for. The template
+      // sits under it for the first time they do this.
+      { label: 'Upload a file', onClick: () => picker.click() },
+      template
+        ? {
+          label: template.label ?? 'Download template',
+          href: template.href,
+          download: template.download ?? 'template.csv',
+        }
+        : null,
+    ],
+  });
 }
 
 export function emptyState(title, detail) {

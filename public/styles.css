@@ -449,9 +449,9 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 /* Bulk upload: one button, and the template behind it. Uploading a sheet and
    downloading the one to fill in are the same job in two directions, so they
    are one control rather than two buttons that read as unrelated. */
-.bulk-wrap { position: relative; display: inline-flex; }
-.bulk-caret { margin-left: .35rem; font-size: .7em; opacity: .7; }
-.bulk-menu {
+.menu-wrap { position: relative; display: inline-flex; }
+.menu-caret { margin-left: .35rem; font-size: .7em; opacity: .7; }
+.menu-drop {
   display: none;
   position: absolute;
   top: calc(100% + .35rem);
@@ -464,8 +464,8 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   border-radius: var(--radius-sm);
   box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
 }
-.bulk-wrap.open .bulk-menu { display: grid; }
-.bulk-item {
+.menu-wrap.open .menu-drop { display: grid; }
+.menu-item {
   display: block;
   width: 100%;
   padding: .5rem .6rem;
@@ -478,13 +478,13 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   text-decoration: none;
   cursor: pointer;
 }
-.bulk-item:hover, .bulk-item:focus-visible { background: var(--surface-2, #f2f4f7); }
+.menu-item:hover, .menu-item:focus-visible { background: var(--surface-2, #f2f4f7); }
 
 /* On a handset the button is narrower than the menu, so the menu hangs off its
    left edge rather than being squeezed to the button's width — which wrapped
    "Download template" onto two lines. */
 @media (max-width: 620px) {
-  .bulk-menu { left: 0; right: auto; min-width: 12rem; }
+  .menu-drop { left: 0; right: auto; min-width: 12rem; }
 }
 
 .toolbar-more-wrap, .toolbar-more { display: contents; }
@@ -2489,6 +2489,10 @@ html { touch-action: manipulation; }
 
 .app-dialog-narrow { max-width: 420px; }
 .app-dialog-wide { max-width: 620px; }
+/* For the one dialog that is a table with a column per thing being set. It is
+   still a dialog and not a page, so it stops here rather than growing with the
+   screen. */
+.app-dialog-xl { max-width: 820px; }
 
 /* On a handset it stops pretending to be a window and fills the width.
    ANCHORED TO THE TOP, not the bottom. A sheet along the bottom is where the
@@ -2499,7 +2503,7 @@ html { touch-action: manipulation; }
    be reached however hard anybody scrolls. From the top down, with a height no
    greater than the screen really is, every part of it is on screen. */
 @media (max-width: 620px) {
-  .app-dialog, .app-dialog-narrow, .app-dialog-wide {
+  .app-dialog, .app-dialog-narrow, .app-dialog-wide, .app-dialog-xl {
     width: 100%;
     max-width: 100%;
     /* Clear of the clock and the signal bars. Installed on a phone the page

@@ -39,6 +39,7 @@ export function computeLine({
   annualBasic = null,
   bonusPaidThisYear = 0,
   bonusIsNet = true,
+  relief = 0,
   rates,
   tiers = TIERS,
 }) {
@@ -73,7 +74,14 @@ export function computeLine({
   const split = tierSplit(pay, { qualifies: Boolean(ssnit), rates, tiers });
 
   const salaryGross = round2(pay + taxableAllowance);
-  const salaryChargeable = Math.max(0, round2(salaryGross - contributions.employee));
+  // A relief comes off before the bands, the same as the pension does. It is
+  // claimed on a certificate the GRA issues to the person, so a payroll only
+  // ever holds what somebody has been shown, and it is nought for almost
+  // everybody. Where there is one it has to actually reduce the tax: on the
+  // return, column 22 is 19 minus 21, and 21 includes the relief.
+  const taxRelief = Math.max(0, round2(relief));
+  const salaryChargeable = Math.max(0,
+    round2(salaryGross - contributions.employee - taxRelief));
 
   // ---- the bonus, grossed up against that ------------------------------
   const yearBasic = annualBasic == null ? round2(pay * 12) : round2(annualBasic);
@@ -209,6 +217,7 @@ export function computeLine({
 
     gross,
     chargeable,
+    relief: taxRelief,
     ssnit: {
       qualifies: Boolean(ssnit),
       employee: contributions.employee,

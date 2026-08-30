@@ -3,10 +3,14 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { PAYE_COLUMNS, payeSchedule } from '../src/lib/statutory.js';
-import { cellRef, colName, workbook } from '../src/lib/xlsx.js';
 import {
-  exportBook, payroll, returns, saveScheme, setProfiles, setScores,
+  PAYE_COLUMNS, POSITIONS, RESIDENCIES, payeSchedule,
+} from '../src/lib/statutory.js';
+import { cellRef, colName, workbook } from '../src/lib/xlsx.js';
+import { round2 } from '../src/lib/tax.js';
+import {
+  addSeverance, exportBook, payroll, removeSeverance, returns, saveScheme, setProfiles,
+  setScores,
 } from '../src/routes/payroll.js';
 
 /**
@@ -278,4 +282,150 @@ test('a month nobody has touched still makes a workbook', async () => {
   const res = await exportBook(ctx(db, { query: '?month=2026-11' }));
   assert.equal(res.status, 200);
   assert.ok((await res.arrayBuffer()).byteLength > 500);
+});
+
+// ---------------------------------------------------------------------------
+// The three the form asks about a person, and the one it asks about a month
+// ---------------------------------------------------------------------------
+
+const setReturn = (db, rows) => setProfiles(ctx(db, { body: { rows } }));
+
+test('position, residency and reliefs are set against the person', async () => {
+  const { db } = setup();
+  await aMonth(db);
+  await setReturn(db, [{
+    staffId: 1, basic: 2000, ssnit: true,
+    graPosition: 'MANAGEMENT', graResidency: 'Resident-Part-Time', graRelief: 120,
+  }]);
+
+  const data = await read(await returns(ctx(db, { query: `?month=${MONTH}` })));
+  const [mine] = data.schedule.rows.filter((r) => r.name === 'Ama Boateng');
+  assert.equal(mine.position, 'MANAGEMENT');
+  assert.equal(mine.residency, 'Resident-Part-Time');
+  assert.equal(mine.relief, 120);
+  // Column 21 is 9 + 10 + 20, so the relief has to be inside it.
+  assert.equal(mine.reliefs, round2(mine.ssf + 120));
+  assert.equal(mine.chargeable, round2(mine.assessable - mine.reliefs));
+});
+
+test('and changing one later changes what the return says', async () => {
+  const { db } = setup();
+  await aMonth(db);
+  await setReturn(db, [{ staffId: 1, basic: 2000, ssnit: true, graPosition: 'JUNIOR' }]);
+  await setReturn(db, [{ staffId: 1, basic: 2000, ssnit: true, graPosition: 'SENIOR' }]);
+
+  const data = await read(await returns(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(data.schedule.rows.find((r) => r.name === 'Ama Boateng').position, 'SENIOR');
+});
+
+test('saying nothing keeps the reading the form had before', async () => {
+  const { db } = setup();
+  await aMonth(db);
+  const data = await read(await returns(ctx(db, { query: `?month=${MONTH}` })));
+  const mine = data.schedule.rows.find((r) => r.name === 'Ama Boateng');
+  assert.equal(mine.position, 'SENIOR', 'their job title');
+  assert.equal(mine.residency, 'Resident-Full-Time');
+  assert.equal(mine.relief, 0);
+});
+
+test('a screen that does not ask about them leaves them alone', async () => {
+  const { db } = setup();
+  await aMonth(db);
+  await setReturn(db, [{
+    staffId: 1, basic: 2000, ssnit: true, graPosition: 'MANAGEMENT', graRelief: 90,
+  }]);
+  // What a spreadsheet upload sends: a basic and nothing else.
+  await setReturn(db, [{ staffId: 1, basic: 2400, ssnit: true }]);
+
+  const data = await read(await returns(ctx(db, { query: `?month=${MONTH}` })));
+  const mine = data.schedule.rows.find((r) => r.name === 'Ama Boateng');
+  assert.equal(mine.basic, 2400);
+  assert.equal(mine.position, 'MANAGEMENT');
+  assert.equal(mine.relief, 90);
+});
+
+test('the form only takes a residency it prints', async () => {
+  assert.deepEqual(RESIDENCIES, [
+    'Resident-Full-Time', 'Resident-Part-Time', 'Resident-Casual', 'Non-Resident',
+  ]);
+  assert.deepEqual(POSITIONS, ['MANAGEMENT', 'SENIOR', 'JUNIOR']);
+});
+
+test('severance goes in its own column and moves nothing else', async () => {
+  const { db } = setup();
+  await aMonth(db);
+  const before = await read(await returns(ctx(db, { query: `?month=${MONTH}` })));
+  const was = before.schedule.rows.find((r) => r.name === 'Kofi Mensah');
+
+  await addSeverance(ctx(db, {
+    body: { month: MONTH, staffId: 2, amount: 4500, note: 'Two years' },
+  }));
+
+  const after = await read(await returns(ctx(db, { query: `?month=${MONTH}` })));
+  const now = after.schedule.rows.find((r) => r.name === 'Kofi Mensah');
+
+  assert.equal(now.severance, 4500);
+  assert.equal(now.totalCash, was.totalCash, 'column 15 does not move');
+  assert.equal(now.chargeable, was.chargeable, 'and neither does 22');
+  assert.equal(now.total, was.total, 'nor the tax');
+  assert.equal(after.totals.net, before.totals.net, 'and nobody is paid differently');
+});
+
+test('two payments in one month are added together', async () => {
+  const { db } = setup();
+  await aMonth(db);
+  for (const amount of [1000, 250]) {
+    await addSeverance(ctx(db, { body: { month: MONTH, staffId: 2, amount } }));
+  }
+  const data = await read(await returns(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(data.schedule.rows.find((r) => r.name === 'Kofi Mensah').severance, 1250);
+});
+
+test('severance belongs to its month, not to the person forever', async () => {
+  const { db } = setup();
+  await aMonth(db);
+  await addSeverance(ctx(db, { body: { month: MONTH, staffId: 2, amount: 4500 } }));
+
+  const next = await read(await returns(ctx(db, { query: '?month=2026-08' })));
+  const mine = next.schedule.rows.find((r) => r.name === 'Kofi Mensah');
+  assert.equal(mine.severance, 0, 'August is not asked to report July again');
+});
+
+test('one can be taken back off while the month is open', async () => {
+  const { db, raw } = setup();
+  await aMonth(db);
+  await addSeverance(ctx(db, { body: { month: MONTH, staffId: 2, amount: 4500 } }));
+  const { id } = raw.prepare('SELECT id FROM pay_severance').get();
+
+  await removeSeverance(ctx(db), id);
+  const data = await read(await returns(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(data.schedule.rows.find((r) => r.name === 'Kofi Mensah').severance, 0);
+});
+
+test('it reaches the workbook as well as the screen', async () => {
+  const { db } = setup();
+  await aMonth(db);
+  await setReturn(db, [{ staffId: 1, basic: 2000, ssnit: true, graPosition: 'MANAGEMENT' }]);
+  await addSeverance(ctx(db, { body: { month: MONTH, staffId: 2, amount: 4500 } }));
+
+  const res = await exportBook(ctx(db, { query: `?month=${MONTH}` }));
+  const text = new TextDecoder().decode(new Uint8Array(await res.arrayBuffer()));
+  assert.ok(text.includes('>MANAGEMENT<'));
+  assert.ok(text.includes('<v>4500</v>'));
+});
+
+test('a relief actually reduces the tax, it is not just reported', async () => {
+  const { db } = setup();
+  await aMonth(db);
+  const before = await read(await returns(ctx(db, { query: `?month=${MONTH}` })));
+  const was = before.schedule.rows.find((r) => r.name === 'Ama Boateng');
+
+  await setReturn(db, [{ staffId: 1, basic: 2000, ssnit: true, graRelief: 200 }]);
+  const after = await read(await returns(ctx(db, { query: `?month=${MONTH}` })));
+  const now = after.schedule.rows.find((r) => r.name === 'Ama Boateng');
+
+  assert.equal(now.chargeable, round2(was.chargeable - 200), '200 less to tax');
+  assert.ok(now.total < was.total, 'so less tax');
+  assert.ok(after.totals.net > before.totals.net, 'and more in hand');
+  assert.equal(now.totalCash, was.totalCash, 'the pay itself has not changed');
 });
