@@ -226,9 +226,12 @@ async function payrollGrantsCard(reload) {
     + 'Administrators are granted nothing, but they set a PIN like everybody else.'),
 
   rows.length
-    ? h('table', h('thead', h('tr',
+    // In a wrapper, like every other table here. Four columns of names, pills
+    // and dates is wider than a handset, and without one it was the table that
+    // took the whole page sideways rather than scrolling on its own.
+    ? h('div.table-wrap', h('table', h('thead', h('tr',
       h('th', 'Login'), h('th', 'Payroll'), h('th', 'PIN and dates'), h('th', ''))),
-    h('tbody', rows))
+    h('tbody', rows)))
     : h('p.muted', 'Nobody has "Pay and labour cost" on their login yet.'));
 }
 

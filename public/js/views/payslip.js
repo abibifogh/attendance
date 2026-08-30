@@ -75,8 +75,21 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
     // is one figure, and the second one only invites the question of why a
     // bonus of four hundred carried tax of eighty-seven.
     row('PAYE', cash(line.paye.total)),
-    ...(line.loans ?? []).map((l) => row('Salary advance', cash(l.amount),
-      l.left ? `${cash(l.left)} still to run` : 'last instalment')),
+    // ONE LINE, WHATEVER THEY HAVE RUNNING. Two advances came off as two
+    // identical rows both headed Salary advance, which reads as a mistake
+    // rather than as two agreements. What a payslip has to answer is how much
+    // came off, and that is one figure.
+    //
+    // And no running balance beside it. What is left to pay is a moving figure
+    // that belongs on the advance screen, where it is shown properly with the
+    // months behind and ahead of it; on a payslip it is a number with no
+    // working, printed on a document somebody keeps.
+    (line.loans ?? []).length
+      ? row(
+        (line.loans ?? []).length > 1 ? 'Salary advances' : 'Salary advance',
+        cash(line.loanTotal ?? (line.loans ?? []).reduce((n, l) => n + (l.amount || 0), 0)),
+      )
+      : null,
   ].filter(Boolean);
 
   const took = (line.ssnit?.employee ?? 0) + line.paye.total + (line.loanTotal ?? 0);

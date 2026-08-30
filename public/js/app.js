@@ -125,10 +125,30 @@ export function can(permission) {
   const needed = Array.isArray(permission) ? permission : [permission];
   // "Your own" needs a you. An administrator holds every permission there is,
   // including this one, and with no staff record behind the login there is
-  // nothing of theirs to show — a menu item that opens an apology is worse
-  // than no menu item.
+  // nothing of theirs to show, so the menu item goes: an item that opens an
+  // apology is worse than no item.
+  //
+  // UNLESS THEY HAVE NOTHING ELSE. That reasoning assumed the alternative was
+  // a full menu with one broken entry in it. For a member of staff whose
+  // login has not been pointed at their record yet it produced something far
+  // worse: every screen they own hidden, and an app that opened on the Guide
+  // with no way out of it. One screen that explains why it is empty beats an
+  // app that appears to contain nothing.
   return needed.some((p) => state.permissions.includes(p)
-    && (p !== 'att_me' || state.staffId != null));
+    && (p !== 'att_me' || state.staffId != null || nothingElseToShow()));
+}
+
+/**
+ * Whether this login opens anything at all beyond their own screens.
+ *
+ * Deliberately does not call `can`, which calls this.
+ */
+function nothingElseToShow() {
+  return !ROUTES.some((route) => {
+    if (route.hidden || !route.permission) return false;
+    const needed = Array.isArray(route.permission) ? route.permission : [route.permission];
+    return needed.some((p) => p !== 'att_me' && state.permissions.includes(p));
+  });
 }
 
 function allowed(route) {
@@ -150,7 +170,12 @@ function currentRoute() {
  */
 function defaultRoute() {
   const preferred = ['att-today', 'att-overview', 'att-rota', 'signoff', 'att-leave', 'people',
-    'letters', 'att-setup', 'admin'];
+    'letters', 'att-setup', 'admin',
+    // A member of staff holds none of the above, and their own week is the
+    // screen they came for. Named rather than left to the fallback, which
+    // walks the route table and would land them wherever it happened to
+    // start.
+    'att-me'];
   const wanted = preferred.find((path) => allowed(ROUTES.find((r) => r.path === path)));
   return wanted ?? ROUTES.find((r) => allowed(r) && !r.hidden)?.path ?? 'att-today';
 }

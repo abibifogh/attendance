@@ -4990,5 +4990,23 @@ body.rota-dragging .pos-add { pointer-events: none; }
    and the wrapper has to be the thing that scrolls. Without a min-width of
    nought a wrapper inside any grid or flex track grows to fit its content
    instead, and takes the whole page sideways with it. */
-.table-wrap { min-width: 0; max-width: 100%; }
+.table-wrap { min-width: 0; }
+
+/* A table that scrolls should look as though it does.
+   Two pairs of backgrounds: a solid one anchored to the content, which slides
+   away as you scroll, and a shadow anchored to the box, which it uncovers. So
+   the shadow appears on whichever side there is more to see, and on neither
+   side when the whole table already fits. Cheaper and steadier than watching
+   scroll events, and it needs no JavaScript at all. */
+.table-wrap {
+  background:
+    linear-gradient(to right, var(--surface) 40%, transparent) left / 2rem 100% no-repeat local,
+    linear-gradient(to left, var(--surface) 40%, transparent) right / 2rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(15, 23, 42, .13), transparent)
+      left / .7rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(15, 23, 42, .13), transparent)
+      right / .7rem 100% no-repeat scroll;
+}
+/* On paper there is nothing to scroll and a shadow down the margin is ink. */
+@media print { .table-wrap { background: none; } }
 .an, .an > .card, .an-split > * { min-width: 0; }

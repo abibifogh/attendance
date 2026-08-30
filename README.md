@@ -1506,6 +1506,42 @@ tier 1 / tier 2 split against the PAYE it was actually closed on. Payslips
 written before this keep working: they fall back to computing it, which is what
 they always did.
 
+### A member of staff sees their own screens, even before they are linked
+
+A staff login that has not yet been pointed at somebody's staff record used to
+open on the Guide and nothing else. Every one of their screens was hidden, and
+there was no way through to any of them.
+
+The rule doing it was written for an administrator who happens not to be on the
+rota: they hold every permission there is, including the one for their own
+screens, and with no staff record behind the login there is nothing of theirs
+to show, so the menu item goes. That is right, and it assumed the alternative
+was a full menu with one broken entry in it.
+
+For a member of staff it produced something far worse, because those screens
+are the only ones they have. So the rule now applies only while there is
+something else to show. Somebody who holds nothing but their own screens gets
+them, and each one says plainly that the login is not linked yet and who to
+ask. One screen that explains why it is empty beats an app that appears to
+contain nothing.
+
+### Every table fits a phone, or scrolls on its own
+
+A table of figures has cells that do not wrap, so on a handset it is wider than
+the screen. That is fine as long as the table is what scrolls. It was the page
+that scrolled, which takes the whole layout sideways and hides the column on
+the right that the table exists for.
+
+Every wide table now scrolls inside its own box, and looks as though it does: a
+shadow appears on whichever side there is more to see, and on neither side once
+the whole table fits. It is two pairs of backgrounds rather than a scroll
+listener, so it costs nothing and cannot fall out of step.
+
+Where a column can go instead of scrolling, it goes: the running account under
+My advance drops the opening balance on a phone, because it is the closing
+figure on the line above, and says the currency once in the heading rather than
+on every figure in every row.
+
 ### The workforce, measured four ways
 
 Under the comparison table on **Workload** are four blocks, in the order a
