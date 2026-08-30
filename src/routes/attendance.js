@@ -753,10 +753,43 @@ export async function staffReport(ctx, id) {
       ORDER BY day, id`,
   ).bind(staffId, from, to).all().catch(() => ({ results: [] }));
 
+  // THE CLOCK'S OWN RECORD, under the figures worked out from it.
+  //
+  // Every screen here shows what a day was decided to be. None of them showed
+  // what the terminal actually sent, so "he clocked in and it says he did not"
+  // had no answer in the app at all: you could not tell a punch that never
+  // arrived from one that arrived and was not counted.
+  //
+  // MATCHED ON THE NUMBER, NOT ON THE PERSON. A punch is joined to somebody by
+  // their employee number and nothing else, so a punch under their number that
+  // never attached is exactly the case worth seeing — and the one a query
+  // filtered by staff_id can never show.
+  const punches = await ctx.db.prepare(
+    `SELECT id, day, at_local, direction, device_serial, employee_no, staff_id, source
+       FROM att_punches
+      WHERE day BETWEEN ?2 AND ?3
+        AND (staff_id = ?1 OR (staff_id IS NULL AND employee_no = ?4))
+      ORDER BY at_local`,
+  ).bind(staffId, addDays(from, -1), addDays(to, 1), String(staff.employee_no ?? ''))
+    .all().catch(() => ({ results: [] }));
+
   return json({
     staff,
     from,
     to,
+    // What the terminal sent, as it sent it. `attached` is the whole point:
+    // false means a punch under their number that Hive is holding but has not
+    // joined to them, which is invisible in every figure on the page.
+    punches: (punches.results ?? []).map((p) => ({
+      id: p.id,
+      day: p.day,
+      at: p.at_local,
+      direction: p.direction ?? null,
+      device: p.device_serial,
+      employeeNo: p.employee_no,
+      source: p.source,
+      attached: p.staff_id != null,
+    })),
     days: records.map((r) => present(ds, r)),
     // Split on purpose. What has happened belongs at the foot of the report;
     // what is still waiting belongs on the day itself, where somebody about to

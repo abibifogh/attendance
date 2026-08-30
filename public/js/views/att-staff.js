@@ -359,7 +359,8 @@ export async function renderAttStaff(params) {
     ? h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
       'Times in rows marked as confirmed were supplied by a supervisor where the terminal had no record.')
     : null,
-  timeEditTrail(data.timeEdits ?? []));
+  timeEditTrail(data.timeEdits ?? []),
+  clockRecord(data.punches ?? [], data.staff));
 
   const pendingCard = (data.pendingTimes ?? []).length
     ? h('div.alert.warn.no-print', { style: { marginTop: '.8rem' } },
@@ -681,6 +682,58 @@ const DECISION = {
   superseded: 'Replaced before it was answered',
   pending: 'Waiting on an administrator',
 };
+
+/**
+ * What the terminal actually sent.
+ *
+ * Every other figure on this page is what a day was decided to be. None of
+ * them said what the clock recorded, so "he clocked in and it says he did not"
+ * had no answer anywhere in the app: there was no way to tell a punch that
+ * never arrived from one that arrived and was not counted, and the two want
+ * completely different things done about them.
+ *
+ * A PUNCH UNDER THEIR NUMBER THAT IS NOT THEIRS IS THE ONE TO SEE. Punches are
+ * joined to people by employee number and nothing else, so one that never
+ * attached is invisible in every figure here while sitting in the database
+ * under their own number. It is listed, and it is marked.
+ */
+function clockRecord(punches, staff) {
+  const loose = punches.filter((p) => !p.attached);
+
+  return h('div', { style: { marginTop: '1rem' } },
+    h('h3', { style: { fontSize: '.95rem', marginBottom: '.4rem' } }, 'What the terminal sent'),
+    punches.length
+      ? h('div',
+        loose.length
+          ? h('div.alert.warn', { style: { marginBottom: '.6rem' } },
+            h('span.alert-icon', '\u26a0\ufe0f'),
+            h('div',
+              h('div.alert-title',
+                `${loose.length} ${loose.length === 1 ? 'punch is' : 'punches are'} not `
+                + 'attached to anybody'),
+              h('div', `They came in under ${loose[0].employeeNo}, which is not a number any `
+                + 'staff record here carries. Nothing counts them until one does.')))
+          : null,
+        h('div.table-wrap', h('table',
+          h('thead', h('tr',
+            h('th', 'When'), h('th', 'In or out'), h('th', 'Terminal'),
+            h('th', 'Number'), h('th', ''))),
+          h('tbody', punches.map((p) => h('tr',
+            h('td', (p.at || '').slice(0, 16).replace('T', ' ')),
+            h('td', p.direction ? (p.direction === 'in' ? 'In' : 'Out') : h('span.muted', 'not said')),
+            h('td', h('small.muted', p.device || '\u2014')),
+            h('td', h('small.muted', p.employeeNo)),
+            h('td', p.attached
+              ? h('span.pill.good', 'counted')
+              : h('span.pill.bad', 'not attached'))))))),
+        h('p.muted', { style: { fontSize: '.8rem', marginTop: '.5rem' } },
+          'Every reading the terminal sent for this range, as it sent it, including the day '
+          + 'either side so a night shift is whole. A day here with nothing against it is a '
+          + 'day the terminal recorded nothing at all.'))
+      : h('p.muted', { style: { fontSize: '.85rem' } },
+        `Nothing at all for ${staff?.employee_no ?? 'this number'} in this range. Either the `
+        + 'terminal recorded nothing, or it has not sent what it has yet.'));
+}
 
 function timeEditTrail(edits) {
   if (!edits.length) return null;

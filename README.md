@@ -2142,6 +2142,29 @@ case this hides is a day that looks perfectly ordinary and is not: the terminal
 read somebody out at 17:02 and the kitchen ran until nine. **Show buttons on
 every day** on the person's report reaches those.
 
+**What the terminal sent.** A day that reads *Absent* has two very different
+causes behind it and, until now, one appearance. Either nothing arrived — the
+terminal recorded nothing, or it recorded something and has not sent it yet — or
+something arrived and was not counted, because it came in under a number that no
+longer matches anybody. Nowhere in the app could you tell those apart, so every
+argument about a missing clock-in came down to whose memory to believe.
+
+The bottom of a person's report now lists the raw punches for the range: the
+time, whether it was read as in or out, which terminal serial sent it, the number
+it came in under, and whether it is attached to that person or floating. It is
+matched on the number as well as the person, so a punch that belongs to nobody
+is still shown against the number that made it, with a warning saying so. The
+day either side of the range is included, because a night shift's clock-out
+lands on tomorrow.
+
+When there is nothing at all, it says so in those words rather than showing an
+empty table, since an empty table reads as a bug.
+
+This is the terminal's own record, not a summary of it: no rounding, no shift,
+no verdict. If the punch is on this list and the day still says absent, the fault
+is in how the day was worked out. If it is not on the list, the punch never
+reached us.
+
 **Sign off attendance** is deliberately separate and is not part of the planner's
 defaults. Tick it for whoever draws up the rota and they can close a day, a week
 or a month off and move the days against people's leave — while still never
