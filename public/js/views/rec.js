@@ -120,11 +120,21 @@ const nextOne = (booked) => {
 function pipeline(data, reload) {
   const byRole = new Map(data.roles.map((r) => [r.id, r]));
 
+  // The buttons belong on the empty card too. An empty pipeline is exactly when
+  // somebody wants to upload a folder of CVs, and hiding the way to do it
+  // until there is already somebody in the list is the wrong way round.
+  const ways = data.canManage
+    ? h('div.btn-row',
+      h('button.btn-sm', { onclick: () => uploadCvs(data, reload) }, 'Upload CVs'),
+      h('button.btn-sm', { onclick: () => pasteList(data, reload) }, 'Paste a list'))
+    : null;
+
   if (!data.candidates.length) {
-    return card('Everybody who has applied', { wide: true },
+    return card('Everybody who has applied', { wide: true, actions: ways },
       emptyState('Nobody yet',
-        'Add a candidate above, or paste a list of names. Nothing here ever puts anybody on the '
-        + 'books. That is a separate press once somebody has been offered the job.'));
+        'Upload a folder of CVs, paste a list of names, or add somebody above. Nothing here '
+        + 'ever puts anybody on the books. That is a separate press once somebody has been '
+        + 'offered the job.'));
   }
 
   // Live stages first, in order, then the endings. Somebody comes to this
@@ -139,9 +149,7 @@ function pipeline(data, reload) {
   return card('Everybody who has applied', {
     note: `${rows.length}`,
     wide: true,
-    actions: data.canManage
-      ? h('button.btn-sm', { onclick: () => pasteList(data, reload) }, 'Paste a list')
-      : null,
+    actions: ways,
   },
   table([
     {
@@ -502,6 +510,176 @@ async function pasteList(data, reload) {
   await reload();
 }
 
+/**
+ * A stack of CVs, read and then added.
+ *
+ * The way applications actually arrive here is twenty files in a folder or a
+ * WhatsApp thread. Typing twenty names off them is an afternoon nobody has, so
+ * the files go in together and what could be read off each one comes back for
+ * checking.
+ *
+ * EVERY FIELD IS EDITABLE, because a name read off a CV is a guess. The screen
+ * says where each one came from — the heading, the first line, the file name —
+ * so somebody checking knows how much to trust it, and a photograph says
+ * plainly that there was no text to read and leaves the box empty.
+ *
+ * Nothing is written until the second press, and each CV lands on the person
+ * it came from.
+ */
+async function uploadCvs(data, reload) {
+  const picker = h('input', {
+    type: 'file',
+    multiple: true,
+    accept: 'image/*,application/pdf,.doc,.docx',
+  });
+  const host = h('div');
+  const status = h('p.muted');
+
+  // Held here between the two presses. A Worker has nowhere to keep twenty
+  // files while somebody reads a list, so the browser keeps them and sends
+  // them again with the ticks.
+  let held = [];
+  const rows = new Map();
+
+  const draw = () => {
+    if (!held.length) return mount(host, []);
+
+    mount(host,
+      h('p.muted', `${held.length} file${held.length === 1 ? '' : 's'} read. `
+        + 'Correct anything that is wrong, and untick anybody you do not want.'),
+
+      h('div.cv-rows', held.map((row, i) => {
+        if (row.problem) {
+          return h('div.cv-row.is-bad',
+            h('div.cv-file', row.filename),
+            h('div.cv-problem', row.problem));
+        }
+
+        const state = rows.get(i);
+        const name = h('input', {
+          type: 'text', maxlength: 120, value: state.name ?? '',
+          placeholder: 'Their name',
+          oninput: (e) => { state.name = e.target.value; },
+        });
+        const phone = h('input', {
+          type: 'tel', maxlength: 40, value: state.phone ?? '', placeholder: 'Phone',
+          oninput: (e) => { state.phone = e.target.value; },
+        });
+        const email = h('input', {
+          type: 'email', maxlength: 160, value: state.email ?? '', placeholder: 'Email',
+          oninput: (e) => { state.email = e.target.value; },
+        });
+
+        return h('div.cv-row',
+          h('label.cv-tick',
+            h('input', {
+              type: 'checkbox',
+              checked: state.take,
+              onchange: (e) => { state.take = e.target.checked; },
+            })),
+          h('div.cv-body',
+            h('div.cv-file',
+              row.filename,
+              h('small.muted', `${Math.round(row.bytes / 1000)} KB`),
+              row.already
+                ? h('span.pill.warn', `already ${row.already.label.toLowerCase()}`)
+                : null),
+            h('div.cv-fields', name, phone, email),
+            h('small.muted.cv-note',
+              row.note
+                ? row.note
+                : row.nameFrom
+                  ? `Name read from ${row.nameFrom}. Check it.`
+                  : 'No name could be read. Type it.')),
+        );
+      })));
+  };
+
+  picker.addEventListener('change', async () => {
+    const chosen = [...(picker.files ?? [])];
+    if (!chosen.length) return;
+    picker.disabled = true;
+    status.textContent = `Reading ${chosen.length} file${chosen.length === 1 ? '' : 's'}…`;
+
+    try {
+      const files = [];
+      for (const file of chosen) {
+        files.push({
+          filename: file.name,
+          mime: file.type || 'application/octet-stream',
+          content: await asBase64(file),
+        });
+      }
+      const read = await api.recReadCvs(files);
+
+      held = read.rows;
+      rows.clear();
+      held.forEach((row, i) => {
+        if (row.problem) return;
+        rows.set(i, {
+          // Anybody already in the pipeline starts unticked, so a folder
+          // uploaded twice does not double everybody up.
+          take: Boolean(row.name) && !row.already,
+          name: row.name ?? '',
+          phone: row.phone ?? '',
+          email: row.email ?? '',
+          content: files[i]?.content,
+          mime: files[i]?.mime,
+          filename: row.filename,
+        });
+      });
+      status.textContent = read.unread
+        ? `${read.read} read, ${read.unread} that could not be read. Type those names.`
+        : `${read.read} read.`;
+      draw();
+    } catch (err) {
+      toast(err.message, 'bad');
+      status.textContent = '';
+    }
+    picker.disabled = false;
+  });
+
+  const done = await formDialog({
+    title: 'Upload CVs',
+    submitLabel: 'Add the ticked ones',
+    wide: true,
+    body: h('div',
+      h('p.muted', 'Several at once. Each one is read for a name, a number and an email, and '
+        + 'nothing is written until you press Add. The CV goes on the person it came from.'),
+      field('Which vacancy are these for', rolePicker(data, null)),
+      h('div.grid.grid-2',
+        field('The files', picker),
+        field('How they found us', h('select', { name: 'source' },
+          h('option', { value: '' }, 'Not said'),
+          data.sources.map(([key, label]) => h('option', { value: key }, label))))),
+      status,
+      host,
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'A name read off a CV is a guess: there is no marker for one, so it is taken from the '
+        + 'heading, the first line, or the file name, whichever is there. A photograph has no '
+        + 'text in it at all and its name is left for you.'),
+    ),
+    onSubmit: async (form) => {
+      const taking = [...rows.values()].filter((r) => r.take);
+      if (!taking.length) throw new Error('Nothing is ticked.');
+      if (taking.some((r) => !String(r.name).trim())) {
+        throw new Error('One of the ticked ones has no name. Type it, or untick it.');
+      }
+      return api.recImportCvs({
+        roleId: form.get('roleId'),
+        source: form.get('source'),
+        rows: taking,
+      });
+    },
+  });
+  if (!done) return;
+
+  toast(done.refused?.length
+    ? `${done.added} added, ${done.refused.length} without their file.`
+    : `${done.added} added.`, done.refused?.length ? 'warn' : 'good');
+  await reload();
+}
+
 // ---------------------------------------------------------------------------
 // The diary
 // ---------------------------------------------------------------------------
@@ -537,7 +715,14 @@ function diary(data, reload) {
 
     days.length
       ? h('div.rec-diary', days.map((day) => h('div.rec-diary-day',
-        h('h3', fmtDay(day.day, { withYear: true })),
+        h('div.rec-diary-head',
+          h('h3', fmtDay(day.day, { withYear: true })),
+          h('small.muted', sayDay(day.slots)),
+          data.canManage
+            ? h('button.link-button', { onclick: () => editDay(day, data, reload) },
+              'Edit this day')
+            : null),
+
         h('div.rec-slots', day.slots.map((slot) => h(
           `div.rec-slot${slot.candidateId ? '.is-taken' : ''}`,
           h('div.rec-slot-time', h('strong', slot.at), h('small', `– ${slot.ends}`)),
@@ -548,6 +733,7 @@ function diary(data, reload) {
             : h('span.rec-slot-free', 'Free'),
           h('div.rec-slot-meta',
             slot.roleTitle ? h('small', slot.roleTitle) : h('small.muted', 'any vacancy'),
+            slot.interviewer ? h('small.muted', `${slot.interviewer} interviewing`) : null,
             slot.place
               ? (slot.directions
                 ? h('a.rec-slot-map', {
@@ -557,16 +743,94 @@ function diary(data, reload) {
                 : h('small.muted', slot.place))
               : null),
           data.canManage
-            ? h('button.rec-slot-x', {
-              type: 'button',
-              title: slot.candidateId ? 'Cancel this interview' : 'Take this time out',
-              onclick: () => dropSlot(slot, reload),
-            }, '✕')
+            ? h('div.rec-slot-tools',
+              h('button.rec-slot-tool', {
+                type: 'button',
+                title: 'Change this time',
+                onclick: () => editSlot(slot, data, reload),
+              }, '✎'),
+              h('button.rec-slot-tool', {
+                type: 'button',
+                title: slot.candidateId ? 'Cancel this interview' : 'Take this time out',
+                onclick: () => dropSlot(slot, reload),
+              }, '✕'))
             : null,
         ))))))
       : emptyState('Nothing published',
         'Publish a morning of times and a candidate with a link can take one.')),
   );
+}
+
+/** How much of a morning is spoken for, which is the question anybody asks. */
+function sayDay(slots) {
+  const taken = slots.filter((s) => s.candidateId).length;
+  if (!taken) return `${slots.length} free`;
+  if (taken === slots.length) return 'all taken';
+  return `${taken} of ${slots.length} taken`;
+}
+
+/**
+ * Who is interviewing, picked off the staff list.
+ *
+ * A name typed in a box printed and did nothing else. The moment a candidate
+ * takes a time somebody has to be told, and "Kwame" is not somebody the app
+ * can tell — so this is a person, and a person with a login gets it on their
+ * phone.
+ *
+ * SOMEBODY ELSE IS STILL AN ANSWER. An owner, a consultant sitting on the
+ * panel, somebody who does not work here: the last option opens a plain box,
+ * and everything works as it did except that nobody can be notified. The
+ * screen says which of the two you have chosen rather than leaving somebody to
+ * wonder why no notice arrived.
+ */
+function interviewerField(data, current = {}) {
+  const typed = h('input', {
+    type: 'text', maxlength: 120, placeholder: 'Their name',
+    value: current.staffId ? '' : (current.name ?? ''),
+  });
+  const wrap = h('div.rec-who-typed', { hidden: Boolean(current.staffId) || !current.name },
+    typed);
+  const note = h('small.muted.rec-who-note');
+
+  const picker = h('select',
+    h('option', { value: '' }, 'Nobody named yet'),
+    (data.panel ?? []).map((person) => h('option', {
+      value: String(person.id),
+      selected: current.staffId === person.id,
+    }, `${person.name}${person.department ? ` — ${person.department}` : ''}`
+      + `${person.canBeTold ? '' : ' (no login)'}`)),
+    h('option', {
+      value: 'other',
+      selected: !current.staffId && Boolean(current.name),
+    }, 'Somebody else…'));
+
+  const say = () => {
+    const chosen = picker.value;
+    wrap.hidden = chosen !== 'other';
+    if (chosen === 'other') {
+      note.textContent = 'Not on the books, so nothing can be sent to them. '
+        + 'You will be told, and can pass it on.';
+    } else if (!chosen) {
+      note.textContent = 'Nobody is named, so nobody is told when a time is taken.';
+    } else {
+      const person = (data.panel ?? []).find((p) => String(p.id) === chosen);
+      note.textContent = person?.canBeTold
+        ? 'They get a notice on their phone the moment a candidate takes one of these times.'
+        : 'They have no login, so nothing can be sent to them. '
+          + 'You will be told, and can pass it on.';
+    }
+  };
+  picker.addEventListener('change', say);
+  say();
+
+  return {
+    el: h('div', picker, wrap, note),
+    get value() {
+      return picker.value === 'other'
+        ? { interviewer: typed.value, interviewerStaffId: '' }
+        : { interviewer: '', interviewerStaffId: picker.value };
+    },
+  };
 }
 
 async function publishSlots(data, reload) {
@@ -578,6 +842,7 @@ async function publishSlots(data, reload) {
     placeholder: 'The office, main building',
     enabled: data.canFindPlaces,
   });
+  const who = interviewerField(data, data.interviewerAt ?? {});
 
   const done = await formDialog({
     title: 'Publish interview times',
@@ -605,9 +870,7 @@ async function publishSlots(data, reload) {
         : 'Typed as it is. To have this find real places and give candidates directions, '
           + 'set a Google maps key under Setup → Rules.'),
 
-      field('Who is interviewing', h('input', {
-        type: 'text', name: 'interviewer', maxlength: 120,
-      })),
+      field('Who is interviewing', who.el),
       h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
         'Where is printed on the candidate’s page. Who is not: whoever is on the panel is '
         + 'the property’s business.'),
@@ -619,12 +882,138 @@ async function publishSlots(data, reload) {
       // place and then edits the text has an address that is theirs, not
       // Google's, and a coordinate from the old one would be a lie.
       ...where.place,
+      ...who.value,
     }),
   });
   if (!done) return;
   toast(done.skipped
     ? `${done.added} published, ${done.skipped} were already there.`
     : `${done.added} published.`, 'good');
+  await reload();
+}
+
+/**
+ * Change one time that is already published.
+ *
+ * Moving a booked one is allowed and the box says what it costs: the
+ * candidate's own page reads the slot, so the new time is what they see next
+ * time they open their link, but a link they have already closed does not
+ * ring. Somebody has to tell them.
+ */
+async function editSlot(slot, data, reload) {
+  const where = placeField({
+    name: 'place',
+    value: slot.place || '',
+    placeholder: 'The office, main building',
+    enabled: data.canFindPlaces,
+  });
+  const who = interviewerField(data, {
+    staffId: slot.interviewerStaffId, name: slot.interviewer,
+  });
+
+  const done = await formDialog({
+    title: slot.candidateName
+      ? `${slot.candidateName}, ${fmtDay(slot.day)} at ${slot.at}`
+      : `${fmtDay(slot.day)} at ${slot.at}`,
+    submitLabel: 'Save',
+    body: h('div',
+      slot.candidateId
+        ? h('div.alert.warn',
+          h('span.alert-icon', '⚠️'),
+          h('div',
+            h('div.alert-title', `${slot.candidateName} has taken this time`),
+            h('div.alert-detail', 'Their own page reads this, so a change shows the next time '
+              + 'they open their link. A link they have already closed does not ring, so ring '
+              + 'them if you move it.')))
+        : null,
+
+      h('div.grid.grid-3',
+        field('Day', h('input', { type: 'date', name: 'day', value: slot.day, required: true })),
+        field('At', h('input', { type: 'time', name: 'at', value: slot.at, required: true })),
+        field('How long', h('input', {
+          type: 'number', name: 'minutes', min: 5, max: 240, step: 5, value: slot.minutes,
+        }))),
+      field('For which vacancy', rolePicker(data, slot.roleId)),
+      field('Where', where.el),
+      field('Who is interviewing', who.el),
+    ),
+    onSubmit: async (form) => api.recUpdateSlot(slot.id, {
+      ...Object.fromEntries(form.entries()),
+      place: where.value,
+      ...where.place,
+      ...who.value,
+    }),
+  });
+  if (!done) return;
+  toast(done.moved && done.booked
+    ? 'Moved. Ring them, because their link will not.'
+    : 'Saved.', done.moved && done.booked ? 'warn' : 'good');
+  await reload();
+}
+
+/**
+ * Change a whole day at once.
+ *
+ * The realistic edit is not one time, it is "Tuesday is Yaa now, not me" or
+ * "we are doing them in the small office". Doing that one slot at a time
+ * across a morning of eleven is how somebody gives up and republishes.
+ *
+ * The times themselves are left alone. Moving eleven interviews together is a
+ * different thing from correcting who is on the panel, and it would move
+ * appointments people have already been given.
+ */
+async function editDay(day, data, reload) {
+  const booked = day.slots.filter((s) => s.candidateId).length;
+  const first = day.slots[0] ?? {};
+
+  const where = placeField({
+    name: 'place',
+    value: first.place || '',
+    placeholder: 'The office, main building',
+    enabled: data.canFindPlaces,
+  });
+  const who = interviewerField(data, {
+    staffId: first.interviewerStaffId, name: first.interviewer,
+  });
+
+  const done = await formDialog({
+    title: fmtDay(day.day, { withYear: true }),
+    submitLabel: 'Change the day',
+    body: h('div',
+      h('p.muted', `${day.slots.length} time${day.slots.length === 1 ? '' : 's'} published`
+        + `${booked ? `, ${booked} already taken` : ', none taken yet'}. `
+        + 'This changes where they are, who is on the panel and which vacancy they belong to. '
+        + 'The times themselves are left alone.'),
+
+      field('For which vacancy', rolePicker(data, first.roleId)),
+      field('Where', where.el),
+      field('Who is interviewing', who.el),
+
+      booked
+        ? h('label.tickline',
+          h('input', { type: 'checkbox', name: 'includeBooked' }),
+          h('span', `Change the ${booked} that ${booked === 1 ? 'has' : 'have'} `
+            + 'already been taken as well'))
+        : null,
+      booked
+        ? h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+          'Left unticked, an appointment somebody has already been given is not touched. '
+          + 'Whoever is put on the panel is told either way.')
+        : null,
+    ),
+    onSubmit: async (form) => api.recUpdateDay({
+      day: day.day,
+      roleId: form.get('roleId'),
+      includeBooked: form.get('includeBooked') === 'on',
+      place: where.value,
+      ...where.place,
+      ...who.value,
+    }),
+  });
+  if (!done) return;
+  toast(done.left
+    ? `${done.changed} changed, ${done.left} left alone.`
+    : `${done.changed} changed.`, 'good');
   await reload();
 }
 

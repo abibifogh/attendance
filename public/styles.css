@@ -5199,14 +5199,39 @@ body.rota-dragging .pos-add { pointer-events: none; }
 .rec-slot-who small { font-weight: 400; }
 .rec-slot-meta { display: grid; }
 .rec-slot-meta small { font-size: .75rem; }
-.rec-slot-x {
-  position: absolute; top: .2rem; right: .2rem;
-  border: none; background: none; padding: .2rem .35rem;
-  color: var(--text-faint); font-size: .8rem; line-height: 1;
+/* The day's heading, with how much of it is spoken for and a way in. */
+.rec-diary-head {
+  display: flex;
+  align-items: baseline;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin-bottom: .5rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: .25rem;
+}
+.rec-diary-head h3 { margin: 0; border: none; padding: 0; }
+.rec-diary-head .link-button { margin-left: auto; font-size: .78rem; }
+
+/* Edit and cancel, out of the way until wanted. On a touchscreen there is no
+   hovering, so they are simply always faint. */
+.rec-slot-tools {
+  position: absolute; top: .15rem; right: .15rem;
+  display: flex; gap: .1rem;
   opacity: 0;
 }
-.rec-slot:hover .rec-slot-x, .rec-slot-x:focus-visible { opacity: 1; }
-@media (hover: none) { .rec-slot-x { opacity: .6; } }
+.rec-slot-tool {
+  border: none; background: none; padding: .2rem .3rem;
+  color: var(--text-faint); font-size: .8rem; line-height: 1;
+}
+.rec-slot-tool:hover { color: var(--text); }
+.rec-slot:hover .rec-slot-tools,
+.rec-slot-tools:focus-within { opacity: 1; }
+@media (hover: none) { .rec-slot-tools { opacity: .6; } }
+
+/* Who is on the panel: a picker, a box for somebody who is not on the books,
+   and a line saying which of the two you have ended up with. */
+.rec-who-typed { margin-top: .4rem; }
+.rec-who-note { display: block; margin-top: .3rem; line-height: 1.35; }
 
 .rec-when { font-size: 1.05rem; margin: 0 0 .3rem; }
 
@@ -5334,3 +5359,47 @@ body.rota-dragging .pos-add { pointer-events: none; }
 .rec-slot-map:hover { color: var(--accent); }
 
 .hire-directions { margin: .3rem 0 .6rem; }
+
+/* A stack of CVs, read and shown for checking. One row per file, everything
+   editable, because a name read off a CV is a guess and the person checking is
+   the one who knows. */
+.cv-rows {
+  display: grid;
+  gap: .5rem;
+  max-height: 24rem;
+  overflow-y: auto;
+  margin: .6rem 0;
+  padding-right: .2rem;
+}
+.cv-row {
+  display: flex;
+  gap: .6rem;
+  padding: .6rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.cv-row.is-bad {
+  display: grid;
+  gap: .2rem;
+  border-color: color-mix(in srgb, var(--bad) 40%, var(--border));
+  background: color-mix(in srgb, var(--bad) 5%, var(--surface));
+}
+.cv-tick { display: flex; align-items: flex-start; padding-top: .35rem; }
+.cv-tick input { width: auto; margin: 0; }
+.cv-body { flex: 1; min-width: 0; display: grid; gap: .35rem; }
+.cv-file {
+  display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
+  font-size: .85rem; font-weight: 600; overflow-wrap: anywhere;
+}
+.cv-fields {
+  display: grid; gap: .4rem;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.4fr);
+}
+.cv-fields input { margin: 0; }
+.cv-note { line-height: 1.35; }
+.cv-problem { font-size: .85rem; color: var(--bad); }
+
+@media (max-width: 40rem) {
+  .cv-fields { grid-template-columns: 1fr; }
+}

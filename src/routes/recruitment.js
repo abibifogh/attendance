@@ -9,10 +9,12 @@ import { fromBase64 } from '../lib/files.js';
 import { claimOrphans, recompute } from '../lib/attendance-ingest.js';
 import { todayIn } from '../util/dates.js';
 import { mapLink, mapsKey } from '../lib/places.js';
+import { readCv } from '../lib/cv-read.js';
+import { extractPdfText } from '../lib/pdf-text.js';
 import {
   CLOSED_STAGES, EMPLOYMENT, FILE_KINDS, LIVE_STAGES, SOURCES, STAGES, cutIntoSlots,
-  endsAt, howItIsGoing, isFileKind, isStage, offerable, readCandidateList, staffDocumentKind,
-  stageLabel, toMinutes, whyNot,
+  endsAt, fromMinutes, howItIsGoing, isFileKind, isStage, offerable, readCandidateList,
+  staffDocumentKind, stageLabel, toMinutes, whyNot,
 } from '../lib/recruitment.js';
 
 /**
@@ -35,6 +37,11 @@ const actorOf = (ctx) => (ctx.session?.user
   : null);
 
 const canManage = (ctx) => allows('rec_manage', ctx.session.permissions);
+
+/** What a candidate may send in. A CV is a photograph as often as a document. */
+const ACCEPTED = ['image/', 'application/pdf', 'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+const MAX_UPLOAD = 12_000_000;
 
 async function audit(ctx, action, entity, detail) {
   await ctx.db.prepare(
@@ -144,6 +151,25 @@ export async function board(ctx) {
     // Whether the Where box can offer suggestions. Never the key itself: this
     // answer is a yes or a no, and a key is money.
     canFindPlaces: Boolean((await mapsKey(ctx.env, ctx.db)).key),
+    interviewerAt: {
+      name: await setting(ctx.db, 'rec_interviewer', '') || null,
+      staffId: numberOrNull(await setting(ctx.db, 'rec_interviewer_staff_id', '')),
+    },
+    // Who can be put on a panel, and which of them the app can actually reach.
+    // Somebody on the books with no login is a perfectly good interviewer and
+    // simply cannot be told, which the screen says rather than hiding them.
+    panel: (await ctx.db.prepare(
+      `SELECT s.id, s.name, s.department,
+              (SELECT COUNT(*) FROM users u WHERE u.staff_id = s.id AND u.active = 1) AS reachable
+         FROM att_staff s
+        WHERE s.active = 1
+        ORDER BY s.name`,
+    ).all().catch(() => ({ results: [] }))).results?.map((row) => ({
+      id: row.id,
+      name: row.name,
+      department: row.department,
+      canBeTold: Number(row.reachable ?? 0) > 0,
+    })) ?? [],
     slotMinutes: Number(await setting(ctx.db, 'rec_slot_minutes', 30)) || 30,
     roles: (roles.results ?? []).map((role) => {
       const mine = byRole.get(role.id) ?? [];
@@ -223,6 +249,7 @@ const shapeSlot = (slot) => ({
   minutes: Number(slot.minutes) || 30,
   place: slot.place,
   interviewer: slot.interviewer,
+  interviewerStaffId: slot.interviewer_staff_id ?? null,
   candidateId: slot.candidate_id,
   candidateName: slot.candidate_name ?? null,
   takenAt: slot.taken_at,
@@ -423,6 +450,191 @@ export async function applyCandidates(ctx) {
 
   await audit(ctx, 'recruitment.candidates_paste', roleId, { added });
   return json({ ok: true, added });
+}
+
+/**
+ * A stack of CVs, read and shown before anything is written.
+ *
+ * The way applications actually arrive here is twenty files in a folder or a
+ * WhatsApp thread, and typing twenty names off them is an afternoon nobody
+ * has. So the files come in together, each one is read for a name, a number
+ * and an email, and what was found is shown with a tick against each.
+ *
+ * NOTHING IS WRITTEN BY THIS. It reads and reports. The second press creates
+ * the candidates, with each CV attached to the person it came from — which is
+ * the same shape as the pasted list and the rota import, and for the same
+ * reason: a name entered wrongly and silently is worse than no name at all.
+ *
+ * WHAT IT CANNOT READ, IT SAYS SO ABOUT. Half the CVs here are a photograph
+ * taken on a phone, and there is no text in a photograph. Those come back
+ * marked, with whatever the file name suggests, for somebody to type. That is
+ * honest and useful; guessing would be neither.
+ */
+export async function readCvs(ctx) {
+  const body = await readJson(ctx.request);
+  const files = Array.isArray(body.files) ? body.files.slice(0, 40) : [];
+  if (!files.length) throw badRequest('No files were sent.');
+
+  // Everybody already in the pipeline, so a CV for somebody who applied last
+  // month is flagged rather than added twice.
+  const existing = await ctx.db.prepare('SELECT id, name, stage FROM rec_candidate')
+    .all().catch(() => ({ results: [] }));
+  const known = new Map((existing.results ?? [])
+    .map((r) => [String(r.name).trim().toLowerCase(), r]));
+
+  const rows = [];
+  for (const file of files) {
+    const filename = str(file.filename, 'File name', { max: 200 }) || 'CV';
+    const mime = str(file.mime, 'Type', { max: 80 }) || 'application/octet-stream';
+
+    let bytes;
+    try {
+      bytes = fromBase64(file.content);
+    } catch {
+      rows.push({ filename, problem: 'That file did not arrive in one piece.' });
+      continue;
+    }
+    if (!bytes.length) {
+      rows.push({ filename, problem: 'There was nothing in that file.' });
+      continue;
+    }
+    if (bytes.length > MAX_UPLOAD) {
+      rows.push({
+        filename,
+        problem: `${Math.round(bytes.length / 1_000_000)} MB is over the `
+          + `${Math.round(MAX_UPLOAD / 1_000_000)} MB limit.`,
+      });
+      continue;
+    }
+    if (!ACCEPTED.some((ok) => mime.startsWith(ok))) {
+      rows.push({ filename, problem: 'Send a photograph, a PDF or a Word document.' });
+      continue;
+    }
+
+    // Only a PDF has text this app can read. A photograph is attached and its
+    // name is left to somebody; a Word file is attached and read as far as its
+    // file name goes, which is further than nothing.
+    let pages = null;
+    let note = null;
+    if (mime === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')) {
+      try {
+        pages = (await extractPdfText(bytes)).pages;
+      } catch (err) {
+        note = err.message || 'That PDF could not be read.';
+      }
+    } else if (mime.startsWith('image/')) {
+      note = 'A photograph, so there is no text to read. Type their name.';
+    } else {
+      note = 'Only a PDF can be read for a name. Check what it found.';
+    }
+
+    const read = readCv({ pages, filename });
+    if (pages && !read.readable) {
+      note = 'That PDF is a picture of a CV rather than text. Type their name.';
+    }
+
+    const match = read.name ? known.get(read.name.toLowerCase()) : null;
+    rows.push({
+      filename,
+      mime,
+      bytes: bytes.length,
+      name: read.name,
+      nameFrom: read.nameFrom,
+      phone: read.phone,
+      email: read.email,
+      note,
+      already: match
+        ? { id: match.id, stage: match.stage, label: stageLabel(match.stage) }
+        : null,
+    });
+  }
+
+  return json({
+    rows,
+    read: rows.filter((r) => r.name).length,
+    unread: rows.filter((r) => !r.name && !r.problem).length,
+  });
+}
+
+/**
+ * Create the candidates, each with their own CV on their record.
+ *
+ * The file comes back up rather than being held between the two presses: a
+ * Worker has nowhere to put twenty files while somebody reads a list, and a
+ * second upload of what the browser already has is cheaper than inventing
+ * somewhere.
+ */
+export async function importCvs(ctx) {
+  const body = await readJson(ctx.request);
+  const roleId = body.roleId == null || body.roleId === '' ? null : Number(body.roleId);
+  if (roleId != null) await roleMustExist(ctx, roleId);
+
+  const rows = Array.isArray(body.rows) ? body.rows.slice(0, 40) : [];
+  if (!rows.length) throw badRequest('Nothing was ticked, so nothing was added.');
+
+  const added = [];
+  const refused = [];
+
+  for (const row of rows) {
+    const name = str(row.name, 'Their name', { max: 120 });
+    if (!name) {
+      refused.push({ filename: row.filename, why: 'No name was given for this one.' });
+      continue;
+    }
+
+    const created = await ctx.db.prepare(
+      `INSERT INTO rec_candidate (role_id, name, phone, email, source, created_by)
+       VALUES (?1,?2,?3,?4,?5,?6) RETURNING id`,
+    ).bind(
+      roleId, name,
+      str(row.phone, 'Phone', { max: 40 }),
+      str(row.email, 'Email', { max: 160 }),
+      readSource(body.source),
+      actorOf(ctx),
+    ).first();
+
+    await trail(ctx.db, {
+      candidateId: created.id, kind: 'added', toStage: 'applied',
+      detail: `From ${str(row.filename, 'f', { max: 200 }) || 'a CV'}`,
+      actor: actorOf(ctx),
+    });
+
+    // The CV itself, on the person it came from. A stack of files imported
+    // without the files attached would be the worst of both.
+    if (row.content) {
+      try {
+        const bytes = fromBase64(row.content);
+        if (bytes.length && bytes.length <= MAX_UPLOAD) {
+          await ctx.db.prepare(
+            `INSERT INTO rec_file (candidate_id, kind, title, filename, mime, bytes, content,
+                                   uploaded_by)
+             VALUES (?1,'cv',?2,?3,?4,?5,?6,?7)`,
+          ).bind(
+            created.id,
+            str(row.filename, 'Title', { max: 160 }) || 'CV',
+            str(row.filename, 'File name', { max: 200 }),
+            str(row.mime, 'Type', { max: 80 }) || 'application/octet-stream',
+            bytes.length, bytes, actorOf(ctx),
+          ).run();
+          await trail(ctx.db, {
+            candidateId: created.id, kind: 'file',
+            detail: `CV: ${str(row.filename, 'f', { max: 200 })}`,
+            actor: actorOf(ctx),
+          });
+        }
+      } catch {
+        // The person is added either way. Losing a name because a file would
+        // not decode is the worse trade, and the screen says which are missing
+        // their paper.
+        refused.push({ filename: row.filename, why: 'The person was added, but the file was not.' });
+      }
+    }
+
+    added.push({ id: created.id, name });
+  }
+
+  await audit(ctx, 'recruitment.cv_import', roleId, { added: added.length });
+  return json({ ok: true, added: added.length, people: added, refused });
 }
 
 export async function updateCandidate(ctx, id) {
@@ -664,10 +876,6 @@ export async function scoreCandidate(ctx, id) {
 // Files
 // ---------------------------------------------------------------------------
 
-const ACCEPTED = ['image/', 'application/pdf', 'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-const MAX_UPLOAD = 12_000_000;
-
 export async function addFile(ctx, id) {
   const row = await candidateOr404(ctx, id);
   const body = await readJson(ctx.request);
@@ -740,6 +948,74 @@ export async function removeFile(ctx, id, fileId) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Who is interviewing, resolved to a person where they are one.
+ *
+ * The name is kept alongside the id and is what prints. A staff record renamed
+ * next year, or somebody who leaves, should not change what a diary from March
+ * said it was; and an interviewer who is not on the books at all — an owner, a
+ * consultant sitting on the panel — is still just a name, exactly as before.
+ */
+async function readInterviewer(ctx, body, fallbackName = null) {
+  const staffId = body.interviewerStaffId == null || body.interviewerStaffId === ''
+    ? null
+    : Number(body.interviewerStaffId);
+
+  if (staffId != null) {
+    const person = await ctx.db.prepare('SELECT id, name FROM att_staff WHERE id = ?')
+      .bind(staffId).first();
+    if (!person) throw badRequest('That member of staff is no longer on the books.');
+    return { staffId: person.id, name: person.name };
+  }
+
+  return {
+    staffId: null,
+    name: str(body.interviewer, 'Who is interviewing', { max: 120 }) || fallbackName,
+  };
+}
+
+/**
+ * Tell whoever is interviewing.
+ *
+ * The reason the interviewer is a person and not a line of text. A candidate
+ * takes a time at eleven at night and nobody here is looking at the screen;
+ * without this, the first anybody knows is somebody arriving at reception.
+ *
+ * IT NEEDS A LOGIN TO REACH. Somebody on the books with no account cannot be
+ * told, and that is not an error — plenty of people who sit on a panel have no
+ * reason to open this app. It says so where it matters, on the screen that
+ * chose them, rather than failing quietly here.
+ *
+ * Never throws. A notice is a courtesy; failing to send one must not fail the
+ * booking that earned it.
+ */
+async function tellInterviewer(ctx, slot, { kind, title, body, level = 'info' }) {
+  if (!slot?.interviewer_staff_id) return false;
+
+  const user = await ctx.db.prepare(
+    'SELECT id FROM users WHERE staff_id = ? AND active = 1',
+  ).bind(slot.interviewer_staff_id).first().catch(() => null);
+  if (!user) return false;
+
+  await createNotice(ctx.db, {
+    kind,
+    level,
+    title,
+    body,
+    link: slot.candidate_id ? `#/rec-candidate?id=${slot.candidate_id}` : '#/rec?tab=diary',
+    day: slot.day,
+    actor: 'HIVE',
+    userId: user.id,
+    push: true,
+    email: false,
+  }, ctx).catch(() => {});
+  return true;
+}
+
+/** The same, said the way a person reads a diary entry. */
+const sayWhen = (slot) => `${slot.day} at ${slot.starts_at}`
+  + `${slot.place ? `, ${slot.place}` : ''}`;
+
+/**
  * Publish a morning of interviews.
  *
  * Somebody thinks "Tuesday, ten till one, half an hour each", not in eleven
@@ -773,9 +1049,7 @@ export async function addSlots(ctx) {
   const placeId = str(body.placeId, 'Place', { max: 300 }) || null;
   const lat = numberOrNull(body.lat);
   const lng = numberOrNull(body.lng);
-  const interviewer = str(body.interviewer, 'Who is interviewing', {
-    max: 120, fallback: ctx.session?.user?.name ?? null,
-  });
+  const who = await readInterviewer(ctx, body, ctx.session?.user?.name ?? null);
 
   // A time already published for that day is not published twice. Somebody
   // adding a second block to the same morning should get the times they are
@@ -790,20 +1064,22 @@ export async function addSlots(ctx) {
     if (already.has(slot.startsAt)) continue;
     await ctx.db.prepare(
       `INSERT INTO rec_slot (role_id, day, starts_at, minutes, place, place_id, place_lat,
-                             place_lng, interviewer, created_by)
-       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)`,
+                             place_lng, interviewer, interviewer_staff_id, created_by)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)`,
     ).bind(roleId, slot.day, slot.startsAt, slot.minutes, place, placeId,
-      lat, lng, interviewer, actorOf(ctx)).run();
+      lat, lng, who.name, who.staffId, actorOf(ctx)).run();
     added += 1;
   }
 
   // Remembered as the default for next time. Somebody who picks the front desk
   // off the map in September should find it already filled in come November.
-  if (place && bool(body.remember, true)) {
+  if (bool(body.remember, true)) {
     for (const [key, value] of [
-      ['rec_place', place], ['rec_place_id', placeId ?? ''],
+      ['rec_place', place ?? ''], ['rec_place_id', placeId ?? ''],
       ['rec_place_lat', lat == null ? '' : String(lat)],
       ['rec_place_lng', lng == null ? '' : String(lng)],
+      ['rec_interviewer', who.name ?? ''],
+      ['rec_interviewer_staff_id', who.staffId == null ? '' : String(who.staffId)],
     ]) {
       await ctx.db.prepare(
         'INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2',
@@ -813,6 +1089,216 @@ export async function addSlots(ctx) {
 
   await audit(ctx, 'recruitment.slots', roleId, { day, added, minutes, mapped: Boolean(placeId) });
   return json({ ok: true, added, skipped: cut.length - added });
+}
+
+/**
+ * Change one interview time that is already published.
+ *
+ * A diary is written a week ahead and the week moves: the panel changes, the
+ * room changes, an interview slides half an hour. Before this the only answer
+ * was to cancel and republish, which loses the time a candidate had already
+ * taken and tells them nothing.
+ *
+ * MOVING A BOOKED ONE IS ALLOWED, and the screen says what it costs. The
+ * candidate's own page reads the slot, so the new time is what they see the
+ * next time they open their link — but a link they have already closed does
+ * not ring, so somebody has to tell them. Better a control that says so than a
+ * control that refuses and gets worked around on paper.
+ */
+export async function updateSlot(ctx, id) {
+  const slot = await ctx.db.prepare('SELECT * FROM rec_slot WHERE id = ?').bind(Number(id)).first();
+  if (!slot) throw notFound('No such interview time.');
+  if (slot.cancelled_at) throw badRequest('That time has been taken out of the diary.');
+
+  const body = await readJson(ctx.request);
+  const roleId = body.roleId === undefined
+    ? slot.role_id
+    : (body.roleId == null || body.roleId === '' ? null : Number(body.roleId));
+  if (roleId != null && roleId !== slot.role_id) await roleMustExist(ctx, roleId);
+
+  const day = body.day === undefined ? slot.day : (readDayOrNull(body.day, 'The day') ?? slot.day);
+  const startsAt = body.at === undefined || body.at === ''
+    ? slot.starts_at
+    : fromMinutes(mustBeTime(body.at));
+  const minutes = int(body.minutes, 'How long', {
+    min: 5, max: 240, fallback: Number(slot.minutes) || 30,
+  });
+
+  // Two interviews at the same minute is a diary nobody can keep. Checked
+  // against what is live rather than what was ever published, so a time freed
+  // by a cancellation can be moved back into.
+  if (day !== slot.day || startsAt !== slot.starts_at) {
+    const clash = await ctx.db.prepare(
+      'SELECT id FROM rec_slot WHERE day = ?1 AND starts_at = ?2 AND cancelled_at IS NULL AND id <> ?3',
+    ).bind(day, startsAt, slot.id).first();
+    if (clash) throw badRequest(`There is already an interview at ${startsAt} on ${day}.`);
+  }
+
+  // Only where the form actually said something about it. Without this, moving
+  // a time by half an hour silently takes whoever was on the panel off it,
+  // which is the worst kind of bug: nothing looks wrong until nobody turns up.
+  const who = body.interviewer === undefined && body.interviewerStaffId === undefined
+    ? { staffId: slot.interviewer_staff_id, name: slot.interviewer }
+    : await readInterviewer(ctx, body, slot.interviewer);
+  const place = body.place === undefined
+    ? slot.place
+    : str(body.place, 'Where', { max: 160 });
+  const placeId = body.place === undefined
+    ? slot.place_id
+    : (str(body.placeId, 'Place', { max: 300 }) || null);
+  const lat = body.place === undefined ? slot.place_lat : numberOrNull(body.lat);
+  const lng = body.place === undefined ? slot.place_lng : numberOrNull(body.lng);
+
+  await ctx.db.prepare(
+    `UPDATE rec_slot
+        SET role_id = ?2, day = ?3, starts_at = ?4, minutes = ?5, place = ?6, place_id = ?7,
+            place_lat = ?8, place_lng = ?9, interviewer = ?10, interviewer_staff_id = ?11
+      WHERE id = ?1`,
+  ).bind(slot.id, roleId, day, startsAt, minutes, place, placeId, lat, lng,
+    who.name, who.staffId).run();
+
+  const after = await ctx.db.prepare('SELECT * FROM rec_slot WHERE id = ?').bind(slot.id).first();
+  const moved = day !== slot.day || startsAt !== slot.starts_at;
+
+  // Whoever is on it now is told, and whoever has just come off it is told
+  // too. Being quietly taken off a panel is how somebody turns up to an
+  // interview that is not theirs, or fails to turn up to one that is.
+  if (slot.candidate_id) {
+    const person = await ctx.db.prepare('SELECT name FROM rec_candidate WHERE id = ?')
+      .bind(slot.candidate_id).first().catch(() => null);
+    const name = person?.name ?? 'A candidate';
+
+    if (who.staffId !== slot.interviewer_staff_id && slot.interviewer_staff_id) {
+      await tellInterviewer(ctx, slot, {
+        kind: 'recruitment.off_panel',
+        title: `You are no longer interviewing ${name}`,
+        body: `${sayWhen(slot)} has been given to ${who.name || 'somebody else'}.`,
+      });
+    }
+    await tellInterviewer(ctx, after, {
+      kind: moved ? 'recruitment.moved' : 'recruitment.changed',
+      level: moved ? 'warn' : 'info',
+      title: moved
+        ? `${name}\u2019s interview has moved`
+        : `${name}\u2019s interview has changed`,
+      body: moved
+        ? `Now ${sayWhen(after)}. It was ${sayWhen(slot)}.`
+        : sayWhen(after),
+    });
+  } else if (who.staffId !== slot.interviewer_staff_id) {
+    await tellInterviewer(ctx, after, {
+      kind: 'recruitment.on_panel',
+      title: 'You are down to interview',
+      body: `${sayWhen(after)}. Nobody has taken it yet.`,
+    });
+  }
+
+  if (slot.candidate_id) {
+    await trail(ctx.db, {
+      candidateId: slot.candidate_id,
+      kind: moved ? 'slot_moved' : 'slot_edited',
+      detail: moved
+        ? `Moved from ${slot.day} at ${slot.starts_at} to ${day} at ${startsAt}`
+        : `${who.name ? `${who.name} interviewing` : 'Changed'}${place ? `, ${place}` : ''}`,
+      actor: actorOf(ctx),
+    });
+  }
+
+  await audit(ctx, 'recruitment.slot_update', slot.id, { day, startsAt, moved });
+  return json({ ok: true, moved, booked: slot.candidate_id != null });
+}
+
+/**
+ * Change a whole day of the diary at once.
+ *
+ * The realistic edit is not one time, it is "Tuesday is Yaa now, not me" or
+ * "we are doing them in the small office". Doing that one slot at a time
+ * across a morning of eleven is how somebody gives up and republishes.
+ *
+ * The times themselves are not touched — moving eleven interviews together is
+ * a different thing from correcting who is on the panel, and it would move
+ * bookings people have already been given.
+ */
+export async function updateDay(ctx) {
+  const body = await readJson(ctx.request);
+  const day = readDayOrNull(body.day, 'The day');
+  if (!day) throw badRequest('Say which day.');
+
+  const slots = await ctx.db.prepare(
+    'SELECT * FROM rec_slot WHERE day = ? AND cancelled_at IS NULL ORDER BY starts_at',
+  ).bind(day).all().catch(() => ({ results: [] }));
+  const live = slots.results ?? [];
+  if (!live.length) throw badRequest('There is nothing published on that day.');
+
+  // Whether the ones somebody has already taken are included. Left out by
+  // default: changing a booked interview is a decision, and a bulk edit meant
+  // to tidy up the free times should not quietly move somebody's appointment.
+  const includeBooked = bool(body.includeBooked, false);
+  const touching = live.filter((slot) => includeBooked || slot.candidate_id == null);
+  if (!touching.length) {
+    throw badRequest('Every time that day is booked. Tick the box to change those as well.');
+  }
+
+  const roleId = body.roleId === undefined || body.roleId === ''
+    ? undefined
+    : (body.roleId == null ? null : Number(body.roleId));
+  if (roleId != null && roleId !== undefined) await roleMustExist(ctx, roleId);
+
+  const who = body.interviewer === undefined && body.interviewerStaffId === undefined
+    ? null
+    : await readInterviewer(ctx, body);
+  const place = body.place === undefined ? null : {
+    place: str(body.place, 'Where', { max: 160 }),
+    placeId: str(body.placeId, 'Place', { max: 300 }) || null,
+    lat: numberOrNull(body.lat),
+    lng: numberOrNull(body.lng),
+  };
+
+  if (roleId === undefined && !who && !place) {
+    throw badRequest('Nothing was changed.');
+  }
+
+  for (const slot of touching) {
+    await ctx.db.prepare(
+      `UPDATE rec_slot
+          SET role_id = COALESCE(?2, role_id),
+              interviewer = CASE WHEN ?3 = 1 THEN ?4 ELSE interviewer END,
+              interviewer_staff_id = CASE WHEN ?3 = 1 THEN ?5 ELSE interviewer_staff_id END,
+              place = CASE WHEN ?6 = 1 THEN ?7 ELSE place END,
+              place_id = CASE WHEN ?6 = 1 THEN ?8 ELSE place_id END,
+              place_lat = CASE WHEN ?6 = 1 THEN ?9 ELSE place_lat END,
+              place_lng = CASE WHEN ?6 = 1 THEN ?10 ELSE place_lng END
+        WHERE id = ?1`,
+    ).bind(
+      slot.id,
+      roleId === undefined ? null : roleId,
+      who ? 1 : 0, who?.name ?? null, who?.staffId ?? null,
+      place ? 1 : 0, place?.place ?? null, place?.placeId ?? null,
+      place?.lat ?? null, place?.lng ?? null,
+    ).run();
+  }
+
+  // One notice for the day rather than eleven. A phone that buzzes eleven
+  // times for one edit is a phone whose owner turns notifications off.
+  if (who?.staffId) {
+    const booked = touching.filter((slot) => slot.candidate_id != null).length;
+    await tellInterviewer(ctx, { ...touching[0], interviewer_staff_id: who.staffId, candidate_id: null }, {
+      kind: 'recruitment.on_panel',
+      title: `You are interviewing on ${day}`,
+      body: `${touching.length} time${touching.length === 1 ? '' : 's'}`
+        + `${booked ? `, ${booked} already taken` : ', none taken yet'}.`,
+    });
+  }
+
+  await audit(ctx, 'recruitment.day_update', null, { day, changed: touching.length, includeBooked });
+  return json({ ok: true, changed: touching.length, left: live.length - touching.length });
+}
+
+/** A time, or a plain refusal. Used where a blank means "leave it alone". */
+function mustBeTime(value) {
+  const at = toMinutes(value);
+  if (at == null) throw badRequest('Give a time like 10:30.');
+  return at;
 }
 
 /**
@@ -830,11 +1316,21 @@ export async function removeSlot(ctx, id) {
     .bind(slot.id).run();
 
   if (slot.candidate_id) {
+    const person = await ctx.db.prepare('SELECT name FROM rec_candidate WHERE id = ?')
+      .bind(slot.candidate_id).first().catch(() => null);
+
     await trail(ctx.db, {
       candidateId: slot.candidate_id,
       kind: 'slot_cancelled',
       detail: `${slot.day} at ${slot.starts_at}, cancelled by the property`,
       actor: actorOf(ctx),
+    });
+    await tellInterviewer(ctx, slot, {
+      kind: 'recruitment.cancelled',
+      level: 'warn',
+      title: `${person?.name ?? 'An'} interview is off`,
+      body: `${sayWhen(slot)} has been taken out of the diary. `
+        + 'They have not been told, so somebody has to ring them.',
     });
   }
   await audit(ctx, 'recruitment.slot_remove', slot.id, { day: slot.day, at: slot.starts_at });
@@ -867,7 +1363,16 @@ export async function bookSlot(ctx, id) {
     detail: `${slot.day} at ${slot.starts_at}, booked by the office`,
     actor: actorOf(ctx),
   });
-  return json({ ok: true });
+
+  const told = await tellInterviewer(ctx, { ...slot, candidate_id: row.id }, {
+    kind: 'recruitment.booked',
+    title: `You are interviewing ${row.name}`,
+    body: `${sayWhen(slot)}. Booked by the office.`,
+  });
+
+  // Whether the panel actually heard, so the screen can say "tell them
+  // yourself" rather than letting somebody assume it was handled.
+  return json({ ok: true, interviewerTold: told });
 }
 
 /**
@@ -921,6 +1426,41 @@ export async function claimSlot(db, { slotId, candidateId, by }) {
   }
 
   return { ok: true, released: (held.results ?? []).length };
+}
+
+/**
+ * Tell the panel that a candidate has taken a time.
+ *
+ * Separate from `claimSlot` because that is shared with the candidate's own
+ * side of the link, which has a database and no session. Both doors call this
+ * straight after, so a time taken on a phone at eleven at night and a time
+ * booked over the counter reach the same person the same way.
+ */
+export async function tellPanelAboutBooking(ctx, slotId, { changed = false } = {}) {
+  const slot = await ctx.db.prepare(
+    `SELECT s.*, c.name AS candidate_name
+       FROM rec_slot s LEFT JOIN rec_candidate c ON c.id = s.candidate_id
+      WHERE s.id = ?`,
+  ).bind(slotId).first().catch(() => null);
+  if (!slot) return false;
+
+  return tellInterviewer(ctx, slot, {
+    kind: 'recruitment.booked',
+    title: changed
+      ? `${slot.candidate_name ?? 'A candidate'} has moved their interview`
+      : `You are interviewing ${slot.candidate_name ?? 'a candidate'}`,
+    body: `${sayWhen(slot)}. They chose it themselves.`,
+  });
+}
+
+/** And when they give one back, so the chair is not sat waiting. */
+export async function tellPanelAboutRelease(ctx, slot, candidateName) {
+  return tellInterviewer(ctx, { ...slot, candidate_id: null }, {
+    kind: 'recruitment.released',
+    level: 'warn',
+    title: `${candidateName} has given back their interview time`,
+    body: `${sayWhen(slot)} is free again. They have not picked another one yet.`,
+  });
 }
 
 // ---------------------------------------------------------------------------

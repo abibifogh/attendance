@@ -1354,7 +1354,54 @@ publishing interview times. Where nothing was picked off the map, the
 directions link still searches Maps for the words.
 
 The place you pick is remembered as the default, so a property that picks its
-own front desk once never picks it again.
+own front desk once never picks it again. So is whoever is interviewing.
+
+### Who is interviewing, and who gets told
+
+**Who is interviewing** is a member of staff picked off the list, not a name
+typed in a box. That is the whole point of it: a candidate takes a time at
+eleven at night, nobody here is looking at a screen, and "Kwame" is not
+somebody the app can tell.
+
+So the moment a time is taken — by the candidate on their own phone, or by the
+office booking one over the counter — **whoever is on the panel is told**, on
+their own phone, by name. They are also told when somebody gives a time back,
+when the property cancels an interview, when one is moved, and when they are
+put on or taken off a panel. Being quietly taken off one is how somebody fails
+to turn up to an interview that was theirs.
+
+Somebody on the books with **no login** is still a perfectly good interviewer
+and simply cannot be reached. That is not an error: plenty of people who sit on
+a panel have no reason to open this app. The picker says "(no login)" beside
+them and the line underneath says nothing can be sent, so you know to pass it
+on yourself. **Somebody else** is the last option in the list, for an owner or
+a consultant who is not on the books at all.
+
+### Changing a diary that is already published
+
+A diary is written a week ahead and the week moves. Before this the only answer
+was to cancel and republish, which loses the time a candidate had already taken
+and tells them nothing.
+
+**One time** — the pencil on a slot. Day, time, length, vacancy, where, and who
+is on it. Moving one onto a time already published that day is refused rather
+than left to produce two interviews at the same minute.
+
+Moving a **booked** one is allowed, and the box says what it costs. The
+candidate's own page reads the slot, so the new time is what they see the next
+time they open their link — but a link they have already closed does not ring,
+so somebody has to tell them. Better a control that says so than one that
+refuses and gets worked around on paper.
+
+**A whole day** — *Edit this day* beside the date. The realistic edit is not one
+time, it is "Tuesday is Yaa now, not me" or "we are in the small office". It
+changes where, who and which vacancy across the day and leaves the **times**
+alone: moving eleven interviews together is a different thing from correcting
+who is on the panel.
+
+Appointments somebody has already been given are **left alone unless you tick
+the box**. A bulk edit meant to tidy up the free times should not quietly move
+somebody's appointment.
 
 > **The key never reaches a browser.** The ordinary way to do this loads
 > Google's own script into the page with the key in the URL, restricted by
@@ -1414,6 +1461,27 @@ you press the second button.
 
 It creates candidates and only candidates. Nobody reaches the property's books
 this way.
+
+**Or upload the CVs themselves.** *Upload CVs* takes a folder of them at once,
+against a vacancy you pick, and reads each one for a name, a phone number and
+an email. What it found comes back with a tick and an editable box against each
+file; nothing is written until the second press, and each CV lands on the
+person it came from rather than in a pile.
+
+The three things it reads are not equally reliable, and the screen says which
+is which. An **email** is a shape and is as close to certain as this gets. A
+**phone number** is nearly as good, and is checked against the two traps that
+do real damage on a CV — a year of employment and a Ghana Card number. A
+**name** is a guess: there is no marker for one, so it is taken from the
+heading, the first line, or the file's own name, and the note under each row
+says which of the three it used.
+
+A **photograph** has no text in it at all, and half the CVs here are a picture
+taken on a phone. Those are attached, offered whatever the file name suggests,
+and marked *"A photograph, so there is no text to read. Type their name."* That
+is honest and useful; guessing would be neither. Anybody already in the
+pipeline is flagged and starts unticked, so a folder uploaded twice does not
+double everybody up.
 
 **The CV goes on when the name does.** The Add a candidate form takes files,
 several at once, because the moment somebody is typing a name off an

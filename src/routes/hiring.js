@@ -6,7 +6,9 @@ import { createNotice } from '../lib/notices.js';
 import { fromBase64 } from '../lib/files.js';
 import { endsAt, offerable } from '../lib/recruitment.js';
 import { mapLink } from '../lib/places.js';
-import { claimSlot, hashRecPin, hashRecToken, trail } from './recruitment.js';
+import {
+  claimSlot, hashRecPin, hashRecToken, tellPanelAboutBooking, tellPanelAboutRelease, trail,
+} from './recruitment.js';
 import { todayIn } from '../util/dates.js';
 
 /**
@@ -276,9 +278,14 @@ export async function choose(ctx, token) {
     agent: agentOf(ctx),
   });
 
-  // Whoever is interviewing needs to know, and a candidate choosing a time is
-  // the one thing in this whole pipeline that happens without anybody here
-  // doing it.
+  // The person on the panel, by name, on their own phone. A candidate choosing
+  // a time is the one thing in this whole pipeline that happens without
+  // anybody here doing it, and at eleven at night nobody is watching a screen.
+  await tellPanelAboutBooking(ctx, slotId, { changed: Boolean(claimed.released) })
+    .catch(() => {});
+
+  // And the office in general, which is who was told before there was a panel
+  // to tell.
   await createNotice(ctx.db, {
     kind: 'recruitment.booked',
     level: 'info',
@@ -326,6 +333,8 @@ export async function release(ctx, token) {
     candidateId: candidate.id, inviteId: invite.id, kind: 'slot_given_back',
     detail: `${held.day} at ${held.starts_at}`, ip: ipOf(ctx), agent: agentOf(ctx),
   });
+
+  await tellPanelAboutRelease(ctx, held, candidate.name).catch(() => {});
 
   await createNotice(ctx.db, {
     kind: 'recruitment.released',

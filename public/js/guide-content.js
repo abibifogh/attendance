@@ -1609,10 +1609,11 @@ export const GUIDE = [
       { sub: 'How it runs' },
       { steps: [
         'Open a vacancy: what the job is, which department, how many you want.',
-        'Add the candidates, one at a time or by pasting a list of names. '
+        'Add the candidates: upload a folder of CVs, paste a list of names, or one at a time. '
           + 'Attach the CV on the same form: several files at once, and each one says '
           + 'whether it is a CV, a certificate or a reference.',
-        'Publish interview times: a day, a start and an end, and how long each one is.',
+        'Publish interview times: a day, a start and an end, and how long each one is. '
+          + 'Pick who is interviewing off the staff list, so they can be told.',
         'Shortlist somebody, then make them a link and send it to them yourself.',
         'They open it on their phone and pick a time. You are told when they do.',
         'After the interview, write down what you thought while it is fresh.',
@@ -1630,6 +1631,25 @@ export const GUIDE = [
       { note: 'Their page shows the times, the job and whatever message you wrote. It never '
         + 'shows who else applied, who is on the panel, or anything anybody has written about '
         + 'them.' },
+
+      { sub: 'Who is interviewing, and who gets told' },
+      { p: 'Pick them off the staff list rather than typing a name. That is the point of it: '
+        + 'the moment a candidate takes a time \u2014 on their own phone at eleven at night, or '
+        + 'over the counter \u2014 whoever is on the panel is told on their own phone. They are '
+        + 'told when somebody gives a time back too, when one is cancelled or moved, and when '
+        + 'they are put on or taken off a panel.' },
+      { note: 'Somebody with no login cannot be reached, and that is not an error. The picker '
+        + 'says so beside their name so you know to pass it on yourself. "Somebody else" is '
+        + 'there for an owner or a consultant who is not on the books at all.' },
+
+      { sub: 'Changing a diary that is already published' },
+      { p: 'The pencil on a time changes that one; Edit this day changes where, who and which '
+        + 'vacancy across the whole day at once, leaving the times themselves alone. '
+        + 'Appointments somebody has already been given are left alone unless you tick the '
+        + 'box.' },
+      { warn: 'Moving a booked interview is allowed and does not tell the candidate. Their own '
+        + 'page reads the new time the next time they open their link, but a link they have '
+        + 'already closed does not ring. Ring them.' },
 
       { sub: 'Where it is' },
       { p: 'With a Google maps key set, the Where box finds real places as you type and what '

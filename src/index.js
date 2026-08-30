@@ -418,6 +418,9 @@ export const ROUTES = [
   // candidates and nothing else — nobody reaches the books this way.
   ['POST', '/api/rec/candidates/read', 'rec_manage', rec.readCandidates],
   ['POST', '/api/rec/candidates/import', 'rec_manage', rec.applyCandidates],
+  // A stack of CVs, read for a name and a number before anything is written.
+  ['POST', '/api/rec/candidates/cvs/read', 'rec_manage', rec.readCvs],
+  ['POST', '/api/rec/candidates/cvs', 'rec_manage', rec.importCvs],
   ['GET', '/api/rec/candidates/:id', 'rec_view', rec.candidate],
   ['POST', '/api/rec/candidates/:id', 'rec_manage', rec.updateCandidate],
   ['POST', '/api/rec/candidates/:id/stage', 'rec_manage', rec.moveCandidate],
@@ -440,6 +443,10 @@ export const ROUTES = [
   ['GET', '/api/places', ['rec_manage', 'att_setup'], places.placesReady],
   ['GET', '/api/places/suggest', 'rec_manage', places.suggest],
   ['GET', '/api/places/details/:id', 'rec_manage', places.details],
+  // A published diary is a week ahead of itself and the week moves: the panel
+  // changes, the room changes, an interview slides half an hour.
+  ['POST', '/api/rec/slots/day', 'rec_manage', rec.updateDay],
+  ['POST', '/api/rec/slots/:id', 'rec_manage', rec.updateSlot],
   ['POST', '/api/rec/slots/:id/remove', 'rec_manage', rec.removeSlot],
   ['POST', '/api/rec/slots/:id/book', 'rec_manage', rec.bookSlot],
 

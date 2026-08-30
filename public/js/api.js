@@ -154,6 +154,8 @@ export const api = {
   recAddCandidate: (body) => request('/api/rec/candidates', { method: 'POST', body }),
   recReadCandidates: (text) => request('/api/rec/candidates/read', { method: 'POST', body: { text } }),
   recImportCandidates: (body) => request('/api/rec/candidates/import', { method: 'POST', body }),
+  recReadCvs: (files) => request('/api/rec/candidates/cvs/read', { method: 'POST', body: { files } }),
+  recImportCvs: (body) => request('/api/rec/candidates/cvs', { method: 'POST', body }),
   recCandidate: (id) => request(`/api/rec/candidates/${id}`),
   recUpdateCandidate: (id, body) => request(`/api/rec/candidates/${id}`, { method: 'POST', body }),
   recMoveCandidate: (id, body) => request(`/api/rec/candidates/${id}/stage`, { method: 'POST', body }),
@@ -171,6 +173,8 @@ export const api = {
     `/api/places/suggest?q=${encodeURIComponent(q)}&session=${encodeURIComponent(session ?? '')}`),
   placeDetails: (id, session) => request(
     `/api/places/details/${encodeURIComponent(id)}?session=${encodeURIComponent(session ?? '')}`),
+  recUpdateSlot: (id, body) => request(`/api/rec/slots/${id}`, { method: 'POST', body }),
+  recUpdateDay: (body) => request('/api/rec/slots/day', { method: 'POST', body }),
   recRemoveSlot: (id) => request(`/api/rec/slots/${id}/remove`, { method: 'POST' }),
   recBookSlot: (id, candidateId) => request(`/api/rec/slots/${id}/book`, { method: 'POST', body: { candidateId } }),
 
