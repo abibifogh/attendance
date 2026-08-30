@@ -3522,23 +3522,26 @@ html { touch-action: manipulation; }
 /* Credits sit under the debits they answer, the way a journal is written. */
 .returns-indent { display: inline-block; width: 1.4rem; }
 .returns-journal { max-width: 40rem; }
-/* Fourteen columns fit a landscape sheet only because of three decisions:
-   the currency is said once in the heading rather than fourteen times a row,
-   the columns are given their widths rather than fighting for them, and the
-   headings are sentence case, which is narrower than shouting. */
-.returns-paye { min-width: 58rem; table-layout: fixed; }
+/* The GRA's form has twenty-seven columns and they do not fit a screen, so
+   the table keeps its own width and the wrapper scrolls. Rearranging them to
+   fit would defeat the point: whoever is filing works down the paper form by
+   number, and the screen has to match it. The currency is said once in the
+   heading rather than twenty-seven times a row. */
+.returns-paye { min-width: 132rem; }
 .returns-paye th, .returns-paye th.num { white-space: normal; }
 .returns-paye th {
-  text-transform: none; letter-spacing: 0; font-size: .74rem;
+  text-transform: none; letter-spacing: 0; font-size: .68rem; vertical-align: bottom;
   /* break-word, not anywhere: a word too long for its column is broken, but
      the column is still measured on whole words. `anywhere` shrinks every
      column to one letter and stacks the heading down the page. */
   overflow-wrap: break-word;
 }
-.returns-paye th:nth-child(1) { width: 3.5%; }
-.returns-paye th:nth-child(2) { width: 11%; }
-.returns-paye th:nth-child(3),
-.returns-paye th:nth-child(4) { width: 7.5%; }
+.returns-paye td { font-size: .74rem; }
+/* The form's own numbers over its own headings. */
+.returns-nums th {
+  font-size: .64rem; color: var(--text-faint); font-weight: 600;
+  border-bottom: 0; padding-bottom: 0; text-align: center;
+}
 
 .returns-tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; }
 .returns-tier {
@@ -3578,9 +3581,12 @@ html { touch-action: manipulation; }
      corner, and the wide schedule shrinks rather than being cut off. */
   .returns-sheet { box-shadow: none; border-radius: 0; padding: 0; }
   /* Fourteen columns on a landscape sheet. */
-  .returns-paye { min-width: 0; width: 100%; font-size: 7pt; }
-  .returns-paye th { font-size: 6.5pt; }
-  .returns-paye th, .returns-paye td { padding: .8mm 1mm; }
+  /* Twenty-seven columns across a landscape page. Small, and the only way
+     it is small enough is to let it be. */
+  .returns-paye { min-width: 0; width: 100%; font-size: 5pt; }
+  .returns-paye th { font-size: 4.6pt; }
+  .returns-nums th { font-size: 4.2pt; }
+  .returns-paye th, .returns-paye td { padding: .3mm .4mm; }
   .returns-block { break-inside: avoid; }
   /* The last page must not push a blank sheet out of the printer. */
   .preview-pages > *:last-child,

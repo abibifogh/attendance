@@ -265,6 +265,7 @@ export const ROUTES = [
   ['DELETE', '/api/payroll/pin/:id', 'users', payAccess.resetPin],
 
   ['GET', '/api/payroll/returns', 'hr_pay', payroll.returns],
+  ['GET', '/api/payroll/book', 'hr_pay', payroll.exportBook],
   ['GET', '/api/payroll/input/template', 'hr_pay', payroll.inputTemplate],
   ['POST', '/api/payroll/input/read', 'hr_pay', payroll.readInput],
   ['POST', '/api/payroll/input/apply', 'hr_pay', payroll.applyInput],

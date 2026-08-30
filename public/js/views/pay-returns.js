@@ -95,9 +95,9 @@ export function returnsSheet(data, niceMonth) {
     h('section.returns-block',
       h('h2', 'PAYE schedule'),
       h('p.muted',
-        `Every employee, what they earned, what came off and what tax that came to, in `
-        + `${data.currency}. Tax relief is left empty because it is claimed on a certificate `
-        + 'the GRA issues to the person, not something a payroll knows.'),
+        `The GRA's own form, column for column, in ${data.currency}. Deductible reliefs are `
+        + 'left at nought because they are claimed on a certificate the GRA issues to the '
+        + 'person, not something a payroll knows.'),
       h('p.muted',
         'A bonus is taxed at 5% as a final tax up to 15% of annual basic salary. Anything past '
         + 'that ceiling is the excess bonus: it is income rather than a separate tax, so it is '
@@ -105,7 +105,12 @@ export function returnsSheet(data, niceMonth) {
         + 'to the two together.'),
       h('div.table-wrap',
         h('table.returns-table.returns-paye',
-          h('thead', h('tr', columns.map((c) => h(c.money ? 'th.num' : 'th', c.label)))),
+          h('thead',
+            // The form's own column numbers, above its own headings. Whoever
+            // is filing has the paper form beside them and works down it by
+            // number, so the screen says the same numbers in the same order.
+            h('tr.returns-nums', columns.map((c) => h('th', c.no ?? ''))),
+            h('tr', columns.map((c) => h(c.money ? 'th.num' : 'th', c.label)))),
           h('tbody',
             schedule.rows.map((row) => h('tr', columns.map((c) => h(
               c.money ? 'td.num' : 'td',

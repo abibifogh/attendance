@@ -8,6 +8,7 @@ import { ratesOn } from '../lib/tax-tables.js';
 import { readSheet, tallyOf } from '../lib/pay-import.js';
 import { isAdmin } from '../lib/payroll-access.js';
 import { hasTiers, readTiers, tierAmount } from '../lib/pay-tiers.js';
+import { S, colName, workbook } from '../lib/xlsx.js';
 import { addMonths, isMonth, monthOf, todayIn } from '../util/dates.js';
 
 /**
@@ -784,7 +785,7 @@ function withoutTheSlip(line) {
  * reads TIN and SSNIT numbers out of the personal records and there is no
  * reason for those to travel with a screen that does not show them.
  */
-export async function returns(ctx) {
+async function monthReturn(ctx) {
   const { timezone } = await settingsOf(ctx.db);
   const month = monthFrom(ctx.url, timezone);
   const data = await gather(ctx, month);
@@ -797,10 +798,37 @@ export async function returns(ctx) {
       .map((slip) => JSON.parse(slip.detail))
     : linesFrom(data, month);
 
+  // Everything the return needs that the payroll itself does not hold.
+  //
+  // THE TABLE IS hr_profile. It was read as hr_person here, which is not a
+  // table this app has ever had, so the query threw on every single month and
+  // the catch below turned that into an empty list. The column asking for a
+  // tax number came out blank for a property that had filled every one of them
+  // in. A catch that swallows a typo is worse than no catch at all, so this
+  // one now only covers the case it was for: a database old enough not to have
+  // the people tables yet.
+  //
+  // Read from att_staff outwards rather than from the profile, so somebody
+  // with a job title and no personal record still gets their grade on the
+  // form.
   const records = await ctx.db.prepare(
-    'SELECT staff_id, tin_number, ssnit_number FROM hr_person',
+    `SELECT s.id AS staff_id, s.job_title, s.department,
+            p.tin_number, p.ssnit_number, p.id_type, p.id_number
+       FROM att_staff s
+       LEFT JOIN hr_profile p ON p.staff_id = s.id`,
   ).all().catch(() => ({ results: [] }));
-  const people = new Map((records.results ?? []).map((r) => [Number(r.staff_id), r]));
+
+  const people = new Map((records.results ?? []).map((r) => [Number(r.staff_id), {
+    ...r,
+    // The form's column 2 asks for a TIN or a Ghana Card number. Almost
+    // everybody here has the card and not the TIN, and it is kept under
+    // identification rather than under tax, so the column came out empty for
+    // a property that had filled the number in perfectly well.
+    ghana_card: /ghana\s*card/i.test(String(r.id_type ?? '')) || /^GHA-/i.test(String(r.id_number ?? ''))
+      ? r.id_number
+      : '',
+    position: r.job_title || r.department || '',
+  }]));
 
   const totals = totalsOf(lines);
   const journal = journalFor({ lines, totals, rates: data.rates, tiers: data.tiers });
@@ -812,6 +840,12 @@ export async function returns(ctx) {
       wants: [!row.tin ? 'TIN' : null, !row.ssnitNumber ? 'SSNIT number' : null].filter(Boolean),
     }));
 
+  return { month, data, lines, totals, journal, schedule, missing };
+}
+
+/** The month's journal and PAYE schedule, for the screen. */
+export async function returns(ctx) {
+  const { month, data, totals, journal, schedule, missing } = await monthReturn(ctx);
   return json({
     month,
     currency: data.currency,
@@ -832,6 +866,160 @@ export async function returns(ctx) {
     // Named rather than counted: whoever files the return has to go and get
     // these, and a number does not tell them whose record to open.
     missing,
+  });
+}
+
+/**
+ * The whole month as a workbook: the payroll, the journal and the return.
+ *
+ * Three sheets rather than three downloads, because they are read together.
+ * The schedule sheet is the GRA's own form, line for line: the same heading
+ * block, the same column numbers along the top, the same twenty-seven columns
+ * in the same order, and the rows starting where the form starts them. It is
+ * meant to be filed as it comes out, not rearranged first.
+ */
+export async function exportBook(ctx) {
+  const { month, data, lines, totals, journal, schedule } = await monthReturn(ctx);
+  const map = (await settingsOf(ctx.db)).settings ?? {};
+  const employer = map.company_legal_name || data.property || '';
+  const employerTin = map.company_tin || '';
+  // The form wants the month as MM/YYYY, and a form headed the wrong month is
+  // the one mistake on it nobody notices until the assessment arrives.
+  const [year, mm] = String(month).split('-');
+  const asFiled = `${mm}/${year}`;
+
+  const money = (n) => ({ v: round2(Number(n) || 0), s: S.money });
+  const totalMoney = (n) => ({ v: round2(Number(n) || 0), s: S.moneyTotal });
+  const head = (t) => ({ v: t, s: S.head });
+
+  // ---- the month, as the payroll screen shows it ------------------------
+  const payHead = ['Name', 'Department', 'Basic', 'Allowances', 'Bonus', 'Gross',
+    'SSNIT', 'PAYE', 'Advance', 'Net pay', 'Employer SSNIT', 'Cost'];
+  const payRows = lines.map((line) => [
+    line.staff?.name ?? '',
+    line.staff?.department ?? '',
+    money(line.basic),
+    money(line.slip?.allowanceTotal ?? line.allowanceTotal),
+    money(line.bonus?.net),
+    money(line.gross),
+    money(line.ssnit?.employee),
+    money(line.paye?.total),
+    money(line.loanTotal),
+    money(line.net),
+    money(line.ssnit?.employer),
+    money(line.employerCost),
+  ]);
+  const payTotals = [{ v: 'Everybody', s: S.total }, { v: '', s: S.total },
+    totalMoney(totals.basic), totalMoney(totals.allowancesOnSlip ?? totals.allowances),
+    totalMoney(totals.bonusNet), totalMoney(totals.gross),
+    totalMoney(totals.ssnitEmployee), totalMoney(totals.paye), totalMoney(totals.loans),
+    totalMoney(totals.net), totalMoney(totals.ssnitEmployer), totalMoney(totals.cost)];
+
+  const payroll = {
+    name: 'Payroll',
+    freeze: 4,
+    widths: [26, 16, 11, 12, 11, 12, 10, 11, 11, 12, 13, 12],
+    rows: [
+      [{ v: `${employer} — payroll for ${month}`, s: S.title }],
+      [`${lines.length} on the payroll`, '', '', '', '', `In ${data.currency}`],
+      [],
+      payHead.map(head),
+      ...payRows,
+      payTotals,
+    ],
+  };
+
+  // ---- the journal ------------------------------------------------------
+  const side = (rows, label) => [
+    [{ v: label, s: S.bold }],
+    [head('Account'), head('Detail'), head('Amount')],
+    ...rows.map((r) => [r.account, r.detail ?? '', money(r.amount)]),
+    [{ v: `Total ${label.toLowerCase()}`, s: S.total }, { v: '', s: S.total },
+      totalMoney(rows.reduce((n, r) => n + (Number(r.amount) || 0), 0))],
+  ];
+  const journalSheet = {
+    name: 'Journal',
+    widths: [34, 40, 14],
+    rows: [
+      [{ v: `${employer} — payroll journal, ${month}`, s: S.title }],
+      [],
+      ...side(journal.debits ?? [], 'Debits'),
+      [],
+      ...side(journal.credits ?? [], 'Credits'),
+    ],
+  };
+
+  // ---- the GRA schedule, on the GRA's own form ---------------------------
+  const cols = PAYE_COLUMNS;
+  const last = colName(cols.length - 1);
+  const at = (letter, value) => {
+    const row = [];
+    row[letter.charCodeAt(0) - 65] = value;
+    return row;
+  };
+  const put = (pairs) => {
+    const row = [];
+    for (const [letter, value] of pairs) row[letter.charCodeAt(0) - 65] = value;
+    return row;
+  };
+
+  const rows = [
+    at('A', { v: 'GHANA REVENUE AUTHORITY', s: S.title }),
+    at('A', { v: 'DOMESTIC TAX REVENUE DIVISION', s: S.bold }),
+    [], [],
+    at('A', { v: "EMPLOYER'S MONTHLY TAX DEDUCTIONS SCHEDULE (P. A. Y. E.)", s: S.title }),
+    [],
+    put([['A', { v: 'CURRENT TAX OFFICE', s: S.bold }], ['D', 'LTO'], ['F', 'TSC'], ['G', 'NIMA']]),
+    put([['D', '(tick one)'], ['G', 'Name of Tax Office']]),
+    put([['A', { v: 'NAME OF EMPLOYER', s: S.bold }], ['D', { v: employer, s: S.bold }],
+      ['S', { v: 'FOR THE MONTH OF', s: S.bold }], ['U', { v: asFiled, s: S.bold, text: true }]]),
+    put([['V', '(MM/YYYY)']]),
+    put([['A', { v: "EMPLOYER'S TIN / GH. CARD NO.", s: S.bold }],
+      ['D', { v: employerTin, s: S.bold, text: true }]]),
+    [],
+    // The numbers printed above the columns. Text, not numbers, because the
+    // form numbers two of its columns 26 and a spreadsheet asked for a number
+    // there quietly makes it 26 twice over as a figure nobody can sort on.
+    cols.map((c) => ({ v: c.no, s: S.bold, text: true })),
+    at('I', { v: 'PENSIONS', s: S.head }),
+    cols.map((c) => head(c.label)),
+    [], [],
+    ...schedule.rows.map((row) => cols.map((c) => {
+      const value = row[c.key];
+      if (c.money) return money(value);
+      if (c.text) return { v: value ?? '', text: true };
+      return value ?? '';
+    })),
+    cols.map((c, i) => {
+      if (i === 0) return { v: 'TOTALS', s: S.total };
+      if (!c.money) return { v: '', s: S.total };
+      return totalMoney(schedule.totals[c.key]);
+    }),
+  ];
+
+  const scheduleSheet = {
+    name: 'PAYE schedule',
+    freeze: 15,
+    widths: cols.map((c) => c.width ?? 13),
+    // The heading block spans the page the way the form does, and each column
+    // heading is three rows tall so the long ones wrap instead of being cut.
+    merges: [
+      `A1:${last}1`, `A2:${last}2`, `A5:${last}5`,
+      'D7:E7', 'G7:N7', 'D8:F8', 'G8:N8', 'D9:N9', 'U9:W9', 'D11:O11',
+      'I14:J14',
+      ...cols.map((c, i) => `${colName(i)}15:${colName(i)}17`),
+    ],
+    rows,
+  };
+
+  const bytes = workbook([payroll, journalSheet, scheduleSheet]);
+  const name = `${(employer || 'Payroll').replace(/[^A-Za-z0-9]+/g, '-')}-payroll-${month}.xlsx`;
+  return new Response(bytes, {
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${name}"`,
+      'Cache-Control': 'no-store',
+    },
   });
 }
 

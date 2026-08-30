@@ -167,9 +167,13 @@ test('the schedule is a row per person with the GRA’s own columns', () => {
   assert.equal(rows[0].chargeable, 2190);
   assert.equal(rows[0].total, rows[0].tax);
 
-  // Nobody has a relief certificate in a payroll, so the column is empty
-  // rather than a zero that would be filed as a claim of none.
-  assert.equal(rows[0].relief, null);
+  // Nobody has a relief certificate in a payroll. It used to be left empty
+  // rather than a zero, which read better on Hive's own summary and does not
+  // work on the form: column 21 is 9 + 10 + 20, and a blank in 20 leaves the
+  // column that has to be filed with nothing in it.
+  assert.equal(rows[0].relief, 0);
+  assert.equal(rows[0].reliefs, rows[0].ssf, '9 + 10 + 20 with nothing in 10 or 20');
+  assert.equal(rows[0].assessable, rows[0].totalCash, 'and nothing non-cash, so 19 is 15');
 
   // A person with no record yet comes through with the money right and the
   // numbers blank, so the sheet still shows what is owed.

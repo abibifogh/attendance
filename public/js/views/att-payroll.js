@@ -187,6 +187,14 @@ export async function renderAttPayroll(params) {
             : null,
           h('button.btn-sm', { onclick: () => openReturns(month) },
             'Journal and PAYE'),
+          // A link rather than a button, so the browser saves the file itself.
+          // Fetching it and making a blob works too and gives you a spinner
+          // nobody asked for and a filename you have to invent twice.
+          h('a.btn.btn-sm', {
+            href: `/api/payroll/book?month=${encodeURIComponent(month)}`,
+            download: '',
+            title: 'The month, the journal and the GRA schedule as one workbook',
+          }, 'Excel'),
           closed ? null : importButton(month, reload),
           closed
             ? null
@@ -691,6 +699,10 @@ async function openReturns(month) {
       h('span.muted', `${niceMonth(month)} · ${data.status === 'final' ? 'closed' : 'draft'}`),
       h('div.btn-row',
         h('button.btn-sm', { onclick: () => window.print() }, 'Print or save as PDF'),
+        h('a.btn.btn-sm', {
+          href: `/api/payroll/book?month=${encodeURIComponent(month)}`,
+          download: '',
+        }, 'Download as Excel'),
         h('button.btn-sm', { onclick: () => shade.remove() }, 'Close'))),
     h('div.preview-pages', h('div.returns-sheet', returnsSheet(data, niceMonth(month))))));
 

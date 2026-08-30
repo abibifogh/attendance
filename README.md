@@ -1506,6 +1506,37 @@ tier 1 / tier 2 split against the PAYE it was actually closed on. Payslips
 written before this keep working: they fall back to computing it, which is what
 they always did.
 
+### The return is the GRA's own form, and the month comes out as a workbook
+
+**Payroll → Journal and PAYE** used to show Hive's own fourteen-column summary
+of the return. It had the right figures in the wrong shape, so whoever filed it
+rearranged the columns by hand every month, which is a job nobody should be
+doing twelve times a year.
+
+It is now the form. The same twenty-seven column numbers along the top, the
+same headings in the same order, the same heading block with the employer, the
+tax office and the month as MM/YYYY. Column 15 is 6 + 11 + 14, column 19 is
+15 + 16 + 17 + 18, column 21 is 9 + 10 + 20, column 22 is 19 minus 21 and
+column 26 is 13 + 23 + 25, because that is what the form says they are.
+
+Three columns are filled in from outside the payroll:
+
+| Column | Where it comes from |
+|---|---|
+| 2, TIN / GH. Card | The TIN on somebody's record, or their Ghana Card number where there is no TIN. The column asks for either. |
+| 4, Position | Their job title, or their department where there is no job title. |
+| 5, Residency | Resident-Full-Time for everybody. |
+
+Deductible reliefs are nought rather than blank: they are claimed on a
+certificate the GRA issues to the person, and column 21 has to add up.
+
+**Download as Excel** on that screen, or the **Excel** button beside it on the
+payroll page, gives the whole month as one workbook of three sheets: the
+payroll table, the journal, and the PAYE schedule laid out as the form. It is
+written without a library, because a Worker has no zip in it and an .xlsx is a
+zip of XML; the parts go in uncompressed, which every spreadsheet program
+opens.
+
 ### A bonus is net for most people, and gross for some
 
 A bonus here is normally a net promise. Somebody is told five hundred cedis,
