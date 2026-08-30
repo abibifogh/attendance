@@ -1,0 +1,15 @@
+-- Whether somebody's bonus figures are what they receive or what is taxed.
+--
+-- A bonus here is normally agreed net: somebody is promised five hundred, gets
+-- five hundred, and the property carries the tax that makes that true. That is
+-- not universal. Some figures were always gross ones, worked out from a
+-- take-home somebody had already settled on, and grossing those up again pays
+-- the tax twice and hands the person more than was agreed.
+--
+-- Per person rather than per scheme, because the promise belongs to the
+-- conversation somebody had, not to the scheme they happen to sit under: the
+-- same Nkosoo tier can be a net promise to one person and a gross figure for
+-- another.
+--
+-- Net by default, which is what every figure in here was entered as.
+ALTER TABLE pay_profile ADD COLUMN bonus_is_net INTEGER NOT NULL DEFAULT 1;

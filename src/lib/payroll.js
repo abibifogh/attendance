@@ -10,12 +10,16 @@ import { TIERS, tierSplit } from './statutory.js';
  * SSNIT first, then the salary's chargeable income, then the bonus grossed up
  * against it, and only then the tax on the whole.
  *
- * THE BONUS IS AGREED NET AND SO ARE THE DEDUCTIONS FROM IT. A scheme is worth
- * five hundred cedis in somebody's hand; a hundred cedis off for misconduct is
- * a hundred cedis out of their hand. Both are net figures, they are settled
- * against each other first, and the result is grossed up once. Grossing up
- * each half separately would have the property paying tax on money nobody
- * received.
+ * THE BONUS IS NORMALLY AGREED NET, AND SO ARE THE DEDUCTIONS FROM IT. A
+ * scheme is worth five hundred cedis in somebody's hand; a hundred cedis off
+ * for misconduct is a hundred cedis out of their hand. Both are net figures,
+ * they are settled against each other first, and the result is grossed up
+ * once. Grossing up each half separately would have the property paying tax
+ * on money nobody received.
+ *
+ * Where somebody's figures were agreed gross instead, bonusIsNet says so and
+ * the grossing up is skipped. Everything after that is the same, because a
+ * gross figure is only a net one that has already had the sum done to it.
  *
  * WHAT COMES OUT AFTER TAX IS NOT AN EXPENSE. A salary advance being repaid is
  * the person's own money going back; it comes off the net pay and it changes
@@ -34,6 +38,7 @@ export function computeLine({
   loans = [],
   annualBasic = null,
   bonusPaidThisYear = 0,
+  bonusIsNet = true,
   rates,
   tiers = TIERS,
 }) {
@@ -89,9 +94,15 @@ export function computeLine({
     alreadyPaid: spent,
     rates,
   };
-  const grossed = bonusNet > 0
-    ? grossUpBonus(bonusNet, bonusContext)
-    : { gross: 0, ...bonusTaxOn(0, bonusContext) };
+  // Whether the figure agreed was what lands in the hand or what gets taxed.
+  // Net is the normal case and the default, but it is not universal: some
+  // figures were worked out from a take-home somebody had already settled on
+  // and are gross already. Grossing one of those up again pays the tax twice.
+  const grossed = bonusNet <= 0
+    ? { gross: 0, ...bonusTaxOn(0, bonusContext) }
+    : bonusIsNet
+      ? grossUpBonus(bonusNet, bonusContext)
+      : { gross: bonusNet, ...bonusTaxOn(bonusNet, bonusContext) };
 
   // ---- the whole month --------------------------------------------------
   const gross = round2(salaryGross + freeAllowance + grossed.gross);
@@ -109,8 +120,11 @@ export function computeLine({
 
   // ---- how it reads on a payslip ---------------------------------------
   //
-  // A bonus here is agreed net: somebody is promised four hundred and gets
-  // four hundred, and the property carries the tax that makes that true. So
+  // A bonus here is usually agreed net: somebody is promised four hundred and
+  // gets four hundred, and the property carries the tax that makes that true.
+  // Nothing below runs for a bonus agreed gross, because there is no
+  // difference to carry: the carried figure is nought and the slip shows the
+  // figure that was agreed, same as the list above. So
   // the grossed-up figure is not a number anybody was offered, and putting it
   // on a payslip under Bonus invites the one question it cannot answer —
   // "why does this say 470 when we agreed 400".
@@ -168,8 +182,14 @@ export function computeLine({
       // Where a deduction was bigger than the bonus it came out of. Said
       // rather than swallowed: somebody will ask where the rest went.
       notTaken,
+      // The figure that was agreed, which is what a payslip shows. What it
+      // means depends on isNet: the money in somebody's hand where the bonus
+      // was promised net, the taxable figure where it was promised gross.
       net: bonusNet,
+      isNet: Boolean(bonusIsNet),
       gross: grossed.gross,
+      // What the property put in on top to make a net promise come true.
+      // Nought on a gross figure, where the tax comes out of the bonus itself.
       tax: round2(grossed.gross - bonusNet),
       atFinalRate: grossed.atFinalRate,
       atGraduated: grossed.atGraduated,

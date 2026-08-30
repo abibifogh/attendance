@@ -1506,6 +1506,35 @@ tier 1 / tier 2 split against the PAYE it was actually closed on. Payslips
 written before this keep working: they fall back to computing it, which is what
 they always did.
 
+### A bonus is net for most people, and gross for some
+
+A bonus here is normally a net promise. Somebody is told five hundred cedis,
+five hundred is what reaches them, and the property carries the tax that makes
+that true. Hive works out the gross figure that leaves five hundred after tax,
+puts the difference into the allowance line, and shows the payslip the five
+hundred that was actually agreed.
+
+That is not true of everybody. Some figures were never net promises: they were
+worked backwards from a take-home somebody had already settled on, so the tax
+is already inside them. Grossing one of those up again pays the same tax twice
+and hands the person more than was agreed.
+
+**Setup → Pay and allowances → Bonus is net** says which it is, one person at a
+time. It sits per person rather than per scheme because the promise belongs to
+the conversation somebody had, not to the scheme they happen to sit under: the
+same Nkosoɔ tier can be a net promise to one person and a gross figure for the
+next.
+
+Ticked, which is how everybody starts, nothing changes. Unticked, the figure
+is taxed exactly as it stands, the allowance line carries nothing extra, and
+the tax comes out of the bonus instead of out of the property. The payslip
+still reads the same way either way, and the earnings column still adds to the
+gross.
+
+Who is which shows on **Who is on the payroll** as a `net` or `gross` pill
+against each name. A screen that does not ask about it, such as a spreadsheet
+upload, leaves the setting alone rather than putting everybody back to net.
+
 ### Somebody who is only ever paid
 
 A property has people on the payroll who never touch a terminal and never

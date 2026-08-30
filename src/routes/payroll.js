@@ -266,6 +266,9 @@ function linesFrom(data, month) {
       loans,
       annualBasic: round2(profile.basic * 12),
       bonusPaidThisYear: data.paidBy.get(person.id) ?? 0,
+      // Older profiles have nothing written here and every figure in them was
+      // entered as a net promise, so the absence reads as net.
+      bonusIsNet: profile.bonus_is_net == null ? true : Boolean(profile.bonus_is_net),
       rates: data.rates,
       tiers: data.tiers,
     }));
@@ -454,6 +457,8 @@ export async function payroll(ctx) {
         onPayroll: Boolean(profile),
         basic: profile ? round2(profile.basic) : null,
         ssnit: profile ? Boolean(profile.ssnit) : true,
+        // Whether their bonus figures are what they receive or what is taxed.
+        bonusIsNet: profile ? profile.bonus_is_net == null || Boolean(profile.bonus_is_net) : true,
         // What they had as bonus before this app was keeping the year's
         // running total. Nought where it was written against another year,
         // so it stops counting on its own.
@@ -896,17 +901,23 @@ export async function setProfiles(ctx) {
       ? String(line.bonusOpeningYear).slice(0, 4)
       : String(line.bonusOpeningYear ?? '').slice(0, 4) || monthOf(todayIn(timezone)).slice(0, 4);
 
+    // Left where it is when the form says nothing, like the opening figure
+    // above: a spreadsheet upload does not ask about it, and it must not
+    // quietly put everybody back to net.
+    const netBonus = line.bonusIsNet == null ? null : (line.bonusIsNet === false ? 0 : 1);
+
     await ctx.db.prepare(
       `INSERT INTO pay_profile (staff_id, basic, ssnit, note, set_by, bonus_opening,
-                                bonus_opening_year)
-       VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(?6, 0), ?7)
+                                bonus_opening_year, bonus_is_net)
+       VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(?6, 0), ?7, COALESCE(?8, 1))
        ON CONFLICT (staff_id) DO UPDATE
          SET basic = ?2, ssnit = ?3, note = ?4, set_by = ?5, set_at = datetime('now'),
              bonus_opening = COALESCE(?6, bonus_opening),
-             bonus_opening_year = COALESCE(?7, bonus_opening_year)`,
+             bonus_opening_year = COALESCE(?7, bonus_opening_year),
+             bonus_is_net = COALESCE(?8, bonus_is_net)`,
     ).bind(staffId, basic, line.ssnit === false ? 0 : 1,
       str(line.note, 'Note', { max: 300 }), actorOf(ctx),
-      opening, said ? openingYear : null).run();
+      opening, said ? openingYear : null, netBonus).run();
 
     if (Array.isArray(line.allowances)) {
       await ctx.db.prepare('DELETE FROM pay_allowance WHERE staff_id = ?').bind(staffId).run();

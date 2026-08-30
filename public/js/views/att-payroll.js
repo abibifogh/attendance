@@ -1080,8 +1080,9 @@ function schemesCard(data, month, closed, reload, cash) {
   },
   h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
     'A scheme either pays a share of one figure, scored per person, or a set figure agreed '
-    + 'with each of them. Both are net: what somebody actually receives, with the tax on it '
-    + 'carried by the property. Somebody can be under several schemes or under none.'),
+    + 'with each of them. Whether the figure is what somebody receives or what gets taxed is '
+    + 'set against the person, under Who is on the payroll. Somebody can be under several '
+    + 'schemes or under none.'),
 
   data.schemes.length
     // Folded. A property with nine schemes across four departments opened on a
@@ -1480,6 +1481,7 @@ function peopleCard(data, reload, cash) {
     ? h('div.table-wrap', h('table',
       h('thead', h('tr',
         h('th', 'Name'), h('th.num', 'Basic'), h('th', 'Allowances'), h('th', 'SSNIT'),
+        h('th', 'Bonus'),
       )),
       h('tbody', on.map((person) => h('tr',
         h('td', person.name, h('small.muted', person.department ? ` · ${person.department}` : '')),
@@ -1487,7 +1489,12 @@ function peopleCard(data, reload, cash) {
         h('td', person.allowances.length
           ? person.allowances.map((a) => `${a.name} ${cash(a.amount)}`).join(' · ')
           : h('span.muted', 'none')),
-        h('td', person.ssnit ? h('span.pill.good', 'yes') : h('span.pill', 'no')))))))
+        h('td', person.ssnit ? h('span.pill.good', 'yes') : h('span.pill', 'no')),
+        h('td', person.bonusIsNet === false
+          ? h('span.pill', { title: 'Their bonus figures are already gross. Tax comes out of the '
+              + 'bonus, so the property adds nothing on top.' }, 'gross')
+          : h('span.pill.good', { title: 'Their bonus figures are what they receive. The property '
+              + 'carries the tax and it goes into their allowance.' }, 'net')))))))
     : h('p.muted', 'Nobody yet.'));
 }
 
@@ -1504,6 +1511,7 @@ async function editPeople(data, reload) {
     onPayroll: s.onPayroll,
     basic: s.basic ?? 0,
     ssnit: s.ssnit,
+    bonusIsNet: s.bonusIsNet !== false,
     bonusOpening: s.bonusOpening ?? 0,
     allowances: s.allowances.map((a) => ({ ...a })),
   }]));
@@ -1525,6 +1533,13 @@ async function editPeople(data, reload) {
       type: 'checkbox', checked: mine.ssnit,
       'aria-label': `${person.name} pays SSNIT`,
       onchange: (e) => { mine.ssnit = e.target.checked; },
+    });
+    // Which way this person's bonus figures were agreed. It varies from one
+    // person to the next, which is why it sits here and not in the settings.
+    const netBonus = h('input', {
+      type: 'checkbox', checked: mine.bonusIsNet,
+      'aria-label': `${person.name}'s bonus figures are what they receive`,
+      onchange: (e) => { mine.bonusIsNet = e.target.checked; },
     });
     const allowanceCount = h('span.muted',
       mine.allowances.length ? `${mine.allowances.length}` : 'none');
@@ -1548,16 +1563,22 @@ async function editPeople(data, reload) {
         mine.onPayroll = e.target.checked;
         basic.disabled = !e.target.checked;
         ssnit.disabled = !e.target.checked;
+        netBonus.disabled = !e.target.checked;
         line.classList.toggle('adv-skipped', !e.target.checked);
       },
     });
     basic.disabled = !mine.onPayroll;
     ssnit.disabled = !mine.onPayroll;
+    netBonus.disabled = !mine.onPayroll;
 
     const line = h(`tr${mine.onPayroll ? '' : '.adv-skipped'}`,
       h('td', h('label.tickline', tick, h('span', person.name))),
       h('td.num', basic),
-      h('td', h('label.tickline', ssnit, h('span', 'SSNIT'))),
+      // Both ticks in one cell, one above the other. A column each pushed the
+      // allowances button off the side of the dialog.
+      h('td',
+        h('label.tickline', ssnit, h('span', 'SSNIT')),
+        h('label.tickline', netBonus, h('span', 'Net bonus'))),
       yearly ? h('td.num', opening) : null,
       h('td.num',
         allowanceCount,
@@ -1577,11 +1598,16 @@ async function editPeople(data, reload) {
   const done = await formDialog({
     title: 'Pay and allowances',
     submitLabel: 'Save the payroll',
+    wide: true,
     body: h('div',
       h('p.muted', { style: { fontSize: '.85rem' } },
         'Tick everybody the payroll covers and give their monthly basic. SSNIT is 5.5% from '
-        + 'them and 13% from the property, on basic salary alone — untick it for anybody it '
+        + 'them and 13% from the property, on basic salary alone. Untick it for anybody it '
         + 'does not apply to.'),
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Bonus is net where the figures agreed are what the person receives. The property then '
+        + 'carries the tax on top and it shows in their allowance. Untick it for anybody whose '
+        + 'bonus figures were worked out gross already, or the tax gets paid twice.'),
       yearly
         ? h('p.muted', { style: { fontSize: '.85rem' } },
           `Bonus already had in ${year} is for months this app did not run. The 5% rate on a `
@@ -1602,6 +1628,7 @@ async function editPeople(data, reload) {
         onPayroll: v.onPayroll,
         basic: v.basic,
         ssnit: v.ssnit,
+        bonusIsNet: v.bonusIsNet,
         bonusOpening: v.bonusOpening,
         bonusOpeningYear: year,
         allowances: v.allowances,

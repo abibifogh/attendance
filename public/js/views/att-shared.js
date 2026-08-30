@@ -452,13 +452,13 @@ export function showSheet({ title, body }) {
  * Uses a real <dialog>, so Escape closes it and the browser handles the focus
  * trap — both of which a hand-rolled overlay gets wrong.
  */
-export function formDialog({ title, body, submitLabel = 'Save', onSubmit }) {
+export function formDialog({ title, body, submitLabel = 'Save', onSubmit, wide = false }) {
   return new Promise((resolve) => {
     const form = h('form', { method: 'dialog' });
     // Styled by class rather than inline, so the phone rules can win. An
     // inline width beats any stylesheet, which is how a dialog ended up 92% of
     // a handset with its buttons off the bottom.
-    const dialog = h('dialog.app-dialog',
+    const dialog = h(`dialog.app-dialog${wide ? '.app-dialog-wide' : ''}`,
       h('div.dialog-head',
         h('h2', title),
         h('button.dialog-close', {
