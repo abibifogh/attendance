@@ -1506,6 +1506,44 @@ tier 1 / tier 2 split against the PAYE it was actually closed on. Payslips
 written before this keep working: they fall back to computing it, which is what
 they always did.
 
+### The workforce, measured four ways
+
+Under the comparison table on **Workload** are four blocks, in the order a
+hotel asks the questions once it has stopped firefighting.
+
+**What the labour costs.** Cost an hour, cost a day, and the share of the bill
+going out as overtime and holiday premium, each beside what it was over the
+window before. Rates rather than totals on purpose: a wage bill goes up when
+trade goes up, which is the point of trade, and only a rate moves when
+something has actually changed. Under that, the split between what a rota can
+move and what it cannot, cost an hour by department, and who the money goes to
+with a running share beside them, which is what answers "how few people is half
+of this". Anybody without a salary on their record is named, because until they
+have one every figure above is an understatement.
+
+**Where the time goes.** Two different questions, kept apart, because mixing
+them sends somebody to talk to the wrong person. Did the rota ask of people
+what was agreed with them, and having been asked, did they turn up and stay.
+Absence and lateness come from what the clock recorded, over the days somebody
+was actually rostered: a day nobody put them down for is not an absence.
+
+**Who is at risk.** The strain score behind the table above, ranked, with what
+put each person there. Rules are counted by rule rather than by person, because
+four people short of a turnaround is one rostering habit and not four problems.
+Untaken leave is priced at each person's own daily rate, which is a real bill
+that grows quietly and falls due in a lump the day somebody resigns.
+
+**What shape the cover is.** People on, hour by hour across the day. A rota
+looks balanced as a grid of shifts and is often not balanced at all as a curve:
+three shifts that all start at eight leave the building empty at six, and no
+table of shift counts ever shows that. A night shift counts on the hours it
+actually covers rather than falling off the end of the clock.
+
+Money only reaches somebody who may see pay, and it is left out by the server
+rather than hidden on the screen. Every figure comes back as nothing known
+rather than as nought where there was no denominator: a department with nobody
+in it has no absence rate, and printing 0% would be a claim nobody made.
+
 ### The return is the GRA's own form, and the month comes out as a workbook
 
 **Payroll → Journal and PAYE** used to show Hive's own fourteen-column summary

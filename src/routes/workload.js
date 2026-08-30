@@ -1,9 +1,13 @@
 import { json } from '../lib/http.js';
 import { allows } from '../lib/permissions.js';
-import { leaveBalance, loadDataset, onRota } from '../lib/attendance.js';
+import { computeRange, leaveBalance, loadDataset, onRota } from '../lib/attendance.js';
 import {
-  assessPerson, limitsFrom, restFindings, strainScore,
+  assessPerson, limitsFrom, restFindings, shiftsInWindow, strainScore,
 } from '../lib/workload.js';
+import {
+  analyseCost, analyseRisk, analyseShape, analyseTime, previousWindow,
+} from '../lib/analytics.js';
+import { costingFor } from './pay.js';
 import { addDays, diffDays, isDay, todayIn } from '../util/dates.js';
 
 /**
@@ -163,4 +167,136 @@ export async function rotaWarnings(ctx) {
   }
 
   return json({ from, to, rows });
+}
+
+/**
+ * The workforce, measured four ways.
+ *
+ * The table above this answers "who is being worked too hard". This answers
+ * the four questions a hotel asks once it has stopped firefighting: what the
+ * labour costs and which part of that could be different, where the time goes
+ * against what was agreed, who is at risk and what liability sits behind them,
+ * and what shape the cover actually is across a day.
+ *
+ * MONEY ONLY FOR SOMEBODY WHO MAY SEE MONEY. The rest of it is a rota question
+ * and travels for anybody who may read the rota. The cost block is simply
+ * absent for everybody else rather than blanked out on the screen, because a
+ * screen that hides something it was sent is not hiding it.
+ *
+ * READ AGAINST THE WINDOW BEFORE IT, and as rates rather than totals. A wage
+ * bill that went up tells nobody anything; it goes up when trade goes up. Cost
+ * per worked hour moves only when something has actually changed.
+ */
+export async function analytics(ctx) {
+  const timezone = await timezoneOf(ctx.db);
+  const { from, to, clamped } = windowOf(ctx.url, timezone);
+  const span = diffDays(from, to) + 1;
+  const onlyDepartment = ctx.url.searchParams.get('department') || '';
+
+  const seesPay = allows('hr_pay', ctx.session.permissions);
+  const seesLeave = allows('att_reports', ctx.session.permissions);
+
+  const ds = await loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) });
+  const limits = limitsFrom(ds.settings);
+
+  const mine = ds.staff.filter((staff) => onRota(staff)
+    && (!onlyDepartment || (staff.department || '') === onlyDepartment));
+
+  const people = mine.map((staff) => assessPerson(ds, staff, from, to, limits));
+
+  // The rota as it stands, per person, for the shape of the cover. Kept from
+  // the same pass rather than worked out again: reading the roster twice for
+  // a quarter is the difference between a page and a wait.
+  const worked = new Map(mine.map((staff) => [staff.id, shiftsInWindow(ds, staff.id, from, to)]));
+
+  // What the clock recorded, which is a different question from what the rota
+  // asked. Absence and lateness come from here and from nowhere else.
+  const daysBy = new Map(mine.map((staff) => [
+    staff.id, computeRange(ds, staff.id, from, to),
+  ]));
+
+  const rows = people.map((person) => {
+    const staff = ds.staffById.get(person.staff.id);
+    const balance = seesLeave
+      ? leaveBalance({
+        staff,
+        records: [],
+        requests: ds.requestsByStaff.get(staff.id) ?? [],
+        settings: ds.settings,
+        asOf: to,
+        reasons: ds.reasonBy,
+      })
+      : null;
+    return {
+      ...person,
+      leave: balance,
+      score: strainScore(person, limits),
+    };
+  });
+
+  const time = analyseTime({ people, daysBy });
+  const shape = analyseShape({
+    ds,
+    worked,
+    from,
+    to,
+    joiners: mine.filter((s) => s.hired_on && s.hired_on >= from && s.hired_on <= to),
+    leavers: mine.filter((s) => s.left_on && s.left_on >= from && s.left_on <= to),
+  });
+
+  let cost = null;
+  let risk = analyseRisk({ rows });
+  if (seesPay) {
+    const back = previousWindow(from, to);
+    const [now, before] = await Promise.all([
+      costingFor(ctx, from, to),
+      costingFor(ctx, back.from, back.to),
+    ]);
+    const only = (rowsIn) => (onlyDepartment
+      ? rowsIn.filter((r) => (r.staff.department || '') === onlyDepartment)
+      : rowsIn);
+
+    const wasRows = only(before.rows);
+    cost = {
+      currency: now.currency,
+      missing: now.missing,
+      fromPayroll: now.fromPayroll,
+      ...analyseCost({
+        rows: only(now.rows),
+        span,
+        previous: {
+          from: back.from,
+          to: back.to,
+          people: wasRows.length,
+          ...analyseCost({ rows: wasRows, span }),
+        },
+      }),
+    };
+
+    // What a day of somebody's leave is worth, for the liability. Their own
+    // rate, not an average: a manager's untaken fortnight is not worth what a
+    // porter's is, and averaging them is how a liability comes out wrong in
+    // whichever direction the payroll happens to be shaped.
+    const dayRateBy = new Map(now.rows
+      .filter((r) => Number(r.cost?.perDay) > 0)
+      .map((r) => [r.staff.id, Number(r.cost.perDay)]));
+    risk = analyseRisk({ rows, dayRateBy });
+  }
+
+  return json({
+    from,
+    to,
+    span,
+    clamped,
+    maxSpan: MAX_SPAN,
+    seesPay,
+    seesLeave,
+    departments: [...new Set(ds.staff.filter(onRota)
+      .map((s) => s.department).filter(Boolean))].sort(),
+    department: onlyDepartment || null,
+    cost,
+    time,
+    risk,
+    shape,
+  });
 }

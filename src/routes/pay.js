@@ -118,6 +118,18 @@ export async function labourCost(ctx) {
   const today = todayIn(timezone);
   const from = isDay(ctx.url.searchParams.get('from')) ? ctx.url.searchParams.get('from') : today;
   const to = isDay(ctx.url.searchParams.get('to')) ? ctx.url.searchParams.get('to') : addDays(from, 13);
+  return json(await costingFor(ctx, from, to));
+}
+
+/**
+ * The same reading, as a value rather than a response.
+ *
+ * The analytics screen needs this window and the one before it, and a route
+ * that can only answer over HTTP would mean asking the app to fetch from
+ * itself. Everything of substance lives here; labourCost is the address it
+ * answers on.
+ */
+export async function costingFor(ctx, from, to) {
   const span = diffDays(from, to) + 1;
 
   const [ds, payRows, profiles, allowances, rateRow] = await Promise.all([
@@ -252,7 +264,7 @@ export async function labourCost(ctx) {
     hours: acc.hours + r.hours,
   }), { fixed: 0, variable: 0, premium: 0, total: 0, hours: 0 });
 
-  return json({
+  return {
     from,
     to,
     span,
@@ -285,5 +297,5 @@ export async function labourCost(ctx) {
       perHour: totals.hours ? round(totals.total / totals.hours) : 0,
     },
     rates: { overtimeMultiplier, holidayMultiplier },
-  });
+  };
 }

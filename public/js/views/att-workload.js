@@ -1,9 +1,10 @@
 import { api } from '../api.js';
 import {
-  daysApart, fmtDayShort, fmtNum, h, money, monthOf, mount, shiftDay, shiftMonth, todayISO,
+  daysApart, fmtDayShort, fmtNum, h, monthOf, mount, shiftDay, shiftMonth, todayISO,
 } from '../util.js';
 import { card, emptyState } from './components.js';
-import { can, navigate, replaceParams } from '../app.js';
+import { analyticsSection } from './att-analytics.js';
+import { navigate, replaceParams } from '../app.js';
 
 /**
  * How the rota is treating people.
@@ -72,11 +73,14 @@ export async function renderAttWorkload(params) {
   const dir = params.dir === 'asc' ? 'asc' : 'desc';
   const only = ['over', 'quiet', 'sundays', 'all'].includes(params.only) ? params.only : 'all';
 
-  const [data, cost] = await Promise.all([
+  const [data, deeper] = await Promise.all([
     api.attWorkload({ from, to, ...(params.department ? { department: params.department } : {}) }),
-    // Only for somebody who may see pay at all, and never allowed to stop the
-    // rest of the screen loading.
-    can('hr_pay') ? api.attLabourCost({ from, to }).catch(() => null) : Promise.resolve(null),
+    // The four measured views under the table. Heavier than the rest of the
+    // screen, so a failure here leaves the table standing rather than taking
+    // the page down with it. The money inside it is left out by the route for
+    // anybody who may not see pay, rather than blanked on the screen.
+    api.attAnalytics({ from, to, ...(params.department ? { department: params.department } : {}) })
+      .catch(() => null),
   ]);
 
   // What came back, which is not always what was asked for: a range longer
@@ -213,7 +217,10 @@ export async function renderAttWorkload(params) {
       : emptyState('Nobody to look at',
         'No active staff in this window — or none in the department chosen.'),
 
-    cost ? costCard(cost) : null,
+    // The old cost card said the same thing in a weaker way and had to be
+    // reconciled with the one below it. Its one unique reading, the split
+    // between what a rota can move and what it cannot, is in there now.
+    deeper ? analyticsSection(deeper) : null,
     limitsCard(data.limits),
   );
 
@@ -407,86 +414,6 @@ function loadBar(hours, allowance, scale, worst, figures) {
     spill ? h('span.pill.bad.wl-over-pill', `+${spill}`) : null));
 }
 
-/**
- * What the fortnight costs, and which part of it the rota can change.
- *
- * Split on purpose. A monthly salary does not move because somebody worked a
- * sixth day, so a single total reacts to the rota in ways the bank balance
- * never will — and a planner trying to save money ends up cutting the shifts
- * that cost nothing while the overtime carries on.
- */
-function costCard(cost) {
-  const m = (n) => money(n, cost.currency);
-
-  return card('What this costs', {
-    note: `${fmtDayShort(cost.from)} – ${fmtDayShort(cost.to)}`,
-    wide: true,
-  },
-    h('div.grid.grid-4', { style: { marginBottom: '.8rem' } },
-      h('div.stat',
-        h('div.stat-label', 'Wage bill'),
-        h('div.stat-value', m(cost.totals.total)),
-        h('div.stat-sub', `${fmtNum(cost.totals.hours, 0)} h · ${m(cost.totals.perHour)} an hour`)),
-      h('div.stat',
-        h('div.stat-label', 'Fixed'),
-        h('div.stat-value', m(cost.totals.fixed)),
-        h('div.stat-sub', 'salaries — the rota cannot move this')),
-      h('div.stat',
-        h('div.stat-label', 'The rota’s doing'),
-        h('div.stat-value', m(cost.totals.variable)),
-        h('div.stat-sub', 'daily and hourly staff')),
-      h('div.stat',
-        h('div.stat-label', 'Overtime and holidays'),
-        h('div.stat-value', m(cost.totals.premium)),
-        h('div.stat-sub', `at ${cost.rates.overtimeMultiplier}× and ${cost.rates.holidayMultiplier}×`)),
-    ),
-
-    // Where the figures came from. Over a window in the past, today's payroll
-    // and what somebody was actually on then are not the same thing, and the
-    // difference is worth a line rather than an assumption.
-    cost.fromPayroll
-      ? h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
-        cost.fromPayroll === cost.rows.length
-          ? 'Worked out from what the payroll pays today, including the property\u2019s own '
-            + 'pension contribution. Nobody has a dated rate on their record, so a period in '
-            + 'the past is priced at today\u2019s salaries rather than at the ones in force '
-            + 'at the time.'
-          : `${cost.fromPayroll} of these come from what the payroll pays today rather than `
-            + 'from a rate dated to the period.')
-      : null,
-
-    // Named, not counted. Until every one of these has a rate the total above
-    // is an understatement rather than an answer, and a count sends somebody
-    // hunting where a list sends them straight there.
-    cost.missing.length
-      ? h('div.alert.warn',
-        h('span.alert-icon', '⚠️'),
-        h('div',
-          h('div.alert-title',
-            `${cost.missing.length} ${cost.missing.length === 1 ? 'person has' : 'people have'} no rate recorded`),
-          h('div.alert-detail',
-            `${cost.missing.map((p) => p.name).join(', ')}. `
-            + 'They are left out of every figure above rather than counted as free.')))
-      : null,
-
-    cost.departments.length
-      ? h('div.table-wrap', h('table',
-        h('thead', h('tr',
-          h('th', 'Department'), h('th.num', 'People'), h('th.num', 'Hours'),
-          h('th.num', 'Fixed'), h('th.num', 'Rota'), h('th.num', 'Premium'), h('th.num', 'Total'),
-        )),
-        h('tbody', cost.departments.map((d) => h('tr',
-          h('td', d.department),
-          h('td.num', String(d.people)),
-          h('td.num', fmtNum(d.hours, 0)),
-          h('td.num', m(d.fixed)),
-          h('td.num', m(d.variable)),
-          h('td.num', d.premium ? m(d.premium) : h('span.muted', '—')),
-          h('td.num', h('strong', m(d.total))),
-        )))))
-      : null,
-  );
-}
 
 /** What the app is measuring against, said plainly and in one place. */
 function limitsCard(limits) {

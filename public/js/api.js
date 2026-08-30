@@ -203,6 +203,7 @@ export const api = {
   hrSetStaffPay: (id, body) => request(`/api/hr/staff/${id}/pay`, { method: 'POST', body }),
   hrRemoveStaffPay: (id, rateId) => request(`/api/hr/staff/${id}/pay/${rateId}`, { method: 'DELETE' }),
   attLabourCost: (params) => request(`/api/att/labour-cost?${new URLSearchParams(params)}`),
+  attAnalytics: (q) => request(`/api/att/workload/analytics?${new URLSearchParams(q)}`),
   attWorkload: (params) => request(`/api/att/workload?${new URLSearchParams(params)}`),
   attWorkloadRota: (from, to) => request(`/api/att/workload/rota?${new URLSearchParams({ from, to })}`),
   attSaveRoster: (body) => request('/api/att/roster', { method: 'POST', body }),

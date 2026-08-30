@@ -276,6 +276,7 @@ export const ROUTES = [
   ['POST', '/api/payroll/close', 'hr_pay', payroll.closeRun],
   ['POST', '/api/payroll/reopen', 'hr_pay', payroll.reopenRun],
   ['GET', '/api/att/workload/rota', ['att_rota', 'att_reports'], workload.rotaWarnings],
+  ['GET', '/api/att/workload/analytics', ['att_rota', 'att_reports'], workload.analytics],
   ['POST', '/api/att/roster', 'att_rota', att.saveRoster],
   ['POST', '/api/att/roster/copy', 'att_rota', att.copyRoster],
   // Taking a period back off. Its own route rather than a flag on the save,

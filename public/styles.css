@@ -4903,3 +4903,92 @@ body.rota-dragging .pos-add { pointer-events: none; }
 .pay-people-head::-webkit-details-marker { display: none; }
 .pay-people-head > span::before { content: '\25be'; margin-right: .4rem; color: var(--text-faint); }
 .pay-people:not([open]) .pay-people-head > span::before { content: '\25b8'; }
+
+/* --------------------------------------------------------------------------
+   Workload analytics
+   --------------------------------------------------------------------------
+   One measure, one fill, one track. Colour is state — fine, watch, over — and
+   never identity, because there is only ever one series in any of these. */
+
+.an { display: grid; gap: 1rem; }
+.an-lede { font-size: .88rem; margin: 0 0 .9rem; max-width: 68ch; }
+.an-note { font-size: .82rem; margin: 0 0 .6rem; max-width: 62ch; }
+.an-tiles { margin-bottom: 1rem; }
+.an-head {
+  font-size: .8rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-faint); margin: 1.1rem 0 .3rem;
+}
+.an-head:first-child { margin-top: 0; }
+
+/* Two columns where there is room, because the bars and the names beside them
+   are read together. One column on anything narrower: a chart squeezed to
+   half a handset is a chart nobody reads. */
+.an-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; margin-bottom: 1rem; }
+/* Where one side is a ranked list of a dozen and the other is a handful of
+   lines, an even split leaves half the card empty. */
+.an-split-lead { grid-template-columns: 1.5fr 1fr; }
+@media (max-width: 900px) { .an-split { grid-template-columns: 1fr; gap: 1rem; } }
+
+.an-bars { display: grid; gap: .4rem; }
+.an-bar {
+  display: grid; grid-template-columns: minmax(6rem, 9rem) 1fr auto;
+  align-items: center; gap: .6rem; font-size: .85rem;
+}
+.an-bar-label { overflow-wrap: anywhere; }
+.an-bar-label small { display: block; font-size: .72rem; }
+.an-bar-track {
+  height: .55rem; border-radius: 999px; background: var(--surface-2, #eef1f5);
+  overflow: hidden; min-width: 2rem;
+}
+.an-bar-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+.an-bar-fill.is-watch { background: var(--warn, #b45309); }
+.an-bar-fill.is-over { background: var(--bad, #b91c1c); }
+.an-bar-figure { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+
+.an-table { width: 100%; font-size: .85rem; }
+.an-table th { white-space: nowrap; }
+.an-table td, .an-table th { padding: .35rem .5rem; }
+.an-table .num { font-variant-numeric: tabular-nums; }
+
+.an-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+.an-list li {
+  display: flex; justify-content: space-between; gap: .8rem; font-size: .85rem;
+  padding: .35rem 0; border-bottom: 1px solid var(--border);
+}
+.an-list li:last-child { border-bottom: 0; }
+
+/* The day as a curve. Twenty-four columns of equal width, each one a share of
+   the fullest hour, because the question is the shape rather than the count. */
+.an-hours {
+  display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px;
+  align-items: end; margin-bottom: .4rem;
+}
+.an-hour { display: grid; gap: .2rem; }
+.an-hour-track {
+  height: 5rem; display: flex; align-items: flex-end;
+  background: var(--surface-2, #eef1f5); border-radius: 3px;
+}
+.an-hour-fill {
+  width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 1px;
+}
+.an-hour-label {
+  font-size: .62rem; color: var(--text-faint); text-align: center;
+  font-variant-numeric: tabular-nums;
+  /* Every column keeps a label row whether it has a label in it or not. An
+     empty one collapses to no height, and with the columns bottom-aligned
+     that lifts the unlabelled tracks clear of the labelled ones. */
+  min-height: 1em; line-height: 1;
+}
+
+@media (max-width: 640px) {
+  .an-bar { grid-template-columns: minmax(4.5rem, 7rem) 1fr auto; font-size: .8rem; }
+  .an-hour-track { height: 3.5rem; }
+  .an-hour-label { font-size: .55rem; }
+}
+
+/* A table of figures has nowrap cells, so its content is wider than a phone
+   and the wrapper has to be the thing that scrolls. Without a min-width of
+   nought a wrapper inside any grid or flex track grows to fit its content
+   instead, and takes the whole page sideways with it. */
+.table-wrap { min-width: 0; max-width: 100%; }
+.an, .an > .card, .an-split > * { min-width: 0; }
