@@ -67,6 +67,12 @@ export function card(title, { note, actions, wide, id, cls } = {}, ...children) 
  * is the sort of small wrongness that makes somebody stop trusting the rest of
  * the screen.
  *
+ * `groupOrder` is the order the bands appear in, as a list of labels.
+ * Alphabetical is right for a list of departments and wrong for anything that
+ * has an order of its own: a recruitment pipeline reading "Not this time,
+ * Shortlisted" is sorted correctly and reads as nonsense. Anything not named
+ * falls to the end, alphabetically, so a new group cannot vanish.
+ *
  * `fold` makes each band a lid. Opt-in, because folding is only worth the
  * click on a list long enough to lose your place in: on a screen with three
  * groups of four it is a control that costs more than it saves. Pass
@@ -76,7 +82,7 @@ export function card(title, { note, actions, wide, id, cls } = {}, ...children) 
  */
 export function table(columns, rows, {
   rowClass = null, empty = 'No data yet.', groupBy = null, groupSummary = null,
-  groupNoun = ['person', 'people'], fold = false,
+  groupNoun = ['person', 'people'], fold = false, groupOrder = null,
 } = {}) {
   if (!rows?.length) return h('div.empty', h('p', empty));
 
@@ -94,13 +100,14 @@ export function table(columns, rows, {
       h('thead', h('tr', columns.map((c) =>
         h(`th${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, c.label)))),
       h('tbody', groupBy
-        ? groupedBody(rows, groupBy, groupSummary, columns.length, rowEl, groupNoun, fold)
+        ? groupedBody(rows, groupBy, groupSummary, columns.length, rowEl, groupNoun, fold,
+          groupOrder)
         : rows.map(rowEl)),
     ),
   );
 }
 
-function groupedBody(rows, groupBy, groupSummary, span, rowEl, noun, fold) {
+function groupedBody(rows, groupBy, groupSummary, span, rowEl, noun, fold, groupOrder) {
   const groups = new Map();
   for (const row of rows) {
     const label = groupBy(row) || UNGROUPED;
@@ -111,7 +118,7 @@ function groupedBody(rows, groupBy, groupSummary, span, rowEl, noun, fold) {
   const out = [];
   const shut = fold === 'closed';
 
-  for (const label of sortGroups([...groups.keys()])) {
+  for (const label of sortGroups([...groups.keys()], groupOrder)) {
     const group = groups.get(label);
     const body = group.map(rowEl);
 
@@ -153,11 +160,22 @@ function groupedBody(rows, groupBy, groupSummary, span, rowEl, noun, fold) {
 
 const UNGROUPED = 'No department';
 
-/** Alphabetical, but whoever has no department sits at the bottom. */
-function sortGroups(labels) {
+/**
+ * Alphabetical, unless the caller has said otherwise, and whoever has no
+ * department sits at the bottom either way.
+ */
+function sortGroups(labels, order = null) {
+  const rank = order
+    ? (label) => { const at = order.indexOf(label); return at === -1 ? order.length : at; }
+    : null;
+
   return labels.sort((a, b) => {
     if (a === UNGROUPED) return 1;
     if (b === UNGROUPED) return -1;
+    if (rank) {
+      const by = rank(a) - rank(b);
+      if (by) return by;
+    }
     return a.localeCompare(b);
   });
 }

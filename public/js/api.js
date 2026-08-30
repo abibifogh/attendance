@@ -147,6 +147,26 @@ export const api = {
   logout: () => request('/api/auth/logout', { method: 'POST' }),
   me: () => request('/api/auth/me'),
 
+  // ----------------------------------------------------------- recruitment --
+  recBoard: () => request('/api/rec'),
+  recCreateRole: (body) => request('/api/rec/roles', { method: 'POST', body }),
+  recUpdateRole: (id, body) => request(`/api/rec/roles/${id}`, { method: 'POST', body }),
+  recAddCandidate: (body) => request('/api/rec/candidates', { method: 'POST', body }),
+  recReadCandidates: (text) => request('/api/rec/candidates/read', { method: 'POST', body: { text } }),
+  recImportCandidates: (body) => request('/api/rec/candidates/import', { method: 'POST', body }),
+  recCandidate: (id) => request(`/api/rec/candidates/${id}`),
+  recUpdateCandidate: (id, body) => request(`/api/rec/candidates/${id}`, { method: 'POST', body }),
+  recMoveCandidate: (id, body) => request(`/api/rec/candidates/${id}/stage`, { method: 'POST', body }),
+  recScoreCandidate: (id, body) => request(`/api/rec/candidates/${id}/score`, { method: 'POST', body }),
+  recAddFile: (id, body) => request(`/api/rec/candidates/${id}/files`, { method: 'POST', body }),
+  recRemoveFile: (id, fileId) => request(`/api/rec/candidates/${id}/files/${fileId}/remove`, { method: 'POST' }),
+  recInvite: (id, body) => request(`/api/rec/candidates/${id}/invite`, { method: 'POST', body }),
+  recRevokeInvite: (id) => request(`/api/rec/invites/${id}/revoke`, { method: 'POST' }),
+  recHire: (id, body) => request(`/api/rec/candidates/${id}/hire`, { method: 'POST', body }),
+  recAddSlots: (body) => request('/api/rec/slots', { method: 'POST', body }),
+  recRemoveSlot: (id) => request(`/api/rec/slots/${id}/remove`, { method: 'POST' }),
+  recBookSlot: (id, candidateId) => request(`/api/rec/slots/${id}/book`, { method: 'POST', body: { candidateId } }),
+
   // ------------------------------------------------------------ attendance --
   attBootstrap: () => request('/api/att/bootstrap'),
   attBirthdayManage: () => request('/api/att/birthdays/manage'),

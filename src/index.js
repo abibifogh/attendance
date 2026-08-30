@@ -16,6 +16,8 @@ import * as attSetup from './routes/attendance-setup.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
 import * as invite from './routes/invite.js';
+import * as rec from './routes/recruitment.js';
+import * as hiring from './routes/hiring.js';
 import * as corr from './routes/correspondence.js';
 import * as signoff from './routes/signoff.js';
 import * as workload from './routes/workload.js';
@@ -402,6 +404,44 @@ export const ROUTES = [
   // ------------------------------------------------- somebody with a link --
   // No session reaches any of these. The token in the path is the whole of the
   // caller's authority and it can only ever act on the one person the link was
+  // --------------------------------------------------------- recruitment --
+  // The half of somebody's history that happens before People starts. Two
+  // permissions: reading the pipeline, and running it. Taking somebody on is
+  // guarded a third time inside the handler, because that one puts a person on
+  // the property's books.
+  ['GET', '/api/rec', 'rec_view', rec.board],
+  ['POST', '/api/rec/roles', 'rec_manage', rec.createRole],
+  ['POST', '/api/rec/roles/:id', 'rec_manage', rec.updateRole],
+  ['POST', '/api/rec/candidates', 'rec_manage', rec.addCandidate],
+  // A pasted list, read and shown before anything is written. It creates
+  // candidates and nothing else — nobody reaches the books this way.
+  ['POST', '/api/rec/candidates/read', 'rec_manage', rec.readCandidates],
+  ['POST', '/api/rec/candidates/import', 'rec_manage', rec.applyCandidates],
+  ['GET', '/api/rec/candidates/:id', 'rec_view', rec.candidate],
+  ['POST', '/api/rec/candidates/:id', 'rec_manage', rec.updateCandidate],
+  ['POST', '/api/rec/candidates/:id/stage', 'rec_manage', rec.moveCandidate],
+  // Whoever sat in the interview writes what they thought, which is not the
+  // same permission as moving somebody along.
+  ['POST', '/api/rec/candidates/:id/score', 'rec_view', rec.scoreCandidate],
+  ['POST', '/api/rec/candidates/:id/files', 'rec_manage', rec.addFile],
+  ['GET', '/api/rec/candidates/:id/files/:fileId', 'rec_view', rec.readFile],
+  ['POST', '/api/rec/candidates/:id/files/:fileId/remove', 'rec_manage', rec.removeFile],
+  ['POST', '/api/rec/candidates/:id/invite', 'rec_manage', rec.inviteCandidate],
+  ['POST', '/api/rec/invites/:id/revoke', 'rec_manage', rec.revokeInvite],
+  ['POST', '/api/rec/candidates/:id/hire', 'rec_manage', rec.hire],
+  ['POST', '/api/rec/slots', 'rec_manage', rec.addSlots],
+  ['POST', '/api/rec/slots/:id/remove', 'rec_manage', rec.removeSlot],
+  ['POST', '/api/rec/slots/:id/book', 'rec_manage', rec.bookSlot],
+
+  // A candidate's own link. No account, no session, and the token in every
+  // path — the same shape as an employee's, for the same reasons.
+  ['GET', '/api/c/:token', 'public', hiring.head],
+  ['POST', '/api/c/:token/open', 'public', hiring.open],
+  ['POST', '/api/c/:token/choose', 'public', hiring.choose],
+  ['POST', '/api/c/:token/release', 'public', hiring.release],
+  ['POST', '/api/c/:token/details', 'public', hiring.details],
+  ['POST', '/api/c/:token/cv', 'public', hiring.file],
+
   // made for — see the note at the top of routes/invite.js.
   ['GET', '/api/i/:token', 'public', invite.inviteHead],
   ['POST', '/api/i/:token/open', 'public', invite.inviteOpen],
@@ -602,6 +642,13 @@ export default {
     // why the address must not be allowed to change on the way.
     if (url.pathname.startsWith('/i/')) {
       return servePage(env, url, request, '/invite.html');
+    }
+
+    // And the same for somebody applying for a job. A separate page again:
+    // this one is opened by people who do not work here yet, and the less of
+    // the system it can reach the better.
+    if (url.pathname.startsWith('/c/')) {
+      return servePage(env, url, request, '/hiring.html');
     }
 
     // The same idea for a letter sent out for signature. A separate page from

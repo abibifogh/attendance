@@ -25,6 +25,8 @@ import { renderAttSignoff } from './views/att-signoff.js';
 import { renderAttSetup } from './views/att-setup.js';
 import { renderAdmin } from './views/admin.js';
 import { renderPeople } from './views/people.js';
+import { renderRec } from './views/rec.js';
+import { renderRecCandidate } from './views/rec-candidate.js';
 import { renderPerson } from './views/person.js';
 import { renderPeopleTemplates } from './views/people-templates.js';
 import { renderPeopleForm } from './views/people-form.js';
@@ -85,6 +87,8 @@ const ROUTES = [
   { path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave, live: ['leave', 'rota'] },
   { path: 'signoff', label: 'Sign-off', permission: 'att_signoff', render: renderAttSignoff, live: ['attendance', 'rota', 'leave'] },
   { path: 'people', label: 'People', permission: 'hr_view', render: renderPeople, live: ['people'] },
+  // Before People starts: how somebody got onto the books at all.
+  { path: 'rec', label: 'Recruitment', permission: 'rec_view', render: renderRec, live: ['people'] },
   // Its own permission, the same one as what anybody earns.
   { path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances, live: ['pay'] },
   { path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
@@ -100,6 +104,7 @@ const ROUTES = [
   // Reached by clicking a name rather than from the menu.
   { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, live: ['attendance', 'rota', 'leave'], hidden: true },
   { path: 'person', label: 'Record', permission: 'hr_view', render: renderPerson, live: ['people'], hidden: true },
+  { path: 'rec-candidate', label: 'Candidate', permission: 'rec_view', render: renderRecCandidate, live: ['people'], hidden: true },
   { path: 'people-templates', label: 'Templates', permission: 'hr_manage', render: renderPeopleTemplates, hidden: true },
   { path: 'people-form', label: 'What to ask for', permission: 'hr_manage', render: renderPeopleForm, hidden: true },
   { path: 'contract', label: 'Contract', permission: 'hr_view', render: renderContract, live: ['people'], hidden: true },

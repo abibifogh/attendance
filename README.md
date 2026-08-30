@@ -1307,6 +1307,123 @@ screen every morning until everybody learned to ignore all of them.
 
 ---
 
+## Recruitment — before somebody is on the books
+
+Everything else in this app assumes a person is already on the books. How they
+got there was a folder of CVs, a WhatsApp group and somebody's memory of who
+was coming in on Thursday.
+
+**Recruitment** is that part: who applied, who is worth seeing, when they came
+in, what the interviewer thought, and who was taken on. It ends where People
+begins, and the join between the two is one deliberate press.
+
+Three things on one screen, because they are read together: the **vacancies**
+being filled, the **pipeline** of everybody in the running, and the **interview
+diary**. Nobody can answer "are we going to fill the housekeeping job" if those
+live on three tabs.
+
+### The candidate picks the time
+
+This is the part worth building properly. A time somebody is *told* to attend
+is a time half of them cannot make, and the phone calls that follow are the
+whole cost of arranging interviews at a property this size.
+
+So the property publishes when it is free and the person chooses.
+
+**Recruitment → Interviews → Publish times.** You say "Tuesday, ten till one,
+half an hour each" and it cuts the morning into slots. A slot that would not
+fit is not published: a half-hour interview starting at 12:45 when the morning
+ends at one o'clock is fifteen minutes, which is not an interview. Publishing
+the same morning twice adds only what was missing rather than doubling it.
+
+Then **make the candidate a link**. They open it on their phone, see the times
+grouped by day, and tap one. You are told the moment they do. They can change
+their mind or give the time back, which frees it for somebody else rather than
+leaving you with an empty chair and no warning.
+
+> **Two people can never take the same half hour.** The claim is one
+> conditional update, shared by the candidate's own page and by the office
+> booking a time over the phone. Two candidates pressing at the same moment:
+> one gets it, the other is told plainly and shown the list again rather than a
+> confirmation that is not real.
+
+A candidate is only ever offered times published for **their own vacancy**, or
+for none, and never a time that has already gone. A link sent on Monday and
+opened on Friday must not offer Tuesday morning, because somebody will pick it
+and turn up.
+
+Their page is told the property, the job, the message you wrote and the times
+that are free. It is not told who else applied, who is on the panel, or
+anything anybody has written about them.
+
+### Nothing is emailed from here
+
+You get a link and a message written out ready to paste, and you send it
+however you already talk to that person. There is a WhatsApp button beside it.
+An app that insisted on sending its own email would be an app that needs an
+address for somebody who applied by walking in with a printed CV.
+
+The link is the same shape as an employee's: shown once, stored only as a hash,
+expiring, cancellable, with an optional four digits you tell them out loud. It
+lasts ten days by default rather than twenty-one, because it carries a diary
+and a diary three weeks old offers times that have been and gone.
+
+### Getting people into the pipeline
+
+One at a time, or **Paste a list** — a name per line, with a number after a
+comma if you have one, which is what a stack of applications or a list from an
+agency actually looks like. It reads the list, shows what it found with a tick
+on each line, marks anybody already in the pipeline, and writes nothing until
+you press the second button.
+
+It creates candidates and only candidates. Nobody reaches the property's books
+this way.
+
+### Why somebody was not taken on
+
+Turning somebody down asks for a reason in a line and keeps it. That is the
+whole value of a recruitment record afterwards: the question anybody asks a
+year later is why, and "nobody can remember" is the answer that costs a
+property a claim.
+
+Every candidate has a trail — added, shortlisted, link made, link opened, time
+taken, scored, offered, taken on — with who did it and when. Nothing on it can
+be edited or removed.
+
+And nothing is ever deleted. Somebody turned down in March is somebody to ring
+in June, which is the single most useful thing a small property's hiring
+records can do for it.
+
+### Taking somebody on
+
+The one door between a candidate and the books, and it is deliberately heavy.
+
+It appears once somebody has actually been **offered** the job. It makes their
+staff record, carries across the phone number and email the pipeline already
+holds, and moves their CV onto the record so it is filed where the rest of
+their paper will be. Their interview time goes back into the diary. The
+vacancy closes itself if that was the last person wanted. Whoever keeps the
+records is told, because the next three things that have to happen are theirs.
+
+**The employee number is typed in by hand** and has to match what is enrolled
+on the terminal exactly. It is the join between a punch and a person; there is
+no version of guessing it that is safe. Punches already sitting under that
+number become theirs, so somebody enrolled last week and starting this week
+does not lose the days in between.
+
+**It needs the attendance setup permission as well as recruitment.** Running
+the pipeline is a job a manager holds; putting somebody on the property's books
+is what setup guards, and a side door into it would make that permission mean
+less everywhere else. The screen says so rather than hiding the button —
+"ask an administrator" is a useful sentence and a missing control is not.
+
+**It does not issue the contract.** That is the next press, on their new
+record, through the templates and the signing that already exist. A contract
+from a hire and a contract from anywhere else have to be the same document with
+the same trail, or the trail is worth nothing.
+
+---
+
 ## People — the records behind the names
 
 Attendance knows somebody as an employee number and a name, because that is all
@@ -2120,6 +2237,8 @@ bank account:
 | **Attendance setup** | Staff, shifts, absence reasons, holidays, terminals, rules |
 | **Employee records** | Read personal details, contacts and contracts. Private numbers stay masked |
 | **Manage employee records** | Edit records, send links, accept what people send in, issue and sign contracts |
+| **Recruitment** | See the vacancies, who has applied, the interview diary and what was decided. Changes nothing |
+| **Run the recruitment** | Open vacancies, add candidates, publish interview times, make a candidate's link, score an interview, move people along. Taking somebody on needs attendance setup as well |
 | **Letters** | Read the correspondence register |
 | **Write letters** | Draft letters, send them for signature, keep the address book |
 | **Sign for the property** | Sign a letter and apply the company stamp |

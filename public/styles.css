@@ -5089,3 +5089,192 @@ body.rota-dragging .pos-add { pointer-events: none; }
 /* On paper there is nothing to scroll and a shadow down the margin is ink. */
 @media print { .table-wrap { background: none; } }
 .an, .an > .card, .an-split > * { min-width: 0; }
+
+/* ============================================================ recruitment ==
+   The half of somebody's history that happens before People. Two shapes: a
+   pipeline that folds by stage, and a diary read as days.
+   ========================================================================= */
+
+/* Where somebody is, as a track rather than a word. Four steps and no more:
+   the two endings are not on it, because an ending is not further along. */
+.rec-track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem 1.2rem;
+  margin-bottom: .9rem;
+}
+.rec-track-step {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .82rem;
+  color: var(--text-faint);
+}
+.rec-track-dot {
+  display: grid;
+  place-items: center;
+  width: 1.4rem; height: 1.4rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  font-size: .72rem;
+  font-weight: 700;
+}
+.rec-track-step.is-done { color: var(--text-dim); }
+.rec-track-step.is-done .rec-track-dot {
+  background: var(--good); border-color: var(--good); color: #fff;
+}
+.rec-track-step.is-here { color: var(--text); font-weight: 600; }
+.rec-track-step.is-here .rec-track-dot {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+
+.rec-stage-say { margin: 0 0 .8rem; line-height: 1.4; }
+.rec-stage-say small { font-weight: 400; }
+
+/* The stage pill. Colour carries the same information as the word, never
+   instead of it. */
+.pill.rec-stage { background: var(--surface-2); color: var(--text-dim); }
+.pill.rec-stage.is-shortlisted { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); color: var(--accent); }
+.pill.rec-stage.is-interview { background: color-mix(in srgb, var(--c3, var(--accent)) 18%, var(--surface)); }
+.pill.rec-stage.is-offer { background: color-mix(in srgb, var(--warn) 20%, var(--surface)); color: var(--warn); }
+.pill.rec-stage.is-hired { background: color-mix(in srgb, var(--good) 18%, var(--surface)); color: var(--good); }
+.pill.rec-stage.is-out { opacity: .7; }
+
+/* How a vacancy is doing, said in a sentence rather than four counters. */
+.rec-going {
+  padding: .5rem .7rem;
+  border-radius: var(--radius-sm);
+  font-size: .88rem;
+  font-weight: 600;
+  margin-bottom: .7rem;
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+.rec-going.tone-good { background: color-mix(in srgb, var(--good) 12%, var(--surface)); color: var(--good); }
+.rec-going.tone-warn { background: color-mix(in srgb, var(--warn) 14%, var(--surface)); color: var(--warn); }
+.rec-going.tone-bad  { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); color: var(--bad); }
+.rec-going.tone-off  { opacity: .65; }
+
+.rec-facts { display: grid; gap: .2rem; margin: 0 0 .7rem; }
+.rec-facts > div { display: flex; gap: .5rem; font-size: .86rem; }
+.rec-facts dt { color: var(--text-faint); min-width: 6rem; }
+.rec-facts dd { margin: 0; }
+.rec-detail { font-size: .86rem; margin: .7rem 0 0; }
+
+/* The diary. Days down the page, times across, because that is how a diary is
+   read and because a table of forty rows is not one. */
+.rec-diary { display: grid; gap: 1.2rem; }
+.rec-diary-day h3 {
+  margin: 0 0 .5rem;
+  font-size: .78rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: .25rem;
+}
+.rec-slots {
+  display: grid;
+  gap: .5rem;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+}
+.rec-slot {
+  position: relative;
+  padding: .55rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  display: grid;
+  gap: .15rem;
+}
+.rec-slot.is-taken {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+.rec-slot-time { display: flex; align-items: baseline; gap: .35rem; }
+.rec-slot-time strong { font-variant-numeric: tabular-nums; }
+.rec-slot-time small { color: var(--text-faint); }
+.rec-slot-free { font-size: .85rem; color: var(--text-faint); }
+.rec-slot-who { font-size: .88rem; font-weight: 600; display: grid; }
+.rec-slot-who small { font-weight: 400; }
+.rec-slot-meta { display: grid; }
+.rec-slot-meta small { font-size: .75rem; }
+.rec-slot-x {
+  position: absolute; top: .2rem; right: .2rem;
+  border: none; background: none; padding: .2rem .35rem;
+  color: var(--text-faint); font-size: .8rem; line-height: 1;
+  opacity: 0;
+}
+.rec-slot:hover .rec-slot-x, .rec-slot-x:focus-visible { opacity: 1; }
+@media (hover: none) { .rec-slot-x { opacity: .6; } }
+
+.rec-when { font-size: 1.05rem; margin: 0 0 .3rem; }
+
+.rec-scores { list-style: none; margin: 0; padding: 0; display: grid; gap: .8rem; }
+.rec-scores li { border-left: 2px solid var(--border); padding-left: .7rem; }
+.rec-scores p { margin: .25rem 0 0; font-size: .9rem; line-height: 1.45; }
+.rec-score-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.rec-rating { font-weight: 700; font-variant-numeric: tabular-nums; }
+.pill.rec-rec.is-yes { background: color-mix(in srgb, var(--good) 18%, var(--surface)); color: var(--good); }
+.pill.rec-rec.is-no  { background: color-mix(in srgb, var(--bad) 15%, var(--surface)); color: var(--bad); }
+
+/* The handover. Deliberately loud: it is the one control on the screen that
+   changes the property rather than the pipeline. */
+.rec-hire {
+  border-color: color-mix(in srgb, var(--good) 40%, var(--border));
+  background: color-mix(in srgb, var(--good) 5%, var(--surface));
+}
+.rec-next { margin: .5rem 0 .9rem; padding-left: 1.1rem; font-size: .88rem; color: var(--text-dim); }
+.rec-next li { margin-bottom: .2rem; }
+
+.rec-files { list-style: none; margin: 0 0 .8rem; padding: 0; display: grid; gap: .4rem; }
+.rec-files li { display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap; }
+.rec-files li a { font-weight: 600; }
+
+.rec-trail { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; }
+.rec-trail li {
+  border-left: 2px solid var(--border);
+  padding-left: .8rem;
+  font-size: .88rem;
+}
+.rec-trail-detail { color: var(--text-dim); }
+.rec-trail-who { margin-top: .1rem; }
+
+/* ---------------------------------------------------------------------------
+   The candidate's own page. A cheap phone, a slow connection, and somebody who
+   does not work here choosing a time.
+   ------------------------------------------------------------------------ */
+
+.hire-days { display: grid; gap: 1.1rem; margin-top: .8rem; }
+.hire-day h4 {
+  margin: 0 0 .45rem;
+  font-size: .78rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.hire-times {
+  display: grid;
+  gap: .5rem;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+}
+/* A big target. This is pressed with a thumb, once, and getting it wrong means
+   turning up on the wrong day. */
+.hire-time {
+  display: grid;
+  gap: .1rem;
+  padding: .7rem .6rem;
+  min-height: 3.6rem;
+  text-align: left;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.hire-time strong { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.hire-time small { font-size: .74rem; color: var(--text-faint); }
+.hire-time:hover { border-color: var(--accent); }
+.hire-time:active { transform: scale(.98); }
+
+.hire-when { font-size: 1.1rem; margin: .2rem 0 .4rem; line-height: 1.35; }
+.hire-sent { list-style: none; margin: 0 0 .7rem; padding: 0; display: grid; gap: .3rem; }
+.hire-sent li { display: flex; justify-content: space-between; gap: 1rem; font-size: .88rem; }

@@ -72,6 +72,19 @@ export const PERMISSIONS = [
       + 'administrator has to grant that separately, with an end date and a code',
   },
   {
+    key: 'rec_view',
+    label: 'Recruitment',
+    detail: 'See the vacancies, who has applied, the interview diary and what was decided. '
+      + 'Reads a candidate\u2019s CV and the scores. Changes nothing',
+  },
+  {
+    key: 'rec_manage',
+    label: 'Run the recruitment',
+    detail: 'Open vacancies, add candidates, publish interview times, make the link a candidate '
+      + 'picks a time on, score an interview and move people along. Taking somebody on is '
+      + 'separate: that puts them on the books, which needs attendance setup as well',
+  },
+  {
     key: 'corr_view',
     label: 'Letters',
     detail: 'Read the correspondence register and what has been sent',
@@ -131,10 +144,10 @@ export const ROLES = [
     key: 'manager',
     label: 'Manager',
     detail: 'Everything a supervisor does, plus the reports, the rota, approving leave, the '
-      + 'employee records and the letter register. Add "Sign for the property" to let them '
-      + 'sign and stamp letters.',
+      + 'employee records, recruitment and the letter register. Add "Sign for the property" to '
+      + 'let them sign and stamp letters. Taking somebody on stays with an administrator.',
     defaults: ['att_view', 'att_reports', 'att_manage', 'hr_view', 'hr_manage',
-      'corr_view', 'corr_write', 'lunch'],
+      'rec_view', 'rec_manage', 'corr_view', 'corr_write', 'lunch'],
   },
   {
     key: 'viewer',
@@ -214,13 +227,17 @@ export function effectivePermissions(user) {
   // And the same argument for the employee records: an administrator who could
   // not open them would be looking at the one screen that can grant them.
   if (user.role === 'admin') {
-    for (const key of ['hr_view', 'hr_manage', 'corr_view', 'corr_write', 'corr_sign']) {
+    for (const key of ['hr_view', 'hr_manage', 'rec_view', 'rec_manage',
+      'corr_view', 'corr_write', 'corr_sign']) {
       if (!list.includes(key)) list.push(key);
     }
   }
   // Managing records is strictly more than reading them, so holding the larger
   // permission holds the smaller one and no route has to name both.
   if (list.includes('hr_manage') && !list.includes('hr_view')) list.push('hr_view');
+  // Running the recruitment is strictly more than reading it, the same way
+  // managing records is more than reading them.
+  if (list.includes('rec_manage') && !list.includes('rec_view')) list.push('rec_view');
   // Writing a letter and signing one are separate on purpose — the point of
   // the split is that whoever drafts is not necessarily whoever signs — but
   // both of them have to be able to read the register.

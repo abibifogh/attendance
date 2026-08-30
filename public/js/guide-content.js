@@ -1597,6 +1597,90 @@ export const GUIDE = [
   },
 
   {
+    key: 'recruitment',
+    title: 'Recruitment',
+    permission: 'rec_view',
+    lede: 'From an application to a contract, and the candidate picks their own interview time.',
+    blocks: [
+      { p: 'Everything else in this app assumes somebody is already on the books. This is the '
+        + 'part before that: who applied, who is worth seeing, when they came in, what the '
+        + 'interviewer thought, and who was taken on.' },
+
+      { sub: 'How it runs' },
+      { steps: [
+        'Open a vacancy: what the job is, which department, how many you want.',
+        'Add the candidates, one at a time or by pasting a list of names.',
+        'Publish interview times: a day, a start and an end, and how long each one is.',
+        'Shortlist somebody, then make them a link and send it to them yourself.',
+        'They open it on their phone and pick a time. You are told when they do.',
+        'After the interview, write down what you thought while it is fresh.',
+        'Offer them the job, then take them on. That makes their staff record.',
+        'Their contract and details form go out from that record, on one link.',
+      ] },
+
+      { sub: 'The candidate chooses the time' },
+      { p: 'A time somebody is told to attend is a time half of them cannot make, and the phone '
+        + 'calls that follow are the whole cost of arranging interviews at a place this size. So '
+        + 'the property publishes when it is free, and the person picks.' },
+      { p: 'They can change their mind or give the time back, which frees it for somebody else '
+        + 'rather than leaving an empty chair. Two candidates can never take the same half hour, '
+        + 'and nor can a candidate and the office booking one over the phone.' },
+      { note: 'Their page shows the times, the job and whatever message you wrote. It never '
+        + 'shows who else applied, who is on the panel, or anything anybody has written about '
+        + 'them.' },
+
+      { sub: 'Nothing is emailed from here' },
+      { p: 'You get a link and a message written out ready to paste, and you send it however you '
+        + 'already talk to that person. There is a WhatsApp button beside it. An app that '
+        + 'insisted on sending its own email would be an app that needs an address for somebody '
+        + 'who applied by walking in with a printed CV.' },
+      { warn: 'The link is shown once. Only a fingerprint of it is stored, so a copy of the '
+        + 'database opens nothing, and a lost one is replaced rather than recovered. It lasts '
+        + 'ten days by default — shorter than a staff link, because it carries a diary and a '
+        + 'diary three weeks old offers times that have been and gone.' },
+
+      { sub: 'Why somebody was not taken on' },
+      { p: 'Turning somebody down asks for a reason in a line, and keeps it. That is the whole '
+        + 'value of a recruitment record afterwards: the question anybody asks a year later is '
+        + 'why, and "nobody can remember" is the answer that costs a property a claim.' },
+      { p: 'Nothing is ever deleted. Somebody turned down in March is somebody to ring in June, '
+        + 'which is the single most useful thing a small property\u2019s hiring records can do '
+        + 'for it.' },
+    ],
+  },
+
+  {
+    key: 'recruitment-hire',
+    title: 'Taking somebody on',
+    permission: 'rec_manage',
+    lede: 'The one door between a candidate and the property\u2019s books.',
+    blocks: [
+      { p: 'Everything else in recruitment moves rows around inside recruitment. Taking somebody '
+        + 'on makes a person: a staff record, their phone number and email carried across, and '
+        + 'their CV moved onto the record so it is filed where the rest of their paper will be.' },
+
+      { warn: 'It needs the attendance setup permission as well. Running the recruitment is a '
+        + 'job a manager holds; putting somebody on the property\u2019s books is what setup '
+        + 'guards, and a side door into it would make that permission mean less everywhere '
+        + 'else. Everything up to the last press is a manager\u2019s to do.' },
+
+      { sub: 'The employee number' },
+      { p: 'Typed in by hand, and it has to match what is enrolled on the terminal exactly. It '
+        + 'is the join between a punch and a person; there is no version of guessing it that is '
+        + 'safe. Any punches already sitting under that number become theirs, so somebody '
+        + 'enrolled last week and starting this week does not lose the days in between.' },
+
+      { sub: 'What it deliberately does not do' },
+      { p: 'It does not issue the contract. That is the next press, on their new record, using '
+        + 'the templates and the signing that are already there \u2014 so a contract from a hire '
+        + 'and a contract from anywhere else are the same document with the same trail.' },
+      { note: 'Their interview time goes back into the diary, the vacancy closes itself if that '
+        + 'was the last person wanted, and whoever keeps the records is told, because the next '
+        + 'three things that have to happen are all theirs.' },
+    ],
+  },
+
+  {
     key: 'people-manage',
     title: 'Running the records',
     permission: 'hr_manage',
