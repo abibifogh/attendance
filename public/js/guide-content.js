@@ -1609,7 +1609,9 @@ export const GUIDE = [
       { sub: 'How it runs' },
       { steps: [
         'Open a vacancy: what the job is, which department, how many you want.',
-        'Add the candidates, one at a time or by pasting a list of names.',
+        'Add the candidates, one at a time or by pasting a list of names. '
+          + 'Attach the CV on the same form: several files at once, and each one says '
+          + 'whether it is a CV, a certificate or a reference.',
         'Publish interview times: a day, a start and an end, and how long each one is.',
         'Shortlist somebody, then make them a link and send it to them yourself.',
         'They open it on their phone and pick a time. You are told when they do.',
@@ -1669,6 +1671,10 @@ export const GUIDE = [
         + 'is the join between a punch and a person; there is no version of guessing it that is '
         + 'safe. Any punches already sitting under that number become theirs, so somebody '
         + 'enrolled last week and starting this week does not lose the days in between.' },
+
+      { note: 'Whatever they sent in moves onto the record under the staff file\u2019s own name '
+        + 'for it: a certificate becomes a qualification, a reference becomes a reference. '
+        + 'A certificate filed as a CV is a certificate nobody finds afterwards.' },
 
       { sub: 'What it deliberately does not do' },
       { p: 'It does not issue the contract. That is the next press, on their new record, using '

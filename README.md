@@ -1379,6 +1379,21 @@ you press the second button.
 It creates candidates and only candidates. Nobody reaches the property's books
 this way.
 
+**The CV goes on when the name does.** The Add a candidate form takes files,
+several at once, because the moment somebody is typing a name off an
+application is the moment they are holding the application. Made to wait for a
+second screen it does not get attached at all, and a pipeline of names with no
+paper behind them is a pipeline nobody can shortlist from. A photograph of a
+printed CV counts, which is what most of them are.
+
+Each file says what it is: a CV, a certificate, a reference, or something else.
+That is not decoration. When somebody is taken on, each one lands under the
+staff record's own name for it — a certificate becomes a qualification, a
+reference becomes a reference — so a school certificate sent with an
+application is filed where the record expects it rather than in a pile called
+"CV". More can be added on the candidate's own page at any time, and they can
+be asked for on the candidate's link.
+
 ### Why somebody was not taken on
 
 Turning somebody down asks for a reason in a line and keeps it. That is the

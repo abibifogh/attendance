@@ -9,8 +9,9 @@ import { fromBase64 } from '../lib/files.js';
 import { claimOrphans, recompute } from '../lib/attendance-ingest.js';
 import { todayIn } from '../util/dates.js';
 import {
-  CLOSED_STAGES, EMPLOYMENT, LIVE_STAGES, SOURCES, STAGES, cutIntoSlots, endsAt,
-  howItIsGoing, isStage, offerable, readCandidateList, stageLabel, toMinutes, whyNot,
+  CLOSED_STAGES, EMPLOYMENT, FILE_KINDS, LIVE_STAGES, SOURCES, STAGES, cutIntoSlots,
+  endsAt, howItIsGoing, isFileKind, isStage, offerable, readCandidateList, staffDocumentKind,
+  stageLabel, toMinutes, whyNot,
 } from '../lib/recruitment.js';
 
 /**
@@ -129,6 +130,7 @@ export async function board(ctx) {
     stages: STAGES,
     sources: SOURCES,
     employment: EMPLOYMENT,
+    fileKinds: FILE_KINDS,
     departments: (await setting(ctx.db, 'att_departments', '')).split('\n').filter(Boolean),
     place: await setting(ctx.db, 'rec_place', ''),
     slotMinutes: Number(await setting(ctx.db, 'rec_slot_minutes', 30)) || 30,
@@ -469,6 +471,7 @@ export async function candidate(ctx, id) {
     canHire: allows('att_setup', ctx.session.permissions),
     stages: STAGES,
     sources: SOURCES,
+    fileKinds: FILE_KINDS,
     candidate: {
       ...shapeCandidate(row),
       interview: slot ? shapeSlot(slot) : null,
@@ -492,8 +495,15 @@ export async function candidate(ctx, id) {
       at: s.at,
     })),
     files: (files.results ?? []).map((f) => ({
-      id: f.id, kind: f.kind, title: f.title, filename: f.filename,
-      mime: f.mime, bytes: Number(f.bytes), by: f.uploaded_by, at: f.uploaded_at,
+      id: f.id,
+      kind: f.kind,
+      kindLabel: FILE_KINDS.find(([k]) => k === f.kind)?.[1] ?? f.kind,
+      title: f.title,
+      filename: f.filename,
+      mime: f.mime,
+      bytes: Number(f.bytes),
+      by: f.uploaded_by,
+      at: f.uploaded_at,
     })),
     invites: (invites.results ?? []).map((i) => ({
       id: i.id,
@@ -647,19 +657,30 @@ export async function addFile(ctx, id) {
     throw badRequest('Send a photograph, a PDF or a Word document.');
   }
 
+  // A kind from the list, not free text. What it is decides where it lands on
+  // the staff record if this person is taken on, and a typo would file a
+  // school certificate somewhere nobody looks.
+  const kind = body.kind == null || body.kind === '' ? 'cv' : String(body.kind).trim();
+  if (!isFileKind(kind)) throw badRequest('That is not a kind of document.');
+
   const created = await ctx.db.prepare(
     `INSERT INTO rec_file (candidate_id, kind, title, filename, mime, bytes, content, uploaded_by)
      VALUES (?1,?2,?3,?4,?5,?6,?7,?8) RETURNING id`,
   ).bind(
     row.id,
-    str(body.kind, 'Kind', { max: 40, fallback: 'cv' }),
-    str(body.title, 'Title', { max: 160, fallback: 'CV' }),
+    kind,
+    str(body.title, 'Title', { max: 160 })
+      || str(body.filename, 'File name', { max: 160 })
+      || FILE_KINDS.find(([k]) => k === kind)[1],
     str(body.filename, 'File name', { max: 200 }),
     mime, bytes.length, bytes, actorOf(ctx) ?? body.by ?? null,
   ).first();
 
   await trail(ctx.db, {
-    candidateId: row.id, kind: 'file', detail: str(body.filename, 'f', { max: 200 }) || 'A file',
+    candidateId: row.id,
+    kind: 'file',
+    detail: [FILE_KINDS.find(([k]) => k === kind)[1], str(body.filename, 'f', { max: 200 })]
+      .filter(Boolean).join(': '),
     actor: actorOf(ctx),
   });
   return json({ ok: true, id: created.id });
@@ -1067,7 +1088,7 @@ export async function hire(ctx, id) {
                                 uploaded_by, source, status)
        VALUES (?1,?2,?3,?4,?5,?6,?7,?8,'office','filed')`,
     ).bind(
-      staff.id, file.kind === 'cv' ? 'cv' : file.kind, file.title, file.filename,
+      staff.id, staffDocumentKind(file.kind), file.title, file.filename,
       file.mime, file.bytes, file.content,
       `${file.uploaded_by || 'Recruitment'} (from their application)`,
     ).run().catch(() => {});

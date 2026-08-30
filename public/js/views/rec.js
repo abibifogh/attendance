@@ -301,7 +301,32 @@ async function openRole(role, data, reload) {
 // Candidates
 // ---------------------------------------------------------------------------
 
+/**
+ * Add somebody, with whatever they handed over.
+ *
+ * The CV comes in here rather than only on their page afterwards, because the
+ * moment somebody is typing a name off an application is the moment they are
+ * holding the application. Made to wait for a second screen, it does not get
+ * attached at all, and a pipeline of names with no paper behind them is a
+ * pipeline nobody can shortlist from.
+ *
+ * Several files at once, and each one says what it is. A certificate filed as
+ * a CV is a certificate nobody finds later, and what it is decides where it
+ * lands on the staff record if this person is taken on.
+ */
 async function addCandidate(data, reload) {
+  const files = h('input', {
+    type: 'file',
+    multiple: true,
+    accept: 'image/*,application/pdf,.doc,.docx',
+  });
+  // Deliberately unnamed: it is read straight off the element, and a name
+  // would put a field the candidate endpoint knows nothing about into every
+  // payload it sends.
+  const kind = h('select',
+    (data.fileKinds ?? [['cv', 'CV']]).map(([key, label]) =>
+      h('option', { value: key }, label)));
+
   const done = await formDialog({
     title: 'Add a candidate',
     submitLabel: 'Add them',
@@ -320,16 +345,72 @@ async function addCandidate(data, reload) {
         field('Applied on', h('input', {
           type: 'date', name: 'appliedOn', value: todayISO(),
         }))),
+
+      h('div.grid.grid-2',
+        field('Their CV', files,
+          'A photograph of a printed one is fine. Several at once if you have them.'),
+        field('What it is', kind,
+          'Applies to everything picked. Add anything of a different kind on their '
+          + 'page afterwards.')),
+
       field('Anything worth noting', h('textarea', { name: 'note', rows: 2, maxlength: 2000 })),
       h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
         'This adds somebody to the pipeline and nothing else. Nobody reaches the property’s '
         + 'books until they are offered the job and taken on, which is a separate press.'),
     ),
-    onSubmit: async (form) => api.recAddCandidate(Object.fromEntries(form.entries())),
+    onSubmit: async (form) => {
+      const chosen = [...(files.files ?? [])];
+      // Read before the candidate is created, so a file the browser cannot
+      // read stops the whole thing rather than leaving a candidate behind with
+      // half their paper.
+      const payloads = [];
+      for (const file of chosen) {
+        payloads.push({
+          filename: file.name,
+          title: file.name,
+          kind: kind.value,
+          mime: file.type || 'application/octet-stream',
+          content: await asBase64(file),
+        });
+      }
+
+      const created = await api.recAddCandidate(Object.fromEntries(form.entries()));
+
+      // Attached one at a time after the fact, because the candidate has to
+      // exist for a file to belong to. If one is refused the person is still
+      // added and the message says which: losing a name because a photograph
+      // was the wrong type would be the worse trade.
+      const refused = [];
+      for (const payload of payloads) {
+        try {
+          await api.recAddFile(created.id, payload);
+        } catch (err) {
+          refused.push(`${payload.filename}: ${err.message}`);
+        }
+      }
+      return { ...created, attached: payloads.length - refused.length, refused };
+    },
   });
   if (!done) return;
-  toast('Added.', 'good');
+
+  if (done.refused?.length) {
+    toast(`Added, but ${done.refused.length} file did not go on. ${done.refused[0]}`, 'bad');
+  } else {
+    toast(done.attached
+      ? `Added, with ${done.attached} file${done.attached === 1 ? '' : 's'}.`
+      : 'Added.', 'good');
+  }
   navigate('rec-candidate', { id: done.id });
+}
+
+/** A file as the API takes it. Read in one go: these are photographs, not films. */
+function asBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`${file.name} could not be read.`));
+    reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''));
+    reader.readAsDataURL(file);
+  });
 }
 
 function rolePicker(data, current) {

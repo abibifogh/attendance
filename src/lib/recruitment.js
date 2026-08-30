@@ -159,6 +159,34 @@ export const EMPLOYMENT = [
 ];
 
 /**
+ * What a candidate sends in, and where it lands if they are taken on.
+ *
+ * A CV is the common one and the reason this exists at all. The other three
+ * matter because a certificate filed as a CV is a certificate nobody finds:
+ * when somebody is taken on, each of these becomes the document kind the staff
+ * record already understands, so a school certificate sent with an application
+ * satisfies the education document rather than sitting in a pile called "CV".
+ */
+export const FILE_KINDS = [
+  ['cv', 'CV'],
+  ['certificate', 'Certificate or qualification'],
+  ['reference', 'Reference'],
+  ['other', 'Something else'],
+];
+
+const TO_STAFF_DOCUMENT = {
+  cv: 'cv',
+  certificate: 'education',
+  reference: 'reference',
+  other: 'other',
+};
+
+export const isFileKind = (kind) => FILE_KINDS.some(([k]) => k === kind);
+
+/** The staff record's own name for it, once there is a staff record. */
+export const staffDocumentKind = (kind) => TO_STAFF_DOCUMENT[kind] ?? 'other';
+
+/**
  * Cut a morning into interview slots.
  *
  * Somebody publishing a diary thinks in "Tuesday, ten till one, half an hour

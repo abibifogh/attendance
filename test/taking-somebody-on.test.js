@@ -4,10 +4,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  cutIntoSlots, howItIsGoing, movesFrom, offerable, readCandidateList, whyNot,
+  cutIntoSlots, howItIsGoing, movesFrom, offerable, readCandidateList, staffDocumentKind,
+  whyNot,
 } from '../src/lib/recruitment.js';
 import {
-  addSlots, board, bookSlot, candidate, hire, inviteCandidate, moveCandidate,
+  addSlots, addFile, board, bookSlot, candidate, hire, inviteCandidate, moveCandidate,
   addCandidate, createRole, scoreCandidate, applyCandidates, readCandidates,
 } from '../src/routes/recruitment.js';
 import { choose, open, release } from '../src/routes/hiring.js';
@@ -544,4 +545,99 @@ test('the link message names the property and carries the address, and nothing i
   assert.match(made.message, /choose an interview time/);
   assert.match(made.message, /\/c\//);
   assert.equal(made.expiresInDays, 10);
+});
+
+// ----------------------------------------------------- what they sent in --
+
+/** A one-pixel PNG, which is a real file as far as everything here cares. */
+const A_FILE = (over = {}) => ({
+  filename: 'ama-cv.pdf',
+  mime: 'application/pdf',
+  content: Buffer.from('a cv').toString('base64'),
+  ...over,
+});
+
+test('a CV goes on at the moment somebody is added', async () => {
+  const { raw, db } = setup();
+  const id = await aCandidate(db, await aRole(db));
+  await addFile(ctx(db, A_FILE()), id);
+
+  const data = await body(await candidate(ctx(db), id));
+  assert.equal(data.files.length, 1);
+  assert.equal(data.files[0].filename, 'ama-cv.pdf');
+  assert.equal(data.files[0].kind, 'cv');
+  assert.equal(data.files[0].kindLabel, 'CV');
+  // The board counts it, so the pipeline shows who has paper behind them.
+  const seen = (await body(await board(ctx(db)))).candidates.find((c) => c.id === id);
+  assert.equal(seen.files, 1);
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM rec_file').get().n, 1);
+});
+
+test('a kind that is not one of the four is refused', async () => {
+  const { db } = setup();
+  const id = await aCandidate(db, await aRole(db));
+  await assert.rejects(
+    () => addFile(ctx(db, A_FILE({ kind: 'passport' })), id),
+    /not a kind of document/,
+  );
+  // Free text would have filed a school certificate where nobody looks.
+  await addFile(ctx(db, A_FILE({ kind: 'certificate' })), id);
+  const data = await body(await candidate(ctx(db), id));
+  assert.equal(data.files[0].kind, 'certificate');
+});
+
+test('a file with no title takes its own name rather than being called CV', async () => {
+  const { db } = setup();
+  const id = await aCandidate(db, await aRole(db));
+  await addFile(ctx(db, A_FILE({ filename: 'wassce-results.jpg', mime: 'image/jpeg', kind: 'certificate' })), id);
+
+  const data = await body(await candidate(ctx(db), id));
+  assert.equal(data.files[0].title, 'wassce-results.jpg');
+});
+
+test('anything but a photograph, a PDF or a Word file is refused', async () => {
+  const { db } = setup();
+  const id = await aCandidate(db, await aRole(db));
+  await assert.rejects(
+    () => addFile(ctx(db, A_FILE({ mime: 'application/zip' })), id),
+    /photograph, a PDF or a Word document/,
+  );
+  await assert.rejects(() => addFile(ctx(db, A_FILE({ content: '' })), id), /nothing in that file/);
+});
+
+test('what they sent lands under the staff record\'s own name for it', async () => {
+  const { raw, db } = setup();
+  const id = await aCandidate(db, await aRole(db));
+  await addFile(ctx(db, A_FILE({ filename: 'cv.pdf' })), id);
+  await addFile(ctx(db, A_FILE({ filename: 'wassce.pdf', kind: 'certificate' })), id);
+  await addFile(ctx(db, A_FILE({ filename: 'ref.pdf', kind: 'reference' })), id);
+
+  const done = await body(await hire(ctx(db, { employeeNo: 'HSK006' }), id));
+  assert.equal(done.filesMoved, 3);
+
+  const kinds = Object.fromEntries(raw.prepare(
+    'SELECT filename, kind FROM hr_document WHERE staff_id = ?',
+  ).all(done.staffId).map((r) => [r.filename, r.kind]));
+
+  // A certificate filed as a CV is a certificate nobody finds afterwards.
+  assert.deepEqual(kinds, { 'cv.pdf': 'cv', 'wassce.pdf': 'education', 'ref.pdf': 'reference' });
+  assert.equal(staffDocumentKind('other'), 'other');
+});
+
+test('the screens are told the kinds rather than guessing them', async () => {
+  const { db } = setup();
+  const id = await aCandidate(db, await aRole(db));
+  const kinds = (await body(await board(ctx(db)))).fileKinds.map(([k]) => k);
+  assert.deepEqual(kinds, ['cv', 'certificate', 'reference', 'other']);
+  assert.deepEqual((await body(await candidate(ctx(db), id))).fileKinds, (await body(await board(ctx(db)))).fileKinds);
+});
+
+test('the trail says what was attached, and what kind it was', async () => {
+  const { db } = setup();
+  const id = await aCandidate(db, await aRole(db));
+  await addFile(ctx(db, A_FILE({ filename: 'wassce.pdf', kind: 'certificate' })), id);
+
+  const data = await body(await candidate(ctx(db), id));
+  const filed = data.events.find((e) => e.kind === 'file');
+  assert.equal(filed.detail, 'Certificate or qualification: wassce.pdf');
 });

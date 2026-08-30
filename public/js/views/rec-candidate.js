@@ -447,25 +447,34 @@ async function hire(data, reload) {
 
 function filesCard(data, reload) {
   const person = data.candidate;
+  const kind = h('select',
+    (data.fileKinds ?? [['cv', 'CV']]).map(([key, label]) =>
+      h('option', { value: key }, label)));
+
   const input = h('input', {
     type: 'file',
+    multiple: true,
     accept: 'image/*,application/pdf,.doc,.docx',
     onchange: async (event) => {
-      const chosen = event.target.files?.[0];
-      if (!chosen) return;
+      const chosen = [...(event.target.files ?? [])];
+      if (!chosen.length) return;
       event.target.disabled = true;
       try {
-        await api.recAddFile(person.id, {
-          filename: chosen.name,
-          title: chosen.name,
-          mime: chosen.type || 'application/octet-stream',
-          content: await asBase64(chosen),
-        });
-        toast('Filed.', 'good');
+        for (const file of chosen) {
+          await api.recAddFile(person.id, {
+            filename: file.name,
+            title: file.name,
+            kind: kind.value,
+            mime: file.type || 'application/octet-stream',
+            content: await asBase64(file),
+          });
+        }
+        toast(chosen.length === 1 ? 'Filed.' : `${chosen.length} filed.`, 'good');
         await reload();
       } catch (err) {
         toast(err.message, 'bad');
         event.target.disabled = false;
+        event.target.value = '';
       }
     },
   });
@@ -479,6 +488,7 @@ function filesCard(data, reload) {
         href: `/api/rec/candidates/${person.id}/files/${f.id}`,
         target: '_blank', rel: 'noopener',
       }, f.filename || f.title),
+      h('span.pill', f.kindLabel ?? f.kind),
       h('small.muted', `${Math.round(f.bytes / 1000)} KB · ${f.by ?? ''}`),
       data.canManage
         ? h('button.link-button', {
@@ -490,10 +500,17 @@ function filesCard(data, reload) {
         }, 'Delete')
         : null)))
     : h('p.muted', 'Nothing yet. Upload one here, or ask for it on their link.'),
-  data.canManage ? field('Add one', input) : null,
+
+  data.canManage
+    ? h('div.grid.grid-2',
+      field('Add one', input),
+      field('What it is', kind))
+    : null,
+
   person.staffId
     ? h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
-      'These were copied onto their staff record when they were taken on.')
+      'These were copied onto their staff record when they were taken on. A certificate '
+      + 'went on as a qualification, a reference as a reference.')
     : null);
 }
 
