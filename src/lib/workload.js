@@ -1,4 +1,24 @@
 import { addDays, diffDays, dow, rangeDays } from '../util/dates.js';
+
+/**
+ * A date the way somebody says it out loud.
+ *
+ * These lines are read by a manager deciding what to do about a rota, not by
+ * anybody reconciling to a system. '2026-08-03' makes them stop and work out
+ * what day that was; '3 August' does not.
+ */
+function sayDay(day) {
+  const at = new Date(`${day}T00:00:00Z`);
+  if (Number.isNaN(at.getTime())) return String(day ?? '');
+  return at.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+}
+
+/** '17.5 hours', and 'an hour' rather than '1 hours'. */
+function sayHours(n) {
+  const hours = Math.round((Number(n) || 0) * 10) / 10;
+  if (hours === 1) return 'an hour';
+  return `${hours} hours`;
+}
 import { absMinutes, calendarFor, daysPerWeekFor, scheduleFor, shiftWindow } from './attendance.js';
 
 /**
@@ -401,10 +421,11 @@ export function assessPerson(ds, staff, from, to, limits = limitsFrom(ds?.settin
     const all = thinWeeks.length === rest.length;
     findings.push(finding(HIGH, 'weekly-rest',
       all
-        ? `Never a ${limits.weeklyRestHours.value}-hour break in this whole period`
-        : `${thinWeeks.length} seven-day stretch${thinWeeks.length === 1 ? '' : 'es'} with no `
-          + `${limits.weeklyRestHours.value}-hour break`,
-      `The longest unbroken rest is ${worst.hours} h, in the seven days from ${worst.from}.`,
+        ? `Never a full ${limits.weeklyRestHours.value} hours off, at any point`
+        : `${thinWeeks.length} week${thinWeeks.length === 1 ? '' : 's'} without a proper `
+          + `${limits.weeklyRestHours.value} hours off`,
+      `The longest clear run they got was ${sayHours(worst.hours)}, in the week beginning `
+      + `${sayDay(worst.from)}.`,
       limits.weeklyRestHours.law));
   }
 
@@ -413,14 +434,15 @@ export function assessPerson(ds, staff, from, to, limits = limitsFrom(ds?.settin
     const worst = overWeeks.reduce((a, b) => (a.hours >= b.hours ? a : b));
     findings.push(finding(HIGH, 'weekly-hours',
       `${overWeeks.length} week${overWeeks.length === 1 ? '' : 's'} over ${limits.weeklyHours.value} hours`,
-      `Heaviest is the week of ${worst.week} at ${worst.hours} h across ${worst.days} days.`,
+      `The heaviest was the week of ${sayDay(worst.week)}: ${sayHours(worst.hours)} across `
+      + `${worst.days} day${worst.days === 1 ? '' : 's'}.`,
       limits.weeklyHours.law));
   }
 
   if (longDays.length) {
     findings.push(finding(WARN, 'long-days',
       `${longDays.length} shift${longDays.length === 1 ? '' : 's'} longer than ${limits.dailyHours.value} hours`,
-      `Longest is ${Math.round(Math.max(...longDays.map((d) => d.hours)) * 10) / 10} h.`,
+      `The longest was ${sayHours(Math.max(...longDays.map((d) => d.hours)))}.`,
       limits.dailyHours.law));
   }
 
@@ -428,13 +450,15 @@ export function assessPerson(ds, staff, from, to, limits = limitsFrom(ds?.settin
   if (runs.longest > limits.consecutiveDays.value) {
     findings.push(finding(HIGH, 'consecutive',
       `${runs.longest} days in a row without one off`,
-      `Ending ${runs.longestEnd}. The house rule here is ${limits.consecutiveDays.value}.`));
+      `The run ended on ${sayDay(runs.longestEnd)}. ${limits.consecutiveDays.value} is the most `
+      + 'this property allows.'));
   }
 
   if (nights > limits.nightsPerFortnight.value) {
     findings.push(finding(WARN, 'nights',
       `${nights} night shifts`,
-      `More than the ${limits.nightsPerFortnight.value} this property counts as a heavy fortnight.`));
+      `This property counts anything over ${limits.nightsPerFortnight.value} as a heavy `
+      + 'fortnight of nights.'));
   }
 
   // Pro-rated from the house rule, so it only has anything to say about a
@@ -587,11 +611,14 @@ export function restFindings(person, peers, limits, leave = null) {
     const throughYear = Number(leave.yearElapsed ?? 0);
 
     if (throughYear >= 0.6 && banked >= entitlement * 0.75) {
+      // Months rather than a per cent. "Nine months in" is a thing somebody
+      // pictures; "66% through the leave year" is a thing they have to convert.
+      const monthsIn = Math.round(throughYear * 12);
       out.push(finding(WARN, 'leave-unused',
         `${banked} days of leave still untaken`,
-        `${Math.round(throughYear * 100)}% through the leave year with `
-        + `${Math.round((banked / entitlement) * 100)}% of the entitlement banked. Usually it `
-        + 'means nobody can be spared to release them.'));
+        `${monthsIn} month${monthsIn === 1 ? '' : 's'} into the leave year, with `
+        + `${banked} of their ${Math.round(entitlement)} days still to take. Usually that means `
+        + 'nobody can be spared to let them go.'));
     }
   }
 

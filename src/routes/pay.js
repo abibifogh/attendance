@@ -120,15 +120,50 @@ export async function labourCost(ctx) {
   const to = isDay(ctx.url.searchParams.get('to')) ? ctx.url.searchParams.get('to') : addDays(from, 13);
   const span = diffDays(from, to) + 1;
 
-  const [ds, payRows] = await Promise.all([
+  const [ds, payRows, profiles, allowances, rateRow] = await Promise.all([
     loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) }),
     ctx.db.prepare('SELECT * FROM hr_pay ORDER BY from_day').all().catch(() => ({ results: [] })),
+    // The payroll's own figures. This report used to read hr_pay and nothing
+    // else, which is a table only this report writes to — so a property that
+    // set everybody up under Payroll had every single person come back as
+    // having no rate, and the card said nothing at all.
+    ctx.db.prepare('SELECT * FROM pay_profile').all().catch(() => ({ results: [] })),
+    ctx.db.prepare('SELECT * FROM pay_allowance WHERE active = 1').all()
+      .catch(() => ({ results: [] })),
+    ctx.db.prepare("SELECT * FROM pay_rates WHERE id = 1").first().catch(() => null),
   ]);
 
   const payBy = new Map();
   for (const row of payRows.results ?? []) {
     if (!payBy.has(row.staff_id)) payBy.set(row.staff_id, []);
     payBy.get(row.staff_id).push(row);
+  }
+
+  // What somebody costs a month according to the payroll: their basic, their
+  // standing allowances, and the property's own pension contribution on the
+  // basic. That last part is a real cost and it is not in anybody's pay, so a
+  // wage bill that leaves it out understates by an eighth.
+  const employerSsnit = Number(rateRow?.ssnit_employer ?? ds.settings.pay_ssnit_employer) || 0.13;
+  const allowanceBy = new Map();
+  for (const row of allowances.results ?? []) {
+    allowanceBy.set(row.staff_id, (allowanceBy.get(row.staff_id) ?? 0) + (Number(row.amount) || 0));
+  }
+  const fromPayroll = new Map();
+  for (const profile of profiles.results ?? []) {
+    const basic = Number(profile.basic) || 0;
+    const monthly = basic + (allowanceBy.get(profile.staff_id) ?? 0)
+      + (profile.ssnit ? basic * employerSsnit : 0);
+    if (monthly <= 0) continue;
+    fromPayroll.set(profile.staff_id, [{
+      basis: 'monthly',
+      amount: Math.round(monthly * 100) / 100,
+      currency: ds.settings.currency || 'GHS',
+      // What somebody is on now, applied across the window. A dated rate says
+      // what they were on at the time and is used ahead of this wherever there
+      // is one; the payroll only ever holds the current figure. The response
+      // says which each row came from rather than leaving it to be assumed.
+      from_day: '1970-01-01',
+    }]);
   }
 
   const limits = limitsFrom(ds.settings);
@@ -155,8 +190,10 @@ export async function labourCost(ctx) {
     );
     const holidayHours = worked.filter((w) => w.holiday).reduce((n, w) => n + w.hours, 0);
 
-    const rates = payBy.get(staff.id) ?? [];
-    if (!rateOn(rates, from) && !rateOn(rates, to)) {
+    const dated = payBy.get(staff.id) ?? [];
+    const hasDated = Boolean(rateOn(dated, from) || rateOn(dated, to));
+    const rates = hasDated ? dated : (fromPayroll.get(staff.id) ?? []);
+    if (!rates.length) {
       missing.push({ id: staff.id, name: staff.name, department: staff.department ?? null });
       continue;
     }
@@ -178,6 +215,9 @@ export async function labourCost(ctx) {
       staff: {
         id: staff.id, name: staff.name, department: staff.department ?? null,
       },
+      // Where the figure came from. A dated rate is what they were on at the
+      // time; the payroll is what they are on now.
+      source: hasDated ? 'rate' : 'payroll',
       days: worked.length,
       hours: Math.round(hours * 10) / 10,
       overtimeHours: Math.round(overtimeHours * 10) / 10,
@@ -222,6 +262,10 @@ export async function labourCost(ctx) {
     // hunting; the names send them straight there, and until every name is
     // gone the total below is an understatement rather than an answer.
     missing,
+    // How many of the figures above are today's payroll rather than a rate
+    // dated to the period. Said rather than left to be assumed: over a window
+    // in the past the two are not the same thing.
+    fromPayroll: rows.filter((r) => r.source === 'payroll').length,
     departments: [...departments.values()]
       .map((d) => ({
         ...d,

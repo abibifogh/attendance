@@ -441,6 +441,20 @@ function costCard(cost) {
         h('div.stat-sub', `at ${cost.rates.overtimeMultiplier}× and ${cost.rates.holidayMultiplier}×`)),
     ),
 
+    // Where the figures came from. Over a window in the past, today's payroll
+    // and what somebody was actually on then are not the same thing, and the
+    // difference is worth a line rather than an assumption.
+    cost.fromPayroll
+      ? h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
+        cost.fromPayroll === cost.rows.length
+          ? 'Worked out from what the payroll pays today, including the property\u2019s own '
+            + 'pension contribution. Nobody has a dated rate on their record, so a period in '
+            + 'the past is priced at today\u2019s salaries rather than at the ones in force '
+            + 'at the time.'
+          : `${cost.fromPayroll} of these come from what the payroll pays today rather than `
+            + 'from a rate dated to the period.')
+      : null,
+
     // Named, not counted. Until every one of these has a rate the total above
     // is an understatement rather than an answer, and a count sends somebody
     // hunting where a list sends them straight there.
