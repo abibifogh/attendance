@@ -421,6 +421,17 @@ export const ROUTES = [
   // A stack of CVs, read for a name and a number before anything is written.
   ['POST', '/api/rec/candidates/cvs/read', 'rec_manage', rec.readCvs],
   ['POST', '/api/rec/candidates/cvs', 'rec_manage', rec.importCvs],
+  // Several at once. Shortlisting is the one step genuinely done in a batch:
+  // somebody reads twenty CVs in an evening and six are worth seeing.
+  //
+  // ABOVE THE :id ROUTES, and it has to stay there. The table is read in
+  // order and both are four segments, so registered below them this would be
+  // matched as a candidate whose id is the word "stage" and answered with a
+  // 404 that says nothing about why.
+  ['POST', '/api/rec/candidates/stage', 'rec_manage', rec.moveCandidates],
+  // And a link each for everybody ticked, for the same reason: the point of
+  // shortlisting six in one press is inviting six in one press.
+  ['POST', '/api/rec/candidates/invites', 'rec_manage', rec.inviteCandidates],
   ['GET', '/api/rec/candidates/:id', 'rec_view', rec.candidate],
   ['POST', '/api/rec/candidates/:id', 'rec_manage', rec.updateCandidate],
   ['POST', '/api/rec/candidates/:id/stage', 'rec_manage', rec.moveCandidate],

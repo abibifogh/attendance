@@ -1498,6 +1498,47 @@ application is filed where the record expects it rather than in a pile called
 "CV". More can be added on the candidate's own page at any time, and they can
 be asked for on the candidate's link.
 
+### Several at once
+
+Shortlisting is the one step genuinely done in a batch: somebody reads twenty
+CVs in an evening and six of them are worth seeing. Six presses with a dialog
+on each is how that turns into an afternoon, and how a pipeline stops being
+kept up to date.
+
+So the pipeline has a tick against each name and a bar that appears once
+anything is ticked. **Move to shortlisted** where they are all at the same
+stage, **Not this time**, or **Somewhere else** for a mixed handful where there
+is no one forward step. An ending still insists on a reason, asked once and
+written on every one of their records.
+
+A batch can do nothing a single press could not. Nobody reaches the books this
+way, every move lands on its own trail, and anybody being taken out of the
+pipeline gives their interview time back to the diary. **One refusal does not
+sink the rest**: somebody taken on since the screen was drawn is skipped with a
+reason and everybody else goes through, because failing all twenty because of
+one is what teaches people to move them one at a time again.
+
+### A link each, and a file to keep them in
+
+The point of shortlisting six people in one press is inviting six people in one
+press. **Make links** on the same bar does that, and the first thing it offers
+is the **download**.
+
+That is not a convenience. Every link is stored only as a hash and can never be
+shown again, which is right for one link and dangerous for twenty: a browser
+closed at the wrong moment loses the lot. The file has the name, the number,
+the link and the whole message on one row — a safe copy, and also the shape
+somebody wants for pasting them into WhatsApp one at a time. There is a Copy
+and a WhatsApp button on each row beside it.
+
+Anybody with no interview times free for their vacancy is skipped by name and
+told why, rather than being sent a link that opens on an apology.
+
+> **No four-digit code on a batch.** A code has to be told to each person out
+> loud on a call, which is the phone call this whole thing exists to remove,
+> and one code shared by twenty is not really a code. Where you want one, make
+> that link on its own from their page.
+
 ### Why somebody was not taken on
 
 Turning somebody down asks for a reason in a line and keeps it. That is the

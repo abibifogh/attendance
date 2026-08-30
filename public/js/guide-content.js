@@ -1621,6 +1621,18 @@ export const GUIDE = [
         'Their contract and details form go out from that record, on one link.',
       ] },
 
+      { sub: 'Several at once' },
+      { p: 'Shortlisting is the one step genuinely done in a batch: somebody reads twenty CVs '
+        + 'in an evening and six are worth seeing. Tick them on the pipeline and a bar appears '
+        + 'with Move to shortlisted, Not this time, Somewhere else, and Make links.' },
+      { p: 'A batch does nothing a single press could not. Nobody reaches the books this way, '
+        + 'an ending still needs a reason, every move lands on its own trail, and anybody taken '
+        + 'out of the pipeline gives their interview time back. One that cannot move is skipped '
+        + 'with a reason and the rest still go through.' },
+      { warn: 'Make links gives you a link each and a file to download, and the download is the '
+        + 'point: every link is shown once and stored only as a fingerprint, so a browser '
+        + 'closed at the wrong moment loses twenty of them at once. Save the file first.' },
+
       { sub: 'The candidate chooses the time' },
       { p: 'A time somebody is told to attend is a time half of them cannot make, and the phone '
         + 'calls that follow are the whole cost of arranging interviews at a place this size. So '

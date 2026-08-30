@@ -801,6 +801,78 @@ export async function moveCandidate(ctx, id) {
     throw badRequest('Say why in a line. It is the whole value of the record afterwards.');
   }
 
+  await moveOne(ctx, row, to, outcome);
+  await audit(ctx, 'recruitment.stage', row.id, { from: row.stage, to });
+
+  return json({ ok: true, stage: to });
+}
+
+/**
+ * Move several at once.
+ *
+ * Shortlisting is the one step that is genuinely done in a batch: somebody
+ * reads twenty CVs in an evening and six of them are worth seeing. Six presses
+ * with a dialog on each is how that turns into an afternoon, and how a
+ * pipeline stops being kept up to date.
+ *
+ * ONE REFUSAL DOES NOT SINK THE REST. Somebody in the list may have been taken
+ * on since the screen was drawn, or moved by a colleague; that person is
+ * skipped with a reason and everybody else goes through. Failing all twenty
+ * because of one is the behaviour that teaches people to move them one at a
+ * time again.
+ *
+ * The rules are the single-move rules, applied per person, so a batch cannot
+ * do anything a single press could not: nobody reaches the books this way, an
+ * ending still needs a reason, and every one of them lands on its own trail.
+ */
+export async function moveCandidates(ctx) {
+  const body = await readJson(ctx.request);
+  const to = String(body.stage ?? '').trim();
+  if (!isStage(to)) throw badRequest('That is not a stage.');
+
+  const ids = [...new Set((Array.isArray(body.ids) ? body.ids : [])
+    .map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) throw badRequest('Nobody was ticked.');
+  if (ids.length > 200) throw badRequest('That is more people than a pipeline holds.');
+
+  const outcome = str(body.outcome, 'Why', { max: 400 });
+  // Asked once for the batch rather than once each, and still insisted on.
+  // "Why was this person not taken on" is the question the record exists to
+  // answer, and a batch of six with no reason answers it six times over.
+  if (CLOSED_STAGES.includes(to) && to !== 'hired' && !outcome) {
+    throw badRequest('Say why in a line. It goes on every one of their records.');
+  }
+
+  const moved = [];
+  const skipped = [];
+
+  for (const id of ids) {
+    const row = await ctx.db.prepare('SELECT * FROM rec_candidate WHERE id = ?')
+      .bind(id).first();
+    if (!row) {
+      skipped.push({ id, name: null, why: 'They are no longer in the pipeline.' });
+      continue;
+    }
+
+    const refused = whyNot(row.stage, to, { hasStaffRecord: row.staff_id != null });
+    if (refused) {
+      skipped.push({ id, name: row.name, why: refused });
+      continue;
+    }
+
+    await moveOne(ctx, row, to, outcome);
+    moved.push({ id, name: row.name, from: row.stage });
+  }
+
+  await audit(ctx, 'recruitment.stage_bulk', null, {
+    to, moved: moved.length, skipped: skipped.length,
+  });
+
+  return json({ ok: true, stage: to, moved, skipped });
+}
+
+/** One move, and everything that follows from it. Shared by both doors. */
+async function moveOne(ctx, row, to, outcome) {
   await ctx.db.prepare(
     `UPDATE rec_candidate SET stage = ?2, outcome = ?3, updated_at = datetime('now')
       WHERE id = ?1`,
@@ -814,9 +886,6 @@ export async function moveCandidate(ctx, id) {
     candidateId: row.id, kind: 'stage', fromStage: row.stage, toStage: to,
     detail: outcome || null, actor: actorOf(ctx),
   });
-  await audit(ctx, 'recruitment.stage', row.id, { from: row.stage, to });
-
-  return json({ ok: true, stage: to });
 }
 
 async function releaseSlots(db, candidateId, actor) {
@@ -1486,26 +1555,11 @@ export const hashRecPin = (pin, pepper) => hashPin(`rec-invite-pin:${pin}`, pepp
 export async function inviteCandidate(ctx, id) {
   const row = await candidateOr404(ctx, id);
   const body = await readJson(ctx.request);
+  const asks = readAsks(body);
 
-  const wantsSlot = bool(body.wantsSlot, true);
-  const wantsDetails = bool(body.wantsDetails, true);
-  const wantsCv = bool(body.wantsCv, false);
-  if (!wantsSlot && !wantsDetails && !wantsCv) {
-    throw badRequest('A link has to ask for something: a time, their details, or a CV.');
-  }
-
-  if (wantsSlot) {
-    const { today, at } = await nowIn(ctx.db);
-    const free = await ctx.db.prepare(
-      `SELECT * FROM rec_slot
-        WHERE cancelled_at IS NULL AND candidate_id IS NULL AND day >= ?1
-          AND (role_id IS NULL OR role_id = ?2)`,
-    ).bind(today, row.role_id ?? -1).all().catch(() => ({ results: [] }));
-
-    if (!offerable(free.results ?? [], { now: at }).length) {
-      throw badRequest('There are no interview times free for this vacancy. '
-        + 'Publish some under Interviews first, or send a link that only asks for their details.');
-    }
+  if (asks.wantsSlot && !(await hasFreeTimes(ctx, row))) {
+    throw badRequest('There are no interview times free for this vacancy. '
+      + 'Publish some under Interviews first, or send a link that only asks for their details.');
   }
 
   const days = int(body.days, 'Days', {
@@ -1514,6 +1568,120 @@ export async function inviteCandidate(ctx, id) {
   const pin = body.pin == null || body.pin === '' ? null : String(body.pin).replace(/\D/g, '');
   if (pin && pin.length !== 4) throw badRequest('A code has to be four digits, or leave it blank.');
 
+  const made = await makeInvite(ctx, row, {
+    ...asks, days, pin, message: str(body.message, 'Message', { max: 600 }),
+  });
+
+  await audit(ctx, 'recruitment.invite', row.id, { days, wantsSlot: asks.wantsSlot, pin: Boolean(pin) });
+  return json({ ok: true, ...made });
+}
+
+/**
+ * A link each, for everybody ticked.
+ *
+ * The point of shortlisting six people in one press is inviting six people in
+ * one press. Doing it one at a time, with a dialog that shows a link once and
+ * then never again, is six chances to lose one.
+ *
+ * SO THEY COME BACK AS A FILE. Every link is shown once and stored only as a
+ * hash, which is right for a link and wrong for a batch of twenty: a browser
+ * closed at the wrong moment loses the lot. The screen offers them as a
+ * spreadsheet the moment they exist, with the name, the number, the link and
+ * the message beside each other, which is also the shape somebody wants for
+ * pasting them into WhatsApp one at a time.
+ *
+ * NO CODE ON A BATCH. A four-digit code has to be told to each person out loud
+ * on a call, which is exactly the phone call this exists to remove; and one
+ * code shared by twenty is a code that is not really a code. Where one is
+ * wanted, make that link on its own.
+ *
+ * ONE REFUSAL DOES NOT SINK THE REST, the same as moving them: somebody taken
+ * on since the screen was drawn is skipped with a reason and everybody else
+ * gets their link.
+ */
+export async function inviteCandidates(ctx) {
+  const body = await readJson(ctx.request);
+  const asks = readAsks(body);
+
+  const ids = [...new Set((Array.isArray(body.ids) ? body.ids : [])
+    .map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) throw badRequest('Nobody was ticked.');
+  if (ids.length > 100) throw badRequest('That is more links than anybody sends at once.');
+
+  const days = int(body.days, 'Days', {
+    min: 1, max: 60, fallback: Number(await setting(ctx.db, 'rec_link_days', 10)) || 10,
+  });
+  const message = str(body.message, 'Message', { max: 600 });
+
+  const links = [];
+  const skipped = [];
+
+  for (const id of ids) {
+    const row = await ctx.db.prepare('SELECT * FROM rec_candidate WHERE id = ?').bind(id).first();
+    if (!row) {
+      skipped.push({ id, name: null, why: 'They are no longer in the pipeline.' });
+      continue;
+    }
+    if (CLOSED_STAGES.includes(row.stage)) {
+      skipped.push({ id, name: row.name, why: `They are ${stageLabel(row.stage).toLowerCase()}.` });
+      continue;
+    }
+    if (asks.wantsSlot && !(await hasFreeTimes(ctx, row))) {
+      skipped.push({
+        id,
+        name: row.name,
+        why: row.role_id
+          ? 'No interview times are free for their vacancy.'
+          : 'No interview times are free.',
+      });
+      continue;
+    }
+
+    const made = await makeInvite(ctx, row, { ...asks, days, pin: null, message });
+    links.push({
+      id: row.id, name: row.name, phone: row.phone, email: row.email, ...made,
+    });
+  }
+
+  await audit(ctx, 'recruitment.invite_bulk', null, {
+    made: links.length, skipped: skipped.length, days,
+  });
+
+  return json({ ok: true, links, skipped, expiresInDays: days });
+}
+
+/** What a link is asking for, checked once for both doors. */
+function readAsks(body) {
+  const wantsSlot = bool(body.wantsSlot, true);
+  const wantsDetails = bool(body.wantsDetails, true);
+  const wantsCv = bool(body.wantsCv, false);
+  if (!wantsSlot && !wantsDetails && !wantsCv) {
+    throw badRequest('A link has to ask for something: a time, their details, or a CV.');
+  }
+  return { wantsSlot, wantsDetails, wantsCv };
+}
+
+/**
+ * Whether there is anything to offer this person.
+ *
+ * A link that offers times and has none is a link that opens on an apology, so
+ * it is refused where it would be one. Checked per candidate rather than once
+ * for the batch: times are published against a vacancy, and six people on
+ * three vacancies are three different answers.
+ */
+async function hasFreeTimes(ctx, candidate) {
+  const { today, at } = await nowIn(ctx.db);
+  const free = await ctx.db.prepare(
+    `SELECT * FROM rec_slot
+      WHERE cancelled_at IS NULL AND candidate_id IS NULL AND day >= ?1
+        AND (role_id IS NULL OR role_id = ?2)`,
+  ).bind(today, candidate.role_id ?? -1).all().catch(() => ({ results: [] }));
+
+  return offerable(free.results ?? [], { now: at }).length > 0;
+}
+
+/** One link: the row, the trail, and the words to paste. Shown once. */
+async function makeInvite(ctx, row, { wantsSlot, wantsDetails, wantsCv, days, pin, message }) {
   const pepper = await getPepper(ctx.db);
   const token = newToken();
 
@@ -1525,7 +1693,7 @@ export async function inviteCandidate(ctx, id) {
     row.id,
     await hashRecToken(token, pepper),
     pin ? await hashRecPin(pin, pepper) : null,
-    str(body.message, 'Message', { max: 600 }),
+    message ?? null,
     wantsSlot ? 1 : 0, wantsDetails ? 1 : 0, wantsCv ? 1 : 0,
     `+${days} days`, actorOf(ctx),
   ).first();
@@ -1536,19 +1704,17 @@ export async function inviteCandidate(ctx, id) {
       wantsCv ? 'a CV' : null].filter(Boolean).join(', '),
     actor: actorOf(ctx),
   });
-  await audit(ctx, 'recruitment.invite', row.id, { days, wantsSlot, pin: Boolean(pin) });
 
   const url = `${await siteOrigin(ctx.db, ctx.url.origin)}/c/${token}`;
   const property = await setting(ctx.db, 'property_name', 'Somewhere Nice');
 
-  return json({
-    ok: true,
+  return {
     id: created.id,
     url,
     pin,
     expiresInDays: days,
     message: inviteMessage(row.name, property, url, { wantsSlot, wantsDetails, wantsCv }),
-  });
+  };
 }
 
 function inviteMessage(name, property, url, { wantsSlot, wantsDetails, wantsCv }) {

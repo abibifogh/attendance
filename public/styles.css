@@ -5403,3 +5403,43 @@ body.rota-dragging .pos-add { pointer-events: none; }
 @media (max-width: 40rem) {
   .cv-fields { grid-template-columns: 1fr; }
 }
+
+/* Several ticked, and what can be done with them. The bar is absent until
+   something is ticked: a row of controls above a list nobody has selected
+   anything in is a row of controls that is wrong every time it is read. */
+.rec-picked {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  flex-wrap: wrap;
+  padding: .5rem .7rem;
+  margin-bottom: .7rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.rec-picked-count { font-size: .88rem; font-weight: 600; }
+.rec-picked .btn-row { margin-left: auto; }
+
+.rec-tick-col { width: 1.8rem; }
+.rec-tick-col input { width: 1.15rem; height: 1.15rem; margin: 0; }
+
+.rec-picked-list {
+  list-style: none; margin: .4rem 0 .8rem; padding: 0;
+  display: grid; gap: .2rem;
+  max-height: 11rem; overflow-y: auto;
+}
+.rec-picked-list li {
+  display: flex; justify-content: space-between; gap: 1rem;
+  font-size: .88rem;
+}
+
+/* A link in a cell, selectable but not editable. Monospaced because a link is
+   read character by character when somebody is checking one. */
+.link-cell {
+  width: 100%;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .78rem;
+  padding: .3rem .4rem;
+}

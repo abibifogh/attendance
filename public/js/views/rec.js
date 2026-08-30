@@ -146,12 +146,108 @@ function pipeline(data, reload) {
     return String(b.appliedOn).localeCompare(String(a.appliedOn));
   });
 
-  return card('Everybody who has applied', {
-    note: `${rows.length}`,
-    wide: true,
-    actions: ways,
-  },
-  table([
+  /**
+   * Ticking several and moving them together.
+   *
+   * Shortlisting is the one step genuinely done in a batch: somebody reads
+   * twenty CVs in an evening and six of them are worth seeing. Six presses
+   * with a dialog on each is how that turns into an afternoon, and how a
+   * pipeline stops being kept up to date.
+   *
+   * The bar only appears once something is ticked. A row of controls above a
+   * list nobody has selected anything in is a row of controls that is wrong
+   * every time it is read.
+   */
+  const chosen = new Set();
+  const bar = h('div.rec-picked', { hidden: true });
+
+  const canMove = (r) => !['hired'].includes(r.stage);
+
+  const refresh = () => {
+    bar.hidden = chosen.size === 0;
+    if (!chosen.size) return;
+
+    const picked = rows.filter((r) => chosen.has(r.id));
+    // Where they all sit now decides what is worth offering. Six people at
+    // Applied get "shortlist them"; a mixed handful gets the endings and the
+    // full list, because there is no one forward step for all of them.
+    const stages = new Set(picked.map((r) => r.stage));
+    const only = stages.size === 1 ? [...stages][0] : null;
+    const next = only ? order[order.indexOf(only) + 1] : null;
+    const forward = next && !['hired'].includes(next) ? next : null;
+
+    mount(bar,
+      h('span.rec-picked-count',
+        `${chosen.size} ${chosen.size === 1 ? 'person' : 'people'} ticked`),
+      h('div.btn-row',
+        forward
+          ? h('button.btn-sm.btn-primary', {
+            onclick: () => moveMany(picked, forward, data, reload),
+          }, `Move to ${labelOf(data.stages, forward).toLowerCase()}`)
+          : null,
+        // Only for people who could actually use one. Somebody already taken
+        // on or turned down has nothing to be invited to.
+        picked.some((r) => !['hired', 'declined', 'not_taken'].includes(r.stage))
+          ? h('button.btn-sm', {
+            onclick: () => inviteMany(picked, data, reload),
+          }, 'Make links')
+          : null,
+        h('button.btn-sm', {
+          onclick: () => moveMany(picked, 'not_taken', data, reload),
+        }, 'Not this time'),
+        h('button.btn-sm', {
+          onclick: () => moveMany(picked, null, data, reload),
+        }, 'Somewhere else'),
+        h('button.link-button', {
+          onclick: () => {
+            chosen.clear();
+            for (const box of bodyEl.querySelectorAll('input.rec-tick')) box.checked = false;
+            const all = bodyEl.querySelector('.rec-tick-all');
+            if (all) { all.checked = false; all.indeterminate = false; }
+            refresh();
+          },
+        }, 'Clear')),
+    );
+  };
+
+  const tickAll = h('input.th-tick.rec-tick-all', {
+    type: 'checkbox',
+    title: 'Tick everybody who can be moved',
+    onchange: (event) => {
+      const on = event.target.checked;
+      event.target.indeterminate = false;
+      for (const box of bodyEl.querySelectorAll('input.rec-tick:not(:disabled)')) {
+        box.checked = on;
+        const id = Number(box.dataset.id);
+        if (on) chosen.add(id); else chosen.delete(id);
+      }
+      refresh();
+    },
+  });
+
+  const list = table([
+    data.canManage
+      ? {
+        key: 'id',
+        label: tickAll,
+        cls: 'rec-tick-col',
+        format: (v, r) => h('input.rec-tick', {
+          type: 'checkbox',
+          'data-id': String(v),
+          // Somebody already on the books is not in the pipeline any more,
+          // and nothing a batch does applies to them.
+          disabled: !canMove(r),
+          title: canMove(r) ? '' : 'They are on the books now',
+          onchange: (event) => {
+            if (event.target.checked) chosen.add(v); else chosen.delete(v);
+            const boxes = [...bodyEl.querySelectorAll('input.rec-tick:not(:disabled)')];
+            tickAll.checked = boxes.length > 0 && boxes.every((b) => b.checked);
+            tickAll.indeterminate = !tickAll.checked && boxes.some((b) => b.checked);
+            refresh();
+          },
+        }),
+      }
+      : null,
     {
       key: 'name',
       label: 'Name',
@@ -196,7 +292,7 @@ function pipeline(data, reload) {
         v ? h('span.pill', 'link out') : null,
         r.files ? h('span.pill', `${r.files} file${r.files === 1 ? '' : 's'}`) : null),
     },
-  ], rows, {
+  ].filter(Boolean), rows, {
     groupBy: (r) => labelOf(data.stages, r.stage),
     // The stages in their own order. Alphabetical would put "Not this time"
     // above "Shortlisted", which is sorted correctly and reads as nonsense.
@@ -205,7 +301,15 @@ function pipeline(data, reload) {
     fold: true,
     rowClass: (r) => (['hired', 'declined', 'not_taken'].includes(r.stage) ? 'row-muted' : ''),
     empty: 'Nobody yet.',
-  }));
+  });
+
+  const bodyEl = list;
+
+  return card('Everybody who has applied', {
+    note: `${rows.length}`,
+    wide: true,
+    actions: ways,
+  }, bar, list);
 }
 
 const labelOf = (stages, key) => stages.find((s) => s.key === key)?.label ?? key;
@@ -421,6 +525,254 @@ function asBase64(file) {
     reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''));
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * Move everybody ticked, in one press.
+ *
+ * `stage` of null asks which, for the mixed handful where there is no one
+ * forward step. An ending still insists on a reason, asked once and written on
+ * every one of their records, because "why was this person not taken on" is
+ * the question the record exists to answer and six blanks answer it no better
+ * than one.
+ */
+async function moveMany(picked, stage, data, reload) {
+  const ending = stage === null || ['declined', 'not_taken'].includes(stage);
+  const target = stage ? data.stages.find((s) => s.key === stage) : null;
+  const count = `${picked.length} ${picked.length === 1 ? 'person' : 'people'}`;
+
+  const done = await formDialog({
+    title: target ? `${target.label}: ${count}` : `Move ${count}`,
+    submitLabel: target ? `Move ${picked.length}` : 'Move them',
+    body: h('div',
+      target ? h('p.muted', target.detail) : null,
+
+      h('ul.rec-picked-list', picked.slice(0, 12).map((p) => h('li',
+        h('span', p.name),
+        h('small.muted', labelOf(data.stages, p.stage))))),
+      picked.length > 12
+        ? h('p.muted', { style: { fontSize: '.82rem' } },
+          `and ${picked.length - 12} more`)
+        : null,
+
+      stage
+        ? null
+        : field('To', h('select', { name: 'stage' },
+          data.stages
+            .filter((s) => s.key !== 'hired')
+            .map((s) => h('option', { value: s.key }, s.label)))),
+
+      ending
+        ? field('Why', h('textarea', { name: 'outcome', rows: 3, maxlength: 400 }),
+          'Written on every one of their records. It is the whole value of this '
+          + 'afterwards: the question anybody asks a year later is why.')
+        : field('Anything worth noting', h('textarea', {
+          name: 'outcome', rows: 2, maxlength: 400,
+        })),
+
+      picked.some((p) => p.interview)
+        ? h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+          'Anybody being taken out of the pipeline gives their interview time back '
+          + 'to the diary.')
+        : null,
+    ),
+    onSubmit: async (form) => api.recMoveCandidates({
+      ids: picked.map((p) => p.id),
+      stage: stage ?? form.get('stage'),
+      outcome: form.get('outcome'),
+    }),
+  });
+  if (!done) return;
+
+  // One refusal does not sink the rest, so the message says what actually
+  // happened rather than reporting a clean sweep.
+  if (done.skipped?.length) {
+    toast(`${done.moved.length} moved. ${done.skipped.length} skipped: `
+      + `${done.skipped[0].name ?? 'somebody'} — ${done.skipped[0].why}`, 'warn');
+  } else {
+    toast(`${done.moved.length} moved.`, 'good');
+  }
+  await reload();
+}
+
+/**
+ * A link each, for everybody ticked, and a file to keep them in.
+ *
+ * The point of shortlisting six people in one press is inviting six people in
+ * one press. Doing it one at a time, through a dialog that shows a link once
+ * and never again, is six chances to lose one.
+ *
+ * SO THE FIRST THING OFFERED IS THE DOWNLOAD. Every link is stored only as a
+ * hash and can never be shown again; a browser closed at the wrong moment
+ * loses the lot. The spreadsheet has the name, the number, the link and the
+ * whole message on one row, which is both a safe copy and the shape somebody
+ * actually wants for pasting them into WhatsApp one at a time.
+ */
+async function inviteMany(picked, data, reload) {
+  const live = picked.filter((r) => !['hired', 'declined', 'not_taken'].includes(r.stage));
+
+  const made = await formDialog({
+    title: `A link each for ${live.length} ${live.length === 1 ? 'person' : 'people'}`,
+    submitLabel: `Make ${live.length} link${live.length === 1 ? '' : 's'}`,
+    body: h('div',
+      h('p.muted', 'Nothing is sent from here. You get a link and a message for each of them, '
+        + 'and a file to keep them in, to send however you already talk to people.'),
+
+      h('ul.rec-picked-list', live.slice(0, 12).map((p) => h('li',
+        h('span', p.name),
+        h('small.muted', p.phone || 'no number')))),
+      live.length > 12
+        ? h('p.muted', { style: { fontSize: '.82rem' } }, `and ${live.length - 12} more`)
+        : null,
+
+      h('label.tickline',
+        h('input', { type: 'checkbox', name: 'wantsSlot', checked: true }),
+        h('span', 'Let them pick an interview time')),
+      h('label.tickline',
+        h('input', { type: 'checkbox', name: 'wantsDetails', checked: true }),
+        h('span', 'Ask them to check their phone number and email')),
+      h('label.tickline',
+        h('input', { type: 'checkbox', name: 'wantsCv', checked: false }),
+        h('span', 'Ask for their CV')),
+
+      field('Anything to say', h('textarea', {
+        name: 'message', rows: 3, maxlength: 600,
+        placeholder: 'Thank you for applying. Please pick a time that suits you…',
+      }), 'The same message on every one of them.'),
+      field('Lasts', h('input', { type: 'number', name: 'days', min: 1, max: 60, value: 10 }),
+        'Days.'),
+
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'No four-digit code on a batch: a code has to be told to each person out loud on a '
+        + 'call, which is the phone call this exists to remove, and one code shared by twenty '
+        + 'is not really a code. Where you want one, make that link on its own from their '
+        + 'page.'),
+    ),
+    onSubmit: async (form) => api.recInviteMany({
+      ids: live.map((p) => p.id),
+      wantsSlot: form.get('wantsSlot') === 'on',
+      wantsDetails: form.get('wantsDetails') === 'on',
+      wantsCv: form.get('wantsCv') === 'on',
+      message: form.get('message'),
+      days: form.get('days'),
+    }),
+  });
+  if (!made) return;
+
+  await showLinks(made);
+  await reload();
+}
+
+/**
+ * The links, once, with the file first.
+ *
+ * The download is the primary button and it is at the top, because it is the
+ * only one of these controls that cannot be repeated. Everything else on this
+ * screen is a convenience; that one is the difference between having the links
+ * and having made them.
+ */
+async function showLinks(made) {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const filename = `interview-links-${stamp}.csv`;
+
+  const download = () => {
+    const rows = [
+      ['Name', 'Phone', 'Email', 'Link', 'Expires in (days)', 'Message'],
+      ...made.links.map((l) => [
+        l.name, l.phone ?? '', l.email ?? '', l.url, String(l.expiresInDays), l.message,
+      ]),
+    ];
+    // A BOM, so a spreadsheet opened in Ghana reads the accented names right
+    // rather than showing them as mojibake and having somebody retype them.
+    const csv = `\ufeff${rows.map((row) => row.map(cell).join(',')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = h('a', { href: url, download: filename });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  await formDialog({
+    title: `${made.links.length} link${made.links.length === 1 ? '' : 's'} — save them now`,
+    submitLabel: 'Done',
+    wide: true,
+    body: h('div',
+      h('div.alert.warn',
+        h('span.alert-icon', '⚠️'),
+        h('div',
+          h('div.alert-title', 'This is the only time you will see them'),
+          h('div.alert-detail', 'Only a fingerprint of each one is stored, so they cannot be '
+            + 'shown again. Download the file before you close this: making them again is '
+            + 'quick, but these ones will be gone.'))),
+
+      h('div.btn-row', { style: { marginBottom: '.9rem' } },
+        h('button.btn.btn-primary', { onclick: download }, 'Download the file'),
+        h('button.btn-sm', {
+          onclick: async (e) => {
+            try {
+              await navigator.clipboard.writeText(
+                made.links.map((l) => `${l.name}\t${l.phone ?? ''}\t${l.url}`).join('\n'),
+              );
+              e.target.textContent = 'Copied ✓';
+            } catch {
+              toast('Use the file instead.', 'bad');
+            }
+          },
+        }, 'Copy all')),
+
+      made.skipped?.length
+        ? h('div.alert.info',
+          h('span.alert-icon', 'ℹ️'),
+          h('div',
+            h('div.alert-title',
+              `${made.skipped.length} did not get one`),
+            h('div.alert-detail', made.skipped
+              .map((sk) => `${sk.name ?? 'Somebody'}: ${sk.why}`).join(' '))))
+        : null,
+
+      table([
+        { key: 'name', label: 'Name', format: (v, r) => h('div', h('div', v), h('small.muted', r.phone ?? '')) },
+        {
+          key: 'url',
+          label: 'Their link',
+          format: (v) => h('input.link-cell', {
+            type: 'text', value: v, readonly: true, onclick: (e) => e.target.select(),
+          }),
+        },
+        {
+          key: 'id',
+          label: '',
+          format: (v, r) => h('div.btn-row',
+            h('button.btn-sm', {
+              onclick: async (e) => {
+                try {
+                  await navigator.clipboard.writeText(r.message);
+                  e.target.textContent = 'Copied ✓';
+                } catch {
+                  toast('Select the link and copy it.', 'bad');
+                }
+              },
+            }, 'Copy'),
+            h('a.btn-sm', {
+              href: `https://wa.me/${(r.phone ?? '').replace(/\D/g, '')}`
+                + `?text=${encodeURIComponent(r.message)}`,
+              target: '_blank', rel: 'noopener',
+            }, 'WhatsApp')),
+        },
+      ], made.links, { empty: 'None were made.' }),
+
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        `They stop working in ${made.expiresInDays} days.`),
+    ),
+    onSubmit: async () => ({ ok: true }),
+  });
+}
+
+/** One cell of a CSV, quoted where it has to be. */
+function cell(value) {
+  const text = String(value ?? '');
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 function rolePicker(data, current) {
