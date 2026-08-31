@@ -1,7 +1,7 @@
 import { badRequest, forbidden, json, notFound, readJson, str } from '../lib/http.js';
 import { getPepper, hashPin, throttleCheck, throttleFail } from '../lib/auth.js';
 import { sendEmail, senderNameOf, senderWithName } from '../lib/notify.js';
-import { sha256Hex } from '../lib/files.js';
+import { asBytes, sha256Hex } from '../lib/files.js';
 import { whoCanSign } from '../lib/correspondence.js';
 import { normaliseLayout } from '../lib/paper.js';
 import { appendEvent, hashAccessCode, hashSignToken } from './correspondence.js';
@@ -276,8 +276,9 @@ async function wholeFile(db, row) {
     chunks.push(part.content);
   }
 
-  const bytes = chunks.filter(Boolean)
-    .map((c) => (c instanceof ArrayBuffer ? new Uint8Array(c) : c));
+  // asBytes, because D1 returns a BLOB as a plain array of numbers and an
+  // ArrayBuffer check lets that straight through.
+  const bytes = chunks.map((c) => asBytes(c)).filter(Boolean);
   const out = new Uint8Array(bytes.reduce((n, b) => n + b.length, 0));
   let at = 0;
   for (const part of bytes) { out.set(part, at); at += part.length; }

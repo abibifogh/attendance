@@ -12,6 +12,7 @@ import {
 import {
   REQUIRED_DOCUMENTS, STANDARD_TEMPLATES, fileStatus,
 } from '../lib/ghana-templates.js';
+import { asBytes } from '../lib/files.js';
 
 /**
  * Employee records, from the property's side of the desk.
@@ -374,7 +375,10 @@ export async function storeFile(ctx, staffId, {
 
 /** Read a file back, in order. */
 export async function readFile(db, row) {
-  const first = row.content instanceof ArrayBuffer ? new Uint8Array(row.content) : row.content;
+  // asBytes rather than an ArrayBuffer check: D1 returns a BLOB as a plain
+  // array of numbers, which this let through untouched and straight into a
+  // Response, where it stringifies.
+  const first = asBytes(row.content) ?? new Uint8Array(0);
   const parts = Number(row.parts ?? 1);
   if (parts <= 1) return first;
 
@@ -386,7 +390,7 @@ export async function readFile(db, row) {
       'SELECT content FROM hr_document_part WHERE document_id = ? AND seq = ?',
     ).bind(row.id, seq).first();
     if (!part) break;
-    chunks.push(part.content instanceof ArrayBuffer ? new Uint8Array(part.content) : part.content);
+    chunks.push(asBytes(part.content) ?? new Uint8Array(0));
   }
 
   const total = chunks.reduce((n, c) => n + c.length, 0);

@@ -2199,6 +2199,28 @@ reason to skip the instalment that finished it. A settled advance with nothing
 recorded against a month still takes nothing off it, so one finished in July
 does not come back in August.
 
+### A stored file comes back as a file, whatever the driver hands over
+
+Opening a candidate's CV gave *Failed to load PDF document*. The route handed
+the database column straight to the response, and D1 returns a BLOB as a plain
+array of numbers, so the browser was sent the text `37,80,68,70,45,...` under a
+PDF content type. Every CV on the system read as a corrupt file.
+
+`asBytes` exists for exactly this and carries a long comment about the last
+time it cost every stored file in the app. The recruitment routes were written
+without it. Three other places had the same hole, each checking for an
+ArrayBuffer and letting the array of numbers through: the staff-document
+reader, the signed-letter reader, and — worse than a broken download — the step
+that copies a candidate's CV onto their staff record when they are taken on,
+which was writing the mangled shape back into the database.
+
+The test for it has to lie about the driver to be worth anything. `node:sqlite`
+hands a BLOB back as a Uint8Array, which every one of those routes handled by
+accident, which is why the suite was green throughout. The shim in
+`a-stored-file-comes-back-as-a-file.test.js` returns arrays of numbers the way
+the real thing does, and the tests fail against any route that has not been
+through `asBytes`.
+
 ### A bonus is net for most people, and gross for some
 
 A bonus here is normally a net promise. Somebody is told five hundred cedis,

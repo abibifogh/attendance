@@ -5,7 +5,7 @@ import {
 import { getPepper, hashPin } from '../lib/auth.js';
 import { allows } from '../lib/permissions.js';
 import { createNotice } from '../lib/notices.js';
-import { fromBase64 } from '../lib/files.js';
+import { asBytes, fromBase64 } from '../lib/files.js';
 import { claimOrphans, recompute } from '../lib/attendance-ingest.js';
 import { todayIn } from '../util/dates.js';
 import { mapLink, mapsKey } from '../lib/places.js';
@@ -1009,7 +1009,16 @@ export async function readFile(ctx, id, fileId) {
   ).bind(Number(fileId), Number(id)).first();
   if (!file) throw notFound('No such file.');
 
-  return new Response(file.content, {
+  // asBytes, not the column straight out of the driver. D1 hands a BLOB back
+  // as a plain array of numbers, and `new Response([37, 80, 68, 70, ...])`
+  // stringifies it: the browser is sent "37,80,68,70,..." under a PDF content
+  // type and says "Failed to load PDF document". Every CV on the system read
+  // like a corrupt file. The same lesson is written at length over `asBytes`,
+  // and this is what it costs when a new route does not use it.
+  const bytes = asBytes(file.content);
+  if (!bytes || !bytes.length) throw notFound('That file is empty.');
+
+  return new Response(bytes, {
     headers: {
       'Content-Type': file.mime,
       'Content-Disposition': `inline; filename="${String(file.filename || file.title).replace(/"/g, '')}"`,
@@ -1915,7 +1924,10 @@ export async function hire(ctx, id) {
        VALUES (?1,?2,?3,?4,?5,?6,?7,?8,'office','filed')`,
     ).bind(
       staff.id, staffDocumentKind(file.kind), file.title, file.filename,
-      file.mime, file.bytes, file.content,
+      // Through asBytes on the way across too, or taking somebody on writes
+      // their CV onto their staff record in whatever shape the driver handed
+      // it over in and it is unreadable there as well.
+      file.mime, file.bytes, asBytes(file.content),
       `${file.uploaded_by || 'Recruitment'} (from their application)`,
     ).run().catch(() => {});
     moved += 1;
