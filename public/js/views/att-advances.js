@@ -219,13 +219,15 @@ function dueCard(data, month, reload, cash) {
         ? `Closed off by ${data.closed.by || 'somebody'}. Every advance running in `
           + `${niceMonth(month)} has an answer against it.`
         : `Nothing was due to come off anybody's pay in ${niceMonth(month)}.`),
-      closed ? null : h('button.btn-sm', {
-        onclick: async () => {
-          await api.advanceCloseMonth({ month, rows: [] });
-          toast(`${niceMonth(month)} closed off.`, 'good');
-          await reload();
-        },
-      }, 'Close the month anyway'));
+      closed
+        ? h('button.btn-sm', { onclick: () => openItBackUp(month, reload) }, 'Open it back up')
+        : h('button.btn-sm', {
+          onclick: async () => {
+            await api.advanceCloseMonth({ month, rows: [] });
+            toast(`${niceMonth(month)} closed off.`, 'good');
+            await reload();
+          },
+        }, 'Close the month anyway'));
   }
 
   const state = new Map(outstanding.map((row) => [row.advanceId, {
@@ -291,6 +293,40 @@ function dueCard(data, month, reload, cash) {
       },
     }, `Record ${niceMonth(month)}`),
     h('button.btn-sm', { onclick: () => addOne(data, reload) }, 'Something new was given out')));
+}
+
+/**
+ * Take the closed-off mark back off a month.
+ *
+ * A month gets closed off in a hurry and somebody then finds a deduction that
+ * never happened. The mark used to be permanent, so the only way on was to
+ * leave a wrong figure standing.
+ *
+ * The dialog says what it does not do, because the reasonable expectation of a
+ * button called "Open it back up" is that everything goes back to how it was,
+ * and that is not what happens: the deductions already recorded stay put, and
+ * a wrong one is taken off with the cross beside it.
+ */
+async function openItBackUp(month, reload) {
+  const out = await formDialog({
+    title: `Open ${niceMonth(month)} back up`,
+    submitLabel: 'Open it back up',
+    body: h('div',
+      h('p', { style: { marginTop: 0 } },
+        `${niceMonth(month)} stops being closed off, so it can be answered again and the `
+        + 'end-of-month question will come round to it.'),
+      h('p.muted', 'Nothing already recorded is taken back. If a deduction against this '
+        + 'month is wrong, take that one off with the cross beside it on the advance itself, '
+        + 'which leaves a note saying why.')),
+    onSubmit: () => api.advanceReopenMonth({ month }),
+  });
+  if (!out) return;
+
+  toast(out.kept
+    ? `${niceMonth(month)} is open again. ${out.kept} movement${out.kept === 1 ? '' : 's'} `
+      + 'against it left as they are.'
+    : `${niceMonth(month)} is open again.`, 'good');
+  await reload();
 }
 
 /** Look at another month, which is how a missed one gets caught up. */

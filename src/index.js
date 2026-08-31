@@ -195,6 +195,9 @@ export const ROUTES = [
   ['GET', '/api/advances', 'hr_pay', advance.advances],
   ['POST', '/api/advances', 'hr_pay', advance.addAdvance],
   ['POST', '/api/advances/close', 'hr_pay', advance.closeMonth],
+  // And opening one back up. Must stay above /api/advances/:id patterns of the
+  // same shape, or 'reopen' is read as the id of an advance.
+  ['POST', '/api/advances/reopen', 'hr_pay', advance.reopenMonth],
 
   // Advances already running somewhere else, brought in as a sheet. It creates
   // nobody, records nothing twice, and tells nobody: a file of advances that

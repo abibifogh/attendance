@@ -1881,9 +1881,13 @@ export async function closeRun(ctx) {
 
   // Nothing was due in the month, but the advances screen should still know
   // somebody has been through it.
+  // DO NOTHING rather than DO UPDATE. A month somebody had already closed off
+  // by hand is their answer, with their name and their note on it, and the
+  // payroll stamping its own over the top loses that — and then reopening the
+  // payroll deletes a mark the payroll never set.
   await ctx.db.prepare(
     `INSERT INTO hr_advance_month (month, closed_by, note) VALUES (?1, ?2, ?3)
-     ON CONFLICT (month) DO UPDATE SET closed_by = ?2, closed_at = datetime('now'), note = ?3`,
+     ON CONFLICT (month) DO NOTHING`,
   ).bind(month, actorOf(ctx), `Closed with the payroll for ${month}`).run().catch(() => {});
 
   await ctx.db.prepare(
@@ -1916,6 +1920,14 @@ export async function reopenRun(ctx) {
   const undone = await ctx.db.prepare(
     "DELETE FROM hr_advance_entry WHERE month = ? AND source = 'payroll'",
   ).bind(month).run().catch(() => null);
+
+  // And the advances month it closed off, if it was this that closed it. Only
+  // its own mark: a month somebody closed off by hand on the Advances page is
+  // their answer, not the payroll's, and the same rule that leaves their
+  // repayments alone leaves this alone too.
+  await ctx.db.prepare(
+    'DELETE FROM hr_advance_month WHERE month = ? AND note = ?',
+  ).bind(month, `Closed with the payroll for ${month}`).run().catch(() => {});
 
   // An advance settled by a repayment that has just been taken back is not
   // settled any more.

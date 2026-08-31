@@ -2117,6 +2117,27 @@ The live note about why nothing is coming off an advance is shown only on an
 open month, for the same reason: worked out from the books as they stand today,
 it would be explaining figures the table beside it is not showing.
 
+### A closed-off advances month can be opened back up
+
+A month gets closed off in a hurry on the last day of it, and then somebody
+finds a deduction that never happened. The mark was permanent: the screen said
+the month was dealt with and offered nothing, so the only way on was to leave a
+wrong figure standing.
+
+**Open it back up** sits on the closed month's card. It lifts the mark and
+nothing else: the month can be answered again and the end-of-month question
+comes round to it. Every deduction already recorded stays exactly where it is,
+because taking money back off a ledger is not something to do as a side effect
+of pressing a button called reopen. A wrong movement comes off one at a time,
+with the cross beside it and its own note. The dialog says so before you press,
+and the message afterwards says how many movements were left standing.
+
+Reopening the **payroll** now takes its own mark back with it, the same way it
+already took back only its own repayments. And closing the payroll no longer
+stamps over a month somebody had closed off by hand: that is their answer, with
+their name and their note on it, and it was being overwritten and then deleted
+by a payroll reopen that had never set it.
+
 ### A bonus is net for most people, and gross for some
 
 A bonus here is normally a net promise. Somebody is told five hundred cedis,

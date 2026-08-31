@@ -1311,6 +1311,10 @@ export const GUIDE = [
         + 'half an instalment off their pay. Closing the payroll afterwards cannot take it '
         + 'twice, because one answer per advance per month is a rule in the database rather '
         + 'than a check on a screen.' },
+      { p: 'A month closed off on Advances can be opened back up: the button is on the '
+        + 'closed month\u2019s own card. It lifts the mark and nothing else, so the month can '
+        + 'be answered again and everything already recorded stays where it is. A wrong '
+        + 'deduction comes off one at a time, with the cross beside it.' },
       { note: 'A closed month is a snapshot, so editing an advance afterwards does not move '
         + 'the figures on it. Change one and the payroll says so by name, and says to reopen '
         + 'the month and close it again to take the change up. That is also the answer when a '

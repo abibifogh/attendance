@@ -262,6 +262,7 @@ export const api = {
   advances: (month) => request(`/api/advances${month ? `?month=${month}` : ''}`),
   advanceAdd: (body) => request('/api/advances', { method: 'POST', body }),
   advanceCloseMonth: (body) => request('/api/advances/close', { method: 'POST', body }),
+  advanceReopenMonth: (body) => request('/api/advances/reopen', { method: 'POST', body }),
   advancesFor: (staffId) => request(`/api/advances/staff/${staffId}`),
   advanceDecide: (id, body) => request(`/api/advances/${id}/decide`, { method: 'POST', body }),
   advanceAdjust: (id, body) => request(`/api/advances/${id}`, { method: 'PATCH', body }),

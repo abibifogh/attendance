@@ -1096,6 +1096,46 @@ export async function closeMonth(ctx) {
   return json({ ok: true, month, taken, skipped });
 }
 
+/**
+ * Open a month back up after it was closed off.
+ *
+ * A month gets closed off in a hurry on the last day of it, and then somebody
+ * finds a deduction that never happened. Before this the mark was permanent:
+ * the screen said the month was dealt with and offered nothing, so the only
+ * way on was to leave a wrong figure standing.
+ *
+ * IT LIFTS THE MARK AND NOTHING ELSE. Every deduction already recorded stays
+ * exactly where it is, because taking money back off a ledger is not something
+ * to do as a side effect of pressing "reopen". A wrong movement is taken off
+ * one at a time, with its own note, which is what the cross beside each one is
+ * for.
+ */
+export async function reopenMonth(ctx) {
+  const body = await readJson(ctx.request);
+  const month = isMonth(body.month) ? String(body.month) : null;
+  if (!month) throw badRequest('Say which month to open back up.');
+
+  const closed = await ctx.db.prepare('SELECT * FROM hr_advance_month WHERE month = ?')
+    .bind(month).first();
+  if (!closed) throw badRequest('That month has not been closed off.');
+
+  await ctx.db.prepare('DELETE FROM hr_advance_month WHERE month = ?').bind(month).run();
+
+  // What is still standing against the month, so the screen can say plainly
+  // that reopening did not take anything back.
+  const kept = await ctx.db.prepare(
+    `SELECT COUNT(*) AS n FROM hr_advance_entry
+      WHERE month = ? AND kind IN ('repayment', 'skipped')`,
+  ).bind(month).first().catch(() => ({ n: 0 }));
+
+  await audit(ctx, 'advance.reopen_month', month, {
+    wasClosedBy: closed.closed_by ?? null,
+    entriesKept: Number(kept?.n ?? 0),
+  });
+
+  return json({ ok: true, month, kept: Number(kept?.n ?? 0) });
+}
+
 // --------------------------------------------------------------------------
 // The person paying it back
 // --------------------------------------------------------------------------
