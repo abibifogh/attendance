@@ -1328,6 +1328,10 @@ export const GUIDE = [
         + 'the figures on it. Change one and the payroll says so by name, and says to reopen '
         + 'the month and close it again to take the change up. That is also the answer when a '
         + 'deduction you have just taken off is still showing.' },
+      { p: 'Recording the last instalment marks the advance paid off, and that instalment '
+        + 'still comes off that month\u2019s pay. On a one-month advance that is the very '
+        + 'first deduction, so an advance can be recorded, settled and deducted all in the '
+        + 'same month.' },
       { warn: 'A month you let go takes nothing off, which is the point of letting it go. '
         + 'Money handed back in cash is different again: record that as an adjustment on the '
         + 'advance, which brings the balance down without excusing the month\u2019s '

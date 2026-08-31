@@ -2178,6 +2178,27 @@ Only where the deduction would otherwise be due this month. Somebody off the
 payroll whose advance does not start until September has two reasons at once,
 and saying both is noise about something that was not going to happen anyway.
 
+### The instalment that finishes an advance still comes off the pay
+
+The worst of these, because it hits the very first deduction rather than the
+last. Five hundred is handed over and repaid over one month. Somebody records
+the five hundred against August on the Advances page, which is correct, and
+recording it settles the advance on the spot, which is also correct.
+
+The payroll then loaded only advances still running, and skipped that one as
+finished. So the person was paid in full, their record said **paid off**, and
+the money never came off anything. On a one-month advance it happened every
+time; on a longer one it happened on the final month, which is the month the
+balance reaches nought.
+
+Two things were wrong and both are fixed. The payroll now loads settled
+advances as well as running ones, because a settled advance still has movements
+against months. And the rule asks **what was recorded for the month before it
+asks whether the advance is still running**: an advance being finished is not a
+reason to skip the instalment that finished it. A settled advance with nothing
+recorded against a month still takes nothing off it, so one finished in July
+does not come back in August.
+
 ### A bonus is net for most people, and gross for some
 
 A bonus here is normally a net promise. Somebody is told five hundred cedis,

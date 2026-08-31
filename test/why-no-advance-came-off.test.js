@@ -519,3 +519,98 @@ test('somebody off the payroll whose advance is not due yet is not nagged about'
   const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
   assert.deepEqual(data.advancesNotDue, []);
 });
+
+// ---------------------------------------------------------------------------
+// An advance its own last instalment finished off
+// ---------------------------------------------------------------------------
+
+test('a one-month advance still comes off the pay that paid it off', async () => {
+  // The worst of the lot, because it hits the very first deduction. 500 handed
+  // over, 500 recorded against August on the Advances page, and recording it
+  // settles the advance on the spot. The payroll then skipped it as finished
+  // and took nothing off, so the person was paid in full and their advance
+  // said "paid off".
+  const { raw, db } = setup();
+  await onPayroll(db);
+  const given = await read(await addAdvance(ctx(db, {
+    body: {
+      staffId: 1, amount: 500, months: 1, takenOn: '2026-08-14', startMonth: MONTH,
+      purpose: 'other',
+    },
+  })));
+
+  await read(await closeMonth(ctx(db, {
+    body: { month: MONTH, rows: [{ advanceId: given.id, amount: 500 }] },
+  })));
+  assert.equal(
+    raw.prepare('SELECT status FROM hr_advance WHERE id = ?').get(given.id).status,
+    'settled',
+    'the last instalment settles it, which is right',
+  );
+
+  const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(data.lines[0].loanTotal, 500, 'and it still comes off August');
+  assert.deepEqual(data.advancesNotDue, []);
+});
+
+test('a settled advance takes nothing off any later month', async () => {
+  const { db } = setup();
+  await onPayroll(db);
+  const given = await read(await addAdvance(ctx(db, {
+    body: {
+      staffId: 1, amount: 500, months: 1, takenOn: '2026-08-14', startMonth: MONTH,
+      purpose: 'other',
+    },
+  })));
+  await read(await closeMonth(ctx(db, {
+    body: { month: MONTH, rows: [{ advanceId: given.id, amount: 500 }] },
+  })));
+
+  const later = await read(await payroll(ctx(db, { query: '?month=2026-09' })));
+  assert.equal(later.lines[0].loanTotal, 0, 'it is finished, and stays finished');
+  assert.deepEqual(later.advancesNotDue, [], 'and is not explained, because it is simply done');
+});
+
+test('the payslip names the advance that finished, so the figure can be checked', async () => {
+  const { db } = setup();
+  await onPayroll(db);
+  const given = await read(await addAdvance(ctx(db, {
+    body: {
+      staffId: 1, amount: 500, months: 1, takenOn: '2026-08-14', startMonth: MONTH,
+      purpose: 'other',
+    },
+  })));
+  await read(await closeMonth(ctx(db, {
+    body: { month: MONTH, rows: [{ advanceId: given.id, amount: 500 }] },
+  })));
+
+  const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(data.lines[0].loans.length, 1);
+  assert.equal(data.lines[0].loans[0].advanceId, given.id);
+  assert.equal(data.lines[0].loans[0].amount, 500);
+});
+
+test('the last instalment of a longer advance comes off too', async () => {
+  // Not only the one-month case: the same thing happens on the final month of
+  // any advance, because that is the month the balance reaches nought.
+  const { raw, db } = setup();
+  await onPayroll(db);
+  const given = await read(await addAdvance(ctx(db, {
+    body: {
+      staffId: 1, amount: 400, months: 2, monthly: 200, takenOn: '2026-07-05',
+      startMonth: '2026-07', purpose: 'other',
+    },
+  })));
+  await read(await closeMonth(ctx(db, {
+    body: { month: '2026-07', rows: [{ advanceId: given.id, amount: 200 }] },
+  })));
+  await read(await closeMonth(ctx(db, {
+    body: { month: MONTH, rows: [{ advanceId: given.id, amount: 200 }] },
+  })));
+  assert.equal(
+    raw.prepare('SELECT status FROM hr_advance WHERE id = ?').get(given.id).status, 'settled',
+  );
+
+  const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(data.lines[0].loanTotal, 200);
+});

@@ -109,8 +109,16 @@ async function gather(ctx, month, { open = true } = {}) {
       ctx.db.prepare('SELECT * FROM pay_penalty WHERE run_id = ? ORDER BY id').bind(run.id).all(),
       ctx.db.prepare('SELECT * FROM pay_severance WHERE run_id = ? ORDER BY id').bind(run.id).all()
         .catch(() => ({ results: [] })),
-      ctx.db.prepare("SELECT * FROM hr_advance WHERE status = 'approved'").all()
-        .catch(() => ({ results: [] })),
+      // Settled ones too, not only the ones still running. Recording the last
+      // instalment settles an advance on the spot, so a one-month advance is
+      // settled by its very first deduction — and leaving those out here is
+      // what made that deduction vanish off the payslip. `dueThisMonth` is
+      // what decides whether anything comes off; this only has to hand it
+      // every advance that might have an answer against the month.
+      ctx.db.prepare(
+        `SELECT * FROM hr_advance
+          WHERE status IN ('approved', 'settled')`,
+      ).all().catch(() => ({ results: [] })),
       ctx.db.prepare('SELECT * FROM hr_advance_entry').all().catch(() => ({ results: [] })),
       ctx.db.prepare('SELECT * FROM pay_slip WHERE run_id = ?').bind(run.id).all(),
     ]);

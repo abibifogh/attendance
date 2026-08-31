@@ -326,20 +326,30 @@ export const NOT_DUE = {
 };
 
 export function whyNotDue(advance, entries = [], month) {
+  // THE ANSWER FOR THE MONTH IS ASKED FIRST, BEFORE ANYTHING ELSE.
+  //
+  // A repayment recorded on the Advances page is not a reason for nothing to
+  // come off. IT IS WHAT COMES OFF, and reading it as "already dealt with, so
+  // deduct nothing" is what paid nine people their full salary while their
+  // balances went down anyway.
+  //
+  // And it has to be asked before the status, because recording the last
+  // instalment settles the advance on the spot. On a one-month advance that is
+  // the very first deduction: 500 handed over, 500 recorded against August,
+  // advance marked paid off, and the payroll then skipped it as finished and
+  // took nothing off the pay. The advance being finished is not a reason to
+  // skip the instalment that finished it.
+  const already = answerFor(entries, month);
+  if (already?.kind === 'skipped') return 'let_go';
+  if (already) return null;
+
+  // Nothing recorded for the month, so it comes down to whether the advance is
+  // still running and has reached its first month.
   if (!isOpen(advance)) return 'closed';
 
   const start = startsOn(advance);
   if (!start) return 'no_start';
   if (start > month) return 'not_yet';
-
-  // A repayment recorded on the Advances page is not a reason for nothing to
-  // come off. IT IS WHAT COMES OFF, and reading it as "already dealt with, so
-  // deduct nothing" is what paid nine people their full salary in August while
-  // their balances went down anyway. Only a month deliberately let go means
-  // nothing comes off.
-  const already = answerFor(entries, month);
-  if (already?.kind === 'skipped') return 'let_go';
-  if (already) return null;
 
   if (balanceOf(advance, entries) <= 0) return 'paid_off';
   return null;
