@@ -2001,6 +2001,49 @@ written without a library, because a Worker has no zip in it and an .xlsx is a
 zip of XML; the parts go in uncompressed, which every spreadsheet program
 opens.
 
+### The net pays on their own, for the bank
+
+Nobody pays forty people by standing at a counter forty times. The bank takes
+one file, and everything on that file is an account number and an amount. Hive
+already knows both, and typing them out again once a month is how a digit gets
+dropped and somebody is paid nine hundred cedis instead of nine thousand.
+
+So **Export** also offers a **bank file**, in two shapes, and the difference
+between them is who reads them.
+
+**Bank file (Excel)** is for whoever runs the month. The transfers are on one
+sheet with a total under them, so it can be checked against the payroll before
+anything leaves, and the people paid another way are on a second sheet with the
+reason beside each one.
+
+**Bank file (CSV)** is for the bank's own portal, so it is the transfers alone,
+bare: a heading row, the rows, and not one thing else. No total, because a
+total at the bottom of an upload is a line the bank tries to pay somebody. No
+byte order mark either, which is a first column a portal cannot read.
+
+It carries the **narrowest thing it could**: account name, account number,
+bank, branch, amount, reference, employee number and name. No basic, no
+allowances, no tax, no bonus. It goes to a clerk at a bank who has no business
+knowing what anybody's PAYE came to.
+
+**Not everybody is on it, and that is the point.** Somebody on mobile money and
+somebody paid in cash both belong nowhere near a bank upload, so they come out
+on the second sheet instead, with the mobile money number beside them. They are
+not dropped, because they still have to be paid.
+
+The one worth interrupting somebody over is different from both: a person the
+property has set to be paid **by bank whose account number nobody has filled
+in**. That is not somebody paid another way, it is somebody who will simply not
+be paid, and it is invisible on a payroll screen because every figure against
+them is right. So the payroll page names them above the table before the file
+is ever made, and the Net to pay tile says how the month splits: so many by
+transfer, so many by hand.
+
+Where the property's own record says "pay this one by mobile money", that wins
+over whatever old account number is still on the record. Where nobody has
+answered at all, an account number is taken as the answer. The narration is
+`Salary Aug 2026` unless a run is asked for a different one.
+
 ### A bonus is net for most people, and gross for some
 
 A bonus here is normally a net promise. Somebody is told five hundred cedis,

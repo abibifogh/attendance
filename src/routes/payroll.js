@@ -11,6 +11,7 @@ import { readSheet, tallyOf } from '../lib/pay-import.js';
 import { isAdmin } from '../lib/payroll-access.js';
 import { hasTiers, readTiers, tierAmount } from '../lib/pay-tiers.js';
 import { S, colName, workbook } from '../lib/xlsx.js';
+import { BANK_COLUMNS, BY_HAND_COLUMNS, bankFile } from '../lib/bank-file.js';
 import { addMonths, isMonth, monthOf, todayIn } from '../util/dates.js';
 
 /**
@@ -375,6 +376,7 @@ export async function payroll(ctx) {
   const { timezone } = await settingsOf(ctx.db);
   const month = monthFrom(ctx.url, timezone);
   const data = await gather(ctx, month);
+  const howTheyArePaid = await howEverybodyIsPaid(ctx.db);
 
   // A closed month answers from what was written down, not from what the
   // figures happen to say today.
@@ -437,6 +439,24 @@ export async function payroll(ctx) {
     lines: isAdmin(ctx.session) ? lines : lines.map(withoutTheSlip),
     slips: isAdmin(ctx.session),
     totals: totalsOf(lines),
+    // How the month would leave the building. Counted here rather than on the
+    // screen so the note above the table and the file itself cannot disagree,
+    // and so somebody set to be paid by bank with no account number is visible
+    // before the file is made rather than after the bank rejects the line.
+    bank: (() => {
+      const file = bankFile(lines, howTheyArePaid, { month });
+      return {
+        toBank: file.rows.length,
+        toBankTotal: file.total,
+        byHand: file.byHand.length,
+        byHandTotal: file.byHandTotal,
+        missingAccounts: file.missingAccounts,
+        // Named, because "three people" does not tell anybody whose record to
+        // open, and these are the ones who will not be paid.
+        missing: file.byHand.filter((r) => r.how === 'no-account').map((r) => r.name),
+        reference: file.reference,
+      };
+    })(),
     schemes: data.schemes.map((scheme) => ({
       id: scheme.id,
       name: scheme.name,
@@ -1067,6 +1087,150 @@ export async function exportBook(ctx) {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename="${name}"`,
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
+/**
+ * How everybody is paid, against their staff id.
+ *
+ * Read from hr_profile, which is where the personal record keeps it. The catch
+ * covers exactly one case: a database old enough not to have the people tables
+ * yet. It must not be widened to cover a mistyped column, because a swallowed
+ * typo here is a bank file that quietly comes out with nobody on it.
+ */
+async function howEverybodyIsPaid(db) {
+  const rows = await db.prepare(
+    `SELECT staff_id, pay_method, bank_name, bank_branch, account_name, account_number,
+            momo_network, momo_number
+       FROM hr_profile`,
+  ).all().catch(() => ({ results: [] }));
+
+  return new Map((rows.results ?? []).map((row) => [Number(row.staff_id), {
+    payMethod: row.pay_method,
+    bankName: row.bank_name,
+    bankBranch: row.bank_branch,
+    accountName: row.account_name,
+    accountNumber: row.account_number,
+    momoNetwork: row.momo_network,
+    momoNumber: row.momo_number,
+  }]));
+}
+
+/** The month's net pays worked out and split, for whatever wants to show them. */
+async function bankRunFor(ctx) {
+  const { month, data, lines } = await monthReturn(ctx);
+  const file = bankFile(lines, await howEverybodyIsPaid(ctx.db), {
+    month,
+    // A property that words its own narration can say so; almost nobody will.
+    // Trimmed rather than refused, because a long one is a typo and not
+    // something to stop somebody's pay run over.
+    note: ctx.url.searchParams.get('reference') ?? '',
+  });
+  return { month, data, file };
+}
+
+/**
+ * The net pays, and nothing else, for taking to the bank.
+ *
+ * TWO FILES, BECAUSE THEY ARE READ BY TWO DIFFERENT PEOPLE. The spreadsheet is
+ * for whoever runs the month: it has the transfers on one sheet, the people
+ * being paid by hand on another, and a total under each so it can be checked
+ * against the payroll before anything leaves. The CSV is for the bank's own
+ * portal, so it is the transfers alone, bare: a heading row, the rows, and not
+ * one thing else. A totals line at the bottom of an upload is a line the bank
+ * tries to pay somebody, and a byte order mark at the front is a first column
+ * a portal cannot read.
+ */
+export async function bankPayments(ctx) {
+  const { month, data, file } = await bankRunFor(ctx);
+  const map = (await settingsOf(ctx.db)).settings ?? {};
+  const employer = map.company_legal_name || data.property || '';
+  const stem = `${(employer || 'Payroll').replace(/[^A-Za-z0-9]+/g, '-')}-net-pay-${month}`;
+
+  if (ctx.url.searchParams.get('as') === 'csv') {
+    const rows = [
+      BANK_COLUMNS.map((c) => c.label),
+      ...file.rows.map((row) => BANK_COLUMNS.map((c) => (c.money
+        ? round2(row[c.key]).toFixed(2)
+        : String(row[c.key] ?? '')))),
+    ];
+    const escape = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    return new Response(rows.map((r) => r.map(escape).join(',')).join('\n'), {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${stem}.csv"`,
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
+  const money = (n) => ({ v: round2(Number(n) || 0), s: S.money });
+  const totalMoney = (n) => ({ v: round2(Number(n) || 0), s: S.moneyTotal });
+  const head = (t) => ({ v: t, s: S.head });
+  const cell = (column, row) => {
+    if (column.money) return money(row[column.key]);
+    if (column.text) return { v: row[column.key] ?? '', text: true };
+    return row[column.key] ?? '';
+  };
+
+  const transfers = {
+    name: 'Bank transfer',
+    freeze: 5,
+    widths: BANK_COLUMNS.map((c) => c.width ?? 16),
+    rows: [
+      [{ v: `${employer}, net pay for ${month}`, s: S.title }],
+      [file.rows.length === 1 ? '1 into a bank account' : `${file.rows.length} into bank accounts`,
+        '', '', '', { v: `In ${data.currency}`, s: S.bold }],
+      [`Reference: ${file.reference}`],
+      [],
+      BANK_COLUMNS.map((c) => head(c.label)),
+      ...file.rows.map((row) => BANK_COLUMNS.map((c) => cell(c, row))),
+      BANK_COLUMNS.map((c, i) => {
+        if (i === 0) return { v: 'Total', s: S.total };
+        if (c.money) return totalMoney(file.total);
+        return { v: '', s: S.total };
+      }),
+    ],
+  };
+
+  const byHand = {
+    name: 'Paid another way',
+    freeze: 5,
+    widths: BY_HAND_COLUMNS.map((c) => c.width ?? 16),
+    rows: [
+      [{ v: `${employer}, not on the bank file for ${month}`, s: S.title }],
+      [file.byHand.length === 1
+        ? '1 to be paid by hand'
+        : file.byHand.length
+          ? `${file.byHand.length} to be paid by hand`
+          : 'Everybody with something to be paid is on the bank file.'],
+      [file.missingAccounts === 1
+        ? 'One of them is down to be paid by bank and has no account number. That is the one '
+          + 'to fix.'
+        : file.missingAccounts
+          ? `${file.missingAccounts} of them are down to be paid by bank and have no account `
+            + 'number. Those are the ones to fix.'
+          : ''],
+      [],
+      BY_HAND_COLUMNS.map((c) => head(c.label)),
+      ...file.byHand.map((row) => BY_HAND_COLUMNS.map((c) => cell(c, row))),
+      file.byHand.length
+        ? BY_HAND_COLUMNS.map((c, i) => {
+          if (i === 0) return { v: 'Total', s: S.total };
+          if (c.money) return totalMoney(file.byHandTotal);
+          return { v: '', s: S.total };
+        })
+        : [],
+    ],
+  };
+
+  const bytes = workbook([transfers, byHand]);
+  return new Response(bytes, {
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${stem}.xlsx"`,
       'Cache-Control': 'no-store',
     },
   });

@@ -159,10 +159,12 @@ export async function renderAttPayroll(params) {
         tile('Deductions', cash(data.totals.ssnitEmployee + data.totals.paye + data.totals.loans),
           `SSNIT ${cash(data.totals.ssnitEmployee)} · PAYE ${cash(data.totals.paye)}`
           + (data.totals.loans ? ` · advances ${cash(data.totals.loans)}` : '')),
-        tile('Net to pay', cash(data.totals.net), 'what goes out to people'),
+        tile('Net to pay', cash(data.totals.net), netSplit(data)),
         tile('Cost to the property', cash(data.totals.cost),
           `including ${cash(data.totals.ssnitEmployer)} employer SSNIT`))
       : null,
+
+    onPayroll.length ? noAccountWarning(data) : null,
 
     onPayroll.length
       ? card('The month', {
@@ -552,6 +554,46 @@ function niceStamp(value) {
  * on every platform and a second way of making one would only disagree with
  * the first.
  */
+/**
+ * What the net figure is actually made of, once it leaves the building.
+ *
+ * "What goes out to people" was true and told nobody anything. How many of it
+ * goes by transfer and how many has to be handed over is the thing somebody
+ * needs before they set a morning aside for it.
+ */
+function netSplit(data) {
+  const bank = data.bank;
+  if (!bank) return 'what goes out to people';
+  if (!bank.byHand) return `${bank.toBank} by transfer`;
+  if (!bank.toBank) return `${bank.byHand} paid by hand`;
+  return `${bank.toBank} by transfer · ${bank.byHand} by hand`;
+}
+
+/**
+ * Somebody the property means to pay by bank and cannot.
+ *
+ * This is the one thing about the bank file worth interrupting somebody over.
+ * Every figure against them on the payroll is right, so nothing on this screen
+ * looks wrong, and the first anybody hears of it is the person asking on the
+ * second of the month where their money is. Named rather than counted: three
+ * people is not something anybody can act on, three names is.
+ */
+function noAccountWarning(data) {
+  const names = data.bank?.missing ?? [];
+  if (!names.length) return null;
+
+  return h('div.alert.warn',
+    h('span.alert-icon', '🏦'),
+    h('div',
+      h('div.alert-title', names.length === 1
+        ? `${names[0]} is down to be paid by bank and has no account number`
+        : `${names.length} people are down to be paid by bank and have no account number`),
+      h('div.alert-detail',
+        (names.length === 1 ? 'They are ' : `${names.join(', ')} are `)
+        + 'left off the bank file, so nothing reaches them. Put the account number on their '
+        + 'record under People, or change how they are paid.')));
+}
+
 function exportButton(data, month, closed) {
   return dropdownMenu({
     label: 'Export',
@@ -570,6 +612,17 @@ function exportButton(data, month, closed) {
         label: 'Excel',
         title: 'The month, the journal and the GRA schedule as one workbook',
         href: `/api/payroll/book?month=${encodeURIComponent(month)}`,
+      },
+      {
+        label: 'Bank file (Excel)',
+        title: 'Just the net pays and the account numbers, with the people paid by hand '
+          + 'listed on their own sheet',
+        href: `/api/payroll/bank?month=${encodeURIComponent(month)}`,
+      },
+      {
+        label: 'Bank file (CSV)',
+        title: 'The transfers on their own, bare, for uploading to the bank',
+        href: `/api/payroll/bank?month=${encodeURIComponent(month)}&as=csv`,
       },
     ],
   });

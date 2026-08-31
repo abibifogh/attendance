@@ -276,6 +276,9 @@ export const ROUTES = [
 
   ['GET', '/api/payroll/returns', 'hr_pay', payroll.returns],
   ['GET', '/api/payroll/book', 'hr_pay', payroll.exportBook],
+  // The net pays on their own, for the bank. Behind the same lock as the rest
+  // of payroll, because it is a list of account numbers.
+  ['GET', '/api/payroll/bank', 'hr_pay', payroll.bankPayments],
   ['GET', '/api/payroll/input/template', 'hr_pay', payroll.inputTemplate],
   ['POST', '/api/payroll/input/read', 'hr_pay', payroll.readInput],
   ['POST', '/api/payroll/input/apply', 'hr_pay', payroll.applyInput],

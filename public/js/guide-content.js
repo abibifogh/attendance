@@ -1300,6 +1300,30 @@ export const GUIDE = [
         + 'certificate the GRA issues to the person, and a payroll that guessed at it would '
         + 'be filing a claim nobody made.' },
 
+      { sub: 'Paying everybody at the bank' },
+      { p: 'Export on the month offers a bank file. Nobody pays forty people by standing at a '
+        + 'counter forty times: the bank takes one file, and everything on it is an account '
+        + 'number and an amount. Both are already on the payroll, and typing them out again '
+        + 'once a month is how a digit gets dropped.' },
+      { list: [
+        'Bank file (Excel) is for whoever runs the month: the transfers on one sheet with a '
+          + 'total under them, and the people paid another way on a second sheet with the '
+          + 'reason beside each one.',
+        'Bank file (CSV) is for the bank\u2019s own portal, so it is the transfers alone and '
+          + 'nothing else. No total, because a total at the bottom of an upload is a line the '
+          + 'bank tries to pay somebody.',
+        'Only the net figure leaves the building. No basic, no allowances, no tax, no bonus: '
+          + 'it goes to a clerk who has no business knowing what anybody\u2019s PAYE came to.',
+      ] },
+      { p: 'Somebody on mobile money and somebody paid in cash belong nowhere near a bank '
+        + 'upload, so they come out on the second sheet with their mobile money number rather '
+        + 'than being dropped. They still have to be paid.' },
+      { warn: 'Somebody set to be paid by bank whose account number nobody has filled in is a '
+        + 'different thing again: they will simply not be paid, and nothing on the payroll '
+        + 'screen looks wrong because every figure against them is right. So they are named '
+        + 'above the table before the file is ever made, and the Net to pay tile says how the '
+        + 'month splits: so many by transfer, so many by hand.' },
+
       { sub: 'The payslip' },
       { warn: 'Somebody else\u2019s payslip is an administrator\u2019s to open, whatever else '
         + 'they hold. Running the payroll means seeing what the month comes to for each person, '
