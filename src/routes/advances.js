@@ -7,7 +7,7 @@ import { readFile, storeFile } from './people.js';
 import {
   PURPOSES, accountFor, balanceOf, checkRequest, dueThisMonth, finishesOn, firstMonthFor,
   instalmentFor, isMonthEnd, isOpen, monthsLeft, purposeOf, purposesFor, repaidOf, round2,
-  reconcilePlan, scheduleFor, summarise, unansweredMonths,
+  reconcilePlan, scheduleFor, startsOn, summarise, unansweredMonths,
 } from '../lib/advances.js';
 import { isAdmin } from '../lib/payroll-access.js';
 import { addMonths, isDay, isMonth, monthOf, todayIn } from '../util/dates.js';
@@ -161,7 +161,7 @@ export async function advances(ctx) {
     const entries = entriesBy.get(advance.id) ?? [];
     const balance = balanceOf(advance, entries);
     if (balance <= 0) continue;
-    if ((advance.start_month || '9999-99') > month) continue;
+    if (startsOn(advance) > month) continue;
     const already = entries.find((e) => e.month === month && ['repayment', 'skipped'].includes(e.kind));
     due.push({
       advanceId: advance.id,
@@ -1264,13 +1264,17 @@ export async function askAboutTheMonth(db, { timezone = 'UTC', now = null, ctx =
   if (!isMonthEnd(today) && day !== 7 && day !== 14) return { asked: 0, month };
 
   const rows = await db.prepare(
-    `SELECT a.id, a.monthly, a.amount, a.start_month
+    // taken_on and asked_at come too, because the month repayment starts falls
+    // back to them where nobody set one, and a query that leaves them out
+    // makes this nudge disagree with the payroll.
+    `SELECT a.id, a.monthly, a.amount, a.start_month, a.taken_on, a.asked_at
        FROM hr_advance a WHERE a.status = 'approved'`,
   ).all().catch(() => ({ results: [] }));
 
   const open = [];
   for (const advance of rows.results ?? []) {
-    if ((advance.start_month || '9999-99') > month) continue;
+    const start = startsOn(advance);
+    if (!start || start > month) continue;
     const entries = await entriesFor(db, advance.id);
     if (balanceOf(advance, entries) <= 0) continue;
     if (entries.some((e) => e.month === month && ['repayment', 'skipped'].includes(e.kind))) continue;

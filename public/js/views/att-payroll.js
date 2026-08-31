@@ -262,6 +262,7 @@ export async function renderAttPayroll(params) {
             h('td.num.off-phone',
               costCell(data.totals.cost, wholeMonthAgainst(data, 'cost'), cash)))))),
         compareNote(data),
+        advanceNote(data, cash),
         h('p.muted', { style: { fontSize: '.85rem' } }, data.slips
           ? 'Press a row for the payslip behind it.'
           : 'Payslips are an administrator\u2019s to open. The figures here are what the '
@@ -554,6 +555,40 @@ function niceStamp(value) {
  * on every platform and a second way of making one would only disagree with
  * the first.
  */
+/**
+ * Why the Advance column is empty against somebody who has one running.
+ *
+ * A dash there is four different situations wearing the same face: it has not
+ * started yet, it was let go this month, it was already recorded, or there is
+ * no month set for it to start at all. The first is normal and the last is a
+ * record somebody has to fix, and until this line existed the only way to tell
+ * them apart was to open the Advances screen and work it out.
+ */
+const NOT_DUE = {
+  no_start: 'no month set for it to start',
+  let_go: 'let go this month',
+  recorded: 'already recorded against this month',
+};
+
+function advanceNote(data, cash) {
+  const rows = data.advancesNotDue ?? [];
+  if (!rows.length) return null;
+
+  const say = (row) => (row.why === 'not_yet' && row.from
+    ? `not until ${niceMonth(row.from)}`
+    : NOT_DUE[row.why] ?? 'not due this month');
+
+  return h('p.muted', { style: { fontSize: '.85rem' } },
+    rows.length === 1
+      ? 'One advance is running with nothing coming off it this month: '
+      : `${rows.length} advances are running with nothing coming off them this month: `,
+    rows.map((row, at) => h('span', at ? '; ' : '',
+      h('strong', row.name),
+      `, ${say(row)}`,
+      row.left ? ` (${cash(row.left)} left)` : '')),
+    '.');
+}
+
 /**
  * What the net figure is actually made of, once it leaves the building.
  *

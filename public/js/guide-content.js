@@ -1300,6 +1300,17 @@ export const GUIDE = [
         + 'certificate the GRA issues to the person, and a payroll that guessed at it would '
         + 'be filing a claim nobody made.' },
 
+      { sub: 'When an advance does not come off' },
+      { p: 'A dash in the Advance column is not one thing. It has not started yet, it was let '
+        + 'go this month, it was already recorded against the month, or nobody ever set a '
+        + 'month for it to start. Under the table is a line saying which, by name: "Kofi '
+        + 'Mensah, not until September 2026". An advance being paid off normally is not '
+        + 'mentioned, because there is nothing to explain.' },
+      { note: 'Money handed over in the last week of a month is paid back from the month '
+        + 'after. The payroll for the month it was taken in has usually been worked out '
+        + 'already, and taking it back the same month is a surprise on somebody\u2019s '
+        + 'payslip. Change the month it starts on the advance itself, under Advances.' },
+
       { sub: 'Paying everybody at the bank' },
       { p: 'Export on the month offers a bank file. Nobody pays forty people by standing at a '
         + 'counter forty times: the bank takes one file, and everything on it is an account '

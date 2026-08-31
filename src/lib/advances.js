@@ -189,6 +189,24 @@ export function firstMonthFor(takenOn) {
 }
 
 /**
+ * The month repayment starts, whatever the record actually holds.
+ *
+ * ONE PLACE, BECAUSE TWO PLACES DISAGREED. The schedule on the Advances screen
+ * fell back to the day the money was handed over where nobody had set a start
+ * month; the payroll did not, and read a missing start month as "not until
+ * the year 9999". So an advance without one showed a deduction due in August
+ * on one screen and deducted nothing on the other, which is the exact thing
+ * the rule below exists to prevent. Everything that asks when repayment starts
+ * now asks here.
+ */
+export function startsOn(advance = {}) {
+  return advance.start_month
+    || firstMonthFor(advance.taken_on)
+    || monthOf(advance.asked_at ?? '')
+    || null;
+}
+
+/**
  * The whole schedule: what was agreed, what has happened, what is left.
  *
  * Months already dealt with carry what was actually recorded. Months ahead
@@ -197,7 +215,7 @@ export function firstMonthFor(takenOn) {
  */
 export function scheduleFor(advance, entries = [], { asOfMonth = null } = {}) {
   const rows = [...entries].sort((a, b) => String(a.month).localeCompare(String(b.month)));
-  const start = advance.start_month || firstMonthFor(advance.taken_on) || monthOf(advance.asked_at ?? '');
+  const start = startsOn(advance);
   const out = [];
 
   // What actually happened, month by month.
@@ -264,13 +282,46 @@ export function scheduleFor(advance, entries = [], { asOfMonth = null } = {}) {
  * left rather than a full one.
  */
 export function dueThisMonth(advance, entries = [], month) {
-  if (!isOpen(advance)) return 0;
-  if ((advance.start_month || '9999-99') > month) return 0;
-  if (entries.some((e) => e.month === month && ['repayment', 'skipped'].includes(e.kind))) return 0;
+  return whyNotDue(advance, entries, month) ? 0 : round2(Math.min(
+    round2(advance.monthly),
+    balanceOf(advance, entries),
+  ));
+}
 
-  const balance = balanceOf(advance, entries);
-  if (balance <= 0) return 0;
-  return round2(Math.min(round2(advance.monthly), balance));
+/**
+ * Why nothing is coming off an advance this month.
+ *
+ * Nought in the Advance column is several different situations wearing the
+ * same face, and telling them apart is the difference between "that is right"
+ * and "somebody is not paying back what they agreed". Null means it is due,
+ * which is what `dueThisMonth` reads.
+ *
+ * A code rather than a sentence, because the one about a month that has not
+ * come yet wants the month written the way a person writes it, and the screen
+ * is the only thing that knows how to do that.
+ */
+export const NOT_DUE = {
+  closed: 'not running any more',
+  no_start: 'no month set for it to start',
+  not_yet: 'has not started yet',
+  let_go: 'let go this month',
+  recorded: 'already recorded against this month',
+  paid_off: 'paid off',
+};
+
+export function whyNotDue(advance, entries = [], month) {
+  if (!isOpen(advance)) return 'closed';
+
+  const start = startsOn(advance);
+  if (!start) return 'no_start';
+  if (start > month) return 'not_yet';
+
+  const already = entries.find((e) => e.month === month
+    && ['repayment', 'skipped'].includes(e.kind));
+  if (already) return already.kind === 'skipped' ? 'let_go' : 'recorded';
+
+  if (balanceOf(advance, entries) <= 0) return 'paid_off';
+  return null;
 }
 
 /**

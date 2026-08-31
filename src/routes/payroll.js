@@ -1,6 +1,6 @@
 import { badRequest, csvResponse, int, json, notFound, num, readJson, str } from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
-import { balanceOf, dueThisMonth } from '../lib/advances.js';
+import { balanceOf, dueThisMonth, startsOn, whyNotDue } from '../lib/advances.js';
 import { computeLine, totalsOf } from '../lib/payroll.js';
 import { ratesFrom, round2 } from '../lib/tax.js';
 import {
@@ -439,6 +439,35 @@ export async function payroll(ctx) {
     lines: isAdmin(ctx.session) ? lines : lines.map(withoutTheSlip),
     slips: isAdmin(ctx.session),
     totals: totalsOf(lines),
+    // Anybody with an advance running that nothing is coming off this month,
+    // and why. Nought in the Advance column is four different situations
+    // wearing the same face, and "not until 2026-09" and "somebody let this
+    // one go" are not the same news. Only the ones with a reason: an advance
+    // being deducted normally has nothing to explain.
+    advancesNotDue: (() => {
+      const nameOf = new Map(data.staff.map((p) => [p.id, p.name]));
+      const out = [];
+      for (const advance of data.advances) {
+        const entries = data.entriesBy.get(advance.id) ?? [];
+        const why = whyNotDue(advance, entries, month);
+        if (!why || why === 'paid_off' || why === 'closed') continue;
+        // Somebody who is not on this payroll at all is a different problem
+        // and is already named as one.
+        if (!lines.some((line) => line.staff.id === advance.staff_id)) continue;
+        out.push({
+          staffId: advance.staff_id,
+          name: nameOf.get(advance.staff_id) ?? 'Somebody',
+          why,
+          // Only meaningful against 'not_yet', and the screen writes it out in
+          // words rather than showing somebody "2026-09".
+          from: startsOn(advance),
+          monthly: round2(advance.monthly),
+          left: balanceOf(advance, entries),
+        });
+      }
+      return out.sort((a, b) => a.name.localeCompare(b.name));
+    })(),
+
     // How the month would leave the building. Counted here rather than on the
     // screen so the note above the table and the file itself cannot disagree,
     // and so somebody set to be paid by bank with no account number is visible

@@ -2044,6 +2044,30 @@ over whatever old account number is still on the record. Where nobody has
 answered at all, an account number is taken as the answer. The narration is
 `Salary Aug 2026` unless a run is asked for a different one.
 
+### Nought in the Advance column now says which nought it is
+
+An advance came back off the payroll and one did not, and nothing on the screen
+said why. Two things were wrong.
+
+**The two screens disagreed about when repayment starts.** The schedule on the
+Advances page fell back to the day the money was handed over where nobody had
+set a start month; the payroll did not, and read a missing start month as "not
+until the year 9999". So an advance without one showed an instalment due in
+August on one page and deducted nothing on the other, for ever. There is now
+one rule, `startsOn`, and everything that asks when repayment starts asks it:
+the start month if there is one, otherwise the month it was handed over, and a
+handover in the last week of a month still starts the month after, because the
+payroll for the month it was taken in has usually been worked out already.
+
+**And a dash in the Advance column was several different situations wearing the
+same face.** It has not started yet, it was let go this month, it was already
+recorded against the month, or nobody ever set a month for it to start. The
+first is normal; the last is a record somebody has to fix. Under the payroll
+table is now a line naming anybody with an advance running that nothing is
+coming off, and which of those it is: *Kofi Mensah, not until September 2026
+(GHS 900 left)*. An advance being paid off normally is not mentioned, because
+there is nothing to explain.
+
 ### A bonus is net for most people, and gross for some
 
 A bonus here is normally a net promise. Somebody is told five hundred cedis,
