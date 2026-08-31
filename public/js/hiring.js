@@ -134,6 +134,7 @@ function draw() {
       + 'You can close this page and come back to it.'),
   ));
   window.scrollTo(0, 0);
+  watchTheTimes();
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +287,79 @@ async function refresh() {
   if (fresh) packet = fresh;
   else draw();
 }
+
+/**
+ * Keeping the list of times honest while somebody looks at it.
+ *
+ * THE PROBLEM THIS SOLVES IS NOT THE RACE. Two people pressing at the same
+ * instant is handled where it has to be, in one conditional update on the
+ * server; the second is refused and shown the list again. This is the slower
+ * and far commoner version of the same thing: a page opened at nine, left on
+ * a phone, and looked at again at half past. By then two of the four times are
+ * gone, and the page is still offering them.
+ *
+ * Being refused when you tap is a bad way to find that out. Somebody has
+ * decided on Tuesday at eleven, pressed it, and been told no — which reads as
+ * the app failing rather than as a time going. Far better that the button is
+ * simply not there any more.
+ *
+ * SO IT ASKS AGAIN, on the two occasions worth asking. When the page comes
+ * back into view, which is what happens when a phone is unlocked or a tab is
+ * returned to, and that is the case this exists for. And on a slow timer while
+ * it is actually on screen, for a page left open on a desk.
+ *
+ * It stops the moment it is not needed: nothing is asked while the page is
+ * hidden, or once a time has been chosen, or on a link that is not offering
+ * times at all. A candidate's phone is somebody's own data allowance.
+ */
+const ASK_AGAIN_EVERY = 45_000;
+let timer = null;
+
+function watchTheTimes() {
+  clearInterval(timer);
+  timer = null;
+
+  // Nothing to watch: they have their time, or this link never offered any.
+  if (!packet?.wantsSlot || packet?.chosen) return;
+
+  timer = setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    quietlyRefresh();
+  }, ASK_AGAIN_EVERY);
+}
+
+/**
+ * Ask again, and redraw only where something has actually gone.
+ *
+ * Redrawing regardless would move the page under somebody's thumb every
+ * forty-five seconds for no reason, which is its own way of making a button
+ * hard to press.
+ */
+async function quietlyRefresh() {
+  const before = (packet.slots ?? []).map((s) => s.id).join(',');
+  const chosen = packet.chosen;
+
+  const fresh = await call(`/api/c/${encodeURIComponent(token)}/open`, { pin: code })
+    .catch(() => null);
+  if (!fresh) return;
+
+  const after = (fresh.slots ?? []).map((s) => s.id).join(',');
+  const wasChosen = Boolean(chosen);
+  packet = fresh;
+
+  if (after === before && Boolean(fresh.chosen) === wasChosen) return;
+
+  // Somebody else took one while this was on the screen. Said quietly rather
+  // than as an error: nothing has gone wrong, there is simply one fewer time.
+  const went = (packet.slots ?? []).length < (before ? before.split(',').length : 0);
+  draw();
+  if (went && !packet.chosen) toast('One of the times has just been taken.', '');
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') quietlyRefresh();
+});
+window.addEventListener('focus', () => quietlyRefresh());
 
 // ---------------------------------------------------------------------------
 // Their details

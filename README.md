@@ -1430,6 +1430,24 @@ leaving you with an empty chair and no warning.
 > one gets it, the other is told plainly and shown the list again rather than a
 > confirmation that is not real.
 
+**And a time somebody has taken goes off everybody else's screen.** The
+conditional update above handles two people pressing at the same instant; the
+commoner version of the same thing is slower and more annoying. A page opened
+at nine, left on a phone, looked at again at half past: by then two of the four
+times are gone and it is still offering them. Being refused *after* deciding on
+Tuesday at eleven reads as the app failing, rather than as a time going.
+
+So the candidate's page asks again on the two occasions worth asking: when it
+comes back into view, which is what happens when a phone is unlocked or a tab
+is returned to, and on a slow timer while it is actually on screen. The button
+is simply not there any more, and a quiet line says one has just been taken. It
+asks for nothing while the page is hidden, once a time has been chosen, or on a
+link that never offered times — a candidate's phone is their own data.
+
+The office screens hear it too. Recruitment has its own live channel, so a
+candidate booking at eleven at night moves the diary on any screen that happens
+to be open on it, without anybody reloading.
+
 A candidate is only ever offered times published for **their own vacancy**, or
 for none, and never a time that has already gone. A link sent on Monday and
 opened on Friday must not offer Tuesday morning, because somebody will pick it

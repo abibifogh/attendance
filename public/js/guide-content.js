@@ -1640,6 +1640,10 @@ export const GUIDE = [
       { p: 'They can change their mind or give the time back, which frees it for somebody else '
         + 'rather than leaving an empty chair. Two candidates can never take the same half hour, '
         + 'and nor can a candidate and the office booking one over the phone.' },
+      { p: 'A time somebody has taken goes off everybody else\u2019s screen rather than being '
+        + 'offered and then refused: their page checks again whenever it comes back into view, '
+        + 'and quietly on a timer while it is open. The diary here updates the same way, so a '
+        + 'booking made at eleven at night is on the screen without anybody reloading.' },
       { note: 'Their page shows the times, the job and whatever message you wrote. It never '
         + 'shows who else applied, who is on the panel, or anything anybody has written about '
         + 'them.' },

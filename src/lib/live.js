@@ -41,6 +41,9 @@ export const TOPICS = {
   rota: ['att_rota', 'att_view', 'att_me'],
   leave: ['att_view', 'att_me'],
   people: ['hr_view'],
+  // A candidate taking an interview time is the one change in this app that
+  // happens with nobody here doing it, so the diary has to hear about it.
+  recruitment: ['rec_view'],
   pay: ['hr_pay', 'att_me'],
   letters: ['corr_view'],
   lunch: ['lunch', 'att_me'],
@@ -78,6 +81,10 @@ const BY_PATH = [
   ['/api/audit/', 'attendance'],
   ['/api/hr/', 'people'],
   ['/api/i/', 'people'],
+  ['/api/rec/', 'recruitment'],
+  // The candidate's own side. Their booking is exactly the change the office
+  // screens most need to hear about, and it comes from a page with no session.
+  ['/api/c/', 'recruitment'],
   ['/api/payroll', 'pay'],
   ['/api/advances', 'pay'],
   ['/api/medical', 'pay'],

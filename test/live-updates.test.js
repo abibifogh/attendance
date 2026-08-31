@@ -331,3 +331,24 @@ test('nobody signed out gets a socket', async () => {
   );
   assert.equal(res.status, 401);
 });
+
+test('a candidate taking a time reaches the office diary, and only recruitment', () => {
+  // The one change in this app that happens with nobody here doing it. Both
+  // sides of it belong to the same topic: the office publishing times and the
+  // candidate taking one are the same screen changing.
+  assert.equal(topicFor('/api/rec/slots'), 'recruitment');
+  assert.equal(topicFor('/api/rec/candidates/1/stage'), 'recruitment');
+  assert.equal(topicFor('/api/c/abc123/choose'), 'recruitment');
+  assert.equal(topicFor('/api/c/abc123/release'), 'recruitment');
+
+  // A booking made from a page with no session still announces itself.
+  assert.equal(worthTelling('POST', '/api/c/abc123/choose'), true);
+
+  // And it is heard by whoever runs the recruitment, and nobody else. A topic
+  // name carries nothing, but a screen that reloads for no reason it can show
+  // teaches people that the app is restless.
+  assert.equal(mayHear('recruitment', ['rec_view']), true);
+  assert.equal(mayHear('recruitment', ['rec_manage', 'rec_view']), true);
+  assert.equal(mayHear('recruitment', ['att_rota_view']), false);
+  assert.equal(mayHear('recruitment', ['att_me']), false);
+});

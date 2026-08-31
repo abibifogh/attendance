@@ -317,6 +317,54 @@ test('two candidates cannot take the same half hour', async () => {
   );
 });
 
+test('a time somebody has taken is gone from everybody else\'s list', async () => {
+  const { db } = setup();
+  const roleId = await aRole(db, { headcount: 2 });
+  const one = await aCandidate(db, roleId, 'Ama Mensah');
+  const two = await aCandidate(db, roleId, 'Kofi Boateng');
+  await addSlots(ctx(db, { roleId, day: soon(), from: '10:00', to: '11:00', minutes: 30 }));
+
+  const tokenOne = await linkFor(db, one);
+  const tokenTwo = await linkFor(db, two);
+
+  // Both are offered both times to begin with.
+  const first = await body(await open(publicCtx(db), tokenOne));
+  assert.equal(first.slots.length, 2);
+  assert.equal((await body(await open(publicCtx(db), tokenTwo))).slots.length, 2);
+
+  await choose(publicCtx(db, { slotId: first.slots[0].id }), tokenOne);
+
+  // And the moment one is taken it is off the other's list, rather than still
+  // being offered and refused when they press it. Being told no after deciding
+  // reads as the app failing; a button that is simply not there does not.
+  const after = await body(await open(publicCtx(db), tokenTwo));
+  assert.equal(after.slots.length, 1);
+  assert.ok(!after.slots.some((s) => s.id === first.slots[0].id));
+
+  // The one who took it still sees theirs, because that is the one they can
+  // move off.
+  const mine = await body(await open(publicCtx(db), tokenOne));
+  assert.equal(mine.chosen.id, first.slots[0].id);
+});
+
+test('a time given back comes straight back onto everybody else\'s list', async () => {
+  const { db } = setup();
+  const roleId = await aRole(db, { headcount: 2 });
+  const one = await aCandidate(db, roleId, 'Ama Mensah');
+  const two = await aCandidate(db, roleId, 'Kofi Boateng');
+  await addSlots(ctx(db, { roleId, day: soon(), from: '10:00', to: '10:30', minutes: 30 }));
+
+  const tokenOne = await linkFor(db, one);
+  const tokenTwo = await linkFor(db, two);
+  const page = await body(await open(publicCtx(db), tokenOne));
+  await choose(publicCtx(db, { slotId: page.slots[0].id }), tokenOne);
+
+  assert.equal((await body(await open(publicCtx(db), tokenTwo))).slots.length, 0);
+  await release(publicCtx(db), tokenOne);
+  assert.equal((await body(await open(publicCtx(db), tokenTwo))).slots.length, 1,
+    'free again for somebody else');
+});
+
 test('the office booking one and a candidate choosing one cannot collide', async () => {
   const { db } = setup();
   const roleId = await aRole(db, { headcount: 2 });
