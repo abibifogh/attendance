@@ -1122,65 +1122,127 @@ function sayDay(slots) {
 }
 
 /**
- * Who is interviewing, picked off the staff list.
+ * Who is on the panel, picked off the staff list.
  *
  * A name typed in a box printed and did nothing else. The moment a candidate
  * takes a time somebody has to be told, and "Kwame" is not somebody the app
- * can tell — so this is a person, and a person with a login gets it on their
- * phone.
+ * can tell.
  *
- * SOMEBODY ELSE IS STILL AN ANSWER. An owner, a consultant sitting on the
- * panel, somebody who does not work here: the last option opens a plain box,
- * and everything works as it did except that nobody can be notified. The
- * screen says which of the two you have chosen rather than leaving somebody to
+ * SEVERAL OF THEM, because an interview at a property this size is the head of
+ * department and whoever runs the place sitting in together. Chips rather than
+ * a list of six-and-twenty tick boxes: a panel is two people out of two dozen,
+ * so the control should be small until it is used and should show what has
+ * been chosen rather than making somebody scan for the ticks.
+ *
+ * SOMEBODY ELSE IS STILL AN ANSWER. An owner, a consultant, somebody who does
+ * not work here: the last option in the picker opens a plain box, and
+ * everything works as it did except that they cannot be notified. The line
+ * underneath says which of the two you have ended up with, and how many of the
+ * people chosen can actually be reached, rather than leaving somebody to
  * wonder why no notice arrived.
  */
-function interviewerField(data, current = {}) {
+function panelField(data, current = {}) {
+  const roster = data.panel ?? [];
+  const chosen = [...(current.staffIds ?? [])].filter((id) => roster.some((p) => p.id === id));
+
   const typed = h('input', {
-    type: 'text', maxlength: 120, placeholder: 'Their name',
-    value: current.staffId ? '' : (current.name ?? ''),
+    type: 'text', maxlength: 160, placeholder: 'Their name',
+    value: chosen.length ? '' : (current.name ?? ''),
   });
-  const wrap = h('div.rec-who-typed', { hidden: Boolean(current.staffId) || !current.name },
-    typed);
+  const typedWrap = h('div.rec-who-typed', { hidden: chosen.length > 0 || !current.name }, typed);
+  const chips = h('div.rec-panel-chips');
   const note = h('small.muted.rec-who-note');
 
   const picker = h('select',
-    h('option', { value: '' }, 'Nobody named yet'),
-    (data.panel ?? []).map((person) => h('option', {
-      value: String(person.id),
-      selected: current.staffId === person.id,
-    }, `${person.name}${person.department ? ` — ${person.department}` : ''}`
+    h('option', { value: '' }, chosen.length ? 'Add somebody else…' : 'Nobody named yet'),
+    roster.map((person) => h('option', { value: String(person.id) },
+      `${person.name}${person.department ? ` — ${person.department}` : ''}`
       + `${person.canBeTold ? '' : ' (no login)'}`)),
-    h('option', {
-      value: 'other',
-      selected: !current.staffId && Boolean(current.name),
-    }, 'Somebody else…'));
+    h('option', { value: 'other' }, 'Somebody not on the books…'));
 
   const say = () => {
-    const chosen = picker.value;
-    wrap.hidden = chosen !== 'other';
-    if (chosen === 'other') {
+    if (picker.value === 'other') {
       note.textContent = 'Not on the books, so nothing can be sent to them. '
         + 'You will be told, and can pass it on.';
-    } else if (!chosen) {
+      return;
+    }
+    if (!chosen.length) {
       note.textContent = 'Nobody is named, so nobody is told when a time is taken.';
-    } else {
-      const person = (data.panel ?? []).find((p) => String(p.id) === chosen);
-      note.textContent = person?.canBeTold
+      return;
+    }
+    const people = chosen.map((id) => roster.find((p) => p.id === id));
+    const reachable = people.filter((p) => p?.canBeTold);
+
+    if (reachable.length === people.length) {
+      note.textContent = people.length === 1
         ? 'They get a notice on their phone the moment a candidate takes one of these times.'
-        : 'They have no login, so nothing can be sent to them. '
-          + 'You will be told, and can pass it on.';
+        : `All ${people.length} get a notice on their phone the moment a candidate takes one `
+          + 'of these times.';
+    } else if (!reachable.length) {
+      note.textContent = people.length === 1
+        ? 'They have no login, so nothing can be sent to them. You will be told.'
+        : 'None of them have a login, so nothing can be sent to them. You will be told.';
+    } else {
+      const without = people.filter((p) => !p?.canBeTold).map((p) => p.name).join(' and ');
+      note.textContent = `${reachable.length} of ${people.length} get a notice. `
+        + `${without} ${people.length - reachable.length === 1 ? 'has' : 'have'} no login, `
+        + 'so pass it on to them yourself.';
     }
   };
-  picker.addEventListener('change', say);
+
+  const drawChips = () => {
+    mount(chips, chosen.map((id) => {
+      const person = roster.find((p) => p.id === id);
+      return h(`span.rec-chip${person?.canBeTold ? '' : '.is-unreachable'}`,
+        h('span', person?.name ?? 'Somebody'),
+        person?.canBeTold ? null : h('small', 'no login'),
+        h('button', {
+          type: 'button',
+          'aria-label': `Take ${person?.name ?? 'them'} off the panel`,
+          onclick: (e) => {
+            // The whole field sits inside a <label>, and a label forwards a
+            // click to the control inside it. Without this the handler runs
+            // twice, and the second run takes somebody else off the panel.
+            e.preventDefault();
+            const at = chosen.indexOf(id);
+            if (at === -1) return;
+            chosen.splice(at, 1);
+            drawChips();
+            picker.options[0].textContent = chosen.length ? 'Add somebody else…' : 'Nobody named yet';
+            say();
+          },
+        }, '✕'));
+    }));
+  };
+
+  picker.addEventListener('change', () => {
+    const value = picker.value;
+    if (value === 'other') {
+      typedWrap.hidden = false;
+      say();
+      return;
+    }
+    typedWrap.hidden = true;
+    const id = Number(value);
+    if (Number.isInteger(id) && id > 0 && !chosen.includes(id)) chosen.push(id);
+    picker.value = '';
+    picker.options[0].textContent = chosen.length ? 'Add somebody else…' : 'Nobody named yet';
+    drawChips();
+    say();
+  });
+
+  drawChips();
   say();
 
   return {
-    el: h('div', picker, wrap, note),
+    el: h('div', chips, picker, typedWrap, note),
     get value() {
-      return picker.value === 'other'
-        ? { interviewer: typed.value, interviewerStaffId: '' }
-        : { interviewer: '', interviewerStaffId: picker.value };
+      // A typed name and a picked panel are two different answers, and the
+      // chips win: somebody who has picked two people and left an old name in
+      // the box meant the two people.
+      return chosen.length
+        ? { interviewerStaffIds: chosen, interviewer: '' }
+        : { interviewerStaffIds: [], interviewer: typed.value };
     },
   };
 }
@@ -1194,7 +1256,7 @@ async function publishSlots(data, reload) {
     placeholder: 'The office, main building',
     enabled: data.canFindPlaces,
   });
-  const who = interviewerField(data, data.interviewerAt ?? {});
+  const who = panelField(data, data.interviewerAt ?? {});
 
   const done = await formDialog({
     title: 'Publish interview times',
@@ -1259,9 +1321,7 @@ async function editSlot(slot, data, reload) {
     placeholder: 'The office, main building',
     enabled: data.canFindPlaces,
   });
-  const who = interviewerField(data, {
-    staffId: slot.interviewerStaffId, name: slot.interviewer,
-  });
+  const who = panelField(data, { staffIds: slot.panel, name: slot.interviewer });
 
   const done = await formDialog({
     title: slot.candidateName
@@ -1324,9 +1384,7 @@ async function editDay(day, data, reload) {
     placeholder: 'The office, main building',
     enabled: data.canFindPlaces,
   });
-  const who = interviewerField(data, {
-    staffId: first.interviewerStaffId, name: first.interviewer,
-  });
+  const who = panelField(data, { staffIds: first.panel, name: first.interviewer });
 
   const done = await formDialog({
     title: fmtDay(day.day, { withYear: true }),

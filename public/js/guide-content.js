@@ -1613,7 +1613,7 @@ export const GUIDE = [
           + 'Attach the CV on the same form: several files at once, and each one says '
           + 'whether it is a CV, a certificate or a reference.',
         'Publish interview times: a day, a start and an end, and how long each one is. '
-          + 'Pick who is interviewing off the staff list, so they can be told.',
+          + 'Pick everybody who is interviewing off the staff list, so they can all be told.',
         'Shortlist somebody, then make them a link and send it to them yourself.',
         'They open it on their phone and pick a time. You are told when they do.',
         'After the interview, write down what you thought while it is fresh.',
@@ -1654,6 +1654,10 @@ export const GUIDE = [
         + 'over the counter \u2014 whoever is on the panel is told on their own phone. They are '
         + 'told when somebody gives a time back too, when one is cancelled or moved, and when '
         + 'they are put on or taken off a panel.' },
+      { p: 'Pick as many as sit in the room, up to eight. An interview here is rarely one '
+        + 'person, and telling one of two is how the other fails to turn up. Each name you '
+        + 'pick appears as a chip you can take off again, and the line underneath says how '
+        + 'many of them the app can actually reach.' },
       { note: 'Somebody with no login cannot be reached, and that is not an error. The picker '
         + 'says so beside their name so you know to pass it on yourself. "Somebody else" is '
         + 'there for an owner or a consultant who is not on the books at all.' },

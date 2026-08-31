@@ -5228,10 +5228,36 @@ body.rota-dragging .pos-add { pointer-events: none; }
 .rec-slot-tools:focus-within { opacity: 1; }
 @media (hover: none) { .rec-slot-tools { opacity: .6; } }
 
-/* Who is on the panel: a picker, a box for somebody who is not on the books,
-   and a line saying which of the two you have ended up with. */
+/* Who is on the panel: the people chosen as chips, a picker that adds one, a
+   box for somebody who is not on the books, and a line saying how many of them
+   the app can actually reach. */
 .rec-who-typed { margin-top: .4rem; }
 .rec-who-note { display: block; margin-top: .3rem; line-height: 1.35; }
+
+.rec-panel-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.rec-panel-chips:not(:empty) { margin-bottom: .4rem; }
+.rec-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .2rem .3rem .2rem .6rem;
+  border-radius: 999px;
+  font-size: .85rem;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+/* Somebody who cannot be sent anything looks different, because that is the
+   thing somebody needs to notice about them. */
+.rec-chip.is-unreachable {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+.rec-chip small { font-size: .7rem; color: var(--text-faint); }
+.rec-chip button {
+  border: none; background: none; padding: 0 .2rem;
+  font-size: .72rem; line-height: 1; color: var(--text-faint);
+}
+.rec-chip button:hover { color: var(--bad); }
 
 .rec-when { font-size: 1.05rem; margin: 0 0 .3rem; }
 

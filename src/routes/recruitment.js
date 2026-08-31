@@ -111,7 +111,9 @@ export async function board(ctx) {
         ORDER BY c.applied_on DESC, c.id DESC`,
     ).all().catch(() => ({ results: [] })),
     ctx.db.prepare(
-      `SELECT s.*, c.name AS candidate_name, r.title AS role_title
+      `SELECT s.*, c.name AS candidate_name, r.title AS role_title,
+              (SELECT group_concat(p.staff_id) FROM rec_slot_panel p WHERE p.slot_id = s.id)
+                AS panel_ids
          FROM rec_slot s
          LEFT JOIN rec_candidate c ON c.id = s.candidate_id
          LEFT JOIN rec_role r ON r.id = s.role_id
@@ -153,7 +155,7 @@ export async function board(ctx) {
     canFindPlaces: Boolean((await mapsKey(ctx.env, ctx.db)).key),
     interviewerAt: {
       name: await setting(ctx.db, 'rec_interviewer', '') || null,
-      staffId: numberOrNull(await setting(ctx.db, 'rec_interviewer_staff_id', '')),
+      staffIds: readIds(await setting(ctx.db, 'rec_panel', '')),
     },
     // Who can be put on a panel, and which of them the app can actually reach.
     // Somebody on the books with no login is a perfectly good interviewer and
@@ -249,7 +251,8 @@ const shapeSlot = (slot) => ({
   minutes: Number(slot.minutes) || 30,
   place: slot.place,
   interviewer: slot.interviewer,
-  interviewerStaffId: slot.interviewer_staff_id ?? null,
+  // Who is on it, as ids the screen can tick against its own list of staff.
+  panel: String(slot.panel_ids ?? '').split(',').filter(Boolean).map(Number),
   candidateId: slot.candidate_id,
   candidateName: slot.candidate_name ?? null,
   takenAt: slot.taken_at,
@@ -336,6 +339,16 @@ const readSource = (value) => {
   if (!SOURCES.some(([k]) => k === key)) throw badRequest('That is not one of the ways people find us.');
   return key;
 };
+
+/** A stored list of staff ids, or none. A blank setting is not a panel of one. */
+function readIds(value) {
+  try {
+    const parsed = JSON.parse(String(value || '[]'));
+    return Array.isArray(parsed) ? parsed.map(Number).filter(Number.isInteger) : [];
+  } catch {
+    return [];
+  }
+}
 
 /** A coordinate, or nothing. A blank setting is not the equator. */
 function numberOrNull(value) {
@@ -1017,67 +1030,116 @@ export async function removeFile(ctx, id, fileId) {
 // ---------------------------------------------------------------------------
 
 /**
- * Who is interviewing, resolved to a person where they are one.
+ * Who is interviewing, as people rather than a line of text.
  *
- * The name is kept alongside the id and is what prints. A staff record renamed
- * next year, or somebody who leaves, should not change what a diary from March
- * said it was; and an interviewer who is not on the books at all — an owner, a
- * consultant sitting on the panel — is still just a name, exactly as before.
+ * A panel at a property this size is the head of department and whoever runs
+ * the place, sitting in together, so this takes as many as it is given. The
+ * printed name is built from them and kept on the slot: a staff record renamed
+ * next year should not change what a diary from March said it was.
+ *
+ * SOMEBODY ELSE IS STILL AN ANSWER. An owner, a consultant on the panel,
+ * somebody who does not work here: a typed name with nobody behind it works
+ * exactly as it did, and nobody can be notified, which the screen says.
  */
-async function readInterviewer(ctx, body, fallbackName = null) {
-  const staffId = body.interviewerStaffId == null || body.interviewerStaffId === ''
-    ? null
-    : Number(body.interviewerStaffId);
+async function readPanel(ctx, body, fallbackName = null) {
+  const given = body.interviewerStaffIds ?? body.interviewerStaffId;
+  const ids = [...new Set((Array.isArray(given) ? given : [given])
+    .map(Number).filter((n) => Number.isInteger(n) && n > 0))];
 
-  if (staffId != null) {
-    const person = await ctx.db.prepare('SELECT id, name FROM att_staff WHERE id = ?')
-      .bind(staffId).first();
-    if (!person) throw badRequest('That member of staff is no longer on the books.');
-    return { staffId: person.id, name: person.name };
+  if (!ids.length) {
+    return {
+      staffIds: [],
+      name: str(body.interviewer, 'Who is interviewing', { max: 160 }) || fallbackName,
+    };
   }
+  if (ids.length > 8) throw badRequest('That is more people than sit on a panel.');
 
-  return {
-    staffId: null,
-    name: str(body.interviewer, 'Who is interviewing', { max: 120 }) || fallbackName,
-  };
+  const rows = await ctx.db.prepare(
+    `SELECT id, name FROM att_staff WHERE active = 1 AND id IN (${ids.map(() => '?').join(',')})`,
+  ).bind(...ids).all().catch(() => ({ results: [] }));
+  const found = rows.results ?? [];
+
+  const missing = ids.filter((id) => !found.some((r) => r.id === id));
+  if (missing.length) throw badRequest('Somebody on that panel is no longer on the books.');
+
+  // In the order they were picked, so the printed name reads the way whoever
+  // built it meant it to.
+  const ordered = ids.map((id) => found.find((r) => r.id === id));
+  return { staffIds: ids, name: sayPanel(ordered.map((r) => r.name)) };
+}
+
+/** "Yaa Asantewaa and Kwame Mensah", which is how a person says it. */
+function sayPanel(names) {
+  const list = names.filter(Boolean);
+  if (!list.length) return null;
+  if (list.length === 1) return list[0];
+  return `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`.slice(0, 160);
+}
+
+/** Put a slot's panel on it, replacing whoever was there. */
+async function setPanel(ctx, slotId, staffIds) {
+  await ctx.db.prepare('DELETE FROM rec_slot_panel WHERE slot_id = ?').bind(slotId).run();
+  for (const staffId of staffIds) {
+    await ctx.db.prepare(
+      'INSERT OR IGNORE INTO rec_slot_panel (slot_id, staff_id, added_by) VALUES (?1, ?2, ?3)',
+    ).bind(slotId, staffId, actorOf(ctx)).run().catch(() => {});
+  }
+}
+
+/** Who is on one slot's panel, as ids. */
+async function panelOf(db, slotId) {
+  const rows = await db.prepare(
+    'SELECT staff_id FROM rec_slot_panel WHERE slot_id = ? ORDER BY rowid',
+  ).bind(slotId).all().catch(() => ({ results: [] }));
+  return (rows.results ?? []).map((r) => Number(r.staff_id));
 }
 
 /**
- * Tell whoever is interviewing.
+ * Tell everybody on the panel.
  *
- * The reason the interviewer is a person and not a line of text. A candidate
- * takes a time at eleven at night and nobody here is looking at the screen;
- * without this, the first anybody knows is somebody arriving at reception.
+ * The reason a panel is people and not a line of text. A candidate takes a
+ * time at eleven at night and nobody here is looking at a screen; without
+ * this, the first anybody knows is somebody arriving at reception.
  *
- * IT NEEDS A LOGIN TO REACH. Somebody on the books with no account cannot be
- * told, and that is not an error — plenty of people who sit on a panel have no
- * reason to open this app. It says so where it matters, on the screen that
- * chose them, rather than failing quietly here.
+ * EACH OF THEM, not the first one. An interview is the head of department and
+ * whoever runs the place sitting in together, and telling one of the two is
+ * how the other fails to turn up.
+ *
+ * A LOGIN IS NEEDED TO REACH SOMEBODY. Plenty of people who sit on a panel
+ * have no reason to open this app; those are simply not told, which is not an
+ * error. What is returned is how many actually heard, so the screen can say
+ * "tell the other one yourself" rather than letting somebody assume it was
+ * handled.
  *
  * Never throws. A notice is a courtesy; failing to send one must not fail the
  * booking that earned it.
  */
-async function tellInterviewer(ctx, slot, { kind, title, body, level = 'info' }) {
-  if (!slot?.interviewer_staff_id) return false;
+async function tellPanel(ctx, slot, { kind, title, body, level = 'info' }, staffIds = null) {
+  const panel = staffIds ?? await panelOf(ctx.db, slot.id);
+  if (!panel.length) return 0;
 
-  const user = await ctx.db.prepare(
-    'SELECT id FROM users WHERE staff_id = ? AND active = 1',
-  ).bind(slot.interviewer_staff_id).first().catch(() => null);
-  if (!user) return false;
+  const users = await ctx.db.prepare(
+    `SELECT id, staff_id FROM users
+      WHERE active = 1 AND staff_id IN (${panel.map(() => '?').join(',')})`,
+  ).bind(...panel).all().catch(() => ({ results: [] }));
 
-  await createNotice(ctx.db, {
-    kind,
-    level,
-    title,
-    body,
-    link: slot.candidate_id ? `#/rec-candidate?id=${slot.candidate_id}` : '#/rec?tab=diary',
-    day: slot.day,
-    actor: 'HIVE',
-    userId: user.id,
-    push: true,
-    email: false,
-  }, ctx).catch(() => {});
-  return true;
+  let told = 0;
+  for (const user of users.results ?? []) {
+    await createNotice(ctx.db, {
+      kind,
+      level,
+      title,
+      body,
+      link: slot.candidate_id ? `#/rec-candidate?id=${slot.candidate_id}` : '#/rec?tab=diary',
+      day: slot.day,
+      actor: 'HIVE',
+      userId: user.id,
+      push: true,
+      email: false,
+    }, ctx).catch(() => {});
+    told += 1;
+  }
+  return told;
 }
 
 /** The same, said the way a person reads a diary entry. */
@@ -1118,7 +1180,7 @@ export async function addSlots(ctx) {
   const placeId = str(body.placeId, 'Place', { max: 300 }) || null;
   const lat = numberOrNull(body.lat);
   const lng = numberOrNull(body.lng);
-  const who = await readInterviewer(ctx, body, ctx.session?.user?.name ?? null);
+  const who = await readPanel(ctx, body, ctx.session?.user?.name ?? null);
 
   // A time already published for that day is not published twice. Somebody
   // adding a second block to the same morning should get the times they are
@@ -1131,12 +1193,13 @@ export async function addSlots(ctx) {
   let added = 0;
   for (const slot of cut) {
     if (already.has(slot.startsAt)) continue;
-    await ctx.db.prepare(
+    const made = await ctx.db.prepare(
       `INSERT INTO rec_slot (role_id, day, starts_at, minutes, place, place_id, place_lat,
-                             place_lng, interviewer, interviewer_staff_id, created_by)
-       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)`,
+                             place_lng, interviewer, created_by)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) RETURNING id`,
     ).bind(roleId, slot.day, slot.startsAt, slot.minutes, place, placeId,
-      lat, lng, who.name, who.staffId, actorOf(ctx)).run();
+      lat, lng, who.name, actorOf(ctx)).first();
+    if (who.staffIds.length) await setPanel(ctx, made.id, who.staffIds);
     added += 1;
   }
 
@@ -1148,7 +1211,7 @@ export async function addSlots(ctx) {
       ['rec_place_lat', lat == null ? '' : String(lat)],
       ['rec_place_lng', lng == null ? '' : String(lng)],
       ['rec_interviewer', who.name ?? ''],
-      ['rec_interviewer_staff_id', who.staffId == null ? '' : String(who.staffId)],
+      ['rec_panel', who.staffIds.length ? JSON.stringify(who.staffIds) : ''],
     ]) {
       await ctx.db.prepare(
         'INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2',
@@ -1206,9 +1269,13 @@ export async function updateSlot(ctx, id) {
   // Only where the form actually said something about it. Without this, moving
   // a time by half an hour silently takes whoever was on the panel off it,
   // which is the worst kind of bug: nothing looks wrong until nobody turns up.
-  const who = body.interviewer === undefined && body.interviewerStaffId === undefined
-    ? { staffId: slot.interviewer_staff_id, name: slot.interviewer }
-    : await readInterviewer(ctx, body, slot.interviewer);
+  const was = await panelOf(ctx.db, slot.id);
+  const saidSomething = body.interviewer !== undefined
+    || body.interviewerStaffId !== undefined
+    || body.interviewerStaffIds !== undefined;
+  const who = saidSomething
+    ? await readPanel(ctx, body, slot.interviewer)
+    : { staffIds: was, name: slot.interviewer };
   const place = body.place === undefined
     ? slot.place
     : str(body.place, 'Where', { max: 160 });
@@ -1221,10 +1288,10 @@ export async function updateSlot(ctx, id) {
   await ctx.db.prepare(
     `UPDATE rec_slot
         SET role_id = ?2, day = ?3, starts_at = ?4, minutes = ?5, place = ?6, place_id = ?7,
-            place_lat = ?8, place_lng = ?9, interviewer = ?10, interviewer_staff_id = ?11
+            place_lat = ?8, place_lng = ?9, interviewer = ?10
       WHERE id = ?1`,
-  ).bind(slot.id, roleId, day, startsAt, minutes, place, placeId, lat, lng,
-    who.name, who.staffId).run();
+  ).bind(slot.id, roleId, day, startsAt, minutes, place, placeId, lat, lng, who.name).run();
+  if (saidSomething) await setPanel(ctx, slot.id, who.staffIds);
 
   const after = await ctx.db.prepare('SELECT * FROM rec_slot WHERE id = ?').bind(slot.id).first();
   const moved = day !== slot.day || startsAt !== slot.starts_at;
@@ -1232,19 +1299,24 @@ export async function updateSlot(ctx, id) {
   // Whoever is on it now is told, and whoever has just come off it is told
   // too. Being quietly taken off a panel is how somebody turns up to an
   // interview that is not theirs, or fails to turn up to one that is.
+  const dropped = was.filter((id) => !who.staffIds.includes(id));
+  const added = who.staffIds.filter((id) => !was.includes(id));
+
   if (slot.candidate_id) {
     const person = await ctx.db.prepare('SELECT name FROM rec_candidate WHERE id = ?')
       .bind(slot.candidate_id).first().catch(() => null);
     const name = person?.name ?? 'A candidate';
 
-    if (who.staffId !== slot.interviewer_staff_id && slot.interviewer_staff_id) {
-      await tellInterviewer(ctx, slot, {
+    // Being quietly taken off a panel is how somebody fails to turn up to an
+    // interview that was theirs, so whoever has come off is told too.
+    if (dropped.length) {
+      await tellPanel(ctx, slot, {
         kind: 'recruitment.off_panel',
         title: `You are no longer interviewing ${name}`,
         body: `${sayWhen(slot)} has been given to ${who.name || 'somebody else'}.`,
-      });
+      }, dropped);
     }
-    await tellInterviewer(ctx, after, {
+    await tellPanel(ctx, after, {
       kind: moved ? 'recruitment.moved' : 'recruitment.changed',
       level: moved ? 'warn' : 'info',
       title: moved
@@ -1253,13 +1325,13 @@ export async function updateSlot(ctx, id) {
       body: moved
         ? `Now ${sayWhen(after)}. It was ${sayWhen(slot)}.`
         : sayWhen(after),
-    });
-  } else if (who.staffId !== slot.interviewer_staff_id) {
-    await tellInterviewer(ctx, after, {
+    }, who.staffIds);
+  } else if (added.length) {
+    await tellPanel(ctx, after, {
       kind: 'recruitment.on_panel',
       title: 'You are down to interview',
       body: `${sayWhen(after)}. Nobody has taken it yet.`,
-    });
+    }, added);
   }
 
   if (slot.candidate_id) {
@@ -1314,8 +1386,9 @@ export async function updateDay(ctx) {
   if (roleId != null && roleId !== undefined) await roleMustExist(ctx, roleId);
 
   const who = body.interviewer === undefined && body.interviewerStaffId === undefined
+    && body.interviewerStaffIds === undefined
     ? null
-    : await readInterviewer(ctx, body);
+    : await readPanel(ctx, body);
   const place = body.place === undefined ? null : {
     place: str(body.place, 'Where', { max: 160 }),
     placeId: str(body.placeId, 'Place', { max: 300 }) || null,
@@ -1332,31 +1405,31 @@ export async function updateDay(ctx) {
       `UPDATE rec_slot
           SET role_id = COALESCE(?2, role_id),
               interviewer = CASE WHEN ?3 = 1 THEN ?4 ELSE interviewer END,
-              interviewer_staff_id = CASE WHEN ?3 = 1 THEN ?5 ELSE interviewer_staff_id END,
-              place = CASE WHEN ?6 = 1 THEN ?7 ELSE place END,
-              place_id = CASE WHEN ?6 = 1 THEN ?8 ELSE place_id END,
-              place_lat = CASE WHEN ?6 = 1 THEN ?9 ELSE place_lat END,
-              place_lng = CASE WHEN ?6 = 1 THEN ?10 ELSE place_lng END
+              place = CASE WHEN ?5 = 1 THEN ?6 ELSE place END,
+              place_id = CASE WHEN ?5 = 1 THEN ?7 ELSE place_id END,
+              place_lat = CASE WHEN ?5 = 1 THEN ?8 ELSE place_lat END,
+              place_lng = CASE WHEN ?5 = 1 THEN ?9 ELSE place_lng END
         WHERE id = ?1`,
     ).bind(
       slot.id,
       roleId === undefined ? null : roleId,
-      who ? 1 : 0, who?.name ?? null, who?.staffId ?? null,
+      who ? 1 : 0, who?.name ?? null,
       place ? 1 : 0, place?.place ?? null, place?.placeId ?? null,
       place?.lat ?? null, place?.lng ?? null,
     ).run();
+    if (who) await setPanel(ctx, slot.id, who.staffIds);
   }
 
   // One notice for the day rather than eleven. A phone that buzzes eleven
   // times for one edit is a phone whose owner turns notifications off.
-  if (who?.staffId) {
+  if (who?.staffIds.length) {
     const booked = touching.filter((slot) => slot.candidate_id != null).length;
-    await tellInterviewer(ctx, { ...touching[0], interviewer_staff_id: who.staffId, candidate_id: null }, {
+    await tellPanel(ctx, { ...touching[0], candidate_id: null }, {
       kind: 'recruitment.on_panel',
       title: `You are interviewing on ${day}`,
       body: `${touching.length} time${touching.length === 1 ? '' : 's'}`
         + `${booked ? `, ${booked} already taken` : ', none taken yet'}.`,
-    });
+    }, who.staffIds);
   }
 
   await audit(ctx, 'recruitment.day_update', null, { day, changed: touching.length, includeBooked });
@@ -1394,7 +1467,7 @@ export async function removeSlot(ctx, id) {
       detail: `${slot.day} at ${slot.starts_at}, cancelled by the property`,
       actor: actorOf(ctx),
     });
-    await tellInterviewer(ctx, slot, {
+    await tellPanel(ctx, slot, {
       kind: 'recruitment.cancelled',
       level: 'warn',
       title: `${person?.name ?? 'An'} interview is off`,
@@ -1433,7 +1506,7 @@ export async function bookSlot(ctx, id) {
     actor: actorOf(ctx),
   });
 
-  const told = await tellInterviewer(ctx, { ...slot, candidate_id: row.id }, {
+  const told = await tellPanel(ctx, { ...slot, candidate_id: row.id }, {
     kind: 'recruitment.booked',
     title: `You are interviewing ${row.name}`,
     body: `${sayWhen(slot)}. Booked by the office.`,
@@ -1513,7 +1586,7 @@ export async function tellPanelAboutBooking(ctx, slotId, { changed = false } = {
   ).bind(slotId).first().catch(() => null);
   if (!slot) return false;
 
-  return tellInterviewer(ctx, slot, {
+  return tellPanel(ctx, slot, {
     kind: 'recruitment.booked',
     title: changed
       ? `${slot.candidate_name ?? 'A candidate'} has moved their interview`
@@ -1524,7 +1597,7 @@ export async function tellPanelAboutBooking(ctx, slotId, { changed = false } = {
 
 /** And when they give one back, so the chair is not sat waiting. */
 export async function tellPanelAboutRelease(ctx, slot, candidateName) {
-  return tellInterviewer(ctx, { ...slot, candidate_id: null }, {
+  return tellPanel(ctx, { ...slot, candidate_id: null }, {
     kind: 'recruitment.released',
     level: 'warn',
     title: `${candidateName} has given back their interview time`,

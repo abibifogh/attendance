@@ -1363,6 +1363,13 @@ typed in a box. That is the whole point of it: a candidate takes a time at
 eleven at night, nobody here is looking at a screen, and "Kwame" is not
 somebody the app can tell.
 
+It is **as many people as actually sit in the room**, up to eight. An interview
+here is rarely one person: the head of department and the manager, or the
+manager and somebody from the office. Pick each of them off the list and they
+appear as a row of names you can take one off again. The line underneath says
+how many of them the app can actually reach, because a panel of three where
+only one has a login is a panel where two have to be told by hand.
+
 So the moment a time is taken — by the candidate on their own phone, or by the
 office booking one over the counter — **whoever is on the panel is told**, on
 their own phone, by name. They are also told when somebody gives a time back,

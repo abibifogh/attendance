@@ -101,6 +101,11 @@ const bellOf = (raw, userId) => raw.prepare(
   'SELECT kind, title, body FROM app_notices WHERE user_id = ? ORDER BY id',
 ).all(userId);
 
+/** Who is on a slot's panel, as ids. */
+const panelOf = (raw, slotId) => raw.prepare(
+  'SELECT staff_id FROM rec_slot_panel WHERE slot_id = ? ORDER BY rowid',
+).all(slotId).map((r) => Number(r.staff_id));
+
 async function aDiary(db, { roleId = null, staffId = null, day = soon() } = {}) {
   await addSlots(ctx(db, {
     roleId, day, from: '10:00', to: '12:00', minutes: 30,
@@ -117,12 +122,48 @@ test('the interviewer can be a member of staff, and the name is kept beside them
   await aDiary(db, { staffId: yaa });
 
   const slot = raw.prepare('SELECT * FROM rec_slot ORDER BY id LIMIT 1').get();
-  assert.equal(slot.interviewer_staff_id, yaa);
+  assert.deepEqual(panelOf(raw, slot.id), [yaa]);
   assert.equal(slot.interviewer, 'Yaa Asantewaa', 'the printed name is stored too');
 
   const shown = (await body(await board(ctx(db)))).diary[0];
-  assert.equal(shown.interviewerStaffId, yaa);
+  assert.deepEqual(shown.panel, [yaa]);
   assert.equal(shown.interviewer, 'Yaa Asantewaa');
+});
+
+test('a panel is as many people as sit on one, and reads as a sentence', async () => {
+  const { raw, db, staff } = setup();
+  const yaa = staff(1, 'Yaa Asantewaa');
+  const kofi = staff(2, 'Kofi Mensah');
+  const ama = staff(3, 'Ama Owusu');
+
+  await addSlots(ctx(db, {
+    day: soon(), from: '10:00', to: '10:30',
+    interviewerStaffIds: [yaa, kofi, ama],
+  }));
+
+  const slot = raw.prepare('SELECT * FROM rec_slot LIMIT 1').get();
+  assert.deepEqual(panelOf(raw, slot.id), [yaa, kofi, ama], 'in the order they were picked');
+  // The printed name is the list written out the way a person would say it.
+  assert.equal(slot.interviewer, 'Yaa Asantewaa, Kofi Mensah and Ama Owusu');
+});
+
+test('a panel bigger than a panel is refused, and one that is gone is too', async () => {
+  const { db, staff } = setup();
+  for (let i = 1; i <= 9; i += 1) staff(i, `Somebody ${i}`);
+
+  await assert.rejects(
+    () => addSlots(ctx(db, {
+      day: soon(), from: '10:00', to: '10:30',
+      interviewerStaffIds: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    })),
+    /more people than sit on a panel/,
+  );
+  await assert.rejects(
+    () => addSlots(ctx(db, {
+      day: soon(), from: '10:00', to: '10:30', interviewerStaffIds: [1, 999],
+    })),
+    /no longer on the books/,
+  );
 });
 
 test('somebody who is not on the books is still a perfectly good interviewer', async () => {
@@ -132,7 +173,7 @@ test('somebody who is not on the books is still a perfectly good interviewer', a
   }));
   const slot = raw.prepare('SELECT * FROM rec_slot LIMIT 1').get();
   assert.equal(slot.interviewer, 'The owner');
-  assert.equal(slot.interviewer_staff_id, null);
+  assert.deepEqual(panelOf(raw, slot.id), [], 'nobody to notify, which is fine');
 });
 
 test('the screen is told who can actually be reached', async () => {
@@ -188,8 +229,42 @@ test('the panel is told when the office books one for somebody', async () => {
   const slot = raw.prepare('SELECT id FROM rec_slot ORDER BY id LIMIT 1').get();
   const done = await body(await bookSlot(ctx(db, { candidateId: person.id }), slot.id));
 
-  assert.equal(done.interviewerTold, true, 'the screen can say so');
+  assert.equal(done.interviewerTold, 1, 'the screen can say how many heard');
   assert.ok(bellOf(raw, 101).some((n) => /You are interviewing Kofi Boateng/.test(n.title)));
+});
+
+test('every one of them is told, not just the first', async () => {
+  const { raw, db, staff } = setup();
+  const yaa = staff(1, 'Yaa Asantewaa');
+  const kofi = staff(2, 'Kofi Mensah');
+  await addSlots(ctx(db, {
+    day: soon(), from: '10:00', to: '10:30', interviewerStaffIds: [yaa, kofi],
+  }));
+
+  const person = await body(await addCandidate(ctx(db, { name: 'Ama Mensah' })));
+  const slot = raw.prepare('SELECT id FROM rec_slot LIMIT 1').get();
+  const done = await body(await bookSlot(ctx(db, { candidateId: person.id }), slot.id));
+
+  // Telling one of the two is how the other fails to turn up.
+  assert.equal(done.interviewerTold, 2);
+  assert.ok(bellOf(raw, 101).some((n) => n.kind === 'recruitment.booked'));
+  assert.ok(bellOf(raw, 102).some((n) => n.kind === 'recruitment.booked'));
+});
+
+test('the one with a login hears and the one without does not, and the count says so', async () => {
+  const { raw, db, staff } = setup();
+  const yaa = staff(1, 'Yaa Asantewaa');
+  const nobody = staff(2, 'Nobody Online', { login: false });
+  await addSlots(ctx(db, {
+    day: soon(), from: '10:00', to: '10:30', interviewerStaffIds: [yaa, nobody],
+  }));
+
+  const person = await body(await addCandidate(ctx(db, { name: 'Ama Mensah' })));
+  const slot = raw.prepare('SELECT id FROM rec_slot LIMIT 1').get();
+  const done = await body(await bookSlot(ctx(db, { candidateId: person.id }), slot.id));
+
+  assert.equal(done.interviewerTold, 1, 'so the screen can say to tell the other one');
+  assert.equal(bellOf(raw, 101).length, 1);
 });
 
 test('an interviewer with no login is simply not told, and the screen is told that', async () => {
@@ -203,7 +278,7 @@ test('an interviewer with no login is simply not told, and the screen is told th
 
   // Not an error. Plenty of people who sit on a panel have no reason to open
   // this app; what matters is that the screen can say "tell them yourself".
-  assert.equal(done.interviewerTold, false);
+  assert.equal(done.interviewerTold, 0);
 });
 
 test('the panel is told when somebody gives their time back', async () => {
@@ -317,11 +392,11 @@ test('a whole day changes at once, and leaves the booked ones alone by default',
   assert.equal(done.left, 1, 'and the booked one is not touched');
 
   const booked = raw.prepare('SELECT * FROM rec_slot WHERE id = ?').get(first.id);
-  assert.equal(booked.interviewer_staff_id, yaa, 'an appointment already given is left alone');
+  assert.deepEqual(panelOf(raw, first.id), [yaa], 'an appointment already given is left alone');
   assert.equal(booked.place, 'The office');
 
   const free = raw.prepare('SELECT * FROM rec_slot WHERE candidate_id IS NULL LIMIT 1').get();
-  assert.equal(free.interviewer_staff_id, kofi);
+  assert.deepEqual(panelOf(raw, free.id), [kofi]);
   assert.equal(free.place, 'The small office');
 });
 
@@ -338,8 +413,7 @@ test('the booked ones come too when the box is ticked', async () => {
     day, interviewerStaffId: kofi, includeBooked: true,
   })));
   assert.equal(done.changed, 4);
-  assert.equal(raw.prepare('SELECT interviewer_staff_id FROM rec_slot WHERE id = ?')
-    .get(first.id).interviewer_staff_id, kofi);
+  assert.deepEqual(panelOf(raw, first.id), [kofi]);
 });
 
 test('a day edit that changes nothing is refused rather than reported as done', async () => {
@@ -530,4 +604,107 @@ test('taking somebody out of the pipeline still frees their time and tells the p
   await moveCandidate(ctx(db, { stage: 'not_taken', outcome: 'Did not turn up' }), person.id);
   assert.equal(raw.prepare('SELECT candidate_id FROM rec_slot WHERE id = ?').get(slot.id)
     .candidate_id, null);
+});
+
+test('a candidate choosing a time on their own phone tells the whole panel', async () => {
+  const { raw, db, staff } = setup();
+  const yaa = staff(1, 'Yaa Asantewaa');
+  const kofi = staff(2, 'Kofi Mensah');
+  const role = (await body(await createRole(ctx(db, { title: 'Room attendant' })))).id;
+  await addSlots(ctx(db, {
+    roleId: role, day: soon(), from: '10:00', to: '10:30',
+    place: 'The office', interviewerStaffIds: [yaa, kofi],
+  }));
+
+  const person = await body(await addCandidate(ctx(db, { name: 'Ama Mensah', roleId: role })));
+  const made = await body(await inviteCandidate(ctx(db, { wantsSlot: true }), person.id));
+  const token = made.url.split('/c/')[1];
+  const page = await body(await open(publicCtx(db), token));
+  await choose(publicCtx(db, { slotId: page.slots[0].id }), token);
+
+  // The one thing in this pipeline that happens with nobody here doing it, so
+  // everybody who has to be in the room hears about it.
+  for (const userId of [101, 102]) {
+    const told = bellOf(raw, userId).find((n) => n.kind === 'recruitment.booked');
+    assert.ok(told, `user ${userId} heard`);
+    assert.match(told.title, /You are interviewing Ama Mensah/);
+    assert.match(told.body, /They chose it themselves/);
+  }
+});
+
+test('changing a panel tells everybody joining and everybody leaving', async () => {
+  const { raw, db, staff } = setup();
+  const yaa = staff(1, 'Yaa Asantewaa');
+  const kofi = staff(2, 'Kofi Mensah');
+  const ama = staff(3, 'Ama Owusu');
+  await addSlots(ctx(db, {
+    day: soon(), from: '10:00', to: '10:30', interviewerStaffIds: [yaa, kofi],
+  }));
+  const person = await body(await addCandidate(ctx(db, { name: 'Somebody Else' })));
+  const slot = raw.prepare('SELECT id FROM rec_slot LIMIT 1').get();
+  await bookSlot(ctx(db, { candidateId: person.id }), slot.id);
+
+  // Yaa stays, Kofi comes off, Ama goes on.
+  await updateSlot(ctx(db, { interviewerStaffIds: [yaa, ama] }), slot.id);
+  assert.deepEqual(panelOf(raw, slot.id), [yaa, ama]);
+
+  assert.ok(bellOf(raw, 102).some((n) => n.kind === 'recruitment.off_panel'),
+    'the one taken off is told, or they fail to turn up to nothing');
+  assert.ok(bellOf(raw, 103).some((n) => n.kind === 'recruitment.changed'),
+    'and the one put on is told');
+  // Whoever stayed is told it changed too, and not told they are off it.
+  assert.ok(bellOf(raw, 101).some((n) => n.kind === 'recruitment.changed'));
+  assert.ok(!bellOf(raw, 101).some((n) => n.kind === 'recruitment.off_panel'));
+});
+
+test('moving a time leaves the panel alone, and tells all of them it moved', async () => {
+  const { raw, db, staff } = setup();
+  const yaa = staff(1, 'Yaa Asantewaa');
+  const kofi = staff(2, 'Kofi Mensah');
+  await addSlots(ctx(db, {
+    day: soon(), from: '10:00', to: '10:30', interviewerStaffIds: [yaa, kofi],
+  }));
+  const person = await body(await addCandidate(ctx(db, { name: 'Ama Mensah' })));
+  const slot = raw.prepare('SELECT id FROM rec_slot LIMIT 1').get();
+  await bookSlot(ctx(db, { candidateId: person.id }), slot.id);
+
+  await updateSlot(ctx(db, { at: '15:30' }), slot.id);
+
+  // The bug this had once: an edit that says nothing about the panel used to
+  // clear it, and nothing looked wrong until nobody turned up.
+  assert.deepEqual(panelOf(raw, slot.id), [yaa, kofi]);
+  assert.ok(bellOf(raw, 101).some((n) => n.kind === 'recruitment.moved'));
+  assert.ok(bellOf(raw, 102).some((n) => n.kind === 'recruitment.moved'));
+});
+
+test('a diary published before panels existed keeps its interviewer', () => {
+  // The migration carries the single interviewer across, so a diary published
+  // last week keeps getting told. Checked by running the migrations against a
+  // slot that predates the change.
+  const raw = new DatabaseSync(':memory:');
+  raw.exec('PRAGMA foreign_keys = ON;');
+  const files = readdirSync('migrations').filter((n) => n.endsWith('.sql')).sort();
+  const before = files.filter((f) => f < '0088');
+
+  for (const f of before) raw.exec(readFileSync(`migrations/${f}`, 'utf8'));
+  // The migrations seed a few staff of their own, so let the database pick the
+  // id rather than choosing one that turns out to be taken.
+  const her = Number(raw.prepare("INSERT INTO att_staff (employee_no, name) VALUES ('E7', 'Yaa Asantewaa')")
+    .run().lastInsertRowid);
+  raw.prepare(`INSERT INTO rec_slot (id, day, starts_at, interviewer, interviewer_staff_id)
+               VALUES (1, '2026-09-01', '10:00', 'Yaa Asantewaa', ?)`).run(her);
+
+  for (const f of files.filter((x) => x >= '0088')) {
+    raw.exec(readFileSync(`migrations/${f}`, 'utf8'));
+  }
+
+  assert.deepEqual(
+    raw.prepare('SELECT staff_id FROM rec_slot_panel WHERE slot_id = 1').all()
+      .map((r) => Number(r.staff_id)),
+    [her],
+  );
+  // And the column is gone, so there is no second place for the two to
+  // disagree.
+  assert.ok(!raw.prepare('PRAGMA table_info(rec_slot)').all()
+    .some((c) => c.name === 'interviewer_staff_id'));
 });
