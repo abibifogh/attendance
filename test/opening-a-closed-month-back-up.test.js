@@ -188,3 +188,67 @@ test('but it leaves a month somebody closed off by hand alone', async () => {
   assert.ok(after.closed, 'still closed off, because a person closed it');
   assert.equal(after.closed.note, 'Done by hand');
 });
+
+// ---------------------------------------------------------------------------
+// An advance recorded today that does not start until next month
+// ---------------------------------------------------------------------------
+
+test('an advance that does not start yet is named rather than left looking lost', async () => {
+  // Money handed over in the last week of a month repays from the month after.
+  // That is deliberate, and it left the month-end card saying "nothing due"
+  // with no hint that the three just recorded were the reason it looked empty.
+  const { db } = setup();
+  for (const name of ['one', 'two', 'three']) {
+    await read(await addAdvance(ctx(db, {
+      body: {
+        staffId: 1, amount: 500, months: 1, takenOn: '2026-08-31', purpose: 'other', reason: name,
+      },
+    })));
+  }
+
+  const data = await read(await advances(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(data.due.length, 0, 'nothing is due in August, which is right');
+  assert.equal(data.later.length, 3, 'and the screen is told why');
+  assert.deepEqual([...new Set(data.later.map((r) => r.from))], ['2026-09']);
+  assert.equal(data.later[0].staff, 'Ama Boateng');
+  assert.equal(data.later[0].monthly, 500);
+
+  // They are on the ledger the whole time, which is the thing somebody is
+  // really asking when they say an advance has disappeared.
+  assert.equal(data.people[0].advances.length, 3);
+  assert.equal(data.people[0].totals.owed, 1500);
+});
+
+test('and in September they are simply due, with nothing left to explain', async () => {
+  const { db } = setup();
+  await read(await addAdvance(ctx(db, {
+    body: { staffId: 1, amount: 500, months: 1, takenOn: '2026-08-31', purpose: 'other' },
+  })));
+
+  const data = await read(await advances(ctx(db, { query: '?month=2026-09' })));
+  assert.equal(data.due.length, 1);
+  assert.equal(data.due[0].expected, 500);
+  assert.deepEqual(data.later, []);
+});
+
+test('one recorded early in the month starts the same month and is due at once', async () => {
+  const { db } = setup();
+  await read(await addAdvance(ctx(db, {
+    body: { staffId: 1, amount: 500, months: 1, takenOn: '2026-08-04', purpose: 'other' },
+  })));
+
+  const data = await read(await advances(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(data.due.length, 1);
+  assert.deepEqual(data.later, []);
+});
+
+test('a settled advance is not listed as waiting to start', async () => {
+  const { raw, db } = setup();
+  const given = await read(await addAdvance(ctx(db, {
+    body: { staffId: 1, amount: 500, months: 1, takenOn: '2026-08-31', purpose: 'other' },
+  })));
+  raw.prepare("UPDATE hr_advance SET status = 'settled' WHERE id = ?").run(given.id);
+
+  const data = await read(await advances(ctx(db, { query: `?month=${MONTH}` })));
+  assert.deepEqual(data.later, []);
+});

@@ -178,6 +178,30 @@ export async function advances(ctx) {
 
   due.sort((a, b) => String(a.staff).localeCompare(String(b.staff)));
 
+  // Advances that exist and are simply not due yet.
+  //
+  // Money handed over in the last week of a month repays from the month after,
+  // which is deliberate and is also invisible: three advances recorded on the
+  // 31st leave the month-end card saying "nothing due" with no hint that they
+  // are the reason it looks empty. Whoever just recorded them concludes they
+  // did not save.
+  const later = [];
+  for (const advance of rows) {
+    if (!isOpen(advance)) continue;
+    const start = startsOn(advance);
+    if (!start || start <= month) continue;
+    if (balanceOf(advance, entriesBy.get(advance.id) ?? []) <= 0) continue;
+    later.push({
+      advanceId: advance.id,
+      staffId: advance.staff_id,
+      staff: staffById.get(advance.staff_id)?.name ?? 'Somebody',
+      from: start,
+      monthly: round2(advance.monthly),
+    });
+  }
+  later.sort((a, b) => String(a.from).localeCompare(String(b.from))
+    || String(a.staff).localeCompare(String(b.staff)));
+
   return json({
     month,
     today,
@@ -190,6 +214,9 @@ export async function advances(ctx) {
     canEdit: isAdmin(ctx.session),
     closed: closed ? { by: closed.closed_by, at: closed.closed_at, note: closed.note } : null,
     due,
+    // Running, but not against this month. What makes an empty month-end card
+    // an answer rather than a worry.
+    later,
     people: list,
     requests: rows.filter((r) => r.status === 'requested').map((r) => ({
       ...shape(r, entriesBy.get(r.id) ?? [], { asOfMonth: thisMonth }),

@@ -1311,6 +1311,11 @@ export const GUIDE = [
         + 'half an instalment off their pay. Closing the payroll afterwards cannot take it '
         + 'twice, because one answer per advance per month is a rule in the database rather '
         + 'than a check on a screen.' },
+      { warn: 'An advance recorded in the last week of a month starts coming off the month '
+        + 'after, so it will not be in this month\u2019s list and is not lost. The message '
+        + 'when you record one says which month it starts, and the month-end card names '
+        + 'anything running that does not start yet. To make one come off this month, set '
+        + '"First deduction" on the form.' },
       { p: 'A month closed off on Advances can be opened back up: the button is on the '
         + 'closed month\u2019s own card. It lifts the mark and nothing else, so the month can '
         + 'be answered again and everything already recorded stays where it is. A wrong '

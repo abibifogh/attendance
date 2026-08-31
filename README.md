@@ -2138,6 +2138,29 @@ stamps over a month somebody had closed off by hand: that is their answer, with
 their name and their note on it, and it was being overwritten and then deleted
 by a payroll reopen that had never set it.
 
+### An advance recorded on the 31st is not a lost advance
+
+Money handed over in the last week of a month repays from the month after: the
+payroll for the month it was taken in has usually been worked out already, and
+taking it back the same month is a surprise on somebody's payslip. That rule is
+right and it was invisible.
+
+So somebody records three advances on the last afternoon of August, goes to the
+month-end card, and reads *Nothing was due to come off anybody's pay in August
+2026*. The three are on the ledger the whole time, in the table below. But the
+card that they were looking at says nothing about them, and the reasonable
+conclusion is that they did not save.
+
+Two lines close that. The message after recording one now says when it starts:
+*Recorded, and they have been told. First deduction September 2026.* And the
+month-end card names what is running but not yet due, on a quiet month and a
+busy one alike: *Three advances are running that do not start yet: Divine Atsu
+Adanuvi, Emmanuel Ofori Bennie, Vivian Ahiadorme from September 2026.*
+
+The start month is a field on the form, so an advance that really should come
+off this month is made to by setting it, or by putting the handover date
+earlier.
+
 ### A bonus is net for most people, and gross for some
 
 A bonus here is normally a net promise. Somebody is told five hundred cedis,

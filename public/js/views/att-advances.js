@@ -219,6 +219,7 @@ function dueCard(data, month, reload, cash) {
         ? `Closed off by ${data.closed.by || 'somebody'}. Every advance running in `
           + `${niceMonth(month)} has an answer against it.`
         : `Nothing was due to come off anybody's pay in ${niceMonth(month)}.`),
+      startingLater(data),
       closed
         ? h('button.btn-sm', { onclick: () => openItBackUp(month, reload) }, 'Open it back up')
         : h('button.btn-sm', {
@@ -271,6 +272,10 @@ function dueCard(data, month, reload, cash) {
     + 'come off, and change the figure where it came off differently. Nothing is written until '
     + 'you press the button.'),
 
+  // Here too, not only on a quiet month: somebody who has just recorded three
+  // advances and finds one name on this list wonders where the other two went.
+  startingLater(data),
+
   h('div.table-wrap', h('table.adv-close',
     h('thead', h('tr', h('th', 'Deducted'), h('th.num', 'Still owed'), h('th.num', 'Amount'))),
     h('tbody', lines))),
@@ -293,6 +298,34 @@ function dueCard(data, month, reload, cash) {
       },
     }, `Record ${niceMonth(month)}`),
     h('button.btn-sm', { onclick: () => addOne(data, reload) }, 'Something new was given out')));
+}
+
+/**
+ * Advances that are running and simply not due yet.
+ *
+ * An empty month-end card is either "nobody owes anything" or "the three you
+ * recorded this afternoon start next month", and those are not the same news.
+ * Money handed over in the last week of a month repays from the month after,
+ * which is deliberate and was invisible: whoever had just recorded them saw a
+ * card saying nothing was due and concluded they had not saved.
+ */
+function startingLater(data) {
+  const rows = data.later ?? [];
+  if (!rows.length) return null;
+
+  const byMonth = new Map();
+  for (const row of rows) {
+    if (!byMonth.has(row.from)) byMonth.set(row.from, []);
+    byMonth.get(row.from).push(row.staff);
+  }
+
+  return h('p.muted', { style: { fontSize: '.85rem' } },
+    rows.length === 1
+      ? 'One advance is running that does not start yet: '
+      : `${rows.length} advances are running that do not start yet: `,
+    [...byMonth.entries()].map(([from, names], at) => h('span', at ? '; ' : '',
+      names.join(', '), ` from ${niceMonth(from)}`)),
+    '. Money handed over in the last week of a month comes off from the month after.');
 }
 
 /**
@@ -503,7 +536,12 @@ async function addOne(data, reload) {
     onSubmit: (form) => api.advanceAdd(Object.fromEntries(form.entries())),
   });
   if (!done) return;
-  toast('Recorded, and they have been told.', 'good');
+  // When it starts coming off, not just that it saved. Money handed over on
+  // the 31st repays from next month, and somebody who is not told that goes
+  // looking for it in this month's list and concludes it did not save.
+  toast(done.startMonth
+    ? `Recorded, and they have been told. First deduction ${niceMonth(done.startMonth)}.`
+    : 'Recorded, and they have been told.', 'good');
   await reload();
 }
 
