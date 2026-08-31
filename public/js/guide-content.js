@@ -1302,10 +1302,19 @@ export const GUIDE = [
 
       { sub: 'When an advance does not come off' },
       { p: 'A dash in the Advance column is not one thing. It has not started yet, it was let '
-        + 'go this month, it was already recorded against the month, or nobody ever set a '
-        + 'month for it to start. Under the table is a line saying which, by name: "Kofi '
-        + 'Mensah, not until September 2026". An advance being paid off normally is not '
-        + 'mentioned, because there is nothing to explain.' },
+        + 'go this month, or nobody ever set a month for it to start. Under the table is a '
+        + 'line saying which, by name: "Kofi Mensah, not until September 2026". An advance '
+        + 'being paid off normally is not mentioned, because there is nothing to explain.' },
+      { p: 'Answering the month on the Advances page and closing the payroll are two ways of '
+        + 'recording the same thing, and either will do. What you record on Advances is what '
+        + 'comes off the payslip, down to the figure: half an instalment recorded there is '
+        + 'half an instalment off their pay. Closing the payroll afterwards cannot take it '
+        + 'twice, because one answer per advance per month is a rule in the database rather '
+        + 'than a check on a screen.' },
+      { warn: 'A month you let go takes nothing off, which is the point of letting it go. '
+        + 'Money handed back in cash is different again: record that as an adjustment on the '
+        + 'advance, which brings the balance down without excusing the month\u2019s '
+        + 'deduction.' },
       { note: 'Money handed over in the last week of a month is paid back from the month '
         + 'after. The payroll for the month it was taken in has usually been worked out '
         + 'already, and taking it back the same month is a surprise on somebody\u2019s '

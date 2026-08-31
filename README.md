@@ -2060,13 +2060,40 @@ handover in the last week of a month still starts the month after, because the
 payroll for the month it was taken in has usually been worked out already.
 
 **And a dash in the Advance column was several different situations wearing the
-same face.** It has not started yet, it was let go this month, it was already
-recorded against the month, or nobody ever set a month for it to start. The
-first is normal; the last is a record somebody has to fix. Under the payroll
-table is now a line naming anybody with an advance running that nothing is
-coming off, and which of those it is: *Kofi Mensah, not until September 2026
-(GHS 900 left)*. An advance being paid off normally is not mentioned, because
-there is nothing to explain.
+same face.** It has not started yet, it was let go this month, or nobody ever
+set a month for it to start. The first is normal; the last is a record somebody
+has to fix. Under the payroll table is now a line naming anybody with an
+advance running that nothing is coming off, and which of those it is: *Kofi
+Mensah, not until September 2026 (GHS 900 left)*. An advance being paid off
+normally is not mentioned, because there is nothing to explain.
+
+### Answering the month on Advances is what comes off the payslip
+
+The worst of the three, and the one that cost money. Repayments can be recorded
+two ways: the payroll writes them when the month is closed, and the Advances
+page asks the same question at month end so a property that works down that
+list can tick everybody off in one go.
+
+The payroll read "there is already an answer for August" as "so deduct
+nothing". So a property that answered the month on Advances first had nine
+people's balances come down while every one of them was paid their full salary.
+The money came off the ledger and never off the pay, and nothing on either
+screen said so: the payroll showed a dash and the Advances page showed the
+month settled.
+
+**A recorded repayment is now what comes off**, and it is the recorded figure
+rather than the instalment, because half an instalment somebody could manage is
+what actually came off. Closing the payroll afterwards still cannot deduct it
+twice: one answer per advance per month is a unique index in the database, not
+a check on a screen.
+
+Three things it deliberately does not do. A month **let go** still takes
+nothing off, because that is what letting it go means. Money handed back **in
+cash** is an adjustment rather than a repayment: it brings the balance down and
+does not excuse the month's deduction. And **reopening** a closed month takes
+back only what the payroll itself wrote, so an answer given on the Advances
+page survives it. A month closed while the old rule was in force is corrected
+by reopening it and closing it again.
 
 ### A bonus is net for most people, and gross for some
 

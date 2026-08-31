@@ -567,7 +567,6 @@ function niceStamp(value) {
 const NOT_DUE = {
   no_start: 'no month set for it to start',
   let_go: 'let go this month',
-  recorded: 'already recorded against this month',
 };
 
 function advanceNote(data, cash) {

@@ -282,10 +282,27 @@ export function scheduleFor(advance, entries = [], { asOfMonth = null } = {}) {
  * left rather than a full one.
  */
 export function dueThisMonth(advance, entries = [], month) {
-  return whyNotDue(advance, entries, month) ? 0 : round2(Math.min(
-    round2(advance.monthly),
-    balanceOf(advance, entries),
-  ));
+  if (whyNotDue(advance, entries, month)) return 0;
+
+  // A month already answered on the Advances page. What was recorded there IS
+  // what comes off the pay, so the payslip carries that figure rather than the
+  // instalment, and rather than nothing.
+  const already = answerFor(entries, month);
+  if (already) return round2(already.amount);
+
+  return round2(Math.min(round2(advance.monthly), balanceOf(advance, entries)));
+}
+
+/**
+ * The one answer this advance has for this month, if it has one.
+ *
+ * Only a repayment or a let-go month counts. An adjustment or a write-off is
+ * money that moved some other way — somebody handing cash back over the
+ * counter — and has nothing to do with what comes off a payslip.
+ */
+function answerFor(entries = [], month) {
+  return entries.find((e) => e.month === month
+    && ['repayment', 'skipped'].includes(e.kind)) ?? null;
 }
 
 /**
@@ -305,7 +322,6 @@ export const NOT_DUE = {
   no_start: 'no month set for it to start',
   not_yet: 'has not started yet',
   let_go: 'let go this month',
-  recorded: 'already recorded against this month',
   paid_off: 'paid off',
 };
 
@@ -316,9 +332,14 @@ export function whyNotDue(advance, entries = [], month) {
   if (!start) return 'no_start';
   if (start > month) return 'not_yet';
 
-  const already = entries.find((e) => e.month === month
-    && ['repayment', 'skipped'].includes(e.kind));
-  if (already) return already.kind === 'skipped' ? 'let_go' : 'recorded';
+  // A repayment recorded on the Advances page is not a reason for nothing to
+  // come off. IT IS WHAT COMES OFF, and reading it as "already dealt with, so
+  // deduct nothing" is what paid nine people their full salary in August while
+  // their balances went down anyway. Only a month deliberately let go means
+  // nothing comes off.
+  const already = answerFor(entries, month);
+  if (already?.kind === 'skipped') return 'let_go';
+  if (already) return null;
 
   if (balanceOf(advance, entries) <= 0) return 'paid_off';
   return null;
