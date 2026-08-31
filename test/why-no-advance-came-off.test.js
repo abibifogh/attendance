@@ -441,3 +441,81 @@ test('two advances against one person are added up rather than one being missed'
   assert.equal(data.lines[0].loanTotal, 400, 'two instalments, not one');
   assert.equal(data.lines[0].loans.length, 2, 'and the payslip shows them one by one');
 });
+
+// ---------------------------------------------------------------------------
+// An advance against somebody the payroll has no line for
+// ---------------------------------------------------------------------------
+
+test('an advance against somebody not on the payroll is named, not silently dropped', async () => {
+  // The one that looks like a lost deduction from every angle: the advance's
+  // own schedule on the Advances screen says August, correctly, and the
+  // payroll has no row for them at all because nobody has said what they are
+  // paid. Two screens, both right, and no way to see why they disagree.
+  const { raw, db } = setup();
+  await onPayroll(db);
+  raw.prepare(
+    `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
+     VALUES (2, 'E2', 'Divine Atsu Adanuvi', 'Kitchen', '2020-01-01')`,
+  ).run();
+  await read(await addAdvance(ctx(db, {
+    body: {
+      staffId: 2, amount: 500, months: 1, takenOn: '2026-08-04', startMonth: MONTH,
+      purpose: 'other',
+    },
+  })));
+
+  const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.ok(!data.lines.some((l) => l.staff.id === 2), 'no pay profile, so no line');
+  assert.equal(data.advancesNotDue.length, 1);
+  assert.equal(data.advancesNotDue[0].name, 'Divine Atsu Adanuvi');
+  assert.equal(data.advancesNotDue[0].why, 'not_on_payroll');
+  assert.equal(data.advancesNotDue[0].left, 500);
+});
+
+test('putting them on the payroll takes the deduction', async () => {
+  const { raw, db } = setup();
+  await onPayroll(db);
+  raw.prepare(
+    `INSERT INTO att_staff (id, employee_no, name, hired_on)
+     VALUES (2, 'E2', 'Divine Atsu Adanuvi', '2020-01-01')`,
+  ).run();
+  await read(await addAdvance(ctx(db, {
+    body: {
+      staffId: 2, amount: 500, months: 1, takenOn: '2026-08-04', startMonth: MONTH,
+      purpose: 'other',
+    },
+  })));
+
+  await setProfiles(ctx(db, {
+    body: {
+      rows: [
+        { staffId: 1, basic: 2000, ssnit: true, bonusIsNet: false },
+        { staffId: 2, basic: 1200, ssnit: false, bonusIsNet: false },
+      ],
+    },
+  }));
+
+  const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(data.lines.find((l) => l.staff.id === 2).loanTotal, 500);
+  assert.deepEqual(data.advancesNotDue, [], 'and nothing left to explain');
+});
+
+test('somebody off the payroll whose advance is not due yet is not nagged about', async () => {
+  // Two reasons at once is noise. The sharp case is an advance that would be
+  // coming off today and has nowhere to come off.
+  const { raw, db } = setup();
+  await onPayroll(db);
+  raw.prepare(
+    `INSERT INTO att_staff (id, employee_no, name, hired_on)
+     VALUES (2, 'E2', 'Divine Atsu Adanuvi', '2020-01-01')`,
+  ).run();
+  await read(await addAdvance(ctx(db, {
+    body: {
+      staffId: 2, amount: 500, months: 1, takenOn: '2026-09-02', startMonth: '2026-09',
+      purpose: 'other',
+    },
+  })));
+
+  const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.deepEqual(data.advancesNotDue, []);
+});

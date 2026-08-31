@@ -1302,9 +1302,13 @@ export const GUIDE = [
 
       { sub: 'When an advance does not come off' },
       { p: 'A dash in the Advance column is not one thing. It has not started yet, it was let '
-        + 'go this month, or nobody ever set a month for it to start. Under the table is a '
-        + 'line saying which, by name: "Kofi Mensah, not until September 2026". An advance '
-        + 'being paid off normally is not mentioned, because there is nothing to explain.' },
+        + 'go this month, nobody ever set a month for it to start, or the person is not on '
+        + 'the payroll at all. Under the table is a line saying which, by name: "Kofi Mensah, '
+        + 'not until September 2026". An advance being paid off normally is not mentioned, '
+        + 'because there is nothing to explain.' },
+      { note: 'Somebody with an advance who is not on the payroll has no line for a deduction '
+        + 'to come off, so nothing happens and their advance schedule still says this month. '
+        + 'Set what they are paid under Who is on the payroll and it comes off.' },
       { p: 'Answering the month on the Advances page and closing the payroll are two ways of '
         + 'recording the same thing, and either will do. What you record on Advances is what '
         + 'comes off the payslip, down to the figure: half an instalment recorded there is '

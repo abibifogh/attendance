@@ -2060,8 +2060,8 @@ handover in the last week of a month still starts the month after, because the
 payroll for the month it was taken in has usually been worked out already.
 
 **And a dash in the Advance column was several different situations wearing the
-same face.** It has not started yet, it was let go this month, or nobody ever
-set a month for it to start. The first is normal; the last is a record somebody
+same face.** It has not started yet, it was let go this month, nobody ever set
+a month for it to start, or the person is not on the payroll at all. The first is normal; the last is a record somebody
 has to fix. Under the payroll table is now a line naming anybody with an
 advance running that nothing is coming off, and which of those it is: *Kofi
 Mensah, not until September 2026 (GHS 900 left)*. An advance being paid off
@@ -2160,6 +2160,23 @@ Adanuvi, Emmanuel Ofori Bennie, Vivian Ahiadorme from September 2026.*
 The start month is a field on the form, so an advance that really should come
 off this month is made to by setting it, or by putting the handover date
 earlier.
+
+### An advance against somebody who is not on the payroll
+
+The one that looks like a lost deduction from every angle. The advance's own
+schedule on the Advances screen says August, correctly. The payroll has no row
+for that person at all, because nobody has said what they are paid. Two screens,
+both right, and until now no way to see why they disagreed: the deduction simply
+never appeared and nothing anywhere mentioned it.
+
+The payroll now names them: *Emmanuel Ofori Bennie, not on the payroll, so there
+is nothing for it to come off (GHS 500 left). Say what they are paid under Who
+is on the payroll, and the deduction comes off next time this month is worked
+out.*
+
+Only where the deduction would otherwise be due this month. Somebody off the
+payroll whose advance does not start until September has two reasons at once,
+and saying both is noise about something that was not going to happen anyway.
 
 ### A bonus is net for most people, and gross for some
 

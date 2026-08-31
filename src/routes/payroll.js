@@ -450,14 +450,25 @@ export async function payroll(ctx) {
     // would be explaining figures the table is not showing.
     advancesNotDue: closed ? [] : (() => {
       const nameOf = new Map(data.staff.map((p) => [p.id, p.name]));
+      const onPayroll = new Set(lines.map((line) => line.staff.id));
       const out = [];
       for (const advance of data.advances) {
         const entries = data.entriesBy.get(advance.id) ?? [];
-        const why = whyNotDue(advance, entries, month);
+        let why = whyNotDue(advance, entries, month);
+
+        // Somebody with an advance who is not on the payroll at all. Nobody
+        // has said what they are paid, so there is no line for a deduction to
+        // come off, and until now nothing anywhere said so: the advance sat on
+        // the Advances screen with August against it in its own schedule, and
+        // the payroll simply had no row for them. Only worth saying where the
+        // deduction would otherwise be due, or it is noise about an advance
+        // that is not due anyway.
+        if (!onPayroll.has(advance.staff_id)) {
+          if (why !== null) continue;
+          why = 'not_on_payroll';
+        }
+
         if (!why || why === 'paid_off' || why === 'closed') continue;
-        // Somebody who is not on this payroll at all is a different problem
-        // and is already named as one.
-        if (!lines.some((line) => line.staff.id === advance.staff_id)) continue;
         out.push({
           staffId: advance.staff_id,
           name: nameOf.get(advance.staff_id) ?? 'Somebody',

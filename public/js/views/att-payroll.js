@@ -568,6 +568,7 @@ function niceStamp(value) {
 const NOT_DUE = {
   no_start: 'no month set for it to start',
   let_go: 'let go this month',
+  not_on_payroll: 'not on the payroll, so there is nothing for it to come off',
 };
 
 function advanceNote(data, cash) {
@@ -578,6 +579,10 @@ function advanceNote(data, cash) {
     ? `not until ${niceMonth(row.from)}`
     : NOT_DUE[row.why] ?? 'not due this month');
 
+  // Said once at the end rather than against each name, because it is the same
+  // instruction however many people it applies to.
+  const missing = rows.filter((row) => row.why === 'not_on_payroll');
+
   return h('p.muted', { style: { fontSize: '.85rem' } },
     rows.length === 1
       ? 'One advance is running with nothing coming off it this month: '
@@ -586,7 +591,11 @@ function advanceNote(data, cash) {
       h('strong', row.name),
       `, ${say(row)}`,
       row.left ? ` (${cash(row.left)} left)` : '')),
-    '.');
+    '.',
+    missing.length
+      ? ' Say what they are paid under Who is on the payroll, and the deduction comes off '
+        + 'next time this month is worked out.'
+      : '');
 }
 
 /**
