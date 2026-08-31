@@ -263,6 +263,7 @@ export async function renderAttPayroll(params) {
               costCell(data.totals.cost, wholeMonthAgainst(data, 'cost'), cash)))))),
         compareNote(data),
         advanceNote(data, cash),
+        advancesMovedOn(data, cash),
         h('p.muted', { style: { fontSize: '.85rem' } }, data.slips
           ? 'Press a row for the payslip behind it.'
           : 'Payslips are an administrator\u2019s to open. The figures here are what the '
@@ -586,6 +587,27 @@ function advanceNote(data, cash) {
       `, ${say(row)}`,
       row.left ? ` (${cash(row.left)} left)` : '')),
     '.');
+}
+
+/**
+ * A closed month whose advances have been edited since it was closed.
+ *
+ * The table on a closed month is the snapshot that was written, which is the
+ * whole point of closing one. But somebody who has just let a month go on the
+ * Advances page and come back to find the deduction still sitting there has
+ * been told nothing, and will reasonably conclude the app ignored them.
+ */
+function advancesMovedOn(data, cash) {
+  const rows = data.advancesChanged ?? [];
+  if (!rows.length) return null;
+
+  return h('p.muted', { style: { fontSize: '.85rem' } },
+    h('strong', 'This month is closed, so the advances above are as they were written. '),
+    rows.length === 1 ? 'One has been changed since: ' : `${rows.length} have been changed since: `,
+    rows.map((row, at) => h('span', at ? '; ' : '',
+      h('strong', row.name),
+      ` ${cash(row.was)} here, ${cash(row.now)} on the books now`)),
+    '. Reopen the month and close it again to take that up.');
 }
 
 /**

@@ -440,11 +440,15 @@ export async function payroll(ctx) {
     slips: isAdmin(ctx.session),
     totals: totalsOf(lines),
     // Anybody with an advance running that nothing is coming off this month,
-    // and why. Nought in the Advance column is four different situations
-    // wearing the same face, and "not until 2026-09" and "somebody let this
-    // one go" are not the same news. Only the ones with a reason: an advance
-    // being deducted normally has nothing to explain.
-    advancesNotDue: (() => {
+    // and why. Nought in the Advance column is several situations wearing the
+    // same face, and "not until 2026-09" and "somebody let this one go" are
+    // not the same news. Only the ones with a reason: an advance being
+    // deducted normally has nothing to explain.
+    //
+    // Nothing at all on a closed month. The table there is the snapshot that
+    // was written, and a note worked out from the books as they stand today
+    // would be explaining figures the table is not showing.
+    advancesNotDue: closed ? [] : (() => {
       const nameOf = new Map(data.staff.map((p) => [p.id, p.name]));
       const out = [];
       for (const advance of data.advances) {
@@ -464,6 +468,31 @@ export async function payroll(ctx) {
           monthly: round2(advance.monthly),
           left: balanceOf(advance, entries),
         });
+      }
+      return out.sort((a, b) => a.name.localeCompare(b.name));
+    })(),
+
+    // A closed month whose books have moved since it was closed.
+    //
+    // THE TABLE ON A CLOSED MONTH IS A SNAPSHOT, and correctly so: a payslip
+    // handed over in September must not change because somebody edited an
+    // advance in October. But somebody who has just gone to the Advances page,
+    // let a month go, and come back to find the payroll still showing the
+    // deduction has been told nothing at all, and the reasonable conclusion is
+    // that the app ignored them. It did not: the month is closed, and closing
+    // is what makes a figure stop moving. So say it, name them, and say what
+    // takes the change up.
+    advancesChanged: !closed ? [] : (() => {
+      const out = [];
+      for (const line of lines) {
+        const mine = data.advances.filter((a) => a.staff_id === line.staff.id);
+        if (!mine.length) continue;
+        const now = round2(mine.reduce((n, advance) => n + dueThisMonth(
+          advance, data.entriesBy.get(advance.id) ?? [], month,
+        ), 0));
+        const was = round2(line.loanTotal ?? 0);
+        if (Math.abs(now - was) < 0.005) continue;
+        out.push({ staffId: line.staff.id, name: line.staff.name, was, now });
       }
       return out.sort((a, b) => a.name.localeCompare(b.name));
     })(),

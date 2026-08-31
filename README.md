@@ -2095,6 +2095,28 @@ back only what the payroll itself wrote, so an answer given on the Advances
 page survives it. A month closed while the old rule was in force is corrected
 by reopening it and closing it again.
 
+### A closed month says when its advances have moved under it
+
+The table on a closed month is the snapshot that was written, and that is the
+point of closing one: a payslip handed over in September must not change
+because somebody edited an advance in October.
+
+But somebody who has just gone to Advances, taken a deduction off and let the
+month go instead, then come back to the payroll to find the deduction still
+sitting there, has been told nothing at all. The reasonable conclusion is that
+the app ignored them. It did not: the month is closed, and closing is what
+makes a figure stop moving.
+
+So a closed month now says it, and names them: *This month is closed, so the
+advances above are as they were written. One has been changed since: Henry
+Nii-Okai Aryee GHS 1,000 here, GHS 0 on the books now. Reopen the month and
+close it again to take that up.* A closed month nobody has touched says
+nothing.
+
+The live note about why nothing is coming off an advance is shown only on an
+open month, for the same reason: worked out from the books as they stand today,
+it would be explaining figures the table beside it is not showing.
+
 ### A bonus is net for most people, and gross for some
 
 A bonus here is normally a net promise. Somebody is told five hundred cedis,

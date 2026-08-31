@@ -1311,6 +1311,10 @@ export const GUIDE = [
         + 'half an instalment off their pay. Closing the payroll afterwards cannot take it '
         + 'twice, because one answer per advance per month is a rule in the database rather '
         + 'than a check on a screen.' },
+      { note: 'A closed month is a snapshot, so editing an advance afterwards does not move '
+        + 'the figures on it. Change one and the payroll says so by name, and says to reopen '
+        + 'the month and close it again to take the change up. That is also the answer when a '
+        + 'deduction you have just taken off is still showing.' },
       { warn: 'A month you let go takes nothing off, which is the point of letting it go. '
         + 'Money handed back in cash is different again: record that as an adjustment on the '
         + 'advance, which brings the balance down without excusing the month\u2019s '

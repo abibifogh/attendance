@@ -339,3 +339,105 @@ test('a month closed before the fix picks the deduction up when it is reopened',
     'and still only one answer for the month',
   );
 });
+
+// ---------------------------------------------------------------------------
+// A closed month whose books have moved on
+// ---------------------------------------------------------------------------
+
+test('letting a month go after it was closed says so rather than looking ignored', async () => {
+  // Henry's case. The month was closed with the deduction on it; somebody then
+  // went to Advances, took that movement off and let the month go instead. The
+  // table still shows what was written, correctly, and until now said nothing
+  // about it.
+  const { raw, db } = setup();
+  await onPayroll(db);
+  const given = await read(await addAdvance(ctx(db, {
+    body: {
+      staffId: 1, amount: 600, months: 3, takenOn: '2026-07-05', startMonth: '2026-07',
+      purpose: 'other',
+    },
+  })));
+  await closeRun(ctx(db, { body: { month: MONTH } }));
+
+  const before = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(before.lines[0].loanTotal, 200);
+  assert.deepEqual(before.advancesChanged, [], 'nothing has moved yet');
+
+  // Off with the deduction, on with a let-go, exactly as the Advances page does.
+  raw.prepare("DELETE FROM hr_advance_entry WHERE advance_id = ? AND month = ?")
+    .run(given.id, MONTH);
+  raw.prepare(
+    `INSERT INTO hr_advance_entry (advance_id, month, kind, amount, note, actor)
+     VALUES (?, ?, 'skipped', 0, 'No deduction this month', 'Yaa')`,
+  ).run(given.id, MONTH);
+
+  const after = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(after.lines[0].loanTotal, 200, 'a closed month is still a snapshot');
+  assert.deepEqual(after.advancesChanged, [
+    { staffId: 1, name: 'Ama Boateng', was: 200, now: 0 },
+  ]);
+  assert.deepEqual(after.advancesNotDue, [], 'and the live note is not shown beside a snapshot');
+});
+
+test('reopening and closing again takes the change up', async () => {
+  const { raw, db } = setup();
+  await onPayroll(db);
+  const given = await read(await addAdvance(ctx(db, {
+    body: {
+      staffId: 1, amount: 600, months: 3, takenOn: '2026-07-05', startMonth: '2026-07',
+      purpose: 'other',
+    },
+  })));
+  await closeRun(ctx(db, { body: { month: MONTH } }));
+  raw.prepare('DELETE FROM hr_advance_entry WHERE advance_id = ? AND month = ?')
+    .run(given.id, MONTH);
+  raw.prepare(
+    `INSERT INTO hr_advance_entry (advance_id, month, kind, amount, note, actor)
+     VALUES (?, ?, 'skipped', 0, 'No deduction this month', 'Yaa')`,
+  ).run(given.id, MONTH);
+
+  await reopenRun(ctx(db, { body: { month: MONTH } }));
+  const open = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(open.lines[0].loanTotal, 0, 'nothing comes off a month that was let go');
+  assert.equal(open.advancesNotDue[0].why, 'let_go');
+
+  await closeRun(ctx(db, { body: { month: MONTH } }));
+  const done = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(done.lines[0].loanTotal, 0);
+  assert.deepEqual(done.advancesChanged, [], 'and the two agree again');
+});
+
+test('a closed month nobody has touched says nothing at all', async () => {
+  const { db } = setup();
+  await onPayroll(db);
+  await read(await addAdvance(ctx(db, {
+    body: {
+      staffId: 1, amount: 600, months: 3, takenOn: '2026-07-05', startMonth: '2026-07',
+      purpose: 'other',
+    },
+  })));
+  await closeRun(ctx(db, { body: { month: MONTH } }));
+
+  const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.deepEqual(data.advancesChanged, []);
+  assert.deepEqual(data.advancesNotDue, []);
+});
+
+test('two advances against one person are added up rather than one being missed', async () => {
+  // Which is the other reason a figure on the payroll can be bigger than the
+  // one advance somebody is looking at.
+  const { db } = setup();
+  await onPayroll(db);
+  for (const reason of ['Rent', 'School fees']) {
+    await read(await addAdvance(ctx(db, {
+      body: {
+        staffId: 1, amount: 600, months: 3, takenOn: '2026-07-05', startMonth: '2026-07',
+        purpose: 'other', reason,
+      },
+    })));
+  }
+
+  const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(data.lines[0].loanTotal, 400, 'two instalments, not one');
+  assert.equal(data.lines[0].loans.length, 2, 'and the payslip shows them one by one');
+});
