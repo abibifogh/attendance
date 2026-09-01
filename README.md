@@ -1532,9 +1532,16 @@ kept up to date.
 
 So the pipeline has a tick against each name and a bar that appears once
 anything is ticked. **Move to shortlisted** where they are all at the same
-stage, **Not this time**, or **Somewhere else** for a mixed handful where there
-is no one forward step. An ending still insists on a reason, asked once and
-written on every one of their records.
+stage, **Not this time**, and **Move to**, which names every other stage. An
+ending still insists on a reason, asked once and written on every one of their
+records.
+
+That last one was a button called **Somewhere else** opening a dialog with a
+picker in it, and it read as where things went when there was nowhere sensible
+for them. So moving somebody back — the interview fell through, put them back
+in the pile — looked like something the app would not do, when it always would.
+Nothing about the order is a one-way door: any live stage reaches any other,
+forwards or back, and now the menu says so by name.
 
 A batch can do nothing a single press could not. Nobody reaches the books this
 way, every move lands on its own trail, and anybody being taken out of the

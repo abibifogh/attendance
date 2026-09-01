@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { navigate } from '../app.js';
 import { confirmAction, fmtDay, h, mount, toast, todayISO } from '../util.js';
-import { card, emptyState, table } from './components.js';
+import { card, dropdownMenu, emptyState, table } from './components.js';
 import { field, formDialog, placeField } from './att-shared.js';
 
 /**
@@ -195,9 +195,26 @@ function pipeline(data, reload) {
         h('button.btn-sm', {
           onclick: () => moveMany(picked, 'not_taken', data, reload),
         }, 'Not this time'),
-        h('button.btn-sm', {
-          onclick: () => moveMany(picked, null, data, reload),
-        }, 'Somewhere else'),
+        // Every other stage, by name, in one press.
+        //
+        // This was a button called "Somewhere else" that opened a dialog with
+        // a picker in it, and it read as the place things went when there was
+        // nowhere sensible for them. So moving somebody back — the
+        // interview fell through, put them back in the pile — looked like
+        // something the app would not do, when it always would. Naming the
+        // stages is the whole fix.
+        dropdownMenu({
+          label: 'Move to',
+          title: 'Any other stage, including back to where they were',
+          items: data.stages
+            .filter((stage) => stage.key !== 'hired' && stage.key !== only
+              && stage.key !== forward && stage.key !== 'not_taken')
+            .map((stage) => ({
+              label: stage.label,
+              title: stage.detail,
+              onClick: () => moveMany(picked, stage.key, data, reload),
+            })),
+        }),
         h('button.link-button', {
           onclick: () => {
             chosen.clear();
@@ -537,13 +554,13 @@ function asBase64(file) {
  * than one.
  */
 async function moveMany(picked, stage, data, reload) {
-  const ending = stage === null || ['declined', 'not_taken'].includes(stage);
-  const target = stage ? data.stages.find((s) => s.key === stage) : null;
+  const ending = ['declined', 'not_taken'].includes(stage);
+  const target = data.stages.find((s) => s.key === stage);
   const count = `${picked.length} ${picked.length === 1 ? 'person' : 'people'}`;
 
   const done = await formDialog({
-    title: target ? `${target.label}: ${count}` : `Move ${count}`,
-    submitLabel: target ? `Move ${picked.length}` : 'Move them',
+    title: `${target?.label ?? 'Move'}: ${count}`,
+    submitLabel: `Move ${picked.length}`,
     body: h('div',
       target ? h('p.muted', target.detail) : null,
 
@@ -554,13 +571,6 @@ async function moveMany(picked, stage, data, reload) {
         ? h('p.muted', { style: { fontSize: '.82rem' } },
           `and ${picked.length - 12} more`)
         : null,
-
-      stage
-        ? null
-        : field('To', h('select', { name: 'stage' },
-          data.stages
-            .filter((s) => s.key !== 'hired')
-            .map((s) => h('option', { value: s.key }, s.label)))),
 
       ending
         ? field('Why', h('textarea', { name: 'outcome', rows: 3, maxlength: 400 }),
@@ -578,7 +588,7 @@ async function moveMany(picked, stage, data, reload) {
     ),
     onSubmit: async (form) => api.recMoveCandidates({
       ids: picked.map((p) => p.id),
-      stage: stage ?? form.get('stage'),
+      stage,
       outcome: form.get('outcome'),
     }),
   });

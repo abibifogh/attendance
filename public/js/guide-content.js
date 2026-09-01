@@ -1711,7 +1711,12 @@ export const GUIDE = [
       { sub: 'Several at once' },
       { p: 'Shortlisting is the one step genuinely done in a batch: somebody reads twenty CVs '
         + 'in an evening and six are worth seeing. Tick them on the pipeline and a bar appears '
-        + 'with Move to shortlisted, Not this time, Somewhere else, and Make links.' },
+        + 'with Move to shortlisted, Not this time, Make links, and Move to, which names '
+        + 'every other stage.' },
+      { note: 'Nothing about the order is a one-way door. Somebody at Interview whose '
+        + 'interview fell through goes back to Applied in one press, under Move to; any '
+        + 'live stage reaches any other, forwards or back. Only the books are one-way, '
+        + 'because taking somebody on makes their record.' },
       { p: 'A batch does nothing a single press could not. Nobody reaches the books this way, '
         + 'an ending still needs a reason, every move lands on its own trail, and anybody taken '
         + 'out of the pipeline gives their interview time back. One that cannot move is skipped '

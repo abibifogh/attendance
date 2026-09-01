@@ -114,6 +114,27 @@ test('the moves offered lead forward first, then out, then back', () => {
   assert.ok(!keys.includes('hired'), 'never straight to the books');
 });
 
+test('somebody at interview can go all the way back to the pile', () => {
+  // An interview that fell through is not a judgement about the person. Back
+  // to Applied, not just back one step to Shortlisted, and both are offered.
+  const keys = movesFrom('interview').map((s) => s.key);
+  assert.ok(keys.includes('applied'), 'two steps back is still a move');
+  assert.ok(keys.includes('shortlisted'));
+  assert.equal(whyNot('interview', 'applied'), null);
+});
+
+test('every live stage can reach every other one, forwards or back', () => {
+  // Nothing about the order is a one-way door. The only things that are
+  // are the books, which have their own press, and hired, which has its own
+  // way out.
+  for (const from of ['applied', 'shortlisted', 'interview', 'offer']) {
+    for (const to of ['applied', 'shortlisted', 'interview', 'offer']) {
+      if (from === to) continue;
+      assert.equal(whyNot(from, to), null, `${from} -> ${to}`);
+    }
+  }
+});
+
 test('a morning is cut into interviews, and the last one has to fit', () => {
   const slots = cutIntoSlots({ day: '2026-09-01', from: '10:00', to: '13:00', minutes: 30 });
   assert.equal(slots.length, 6);
