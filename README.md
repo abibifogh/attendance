@@ -2221,46 +2221,54 @@ accident, which is why the suite was green throughout. The shim in
 the real thing does, and the tests fail against any route that has not been
 through `asBytes`.
 
-### What somebody takes home, and the bonus worked back from it
+### What somebody takes home, and the allowance worked out from it
 
-What is actually agreed with people here is not a bonus, it is a take-home.
-Linda is on 2,480 a month. The allowances and the bonus are how that figure is
-arrived at, and the bonus is whatever makes it come out right once the tax has
-had its say.
+What is agreed with people here is not an allowance, it is a take-home. Linda
+is on 2,480 a month and scores what she scores on her bonus schemes; the
+allowance is simply whatever is left to make that figure come out once the
+pension and the tax have had their say. Nobody sits down and agrees a transport
+allowance of 1,437.64.
 
-That sum was being done on a spreadsheet once a month and the answer typed into
-the bonus box, which is a job that has to be redone the moment an allowance
-moves, and it drifted: reconciling one August payroll against the sheet it came
-from took most of a day and turned up sixteen people whose figures no longer
-agreed.
+So the allowance was being worked out on a spreadsheet once a month and typed
+in, and it went stale the moment a score or a tax band moved. Reconciling one
+August payroll against the sheet it came from took a day and turned up sixteen
+people whose figures no longer agreed.
 
 **Takes home** is now a field on somebody's pay record, beside their basic.
-Give it a figure and the bonus is worked back from it every month; leave it
-empty and their bonus comes off their scheme scores exactly as before. This is
-an addition, not a change of rule.
+Three things go in and three come out.
 
-**It is worked out rather than searched for.** A bonus agreed net passes
-straight through to the take-home, cedi for cedi, because the grossing-up is
-defined as whatever covers the tax on it. So the bonus needed is simply the
-target less what they would take home with no bonus at all, there is nothing to
-iterate, and the answer lands on the agreed figure to the pesewa rather than
-near it.
+| Entered | Worked out |
+|---|---|
+| Basic salary | The allowance |
+| Bonus scores, as always | SSNIT and PAYE |
+| What they take home, bonus included | What the month costs the property |
 
-**Measured before the advances and before anything docked**, on purpose. An
-advance is the person's own money going back and a penalty is meant to cost
-them. Read after either, the bonus would quietly grow to cancel them out and
-the property would be paying back its own advance. So Vivian on 1,530 repaying
-1,200 takes home 330, and a hundred off her bonus is a hundred out of her hand.
+Leave the take-home empty and nothing changes for that person: they are paid
+their basic, whatever allowances are entered against them, and their scored
+bonus. This is an addition, not a change of rule.
 
-**Nobody is paid less to hit a number.** Somebody whose salary and allowances
-already pass the figure set for them gets no bonus, and does not have money
-taken off them either: that would be a pay cut arrived at by arithmetic nobody
-agreed to. The payroll names them under the table, because a target that cannot
-be met is one somebody has to look at.
+**It is searched for rather than calculated, and it has to be.** An extra cedi
+of allowance is taxable, so it yields less than a cedi of take-home, and how
+much less depends on the band it lands in and on what the bonus has already
+used up. There is no formula that inverts cleanly. So it walks the figure to
+the pesewa, which is exact and costs twenty passes of arithmetic nobody can
+feel.
 
-**And the scores are not thrown away.** What somebody scored is still on their
-line and still on the payslip, even where a take-home is what decided the
-money. A screen that hid it would look like the scoring had been discarded.
+**Solved against a clean month**, on purpose: no advance being repaid and
+nothing docked off the bonus. An advance is the person's own money going back
+and a penalty is meant to cost them. Read after either, the allowance would
+quietly grow to cancel them out and the property would be paying back its own
+advance. So Vivian on 1,530 repaying 1,200 takes home 330.
+
+**Nobody is paid less to hit a number.** Somebody whose basic and bonus already
+carry them past the figure gets no allowance, and does not have money taken off
+them either: that would be a pay cut arrived at by arithmetic nobody agreed to.
+The payroll names them under the table.
+
+**The worked-out allowance is a real allowance line**, taxed like any other
+because it is cash pay and nothing else. It is marked as worked out rather than
+agreed, so a payslip can tell the two apart, and an allowance somebody did
+agree to is left exactly as it is and topped up around.
 
 ### A bonus is net for most people, and gross for some
 

@@ -558,33 +558,34 @@ function niceStamp(value) {
  * the first.
  */
 /**
- * Which bonuses were worked back from an agreed take-home.
+ * Which allowances were worked out rather than agreed.
  *
  * Worth one quiet line rather than a column: on a property that does this for
  * everybody it is simply how the payroll works and nobody needs telling twice.
  * The people worth naming are the ones it could not be done for.
  */
 function takeHomeNote(data, cash) {
-  const solved = (data.lines ?? []).filter((l) => l.bonus?.solved);
-  if (!solved.length) return null;
+  const worked = (data.lines ?? []).filter((l) => l.takeHome != null);
+  if (!worked.length) return null;
 
-  // Their salary and allowances alone already pass the figure agreed with
-  // them, so there is no bonus to add and the app will not take money off
-  // them to get back down to it. Somebody has to look at that.
-  const over = solved.filter((l) => l.bonus?.overshoots);
+  // Their basic and their bonus already carry them past the figure agreed with
+  // them, so there is no allowance to add and nothing is taken off them to get
+  // back down to it. Somebody has to look at that.
+  const over = worked.filter((l) => l.overshoots);
+  const one = over.length === 1;
 
   return h('p.muted', { style: { fontSize: '.85rem' } },
-    solved.length === 1
-      ? 'One bonus is worked back from an agreed take-home. '
-      : `${solved.length} bonuses are worked back from an agreed take-home. `,
+    worked.length === 1
+      ? 'One allowance is worked out from an agreed take-home rather than entered. '
+      : `${worked.length} allowances are worked out from an agreed take-home rather than `
+        + 'entered. ',
     over.length
       ? h('span',
         over.map((l, at) => h('span', at ? ', ' : '', h('strong', l.staff.name))),
-        over.length === 1 ? ' already takes home more than ' : ' already take home more than ',
-        over.length === 1 ? 'the figure set for them' : 'the figures set for them',
-        ' on salary and allowances alone, so ',
-        over.length === 1 ? 'they get' : 'they get',
-        ' no bonus. Nothing is taken off anybody to bring them back down.')
+        one ? ' already takes home more than that' : ' already take home more than that',
+        ' on basic and bonus alone, so ',
+        one ? 'they get' : 'they get',
+        ' no allowance. Nothing is taken off anybody to bring them back down.')
       : 'Change what somebody is on under Set pay and allowances.');
 }
 
@@ -1790,8 +1791,8 @@ function peopleCard(data, reload, cash) {
           : h('span.pill.good', { title: 'Their bonus figures are what they receive. The property '
               + 'carries the tax and it goes into their allowance.' }, 'net')),
         h('td.num', person.takeHome == null
-          ? h('span.muted', { title: 'Their bonus comes off their scheme scores.' }, 'off scores')
-          : h('strong', { title: 'The bonus is worked back from this every month.' },
+          ? h('span.muted', { title: 'They are paid what is entered against them.' }, 'as entered')
+          : h('strong', { title: 'The allowance is worked out from this every month.' },
             cash(person.takeHome)))))))))
     : h('p.muted', 'Nobody yet.'));
 }
@@ -1854,7 +1855,7 @@ async function editPeople(data, reload) {
     // every month and nobody types it again.
     const takeHome = h('input.med-amount', {
       type: 'number', step: '0.01', min: '0', value: mine.takeHome,
-      placeholder: 'off scores',
+      placeholder: 'as entered',
       'aria-label': `What ${person.name} takes home`,
       onchange: (e) => { mine.takeHome = e.target.value === '' ? '' : Number(e.target.value); },
     });
@@ -1944,11 +1945,12 @@ async function editPeople(data, reload) {
         + 'carries the tax on top and it shows in their allowance. Untick it for anybody whose '
         + 'bonus figures were worked out gross already, or the tax gets paid twice.'),
       h('p.muted', { style: { fontSize: '.85rem' } },
-        'Takes home is what the person is actually on: give it and the bonus is worked back '
-        + 'from it every month, whatever the allowances and the tax do, so nobody has to '
-        + 'recalculate it. Leave it empty and their bonus comes off their scheme scores as '
-        + 'before. It is measured before any advance they are repaying and before anything '
-        + 'docked off their bonus, so both still cost them what they are meant to.'),
+        'Takes home is what the person is actually on, bonus included. Give it and the '
+        + 'allowance is worked out from it every month \u2014 whatever they score and '
+        + 'whatever the tax does \u2014 so nobody recalculates it. Leave it empty and they '
+        + 'are paid their basic, their allowances and their scored bonus as entered. It is '
+        + 'measured before any advance they are repaying and before anything docked off '
+        + 'their bonus, so both still cost them what they are meant to.'),
       h('p.muted', { style: { fontSize: '.85rem' } },
         'GRA return is the grade, the residency and any reliefs the form asks about somebody. '
         + 'Left alone, the form uses their job title and puts them down as resident and full '

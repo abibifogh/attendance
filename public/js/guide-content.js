@@ -1366,18 +1366,26 @@ export const GUIDE = [
         + 'month splits: so many by transfer, so many by hand.' },
 
       { sub: 'Paying somebody an agreed take-home' },
-      { p: 'What is usually agreed with somebody is what they take home, not what their bonus '
-        + 'is. Put that figure in Takes home, under Set pay and allowances, and the bonus is '
-        + 'worked back from it every month \u2014 whatever the allowances and the tax do. '
-        + 'Leave it empty and their bonus comes off their scheme scores as before.' },
+      { p: 'What is usually agreed with somebody is what they take home, bonus included \u2014 '
+        + 'not what their allowance is. Nobody sits down and agrees a transport allowance of '
+        + '1,437.64. So put the take-home in Takes home, under Set pay and allowances, score '
+        + 'them as usual, and the allowance is worked out from there every month.' },
+      { steps: [
+        'Enter their basic salary.',
+        'Enter what they take home, bonus and all.',
+        'Score them on their bonus schemes as you always have.',
+        'The allowance, the SSNIT and the tax are worked out. Nobody types them.',
+      ] },
       { list: [
         'It is measured before any advance they are repaying, so an advance still costs them '
           + 'and the property is not quietly handing its own money back.',
         'It is measured before anything docked off their bonus, so a penalty still bites.',
-        'Somebody whose salary alone already passes the figure gets no bonus, and no pay cut '
-          + 'either. The payroll names them under the table.',
-        'What they scored is still shown, even where the take-home is what set the money.',
+        'Somebody whose basic and bonus already carry them past the figure gets no allowance, '
+          + 'and no pay cut either. The payroll names them under the table.',
+        'An allowance you did agree is left alone. The worked-out one tops it up.',
       ] },
+      { note: 'Leave Takes home empty and nothing changes for that person: they are paid their '
+        + 'basic, whatever allowances are entered against them, and their scored bonus.' },
 
       { sub: 'The payslip' },
       { warn: 'Somebody else\u2019s payslip is an administrator\u2019s to open, whatever else '

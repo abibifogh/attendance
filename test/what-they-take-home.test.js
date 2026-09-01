@@ -9,12 +9,12 @@ import { payroll, saveScheme, setProfiles, setScores } from '../src/routes/payro
 import { addAdvance } from '../src/routes/advances.js';
 
 /**
- * A take-home agreed with somebody, and the bonus worked back from it.
+ * A take-home agreed with somebody, and the allowance worked out from it.
  *
- * What is actually agreed at this property is what lands in the hand: Linda is
- * on 2,480 a month. The bonus is whatever makes that true once the allowances
- * and the tax have had their say, and it was being worked out on a spreadsheet
- * and typed in by hand every month.
+ * What is agreed at this property is what lands in the hand, bonus included:
+ * Linda is on 2,480 a month and scores what she scores. The allowance is
+ * simply whatever is left to make that figure come out, and it was being
+ * worked out on a spreadsheet and typed in by hand every month.
  */
 
 const TIERS = { tier1: 0.135, tier2: 0.05 };
@@ -39,7 +39,7 @@ const line = (o) => computeLine({
 // The sum itself
 // ---------------------------------------------------------------------------
 
-test('the bonus lands the person exactly on what was agreed', () => {
+test('the allowance lands the person exactly on what was agreed', () => {
   // Every one of these is somebody real off the August payroll, with the
   // take-home the property actually agreed with them.
   for (const [name, basic, allow, ssnit, target] of [
@@ -55,68 +55,79 @@ test('the bonus lands the person exactly on what was agreed', () => {
   }
 });
 
-test('it is worked out and not searched for, so it is exact rather than close', () => {
-  // A bonus agreed net passes straight through to the take-home, cedi for
-  // cedi, because the grossing-up is defined as whatever covers the tax on it.
-  // So there is a right answer rather than a nearest one.
-  // Above what the salary alone comes to, so there is a bonus to work out.
-  // Below it there is nothing to solve, which is its own test further down.
+test('it is walked to the pesewa, so it is exact rather than close', () => {
+  // An extra cedi of allowance is taxable and so yields less than a cedi of
+  // take-home, which is why there is no formula to invert. Above what the
+  // basic alone comes to, so there is an allowance to find; below it there is
+  // nothing to solve, which is its own test further down.
   for (const target of [1200, 1234.56, 2480, 3999.99, 12000]) {
-    assert.equal(line({ basic: 800, allow: 500, takeHome: target }).net, target);
+    assert.equal(line({ basic: 800, takeHome: target }).net, target);
   }
 });
 
-test('the property carries the tax, so the bonus shows as a net promise', () => {
-  const l = line({ basic: 800, allow: 1437.64, takeHome: 2480 });
-  assert.equal(l.bonus.solved, true);
-  assert.equal(l.bonus.isNet, true, 'a solved bonus is a net promise by definition');
-  assert.equal(l.bonus.takeHome, 2480);
-  assert.ok(l.bonus.tax > 0, 'and the property is carrying something');
-  assert.equal(round(l.bonus.gross - l.bonus.tax), l.bonus.net);
+test('the worked-out allowance is a real allowance line, and says it was worked out', () => {
+  const l = line({ basic: 800, takeHome: 2480 });
+  assert.equal(l.takeHome, 2480);
+  assert.ok(l.workedOut > 0);
+  const added = l.allowances.find((a) => a.workedOut);
+  assert.ok(added, 'it appears on the line like any other allowance');
+  assert.equal(added.amount, l.workedOut);
+  assert.equal(added.taxable, true, 'it is cash pay and is taxed like it');
+  assert.equal(l.allowanceTotal, l.workedOut);
+});
+
+test('an allowance somebody did agree is kept, and the worked-out one tops it up', () => {
+  const l = line({ basic: 800, allow: 300, takeHome: 2480 });
+  assert.equal(l.net, 2480);
+  const agreed = l.allowances.find((a) => !a.workedOut);
+  assert.equal(agreed.amount, 300, 'the agreed one is untouched');
+  assert.equal(round(l.allowanceTotal - 300), l.workedOut);
 });
 
 const round = (n) => Math.round(n * 100) / 100;
 
-test('nothing set means nothing changes: the scores still decide', () => {
-  const scored = line({ basic: 800, allow: 500, bonus: 400 });
-  assert.equal(scored.bonus.solved, false);
-  assert.equal(scored.bonus.net, 400);
-  assert.equal(scored.bonus.takeHome, null);
-  assert.equal(scored.bonus.scored, 400);
+test('nothing set means nothing changes: they are paid what is entered', () => {
+  const l = line({ basic: 800, allow: 500, bonus: 400 });
+  assert.equal(l.takeHome, undefined);
+  assert.equal(l.bonus.net, 400);
+  assert.equal(l.allowanceTotal, 500, 'no allowance is invented');
 });
 
-test('a take-home of nought is a real answer and not the same as leaving it blank', () => {
-  const blank = line({ basic: 800, allow: 500, bonus: 400, takeHome: null });
-  assert.equal(blank.bonus.net, 400);
-  const nought = line({ basic: 800, allow: 500, bonus: 400, takeHome: 0 });
-  assert.equal(nought.bonus.net, 0, 'nought means no bonus, whatever they scored');
-  assert.equal(nought.bonus.solved, true);
+test('the score still sets the bonus, and the allowance moves around it', () => {
+  const full = line({ basic: 800, bonus: 400, score: 100, takeHome: 2000 });
+  const half = line({ basic: 800, bonus: 400, score: 50, takeHome: 2000 });
+  assert.equal(full.bonus.net, 400);
+  assert.equal(half.bonus.net, 200, 'half a scheme is half the money, as always');
+  assert.equal(full.net, 2000);
+  assert.equal(half.net, 2000, 'and the take-home holds either way');
+  assert.ok(half.workedOut > full.workedOut, 'the allowance made up the difference');
 });
 
 // ---------------------------------------------------------------------------
 // What it is measured before
 // ---------------------------------------------------------------------------
 
-test('an advance still costs them, rather than being made up by a bigger bonus', () => {
+test('an advance still costs them, rather than being made up by a bigger allowance', () => {
   // Vivian: agreed 1,530 a month, repaying 1,200. She takes home 330, and the
   // property does not quietly hand back its own advance.
-  const l = line({ basic: 587.80, allow: 491.47, takeHome: 1530, loan: 1200 });
+  const l = line({ basic: 587.80, bonus: 520, takeHome: 1530, loan: 1200 });
   assert.equal(l.net, 330);
   assert.equal(l.loanTotal, 1200);
 
-  const without = line({ basic: 587.80, allow: 491.47, takeHome: 1530 });
-  assert.equal(without.bonus.net, l.bonus.net, 'the same bonus either way');
+  const without = line({ basic: 587.80, bonus: 520, takeHome: 1530 });
+  assert.equal(without.workedOut, l.workedOut, 'the same allowance either way');
 });
 
 test('money docked off a bonus still costs them', () => {
-  const clean = line({ basic: 800, allow: 500, takeHome: 2000 });
-  const docked = line({ basic: 800, allow: 500, takeHome: 2000, docked: 100 });
+  const clean = line({ basic: 800, bonus: 600, takeHome: 2000 });
+  const docked = line({ basic: 800, bonus: 600, takeHome: 2000, docked: 100 });
   assert.equal(clean.net, 2000);
-  assert.equal(docked.net, 1900, 'a hundred off is a hundred out of their hand');
+  assert.ok(docked.net < 2000, 'a penalty is not made up by a bigger allowance');
+  assert.equal(docked.workedOut, clean.workedOut, 'the same allowance either way');
 });
 
 test('a deduction bigger than the bonus is not taken out of their salary', () => {
-  const l = line({ basic: 800, allow: 500, takeHome: 1400, docked: 5000 });
+  const l = line({ basic: 800, bonus: 300, takeHome: 1400, docked: 5000 });
   assert.equal(l.bonus.net, 0);
   assert.ok(l.bonus.notTaken > 0, 'and what could not be taken is said');
   assert.ok(l.net > 0);
@@ -126,20 +137,20 @@ test('a deduction bigger than the bonus is not taken out of their salary', () =>
 // When it cannot be met
 // ---------------------------------------------------------------------------
 
-test('somebody already past their figure gets no bonus, and no pay cut', () => {
-  // Their salary and allowances alone take them past it. The app will not
+test('somebody already past their figure gets no allowance, and no pay cut', () => {
+  // Their basic and their bonus alone take them past it. The app will not
   // claw money back to get down to the number.
-  const l = line({ basic: 2000, allow: 2000, takeHome: 1000 });
-  assert.equal(l.bonus.net, 0);
-  assert.equal(l.bonus.overshoots, true, 'and the screen is told');
-  assert.ok(l.net > 1000, 'they keep what their salary comes to');
+  const l = line({ basic: 2000, bonus: 2000, takeHome: 1000 });
+  assert.equal(l.workedOut, 0);
+  assert.equal(l.allowanceTotal, 0);
+  assert.equal(l.overshoots, true, 'and the screen is told');
+  assert.ok(l.net > 1000, 'they keep what their basic and bonus come to');
 });
 
-test('a figure that is met to the penny does not read as overshooting', () => {
-  const bare = line({ basic: 800, allow: 500 });
-  const l = line({ basic: 800, allow: 500, takeHome: bare.net });
-  assert.equal(l.bonus.net, 0);
-  assert.equal(l.bonus.overshoots, false);
+test('a figure already met to the penny needs no allowance and is not a fault', () => {
+  const bare = line({ basic: 800, bonus: 400 });
+  const l = line({ basic: 800, bonus: 400, takeHome: bare.net });
+  assert.equal(l.workedOut, 0);
   assert.equal(l.net, bare.net);
 });
 
@@ -147,11 +158,11 @@ test('a figure that is met to the penny does not read as overshooting', () => {
 // The score is not thrown away
 // ---------------------------------------------------------------------------
 
-test('what they scored is still reported, even where it no longer sets the money', () => {
-  const l = line({ basic: 800, allow: 500, bonus: 400, score: 75, takeHome: 2000 });
+test('what they scored is what they are paid as bonus, take-home or no take-home', () => {
+  const l = line({ basic: 800, bonus: 400, score: 75, takeHome: 2000 });
   assert.equal(l.bonus.scored, 300, 'three quarters of a four hundred scheme');
-  assert.notEqual(l.bonus.net, 300, 'but the take-home is what decides the money');
-  assert.equal(l.net, 2000);
+  assert.equal(l.bonus.net, 300, 'and that is the bonus, unchanged');
+  assert.equal(l.net, 2000, 'the allowance is what moved');
 });
 
 // ---------------------------------------------------------------------------
@@ -208,54 +219,57 @@ const MONTH = '2026-08';
 test('a take-home set once is used every month without anybody typing it again', async () => {
   const { db } = setup();
   await setProfiles(ctx(db, {
-    body: {
-      rows: [{
-        staffId: 1, basic: 800, ssnit: true, bonusIsNet: false, takeHome: 2480,
-        allowances: [{ name: 'Allowance', amount: 1437.64, taxable: true }],
-      }],
-    },
+    body: { rows: [{ staffId: 1, basic: 800, ssnit: true, takeHome: 2480, allowances: [] }] },
   }));
 
   for (const month of [MONTH, '2026-09', '2026-10']) {
     const data = await read(await payroll(ctx(db, { query: `?month=${month}` })));
     assert.equal(data.lines[0].net, 2480, `${month} lands on it too`);
-    assert.equal(data.lines[0].bonus.solved, true);
+    assert.equal(data.lines[0].takeHome, 2480);
+    assert.ok(data.lines[0].workedOut > 0);
   }
 });
 
-test('it holds when an allowance moves, which is the whole point', async () => {
+test('it holds when a score moves, which is the whole point', async () => {
   const { db } = setup();
-  const save = (allow) => setProfiles(ctx(db, {
-    body: {
-      rows: [{
-        staffId: 1, basic: 800, ssnit: true, bonusIsNet: false, takeHome: 2480,
-        allowances: [{ name: 'Allowance', amount: allow, taxable: true }],
-      }],
-    },
+  await setProfiles(ctx(db, {
+    body: { rows: [{ staffId: 1, basic: 800, ssnit: true, takeHome: 2480, allowances: [] }] },
   }));
+  const scheme = await read(await saveScheme(ctx(db, {
+    body: { name: 'Nkosoɔ', amount: 900, departments: [], staffIds: [1] },
+  })));
 
-  await save(1437.64);
-  const before = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
-  await save(1800);
-  const after = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  const scoreThem = (score) => setScores(ctx(db, {
+    body: { month: MONTH, rows: [{ schemeId: scheme.id, staffId: 1, score }] },
+  }));
+  const month = () => read(payroll(ctx(db, { query: `?month=${MONTH}` })).then((r) => r));
 
-  assert.equal(before.lines[0].net, 2480);
-  assert.equal(after.lines[0].net, 2480, 'still exactly on it');
-  assert.ok(after.lines[0].bonus.net < before.lines[0].bonus.net,
-    'and the bonus came down by itself to make room for the bigger allowance');
+  await scoreThem(100);
+  const full = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  await scoreThem(50);
+  const half = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+
+  assert.equal(full.lines[0].net, 2480);
+  assert.equal(half.lines[0].net, 2480, 'still exactly on it');
+  assert.equal(full.lines[0].bonus.net, 900);
+  assert.equal(half.lines[0].bonus.net, 450, 'the score still sets the bonus');
+  assert.ok(half.lines[0].workedOut > full.lines[0].workedOut,
+    'and the allowance grew to make up the difference');
 });
 
-test('the screen is told which lines were worked back, and what was agreed', async () => {
+test('the screen is told what was agreed and what was worked out', async () => {
   const { db } = setup();
   await setProfiles(ctx(db, {
     body: { rows: [{ staffId: 1, basic: 800, ssnit: true, takeHome: 2480, allowances: [] }] },
   }));
   const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
   assert.equal(data.staff[0].takeHome, 2480);
-  assert.equal(data.lines[0].bonus.takeHome, 2480);
+  assert.equal(data.lines[0].takeHome, 2480);
+  const added = data.lines[0].allowances.find((a) => a.workedOut);
+  assert.ok(added, 'and the allowance says it was worked out rather than agreed');
 });
 
-test('emptying the box puts them back on their scores, and a silent form does not', async () => {
+test('emptying the box pays them what is entered, and a silent form changes nothing', async () => {
   const { raw, db } = setup();
   const save = (row) => setProfiles(ctx(db, { body: { rows: [{ staffId: 1, basic: 800, ...row }] } }));
 
@@ -270,36 +284,14 @@ test('emptying the box puts them back on their scores, and a silent form does no
   assert.equal(raw.prepare('SELECT take_home FROM pay_profile WHERE staff_id = 1').get().take_home, null);
 
   const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
-  assert.equal(data.lines[0].bonus.solved, false);
-});
-
-test('a scored bonus and a take-home together: the take-home wins and the score is kept', async () => {
-  const { db } = setup();
-  await setProfiles(ctx(db, {
-    body: { rows: [{ staffId: 1, basic: 800, ssnit: true, takeHome: 2000, allowances: [] }] },
-  }));
-  const scheme = await read(await saveScheme(ctx(db, {
-    body: { name: 'Nkosoɔ', amount: 900, departments: [], staffIds: [1] },
-  })));
-  await setScores(ctx(db, {
-    body: { month: MONTH, rows: [{ schemeId: scheme.id, staffId: 1, score: 100 }] },
-  }));
-
-  const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
-  assert.equal(data.lines[0].net, 2000);
-  assert.equal(data.lines[0].bonus.scored, 900, 'what they scored is still on the line');
-  assert.notEqual(data.lines[0].bonus.net, 900);
+  assert.equal(data.lines[0].takeHome, undefined);
+  assert.equal(data.lines[0].allowanceTotal, 0, 'and no allowance is invented');
 });
 
 test('an advance running against a take-home comes off after it, not out of it', async () => {
   const { db } = setup();
   await setProfiles(ctx(db, {
-    body: {
-      rows: [{
-        staffId: 1, basic: 800, ssnit: true, takeHome: 2480,
-        allowances: [{ name: 'Allowance', amount: 1437.64, taxable: true }],
-      }],
-    },
+    body: { rows: [{ staffId: 1, basic: 800, ssnit: true, takeHome: 2480, allowances: [] }] },
   }));
   await read(await addAdvance(ctx(db, {
     body: {
@@ -311,4 +303,38 @@ test('an advance running against a take-home comes off after it, not out of it',
   const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
   assert.equal(data.lines[0].loanTotal, 500);
   assert.equal(data.lines[0].net, 1980, '2,480 agreed, 500 going back');
+});
+
+test('the whole August payroll lands on the sheet, with nothing entered but a take-home', async () => {
+  // The reconciliation this was built to end. Basic and the agreed take-home
+  // for each person, no allowances typed anywhere, and every net comes out.
+  const { raw, db } = setup();
+  const people = [
+    ['Linda Attipoe', 800, true, 2480, 2480],
+    ['Abdul Hamid Iddrisu', 800, true, 1610, 1610],
+    ['Patience Naa Torshie Torto', 800, false, 1230, 1230],
+    ['Michael Kesseh', 2000, true, 5000, 5000],
+    ['Rebecca Aborehey', 587.80, false, 600, 600],
+  ];
+  people.forEach(([name], at) => {
+    if (at === 0) return;
+    raw.prepare(
+      `INSERT INTO att_staff (id, employee_no, name, hired_on)
+       VALUES (?, ?, ?, '2020-01-01')`,
+    ).run(at + 1, `E${at + 1}`, name);
+  });
+
+  await setProfiles(ctx(db, {
+    body: {
+      rows: people.map(([, basic, ssnit, target], at) => ({
+        staffId: at + 1, basic, ssnit, takeHome: target, allowances: [],
+      })),
+    },
+  }));
+
+  const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  for (const [name, , , , want] of people) {
+    const line = data.lines.find((l) => l.staff.name === name);
+    assert.equal(line.net, want, `${name} lands on ${want}`);
+  }
 });
