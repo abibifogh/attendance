@@ -262,6 +262,7 @@ export async function renderAttPayroll(params) {
             h('td.num.off-phone',
               costCell(data.totals.cost, wholeMonthAgainst(data, 'cost'), cash)))))),
         compareNote(data),
+        takeHomeNote(data, cash),
         advanceNote(data, cash),
         advancesMovedOn(data, cash),
         h('p.muted', { style: { fontSize: '.85rem' } }, data.slips
@@ -556,6 +557,37 @@ function niceStamp(value) {
  * on every platform and a second way of making one would only disagree with
  * the first.
  */
+/**
+ * Which bonuses were worked back from an agreed take-home.
+ *
+ * Worth one quiet line rather than a column: on a property that does this for
+ * everybody it is simply how the payroll works and nobody needs telling twice.
+ * The people worth naming are the ones it could not be done for.
+ */
+function takeHomeNote(data, cash) {
+  const solved = (data.lines ?? []).filter((l) => l.bonus?.solved);
+  if (!solved.length) return null;
+
+  // Their salary and allowances alone already pass the figure agreed with
+  // them, so there is no bonus to add and the app will not take money off
+  // them to get back down to it. Somebody has to look at that.
+  const over = solved.filter((l) => l.bonus?.overshoots);
+
+  return h('p.muted', { style: { fontSize: '.85rem' } },
+    solved.length === 1
+      ? 'One bonus is worked back from an agreed take-home. '
+      : `${solved.length} bonuses are worked back from an agreed take-home. `,
+    over.length
+      ? h('span',
+        over.map((l, at) => h('span', at ? ', ' : '', h('strong', l.staff.name))),
+        over.length === 1 ? ' already takes home more than ' : ' already take home more than ',
+        over.length === 1 ? 'the figure set for them' : 'the figures set for them',
+        ' on salary and allowances alone, so ',
+        over.length === 1 ? 'they get' : 'they get',
+        ' no bonus. Nothing is taken off anybody to bring them back down.')
+      : 'Change what somebody is on under Set pay and allowances.');
+}
+
 /**
  * Why the Advance column is empty against somebody who has one running.
  *
@@ -1743,7 +1775,7 @@ function peopleCard(data, reload, cash) {
     h('div.table-wrap', h('table',
       h('thead', h('tr',
         h('th', 'Name'), h('th.num', 'Basic'), h('th', 'Allowances'), h('th', 'SSNIT'),
-        h('th', 'Bonus'),
+        h('th', 'Bonus'), h('th.num', 'Takes home'),
       )),
       h('tbody', on.map((person) => h('tr',
         h('td', person.name, h('small.muted', person.department ? ` · ${person.department}` : '')),
@@ -1756,7 +1788,11 @@ function peopleCard(data, reload, cash) {
           ? h('span.pill', { title: 'Their bonus figures are already gross. Tax comes out of the '
               + 'bonus, so the property adds nothing on top.' }, 'gross')
           : h('span.pill.good', { title: 'Their bonus figures are what they receive. The property '
-              + 'carries the tax and it goes into their allowance.' }, 'net'))))))))
+              + 'carries the tax and it goes into their allowance.' }, 'net')),
+        h('td.num', person.takeHome == null
+          ? h('span.muted', { title: 'Their bonus comes off their scheme scores.' }, 'off scores')
+          : h('strong', { title: 'The bonus is worked back from this every month.' },
+            cash(person.takeHome)))))))))
     : h('p.muted', 'Nobody yet.'));
 }
 
@@ -1774,6 +1810,10 @@ async function editPeople(data, reload) {
     basic: s.basic ?? 0,
     ssnit: s.ssnit,
     bonusIsNet: s.bonusIsNet !== false,
+    // Blank rather than nought where nobody has agreed one. Nought is a
+    // take-home of nothing, which is a real if unlikely answer, and it must
+    // not be what an empty box means.
+    takeHome: s.takeHome == null ? '' : s.takeHome,
     bonusOpening: s.bonusOpening ?? 0,
     // What the GRA form says about them. Blank means nobody has said, and the
     // form still falls back to their job title and to resident and full time.
@@ -1809,6 +1849,15 @@ async function editPeople(data, reload) {
       'aria-label': `${person.name}'s bonus figures are what they receive`,
       onchange: (e) => { mine.bonusIsNet = e.target.checked; },
     });
+    // What they take home. Left empty, their bonus comes off their scores the
+    // way it always has; given a figure, the bonus is worked back from it
+    // every month and nobody types it again.
+    const takeHome = h('input.med-amount', {
+      type: 'number', step: '0.01', min: '0', value: mine.takeHome,
+      placeholder: 'off scores',
+      'aria-label': `What ${person.name} takes home`,
+      onchange: (e) => { mine.takeHome = e.target.value === '' ? '' : Number(e.target.value); },
+    });
     const allowanceCount = h('span.muted',
       mine.allowances.length ? `${mine.allowances.length}` : 'none');
     // What the return will say about them, so somebody can see at a glance
@@ -1835,12 +1884,14 @@ async function editPeople(data, reload) {
         basic.disabled = !e.target.checked;
         ssnit.disabled = !e.target.checked;
         netBonus.disabled = !e.target.checked;
+        takeHome.disabled = !e.target.checked;
         line.classList.toggle('adv-skipped', !e.target.checked);
       },
     });
     basic.disabled = !mine.onPayroll;
     ssnit.disabled = !mine.onPayroll;
     netBonus.disabled = !mine.onPayroll;
+    takeHome.disabled = !mine.onPayroll;
 
     const line = h(`tr${mine.onPayroll ? '' : '.adv-skipped'}`,
       h('td', h('label.tickline', tick, h('span', person.name))),
@@ -1850,6 +1901,7 @@ async function editPeople(data, reload) {
       h('td',
         h('label.tickline', ssnit, h('span', 'SSNIT')),
         h('label.tickline', netBonus, h('span', 'Net bonus'))),
+      h('td.num', takeHome),
       yearly ? h('td.num', opening) : null,
       h('td.num',
         allowanceCount,
@@ -1892,6 +1944,12 @@ async function editPeople(data, reload) {
         + 'carries the tax on top and it shows in their allowance. Untick it for anybody whose '
         + 'bonus figures were worked out gross already, or the tax gets paid twice.'),
       h('p.muted', { style: { fontSize: '.85rem' } },
+        'Takes home is what the person is actually on: give it and the bonus is worked back '
+        + 'from it every month, whatever the allowances and the tax do, so nobody has to '
+        + 'recalculate it. Leave it empty and their bonus comes off their scheme scores as '
+        + 'before. It is measured before any advance they are repaying and before anything '
+        + 'docked off their bonus, so both still cost them what they are meant to.'),
+      h('p.muted', { style: { fontSize: '.85rem' } },
         'GRA return is the grade, the residency and any reliefs the form asks about somebody. '
         + 'Left alone, the form uses their job title and puts them down as resident and full '
         + 'time, which is right for most people. Change it here when it changes for them.'),
@@ -1905,6 +1963,7 @@ async function editPeople(data, reload) {
       h('div.table-wrap.med-set-wrap', h('table.med-set',
         h('thead', h('tr',
           h('th', 'On the payroll'), h('th.num', 'Basic'), h('th', ''),
+          h('th.num', 'Takes home'),
           yearly ? h('th.num', `Bonus already had in ${year}`) : null,
           h('th.num', 'Allowances'), h('th.num', 'GRA return'),
         )),
@@ -1916,6 +1975,7 @@ async function editPeople(data, reload) {
         basic: v.basic,
         ssnit: v.ssnit,
         bonusIsNet: v.bonusIsNet,
+        takeHome: v.takeHome,
         graPosition: v.graPosition,
         graResidency: v.graResidency,
         graRelief: v.graRelief,

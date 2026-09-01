@@ -1365,6 +1365,20 @@ export const GUIDE = [
         + 'above the table before the file is ever made, and the Net to pay tile says how the '
         + 'month splits: so many by transfer, so many by hand.' },
 
+      { sub: 'Paying somebody an agreed take-home' },
+      { p: 'What is usually agreed with somebody is what they take home, not what their bonus '
+        + 'is. Put that figure in Takes home, under Set pay and allowances, and the bonus is '
+        + 'worked back from it every month \u2014 whatever the allowances and the tax do. '
+        + 'Leave it empty and their bonus comes off their scheme scores as before.' },
+      { list: [
+        'It is measured before any advance they are repaying, so an advance still costs them '
+          + 'and the property is not quietly handing its own money back.',
+        'It is measured before anything docked off their bonus, so a penalty still bites.',
+        'Somebody whose salary alone already passes the figure gets no bonus, and no pay cut '
+          + 'either. The payroll names them under the table.',
+        'What they scored is still shown, even where the take-home is what set the money.',
+      ] },
+
       { sub: 'The payslip' },
       { warn: 'Somebody else\u2019s payslip is an administrator\u2019s to open, whatever else '
         + 'they hold. Running the payroll means seeing what the month comes to for each person, '

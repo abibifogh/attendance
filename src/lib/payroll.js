@@ -39,6 +39,10 @@ export function computeLine({
   annualBasic = null,
   bonusPaidThisYear = 0,
   bonusIsNet = true,
+  // A take-home agreed with the person: what they are to receive this month
+  // before anything they are paying back. Where there is one, the bonus is
+  // worked back from it rather than read off their scores.
+  takeHome = null,
   relief = 0,
   rates,
   tiers = TIERS,
@@ -60,14 +64,9 @@ export function computeLine({
     // scored. Half a scheme is half the money.
     amount: round2(round2(scheme.amount) * (round2(scheme.score) / 100)),
   }));
-  const bonusEarned = round2(earned.reduce((n, s) => n + s.amount, 0));
+  const scored = round2(earned.reduce((n, s) => n + s.amount, 0));
 
   const docked = round2(penalties.reduce((n, p) => n + round2(p.amount), 0));
-  // Never below nothing. A deduction bigger than the bonus is a matter for a
-  // person to settle, not something to take out of somebody's salary by
-  // arithmetic nobody decided on.
-  const bonusNet = Math.max(0, round2(bonusEarned - docked));
-  const notTaken = round2(Math.max(0, docked - bonusEarned));
 
   // ---- SSNIT, which is on basic alone and comes off before tax ----------
   const contributions = ssnitOn(pay, { qualifies: ssnit, rates });
@@ -82,6 +81,53 @@ export function computeLine({
   const taxRelief = Math.max(0, round2(relief));
   const salaryChargeable = Math.max(0,
     round2(salaryGross - contributions.employee - taxRelief));
+
+  // ---- a take-home agreed with the person, worked backwards -------------
+  //
+  // WHY THIS EXISTS. What is actually agreed with somebody here is what they
+  // take home: Linda is on 2,480 a month, and the bonus is whatever makes that
+  // true once the allowances and the tax have had their say. Before this,
+  // somebody worked that figure out on a spreadsheet and typed the answer into
+  // the bonus box every month, and the two drifted apart the first time an
+  // allowance moved.
+  //
+  // It is exact rather than approximate because a bonus agreed net passes
+  // straight through to the take-home, cedi for cedi: the grossing-up is
+  // defined as whatever covers the tax on it. So the bonus needed is simply
+  // the target less what they would take home with no bonus at all, and there
+  // is nothing to iterate.
+  //
+  // MEASURED BEFORE THE ADVANCES AND BEFORE ANY PENALTY, on purpose. An
+  // advance is the person's own money going back and a penalty is meant to
+  // cost them; if the target were read after either, the bonus would quietly
+  // grow to cancel them out and the property would be paying back its own
+  // advance.
+  const salaryPaye = payeOn(salaryChargeable, rates.bands);
+  const withoutBonus = round2(salaryGross + freeAllowance
+    - contributions.employee - salaryPaye.tax);
+
+  const target = takeHome == null || takeHome === '' ? null : round2(takeHome);
+  // Never below nothing. Somebody whose salary alone already passes the figure
+  // set for them gets no bonus, and does not get money taken off them either:
+  // that would be a pay cut arrived at by arithmetic nobody agreed to. The
+  // screen is told, because a target that cannot be met is a target somebody
+  // has to look at.
+  const solved = target == null ? null : Math.max(0, round2(target - withoutBonus));
+  const overshoots = target != null && round2(target - withoutBonus) < 0;
+
+  const bonusEarned = solved == null ? scored : solved;
+  // A solved bonus is a net promise by definition: the figure agreed is what
+  // reaches them, and the property carries the tax. That is the whole point of
+  // working backwards from a take-home, so it does not depend on the box.
+  const treatAsNet = solved == null ? bonusIsNet : true;
+
+  // Never below nothing. A deduction bigger than the bonus is a matter for a
+  // person to settle, not something to take out of somebody's salary by
+  // arithmetic nobody decided on. It comes off after a target has been worked
+  // out rather than before, so a penalty still costs somebody money instead of
+  // being quietly made up by a bigger bonus.
+  const bonusNet = Math.max(0, round2(bonusEarned - docked));
+  const notTaken = round2(Math.max(0, docked - bonusEarned));
 
   // ---- the bonus, grossed up against that ------------------------------
   const yearBasic = annualBasic == null ? round2(pay * 12) : round2(annualBasic);
@@ -108,7 +154,7 @@ export function computeLine({
   // and are gross already. Grossing one of those up again pays the tax twice.
   const grossed = bonusNet <= 0
     ? { gross: 0, ...bonusTaxOn(0, bonusContext) }
-    : bonusIsNet
+    : treatAsNet
       ? grossUpBonus(bonusNet, bonusContext)
       : { gross: bonusNet, ...bonusTaxOn(bonusNet, bonusContext) };
 
@@ -117,9 +163,10 @@ export function computeLine({
   const chargeable = round2(salaryChargeable + grossed.atGraduated);
   const paye = payeOn(chargeable, rates.bands);
 
-  // The tax on the salary, told apart from the tax the bonus added, because
-  // the second is the property's own doing and it should be able to see it.
-  const salaryPaye = payeOn(salaryChargeable, rates.bands);
+  // The tax on the salary is worked out above, where the take-home a bonus has
+  // to reach is measured. It is told apart from the tax the bonus added,
+  // because the second is the property's own doing and it should be able to
+  // see it.
   const tax = round2(paye.tax + grossed.final);
 
   const loanDue = round2(loans.reduce((n, l) => n + round2(l.amount), 0));
@@ -186,6 +233,16 @@ export function computeLine({
     bonus: {
       schemes: earned,
       earned: bonusEarned,
+      // What the schemes and scores came to, kept whatever else decided the
+      // money. A score that no longer sets the figure is still a score
+      // somebody gave, and a screen that hid it would look like it had
+      // thrown the scoring away.
+      scored,
+      // The take-home this was worked back from, where there is one, and
+      // whether it could be reached at all.
+      takeHome: target,
+      solved: solved != null,
+      overshoots,
       docked,
       // Where a deduction was bigger than the bonus it came out of. Said
       // rather than swallowed: somebody will ask where the rest went.
@@ -194,7 +251,11 @@ export function computeLine({
       // means depends on isNet: the money in somebody's hand where the bonus
       // was promised net, the taxable figure where it was promised gross.
       net: bonusNet,
-      isNet: Boolean(bonusIsNet),
+      // How it was actually treated, which is not always the box: a bonus
+      // worked back from a take-home is a net promise whatever the box says,
+      // and reporting the box here would have the payslip and this line
+      // disagreeing about the same bonus.
+      isNet: Boolean(treatAsNet),
       gross: grossed.gross,
       // What the property put in on top to make a net promise come true.
       // Nought on a gross figure, where the tax comes out of the bonus itself.

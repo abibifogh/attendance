@@ -285,6 +285,9 @@ function linesFrom(data, month) {
       // Older profiles have nothing written here and every figure in them was
       // entered as a net promise, so the absence reads as net.
       bonusIsNet: profile.bonus_is_net == null ? true : Boolean(profile.bonus_is_net),
+      // What they take home, where one has been agreed. The bonus is worked
+      // back from it rather than read off their scores.
+      takeHome: profile.take_home == null ? null : round2(profile.take_home),
       // What the GRA has issued them a certificate for. Off before the bands,
       // like the pension, and nought for almost everybody.
       relief: round2(profile.gra_relief ?? 0),
@@ -585,6 +588,9 @@ export async function payroll(ctx) {
         ssnit: profile ? Boolean(profile.ssnit) : true,
         // Whether their bonus figures are what they receive or what is taxed.
         bonusIsNet: profile ? profile.bonus_is_net == null || Boolean(profile.bonus_is_net) : true,
+        // Null where nobody has agreed one, which is the ordinary case and
+        // means their scores decide the bonus.
+        takeHome: profile?.take_home == null ? null : round2(profile.take_home),
         // What the GRA form says about them. Empty means nobody has said, and
         // the form falls back to the job title and to resident and full time.
         graPosition: profile?.gra_position ?? '',
@@ -1466,12 +1472,22 @@ export async function setProfiles(ctx) {
       ? null
       : round2(num(line.graRelief, 'Deductible reliefs', { min: 0, max: 1_000_000 }));
 
+    // What they take home, which the bonus is worked back from. Three states,
+    // not two: absent leaves whatever is there alone, so a spreadsheet upload
+    // cannot wipe it; an empty string clears it, which is how somebody goes
+    // back to being paid off their scores; a figure sets it.
+    const saidTakeHome = Object.prototype.hasOwnProperty.call(line, 'takeHome');
+    const takeHome = !saidTakeHome || line.takeHome == null || line.takeHome === ''
+      ? null
+      : round2(num(line.takeHome, 'Take-home', { min: 0, max: 10_000_000 }));
+    const clearTakeHome = saidTakeHome && (line.takeHome == null || line.takeHome === '');
+
     await ctx.db.prepare(
       `INSERT INTO pay_profile (staff_id, basic, ssnit, note, set_by, bonus_opening,
                                 bonus_opening_year, bonus_is_net,
-                                gra_position, gra_residency, gra_relief)
+                                gra_position, gra_residency, gra_relief, take_home)
        VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(?6, 0), ?7, COALESCE(?8, 1),
-               ?9, ?10, COALESCE(?11, 0))
+               ?9, ?10, COALESCE(?11, 0), ?12)
        ON CONFLICT (staff_id) DO UPDATE
          SET basic = ?2, ssnit = ?3, note = ?4, set_by = ?5, set_at = datetime('now'),
              bonus_opening = COALESCE(?6, bonus_opening),
@@ -1479,11 +1495,14 @@ export async function setProfiles(ctx) {
              bonus_is_net = COALESCE(?8, bonus_is_net),
              gra_position = COALESCE(?9, gra_position),
              gra_residency = COALESCE(?10, gra_residency),
-             gra_relief = COALESCE(?11, gra_relief)`,
+             gra_relief = COALESCE(?11, gra_relief),
+             -- Cleared where the box was emptied, left alone where the form
+             -- never asked, set where a figure came.
+             take_home = CASE WHEN ?13 = 1 THEN NULL ELSE COALESCE(?12, take_home) END`,
     ).bind(staffId, basic, line.ssnit === false ? 0 : 1,
       str(line.note, 'Note', { max: 300 }), actorOf(ctx),
       opening, said ? openingYear : null, netBonus,
-      graPosition, graResidency, graRelief).run();
+      graPosition, graResidency, graRelief, takeHome, clearTakeHome ? 1 : 0).run();
 
     if (Array.isArray(line.allowances)) {
       await ctx.db.prepare('DELETE FROM pay_allowance WHERE staff_id = ?').bind(staffId).run();

@@ -2221,6 +2221,47 @@ accident, which is why the suite was green throughout. The shim in
 the real thing does, and the tests fail against any route that has not been
 through `asBytes`.
 
+### What somebody takes home, and the bonus worked back from it
+
+What is actually agreed with people here is not a bonus, it is a take-home.
+Linda is on 2,480 a month. The allowances and the bonus are how that figure is
+arrived at, and the bonus is whatever makes it come out right once the tax has
+had its say.
+
+That sum was being done on a spreadsheet once a month and the answer typed into
+the bonus box, which is a job that has to be redone the moment an allowance
+moves, and it drifted: reconciling one August payroll against the sheet it came
+from took most of a day and turned up sixteen people whose figures no longer
+agreed.
+
+**Takes home** is now a field on somebody's pay record, beside their basic.
+Give it a figure and the bonus is worked back from it every month; leave it
+empty and their bonus comes off their scheme scores exactly as before. This is
+an addition, not a change of rule.
+
+**It is worked out rather than searched for.** A bonus agreed net passes
+straight through to the take-home, cedi for cedi, because the grossing-up is
+defined as whatever covers the tax on it. So the bonus needed is simply the
+target less what they would take home with no bonus at all, there is nothing to
+iterate, and the answer lands on the agreed figure to the pesewa rather than
+near it.
+
+**Measured before the advances and before anything docked**, on purpose. An
+advance is the person's own money going back and a penalty is meant to cost
+them. Read after either, the bonus would quietly grow to cancel them out and
+the property would be paying back its own advance. So Vivian on 1,530 repaying
+1,200 takes home 330, and a hundred off her bonus is a hundred out of her hand.
+
+**Nobody is paid less to hit a number.** Somebody whose salary and allowances
+already pass the figure set for them gets no bonus, and does not have money
+taken off them either: that would be a pay cut arrived at by arithmetic nobody
+agreed to. The payroll names them under the table, because a target that cannot
+be met is one somebody has to look at.
+
+**And the scores are not thrown away.** What somebody scored is still on their
+line and still on the payslip, even where a take-home is what decided the
+money. A screen that hid it would look like the scoring had been discarded.
+
 ### A bonus is net for most people, and gross for some
 
 A bonus here is normally a net promise. Somebody is told five hundred cedis,

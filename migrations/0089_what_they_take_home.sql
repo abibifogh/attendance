@@ -1,0 +1,13 @@
+-- What somebody actually takes home, and the bonus worked back from it.
+--
+-- WHAT IS AGREED HERE IS NOT A BONUS, IT IS A TAKE-HOME. Somebody is on 2,480
+-- a month; the allowances and the bonus are how that figure is arrived at, and
+-- the bonus is whatever makes it come out right once the tax has had its say.
+-- Until now that sum was done on a spreadsheet once a month and the answer was
+-- typed into the bonus box, which drifted the first time an allowance moved
+-- and had to be reconciled by hand every month after.
+--
+-- NULL means what it has always meant: nobody has agreed a take-home for this
+-- person, so their bonus comes off their schemes and their scores, exactly as
+-- before. This is an addition, not a change of rule.
+ALTER TABLE pay_profile ADD COLUMN take_home REAL;
