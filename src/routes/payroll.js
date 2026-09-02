@@ -1058,7 +1058,11 @@ export async function exportBook(ctx) {
   const head = (t) => ({ v: t, s: S.head });
 
   // ---- the month, as the payroll screen shows it ------------------------
-  const payHead = ['Name', 'Department', 'Basic', 'Allowances', 'Bonus', 'Gross',
+  // The tax the property carried on a bonus promised as a net figure sits
+  // inside the allowances column, as it does on the payslip. It gets a column
+  // of its own here as well, so a month can be reconciled against an outside
+  // sheet without anybody having to work out where the difference went.
+  const payHead = ['Name', 'Department', 'Basic', 'Allowances', 'Bonus', 'Tax carried on bonus', 'Gross',
     'SSNIT', 'PAYE', 'Advance', 'Net pay', 'Employer SSNIT', 'Cost'];
   const payRows = lines.map((line) => [
     line.staff?.name ?? '',
@@ -1066,6 +1070,7 @@ export async function exportBook(ctx) {
     money(line.basic),
     money(line.slip?.allowanceTotal ?? line.allowanceTotal),
     money(line.bonus?.net),
+    money(line.slip?.carried ?? 0),
     money(line.gross),
     money(line.ssnit?.employee),
     money(line.paye?.total),
@@ -1076,14 +1081,14 @@ export async function exportBook(ctx) {
   ]);
   const payTotals = [{ v: 'Everybody', s: S.total }, { v: '', s: S.total },
     totalMoney(totals.basic), totalMoney(totals.allowancesOnSlip ?? totals.allowances),
-    totalMoney(totals.bonusNet), totalMoney(totals.gross),
+    totalMoney(totals.bonusNet), totalMoney(totals.carriedOnBonus ?? 0), totalMoney(totals.gross),
     totalMoney(totals.ssnitEmployee), totalMoney(totals.paye), totalMoney(totals.loans),
     totalMoney(totals.net), totalMoney(totals.ssnitEmployer), totalMoney(totals.cost)];
 
   const payroll = {
     name: 'Payroll',
     freeze: 4,
-    widths: [26, 16, 11, 12, 11, 12, 10, 11, 11, 12, 13, 12],
+    widths: [26, 16, 11, 12, 11, 13, 12, 10, 11, 11, 12, 13, 12],
     rows: [
       [{ v: `${employer} — payroll for ${month}`, s: S.title }],
       [`${lines.length} on the payroll`, '', '', '', '', `In ${data.currency}`],
