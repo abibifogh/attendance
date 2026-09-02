@@ -2,7 +2,7 @@
   "name": "niceoperation-attendance",
   "version": "1.0.0",
   "private": true,
-  "description": "HIVE — Human Information & Verification Engine: attendance, rota, leave, personnel records and correspondence",
+  "description": "HIVE \u2014 Human Information & Verification Engine: attendance, rota, leave, personnel records and correspondence",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
@@ -10,9 +10,10 @@
     "db:create": "wrangler d1 create attendance",
     "db:migrate": "wrangler d1 migrations apply attendance --remote",
     "db:migrate:local": "wrangler d1 migrations apply attendance --local",
-    "test": "node --test \"test/**/*.test.js\"",
+    "test": "node --test \"test/**/*.test.js\" && npm run test:bi",
     "sql:console": "node scripts/console-sql.mjs",
-    "poller": "node scripts/hik-poller.mjs"
+    "poller": "node scripts/hik-poller.mjs",
+    "test:bi": "cd bi && node --test \"test/**/*.test.js\""
   },
   "devDependencies": {
     "wrangler": "^4.20.0"
