@@ -1,6 +1,6 @@
 import {
   clearCookie, createToken, getPepper, getSession, hashPin, isReservedPin,
-  PIN_DIGITS, PIN_GRACE_SIGN_INS, PIN_RULE, clearShortPinChance, pinLooksRight, useShortPinChance,
+  PIN_RULE, pinLooksRight,
   saltForEmail, sessionCookie, storedPassword, throttleCheck, throttleFail,
   throttleReset, tokenTtl, userForCredentials, userForPin, verifyPasswordKey,
 } from './lib/auth.js';
@@ -953,17 +953,6 @@ async function login(ctx) {
     ? await userForCredentials(db, body.email, String(body.passwordKey ?? ''))
     : await userForPin(db, typedPin, env);
 
-  // Their allowance ran out on an earlier sign-in. They know the PIN, so they
-  // are told what has actually happened and who can undo it.
-  if (user?.isLocked) {
-    await throttleReset(db, ip);
-    return json({
-      error: `This login is switched off because the PIN was never lengthened to ${PIN_DIGITS} `
-        + 'digits. An administrator can set you a new one under Users & data.',
-      pinLocked: true,
-    }, { status: 403 });
-  }
-
   if (!user) {
     await throttleFail(db, ip);
     // A uniform delay keeps a wrong credential from being distinguishable by
@@ -976,22 +965,12 @@ async function login(ctx) {
 
   await throttleReset(db, ip);
 
-  // A PIN shorter than the rule opens the app three more times and then stops
-  // doing so. Only for a PIN sign-in: a password is not a PIN, and a recovery
-  // session has no row to count against.
-  let shortPin = null;
-  if (!body.email && !user.isRecovery && !pinLooksRight(typedPin)) {
-    const chance = await useShortPinChance(db, user.id);
-    if (chance.locked) {
-      return json({
-        error: `That PIN is too short and has been used its ${PIN_GRACE_SIGN_INS} times. `
-          + 'This login is now switched off. An administrator can set you a new one under '
-          + 'Users & data.',
-        pinLocked: true,
-      }, { status: 403 });
-    }
-    shortPin = chance.left;
-  }
+  // A PIN shorter than the rule. Nothing is refused and nothing is switched
+  // off: the session is issued as normal and the app puts the screen asking
+  // for a longer one in front of everything until it is done. Only for a PIN
+  // sign-in — a password is not a PIN, and the recovery route is a Worker
+  // secret with no account to ask.
+  const shortPin = !body.email && !user.isRecovery && !pinLooksRight(typedPin);
 
   const now = Math.floor(Date.now() / 1000);
   const token = await createToken(
@@ -1004,7 +983,7 @@ async function login(ctx) {
       via: body.email ? 'password' : 'pin',
       // Carried in the token so every later request knows, without the raw
       // PIN being available again to work it out from.
-      ...(shortPin == null ? {} : { shortPin: 1 }),
+      ...(shortPin ? { shortPin: 1 } : {}),
       iat: now,
       exp: now + tokenTtl(user.role),
     },
@@ -1022,11 +1001,10 @@ async function login(ctx) {
     name: user.name,
     email: user.email ?? null,
     isRecovery: Boolean(user.isRecovery),
-    // Their PIN is shorter than the rule and this is what is left of the
-    // allowance. The app puts them on My account and will not let them past
-    // it until they have chosen a longer one.
-    mustChangePin: shortPin != null,
-    pinChancesLeft: shortPin,
+    // Their PIN is shorter than the rule, so the app shows the screen asking
+    // for a longer one instead of the rota, and goes on showing it every
+    // time they sign in until they have chosen one.
+    mustChangePin: shortPin,
     permissions: effectivePermissions(user),
   }, {
     headers: { 'Set-Cookie': sessionCookie(token, user.role, url.protocol === 'https:') },
@@ -1068,10 +1046,8 @@ async function me(ctx) {
     // What they typed to get here, so My account knows which credential it can
     // ask them to confirm with.
     signedInWith: session.via ?? 'pin',
-    // Still on a PIN too short for the rule. Read fresh rather than off the
-    // token, so the moment they lengthen it the screens stop insisting.
+    // Still on a PIN too short for the rule.
     mustChangePin: Boolean(session.shortPin),
-    pinChancesLeft: session.shortPin ? await chancesLeft(ctx.db, session.user.id) : null,
     // Whether they already have a login PIN, so My account offers to change it
     // rather than to set one.
     hasPin: Boolean(session.user.has_pin),
@@ -1152,7 +1128,6 @@ async function changeCredentials(ctx) {
         if (String(err).includes('UNIQUE')) throw badRequest(PIN_TAKEN);
         throw err;
       }
-      await clearShortPinChance(db, row.id);
       return json({ ok: true, changed: 'pin', hasPin: true }, { headers: await freshCookie(ctx, row) });
     }
 
@@ -1202,15 +1177,7 @@ async function changeCredentials(ctx) {
     throw err;
   }
 
-  await clearShortPinChance(db, row.id);
   return json({ ok: true, changed: 'pin' }, { headers: await freshCookie(ctx, row) });
-}
-
-/** What is left of somebody's allowance, for the screens that have to say. */
-async function chancesLeft(db, userId) {
-  const row = await db.prepare('SELECT pin_grace_left FROM users WHERE id = ?')
-    .bind(userId).first().catch(() => null);
-  return row?.pin_grace_left == null ? PIN_GRACE_SIGN_INS : Number(row.pin_grace_left);
 }
 
 /**

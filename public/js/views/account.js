@@ -405,43 +405,37 @@ export function openAccountDialog({
 }
 
 /**
- * The screen somebody with a too-short PIN cannot get past.
+ * The screen that stands in front of the app while a PIN is too short.
  *
  * Six digits is the rule now, and the PINs already in use cannot be measured
  * — only a hash of each is kept. So the rule is applied where the PIN itself
- * is: at sign-in. A short one still opens the app three more times, and each
- * of those times lands here instead of on the rota.
+ * is: at sign-in. A short one signs in perfectly well and lands here instead
+ * of on the rota, every time, until it is lengthened.
  *
- * Rendered in place of the whole app rather than as a dialog over it. A
- * dialog invites somebody to find the way round it, and the point of this
- * screen is that there is no way round it: the only ways off it are a longer
- * PIN or signing out.
+ * NOTHING IS EVER SWITCHED OFF FOR THIS. An earlier version gave three
+ * sign-ins and then locked the account, which meant somebody who kept
+ * pressing past this ended up unable to clock in for a shift they were
+ * standing in the building for, and an administrator hunting for the reason.
+ * The screen was doing the work; the lock was only a way for it to go wrong.
+ *
+ * Drawn in place of the whole app rather than as a dialog over it. A dialog
+ * invites somebody to find the way round it, and there is no way round this
+ * one: it is a longer PIN or signing out.
  */
-export function renderForcedPinChange({ chancesLeft = null, onDone }) {
+export function renderForcedPinChange({ onDone }) {
   const current = h('input', {
     type: 'password', inputmode: 'numeric', maxlength: 10,
     placeholder: 'Your PIN now', autocomplete: 'current-password',
   });
   const next = h('input', {
     type: 'password', inputmode: 'numeric', maxlength: 10,
-    placeholder: 'New PIN (6 to 10 digits)', autocomplete: 'new-password',
+    placeholder: '6 to 10 digits', autocomplete: 'new-password',
   });
   const confirm = h('input', {
     type: 'password', inputmode: 'numeric', maxlength: 10,
-    placeholder: 'Repeat the new PIN', autocomplete: 'new-password',
+    placeholder: 'The same again', autocomplete: 'new-password',
   });
   const error = h('p.muted', { style: { minHeight: '1.2rem', fontSize: '.9rem' } });
-
-  const left = Number(chancesLeft);
-  const warning = !Number.isFinite(left) ? null
-    : left <= 0
-      ? 'This is the last time. If you sign in again without changing it, this login is '
-        + 'switched off and an administrator will have to set you a new one.'
-      : left === 1
-        ? 'You can sign in once more after this without changing it. After that the login is '
-          + 'switched off and an administrator will have to set you a new one.'
-        : `You can sign in ${left} more times without changing it. After that the login is `
-          + 'switched off and an administrator will have to set you a new one.';
 
   const save = async (event) => {
     if (!current.value || !next.value) {
@@ -468,20 +462,19 @@ export function renderForcedPinChange({ chancesLeft = null, onDone }) {
     }
   };
 
-  return h('div.login-screen',
-    h('div.login-card',
-      h('h1', 'Choose a longer PIN'),
+  return h('div.login-wrap',
+    h('div.card.login-card',
+      h('h1', { style: { marginTop: 0 } }, 'Choose a longer PIN'),
       h('p.muted',
         'Every PIN is now six digits or more. Yours is shorter, and it is the whole of what '
         + 'stands between somebody else and your shifts.'),
-      warning ? h('p.returns-warn', warning) : null,
       h('label.field', h('span', 'Your PIN now'), current),
       h('label.field', h('span', 'New PIN'), next),
       h('label.field', h('span', 'Repeat it'), confirm),
       error,
-      h('button.btn.btn-primary', { onclick: save }, 'Change my PIN'),
+      h('button.btn.btn-primary', { style: { width: '100%' }, onclick: save }, 'Change my PIN'),
       h('button.btn-ghost.btn-sm', {
-        style: { marginTop: '.6rem' },
+        style: { marginTop: '.8rem' },
         onclick: async () => { await api.logout().catch(() => {}); location.reload(); },
       }, 'Sign out instead')));
 }

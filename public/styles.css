@@ -511,13 +511,22 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .toolbar-more-btn { display: none; }
 
 /* --------------------------------------------------------------- login --- */
+/* Centred when it fits, scrolled from the top when it does not.
+   `place-items: center` on a grid pushes the top of a tall card off the
+   screen — under the phone's clock, with no way to scroll back up to it,
+   which is where the "choose a longer PIN" card ended up on a handset.
+   `margin: auto` on a flex child centres the same way and never overflows
+   the start edge. The insets keep it clear of the notch and the home bar. */
 .login-wrap {
   min-height: 100vh;
   min-height: 100dvh;
   min-height: var(--vh, 100vh);
-  display: grid; place-items: center; padding: 1.5rem;
+  display: flex; justify-content: center; overflow-y: auto;
+  padding: 1.5rem;
+  padding-top: max(1.5rem, env(safe-area-inset-top));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
 }
-.login-card { width: 100%; max-width: 380px; text-align: center; }
+.login-card { width: 100%; max-width: 380px; text-align: center; margin: auto; }
 .pin-display {
   font-family: var(--mono); font-size: 1.8rem; letter-spacing: .5rem;
   height: 3rem; display: grid; place-items: center; margin: .5rem 0 1rem;

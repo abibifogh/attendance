@@ -3019,20 +3019,22 @@ adding a login, editing one, and My account.
 The PINs already in use cannot be checked against it, because only a hash of
 each one is kept and a hash says nothing about length. So the rule is applied
 where the PIN itself is, at the moment somebody types it. Signing in with a
-short PIN still works, and lands on a screen that will not let them past it
-until they choose a longer one. They can leave that screen by signing out,
-three times. On the fourth sign-in the login is refused and switched off.
+short PIN works exactly as it always did, and lands on a screen asking for a
+longer one instead of on the rota. The only ways off that screen are choosing
+a six-digit PIN or signing out, and it comes back on the next sign-in, and
+the one after, until the PIN is long enough.
 
-An administrator sets them a new PIN under **Users & data** to let them back
-in; the list shows those accounts as "PIN too short" rather than "inactive",
-with the reason under the name, so nobody just ticks Active and wonders why
-it made no difference. Nothing else about the person is touched: their staff
-record, their attendance and their payslips are all where they were.
+**Nothing is ever switched off for this.** The first version of this gave
+three sign-ins and then locked the account, which is how somebody ends up
+unable to clock in for a shift they are standing in the building for, with an
+administrator hunting for the reason. The screen was doing the work; the lock
+was only a way for it to go wrong. So the pressure is the screen and only the
+screen, and the person can always let themselves out of it.
 
-An administrator who signs in with a short PIN gets the same treatment, and
-still has their email address and password, so they are never shut out of the
-screen that fixes it. The emergency `MANAGER_PIN` is a Worker secret with no
-account behind it and is left alone; set that one to six digits yourself.
+An administrator who signs in with a short PIN gets the same screen, and
+still has their email address and password, so they are never shut out of
+anything. The emergency `MANAGER_PIN` is a Worker secret with no account
+behind it and is left alone; set that one to six digits yourself.
 
 ### A copy of everything
 

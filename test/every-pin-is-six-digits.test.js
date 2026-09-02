@@ -10,9 +10,10 @@ import { getPepper, hashPin, pinLooksRight, readToken } from '../src/lib/auth.js
 /**
  * Six digits for everybody, and what happens to the PINs that are shorter.
  *
- * The PINs already in use cannot be measured, so the rule is applied where
- * the PIN itself is: at sign-in. Three sign-ins of being told, and then the
- * login is switched off until an administrator sets a new one.
+ * The PINs already in use cannot be measured — only a hash of each is kept —
+ * so the rule is applied where the PIN itself is: at sign-in. A short one
+ * signs in perfectly well and is met by the screen asking for a longer one,
+ * every time, and nothing is ever switched off for it.
  */
 
 function d1(db) {
@@ -41,7 +42,8 @@ function setup() {
   return { raw, db: d1(raw) };
 }
 
-const env = (db) => ({ DB: db, SESSION_SECRET: 'x'.repeat(40) });
+const SECRET = 'x'.repeat(40);
+const env = (db) => ({ DB: db, SESSION_SECRET: SECRET });
 
 /** Somebody already on the books, with whatever PIN they were given. */
 async function withPin(raw, db, pin, { role = 'staff', id = 5, name = 'Ama' } = {}) {
@@ -58,7 +60,9 @@ const signIn = (db, pin) => worker.fetch(new Request('https://x/api/auth/login',
   body: JSON.stringify({ pin }),
 }), env(db), null);
 
-const user = (raw, id = 5) => raw.prepare('SELECT active, pin_grace_left, pin_locked_at FROM users WHERE id = ?').get(id);
+const user = (raw, id = 5) => raw.prepare('SELECT active FROM users WHERE id = ?').get(id);
+const cookieOf = (res) => res.headers.get('Set-Cookie').split(';')[0];
+const tokenIn = (res) => decodeURIComponent(cookieOf(res).split('=').slice(1).join('='));
 
 const ADMIN = { user: { id: 1, name: 'Kwame', role: 'admin' }, permissions: ['users'], via: 'password' };
 const ctx = (db, body, session = ADMIN) => ({
@@ -97,76 +101,53 @@ test('a new login of any role is refused a short PIN', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// The allowance
+// A PIN that is already too short
 // ---------------------------------------------------------------------------
 
-test('a short PIN opens the app three more times and then stops', async () => {
+test('it signs in every time, is asked every time, and is never switched off', async () => {
   const { raw, db } = setup();
   await withPin(raw, db, '1234');
 
-  for (const expected of [2, 1, 0]) {
+  // Ten sign-ins, well past where a three-strike lockout would have bitten.
+  for (let i = 0; i < 10; i += 1) {
     const res = await signIn(db, '1234');
-    assert.equal(res.status, 200, `chance with ${expected} to follow`);
-    const body = await res.json();
-    assert.equal(body.mustChangePin, true);
-    assert.equal(body.pinChancesLeft, expected);
-    assert.equal(user(raw).pin_grace_left, expected);
-    assert.equal(user(raw).active, 1, 'still allowed in while the allowance lasts');
+    assert.equal(res.status, 200, `sign-in ${i + 1}`);
+    assert.equal((await res.json()).mustChangePin, true);
+    assert.equal(user(raw).active, 1, 'nothing is ever switched off for this');
   }
-
-  // The fourth is refused, and the login is switched off.
-  const out = await signIn(db, '1234');
-  assert.equal(out.status, 403);
-  const refused = await out.json();
-  assert.equal(refused.pinLocked, true);
-  assert.match(refused.error, /switched off/);
-  assert.equal(user(raw).active, 0);
-  assert.ok(user(raw).pin_locked_at);
-
-  // And it stays refused, with the reason rather than "not recognised".
-  const again = await signIn(db, '1234');
-  assert.equal(again.status, 403);
-  assert.match((await again.json()).error, /administrator can set you a new one/);
 });
 
-test('the session says so too, so a browser that comes back is still sent to change it', async () => {
+test('the session says so too, so a browser that comes back is sent to the same screen', async () => {
   const { raw, db } = setup();
   await withPin(raw, db, '1234');
   const res = await signIn(db, '1234');
-  const cookie = res.headers.get('Set-Cookie');
-  assert.ok(cookie);
 
-  const token = decodeURIComponent(cookie.split(';')[0].split('=').slice(1).join('='));
-  const payload = await readToken(token, 'x'.repeat(40));
+  const payload = await readToken(tokenIn(res), SECRET);
   assert.equal(payload.shortPin, 1);
 
   const me = await worker.fetch(
-    new Request('https://x/api/auth/me', { headers: { Cookie: cookie.split(';')[0] } }),
+    new Request('https://x/api/auth/me', { headers: { Cookie: cookieOf(res) } }),
     env(db), null,
   );
-  const body = await me.json();
-  assert.equal(body.mustChangePin, true);
-  assert.equal(body.pinChancesLeft, 2);
+  assert.equal((await me.json()).mustChangePin, true);
 });
 
-test('a PIN long enough is nobody’s business and touches nothing', async () => {
+test('a PIN long enough is nobody’s business', async () => {
   const { raw, db } = setup();
   await withPin(raw, db, '123456');
-  const body = await (await signIn(db, '123456')).json();
-  assert.equal(body.mustChangePin, false);
-  assert.equal(body.pinChancesLeft, null);
-  assert.equal(user(raw).pin_grace_left, null, 'the allowance is never opened');
+  const res = await signIn(db, '123456');
+  assert.equal((await res.json()).mustChangePin, false);
+  assert.equal((await readToken(tokenIn(res), SECRET)).shortPin, undefined);
 });
 
 // ---------------------------------------------------------------------------
-// The ways out
+// The way out, which is always open
 // ---------------------------------------------------------------------------
 
-test('lengthening the PIN puts the allowance away and hands back a clean session', async () => {
+test('lengthening the PIN clears it, and hands back a session that agrees', async () => {
   const { raw, db } = setup();
   await withPin(raw, db, '1234');
-  const first = await signIn(db, '1234');
-  const cookie = first.headers.get('Set-Cookie').split(';')[0];
+  const cookie = cookieOf(await signIn(db, '1234'));
 
   const changed = await worker.fetch(new Request('https://x/api/auth/change-credentials', {
     method: 'POST',
@@ -175,25 +156,17 @@ test('lengthening the PIN puts the allowance away and hands back a clean session
   }), env(db), null);
   assert.equal(changed.status, 200);
   assert.equal((await changed.json()).changed, 'pin');
-  assert.equal(user(raw).pin_grace_left, null);
 
   // The replacement cookie no longer says anything is owed, so they are not
   // sent back to the same screen for the life of the old one.
-  const fresh = changed.headers.get('Set-Cookie');
-  assert.ok(fresh, 'a new session comes back with it');
-  const payload = await readToken(
-    decodeURIComponent(fresh.split(';')[0].split('=').slice(1).join('=')), 'x'.repeat(40),
-  );
-  assert.equal(payload.shortPin, undefined);
-
-  const back = await signIn(db, '987654');
-  assert.equal((await back.json()).mustChangePin, false);
+  assert.equal((await readToken(tokenIn(changed), SECRET)).shortPin, undefined);
+  assert.equal((await (await signIn(db, '987654')).json()).mustChangePin, false);
 });
 
 test('a short new PIN is refused, so the way out is not another four digits', async () => {
   const { raw, db } = setup();
   await withPin(raw, db, '1234');
-  const cookie = (await signIn(db, '1234')).headers.get('Set-Cookie').split(';')[0];
+  const cookie = cookieOf(await signIn(db, '1234'));
 
   const res = await worker.fetch(new Request('https://x/api/auth/change-credentials', {
     method: 'POST',
@@ -204,29 +177,25 @@ test('a short new PIN is refused, so the way out is not another four digits', as
   assert.match((await res.json()).error, /6 to 10 digits/);
 });
 
-test('an administrator setting a new PIN is the way back from a lockout', async () => {
+test('an administrator never has to rescue anybody from this', async () => {
   const { raw, db } = setup();
   raw.prepare(
     `INSERT INTO users (id, name, role, email, password_hash, active)
      VALUES (1, 'Kwame', 'admin', 'k@x.com', 'pbkdf2c$1$1$AAAA$x', 1)`,
   ).run();
   const id = await withPin(raw, db, '1234');
-  for (let i = 0; i < 4; i += 1) await signIn(db, '1234');
-  assert.equal(user(raw, id).active, 0);
+  for (let i = 0; i < 6; i += 1) await signIn(db, '1234');
 
-  // The screen says why, so nobody just ticks Active and wonders.
+  // The account is untouched, so the Users screen has nothing to explain and
+  // an administrator has nothing to undo.
+  assert.equal(user(raw, id).active, 1);
   const list = await (await listUsers(ctx(db, {}))).json();
-  assert.equal(list.users.find((u) => u.id === id).pinLocked, true);
+  assert.equal(list.users.find((u) => u.id === id).active, true);
 
+  // They can still be given a longer one from here if they ask for help, and
+  // then the screen stops appearing.
   await updateUser(ctx(db, { name: 'Ama', role: 'staff', pin: '246810', active: true }), id);
-  const after = user(raw, id);
-  assert.equal(after.active, 1);
-  assert.equal(after.pin_locked_at, null);
-  assert.equal(after.pin_grace_left, null);
-
-  const back = await signIn(db, '246810');
-  assert.equal(back.status, 200);
-  assert.equal((await back.json()).mustChangePin, false);
+  assert.equal((await (await signIn(db, '246810')).json()).mustChangePin, false);
 });
 
 test('an administrator on a short PIN is treated the same, and still has the password door', async () => {
@@ -240,5 +209,5 @@ test('an administrator on a short PIN is treated the same, and still has the pas
   const body = await (await signIn(db, '4321')).json();
   assert.equal(body.mustChangePin, true);
   assert.equal(body.role, 'admin');
-  assert.equal(user(raw, 9).pin_grace_left, 2);
+  assert.equal(user(raw, 9).active, 1);
 });

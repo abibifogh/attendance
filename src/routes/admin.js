@@ -119,9 +119,6 @@ function publicUser(row) {
       ? (row.pin_hash ? 'password or PIN' : 'password')
       : 'pin',
     hasPin: Boolean(row.pin_hash),
-    // Switched off by the PIN rule rather than by a person, which is worth
-    // saying: the fix is to give them a new PIN, not to tick Active.
-    pinLocked: Boolean(row.pin_locked_at),
     hasPassword: typeof row.password_hash === 'string' && row.password_hash.startsWith('pbkdf2c$'),
     role: row.role,
     // Which member of staff this login belongs to, for the accounts that are
@@ -300,15 +297,8 @@ export async function updateUser(ctx, id) {
 
   try {
     const row = await ctx.db.prepare(
-      // Numbered throughout rather than a row of question marks, because the
-      // PIN is read twice and mixing the two styles is how a bind quietly
-      // lands in the wrong column.
       `UPDATE users SET name = ?1, role = ?2, permissions = ?3, active = ?4, note = ?5,
-                        pin_hash = ?6, email = ?7, password_hash = ?8, staff_id = ?9,
-                        -- A new PIN is the way back from a lockout: it meets
-                        -- the rule, so there is nothing left to be owed.
-                        pin_grace_left = CASE WHEN ?6 IS NOT NULL THEN NULL ELSE pin_grace_left END,
-                        pin_locked_at  = CASE WHEN ?6 IS NOT NULL THEN NULL ELSE pin_locked_at END
+                        pin_hash = ?6, email = ?7, password_hash = ?8, staff_id = ?9
        WHERE id = ?10 RETURNING *`,
     ).bind(
       name, role, permissions, active ? 1 : 0, note,

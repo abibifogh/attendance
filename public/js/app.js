@@ -44,11 +44,9 @@ export const state = {
   name: null,
   email: null,
   isRecovery: false,
-  // Signed in on a PIN shorter than the rule, and how many sign-ins are left
-  // before the login is switched off. Nothing else in the app draws while
-  // this is set.
+  // Signed in on a PIN shorter than the rule. Nothing else in the app draws
+  // while this is set, and it stays set until they choose a longer one.
   mustChangePin: false,
-  pinChancesLeft: null,
   permissions: [],
   settings: {},
   // Which staff record this login belongs to, or null. Decides whether the
@@ -434,7 +432,7 @@ export async function render({ quiet = false } = {}) {
 
   if (!state.role) {
     mount(root, renderLogin(async ({
-      role, name, email, permissions, isRecovery, mustChangePin, pinChancesLeft,
+      role, name, email, permissions, isRecovery, mustChangePin,
     }) => {
       state.role = role;
       state.name = name;
@@ -442,7 +440,6 @@ export async function render({ quiet = false } = {}) {
       state.isRecovery = Boolean(isRecovery);
       state.permissions = permissions ?? [];
       state.mustChangePin = Boolean(mustChangePin);
-      state.pinChancesLeft = pinChancesLeft ?? null;
       startLive();
       if (!location.hash || !currentRoute()) navigate(defaultRoute());
       await render();
@@ -454,10 +451,8 @@ export async function render({ quiet = false } = {}) {
   // rather than over it, so there is no screen behind it to get back to.
   if (state.mustChangePin) {
     mount(root, renderForcedPinChange({
-      chancesLeft: state.pinChancesLeft,
       onDone: async () => {
         state.mustChangePin = false;
-        state.pinChancesLeft = null;
         state.hasPin = true;
         if (!currentRoute()) navigate(defaultRoute());
         await render();
@@ -813,7 +808,6 @@ window.addEventListener('online', () => { api.me().catch(() => {}); });
       state.permissionLabels = me.permissionLabels || {};
       state.roleLabels = me.roleLabels || {};
       state.mustChangePin = Boolean(me.mustChangePin);
-      state.pinChancesLeft = me.pinChancesLeft ?? null;
     }
   } catch { /* fall through to the login screen */ }
 

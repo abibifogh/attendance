@@ -273,7 +273,7 @@ export async function userForPin(db, pin, env) {
     const pepper = await getPepper(db);
     const hash = await hashPin(pin, pepper);
     row = await db.prepare(
-      'SELECT id, name, role, permissions, active, pin_locked_at FROM users WHERE pin_hash = ?',
+      'SELECT id, name, role, permissions, active FROM users WHERE pin_hash = ?',
     ).bind(hash).first();
   } catch (err) {
     if (!isMissingTable(err)) throw err;
@@ -281,11 +281,6 @@ export async function userForPin(db, pin, env) {
   }
 
   if (row) {
-    // Switched off for never having lengthened a short PIN. Said plainly
-    // rather than as "not recognised": they proved they know the PIN by
-    // getting here, and a person who cannot tell a locked account from a
-    // mistyped digit rings whoever is least able to help.
-    if (!row.active && row.pin_locked_at) return { ...row, isLocked: true };
     if (!row.active) return null;
     // An administrator may hold a PIN as well as a password, and either one
     // signs them in. What the password still buys is everything a PIN is too
@@ -536,42 +531,10 @@ export function pinLooksRight(pin) {
   return new RegExp(`^\\d{${PIN_DIGITS},10}$`).test(String(pin ?? ''));
 }
 
-/**
- * What is left of a short PIN's allowance, and what to do about it.
- *
- * The PINs already in use cannot be measured — only a hash of each one is
- * kept — so the rule is applied where the PIN itself is: the moment somebody
- * types it. A short one still opens the app and the person is told to choose
- * a longer one, three times. On the fourth sign-in the login is refused and
- * the account is switched off until an administrator sets them a new PIN.
- *
- * Counted at sign-in rather than on a "not now" button, so an allowance
- * cannot be spun out by never pressing anything.
+/*
+ * A PIN shorter than the rule cannot be found by looking: only a hash of it
+ * is kept, and a hash says nothing about length. So the check happens where
+ * the PIN itself is, at the moment somebody types it, and what follows is a
+ * screen rather than a punishment. Nothing is counted and nothing is ever
+ * switched off: see `renderForcedPinChange` in the browser.
  */
-export const PIN_GRACE_SIGN_INS = 3;
-
-export async function useShortPinChance(db, userId) {
-  if (!userId) return { left: PIN_GRACE_SIGN_INS, locked: false };
-  const row = await db.prepare('SELECT pin_grace_left FROM users WHERE id = ?')
-    .bind(userId).first().catch(() => null);
-  const left = row?.pin_grace_left == null ? PIN_GRACE_SIGN_INS : Number(row.pin_grace_left);
-
-  if (left <= 0) {
-    await db.prepare(
-      "UPDATE users SET active = 0, pin_locked_at = datetime('now') WHERE id = ?",
-    ).bind(userId).run();
-    return { left: 0, locked: true };
-  }
-
-  const now = left - 1;
-  await db.prepare('UPDATE users SET pin_grace_left = ? WHERE id = ?').bind(now, userId).run();
-  return { left: now, locked: false };
-}
-
-/** A PIN long enough puts the allowance away again. */
-export async function clearShortPinChance(db, userId) {
-  if (!userId) return;
-  await db.prepare(
-    'UPDATE users SET pin_grace_left = NULL, pin_locked_at = NULL WHERE id = ?',
-  ).bind(userId).run().catch(() => {});
-}
