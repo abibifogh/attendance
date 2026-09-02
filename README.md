@@ -3163,6 +3163,10 @@ npm run db:migrate
 npm run deploy
 ```
 
+`npm test` runs HIVE's own tests and then Insight's, the warehouse app under
+`bi/`, so a change here that breaks its hand-off shows up in the same run.
+`npm run test:bi` runs Insight's on their own.
+
 No frontend build step and no runtime dependencies. `migrations/console/` holds
 comment-free copies of every migration for pasting into the D1 console, which is
 the third way of applying them if both of the above are inconvenient.
