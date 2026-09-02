@@ -56,6 +56,48 @@ Not by how alarming they sound. A critical-sounding note worth nothing must not
 sit above a quiet one worth two thousand cedis a month, because the person
 reading has ten minutes and reads from the top.
 
+### What people cost
+
+HIVE runs payroll now, so Insight reads three things it used to invent.
+
+**Each person's own rate** (`hr_pay`). Until this was read, `dim_person.hour_cost`
+was empty for everybody and every wage figure in the warehouse was one flat
+property-wide default — a night porter, a room attendant and a head chef priced
+identically. Every labour finding rested on it. A monthly salary is converted at
+52/12 weeks and the person's own days-per-week, matching HIVE's own arithmetic;
+a parity test holds the two together.
+
+**The payslips themselves** (`pay_slip`, closed runs only) land in
+`fact_payroll` at month grain — gross, PAYE, both halves of SSNIT, advances
+repaid, net, and the employer's true cost. They are deliberately *not* spread
+across days: a payslip belongs to the month it was run for, and a daily wage
+figure that reconciles with no document anybody could be shown is worse than no
+figure. `pay_slip.cost` is the number a margin should be struck against — it
+includes the employer's 13% pension, which every labour ratio here was
+previously missing.
+
+**What people were down to work** (`att_days.expected_minutes`). HIVE has stored
+this from the beginning and the connector was already fetching it; there was
+nowhere to put it, so the roll-up wrote `scheduled people × 480` instead — a
+hard-coded eight-hour day on a property that runs six-hour breakfast shifts and
+twelve-hour night cover. Rostered-against-worked was a comparison with a
+fiction.
+
+`fact_labour.cost_basis` records which of `rate` or `default` a day's money came
+from, and the money page says so in words. "Wages are 38% of takings" means
+different things depending on the answer, and a reader has no other way to tell.
+
+> **The money trap.** HIVE keeps money as `REAL` cedis. This warehouse is whole
+> pesewas. `toMinor()`, never `minor()` — the latter loads GH₵2,450.75 as 2,451
+> pesewas, a wage bill a hundredth of its real size, with no error and a
+> plausible-looking number on screen. Every payroll field is asserted in both
+> units in `test/payroll.test.js`.
+
+Not yet read, in rough order of worth: salary advances (`hr_advance`) as a
+cash-flow exposure, bonus schemes (`pay_scheme`, now attributable to a line) and
+their per-person scores, manual punch corrections (`att_time_edit`) as a control
+signal, and medical claims.
+
 ### Findings
 
 A finding is a sentence somebody can act on, the money it is worth, the systems

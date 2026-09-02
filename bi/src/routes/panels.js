@@ -165,7 +165,7 @@ export async function pnl(env, query) {
     daily,
     caveats: [
       'Room revenue is not in any of the four systems, so the group total is understated by the whole of the rooms business.',
-      `Wages are hours worked priced at ${config.currencySymbol}${(config.defaultHourCost / 100).toFixed(2)} an hour unless a person carries their own rate.`,
+      wageBasisNote(facts, config),
       'Contribution is revenue less purchases and wages. Rent, power, water and depreciation are in none of these systems.',
       'Breakfast will always look like a loss here: the food is bought for every guest in the house, and only the outside guests pay a fee that any system records. It is a cost of the rooms, and the rooms are the line nothing reports.',
       'Housekeeping, maintenance and admin have no takings of their own by design. They are costs the earning lines carry, not businesses that failed.',
@@ -477,3 +477,39 @@ function shapeFinding(row) {
 }
 
 export { shapeFinding };
+
+/**
+ * How the wage figure on this page was arrived at.
+ *
+ * Worth a sentence rather than a footnote nobody wrote, because "wages are 38%
+ * of takings" means three different things depending on where the money came
+ * from, and until HIVE ran payroll it always meant the weakest of them: hours
+ * multiplied by one property-wide rate, the same for a night porter and a head
+ * chef. A reader had no way to tell that from a measurement.
+ *
+ * So the page says which it is, and — when it is part one and part the other —
+ * how much of the bill is which.
+ */
+export function wageBasisNote(facts, config) {
+  const rows = facts.labour || [];
+  const total = rows.reduce((sum, row) => sum + (row.labour_cost || 0), 0);
+  const guessed = rows
+    .filter((row) => (row.cost_basis || 'default') === 'default')
+    .reduce((sum, row) => sum + (row.labour_cost || 0), 0);
+
+  const fallback = `${config.currencySymbol}${(config.defaultHourCost / 100).toFixed(2)}`;
+
+  if (total === 0) return 'No wage cost is recorded for this period.';
+  if (guessed === 0) {
+    return 'Wages are hours worked priced at each person\u2019s own rate from HIVE, '
+      + 'which is a measurement rather than an estimate. It is not the payroll figure: '
+      + 'a payslip also carries allowances, bonus and the employer\u2019s pension, and is monthly.';
+  }
+  if (guessed >= total) {
+    return `Wages are hours worked priced at ${fallback} an hour for everybody, because nobody `
+      + 'has a rate recorded in HIVE. Set the rates there and this figure stops being a guess.';
+  }
+  const share = Math.round((guessed / total) * 100);
+  return `Wages are hours worked at each person\u2019s own rate from HIVE, except for ${share}% of `
+    + `the bill where nobody has a rate recorded and ${fallback} an hour is assumed.`;
+}

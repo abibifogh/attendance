@@ -155,19 +155,31 @@ export class Register {
       const created = await this.db.prepare('SELECT * FROM dim_person WHERE match_key = ?1').bind(key).first();
       person = created;
       this.people.set(key, person);
-    } else if (employeeNo || department || line) {
+    } else if (employeeNo || department || line || hourCost != null) {
+      // Everything but the rate fills a blank and leaves what is already
+      // there: a department typed one way here and another way there should
+      // not flip on every run.
+      //
+      // The rate is the exception, and has to be. It is the only field that
+      // legitimately changes — somebody gets a rise, and COALESCE would keep
+      // costing them at last year's wage for ever, quietly, with the new
+      // figure sitting unused in HIVE. A null is still ignored, so a source
+      // that does not know a rate cannot erase one that does.
       await run(this.db, `
         UPDATE dim_person
            SET employee_no = COALESCE(employee_no, ?2),
                department  = COALESCE(department,  ?3),
                job_title   = COALESCE(job_title,   ?4),
-               line_id     = COALESCE(line_id,     ?5)
+               line_id     = COALESCE(line_id,     ?5),
+               hour_cost   = COALESCE(?6, hour_cost)
          WHERE id = ?1`,
-        person.id, employeeNo || null, department || null, jobTitle || null, line || null);
+        person.id, employeeNo || null, department || null, jobTitle || null, line || null,
+        hourCost ?? null);
       Object.assign(person, {
         employee_no: person.employee_no || employeeNo || null,
         department: person.department || department || null,
         line_id: person.line_id || line || null,
+        hour_cost: hourCost ?? person.hour_cost,
       });
     }
 

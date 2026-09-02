@@ -175,3 +175,114 @@ test('the run log records what each source did', async () => {
   assert.equal(etl.status, 'ok');
   assert.ok(etl.finished_at, 'a finished run must say when it finished');
 });
+
+/**
+ * Payroll, from HIVE to the warehouse.
+ *
+ * Kept at its own grain and outside the daily window-replace cycle, which is
+ * the part most likely to be got wrong: a payslip belongs to the month it was
+ * run for, and a loader that treated it like everything else would either
+ * delete it on the next daily reload or double it.
+ */
+test('a run loads payslips at their own grain', async () => {
+  const { raw } = await loaded();
+  const slips = raw.prepare('SELECT * FROM fact_payroll').all();
+  assert.ok(slips.length > 0, 'the demonstration runs payroll');
+
+  for (const slip of slips) {
+    assert.match(slip.month, /^\d{4}-\d{2}$/, 'a payslip is a month, not a day');
+    // Every column is pesewas. A cedis figure would be small enough to look
+    // like a plausible daily amount, which is why it is worth asserting.
+    for (const field of ['gross', 'ssf_employee', 'ssf_employer', 'paye', 'net', 'cost']) {
+      assert.ok(Number.isInteger(slip[field]), `${field} is ${slip[field]}`);
+      assert.ok(slip[field] >= 0, `${field} is negative`);
+    }
+    assert.equal(slip.cost, slip.gross + slip.ssf_employer,
+      'employer cost is gross plus the employer\'s pension');
+    assert.ok(slip.net <= slip.gross, 'net cannot exceed gross');
+  }
+});
+
+test('reloading rewrites a month\'s payslips rather than doubling them', async () => {
+  const { raw, env } = await loaded();
+  const before = raw.prepare('SELECT month, person_id, cost FROM fact_payroll ORDER BY month, person_id').all();
+  assert.ok(before.length > 0);
+
+  await runEtl(env, { ...WINDOW, trigger: 'test' });
+  const after = raw.prepare('SELECT month, person_id, cost FROM fact_payroll ORDER BY month, person_id').all();
+
+  assert.deepEqual(after, before, 'a second run must change nothing at all');
+});
+
+test('what people were down to work is stored, not assumed to be eight hours', async () => {
+  const { raw } = await loaded();
+  const shifts = raw.prepare(`
+    SELECT DISTINCT expected_minutes FROM fact_person_day WHERE scheduled = 1`).all();
+  assert.ok(shifts.length > 0);
+  // The old code wrote scheduled_count * 480 into fact_labour and threw the
+  // real figure away. Whatever the roster says now, it comes from the roster.
+  // Aggregated on both sides before comparing. `fact_labour` is keyed by day,
+  // line AND department, so one line can carry several rows; summing the
+  // roster for a whole line and setting it against a single labour row counts
+  // the same people more than once.
+  const labour = raw.prepare(`
+    SELECT day, line_id, SUM(expected_minutes) AS rolled
+      FROM fact_labour GROUP BY day, line_id HAVING rolled > 0 LIMIT 20`).all();
+  assert.ok(labour.length > 0, 'somebody was rostered');
+
+  const roster = raw.prepare(`
+    SELECT day, line_id, SUM(expected_minutes) AS summed
+      FROM fact_person_day GROUP BY day, line_id`).all();
+  const rosterBy = new Map(roster.map((r) => [`${r.day}|${r.line_id}`, r.summed]));
+
+  for (const row of labour) {
+    assert.equal(row.rolled, rosterBy.get(`${row.day}|${row.line_id}`),
+      `${row.day} ${row.line_id}: the roll-up must sum the roster, not invent it`);
+  }
+});
+
+test('a labour cost says which of the three it was built from', async () => {
+  const { raw } = await loaded();
+  const bases = raw.prepare('SELECT DISTINCT cost_basis FROM fact_labour').all().map((r) => r.cost_basis);
+  assert.ok(bases.length > 0);
+  for (const basis of bases) {
+    assert.ok(['payslip', 'rate', 'default'].includes(basis), `unknown basis ${basis}`);
+  }
+  // The demonstration gives everybody a rate, so nothing should be falling
+  // back to the property-wide guess. If this ever fails, the connector has
+  // stopped sending rates and every wage figure has quietly become an
+  // assumption again.
+  assert.ok(!bases.includes('default'),
+    `some labour is still costed at the flat default: ${bases.join(', ')}`);
+});
+
+test('the page says whether the wage bill was measured or assumed', async () => {
+  const { db } = await loaded();
+  const { loadFacts: load } = await import('../src/insight/facts.js');
+  const { wageBasisNote } = await import('../src/routes/panels.js');
+  const config = { currencySymbol: 'GH₵', defaultHourCost: 1200 };
+  const facts = await load(db, WINDOW.from, WINDOW.to);
+
+  // Everybody in the demonstration has a rate, so this must not describe
+  // itself as an estimate.
+  const measured = wageBasisNote(facts, config);
+  assert.match(measured, /own rate/);
+  assert.doesNotMatch(measured, /assumed|guess/);
+  // And it must not overclaim: a rate priced against hours is still not what a
+  // payslip says, and the sentence has to admit that.
+  assert.match(measured, /not the payroll figure/);
+
+  // With nobody's rate known, it says so plainly rather than quietly reporting
+  // a flat figure as though it were measured.
+  const guessed = wageBasisNote(
+    { labour: facts.labour.map((r) => ({ ...r, cost_basis: 'default' })) }, config);
+  assert.match(guessed, /nobody has a rate recorded/);
+  assert.match(guessed, /guess/);
+
+  // And a mixture reports how much of the bill is which, rather than picking
+  // whichever description flatters.
+  const half = facts.labour.map((r, i) => ({ ...r, cost_basis: i % 2 ? 'default' : 'rate' }));
+  assert.match(wageBasisNote({ labour: half }, config), /\d+% of the bill/);
+
+  assert.match(wageBasisNote({ labour: [] }, config), /No wage cost is recorded/);
+});
