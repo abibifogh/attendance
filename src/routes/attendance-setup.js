@@ -9,6 +9,7 @@ import { EARLIEST } from '../lib/tax-tables.js';
 import { ghanaHolidays, toMinutes } from '../lib/attendance.js';
 import { listeningHostSettings } from '../lib/push-events.js';
 import { claimOrphans, hashDeviceToken, recompute } from '../lib/attendance-ingest.js';
+import { settleLeaving } from '../lib/leaving.js';
 import { getPepper } from '../lib/auth.js';
 import { asBytes, fromBase64 } from '../lib/files.js';
 import { addDays, isDay, todayIn } from '../util/dates.js';
@@ -303,13 +304,27 @@ export async function updateStaff(ctx, id) {
   if (onClock) {
     await recompute(ctx.db, { staffIds: [staffId], from: addDays(today, -60), to: today });
   }
+
+  // A LEAVING DATE IS THE WHOLE OF LEAVING. Setting it takes them off the
+  // rota after that day now, and switches off the record, the login and the
+  // phone once the day has passed — at once if it already has, otherwise on
+  // the morning after. Nothing else on this form has to be remembered.
+  let left = null;
+  const leftOn = readDayOrNull(body.leftOn, 'Leaving date');
+  if (leftOn && (leftOn !== existing.left_on || (leftOn < today && existing.active))) {
+    left = await settleLeaving(ctx.db, {
+      staffId, leftOn, today, actor: `${ctx.session.user.name} (${ctx.session.user.role})`,
+    });
+  }
+
   await audit(ctx, 'attendance.staff_update', staffId, {
     employeeNo,
     offRota: existing.on_rota && !onRota ? { cleared } : undefined,
     offClock: existing.on_clock !== 0 && !onClock ? true : undefined,
+    left: left ?? undefined,
   });
 
-  return json({ ok: true, clearedFromRota: cleared, offClock: !onClock });
+  return json({ ok: true, clearedFromRota: cleared, offClock: !onClock, left });
 }
 
 /**

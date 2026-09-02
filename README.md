@@ -3300,6 +3300,12 @@ sign-in are unaffected either way. The protocol is in
   leaving date rather than removing them, or the months you have already
   reported on go with them. The same applies to a shift that has ever been
   worked.
+- **The leaving date is the whole of leaving.** Setting it clears the rota
+  after that day at once. From the day after, the record goes inactive, the
+  login is switched off, their phone stops being told about shifts and the
+  standing pattern is dropped: immediately if the date has passed, otherwise
+  by the nightly run on the morning after. Payroll pays the month they leave
+  in and then stops. Nothing else on the form has to be remembered.
 - **Every decision is attributed.** Confirmations, rota changes, leave decisions
   and changes to what an absence costs all record who did them, and changes to
   costs record the old values beside the new. The audit trail under Users & data

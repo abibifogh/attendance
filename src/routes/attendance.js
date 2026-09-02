@@ -19,6 +19,7 @@ import { getPepper } from '../lib/auth.js';
 import { allows } from '../lib/permissions.js';
 import { createNotice } from '../lib/notices.js';
 import { terminalWarnings } from '../lib/terminal-watch.js';
+import { sweepLeavers } from '../lib/leaving.js';
 import { notifyClockings } from '../lib/clock-alerts.js';
 import { daysBetween, parseDays } from '../lib/signoff.js';
 import { refuseUnsettled } from './signoff.js';
@@ -3838,6 +3839,14 @@ export async function balances(ctx) {
  * morning and everybody would learn to swipe them away.
  */
 export async function dailyTick(db, env, today) {
+  // Anybody whose last day was yesterday or earlier is switched off before
+  // the recompute, so the morning's list is about the people still here.
+  const leavers = await sweepLeavers(db, { today }).catch((err) => {
+    console.error('leavers sweep failed', err);
+    return [];
+  });
+  if (leavers.length) console.log(`Attendance: ${leavers.length} switched off after leaving`);
+
   const from = addDays(today, -3);
   await recompute(db, { from, to: today });
 

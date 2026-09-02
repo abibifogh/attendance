@@ -727,7 +727,9 @@ async function staffTab(reload) {
       ),
       h('div.field-row',
         field('Started', h('input', { type: 'date', name: 'hiredOn', value: existing?.hired_on ?? '' }), 'Leave earns from this date'),
-        field('Left', h('input', { type: 'date', name: 'leftOn', value: existing?.left_on ?? '' }), 'They drop off the rota after this'),
+        field('Left', h('input', { type: 'date', name: 'leftOn', value: existing?.left_on ?? '' }),
+          'Their last day. The rota after it is cleared now; from the day after, their login and '
+          + 'phone alerts stop and they come off the payroll once that month is run'),
       ),
       remember(h('div.field-row',
         field(
@@ -796,7 +798,14 @@ async function staffTab(reload) {
     });
 
     if (done) {
-      if (done.clearedFromRota) {
+      if (done.left) {
+        const l = done.left;
+        const bits = [];
+        if (l.cleared) bits.push(`${l.cleared} shift${l.cleared === 1 ? '' : 's'} after that day taken off the rota`);
+        if (l.gone) bits.push(l.loginOff ? 'their login switched off' : 'their record switched off');
+        else bits.push('their login will be switched off the morning after');
+        toast(`Saved. Leaves on ${l.leftOn}: ${bits.join(', ')}.`, 'good');
+      } else if (done.clearedFromRota) {
         toast(`Saved. ${done.clearedFromRota} shift`
           + `${done.clearedFromRota === 1 ? '' : 's'} from today onwards have been taken off `
           + 'the rota.', 'good');

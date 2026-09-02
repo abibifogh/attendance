@@ -1,5 +1,6 @@
 import { badRequest, csvResponse, int, json, notFound, num, readJson, str } from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
+import { paidInMonth } from '../lib/leaving.js';
 import { balanceOf, dueThisMonth, startsOn, whyNotDue } from '../lib/advances.js';
 import { computeLine, totalsOf } from '../lib/payroll.js';
 import { ratesFrom, round2 } from '../lib/tax.js';
@@ -96,7 +97,7 @@ async function gather(ctx, month, { open = true } = {}) {
   const [staff, profiles, allowances, schemes, members, scores, penalties, severances,
     advances, entries, slips]
     = await Promise.all([
-      ctx.db.prepare('SELECT id, name, department, job_title, employee_no, active FROM att_staff ORDER BY name').all(),
+      ctx.db.prepare('SELECT id, name, department, job_title, employee_no, active, hired_on, left_on FROM att_staff ORDER BY name').all(),
       ctx.db.prepare('SELECT * FROM pay_profile').all(),
       ctx.db.prepare('SELECT * FROM pay_allowance WHERE active = 1').all(),
       ctx.db.prepare(
@@ -234,7 +235,9 @@ function linesFrom(data, month) {
     // Nobody is on the payroll until somebody has said what they are paid.
     // Guessing at a basic salary is the one thing a payroll must never do.
     if (!profile) continue;
-    if (!person.active && !data.slipBy.has(person.id)) continue;
+    // Somebody who has left is paid for the month they left in and then no
+    // more; a slip already made for them stands whatever the date says.
+    if (!paidInMonth(person, month) && !data.slipBy.has(person.id)) continue;
 
     const schemes = (memberOf.get(person.id) ?? []).map((schemeId) => {
       const scheme = schemeById.get(schemeId);
@@ -709,7 +712,7 @@ export async function inputTemplate(ctx) {
 
   const rows = [header];
   for (const person of c.staff) {
-    if (!person.active) continue;
+    if (!paidInMonth(person, month)) continue;
     const profile = c.profiles.get(person.id);
     if (!profile) continue;
 
