@@ -1322,6 +1322,41 @@ being filled, the **pipeline** of everybody in the running, and the **interview
 diary**. Nobody can answer "are we going to fill the housekeeping job" if those
 live on three tabs.
 
+
+### When the terminal goes quiet
+
+Everything on the attendance screens rests on one assumption: that a shift
+with no punch against it is a shift nobody turned up for. That is only true
+while the terminal is being heard. The poller is one script on one machine,
+and the day it stops every rostered person reads as absent, the nightly
+recompute writes that down, and the first anybody hears of it is a payroll
+query a month later.
+
+So every five minutes the app asks two questions. Has the terminal said
+anything in the last hour? And, if not, was anybody due to start in the
+silence who has no punch? Both together are the alarm; either alone is not.
+A terminal that is quiet at three in the morning with nobody on the rota is
+simply quiet, and a quiet Sunday does not ring the bell.
+
+When it is an alarm, everybody who can manage attendance is told, by bell,
+push and email, and a red banner sits above the list on Today until the
+terminal is heard again. The shifts that began inside the silence are held
+on the to-confirm list rather than marked absent, and they stay held after
+the terminal is back, because any punch it lost while it was down is not
+coming. Somebody settles those days from Today, the way any other held day
+is settled, once they know what happened. The person's own report says why
+the day is waiting rather than showing an absence.
+
+The hour is a setting, under Attendance setup, Chasing. Zero switches the
+watch off.
+
+The poller sends an empty batch when it finds nothing, so that "last heard
+from" on the Terminals screen moves every five minutes whether or not
+anybody tapped. A poller from before this change only spoke when it had
+punches to send, so the app would see a quiet night as silence; that is
+harmless, because the second question still has to be answered, but the
+Terminals screen reads better with the newer script.
+
 ### The candidate picks the time
 
 This is the part worth building properly. A time somebody is *told* to attend

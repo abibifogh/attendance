@@ -370,7 +370,8 @@ async function send(events) {
   const url = new URL('/api/att/ingest', CONFIG.appUrl);
   const totals = { received: 0, stored: 0, duplicates: 0, unknown: new Set() };
 
-  for (let i = 0; i < events.length; i += BATCH) {
+  // One trip for an empty batch, otherwise one per two hundred events.
+  for (let i = 0; i === 0 || i < events.length; i += BATCH) {
     const slice = events.slice(i, i + BATCH);
     const response = await fetch(url, {
       method: 'POST',
@@ -447,6 +448,10 @@ async function pass({ from = null, to = null } = {}) {
 
   if (!events.length) {
     debug('nothing in that window');
+    // Tell the app anyway. An empty batch is a heartbeat: it moves the
+    // terminal's "last heard from" without storing anything, and it is how
+    // the app tells a quiet Sunday night from a poller that has stopped.
+    await send([]).catch((err) => warn(`heartbeat not delivered: ${err.message}`));
     writeState({ ...state, lastRunAt: now.toISOString(), lastEventCount: 0 });
     return { events: 0 };
   }

@@ -35,6 +35,7 @@ export async function renderAttToday(params) {
   // the rota holds it on its own.
   const fixesTimes = can('att_times');
   const clocks = clockBanner(data.clockWarnings);
+  const quiet = terminalBanner(data.terminals);
   // Only ever on the day itself, and never allowed to stop the morning list
   // loading. It is a nicety; the rest of this screen is the job.
   const birthdays = day === todayISO() ? await birthdayStrip().catch(() => null) : null;
@@ -104,6 +105,7 @@ export async function renderAttToday(params) {
     mount(host,
       h('div.page-head', h('h1', 'Attendance'), h('div.sub', fmtDay(day, { withYear: true }))),
       nav,
+      quiet,
       clocks,
       birthdays,
       emptyState(
@@ -274,6 +276,20 @@ export async function renderAttToday(params) {
  * would be one more thing to scroll past every morning, and the whole point of
  * this screen is that everything on it needs dealing with.
  */
+function terminalBanner(spells) {
+  if (!spells?.length) return null;
+  return alertList(spells.map((s) => ({
+    level: 'high',
+    title: `${s.device} has gone quiet`,
+    detail: `Nothing has been heard from it since ${s.since.slice(11)} on ${fmtDay(s.since.slice(0, 10))}. `
+      + (s.due === 1
+        ? 'One person was due to start since then and has no punch. '
+        : `${s.due} people were due to start since then and none of them has a punch. `)
+      + 'Until it is back, the shifts that began in the silence are held on the to-confirm list '
+      + 'rather than marked absent. Check the terminal is on and the machine that polls it is running.',
+  })));
+}
+
 function clockBanner(warnings) {
   if (!warnings?.length) return null;
 

@@ -2237,6 +2237,15 @@ async function rulesTab(reload) {
           + 'manage the rota.'),
       ),
 
+      card('If the terminal goes quiet', {},
+        h('label.field', h('span', 'Minutes of silence before it counts as quiet'),
+          h('input', { type: 'number', name: 'att_terminal_quiet_minutes', min: 0, max: 1440, value: s.att_terminal_quiet_minutes ?? 60 })),
+        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+          'When nothing has been heard from a terminal for this long and somebody was due to start, '
+          + 'everybody who can manage attendance is told, and the shifts that began in the silence are '
+          + 'held for a decision instead of being marked absent. Zero switches this off.'),
+      ),
+
       card('What the terminal tells them', { note: 'On their own phone' },
         h('label.field',
           h('span', 'When they clock in and out'),

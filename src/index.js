@@ -11,6 +11,7 @@ import * as att from './routes/attendance.js';
 import * as suggest from './routes/suggest.js';
 import * as mine from './routes/me.js';
 import { watchShifts } from './lib/shift-watch.js';
+import { watchTerminals } from './lib/terminal-watch.js';
 import * as birthday from './routes/birthdays.js';
 import * as attSetup from './routes/attendance-setup.js';
 import * as rotaImport from './routes/rota-import.js';
@@ -779,6 +780,18 @@ export default {
       });
       if (watched.nudged) console.log(`Attendance: ${watched.nudged} told their shift has started`);
       if (watched.reminded) console.log(`Attendance: ${watched.reminded} reminded to clock out`);
+
+      // And whether the terminal is still being heard, which is the one fact
+      // every other line on the attendance screens quietly depends on.
+      const heard = await watchTerminals(env.DB, {
+        timezone,
+        ctx: { env, executionContext },
+      }).catch((err) => {
+        console.error('Terminal watch failed', err);
+        return { quiet: 0, back: 0 };
+      });
+      if (heard.quiet) console.log(`Attendance: ${heard.quiet} terminal(s) quiet`);
+      if (heard.back) console.log(`Attendance: ${heard.back} terminal(s) back`);
 
       if (!nightly) return;
 

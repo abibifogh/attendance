@@ -18,6 +18,7 @@ import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from 
 import { getPepper } from '../lib/auth.js';
 import { allows } from '../lib/permissions.js';
 import { createNotice } from '../lib/notices.js';
+import { terminalWarnings } from '../lib/terminal-watch.js';
 import { notifyClockings } from '../lib/clock-alerts.js';
 import { daysBetween, parseDays } from '../lib/signoff.js';
 import { refuseUnsettled } from './signoff.js';
@@ -598,9 +599,10 @@ export async function day(ctx) {
   const today = todayIn(timezone);
   const target = readDay(ctx.url.searchParams.get('day'), today);
 
-  const [ds, clocks] = await Promise.all([
+  const [ds, clocks, terminals] = await Promise.all([
     loadDataset(ctx.db, { from: addDays(target, -7), to: addDays(target, 1) }),
     clockWarnings(ctx.db),
+    terminalWarnings(ctx.db),
   ]);
   const rows = [];
 
@@ -631,6 +633,9 @@ export async function day(ctx) {
     today,
     totals: summarise(rows, { shifts: ds.shiftById, reasons: ds.reasonBy }),
     clockWarnings: clocks,
+    // Terminals nothing has been heard from. Shown above the list, because
+    // while one is quiet the list below it cannot be trusted.
+    terminals,
     rows,
   });
 }

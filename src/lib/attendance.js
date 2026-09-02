@@ -64,6 +64,13 @@ export function absMinutes(day, time) {
   return diffDays(ANCHOR, day) * 1440 + mins;
 }
 
+/** Absolute minutes from a 'YYYY-MM-DD HH:MM' stamp in the property's own clock. */
+export function absOfStamp(stamp) {
+  const [day, time] = String(stamp ?? '').split(' ');
+  if (!day || !time) return null;
+  return absMinutes(day, time.slice(0, 5));
+}
+
 /** The day and clock time an absolute minute count lands on. */
 export function fromAbs(minutes) {
   const dayOffset = Math.floor(minutes / 1440);
@@ -637,6 +644,15 @@ export function computeDay({
     if (nowAbs != null && window && nowAbs < window.start + (shift.grace_in_minutes ?? 0)) {
       return { ...base, status: 'upcoming', reason_code: null };
     }
+    // Nothing recorded because nothing could be. The terminal was not being
+    // heard when this shift began, so an empty day says nothing about the
+    // person, and it is held for somebody to settle rather than written down
+    // as an absence that the payroll would then believe.
+    if (policy.terminalQuiet) {
+      return {
+        ...base, status: 'missing_in', reason_code: 'incomplete', resolution: 'open', held: 'terminal',
+      };
+    }
     return { ...base, status: 'absent', reason_code: 'absent' };
   }
 
@@ -868,6 +884,7 @@ export function labelFor(record, reasons) {
         : record.reason_code === 'absent' ? 'Absent (no clock-out)' : 'No clock-out — to check';
     case 'missing_in':
       if (record.resolution === 'auto') return 'No clock-in — shift credited';
+      if (record.held === 'terminal') return 'Terminal was quiet, to check';
       return record.reason_code === 'absent' ? 'Absent (no clock-in)' : 'No clock-in — to check';
     case 'absent': return reason?.label ?? 'Absent';
     case 'leave': return reason?.label ?? 'Leave';
@@ -899,6 +916,12 @@ export function noteFor(record, { shift = null, streak = 0, weekCount = 0, reaso
   const start = shift ? shift.starts_at : null;
   const end = shift ? shift.ends_at : null;
   const again = repetition(streak, weekCount);
+
+  if (record.held === 'terminal') {
+    return 'Nothing was recorded for you, but nothing was recorded for anybody: the terminal was '
+      + 'not being heard when your shift began. This day is waiting for somebody to say what '
+      + 'happened, and it is not counted as an absence.';
+  }
 
   switch (record.status) {
     case 'present': {
@@ -1733,7 +1756,7 @@ export function withObservedDays(holidays) {
  * all.
  */
 export async function loadDataset(db, { from, to, now } = {}) {
-  const [staff, shifts, patterns, roster, punches, days, reasons, holidays, leave, settings, calendars] = await Promise.all([
+  const [staff, shifts, patterns, roster, punches, days, reasons, holidays, leave, settings, calendars, quiet] = await Promise.all([
     db.prepare('SELECT * FROM att_staff ORDER BY name').all(),
     db.prepare('SELECT * FROM att_shifts ORDER BY sort_order, name').all(),
     db.prepare('SELECT * FROM att_patterns').all(),
@@ -1757,6 +1780,16 @@ export async function loadDataset(db, { from, to, now } = {}) {
     // all for a property that has never varied one — so it is read whole
     // rather than windowed.
     db.prepare('SELECT staff_id, month, days FROM att_calendar').all().catch(() => ({ results: [] })),
+    // The stretches when nothing was heard from a terminal. Read for every
+    // terminal, active or not: one retired last month was still the one that
+    // was quiet on the 14th. Missing on a database not yet upgraded, which
+    // simply means no day is ever held.
+    from
+      ? db.prepare(
+        `SELECT device_id, from_at, to_at FROM att_device_quiet
+          WHERE from_at <= ?2 AND (to_at IS NULL OR to_at >= ?1)`,
+      ).bind(`${addDays(from, -1)} 00:00`, `${addDays(to, 1)} 23:59`).all().catch(() => ({ results: [] }))
+      : db.prepare('SELECT device_id, from_at, to_at FROM att_device_quiet').all().catch(() => ({ results: [] })),
   ]);
 
   return makeDataset({
@@ -1772,6 +1805,7 @@ export async function loadDataset(db, { from, to, now } = {}) {
     leave: leave.results ?? [],
     settings: settings.results ?? [],
     calendars: calendars.results ?? [],
+    quiet: quiet.results ?? [],
   });
 }
 
@@ -1893,6 +1927,13 @@ export function makeDataset(raw) {
     // than left to each caller to remember. A caller that wants time frozen
     // still passes its own.
     now: raw.now === undefined ? nowIn(settings.timezone || 'UTC') : raw.now,
+    // When a terminal was not being heard, as absolute minutes, so a shift
+    // can ask whether its start fell inside a silence. `to` is null while
+    // the silence is still going on.
+    quiet: (raw.quiet ?? []).map((q) => ({
+      from: absOfStamp(q.from_at),
+      to: q.to_at ? absOfStamp(q.to_at) : null,
+    })).filter((q) => q.from != null),
     staff,
     shifts,
     reasons: raw.reasons ?? [],
@@ -1917,6 +1958,21 @@ export function makeDataset(raw) {
       escalateAfter: Number(settings.att_escalate_after ?? 3),
     },
   };
+}
+
+/**
+ * Did a terminal fall silent around the time this shift was due to begin?
+ *
+ * The stretch that matters is the one an arrival punch would land in: from
+ * as early as the property accepts a clock-in, to the grace period and half
+ * an hour past the start. A terminal that died at two in the afternoon says
+ * nothing about a shift that began at six and had no punch by seven.
+ */
+function quietAtStart(ds, window) {
+  if (!window || !ds.quiet?.length) return false;
+  const earliest = window.start - (ds.policy?.windowBefore ?? 180);
+  const latest = window.start + (window.shift?.grace_in_minutes ?? 0) + 30;
+  return ds.quiet.some((q) => q.from <= latest && (q.to == null || q.to >= earliest));
 }
 
 /**
@@ -2006,7 +2062,7 @@ export function computeRange(ds, staffId, from, to) {
             corrected_out: existing.corrected_out ?? null,
           }
           : null,
-      policy: { ...ds.policy, nowAbs },
+      policy: { ...ds.policy, nowAbs, terminalQuiet: quietAtStart(ds, window) },
     });
 
     out.push({

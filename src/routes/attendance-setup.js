@@ -1064,6 +1064,10 @@ const SETTINGS = new Map([
   // answer twice a month.
   ['att_report_holidays', (v) => (v === '0' || v === 'false' ? '0' : '1')],
 
+  // How long a terminal may say nothing before the property is told. Zero
+  // switches the watch off.
+  ['att_terminal_quiet_minutes', (v) => String(int(v, 'Minutes before a terminal counts as quiet', { min: 0, max: 1440 }))],
+
   // What this property considers a sustainable rota. The first four are
   // Act 651 and are seeded at the statutory figure; a property may tighten
   // them, and the app cites the section wherever it reports one. The rest are
