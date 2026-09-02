@@ -184,7 +184,7 @@ export async function renderAttPayroll(params) {
               'Download slips')
             : null,
           h('button.btn-sm', { onclick: () => openReturns(month) },
-            'Journal and PAYE'),
+            'Journal, PAYE and SSNIT'),
           closed ? null : importButton(month, reload),
           closed
             ? null
@@ -871,7 +871,7 @@ async function openReturns(month) {
   });
   shade.append(h('div.preview-wrap.preview-wide',
     h('div.preview-bar',
-      h('strong', 'Journal and PAYE schedule'),
+      h('strong', 'Journal, PAYE schedule and SSNIT return'),
       h('span.muted', `${niceMonth(month)} · ${data.status === 'final' ? 'closed' : 'draft'}`),
       h('div.btn-row',
         dropdownMenu({

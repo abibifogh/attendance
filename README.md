@@ -2043,6 +2043,19 @@ written without a library, because a Worker has no zip in it and an .xlsx is a
 zip of XML; the parts go in uncompressed, which every spreadsheet program
 opens.
 
+### The SSNIT return, beside the PAYE one
+
+The same button that makes the journal and the GRA schedule now makes the
+SSNIT monthly contribution report as well: a fourth sheet in the workbook,
+headed with the employer's name, SSNIT employer number and TIN from
+**Setup → Company**, and one row per contributing member with their SSNIT
+number, basic, the worker's 5.5%, the employer's 13%, the 18.5% together,
+and the tier 1 and tier 2 split it is paid as. Somebody not contributing is
+left off rather than shown at nought, because the return is a list of
+members. The same table is on the Journal, PAYE schedule and SSNIT return
+screen, and anybody contributing with no SSNIT number on their record is
+named under "Missing before this can be filed".
+
 ### The net pays on their own, for the bank
 
 Nobody pays forty people by standing at a counter forty times. The bank takes

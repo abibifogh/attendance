@@ -91,6 +91,31 @@ export function returnsSheet(data, niceMonth) {
           + 'The rates as set do not add up, so somebody has to say where it goes.')
         : null),
 
+    // ---- the SSNIT return -----------------------------------------------
+    data.ssnit
+      ? h('section.returns-block',
+        h('h2', 'SSNIT contribution return'),
+        h('p.muted',
+          `${data.ssnit.members} contributing ${data.ssnit.members === 1 ? 'member' : 'members'}, `
+          + `in ${data.currency}. Who contributed, on what basic, and how the 18.5% splits `
+          + 'between SSNIT and the trustee. Somebody not contributing is left off rather than '
+          + 'shown at nought: the return is a list of members.'),
+        h('div.table-wrap',
+          h('table.returns-table.returns-paye',
+            h('thead', h('tr', data.ssnit.columns.map((c) => h(c.money ? 'th.num' : 'th', c.label)))),
+            h('tbody',
+              data.ssnit.rows.map((row) => h('tr', data.ssnit.columns.map((c) => h(
+                c.money ? 'td.num' : 'td',
+                c.money ? figure(row[c.key]) : String(row[c.key] ?? ''),
+              )))),
+              h('tr.returns-total', data.ssnit.columns.map((c, i) => {
+                if (i === 0) return h('td', h('strong', 'Totals'));
+                return c.money
+                  ? h('td.num', h('strong', figure(data.ssnit.totals[c.key])))
+                  : h('td', '');
+              }))))))
+      : null,
+
     // ---- the PAYE schedule ----------------------------------------------
     h('section.returns-block',
       h('h2', 'PAYE schedule'),

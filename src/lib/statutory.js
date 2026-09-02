@@ -323,3 +323,65 @@ export function payeSchedule({ lines = [], people = new Map() }) {
   for (const key of PAYE_TOTALLED) totals[key] = add(key);
   return { rows, totals };
 }
+
+/**
+ * The SSNIT contribution return, one row per contributing worker.
+ *
+ * The GRA schedule says what tax was withheld; this says what pension was
+ * deducted and what the property owes on top, which is the other return a
+ * payroll has to file every month. Somebody not contributing is left off it
+ * rather than shown at nought: the return is a list of members.
+ *
+ * The 18.5% is one deduction paid two ways, and the form is read tier by
+ * tier, so both splits are on every row: what came from whom, and where it
+ * goes.
+ */
+export const SSNIT_COLUMNS = [
+  { key: 'no', label: 'No.', width: 5 },
+  { key: 'ssnitNumber', label: 'SSNIT number', text: true, width: 16 },
+  { key: 'name', label: 'Name of worker', width: 28 },
+  { key: 'basic', label: 'Basic salary', money: true, width: 13 },
+  { key: 'employee', label: 'Worker 5.5%', money: true, width: 12 },
+  { key: 'employer', label: 'Employer 13%', money: true, width: 12 },
+  { key: 'total', label: 'Total 18.5%', money: true, width: 12 },
+  { key: 'tier1', label: 'Tier 1 to SSNIT 13.5%', money: true, width: 14 },
+  { key: 'tier2', label: 'Tier 2 to trustee 5%', money: true, width: 14 },
+];
+
+export function ssnitSchedule({ lines = [], people = new Map(), rates, tiers = TIERS } = {}) {
+  const contributing = lines.filter((line) => line.ssnit?.qualifies);
+  const rows = contributing.map((line, i) => {
+    const record = people.get(Number(line.staff?.id)) ?? {};
+    const employee = round2(line.ssnit?.employee ?? 0);
+    const employer = round2(line.ssnit?.employer ?? 0);
+    return {
+      no: i + 1,
+      ssnitNumber: record.ssnit_number || '',
+      name: line.staff?.name ?? '',
+      basic: round2(line.basic),
+      employee,
+      employer,
+      total: round2(employee + employer),
+      tier1: round2(line.ssnit?.tier1 ?? 0),
+      tier2: round2(line.ssnit?.tier2 ?? 0),
+    };
+  });
+  const totals = {};
+  for (const c of SSNIT_COLUMNS) {
+    if (c.money) totals[c.key] = round2(rows.reduce((n, r) => n + (Number(r[c.key]) || 0), 0));
+  }
+  // The percentages as they stood, so the sheet's headings can say what was
+  // actually applied rather than what the law says this year.
+  const pct = (n) => `${Math.round((Number(n) || 0) * 10000) / 100}%`;
+  const labels = rates
+    ? {
+      employee: `Worker ${pct(rates.ssnitEmployee)}`,
+      employer: `Employer ${pct(rates.ssnitEmployer)}`,
+      total: `Total ${pct((rates.ssnitEmployee ?? 0) + (rates.ssnitEmployer ?? 0))}`,
+      tier1: `Tier 1 to SSNIT ${pct(tiers.tier1)}`,
+      tier2: `Tier 2 to trustee ${pct(tiers.tier2)}`,
+    }
+    : {};
+  const columns = SSNIT_COLUMNS.map((c) => (labels[c.key] ? { ...c, label: labels[c.key] } : c));
+  return { rows, totals, columns, members: rows.length };
+}

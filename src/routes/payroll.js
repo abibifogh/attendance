@@ -7,7 +7,7 @@ import {
 } from '../lib/payroll.js';
 import { ratesFrom, round2 } from '../lib/tax.js';
 import {
-  PAYE_COLUMNS, POSITIONS, RESIDENCIES, journalFor, payeSchedule, tiersFrom,
+  PAYE_COLUMNS, POSITIONS, RESIDENCIES, journalFor, payeSchedule, ssnitSchedule, tiersFrom,
 } from '../lib/statutory.js';
 import { ratesOn } from '../lib/tax-tables.js';
 import { readSheet, tallyOf } from '../lib/pay-import.js';
@@ -993,6 +993,7 @@ async function monthReturn(ctx) {
   const totals = totalsOf(lines);
   const journal = journalFor({ lines, totals, rates: data.rates, tiers: data.tiers });
   const schedule = payeSchedule({ lines, people });
+  const ssnit = ssnitSchedule({ lines, people, rates: data.rates, tiers: data.tiers });
 
   const missing = schedule.rows.filter((row) => !row.tin || !row.ssnitNumber)
     .map((row) => ({
@@ -1000,12 +1001,12 @@ async function monthReturn(ctx) {
       wants: [!row.tin ? 'TIN' : null, !row.ssnitNumber ? 'SSNIT number' : null].filter(Boolean),
     }));
 
-  return { month, data, lines, totals, journal, schedule, missing };
+  return { month, data, lines, totals, journal, schedule, ssnit, missing };
 }
 
 /** The month's journal and PAYE schedule, for the screen. */
 export async function returns(ctx) {
-  const { month, data, totals, journal, schedule, missing } = await monthReturn(ctx);
+  const { month, data, totals, journal, schedule, ssnit, missing } = await monthReturn(ctx);
   return json({
     month,
     currency: data.currency,
@@ -1023,6 +1024,9 @@ export async function returns(ctx) {
     // screen: a return with two lists of headings drifts apart.
     columns: PAYE_COLUMNS,
     schedule,
+    // The pension return beside the tax one: who contributed, how much, and
+    // how it splits between SSNIT and the trustee.
+    ssnit,
     // Named rather than counted: whoever files the return has to go and get
     // these, and a number does not tell them whose record to open.
     missing,
@@ -1039,10 +1043,11 @@ export async function returns(ctx) {
  * meant to be filed as it comes out, not rearranged first.
  */
 export async function exportBook(ctx) {
-  const { month, data, lines, totals, journal, schedule } = await monthReturn(ctx);
+  const { month, data, lines, totals, journal, schedule, ssnit } = await monthReturn(ctx);
   const map = (await settingsOf(ctx.db)).settings ?? {};
   const employer = map.company_legal_name || data.property || '';
   const employerTin = map.company_tin || '';
+  const employerSsnit = map.company_ssnit || '';
   // The form wants the month as MM/YYYY, and a form headed the wrong month is
   // the one mistake on it nobody notices until the assessment arrives.
   const [year, mm] = String(month).split('-');
@@ -1172,7 +1177,39 @@ export async function exportBook(ctx) {
     rows,
   };
 
-  const bytes = workbook([payroll, journalSheet, scheduleSheet]);
+  // ---- the SSNIT return --------------------------------------------------
+  const scols = ssnit.columns;
+  const ssnitSheet = {
+    name: 'SSNIT return',
+    freeze: 8,
+    widths: scols.map((c) => c.width ?? 13),
+    merges: [`A1:${colName(scols.length - 1)}1`],
+    rows: [
+      [{ v: 'SOCIAL SECURITY AND NATIONAL INSURANCE TRUST', s: S.title }],
+      [{ v: 'MONTHLY CONTRIBUTION REPORT', s: S.bold }],
+      [],
+      [{ v: 'NAME OF EMPLOYER', s: S.bold }, '', { v: employer, s: S.bold }],
+      [{ v: 'EMPLOYER SSNIT NUMBER', s: S.bold }, '', { v: employerSsnit, s: S.bold, text: true },
+        '', { v: 'TIN', s: S.bold }, { v: employerTin, s: S.bold, text: true }],
+      [{ v: 'FOR THE MONTH OF', s: S.bold }, '', { v: asFiled, s: S.bold, text: true },
+        '', { v: 'MEMBERS', s: S.bold }, ssnit.members],
+      [],
+      scols.map((c) => head(c.label)),
+      ...ssnit.rows.map((row) => scols.map((c) => {
+        const value = row[c.key];
+        if (c.money) return money(value);
+        if (c.text) return { v: value ?? '', text: true };
+        return value ?? '';
+      })),
+      scols.map((c, i) => {
+        if (i === 0) return { v: 'TOTALS', s: S.total };
+        if (!c.money) return { v: '', s: S.total };
+        return totalMoney(ssnit.totals[c.key]);
+      }),
+    ],
+  };
+
+  const bytes = workbook([payroll, journalSheet, scheduleSheet, ssnitSheet]);
   const name = `${(employer || 'Payroll').replace(/[^A-Za-z0-9]+/g, '-')}-payroll-${month}.xlsx`;
   return new Response(bytes, {
     headers: {
