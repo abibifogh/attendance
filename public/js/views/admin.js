@@ -834,6 +834,15 @@ async function dataTab(reload) {
   await summarise();
 
   return h('div',
+    card('A copy of everything', { note: 'Keep one somewhere the property controls', wide: true },
+      h('p.muted',
+        'Every table as a spreadsheet file and every stored document, contract, CV and logo as the '
+        + 'file it is, in one zip. It can be opened without this app, which is what a copy is for. '
+        + 'Payroll, contracts and four years of attendance live in one database; this is the other '
+        + 'copy. Take one before anything big, and one a month regardless.'),
+      h('a.btn.btn-primary', { href: api.dataBackupUrl(), download: '' }, 'Download a copy of everything'),
+    ),
+
     card('Erase recorded attendance', {
       note: 'For clearing a trial run before going live',
       wide: true,

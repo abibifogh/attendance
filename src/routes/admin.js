@@ -1,4 +1,5 @@
 import { originOf } from '../lib/site.js';
+import { backupZip } from '../lib/backup.js';
 import { badRequest, bool, json, notFound, readJson, str } from '../lib/http.js';
 import {
   getPepper, hashPin, isReservedPin, normaliseEmail, pinDigitsFor, pinLooksRight, pinRuleFor, storedPassword,
@@ -571,6 +572,32 @@ const CONFIRM_PHRASE = 'ERASE';
  * Counted from the same columns the delete uses, so it cannot promise one thing
  * and do another.
  */
+/**
+ * A copy of everything, as a zip of CSVs and files.
+ *
+ * Administrators only, and recorded: a whole-database copy leaving the
+ * building is worth a line in the audit log even when it is the owner
+ * taking it.
+ */
+export async function backup(ctx) {
+  const property = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'property_name'").first()
+    .catch(() => null))?.value ?? '';
+  const now = new Date();
+  const { bytes, manifest } = await backupZip(ctx.db, { now: now.toISOString(), property });
+  await ctx.db.prepare('INSERT INTO audit_log (actor, action, entity, detail) VALUES (?, ?, ?, ?)')
+    .bind(`${ctx.session.user.name} (${ctx.session.user.role})`, 'data.backup', 'all',
+      JSON.stringify({ tables: Object.keys(manifest.tables).length, files: manifest.files, bytes: bytes.length }))
+    .run().catch(() => {});
+  const stamp = now.toISOString().slice(0, 16).replace('T', '-').replace(':', '');
+  return new Response(bytes, {
+    headers: {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="hive-backup-${stamp}.zip"`,
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
 export async function dataSummary(ctx) {
   const from = ctx.url.searchParams.get('from');
   const to = ctx.url.searchParams.get('to');

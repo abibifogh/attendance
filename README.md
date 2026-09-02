@@ -2989,6 +2989,22 @@ The rule is checked wherever a PIN is set: adding a login, and My account.
 PINs set before this rule stood are still accepted; the next change has to
 meet it.
 
+### A copy of everything
+
+Payroll, contracts, signatures and every month of attendance live in one
+database, and nothing else holds a copy. **Users & data → Data → Download a
+copy of everything** makes one: a zip with every table as a CSV, named as in
+the database with the column names on the first row, and every stored
+document, contract, CV and logo as the file it is, with the row that owns it
+pointing at the path. It opens without this app, which is the point of a
+copy. Take one before anything big, and one a month regardless. Taking one is
+recorded in the audit log.
+
+For a copy nobody has to remember, bind a bucket: `wrangler r2 bucket create
+hive-backups`, uncomment the `[[r2_buckets]]` block in `wrangler.toml`, and
+deploy. The nightly run then writes one zip a day under `hive/` and keeps the
+last thirty.
+
 ### 7. The terminal
 
 **On the terminal itself.** Give it a fixed address on your network, set its

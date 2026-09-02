@@ -13,6 +13,7 @@ import * as suggest from './routes/suggest.js';
 import * as mine from './routes/me.js';
 import { watchShifts } from './lib/shift-watch.js';
 import { watchTerminals } from './lib/terminal-watch.js';
+import { nightlyCopy } from './lib/backup.js';
 import * as birthday from './routes/birthdays.js';
 import * as attSetup from './routes/attendance-setup.js';
 import * as rotaImport from './routes/rota-import.js';
@@ -563,6 +564,7 @@ export const ROUTES = [
   ['POST', '/api/notifications/test', 'users', admin.testNotification],
   ['POST', '/api/notifications/test-text', 'users', admin.testText],
 
+  ['GET', '/api/data/backup', 'users', admin.backup],
   ['GET', '/api/data/summary', 'users', admin.dataSummary],
   ['POST', '/api/data/erase', 'users', admin.eraseData],
   ['GET', '/api/audit', 'users', admin.auditTrail],
@@ -795,6 +797,16 @@ export default {
       if (heard.back) console.log(`Attendance: ${heard.back} terminal(s) back`);
 
       if (!nightly) return;
+
+      // A copy of everything to the bucket, when one is bound. First, so a
+      // fault further down the morning cannot cost the night's copy.
+      if (env.BACKUPS) {
+        const property = (await env.DB.prepare("SELECT value FROM settings WHERE key = 'property_name'")
+          .first().catch(() => null))?.value ?? '';
+        const copied = await nightlyCopy(env.DB, env.BACKUPS, { today: todayIn(timezone), property })
+          .catch((err) => { console.error('Backup failed', err); return null; });
+        if (copied?.written) console.log(`Backup: ${copied.key}, ${copied.bytes} bytes, ${copied.dropped} old copies dropped`);
+      }
 
       const result = await att.dailyTick(env.DB, env, todayIn(timezone));
       if (result.open || result.absent) {

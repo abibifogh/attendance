@@ -36,6 +36,13 @@ database_name = "attendance"
 # Filled in by `npm run db:create` — see the README.
 database_id = "1df34f21-bfc6-43dc-b11a-1a57d7f691b0"
 
+# A nightly copy of everything, kept for thirty days. Optional: without this
+# block the copy is only ever the one you download from Users & data. To turn
+# it on, `wrangler r2 bucket create hive-backups` and uncomment.
+# [[r2_buckets]]
+# binding = "BACKUPS"
+# bucket_name = "hive-backups"
+
 [vars]
 # Nothing secret lives here. SESSION_SECRET, MANAGER_PIN and RESEND_API_KEY are
 # Worker secrets, set with `wrangler secret put`.

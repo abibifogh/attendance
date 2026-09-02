@@ -184,7 +184,7 @@ ${list.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxm
 }
 
 /** The parts, stored rather than deflated, in one archive. */
-function zip(parts) {
+export function zip(parts) {
   const chunks = [];
   const central = [];
   let offset = 0;
