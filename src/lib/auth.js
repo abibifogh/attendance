@@ -405,31 +405,122 @@ export async function constantTimeEqual(a, b) {
   return diff === 0;
 }
 
-// Best-effort brute-force brake. Workers isolates are ephemeral and there may
-// be several, so this slows an attacker down rather than stopping them.
-const attempts = new Map();
-const WINDOW_MS = 10 * 60 * 1000;
-const MAX_ATTEMPTS = 10;
+// ---------------------------------------------------------------------------
+// The brake on guessing
+// ---------------------------------------------------------------------------
+//
+// Login is by PIN alone, and a PIN is a handful of digits: with twenty-odd
+// accounts on four-digit PINs, one guess in four hundred lands in somebody's
+// account. So wrong tries are counted, and the count lives in the database
+// rather than in the memory of whichever isolate took the request — Workers
+// run many of those, each starting from nothing, and a guesser spread across
+// them was never really slowed by a counter that kept resetting.
+//
+// Two counters. One per address, which is the ordinary case: a phone with a
+// mistyped PIN gets ten tries in ten minutes and then a wait. And one for the
+// property as a whole, for a guesser coming from everywhere at once: past two
+// hundred wrong tries in ten minutes the PIN keypad closes for everybody until
+// the window passes. The email-and-password door stays open through that,
+// because a stretched password is not guessable at that rate and an
+// administrator locked out during an attack is exactly the person needed.
+//
+// A database that has not been upgraded yet has no table for this; the brake
+// simply does not bite until it has, rather than nobody being able to sign in.
 
-export function throttleCheck(ip) {
-  const now = Date.now();
-  const rec = attempts.get(ip);
-  if (!rec || now - rec.first > WINDOW_MS) {
-    attempts.set(ip, { first: now, count: 0 });
-    return { allowed: true };
+export const THROTTLE_WINDOW_SECONDS = 10 * 60;
+export const THROTTLE_MAX_PER_ADDRESS = 10;
+export const THROTTLE_MAX_FOR_EVERYBODY = 200;
+const EVERYBODY = 'all';
+
+const seconds = () => Math.floor(Date.now() / 1000);
+
+async function attemptsFor(db, key) {
+  try {
+    return await db.prepare('SELECT first_at, count FROM login_attempts WHERE key = ?').bind(key).first();
+  } catch (err) {
+    if (isMissingTable(err)) return null;
+    throw err;
   }
-  if (rec.count >= MAX_ATTEMPTS) {
-    return { allowed: false, retryAfter: Math.ceil((rec.first + WINDOW_MS - now) / 1000) };
+}
+
+function standing(row, limit, now) {
+  if (!row || now - Number(row.first_at) > THROTTLE_WINDOW_SECONDS) return { allowed: true };
+  if (Number(row.count) >= limit) {
+    return { allowed: false, retryAfter: Math.max(1, Number(row.first_at) + THROTTLE_WINDOW_SECONDS - now) };
   }
   return { allowed: true };
 }
 
-export function throttleFail(ip) {
-  const rec = attempts.get(ip);
-  if (rec) rec.count += 1;
-  if (attempts.size > 5000) attempts.clear();
+/**
+ * May this address try to sign in right now?
+ *
+ * `pin` says whether it is the keypad asking. The property-wide brake only
+ * closes the keypad; see above for why the password door stays open.
+ */
+export async function throttleCheck(db, ip, { pin = true } = {}) {
+  const now = seconds();
+  const mine = standing(await attemptsFor(db, `ip:${ip}`), THROTTLE_MAX_PER_ADDRESS, now);
+  if (!mine.allowed) return { ...mine, scope: 'address' };
+  if (!pin) return { allowed: true };
+  const all = standing(await attemptsFor(db, EVERYBODY), THROTTLE_MAX_FOR_EVERYBODY, now);
+  if (!all.allowed) return { ...all, scope: 'everybody' };
+  return { allowed: true };
 }
 
-export function throttleReset(ip) {
-  attempts.delete(ip);
+/**
+ * A wrong try, counted against the address and, for the keypad, against
+ * everybody. The code on a self-service link is guarded by the same brake
+ * with `everybody: false`: a guesser working on one candidate's link should
+ * not be able to close the staff entrance keypad for the whole property.
+ */
+export async function throttleFail(db, ip, { everybody = true } = {}) {
+  const now = seconds();
+  const bump = (key) => db.prepare(
+    `INSERT INTO login_attempts (key, first_at, count) VALUES (?1, ?2, 1)
+     ON CONFLICT (key) DO UPDATE SET
+       count = CASE WHEN ?2 - login_attempts.first_at > ?3 THEN 1 ELSE login_attempts.count + 1 END,
+       first_at = CASE WHEN ?2 - login_attempts.first_at > ?3 THEN ?2 ELSE login_attempts.first_at END`,
+  ).bind(key, now, THROTTLE_WINDOW_SECONDS);
+  try {
+    await db.batch([
+      bump(`ip:${ip}`),
+      ...(everybody ? [bump(EVERYBODY)] : []),
+      // Sweep what the window has already forgiven, so the table only ever
+      // holds the last ten minutes.
+      db.prepare('DELETE FROM login_attempts WHERE first_at < ?').bind(now - THROTTLE_WINDOW_SECONDS),
+    ]);
+  } catch (err) {
+    if (!isMissingTable(err)) throw err;
+  }
+}
+
+/** A right try clears the address. The property-wide count stands. */
+export async function throttleReset(db, ip) {
+  try {
+    await db.prepare('DELETE FROM login_attempts WHERE key = ?').bind(`ip:${ip}`).run();
+  } catch (err) {
+    if (!isMissingTable(err)) throw err;
+  }
+}
+
+/**
+ * How many digits a PIN has to be.
+ *
+ * A member of staff holds their own shifts and nothing else, and types it on
+ * a wet tablet with one hand: four is enough. Anybody who can see other
+ * people's days, money or records is worth a hundred times more to a
+ * guesser, so six. The rule is stated here once and read wherever a PIN is
+ * set, so the form, the API and the account screen cannot disagree.
+ */
+export function pinDigitsFor(role) {
+  return role === 'staff' ? 4 : 6;
+}
+
+export function pinRuleFor(role) {
+  return `The PIN must be ${pinDigitsFor(role)} to 10 digits`;
+}
+
+export function pinLooksRight(pin, role) {
+  const text = String(pin ?? '');
+  return /^\d{4,10}$/.test(text) && text.length >= pinDigitsFor(role);
 }

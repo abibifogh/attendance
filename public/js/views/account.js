@@ -41,7 +41,7 @@ export function openAccountDialog({
   const next = h('input', {
     type: 'password',
     inputmode: usesPassword ? 'text' : 'numeric',
-    placeholder: usesPassword ? 'New password (10+ characters)' : 'New PIN (4 to 10 digits)',
+    placeholder: usesPassword ? 'New password (10+ characters)' : `New PIN (${role === 'staff' ? 4 : 6} to 10 digits)`,
     autocomplete: 'new-password',
   });
   const confirm = h('input', {
@@ -101,7 +101,7 @@ export function openAccountDialog({
     const now = h('input', { type: 'password', placeholder: 'Your password', autocomplete: 'current-password' });
     const wanted = h('input', {
       type: 'password', inputmode: 'numeric', maxlength: 10,
-      placeholder: hasPin ? 'New PIN (4 to 10 digits)' : '4 to 10 digits',
+      placeholder: hasPin ? `New PIN (${role === 'staff' ? 4 : 6} to 10 digits)` : '6 to 10 digits',
       autocomplete: 'new-password',
     });
     const problem = h('p.muted', { style: { minHeight: '1.2rem', fontSize: '.85rem' } });
@@ -118,7 +118,7 @@ export function openAccountDialog({
         ? 'You have one. The keypad on the sign-in screen will take it.'
         : 'You do not have one yet. The sign-in screen will only take your email address and '
           + 'password.';
-      wanted.placeholder = mine ? 'New PIN (4 to 10 digits)' : '4 to 10 digits';
+      wanted.placeholder = mine ? `New PIN (${role === 'staff' ? 4 : 6} to 10 digits)` : '6 to 10 digits';
       drop.style.display = mine ? '' : 'none';
       setIt.textContent = mine ? 'Change the PIN' : 'Set a PIN';
     };

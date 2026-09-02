@@ -97,7 +97,7 @@ export async function inviteOpen(ctx, token) {
 
   if (invite.pin_hash) {
     const ip = ipOf(ctx);
-    const gate = throttleCheck(`hr:${ip}`);
+    const gate = await throttleCheck(ctx.db, `hr:${ip}`, { pin: false });
     if (!gate.allowed) {
       throw forbidden(`Too many tries. Wait ${Math.ceil(gate.retryAfter / 60)} minutes and try again.`);
     }
@@ -105,7 +105,7 @@ export async function inviteOpen(ctx, token) {
     const given = String(body.pin ?? '').replace(/\D/g, '');
     const pepper = await getPepper(ctx.db);
     if (!given || await hashInvitePin(given, pepper) !== invite.pin_hash) {
-      throttleFail(`hr:${ip}`);
+      await throttleFail(ctx.db, `hr:${ip}`, { everybody: false });
       await logEvent(ctx, invite, 'link_pin_failed');
       throw forbidden('That code is not right. It is the four digits you were told.');
     }

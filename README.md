@@ -2971,6 +2971,24 @@ accounts yet, so that is the only way in.
 a real password. Sign out, sign back in as yourself, and put the emergency PIN
 in a drawer.
 
+### Wrong PINs are counted
+
+Login is by PIN alone, and a PIN is a handful of digits, so wrong tries are
+counted and the count lives in the database rather than in the memory of
+whichever machine took the request. Ten wrong tries from one address in ten
+minutes and that address waits out the window; a right PIN clears it. Past
+two hundred wrong tries in ten minutes from everywhere put together, the PIN
+keypad closes for everybody until the window passes. The email-and-password
+door stays open through that, on purpose: a stretched password is not
+guessable at that rate, and an administrator locked out during an attack is
+exactly the person you need.
+
+A member of staff, who holds only their own shifts, may have a four-digit
+PIN. Anybody who can see other people's days, records or money needs six.
+The rule is checked wherever a PIN is set: adding a login, and My account.
+PINs set before this rule stood are still accepted; the next change has to
+meet it.
+
 ### 7. The terminal
 
 **On the terminal itself.** Give it a fixed address on your network, set its

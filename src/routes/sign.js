@@ -108,7 +108,7 @@ export async function signOpen(ctx, token) {
 
   if (recipient.code_hash) {
     const ip = ipOf(ctx);
-    const gate = throttleCheck(`corr:${ip}`);
+    const gate = await throttleCheck(ctx.db, `corr:${ip}`, { pin: false });
     if (!gate.allowed) {
       throw forbidden(`Too many tries. Wait ${Math.ceil(gate.retryAfter / 60)} minutes.`);
     }
@@ -116,7 +116,7 @@ export async function signOpen(ctx, token) {
     const given = String(body.code ?? '').trim().toUpperCase();
     const pepper = await getPepper(ctx.db);
     if (!given || await hashAccessCode(given, pepper) !== recipient.code_hash) {
-      throttleFail(`corr:${ip}`);
+      await throttleFail(ctx.db, `corr:${ip}`, { everybody: false });
       await appendEvent(ctx.db, letter.id, {
         kind: 'access_code_failed', actor: recipient.name, detail: null,
         ip, agent: agentOf(ctx),

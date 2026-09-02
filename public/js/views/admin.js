@@ -360,7 +360,7 @@ function openUserDialog({ existing, data, reload }) {
   const roleSelect = h('select', data.roles.map((r) =>
     h('option', { value: r.key, selected: (existing?.role ?? 'supervisor') === r.key }, r.label)));
 
-  const pin = h('input', { type: 'text', inputmode: 'numeric', maxlength: 10, placeholder: existing ? 'leave blank to keep' : '4 to 10 digits' });
+  const pin = h('input', { type: 'text', inputmode: 'numeric', maxlength: 10, placeholder: existing ? 'leave blank to keep' : '6 to 10 digits' });
   const email = h('input', { type: 'email', maxlength: 200, value: existing?.email ?? '' });
   const password = h('input', { type: 'password', maxlength: 200, placeholder: existing?.hasPassword ? 'leave blank to keep' : 'at least 10 characters' });
 
@@ -449,7 +449,9 @@ function openUserDialog({ existing, data, reload }) {
       : '';
     pin.placeholder = existing?.hasPin
       ? 'leave blank to keep'
-      : isAdmin ? 'none set' : '4 to 10 digits';
+      // Four digits is enough for somebody who holds only their own shifts;
+      // anybody who can see other people's is worth more to a guesser.
+      : isAdmin ? 'none set' : `${roleSelect.value === 'staff' ? 4 : 6} to 10 digits`;
     dropPinRow.style.display = isAdmin && existing?.hasPin ? '' : 'none';
     if (!isAdmin || !existing?.hasPin) dropPin.checked = false;
     showStaff();

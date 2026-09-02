@@ -101,12 +101,12 @@ test('an administrator still needs an email address and a password', async () =>
   );
 });
 
-test('an administrator PIN has the same shape as everybody else’s', async () => {
+test('an administrator PIN is six digits or more, like anybody who sees other people’s', async () => {
   const { db } = setup();
-  for (const bad of ['12', 'abcd', '1 234']) {
+  for (const bad of ['12', 'abcd', '1 234', '12345']) {
     await assert.rejects(
       () => createUser(ctx(db, newAdmin({ pin: bad }))),
-      /4 to 10 digits/,
+      /6 to 10 digits/,
       String(bad),
     );
   }

@@ -101,14 +101,14 @@ export async function open(ctx, token) {
 
   if (invite.pin_hash) {
     const ip = ipOf(ctx);
-    const gate = throttleCheck(`rec:${ip}`);
+    const gate = await throttleCheck(ctx.db, `rec:${ip}`, { pin: false });
     if (!gate.allowed) {
       throw forbidden(`Too many tries. Wait ${Math.ceil(gate.retryAfter / 60)} minutes and try again.`);
     }
     const given = String(body.pin ?? '').replace(/\D/g, '');
     const pepper = await getPepper(ctx.db);
     if (!given || await hashRecPin(given, pepper) !== invite.pin_hash) {
-      throttleFail(`rec:${ip}`);
+      await throttleFail(ctx.db, `rec:${ip}`, { everybody: false });
       await trail(ctx.db, {
         candidateId: invite.candidate_id, inviteId: invite.id, kind: 'link_pin_failed',
         ip, agent: agentOf(ctx),

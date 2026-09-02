@@ -1,5 +1,6 @@
 import {
   clearCookie, createToken, getPepper, getSession, hashPin, isReservedPin,
+  pinLooksRight, pinRuleFor,
   saltForEmail, sessionCookie, storedPassword, throttleCheck, throttleFail,
   throttleReset, tokenTtl, userForCredentials, userForPin, verifyPasswordKey,
 } from './lib/auth.js';
@@ -915,16 +916,22 @@ async function passwordSalt(ctx) {
 async function login(ctx) {
   const { request, env, url, db } = ctx;
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const body = await readJson(request);
 
-  const gate = throttleCheck(ip);
+  const gate = await throttleCheck(db, ip, { pin: !body.email });
   if (!gate.allowed) {
+    const wait = Math.max(1, Math.ceil(gate.retryAfter / 60));
+    const minutes = wait === 1 ? 'a minute' : `${wait} minutes`;
     return json(
-      { error: `Too many attempts. Try again in ${Math.ceil(gate.retryAfter / 60)} minutes.` },
+      {
+        error: gate.scope === 'everybody'
+          ? `The PIN keypad is closed for ${minutes} after too many wrong tries from all over. `
+            + 'An administrator can still sign in with their email address and password.'
+          : `Too many wrong tries. Try again in ${minutes}.`,
+      },
       { status: 429, headers: { 'Retry-After': String(gate.retryAfter) } },
     );
   }
-
-  const body = await readJson(request);
 
   // Two ways in: a PIN for a supervisor with a phone in a corridor, or an email
   // address and password. An administrator must have the second and may have
@@ -934,7 +941,7 @@ async function login(ctx) {
     : await userForPin(db, str(body.pin, 'PIN', { required: true, max: 64 }), env);
 
   if (!user) {
-    throttleFail(ip);
+    await throttleFail(db, ip);
     // A uniform delay keeps a wrong credential from being distinguishable by
     // timing, and says nothing about which half was wrong.
     await new Promise((resolve) => setTimeout(resolve, 400));
@@ -943,7 +950,7 @@ async function login(ctx) {
       : 'That PIN was not recognised');
   }
 
-  throttleReset(ip);
+  await throttleReset(db, ip);
 
   const now = Math.floor(Date.now() / 1000);
   const token = await createToken(
@@ -1078,7 +1085,7 @@ async function changeCredentials(ctx) {
         return json({ ok: true, changed: 'pin', hasPin: false });
       }
 
-      if (!/^\d{4,10}$/.test(wanted)) throw badRequest('The new PIN must be 4 to 10 digits');
+      if (!pinLooksRight(wanted, 'admin')) throw badRequest(pinRuleFor('admin').replace('The PIN', 'The new PIN'));
       if (await isReservedPin(wanted, ctx.env)) throw badRequest(PIN_TAKEN);
 
       try {
@@ -1125,7 +1132,9 @@ async function changeCredentials(ctx) {
     await new Promise((resolve) => setTimeout(resolve, 400));
     throw badRequest('Your current PIN is not correct');
   }
-  if (!/^\d{4,10}$/.test(next)) throw badRequest('The new PIN must be 4 to 10 digits');
+  if (!pinLooksRight(next, session.user.role)) {
+    throw badRequest(pinRuleFor(session.user.role).replace('The PIN', 'The new PIN'));
+  }
   if (next === current) throw badRequest('The new PIN is the same as the current one');
   if (await isReservedPin(next, ctx.env)) throw badRequest(PIN_TAKEN);
 

@@ -1,7 +1,7 @@
 import { originOf } from '../lib/site.js';
 import { badRequest, bool, json, notFound, readJson, str } from '../lib/http.js';
 import {
-  getPepper, hashPin, isReservedPin, normaliseEmail, storedPassword,
+  getPepper, hashPin, isReservedPin, normaliseEmail, pinDigitsFor, pinLooksRight, pinRuleFor, storedPassword,
 } from '../lib/auth.js';
 import {
   PERMISSIONS, PERMISSION_KEYS, ROLES, effectivePermissions, isRole,
@@ -18,7 +18,6 @@ import { isDay } from '../util/dates.js';
  * behind one permission, because the three things have exactly one audience.
  */
 
-const PIN_RE = /^\d{4,10}$/;
 const MIN_PASSWORD = 10;
 
 // Deliberately identical for "a colleague has it" and "the server reserves it".
@@ -84,7 +83,7 @@ function readCredentials(body, role, { existing = null } = {}) {
     // Theirs to have or not: blank leaves whatever they had, and the form
     // sends clearPin when they want the short way in taken away again.
     const adminPin = str(body.pin, 'PIN', { max: 10, fallback: '' });
-    if (adminPin && !PIN_RE.test(adminPin)) throw badRequest('The PIN must be 4 to 10 digits');
+    if (adminPin && !pinLooksRight(adminPin, role)) throw badRequest(pinRuleFor(role));
 
     return {
       isAdmin,
@@ -98,8 +97,10 @@ function readCredentials(body, role, { existing = null } = {}) {
   // Everyone else: a PIN, required on creation. Right for a supervisor holding
   // a phone in a corridor with one hand.
   const pin = str(body.pin, 'PIN', { max: 10, fallback: '' });
-  if (!pin && !existing?.pin_hash) throw badRequest('Give this person a PIN of 4 to 10 digits');
-  if (pin && !PIN_RE.test(pin)) throw badRequest('The PIN must be 4 to 10 digits');
+  if (!pin && !existing?.pin_hash) {
+    throw badRequest(`Give this person a PIN of ${pinDigitsFor(role)} to 10 digits`);
+  }
+  if (pin && !pinLooksRight(pin, role)) throw badRequest(pinRuleFor(role));
 
   // A demoted administrator keeps their address on file but stops using it.
   const email = normaliseEmail(str(body.email, 'Email address', { max: 200, fallback: '' }));
