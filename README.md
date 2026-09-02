@@ -2312,6 +2312,18 @@ because it is cash pay and nothing else. It is marked as worked out rather than
 agreed, so a payslip can tell the two apart, and an allowance somebody did
 agree to is left exactly as it is and topped up around.
 
+### Somebody who starts or leaves inside the month
+
+They are paid for the days they were here, counted on the calendar. Somebody
+who starts on the 20th of a 30-day month is on 11 of 30 days; somebody who
+leaves on the 10th of a 31-day month is on 10 of 31. The basic, the standing
+allowances and an agreed take-home all scale by that share; a bonus does not,
+because it was scored rather than accrued, and the 15% concession ceiling
+stays on the annual salary because that is what it is a ceiling on. The
+payslip and the month table both say "11 of 30 days" under the basic, so the
+figure can be checked with a calendar. A whole month is left exactly as it
+was.
+
 ### A bonus is net for most people, and gross for some
 
 A bonus here is normally a net promise. Somebody is told five hundred cedis,

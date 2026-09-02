@@ -223,7 +223,10 @@ export async function renderAttPayroll(params) {
             h('div.adv-who', line.staff.name),
             h('small.muted', line.staff.department || `No. ${line.staff.employeeNo ?? ''}`),
             !line.ssnit.qualifies ? h('small.pill', 'no SSNIT') : null),
-          h('td.num', cash(line.basic)),
+          h('td.num', cash(line.basic),
+            line.partMonth
+              ? h('small.muted', { style: { display: 'block' } }, `${line.partMonth.days} of ${line.partMonth.of} days`)
+              : null),
           // The allowances and the bonus as the payslip says them: the bonus is
           // what was agreed, and the tax the property carried on it sits with
           // the allowances. The row still adds to the same gross either way,

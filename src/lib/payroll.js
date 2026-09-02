@@ -296,9 +296,60 @@ function oneLine({
  * either, the allowance would quietly grow to cancel them out and the property
  * would be paying back its own advance.
  */
-export function computeLine(terms) {
+/**
+ * The part of a month somebody was actually employed for.
+ *
+ * Somebody who starts on the 20th is not owed a month's salary, and somebody
+ * who leaves on the 10th is not owed one either. Until now both got a full
+ * month unless the basic was edited by hand and then edited back. Counted in
+ * calendar days, which is how the Labour Act reads a month and how a payslip
+ * can be checked with a calendar: 11 of 30 is a thing anybody can see.
+ *
+ * Null for a whole month, which is nearly everybody nearly always, so the
+ * ordinary line is untouched.
+ */
+export function partMonth({ month, hiredOn = null, leftOn = null } = {}) {
+  if (!/^\d{4}-\d{2}$/.test(String(month ?? ''))) return null;
+  const [y, m] = month.split('-').map(Number);
+  const of = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const first = `${month}-01`;
+  const last = `${month}-${String(of).padStart(2, '0')}`;
+  const from = hiredOn && hiredOn > first ? hiredOn : first;
+  const to = leftOn && leftOn < last ? leftOn : last;
+  if (from === first && to === last) return null;
+  if (to < from) return { days: 0, of, from, to };
+  const dayOf = (d) => Number(d.slice(8, 10));
+  return { days: dayOf(to) - dayOf(from) + 1, of, from, to };
+}
+
+/**
+ * The agreed figures scaled to the part of the month worked.
+ *
+ * Basic, the standing allowances and an agreed take-home all scale; a bonus
+ * does not, because it was scored, not accrued, and the concession ceiling
+ * stays on the annual salary because that is what it is a ceiling on.
+ */
+function proRated(terms) {
+  const part = terms.partMonth;
+  if (!part || part.days >= part.of) return terms;
+  const share = (n) => round2((Number(n) || 0) * part.days / part.of);
+  return {
+    ...terms,
+    basic: share(terms.basic),
+    allowances: (terms.allowances ?? []).map((a) => ({ ...a, amount: share(a.amount) })),
+    takeHome: terms.takeHome == null || terms.takeHome === '' ? terms.takeHome : share(terms.takeHome),
+  };
+}
+
+export function computeLine(given) {
+  const terms = proRated(given);
+  const part = given.partMonth && given.partMonth.days < given.partMonth.of
+    ? { ...given.partMonth, basis: round2(given.basic) }
+    : null;
+  const finish = (line) => (part ? { ...line, partMonth: part } : line);
+
   const wanted = terms.takeHome;
-  if (wanted == null || wanted === '') return oneLine({ ...terms, topUp: 0 });
+  if (wanted == null || wanted === '') return finish(oneLine({ ...terms, topUp: 0 }));
 
   const target = round2(wanted);
   const clean = { ...terms, penalties: [], loans: [] };
@@ -308,7 +359,7 @@ export function computeLine(terms) {
   // allowance, and no money is taken off them to bring them back down: that
   // would be a pay cut arrived at by arithmetic nobody agreed to.
   if (reach(0) >= target) {
-    return { ...oneLine({ ...terms, topUp: 0 }), takeHome: target, workedOut: 0, overshoots: true };
+    return finish({ ...oneLine({ ...terms, topUp: 0 }), takeHome: target, workedOut: 0, overshoots: true });
   }
 
   let low = 0;
@@ -323,7 +374,7 @@ export function computeLine(terms) {
   }
 
   const topUp = round2(low / 100);
-  return { ...oneLine({ ...terms, topUp }), takeHome: target, workedOut: topUp, overshoots: false };
+  return finish({ ...oneLine({ ...terms, topUp }), takeHome: target, workedOut: topUp, overshoots: false });
 }
 
 /** What a whole run comes to, for the page that has to sign it off. */

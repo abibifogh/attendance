@@ -142,7 +142,8 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
         h('section.slip-col',
           h('h3.slip-col-head', 'Earnings'),
           h('table.slip-table', h('tbody',
-            row('Basic salary', cash(line.basic)),
+            row('Basic salary', cash(line.basic),
+              line.partMonth ? `${line.partMonth.days} of ${line.partMonth.of} days` : null),
             // The allowances as they read here, which is the agreed figures
             // with the tax the property carried on the bonus folded in. The
             // list the property actually agreed to pay is line.allowances, and

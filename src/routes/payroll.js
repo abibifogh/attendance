@@ -2,7 +2,9 @@ import { badRequest, csvResponse, int, json, notFound, num, readJson, str } from
 import { createNotice } from '../lib/notices.js';
 import { paidInMonth } from '../lib/leaving.js';
 import { balanceOf, dueThisMonth, startsOn, whyNotDue } from '../lib/advances.js';
-import { computeLine, totalsOf } from '../lib/payroll.js';
+import {
+  computeLine, partMonth, totalsOf,
+} from '../lib/payroll.js';
 import { ratesFrom, round2 } from '../lib/tax.js';
 import {
   PAYE_COLUMNS, POSITIONS, RESIDENCIES, journalFor, payeSchedule, tiersFrom,
@@ -277,6 +279,9 @@ function linesFrom(data, month) {
       allowances: (data.allowanceBy.get(person.id) ?? []).map((a) => ({
         name: a.name, amount: a.amount, taxable: a.taxable,
       })),
+      // Somebody who started or left inside the month is paid for the days
+      // they were here. Null for everybody else, which leaves the line alone.
+      partMonth: partMonth({ month, hiredOn: person.hired_on, leftOn: person.left_on }),
       ssnit: Boolean(profile.ssnit),
       schemes,
       penalties: (penaltyBy.get(person.id) ?? []).map((p) => ({
