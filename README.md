@@ -3008,11 +3008,31 @@ door stays open through that, on purpose: a stretched password is not
 guessable at that rate, and an administrator locked out during an attack is
 exactly the person you need.
 
-A member of staff, who holds only their own shifts, may have a four-digit
-PIN. Anybody who can see other people's days, records or money needs six.
-The rule is checked wherever a PIN is set: adding a login, and My account.
-PINs set before this rule stood are still accepted; the next change has to
-meet it.
+### Six digits, and what happens to the PINs that are shorter
+
+Every PIN is six to ten digits, whatever the person does here. A member of
+staff was allowed four on the grounds that they hold only their own shifts,
+but the same keypad opens records and pay for everybody else, and a door is
+only as good as its shortest key. The rule is checked wherever a PIN is set:
+adding a login, editing one, and My account.
+
+The PINs already in use cannot be checked against it, because only a hash of
+each one is kept and a hash says nothing about length. So the rule is applied
+where the PIN itself is, at the moment somebody types it. Signing in with a
+short PIN still works, and lands on a screen that will not let them past it
+until they choose a longer one. They can leave that screen by signing out,
+three times. On the fourth sign-in the login is refused and switched off.
+
+An administrator sets them a new PIN under **Users & data** to let them back
+in; the list shows those accounts as "PIN too short" rather than "inactive",
+with the reason under the name, so nobody just ticks Active and wonders why
+it made no difference. Nothing else about the person is touched: their staff
+record, their attendance and their payslips are all where they were.
+
+An administrator who signs in with a short PIN gets the same treatment, and
+still has their email address and password, so they are never shut out of the
+screen that fixes it. The emergency `MANAGER_PIN` is a Worker secret with no
+account behind it and is left alone; set that one to six digits yourself.
 
 ### A copy of everything
 

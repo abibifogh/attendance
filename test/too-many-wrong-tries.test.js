@@ -146,14 +146,16 @@ test('a database not yet upgraded has no brake rather than no way in', async () 
 // How long a PIN has to be
 // ---------------------------------------------------------------------------
 
-test('four digits will do for a member of staff, and nobody else', () => {
-  assert.equal(pinLooksRight('1234', 'staff'), true);
-  assert.equal(pinLooksRight('1234', 'supervisor'), false);
-  assert.equal(pinLooksRight('12345', 'manager'), false);
-  assert.equal(pinLooksRight('123456', 'manager'), true);
-  assert.equal(pinLooksRight('123456', 'admin'), true);
-  assert.equal(pinLooksRight('12345678901', 'admin'), false, 'ten at most');
-  assert.equal(pinLooksRight('12a456', 'admin'), false, 'digits only');
+test('six digits, whatever the person does here', () => {
+  // A member of staff used to be allowed four, on the grounds that they hold
+  // only their own shifts. The same keypad opens records and pay for
+  // everybody else, and a door is only as good as its shortest key.
+  assert.equal(pinLooksRight('1234'), false);
+  assert.equal(pinLooksRight('12345'), false);
+  assert.equal(pinLooksRight('123456'), true);
+  assert.equal(pinLooksRight('1234567890'), true);
+  assert.equal(pinLooksRight('12345678901'), false, 'ten at most');
+  assert.equal(pinLooksRight('12a456'), false, 'digits only');
 });
 
 const asAdmin = { user: { id: 1, name: 'Kwame', role: 'admin' }, permissions: [], via: 'password' };
@@ -169,15 +171,15 @@ const ctx = (db, body) => ({
   }),
 });
 
-test('adding a login holds the rule: a supervisor needs six, a member of staff four', async () => {
+test('adding a login holds the rule, for a member of staff as much as anybody', async () => {
   const { db } = setup();
-  await assert.rejects(
-    () => createUser(ctx(db, { name: 'Efua', role: 'supervisor', pin: '2468' })),
-    /6 to 10 digits/,
-  );
-  const ok = await createUser(ctx(db, { name: 'Efua', role: 'supervisor', pin: '246810' }));
-  assert.equal(ok.status, 201);
-
-  const staff = await createUser(ctx(db, { name: 'Kojo', role: 'staff', pin: '1357' }));
-  assert.equal(staff.status, 201);
+  for (const role of ['supervisor', 'staff']) {
+    await assert.rejects(
+      () => createUser(ctx(db, { name: 'Efua', role, pin: '2468' })),
+      /6 to 10 digits/,
+      role,
+    );
+  }
+  assert.equal((await createUser(ctx(db, { name: 'Efua', role: 'supervisor', pin: '246810' }))).status, 201);
+  assert.equal((await createUser(ctx(db, { name: 'Kojo', role: 'staff', pin: '135790' }))).status, 201);
 });

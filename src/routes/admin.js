@@ -2,7 +2,7 @@ import { originOf } from '../lib/site.js';
 import { backupZip } from '../lib/backup.js';
 import { badRequest, bool, json, notFound, readJson, str } from '../lib/http.js';
 import {
-  getPepper, hashPin, isReservedPin, normaliseEmail, pinDigitsFor, pinLooksRight, pinRuleFor, storedPassword,
+  PIN_DIGITS, PIN_RULE, getPepper, hashPin, isReservedPin, normaliseEmail, pinLooksRight, storedPassword,
 } from '../lib/auth.js';
 import {
   PERMISSIONS, PERMISSION_KEYS, ROLES, effectivePermissions, isRole,
@@ -84,7 +84,7 @@ function readCredentials(body, role, { existing = null } = {}) {
     // Theirs to have or not: blank leaves whatever they had, and the form
     // sends clearPin when they want the short way in taken away again.
     const adminPin = str(body.pin, 'PIN', { max: 10, fallback: '' });
-    if (adminPin && !pinLooksRight(adminPin, role)) throw badRequest(pinRuleFor(role));
+    if (adminPin && !pinLooksRight(adminPin)) throw badRequest(PIN_RULE);
 
     return {
       isAdmin,
@@ -99,9 +99,9 @@ function readCredentials(body, role, { existing = null } = {}) {
   // a phone in a corridor with one hand.
   const pin = str(body.pin, 'PIN', { max: 10, fallback: '' });
   if (!pin && !existing?.pin_hash) {
-    throw badRequest(`Give this person a PIN of ${pinDigitsFor(role)} to 10 digits`);
+    throw badRequest(`Give this person a PIN of ${PIN_DIGITS} to 10 digits`);
   }
-  if (pin && !pinLooksRight(pin, role)) throw badRequest(pinRuleFor(role));
+  if (pin && !pinLooksRight(pin)) throw badRequest(PIN_RULE);
 
   // A demoted administrator keeps their address on file but stops using it.
   const email = normaliseEmail(str(body.email, 'Email address', { max: 200, fallback: '' }));
@@ -119,6 +119,9 @@ function publicUser(row) {
       ? (row.pin_hash ? 'password or PIN' : 'password')
       : 'pin',
     hasPin: Boolean(row.pin_hash),
+    // Switched off by the PIN rule rather than by a person, which is worth
+    // saying: the fix is to give them a new PIN, not to tick Active.
+    pinLocked: Boolean(row.pin_locked_at),
     hasPassword: typeof row.password_hash === 'string' && row.password_hash.startsWith('pbkdf2c$'),
     role: row.role,
     // Which member of staff this login belongs to, for the accounts that are
@@ -297,9 +300,16 @@ export async function updateUser(ctx, id) {
 
   try {
     const row = await ctx.db.prepare(
-      `UPDATE users SET name = ?, role = ?, permissions = ?, active = ?, note = ?,
-                        pin_hash = ?, email = ?, password_hash = ?, staff_id = ?
-       WHERE id = ? RETURNING *`,
+      // Numbered throughout rather than a row of question marks, because the
+      // PIN is read twice and mixing the two styles is how a bind quietly
+      // lands in the wrong column.
+      `UPDATE users SET name = ?1, role = ?2, permissions = ?3, active = ?4, note = ?5,
+                        pin_hash = ?6, email = ?7, password_hash = ?8, staff_id = ?9,
+                        -- A new PIN is the way back from a lockout: it meets
+                        -- the rule, so there is nothing left to be owed.
+                        pin_grace_left = CASE WHEN ?6 IS NOT NULL THEN NULL ELSE pin_grace_left END,
+                        pin_locked_at  = CASE WHEN ?6 IS NOT NULL THEN NULL ELSE pin_locked_at END
+       WHERE id = ?10 RETURNING *`,
     ).bind(
       name, role, permissions, active ? 1 : 0, note,
       pinHash, creds.email ?? null, passwordHash, readStaffLink(body), userId,

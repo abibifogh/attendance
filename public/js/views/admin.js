@@ -102,7 +102,15 @@ async function peopleTab(reload) {
           key: 'name',
           label: 'Name',
           format: (v, r) => h('div',
-            h('div', v, r.active ? null : h('span.pill', { style: { marginLeft: '.4rem' } }, 'inactive')),
+            h('div', v, r.active ? null : h('span.pill', { style: { marginLeft: '.4rem' } },
+              // Worth telling apart from an account somebody switched off on
+              // purpose: the way back is a new PIN, not the Active tick.
+              r.pinLocked ? 'PIN too short' : 'inactive')),
+            r.pinLocked
+              ? h('small.muted', { style: { display: 'block' } },
+                'Switched off for never lengthening their PIN. Edit them and set a new one of six '
+                + 'digits or more to let them back in.')
+              : null,
             h('small.muted', r.email
               // An address is what they type; a PIN is worth saying as well,
               // because it is the half somebody forgets they handed out.
@@ -449,9 +457,7 @@ function openUserDialog({ existing, data, reload }) {
       : '';
     pin.placeholder = existing?.hasPin
       ? 'leave blank to keep'
-      // Four digits is enough for somebody who holds only their own shifts;
-      // anybody who can see other people's is worth more to a guesser.
-      : isAdmin ? 'none set' : `${roleSelect.value === 'staff' ? 4 : 6} to 10 digits`;
+      : isAdmin ? 'none set' : '6 to 10 digits';
     dropPinRow.style.display = isAdmin && existing?.hasPin ? '' : 'none';
     if (!isAdmin || !existing?.hasPin) dropPin.checked = false;
     showStaff();

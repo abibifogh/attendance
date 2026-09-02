@@ -1,0 +1,21 @@
+-- Six digits for everybody, and what happens to the PINs that are shorter.
+--
+-- Login is by PIN alone, so a four-digit PIN on any account is four digits
+-- standing between a stranger and somebody's shifts, records or pay. Six is
+-- now the rule for every role, staff included.
+--
+-- The PINs already in use cannot be checked against it, because only a hash
+-- of each one is kept and a hash says nothing about length. What can be
+-- checked is the PIN somebody types at the moment they sign in, so that is
+-- where the rule is applied: a short PIN still opens the app, and the person
+-- is told to choose a longer one. Three sign-ins of being told is the whole
+-- allowance. On the fourth the login is refused and the account is switched
+-- off until an administrator sets a new PIN.
+--
+-- `pin_grace_left` is what remains of that allowance. NULL means untouched,
+-- which is everybody with a PIN long enough to be no business of this.
+-- `pin_locked_at` is when the allowance ran out, and it is what tells the
+-- Users screen that an account is off for this reason rather than because
+-- somebody switched it off on purpose.
+ALTER TABLE users ADD COLUMN pin_grace_left INTEGER;
+ALTER TABLE users ADD COLUMN pin_locked_at TEXT;

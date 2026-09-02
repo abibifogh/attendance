@@ -41,7 +41,7 @@ export function openAccountDialog({
   const next = h('input', {
     type: 'password',
     inputmode: usesPassword ? 'text' : 'numeric',
-    placeholder: usesPassword ? 'New password (10+ characters)' : `New PIN (${role === 'staff' ? 4 : 6} to 10 digits)`,
+    placeholder: usesPassword ? 'New password (10+ characters)' : 'New PIN (6 to 10 digits)',
     autocomplete: 'new-password',
   });
   const confirm = h('input', {
@@ -101,7 +101,7 @@ export function openAccountDialog({
     const now = h('input', { type: 'password', placeholder: 'Your password', autocomplete: 'current-password' });
     const wanted = h('input', {
       type: 'password', inputmode: 'numeric', maxlength: 10,
-      placeholder: hasPin ? `New PIN (${role === 'staff' ? 4 : 6} to 10 digits)` : '6 to 10 digits',
+      placeholder: hasPin ? 'New PIN (6 to 10 digits)' : '6 to 10 digits',
       autocomplete: 'new-password',
     });
     const problem = h('p.muted', { style: { minHeight: '1.2rem', fontSize: '.85rem' } });
@@ -118,7 +118,7 @@ export function openAccountDialog({
         ? 'You have one. The keypad on the sign-in screen will take it.'
         : 'You do not have one yet. The sign-in screen will only take your email address and '
           + 'password.';
-      wanted.placeholder = mine ? `New PIN (${role === 'staff' ? 4 : 6} to 10 digits)` : '6 to 10 digits';
+      wanted.placeholder = mine ? 'New PIN (6 to 10 digits)' : '6 to 10 digits';
       drop.style.display = mine ? '' : 'none';
       setIt.textContent = mine ? 'Change the PIN' : 'Set a PIN';
     };
@@ -402,4 +402,86 @@ export function openAccountDialog({
     currentSubscription().then((sub) => draw(Boolean(sub))).catch(() => draw(false));
     return host;
   }
+}
+
+/**
+ * The screen somebody with a too-short PIN cannot get past.
+ *
+ * Six digits is the rule now, and the PINs already in use cannot be measured
+ * — only a hash of each is kept. So the rule is applied where the PIN itself
+ * is: at sign-in. A short one still opens the app three more times, and each
+ * of those times lands here instead of on the rota.
+ *
+ * Rendered in place of the whole app rather than as a dialog over it. A
+ * dialog invites somebody to find the way round it, and the point of this
+ * screen is that there is no way round it: the only ways off it are a longer
+ * PIN or signing out.
+ */
+export function renderForcedPinChange({ chancesLeft = null, onDone }) {
+  const current = h('input', {
+    type: 'password', inputmode: 'numeric', maxlength: 10,
+    placeholder: 'Your PIN now', autocomplete: 'current-password',
+  });
+  const next = h('input', {
+    type: 'password', inputmode: 'numeric', maxlength: 10,
+    placeholder: 'New PIN (6 to 10 digits)', autocomplete: 'new-password',
+  });
+  const confirm = h('input', {
+    type: 'password', inputmode: 'numeric', maxlength: 10,
+    placeholder: 'Repeat the new PIN', autocomplete: 'new-password',
+  });
+  const error = h('p.muted', { style: { minHeight: '1.2rem', fontSize: '.9rem' } });
+
+  const left = Number(chancesLeft);
+  const warning = !Number.isFinite(left) ? null
+    : left <= 0
+      ? 'This is the last time. If you sign in again without changing it, this login is '
+        + 'switched off and an administrator will have to set you a new one.'
+      : left === 1
+        ? 'You can sign in once more after this without changing it. After that the login is '
+          + 'switched off and an administrator will have to set you a new one.'
+        : `You can sign in ${left} more times without changing it. After that the login is `
+          + 'switched off and an administrator will have to set you a new one.';
+
+  const save = async (event) => {
+    if (!current.value || !next.value) {
+      error.textContent = 'Fill in every box';
+      return;
+    }
+    if (!/^\d{6,10}$/.test(next.value)) {
+      error.textContent = 'The new PIN must be 6 to 10 digits';
+      return;
+    }
+    if (next.value !== confirm.value) {
+      error.textContent = 'The two new PINs do not match';
+      return;
+    }
+    event.target.disabled = true;
+    error.textContent = 'Saving…';
+    try {
+      await api.changeCredentials({ currentPin: current.value, newPin: next.value });
+      toast('PIN changed', 'good');
+      await onDone();
+    } catch (err) {
+      error.textContent = err.message;
+      event.target.disabled = false;
+    }
+  };
+
+  return h('div.login-screen',
+    h('div.login-card',
+      h('h1', 'Choose a longer PIN'),
+      h('p.muted',
+        'Every PIN is now six digits or more. Yours is shorter, and it is the whole of what '
+        + 'stands between somebody else and your shifts.'),
+      warning ? h('p.returns-warn', warning) : null,
+      h('label.field', h('span', 'Your PIN now'), current),
+      h('label.field', h('span', 'New PIN'), next),
+      h('label.field', h('span', 'Repeat it'), confirm),
+      error,
+      h('button.btn.btn-primary', { onclick: save }, 'Change my PIN'),
+      h('button.btn-ghost.btn-sm', {
+        style: { marginTop: '.6rem' },
+        onclick: async () => { await api.logout().catch(() => {}); location.reload(); },
+      }, 'Sign out instead')));
 }

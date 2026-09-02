@@ -4,7 +4,7 @@ import { registerWorker, watchForInstall } from './install.js';
 import { h, holdBehindDialogs, keepScroll, mount, watchScreenHeight } from './util.js';
 import { renderLogin } from './views/login.js';
 import { alreadyWelcomed, markWelcomed, welcomePanel } from './views/welcome.js';
-import { openAccountDialog } from './views/account.js';
+import { openAccountDialog, renderForcedPinChange } from './views/account.js';
 import { noticeBell } from './views/notices.js';
 import { renderAttToday } from './views/att-today.js';
 import { renderAttStaff } from './views/att-staff.js';
@@ -44,6 +44,11 @@ export const state = {
   name: null,
   email: null,
   isRecovery: false,
+  // Signed in on a PIN shorter than the rule, and how many sign-ins are left
+  // before the login is switched off. Nothing else in the app draws while
+  // this is set.
+  mustChangePin: false,
+  pinChancesLeft: null,
   permissions: [],
   settings: {},
   // Which staff record this login belongs to, or null. Decides whether the
@@ -428,15 +433,35 @@ export async function render({ quiet = false } = {}) {
   root.classList.remove('app-loading');
 
   if (!state.role) {
-    mount(root, renderLogin(async ({ role, name, email, permissions, isRecovery }) => {
+    mount(root, renderLogin(async ({
+      role, name, email, permissions, isRecovery, mustChangePin, pinChancesLeft,
+    }) => {
       state.role = role;
       state.name = name;
       state.email = email ?? null;
       state.isRecovery = Boolean(isRecovery);
       state.permissions = permissions ?? [];
+      state.mustChangePin = Boolean(mustChangePin);
+      state.pinChancesLeft = pinChancesLeft ?? null;
       startLive();
       if (!location.hash || !currentRoute()) navigate(defaultRoute());
       await render();
+    }));
+    return;
+  }
+
+  // Nothing else until the PIN is long enough. Drawn in place of the app
+  // rather than over it, so there is no screen behind it to get back to.
+  if (state.mustChangePin) {
+    mount(root, renderForcedPinChange({
+      chancesLeft: state.pinChancesLeft,
+      onDone: async () => {
+        state.mustChangePin = false;
+        state.pinChancesLeft = null;
+        state.hasPin = true;
+        if (!currentRoute()) navigate(defaultRoute());
+        await render();
+      },
     }));
     return;
   }
@@ -787,6 +812,8 @@ window.addEventListener('online', () => { api.me().catch(() => {}); });
       state.staffId = me.staffId ?? null;
       state.permissionLabels = me.permissionLabels || {};
       state.roleLabels = me.roleLabels || {};
+      state.mustChangePin = Boolean(me.mustChangePin);
+      state.pinChancesLeft = me.pinChancesLeft ?? null;
     }
   } catch { /* fall through to the login screen */ }
 
