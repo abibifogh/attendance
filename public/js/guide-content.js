@@ -96,7 +96,7 @@ export const GUIDE = [
     key: 'mine',
     title: 'My shifts',
     permission: 'att_me',
-    lede: 'Your own week, your own leave, and telling them you are running late.',
+    lede: 'Your own week, your own leave, and the days you cannot work.',
     blocks: [
 
       { sub: 'What you see' },
@@ -183,25 +183,34 @@ export const GUIDE = [
       { p: 'While it is still waiting you can take it back. Once it has been decided you cannot, '
         + 'and the answer shows on the request with whatever your manager wrote.' },
 
-      { sub: 'Days you cannot work' },
+      { sub: 'Create unavailability' },
       { p: 'This is not leave. Nothing is approved, nothing comes off your balance, and it is '
         + 'not a promise that you will not be put on. It is the fact whoever builds the rota '
         + 'needs in front of them before they choose — and they see it in the cell.' },
       { p: 'A whole day, or a few hours of one. An appointment until nine in the morning and an '
         + 'evening class are different problems, and only the first one clashes with a '
         + 'breakfast shift.' },
-
-      { sub: 'Running late' },
-      { p: 'One button. It tells your manager before the shift starts, so somebody can cover '
-        + 'you in the meantime, instead of them finding out by looking at an empty station.' },
-      { warn: 'It changes nothing on your record. The terminal still decides what time you '
-        + 'arrived, and pressing this is a message rather than an excuse note.' },
+      { warn: 'Two days at a time, and no more than two in a row. Anything longer is leave: it '
+        + 'is approved by somebody, it comes off your balance, and there is a record of who '
+        + 'agreed to it. Marked here instead it would be none of those things, so the screen '
+        + 'sends you to Ask for leave rather than taking it.' },
+      { note: 'The limit counts what is already on your record, not just what you have ticked '
+        + 'this time. Monday saved now and Tuesday saved later is still two days in a row, and '
+        + 'a third joined onto them is refused the same way.' },
 
       { sub: 'Leaving something half-done' },
       { p: 'Anywhere you have typed something and not saved it \u2014 a rota you have moved '
         + 'shifts on, bonus figures, a page of settings \u2014 the app asks before it takes '
         + 'the screen away. Pressing a menu item by mistake should not cost you an '
         + 'afternoon.' },
+
+      { sub: 'Your picture' },
+      { p: 'Open My account, at the top of the screen, and choose a picture. It shows beside '
+        + 'your name on every rota anybody opens, and nowhere else. Anybody without one keeps '
+        + 'their initials, and Take my picture off puts you back to those.' },
+      { note: 'A head-and-shoulders picture, the way it would look on a staff card. It is made '
+        + 'smaller on your own phone before it is sent, so a photograph straight from the '
+        + 'camera is fine.' },
 
       { sub: 'Alerts on your phone' },
       { p: 'Turn them on under My account, on each device you want them on: a phone and a '
@@ -562,8 +571,8 @@ export const GUIDE = [
         + 'too, marked as drafts, so nothing has to be published before it can leave the screen.' },
 
       { note: 'A shift that runs into the night carries a moon beside its time, and a face '
-        + 'beside every name that has one. Staff add their own picture from My picture on their '
-        + 'screen; anybody without one keeps their initials.' },
+        + 'beside every name that has one. Staff choose their own picture under My account; '
+        + 'anybody without one keeps their initials.' },
 
       { sub: 'Who changed this shift' },
       { p: 'Every change to the rota is kept: who made it, when, and what the day said before. '

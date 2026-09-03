@@ -473,12 +473,28 @@ it was approved; turning it down tells them that, with whatever reason was
 given. A planner writing availability on somebody's behalf is already the
 decision, so it goes straight in.
 
+**Two days, and no more.** *Create unavailability* on the staff screen takes a
+day or two: a christening on Saturday, a clinic appointment on Tuesday. A week
+is leave, and leave is approved by somebody, comes off a balance and leaves a
+record of who agreed to it. Marked as unavailability instead, the same week
+would be none of those things, which is how somebody ends up away for five days
+that nobody signed for. So the limit is not tidiness, it is the line between
+the two screens, and the third tick says so and sends them to *Ask for leave*.
+It is counted across the run rather than the request, because Monday saved now
+and Tuesday saved later is the same week arrived at in two presses. Days
+scattered about are left alone: three separate Sundays are three separate
+facts. Wanting to work is not being away, so *Would like to work* is none of
+the limit's business. The screen says it as the boxes are ticked and the server
+refuses it either way.
+
 **Staff can put a picture to their name.** A grid of thirty names is read by
 face long before it is read by name, and everybody who has used Humanity looks
-for the face first. It is uploaded from *My picture* on the staff screen,
-shrunk in the browser before it is sent so a phone photo does not arrive as
-four megabytes, and it shows in the circle beside the name on the people grid.
-Anybody without one keeps their initials, centred in the circle.
+for the face first. It is chosen under *My account*, shrunk in the browser
+before it is sent so a phone photo does not arrive as four megabytes, and it
+shows in the circle beside the name on the people grid. Anybody without one
+keeps their initials, centred in the circle. It was on *My shifts*, in a row of
+buttons above the rota, which is the screen somebody opens to find out when
+they are in rather than to choose a photograph.
 
 **A shift that runs into the night carries a moon.** `☾` sits beside the time
 on any shift that ends at or before it starts, or ends at midnight. Reading

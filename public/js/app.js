@@ -346,6 +346,10 @@ function shell(content) {
           // published shift and "your shift started" are the two alerts
           // written for a phone rather than a desk.
           canAlert: can('att_manage') || can('att_me'),
+          // Only somebody who appears on a rota has a picture to choose. A
+          // login that belongs to nobody on the staff list has nowhere for
+          // one to show.
+          canPhoto: can('att_me'),
         }),
       },
       // The icon is what shows on a phone and the words are what show on a

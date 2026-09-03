@@ -250,3 +250,97 @@ test('an answered mark reads as a fact rather than a question', async () => {
   assert.equal(cell.availability.decision, 'approved');
   assert.equal(data.asked, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Two days, and no more
+// ---------------------------------------------------------------------------
+
+/**
+ * Unavailability is for a day or two. Anything longer is leave, which is
+ * approved by somebody, comes off a balance and leaves a record of who agreed
+ * to it, none of which happens here. So the limit is not tidiness, it is the
+ * line between the two screens, and what is pinned down below is that the line
+ * holds however somebody arrives at it.
+ */
+test('three days at once is refused, and the answer says where to go instead', async () => {
+  const { db, raw } = setup();
+  await assert.rejects(
+    () => ask(db, { days: ['2099-09-14', '2099-09-15', '2099-09-16'], status: 'unavailable' }),
+    /2 days at most.*ask for leave/i,
+  );
+  assert.equal(rows(raw).length, 0, 'and nothing was written');
+});
+
+test('two days is fine', async () => {
+  const { db, raw } = setup();
+  await ask(db, { days: DAYS, status: 'unavailable' });
+  assert.equal(rows(raw).length, 2);
+});
+
+test('a third day joined onto two already there is refused', async () => {
+  const { db, raw } = setup();
+  await ask(db, { days: DAYS, status: 'unavailable' });
+
+  await assert.rejects(
+    () => ask(db, { days: ['2099-09-16'], status: 'unavailable' }),
+    /2 days in a row at most.*would make 3/i,
+  );
+  assert.equal(rows(raw).length, 2, 'the two already there are left alone');
+});
+
+test('one day at a time is still one week off, and is stopped the same way', async () => {
+  const { db } = setup();
+  await ask(db, { days: ['2099-09-14'], status: 'unavailable' });
+  await ask(db, { days: ['2099-09-15'], status: 'unavailable' });
+  await assert.rejects(
+    () => ask(db, { days: ['2099-09-16'], status: 'unavailable' }),
+    /2 days in a row at most/,
+  );
+});
+
+test('a day that fills the gap between two marks makes a run of three', async () => {
+  const { db } = setup();
+  await ask(db, { days: ['2099-09-14'], status: 'unavailable' });
+  await ask(db, { days: ['2099-09-16'], status: 'unavailable' });
+
+  await assert.rejects(
+    () => ask(db, { days: ['2099-09-15'], status: 'unavailable' }),
+    /would make 3/,
+  );
+});
+
+test('days scattered about are not a spell of absence', async () => {
+  const { db, raw } = setup();
+  await ask(db, { days: ['2099-09-06'], status: 'unavailable' });
+  await ask(db, { days: ['2099-09-13'], status: 'unavailable' });
+  await ask(db, { days: ['2099-09-20'], status: 'unavailable' });
+
+  assert.equal(rows(raw).length, 3, 'three separate Sundays are three separate facts');
+});
+
+test('saving the same two days again is not four days', async () => {
+  const { db, raw } = setup();
+  await ask(db, { days: DAYS, status: 'unavailable', note: 'Graduation' });
+  await ask(db, { days: DAYS, status: 'unavailable', note: 'Graduation, all day' });
+
+  assert.equal(rows(raw).length, 2);
+  assert.equal(rows(raw)[0].note, 'Graduation, all day', 'and the second one is what stands');
+});
+
+test('a declined day is not counted against the limit', async () => {
+  const { db, raw } = setup();
+  await ask(db, { days: ['2099-09-14'], status: 'unavailable' });
+  await decide(db, { staffId: 1, days: ['2099-09-14'], decision: 'declined', note: 'Needed' });
+
+  await ask(db, { days: ['2099-09-15', '2099-09-16'], status: 'unavailable' });
+  assert.equal(rows(raw).filter((r) => r.decision === 'waiting').length, 2);
+});
+
+test('wanting to work is not being away, so the limit leaves it alone', async () => {
+  const { db, raw } = setup();
+  await ask(db, {
+    days: ['2099-09-14', '2099-09-15', '2099-09-16', '2099-09-17'],
+    status: 'preferred',
+  });
+  assert.equal(rows(raw).length, 4);
+});

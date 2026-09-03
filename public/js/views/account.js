@@ -8,6 +8,33 @@ import {
 } from '../push.js';
 
 /**
+ * A photograph, made small enough to be worth sending.
+ *
+ * Drawn onto a canvas at 480 pixels on its longest side and re-encoded as a
+ * JPEG. Four megabytes off a phone camera becomes a few tens of kilobytes,
+ * and the picture is shown at two centimetres across either way.
+ */
+async function shrink(file, side = 480) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, side / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const tall = Math.round(bitmap.height * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = tall;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, tall);
+  bitmap.close?.();
+
+  const blob = await new Promise((done) => canvas.toBlob(done, 'image/jpeg', 0.82));
+  const buffer = await blob.arrayBuffer();
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return { content: btoa(binary), mime: 'image/jpeg', bytes: bytes.length };
+}
+
+/**
  * Changing your own PIN or password.
  *
  * Available to everybody, because a credential that only an administrator can
@@ -21,7 +48,7 @@ import {
  * digits are never enough to replace themselves with four other ones.
  */
 export function openAccountDialog({
-  role, name, email: myEmail, isRecovery, hasPin = false, canAlert = false,
+  role, name, email: myEmail, isRecovery, hasPin = false, canAlert = false, canPhoto = false,
 }) {
   const usesPassword = role === 'admin';
   // Only offered to people who would act on an alert. Somebody who reads the
@@ -223,6 +250,7 @@ export function openAccountDialog({
     // pixels painted over — which is what "Signed in as Michael" was.
     h('p.muted', { style: { fontSize: '.85rem' } }, `Signed in as ${name}`),
     body,
+    canPhoto ? pictureSection() : null,
     installSection(),
     canSeeAlerts ? alertsSection() : null,
   );
@@ -234,6 +262,69 @@ export function openAccountDialog({
   });
   dialog.showModal();
   if (!isRecovery) setTimeout(() => current.focus(), 0);
+
+  /**
+   * The picture that goes beside your name.
+   *
+   * It was on My shifts, which is the screen somebody opens to find out when
+   * they are in. Choosing a photograph is not that question, and it sat in a
+   * row of buttons above the rota being pressed by accident. It belongs with
+   * the other things that are about you rather than about your week.
+   *
+   * Shrunk on this device rather than on the way in: a phone camera sends
+   * four megabytes of a face that is shown at two centimetres across, and the
+   * browser can do the resizing for nothing.
+   */
+  function pictureSection() {
+    const pick = h('input', { type: 'file', accept: 'image/*' });
+    const said = h('p.muted', { style: { minHeight: '1.2rem', fontSize: '.85rem' } });
+
+    const use = h('button.btn-primary', { onclick: async (event) => {
+      const file = pick.files?.[0];
+      if (!file) { said.textContent = 'Choose a picture first.'; return; }
+      event.target.disabled = true;
+      said.textContent = 'Sending…';
+      try {
+        const shrunk = await shrink(file).catch(() => {
+          throw new Error('That file could not be read as a picture.');
+        });
+        await api.setMyPhoto({ ...shrunk, filename: file.name });
+        pick.value = '';
+        said.textContent = '';
+        toast('That is your picture now.', 'good');
+      } catch (err) {
+        said.textContent = err.message;
+      } finally {
+        event.target.disabled = false;
+      }
+    } }, 'Use it');
+
+    const drop = h('button.btn-ghost.btn-sm', { onclick: async (event) => {
+      event.target.disabled = true;
+      try {
+        await api.clearMyPhoto();
+        pick.value = '';
+        said.textContent = '';
+        toast('Taken off. Your initials will show instead.', 'good');
+      } catch (err) {
+        said.textContent = err.message;
+      } finally {
+        event.target.disabled = false;
+      }
+    } }, 'Take my picture off');
+
+    return h('div', {
+      style: { marginTop: '1.1rem', paddingTop: '.9rem', borderTop: '1px solid var(--border)' },
+    },
+      h('h3', { style: { fontSize: '.95rem', marginBottom: '.35rem' } }, 'My picture'),
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'A head-and-shoulders picture, the way it would look on a staff card. It is shown '
+        + 'beside your name on the rota and nowhere else, and it is made smaller on this '
+        + 'device before it is sent, so a photograph straight from the camera is fine.'),
+      h('label.field', h('span', 'Choose a picture'), pick),
+      said,
+      h('div.btn-row', { style: { justifyContent: 'flex-end' } }, drop, use));
+  }
 
   /**
    * Putting it on the phone.

@@ -6,12 +6,17 @@ import {
   asHours, field, formDialog, lateBy, shiftColour, shiftHours, shiftMinutes, showSheet,
 } from './att-shared.js';
 
+// How many days somebody can say they cannot work in one go. Kept in step with
+// the same figure in src/routes/me.js, which is the one that actually holds:
+// this one is here so the screen can say it before the server has to.
+const MAX_UNAVAILABLE_DAYS = 2;
+
 /**
  * My shifts.
  *
  * The screen a member of staff opens on their phone, in a corridor, to answer
- * one of four questions: am I in tomorrow, was I marked late on Tuesday, can I
- * have Friday off, and I am stuck in traffic.
+ * three questions: am I in tomorrow, was I marked late on Tuesday, and can I
+ * have Friday off.
  *
  * Built as a list rather than a grid on purpose. A rota grid is the right
  * shape for the person building it, who is comparing twenty-four people; it is
@@ -23,75 +28,6 @@ import {
  * somebody signs the month off — a running total on a phone is a number to
  * argue about, and the app should not be the one starting the argument.
  */
-/**
- * The picture that goes beside your name.
- *
- * It is on every rota anybody opens, which is reason enough to let the person
- * it is of choose it rather than living with whatever was scanned the week
- * they joined. Shrunk here rather than on the way in: a phone camera sends
- * four megabytes of a face that is shown at two centimetres across, and the
- * browser can do the resizing for nothing.
- */
-async function shrink(file, side = 480) {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, side / Math.max(bitmap.width, bitmap.height));
-  const w = Math.round(bitmap.width * scale);
-  const h2 = Math.round(bitmap.height * scale);
-
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h2;
-  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h2);
-  bitmap.close?.();
-
-  const blob = await new Promise((done) => canvas.toBlob(done, 'image/jpeg', 0.82));
-  const buffer = await blob.arrayBuffer();
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
-  return { content: btoa(binary), mime: 'image/jpeg', bytes: bytes.length };
-}
-
-async function choosePhoto(reload) {
-  const pick = h('input', { type: 'file', accept: 'image/*', name: 'photo' });
-  const note = h('p.muted', { style: { fontSize: '.82rem' } },
-    'A head-and-shoulders picture, the way it would look on a staff card. It is shown beside '
-    + 'your name on the rota and nowhere else, and it is shrunk on this device before it is '
-    + 'sent, so a photograph straight from the camera is fine.');
-
-  const done = await formDialog({
-    title: 'My picture',
-    submitLabel: 'Use it',
-    body: h('div',
-      field('Choose a picture', pick),
-      note,
-      h('button.btn-sm', {
-        type: 'button',
-        onclick: async () => {
-          try {
-            await api.clearMyPhoto();
-            toast('Taken off. Your initials will show instead.', 'good');
-          } catch (err) { toast(err.message, 'bad'); }
-        },
-      }, 'Take my picture off'),
-    ),
-    onSubmit: async () => {
-      const file = pick.files?.[0];
-      if (!file) throw new Error('Choose a picture first.');
-      const shrunk = await shrink(file).catch(() => {
-        throw new Error('That file could not be read as a picture.');
-      });
-      await api.setMyPhoto({ ...shrunk, filename: file.name });
-      return true;
-    },
-  });
-
-  if (done) {
-    toast('That is your picture now.', 'good');
-    await reload();
-  }
-}
-
 export async function renderAttMe(params = {}) {
   const host = h('div');
   const from = params.from || null;
@@ -134,11 +70,9 @@ export async function renderAttMe(params = {}) {
             : 'Nothing on the rota for you in the next four weeks'),
       ),
       h('div.btn-row',
-        h('button.btn-sm', { onclick: () => choosePhoto(reload) }, 'My picture'),
-        h('button.btn-sm', { onclick: () => runningLate(reload) }, 'I am running late'),
         h('button.btn-sm', {
           onclick: () => editMyAvailability(data, reload),
-        }, 'Days I cannot work'),
+        }, 'Create unavailability'),
         h('button.btn.btn-primary', { onclick: () => askForLeave(data, reload) }, 'Ask for leave'),
       ),
     ),
@@ -493,33 +427,71 @@ async function askForLeave(data, reload) {
 }
 
 /**
- * Days I cannot work.
+ * Create unavailability.
  *
  * Not leave, and it says so plainly: nothing is approved and nothing is spent.
  * It is the fact the planner needs before they pick a shift, put in by the one
  * person who actually knows it.
+ *
+ * Two days at a time, because that is the size of thing this is for: a
+ * christening on Saturday, a clinic appointment on Tuesday. A week off is
+ * leave, and asking for it here would be asking for a week away without any
+ * of it being approved, counted or taken off a balance. So the third tick
+ * says so and sends them next door.
  */
 async function editMyAvailability(data, reload) {
   const ahead = data.days.filter((d) => d.day >= data.today);
 
+  const status = h('select', { name: 'status' },
+    h('option', { value: 'unavailable' }, 'Cannot work'),
+    h('option', { value: 'preferred' }, 'Would like to work'),
+  );
+
+  // Said as it happens rather than on Save. Somebody who has ticked five days
+  // should find out before they have filled in a note and a pair of times.
+  const tally = h('p.muted', { style: { fontSize: '.85rem', minHeight: '1.2rem' } });
+  const ticks = [];
+  const cannotWork = () => status.value !== 'preferred';
+  const count = () => ticks.filter((t) => t.checked).length;
+
+  const paint = () => {
+    const n = count();
+    const over = cannotWork() && n > MAX_UNAVAILABLE_DAYS;
+    tally.textContent = over
+      ? `${n} days ticked. Unavailability is for a day or two. For anything longer, `
+        + 'close this and use Ask for leave instead.'
+      : n
+        ? `${n} day${n === 1 ? '' : 's'} ticked.`
+        : '';
+    tally.classList.toggle('bad-text', over);
+  };
+
+  const dayList = h('div.avail-days', ahead.map((d) => {
+    const tick = h('input', {
+      type: 'checkbox', name: 'day', value: d.day,
+      checked: d.availability?.status === 'unavailable',
+      onchange: paint,
+    });
+    ticks.push(tick);
+    return h('label.tickline', tick,
+      h('span', fmtDayShort(d.day),
+        d.shift ? h('small.muted', ` (on ${d.shift.name})`) : null));
+  }));
+
+  status.onchange = paint;
+  paint();
+
   const done = await formDialog({
-    title: 'Days I cannot work',
+    title: 'Create unavailability',
     submitLabel: 'Save',
     body: h('div',
       h('p.muted', { style: { fontSize: '.85rem' } },
         'This is not leave. Nothing is approved and no days are spent. It shows in the cell '
-        + 'so whoever builds the rota sees it before they put you on something.'),
-      h('div.avail-days', ahead.map((d) => h('label.tickline',
-        h('input', {
-          type: 'checkbox', name: 'day', value: d.day,
-          checked: d.availability?.status === 'unavailable',
-        }),
-        h('span', fmtDayShort(d.day),
-          d.shift ? h('small.muted', ` (on ${d.shift.name})`) : null)))),
-      field('Kind', h('select', { name: 'status' },
-        h('option', { value: 'unavailable' }, 'Cannot work'),
-        h('option', { value: 'preferred' }, 'Would like to work'),
-      )),
+        + 'so whoever builds the rota sees it before they put you on something. Two days at a '
+        + 'time. For longer than that, ask for leave.'),
+      dayList,
+      tally,
+      field('Kind', status),
       h('div.field-row',
         field('From', h('input', { type: 'time', name: 'fromTime' }), 'Leave both blank for the whole day'),
         field('Until', h('input', { type: 'time', name: 'toTime' })),
@@ -529,6 +501,11 @@ async function editMyAvailability(data, reload) {
     onSubmit: async (form) => {
       const days = form.getAll('day');
       if (!days.length) throw new Error('Tick at least one day.');
+      if (form.get('status') !== 'preferred' && days.length > MAX_UNAVAILABLE_DAYS) {
+        throw new Error(
+          `${MAX_UNAVAILABLE_DAYS} days at most. For longer than that, ask for leave instead.`,
+        );
+      }
       return api.mySetAvailability({
         days,
         status: form.get('status'),
@@ -540,42 +517,6 @@ async function editMyAvailability(data, reload) {
   });
 
   if (!done) return;
-  toast(`${done.marked} day${done.marked === 1 ? '' : 's'} marked.`, 'good');
-  await reload();
-}
-
-/**
- * Stuck in traffic.
- *
- * One button, and the thing a hotel wants most out of a phone. It records
- * nothing against the day — the terminal decides what happened — it just means
- * whoever is on the floor knows before the shift starts rather than by looking
- * at an empty station.
- */
-async function runningLate(reload) {
-  const done = await formDialog({
-    title: 'Tell them I am running late',
-    submitLabel: 'Send it',
-    body: h('div',
-      h('p.muted', { style: { fontSize: '.85rem' } },
-        'Let them know you are running late so your manager can have somebody cover you in '
-        + 'the meantime. This is a message, not an excuse note: it changes nothing on your '
-        + 'record, and the terminal still decides what time you arrived.'),
-      field('About how late', h('select', { name: 'minutes' },
-        [10, 15, 30, 45, 60, 90, 120].map((n) => h('option', {
-          value: String(n), selected: n === 15,
-        }, `${n} minutes`)))),
-      field('Anything to add', h('input', {
-        type: 'text', name: 'note', maxlength: 200, placeholder: 'The Spintex road is at a stop',
-      })),
-    ),
-    onSubmit: async (form) => api.myRunningLate({
-      minutes: Number(form.get('minutes')),
-      note: form.get('note') || null,
-    }),
-  });
-
-  if (!done) return;
-  toast('Sent. They know.', 'good');
+  toast(`${done.asked} day${done.asked === 1 ? '' : 's'} marked.`, 'good');
   await reload();
 }

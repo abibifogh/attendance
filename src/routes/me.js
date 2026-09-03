@@ -571,7 +571,49 @@ export async function withdrawMyLeave(ctx, idParam) {
  * the planner needs in front of them before they pick a shift, put in by the
  * person who actually knows it. Rostering over one stays possible, because
  * some conflicts are deliberate and the grid should show them.
+ *
+ * Two days, and that is the whole of it. Being away for a week is leave: it is
+ * approved by somebody, it comes off a balance, and there is a record of who
+ * agreed to it. Marked here instead, the same week would be none of those
+ * things, which is how somebody ends up away for five days that nobody signed
+ * for. So the limit is not a tidiness rule, it is the line between the two
+ * screens, and the answer sends them to the other one.
+ *
+ * Counted across the run, not just this request. Ticking Monday, saving, then
+ * ticking Tuesday and Wednesday is the same week off arrived at in two
+ * presses, and a limit that stops only the first way of asking is not a limit.
+ * Scattered days are left alone: three separate Sundays are three separate
+ * facts, not a spell of absence.
  */
+export const MAX_UNAVAILABLE_DAYS = 2;
+
+/** The day before, and the day after, as ISO dates. */
+function stepDay(day, by) {
+  const at = new Date(`${day}T00:00:00Z`);
+  at.setUTCDate(at.getUTCDate() + by);
+  return at.toISOString().slice(0, 10);
+}
+
+/**
+ * The longest unbroken run of days this request would leave on the record.
+ *
+ * `asking` is what is being marked now; `standing` is what is already there.
+ * Both are dates, and the answer is the size of the biggest group of them
+ * that sit on consecutive days.
+ */
+export function longestRun(asking, standing = []) {
+  const all = [...new Set([...asking, ...standing])].sort();
+  let best = 0;
+  let run = 0;
+  let last = null;
+  for (const day of all) {
+    run = last && stepDay(last, 1) === day ? run + 1 : 1;
+    last = day;
+    if (run > best) best = run;
+  }
+  return best;
+}
+
 export async function setMyAvailability(ctx) {
   const staff = await meOf(ctx);
   const body = await readJson(ctx.request);
@@ -596,6 +638,36 @@ export async function setMyAvailability(ctx) {
   }
 
   const status = body.status === 'preferred' ? 'preferred' : 'unavailable';
+
+  // Wanting to work is not being away, so it is none of the limit's business.
+  if (status === 'unavailable') {
+    if (days.length > MAX_UNAVAILABLE_DAYS) {
+      throw badRequest(
+        `${MAX_UNAVAILABLE_DAYS} days at most. For longer than that, ask for leave instead, `
+        + 'so it is approved and counted.',
+      );
+    }
+
+    const held = await ctx.db.prepare(
+      `SELECT day FROM att_availability
+        WHERE staff_id = ?1 AND status = 'unavailable' AND day >= ?2
+          AND decision IN ('waiting', 'approved')`,
+    ).bind(staff.id, today).all();
+    // Days being marked again are already in `days`, and counting the copy on
+    // the record as well would have a re-save of the same two days read as a
+    // run of two, which it is, and a re-save of one day read as one. Removing
+    // them keeps that honest either way.
+    const standing = (held.results ?? [])
+      .map((r) => r.day).filter((d) => !days.includes(d));
+    const run = longestRun(days, standing);
+    if (run > MAX_UNAVAILABLE_DAYS) {
+      throw badRequest(
+        `${MAX_UNAVAILABLE_DAYS} days in a row at most. That would make ${run}. `
+        + 'For longer than that, ask for leave instead, so it is approved and counted.',
+      );
+    }
+  }
+
   const note = str(body.note, 'Note', { max: 200 });
   const fromTime = readClock(body.fromTime, 'From');
   const toTime = readClock(body.toTime, 'Until');
