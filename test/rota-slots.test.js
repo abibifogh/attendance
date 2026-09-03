@@ -551,3 +551,68 @@ test('a day with nothing on it set to Off leaves nothing behind', async () => {
   assert.equal(data.slots.filter((s) => s.day === DAY).length, 0,
     'there was no shift to leave standing');
 });
+
+// ---------------------------------------------------------------------------
+// Clearing the name on a day
+// ---------------------------------------------------------------------------
+
+/**
+ * A day carries an optional name of its own: "Stock take", "Cover for Ama".
+ * Clearing one and saving put it straight back, and the only way to be rid of
+ * it was to set the cell to something else and back again.
+ *
+ * A name cleared and a name never mentioned both arrive as null, because an
+ * empty string is read as "nothing given" on the way in, and the row fell back
+ * to what it already said. So the second reading won every time. Whether the
+ * caller said anything about the name is the question, and the key being there
+ * is the answer.
+ */
+const titleOn = (raw, day = DAY) => raw
+  .prepare('SELECT title FROM att_roster WHERE staff_id = 1 AND day = ?').get(day)?.title;
+
+test('a name cleared on a day stays cleared', async () => {
+  const { db, raw } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 1, title: 'Stock take' }]);
+  assert.equal(titleOn(raw), 'Stock take');
+
+  const { id } = raw.prepare('SELECT id FROM att_roster WHERE day = ?').get(DAY);
+  await save(db, [{ id, day: DAY, shiftId: 1, title: null }]);
+  assert.equal(titleOn(raw), null);
+
+  const cell = cellOf(await look(db), 1);
+  assert.equal(cell.title, null, 'and the grid agrees');
+});
+
+test('an empty box is a cleared name, not a name nobody typed', async () => {
+  const { db, raw } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 1, title: 'Stock take' }]);
+  const { id } = raw.prepare('SELECT id FROM att_roster WHERE day = ?').get(DAY);
+
+  await save(db, [{ id, day: DAY, shiftId: 1, title: '' }]);
+  assert.equal(titleOn(raw), null);
+});
+
+test('a change that says nothing about the name keeps it', async () => {
+  // What the fallback was there for: dragging a card onto somebody else
+  // mentions no name, and the day is still the stock take.
+  const { db, raw } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 1, title: 'Stock take' }]);
+  const { id } = raw.prepare('SELECT id FROM att_roster WHERE day = ?').get(DAY);
+
+  await save(db, [{ id, day: DAY, staffId: 2, shiftId: 1 }]);
+  const moved = raw.prepare('SELECT staff_id, title FROM att_roster WHERE day = ?').get(DAY);
+  assert.equal(moved.staff_id, 2);
+  assert.equal(moved.title, 'Stock take');
+});
+
+test('clearing a name is a change, so the day needs publishing again', async () => {
+  const { db, raw } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 1, title: 'Stock take' }]);
+  await publishRoster(ctx(db, { body: { from: '2026-06-01', to: '2026-06-14' } }));
+
+  const { id } = raw.prepare('SELECT id FROM att_roster WHERE day = ?').get(DAY);
+  await save(db, [{ id, day: DAY, shiftId: 1, title: null }]);
+
+  const out = await look(db);
+  assert.equal(out.publish.again, 1, 'staff were told a name that is no longer there');
+});

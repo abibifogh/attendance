@@ -3024,7 +3024,19 @@ export async function saveRoster(ctx) {
       mark(who, day);
 
       const nowShift = shiftId ?? row.shift_id;
-      const nowTitle = title ?? row.title ?? null;
+
+      // ASKED FOR, NOT MERELY EMPTY. A name cleared and a name never mentioned
+      // both arrive as null, because an empty string is read as "nothing given"
+      // on the way in. Falling back to what the row already said meant the
+      // second reading won every time: clearing "Stock take" and saving put
+      // "Stock take" straight back, and the only way to get rid of one was to
+      // set the cell to something else and back again.
+      //
+      // Whether the caller said anything about the title is the question, and
+      // the key being there is the answer. A drag that moves a card mentions
+      // no title and keeps the one it has; a dialog that cleared the box sends
+      // the key with nothing in it and clears it.
+      const nowTitle = 'title' in entry ? title : (row.title ?? null);
 
       // A SAVE THAT CHANGES NOTHING CHANGES NOTHING.
       //

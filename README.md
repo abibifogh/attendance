@@ -437,6 +437,17 @@ does not claim somebody touched the day either. It is the shape *last*
 published, so a day published, changed, published again and then put back the
 first way is a change: what staff were last told is the second version.
 
+**A name cleared on a day stays cleared.** A day carries an optional name of
+its own, "Stock take" or "Cover for Ama", and clearing one put it straight
+back: the only way to be rid of it was to set the cell to something else and
+back again. A name cleared and a name never mentioned both arrive as nothing,
+because an empty box is read as "nothing given" on the way in, and the row
+then fell back to what it already said, so the second reading won every time.
+Whether the caller said anything about the name is the question, and the key
+being present in the change is the answer. A drag that moves a card mentions
+no name and keeps the one it has; a dialog that cleared the box sends the key
+with nothing in it, and clears it.
+
 **Taking somebody off a shift does not take the shift with them.** Setting a
 cell to Off turned the row holding the shift into a rest day and the shift
 went with it, so a breakfast somebody had been put on simply stopped existing
