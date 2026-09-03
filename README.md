@@ -317,6 +317,18 @@ opening on Saturday" read directly). One, two or four weeks; a calendar picker
 that snaps to Mondays; department and tag filters; a conflicts chip that counts
 who the plan is overworking and opens Workload.
 
+**The shifts nobody is on are the first row of the People view.** An empty
+slot belongs to a day rather than to a person, so it travels beside the rows,
+and for a while the people grid had nowhere to put it: a hole in the week
+showed only if somebody thought to switch to Positions. A gap you have to go
+looking for is a gap nobody finds. So the row sits above the names, tinted,
+one card per shift per day, saying how many are still to fill. Pressing a card
+opens the same dialog the Positions board uses, which is how the slot gets
+filled rather than copied: naming somebody moves the row onto them and the
+card goes. It is not there at all on a week with nothing outstanding, it
+follows the department filter with the rest of the screen, and somebody who
+may only read the rota sees it without being able to press it.
+
 **The people grid reads as a grid.** Lines down the columns as well as across
 the rows, so a shift is a box on a day rather than text floating in a band, and
 every cell is the same size as a card on the positions view — an empty Tuesday

@@ -1089,13 +1089,17 @@ export async function renderAttRota(params) {
   // to look at, not scroll through. Past a week the grid drops to fixed
   // columns and the cells give up everything the eye can do without: the hours
   // line, the empty name button, half the padding.
+  let peopleBody = null;
   const grid = h('div.table-wrap.rota-scroll',
     // `rota-read` says the Pattern column is not there, which two width rules
     // and one phone rule need to know: without it they are talking about
     // Monday.
     h('table.rota-table', { class: [tightness, mayEdit ? '' : 'rota-read'].filter(Boolean).join(' ') || null },
       h('thead', headRow),
-      h('tbody', visible.map((row) => h('tr',
+      // Held by name because the unfilled row is put in front of these later:
+      // it draws cards, and the code that draws a card is defined further
+      // down the file than this is.
+      peopleBody = h('tbody', visible.map((row) => h('tr',
         h('td.rota-who',
           h('div.rota-who-in',
             faceOf(row.staff),
@@ -1419,6 +1423,9 @@ export async function renderAttRota(params) {
       cellShown.select.classList.toggle('rota-dirty', pending.has(key) || touchedCells.has(key));
       cellShown.syncHours();
     }
+
+    // The row above the names is about the same window, so it moves with it.
+    redrawUnfilled();
   };
 
   /** Queue a change to one card and redraw whichever grid is on screen. */
@@ -1796,6 +1803,88 @@ export async function renderAttRota(params) {
     nightMark(shift)),
   h('span.pos-card-who', card.row ? card.row.staff.name : 'Empty'));
 
+  /**
+   * The shifts on the week that nobody is on, at the top of the people view.
+   *
+   * An empty slot belongs to a day rather than to a person, so it travelled
+   * beside the rows and the people grid had nowhere to put it. Which meant a
+   * hole in the week, which is the thing the draft marks and the thing somebody
+   * has to answer on Monday, was visible only if you thought to switch to
+   * Positions.
+   * A gap you have to go looking for is a gap nobody finds.
+   *
+   * It goes above the names rather than below them. It is the row that is
+   * asking a question; the rest of the grid is the answer so far.
+   *
+   * Pressing a card opens the same dialog the Positions board uses, which is
+   * how the slot gets filled rather than copied: naming somebody moves the row
+   * onto them and the card goes.
+   */
+  const unfilledRow = () => {
+    const wanted = (data.slots ?? []).filter((slot) => {
+      if (!slot.shift_id) return false;
+      if (!params.department) return true;
+      // Filtered with the rest of the screen. A planner looking at
+      // Housekeeping does not want the breakfasts nobody is on either.
+      return (shiftById.get(String(slot.shift_id))?.department || '') === params.department;
+    });
+    if (!wanted.length) return null;
+
+    const onDay = new Map();
+    for (const slot of wanted) {
+      if (!onDay.has(slot.day)) onDay.set(slot.day, []);
+      onDay.get(slot.day).push(slot);
+    }
+
+    const cardsFor = (day) => (onDay.get(day) ?? [])
+      .map((slot) => {
+        const shift = shiftById.get(String(slot.shift_id));
+        if (!shift) return null;
+        return posCard(shift, {
+          id: slot.id,
+          day,
+          shiftId: slot.shift_id,
+          row: null,
+          title: slot.title,
+          published: slot.published,
+          clash: false,
+        });
+      })
+      .filter(Boolean);
+
+    return h('tr.rota-unfilled',
+      h('td.rota-who',
+        h('div.rota-who-in',
+          h('div.rota-who-text',
+            h('div.rota-who-name', h('span.rota-who-label', 'Nobody on it yet')),
+            h('small.muted', `${wanted.length} shift${wanted.length === 1 ? '' : 's'} `
+              + 'to fill'),
+          ),
+        ),
+      ),
+      mayEdit ? h('td') : null,
+      ...data.days.map((day) => {
+        const cards = cardsFor(day);
+        return h('td', { class: dayClass(day) },
+          cards.length ? h('div.pos-stack', cards) : null);
+      }),
+    );
+  };
+
+  /**
+   * Put the unfilled row in front of the people, or take it away.
+   *
+   * Called again whenever a staged change lands, because filling one of these
+   * from the row itself has to make the card go: leaving it there is the grid
+   * still asking a question somebody has just answered.
+   */
+  const redrawUnfilled = () => {
+    if (!peopleBody) return;
+    peopleBody.querySelector('tr.rota-unfilled')?.remove();
+    const row = unfilledRow();
+    if (row) peopleBody.prepend(row);
+  };
+
   /** Which of a position's shifts a dragged one lands on. */
   const landsOn = (position, load) => {
     const shifts = position.shifts ?? [position];
@@ -1986,6 +2075,9 @@ export async function renderAttRota(params) {
     ),
   );
 
+  // Built once here rather than inside the grid above, because it draws cards
+  // and the card is defined further down than the grid is.
+  redrawUnfilled();
   if (view === 'positions') drawPositions();
 
   // What pressing Publish would do, counted by the server over the whole

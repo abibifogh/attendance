@@ -529,6 +529,15 @@ export const GUIDE = [
         + 'is opening on Saturday" without reading twenty-four rows. Show a week, a fortnight or '
         + 'four weeks; filter by department or tag; the date box opens a calendar and snaps to '
         + 'the Monday.' },
+      { sub: 'The shifts nobody is on' },
+      { p: 'They are the first row of People view, above the names, under '
+        + '"Nobody on it yet". One card per shift per day, and the row says how many are '
+        + 'still to fill. Press a card and you get the same list of people a filled card '
+        + 'gives you; naming somebody moves the shift onto them and the card goes.' },
+      { note: 'The row is not there on a week with nothing outstanding. It follows the '
+        + 'department filter with the rest of the screen, so looking at Housekeeping does '
+        + 'not show you the breakfasts nobody is on either.' },
+
       { sub: 'The special meal' },
       { p: 'It is the last Friday of every month, and that column is marked on the grid so '
         + 'you know which day you are looking at. On it, anybody who was off last month\u2019s '

@@ -330,3 +330,51 @@ test('every change needs a date, and says so rather than falling over', async ()
     /needs a date/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// And the people view draws them
+// ---------------------------------------------------------------------------
+
+/**
+ * A slot belongs to a day rather than to a person, so it travels beside the
+ * rows and the people grid had nowhere to put it. Which meant the shifts
+ * nobody is on, which is the thing the draft marks and the thing somebody
+ * answers on Monday, showed only if you thought to switch to Positions. A gap
+ * you have
+ * to go looking for is a gap nobody finds.
+ *
+ * The row is built in a browser and cannot be built here, so what is pinned
+ * down is that the grid reaches for the slots at all and puts them in front of
+ * the names. The rest was checked in a browser at desk and phone width.
+ */
+test('the people grid puts the unfilled shifts in front of the names', () => {
+  const view = readFileSync('public/js/views/att-rota.js', 'utf8');
+
+  assert.match(view, /const unfilledRow = \(\)/, 'there is a row for them');
+  assert.match(view, /data\.slots \?\? \[\]/, 'built from the slots the roster sends');
+  // In front of the people rather than after them, which is the whole point.
+  assert.match(view, /peopleBody\.prepend\(row\)/);
+  // And redrawn when something is staged, or filling one from the row itself
+  // would leave the card sitting there asking a question already answered.
+  assert.match(view, /redrawUnfilled\(\);/);
+});
+
+test('what the roster sends is what that row needs to draw one', async () => {
+  const { db, raw } = setup();
+  raw.prepare(
+    `INSERT INTO att_roster (staff_id, day, shift_id, title, set_by, published)
+     VALUES (NULL, '2026-06-16', 1, 'Stock take', 'test', 0)`,
+  ).run();
+
+  const out = await (await getRoster(ctx(db, { query: '?from=2026-06-15&to=2026-06-21' }))).json();
+  const [slot] = out.slots;
+
+  assert.ok(slot, 'the slot travels with the window');
+  assert.equal(slot.day, '2026-06-16');
+  assert.equal(slot.shift_id, 1);
+  assert.equal(slot.title, 'Stock take');
+  assert.equal(slot.published, false);
+  // The shift it names has to be in the same payload, or the row has a card
+  // with no name, no hours and no colour on it.
+  assert.ok(out.shifts.some((s) => Number(s.id) === Number(slot.shift_id)));
+});

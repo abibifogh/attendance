@@ -4435,6 +4435,36 @@ html { touch-action: manipulation; }
   /* The totals line under the grid keeps the same seven columns. */
   .rota-total td:first-child { grid-column: 1 / -1; font-weight: 650; }
 
+  /* The unfilled row reads like everything under it: a cell is a seventh of
+     the screen, so the shift's name does not fit here any more than it fits
+     in somebody's cell. The colour and the clock are what identifies it, the
+     same two things a filled day shows, and "Empty" is already said once at
+     the top of the row rather than seven times across it. */
+  .rota-unfilled .pos-card-shift,
+  .rota-unfilled .pos-card-title,
+  .rota-unfilled .pos-card-who { display: none; }
+  .rota-unfilled .pos-card {
+    min-height: 3.3rem;
+    padding: .3rem .1rem;
+    align-content: center;
+    justify-items: center;
+  }
+  .rota-unfilled .pos-card-clock {
+    display: grid;
+    justify-items: center;
+    line-height: 1.2;
+    font-size: .7rem;
+    font-weight: 650;
+    /* The base card keeps its clock to one line and clips the rest, because
+       on a desk it is one line. Stacked here it is two, and the height that
+       was holding it to one was cutting the finishing time off. */
+    height: auto;
+    overflow: visible;
+    white-space: normal;
+  }
+  .rota-unfilled .rota-h-to { color: var(--text-dim); font-weight: 550; }
+  .rota-unfilled .pos-stack { gap: .2rem; }
+
   /* ---- and the positions view the same way ---- */
   .rota-positions,
   .rota-positions thead,
@@ -4822,6 +4852,14 @@ body.rota-dragging .pos-add { pointer-events: none; }
 /* A `td` set to flex stops being a table cell, and the column line beside the
    names stopped lining up with the rows it was meant to divide. The cell stays
    a cell; the row inside it does the arranging. */
+/* The shifts nobody is on, at the top of the people grid.
+   Set apart from the names under it, because it is the row asking a question
+   and the rest of the grid is the answer so far. A tint rather than a rule:
+   the grid already has enough lines in it. */
+.rota-unfilled > td { background: var(--warn-soft, var(--surface-2)); }
+.rota-unfilled td:first-child .rota-who-label { color: var(--text-dim); }
+.rota-unfilled .pos-stack { min-width: 0; }
+
 .rota-who-in { display: flex; align-items: flex-start; gap: .5rem; }
 
 /* A cell is the same size whatever is in it, and the same size as a card on
