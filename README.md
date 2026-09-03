@@ -437,6 +437,18 @@ does not claim somebody touched the day either. It is the shape *last*
 published, so a day published, changed, published again and then put back the
 first way is a change: what staff were last told is the second version.
 
+**Taking somebody off a shift does not take the shift with them.** Setting a
+cell to Off turned the row holding the shift into a rest day and the shift
+went with it, so a breakfast somebody had been put on simply stopped existing
+on that day. But the day still needs its breakfast. What has changed is who is
+doing it, and the answer is nobody yet. The shift now stays on the day as an
+empty slot, in *Nobody on it yet* at the top of the grid, and the person's
+cell reads Off. Their own row is the one that becomes the rest day, so whether
+they had already been told about the day is remembered: losing a shift they
+were promised reads as a change rather than as news. Only where the shift was
+really on the rota, because a shift showing from somebody's standing pattern
+is an assumption about a normal week rather than a shift they were put on.
+
 **A day with a shift on it claims its own punches, however early they are.**
 There is an accepted stretch either side of a shift, three hours before and
 four after by default, and its job is to decide *which* shift a punch belongs
@@ -537,6 +549,32 @@ waits for an answer, because the person writing it is the person who would
 have given one. And there is no two-day limit: that limit exists to stop
 unavailability being a back door to a week off nobody approved, and this is
 the front door.
+
+**Only so many people may be off on one day.** A property can survive two or
+three people being away at once and cannot survive eight, and nothing in the
+app knew that: leave was answered one request at a time, on whether that
+person could spare the days, with no view of who else had already asked for
+the same Friday. The first anybody heard about a Friday with nine people off
+was the Friday.
+
+Three to begin with, set under **Setup → Rules**, and it counts leave and
+unavailability together because both mean the same thing to whoever has to
+build the week. Leave that has been asked for counts as much as leave that has
+been agreed, or the fourth, fifth and sixth requests would all be accepted
+while the first three were still waiting. Turned down and taken back do not
+count, and neither does *would like to work*.
+
+**It holds against what staff ask for and not against what a planner writes.**
+Somebody writing leave or unavailability on another person's behalf can see
+the whole week and is the person who would have approved it; a member of staff
+cannot see who else has asked, which is exactly why the app has to hold the
+line for them.
+
+The refusal names the day and says it is full, and it names nobody. Being told
+"no" with no reason reads as a judgement on the person asking, so the sentence
+has to say it is the day; but this app does not show one member of staff
+anybody else's week, and listing who is off would hand out exactly what the
+rest of it withholds.
 
 **Availability a member of staff asks for waits for approval.** What somebody
 sends from their own screen is a request, not a fact about the week, and a day

@@ -190,6 +190,14 @@ export const GUIDE = [
         + 'still open the figures are being worked out upstairs, and a number you write down '
         + 'from a draft is a number that can move.' },
 
+      { sub: 'How many can be off at once' },
+      { p: 'Only so many people may be off on any one day, leave and unavailability counted '
+        + 'together. Ask for a day that is already full and you are told so, and told it is '
+        + 'the day rather than you. Pick another day, or speak to whoever plans the rota if it '
+        + 'has to be that one.' },
+      { note: 'You are not told who else is off. Nothing in here shows you anybody else’s '
+        + 'week, and this is no exception.' },
+
       { sub: 'Asking for leave' },
       { steps: [
         'Press Ask for leave.',
@@ -583,6 +591,15 @@ export const GUIDE = [
         + 'is still offered with the reason against them \u2014 covering a gap with whoever is '
         + 'standing there is a real Saturday, and the answer to it is a warning rather than '
         + 'an empty list.' },
+
+      { sub: 'How many can be off at once' },
+      { p: 'Set under Setup → Rules, three to begin with. It counts leave and unavailability '
+        + 'together, and it counts what has been asked for as well as what has been agreed, or '
+        + 'four more requests would all be accepted while the first three were still waiting.' },
+      { note: 'It does not stand in your way. Leave or unavailability you write on somebody’s '
+        + 'behalf goes straight in, because you can see the whole week and you are the person '
+        + 'who would have approved it. The ceiling is there for the people who cannot see who '
+        + 'else has asked.' },
 
       { sub: 'When somebody cannot work' },
       { p: 'The ✕ button on their row marks days they cannot work (or asked to work), with the '

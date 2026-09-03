@@ -3172,6 +3172,38 @@ export async function saveRoster(ctx) {
       continue;
     }
 
+    // TAKING SOMEBODY OFF DOES NOT TAKE THE SHIFT WITH THEM.
+    //
+    // Setting a cell to Off turned the row holding the shift into a rest day
+    // and the shift went with it: a breakfast somebody had been put on simply
+    // stopped existing on that day. But the day still needs its breakfast.
+    // What has changed is who is doing it, and the answer is nobody yet.
+    //
+    // So the shift stays on the day as an empty slot and the person's cell
+    // reads Off. Both of the things that are now true get said, in the two
+    // places that say them: their row on the grid, and "Nobody on it yet" at
+    // the top of it, waiting for somebody.
+    //
+    // Only where the shift was really on the rota. A shift showing because of
+    // somebody's standing pattern is an assumption about a normal week rather
+    // than a shift they were put on, and a planner moving one person's day off
+    // should not manufacture a hole for it.
+    if (shiftId == null) {
+      for (const row of held.filter((r) => r.shift_id != null)) {
+        statements.push(ctx.db.prepare(
+          `INSERT INTO att_roster (staff_id, day, shift_id, title, set_by, set_at, published)
+           VALUES (NULL, ?1, ?2, ?3, ?4, datetime('now'), 0)`,
+        ).bind(day, row.shift_id, row.title, actor));
+        statements.push(logChange(ctx.db, {
+          day, shiftId: row.shift_id, action: 'added', actor,
+          detail: 'Left empty when the person was given the day off',
+        }));
+      }
+    }
+
+    // The person's own row is left to do what it always did: become their rest
+    // day, keeping whether they were ever told about the day. The slot above
+    // is a new row, which is right, because nobody was ever told about a slot.
     statements.push(...replaceDay(ctx.db, {
       rows: held, staffId, day, shiftId, actor, note, title,
     }));

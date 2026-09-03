@@ -474,3 +474,80 @@ test('a day-off row already sitting beside a shift accuses nobody', async () => 
   const cell = cellOf(await look(db), 1);
   assert.deepEqual(cell.extra, [], 'a row with no shift on it is not a second shift');
 });
+
+// ---------------------------------------------------------------------------
+// Taking somebody off does not take the shift with them
+// ---------------------------------------------------------------------------
+
+/**
+ * Setting a cell to Off turned the row holding the shift into a rest day and
+ * the shift went with it: a breakfast somebody had been put on simply stopped
+ * existing on that day. But the day still needs its breakfast. What has
+ * changed is who is doing it, and the answer is nobody yet.
+ */
+test('a shift somebody is taken off stays on the day, empty', async () => {
+  const { db } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 1 }]);
+  await save(db, [{ staffId: 1, day: DAY, shiftId: null }]);
+
+  const data = await look(db);
+  assert.equal(cellOf(data, 1).shift_id, null, 'their cell reads Off');
+  assert.deepEqual(
+    data.slots.filter((s) => s.day === DAY).map((s) => s.shift_id), [1],
+    'and the shift is waiting for somebody',
+  );
+});
+
+test('the empty slot it leaves can be given to somebody else', async () => {
+  const { db, raw } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 1 }]);
+  await save(db, [{ staffId: 1, day: DAY, shiftId: null }]);
+
+  const slot = raw.prepare('SELECT id FROM att_roster WHERE staff_id IS NULL AND day = ?').get(DAY);
+  await save(db, [{ id: slot.id, day: DAY, staffId: 2, shiftId: 1 }]);
+
+  const data = await look(db);
+  assert.equal(cellOf(data, 2).shift_id, 1, 'Ama has it now');
+  assert.equal(cellOf(data, 1).shift_id, null, 'and Kofi is still off');
+  assert.equal(data.slots.filter((s) => s.day === DAY).length, 0, 'nothing left waiting');
+});
+
+test('both of somebody’s shifts stay on the day when they go off', async () => {
+  const { db } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 1 }]);
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 2, add: true }]);
+  await save(db, [{ staffId: 1, day: DAY, shiftId: null }]);
+
+  const data = await look(db);
+  assert.equal(cellOf(data, 1).shift_id, null);
+  assert.deepEqual(
+    data.slots.filter((s) => s.day === DAY).map((s) => s.shift_id).sort(), [1, 2],
+  );
+});
+
+test('their rest day is still their own row, so what they were told is remembered', async () => {
+  const { db, raw } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 1 }]);
+  await publishRoster(ctx(db, { body: { from: '2026-06-01', to: '2026-06-14' } }));
+  const before = raw.prepare('SELECT id FROM att_roster WHERE staff_id = 1 AND day = ?').get(DAY);
+
+  await save(db, [{ staffId: 1, day: DAY, shiftId: null }]);
+  const after = raw.prepare(
+    'SELECT id, shift_id, ever_published FROM att_roster WHERE staff_id = 1 AND day = ?',
+  ).get(DAY);
+
+  assert.equal(after.id, before.id, 'the same row is now their day off');
+  assert.equal(after.shift_id, null);
+  assert.equal(after.ever_published, 1,
+    'so losing a shift they were told about reads as a change rather than as news');
+});
+
+test('a day with nothing on it set to Off leaves nothing behind', async () => {
+  const { db } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: null }]);
+
+  const data = await look(db);
+  assert.equal(cellOf(data, 1).shift_id, null);
+  assert.equal(data.slots.filter((s) => s.day === DAY).length, 0,
+    'there was no shift to leave standing');
+});

@@ -6,6 +6,9 @@ import {
   summarise, toMinutes,
 } from '../lib/attendance.js';
 import { createNotice } from '../lib/notices.js';
+import {
+  awayCap, dayFullMessage, daysBetween, firstDayFull, whoIsAway,
+} from '../lib/away.js';
 import { fromBase64 } from '../lib/files.js';
 import { storeFile } from './people.js';
 import {
@@ -502,6 +505,20 @@ export async function askForLeave(ctx) {
   ).bind(staff.id, to, from).first();
   if (clash) throw badRequest('That overlaps leave you have already asked for.');
 
+  // AND HOW MANY OTHER PEOPLE ARE ALREADY OFF. Answered here rather than left
+  // to whoever reads the request, because a person asking cannot see who else
+  // has asked and finding out on the day is what this is for. The refusal
+  // names the day and who is on it: being told "no" with no reason reads as a
+  // judgement on the person asking, and being told the day is full is a fact
+  // they can work with.
+  const cap = await awayCap(ctx.db);
+  const full = firstDayFull(
+    daysBetween(from, to),
+    await whoIsAway(ctx.db, { from, to, exceptStaffId: staff.id }),
+    cap,
+  );
+  if (full) throw badRequest(dayFullMessage(full, cap));
+
   const row = await ctx.db.prepare(
     `INSERT INTO att_leave
        (staff_id, reason_code, from_day, to_day, days, half_day, status, reason,
@@ -666,6 +683,21 @@ export async function setMyAvailability(ctx) {
         + 'For longer than that, ask for leave instead, so it is approved and counted.',
       );
     }
+
+    // And the same ceiling leave is held to. A day off asked for as
+    // unavailability empties the rota exactly as much as a day off asked for
+    // as leave, so a property that can spare three people can spare three
+    // people however they went about it.
+    const cap = await awayCap(ctx.db);
+    const sorted = [...days].sort();
+    const full = firstDayFull(
+      days,
+      await whoIsAway(ctx.db, {
+        from: sorted[0], to: sorted[sorted.length - 1], exceptStaffId: staff.id,
+      }),
+      cap,
+    );
+    if (full) throw badRequest(dayFullMessage(full, cap));
   }
 
   const note = str(body.note, 'Note', { max: 200 });

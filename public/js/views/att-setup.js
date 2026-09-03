@@ -2223,6 +2223,25 @@ async function rulesTab(reload) {
           + 'generous, and one person can be given their own figure on their record.'),
       ),
 
+      card('How many can be off at once', { note: 'Holds against what staff ask for' },
+        h('div.field-row',
+          h('label.field', h('span', 'People off on any one day'),
+            h('input', {
+              type: 'number', name: 'att_away_cap', min: 0, max: 200,
+              value: s.att_away_cap ?? 3,
+            })),
+        ),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'Leave and unavailability together. A member of staff asking for a day that already '
+          + 'has this many people off is told the day is full rather than refused without a '
+          + 'reason, so they can see it is the day and not them. They are not told who: this '
+          + 'app does not show one member of staff anybody else’s week.'),
+        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+          'It does not stand in your way. Leave or unavailability written on somebody’s behalf '
+          + 'goes straight in: you can see the whole week, and you are the person who would '
+          + 'have approved it. Nought means nobody may ask.'),
+      ),
+
       card('Reading the terminal', { note: 'Rarely worth changing' },
         h('div.field-row',
           h('label.field', h('span', 'Ignore repeat taps within'),

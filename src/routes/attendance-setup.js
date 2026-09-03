@@ -1146,6 +1146,7 @@ const SETTINGS = new Map([
     return String(v);
   }],
   ['att_min_gap_minutes', (v) => String(int(v, 'Minimum gap', { min: 0, max: 120 }))],
+  ['att_away_cap', (v) => String(int(v, 'People off at once', { min: 0, max: 200 }))],
   ['att_window_before', (v) => String(int(v, 'Window before', { min: 0, max: 720 }))],
   ['att_window_after', (v) => String(int(v, 'Window after', { min: 0, max: 720 }))],
   ['att_escalate_after', (v) => String(int(v, 'Escalate after', { min: 1, max: 30 }))],
