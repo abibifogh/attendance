@@ -2325,6 +2325,27 @@ because it is cash pay and nothing else. It is marked as worked out rather than
 agreed, so a payslip can tell the two apart, and an allowance somebody did
 agree to is left exactly as it is and topped up around.
 
+### Who is told about a request, and who is emailed about it
+
+Two different questions, and they used to be answered with one audience.
+
+A day somebody says they cannot work is exactly what a rota planner is
+working around, so it rings the bell for everybody who builds the rota. It is
+not theirs to answer: approving leave and answering an availability request
+both need "Rota & decisions", which a planner does not hold. So the **email**
+now goes only to the people who can actually reply to it. An email nobody can
+act on is how somebody learns to filter the sender, and then the one that
+mattered goes unread too.
+
+The rule is that a request waiting on a decision is emailed to whoever can
+take the decision. A leave request already worked that way. An availability
+request now does too: seen by "Set the rota", emailed to "Rota & decisions".
+
+It follows the permission rather than the job title, which matters if you
+ever grant a planner the approving permission as well. At that point they can
+answer these requests, and they will start being emailed about them, which is
+the right answer to the question the rule is actually asking.
+
 ### What has to be on the rota, and what the draft may leave out
 
 A shift used to be optional or not, and "not optional" was doing two jobs at

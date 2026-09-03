@@ -634,7 +634,14 @@ export async function setMyAvailability(ctx) {
       + `${note ? `: ${note}` : ''}. Waiting for an answer.`,
     link: '#/att-leave',
     actor: `${staff.name} (staff)`,
+    // Everybody who builds the rota sees it, because a day somebody cannot
+    // work is exactly what they are working around.
     audience: 'att_rota',
+    // But the mail goes only to whoever can answer it. Answering is a
+    // decision, and a rota planner does not take it: they were getting an
+    // email about every day anybody asked about, none of which was theirs
+    // to reply to, which is how somebody learns to filter the sender.
+    emailAudience: 'att_manage',
   }, ctx);
 
   return json({ ok: true, asked: days.length, status, decision: 'waiting' });

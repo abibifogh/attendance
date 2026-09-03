@@ -30,7 +30,7 @@ const LEVELS = new Set(['info', 'warn', 'high']);
  */
 export async function createNotice(db, {
   kind, level = 'info', title, body, link, day, slot, actor, audience = null, userId = null,
-  email = true, push = false,
+  emailAudience = undefined, email = true, push = false,
 }, ctx = null) {
   if (!kind || !title) return null;
 
@@ -44,6 +44,13 @@ export async function createNotice(db, {
     if (email && ctx?.env) {
       jobs.push(emailNotice(db, ctx.env, {
         kind, level, title, body, link, actor, audience, userId,
+        // Who gets it in an inbox, where that is a narrower set than who sees
+        // it on screen. A request waiting on a decision is worth a bell to
+        // everybody it affects and an email only to whoever can answer it: a
+        // planner needs to know somebody cannot work Tuesday while they are
+        // building the week, and does not need it in their inbox on Sunday
+        // night about a decision that is not theirs to take.
+        emailAudience,
       }).catch((err) => console.error('notice email failed', err)));
     }
 

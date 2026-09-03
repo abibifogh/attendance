@@ -642,7 +642,12 @@ export async function emailNotice(db, env, notice) {
     const from = (settings.email_from || '').trim();
     if (!apiKey || !from) return { sent: 0, reason: 'not configured' };
 
-    const people = await noticeRecipients(db, notice);
+    // A notice may be shown more widely than it is mailed. Where it says so,
+    // the narrower audience is the one that gets an inbox.
+    const people = await noticeRecipients(db, {
+      ...notice,
+      audience: notice.emailAudience === undefined ? notice.audience : notice.emailAudience,
+    });
     if (!people.length) return { sent: 0, reason: 'nobody to send to' };
 
     const { subject, html } = renderNotice({
