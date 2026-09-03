@@ -451,6 +451,8 @@ export async function render({ quiet = false } = {}) {
   // rather than over it, so there is no screen behind it to get back to.
   if (state.mustChangePin) {
     mount(root, renderForcedPinChange({
+      role: state.role,
+      email: state.email,
       onDone: async () => {
         state.mustChangePin = false;
         state.hasPin = true;

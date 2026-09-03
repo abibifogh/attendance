@@ -421,11 +421,22 @@ export function openAccountDialog({
  * Drawn in place of the whole app rather than as a dialog over it. A dialog
  * invites somebody to find the way round it, and there is no way round this
  * one: it is a longer PIN or signing out.
+ *
+ * WHAT AUTHORISES THE CHANGE DEPENDS ON WHO IS ASKING, and it is not a
+ * choice this screen gets to make. An administrator's login PIN is changed
+ * by their password and nothing else — four overheard digits must not be
+ * able to replace themselves with four others — so an administrator is
+ * asked for their password here, exactly as My account asks. Everybody else
+ * holds only the PIN, so the PIN is what they confirm with.
  */
-export function renderForcedPinChange({ onDone }) {
+export function renderForcedPinChange({ role, email, onDone }) {
+  const usesPassword = role === 'admin';
   const current = h('input', {
-    type: 'password', inputmode: 'numeric', maxlength: 10,
-    placeholder: 'Your PIN now', autocomplete: 'current-password',
+    type: 'password',
+    inputmode: usesPassword ? 'text' : 'numeric',
+    maxlength: usesPassword ? 200 : 10,
+    placeholder: usesPassword ? 'Your password' : 'Your PIN now',
+    autocomplete: 'current-password',
   });
   const next = h('input', {
     type: 'password', inputmode: 'numeric', maxlength: 10,
@@ -453,7 +464,17 @@ export function renderForcedPinChange({ onDone }) {
     event.target.disabled = true;
     error.textContent = 'Saving…';
     try {
-      await api.changeCredentials({ currentPin: current.value, newPin: next.value });
+      if (usesPassword) {
+        // The password is stretched here; it never reaches the server in
+        // the clear. See crypto.js.
+        const params = await api.passwordSalt(email);
+        await api.changeCredentials({
+          currentPasswordKey: await deriveLoginKey(current.value, params.salt, params.iterations),
+          newPin: next.value,
+        });
+      } else {
+        await api.changeCredentials({ currentPin: current.value, newPin: next.value });
+      }
       toast('PIN changed', 'good');
       await onDone();
     } catch (err) {
@@ -468,7 +489,12 @@ export function renderForcedPinChange({ onDone }) {
       h('p.muted',
         'Every PIN is now six digits or more. Yours is shorter, and it is the whole of what '
         + 'stands between somebody else and your shifts.'),
-      h('label.field', h('span', 'Your PIN now'), current),
+      h('label.field',
+        h('span', usesPassword ? 'Your password' : 'Your PIN now'),
+        current,
+        usesPassword
+          ? h('small.muted', 'Your password is what changes your PIN, not the PIN itself.')
+          : null),
       h('label.field', h('span', 'New PIN'), next),
       h('label.field', h('span', 'Repeat it'), confirm),
       error,

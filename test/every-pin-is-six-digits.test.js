@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import worker from '../src/index.js';
 import { createUser, listUsers, updateUser } from '../src/routes/admin.js';
-import { getPepper, hashPin, pinLooksRight, readToken } from '../src/lib/auth.js';
+import { getPepper, hashPin, pinLooksRight, readToken, storedPassword } from '../src/lib/auth.js';
 
 /**
  * Six digits for everybody, and what happens to the PINs that are shorter.
@@ -198,16 +198,54 @@ test('an administrator never has to rescue anybody from this', async () => {
   assert.equal((await (await signIn(db, '246810')).json()).mustChangePin, false);
 });
 
-test('an administrator on a short PIN is treated the same, and still has the password door', async () => {
-  const { raw, db } = setup();
+/** An administrator with a real password and a PIN that is too short. */
+async function anAdmin(raw, db, { pin = '4321', password = 'key-of-the-password' } = {}) {
   const pepper = await getPepper(db);
+  const hash = await storedPassword({ passwordKey: password, salt: 'AAAA', iterations: 1 }, pepper);
   raw.prepare(
     `INSERT INTO users (id, name, role, email, password_hash, pin_hash, active)
-     VALUES (9, 'Kwame', 'admin', 'k@x.com', 'pbkdf2c$1$1$AAAA$x', ?, 1)`,
-  ).run(await hashPin('4321', pepper));
+     VALUES (9, 'Kwame', 'admin', 'k@x.com', ?, ?, 1)`,
+  ).run(hash, await hashPin(pin, pepper));
+  return password;
+}
+
+test('an administrator on a short PIN is treated the same, and still has the password door', async () => {
+  const { raw, db } = setup();
+  await anAdmin(raw, db);
 
   const body = await (await signIn(db, '4321')).json();
   assert.equal(body.mustChangePin, true);
   assert.equal(body.role, 'admin');
   assert.equal(user(raw, 9).active, 1);
+});
+
+test('an administrator lengthens their PIN with their password, not with the old PIN', async () => {
+  const { raw, db } = setup();
+  const password = await anAdmin(raw, db);
+  const cookie = cookieOf(await signIn(db, '4321'));
+
+  const change = (body) => worker.fetch(new Request('https://x/api/auth/change-credentials', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify(body),
+  }), env(db), null);
+
+  // The PIN cannot authorise its own replacement for an administrator. This
+  // is what the forced screen was sending, and what it got back.
+  const withPinOnly = await change({ currentPin: '4321', newPin: '654321' });
+  assert.equal(withPinOnly.status, 400);
+  assert.match((await withPinOnly.json()).error, /current password is not correct/);
+
+  // The password does authorise it, which is what the screen sends now.
+  const withPassword = await change({ currentPasswordKey: password, newPin: '654321' });
+  assert.equal(withPassword.status, 200);
+  assert.equal((await withPassword.json()).changed, 'pin');
+  assert.equal((await readToken(tokenIn(withPassword), SECRET)).shortPin, undefined);
+
+  assert.equal((await (await signIn(db, '654321')).json()).mustChangePin, false);
+
+  // And a short one is refused down this path too.
+  const short = await change({ currentPasswordKey: password, newPin: '1111' });
+  assert.equal(short.status, 400);
+  assert.match((await short.json()).error, /6 to 10 digits/);
 });
