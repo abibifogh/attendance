@@ -396,9 +396,19 @@ function openUserDialog({ existing, data, reload }) {
   // left to say is which record.
   const staffSelect = h('select',
     h('option', { value: '' }, 'Choose…'),
-    (data.staff ?? []).map((p) => h('option', {
-      value: String(p.id), selected: String(existing?.staffId ?? '') === String(p.id),
-    }, `${p.name}${p.department ? ` · ${p.department}` : ''} · No. ${p.employee_no}`)));
+    (data.staff ?? []).map((p) => {
+      // Somebody who already holds a login cannot hold a second one, so say
+      // so here rather than letting it be chosen and refused on saving. The
+      // person being edited is the exception: their own record is the one
+      // they are already linked to.
+      const taken = p.has_login && String(existing?.staffId ?? '') !== String(p.id);
+      return h('option', {
+        value: String(p.id),
+        selected: String(existing?.staffId ?? '') === String(p.id),
+        disabled: taken,
+      }, `${p.name}${p.department ? ` · ${p.department}` : ''} · No. ${p.employee_no}`
+        + `${taken ? ' — already has a login' : ''}`);
+    }));
 
   const onRota = h('select',
     h('option', { value: 'no' }, 'No, this login only'),

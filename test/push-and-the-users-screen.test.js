@@ -5,8 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 import * as push from '../src/routes/push.js';
 import {
-  auditTrail, deleteUser, eraseData, getNotifications, listNoticesRoute, listUsers,
-  markNoticesSeen, updateNotifications,
+  auditTrail, createUser, deleteUser, eraseData, getNotifications, listNoticesRoute,
+  listUsers, markNoticesSeen, updateNotifications, updateUser,
 } from '../src/routes/admin.js';
 import { createNotice } from '../src/lib/notices.js';
 
@@ -241,4 +241,76 @@ test('the bell lists what is new to this person and stops once it is marked seen
   const after = await read(await listNoticesRoute(ctx(db)));
   assert.equal(after.unread, 0);
   assert.equal(after.notices.length, 2, 'still listed, no longer new');
+});
+
+// ---------------------------------------------------------------------------
+// Why a login was refused
+// ---------------------------------------------------------------------------
+
+test('a clash says which thing clashed, not whichever one the role suggests', async () => {
+  const { raw, db } = setup();
+  const staff = raw.prepare('SELECT id FROM att_staff ORDER BY id LIMIT 2').all();
+  const [one, two] = staff.map((s) => s.id);
+
+  await createUser(ctx(db, { body: { name: 'Ama', role: 'staff', pin: '111222', staffId: one } }));
+
+  // The one that was reported as a PIN problem for years. SQLite names the
+  // column, not the index, so the old check for the index name never matched.
+  await assert.rejects(
+    () => createUser(ctx(db, { body: { name: 'Kofi', role: 'staff', pin: '333444', staffId: one } })),
+    /member of staff already has a login/,
+  );
+
+  // A PIN really in use still says so.
+  await assert.rejects(
+    () => createUser(ctx(db, { body: { name: 'Yaw', role: 'staff', pin: '111222' } })),
+    /PIN is not available/,
+  );
+
+  // And an administrator with somebody else's PIN is told about the PIN,
+  // where the old guess-by-role would have blamed their email address.
+  await assert.rejects(
+    () => createUser(ctx(db, {
+      body: {
+        name: 'Efua', role: 'admin', email: 'efua@example.com', pin: '111222',
+        passwordKey: 'k', passwordSalt: 'AAAA', passwordIterations: 1,
+      },
+    })),
+    /PIN is not available/,
+  );
+
+  // A duplicate email is still a duplicate email.
+  await createUser(ctx(db, {
+    body: {
+      name: 'Efua', role: 'admin', email: 'efua@example.com', pin: '555666',
+      passwordKey: 'k', passwordSalt: 'AAAA', passwordIterations: 1,
+    },
+  }));
+  await assert.rejects(
+    () => createUser(ctx(db, {
+      body: {
+        name: 'Adjoa', role: 'admin', email: 'efua@example.com', pin: '777888',
+        passwordKey: 'k', passwordSalt: 'AAAA', passwordIterations: 1,
+      },
+    })),
+    /email address is already in use/,
+  );
+
+  // Editing somebody onto a taken staff record says the same thing.
+  const yaw = await (await createUser(ctx(db, { body: { name: 'Yaw', role: 'staff', pin: '999000', staffId: two } }))).json();
+  await assert.rejects(
+    () => updateUser(ctx(db, { body: { name: 'Yaw', role: 'staff', staffId: one } }), yaw.user.id),
+    /member of staff already has a login/,
+  );
+});
+
+test('the picker says who is already spoken for, so the clash is avoidable', async () => {
+  const { raw, db } = setup();
+  const one = raw.prepare('SELECT id FROM att_staff ORDER BY id LIMIT 1').get().id;
+  await createUser(ctx(db, { body: { name: 'Ama', role: 'staff', pin: '111222', staffId: one } }));
+
+  const list = await read(await listUsers(ctx(db)));
+  const taken = list.staff.find((s) => s.id === one);
+  assert.equal(taken.has_login, 1, 'the picker can grey this one out');
+  assert.ok(list.staff.some((s) => !s.has_login), 'and leave the rest alone');
 });

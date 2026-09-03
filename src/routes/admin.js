@@ -24,6 +24,27 @@ const MIN_PASSWORD = 10;
 // Deliberately identical for "a colleague has it" and "the server reserves it".
 export const PIN_TAKEN = 'That PIN is not available. Please choose a different one.';
 
+/**
+ * Which unique constraint a write on `users` tripped, in the words of the
+ * person who tripped it.
+ *
+ * SQLite names the column, not the index: "UNIQUE constraint failed:
+ * users.staff_id". The old check looked for the index name, which never
+ * appears, so every clash fell through to a guess made from the role —
+ * a PIN for a member of staff, an email for an administrator. Pointing a
+ * second login at one member of staff therefore said "That PIN is not
+ * available", which is true of nothing and sends somebody off inventing
+ * PINs until they give up. Read what actually failed instead.
+ */
+export function clashMessage(err) {
+  const text = String(err);
+  if (!text.includes('UNIQUE')) return null;
+  if (text.includes('staff_id')) return 'That member of staff already has a login.';
+  if (text.includes('email')) return 'That email address is already in use by another account.';
+  if (text.includes('pin_hash')) return PIN_TAKEN;
+  return 'Something here is already used by another account.';
+}
+
 async function audit(ctx, action, entity, detail) {
   await ctx.db.prepare(
     'INSERT INTO audit_log (actor, action, entity, detail) VALUES (?, ?, ?, ?)',
@@ -172,7 +193,11 @@ export async function listUsers(ctx) {
   // Who a staff login could point at. Sent with the list so the screen can
   // offer names rather than asking somebody to know an id.
   const staff = await ctx.db.prepare(
-    'SELECT id, name, employee_no, department FROM att_staff WHERE active = 1 ORDER BY name',
+    // Who already holds a login, so the picker can say so rather than
+    // letting somebody choose them and meet a constraint.
+    `SELECT s.id, s.name, s.employee_no, s.department,
+            EXISTS (SELECT 1 FROM users u WHERE u.staff_id = s.id) AS has_login
+       FROM att_staff s WHERE s.active = 1 ORDER BY s.name`,
   ).all().catch(() => ({ results: [] }));
 
   return json({
@@ -243,14 +268,8 @@ export async function createUser(ctx) {
     });
     return json({ user: publicUser(row) }, { status: 201 });
   } catch (err) {
-    if (String(err).includes('idx_users_staff')) {
-      throw badRequest('That member of staff already has a login.');
-    }
-    if (String(err).includes('UNIQUE')) {
-      throw badRequest(creds.isAdmin
-        ? 'That email address is already in use by another account.'
-        : PIN_TAKEN);
-    }
+    const clash = clashMessage(err);
+    if (clash) throw badRequest(clash);
     throw err;
   }
 }
@@ -315,14 +334,8 @@ export async function updateUser(ctx, id) {
     });
     return json({ user: publicUser(row) });
   } catch (err) {
-    if (String(err).includes('idx_users_staff')) {
-      throw badRequest('That member of staff already has a login.');
-    }
-    if (String(err).includes('UNIQUE')) {
-      throw badRequest(creds.isAdmin
-        ? 'That email address is already in use by another account.'
-        : PIN_TAKEN);
-    }
+    const clash = clashMessage(err);
+    if (clash) throw badRequest(clash);
     throw err;
   }
 }
