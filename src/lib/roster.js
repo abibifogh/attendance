@@ -40,6 +40,16 @@ export function replaceDay(db, {
   // A day already saying exactly this is not a change, and a trail full of
   // entries where nothing moved is a trail nobody reads.
   const moved = !keep || Number(keep.shift_id ?? 0) !== Number(shiftId ?? 0);
+
+  // Nor is it a write. Setting a cell to what it already says used to knock it
+  // back to draft, so a planner who opened a dropdown and chose the same shift
+  // again had a week that needed republishing.
+  if (keep && !moved && !extras.length
+    && (keep.title ?? null) === (title ?? null)
+    && (keep.note ?? null) === (note ?? null)) {
+    return out;
+  }
+
   if (moved) {
     out.push(logChange(db, {
       day,
@@ -54,17 +64,22 @@ export function replaceDay(db, {
     }));
   }
 
+  // A changed day is a draft again, however published it was before: staff
+  // plan their lives around the solid ones, so a cell cannot change under them
+  // while still claiming to be the version they saw. Unless what it has been
+  // changed to is the version they saw, which is what `published_as` records
+  // and what a day changed and changed back comes to.
+  const shape = `${staffId ?? ''}|${shiftId ?? ''}|${title ?? ''}|${note ?? ''}`;
+  const asPublished = keep?.published_as != null && keep.published_as === shape ? 1 : 0;
+
   out.push(keep
     ? db.prepare(
       `UPDATE att_roster
           SET shift_id = ?2, note = ?3, title = ?4, set_by = ?5, set_at = datetime('now'),
-              -- A changed day is a draft again, however published it was
-              -- before. Staff plan their lives around the solid ones, so a
-              -- cell cannot change under them while still claiming to be the
-              -- version they saw. ever_published is deliberately left alone.
-              published = 0
+              -- ever_published is deliberately left alone.
+              published = ?6
         WHERE id = ?1`,
-    ).bind(keep.id, shiftId, note, title, actor)
+    ).bind(keep.id, shiftId, note, title, actor, asPublished)
     : db.prepare(
       `INSERT INTO att_roster (staff_id, day, shift_id, note, title, set_by, set_at, published)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), 0)`,

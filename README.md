@@ -419,6 +419,24 @@ as off and now a shift is a change to something staff have already seen. The
 same holds for the other way in, filling an empty slot by naming somebody who
 has that day off.
 
+**A day put back the way it was published needs no publishing.** `published`
+was a flag and nothing else, so every write cleared it: a day being changed is
+a draft again, which is true and was being applied to writes where nothing had
+moved. Take a shift off somebody, think better of it, put it back where it
+was, and the rota is exactly what staff were sent while the Publish button
+asks for a change nobody made. The only way to clear it was to publish the
+week again, which sends everybody a notice about a rota that has not moved.
+Saving a cell that already said what you chose did the same.
+
+The flag cannot answer that on its own, because it does not know what was
+published. `att_roster.published_as` does: the shape of the row at the moment
+it went out, as staff, shift, title and note. A write compares what it is
+about to store against it, and a row that comes to the same shape stays
+published. A write that changes nothing at all is not written, so the trail
+does not claim somebody touched the day either. It is the shape *last*
+published, so a day published, changed, published again and then put back the
+first way is a change: what staff were last told is the second version.
+
 **A period can be taken back off.** Starting a fortnight again, undoing an
 import that came in wrong, emptying a month somebody built against the wrong
 week: all of them meant opening every cell and setting it to Off, and ninety

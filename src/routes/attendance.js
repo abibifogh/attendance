@@ -2606,7 +2606,13 @@ export async function publishRoster(ctx) {
       detail: told === 'none' ? 'Published quietly' : null,
     }),
     ctx.db.prepare(
-      `UPDATE att_roster SET published = 1, ever_published = 1
+      // What went out, kept beside the flag. A later write compares itself
+      // against this, so a day put back the way it was published counts as
+      // published rather than as a change nobody made.
+      `UPDATE att_roster
+          SET published = 1, ever_published = 1,
+              published_as = COALESCE(staff_id, '') || '|' || COALESCE(shift_id, '')
+                             || '|' || COALESCE(title, '') || '|' || COALESCE(note, '')
         WHERE day BETWEEN ?1 AND ?2 AND published = 0`,
     ).bind(from, to),
     ctx.db.prepare(
@@ -2963,6 +2969,16 @@ export async function saveRoster(ctx) {
     touched.set(staffId, range);
   };
 
+  // The shape of a row, written the same way the publish writes it. A row
+  // whose shape matches what went out is still the published day, however many
+  // times it has been changed and changed back in between.
+  const shapeOf = (staff, shift, name, said) => (
+    `${staff ?? ''}|${shift ?? ''}|${name ?? ''}|${said ?? ''}`
+  );
+  const stillPublished = (row, staff, shift, name, said) => (
+    row.published_as != null && row.published_as === shapeOf(staff, shift, name, said) ? 1 : 0
+  );
+
   for (const entry of entries) {
     const day = dayOf(entry);
     // A row id names a row that exists. The grid gives a card it has only
@@ -3008,6 +3024,28 @@ export async function saveRoster(ctx) {
       mark(who, day);
 
       const nowShift = shiftId ?? row.shift_id;
+      const nowTitle = title ?? row.title ?? null;
+
+      // A SAVE THAT CHANGES NOTHING CHANGES NOTHING.
+      //
+      // Every write here used to set `published = 0`, on the reasoning that a
+      // day being changed is a draft again. True, but it was applied to saves
+      // where nothing moved: taking a shift off somebody and putting it back
+      // where it was left the rota exactly as published and the Publish button
+      // asking for a change nobody made. A planner who tried something and
+      // undid it was then made to republish the week to clear it, which sends
+      // staff a notice about a rota that has not moved.
+      //
+      // Compared against the row as this batch has left it so far, not as it
+      // arrived, so a move and a move back inside one save cancel properly
+      // rather than the second half being read as "no change" against the
+      // original and skipped.
+      if (Number(who ?? 0) === Number(row.staff_id ?? 0)
+        && Number(nowShift ?? 0) === Number(row.shift_id ?? 0)
+        && nowTitle === (row.title ?? null)) {
+        continue;
+      }
+
       if (Number(who ?? 0) !== Number(row.staff_id ?? 0)
         || Number(nowShift ?? 0) !== Number(row.shift_id ?? 0)) {
         statements.push(logChange(ctx.db, {
@@ -3040,9 +3078,19 @@ export async function saveRoster(ctx) {
       statements.push(ctx.db.prepare(
         `UPDATE att_roster
             SET staff_id = ?2, shift_id = ?3, title = ?4, set_by = ?5,
-                set_at = datetime('now'), published = 0
+                set_at = datetime('now'), published = ?6
           WHERE id = ?1`,
-      ).bind(rowId, who, nowShift, title ?? row.title, actor));
+      // The note is not written by this branch, so what the row already says
+      // is what it will still say.
+      ).bind(rowId, who, nowShift, nowTitle, actor,
+        stillPublished(row, who, nowShift, nowTitle, row.note)));
+
+      // What this batch has made of the row, so a second entry about it is
+      // compared against what the first one did rather than against the
+      // database as it stood before either.
+      row.staff_id = who;
+      row.shift_id = nowShift;
+      row.title = nowTitle;
       continue;
     }
 

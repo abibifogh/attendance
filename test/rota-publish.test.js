@@ -309,3 +309,114 @@ test('a day being remade says so, because somebody planned around the old one', 
   assert.match(last.body, /change to what you were told/);
   assert.equal(last.level, 'warn', 'louder than a new day, which is only news');
 });
+
+// ---------------------------------------------------------------------------
+// A day put back the way it was published
+// ---------------------------------------------------------------------------
+
+/**
+ * `published` used to be cleared by every write, on the reasoning that a day
+ * being changed is a draft again. True, and it was applied to writes where
+ * nothing had moved. Take a shift off somebody, think better of it, put it
+ * back where it was, and the rota is exactly what staff were sent while the
+ * Publish button asks for a change nobody made. The only way to clear that was
+ * to publish the week again, which sends everybody a notice about a rota that
+ * has not moved.
+ *
+ * The flag cannot answer this on its own because it does not know what was
+ * published. `published_as` does: the shape of the row at the moment it went
+ * out, and a write that comes to the same shape stays published.
+ */
+const state = (raw, day = '2026-06-02') => raw
+  .prepare('SELECT staff_id, shift_id, published, ever_published FROM att_roster WHERE day = ?')
+  .all(day);
+
+/** Somebody to move a shift to, and another shift to move to. */
+const alsoThere = (raw) => {
+  raw.prepare(
+    `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
+     VALUES (2, '2', 'Ama', 'Kitchen', '2020-01-01')`,
+  ).run();
+  raw.prepare(
+    `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes, grace_in_minutes)
+     VALUES (2, 'Evening', '14:00', '22:00', 0, 5)`,
+  ).run();
+};
+
+test('moving a shift to somebody else and back needs no publish', async () => {
+  const { db, raw } = setup();
+  alsoThere(raw);
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
+  await publishRoster(ctx(db, { body: { from: '2026-06-01', to: '2026-06-14' } }));
+
+  const { id } = raw.prepare('SELECT id FROM att_roster WHERE day = ?').get('2026-06-02');
+
+  await saveRoster(ctx(db, { body: { entries: [{ id, day: '2026-06-02', staffId: 2, shiftId: 1 }] } }));
+  let out = await (await getRoster(ctx(db, { query: WINDOW }))).json();
+  assert.deepEqual(out.publish, { fresh: 0, again: 1 }, 'moved, so it does need publishing');
+
+  await saveRoster(ctx(db, { body: { entries: [{ id, day: '2026-06-02', staffId: 1, shiftId: 1 }] } }));
+  out = await (await getRoster(ctx(db, { query: WINDOW }))).json();
+  assert.deepEqual(out.publish, { fresh: 0, again: 0 }, 'and back, so it does not');
+  assert.equal(state(raw)[0].published, 1);
+});
+
+test('changing a shift and changing it back needs no publish either', async () => {
+  const { db, raw } = setup();
+  alsoThere(raw);
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
+  await publishRoster(ctx(db, { body: { from: '2026-06-01', to: '2026-06-14' } }));
+
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 2 }] } }));
+  assert.equal(state(raw)[0].published, 0, 'a different shift is a change');
+
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
+  assert.equal(state(raw)[0].published, 1, 'the one that was published is not');
+});
+
+test('saving a day that says exactly what it already said writes nothing', async () => {
+  const { db, raw } = setup();
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
+  await publishRoster(ctx(db, { body: { from: '2026-06-01', to: '2026-06-14' } }));
+
+  const before = raw.prepare('SELECT id, set_at FROM att_roster WHERE day = ?').get('2026-06-02');
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
+  const after = raw.prepare('SELECT id, set_at, published FROM att_roster WHERE day = ?').get('2026-06-02');
+
+  assert.equal(after.id, before.id);
+  assert.equal(after.set_at, before.set_at, 'the trail does not say somebody touched it');
+  assert.equal(after.published, 1);
+});
+
+test('a real change still needs publishing, and says which kind', async () => {
+  const { db, raw } = setup();
+  alsoThere(raw);
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
+  await publishRoster(ctx(db, { body: { from: '2026-06-01', to: '2026-06-14' } }));
+
+  await saveRoster(ctx(db, {
+    body: {
+      entries: [
+        { staffId: 1, day: '2026-06-02', shiftId: 2 },
+        { staffId: 2, day: '2026-06-03', shiftId: 1 },
+      ],
+    },
+  }));
+
+  const out = await (await getRoster(ctx(db, { query: WINDOW }))).json();
+  assert.deepEqual(out.publish, { fresh: 1, again: 1 });
+});
+
+test('a day published, changed, published again and put back is a change again', async () => {
+  // Because what it goes back to is the second thing published, not the first.
+  const { db, raw } = setup();
+  alsoThere(raw);
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
+  await publishRoster(ctx(db, { body: { from: '2026-06-01', to: '2026-06-14' } }));
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 2 }] } }));
+  await publishRoster(ctx(db, { body: { from: '2026-06-01', to: '2026-06-14' } }));
+
+  await saveRoster(ctx(db, { body: { entries: [{ staffId: 1, day: '2026-06-02', shiftId: 1 }] } }));
+  assert.equal(state(raw)[0].published, 0,
+    'staff were last told the second shift, so going back to the first is news');
+});
