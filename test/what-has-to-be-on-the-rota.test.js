@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { listShifts, saveCoverMap, updateShift } from '../src/routes/attendance-setup.js';
+import { familyWrites, listShifts, saveCoverMap, updateShift } from '../src/routes/attendance-setup.js';
 import { loadDataset } from '../src/lib/attendance.js';
 import { coverOf, suggestRota } from '../src/lib/suggest.js';
 
@@ -231,26 +231,28 @@ test('a must whose alternate ran is satisfied, and no hole is left for it', asyn
 
 test('the map saves what changed and leaves the rest alone', async () => {
   const { raw, db } = setup();
-  const before = raw.prepare('SELECT cover FROM att_shifts WHERE id = 2').get().cover;
+  const before = raw.prepare('SELECT cover FROM att_shifts WHERE id = 3').get().cover;
 
   const out = await (await saveCoverMap(ctx(db, {
     body: {
       shifts: [
-        { id: 1, cover: 'must', altGroup: 'morning', pairGroup: '' },
+        { id: 1, cover: 'must', altWith: [2] },
         // Sent unchanged: it should not count, and should not be written.
-        { id: 2, cover: before, altGroup: '', pairGroup: '' },
+        { id: 3, cover: before },
       ],
     },
   }))).json();
 
-  assert.equal(out.changed, 1);
+  // Two rows are written: the one that was edited and its new partner, which
+  // is what makes the relation mutual rather than one row's opinion.
+  assert.equal(out.changed, 2);
   const one = raw.prepare('SELECT cover, alt_group, pair_group FROM att_shifts WHERE id = 1').get();
   assert.equal(one.cover, 'must');
-  assert.equal(one.alt_group, 'morning');
+  assert.ok(one.alt_group, 'it is in a family');
   assert.equal(one.pair_group, null);
 
   const logged = raw.prepare("SELECT detail FROM audit_log WHERE action = 'attendance.cover_map'").get();
-  assert.match(logged.detail, /"changed":1/);
+  assert.match(logged.detail, /"changed":2/);
   assert.match(logged.detail, /Breakfast early/);
 });
 
@@ -300,4 +302,94 @@ test('the seeded first pass is a starting point, not a guess about hotels', () =
     "SELECT name FROM att_shifts WHERE alt_group IS NOT NULL AND name LIKE '%aintenance%'",
   ).all();
   assert.equal(numbered.length, 0, 'numbered shifts mean a second person, not a second version');
+});
+
+// ---------------------------------------------------------------------------
+// Picking shifts rather than naming a group
+// ---------------------------------------------------------------------------
+
+const family = (raw, column) => {
+  const rows = raw.prepare(`SELECT id, ${column} AS g FROM att_shifts ORDER BY id`).all();
+  const out = new Map();
+  for (const r of rows) {
+    if (!r.g) continue;
+    if (!out.has(r.g)) out.set(r.g, []);
+    out.get(r.g).push(r.id);
+  }
+  return [...out.values()].map((ids) => ids.sort((a, b) => a - b));
+};
+
+test('picking shifts makes them a family, both ways round', async () => {
+  const { raw, db } = setup();
+  await saveCoverMap(ctx(db, { body: { shifts: [{ id: 1, cover: 'must', altWith: [2] }] } }));
+
+  assert.deepEqual(family(raw, 'alt_group'), [[1, 2]],
+    'the pick is mutual: shift 2 now says it too');
+  const both = raw.prepare('SELECT alt_group FROM att_shifts WHERE id IN (1,2)').all();
+  assert.equal(both[0].alt_group, both[1].alt_group);
+});
+
+test('a third shift joins the family, and dropping one lets it go', async () => {
+  const { raw, db } = setup();
+  raw.prepare("INSERT INTO att_shifts (id, name, starts_at, ends_at) VALUES (9, 'Third', '06:00', '14:00')").run();
+
+  await saveCoverMap(ctx(db, { body: { shifts: [{ id: 1, cover: 'wanted', altWith: [2, 9] }] } }));
+  assert.deepEqual(family(raw, 'alt_group'), [[1, 2, 9]]);
+
+  // Editing the same shift redefines the whole family, because the relation
+  // is mutual and two rows cannot disagree about it.
+  await saveCoverMap(ctx(db, { body: { shifts: [{ id: 1, cover: 'wanted', altWith: [2] }] } }));
+  assert.deepEqual(family(raw, 'alt_group'), [[1, 2]], 'the third one is out');
+  assert.equal(raw.prepare('SELECT alt_group FROM att_shifts WHERE id = 9').get().alt_group, null);
+});
+
+test('picking nobody dissolves the family rather than leaving one behind', async () => {
+  const { raw, db } = setup();
+  await saveCoverMap(ctx(db, { body: { shifts: [{ id: 1, cover: 'wanted', altWith: [2] }] } }));
+  await saveCoverMap(ctx(db, { body: { shifts: [{ id: 1, cover: 'wanted', altWith: [] }] } }));
+
+  assert.deepEqual(family(raw, 'alt_group'), [], 'nobody is left holding a group of one');
+  for (const id of [1, 2]) {
+    assert.equal(raw.prepare('SELECT alt_group FROM att_shifts WHERE id = ?').get(id).alt_group, null);
+  }
+});
+
+test('the two relations are kept apart', async () => {
+  const { raw, db } = setup();
+  await saveCoverMap(ctx(db, {
+    body: { shifts: [{ id: 1, cover: 'must', altWith: [2], pairWith: [] }] },
+  }));
+  assert.deepEqual(family(raw, 'alt_group'), [[1, 2]]);
+  assert.deepEqual(family(raw, 'pair_group'), []);
+
+  await saveCoverMap(ctx(db, { body: { shifts: [{ id: 1, cover: 'must', pairWith: [2] }] } }));
+  assert.deepEqual(family(raw, 'alt_group'), [[1, 2]], 'standing in for it is untouched');
+  assert.deepEqual(family(raw, 'pair_group'), [[1, 2]]);
+});
+
+test('a row that only changes its level leaves both families alone', async () => {
+  const { raw, db } = setup();
+  await saveCoverMap(ctx(db, { body: { shifts: [{ id: 1, cover: 'wanted', altWith: [2] }] } }));
+  await saveCoverMap(ctx(db, { body: { shifts: [{ id: 1, cover: 'optional' }] } }));
+
+  assert.deepEqual(family(raw, 'alt_group'), [[1, 2]]);
+  assert.equal(raw.prepare('SELECT cover FROM att_shifts WHERE id = 1').get().cover, 'optional');
+});
+
+test('an existing family keeps its name rather than being renamed for nothing', async () => {
+  const { raw, db } = setup();
+  raw.prepare("UPDATE att_shifts SET alt_group = 'morning' WHERE id IN (1, 2)").run();
+  raw.prepare("INSERT INTO att_shifts (id, name, starts_at, ends_at) VALUES (9, 'Third', '06:00', '14:00')").run();
+
+  await saveCoverMap(ctx(db, { body: { shifts: [{ id: 1, cover: 'wanted', altWith: [2, 9] }] } }));
+  assert.equal(raw.prepare('SELECT alt_group FROM att_shifts WHERE id = 9').get().alt_group, 'morning');
+});
+
+test('a shift picked by nobody it does not know about is not invented', async () => {
+  const { db } = setup();
+  await saveCoverMap(ctx(db, { body: { shifts: [{ id: 1, cover: 'must', altWith: [4242] }] } }));
+  // A pick that does not exist is dropped rather than stored as a family of
+  // one, which would look like a rule and do nothing.
+  const { shifts } = await (await listShifts(ctx(db))).json();
+  assert.equal(shifts.find((s) => s.id === 1).alt_group, null);
 });

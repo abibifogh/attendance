@@ -2373,6 +2373,17 @@ or not at all, which is how a service cut in two is two shifts and one
 decision. An empty slot saves and publishes like any other row, and the draft
 counts holes apart from the shifts it actually filled.
 
+Both of those are picked as shifts rather than typed as a group name. Press
+**Change** on a row and tick every shift it belongs with; the names picked
+show as pills on the row. A family is mutual, so picking is not one row's
+opinion about the others: whoever is ticked, plus the row being edited, is the
+whole family, and any shift that was in it and is no longer ticked drops out.
+Ticking nothing dissolves the family, and so does a family left with one
+member, since a shift has nothing to run instead of or alongside on its own.
+The two questions are kept apart, so a shift can be an alternate of one shift
+and run alongside another. Saving writes every member that moved, which is why
+one edit usually shows as more than one change.
+
 **The mapping that ships is a first pass to be argued with**, not a guess
 about hotels. Must is every shift that already carried a "how many people it
 needs" count, because setting that number was the property saying out loud

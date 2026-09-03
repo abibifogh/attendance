@@ -549,6 +549,69 @@ export async function createShift(ctx) {
 }
 
 /**
+ * Which shifts stand in for one another, worked out from a picked list.
+ *
+ * The engine reads both relations as a shared group name: everybody with the
+ * same `alt_group` is a version of everybody else with it, and the same for
+ * `pair_group`. That is the right shape for the rota and a poor thing to ask
+ * a person to type. Naming a group is bookkeeping; what somebody actually
+ * knows is "Breakfast main + is the other way of doing this morning".
+ *
+ * So the screen picks shifts and this turns the picks into the group.
+ *
+ * PICKING REDEFINES THE WHOLE FAMILY, which is the only reading that stays
+ * consistent. The relation is mutual: if A stands in for B then B stands in
+ * for A. So saying "A is done instead of B" makes the family exactly {A, B},
+ * and anybody who used to be in A's family and is not on the list leaves it.
+ * Anything else would leave two rows disagreeing about the same fact.
+ *
+ * A family of one is not a family, so a name left holding a single shift is
+ * cleared. That is what makes deselecting everything mean what it looks like.
+ */
+export function familyWrites(column, shiftId, picked, shifts) {
+  const byId = new Map(shifts.map((s) => [Number(s.id), { ...s }]));
+  const me = byId.get(Number(shiftId));
+  if (!me) return byId;
+
+  const members = new Set([Number(shiftId), ...picked.map(Number).filter((n) => byId.has(n))]);
+  members.delete(Number.NaN);
+
+  // Everybody who was in this shift's family and is not in the new one.
+  const was = me[column];
+  if (was) {
+    for (const row of byId.values()) {
+      if (row[column] === was && !members.has(Number(row.id))) row[column] = null;
+    }
+  }
+
+  if (members.size < 2) {
+    me[column] = null;
+  } else {
+    // Keep a name the family already answers to where there is exactly one,
+    // so an existing group is not renamed for no reason. Otherwise a fresh
+    // one, named after its lowest member so it is stable and legible.
+    const names = new Set([...members].map((id) => byId.get(id)[column]).filter(Boolean));
+    const outside = (name) => [...byId.values()]
+      .some((r) => r[column] === name && !members.has(Number(r.id)));
+    const keep = names.size === 1 && !outside([...names][0]) ? [...names][0] : null;
+    const name = keep || `${column === 'alt_group' ? 'alt' : 'with'}-${Math.min(...members)}`;
+    for (const id of members) byId.get(id)[column] = name;
+  }
+
+  // A name nobody shares is not a group. Swept here rather than left to the
+  // reader, because a lone alt_group quietly changes nothing and looks like
+  // it does.
+  const counts = new Map();
+  for (const row of byId.values()) {
+    if (row[column]) counts.set(row[column], (counts.get(row[column]) ?? 0) + 1);
+  }
+  for (const row of byId.values()) {
+    if (row[column] && counts.get(row[column]) < 2) row[column] = null;
+  }
+  return byId;
+}
+
+/**
  * The cover map: what every shift is worth, in one go.
  *
  * The per-shift dialog can already say all of this, one shift at a time,
@@ -560,6 +623,11 @@ export async function createShift(ctx) {
  * Only the three things that decide whether a shift reaches the grid: what it
  * is worth, what stands in for it, and what runs beside it. Everything else
  * about a shift stays where it was.
+ *
+ * Rows are applied in the order they are sent, because two of them can
+ * disagree — picking B for A and then picking nobody for B is a person
+ * changing their mind mid-screen, and the last thing they said is the one
+ * they meant.
  */
 export async function saveCoverMap(ctx) {
   const body = await readJson(ctx.request);
@@ -567,27 +635,35 @@ export async function saveCoverMap(ctx) {
   if (!rows.length) throw badRequest('Nothing to save.');
   if (rows.length > 400) throw badRequest('Too many shifts in one go.');
 
-  const known = await ctx.db.prepare('SELECT id, name, cover, alt_group, pair_group FROM att_shifts').all();
-  const byId = new Map((known.results ?? []).map((r) => [Number(r.id), r]));
+  const known = await ctx.db.prepare(
+    'SELECT id, name, cover, alt_group, pair_group FROM att_shifts',
+  ).all();
+  let state = new Map((known.results ?? []).map((r) => [Number(r.id), { ...r }]));
+  const before = new Map([...state].map(([id, r]) => [id, { ...r }]));
+
+  for (const row of rows) {
+    const id = Number(row.id);
+    if (!state.has(id)) throw badRequest('One of those shifts no longer exists.');
+    state.get(id).cover = readCover(row.cover);
+
+    if (Array.isArray(row.altWith)) {
+      state = familyWrites('alt_group', id, row.altWith, [...state.values()]);
+    }
+    if (Array.isArray(row.pairWith)) {
+      state = familyWrites('pair_group', id, row.pairWith, [...state.values()]);
+    }
+  }
 
   const writes = [];
   const changed = [];
-  for (const row of rows) {
-    const id = Number(row.id);
-    const was = byId.get(id);
-    if (!was) throw badRequest('One of those shifts no longer exists.');
-
-    const cover = readCover(row.cover);
-    const altGroup = str(row.altGroup, 'Alternatives group', { max: 60 }) || null;
-    const pairGroup = str(row.pairGroup, 'Runs-together group', { max: 60 }) || null;
-
-    if (cover === was.cover && altGroup === (was.alt_group ?? null)
-      && pairGroup === (was.pair_group ?? null)) continue;
-
+  for (const [id, now] of state) {
+    const was = before.get(id);
+    if (now.cover === was.cover && now.alt_group === was.alt_group
+      && now.pair_group === was.pair_group) continue;
     writes.push(ctx.db.prepare(
       'UPDATE att_shifts SET cover = ?2, alt_group = ?3, pair_group = ?4 WHERE id = ?1',
-    ).bind(id, cover, altGroup, pairGroup));
-    changed.push({ name: was.name, from: was.cover, to: cover });
+    ).bind(id, now.cover, now.alt_group ?? null, now.pair_group ?? null));
+    changed.push({ name: was.name, from: was.cover, to: now.cover });
   }
 
   if (writes.length) await ctx.db.batch(writes);

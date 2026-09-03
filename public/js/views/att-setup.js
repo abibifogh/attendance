@@ -3135,9 +3135,6 @@ function coverMapCard(shifts, reload) {
   };
   const valueOf = (sh, field, fallback) => (edits.get(sh.id)?.[field] ?? fallback);
 
-  const altNames = [...new Set(live.map((sh) => sh.alt_group).filter(Boolean))].sort();
-  const pairNames = [...new Set(live.map((sh) => sh.pair_group).filter(Boolean))].sort();
-
   const count = h('span.muted');
   const paintCount = () => {
     const n = edits.size;
@@ -3161,10 +3158,10 @@ function coverMapCard(shifts, reload) {
       }, COVER_LEVELS.map(([value, label]) => h('option', {
         value, selected: (sh.cover ?? 'wanted') === value,
       }, COVER_SHORT[value] ?? label)))),
-    h('td', groupPicker(altNames, sh.alt_group ?? '', 'Nothing stands in for it',
-      (value) => change(sh.id, 'altGroup', value))),
-    h('td', groupPicker(pairNames, sh.pair_group ?? '', 'Runs on its own',
-      (value) => change(sh.id, 'pairGroup', value))));
+    h('td', familyCell(sh, live, 'alt_group', 'altWith', 'Nothing stands in for it',
+      edits, change)),
+    h('td', familyCell(sh, live, 'pair_group', 'pairWith', 'Runs on its own',
+      edits, change)));
 
   const body = h('tbody',
     [...byDepartment.entries()].map(([department, list]) => [
@@ -3178,12 +3175,12 @@ function coverMapCard(shifts, reload) {
     try {
       const payload = [...edits.entries()].map(([id, row]) => {
         const sh = live.find((x) => x.id === id);
-        return {
-          id,
-          cover: row.cover ?? sh.cover ?? 'wanted',
-          altGroup: row.altGroup ?? sh.alt_group ?? '',
-          pairGroup: row.pairGroup ?? sh.pair_group ?? '',
-        };
+        const out = { id, cover: row.cover ?? sh.cover ?? 'wanted' };
+        // Only sent where it was touched. A row edited for its level alone
+        // must not also redefine two families it never mentioned.
+        if (row.altWith) out.altWith = row.altWith;
+        if (row.pairWith) out.pairWith = row.pairWith;
+        return out;
       });
       const out = await api.attSaveCoverMap(payload);
       toast(`Saved. ${out.changed} shift${out.changed === 1 ? '' : 's'} changed.`, 'good');
@@ -3218,34 +3215,80 @@ function coverMapCard(shifts, reload) {
         body)));
 }
 
+
 /**
- * A group name, chosen from the ones already in use or typed fresh.
+ * The shifts that stand in for this one, or run beside it, as a picked list.
  *
- * The dialog's own picker reads its answer off the form by name at save
- * time, which is right there and no use here: this table has eighty of them
- * and saves what changed rather than everything. So this one hands its
- * answer back as it is given.
+ * The engine holds both as a shared group name, which is the right shape for
+ * a rota and a poor thing to ask a person to type: naming a group is
+ * bookkeeping, and what somebody knows is "Breakfast main + is the other way
+ * of doing this morning". So the cell reads the family out of the names and
+ * the button edits it by ticking shifts.
+ *
+ * A dialog rather than a multi-select in the cell. Twenty-nine shifts in a
+ * box four rows tall, twenty-nine times down a page, is a screen nobody can
+ * read, and on a handset it is worse.
  */
-function groupPicker(names, current, blank, onchange) {
-  const typed = h('input', {
-    type: 'text', maxlength: 60, placeholder: 'Name it',
-    style: { display: 'none', marginTop: '.4rem' },
-    oninput: (e) => onchange(e.target.value.trim()),
-  });
+function familyCell(shift, all, column, field, blank, edits, change) {
+  const host = h('div');
 
-  const options = [...names];
-  if (current && !options.includes(current)) options.unshift(current);
+  const currently = () => {
+    const picked = edits.get(shift.id)?.[field];
+    if (picked) return picked.map(Number);
+    const group = shift[column];
+    if (!group) return [];
+    return all.filter((s) => s[column] === group && s.id !== shift.id).map((s) => s.id);
+  };
 
-  const select = h('select', {
-    onchange: (e) => {
-      const adding = e.target.value === NEW_DEPARTMENT;
-      typed.style.display = adding ? '' : 'none';
-      if (adding) { typed.focus(); onchange(typed.value.trim()); } else onchange(e.target.value);
-    },
-  },
-  h('option', { value: '', selected: !current }, blank),
-  options.map((n) => h('option', { value: n, selected: n === current }, n)),
-  h('option', { value: NEW_DEPARTMENT }, '+ New group…'));
+  const paint = () => {
+    const ids = currently();
+    const names = ids.map((id) => all.find((s) => s.id === id)?.name).filter(Boolean);
+    mount(host,
+      names.length
+        ? h('div', names.map((n) => h('span.pill', { style: { marginRight: '.25rem' } }, n)))
+        : h('small.muted', blank),
+      h('button.btn-ghost.btn-sm', { style: { marginTop: '.3rem' }, onclick: open }, 'Change'));
+  };
 
-  return h('div', select, typed);
+  async function open() {
+    const chosen = new Set(currently());
+    const others = all.filter((s) => s.id !== shift.id);
+    const boxes = others.map((s) => {
+      const box = h('input', {
+        type: 'checkbox',
+        checked: chosen.has(s.id),
+        onchange: (e) => { if (e.target.checked) chosen.add(s.id); else chosen.delete(s.id); },
+      });
+      return h('label.tickline', box,
+        h('span', s.name, h('small.muted', ` · ${s.starts_at}–${s.ends_at}`
+          + `${s.department ? ` · ${s.department}` : ''}`)));
+    });
+
+    const done = await formDialog({
+      title: column === 'alt_group'
+        ? `Done instead of ${shift.name}`
+        : `Runs alongside ${shift.name}`,
+      submitLabel: 'Use these',
+      wide: true,
+      body: h('div',
+        h('p.muted', column === 'alt_group'
+          ? 'Tick the shifts that are other ways of doing this one. Exactly one of the family '
+            + 'runs on a day, so a morning written four ways is one morning.'
+          : 'Tick the shifts that run whenever this one does. Either all of them are on the '
+            + 'day or none of them is, which is how a service cut in two is one decision.'),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'This is mutual, so it changes the whole family: anybody in it who is not ticked '
+          + 'here leaves it.'),
+        // Twenty-nine of them, so it scrolls inside the dialog rather than
+        // pushing the buttons off the bottom of a handset.
+        h('div', { style: { maxHeight: '46vh', overflowY: 'auto' } }, boxes)),
+      onSubmit: async () => true,
+    });
+    if (!done) return;
+    change(shift.id, field, [...chosen]);
+    paint();
+  }
+
+  paint();
+  return host;
 }
