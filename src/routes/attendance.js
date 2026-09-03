@@ -2178,7 +2178,13 @@ export async function getRoster(ctx) {
           // Everything after the first. Nearly always empty; when it is not,
           // somebody has been put on two shifts in one day and both ends of
           // the rota say so until one of them goes.
-          extra: held.slice(1).map((row) => ({
+          //
+          // A row with no shift on it is a rostered day off, and a day off is
+          // not a shift. Counting one here is how a day that reads "Off" came
+          // to be reported as two shifts. Nothing should leave one of these
+          // beside a real shift any more, and this makes sure a database that
+          // already has one does not accuse anybody.
+          extra: held.slice(1).filter((row) => row.shift_id != null).map((row) => ({
             id: row.id,
             shift_id: row.shift_id,
             title: row.title ?? null,
@@ -3015,6 +3021,22 @@ export async function saveRoster(ctx) {
         }));
       }
 
+      // The same thing the "+ shift" path has to do, for the other way in:
+      // filling an empty slot by naming somebody who has that day off. Their
+      // day off is a row of its own with no shift on it, and left standing it
+      // makes the day read as two. It is deleted rather than turned into
+      // anything, because the row being written here is already the shift.
+      if (who != null && Number(who) !== Number(row.staff_id ?? 0)) {
+        const theirs = (heldBy.get(`${who}|${day}`) ?? []).filter((r) => r.shift_id == null);
+        for (const off of theirs) {
+          statements.push(logChange(ctx.db, {
+            day, staffId: who, wasStaffId: who, wasShiftId: null,
+            action: 'removed', actor, detail: 'The day off gave way to a shift',
+          }));
+          statements.push(ctx.db.prepare('DELETE FROM att_roster WHERE id = ?').bind(off.id));
+        }
+      }
+
       statements.push(ctx.db.prepare(
         `UPDATE att_roster
             SET staff_id = ?2, shift_id = ?3, title = ?4, set_by = ?5,
@@ -3062,6 +3084,36 @@ export async function saveRoster(ctx) {
     // nothing rather than failing.
     if (entry.add && shiftId != null) {
       if (held.some((r) => Number(r.shift_id) === shiftId)) continue;
+
+      // A ROSTERED DAY OFF IS NOT A SHIFT, AND IT BECOMES ONE.
+      //
+      // "Off" on a cell is a real row with no shift on it: somebody deciding
+      // this person is not working, rather than nobody having decided
+      // anything. Putting a shift on that day used to add a row beside it, so
+      // the day held two and the grid counted them as two shifts: "Betty
+      // Freeman is down for two shifts this day. Take one off." One of the two
+      // was the day off, and a day off is exactly what putting a shift on the
+      // day undoes.
+      //
+      // The row is turned into the shift rather than deleted and replaced,
+      // because `ever_published` lives on it: a day that was published as a
+      // day off and is now a shift is a change to something staff have seen,
+      // not a day nobody has been told about yet.
+      const dayOff = held.find((r) => r.shift_id == null);
+      if (dayOff) {
+        statements.push(logChange(ctx.db, {
+          day, staffId, shiftId, wasStaffId: staffId, wasShiftId: null,
+          action: 'changed', actor, detail: 'The day off became a shift',
+        }));
+        statements.push(ctx.db.prepare(
+          `UPDATE att_roster
+              SET shift_id = ?2, note = ?3, title = ?4, set_by = ?5,
+                  set_at = datetime('now'), published = 0
+            WHERE id = ?1`,
+        ).bind(dayOff.id, shiftId, note, title, actor));
+        continue;
+      }
+
       statements.push(ctx.db.prepare(
         `INSERT INTO att_roster (staff_id, day, shift_id, note, title, set_by, set_at, published)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), 0)`,

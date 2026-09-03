@@ -378,3 +378,99 @@ test('what the roster sends is what that row needs to draw one', async () => {
   // with no name, no hours and no colour on it.
   assert.ok(out.shifts.some((s) => Number(s.id) === Number(slot.shift_id)));
 });
+
+// ---------------------------------------------------------------------------
+// A day off is not a shift
+// ---------------------------------------------------------------------------
+
+/**
+ * "Off" on a cell is a real row with no shift on it: somebody deciding this
+ * person is not working, rather than nobody having decided anything. Putting a
+ * shift on that day used to add a row beside it, so the day held two rows and
+ * the grid counted them as two shifts, and a planner filling an ordinary rest
+ * day was told "Betty Freeman is down for two shifts this day. Take one off."
+ *
+ * One of the two was the day off, and a day off is exactly what putting a
+ * shift on the day undoes.
+ */
+const rowsOn = (raw, staffId, day = DAY) => raw
+  .prepare('SELECT id, shift_id, ever_published FROM att_roster WHERE staff_id = ? AND day = ? ORDER BY id')
+  .all(staffId, day);
+
+test('a shift added to a day off is one shift, not two', async () => {
+  const { db, raw } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: null }]);
+  assert.deepEqual(rowsOn(raw, 1).map((r) => r.shift_id), [null], 'the day off is a row');
+
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 1, add: true }]);
+
+  const cell = cellOf(await look(db), 1);
+  assert.equal(cell.shift_id, 1);
+  assert.deepEqual(cell.extra, [], 'and nothing beside it to argue about');
+  assert.deepEqual(rowsOn(raw, 1).map((r) => r.shift_id), [1], 'one row on the day');
+});
+
+test('the day off becomes the shift rather than being thrown away and remade', async () => {
+  const { db, raw } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: null }]);
+  await publishRoster(ctx(db, { body: { from: '2026-06-01', to: '2026-06-14' } }));
+
+  const [before] = rowsOn(raw, 1);
+  assert.equal(before.ever_published, 1, 'staff have seen this day');
+
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 1, add: true }]);
+  const [after] = rowsOn(raw, 1);
+
+  assert.equal(rowsOn(raw, 1).length, 1, 'still one row on the day');
+  assert.equal(after.id, before.id, 'and it is the same row');
+  assert.equal(after.shift_id, 1, 'carrying the shift now');
+  assert.equal(after.ever_published, 1,
+    'so a day that was promised as off and is now a shift is still a change to something seen');
+});
+
+test('filling an empty slot with somebody who has that day off does the same', async () => {
+  const { db, raw } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: null }]);
+  await save(db, [{ slot: true, day: DAY, shiftId: 1 }]);
+
+  const slot = raw.prepare('SELECT id FROM att_roster WHERE staff_id IS NULL AND day = ?').get(DAY);
+  await save(db, [{ id: slot.id, day: DAY, staffId: 1, shiftId: 1 }]);
+
+  const cell = cellOf(await look(db), 1);
+  assert.equal(cell.shift_id, 1);
+  assert.deepEqual(cell.extra, []);
+  assert.deepEqual(rowsOn(raw, 1).map((r) => r.shift_id), [1],
+    'the day off went with it, rather than sitting under the shift');
+});
+
+test('a real double is still a double, and still says so', async () => {
+  const { db } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 1 }]);
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 2, add: true }]);
+
+  const cell = cellOf(await look(db), 1);
+  assert.equal(cell.shift_id, 1);
+  assert.deepEqual(cell.extra.map((e) => e.shift_id), [2], 'both ends of the rota still say so');
+});
+
+test('a day off written over a shift still clears it', async () => {
+  const { db, raw } = setup();
+  await save(db, [{ staffId: 1, day: DAY, shiftId: 1 }]);
+  await save(db, [{ staffId: 1, day: DAY, shiftId: null }]);
+
+  assert.deepEqual(rowsOn(raw, 1).map((r) => r.shift_id), [null]);
+  assert.equal(cellOf(await look(db), 1).shift_id, null);
+});
+
+test('a day-off row already sitting beside a shift accuses nobody', async () => {
+  // What a database written before this fix looks like. The pair should not be
+  // made by anything any more; it must not be read as a double either.
+  const { db, raw } = setup();
+  raw.prepare(
+    `INSERT INTO att_roster (staff_id, day, shift_id, set_by, published)
+     VALUES (1, ?, NULL, 'old', 0), (1, ?, 1, 'old', 0)`,
+  ).run(DAY, DAY);
+
+  const cell = cellOf(await look(db), 1);
+  assert.deepEqual(cell.extra, [], 'a row with no shift on it is not a second shift');
+});

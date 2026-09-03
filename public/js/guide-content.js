@@ -673,6 +673,9 @@ export const GUIDE = [
         + 'is another reason to settle it.' },
       { note: 'Setting a day to Off still clears the whole day. Somebody given the day off is '
         + 'not also working the evening.' },
+      { note: 'And the other way round: putting a shift on a day that says Off turns the day '
+        + 'off into that shift rather than putting the two side by side. A day off is not a '
+        + 'shift, so a rest day being filled is one shift and never a double.' },
 
       { sub: 'A shift with nobody on it' },
       { p: 'In Positions view, the + on a cell puts a shift on a day whether or not you have '

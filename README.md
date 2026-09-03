@@ -406,6 +406,19 @@ not something anybody would ask for. Taking a shift off is its own action, on
 the card itself. Dropping a shift somebody already has that day changes nothing:
 that is the same promise written down twice.
 
+**But a rostered day off is not a shift, and it gives way to one.** "Off" on a
+cell is a real row with no shift on it: somebody deciding this person is not
+working, rather than nobody having decided anything. Putting a shift on that
+day used to add a row beside it, so the day held two rows and the grid counted
+them as two shifts. A planner filling an ordinary rest day was told "Betty
+Freeman is down for two shifts this day. Take one off" about a day she was
+working once. One of the two was the day off, and a day off is exactly what
+putting a shift on the day undoes. The row is turned into the shift rather
+than deleted and remade, because `ever_published` lives on it: a day promised
+as off and now a shift is a change to something staff have already seen. The
+same holds for the other way in, filling an empty slot by naming somebody who
+has that day off.
+
 **A period can be taken back off.** Starting a fortnight again, undoing an
 import that came in wrong, emptying a month somebody built against the wrong
 week: all of them meant opening every cell and setting it to Off, and ninety
