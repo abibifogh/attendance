@@ -350,8 +350,12 @@ export async function getSession(request, env, db) {
       // has_pin rather than the hash itself: the session is passed around the
       // whole app, and a credential fingerprint has no business travelling
       // with it just so one screen can say "change your PIN".
-      'SELECT id, name, role, permissions, active, staff_id, pin_hash IS NOT NULL AS has_pin '
-      + 'FROM users WHERE id = ?',
+      // pin_ok says the PIN on this row is known to meet the length rule. It
+      // is the answer to "should we still be asking", and it lives here
+      // rather than in the token because a token cannot hear about a PIN
+      // being changed on somebody's other device.
+      'SELECT id, name, role, permissions, active, staff_id, pin_ok, '
+      + 'pin_hash IS NOT NULL AS has_pin FROM users WHERE id = ?',
     ).bind(payload.uid).first().catch(async (err) => {
       // A database that has not been upgraded yet still signs people in.
       if (!isMissingTable(err)) throw err;
@@ -529,6 +533,21 @@ export const PIN_RULE = `The PIN must be ${PIN_DIGITS} to 10 digits`;
 
 export function pinLooksRight(pin) {
   return new RegExp(`^\\d{${PIN_DIGITS},10}$`).test(String(pin ?? ''));
+}
+
+/**
+ * Record that somebody's PIN meets the rule.
+ *
+ * Called wherever a PIN that passes is stored, and at sign-in when the PIN
+ * typed passes — signing in with six digits is proof the six digits are
+ * theirs, which settles a legacy account on its owner's next visit without
+ * asking them anything. Once this is set, no session of theirs asks again,
+ * however old its token is.
+ */
+export async function markPinOk(db, userId) {
+  if (!userId) return;
+  await db.prepare('UPDATE users SET pin_ok = 1 WHERE id = ? AND pin_ok = 0')
+    .bind(userId).run().catch(() => {});
 }
 
 /*

@@ -3089,6 +3089,16 @@ administrator hunting for the reason. The screen was doing the work; the lock
 was only a way for it to go wrong. So the pressure is the screen and only the
 screen, and the person can always let themselves out of it.
 
+Once a PIN meets the rule that is recorded on the person's record, so no
+session of theirs ever asks again. That matters because the screen is
+triggered by what was typed at sign-in, and a token cannot hear about a PIN
+changed somewhere else: without it, somebody who lengthened their PIN on
+their phone would still be asked on the tablet by the door, and the PIN they
+had just chosen would be refused there as "the same as the current one".
+Signing in with a PIN that already meets the rule records it too, which
+settles every account whose PIN was long enough all along, on its owner's
+next visit, without asking them anything.
+
 An administrator who signs in with a short PIN gets the same screen, and
 still has their email address and password, so they are never shut out of
 anything. The emergency `MANAGER_PIN` is a Worker secret with no account

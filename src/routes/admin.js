@@ -2,7 +2,8 @@ import { originOf } from '../lib/site.js';
 import { backupZip } from '../lib/backup.js';
 import { badRequest, bool, json, notFound, readJson, str } from '../lib/http.js';
 import {
-  PIN_DIGITS, PIN_RULE, getPepper, hashPin, isReservedPin, normaliseEmail, pinLooksRight, storedPassword,
+  PIN_DIGITS, PIN_RULE, getPepper, hashPin, isReservedPin, markPinOk, normaliseEmail, pinLooksRight,
+  storedPassword,
 } from '../lib/auth.js';
 import {
   PERMISSIONS, PERMISSION_KEYS, ROLES, effectivePermissions, isRole,
@@ -262,6 +263,7 @@ export async function createUser(ctx) {
       name, pinHash, creds.email, passwordHash, role, permissions, note,
       readStaffLink(body),
     ).first();
+    if (creds.pin) await markPinOk(ctx.db, row.id);
 
     await audit(ctx, 'user.create', row.id, {
       name, role, signIn: creds.isAdmin ? (creds.pin ? 'password and pin' : 'password') : 'pin',
@@ -323,6 +325,7 @@ export async function updateUser(ctx, id) {
       name, role, permissions, active ? 1 : 0, note,
       pinHash, creds.email ?? null, passwordHash, readStaffLink(body), userId,
     ).first();
+    if (creds.pin) await markPinOk(ctx.db, userId);
 
     await audit(ctx, 'user.update', userId, {
       name,

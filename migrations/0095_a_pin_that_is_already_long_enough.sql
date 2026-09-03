@@ -1,0 +1,25 @@
+-- Whether somebody's PIN is known to meet the rule.
+--
+-- Whether to ask for a longer PIN was decided from the session token, which
+-- records what was typed at the moment of signing in. That is the right place
+-- to notice a short PIN and the wrong place to keep the answer, because the
+-- token cannot hear about a PIN being changed somewhere else.
+--
+-- So: somebody signs in on their phone and on the tablet by the door, both on
+-- the old four digits. They lengthen it on the phone. The tablet's token still
+-- says the PIN is short, so it goes on asking — and the PIN they just chose is
+-- refused as "the same as the current one", which leaves them being told to
+-- change a PIN that already meets the rule, to a third one they never wanted.
+--
+-- The truth about somebody's PIN belongs on their row, not in a snapshot of a
+-- sign-in. This column is that truth. It is set the moment a PIN that meets
+-- the rule is stored, by whatever route, and also the moment somebody signs in
+-- with one — signing in with six digits is proof that the six digits are
+-- theirs, and it settles every legacy account on its owner's next visit
+-- without anybody being asked anything.
+--
+-- Nought for everybody already here, which means "not known to be long
+-- enough" rather than "known to be short". Nothing is asked of them on that
+-- basis alone: the sign-in still has to see a short PIN before the screen
+-- appears at all.
+ALTER TABLE users ADD COLUMN pin_ok INTEGER NOT NULL DEFAULT 0;

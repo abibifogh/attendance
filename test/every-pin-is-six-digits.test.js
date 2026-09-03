@@ -249,3 +249,64 @@ test('an administrator lengthens their PIN with their password, not with the old
   assert.equal(short.status, 400);
   assert.match((await short.json()).error, /6 to 10 digits/);
 });
+
+// ---------------------------------------------------------------------------
+// A PIN that is already long enough is nobody's business, on any device
+// ---------------------------------------------------------------------------
+
+test('lengthening it on one device stops every other session asking', async () => {
+  const { raw, db } = setup();
+  await withPin(raw, db, '1234');
+
+  // Their phone and the tablet by the door, both signed in on the old PIN.
+  const phone = cookieOf(await signIn(db, '1234'));
+  const tablet = cookieOf(await signIn(db, '1234'));
+  const asks = async (cookie) => (await (await worker.fetch(
+    new Request('https://x/api/auth/me', { headers: { Cookie: cookie } }), env(db), null,
+  )).json()).mustChangePin;
+
+  assert.equal(await asks(phone), true);
+  assert.equal(await asks(tablet), true);
+
+  await worker.fetch(new Request('https://x/api/auth/change-credentials', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: phone },
+    body: JSON.stringify({ currentPin: '1234', newPin: '987654' }),
+  }), env(db), null);
+
+  // The tablet's token still says the PIN is short, because it was when that
+  // token was made. The row knows better. Without this the person is asked to
+  // change a PIN that already meets the rule, and the PIN they just chose is
+  // refused as the same as the current one, so they cannot answer it at all.
+  assert.equal(await asks(tablet), false, 'the tablet stops asking');
+  assert.equal(raw.prepare('SELECT pin_ok FROM users WHERE id = 5').get().pin_ok, 1);
+});
+
+test('signing in with a PIN that is long enough settles it without asking anything', async () => {
+  const { raw, db } = setup();
+  // A legacy account whose PIN already met the rule: nothing has ever
+  // recorded that, and nothing should need to.
+  await withPin(raw, db, '246810');
+  assert.equal(raw.prepare('SELECT pin_ok FROM users WHERE id = 5').get().pin_ok, 0);
+
+  assert.equal((await (await signIn(db, '246810')).json()).mustChangePin, false);
+  assert.equal(raw.prepare('SELECT pin_ok FROM users WHERE id = 5').get().pin_ok, 1,
+    'signing in with six digits is proof they are theirs');
+});
+
+test('a PIN an administrator sets is never questioned afterwards', async () => {
+  const { raw, db } = setup();
+  const made = await (await createUser(ctx(db, { name: 'Kojo', role: 'staff', pin: '135790' }))).json();
+  assert.equal(raw.prepare('SELECT pin_ok FROM users WHERE id = ?').get(made.user.id).pin_ok, 1);
+
+  await updateUser(ctx(db, { name: 'Kojo', role: 'staff', pin: '246802', active: true }), made.user.id);
+  assert.equal(raw.prepare('SELECT pin_ok FROM users WHERE id = ?').get(made.user.id).pin_ok, 1);
+});
+
+test('a short PIN is still asked about, and the row does not pretend otherwise', async () => {
+  const { raw, db } = setup();
+  await withPin(raw, db, '1234');
+  assert.equal((await (await signIn(db, '1234')).json()).mustChangePin, true);
+  assert.equal(raw.prepare('SELECT pin_ok FROM users WHERE id = 5').get().pin_ok, 0,
+    'nothing has proved this PIN is long enough, because it is not');
+});

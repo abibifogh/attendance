@@ -1,6 +1,6 @@
 import {
   clearCookie, createToken, getPepper, getSession, hashPin, isReservedPin,
-  PIN_RULE, pinLooksRight,
+  PIN_RULE, markPinOk, pinLooksRight,
   saltForEmail, sessionCookie, storedPassword, throttleCheck, throttleFail,
   throttleReset, tokenTtl, userForCredentials, userForPin, verifyPasswordKey,
 } from './lib/auth.js';
@@ -971,7 +971,13 @@ async function login(ctx) {
   // for a longer one in front of everything until it is done. Only for a PIN
   // sign-in — a password is not a PIN, and the recovery route is a Worker
   // secret with no account to ask.
-  const shortPin = !body.email && !user.isRecovery && !pinLooksRight(typedPin);
+  const byPin = !body.email && !user.isRecovery;
+  const shortPin = byPin && !pinLooksRight(typedPin);
+
+  // And a PIN that does meet the rule is settled here and now. Signing in
+  // with six digits is proof they are theirs, so the question is answered
+  // for good rather than asked again of every session they ever open.
+  if (byPin && !shortPin) await markPinOk(db, user.id);
 
   const now = Math.floor(Date.now() / 1000);
   const token = await createToken(
@@ -1047,8 +1053,11 @@ async function me(ctx) {
     // What they typed to get here, so My account knows which credential it can
     // ask them to confirm with.
     signedInWith: session.via ?? 'pin',
-    // Still on a PIN too short for the rule.
-    mustChangePin: Boolean(session.shortPin),
+    // Still on a PIN too short for the rule. The token is what noticed it and
+    // the row is what settles it: a PIN lengthened on somebody's phone must
+    // not leave the tablet by the door still asking, and then refusing the
+    // PIN they just chose as "the same as the current one".
+    mustChangePin: Boolean(session.shortPin) && !session.user.pin_ok,
     // Whether they already have a login PIN, so My account offers to change it
     // rather than to set one.
     hasPin: Boolean(session.user.has_pin),
@@ -1129,6 +1138,7 @@ async function changeCredentials(ctx) {
         if (String(err).includes('UNIQUE')) throw badRequest(PIN_TAKEN);
         throw err;
       }
+      await markPinOk(db, row.id);
       return json({ ok: true, changed: 'pin', hasPin: true }, { headers: await freshCookie(ctx, row) });
     }
 
@@ -1178,6 +1188,7 @@ async function changeCredentials(ctx) {
     throw err;
   }
 
+  await markPinOk(db, row.id);
   return json({ ok: true, changed: 'pin' }, { headers: await freshCookie(ctx, row) });
 }
 
