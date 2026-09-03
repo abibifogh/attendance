@@ -4882,6 +4882,18 @@ body.rota-dragging .pos-add { pointer-events: none; }
    the Workload screen, nowhere near the decision. */
 .rota-who-text { min-width: 0; flex: 1; }
 .rota-who-name { display: flex; align-items: center; gap: .1rem; }
+/* Quiet, but always there. Hiding it until the row is hovered kept the grid
+   tidy and made the one thing on this screen nobody would think to look for
+   invisible as well; a feature nobody can find is a feature that is not there.
+   So it sits faintly beside every name and darkens when it is reached for. */
+.rota-who-more {
+  border: 0; background: none; cursor: pointer; padding: 0 .25rem;
+  font: inherit; line-height: 1; color: var(--text-faint);
+  opacity: .55; transition: opacity .12s, color .12s;
+}
+tr:hover .rota-who-more,
+.rota-who-more:focus-visible { opacity: 1; }
+.rota-who-more:hover { opacity: 1; color: var(--text); }
 
 .rota-face {
   position: relative;

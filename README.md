@@ -475,6 +475,21 @@ nothing approved, nothing spent — and rostering over it stays possible, with
 the mark staying put. Some conflicts are deliberate, and a grid that hides them
 is lying.
 
+**A planner writes it down from the ⋯ beside a name on People view.** The
+route for this has existed as long as availability has and nothing in the app
+called it, so somebody told "Kofi cannot do Thursdays this month" had nowhere
+to put it. It ticks the days still to come in the window on screen, takes a
+kind, a window inside the day and a note, and unticking a day takes the mark
+off. It sits beside the name rather than in the Pattern column, because that
+column is the one cell the phone layout hides and a planner being told this in
+a corridor is holding a phone.
+
+Two rules run the other way from the staff screen, both deliberately. Nothing
+waits for an answer, because the person writing it is the person who would
+have given one. And there is no two-day limit: that limit exists to stop
+unavailability being a back door to a week off nobody approved, and this is
+the front door.
+
 **Availability a member of staff asks for waits for approval.** What somebody
 sends from their own screen is a request, not a fact about the week, and a day
 that takes itself off the rota the moment it is typed hands the shape of the

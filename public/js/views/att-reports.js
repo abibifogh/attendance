@@ -280,7 +280,7 @@ export async function renderAttOverview(params) {
 function head(title, data) {
   return h('div.page-head',
     h('div',
-      h('h1', `Attendance — ${title.toLowerCase()}`),
+      h('h1', `Attendance (${title.toLowerCase()})`),
       h('div.sub', `${fmtDay(data.from, { withYear: true })} to ${fmtDay(data.to, { withYear: true })}`),
     ),
   );

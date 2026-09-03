@@ -1109,7 +1109,20 @@ export async function renderAttRota(params) {
             // the longest name on the property.
             h('div.rota-who-name',
               h('span.rota-who-label', row.staff.name),
-              strainMark(row.staff.id)),
+              strainMark(row.staff.id),
+              // Beside the name rather than in the Pattern column, which is
+              // the one cell a phone hides: a planner standing in a corridor
+              // being told somebody cannot do Thursday is exactly who needs
+              // this, and they are holding the phone.
+              mayEdit ? h('button.rota-who-more', {
+                type: 'button',
+                title: `Days ${row.staff.name} cannot work`,
+                'aria-label': `Days ${row.staff.name} cannot work`,
+                onclick: (event) => {
+                  event.stopPropagation();
+                  markAvailability(row, data, reload);
+                },
+              }, '⋯') : null),
             h('small.muted', row.staff.department || `No. ${row.staff.employee_no}`),
             // What this window already has them down for. The number a planner
             // is weighing every time they fill a cell, and it was on the
@@ -2506,6 +2519,115 @@ async function copyWeek(data, reload) {
       + `${done.skippedLeave ? `, ${done.skippedLeave} left as leave` : ''}.`, 'good');
     await reload();
   }
+}
+
+/**
+ * Days somebody cannot work, written down by whoever builds the rota.
+ *
+ * The route for this has existed since availability did and nothing in the app
+ * called it, so a planner told "Kofi cannot do Thursdays this month" had
+ * nowhere to put it. The chip on the grid even pointed at a button that was
+ * not there.
+ *
+ * NOT LEAVE, and it does not become leave. Nothing is approved, no entitlement
+ * is spent, and rostering over one stays possible: some conflicts are
+ * deliberate and the grid should show them rather than pretend they cannot
+ * happen. What it is is the fact a planner needs in front of them before they
+ * choose, in the place they are already standing.
+ *
+ * NOT CAPPED AT TWO DAYS EITHER, which is the rule on the staff screen. That
+ * cap is there because unavailability asked for by the person is the back door
+ * to a week off that nobody approved and nothing counted. This is the front
+ * door: whoever writes it here is the person who would have approved it, and
+ * "cannot do Thursdays this month" is exactly what the route was written for.
+ *
+ * It covers the window on screen and says so, because that is the window the
+ * planner is looking at and a dialog that quietly reached further would be
+ * changing days they cannot see.
+ */
+async function markAvailability(row, data, reload) {
+  const ahead = row.days.filter((d) => d.day >= data.today);
+  if (!ahead.length) {
+    toast('Nothing ahead in this window to mark. Move to a later week first.');
+    return;
+  }
+
+  const status = h('select', { name: 'status' },
+    h('option', { value: 'unavailable' }, 'Cannot work'),
+    h('option', { value: 'preferred' }, 'Would like to work'),
+  );
+
+  // What is already down for them, so unticking one takes it off rather than
+  // leaving a mark the dialog appeared to have cleared.
+  const was = new Set(ahead.filter((d) => d.availability).map((d) => d.day));
+
+  const ticks = ahead.map((d) => {
+    const box = h('input', {
+      type: 'checkbox', name: 'day', value: d.day, checked: was.has(d.day),
+    });
+    return h('label.tickline', box,
+      h('span', fmtDayShort(d.day),
+        d.shift_id ? h('small.muted', ` (on ${shiftName(data, d.shift_id)})`) : null,
+        d.leave ? h('small.muted', ' (on leave)') : null));
+  });
+
+  const done = await formDialog({
+    title: `When ${row.staff.name} cannot work`,
+    submitLabel: 'Save',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'This is not leave. Nothing is approved and no days are spent. It shows in the cell so '
+        + 'whoever builds the rota sees it before they choose, and you can still roster over '
+        + 'it where you have to.'),
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        `The ${ahead.length} day${ahead.length === 1 ? '' : 's'} still to come in the window `
+        + 'you are looking at. Unticking one takes the mark off.'),
+      h('div.avail-days', ticks),
+      field('Kind', status),
+      h('div.field-row',
+        field('From', h('input', { type: 'time', name: 'fromTime' }),
+          'Leave both blank for the whole day'),
+        field('Until', h('input', { type: 'time', name: 'toTime' })),
+      ),
+      field('Note', h('input', {
+        type: 'text', name: 'note', maxlength: 200, placeholder: 'Evening class',
+      })),
+    ),
+    onSubmit: async (form) => {
+      const picked = form.getAll('day');
+      const gone = [...was].filter((day) => !picked.includes(day));
+
+      // Taken off first, so a day moved from marked to not marked cannot be
+      // written and then cleared in the wrong order.
+      if (gone.length) {
+        await api.attSetAvailability({ staffId: row.staff.id, days: gone, clear: true });
+      }
+      if (picked.length) {
+        await api.attSetAvailability({
+          staffId: row.staff.id,
+          days: picked,
+          status: form.get('status'),
+          note: form.get('note') || null,
+          fromTime: form.get('fromTime') || null,
+          toTime: form.get('toTime') || null,
+        });
+      }
+      if (!picked.length && !gone.length) throw new Error('Nothing changed.');
+      return { marked: picked.length, cleared: gone.length };
+    },
+  });
+
+  if (!done) return;
+  toast([
+    done.marked ? `${done.marked} day${done.marked === 1 ? '' : 's'} marked` : null,
+    done.cleared ? `${done.cleared} taken off` : null,
+  ].filter(Boolean).join(', ') + '.', 'good');
+  await reload();
+}
+
+/** A shift's name, for saying what somebody is already down for. */
+function shiftName(data, shiftId) {
+  return (data.shifts ?? []).find((s) => String(s.id) === String(shiftId))?.name ?? 'a shift';
 }
 
 /**

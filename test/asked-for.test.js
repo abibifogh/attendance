@@ -344,3 +344,102 @@ test('wanting to work is not being away, so the limit leaves it alone', async ()
   });
   assert.equal(rows(raw).length, 4);
 });
+
+// ---------------------------------------------------------------------------
+// The planner writing it down themselves
+// ---------------------------------------------------------------------------
+
+/**
+ * "Kofi cannot do Thursdays this month" is a thing somebody says to a planner
+ * in a corridor, and until now there was nowhere to put it: the route has
+ * existed since availability did and nothing in the app called it.
+ *
+ * The rules are the other way round from the staff screen, and deliberately.
+ * There is no two-day cap, because that cap exists to stop unavailability
+ * being a back door to a week off nobody approved, and the person writing here
+ * is the person who would have done the approving. And nothing waits, for the
+ * same reason: asking them to approve their own note is a press that means
+ * nothing.
+ */
+const plan = (db, body) => setAvailability(ctx(db, { body }));
+
+test('a planner is not held to two days', async () => {
+  const { db, raw } = setup();
+  const week = ['2099-09-14', '2099-09-15', '2099-09-16', '2099-09-17', '2099-09-18'];
+  const out = await (await plan(db, { staffId: 1, days: week, status: 'unavailable' })).json();
+
+  assert.equal(out.marked, 5);
+  assert.equal(rows(raw).length, 5);
+  assert.deepEqual([...new Set(rows(raw).map((r) => r.decision))], ['approved']);
+});
+
+test('a planner taking the mark off leaves the day ordinary', async () => {
+  const { db, raw } = setup();
+  await plan(db, { staffId: 1, days: DAYS, status: 'unavailable', note: 'Evening class' });
+  assert.equal(rows(raw).length, 2);
+
+  const out = await (await plan(db, { staffId: 1, days: [DAYS[0]], clear: true })).json();
+  assert.equal(out.cleared, 1);
+  assert.deepEqual(rows(raw).map((r) => r.day), [DAYS[1]], 'and the other one stands');
+});
+
+test('a planner can take off a day the person asked about themselves', async () => {
+  const { db, raw } = setup();
+  await ask(db, { days: [DAYS[0]], status: 'unavailable' });
+  assert.equal(rows(raw)[0].decision, 'waiting');
+
+  await plan(db, { staffId: 1, days: [DAYS[0]], clear: true });
+  assert.equal(rows(raw).length, 0);
+});
+
+test('a planner writing over what somebody asked for settles it', async () => {
+  const { db, raw } = setup();
+  await ask(db, { days: [DAYS[0]], status: 'unavailable', note: 'Graduation' });
+
+  await plan(db, { staffId: 1, days: [DAYS[0]], status: 'unavailable', note: 'Graduation, agreed' });
+  const [mark] = rows(raw);
+  assert.equal(mark.decision, 'approved', 'nothing is left waiting on the person who wrote it');
+  assert.equal(mark.note, 'Graduation, agreed');
+  assert.match(mark.set_by, /Yaa/);
+});
+
+test('a window inside the day, for an appointment rather than the whole of it', async () => {
+  const { db, raw } = setup();
+  await plan(db, {
+    staffId: 1, days: [DAYS[0]], status: 'unavailable',
+    fromTime: '09:00', toTime: '11:30', note: 'Clinic',
+  });
+  const [mark] = rows(raw);
+  assert.equal(mark.from_time, '09:00');
+  assert.equal(mark.to_time, '11:30');
+});
+
+test('half a window is refused rather than stored as a whole day', async () => {
+  const { db } = setup();
+  await assert.rejects(
+    () => plan(db, { staffId: 1, days: [DAYS[0]], fromTime: '09:00' }),
+    /both times, or neither/i,
+  );
+  await assert.rejects(
+    () => plan(db, { staffId: 1, days: [DAYS[0]], fromTime: '11:00', toTime: '09:00' }),
+    /has to come after/i,
+  );
+});
+
+test('marking somebody who is not there is refused', async () => {
+  const { db } = setup();
+  await assert.rejects(
+    () => plan(db, { staffId: 9999, days: [DAYS[0]] }),
+    /No such member of staff/,
+  );
+});
+
+test('the rota screen is where it is written from', () => {
+  const view = readFileSync('public/js/views/att-rota.js', 'utf8');
+  assert.match(view, /async function markAvailability/);
+  assert.match(view, /api\.attSetAvailability/);
+  // Beside the name, which is the one cell that survives the phone layout.
+  assert.match(view, /rota-who-more/);
+  // And only for somebody who may change the rota.
+  assert.match(view, /mayEdit \? h\('button\.rota-who-more'/);
+});

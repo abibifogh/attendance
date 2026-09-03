@@ -547,6 +547,22 @@ export const GUIDE = [
         + 'department filter with the rest of the screen, so looking at Housekeeping does '
         + 'not show you the breakfasts nobody is on either.' },
 
+      { sub: 'Writing down days somebody cannot work' },
+      { p: 'The ⋯ beside a name on People view. Tick the days, say whether it is "cannot '
+        + 'work" or "would like to work", add a note, and it shows in the cell for everybody '
+        + 'building the rota. Unticking a day takes the mark off again.' },
+      { note: 'It covers the days still to come in the window you are looking at, so move to '
+        + 'the week you mean first. Somebody who cannot do Thursdays all month is four visits, '
+        + 'one per week, rather than one that quietly reaches into weeks you cannot see.' },
+      { warn: 'This is not leave and it does not become leave. Nothing is approved, no days '
+        + 'come off anybody’s balance, and you can still roster over it where you have to: '
+        + 'some clashes are deliberate and the grid should show them rather than pretend they '
+        + 'cannot happen. If somebody is actually going to be away, that is leave.' },
+      { note: 'What you write here does not wait for an answer, because you are the answer. '
+        + 'The two-day limit on the staff screen is not on this one either: that limit stops '
+        + 'unavailability being used as a week off nobody agreed to, and here it is you doing '
+        + 'the agreeing.' },
+
       { sub: 'The special meal' },
       { p: 'It is the last Friday of every month, and that column is marked on the grid so '
         + 'you know which day you are looking at. On it, anybody who was off last month\u2019s '
