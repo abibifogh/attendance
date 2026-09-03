@@ -2325,6 +2325,43 @@ because it is cash pay and nothing else. It is marked as worked out rather than
 agreed, so a payslip can tell the two apart, and an allowance somebody did
 agree to is left exactly as it is and topped up around.
 
+### What has to be on the rota, and what the draft may leave out
+
+A shift used to be optional or not, and "not optional" was doing two jobs at
+once. The craft shop is worth covering and the day survives without it; the
+night desk is not, and a night with nobody on it is a fact somebody has to be
+looking at on Monday morning rather than a line in a list of things the draft
+could not manage. Both were treated the same way and quietly left off the
+grid, which is what "it omits some shifts" meant.
+
+Three levels now, set per shift in the shift dialog or, for all of them at
+once, under **Setup → What has to be on the rota**:
+
+- **Must** — always on the rota. If nobody can be found for it, the draft puts
+  the shift on the grid **empty**, so the hole is a cell somebody answers.
+- **Cover it if somebody is free** — the old "it has to be covered", and what
+  every shift is unless told otherwise. Left out quietly when nobody is free.
+- **Only if somebody is spare** — filled last, from whoever is left over.
+  Nobody free for it is the answer, not a gap.
+
+The same screen holds the other two questions that decide whether a shift
+reaches the grid. **Instead of** groups shifts that are versions of one
+another, where exactly one runs on a day: Breakfast main and Breakfast main +
+are one morning written twice. **Alongside** groups shifts that run together
+or not at all, which is how a service cut in two is two shifts and one
+decision. An empty slot saves and publishes like any other row, and the draft
+counts holes apart from the shifts it actually filled.
+
+**The mapping that ships is a first pass to be argued with**, not a guess
+about hotels. Must is every shift that already carried a "how many people it
+needs" count, because setting that number was the property saying out loud
+that the shift needs a person, plus the overnight Security watch. Alternates
+were grouped only where the names say so: the pairs differing by a "+", and
+the Breakfast shifts that share a start time and differ only in when they
+finish. Anything numbered — Maintenance 1, 2 and 3, Laundry 1 and 2, Admin
+and Admin 2 — was left alone, because a number means a second person, not a
+second version.
+
 ### Somebody who starts or leaves inside the month
 
 They are paid for the days they were here, counted on the calendar. Somebody

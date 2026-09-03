@@ -157,6 +157,7 @@ export const ROUTES = [
   // The year, who has no date on file, and what has gone out. Behind setup
   // rather than att_view: it is a list of everybody's date of birth in one
   // place, which the morning strip deliberately is not.
+  ['POST', '/api/att/shifts/cover', 'att_setup', attSetup.saveCoverMap],
   ['GET', '/api/att/birthdays/manage', 'att_setup', birthday.birthdayAdmin],
 
   // A member of staff, looking at their own. Every route resolves who they are

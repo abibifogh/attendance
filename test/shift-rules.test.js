@@ -198,7 +198,7 @@ test('an optional shift is filled last, never at the cost of one that is not', a
   const { db, raw } = setup();
   // Two people, and an optional shift listed first so order alone cannot pass this.
   raw.prepare('DELETE FROM att_staff WHERE id = 3').run();
-  raw.prepare('UPDATE att_shifts SET optional = 1, sort_order = 0 WHERE id = 1').run();
+  raw.prepare("UPDATE att_shifts SET cover = 'optional', sort_order = 0 WHERE id = 1").run();
 
   const plan = await draft(db);
   const optional = plan.entries.filter((e) => e.shiftId === 1);
@@ -210,7 +210,7 @@ test('an optional shift is filled last, never at the cost of one that is not', a
 test('an optional shift nobody was spare for is not reported as a failure', async () => {
   const { db, raw } = setup();
   raw.prepare('DELETE FROM att_staff WHERE id = 3').run();
-  raw.prepare('UPDATE att_shifts SET optional = 1 WHERE id = 1').run();
+  raw.prepare("UPDATE att_shifts SET cover = 'optional' WHERE id = 1").run();
 
   const plan = await draft(db);
   const gap = plan.gaps.find((g) => g.shiftId === 1);
@@ -221,7 +221,7 @@ test('an optional shift nobody was spare for is not reported as a failure', asyn
 
 test('an optional shift is filled when somebody is spare', async () => {
   const { db, raw } = setup();
-  raw.prepare('UPDATE att_shifts SET optional = 1 WHERE id = 1').run();
+  raw.prepare("UPDATE att_shifts SET cover = 'optional' WHERE id = 1").run();
 
   const plan = await draft(db);
   assert.equal(plan.entries.filter((e) => e.shiftId === 1).length, 1,
@@ -237,7 +237,7 @@ test('the optional pass does not rob a later day of somebody it needs', async ()
   // shift that did not matter.
   raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
   raw.prepare('DELETE FROM att_shifts WHERE id = 3').run();
-  raw.prepare("UPDATE att_shifts SET optional = 1, runs_on = '[0]' WHERE id = 1").run();
+  raw.prepare("UPDATE att_shifts SET cover = 'optional', runs_on = '[0]' WHERE id = 1").run();
   raw.prepare("UPDATE att_shifts SET runs_on = '[1]' WHERE id = 2").run();
 
   const ds = await loadDataset(db, { from: MONDAY, to: '2026-06-08' });
@@ -271,7 +271,7 @@ test('all three are saved and read back', async () => {
       endsAt: '18:00',
       runsOn: [4, 5],
       altGroup: 'Porters',
-      optional: true,
+      cover: 'optional',
     },
   }));
 
@@ -279,13 +279,13 @@ test('all three are saved and read back', async () => {
   const made = shifts.find((s) => s.name === 'Extra porter');
   assert.equal(made.runs_on, '[4,5]');
   assert.equal(made.alt_group, 'Porters');
-  assert.equal(made.optional, 1);
+  assert.equal(made.cover, 'optional');
 });
 
 test('retiring a shift does not quietly wipe its rules', async () => {
   const { db, raw } = setup();
   raw.prepare(
-    "UPDATE att_shifts SET runs_on = '[0,1]', alt_group = 'Breakfast', optional = 1 WHERE id = 1",
+    "UPDATE att_shifts SET runs_on = '[0,1]', alt_group = 'Breakfast', cover = 'optional' WHERE id = 1",
   ).run();
 
   // What the Retire button sends: the row as it stands, with active flipped.
@@ -297,7 +297,7 @@ test('retiring a shift does not quietly wipe its rules', async () => {
       endsAt: row.ends_at,
       runsOn: [0, 1],
       altGroup: row.alt_group,
-      optional: Boolean(row.optional),
+      cover: row.cover,
       active: false,
     },
   }), 1);
@@ -305,7 +305,7 @@ test('retiring a shift does not quietly wipe its rules', async () => {
   const after = raw.prepare('SELECT * FROM att_shifts WHERE id = 1').get();
   assert.equal(after.runs_on, '[0,1]');
   assert.equal(after.alt_group, 'Breakfast');
-  assert.equal(after.optional, 1);
+  assert.equal(after.cover, 'optional');
   assert.equal(after.active, 0);
 });
 
@@ -561,7 +561,7 @@ test('and it appears on every day it is allowed to run', async () => {
 test('optional is the only thing that opts a shift out of that', async () => {
   const { db, raw } = setup();
   raw.prepare('UPDATE att_shifts SET needed = NULL').run();
-  raw.prepare('UPDATE att_shifts SET optional = 1 WHERE id = 2').run();
+  raw.prepare("UPDATE att_shifts SET cover = 'optional' WHERE id = 2").run();
 
   const plan = await draft(db);
   assert.equal(plan.entries.some((e) => e.shiftId === 2), true,
@@ -714,7 +714,7 @@ test('an optional shift is never filled by bending a rule', async () => {
   const { db, raw } = setup();
   raw.prepare('DELETE FROM att_shifts WHERE id = 3').run();
   raw.prepare('DELETE FROM att_staff WHERE id IN (2, 3)').run();
-  raw.prepare('UPDATE att_shifts SET optional = 1 WHERE id = 2').run();
+  raw.prepare("UPDATE att_shifts SET cover = 'optional' WHERE id = 2").run();
 
   const plan = await draft(db);
   assert.equal(plan.entries.length, 1, 'the one that had to be covered, and no more');

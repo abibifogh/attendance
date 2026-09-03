@@ -210,7 +210,7 @@ test('a shift with nothing behind it and nothing asked for is still created', as
 test('optional decides when a shift is filled, not whether it is wanted', async () => {
   const { db, raw } = setup();
   raw.prepare('DELETE FROM att_shifts WHERE id IN (2, 3)').run();
-  raw.prepare('UPDATE att_shifts SET optional = 1 WHERE id = 1').run();
+  raw.prepare("UPDATE att_shifts SET cover = 'optional' WHERE id = 1").run();
 
   const plan = await draft(db);
   assert.equal(plan.entries.filter((e) => e.shiftId === 1).length, 1,

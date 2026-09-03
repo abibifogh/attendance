@@ -365,6 +365,15 @@ function readWorksShifts(staff) {
 }
 
 /** A stored array of weekdays, Monday as 0, read back without ever throwing. */
+// The three things a shift can be worth on a rota, said once so the dialog
+// and the map cannot drift apart.
+const COVER_LEVELS = [
+  ['must', 'Must be on the rota, empty if nobody can do it'],
+  ['wanted', 'Cover it if somebody is free'],
+  ['optional', 'Only if somebody is spare'],
+];
+const COVER_SHORT = { must: 'Must', wanted: 'Wanted', optional: 'Optional' };
+
 function readDayList(value) {
   if (!value) return [];
   try {
@@ -1092,10 +1101,12 @@ async function shiftsTab(reload) {
           field('Whose shift it is', ownerPicker,
             'Named people only, first choice first. On a day none of them is free it does not '
             + 'run at all, rather than becoming a gap nobody can fill'),
-          field('Only if somebody is spare', h('select', { name: 'optional' },
-            h('option', { value: 'false', selected: !existing?.optional }, 'No, it has to be covered'),
-            h('option', { value: 'true', selected: !!existing?.optional }, 'Yes, optional'),
-          ), 'Optional shifts are filled last, from whoever is left over, and never at the cost '
+          field('What it is worth on the rota', h('select', { name: 'cover' },
+            ...COVER_LEVELS.map(([value, label]) => h('option', {
+              value, selected: (existing?.cover ?? 'wanted') === value,
+            }, label)),
+          ), 'A must goes on the rota even with nobody for it, as an empty slot somebody has to '
+            + 'fill. Optional ones are filled last, from whoever is left, and never at the cost '
             + 'of one that has to be covered'),
         ),
         // Chosen for the shift already, from its id, so a property with
@@ -1337,6 +1348,8 @@ async function shiftsTab(reload) {
 
   return h('div',
     suggestionsCard(suggested, reload),
+
+    coverMapCard(shifts, reload),
 
     card('Shifts', {
       note: 'A shift is what "late" is measured against',
@@ -3080,3 +3093,159 @@ function fillWording(text, name, property) {
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
+
+
+/**
+ * What this property actually has to put on a rota.
+ *
+ * Every one of these three things can already be set in the shift dialog,
+ * one shift at a time, behind a dozen fields about break minutes and grace
+ * periods. That is the wrong shape for the question. "Is the night desk a
+ * must" is not asked about the night desk; it is asked about all of them at
+ * once, by somebody reading down a list and comparing, twice a year. So here
+ * is the list.
+ *
+ * Three columns and nothing else:
+ *
+ *   WORTH    Must, wanted, or optional. A must goes on the rota even when
+ *            nobody can be found for it, as an empty cell somebody has to
+ *            answer. That is the whole reason this screen exists: a shift
+ *            that never reaches the grid is a shift nobody sees is missing.
+ *
+ *   INSTEAD OF   Shifts sharing a name here are versions of one another and
+ *            exactly one of them runs on a day. Breakfast main and Breakfast
+ *            main + are one morning written twice.
+ *
+ *   ALONGSIDE    Shifts sharing a name here run together or not at all: a
+ *            service cut in two is two shifts and one decision.
+ *
+ * Nothing is saved until the button is pressed, and only what changed is
+ * written.
+ */
+function coverMapCard(shifts, reload) {
+  const live = (shifts ?? []).filter((sh) => sh.active);
+  if (!live.length) return null;
+
+  const edits = new Map();
+  const change = (id, field, value) => {
+    const row = edits.get(id) ?? {};
+    row[field] = value;
+    edits.set(id, row);
+    paintCount();
+  };
+  const valueOf = (sh, field, fallback) => (edits.get(sh.id)?.[field] ?? fallback);
+
+  const altNames = [...new Set(live.map((sh) => sh.alt_group).filter(Boolean))].sort();
+  const pairNames = [...new Set(live.map((sh) => sh.pair_group).filter(Boolean))].sort();
+
+  const count = h('span.muted');
+  const paintCount = () => {
+    const n = edits.size;
+    count.textContent = n ? `${n} shift${n === 1 ? '' : 's'} changed, not saved yet` : '';
+  };
+
+  const byDepartment = new Map();
+  for (const sh of [...live].sort((a, b) => String(a.starts_at).localeCompare(String(b.starts_at)))) {
+    const key = sh.department || 'Everywhere else';
+    if (!byDepartment.has(key)) byDepartment.set(key, []);
+    byDepartment.get(key).push(sh);
+  }
+
+  const rowFor = (sh) => h('tr',
+    h('td',
+      h('div', sh.name),
+      h('small.muted', `${sh.starts_at}–${sh.ends_at}${sh.needed ? ` · ${sh.needed} needed` : ''}`)),
+    h('td',
+      h('select', {
+        onchange: (e) => change(sh.id, 'cover', e.target.value),
+      }, COVER_LEVELS.map(([value, label]) => h('option', {
+        value, selected: (sh.cover ?? 'wanted') === value,
+      }, COVER_SHORT[value] ?? label)))),
+    h('td', groupPicker(altNames, sh.alt_group ?? '', 'Nothing stands in for it',
+      (value) => change(sh.id, 'altGroup', value))),
+    h('td', groupPicker(pairNames, sh.pair_group ?? '', 'Runs on its own',
+      (value) => change(sh.id, 'pairGroup', value))));
+
+  const body = h('tbody',
+    [...byDepartment.entries()].map(([department, list]) => [
+      h('tr.row-group', h('td', { colspan: 4 }, h('strong', department))),
+      ...list.map(rowFor),
+    ]).flat());
+
+  const save = async (event) => {
+    if (!edits.size) { toast('Nothing changed.'); return; }
+    event.target.disabled = true;
+    try {
+      const payload = [...edits.entries()].map(([id, row]) => {
+        const sh = live.find((x) => x.id === id);
+        return {
+          id,
+          cover: row.cover ?? sh.cover ?? 'wanted',
+          altGroup: row.altGroup ?? sh.alt_group ?? '',
+          pairGroup: row.pairGroup ?? sh.pair_group ?? '',
+        };
+      });
+      const out = await api.attSaveCoverMap(payload);
+      toast(`Saved. ${out.changed} shift${out.changed === 1 ? '' : 's'} changed.`, 'good');
+      await reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      event.target.disabled = false;
+    }
+  };
+
+  return card('What has to be on the rota', {
+    note: 'What the draft is allowed to leave out',
+    wide: true,
+    actions: h('div.btn-row', count,
+      h('button.btn.btn-primary', { onclick: save }, 'Save the map')),
+  },
+    h('p.muted',
+      'A must goes on the rota whether or not anybody can be found for it: where nobody can, '
+      + 'the draft puts the shift on empty and the cell is the question. Wanted is covered when '
+      + 'somebody is free and quietly left out when nobody is. Optional is filled last, from '
+      + 'whoever is spare.'),
+    h('p.muted',
+      'Shifts sharing a name under "Instead of" are versions of one another and exactly one of '
+      + 'them runs on a day. Shifts sharing a name under "Alongside" run together or not at all.'),
+    h('div.table-wrap',
+      h('table.table',
+        h('thead', h('tr',
+          h('th', 'Shift'),
+          h('th', 'Worth'),
+          h('th', 'Instead of'),
+          h('th', 'Alongside'))),
+        body)));
+}
+
+/**
+ * A group name, chosen from the ones already in use or typed fresh.
+ *
+ * The dialog's own picker reads its answer off the form by name at save
+ * time, which is right there and no use here: this table has eighty of them
+ * and saves what changed rather than everything. So this one hands its
+ * answer back as it is given.
+ */
+function groupPicker(names, current, blank, onchange) {
+  const typed = h('input', {
+    type: 'text', maxlength: 60, placeholder: 'Name it',
+    style: { display: 'none', marginTop: '.4rem' },
+    oninput: (e) => onchange(e.target.value.trim()),
+  });
+
+  const options = [...names];
+  if (current && !options.includes(current)) options.unshift(current);
+
+  const select = h('select', {
+    onchange: (e) => {
+      const adding = e.target.value === NEW_DEPARTMENT;
+      typed.style.display = adding ? '' : 'none';
+      if (adding) { typed.focus(); onchange(typed.value.trim()); } else onchange(e.target.value);
+    },
+  },
+  h('option', { value: '', selected: !current }, blank),
+  options.map((n) => h('option', { value: n, selected: n === current }, n)),
+  h('option', { value: NEW_DEPARTMENT }, '+ New group…'));
+
+  return h('div', select, typed);
+}

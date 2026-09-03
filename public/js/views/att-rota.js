@@ -3033,15 +3033,22 @@ async function suggest(from, to, reload) {
   // reading "Kofi, Early" are one decision about Kofi, not twelve.
   const byPerson = new Map();
   for (const entry of plan.entries) {
-    if (!byPerson.has(entry.staff)) byPerson.set(entry.staff, []);
-    byPerson.get(entry.staff).push(entry);
+    // A slot nobody could be found for still goes on the grid, because the
+    // shift has to be there. Grouped under its own heading rather than under
+    // a person, since there is no person: it is the question, not an answer.
+    const who = entry.empty ? 'Nobody yet' : entry.staff;
+    if (!byPerson.has(who)) byPerson.set(who, []);
+    byPerson.get(who).push(entry);
   }
   const dropped = new Set();
 
   const countLine = h('strong');
   const refresh = () => {
-    const n = plan.entries.filter((e) => !dropped.has(e.staff)).length;
-    countLine.textContent = `${n} shift${n === 1 ? '' : 's'}`;
+    const live = plan.entries.filter((e) => !dropped.has(e.empty ? 'Nobody yet' : e.staff));
+    const holes = live.filter((e) => e.empty).length;
+    const n = live.length - holes;
+    countLine.textContent = `${n} shift${n === 1 ? '' : 's'}`
+      + (holes ? `, and ${holes} left empty for somebody to fill` : '');
   };
   refresh();
 
@@ -3151,7 +3158,7 @@ async function suggest(from, to, reload) {
     onSubmit: async () => {
       if (!plan.entries.length) return true;
       const entries = plan.entries
-        .filter((e) => !dropped.has(e.staff))
+        .filter((e) => !dropped.has(e.empty ? 'Nobody yet' : e.staff))
         // A suggestion that lands on an empty slot already standing on the day
         // is addressed by that row, so the slot is filled rather than doubled.
         .map((e) => {

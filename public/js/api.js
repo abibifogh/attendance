@@ -475,6 +475,7 @@ export const api = {
   notices: (limit = 20) => request(`/api/notices?limit=${limit}`),
   markNoticesSeen: (lastId) => request('/api/notices/seen', { method: 'POST', body: { lastId } }),
 
+  attSaveCoverMap: (shifts) => request('/api/att/shifts/cover', { method: 'POST', body: { shifts } }),
   dataBackupUrl: () => '/api/data/backup',
   dataSummary: (from, to) => request(`/api/data/summary?${new URLSearchParams({
     ...(from ? { from } : {}), ...(to ? { to } : {}),

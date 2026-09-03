@@ -46,6 +46,12 @@ import { isNightShift, limitsFrom, shiftsInWindow } from './workload.js';
  *  departments in March is not still being rostered to the old one. */
 export const HISTORY_WEEKS = 6;
 
+/** What a shift is worth on the rota: 'must', 'wanted' or 'optional'. */
+export function coverOf(shift) {
+  const said = String(shift?.cover ?? '').trim();
+  return said === 'must' || said === 'optional' ? said : 'wanted';
+}
+
 /**
  * Where somebody is free, what they usually do, and what the place usually
  * needs — turned into a list of cells to fill.
@@ -64,7 +70,10 @@ export function suggestRota({
     && (!staffIds || staffIds.includes(s.id)));
 
   if (!days.length || !shifts.length || !people.length) {
-    return { entries: [], gaps: [], filled: 0, considered: 0, habits: [] };
+    return {
+      entries: [], gaps: [], instead: [], stretched: [], empties: [],
+      filled: 0, considered: 0, habits: [],
+    };
   }
 
   const wanted = usualCover(history, shifts);
@@ -113,13 +122,18 @@ export function suggestRota({
   // pair and a single shift, the pair is the arrangement and the single is the
   // stand-in — the property runs a split Bistro six days a week and the whole
   // Bistro on the seventh, not the other way round — so the pair goes first
+
+  // What a shift is worth on the rota. Anything a database written before
+  // this column reads as the middle one, which is what every shift was.
+
   // and the single one falls out as "ran as Bistro" on the days it is needed.
   const firstIfPaired = (a, b) => (pairGroup(a) ? 0 : 1) - (pairGroup(b) ? 0 : 1);
-  const required = shifts.filter((shift) => !shift.optional);
+  const spare = (shift) => coverOf(shift) === 'optional';
+  const required = shifts.filter((shift) => !spare(shift));
   const passes = [
     required.filter((shift) => onlyStaff(shift).length),
     required.filter((shift) => !onlyStaff(shift).length),
-    shifts.filter((shift) => shift.optional),
+    shifts.filter(spare),
   ].filter((list) => list.length).map((list) => [...list].sort(firstIfPaired));
 
   for (const pass of passes) {
@@ -277,7 +291,7 @@ export function suggestRota({
         // says, those are not limits to be spent. A shift nobody is left for
         // is reported empty rather than covered by writing the same person
         // down twice or working them through their day off.
-        if (short > 0 && !shift.optional) {
+        if (short > 0 && !spare(shift)) {
           const stretched = people
             .map((person) => ({
               person,
@@ -314,6 +328,37 @@ export function suggestRota({
           }
         }
 
+        // STILL EMPTY, AND IT HAS TO BE ON THE ROTA ANYWAY.
+        //
+        // Everything above has been tried and there is nobody. For a shift
+        // marked "must", that is not a reason to leave it off: a night with
+        // nobody on the desk is a fact somebody has to be looking at, and a
+        // shift that never reaches the grid is one nobody sees. So it goes on
+        // empty, once per person still wanted, and the cell is the question.
+        //
+        // Not for the other two levels. "Wanted" not being covered is the
+        // draft doing its job with the people there are, and a row of empty
+        // cells for every shift nobody was free for is a grid nobody reads.
+        if (short > 0 && coverOf(shift) === 'must') {
+          const wantedEmpty = short;
+          for (let i = 0; i < wantedEmpty; i += 1) {
+            const slot = toFill.shift();
+            entries.push({
+              staffId: null,
+              day,
+              shiftId: shift.id,
+              rowId: slot ? Number(slot.id) : null,
+              why: 'Nobody could be found, and this shift has to be on the rota',
+              breach: null,
+              second: false,
+              // The grid draws this as a slot waiting for somebody, and the
+              // draft counts it apart from the shifts it actually filled.
+              empty: true,
+            });
+          }
+          ran.add(`${day}|${shift.id}`);
+        }
+
         if (short > 0) {
           // A shift that belongs to one person, on a day that person is off,
           // does not run. Nobody else can work it, so calling it a gap is
@@ -335,7 +380,10 @@ export function suggestRota({
             // An optional shift nobody was spare for is not a gap, it is the
             // answer. Reported all the same, under its own heading, because
             // "nobody was free for the extra porter" is worth knowing.
-            optional: Boolean(shift.optional),
+            optional: spare(shift),
+            // Put on the grid empty rather than left off it, so the list can
+            // say which of these is already a cell waiting to be filled.
+            must: coverOf(shift) === 'must',
             // A service split in two is one decision. Saying which shift this
             // one runs beside turns "Bistro shift 2 is short" into "the split
             // Bistro is short", which is the thing a planner has to answer.
@@ -354,7 +402,12 @@ export function suggestRota({
     // Every shift that could only be covered by going past a limit, so the
     // screen can say so once rather than the reader counting them.
     stretched: entries.filter((e) => e.breach),
-    filled: entries.length,
+    // Slots put on the rota with nobody in them, because the shift has to be
+    // there. Counted apart from the shifts that were actually filled: eleven
+    // placements and three holes is a different week from fourteen
+    // placements, and the button should not claim the second.
+    empties: entries.filter((e) => e.empty),
+    filled: entries.filter((e) => !e.empty).length,
     considered,
     habits: [...wanted.entries()]
       .map(([key, n]) => {

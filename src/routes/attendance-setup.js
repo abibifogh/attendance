@@ -407,6 +407,19 @@ export async function listShifts(ctx) {
   });
 }
 
+export const COVER = ['must', 'wanted', 'optional'];
+
+/**
+ * What a shift is worth on the rota, as the form or an import gives it.
+ *
+ * Anything unrecognised is 'wanted', which is what every shift was before
+ * the three levels existed: filled if somebody is free, and no drama if not.
+ */
+export function readCover(value) {
+  const said = String(value ?? '').trim();
+  return COVER.includes(said) ? said : 'wanted';
+}
+
 /**
  * Put a handful of shifts under one position.
  *
@@ -475,9 +488,10 @@ function shiftFields(body) {
     // and deliberately usable alongside it — a pair sits in an alternates
     // group against the single shift that replaces it.
     str(body.pairGroup, 'Runs-together group', { max: 60 }),
-    // Worth running when somebody is spare, not worth pulling anybody off
-    // anything for.
-    bool(body.optional, false) ? 1 : 0,
+    // What this shift is worth on the rota. 'must' goes on it even with
+    // nobody for it, as an empty slot; 'optional' is worth running when
+    // somebody is spare and not worth pulling anybody off anything for.
+    readCover(body.cover),
     // Whose shift it is, first choice first, where it belongs to named
     // people rather than to a department.
     readOnlyStaff(body.onlyStaff ?? body.onlyStaffId),
@@ -523,7 +537,7 @@ export async function createShift(ctx) {
                                grace_out_minutes, half_day_minutes, full_day_minutes,
                                overtime_after, colour, sort_order, active, department,
                                position, needed, runs_on, alt_group, alt_scope, pair_group,
-                               optional, only_staff, every_days)
+                               cover, only_staff, every_days)
        VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)
        RETURNING id`,
     ).bind(...shiftFields(body)).first();
@@ -532,6 +546,53 @@ export async function createShift(ctx) {
   }
   await audit(ctx, 'attendance.shift_create', row.id, { name: body.name });
   return json({ ok: true, id: row.id });
+}
+
+/**
+ * The cover map: what every shift is worth, in one go.
+ *
+ * The per-shift dialog can already say all of this, one shift at a time,
+ * behind a dozen other fields. That is the wrong shape for the question this
+ * answers, which is not "what is this shift" but "what does this property
+ * actually have to put on a rota". That question is asked about all of them
+ * at once, twice a year, by somebody looking down a list — so there is a list.
+ *
+ * Only the three things that decide whether a shift reaches the grid: what it
+ * is worth, what stands in for it, and what runs beside it. Everything else
+ * about a shift stays where it was.
+ */
+export async function saveCoverMap(ctx) {
+  const body = await readJson(ctx.request);
+  const rows = Array.isArray(body.shifts) ? body.shifts : [];
+  if (!rows.length) throw badRequest('Nothing to save.');
+  if (rows.length > 400) throw badRequest('Too many shifts in one go.');
+
+  const known = await ctx.db.prepare('SELECT id, name, cover, alt_group, pair_group FROM att_shifts').all();
+  const byId = new Map((known.results ?? []).map((r) => [Number(r.id), r]));
+
+  const writes = [];
+  const changed = [];
+  for (const row of rows) {
+    const id = Number(row.id);
+    const was = byId.get(id);
+    if (!was) throw badRequest('One of those shifts no longer exists.');
+
+    const cover = readCover(row.cover);
+    const altGroup = str(row.altGroup, 'Alternatives group', { max: 60 }) || null;
+    const pairGroup = str(row.pairGroup, 'Runs-together group', { max: 60 }) || null;
+
+    if (cover === was.cover && altGroup === (was.alt_group ?? null)
+      && pairGroup === (was.pair_group ?? null)) continue;
+
+    writes.push(ctx.db.prepare(
+      'UPDATE att_shifts SET cover = ?2, alt_group = ?3, pair_group = ?4 WHERE id = ?1',
+    ).bind(id, cover, altGroup, pairGroup));
+    changed.push({ name: was.name, from: was.cover, to: cover });
+  }
+
+  if (writes.length) await ctx.db.batch(writes);
+  await audit(ctx, 'attendance.cover_map', null, { changed: changed.length, shifts: changed });
+  return json({ ok: true, changed: changed.length });
 }
 
 /**
@@ -556,7 +617,7 @@ export async function updateShift(ctx, id) {
                              full_day_minutes=?8, overtime_after=?9, colour=?10,
                              sort_order=?11, active=?12, department=?13, position=?14,
                              needed=?15, runs_on=?16, alt_group=?17, alt_scope=?18,
-                             pair_group=?19, optional=?20, only_staff=?21, every_days=?22
+                             pair_group=?19, cover=?20, only_staff=?21, every_days=?22
        WHERE id = ?23`,
     ).bind(...shiftFields(body), shiftId).run();
   } catch (err) {
