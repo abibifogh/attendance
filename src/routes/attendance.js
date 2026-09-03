@@ -3026,6 +3026,9 @@ export async function saveRoster(ctx) {
 
     // A slot: this shift is wanted on this day and nobody is on it yet.
     if (entry.slot) {
+      // A slot is a shift with nobody on it. Without the shift it is nothing
+      // at all, and a row holding neither would sit on the grid saying so.
+      if (shiftId == null) throw badRequest('An empty slot still has to name a shift.');
       statements.push(ctx.db.prepare(
         `INSERT INTO att_roster (staff_id, day, shift_id, title, set_by, set_at, published)
          VALUES (NULL, ?1, ?2, ?3, ?4, datetime('now'), 0)`,

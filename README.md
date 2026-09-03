@@ -2389,6 +2389,11 @@ or not at all, which is how a service cut in two is two shifts and one
 decision. An empty slot saves and publishes like any other row, and the draft
 counts holes apart from the shifts it actually filled.
 
+A hole goes on as an empty slot, which is its own kind of entry rather than a
+change with nobody named on it. Sent the second way, the save refused the
+whole batch with "Staff is required", so one shift the draft had already said
+it could not fill lost every other suggestion with it.
+
 Both of those are picked as shifts rather than typed as a group name. Press
 **Change** on a row and tick every shift it belongs with; the names picked
 show as pills on the row. A family is mutual, so picking is not one row's

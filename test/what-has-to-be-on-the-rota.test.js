@@ -6,6 +6,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { familyWrites, listShifts, saveCoverMap, updateShift } from '../src/routes/attendance-setup.js';
 import { loadDataset } from '../src/lib/attendance.js';
 import { coverOf, suggestRota } from '../src/lib/suggest.js';
+import { saveRoster } from '../src/routes/attendance.js';
+import { draftEntries } from '../public/js/views/draft-entries.js';
 
 /**
  * What has to be on the rota, what is wanted on it, and what is a bonus.
@@ -392,4 +394,64 @@ test('a shift picked by nobody it does not know about is not invented', async ()
   // one, which would look like a rule and do nothing.
   const { shifts } = await (await listShifts(ctx(db))).json();
   assert.equal(shifts.find((s) => s.id === 1).alt_group, null);
+});
+
+// ---------------------------------------------------------------------------
+// Putting the draft on the grid
+// ---------------------------------------------------------------------------
+
+/**
+ * The draft and the Save speak different languages, and the translation is
+ * where a hole in the rota turned into a lost fortnight.
+ *
+ * A shift nobody could be found for is a placement with nobody on it. Sent to
+ * Save as an ordinary change it was a change naming no member of staff, which
+ * the route refused with "Staff is required" — and because a save is one
+ * batch, refusing that one entry refused the whole draft. Somebody pressing
+ * "put these on as drafts" lost every suggestion over the one shift the draft
+ * had already told them it could not fill.
+ */
+test('a hole in the draft is sent as an empty slot, not as nobody', () => {
+  const out = draftEntries([
+    { staffId: 4, day: MONDAY, shiftId: 1 },
+    { staffId: null, day: MONDAY, shiftId: 2, empty: true, rowId: null },
+    { staffId: 5, day: MONDAY, shiftId: 3, second: true },
+    { staffId: 6, day: MONDAY, shiftId: 1, rowId: 88 },
+  ]);
+
+  assert.deepEqual(out[0], { staffId: 4, day: MONDAY, shiftId: 1, add: false });
+  assert.deepEqual(out[1], { slot: true, day: MONDAY, shiftId: 2 });
+  assert.deepEqual(out[2], { staffId: 5, day: MONDAY, shiftId: 3, add: true });
+  assert.deepEqual(out[3], { id: 88, day: MONDAY, shiftId: 1, staffId: 6 });
+
+  assert.equal(out.some((e) => 'staffId' in e && e.staffId == null && !e.slot), false,
+    'nothing goes out as a change with nobody on it');
+});
+
+test('a draft with a hole in it saves, hole and all', async () => {
+  const { raw, db } = setup();
+  cover(raw, 1, 'must');
+  cover(raw, 2, 'must');
+  onePersonTwoShifts(raw);
+
+  const plan = await draft(db);
+  assert.equal(plan.empties.length, 1, 'the draft could not fill one of them');
+
+  const out = await (await saveRoster(ctx(db, {
+    body: { entries: draftEntries(plan.entries) },
+  }))).json();
+
+  assert.equal(out.ok, true);
+  const rows = raw.prepare('SELECT staff_id, day, shift_id, published FROM att_roster ORDER BY shift_id').all();
+  assert.equal(rows.length, 2, 'both shifts reached the grid');
+  assert.equal(rows.filter((r) => r.staff_id == null).length, 1, 'one of them empty');
+  assert.equal(rows.filter((r) => r.published).length, 0, 'and none of it published');
+});
+
+test('an empty slot still has to name a shift', async () => {
+  const { db } = setup();
+  await assert.rejects(
+    () => saveRoster(ctx(db, { body: { entries: [{ slot: true, day: MONDAY }] } })),
+    /has to name a shift/,
+  );
 });

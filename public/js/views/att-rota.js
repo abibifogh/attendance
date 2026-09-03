@@ -4,6 +4,7 @@ import {
 } from '../util.js';
 import { bulkUpload, card, emptyState, moreActions, table } from './components.js';
 import { printButton } from '../print.js';
+import { draftEntries } from './draft-entries.js';
 import { can, holdRefresh, navigate, replaceParams, warnBeforeLeaving } from '../app.js';
 import {
   asHours, byDepartment, byPosition, earliestFirst, field, formDialog, nightMark,
@@ -3157,19 +3158,12 @@ async function suggest(from, to, reload) {
     ),
     onSubmit: async () => {
       if (!plan.entries.length) return true;
-      const entries = plan.entries
-        .filter((e) => !dropped.has(e.empty ? 'Nobody yet' : e.staff))
-        // A suggestion that lands on an empty slot already standing on the day
-        // is addressed by that row, so the slot is filled rather than doubled.
-        .map((e) => {
-          if (e.rowId) return { id: e.rowId, day: e.day, staffId: e.staffId, shiftId: e.shiftId };
-          // A second shift on a day they already hold one goes beside it. Sent
-          // as a plain change it would replace the first, and the day would
-          // come back covered once instead of twice.
-          return {
-            staffId: e.staffId, day: e.day, shiftId: e.shiftId, add: Boolean(e.second),
-          };
-        });
+      // What is still ticked, turned into changes Save understands. The
+      // mapping lives in draft-entries.js so it can be tested without a
+      // browser, which is exactly what it was missing.
+      const entries = draftEntries(
+        plan.entries.filter((e) => !dropped.has(e.empty ? 'Nobody yet' : e.staff)),
+      );
       if (!entries.length) throw new Error('Nothing is ticked, so there is nothing to put on.');
       return api.attSaveRoster({ entries });
     },
