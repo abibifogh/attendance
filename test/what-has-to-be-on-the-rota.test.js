@@ -455,3 +455,32 @@ test('an empty slot still has to name a shift', async () => {
     /has to name a shift/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// On a phone
+// ---------------------------------------------------------------------------
+
+/**
+ * Four columns of shift names does not fit a handset.
+ *
+ * At 360 pixels the map came to 745 of them: the level dropdown squeezed to a
+ * sliver with nothing legible in it, and Alongside sat off the right-hand edge
+ * where the only way to reach it was to drag the table sideways. So below 620
+ * the table stops being a table and each shift becomes a block, which works
+ * only as long as every cell carries the heading it used to sit under.
+ */
+test('every cell says which column it is, so the phone layout can label it', () => {
+  const view = readFileSync('public/js/views/att-setup.js', 'utf8');
+  for (const label of ['Shift', 'Worth', 'Instead of', 'Alongside']) {
+    assert.ok(
+      view.includes(`'data-label': '${label}'`),
+      `the ${label} cell has to name itself`,
+    );
+  }
+  assert.match(view, /table\.table\.cover-map/, 'and the table has to be findable from the CSS');
+
+  const css = readFileSync('public/styles.css', 'utf8');
+  const phone = css.slice(css.indexOf('.cover-map thead'));
+  assert.match(phone, /\.cover-map thead \{ display: none; \}/);
+  assert.match(phone, /\.cover-map select \{ width: 100%; \}/);
+});

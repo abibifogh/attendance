@@ -2419,6 +2419,13 @@ or not at all, which is how a service cut in two is two shifts and one
 decision. An empty slot saves and publishes like any other row, and the draft
 counts holes apart from the shifts it actually filled.
 
+On a phone the map stops being a table. Four columns of shift names came to
+745 pixels on a 360-pixel handset: the level dropdown squeezed to a sliver
+with nothing legible in it, and Alongside sat off the right-hand edge where
+the only way to reach it was to drag the table sideways. Below 620 each shift
+is a block instead, with the level full width and both families stacked under
+their own headings. The table is still a table on a desk.
+
 A hole goes on as an empty slot, which is its own kind of entry rather than a
 change with nobody named on it. Sent the second way, the save refused the
 whole batch with "Staff is required", so one shift the draft had already said

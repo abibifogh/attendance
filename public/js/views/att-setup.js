@@ -3148,20 +3148,27 @@ function coverMapCard(shifts, reload) {
     byDepartment.get(key).push(sh);
   }
 
+  // Every cell carries the heading it sits under. On a desk that is what the
+  // thead already says and the attribute goes unread; on a phone the table
+  // stops being a table and each cell wears its own label, because four
+  // columns of shift names in 360 pixels is a screen you have to drag
+  // sideways to read one row of.
   const rowFor = (sh) => h('tr',
-    h('td',
+    h('td', { 'data-label': 'Shift' },
       h('div', sh.name),
       h('small.muted', `${sh.starts_at}–${sh.ends_at}${sh.needed ? ` · ${sh.needed} needed` : ''}`)),
-    h('td',
+    h('td', { 'data-label': 'Worth' },
       h('select', {
         onchange: (e) => change(sh.id, 'cover', e.target.value),
       }, COVER_LEVELS.map(([value, label]) => h('option', {
         value, selected: (sh.cover ?? 'wanted') === value,
       }, COVER_SHORT[value] ?? label)))),
-    h('td', familyCell(sh, live, 'alt_group', 'altWith', 'Nothing stands in for it',
-      edits, change)),
-    h('td', familyCell(sh, live, 'pair_group', 'pairWith', 'Runs on its own',
-      edits, change)));
+    h('td', { 'data-label': 'Instead of' },
+      familyCell(sh, live, 'alt_group', 'altWith', 'Nothing stands in for it',
+        edits, change)),
+    h('td', { 'data-label': 'Alongside' },
+      familyCell(sh, live, 'pair_group', 'pairWith', 'Runs on its own',
+        edits, change)));
 
   const body = h('tbody',
     [...byDepartment.entries()].map(([department, list]) => [
@@ -3206,7 +3213,7 @@ function coverMapCard(shifts, reload) {
       'Shifts sharing a name under "Instead of" are versions of one another and exactly one of '
       + 'them runs on a day. Shifts sharing a name under "Alongside" run together or not at all.'),
     h('div.table-wrap',
-      h('table.table',
+      h('table.table.cover-map',
         h('thead', h('tr',
           h('th', 'Shift'),
           h('th', 'Worth'),
@@ -3243,11 +3250,20 @@ function familyCell(shift, all, column, field, blank, edits, change) {
   const paint = () => {
     const ids = currently();
     const names = ids.map((id) => all.find((s) => s.id === id)?.name).filter(Boolean);
+    // Both states are a block, so Change sits under whatever is above it
+    // rather than beside the empty case and below the full one.
     mount(host,
       names.length
-        ? h('div', names.map((n) => h('span.pill', { style: { marginRight: '.25rem' } }, n)))
-        : h('small.muted', blank),
-      h('button.btn-ghost.btn-sm', { style: { marginTop: '.3rem' }, onclick: open }, 'Change'));
+        // Wrapped rather than laid end to end. Two pills of "Breakfast
+        // 06:00–15:00" is 290 pixels of nowrap, and side by side in a narrow
+        // column they ran off the edge with no space between them to break at.
+        ? h('div', {
+          style: { display: 'flex', flexWrap: 'wrap', gap: '.25rem' },
+        }, names.map((n) => h('span.pill', n)))
+        : h('div', h('small.muted', blank)),
+      h('button.btn-ghost.btn-sm', {
+        style: { marginTop: '.3rem', marginLeft: '-.4rem' }, onclick: open,
+      }, 'Change'));
   };
 
   async function open() {

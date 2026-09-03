@@ -2444,6 +2444,39 @@ html { touch-action: manipulation; }
   .bell-title { font-size: .92rem; }
 }
 
+/* 3. The cover map stops being a table.
+      Four columns of shift names and two pickers came to 745px, which on a
+      360px handset is a row you drag sideways to read: the level dropdown
+      squeezed down to a sliver with nothing legible in it, and Alongside sat
+      off the edge of the screen entirely. So each shift becomes a block, and
+      every cell wears the heading it used to sit under. */
+@media (max-width: 620px) {
+  .cover-map thead { display: none; }
+  .cover-map,
+  .cover-map tbody,
+  .cover-map tr,
+  .cover-map td { display: block; width: 100%; }
+
+  .cover-map tbody tr { padding: .7rem .1rem; border-bottom: 1px solid var(--border); }
+  .cover-map tbody tr:last-child { border-bottom: 0; }
+  .cover-map tbody tr.row-group { padding: .8rem .1rem .3rem; border-bottom: 0; }
+  .cover-map tbody tr.row-group td { background: none; padding: 0; }
+
+  .cover-map td { border: 0; padding: .45rem 0 0; }
+  .cover-map td:first-child { padding-top: 0; }
+  .cover-map td[data-label]:not(:first-child)::before {
+    content: attr(data-label);
+    display: block;
+    font-size: .7rem; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--text-faint); margin-bottom: .2rem;
+  }
+  /* Room to read the level, and to press it. */
+  .cover-map select { width: 100%; }
+  /* A shift whose name is longer than the screen breaks rather than sticks
+     out. Better a pill on two lines than a name nobody can finish reading. */
+  .cover-map .pill { max-width: 100%; white-space: normal; }
+}
+
 /* 3. A dialog's heading is not a card's heading, and it was being given a
       card's phone treatment: the title on one line, the close button stretched
       to the full width of the dialog underneath it and 31 pixels tall. A
