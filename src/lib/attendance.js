@@ -2012,19 +2012,36 @@ export function computeRange(ds, staffId, from, to) {
     });
   }
 
+  const byDay = new Map(windows.map((w) => [w.day, w]));
+
   // Punches with no window fall back to their own calendar day, which is what
   // makes an unscheduled day visible instead of silently dropping the evidence
   // that somebody came in.
+  //
+  // BUT A DAY WITH A SHIFT ON IT CLAIMS ITS OWN PUNCHES, however far outside
+  // the window they fall. The window is there to decide which shift a punch
+  // belongs to when several could take it; it is not a rule about who counts
+  // as having turned up. Somebody on a 09:00 craft shift who arrives at 05:45
+  // is three and a quarter hours early, and the accepted stretch is three, so
+  // her arrival was being thrown away and the day read as though she never
+  // clocked in at all. She had tapped, and the punch was in the database.
+  //
+  // The window still does its real job: where two shifts could take a punch,
+  // claimPunch has already picked between them above and this never runs.
   const loose = new Map();
   for (const punch of punches) {
     const claimed = claimPunch(punch, windows);
     if (claimed) { claimed.punches.push(punch); continue; }
+
     const day = String(punch.at_local).slice(0, 10);
+    const own = byDay.get(day);
+    if (own) { own.punches.push(punch); continue; }
+
     if (!loose.has(day)) loose.set(day, []);
     loose.get(day).push(punch);
   }
 
-  const windowByDay = new Map(windows.map((w) => [w.day, w]));
+  const windowByDay = byDay;
   const out = [];
 
   for (const day of days) {

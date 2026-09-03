@@ -1121,3 +1121,93 @@ test('a shift still to come counts as neither worked nor missed', () => {
   assert.equal(totals.daysAbsent, 0);
   assert.equal(totals.daysWorked, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Somebody who turns up very early
+// ---------------------------------------------------------------------------
+
+/**
+ * The accepted stretch either side of a shift is there to decide WHICH shift a
+ * punch belongs to when more than one could take it. It was also deciding who
+ * counted as having turned up, which is a different question and not one a
+ * window should be answering.
+ *
+ * Doreen is on a craft shift at 09:00 and arrives at six, because that is when
+ * the first tro-tro gets her there. Three hours is the stretch the property
+ * accepts, so at 05:45 her arrival fell outside it, was thrown away, and the
+ * day read as though she had never clocked in. She had, and the punch was in
+ * the database the whole time.
+ */
+const CRAFT = { ...MORNING, id: 3, name: 'Craft', starts_at: '09:00', ends_at: '17:00' };
+
+const dayFor = (punches, shift = CRAFT, day = '2026-06-16') => {
+  const ds = makeDataset({
+    staff: STAFF,
+    shifts: [MORNING, NIGHT, shift],
+    reasons: REASONS,
+    settings: [{ key: 'timezone', value: 'Africa/Accra' }],
+    roster: [{ staff_id: 1, day, shift_id: shift.id, published: 1 }],
+    punches: punches.map(([time]) => punch(1, day, time)),
+    days: [],
+    holidays: [],
+    leave: [],
+    patterns: [],
+  });
+  return computeRange(ds, 1, day, day)[0];
+};
+
+test('somebody on at nine who arrives at six is at work, not missing', () => {
+  const record = dayFor([['06:00'], ['17:05']]);
+  assert.equal(record.status, 'present');
+  assert.equal(record.first_in, '06:00');
+  assert.equal(record.late_minutes, 0);
+});
+
+test('and further outside the window than that is still not missing', () => {
+  // Three and a quarter hours early, where the property accepts three. This is
+  // the one that used to come back as though she never turned up.
+  const record = dayFor([['05:45'], ['17:05']]);
+  assert.equal(record.status, 'present');
+  assert.equal(record.first_in, '05:45');
+});
+
+test('a day with no shift on it still shows the punch as unscheduled', () => {
+  // The fallback that was there before must keep working: somebody who comes
+  // in on a day nobody put them on is a fact worth seeing, not a claim on a
+  // shift that does not exist.
+  const ds = makeDataset({
+    staff: STAFF,
+    shifts: [MORNING, NIGHT],
+    reasons: REASONS,
+    settings: [{ key: 'timezone', value: 'Africa/Accra' }],
+    roster: [],
+    punches: [punch(1, '2026-06-16', '10:00'), punch(1, '2026-06-16', '15:00')],
+    days: [], holidays: [], leave: [], patterns: [],
+  });
+  const record = computeRange(ds, 1, '2026-06-16', '2026-06-16')[0];
+  assert.equal(record.status, 'unscheduled');
+  assert.equal(record.first_in, '10:00');
+});
+
+test('a night shift still takes the punch that belongs to it, not the day it lands on', () => {
+  // The case the window exists for. Somebody on nights from the 15th taps out
+  // at 06:05 on the 16th; that punch is the night's departure and must not be
+  // claimed by the 16th just because it happened on it.
+  const ds = makeDataset({
+    staff: STAFF,
+    shifts: [MORNING, NIGHT],
+    reasons: REASONS,
+    settings: [{ key: 'timezone', value: 'Africa/Accra' }],
+    roster: [{ staff_id: 1, day: '2026-06-15', shift_id: NIGHT.id, published: 1 }],
+    punches: [punch(1, '2026-06-15', '21:55'), punch(1, '2026-06-16', '06:05')],
+    days: [], holidays: [], leave: [], patterns: [],
+  });
+
+  const [night] = computeRange(ds, 1, '2026-06-15', '2026-06-15');
+  assert.equal(night.status, 'present');
+  assert.equal(night.first_in, '21:55');
+  assert.equal(night.last_out, '06:05', 'the morning punch is the night shift leaving');
+
+  const [after] = computeRange(ds, 1, '2026-06-16', '2026-06-16');
+  assert.equal(after.first_in, null, 'and the 16th did not also claim it');
+});

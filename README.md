@@ -437,6 +437,23 @@ does not claim somebody touched the day either. It is the shape *last*
 published, so a day published, changed, published again and then put back the
 first way is a change: what staff were last told is the second version.
 
+**A day with a shift on it claims its own punches, however early they are.**
+There is an accepted stretch either side of a shift, three hours before and
+four after by default, and its job is to decide *which* shift a punch belongs
+to when more than one could take it. It was also deciding who counted as
+having turned up, which is a different question and not one a window should
+answer. Somebody on a craft shift at nine who arrives at a quarter to six is
+three and a quarter hours early, so her arrival fell outside the stretch, was
+thrown away, and the day read as though she had never clocked in. She had, and
+the punch was in the database the whole time.
+
+A punch that no window claims now goes to that day's own shift where there is
+one. The window still does its real job: where two shifts could take a punch
+it has already chosen between them, and a night shift still takes the tap at
+six the next morning rather than losing it to the day it landed on. Only where
+nobody is rostered at all does a punch fall back to being an unscheduled day,
+which is what that fallback was for.
+
 **A period can be taken back off.** Starting a fortnight again, undoing an
 import that came in wrong, emptying a month somebody built against the wrong
 week: all of them meant opening every cell and setting it to Off, and ninety
