@@ -585,7 +585,15 @@ export async function pushNotice(db, notice) {
       // them, and a notification that opens the wrong page is worse than one
       // that only says its piece.
       url: site && notice.link ? `${site}/${String(notice.link).replace(/^\/*/, '')}` : site || null,
-      tag: notice.kind ?? 'hive',
+      // ONE TAG PER NOTICE, NOT PER KIND. A tag is what the phone replaces:
+      // two notifications sharing one arrive as one, the second quietly
+      // overwriting the first. Tagged by kind, the second person to ask about
+      // a day rubbed out the first, and somebody watching three requests come
+      // in saw one, which looks exactly like push not working at all.
+      //
+      // The daily digest still wants the old behaviour, and it has it: it
+      // sends its own push, with its own tag, and does not come through here.
+      tag: notice.id ? `notice-${notice.id}` : (notice.kind ?? 'hive'),
     });
 
     let sent = 0;

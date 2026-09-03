@@ -1102,9 +1102,40 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 }
 .bell-panel.open { display: block; }
 .bell-head {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
   padding: .6rem .8rem; border-bottom: 1px solid var(--border);
   font-size: .85rem; background: var(--surface-2);
 }
+.bell-mark {
+  border: 0; background: none; padding: 0; cursor: pointer;
+  font: inherit; font-size: .78rem; color: var(--accent); white-space: nowrap;
+}
+.bell-mark:hover { text-decoration: underline; }
+.bell-mark:disabled { color: var(--text-faint); cursor: default; text-decoration: none; }
+
+/* Three piles, and which one is being looked at. A row of quiet buttons rather
+   than anything that looks like navigation: pressing one changes what is in
+   the list below and nothing else on the screen. */
+.bell-tabs {
+  display: flex; gap: .25rem; padding: .4rem .5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.bell-tab {
+  display: inline-flex; align-items: center; gap: .3rem;
+  border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: .8rem; color: var(--text-dim);
+  padding: .35rem .55rem; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border-bottom: 2px solid transparent;
+}
+.bell-tab:hover { color: var(--text); }
+.bell-tab.on { color: var(--text); font-weight: 640; border-bottom-color: var(--accent); }
+.bell-tab-n {
+  font-size: .68rem; font-weight: 600; line-height: 1;
+  padding: .15rem .3rem; border-radius: 999px;
+  background: var(--surface-2); color: var(--text-dim);
+}
+.bell-tab.on .bell-tab-n { background: var(--accent-soft); color: var(--accent); }
+
 .bell-list { max-height: min(60vh, 460px); overflow-y: auto; overscroll-behavior: contain; padding: .3rem; }
 
 .bell-item {

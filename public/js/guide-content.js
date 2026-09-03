@@ -65,10 +65,20 @@ export const GUIDE = [
         + 'the only way notifications are allowed to work at all.' },
 
       { sub: 'The bell' },
-      { p: 'The count beside the bell is what has happened since you last looked. What you see '
-        + 'in it depends on your permissions: an administrator gets clock-time changes waiting '
-        + 'for approval, a supervisor gets days that need confirming. Opening the list marks it '
-        + 'as read; it does not mark the work as done.' },
+      { p: 'The count beside the bell is what has happened that you have not read yet. What you '
+        + 'see in it depends on your permissions: an administrator gets clock-time changes '
+        + 'waiting for approval, a supervisor gets days that need confirming.' },
+      { p: 'Three tabs. Unread is what is waiting, All is everything, Read is what you have '
+        + 'dealt with. It opens on Unread when there is something in it and on All when there '
+        + 'is not.' },
+      { warn: 'Opening the list no longer marks it read. It used to, which meant a list of six '
+        + 'became a list of none before you had done anything about any of them. Read is now '
+        + 'something you say, with Mark all as read at the top, and it does not mark the work '
+        + 'as done either.' },
+      { note: 'The mark beside each line says what it is about: a suitcase for recruitment, a '
+        + 'palm for leave, a calendar for a day somebody cannot work, a stethoscope for a '
+        + 'medical claim. Anything going wrong shows a warning triangle instead, with a '
+        + 'coloured edge down the side.' },
 
       { sub: 'Every screen is live' },
       { p: 'When somebody changes something, every other screen that shows it updates within the '

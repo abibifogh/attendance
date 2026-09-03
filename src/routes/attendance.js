@@ -3888,11 +3888,11 @@ export async function dailyTick(db, env, today) {
     const payload = {
       day: yesterday, open, absent, escalated, rows: days,
     };
-    // Bell only, and deliberately. The digest below carries exactly this
-    // information by mail already; sending the notice as well would put two
-    // emails about the same morning in the same inbox, which is how people
-    // learn to ignore both.
-    await createNotice(db, notice);
+    // Bell only, and deliberately. The two lines below already carry exactly
+    // this information, by mail and to the phone: the mail would be two
+    // emails about the same morning in the same inbox, and the push would be
+    // the same buzz twice, which is how people learn to ignore both.
+    await createNotice(db, { ...notice, push: false });
     await Promise.allSettled([
       pingExceptions(db, payload),
       emailExceptions(db, env, payload),

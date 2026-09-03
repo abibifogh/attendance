@@ -30,9 +30,13 @@ const LEVELS = new Set(['info', 'warn', 'high']);
  */
 export async function createNotice(db, {
   kind, level = 'info', title, body, link, day, slot, actor, audience = null, userId = null,
-  emailAudience = undefined, email = true, push = false,
+  emailAudience = undefined, email = true, push = true,
 }, ctx = null) {
   if (!kind || !title) return null;
+
+  // Filled in the moment the row is written, and handed on to the push so a
+  // notification carries a tag of its own rather than its family's.
+  let noticeId = null;
 
   const post = async () => {
     const jobs = [];
@@ -54,13 +58,23 @@ export async function createNotice(db, {
       }).catch((err) => console.error('notice email failed', err)));
     }
 
-    // And a very few are worth a buzz in somebody's pocket. Opt in per notice
-    // rather than on by default: a phone that lights up for every clock
-    // correction is a phone whose owner turns notifications off, and then the
-    // two that mattered do not arrive either. Needs no `env` — the push keys
-    // live in the database — so it works from the cron as well as a request.
+    // And it goes to the phone in somebody's pocket.
+    //
+    // THIS USED TO BE OPT IN, and the fear behind that was a phone lighting up
+    // for every clock correction until its owner switched notifications off.
+    // What actually happened was the other failure: eighteen kinds of notice
+    // never asked, so somebody taking an interview slot or saying they cannot
+    // work Thursday rang a bell nobody was looking at. A notice is already the
+    // app's judgement that this is worth telling somebody about; making the
+    // telling opt in meant deciding that twice, and the second decision kept
+    // being forgotten.
+    //
+    // So it is on unless a caller says otherwise, and the callers that say
+    // otherwise are the two that would arrive daily whether or not anything
+    // had happened. It needs no `env`, since the push keys live in the
+    // database, so it works from the cron as well as from a request.
     if (push) {
-      jobs.push(pushNotice(db, { kind, title, body, link, day, audience, userId })
+      jobs.push(pushNotice(db, { id: noticeId, kind, title, body, link, day, audience, userId })
         .catch((err) => console.error('notice push failed', err)));
     }
 
@@ -98,8 +112,9 @@ export async function createNotice(db, {
       // that rings for three people is a bell none of them owns.
       userId == null ? null : Number(userId),
     ).first();
+    noticeId = row?.id ?? null;
     await post();
-    return row?.id ?? null;
+    return noticeId;
   } catch (err) {
     // A site whose database has not been upgraded yet simply has no bell. That
     // is a missing nicety, not a reason to fail a submitted check.

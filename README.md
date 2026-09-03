@@ -858,6 +858,36 @@ recipient list, and only when there is something to do about it. Emailing its
 notice as well would put two messages about the same morning in the same inbox,
 which is how people learn to ignore both.
 
+**And every notice goes to the phone too, unless it says not to.** This was the
+other way round, and the fear behind that was a phone lighting up for every
+clock correction until its owner switched notifications off. What actually
+happened was the opposite failure: eighteen kinds of notice never asked, so
+somebody taking an interview slot or saying they cannot work Thursday rang a
+bell nobody was looking at. Recording a notice is already the app deciding this
+is worth telling somebody about; making the telling a second, separate decision
+meant the second one kept being forgotten. The only thing that opts out is the
+morning digest, which sends its own alert on its own setting and would
+otherwise buzz twice.
+
+**A notification is tagged by the notice rather than by its kind.** A tag is
+what a phone replaces: two notifications sharing one arrive as one, the second
+quietly overwriting the first. Tagged by kind, the second person to ask about a
+day rubbed out the first before anybody read it, which from the outside looks
+exactly like alerts not working. Nothing suppresses an alert because the app
+happens to be open on another screen, and nothing ever did.
+
+**The bell is three tabs and a button.** Unread, All, Read, with the count on
+each, opening on Unread when there is something in it. Opening the panel used
+to mark everything read, which turned a list of six into a list of none before
+anybody had dealt with any of them; read is now something a person says, with
+*Mark all as read*. And the mark beside each line says what the notice is
+about, a suitcase for recruitment, a palm for leave, a calendar for a day
+somebody cannot work, rather than what level it is, since almost everything is
+at the same level. Anything going wrong shows a warning instead, which is the
+one thing worth knowing before what it is about. Before this every ordinary
+notice carried a bed, because the emoji for "information" was mistyped once and
+nothing was looking at it.
+
 #### Texts, for the phones nothing else reaches
 
 Half the property is holding an iPhone 7 Plus. It stops at iOS 15, web push for
