@@ -4849,6 +4849,28 @@ body.rota-dragging .pos-add { pointer-events: none; }
 .rota-table th:last-child,
 .rota-table td:last-child { border-right: 0; }
 
+/* Where one week stops and the next begins.
+   A fortnight is fourteen columns of the same width with the same faint line
+   between all of them, so the seam between the two weeks is nowhere and the
+   eye has to count to find it. Four weeks is worse. This one line is drawn in
+   the mark's own gold and at three times the weight; every other line in the
+   grid stays exactly as faint as it was, because a grid where everything is
+   emphasised is a grid where nothing is. The table collapses its borders, so
+   this sits on top of the Sunday's own right-hand line rather than beside it. */
+.rota-table th.rota-week-start,
+.rota-table td.rota-week-start { border-left: 3px solid var(--brand-mark); }
+
+/* The seam is a desk thing. On a handset the grid is seven columns whatever
+   the span, so a fortnight is already two rows with a gap between them and
+   the weeks are separated by the layout itself. The line there would be a
+   vertical stub against the left edge of the second row, marking nothing.
+   After the rule above rather than with the other handset rules, because
+   those come earlier in the file and would lose. */
+@media (max-width: 620px) {
+  .rota-table th.rota-week-start,
+  .rota-table td.rota-week-start { border-left: 0; }
+}
+
 /* A `td` set to flex stops being a table cell, and the column line beside the
    names stopped lining up with the rows it was meant to divide. The cell stays
    a cell; the row inside it does the arranging. */

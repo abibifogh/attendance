@@ -1050,10 +1050,22 @@ export async function renderAttRota(params) {
     return last.toISOString().slice(0, 10) === day;
   };
 
+  /**
+   * Where one week stops and the next begins.
+   *
+   * A fortnight is fourteen columns of the same width with the same faint line
+   * between all of them, so the seam between the two weeks is nowhere: the eye
+   * counts to find it. Four weeks is worse. The first column needs no line in
+   * front of it, so it is every Monday but that one.
+   */
+  const weekStart = (day) => day !== data.days[0]
+    && new Date(`${day}T12:00:00Z`).getUTCDay() === 1;
+
   const dayClass = (day) => [
     isWeekend(day) ? 'rota-weekend' : '',
     day < data.today ? 'rota-past' : '',
     day === data.today ? 'rota-today' : '',
+    weekStart(day) ? 'rota-week-start' : '',
   ].filter(Boolean).join(' ');
 
   // Today, said in the header rather than left to a shade.
