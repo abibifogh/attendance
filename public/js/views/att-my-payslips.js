@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { h, money, mount } from '../util.js';
 import { card, emptyState } from './components.js';
 import { niceMonth } from './att-shared.js';
-import { companyOf, fitPayslip, payslipPage, showPayslips } from './payslip.js';
+import { companyOf, fitPayslip, fitToWidth, payslipPage, showPayslips } from './payslip.js';
 
 /**
  * My payslips.
@@ -56,6 +56,7 @@ export async function renderAttMyPayslips(params) {
     month: { key: data.month, nice: niceMonth(data.month) },
     company,
   });
+  const paper = fitToWidth(page);
 
   mount(host,
     h('div.page-head',
@@ -85,11 +86,14 @@ export async function renderAttMyPayslips(params) {
             h('span.slip-mine-when', niceMonth(m.month)),
             h('strong.slip-mine-net', cash(m.net))))))),
       ),
-      h('div.slip-mine-paper', page)),
+      h('div.slip-mine-paper', paper.box)),
   );
 
   // Sized down to whatever is in front of somebody once it is on the page. A4
-  // is not a phone, and the same page has to fit both.
-  requestAnimationFrame(() => fitPayslip(page));
+  // is not a phone, and the same page has to fit both: first the body is
+  // shrunk until the slip fits the height of the sheet, then the whole sheet
+  // is scaled to the width there is for it. Both need it in the document
+  // before anything can be measured.
+  requestAnimationFrame(() => { fitPayslip(page); paper.fit(); });
   return host;
 }

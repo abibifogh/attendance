@@ -1,6 +1,6 @@
 import { state } from '../app.js';
 import { fmtNum, h, money } from '../util.js';
-import { PAGE_H, PAGE_W } from './letter-paper.js';
+import { PAGE_H, PAGE_W, widthScale } from './letter-paper.js';
 
 /**
  * The payslip, as a piece of paper.
@@ -244,6 +244,54 @@ export function fitPayslip(page) {
 
   page.classList.add('is-overlong');
   return STEPS[STEPS.length - 1];
+}
+
+/**
+ * The page, sized down to the room it has.
+ *
+ * A payslip is a sheet of A4 and a phone is not. Shown at full size in a box
+ * a third as wide, what a reader gets is the left-hand third: the labels
+ * without a single figure beside them, and "NET PAY" with nothing after it.
+ * The one number the document exists to say was the one off the edge, and the
+ * only way to it was to drag the paper sideways.
+ *
+ * So it is scaled rather than scrolled, exactly as the print preview already
+ * scales it. Nothing is reflowed and nothing is left out: it is the same
+ * document, smaller, which is what somebody holding a phone actually wants,
+ * and Print still hands the printer 210 by 297 millimetres because the print
+ * stylesheet takes the transform off again.
+ *
+ * Measured against its own parent rather than the window, so it is right in a
+ * column beside a list of months as well as across the whole screen, and it
+ * re-fits when the phone is turned. The listener lets itself go once the page
+ * has left the document, which happens every time another month is chosen.
+ */
+
+export function fitToWidth(page) {
+  const inner = h('div.paper-scale-inner', { style: { width: `${PAGE_W}px` } }, page);
+  const box = h('div.paper-scale', inner);
+
+  const fit = () => {
+    const room = box.parentElement?.clientWidth;
+    if (!room) return;
+    const scale = widthScale(room);
+    // The body is shrunk to fit A4's height first, and where it could not the
+    // page grows instead of losing a line. So measure what the page actually
+    // came out as rather than assuming it is 297mm.
+    const tall = page.offsetHeight || PAGE_H;
+    inner.style.transform = scale === 1 ? '' : `scale(${scale})`;
+    inner.style.height = `${tall}px`;
+    box.style.width = `${Math.round(PAGE_W * scale)}px`;
+    box.style.height = `${Math.round(tall * scale)}px`;
+  };
+
+  const again = () => {
+    if (!box.isConnected) { window.removeEventListener('resize', again); return; }
+    fit();
+  };
+  window.addEventListener('resize', again);
+
+  return { box, fit };
 }
 
 /**

@@ -181,6 +181,15 @@ export const GUIDE = [
       { p: 'Whether public holidays are counted is up to the property, and set under Setup, '
         + 'Rules. Left out, they go from the totals and from the day-by-day together.' },
 
+      { sub: 'My payslips' },
+      { p: 'Every month that has been closed, newest already open, with the others listed '
+        + 'beside it. It is the same sheet the office prints and hands over, so the figure on '
+        + 'your phone and the figure on the paper are the same figure. Print or save as PDF '
+        + 'gives you a copy to keep.' },
+      { note: 'A month appears the day it is closed and never afterwards changes. While it is '
+        + 'still open the figures are being worked out upstairs, and a number you write down '
+        + 'from a draft is a number that can move.' },
+
       { sub: 'Asking for leave' },
       { steps: [
         'Press Ask for leave.',

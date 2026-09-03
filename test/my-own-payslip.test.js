@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   closeRun, myPayslips, payslip, reopenRun, saveScheme, setProfiles, setScores,
 } from '../src/routes/payroll.js';
+import { PAGE_W, widthScale } from '../public/js/views/letter-paper.js';
 
 /**
  * Somebody's own payslips.
@@ -200,4 +201,48 @@ test('a slip from here is never stamped draft', async () => {
   // and unsaid it defaulted to draft.
   assert.equal(data.status, 'final');
   assert.ok(data.closedAt, 'and it says when it was closed');
+});
+
+// ---------------------------------------------------------------------------
+// And it has to fit the screen it is read on
+// ---------------------------------------------------------------------------
+
+/**
+ * A payslip is a sheet of A4, 794 pixels across, and a phone is not.
+ *
+ * Shown at full size in a box a third as wide, what a reader got was the
+ * left-hand third of the document: every label with no figure beside it, and
+ * "NET PAY" with nothing after it. The one number the whole page exists to say
+ * was off the right-hand edge, and the only way to it was to drag the paper
+ * sideways. So the sheet is scaled to whatever room there is.
+ */
+test('the sheet is scaled to the room, and never past full size', () => {
+  // A handset, and the third of the document a reader used to be left with.
+  assert.ok(widthScale(358) < 0.5);
+  assert.equal(Math.round(PAGE_W * widthScale(358)), 358, 'it comes out exactly the width there is');
+  assert.equal(Math.round(PAGE_W * widthScale(288)), 288);
+
+  // A desk is the size the sheet already is, and anything wider leaves it
+  // alone: a payslip blown up stops matching the paper it prints on.
+  assert.equal(widthScale(PAGE_W), 1);
+  assert.equal(widthScale(2000), 1);
+
+  // Asked before the box is in the document, or in a print stylesheet that has
+  // taken the width off, the answer is full size rather than nothing.
+  assert.equal(widthScale(0), 1);
+  assert.equal(widthScale(undefined), 1);
+  assert.equal(widthScale(Number.NaN), 1);
+});
+
+test('my payslips scales the sheet rather than scrolling it', () => {
+  const view = readFileSync('public/js/views/att-my-payslips.js', 'utf8');
+  assert.match(view, /fitToWidth\(page\)/, 'the page is wrapped in something that scales');
+  assert.match(view, /paper\.fit\(\)/, 'and fitted once it is in the document');
+  assert.match(view, /'div\.slip-mine-paper', paper\.box/, 'the wrapper is what goes on the screen');
+
+  const paper = readFileSync('public/js/views/payslip.js', 'utf8');
+  // Turning the phone changes the room, and the listener has to let go once
+  // the page is gone or every month chosen leaves another one behind.
+  assert.match(paper, /addEventListener\('resize', again\)/);
+  assert.match(paper, /if \(!box\.isConnected\)/);
 });

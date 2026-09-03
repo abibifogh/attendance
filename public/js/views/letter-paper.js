@@ -19,6 +19,24 @@ import { h } from '../util.js';
 export const PAGE_W = 794;
 export const PAGE_H = 1123;
 
+/**
+ * How much of full size fits in the room there is, never more than all of it.
+ *
+ * A sheet of A4 is 794 pixels across and a phone is not. Shown at full size in
+ * a box a third as wide, what a reader gets is the left-hand third of the
+ * document: on a payslip that is every label with no figure beside it, and
+ * "NET PAY" with nothing after it. So the sheet is scaled to the room rather
+ * than scrolled sideways inside it.
+ *
+ * Never above 1, whatever room there is. A page blown up to fill a wide screen
+ * stops matching the sheet it prints on, and somebody holding the paper beside
+ * the screen has to be looking at the same document.
+ */
+export function widthScale(room, pageWidth = PAGE_W) {
+  if (!Number.isFinite(room) || room <= 0) return 1;
+  return Math.min(1, room / pageWidth);
+}
+
 const FACES = {
   serif: 'Georgia, "Times New Roman", Times, serif',
   sans: '-apple-system, "Segoe UI", Roboto, Arial, sans-serif',
