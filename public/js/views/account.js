@@ -49,6 +49,7 @@ async function shrink(file, side = 480) {
  */
 export function openAccountDialog({
   role, name, email: myEmail, isRecovery, hasPin = false, canAlert = false, canPhoto = false,
+  canLockPayslips = false,
 }) {
   const usesPassword = role === 'admin';
   // Only offered to people who would act on an alert. Somebody who reads the
@@ -251,6 +252,7 @@ export function openAccountDialog({
     h('p.muted', { style: { fontSize: '.85rem' } }, `Signed in as ${name}`),
     body,
     canPhoto ? pictureSection() : null,
+    canLockPayslips ? payslipCodeSection() : null,
     installSection(),
     canSeeAlerts ? alertsSection() : null,
   );
@@ -262,6 +264,86 @@ export function openAccountDialog({
   });
   dialog.showModal();
   if (!isRecovery) setTimeout(() => current.focus(), 0);
+
+  /**
+   * A code of your own on your payslips.
+   *
+   * Signing in answers "is this their phone", once, in the morning. Opening a
+   * payslip is asked at a different moment: somebody is beside you in a
+   * corridor, the phone is already unlocked, and the six digits typed at seven
+   * o'clock are no help at all.
+   *
+   * Nobody has to have one. A lock the property switches on for everybody is a
+   * lock everybody writes on the back of their hand, so this is off until the
+   * person whose pay it is decides otherwise.
+   */
+  function payslipCodeSection() {
+    const host = h('div', {
+      style: { marginTop: '1.1rem', paddingTop: '.9rem', borderTop: '1px solid var(--border)' },
+    });
+
+    const draw = async () => {
+      const lock = await api.myPayslipLock().catch(() => null);
+      if (!lock) { mount(host); return; }
+
+      const said = h('p.muted', { style: { minHeight: '1.2rem', fontSize: '.85rem' } });
+      const now = h('input', {
+        type: 'password', inputMode: 'numeric', maxLength: 4,
+        placeholder: 'The code you have now', autocomplete: 'off',
+      });
+      const wanted = h('input', {
+        type: 'password', inputMode: 'numeric', maxLength: 4,
+        placeholder: lock.on ? 'New code (4 digits)' : '4 digits', autocomplete: 'off',
+      });
+
+      const send = async (event, body, done) => {
+        event.target.disabled = true;
+        said.textContent = 'Saving…';
+        try {
+          await api.mySetPayslipLock(body);
+          toast(done, 'good');
+          await draw();
+        } catch (err) {
+          said.textContent = err.message;
+          event.target.disabled = false;
+        }
+      };
+
+      const setIt = h('button.btn-primary', {
+        onclick: (event) => send(
+          event,
+          lock.on ? { current: now.value, code: wanted.value } : { code: wanted.value },
+          lock.on ? 'That is your new code.' : 'Your payslips now ask for that code.',
+        ),
+      }, lock.on ? 'Change it' : 'Turn it on');
+
+      const drop = lock.on
+        ? h('button', {
+          onclick: (event) => send(event, { current: now.value, off: true },
+            'Off. Your payslips open without a code again.'),
+        }, 'Turn it off')
+        : null;
+
+      mount(host,
+        h('h3', { style: { fontSize: '.95rem', marginBottom: '.35rem' } }, 'A code on my payslips'),
+        h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
+          lock.on
+            ? `On since ${(lock.setAt ?? '').slice(0, 10) || 'you set it'}. My payslips asks for `
+              + `it, and stops asking for ${lock.minutes} minutes once you have typed it.`
+            : 'Four digits, asked for whenever you open My payslips. Handing somebody your '
+              + 'phone while it is signed in then does not hand them your pay.'),
+        lock.on ? h('label.field', h('span', 'Current code'), now) : null,
+        h('label.field', h('span', lock.on ? 'New code' : 'Code'), wanted),
+        said,
+        h('p.muted', { style: { fontSize: '.8rem' } },
+          'It does not lock the office out. Payroll and whoever runs it read your payslip as '
+          + 'they always have, because a query about your tax has to be answerable.'),
+        h('div.btn-row', { style: { justifyContent: 'flex-end' } }, drop, setIt));
+    };
+
+    draw();
+    return host;
+  }
 
   /**
    * The picture that goes beside your name.

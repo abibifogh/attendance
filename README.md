@@ -611,6 +611,35 @@ facts. Wanting to work is not being away, so *Would like to work* is none of
 the limit's business. The screen says it as the boxes are ticked and the server
 refuses it either way.
 
+**A code of their own on payslips.** Signing in answers "is this their phone",
+once, in the morning. Opening a payslip is asked at a different moment:
+somebody is standing beside them in a corridor, the phone is already unlocked,
+and the six digits typed at seven o'clock are no help at all. So *My payslips*
+can be given a short code of its own, four digits, set under *My account* by
+the person whose pay it is.
+
+Nobody has to have one. A lock the property switches on for everybody is a lock
+everybody writes on the back of their hand, so the ordinary state is off.
+Setting the first one asks for nothing beyond being signed in as themselves,
+because putting a lock on your own pay only ever takes access away; changing it
+or taking it off needs the one they have, since by then it is the phone in
+somebody else's hand that the question is about.
+
+The refusal carries no figures. Not the last month, not how many months there
+are: a locked screen that leaks the shape of what it is guarding has moved the
+problem one line down and no further. Five wrong tries and guessing stops for a
+quarter of an hour, counted in the database rather than the tab, because a
+guesser who reloads the page is the guesser this is for. Typing it opens the
+screen for ten minutes, and leaving the screen shuts it again.
+
+It does not lock the property out. Payroll and an administrator read what they
+have always read, because a hotel that cannot open a payslip cannot answer a
+query about the tax on it, and a code that could do that would hand one person
+the power to make their own pay unauditable. Nobody can read the code back
+either, not even from Users & data. Somebody who forgets it has one remedy: an
+administrator ticks *Take the code off their payslips* and they choose a new
+one.
+
 **Staff can read their own department's week.** *My shifts* answers "when am I
 in" and used to answer nothing else, so the one ordinary question left over,
 who else is on tomorrow, meant asking a supervisor to read the grid out.

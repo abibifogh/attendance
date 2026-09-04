@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { h, money, mount } from '../util.js';
+import { h, money, mount, toast } from '../util.js';
 import { card, emptyState } from './components.js';
 import { niceMonth } from './att-shared.js';
 import { companyOf, fitPayslip, fitToWidth, payslipPage, showPayslips } from './payslip.js';
@@ -30,6 +30,13 @@ export async function renderAttMyPayslips(params) {
   const host = h('div');
   const data = await api.myPayslips(params.month);
   const cash = (n) => money(n, data.currency);
+
+  if (data.locked) {
+    mount(host,
+      h('div.page-head', h('div', h('h1', 'My payslips'))),
+      lockedCard(data, async () => mount(host, await renderAttMyPayslips(params))));
+    return host;
+  }
 
   if (!data.linked) {
     mount(host,
@@ -95,5 +102,61 @@ export async function renderAttMyPayslips(params) {
   // is scaled to the width there is for it. Both need it in the document
   // before anything can be measured.
   requestAnimationFrame(() => { fitPayslip(page); paper.fit(); });
+
+  // Shut again the moment they leave the screen. Without this the window runs
+  // its full length on a phone that has been put face-up on a bar.
+  if (data.hasCode) shutOnLeaving(host);
   return host;
+}
+
+/**
+ * The screen behind the code.
+ *
+ * It says nothing about what is behind it. Not how many months, not the last
+ * one, not a figure: a locked screen that leaks the shape of what it is
+ * guarding has only moved the problem one line down.
+ */
+function lockedCard(data, reload) {
+  const box = h('input.slip-code', {
+    type: 'password', inputMode: 'numeric', autocomplete: 'off',
+    maxLength: 4, placeholder: '••••', 'aria-label': 'Your payslip code',
+  });
+
+  const go = async () => {
+    try {
+      await api.myOpenPayslips(box.value);
+      await reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      box.value = '';
+      box.focus();
+    }
+  };
+
+  if (data.state === 'locked') {
+    return card('Locked for now', { wide: true },
+      h('p', 'Too many wrong tries. The code will work again shortly.'),
+      h('p.muted', 'If you have forgotten it, whoever looks after logins can take it off '
+        + 'for you. Nobody can read it back to you, not even them.'));
+  }
+
+  return card('Type your code', { wide: true },
+    h('p', 'You have put a four digit code on your payslips. Type it to open them.'),
+    h('div.slip-code-row',
+      box,
+      h('button.btn', { onclick: go }, 'Open')),
+    h('p.muted', `${data.triesLeft} ${data.triesLeft === 1 ? 'try' : 'tries'} left before it `
+      + 'stops accepting guesses for a while.'),
+    h('p.muted', 'Forgotten it? Whoever looks after logins can take it off for you, and you '
+      + 'can put a new one on. Nobody can read the old one back to you.'));
+}
+
+/** Tell the server the tab is closed, once, when the screen goes away. */
+function shutOnLeaving(host) {
+  const watch = new MutationObserver(() => {
+    if (host.isConnected) return;
+    watch.disconnect();
+    api.myShutPayslips().catch(() => {});
+  });
+  watch.observe(document.body, { childList: true, subtree: true });
 }

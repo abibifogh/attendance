@@ -350,6 +350,9 @@ function shell(content) {
           // login that belongs to nobody on the staff list has nowhere for
           // one to show.
           canPhoto: can('att_me'),
+          // The code that guards My payslips. Same test: a login that belongs
+          // to nobody on the staff list has no payslips to put one on.
+          canLockPayslips: can('att_me'),
         }),
       },
       // The icon is what shows on a phone and the words are what show on a

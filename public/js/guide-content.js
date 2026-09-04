@@ -141,6 +141,17 @@ export const GUIDE = [
         + 'somebody signs the month off, having looked at the whole of it. A running total on a '
         + 'phone would be a number to argue about rather than an answer.' },
 
+      { sub: 'A code on your payslips' },
+      { p: 'Under My account you can put four digits on My payslips. It is separate from the '
+        + 'six you sign in with, and it is asked for whenever you open the screen: handing '
+        + 'somebody your phone while it is signed in then does not hand them your pay.' },
+      { p: 'Typing it opens the screen for ten minutes and leaving the screen shuts it again. '
+        + 'Five wrong tries and it stops accepting guesses for a quarter of an hour.' },
+      { note: 'Nobody can read it back to you, so if you forget it the only way on is to have '
+        + 'it taken off. Whoever looks after logins can do that, and then you set a new one. '
+        + 'It does not lock the office out either: payroll reads your payslip as it always '
+        + 'has, because a query about your tax has to be answerable.' },
+
       { sub: 'Who else is on' },
       { p: 'If your supervisor has switched it on for you, a card under the coming week shows '
         + 'the rota for your own department: who is on which day, and what shift. It answers '

@@ -140,6 +140,11 @@ function publicUser(row) {
     signsInWith: row.role === 'admin'
       ? (row.pin_hash ? 'password or PIN' : 'password')
       : 'pin',
+    // That they have put a code on their payslips, and when. Never the code:
+    // there is nothing an administrator can read here, only something they can
+    // take off for somebody who has forgotten it.
+    payslipCode: Boolean(row.payslip_pin_hash),
+    payslipCodeSetAt: row.payslip_pin_set_at ?? null,
     hasPin: Boolean(row.pin_hash),
     hasPassword: typeof row.password_hash === 'string' && row.password_hash.startsWith('pbkdf2c$'),
     role: row.role,
@@ -316,6 +321,19 @@ export async function updateUser(ctx, id) {
   let passwordHash = existing.password_hash;
   if (creds.password) passwordHash = await storedPassword(creds.password, await getPepper(ctx.db));
 
+  // Somebody who has forgotten the code on their own payslips has no other way
+  // back: nobody can read it, not even from here. Taking it off is the whole
+  // of the remedy, and it opens their payslips to them and to nobody else.
+  const clearPayslipCode = bool(body.clearPayslipCode, false);
+  if (clearPayslipCode) {
+    await ctx.db.prepare(
+      `UPDATE users SET payslip_pin_hash = NULL, payslip_pin_set_at = NULL,
+                        payslip_open_until = NULL, payslip_tries = 0,
+                        payslip_locked_until = NULL
+         WHERE id = ?`,
+    ).bind(userId).run();
+  }
+
   try {
     const row = await ctx.db.prepare(
       `UPDATE users SET name = ?1, role = ?2, permissions = ?3, active = ?4, note = ?5,
@@ -334,6 +352,7 @@ export async function updateUser(ctx, id) {
       pinChanged: Boolean(creds.pin),
       pinRemoved: Boolean(creds.clearPin || promoted),
       passwordChanged: Boolean(creds.password),
+      payslipCodeCleared: clearPayslipCode,
     });
     return json({ user: publicUser(row) });
   } catch (err) {

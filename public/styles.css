@@ -475,6 +475,14 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .dept-rota .rota-today { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .dept-week { overflow-x: auto; }
 
+/* Typing the code that opens My payslips. Wide digits and a lot of space
+   between them, because it is four characters typed with a thumb. */
+.slip-code-row { display: flex; gap: .5rem; align-items: center; margin: .8rem 0; }
+.slip-code {
+  width: 7rem; text-align: center;
+  font-size: 1.5rem; letter-spacing: .5rem; padding: .45rem .3rem .45rem .8rem;
+}
+
 /* The same week as a list of days, for a phone. Hidden here and shown at the
    bottom of the file, where the handset widths are handled. */
 .dept-days { display: none; }

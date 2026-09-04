@@ -378,6 +378,15 @@ function openUserDialog({ existing, data, reload }) {
   const dropPinRow = h('label.inline-check', { style: { display: 'none' } },
     dropPin, h('span', 'Take the PIN away, so only the password signs them in'));
 
+  // A code somebody has put on their own payslips. Nobody can read it, not
+  // from here and not from anywhere, so forgetting it has exactly one remedy:
+  // taking it off, and letting them choose a new one.
+  const dropPayslipCode = h('input', { type: 'checkbox' });
+  const dropPayslipRow = existing?.payslipCode
+    ? h('label.inline-check', dropPayslipCode,
+      h('span', 'Take the code off their payslips, so they can open them and set a new one'))
+    : null;
+
   const pinLabel = h('span', 'PIN');
   const pinHint = h('small.muted', { style: { display: 'none' } });
   const pinField = h('label.field', pinLabel, pin, pinHint);
@@ -501,6 +510,7 @@ function openUserDialog({ existing, data, reload }) {
     ),
     dropPinRow,
     roleHint,
+    dropPayslipRow,
     h('label.field', h('span', 'Note (optional)'), note),
     h('div', { style: { marginTop: '.4rem' } },
       h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Sections this person can open'),
@@ -558,6 +568,8 @@ function openUserDialog({ existing, data, reload }) {
         payload.email = email.value.trim() || null;
         if (pin.value) payload.pin = pin.value.trim();
       }
+
+      if (dropPayslipCode.checked) payload.clearPayslipCode = true;
 
       if (existing) await api.updateUser(existing.id, payload);
       else await api.createUser(payload);

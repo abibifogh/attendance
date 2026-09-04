@@ -1,4 +1,6 @@
-import { badRequest, csvResponse, int, json, notFound, num, readJson, str } from '../lib/http.js';
+import {
+  badRequest, bool, csvResponse, int, json, notFound, num, readJson, str,
+} from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
 import { paidInMonth } from '../lib/leaving.js';
 import { balanceOf, dueThisMonth, startsOn, whyNotDue } from '../lib/advances.js';
@@ -12,6 +14,11 @@ import {
 import { ratesOn } from '../lib/tax-tables.js';
 import { readSheet, tallyOf } from '../lib/pay-import.js';
 import { isAdmin } from '../lib/payroll-access.js';
+import {
+  CODE_RULE, MAX_TRIES, OPEN_MINUTES, afterAWrongTry, codeIsObvious, codeLooksRight,
+  minutesLeft, openUntil, readLock,
+} from '../lib/payslip-lock.js';
+import { getPepper, hashPin } from '../lib/auth.js';
 import { hasTiers, readTiers, tierAmount } from '../lib/pay-tiers.js';
 import { S, colName, workbook } from '../lib/xlsx.js';
 import { BANK_COLUMNS, BY_HAND_COLUMNS, bankFile } from '../lib/bank-file.js';
@@ -1413,6 +1420,27 @@ export async function myPayslips(ctx) {
   const staffId = Number(ctx.session.user.staff_id) || 0;
   const { currency, property, settings } = await settingsOf(ctx.db);
 
+  // Their own code, if they have put one on. Refused here rather than on the
+  // screen, and with no figures in the answer at all: a month list carrying
+  // net pay is the thing being guarded, not a detail of it.
+  const lock = readLock(await lockRow(ctx), new Date());
+  if (!lock.open) {
+    return json({
+      locked: true,
+      state: lock.state,
+      lockedUntil: lock.lockedUntil,
+      triesLeft: lock.triesLeft,
+      currency,
+      property,
+      months: [],
+      line: null,
+    });
+  }
+
+  // Reading is using, so the window slides while somebody is still on the
+  // screen. It is dropped when they leave it, which the screen does itself.
+  if (lock.on) await slideOpen(ctx);
+
   // A login that is nobody in particular: real, and with no pay to show. Said
   // rather than answered with an empty list, because the two are different and
   // only one of them is worth telling somebody about.
@@ -1431,6 +1459,8 @@ export async function myPayslips(ctx) {
 
   return json({
     linked: true,
+    // So the screen knows to shut the window again when somebody leaves it.
+    hasCode: lock.on,
     currency,
     property,
     // Always final. Nothing else is ever returned from here, and the paper
@@ -1460,6 +1490,154 @@ export async function myPayslips(ctx) {
       tin: settings.company_tin ?? '',
     },
   });
+}
+
+// --------------------------------------------------------------------------
+// The code somebody puts on their own payslips
+// --------------------------------------------------------------------------
+
+/** The user row this session belongs to, with the lock columns on it. */
+const lockRow = (ctx) => ctx.db.prepare(
+  `SELECT id, payslip_pin_hash, payslip_pin_set_at, payslip_open_until,
+          payslip_tries, payslip_locked_until
+     FROM users WHERE id = ?`,
+).bind(Number(ctx.session.user.id)).first();
+
+const slideOpen = (ctx) => ctx.db.prepare(
+  'UPDATE users SET payslip_open_until = ? WHERE id = ?',
+).bind(openUntil(new Date()), Number(ctx.session.user.id)).run();
+
+/** Hashed in a space of its own, so the same digits as a login PIN differ. */
+const hashCode = async (ctx, code) => hashPin(`payslip:${code}`, await getPepper(ctx.db));
+
+/**
+ * Whether the code is on, and nothing else about it.
+ *
+ * Read by My account to draw the switch and by My payslips to know whether to
+ * ask. It never says what the code is, and there is nothing here an
+ * administrator could read either: the hash is not in the answer.
+ */
+export async function myPayslipLock(ctx) {
+  const lock = readLock(await lockRow(ctx), new Date());
+  return json({
+    on: lock.on,
+    state: lock.state,
+    setAt: lock.setAt,
+    openUntil: lock.openUntil,
+    lockedUntil: lock.lockedUntil,
+    triesLeft: lock.triesLeft,
+    minutes: OPEN_MINUTES,
+    digits: 4,
+  });
+}
+
+/**
+ * Put a code on, change it, or take it off.
+ *
+ * Setting the first one asks for nothing but being signed in as themselves.
+ * Putting a lock on your own payslips only ever takes access away, and asking
+ * somebody to prove who they are before they may protect something is the kind
+ * of ceremony that stops people protecting it.
+ *
+ * Changing or removing it needs the one they have, because at that point it is
+ * the phone in somebody else's hand that the question is about.
+ */
+export async function setMyPayslipLock(ctx) {
+  const body = await readJson(ctx.request);
+  const row = await lockRow(ctx);
+  const lock = readLock(row, new Date());
+  const off = bool(body.off, false);
+
+  if (lock.on) {
+    if (lock.state === 'locked') {
+      throw badRequest(`Too many wrong tries. Try again in ${minutesLeft(lock.lockedUntil)} minutes.`);
+    }
+    const current = str(body.current, 'Current code', { max: 10, fallback: '' });
+    if (!current) throw badRequest('Type the code you have now.');
+    if (await hashCode(ctx, current) !== row.payslip_pin_hash) {
+      const cost = afterAWrongTry(row, new Date());
+      await ctx.db.prepare(
+        'UPDATE users SET payslip_tries = ?, payslip_locked_until = ? WHERE id = ?',
+      ).bind(cost.tries, cost.lockedUntil, row.id).run();
+      throw badRequest(cost.lockedUntil
+        ? 'That is not the code. Too many wrong tries; try again later.'
+        : `That is not the code. ${cost.triesLeft} ${cost.triesLeft === 1 ? 'try' : 'tries'} left.`);
+    }
+  }
+
+  if (off) {
+    await ctx.db.prepare(
+      `UPDATE users SET payslip_pin_hash = NULL, payslip_pin_set_at = NULL,
+                        payslip_open_until = NULL, payslip_tries = 0,
+                        payslip_locked_until = NULL
+         WHERE id = ?`,
+    ).bind(row.id).run();
+    return json({ ok: true, on: false });
+  }
+
+  const code = str(body.code, 'Code', { max: 10, fallback: '' });
+  if (!codeLooksRight(code)) throw badRequest(CODE_RULE);
+  if (codeIsObvious(code)) {
+    throw badRequest('Pick something less easy to guess. Anybody holding your phone tries that one first.');
+  }
+
+  // Set and open in one go, so somebody who has just chosen it is not asked
+  // for it on the very next screen.
+  await ctx.db.prepare(
+    `UPDATE users SET payslip_pin_hash = ?, payslip_pin_set_at = datetime('now'),
+                      payslip_open_until = ?, payslip_tries = 0, payslip_locked_until = NULL
+       WHERE id = ?`,
+  ).bind(await hashCode(ctx, code), openUntil(new Date()), row.id).run();
+
+  return json({ ok: true, on: true, changed: lock.on });
+}
+
+/**
+ * Type the code and open the tab.
+ *
+ * Counted across sessions, because a guesser who reloads the page is exactly
+ * the guesser this is for, and a count that lived in the tab would be cleared
+ * by the reload that carries the next guess.
+ */
+export async function openMyPayslips(ctx) {
+  const body = await readJson(ctx.request);
+  const row = await lockRow(ctx);
+  const lock = readLock(row, new Date());
+
+  if (!lock.on) return json({ ok: true, open: true, on: false });
+  if (lock.state === 'locked') {
+    throw badRequest(`Too many wrong tries. Try again in ${minutesLeft(lock.lockedUntil)} minutes.`);
+  }
+
+  const code = str(body.code, 'Code', { max: 10, fallback: '' });
+  if (await hashCode(ctx, code) !== row.payslip_pin_hash) {
+    const cost = afterAWrongTry(row, new Date());
+    await ctx.db.prepare(
+      'UPDATE users SET payslip_tries = ?, payslip_locked_until = ? WHERE id = ?',
+    ).bind(cost.tries, cost.lockedUntil, row.id).run();
+    throw badRequest(cost.lockedUntil
+      ? `Too many wrong tries. Try again in ${minutesLeft(cost.lockedUntil)} minutes.`
+      : `That is not the code. ${cost.triesLeft} ${cost.triesLeft === 1 ? 'try' : 'tries'} left.`);
+  }
+
+  await ctx.db.prepare(
+    `UPDATE users SET payslip_open_until = ?, payslip_tries = 0, payslip_locked_until = NULL
+       WHERE id = ?`,
+  ).bind(openUntil(new Date()), row.id).run();
+
+  return json({ ok: true, open: true, on: true, minutes: OPEN_MINUTES, tries: MAX_TRIES });
+}
+
+/**
+ * Shut it again on the way out.
+ *
+ * Called when somebody leaves the screen. Without it the window runs on for
+ * its full length on a phone that has been put down on a bar.
+ */
+export async function shutMyPayslips(ctx) {
+  await ctx.db.prepare('UPDATE users SET payslip_open_until = NULL WHERE id = ?')
+    .bind(Number(ctx.session.user.id)).run();
+  return json({ ok: true, open: false });
 }
 
 // --------------------------------------------------------------------------
