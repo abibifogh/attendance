@@ -480,6 +480,9 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .dept-rota th { text-align: left; font-size: .72rem; }
 .dept-rota td { vertical-align: top; padding: .35rem .4rem; }
 .dept-rota tbody tr.dept-me { background: var(--accent-soft); }
+/* On its own line rather than beside the name, because a name and a
+   department run together read as a two-word name. */
+.dept-visiting { display: block; font-size: .7rem; }
 .dept-shift { display: grid; gap: .05rem; }
 .dept-shift-name { font-size: .78rem; font-weight: 600; line-height: 1.25; }
 .dept-shift small { font-size: .7rem; }

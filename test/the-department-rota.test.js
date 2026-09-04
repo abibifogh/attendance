@@ -57,9 +57,15 @@ function setup() {
   raw.exec(`DELETE FROM att_roster; DELETE FROM att_shifts; DELETE FROM att_staff;
             DELETE FROM att_availability; DELETE FROM att_leave; DELETE FROM users;`);
   raw.exec("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'");
+  // One shift per department, so a shift can say which department it belongs
+  // to and somebody can be put on one that is not their own.
   raw.prepare(
-    `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes, colour)
-     VALUES (1, 'Breakfast', '06:00', '14:00', 0, 3)`,
+    `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes, colour, department)
+     VALUES (1, 'Breakfast', '06:00', '14:00', 0, 3, 'Front Office')`,
+  ).run();
+  raw.prepare(
+    `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes, department)
+     VALUES (2, 'Turndown', '14:00', '22:00', 0, 'Housekeeping')`,
   ).run();
   for (const p of TEAM) {
     raw.prepare(
@@ -98,10 +104,18 @@ const alsoSees = (raw, id, names) => raw.prepare(
 ).run(JSON.stringify(names), id);
 
 /** A published shift, or a draft one when told to leave it unpublished. */
-const rota = (raw, staffId, day, published = 1) => raw.prepare(
+/** Which shift belongs to which department, for the fixture's two. */
+const SHIFT_OF = { 'Front Office': 1, Housekeeping: 2 };
+
+/** Everybody on a shift of their own department, which is the ordinary week. */
+const everybodyAtHome = (raw, day) => {
+  for (const p of TEAM) rota(raw, p.id, day, 1, SHIFT_OF[p.department]);
+};
+
+const rota = (raw, staffId, day, published = 1, shiftId = 1) => raw.prepare(
   `INSERT INTO att_roster (staff_id, day, shift_id, set_by, published, ever_published)
-   VALUES (?, ?, 1, 'test', ?, ?)`,
-).run(staffId, day, published, published);
+   VALUES (?, ?, ?, 'test', ?, ?)`,
+).run(staffId, day, shiftId, published, published);
 
 const dayOf = (data, name, day) => data.people
   .find((p) => p.name === name).days.find((d) => d.day === day);
@@ -135,7 +149,7 @@ test('a person with no department is told that, not refused', async () => {
 
 test('their own department and no other', async () => {
   const { db, raw } = setup();
-  for (const p of TEAM) rota(raw, p.id, MON);
+  everybodyAtHome(raw, MON);
 
   const out = await ask(db, 1);
   assert.equal(out.allowed, true);
@@ -149,7 +163,7 @@ test('their own department and no other', async () => {
 test('somebody kept off the list is not on it', async () => {
   const { db, raw } = setup();
   raw.prepare('UPDATE att_staff SET on_dept_rota = 0 WHERE id = 3').run();
-  for (const p of TEAM) rota(raw, p.id, MON);
+  everybodyAtHome(raw, MON);
 
   const out = await ask(db, 1);
   assert.deepEqual(out.people.map((p) => p.name), ['Ama', 'Kofi']);
@@ -224,7 +238,8 @@ test('no clock times, no lateness and no pay travel with it', async () => {
 
   const out = await ask(db, 1);
   const cell = dayOf(out, 'Kofi', MON);
-  assert.deepEqual(Object.keys(cell).sort(), ['away', 'day', 'holiday', 'restDay', 'shift']);
+  assert.deepEqual(Object.keys(cell).sort(),
+    ['away', 'day', 'elsewhere', 'holiday', 'restDay', 'shift']);
 
   const said = JSON.stringify(out);
   for (const leak of ['06:41', 'late', 'salary', 'punch']) {
@@ -295,7 +310,7 @@ test('a named department is offered and can be opened', async () => {
 
 test('a department nobody named for them is not opened by asking for it', async () => {
   const { db, raw } = setup();
-  for (const p of TEAM) rota(raw, p.id, MON);
+  everybodyAtHome(raw, MON);
 
   const out = await ask(db, 1, MON, 'Housekeeping');
   assert.equal(out.department, 'Front Office', 'their own, rather than what was asked for');
@@ -360,4 +375,129 @@ test('the switch above it still decides whether any of it shows', async () => {
   assert.equal(out.allowed, false);
   assert.equal(out.reason, 'not_allowed');
   assert.deepEqual(out.departments, []);
+});
+
+// ---------------------------------------------------------------------------
+// Whoever is actually on the shifts
+// ---------------------------------------------------------------------------
+
+test('somebody covering one of the department’s shifts is on its rota', async () => {
+  const { db, raw } = setup();
+  // Esi is Housekeeping and is down for a Front Office shift on Monday.
+  rota(raw, 4, MON, 1, 1);
+  rota(raw, 2, MON, 1, 1);
+
+  const out = await ask(db, 1);
+  const esi = out.people.find((p) => p.name === 'Esi');
+  assert.ok(esi, 'she is working here, so she is on the page');
+  assert.equal(esi.visiting, true);
+  assert.equal(esi.homeDepartment, 'Housekeeping');
+  assert.equal(dayOf(out, 'Esi', MON).shift.name, 'Breakfast');
+});
+
+test('a visitor’s other days are not this department’s business', async () => {
+  const { db, raw } = setup();
+  rota(raw, 4, MON, 1, 1);
+  // And her own department's shift on the Tuesday, which reception must not
+  // learn about from a page that is supposed to be about reception.
+  rota(raw, 4, TUE, 1, 2);
+  raw.prepare(
+    "INSERT INTO rota_publish (from_day, to_day, changes, actor) VALUES (?, ?, 2, 'test')",
+  ).run(MON, SUN);
+
+  const out = await ask(db, 1);
+  assert.equal(dayOf(out, 'Esi', MON).shift.name, 'Breakfast');
+
+  const tuesday = dayOf(out, 'Esi', TUE);
+  assert.equal(tuesday.shift, null, 'her Housekeeping shift is not shown here');
+  assert.equal(tuesday.elsewhere, true);
+  // And it is not dressed up as a day off, which would be a lie about a day
+  // she is working.
+  assert.equal(tuesday.restDay, false);
+
+  assert.equal(JSON.stringify(out).includes('Turndown'), false);
+});
+
+test('a visitor away on a day they were coming says so, and not otherwise', async () => {
+  const { db, raw } = setup();
+  rota(raw, 4, MON, 1, 1);
+  raw.prepare(
+    `INSERT INTO att_leave (staff_id, reason_code, from_day, to_day, days, status, requested_by)
+     VALUES (4, 'annual_leave', ?, ?, 2, 'approved', 'test')`,
+  ).run(MON, TUE);
+
+  const out = await ask(db, 1);
+  assert.equal(dayOf(out, 'Esi', MON).away, true, 'reception needs to know their cover is off');
+  assert.equal(dayOf(out, 'Esi', TUE).away, false, 'a day she was never coming here');
+});
+
+test('the department’s own people keep their whole week', async () => {
+  const { db, raw } = setup();
+  // Kofi is Front Office and covers a Housekeeping shift on Tuesday. On his
+  // own department's page that is still his week, and his colleagues see it
+  // exactly as they always did.
+  rota(raw, 2, MON, 1, 1);
+  rota(raw, 2, TUE, 1, 2);
+
+  const out = await ask(db, 1);
+  const kofi = out.people.find((p) => p.name === 'Kofi');
+  assert.equal(kofi.visiting, false);
+  assert.equal(dayOf(out, 'Kofi', TUE).shift.name, 'Turndown');
+});
+
+test('cover is looked for across the whole week, not just one day', async () => {
+  const { db, raw } = setup();
+  // Nothing on Monday, one Front Office shift on the Sunday.
+  rota(raw, 4, SUN, 1, 1);
+
+  const out = await ask(db, 1);
+  assert.ok(out.people.some((p) => p.name === 'Esi'));
+  assert.equal(dayOf(out, 'Esi', SUN).shift.name, 'Breakfast');
+  assert.equal(dayOf(out, 'Esi', MON).elsewhere, true);
+});
+
+test('a draft shift does not put somebody on another department’s rota', async () => {
+  const { db, raw } = setup();
+  rota(raw, 4, MON, 0, 1);
+
+  const out = await ask(db, 1);
+  assert.ok(!out.people.some((p) => p.name === 'Esi'),
+    'a plan is not a reason to appear on somebody else’s page');
+});
+
+test('somebody kept off the list stays off it when covering', async () => {
+  const { db, raw } = setup();
+  raw.prepare('UPDATE att_staff SET on_dept_rota = 0 WHERE id = 4').run();
+  rota(raw, 4, MON, 1, 1);
+
+  const out = await ask(db, 1);
+  assert.ok(!out.people.some((p) => p.name === 'Esi'));
+});
+
+test('the same holds on a department they were given to read', async () => {
+  const { db, raw } = setup();
+  alsoSees(raw, 1, ['Housekeeping']);
+  // Kofi from Front Office covers a Housekeeping shift.
+  rota(raw, 2, MON, 1, 2);
+  rota(raw, 4, MON, 1, 2);
+
+  const out = await ask(db, 1, MON, 'Housekeeping');
+  const kofi = out.people.find((p) => p.name === 'Kofi');
+  assert.ok(kofi, 'he is on their shifts that week');
+  assert.equal(kofi.visiting, true);
+  assert.equal(kofi.homeDepartment, 'Front Office');
+  assert.equal(dayOf(out, 'Kofi', MON).shift.name, 'Turndown');
+});
+
+test('a shift belonging to no department pulls nobody onto anything', async () => {
+  const { db, raw } = setup();
+  raw.prepare(
+    `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes)
+     VALUES (3, 'Stock take', '09:00', '13:00', 0)`,
+  ).run();
+  rota(raw, 4, MON, 1, 3);
+
+  const out = await ask(db, 1);
+  assert.ok(!out.people.some((p) => p.name === 'Esi'),
+    'a shift that belongs to nobody belongs to no rota');
 });

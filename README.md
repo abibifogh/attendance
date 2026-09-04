@@ -791,6 +791,27 @@ something on for everybody and waiting to hear who minds is the wrong order.
 first tick would open an empty week; somebody's own shifts are always their own
 to see whatever it says.
 
+**A department's rota is whoever is on its shifts.** It used to be whoever was
+filed under that heading, which is a different thing and the wrong one. A rota
+is the shifts that have to be worked: maintenance covering reception's night
+shift is on reception that night in every sense that matters, and leaving him
+off because his record says Maintenance made the page wrong about the one thing
+it is for. So anybody with a published shift belonging to a department appears
+on that department's rota for the week, whatever their own department says, and
+their row says where they are from.
+
+Their row is about that department and nothing else. The days they are working
+somewhere else are blank rather than shown, and blank rather than called a rest
+day, because neither the shift nor the day off is the reading department's
+business. Being away shows only on a day they were coming, which is the day it
+matters and the only one that department was told about. On a phone they are
+simply not on a day they are not here, rather than listed as off.
+
+Everything else holds: a person kept off the rota with *Their shifts show on it
+for the others* stays off it wherever they are covering, an unpublished draft is
+not a reason to appear on anybody's page, and a shift that belongs to no
+department pulls nobody onto anything.
+
 **And some people need more than their own.** A maintenance man is called into
 every part of the building and needs to know when housekeeping are on the floor
 he is working on; a duty manager covers reception and the bar; a storekeeper

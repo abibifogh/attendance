@@ -519,7 +519,13 @@ function deptWeek(data) {
         h('small.muted', String(Number(day.slice(8, 10)))))))),
     h('tbody', data.people.map((person) => h('tr',
       { class: person.isMe ? 'dept-me' : null },
-      h('td', person.name, person.isMe ? h('small.muted', ' (you)') : null),
+      h('td', person.name,
+        person.isMe ? h('small.muted', ' (you)') : null,
+        // Said on the row, so nobody wonders why the porter is on reception.
+        person.visiting
+          ? h('small.muted.dept-visiting',
+            person.homeDepartment ? `covering, from ${person.homeDepartment}` : 'covering')
+          : null),
       ...person.days.map((entry) => h('td',
         { class: entry.day === data.today ? 'rota-today' : null },
         entry.away
@@ -531,7 +537,9 @@ function deptWeek(data) {
               h('small.muted', `${entry.shift.starts_at}\u2013${entry.shift.ends_at}`))
             : entry.restDay
               ? h('small.muted', 'Rest day')
-              : h('small.muted', '\u2014')))))));
+              // A visitor is not off here, they are working somewhere else,
+              // and this page has no business saying which.
+              : h('small.muted', entry.elsewhere ? '' : '\u2014')))))));
 }
 
 /**
@@ -552,9 +560,16 @@ function deptDay(day, data) {
 
   for (const person of data.people) {
     const entry = person.days.find((d) => d.day === day);
-    const label = person.name + (person.isMe ? ' (you)' : '');
+    const label = person.name
+      + (person.isMe ? ' (you)' : '')
+      + (person.visiting && person.homeDepartment ? ` (${person.homeDepartment})` : '');
+
     if (entry?.away) away.push(label);
     else if (entry?.shift) on.push({ label, shift: entry.shift, isMe: person.isMe });
+    // Somebody covering who is not here today is simply not on this day. They
+    // are working elsewhere or they are not, and neither is this department's
+    // business to publish.
+    else if (entry?.elsewhere) continue;
     // Off and not-yet-said kept apart. Somebody working out who to ask about a
     // Saturday is asking about the first list, and the second one is not an
     // answer at all.

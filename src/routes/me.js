@@ -691,19 +691,50 @@ export async function myDepartment(ctx) {
 
   const ds = await loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) });
 
-  // Everybody in the department who is on the rota and shown on it, plus
-  // themselves whatever their own switch says: somebody's own shifts are
-  // always their own to see. That exception is about their own department; on
-  // somebody else's they are a visitor like anybody else.
+  const days = [];
+  for (let day = from; day <= to; day = addDays(day, 1)) days.push(day);
+
+  // What each person is down for on each day, worked out once. Everything
+  // below reads it rather than asking again, because whether somebody belongs
+  // on this page is the same question as what their days say.
   const own = department === mine;
+  const settledShift = (personId, day) => {
+    const rostered = ds.rosterBy.get(`${personId}|${day}`);
+    const schedule = scheduleFor(ds, personId, day);
+    const settled = schedule.source === 'pattern'
+      || (schedule.source === 'roster' && Boolean(rostered?.published));
+    return settled ? schedule.shift : null;
+  };
+
+  // The department's own people, and anybody else covering one of its shifts.
+  //
+  // A rota is the shifts that have to be worked, not a list of who is filed
+  // under which heading. Maintenance covering reception's night shift is on
+  // reception that night in every sense that matters: reception need to know
+  // who is on, and the man himself needs to know who else is. Leaving him off
+  // because his record says Maintenance made the page wrong about the one
+  // thing it is for.
+  const covering = new Set();
+  for (const person of ds.staff) {
+    if (!person.active) continue;
+    if ((person.department || null) === department) continue;
+    for (const day of days) {
+      if (settledShift(person.id, day)?.department === department) {
+        covering.add(person.id);
+        break;
+      }
+    }
+  }
+
   const people = ds.staff
-    .filter((p) => p.active && (p.department || null) === department)
+    .filter((p) => p.active
+      && ((p.department || null) === department || covering.has(p.id)))
+    // Somebody's own shifts are always their own to see. That exception is
+    // about their own department; on somebody else's they are a visitor like
+    // anybody else.
     .filter((p) => p.on_rota !== 0 || (own && p.id === staff.id))
     .filter((p) => p.on_dept_rota !== 0 || (own && p.id === staff.id))
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-
-  const days = [];
-  for (let day = from; day <= to; day = addDays(day, 1)) days.push(day);
 
   const promised = await daysAlreadyPromised(ctx.db, from, to);
 
@@ -719,42 +750,60 @@ export async function myDepartment(ctx) {
     today,
     days,
     me: staff.id,
-    people: people.map((person) => ({
-      id: person.id,
-      name: person.name,
-      // Their own row says so, because a grid of names is read by looking for
-      // your own first.
-      isMe: person.id === staff.id,
-      days: days.map((day) => {
-        const rostered = ds.rosterBy.get(`${person.id}|${day}`);
-        const schedule = scheduleFor(ds, person.id, day);
-        const settled = schedule.source === 'pattern'
-          || (schedule.source === 'roster' && Boolean(rostered?.published));
-        const shift = settled ? schedule.shift : null;
-        const leave = ds.leaveBy.get(`${person.id}|${day}`) ?? null;
+    people: people.map((person) => {
+      // Somebody here to cover rather than because this is their department.
+      // Their row is about this department and nothing else: the days they are
+      // working somewhere else are not this department's business, and a page
+      // that showed their whole week would be handing out exactly what the
+      // rest of this screen is careful not to.
+      const visiting = (person.department || null) !== department;
 
-        return {
-          day,
-          shift: shift
-            ? {
-              name: shift.name,
-              starts_at: shift.starts_at,
-              ends_at: shift.ends_at,
-              colour: shift.colour ?? null,
-            }
-            : null,
-          // Off, rather than a dash that could equally mean nobody has looked
-          // at this week yet. Somebody reading it to work out who to ask about
-          // a Saturday needs the difference.
-          restDay: !shift && promised(day),
-          // That somebody is away is what the question is really about, and it
-          // is on the rota anybody can read. Why they are away is not, so the
-          // kind of leave does not travel with it.
-          away: Boolean(leave),
-          holiday: ds.holidayBy.get(day)?.name ?? null,
-        };
-      }),
-    })),
+      return {
+        id: person.id,
+        name: person.name,
+        // Their own row says so, because a grid of names is read by looking
+        // for your own first.
+        isMe: person.id === staff.id,
+        // Said on the row, so nobody wonders why the porter is on reception.
+        visiting,
+        homeDepartment: visiting ? (person.department || null) : null,
+        days: days.map((day) => {
+          const shift = settledShift(person.id, day);
+          const here = !visiting || shift?.department === department;
+          const mineToday = here ? shift : null;
+          const leave = ds.leaveBy.get(`${person.id}|${day}`) ?? null;
+
+          return {
+            day,
+            shift: mineToday
+              ? {
+                name: mineToday.name,
+                starts_at: mineToday.starts_at,
+                ends_at: mineToday.ends_at,
+                colour: mineToday.colour ?? null,
+              }
+              : null,
+            // Off, rather than a dash that could equally mean nobody has
+            // looked at this week yet. Somebody reading it to work out who to
+            // ask about a Saturday needs the difference.
+            //
+            // A visitor is never off here. They are working elsewhere or they
+            // are not, and this page has no business saying which.
+            restDay: !visiting && !mineToday && promised(day),
+            // That somebody is away is what the question is really about, and
+            // it is on the rota anybody can read. Why they are away is not, so
+            // the kind of leave does not travel with it. For a visitor it is
+            // said only on a day they were coming here, which is the day it
+            // matters and the only one this department was told about.
+            away: Boolean(leave) && (!visiting || Boolean(mineToday)),
+            // Nothing to say. A blank that is not a day off and not a week
+            // nobody has published: they are simply somewhere else.
+            elsewhere: visiting && !mineToday,
+            holiday: ds.holidayBy.get(day)?.name ?? null,
+          };
+        }),
+      };
+    }),
   });
 }
 
