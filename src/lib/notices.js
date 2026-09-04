@@ -30,13 +30,19 @@ const LEVELS = new Set(['info', 'warn', 'high']);
  */
 export async function createNotice(db, {
   kind, level = 'info', title, body, link, day, slot, actor, audience = null, userId = null,
-  emailAudience = undefined, email = true, push = true,
+  emailAudience = undefined, email = true, push = true, report = false,
 }, ctx = null) {
-  if (!kind || !title) return null;
+  if (!kind || !title) return report ? { id: null, buzzed: 0, emailed: 0 } : null;
 
   // Filled in the moment the row is written, and handed on to the push so a
   // notification carries a tag of its own rather than its family's.
   let noticeId = null;
+
+  // What each way out came back with, for the one caller that has to say. A
+  // rota going out is the only notice somebody is later asked to account for
+  // person by person, and "we sent it" is not an answer to "Doreen never got
+  // hers" unless the app wrote down what happened to Doreen's.
+  const outcome = { buzzed: 0, emailed: 0 };
 
   const post = async () => {
     const jobs = [];
@@ -55,7 +61,9 @@ export async function createNotice(db, {
         // building the week, and does not need it in their inbox on Sunday
         // night about a decision that is not theirs to take.
         emailAudience,
-      }).catch((err) => console.error('notice email failed', err)));
+      })
+        .then((out) => { outcome.emailed = out?.sent ? 1 : out?.tried ? -1 : 0; })
+        .catch((err) => { outcome.emailed = -1; console.error('notice email failed', err); }));
     }
 
     // And it goes to the phone in somebody's pocket.
@@ -75,18 +83,23 @@ export async function createNotice(db, {
     // database, so it works from the cron as well as from a request.
     if (push) {
       jobs.push(pushNotice(db, { id: noticeId, kind, title, body, link, day, audience, userId })
-        .catch((err) => console.error('notice push failed', err)));
+        .then((out) => { outcome.buzzed = out?.sent ? 1 : out?.tried ? -1 : 0; })
+        .catch((err) => { outcome.buzzed = -1; console.error('notice push failed', err); }));
     }
 
     if (!jobs.length) return;
     const sending = Promise.all(jobs);
 
     // Handed to the runtime where there is one, so the response goes back
-    // first and the sending happens after. Where there is not — a cron, a
-    // script, a test — it has to be awaited, because nothing else is going to
+    // first and the sending happens after. Where there is not, a cron, a
+    // script, a test, it has to be awaited, because nothing else is going to
     // keep the isolate alive long enough for it to finish.
-    if (ctx?.executionContext?.waitUntil) ctx.executionContext.waitUntil(sending);
-    else await sending;
+    //
+    // A caller asking to be told what happened is asking to wait for it. There
+    // is no honest way to report on a send that has not finished, and the one
+    // caller that asks is already waiting on the round anyway.
+    if (report || !ctx?.executionContext?.waitUntil) await sending;
+    else ctx.executionContext.waitUntil(sending);
   };
 
   try {
@@ -114,12 +127,12 @@ export async function createNotice(db, {
     ).first();
     noticeId = row?.id ?? null;
     await post();
-    return noticeId;
+    return report ? { id: noticeId, ...outcome } : noticeId;
   } catch (err) {
     // A site whose database has not been upgraded yet simply has no bell. That
     // is a missing nicety, not a reason to fail a submitted check.
     if (!isMissingTable(err)) console.error('notice not recorded', err);
-    return null;
+    return report ? { id: null, buzzed: 0, emailed: 0 } : null;
   }
 }
 

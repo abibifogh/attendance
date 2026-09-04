@@ -1,3 +1,4 @@
+import { CHANNELS_KEY, GROUPS, KINDS, readChannels, tidyChannels } from '../lib/notice-kinds.js';
 import { originOf } from '../lib/site.js';
 import { backupZip } from '../lib/backup.js';
 import { badRequest, bool, json, notFound, readJson, str } from '../lib/http.js';
@@ -447,6 +448,59 @@ export async function getNotifications(ctx) {
     pushLog: pushLog.results ?? [],
     smsLog: smsLog.results ?? [],
     log: recent.results ?? [],
+    // Every kind the app can send, so a screen can name them rather than list
+    // forty keys, and the handful somebody has switched off.
+    groups: GROUPS.map(([key, label]) => ({ key, label })),
+    kinds: KINDS,
+    channels: readChannels(settings[CHANNELS_KEY]),
+  });
+}
+
+/**
+ * Who could actually be told something, and who could not.
+ *
+ * The gaps are invisible until the morning somebody needed to know. A login
+ * with no alerts turned on looks exactly like one with them on until a rota
+ * goes out, and by then the answer is a phone call. This is the same picture
+ * before it matters: everybody on the rota, and which of the three ways out
+ * exists for them.
+ */
+export async function whoCanBeReached(ctx) {
+  const rows = await ctx.db.prepare(
+    `SELECT s.id, s.name, s.department, s.on_rota,
+            u.id AS user_id, u.email, u.active AS login_active,
+            hp.personal_phone, hp.alt_phone,
+            (SELECT COUNT(*) FROM push_subscriptions p WHERE p.user_id = u.id) AS devices
+       FROM att_staff s
+       LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
+       LEFT JOIN hr_profile hp ON hp.staff_id = s.id
+      WHERE s.active = 1
+      ORDER BY s.name`,
+  ).all().catch(() => ({ results: [] }));
+
+  const people = (rows.results ?? []).map((r) => {
+    const devices = Number(r.devices ?? 0);
+    const phone = String(r.personal_phone ?? r.alt_phone ?? '').trim();
+    return {
+      staffId: r.id,
+      name: r.name,
+      department: r.department ?? null,
+      onRota: r.on_rota !== 0,
+      login: r.user_id != null,
+      devices,
+      email: Boolean(r.email),
+      phone: Boolean(phone),
+      // The one number that matters: how many ways there are of telling them
+      // anything at all.
+      ways: (devices ? 1 : 0) + (r.email ? 1 : 0) + (phone ? 1 : 0),
+    };
+  });
+
+  return json({
+    people,
+    // Only the ones a rota would try to reach. Somebody kept off it is not a
+    // gap, and counting them as one makes the number useless.
+    unreachable: people.filter((p) => p.onRota && p.ways === 0).length,
   });
 }
 
@@ -506,7 +560,15 @@ export async function updateNotifications(ctx) {
     throw badRequest('Texts need a sender name, which is what the message shows it is from.');
   }
 
+  // Which kinds may interrupt anybody, and how. Only the offs are stored: an
+  // on is the default, and writing it down would freeze today's default into
+  // every installation that ever pressed Save.
+  const channels = body.channels === undefined
+    ? readChannels(stored[CHANNELS_KEY])
+    : tidyChannels(body.channels);
+
   await ctx.db.batch([
+    setting(ctx.db, CHANNELS_KEY, JSON.stringify(channels)),
     setting(ctx.db, 'att_email_enabled', emailEnabled),
     setting(ctx.db, 'att_email_to', JSON.stringify(list)),
     setting(ctx.db, 'email_from', from),

@@ -1,3 +1,4 @@
+import { CHANNELS_KEY, goesOut, readChannels } from './notice-kinds.js';
 import { isMissingTable } from './http.js';
 
 /**
@@ -162,27 +163,44 @@ export const MOST_IN_ONE_GO = 200;
  *
  * Never throws. A gateway being down is not a reason for a rota to fail to
  * publish, and the log is there for when somebody says they were not told.
+ *
+ * A message may carry a `ref` of the caller's own choosing, and the answer
+ * says what became of each one. Totals answer "did the run work"; the refs
+ * answer "did it work for her", which is the question actually asked when
+ * somebody says they heard nothing.
  */
 export async function sendTexts(db, env, { messages, kind, day = null }) {
   const list = (messages ?? []).filter((m) => m && m.to && m.text);
-  if (!list.length) return { sent: 0, failed: 0, reason: 'nobody to text' };
+  if (!list.length) return { sent: 0, failed: 0, reason: 'nobody to text', each: new Map() };
 
   let settings = {};
   try {
     const rows = await db.prepare('SELECT key, value FROM settings').all();
     settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
   } catch {
-    return { sent: 0, failed: 0, reason: 'settings unreadable' };
+    return { sent: 0, failed: 0, reason: 'settings unreadable', each: new Map() };
+  }
+
+  // Switched off for this kind under Notifications. A text costs money, so
+  // this one is worth being able to turn off on its own.
+  if (!goesOut(readChannels(settings[CHANNELS_KEY]), kind, 'text')) {
+    return { sent: 0, failed: 0, reason: 'switched off for this kind', each: new Map() };
   }
 
   const setup = smsSetup(settings, env);
-  if (!setup.on) return { sent: 0, failed: 0, reason: 'switched off' };
-  if (!setup.ready) return { sent: 0, failed: 0, reason: `not set up: ${setup.missing.join(', ')}` };
+  if (!setup.on) return { sent: 0, failed: 0, reason: 'switched off', each: new Map() };
+  if (!setup.ready) {
+    return {
+      sent: 0, failed: 0, reason: `not set up: ${setup.missing.join(', ')}`, each: new Map(),
+    };
+  }
 
   const going = list.slice(0, MOST_IN_ONE_GO);
   let sent = 0;
   let failed = 0;
   let firstFault = null;
+  // What became of each message, keyed by whatever the caller put on it.
+  const each = new Map();
 
   for (const one of going) {
     try {
@@ -199,8 +217,10 @@ export async function sendTexts(db, env, { messages, kind, day = null }) {
         throw new Error(`${response.status}: ${detail.slice(0, 160)}`);
       }
       sent += 1;
+      if (one.ref != null) each.set(one.ref, true);
     } catch (err) {
       failed += 1;
+      if (one.ref != null) each.set(one.ref, false);
       if (!firstFault) firstFault = String(err.message ?? err).slice(0, 300);
     }
   }
@@ -216,7 +236,7 @@ export async function sendTexts(db, env, { messages, kind, day = null }) {
     kind, day, recipients: going.map((m) => m.to).join(', '), sent, status, detail,
   });
 
-  return { sent, failed, skipped, status, detail };
+  return { sent, failed, skipped, status, detail, each };
 }
 
 /** One line in the log, and never a reason to fail whatever called it. */

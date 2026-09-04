@@ -24,6 +24,7 @@ import { renderAttLeave } from './views/att-leave.js';
 import { renderAttSignoff } from './views/att-signoff.js';
 import { renderAttSetup } from './views/att-setup.js';
 import { renderAdmin } from './views/admin.js';
+import { renderNotifications } from './views/notifications.js';
 import { renderPeople } from './views/people.js';
 import { renderRec } from './views/rec.js';
 import { renderRecCandidate } from './views/rec-candidate.js';
@@ -99,6 +100,7 @@ const ROUTES = [
   { path: 'att-lunch', label: 'Lunch', permission: 'lunch', render: renderAttLunch, live: ['lunch', 'rota'] },
   { path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters, live: ['letters'] },
   { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup, live: ['admin', 'rota', 'attendance'] },
+  { path: 'notifications', label: 'Notifications', permission: 'users', render: renderNotifications, live: ['admin'] },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin, live: ['admin'] },
   // Last in the menu and reachable by everybody. What it contains is filtered
   // to what the reader actually holds, so it is short for a supervisor and
@@ -178,7 +180,7 @@ function currentRoute() {
  */
 function defaultRoute() {
   const preferred = ['att-today', 'att-overview', 'att-rota', 'signoff', 'att-leave', 'people',
-    'letters', 'att-setup', 'admin',
+    'letters', 'att-setup', 'notifications', 'admin',
     // A member of staff holds none of the above, and their own week is the
     // screen they came for. Named rather than left to the fallback, which
     // walks the route table and would land them wherever it happened to

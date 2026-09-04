@@ -1,3 +1,4 @@
+import { CHANNELS_KEY, goesOut, readChannels } from './notice-kinds.js';
 import { originOf } from './site.js';
 import { ALERT_TITLE, getVapidKeys, sendPush } from './push.js';
 import { isMissingTable } from './http.js';
@@ -557,6 +558,13 @@ export async function pushNotice(db, notice) {
     const rows = await db.prepare('SELECT key, value FROM settings').all();
     const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
 
+    // Switched off for this kind under Notifications. Not a failure and not
+    // worth a line in the log: somebody decided this one should not interrupt
+    // anybody, and it doing nothing is it working.
+    if (!goesOut(readChannels(settings[CHANNELS_KEY]), notice.kind, 'push')) {
+      return { sent: 0, tried: 0, reason: 'switched off for this kind' };
+    }
+
     const subs = await db.prepare(
       `SELECT p.*, u.role, u.permissions, u.active
          FROM push_subscriptions p JOIN users u ON u.id = p.user_id
@@ -570,7 +578,7 @@ export async function pushNotice(db, notice) {
       return allows(notice.audience, effectivePermissions(sub));
     });
 
-    if (!wanted.length) return { sent: 0, reason: 'nobody subscribed' };
+    if (!wanted.length) return { sent: 0, tried: 0, reason: 'nobody subscribed' };
 
     const vapid = await getVapidKeys(db);
     const subject = settings.email_from && settings.email_from.includes('@')
@@ -626,10 +634,13 @@ export async function pushNotice(db, notice) {
       sent,
     );
 
-    return { sent };
+    // `tried` separates the two zeroes. Nobody with a device is not a
+    // failure, and a caller writing down what happened to one person must not
+    // record it as one.
+    return { sent, tried: wanted.length };
   } catch (err) {
     await log('failed', `${notice.kind ?? 'notice'}: ${err.message}`);
-    return { sent: 0, reason: err.message };
+    return { sent: 0, tried: 1, reason: err.message };
   }
 }
 
@@ -645,10 +656,13 @@ export async function emailNotice(db, env, notice) {
     const rows = await db.prepare('SELECT key, value FROM settings').all();
     const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
 
-    if (settings.notice_email === '0') return { sent: 0, reason: 'switched off' };
+    if (settings.notice_email === '0') return { sent: 0, tried: 0, reason: 'switched off' };
+    if (!goesOut(readChannels(settings[CHANNELS_KEY]), notice.kind, 'email')) {
+      return { sent: 0, tried: 0, reason: 'switched off for this kind' };
+    }
     const apiKey = env?.RESEND_API_KEY;
     const from = (settings.email_from || '').trim();
-    if (!apiKey || !from) return { sent: 0, reason: 'not configured' };
+    if (!apiKey || !from) return { sent: 0, tried: 0, reason: 'not configured' };
 
     // A notice may be shown more widely than it is mailed. Where it says so,
     // the narrower audience is the one that gets an inbox.
@@ -656,7 +670,7 @@ export async function emailNotice(db, env, notice) {
       ...notice,
       audience: notice.emailAudience === undefined ? notice.audience : notice.emailAudience,
     });
-    if (!people.length) return { sent: 0, reason: 'nobody to send to' };
+    if (!people.length) return { sent: 0, tried: 0, reason: 'nobody to send to' };
 
     const { subject, html } = renderNotice({
       notice,
@@ -679,12 +693,12 @@ export async function emailNotice(db, env, notice) {
     ).bind('notice', null, to.join(', '), 'sent', String(notice.kind).slice(0, 60))
       .run().catch(() => {});
 
-    return { sent: to.length };
+    return { sent: to.length, tried: to.length };
   } catch (err) {
     await db.prepare(
       'INSERT INTO email_log (kind, day, recipients, status, detail) VALUES (?, ?, ?, ?, ?)',
     ).bind('notice', null, null, 'failed', String(err.message).slice(0, 500))
       .run().catch(() => {});
-    return { sent: 0, reason: err.message };
+    return { sent: 0, tried: 1, reason: err.message };
   }
 }

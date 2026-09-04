@@ -477,6 +477,67 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 
 /* Typing the code that opens My payslips. Wide digits and a lot of space
    between them, because it is four characters typed with a thumb. */
+/* Every kind of notice, and which ways out it may take. A grid rather than a
+   table: the rows are of different heights because each one explains itself,
+   and a table cell that wraps to three lines drags its whole row with it. */
+.notice-kinds { display: grid; gap: 0; }
+.notice-head, .notice-kind {
+  display: grid; grid-template-columns: 1fr repeat(3, 4.2rem);
+  gap: .5rem; align-items: center;
+}
+.notice-head {
+  padding: 0 0 .4rem; border-bottom: 1px solid var(--border);
+  font-size: .7rem; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.notice-kind { padding: .6rem 0; border-bottom: 1px solid var(--border); }
+.notice-kind:last-child { border-bottom: 0; }
+.notice-what { display: grid; gap: .1rem; min-width: 0; }
+.notice-what small { font-size: .78rem; line-height: 1.35; }
+.notice-note { color: var(--text-dim); font-style: italic; }
+.notice-way { text-align: center; }
+.notice-way input { width: auto; margin: 0; }
+
+@media (max-width: 620px) {
+  .notice-head, .notice-kind { grid-template-columns: 1fr repeat(3, 2.6rem); gap: .3rem; }
+  .notice-head { font-size: .62rem; }
+}
+
+/* Who heard that the rota went out. A list of people rather than a table:
+   each line is a decision about one person, and a tick box is the decision. */
+.heard-list { display: grid; gap: .4rem; margin: .9rem 0; }
+.heard-row {
+  display: grid; grid-template-columns: auto 1fr auto; gap: .6rem; align-items: start;
+  padding: .55rem .7rem; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); cursor: pointer;
+}
+.heard-row input { margin: .15rem 0 0; width: auto; }
+.heard-row-missed { border-color: color-mix(in srgb, var(--bad) 45%, var(--border)); }
+.heard-who { display: grid; gap: .1rem; min-width: 0; }
+.heard-who small { font-size: .78rem; line-height: 1.35; }
+.heard-why { color: var(--bad); }
+.heard-ways { display: flex; gap: .4rem; align-items: center; white-space: nowrap; }
+.heard-yes { color: var(--good); font-weight: 700; }
+.heard-no { color: var(--bad); font-weight: 700; }
+.heard-none { color: var(--text-faint); font-weight: 700; }
+.heard-tally { display: flex; gap: 1.4rem; margin: .8rem 0; }
+.heard-tally div { display: grid; }
+.heard-tally strong { font-size: 1.4rem; line-height: 1.1; }
+.heard-tally span { font-size: .78rem; color: var(--text-dim); }
+.heard-publish {
+  display: flex; justify-content: space-between; align-items: center; gap: .7rem;
+  width: 100%; text-align: left;
+  padding: .6rem .7rem; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); cursor: pointer;
+}
+.heard-publish:hover { border-color: var(--accent); }
+
+@media (max-width: 620px) {
+  .heard-row { grid-template-columns: auto 1fr; }
+  .heard-ways { grid-column: 2; }
+  .heard-tally { gap: 1rem; }
+}
+
 .slip-code-row { display: flex; gap: .5rem; align-items: center; margin: .8rem 0; }
 .slip-code {
   width: 7rem; text-align: center;

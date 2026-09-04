@@ -540,6 +540,20 @@ export const GUIDE = [
         + 'Change a published day and it goes dashed again; the app offers to '
         + 'republish at once, and asks whether to ring the bell or do it quietly. Quietly is for '
         + 'a typo — a moved shift deserves the bell. Grey days are already behind you.' },
+      { sub: 'Who heard about it' },
+      { p: 'Press "Who heard", beside Publish, for the last twenty rotas that have gone out. '
+        + 'Open one and it lists everybody it was about, what was tried for each of them and '
+        + 'what came back. Whoever it did not reach is ticked already, and "Send it again" '
+        + 'goes to the ticked and to nobody else, so the twenty who read it the first time '
+        + 'are not buzzed for the sake of the one who did not.' },
+      { p: 'The second message is worked out from the rota as it stands rather than repeating '
+        + 'what went the first time, because somebody being told twice is quite often somebody '
+        + 'whose week changed in between.' },
+      { note: 'None of it is a read receipt. An alert has no receipt and a gateway confirms it '
+        + 'took a text rather than that a phone rang. What the list separates is the two '
+        + 'problems that look the same from the office: no way of telling her, which a mobile '
+        + 'number fixes, and told and not looked at, which sending it again will not.' },
+
       { p: 'Three ways out, so nobody is missed. An alert where the phone can take one. An '
         + 'email where it cannot, to the address on their login. And a text to anybody the '
         + 'first two miss, which is the only thing that reaches an old iPhone and the only '
@@ -2496,6 +2510,18 @@ export const GUIDE = [
         + 'and the sign-off without anybody ticking three boxes. And an administrator always '
         + 'keeps Users — otherwise the last one could edit themselves out of the only screen '
         + 'that could undo it.' },
+
+      { sub: 'Notifications live on their own screen' },
+      { p: 'Everything the app tells anybody is under Notifications: every kind of notice by '
+        + 'what it actually says, with a switch for whether it may buzz a phone, land in an '
+        + 'inbox or go out as a text. Turning one off does not stop the notice happening or '
+        + 'showing in the bell, it stops the interrupting.' },
+      { p: '"Who can be reached" is the one to look at first. It lists everybody on the rota '
+        + 'and which of the three ways out exists for them, so the people nothing can reach '
+        + 'are found now rather than the morning a rota goes out. A mobile number under People '
+        + 'is usually the quickest fix.' },
+      { note: 'The addresses, the text gateway and the devices with alerts turned on used to '
+        + 'be a tab here. They are under Notifications now, in Setup.' },
 
       { sub: 'A login and a member of staff are different things' },
       { p: 'Almost nobody who clocks in has a login. A room attendant has a face on a terminal '

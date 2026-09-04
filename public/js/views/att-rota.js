@@ -3,6 +3,7 @@ import {
   fmtDayShort, fmtSince, fmtStamp, h, keepScroll, mount, shiftDay, toast, todayISO,
 } from '../util.js';
 import { bulkUpload, card, emptyState, moreActions, table } from './components.js';
+import { showPublishHistory, showWhoHeard } from './rota-heard.js';
 import { printButton } from '../print.js';
 import { draftEntries } from './draft-entries.js';
 import { can, holdRefresh, navigate, replaceParams, warnBeforeLeaving } from '../app.js';
@@ -2174,6 +2175,11 @@ export async function renderAttRota(params) {
             + 'Tell them yourself.'
           : '')
       : 'Everything here was already published.', 'good');
+
+    // Straight to the list where somebody was not reached, because that is the
+    // moment to do something about it. A number in a toast that has already
+    // faded is a thing nobody acts on.
+    if (done.publishId && silent) await showWhoHeard(done.publishId);
     await reload();
   };
 
@@ -2190,6 +2196,13 @@ export async function renderAttRota(params) {
     ? h('span', 'Publish', h('span.rota-publish-count', String(unpublished)))
     : 'Published ✓');
 
+  // The way back to a rota that went out on Sunday, for the question that
+  // arrives on Tuesday.
+  const heardButton = !mayEdit ? null : h('button.btn-sm.rota-heard-btn', {
+    onclick: () => showPublishHistory(),
+    title: 'Who heard about each rota that has gone out, and send it again',
+  }, 'Who heard');
+
   const seg = (options, chosen, onPick) => h('div.seg',
     options.map(([value, label]) => h('button', {
       class: String(chosen) === String(value) ? 'active' : '',
@@ -2199,7 +2212,7 @@ export async function renderAttRota(params) {
   mount(host,
     h('div.page-head',
       h('h1', 'Rota'),
-      publishButton,
+      h('div.btn-row', heardButton, publishButton),
     ),
 
     // One bar rather than two. Wide, the whole thing sits on a line; narrow,

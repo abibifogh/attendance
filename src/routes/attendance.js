@@ -2432,10 +2432,17 @@ function shortEnoughToText({ what, from, to, first, siteUrl, message }) {
  * iPhone 7 Plus that stopped at iOS 15 and will never show a web alert however
  * long we wait.
  */
-async function tellEachOfThem(ctx, { rows, from, to, actor, message }) {
+async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null }) {
+  // A resend names the few it is for. Everything below is the same round it
+  // was the first time: the same message about the same window, worked out
+  // again from the rota as it stands rather than replayed from a copy, because
+  // the reason somebody is being told twice is often that it changed.
+  const wanted = only ? new Set(only.map(Number)) : null;
+
   const byStaff = new Map();
   for (const row of rows) {
     if (row.staff_id == null) continue;
+    if (wanted && !wanted.has(Number(row.staff_id))) continue;
     const held = byStaff.get(row.staff_id) ?? {
       userId: row.user_id ?? null,
       phone: firstUsableNumber(row.personal_phone, row.alt_phone),
@@ -2463,8 +2470,11 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message }) {
   let told = 0;
   let noLogin = 0;
   let silent = 0;
+  // One line per person, handed back so the caller can write it beside the
+  // publish it belongs to.
+  const each = [];
 
-  for (const held of byStaff.values()) {
+  for (const [staffId, held] of byStaff) {
     held.shifts.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
     const [first] = held.shifts;
     const count = held.shifts.length;
@@ -2478,10 +2488,23 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message }) {
     const buzzed = held.userId != null && carrying.has(held.userId);
     if (held.phone && (everybodyGetsAText || !buzzed)) {
       texts.push({
+        ref: staffId,
         to: held.phone,
         text: shortEnoughToText({ what, from, to, first, siteUrl, message }),
       });
     }
+
+    const line = {
+      staffId,
+      userId: held.userId ?? null,
+      noticeId: null,
+      shifts: count,
+      offDays: held.off,
+      buzzed: 0,
+      emailed: 0,
+      texted: 0,
+    };
+    each.push(line);
 
     // No login is nothing to ring a bell on. Counted and handed back, because
     // a planner who thinks the whole kitchen has been told should be told
@@ -2507,7 +2530,7 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message }) {
       message || null,
     ].filter(Boolean);
 
-    await createNotice(ctx.db, {
+    const went = await createNotice(ctx.db, {
       kind: 'rota.published.mine',
       level: held.again ? 'warn' : 'info',
       title: count ? `Your shifts are out: ${what}` : 'Your rota is out',
@@ -2522,7 +2545,13 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message }) {
       // been told; sending them the same thing again by email is how a
       // fortnightly rota turns into a mailbox nobody opens.
       email: !buzzed,
+      // Waited on rather than fired and forgotten, because this is the one
+      // notice somebody is later asked to account for person by person.
+      report: true,
     }, ctx);
+    line.noticeId = went?.id ?? null;
+    line.buzzed = went?.buzzed ?? 0;
+    line.emailed = went?.emailed ?? 0;
     told += 1;
   }
 
@@ -2530,9 +2559,47 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message }) {
   // rota half published, so this cannot throw and its result is only counted.
   const texted = await sendTexts(ctx.db, ctx.env, {
     messages: texts, kind: 'rota.published', day: from,
-  }).catch(() => ({ sent: 0 }));
+  }).catch(() => ({ sent: 0, each: new Map() }));
 
-  return { told, noLogin, silent, texted: texted.sent ?? 0 };
+  for (const line of each) {
+    const got = texted.each?.get(line.staffId);
+    line.texted = got === true ? 1 : got === false ? -1 : 0;
+  }
+
+  return { told, noLogin, silent, texted: texted.sent ?? 0, each };
+}
+
+/**
+ * Write down what became of each person's alert.
+ *
+ * Kept beside the publish rather than in the send log, because the question it
+ * answers is about a rota and not about a gateway: which of these fourteen
+ * people has no way of hearing this, and who should it be sent to again.
+ *
+ * A resend adds to the row it already made rather than a second one. The
+ * question is still "did this publish reach her", and two rows saying
+ * different things about the same publish is two answers to one question.
+ */
+async function writeDownWhoHeard(db, publishId, each) {
+  if (!publishId || !each?.length) return;
+  await db.batch(each.map((one) => db.prepare(
+    `INSERT INTO rota_publish_told
+       (publish_id, staff_id, user_id, notice_id, shifts, off_days, buzzed, emailed, texted)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+     ON CONFLICT (publish_id, staff_id) DO UPDATE SET
+       user_id = excluded.user_id,
+       notice_id = excluded.notice_id,
+       shifts = excluded.shifts,
+       off_days = excluded.off_days,
+       buzzed = excluded.buzzed,
+       emailed = excluded.emailed,
+       texted = excluded.texted,
+       sends = sends + 1,
+       last_at = datetime('now')`,
+  ).bind(
+    publishId, one.staffId, one.userId, one.noticeId,
+    one.shifts, one.offDays, one.buzzed, one.emailed, one.texted,
+  ))).catch(() => {});
 }
 
 export async function publishRoster(ctx) {
@@ -2616,8 +2683,9 @@ export async function publishRoster(ctx) {
         WHERE day BETWEEN ?1 AND ?2 AND published = 0`,
     ).bind(from, to),
     ctx.db.prepare(
-      'INSERT INTO rota_publish (from_day, to_day, changes, actor) VALUES (?1, ?2, ?3, ?4)',
-    ).bind(from, to, changes, told === 'none' ? `${actor} — quietly` : actor),
+      `INSERT INTO rota_publish (from_day, to_day, changes, actor, notify, message)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+    ).bind(from, to, changes, told === 'none' ? `${actor}, quietly` : actor, told, message || null),
     ctx.db.prepare(
       'INSERT INTO audit_log (actor, action, entity, detail) VALUES (?1, ?2, NULL, ?3)',
     ).bind(actor, 'rota.publish', JSON.stringify({ from, to, fresh, again, notify: told })),
@@ -2625,11 +2693,17 @@ export async function publishRoster(ctx) {
 
   // Everybody the rota just changed something for, told what their own week
   // says rather than that a rota exists somewhere.
-  let sent = { told: 0, noLogin: 0, silent: 0, texted: 0 };
+  // The row just written, so each person's outcome has something to hang off.
+  const publish = await ctx.db.prepare(
+    'SELECT id FROM rota_publish ORDER BY id DESC LIMIT 1',
+  ).first().catch(() => null);
+
+  let sent = { told: 0, noLogin: 0, silent: 0, texted: 0, each: [] };
   if (told !== 'none') {
     sent = await tellEachOfThem(ctx, {
       rows: affected.results ?? [], from, to, actor, message,
     });
+    await writeDownWhoHeard(ctx.db, publish?.id, sent.each);
   }
 
   // And the house announcement, where the answer was everybody. It carries no
@@ -2671,6 +2745,237 @@ export async function publishRoster(ctx) {
     texted: sent.texted,
     // The ones nothing could reach: no login to ring, and no number to text.
     silent: sent.silent,
+    // So the screen can go straight to who heard about this one.
+    publishId: publish?.id ?? null,
+  });
+}
+
+// --------------------------------------------------------------------------
+// Who heard about it, and sending it again to whoever did not
+// --------------------------------------------------------------------------
+
+/**
+ * Recent publishes, and how many people each one actually reached.
+ *
+ * Publishing used to answer with three numbers and forget which people they
+ * were. "Doreen never got hers" could then only be answered by publishing the
+ * fortnight again and buzzing twenty-one people who had already read it.
+ */
+export async function publishHistory(ctx) {
+  const rows = await ctx.db.prepare(
+    `SELECT p.id, p.from_day, p.to_day, p.changes, p.actor, p.notify, p.at,
+            COUNT(t.id)                                       AS people,
+            SUM(CASE WHEN t.buzzed = 1 OR t.emailed = 1 OR t.texted = 1
+                     THEN 1 ELSE 0 END)                       AS reached
+       FROM rota_publish p
+       LEFT JOIN rota_publish_told t ON t.publish_id = p.id
+      GROUP BY p.id
+      ORDER BY p.id DESC
+      LIMIT 20`,
+  ).all().catch(() => ({ results: [] }));
+
+  return json({
+    publishes: (rows.results ?? []).map((r) => ({
+      id: r.id,
+      from: r.from_day,
+      to: r.to_day,
+      changes: Number(r.changes ?? 0),
+      actor: r.actor,
+      notify: r.notify ?? null,
+      at: r.at,
+      people: Number(r.people ?? 0),
+      reached: Number(r.reached ?? 0),
+      missed: Number(r.people ?? 0) - Number(r.reached ?? 0),
+    })),
+  });
+}
+
+/**
+ * One publish, person by person.
+ *
+ * Each line says what the property actually did and what came back from it,
+ * which is not a read receipt and does not pretend to be: web push has none,
+ * and a gateway says it accepted a text rather than that a phone rang. What it
+ * separates is the two problems that look the same from the office. "We had no
+ * way of telling her" is fixed by a phone number or a login. "We told her and
+ * she has not looked" is fixed by nothing, and sending it again is a buzz she
+ * has already had.
+ */
+export async function publishTold(ctx, id) {
+  const publishId = Number(id);
+  const publish = await ctx.db.prepare(
+    'SELECT * FROM rota_publish WHERE id = ?',
+  ).bind(publishId).first();
+  if (!publish) throw notFound('That publish is not on record.');
+
+  const rows = await ctx.db.prepare(
+    `SELECT t.*, s.name, s.department,
+            hp.personal_phone, hp.alt_phone,
+            u.email AS login_email,
+            (SELECT COUNT(*) FROM push_subscriptions ps WHERE ps.user_id = t.user_id) AS devices,
+            (SELECT r.last_id FROM app_notice_reads r WHERE r.user_id = t.user_id)     AS seen_to
+       FROM rota_publish_told t
+       JOIN att_staff s ON s.id = t.staff_id
+       LEFT JOIN hr_profile hp ON hp.staff_id = t.staff_id
+       LEFT JOIN users u ON u.id = t.user_id
+      WHERE t.publish_id = ?
+      ORDER BY s.name`,
+  ).bind(publishId).all().catch(() => ({ results: [] }));
+
+  const people = (rows.results ?? []).map((r) => {
+    const reached = r.buzzed === 1 || r.emailed === 1 || r.texted === 1;
+    return {
+      staffId: r.staff_id,
+      name: r.name,
+      department: r.department ?? null,
+      shifts: Number(r.shifts ?? 0),
+      offDays: Number(r.off_days ?? 0),
+      buzzed: Number(r.buzzed ?? 0),
+      emailed: Number(r.emailed ?? 0),
+      texted: Number(r.texted ?? 0),
+      sends: Number(r.sends ?? 1),
+      lastAt: r.last_at ?? r.at,
+      reached,
+      // Read, as far as the bell can tell. Their own high-water mark having
+      // passed the notice is the only thing in the building that says somebody
+      // has actually looked at it.
+      opened: r.notice_id != null && Number(r.seen_to ?? 0) >= Number(r.notice_id),
+      // Why nothing landed, said plainly, because the fix is different in
+      // every case and a planner cannot guess it from a cross. Read off what
+      // was actually recorded rather than inferred: tried and refused is a
+      // different problem from never tried, and only one of them is theirs.
+      why: reached ? null : whyNothingLanded(r),
+    };
+  });
+
+  return json({
+    publish: {
+      id: publish.id,
+      from: publish.from_day,
+      to: publish.to_day,
+      changes: Number(publish.changes ?? 0),
+      actor: publish.actor,
+      notify: publish.notify ?? null,
+      message: publish.message ?? null,
+      at: publish.at,
+    },
+    people,
+    reached: people.filter((p) => p.reached).length,
+    missed: people.filter((p) => !p.reached).length,
+    opened: people.filter((p) => p.opened).length,
+  });
+}
+
+/**
+ * Why nothing landed, in a sentence somebody can act on.
+ *
+ * A cross in three columns says what happened and not what to do about it. A
+ * missing mobile number is fixed under People in a minute; a gateway with no
+ * credit is fixed under Notifications; a phone that has never had alerts
+ * turned on is fixed by the person holding it. Naming which one it is saves
+ * the wrong person half an hour.
+ */
+function whyNothingLanded(row) {
+  const tried = [row.buzzed, row.emailed, row.texted].some((n) => Number(n) === -1);
+  const phone = Boolean(firstUsableNumber(row.personal_phone, row.alt_phone));
+  const devices = Number(row.devices ?? 0);
+
+  if (tried) {
+    return 'Every way out that was available was tried, and none of them landed. '
+      + 'The send log under Notifications says what came back.';
+  }
+  if (row.user_id == null) {
+    return phone
+      ? 'No login, and no text went. Texts may be switched off or the gateway may be out '
+        + 'of credit.'
+      : 'No login and no mobile number on their record. Nothing in the app can reach them.';
+  }
+  if (devices === 0 && !row.login_email && !phone) {
+    return 'A login with no alerts turned on, no email address and no mobile number. '
+      + 'Any one of the three would do.';
+  }
+  return 'Nothing was sent. Check that this kind of notice is still switched on under '
+    + 'Notifications.';
+}
+
+/**
+ * Send it again, to the few it did not reach.
+ *
+ * Worked out from the rota as it stands rather than replayed from a copy of
+ * what went the first time. Somebody being told twice is quite often somebody
+ * whose week changed in between, and a second message repeating the first
+ * would be wrong in exactly the case that matters most.
+ *
+ * Named people only. There is no button here that buzzes everybody again: the
+ * whole point of the list is that the twenty who read it the first time should
+ * not have their evening interrupted for the one who did not.
+ */
+export async function publishAgain(ctx, id) {
+  const publishId = Number(id);
+  const body = await readJson(ctx.request);
+
+  const publish = await ctx.db.prepare(
+    'SELECT * FROM rota_publish WHERE id = ?',
+  ).bind(publishId).first();
+  if (!publish) throw notFound('That publish is not on record.');
+
+  const asked = Array.isArray(body.staffIds)
+    ? [...new Set(body.staffIds.map(Number).filter(Number.isFinite))]
+    : [];
+  if (!asked.length) throw badRequest('Say who to send it to again.');
+
+  const on = await ctx.db.prepare(
+    `SELECT staff_id FROM rota_publish_told WHERE publish_id = ?`,
+  ).bind(publishId).all().catch(() => ({ results: [] }));
+  const known = new Set((on.results ?? []).map((r) => Number(r.staff_id)));
+  const only = asked.filter((n) => known.has(n));
+  if (!only.length) throw badRequest('None of those people were on this rota.');
+
+  const from = publish.from_day;
+  const to = publish.to_day;
+
+  // Their week as it stands now, published rows only. The first time round
+  // this read the drafts about to go out; there are none left to read, and
+  // what is on the rota today is what the message should say.
+  const rows = await ctx.db.prepare(
+    `SELECT r.staff_id, r.day, r.shift_id, r.ever_published,
+            sh.name AS shift_name, sh.starts_at, sh.ends_at,
+            hp.personal_phone, hp.alt_phone,
+            (SELECT u.id FROM users u
+              WHERE u.staff_id = r.staff_id AND u.active = 1
+              ORDER BY u.id LIMIT 1) AS user_id
+       FROM att_roster r
+       LEFT JOIN att_shifts sh ON sh.id = r.shift_id
+       LEFT JOIN hr_profile hp ON hp.staff_id = r.staff_id
+       LEFT JOIN att_staff s ON s.id = r.staff_id
+      WHERE r.day BETWEEN ?1 AND ?2 AND r.published = 1 AND r.staff_id IS NOT NULL
+        AND s.active = 1
+      ORDER BY r.day`,
+  ).bind(from, to).all().catch(() => ({ results: [] }));
+
+  const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
+  const sent = await tellEachOfThem(ctx, {
+    rows: rows.results ?? [], from, to, actor, message: publish.message ?? '', only,
+  });
+  await writeDownWhoHeard(ctx.db, publishId, sent.each);
+
+  await ctx.db.prepare(
+    'INSERT INTO audit_log (actor, action, entity, detail) VALUES (?1, ?2, ?3, ?4)',
+  ).bind(actor, 'rota.publish.again', String(publishId), JSON.stringify({
+    from, to, people: only.length, told: sent.told, texted: sent.texted,
+  })).run().catch(() => {});
+
+  return json({
+    ok: true,
+    asked: only.length,
+    told: sent.told,
+    texted: sent.texted,
+    // Whoever a second attempt still could not reach. Said plainly, because a
+    // button pressed twice with nothing to show for it should say so rather
+    // than look like it worked.
+    stillSilent: sent.each.filter((one) => (
+      one.buzzed !== 1 && one.emailed !== 1 && one.texted !== 1
+    )).length,
   });
 }
 

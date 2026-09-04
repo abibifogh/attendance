@@ -141,6 +141,9 @@ export const ROUTES = [
   // How the rota is treating people. Whoever builds it needs this most,
   // which is why it is not behind the reports permission.
   ['POST', '/api/att/roster/publish', 'att_rota', att.publishRoster],
+  ['GET', '/api/att/roster/publishes', 'att_rota', att.publishHistory],
+  ['GET', '/api/att/roster/publishes/:id', 'att_rota', att.publishTold],
+  ['POST', '/api/att/roster/publishes/:id/again', 'att_rota', att.publishAgain],
   ['GET', '/api/att/roster/suggest', 'att_rota', suggest.suggestRoster],
   ['GET', '/api/att/roster/history', ['att_rota', 'att_reports'], att.rosterHistory],
   // The rota as a file, draft and all. Everything else that leaves this app is
@@ -566,6 +569,7 @@ export const ROUTES = [
   ['DELETE', '/api/push/devices/:id', 'users', push.removeDevice],
 
   ['GET', '/api/notifications', 'users', admin.getNotifications],
+  ['GET', '/api/notifications/reach', 'users', admin.whoCanBeReached],
   ['PUT', '/api/notifications', 'users', admin.updateNotifications],
   ['POST', '/api/notifications/test', 'users', admin.testNotification],
   ['POST', '/api/notifications/test-text', 'users', admin.testText],

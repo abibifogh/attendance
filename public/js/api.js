@@ -325,6 +325,11 @@ export const api = {
     Object.entries(params).filter(([, v]) => v != null && v !== ''),
   )}`),
   attPublishRoster: (body) => request('/api/att/roster/publish', { method: 'POST', body }),
+  attPublishes: () => request('/api/att/roster/publishes'),
+  attPublishTold: (id) => request(`/api/att/roster/publishes/${id}`),
+  attPublishAgain: (id, staffIds) => request(`/api/att/roster/publishes/${id}/again`, {
+    method: 'POST', body: { staffIds },
+  }),
   attSetAvailability: (body) => request('/api/att/availability', { method: 'POST', body }),
   attCopyRoster: (body) => request('/api/att/roster/copy', { method: 'POST', body }),
   attClearRoster: (body) => request('/api/att/roster/clear', { method: 'POST', body }),
@@ -473,6 +478,7 @@ export const api = {
   removePushDevice: (id) => request(`/api/push/devices/${id}`, { method: 'DELETE' }),
 
   notifications: () => request('/api/notifications'),
+  notificationReach: () => request('/api/notifications/reach'),
   updateNotifications: (body) => request('/api/notifications', { method: 'PUT', body }),
   testNotification: () => request('/api/notifications/test', { method: 'POST' }),
   testText: (to) => request('/api/notifications/test-text', { method: 'POST', body: { to } }),

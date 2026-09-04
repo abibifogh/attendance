@@ -611,6 +611,53 @@ facts. Wanting to work is not being away, so *Would like to work* is none of
 the limit's business. The screen says it as the boxes are ticked and the server
 refuses it either way.
 
+**Who heard that the rota went out, and sending it again.** Publishing told
+everybody at once and then forgot what it had done. What came back was three
+numbers, and the question that arrives a day later is not a number: it is
+"Doreen says she never got hers". Answering that meant publishing the whole
+fortnight again and buzzing twenty-one people who had already read it.
+
+Each person's own outcome is now written down beside the publish it belongs to:
+what was tried, what came back, and whether they have opened their bell since.
+*Who heard*, beside Publish on the rota screen, lists the last twenty publishes
+and opens any one of them person by person. Everybody it did not reach starts
+ticked, and *Send it again* goes to the ticked and to nobody else.
+
+The second message is worked out from the rota as it stands rather than
+replayed from a copy. Somebody being told twice is quite often somebody whose
+week changed in between, and a repeat of the first message would be wrong in
+exactly the case that matters most.
+
+None of it is a read receipt and the wording never pretends otherwise: web push
+has none, and a gateway confirms it accepted a text rather than that a phone
+rang. What it separates is the two problems that look identical from the
+office. "We had no way of telling her" wants a mobile number; "we told her and
+she has not looked" wants a word, and sending it again is a buzz she has
+already had. Where nothing landed, the line says which of the two it was.
+
+**One screen for every kind of notification.** They had grown up one at a time,
+each with its own judgement baked in about whether it was worth a phone
+buzzing, and the only way to see the whole set was to read the source. A
+property that cannot see what it sends cannot decide what it sends, and the two
+ways that ends are both bad: nothing is ever turned off, or somebody turns the
+lot off.
+
+*Notifications* answers four questions, one tab each. **What goes out** lists
+every kind by what it actually says, who it goes to and when it fires, with a
+switch per way out. **Who can be reached** is the same picture as the publish
+list but in advance: everybody on the rota, and which of the three ways out
+exists for them, so the gaps get fixed before the morning they matter. **What
+has been sent** is the alert, email and text logs side by side. **Setup** is the
+addresses, the gateway and the devices, moved here from Users & data so there is
+one set of them rather than two that drift.
+
+The bell has no switch. Every notice is recorded whether or not anybody is
+interrupted about it, because the list in the bell is the record of what
+happened and a record with holes in it where somebody flipped a switch is worse
+than no record. What can be turned off is the interrupting. Only the offs are
+stored, so a property that presses Save today does not freeze today's defaults
+into every kind added afterwards.
+
 **A code of their own on payslips.** Signing in answers "is this their phone",
 once, in the morning. Opening a payslip is asked at a different moment:
 somebody is standing beside them in a corridor, the phone is already unlocked,
