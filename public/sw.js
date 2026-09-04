@@ -86,14 +86,28 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'HIVE';
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || 'Some days need confirming.',
-    // A tag per kind of thing, so a second morning digest replaces the first
-    // rather than stacking underneath it — and a published rota does not
-    // quietly replace somebody's "your shift started" the same way. Two
-    // different messages that overwrite each other are one message lost.
+    // A tag per notice, so two that arrive together are two notifications
+    // rather than the second quietly replacing the first. The daily digest
+    // sends its own with a tag of its own, which is where replacing is right:
+    // a second morning digest should sit on top of the first.
     tag: data.tag || (data.day ? `att-${data.day}` : 'attendance'),
     renotify: true,
-    // No icon is named on purpose: the browser falls back to the site's own,
-    // and pointing at a file that does not exist gets you a broken one.
+    // The app's own mark rather than whatever the browser can find. Without
+    // these an Android phone shows a grey dot in the bar and the notification
+    // reads like something the browser is saying rather than something HIVE
+    // is: the icon is the picture on the notification, the badge is the small
+    // monochrome mark in the status bar.
+    icon: '/icons/hive-192.png',
+    badge: '/icons/hive-192.png',
+    // A buzz. Left unsaid, a phone follows whatever its channel happens to be
+    // set to, and one set quiet is a notification that arrives having made no
+    // sound at all: silent is exactly what the person the alert is for does
+    // not need at six in the morning.
+    vibrate: [180, 90, 180],
+    silent: false,
+    // When it happened rather than when the phone got round to it, so one that
+    // waited out a tunnel is stamped with the moment it was sent.
+    timestamp: Date.now(),
     data: { url: data.url || '/' },
   }));
 });

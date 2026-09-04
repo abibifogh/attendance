@@ -993,6 +993,23 @@ meant the second one kept being forgotten. The only thing that opts out is the
 morning digest, which sends its own alert on its own setting and would
 otherwise buzz twice.
 
+**An alert is sent as urgent, so the phone is woken for it.** Web Push sends
+at "normal" urgency unless it is told otherwise, and a normal message is one
+the push service may sit on until the device next stirs by itself. On a phone
+in somebody's pocket that is hours: the notice reached the bell the moment it
+happened and the lock screen stayed dark, which reads as push not working at
+all. Everything sent from here is worth waking somebody for, which is the
+whole test for whether a notice is a push rather than only a bell.
+
+The notification also carries the app's own icon and badge and a short
+vibration. Left unsaid, an Android phone shows a grey dot in the status bar
+and follows whatever its notification channel happens to be set to, which for
+a phone somebody has quietened is nothing at all. And the service worker is
+registered with `updateViaCache: 'none'`, so a phone fetches sw.js from the
+network rather than from its own cache of it: without that it can go on
+running last week's worker for a day after a deploy, which is how a fix to
+what a notification looks like reaches nobody.
+
 **A notification is tagged by the notice rather than by its kind.** A tag is
 what a phone replaces: two notifications sharing one arrive as one, the second
 quietly overwriting the first. Tagged by kind, the second person to ask about a

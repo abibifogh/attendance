@@ -238,3 +238,55 @@ test('a kind nothing knows about gets a bell, and never a bed', () => {
   const source = readFileSync('public/js/views/notices.js', 'utf8');
   assert.equal(source.includes('🛏'), false, 'the bed is gone');
 });
+
+// ---------------------------------------------------------------------------
+// Reaching a phone that is locked
+// ---------------------------------------------------------------------------
+
+/**
+ * The bell filled in and the lock screen stayed dark and silent.
+ *
+ * Web Push sends at "normal" urgency unless it is told otherwise, and normal
+ * is a message the push service may sit on until the device next stirs by
+ * itself. On a phone in somebody's pocket that can be hours. Everything sent
+ * from here is worth waking somebody for, which is the whole test for whether
+ * a notice is a push rather than only a bell.
+ */
+test('a push is sent at high urgency, so the phone is woken for it', async () => {
+  const { raw, db } = setup();
+  await withDevice(raw);
+
+  let sent = null;
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    sent = { url: String(url), headers: init.headers };
+    return new Response('', { status: 201 });
+  };
+  try {
+    await createNotice(db, { kind: 'rota.published.mine', title: 'Your rota', email: false });
+  } finally { globalThis.fetch = original; }
+
+  assert.ok(sent, 'it went');
+  assert.equal(sent.headers.Urgency, 'high');
+  assert.equal(sent.headers.TTL, '86400', 'and it is still kept for a day if the phone is off');
+});
+
+test('the notification carries a mark and a buzz', () => {
+  // Left unsaid, an Android phone shows a grey dot in the status bar and
+  // follows whatever its channel is set to, which for a phone somebody has
+  // quietened is nothing at all.
+  const sw = readFileSync('public/sw.js', 'utf8');
+  assert.match(sw, /icon: '\/icons\/hive-192\.png'/);
+  assert.match(sw, /badge: '\/icons\/hive-192\.png'/);
+  assert.match(sw, /vibrate: \[/);
+  assert.match(sw, /silent: false/);
+});
+
+test('the worker itself is fetched from the network, not the browser’s cache', () => {
+  // Without this a phone can run last week's worker for a day after a deploy,
+  // which is how a fix to what a notification looks like reaches nobody.
+  for (const file of ['public/js/install.js', 'public/js/push.js']) {
+    const source = readFileSync(file, 'utf8');
+    assert.match(source, /register\('\/sw\.js', \{ updateViaCache: 'none' \}\)/, file);
+  }
+});

@@ -189,6 +189,19 @@ export async function sendPush(subscription, message, vapid, subject) {
     method: 'POST',
     headers: {
       TTL: '86400',
+      // WAKE THE PHONE UP.
+      //
+      // Web Push sends at "normal" urgency unless it is told otherwise, and a
+      // normal message is one the push service may sit on until the device
+      // next stirs by itself. On an Android phone in somebody's pocket that
+      // can be hours: the notice reached the bell inside the app the moment it
+      // happened and the lock screen stayed dark and silent, which reads as
+      // push not working at all.
+      //
+      // Everything sent from here is worth waking somebody for. That is the
+      // whole test for whether it is a push rather than only a bell: a shift
+      // starting with nobody recorded, a rota published, an advance decided.
+      Urgency: 'high',
       'Content-Encoding': 'aes128gcm',
       'Content-Type': 'application/octet-stream',
       Authorization: `vapid t=${jwt}, k=${vapid.vapid_public}`,

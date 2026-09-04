@@ -247,6 +247,26 @@ export const GUIDE = [
         + 'for Home Screen apps in iOS 16.4, and those phones stop at 15. My account says so on '
         + 'the phone itself rather than sending you to the Home Screen to find out. Everything '
         + 'still arrives in the bell at the top of the screen.' },
+      { sub: 'When the bell fills in and the phone stays quiet' },
+      { p: 'The bell inside the app and the alert on your phone are two different journeys, '
+        + 'and the second one has more that can stop it. Work down this list.' },
+      { list: [
+        'Open My account and look at Alerts on this device. If it offers to turn them on, '
+          + 'this device was never set up: press it and allow the browser when it asks.',
+        'Press Send a test. If it comes back with a refusal, that is the reason, in the push '
+          + 'service’s own words. If it says it was sent and nothing appears, the message left '
+          + 'here and the phone is what is swallowing it.',
+        'Check the phone’s own settings for HIVE: notifications allowed, sound on, and allowed '
+          + 'on the lock screen. A phone set to silence a notification will silence this one.',
+        'Take HIVE off battery saving. An Android phone that is optimising an app will hold its '
+          + 'alerts until you next open it, which is exactly too late.',
+        'On an iPhone, HIVE has to be on the Home Screen and opened from there. Safari has no '
+          + 'alerts of its own.',
+      ] },
+      { note: 'Alerts are sent as urgent, so the push service wakes the phone rather than '
+        + 'waiting for it to stir on its own. If yours only ever shows them when you unlock it, '
+        + 'it is battery saving doing that and not the app.' },
+
       { p: 'And a published rota reaches those phones another way. If yours cannot show '
         + 'alerts, the same message comes by email where your login has an address on it, '
         + 'and by text to the number on your record. Whoever keeps the records can check '

@@ -86,7 +86,11 @@ export function registerWorker() {
   // first requests for the connection, on exactly the phones that can least
   // afford it.
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {
+    // `updateViaCache: 'none'` so the browser fetches sw.js itself from the
+    // network rather than from its own HTTP cache. Without it a phone can go
+    // on running last week's worker for up to a day after a deploy, which is
+    // how a fix to what a notification looks like reaches nobody.
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {
       // No worker is a missing convenience, not a broken app.
     });
   });

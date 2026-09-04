@@ -66,7 +66,11 @@ export function tooOldForAlerts() {
 
 let registration = null;
 async function ready() {
-  if (!registration) registration = await navigator.serviceWorker.register('/sw.js');
+  if (!registration) {
+    // Same as the app's own registration: the worker file itself comes from
+    // the network, not from the browser's cache of it.
+    registration = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+  }
   return navigator.serviceWorker.ready.then(() => registration);
 }
 
