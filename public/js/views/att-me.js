@@ -306,10 +306,14 @@ function dayRow(entry, data) {
         h('strong', entry.shift.name),
         h('small.muted', `${shiftHours(entry.shift)} · ${asHours(shiftMinutes(entry.shift))}`))
       : entry.restDay
-        ? h('span.muted', 'Day off')
+        // Said rather than left blank. A dash meant two different things and
+        // this is the one somebody can plan around: a day with nothing on it
+        // in a week that has gone out is a day off, and it was decided.
+        ? h('span.pill', 'Rest day')
         : entry.pending
           ? h('span.pill.warn', 'Being worked out')
-          : h('span.muted', '—');
+          // The other thing the dash meant: nobody has said yet.
+          : h('small.muted', 'Not out yet');
 
   return h('div.me-day', {
     class: [entry.day === data.today ? 'me-today' : '', entry.onShift ? 'me-on-shift' : '']
@@ -509,7 +513,9 @@ function deptWeek(data) {
               { 'data-shift-colour': String(entry.shift.colour ?? 0) },
               h('span.dept-shift-name', entry.shift.name),
               h('small.muted', `${entry.shift.starts_at}\u2013${entry.shift.ends_at}`))
-            : h('small.muted', '\u2014'))))))); 
+            : entry.restDay
+              ? h('small.muted', 'Rest day')
+              : h('small.muted', '\u2014')))))));
 }
 
 /**
@@ -526,12 +532,18 @@ function deptDay(day, data) {
   const off = [];
   const away = [];
 
+  const unsaid = [];
+
   for (const person of data.people) {
     const entry = person.days.find((d) => d.day === day);
     const label = person.name + (person.isMe ? ' (you)' : '');
     if (entry?.away) away.push(label);
     else if (entry?.shift) on.push({ label, shift: entry.shift, isMe: person.isMe });
-    else off.push(label);
+    // Off and not-yet-said kept apart. Somebody working out who to ask about a
+    // Saturday is asking about the first list, and the second one is not an
+    // answer at all.
+    else if (entry?.restDay) off.push(label);
+    else unsaid.push(label);
   }
   on.sort((a, b) => String(a.shift.starts_at).localeCompare(String(b.shift.starts_at)));
 
@@ -548,6 +560,9 @@ function deptDay(day, data) {
       : h('p.muted', 'Nobody on this day.'),
     off.length ? h('p.dept-day-off', h('small.muted', `Off: ${off.join(', ')}`)) : null,
     away.length ? h('p.dept-day-off', h('small.muted', `Away: ${away.join(', ')}`)) : null,
+    unsaid.length
+      ? h('p.dept-day-off', h('small.muted', `Not out yet: ${unsaid.join(', ')}`))
+      : null,
   );
 }
 

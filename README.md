@@ -611,6 +611,21 @@ facts. Wanting to work is not being away, so *Would like to work* is none of
 the limit's business. The screen says it as the boxes are ticked and the server
 refuses it either way.
 
+**A day off says so.** A blank cell meant two entirely different things and
+the screen said the same dash to both. If the fortnight has gone out and there
+is nothing against your name on Thursday, Thursday is your day off: somebody
+decided that, and you can plan around it. If the fortnight has not gone out,
+Thursday is nothing yet, and a screen calling it a day off is making a promise
+the property has not made.
+
+The publish log tells them apart, because it is the record of the decision
+rather than a guess at one: a day inside a window somebody pressed Publish on
+is a day the property has spoken about. So *My shifts* now says **Rest day**
+where it used to show a dash, **Being worked out** where a draft is sitting
+unpublished, and **Not out yet** where nobody has said. The department rota
+does the same, and on a phone the people who are off are listed apart from the
+people nobody has decided about yet.
+
 **Saying how to install it on the phone somebody is holding.** Half the
 property never managed it, and the reason is not that they cannot follow
 instructions. On Android the menu item sits below *Desktop site*, past the

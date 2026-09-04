@@ -216,7 +216,7 @@ test('no clock times, no lateness and no pay travel with it', async () => {
 
   const out = await ask(db, 1);
   const cell = dayOf(out, 'Kofi', MON);
-  assert.deepEqual(Object.keys(cell).sort(), ['away', 'day', 'holiday', 'shift']);
+  assert.deepEqual(Object.keys(cell).sort(), ['away', 'day', 'holiday', 'restDay', 'shift']);
 
   const said = JSON.stringify(out);
   for (const leak of ['06:41', 'late', 'salary', 'punch']) {
@@ -233,4 +233,28 @@ test('the week can be stepped back and forward', async () => {
   // Any day in a week gives that week, not seven days from wherever you asked.
   const midweek = await ask(db, 1, '2099-09-10');
   assert.equal(midweek.from, MON);
+});
+
+test('a day nobody has published is not called a rest day', async () => {
+  const { db, raw } = setup();
+  rota(raw, 2, MON, 1);
+
+  const out = await ask(db, 1);
+  // Monday is published for Kofi and Tuesday is not published for anybody.
+  // Only one of those is a day off, and the other one is nothing yet.
+  assert.equal(dayOf(out, 'Kofi', MON).restDay, false, 'he is on it');
+  assert.equal(dayOf(out, 'Ama', MON).restDay, false, 'nothing published for that day');
+});
+
+test('a day inside a published week with nothing on it is a rest day', async () => {
+  const { db, raw } = setup();
+  rota(raw, 2, MON, 1);
+  raw.prepare(
+    "INSERT INTO rota_publish (from_day, to_day, changes, actor) VALUES (?, ?, 1, 'test')",
+  ).run(MON, SUN);
+
+  const out = await ask(db, 1);
+  assert.equal(dayOf(out, 'Kofi', MON).restDay, false, 'he is working');
+  assert.equal(dayOf(out, 'Kofi', TUE).restDay, true, 'published week, nothing on it');
+  assert.equal(dayOf(out, 'Ama', MON).restDay, true);
 });

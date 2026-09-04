@@ -585,3 +585,50 @@ test('the tick survives a round trip through the setup screen', async () => {
   );
   assert.ok(!(await week(db)).reasons.some((r) => r.code === 'maternity'));
 });
+
+test('a day off is said as one, and a day nobody has decided is not', async () => {
+  const { db } = setup();
+  await saveRoster(ctx(db, PLANNER, {
+    body: { entries: [{ staffId: 1, day: shiftDay(MON, 1), shiftId: 1 }] },
+  }));
+
+  // Before anything is published, the empty days are empty rather than off.
+  // Calling them days off would be promising something nobody has decided.
+  let out = await week(db);
+  assert.equal(out.days.find((d) => d.day === shiftDay(MON, 3)).restDay, false);
+
+  await publishRoster(ctx(db, PLANNER, { body: { from: MON, to: shiftDay(MON, 6) } }));
+
+  out = await week(db);
+  assert.equal(out.days.find((d) => d.day === shiftDay(MON, 1)).restDay, false, 'working');
+  assert.equal(out.days.find((d) => d.day === shiftDay(MON, 3)).restDay, true,
+    'the week has gone out and nothing was put against their name');
+  // And past the end of what was published, still nothing.
+  assert.equal(out.days.find((d) => d.day === shiftDay(MON, 10))?.restDay, false);
+});
+
+test('a day still being worked out is not a day off either', async () => {
+  const { db } = setup();
+  await publishRoster(ctx(db, PLANNER, { body: { from: MON, to: shiftDay(MON, 6) } }));
+  // A draft written after the week went out. Somebody is deciding, and the
+  // screen must not say the answer is no.
+  await saveRoster(ctx(db, PLANNER, {
+    body: { entries: [{ staffId: 1, day: shiftDay(MON, 2), shiftId: 1 }] },
+  }));
+
+  const out = await week(db);
+  const day = out.days.find((d) => d.day === shiftDay(MON, 2));
+  assert.equal(day.pending, true);
+  assert.equal(day.restDay, false);
+});
+
+test('an explicit Off is a rest day whether or not a window was published', async () => {
+  const { db } = setup();
+  await saveRoster(ctx(db, PLANNER, {
+    body: { entries: [{ staffId: 1, day: shiftDay(MON, 4), shiftId: null }] },
+  }));
+  await publishRoster(ctx(db, PLANNER, { body: { from: MON, to: shiftDay(MON, 6) } }));
+
+  const out = await week(db);
+  assert.equal(out.days.find((d) => d.day === shiftDay(MON, 4)).restDay, true);
+});

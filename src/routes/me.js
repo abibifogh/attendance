@@ -184,6 +184,29 @@ function onShiftNow(ds, staffId, today) {
 }
 
 /**
+ * Which days the property has actually promised, whatever is on them.
+ *
+ * A day with no shift on it means two completely different things and the app
+ * was saying "—" to both. If the fortnight has been published and there is
+ * nothing against your name on Thursday, Thursday is your day off: somebody
+ * decided that and you can plan around it. If the fortnight has not been
+ * published, Thursday is nothing at all yet, and a screen that calls it a day
+ * off is making a promise the property has not made.
+ *
+ * The publish log is what tells them apart, because it is the record of the
+ * decision rather than a guess at one. A day inside a window somebody pressed
+ * Publish on is a day the property has spoken about.
+ */
+async function daysAlreadyPromised(db, from, to) {
+  const rows = await db.prepare(
+    'SELECT from_day, to_day FROM rota_publish WHERE to_day >= ?1 AND from_day <= ?2',
+  ).bind(from, to).all().catch(() => ({ results: [] }));
+
+  const spans = (rows.results ?? []).map((r) => [r.from_day, r.to_day]);
+  return (day) => spans.some(([first, last]) => day >= first && day <= last);
+}
+
+/**
  * My weeks: what I am down to work, and how the days behind me came out.
  *
  * Four weeks at a time by default, starting on the Monday of the week asked
@@ -228,6 +251,8 @@ export async function myWeek(ctx) {
   const verdicts = new Map(computeRange(ds, staff.id, from, to).map((r) => [r.day, r]));
   const onShift = onShiftNow(ds, staff.id, today);
 
+  const promised = await daysAlreadyPromised(ctx.db, from, to);
+
   const days = [];
   for (let day = from; day <= to; day = addDays(day, 1)) {
     const rostered = ds.rosterBy.get(`${staff.id}|${day}`);
@@ -243,6 +268,7 @@ export async function myWeek(ctx) {
     const shift = settled ? schedule.shift : null;
     const record = day < today ? verdicts.get(day) : null;
     const avail = availabilityBy.get(day) ?? null;
+    const draft = schedule.source === 'roster' && !rostered?.published;
 
     days.push({
       day,
@@ -261,8 +287,12 @@ export async function myWeek(ctx) {
       // A day the planner has decided and not yet published shows as pending
       // rather than as nothing, so somebody looking at a blank Thursday knows
       // whether it is a day off or a day still being worked out.
-      pending: schedule.source === 'roster' && !rostered?.published,
-      restDay: settled && !shift,
+      pending: draft,
+      // A day off, said as one. Either somebody wrote Off in the cell, or the
+      // week around it has been published and nothing was put against their
+      // name, which is the same fact arrived at from the other side. What it
+      // is not is a day still being worked out, and that stays its own answer.
+      restDay: (settled && !shift) || (!shift && !draft && promised(day)),
       leave: leave ? (ds.reasonBy.get(leave.reason_code)?.label ?? leave.reason_code) : null,
       holiday: ds.holidayBy.get(day)?.name ?? null,
       // The banner the row wears while somebody is at work on it.
@@ -641,6 +671,8 @@ export async function myDepartment(ctx) {
   const days = [];
   for (let day = from; day <= to; day = addDays(day, 1)) days.push(day);
 
+  const promised = await daysAlreadyPromised(ctx.db, from, to);
+
   return json({
     allowed: true,
     department,
@@ -673,6 +705,10 @@ export async function myDepartment(ctx) {
               colour: shift.colour ?? null,
             }
             : null,
+          // Off, rather than a dash that could equally mean nobody has looked
+          // at this week yet. Somebody reading it to work out who to ask about
+          // a Saturday needs the difference.
+          restDay: !shift && promised(day),
           // That somebody is away is what the question is really about, and it
           // is on the rota anybody can read. Why they are away is not, so the
           // kind of leave does not travel with it.
