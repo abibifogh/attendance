@@ -240,7 +240,12 @@ test('the held day is what the dataset computes, and it stays held after the ter
 
 test('Today carries the open spell so the screen can say the list cannot be trusted', async () => {
   const { raw, db } = setup();
-  rosterStartedAgo(raw, 120);
+  // The day the fixture actually put the shift on, asked for by name. A shift
+  // that started two hours ago is on yesterday's date for the first two hours
+  // after midnight, and this used to ask the screen for today and then wonder
+  // where the shift had gone: green all day and red between midnight and two,
+  // which is how a suite teaches people to ignore it.
+  const at = rosterStartedAgo(raw, 120);
   heardAgo(raw, 180);
   await watchTerminals(db, { timezone: 'UTC' });
 
@@ -250,7 +255,7 @@ test('Today carries the open spell so the screen can say the list cannot be trus
   assert.equal(warnings[0].due, 1);
 
   const res = await todayScreen({
-    db, env: {}, url: new URL('https://x/api/att/day'),
+    db, env: {}, url: new URL(`https://x/api/att/day?day=${at.day}`),
     session: { user: { id: 1, name: 'K', role: 'admin' } },
   });
   const body = await res.json();
