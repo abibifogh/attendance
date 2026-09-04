@@ -12,6 +12,7 @@ import {
 import { listNotices, markSeen } from '../lib/notices.js';
 import { emailExceptions, isEmail, parseRecipients } from '../lib/notify.js';
 import { PROVIDERS, ghanaNumber, senderId, sendTexts, smsSetup } from '../lib/sms.js';
+import { MOST_RECORDS, readIds, tidyExtras } from '../lib/records-on-a-login.js';
 import { isDay } from '../util/dates.js';
 
 /**
@@ -133,7 +134,7 @@ function readCredentials(body, role, { existing = null } = {}) {
   return { isAdmin, email: email || null, password: null, pin, clearPin: false };
 }
 
-function publicUser(row) {
+function publicUser(row, alsoStaffIds = []) {
   return {
     id: row.id,
     name: row.name,
@@ -153,6 +154,9 @@ function publicUser(row) {
     // one. Null for everybody who runs the place rather than appearing on the
     // rota.
     staffId: row.staff_id ?? null,
+    // The rest of the records this login opens, on top of the one above.
+    // Empty for almost everybody.
+    alsoStaffIds,
     permissions: effectivePermissions(row),
     customPermissions: row.permissions ? JSON.parse(row.permissions) : null,
     active: Boolean(row.active),
@@ -192,6 +196,80 @@ async function recoveryStatus(ctx) {
   return { configured, enabled, conflictsWith };
 }
 
+/**
+ * The extra records on each login, by login.
+ *
+ * One query for the whole table on the way to the Users screen, because it has
+ * a row for the few people who have any and none for everybody else. Read for a
+ * single login after saving one.
+ */
+async function extraRecords(db, userId = null) {
+  const rows = await (userId == null
+    ? db.prepare('SELECT user_id, staff_id FROM user_staff ORDER BY staff_id').all()
+    : db.prepare('SELECT user_id, staff_id FROM user_staff WHERE user_id = ? ORDER BY staff_id')
+      .bind(userId).all()
+  ).catch(() => ({ results: [] }));
+
+  const by = new Map();
+  for (const row of rows.results ?? []) {
+    const key = Number(row.user_id);
+    if (!by.has(key)) by.set(key, []);
+    by.get(key).push(Number(row.staff_id));
+  }
+  return by;
+}
+
+/**
+ * Which other people this login is being asked to open, checked before anything
+ * is written.
+ *
+ * Refused rather than trimmed where a name is wrong: an administrator who has
+ * just chosen four people and been given three back has no way of knowing which
+ * one went, and would find out from the person it belonged to. Checked before
+ * the login is saved for the same reason — a refusal that has already created
+ * half of what was asked for is worse than a refusal.
+ *
+ * Null back means the request did not mention them at all, which is not the
+ * same as naming nobody.
+ */
+async function checkExtraRecords(db, body, own) {
+  if (body.alsoStaffIds === undefined) return null;
+
+  const wanted = tidyExtras(body.alsoStaffIds, own);
+  if (readIds(body.alsoStaffIds).filter((id) => id !== Number(own)).length > wanted.length) {
+    throw badRequest(`One login can hold at most ${MOST_RECORDS} people\u2019s records.`);
+  }
+
+  if (wanted.length) {
+    const found = await db.prepare(
+      `SELECT id FROM att_staff WHERE id IN (${wanted.map(() => '?').join(',')})`,
+    ).bind(...wanted).all().catch(() => ({ results: [] }));
+    const real = new Set((found.results ?? []).map((r) => Number(r.id)));
+    if (wanted.some((id) => !real.has(id))) {
+      throw badRequest('One of the people chosen is not on the staff list any more.');
+    }
+  }
+  return wanted;
+}
+
+/** And then stored, replacing whatever the login carried before. */
+async function writeExtraRecords(db, userId, wanted, own) {
+  // Nothing said means nothing touched, except where the login no longer
+  // belongs to anybody: extras are extra to somebody, and left behind they
+  // would be a login that opens other people's pay and nobody's own.
+  if (wanted == null) {
+    if (!Number(own)) await db.prepare('DELETE FROM user_staff WHERE user_id = ?').bind(userId).run();
+    return;
+  }
+
+  const writes = [db.prepare('DELETE FROM user_staff WHERE user_id = ?').bind(userId)];
+  for (const staffId of wanted) {
+    writes.push(db.prepare('INSERT INTO user_staff (user_id, staff_id) VALUES (?, ?)')
+      .bind(userId, staffId));
+  }
+  await db.batch(writes);
+}
+
 export async function listUsers(ctx) {
   const rows = await ctx.db.prepare(
     'SELECT * FROM users ORDER BY active DESC, role, name',
@@ -207,8 +285,10 @@ export async function listUsers(ctx) {
        FROM att_staff s WHERE s.active = 1 ORDER BY s.name`,
   ).all().catch(() => ({ results: [] }));
 
+  const extras = await extraRecords(ctx.db);
+
   return json({
-    users: (rows.results ?? []).map(publicUser),
+    users: (rows.results ?? []).map((row) => publicUser(row, extras.get(Number(row.id)) ?? [])),
     roles: ROLES,
     permissions: PERMISSIONS,
     staff: staff.results ?? [],
@@ -260,21 +340,26 @@ export async function createUser(ctx) {
   const pinHash = creds.pin ? await hashPin(creds.pin, pepper) : null;
   const passwordHash = creds.password ? await storedPassword(creds.password, pepper) : null;
 
+  const staffId = readStaffLink(body);
+  const alsoStaff = await checkExtraRecords(ctx.db, body, staffId);
+
   try {
     const row = await ctx.db.prepare(
       `INSERT INTO users (name, pin_hash, email, password_hash, role, permissions, active, note,
                           staff_id)
        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING *`,
     ).bind(
-      name, pinHash, creds.email, passwordHash, role, permissions, note,
-      readStaffLink(body),
+      name, pinHash, creds.email, passwordHash, role, permissions, note, staffId,
     ).first();
     if (creds.pin) await markPinOk(ctx.db, row.id);
+    await writeExtraRecords(ctx.db, row.id, alsoStaff, row.staff_id);
+    const extras = (await extraRecords(ctx.db, row.id)).get(Number(row.id)) ?? [];
 
     await audit(ctx, 'user.create', row.id, {
       name, role, signIn: creds.isAdmin ? (creds.pin ? 'password and pin' : 'password') : 'pin',
+      alsoStaff: extras.length || undefined,
     });
-    return json({ user: publicUser(row) }, { status: 201 });
+    return json({ user: publicUser(row, extras) }, { status: 201 });
   } catch (err) {
     const clash = clashMessage(err);
     if (clash) throw badRequest(clash);
@@ -325,6 +410,9 @@ export async function updateUser(ctx, id) {
   // Somebody who has forgotten the code on their own payslips has no other way
   // back: nobody can read it, not even from here. Taking it off is the whole
   // of the remedy, and it opens their payslips to them and to nobody else.
+  const staffId = readStaffLink(body);
+  const alsoStaff = await checkExtraRecords(ctx.db, body, staffId);
+
   const clearPayslipCode = bool(body.clearPayslipCode, false);
   if (clearPayslipCode) {
     await ctx.db.prepare(
@@ -342,9 +430,11 @@ export async function updateUser(ctx, id) {
        WHERE id = ?10 RETURNING *`,
     ).bind(
       name, role, permissions, active ? 1 : 0, note,
-      pinHash, creds.email ?? null, passwordHash, readStaffLink(body), userId,
+      pinHash, creds.email ?? null, passwordHash, staffId, userId,
     ).first();
     if (creds.pin) await markPinOk(ctx.db, userId);
+    await writeExtraRecords(ctx.db, userId, alsoStaff, row.staff_id);
+    const extras = (await extraRecords(ctx.db, userId)).get(userId) ?? [];
 
     await audit(ctx, 'user.update', userId, {
       name,
@@ -354,8 +444,9 @@ export async function updateUser(ctx, id) {
       pinRemoved: Boolean(creds.clearPin || promoted),
       passwordChanged: Boolean(creds.password),
       payslipCodeCleared: clearPayslipCode,
+      alsoStaff: extras.length || undefined,
     });
-    return json({ user: publicUser(row) });
+    return json({ user: publicUser(row, extras) });
   } catch (err) {
     const clash = clashMessage(err);
     if (clash) throw badRequest(clash);
@@ -380,6 +471,9 @@ export async function deleteUser(ctx, id) {
   // it, so the link is cut and the staff record stands on its own.
   await ctx.db.batch([
     ctx.db.prepare('UPDATE att_staff SET user_id = NULL WHERE user_id = ?').bind(userId),
+    // Whoever else this login opened. Written out rather than left to the
+    // foreign key, which is not enforced everywhere this app runs.
+    ctx.db.prepare('DELETE FROM user_staff WHERE user_id = ?').bind(userId),
     ctx.db.prepare('DELETE FROM users WHERE id = ?').bind(userId),
   ]);
 

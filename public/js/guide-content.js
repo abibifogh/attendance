@@ -193,6 +193,18 @@ export const GUIDE = [
         + 'clock times, lateness or leave balances, and where somebody is away it says away '
         + 'and not why.' },
 
+      { sub: 'If your login carries somebody else as well' },
+      { p: 'A login is normally one person. Two things make it more than one: being on the '
+        + 'books twice, from a second employee number the terminal was given when a card was '
+        + 'reissued, and somebody with no phone of their own whose shifts are read on yours.' },
+      { p: 'When that has been set up, a line above My shifts says whose screens you are '
+        + 'looking at, with the other names in it. Picking one shows their week, report, '
+        + 'advance, claims and payslips, and the line turns blue and says so, because every '
+        + 'heading underneath still reads \u201cMy\u201d. Picking your own name goes back.' },
+      { note: 'Whoever looks after logins sets it, under Users & data. Notices still go to '
+        + 'each person\u2019s own login, so a record on your phone is a screen you can open '
+        + 'rather than a phone that buzzes for two people.' },
+
       { sub: 'My advance' },
       { p: 'If you have taken a salary advance, My advance shows what is left, what comes off '
         + 'your pay each month, and which payday is the last one. Underneath it is every month '
@@ -2586,6 +2598,21 @@ export const GUIDE = [
       { p: 'Answer no and those screens are not in their menu at all, because there would be '
         + 'nothing behind them. The Member of staff role does not ask the question: the answer '
         + 'is yes, and the only thing left to say is which record.' },
+
+      { sub: 'When one login is more than one person' },
+      { p: 'Beside the staff record is "Anybody else this login opens". Add a name and this '
+        + 'login can also open that person\u2019s shifts, report, advance, claims and '
+        + 'payslips, one at a time and with a picker above them saying whose. Two situations '
+        + 'need it: somebody on the books twice, because the terminal was given a second '
+        + 'employee number when a card was reissued, and somebody with no phone of their own '
+        + 'whose record goes on the phone of whoever they live with.' },
+      { p: 'The list under each login on this screen says who else it opens, so you can see '
+        + 'it without opening everybody in turn. Take a name off with the \u2715 beside it '
+        + 'and that login stops opening them at once.' },
+      { warn: 'It is somebody\u2019s pay on another person\u2019s phone, so it is worth being '
+        + 'asked for rather than arranged. Somebody who leaves comes off every login that was '
+        + 'carrying them, and the code on My payslips belongs to the login rather than to each '
+        + 'person, so one code opens both.' },
 
       { sub: 'What the mail says it is from' },
       { p: 'Notifications tab, Email card. Sender name is what a recipient reads before they '

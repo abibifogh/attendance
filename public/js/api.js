@@ -15,6 +15,21 @@ let onUnauthorized = () => {};
 export function setUnauthorizedHandler(fn) { onUnauthorized = fn; }
 
 /**
+ * Whose screens the "my" ones are showing.
+ *
+ * A login is one person almost everywhere, and then this is null and nothing
+ * about a request changes. The few logins that carry more than one record set
+ * it when somebody picks a name, and it rides along on every call from then on
+ * rather than being threaded through thirty api functions and every view that
+ * calls one. The server refuses anything that is not on the login's own list,
+ * so it is a choice among what is already allowed and not a way to ask for
+ * more.
+ */
+let acting = null;
+export function actFor(staffId) { acting = staffId == null ? null : String(staffId); }
+export function actingFor() { return acting; }
+
+/**
  * Whether the server is answering.
  *
  * Not `navigator.onLine`, which only says whether the device has a network
@@ -108,6 +123,7 @@ async function request(path, { method = 'GET', body, signal } = {}) {
         // the answer, and a second redraw over staged edits is how somebody
         // loses work. See live.js.
         'X-Hive-Client': tabId(),
+        ...(acting ? { 'X-Hive-Acting-For': acting } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
       credentials: 'same-origin',

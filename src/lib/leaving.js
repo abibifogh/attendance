@@ -56,6 +56,12 @@ async function switchOff(db, staffId) {
   await db.prepare('UPDATE att_staff SET active = 0 WHERE id = ?').bind(staffId).run();
   await db.prepare('DELETE FROM att_patterns WHERE staff_id = ?').bind(staffId).run().catch(() => {});
 
+  // And off anybody else's login that was carrying their record. Somebody who
+  // has left should not still be on the phone of whoever they lived with,
+  // where their pay would go on being readable long after the property has
+  // anything to do with them.
+  await db.prepare('DELETE FROM user_staff WHERE staff_id = ?').bind(staffId).run().catch(() => {});
+
   const login = await db.prepare('SELECT id, active FROM users WHERE staff_id = ?')
     .bind(staffId).first().catch(() => null);
   let loginOff = false;

@@ -850,6 +850,47 @@ one name at a time, and the question being asked in a corridor is about a day
 anyway. So the day leads, the names hang off it, and the people who are not in
 gather on one line at the bottom rather than taking a row each.
 
+**One login can carry more than one person's record.** A login has always been
+one person, and for almost everybody that is right. Two situations here are not
+covered by it. Somebody on the books twice, because the terminal was given a
+second employee number when a card was reissued and both numbers now carry
+attendance. And somebody with no phone of their own, whose record goes on the
+phone of whoever they live with, because otherwise there is no way at all for
+them to see their own week.
+
+The first record stays where it was, in `users.staff_id`. The rest are extra,
+in a table of their own, which is what keeps every query in the app that asks
+"whose login is this" answering with one person. On the Users screen it is a
+row of names under the staff record, with an ✕ on each, and the list says
+underneath a login who else it opens, so that is readable without opening
+everybody in turn.
+
+The five "my" screens then show one person at a time with a picker above them.
+Which one is chosen rides along on every request as a header, checked on the
+server against that login's own list and refused if it is not on it. Refused
+rather than quietly answered with their own record: a screen headed with one
+name and answered with another person's pay is worse than an error. The choice
+is remembered for the tab and no longer, so signing in on a shared handset does
+not open on whoever used it last, and it is dropped the moment the record is
+taken off the login again. It is said loudly when it is not their own record,
+because every one of those screens is headed *My* and "My payslips" over
+somebody else's pay is the app lying in large type.
+
+Coming off is as thorough as going on. Somebody who leaves is taken off
+whoever else was carrying them, on the same nightly run that switches off their
+own login, so their pay does not stay readable on a colleague's phone after the
+property has finished with them. Removing a login takes its extra records with
+it, written out rather than left to a foreign key, which is not enforced
+everywhere this app runs.
+
+Two things it deliberately does not do. It does not route anybody's
+notifications: a published shift, an approved advance and a birthday still go
+to that person's own login and nowhere else, so a record on somebody else's
+phone is a screen to open rather than a phone that buzzes. And the code on
+*My payslips* stays a code per login, not per person, so a login carrying two
+people opens both with the one they set.
+
+
 **Staff can put a picture to their name.** A grid of thirty names is read by
 face long before it is read by name, and everybody who has used Humanity looks
 for the face first. It is chosen under *My account*, shrunk in the browser

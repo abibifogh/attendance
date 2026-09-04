@@ -14,6 +14,7 @@
 // deactivates the last account can always get back in.
 
 import { isMissingTable } from './http.js';
+import { recordsOn } from './records-on-a-login.js';
 import { effectivePermissions } from './permissions.js';
 
 const COOKIE = 'bf_session';
@@ -332,7 +333,7 @@ export async function getSession(request, env, db) {
     const user = payload.role === 'cook'
       ? { id: 0, name: 'Kitchen', role: 'cook', permissions: null, active: 1, isRecovery: true }
       : recoveryUser();
-    return { user, permissions: effectivePermissions(user), via: 'pin' };
+    return { user, permissions: effectivePermissions(user), via: 'pin', records: [] };
   }
   // Whether the PIN that opened this session is shorter than the rule. Read
   // off the token because the PIN itself is long gone by the second request.
@@ -341,32 +342,43 @@ export async function getSession(request, env, db) {
   // Re-reading means deactivating someone, changing their role or narrowing
   // what they can see takes effect on their very next request rather than
   // whenever their cookie happens to expire.
+  // Tried in order, each one asking for less. A database that has not been
+  // upgraded yet still signs people in, and loses only what it has not got:
+  // the extra records first, then the staff link, rather than the session.
+  //
+  // staff_id comes along because the whole of what a member of staff may see is
+  // decided by it, and it must come from the session rather than from anything
+  // a browser sends. also_staff is the rest of the records this login opens,
+  // read in the same breath rather than as a second query on every request in
+  // the app for the sake of the few logins that have any.
+  // has_pin rather than the hash itself: the session is passed around the whole
+  // app, and a credential fingerprint has no business travelling with it just
+  // so one screen can say "change your PIN".
+  // pin_ok says the PIN on this row is known to meet the length rule. It is the
+  // answer to "should we still be asking", and it lives here rather than in the
+  // token because a token cannot hear about a PIN being changed on somebody's
+  // other device.
+  const attempts = [
+    'SELECT id, name, role, permissions, active, staff_id, pin_ok, '
+    + '(SELECT group_concat(staff_id) FROM user_staff WHERE user_id = users.id) AS also_staff, '
+    + 'pin_hash IS NOT NULL AS has_pin FROM users WHERE id = ?',
+    'SELECT id, name, role, permissions, active, staff_id, pin_ok, '
+    + 'pin_hash IS NOT NULL AS has_pin FROM users WHERE id = ?',
+    'SELECT id, name, role, permissions, active, pin_hash IS NOT NULL AS has_pin '
+    + 'FROM users WHERE id = ?',
+  ];
+
   let user = null;
-  try {
-    user = await db.prepare(
-      // staff_id comes along because the whole of what a member of staff may
-      // see is decided by it, and it must come from the session rather than
-      // from anything a browser sends.
-      // has_pin rather than the hash itself: the session is passed around the
-      // whole app, and a credential fingerprint has no business travelling
-      // with it just so one screen can say "change your PIN".
-      // pin_ok says the PIN on this row is known to meet the length rule. It
-      // is the answer to "should we still be asking", and it lives here
-      // rather than in the token because a token cannot hear about a PIN
-      // being changed on somebody's other device.
-      'SELECT id, name, role, permissions, active, staff_id, pin_ok, '
-      + 'pin_hash IS NOT NULL AS has_pin FROM users WHERE id = ?',
-    ).bind(payload.uid).first().catch(async (err) => {
-      // A database that has not been upgraded yet still signs people in.
+  for (const sql of attempts) {
+    try {
+      user = await db.prepare(sql).bind(payload.uid).first();
+      break;
+    } catch (err) {
       if (!isMissingTable(err)) throw err;
-      return db.prepare(
-        'SELECT id, name, role, permissions, active, pin_hash IS NOT NULL AS has_pin '
-        + 'FROM users WHERE id = ?',
-      ).bind(payload.uid).first();
-    });
-  } catch (err) {
-    if (!isMissingTable(err)) throw err;
-    return null; // schema not applied yet — force a fresh sign-in
+      // The last one asks for nothing this app has ever added, so if that is
+      // what failed the schema is not applied at all: force a fresh sign-in.
+      if (sql === attempts[attempts.length - 1]) return null;
+    }
   }
 
   if (!user || !user.active) return null;
@@ -378,6 +390,9 @@ export async function getSession(request, env, db) {
     permissions: effectivePermissions(user),
     via: payload.via === 'password' ? 'password' : 'pin',
     shortPin,
+    // Every staff record this login opens, their own first. One for almost
+    // everybody, and the list is what the "my" screens choose from.
+    records: recordsOn(user.staff_id, user.also_staff),
   };
 }
 

@@ -114,6 +114,13 @@ async function peopleTab(reload) {
               // because it is the half somebody forgets they handed out.
               ? `${r.email}${r.role === 'admin' && r.hasPin ? ' · and a PIN' : ''}`
               : `signs in with a ${r.signsInWith}`),
+            // Said on the list rather than only inside the dialog: a login that
+            // opens somebody else's pay is worth being able to see without
+            // opening every person in turn.
+            r.alsoStaffIds?.length
+              ? h('small.muted', { style: { display: 'block' } },
+                `also opens ${r.alsoStaffIds.map((id) => staffName(data.staff, id)).join(', ')}`)
+              : null,
           ),
         },
         { key: 'role', label: 'Role', format: (v) => h('span.pill', roleLabel(data.roles, v)) },
@@ -347,6 +354,11 @@ function roleLabel(roles, key) {
   return roles.find((r) => r.key === key)?.label ?? key;
 }
 
+/** A staff id as the name it belongs to, for the few logins that carry more. */
+function staffName(staff, id) {
+  return (staff ?? []).find((p) => String(p.id) === String(id))?.name ?? `record ${id}`;
+}
+
 /**
  * Add or edit a login.
  *
@@ -428,6 +440,62 @@ function openUserDialog({ existing, data, reload }) {
     staffSelect,
     staffNote);
 
+  // Anybody else this login opens the "my" screens for.
+  //
+  // Two situations produce it and both are real here. Somebody on the books
+  // twice, because the terminal was given a second employee number when a card
+  // was reissued. And somebody with no phone of their own, whose record goes on
+  // the phone of whoever they live with, so there is any way at all for them to
+  // see their own week.
+  //
+  // Names rather than a list of ticks: on a property of two dozen people a
+  // column of two dozen checkboxes is a wall to read every time somebody's PIN
+  // is changed, and the answer is almost always nobody.
+  let alsoIds = [...(existing?.alsoStaffIds ?? [])];
+
+  const nameOf = (id) => {
+    const person = (data.staff ?? []).find((p) => String(p.id) === String(id));
+    return person ? `${person.name} · No. ${person.employee_no}` : `Record ${id}`;
+  };
+
+  const alsoList = h('div.chosen-people');
+  const alsoAdd = h('select');
+
+  const paintAlso = () => {
+    mount(alsoList, alsoIds.length
+      ? alsoIds.map((id) => h('span.chosen-person',
+        nameOf(id),
+        h('button.chosen-drop', {
+          type: 'button',
+          title: `Take ${nameOf(id)} off this login`,
+          onclick: () => { alsoIds = alsoIds.filter((x) => x !== id); paintAlso(); },
+        }, '\u2715')))
+      : h('small.muted', 'Nobody else'));
+
+    mount(alsoAdd, [
+      h('option', { value: '' }, 'Add somebody\u2026'),
+      ...(data.staff ?? [])
+        .filter((p) => String(p.id) !== String(staffSelect.value) && !alsoIds.includes(p.id))
+        .map((p) => h('option', { value: String(p.id) },
+          `${p.name}${p.department ? ` \u00b7 ${p.department}` : ''} \u00b7 No. ${p.employee_no}`)),
+    ]);
+    alsoAdd.value = '';
+  };
+
+  alsoAdd.addEventListener('change', () => {
+    const id = Number(alsoAdd.value);
+    if (id && !alsoIds.includes(id)) alsoIds.push(id);
+    paintAlso();
+  });
+  staffSelect.addEventListener('change', paintAlso);
+
+  const alsoField = h('label.field',
+    h('span', 'Anybody else this login opens'),
+    alsoList,
+    alsoAdd,
+    h('small.muted', 'For somebody on the books twice, or somebody with no phone whose shifts '
+      + 'and payslips are read on this one. Each person is shown on their own, by name.'));
+
   const rotaField = h('label.field',
     h('span', 'Are they a member of staff?'),
     onRota,
@@ -437,6 +505,10 @@ function openUserDialog({ existing, data, reload }) {
     const isStaffRole = roleSelect.value === 'staff';
     rotaField.style.display = isStaffRole ? 'none' : '';
     staffField.style.display = isStaffRole || onRota.value === 'yes' ? '' : 'none';
+    // Extras are extra to somebody: a login that belongs to nobody has nothing
+    // for them to be extra to.
+    alsoField.style.display = staffField.style.display;
+    paintAlso();
     staffNote.textContent = isStaffRole
       ? 'Their own, and nothing else'
       : 'Their own shifts, report, advances and claims, on top of what the role gives them';
@@ -505,6 +577,7 @@ function openUserDialog({ existing, data, reload }) {
       passwordField,
       rotaField,
       staffField,
+      alsoField,
     ),
     dropPinRow,
     roleHint,
@@ -536,6 +609,7 @@ function openUserDialog({ existing, data, reload }) {
       staffId: (roleSelect.value === 'staff' || onRota.value === 'yes')
         ? (staffSelect.value || null)
         : null,
+      alsoStaffIds: alsoIds,
     };
 
     if (roleSelect.value === 'staff' && !payload.staffId) {

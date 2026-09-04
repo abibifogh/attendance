@@ -517,6 +517,41 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .lock-said { min-height: 1.2rem; margin: 0; font-size: .85rem; color: var(--bad); }
 .lock-out { margin-top: .8rem; }
 
+/* The people already chosen on a login, each with a way to take them off.
+   Names rather than a column of ticks: the answer is almost always nobody. */
+.chosen-people { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .35rem; }
+.chosen-person {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .2rem .3rem .2rem .6rem; border-radius: 999px;
+  font-size: .78rem;
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+}
+.chosen-drop {
+  border: 0; background: none; cursor: pointer; padding: 0 .25rem;
+  color: var(--text-dim); font-size: .8rem; line-height: 1;
+}
+.chosen-drop:hover { color: var(--bad); }
+
+/* Whose "my" screens are being shown, on a login that carries more than one
+   person's record. Above the page and quiet: for the handful of logins that
+   have it, it is a heading rather than a control they came for. */
+.who-strip {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  margin: 0 0 .9rem; padding: .45rem .7rem;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-2);
+}
+.who-strip-label {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-dim);
+}
+.who-strip-pick { padding: .25rem .5rem; font-size: .9rem; max-width: 14rem; }
+.who-strip-note { font-size: .8rem; color: var(--text-dim); }
+/* Somebody else's record, which every "My" heading below is about to contradict. */
+.who-strip.not-me { border-color: var(--accent); background: var(--accent-soft); }
+.who-strip.not-me .who-strip-label,
+.who-strip.not-me .who-strip-note { color: var(--accent); }
+
 /* Why the last session ended, where it ended by itself. */
 .login-why {
   margin: 0 0 .9rem; padding: .5rem .7rem;

@@ -1,4 +1,4 @@
-import { api, onReachabilityChange, serverReachable, setUnauthorizedHandler } from './api.js';
+import { actFor, api, onReachabilityChange, serverReachable, setUnauthorizedHandler } from './api.js';
 import { liveUp, onLive, startLive, stopLive } from './live.js';
 import { guard, unguard } from './guard.js';
 import { registerWorker, watchForInstall } from './install.js';
@@ -54,6 +54,13 @@ export const state = {
   // Which staff record this login belongs to, or null. Decides whether the
   // screens about oneself mean anything.
   staffId: null,
+  // Everybody whose "my" screens this login opens, their own first. One person
+  // for almost every login, and then there is nothing to choose between and
+  // nothing on the screen about it.
+  records: [],
+  // Whose screens are being shown, where there is more than one. Null means
+  // the first, which is their own.
+  actingFor: null,
   // What the permissions and roles are called, sent with the session so the
   // guide can name one the reader does not hold.
   permissionLabels: {},
@@ -72,15 +79,15 @@ export const state = {
 const ROUTES = [
   // First, and for most people the only one. A member of staff holds this and
   // nothing else, so it has to be the screen they land on.
-  { path: 'att-me', label: 'My shifts', permission: 'att_me', render: renderAttMe, live: ['rota', 'attendance', 'leave', 'lunch'] },
+  { mine: true, path: 'att-me', label: 'My shifts', permission: 'att_me', render: renderAttMe, live: ['rota', 'attendance', 'leave', 'lunch'] },
   // Beside it, because the month is the other question somebody asks about
   // their own attendance and it is not one the week can answer.
-  { path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport, live: ['attendance', 'leave'] },
+  { mine: true, path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport, live: ['attendance', 'leave'] },
   // Money going the other way. Beside their own report because that is where
   // somebody looks when they are working out what they will be paid.
-  { path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
-  { path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
-  { path: 'att-my-payslips', label: 'My payslips', permission: 'att_me', render: renderAttMyPayslips, live: ['pay'] },
+  { mine: true, path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
+  { mine: true, path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
+  { mine: true, path: 'att-my-payslips', label: 'My payslips', permission: 'att_me', render: renderAttMyPayslips, live: ['pay'] },
   { path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday, live: ['attendance', 'rota', 'leave'] },
   { path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek, live: ['attendance', 'rota', 'leave'] },
   // The planner reads the month before building the next one. The one thing
@@ -318,6 +325,107 @@ function toggleMenu() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Whose screens these are
+// ---------------------------------------------------------------------------
+
+/**
+ * A login that carries more than one person's record.
+ *
+ * Rare, and real: somebody on the books twice from a reissued card, and
+ * somebody with no phone of their own whose record sits on the phone of
+ * whoever they live with. The choice is remembered for the tab and not
+ * beyond it, so a shared handset does not open on the last person who used
+ * it after somebody signs in again.
+ */
+const WHO_KEY = 'hive.showing';
+
+function rememberedWho() {
+  try {
+    return Number(sessionStorage.getItem(WHO_KEY)) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Show this person's screens from here on.
+ *
+ * Null means the first record, which is their own, and sends nothing with any
+ * request: a login with one person on it behaves exactly as it always has.
+ */
+function showing(staffId) {
+  const first = state.records[0]?.id ?? null;
+  const wanted = staffId == null || staffId === first ? null : Number(staffId);
+  state.actingFor = wanted;
+  actFor(wanted);
+  try {
+    if (wanted == null) sessionStorage.removeItem(WHO_KEY);
+    else sessionStorage.setItem(WHO_KEY, String(wanted));
+  } catch {
+    // Then it lasts until the page is reloaded, which is no worse than what
+    // the app did before there was anybody to choose between.
+  }
+}
+
+/** Everything about who is signed in, from one answer, in one place. */
+function adoptSession(me) {
+  state.role = me.role ?? state.role;
+  state.name = me.name ?? state.name;
+  state.email = me.email ?? null;
+  state.isRecovery = Boolean(me.isRecovery);
+  state.hasPin = Boolean(me.hasPin);
+  state.signedInWith = me.signedInWith ?? 'pin';
+  state.permissions = me.permissions || [];
+  state.settings = me.settings || state.settings || {};
+  state.staffId = me.staffId ?? null;
+  state.records = me.records ?? [];
+  state.permissionLabels = me.permissionLabels || state.permissionLabels || {};
+  state.roleLabels = me.roleLabels || state.roleLabels || {};
+  state.mustChangePin = Boolean(me.mustChangePin);
+
+  // A name remembered from earlier in this tab, but only if it is still one of
+  // theirs: an administrator can take a record off a login at any time, and
+  // the tab would go on asking for it.
+  const remembered = rememberedWho();
+  showing(state.records.some((p) => p.id === remembered) ? remembered : null);
+}
+
+/**
+ * Which of them the "my" screens are showing, on the screens that show one.
+ *
+ * Above the page rather than inside each of the five, because it is the same
+ * question on all of them and the answer has to hold as somebody moves from
+ * their week to their payslips. Nothing at all for the ordinary login, which
+ * is one person.
+ */
+function whoStrip() {
+  if (state.records.length < 2 || !currentRoute()?.mine) return null;
+  const now = state.actingFor ?? state.records[0].id;
+  const showThem = (event) => {
+    showing(Number(event.target.value));
+    render();
+  };
+
+  // Said loudly when it is not their own record. Every one of these screens is
+  // headed "My", and "My payslips" over somebody else's pay is the app telling
+  // a lie in large type.
+  const mine = now === state.records[0].id;
+  const them = state.records.find((person) => person.id === now)?.name ?? 'somebody else';
+
+  return h(mine ? 'div.who-strip' : 'div.who-strip.not-me',
+    h('span.who-strip-label', 'Showing'),
+    h('select.who-strip-pick', { 'aria-label': 'Whose screens to show', onchange: showThem },
+      state.records.map((person, i) => h('option', {
+        value: String(person.id),
+        selected: person.id === now,
+      }, i === 0 ? `${person.name} (you)` : person.name))),
+    h('span.who-strip-note', mine
+      ? 'Your own shifts, report, advances, claims and payslips'
+      : `Not your own. This is ${them}\u2019s week, report, advances, claims and payslips.`),
+  );
+}
+
 function shell(content) {
   const shellEl = h('div.shell',
     h('header.topbar',
@@ -397,7 +505,7 @@ function shell(content) {
       // Tapping the page behind an open drawer closes it, which is what every
       // phone user already expects to happen.
       h('div.nav-scrim', { onclick: closeDrawer }),
-      h('main.main', content),
+      h('main.main', whoStrip(), content),
     ),
   );
 
@@ -453,15 +561,13 @@ export async function render({ quiet = false } = {}) {
   root.classList.remove('app-loading');
 
   if (!state.role) {
-    mount(root, renderLogin(async ({
-      role, name, email, permissions, isRecovery, mustChangePin,
-    }) => {
-      state.role = role;
-      state.name = name;
-      state.email = email ?? null;
-      state.isRecovery = Boolean(isRecovery);
-      state.permissions = permissions ?? [];
-      state.mustChangePin = Boolean(mustChangePin);
+    mount(root, renderLogin(async (signedIn) => {
+      // What signing in answered, then the fuller answer if it can be had. The
+      // sign-in reply is enough to open the app; the session says who else is
+      // on this login and what the property is called, and without asking for
+      // it the header opened nameless until the next reload.
+      const me = await api.me().catch(() => null);
+      adoptSession(me?.authenticated ? me : signedIn);
       state.signedOutBecause = null;
       startLive();
       watchForTheRoom();
@@ -748,6 +854,11 @@ function resetSession() {
   state.hasPin = false;
   state.signedInWith = 'pin';
   state.permissions = [];
+  state.staffId = null;
+  // And whoever this login was showing. A tablet somebody else signs in on
+  // must not open on the last person's payslips.
+  state.records = [];
+  showing(null);
 }
 
 const ROLE_LABELS = {
@@ -835,20 +946,7 @@ window.addEventListener('online', () => { api.me().catch(() => {}); });
 
   try {
     const me = await api.me();
-    if (me.authenticated) {
-      state.role = me.role;
-      state.name = me.name;
-      state.email = me.email ?? null;
-      state.isRecovery = Boolean(me.isRecovery);
-      state.hasPin = Boolean(me.hasPin);
-      state.signedInWith = me.signedInWith ?? 'pin';
-      state.permissions = me.permissions || [];
-      state.settings = me.settings || {};
-      state.staffId = me.staffId ?? null;
-      state.permissionLabels = me.permissionLabels || {};
-      state.roleLabels = me.roleLabels || {};
-      state.mustChangePin = Boolean(me.mustChangePin);
-    }
+    if (me.authenticated) adoptSession(me);
   } catch { /* fall through to the login screen */ }
 
   if (state.role && !currentRoute()) navigate(defaultRoute());

@@ -5,6 +5,7 @@ import {
   throttleReset, tokenTtl, userForCredentials, userForPin, verifyPasswordKey,
 } from './lib/auth.js';
 import { PERMISSIONS, ROLES, allows, effectivePermissions } from './lib/permissions.js';
+import { whoIsMeant } from './lib/records-on-a-login.js';
 import {
   HttpError, badRequest, forbidden, isMissingTable, json, readJson, str, unauthorized,
 } from './lib/http.js';
@@ -882,6 +883,20 @@ async function route(request, env, url, executionContext) {
     if (permission !== 'public') {
       ctx.session = await getSession(request, env, env.DB);
       if (!ctx.session) throw unauthorized();
+
+      // Which of the records on this login this request is about.
+      //
+      // Almost every login is one person and this settles to them without
+      // anybody asking for anything. Where a login carries more than one, the
+      // screen says whose it is showing and sends it here, and every route
+      // that reads staff_id off the session follows along without having to
+      // know a choice was ever made. Refused rather than quietly answered with
+      // their own record: a screen headed with one name and answered with
+      // another person's pay is worse than an error.
+      const meant = whoIsMeant(ctx.session.records ?? [], request.headers.get('X-Hive-Acting-For'));
+      if (meant.refused) throw forbidden('That is not one of the records on this login.');
+      ctx.session.actingFor = meant.staffId;
+      ctx.session.user.staff_id = meant.staffId;
       // A list means any one of them is enough — see `allows`.
       if (!allows(permission, ctx.session.permissions)) {
         throw forbidden('You do not have access to that part of the system.');
@@ -1048,6 +1063,20 @@ async function me(ctx) {
     + "OR key = 'property_address' OR key LIKE 'company_%'",
   ).all();
 
+  // The people this login opens the "my" screens for, by name, so the screen
+  // can offer them. Only asked for where there is more than one, which is a
+  // handful of logins on the property: everybody else pays nothing for it.
+  const records = session.records ?? [];
+  let people = [];
+  if (records.length > 1) {
+    const rows = await ctx.db.prepare(
+      `SELECT id, name, employee_no, department FROM att_staff
+        WHERE id IN (${records.map(() => '?').join(',')})`,
+    ).bind(...records).all().catch(() => ({ results: [] }));
+    const by = new Map((rows.results ?? []).map((r) => [Number(r.id), r]));
+    people = records.map((id) => by.get(id)).filter(Boolean);
+  }
+
   return json({
     authenticated: true,
     role: session.user.role,
@@ -1060,6 +1089,12 @@ async function me(ctx) {
     // permission there is, and with no staff record behind it My shifts would
     // open an apology.
     staffId: session.user.staff_id ?? null,
+    // Everybody whose screens this login opens, in the order the picker shows
+    // them and their own first. Empty for the ordinary login, which is one
+    // person and needs nothing said about it.
+    records: people.map((p) => ({
+      id: p.id, name: p.name, employeeNo: p.employee_no, department: p.department ?? null,
+    })),
     signsInWith: session.user.role === 'admin' ? 'password' : 'pin',
     // What they typed to get here, so My account knows which credential it can
     // ask them to confirm with.
