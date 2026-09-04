@@ -1,7 +1,8 @@
 import { api } from '../api.js';
-import { navigate } from '../app.js';
+import { navigate, replaceParams } from '../app.js';
 import { fmtDay, fmtDayShort, fmtNum, h, mount, shiftDay, toast } from '../util.js';
 import { card, emptyState } from './components.js';
+import { whatToRemember } from './dept-view.js';
 import { installNudge } from './install-help.js';
 import {
   asHours, field, formDialog, lateBy, shiftColour, shiftHours, shiftMinutes, showSheet,
@@ -122,7 +123,7 @@ export async function renderAttMe(params = {}) {
       empty: 'Nothing further ahead has been published yet.',
     })),
 
-    departmentCard(),
+    departmentCard(params),
 
     data.leave.length
       ? card('My leave', { note: `${data.leave.length}`, wide: true },
@@ -457,12 +458,30 @@ async function askForLeave(data, reload) {
  * nothing for it and somebody who is does not wait on it to see their own
  * week.
  */
-function departmentCard() {
+function departmentCard(params = {}) {
   const host = h('div');
+
+  /**
+   * What it is showing, kept in the address rather than in this closure.
+   *
+   * The screen redraws itself whenever the live socket says something has
+   * changed, which on a working property is every punch on the terminal, all
+   * day. A card that held its choice in a variable was rebuilt from nothing
+   * each time: somebody picked Security, read two lines, and was back on their
+   * own department before they had finished. Held here it survives the redraw,
+   * a reload, and being sent to somebody as a link.
+   */
+  const remember = (from, department, mine) => {
+    const held = whatToRemember({ from, department, mine });
+    params.dept = held.dept;
+    params.deptFrom = held.deptFrom;
+    replaceParams('att-me', { from: params.from ?? null, ...held });
+  };
 
   const draw = async (from = null, department = null) => {
     const data = await api.myDepartment(from, department).catch(() => null);
     if (!data || !data.allowed) { mount(host); return; }
+    remember(from, data.department, data.mine);
 
     const many = (data.departments ?? []).length > 1;
 
@@ -499,7 +518,7 @@ function departmentCard() {
     ));
   };
 
-  draw();
+  draw(params.deptFrom ?? null, params.dept ?? null);
   return host;
 }
 

@@ -791,6 +791,19 @@ something on for everybody and waiting to hear who minds is the wrong order.
 first tick would open an empty week; somebody's own shifts are always their own
 to see whatever it says.
 
+**The card holds on to what it is showing.** Picking another department worked
+and then quietly undid itself: My shifts redraws whenever the live socket says
+something has changed, and on a working property that is every punch on the
+terminal, all day. The card was rebuilt from nothing each time, so somebody
+picked Security, read two lines and was back on their own department before
+they had finished. The week arrows went the same way.
+
+Both now live in the address, where a redraw reads them back, so the choice
+survives a redraw, a reload, and being sent to somebody as a link. Only a
+departure from what the card opens on anyway is written down: their own
+department and this week are the defaults, and spelling those out would follow
+everybody around for nothing.
+
 **A department's rota is whoever is on its shifts.** It used to be whoever was
 filed under that heading, which is a different thing and the wrong one. A rota
 is the shifts that have to be worked: maintenance covering reception's night

@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import { myDepartment } from '../src/routes/me.js';
+import { whatToRemember } from '../public/js/views/dept-view.js';
 
 /**
  * The rota for the people you work beside.
@@ -500,4 +501,38 @@ test('a shift belonging to no department pulls nobody onto anything', async () =
   const out = await ask(db, 1);
   assert.ok(!out.people.some((p) => p.name === 'Esi'),
     'a shift that belongs to nobody belongs to no rota');
+});
+
+// ---------------------------------------------------------------------------
+// What the card holds on to
+// ---------------------------------------------------------------------------
+
+test('a choice is written down and a default is not', () => {
+  // What it opens on anyway is not worth an address that follows everybody
+  // around for nothing.
+  assert.deepEqual(
+    whatToRemember({ from: null, department: 'Front Office', mine: 'Front Office' }),
+    { dept: null, deptFrom: null },
+  );
+
+  // A department they chose, and a week they walked to, are both choices.
+  assert.deepEqual(
+    whatToRemember({ from: '2099-09-14', department: 'Security', mine: 'Front Office' }),
+    { dept: 'Security', deptFrom: '2099-09-14' },
+  );
+
+  // Somebody with no department of their own is on a choice from the start.
+  assert.deepEqual(
+    whatToRemember({ from: null, department: 'Housekeeping', mine: null }),
+    { dept: 'Housekeeping', deptFrom: null },
+  );
+});
+
+test('nothing at all is a safe answer', () => {
+  assert.deepEqual(whatToRemember(), { dept: null, deptFrom: null });
+  assert.deepEqual(whatToRemember({}), { dept: null, deptFrom: null });
+  assert.deepEqual(
+    whatToRemember({ from: '', department: '', mine: '' }),
+    { dept: null, deptFrom: null },
+  );
 });
