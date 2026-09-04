@@ -2545,6 +2545,10 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null
       // been told; sending them the same thing again by email is how a
       // fortnightly rota turns into a mailbox nobody opens.
       email: !buzzed,
+      // The texting is done below rather than here, one message per person and
+      // only where it is the only way of reaching them. A second one out of
+      // the notice would be the same message twice at twice the price.
+      text: false,
       // Waited on rather than fired and forgotten, because this is the one
       // notice somebody is later asked to account for person by person.
       report: true,
@@ -2558,7 +2562,7 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null
   // Last, and never in the way. A gateway being unreachable must not leave a
   // rota half published, so this cannot throw and its result is only counted.
   const texted = await sendTexts(ctx.db, ctx.env, {
-    messages: texts, kind: 'rota.published', day: from,
+    messages: texts, kind: 'rota.published.mine', day: from,
   }).catch(() => ({ sent: 0, each: new Map() }));
 
   for (const line of each) {

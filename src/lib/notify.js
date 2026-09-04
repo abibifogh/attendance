@@ -1,5 +1,6 @@
 import { CHANNELS_KEY, goesOut, readChannels } from './notice-kinds.js';
 import { originOf } from './site.js';
+import { firstUsableNumber, sendTexts } from './sms.js';
 import { ALERT_TITLE, getVapidKeys, sendPush } from './push.js';
 import { isMissingTable } from './http.js';
 import { labelFor } from './attendance.js';
@@ -472,24 +473,122 @@ const NOTICE_COLOUR = { high: '#b02436', warn: '#9a5800', good: '#0f7048', info:
  * Resolving it here means a notice for administrators reaches whoever holds
  * that permission this morning, and stops reaching whoever lost it yesterday.
  */
-export async function noticeRecipients(db, { audience = null, userId = null }) {
+export async function noticeRecipients(db, { audience = null, userId = null, also = null }) {
   const rows = await db.prepare(
     'SELECT id, name, email, role, permissions, active FROM users WHERE active = 1 AND email IS NOT NULL',
   ).all().catch(() => ({ results: [] }));
 
   const people = (rows.results ?? []).filter((u) => isEmail(u.email));
+  const extra = Array.isArray(also) ? also.filter(Boolean) : [];
 
-  // A named person is the whole audience. "Somebody should look at this" is
-  // not a plan, and a mail that goes to four people is a mail none of them
-  // owns — the permission is only the fallback for a notice addressed to a
+  // A named person is the whole audience the code chose. "Somebody should look
+  // at this" is not a plan, and a mail that goes to four people is a mail none
+  // of them owns. The permission is the fallback for a notice addressed to a
   // role rather than to a colleague.
+  //
+  // Anybody the property has added is added to that rather than replacing it.
+  // The person a notice is about does not stop being told because somebody
+  // asked to be copied in.
+  const watching = (u) => extra.some((p) => allows(p, effectivePermissions(u)));
+
   if (userId != null) {
     const one = people.find((u) => Number(u.id) === Number(userId));
-    return one ? [one] : [];
+    const others = extra.length
+      ? people.filter((u) => Number(u.id) !== Number(userId) && watching(u))
+      : [];
+    return one ? [one, ...others] : others;
   }
 
   if (!audience) return people;
-  return people.filter((u) => allows(audience, effectivePermissions(u)));
+  return people.filter((u) => allows(audience, effectivePermissions(u)) || watching(u));
+}
+
+/**
+ * Send one notice on as a text message.
+ *
+ * Off for almost everything, and deliberately. A text costs money every time
+ * and a property that turns it on for a chatty kind finds out at the end of
+ * the month, so nothing texts unless somebody has ticked it against that kind
+ * by name.
+ *
+ * Where it is on, it reaches the same people the bell does, which is the
+ * point: half the property is on a handset that will never show a web alert,
+ * and for them a text is not a fallback, it is the only way.
+ *
+ * Never throws. A gateway having a bad afternoon must not fail the round that
+ * earned the notice.
+ */
+export async function textNotice(db, env, notice) {
+  try {
+    const rows = await db.prepare('SELECT key, value FROM settings').all();
+    const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
+
+    if (!goesOut(readChannels(settings[CHANNELS_KEY]), notice.kind, 'text', notice.wanted)) {
+      return { sent: 0, tried: 0, reason: 'not switched on for this kind' };
+    }
+
+    const people = await textRecipients(db, notice);
+    if (!people.length) return { sent: 0, tried: 0, reason: 'nobody with a number' };
+
+    const site = originOf(settings.site_url);
+    const out = await sendTexts(db, env, {
+      messages: people.map((one) => ({
+        ref: one.id,
+        to: one.phone,
+        text: shortEnough(notice, site),
+      })),
+      kind: notice.kind,
+      day: notice.day ?? null,
+    });
+
+    return { sent: out.sent ?? 0, tried: people.length };
+  } catch (err) {
+    return { sent: 0, tried: 1, reason: err.message };
+  }
+}
+
+/**
+ * Whose phone this notice would reach.
+ *
+ * A number comes off somebody's staff record rather than their login, because
+ * that is where the property already keeps it and asking for it twice is how
+ * the two copies come to disagree.
+ */
+async function textRecipients(db, { audience = null, userId = null, also = null }) {
+  const rows = await db.prepare(
+    `SELECT u.id, u.role, u.permissions, hp.personal_phone, hp.alt_phone
+       FROM users u
+       LEFT JOIN hr_profile hp ON hp.staff_id = u.staff_id
+      WHERE u.active = 1`,
+  ).all().catch(() => ({ results: [] }));
+
+  const extra = Array.isArray(also) ? also.filter(Boolean) : [];
+  const watching = (u) => extra.some((p) => allows(p, effectivePermissions(u)));
+
+  return (rows.results ?? [])
+    .filter((u) => {
+      if (userId != null) return Number(u.id) === Number(userId) || watching(u);
+      if (!audience) return true;
+      return allows(audience, effectivePermissions(u)) || watching(u);
+    })
+    .map((u) => ({ id: u.id, phone: firstUsableNumber(u.personal_phone, u.alt_phone) }))
+    .filter((u) => u.phone);
+}
+
+/**
+ * The notice in one segment.
+ *
+ * A gateway charges by the segment and a segment is 160 characters, so the
+ * title goes in whole, the body goes in if it fits, and the link is bare
+ * because every phone puts the https:// back itself.
+ */
+function shortEnough(notice, site) {
+  const where = String(site ?? '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const head = `HIVE: ${notice.title}`;
+  const tail = where ? ` ${where}` : '';
+  const room = 160 - head.length - tail.length;
+  const body = String(notice.body ?? '').replace(/\s+/g, ' ').trim();
+  return `${head}${body && body.length + 1 <= room ? ` ${body}` : ''}${tail}`;
 }
 
 /** The body. Plain HTML with inline styles: mail clients strip stylesheets. */
@@ -558,10 +657,11 @@ export async function pushNotice(db, notice) {
     const rows = await db.prepare('SELECT key, value FROM settings').all();
     const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
 
-    // Switched off for this kind under Notifications. Not a failure and not
-    // worth a line in the log: somebody decided this one should not interrupt
-    // anybody, and it doing nothing is it working.
-    if (!goesOut(readChannels(settings[CHANNELS_KEY]), notice.kind, 'push')) {
+    // Off for this kind under Notifications, or off by default and never
+    // turned on. Not a failure and not worth a line in the log: somebody
+    // decided this one should not interrupt anybody, and it doing nothing is
+    // it working.
+    if (!goesOut(readChannels(settings[CHANNELS_KEY]), notice.kind, 'push', notice.wanted)) {
       return { sent: 0, tried: 0, reason: 'switched off for this kind' };
     }
 
@@ -571,11 +671,17 @@ export async function pushNotice(db, notice) {
         WHERE u.active = 1`,
     ).all().catch(() => ({ results: [] }));
 
+    const extra = Array.isArray(notice.also) ? notice.also.filter(Boolean) : [];
+    const watching = (sub) => extra.some((p) => allows(p, effectivePermissions(sub)));
+
     const wanted = (subs.results ?? []).filter((sub) => {
-      // A named person is the whole audience, exactly as the email reads it.
-      if (notice.userId != null) return Number(sub.user_id) === Number(notice.userId);
+      // A named person is the whole audience the code chose, exactly as the
+      // email reads it, plus anybody the property has asked to be copied in.
+      if (notice.userId != null) {
+        return Number(sub.user_id) === Number(notice.userId) || watching(sub);
+      }
       if (!notice.audience) return true;
-      return allows(notice.audience, effectivePermissions(sub));
+      return allows(notice.audience, effectivePermissions(sub)) || watching(sub);
     });
 
     if (!wanted.length) return { sent: 0, tried: 0, reason: 'nobody subscribed' };
@@ -657,7 +763,7 @@ export async function emailNotice(db, env, notice) {
     const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
 
     if (settings.notice_email === '0') return { sent: 0, tried: 0, reason: 'switched off' };
-    if (!goesOut(readChannels(settings[CHANNELS_KEY]), notice.kind, 'email')) {
+    if (!goesOut(readChannels(settings[CHANNELS_KEY]), notice.kind, 'email', notice.wanted)) {
       return { sent: 0, tried: 0, reason: 'switched off for this kind' };
     }
     const apiKey = env?.RESEND_API_KEY;

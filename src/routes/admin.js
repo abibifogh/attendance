@@ -453,6 +453,10 @@ export async function getNotifications(ctx) {
     groups: GROUPS.map(([key, label]) => ({ key, label })),
     kinds: KINDS,
     channels: readChannels(settings[CHANNELS_KEY]),
+    // The groups a notice can be sent to as well as whoever it already names.
+    // Permissions rather than people, so a notice added for "whoever signs the
+    // period off" keeps up with who that is.
+    audiences: PERMISSIONS.map((p) => ({ key: p.key, label: p.label })),
   });
 }
 
@@ -507,36 +511,48 @@ export async function whoCanBeReached(ctx) {
 export async function updateNotifications(ctx) {
   const body = await readJson(ctx.request);
 
-  const list = Array.isArray(body.recipients)
-    ? body.recipients.map((r) => String(r).trim()).filter(Boolean)
-    : parseRecipients(body.recipients);
+  // Several screens write to one endpoint, and none of them sends the whole
+  // of it. Anything a sender does not mention keeps what it already had: the
+  // alternative is that saving the switches on one tab silently empties the
+  // From address on another, and nobody finds out until the next morning's
+  // mail does not arrive.
+  const current = await ctx.db.prepare('SELECT key, value FROM settings').all();
+  const stored = Object.fromEntries((current.results ?? []).map((r) => [r.key, r.value]));
+  const said = (key) => body[key] !== undefined;
+
+  const list = said('recipients')
+    ? (Array.isArray(body.recipients)
+      ? body.recipients.map((r) => String(r).trim()).filter(Boolean)
+      : parseRecipients(body.recipients))
+    : parseRecipients(stored.att_email_to);
   const bad = list.filter((r) => !isEmail(r));
   if (bad.length) throw badRequest(`Not a valid email address: ${bad[0]}`);
-  if (list.length > 25) throw badRequest('That is a lot of recipients — 25 is the limit');
+  if (list.length > 25) throw badRequest('That is a lot of recipients, 25 is the limit');
 
-  const from = str(body.from, 'From address', { max: 200, fallback: '' }) || '';
+  const from = said('from')
+    ? (str(body.from, 'From address', { max: 200, fallback: '' }) || '')
+    : (stored.email_from || '');
   if (from && !isEmail(from.replace(/^.*<([^>]+)>.*$/, '$1'))) {
     throw badRequest('The "from" address does not look like an email address');
   }
 
-  const senderName = str(body.senderName, 'Sender name', { max: 60, fallback: '' }) || '';
+  const senderName = said('senderName')
+    ? (str(body.senderName, 'Sender name', { max: 60, fallback: '' }) || '')
+    : (stored.email_sender_name || '');
 
-  const replyTo = str(body.replyTo, 'Reply-to address', { max: 200, fallback: '' }) || '';
+  const replyTo = said('replyTo')
+    ? (str(body.replyTo, 'Reply-to address', { max: 200, fallback: '' }) || '')
+    : (stored.email_reply_to || '');
   if (replyTo && !isEmail(replyTo.replace(/^.*<([^>]+)>.*$/, '$1'))) {
     throw badRequest('The "reply to" address does not look like an email address');
   }
 
-  const siteUrl = str(body.siteUrl, 'Site address', { max: 300, fallback: '' }) || '';
+  const siteUrl = said('siteUrl')
+    ? (str(body.siteUrl, 'Site address', { max: 300, fallback: '' }) || '')
+    : (stored.site_url || '');
   if (siteUrl && !/^https?:\/\//i.test(siteUrl)) {
     throw badRequest('The site address should start with https://');
   }
-
-  // This screen is several cards writing to one endpoint. A switch the sender
-  // did not mention keeps whatever it already had — otherwise saving the email
-  // card would quietly turn phone alerts back on for somebody who switched them
-  // off.
-  const current = await ctx.db.prepare('SELECT key, value FROM settings').all();
-  const stored = Object.fromEntries((current.results ?? []).map((r) => [r.key, r.value]));
 
   const smsProvider = PROVIDERS.includes(body.smsProvider)
     ? body.smsProvider
@@ -565,7 +581,7 @@ export async function updateNotifications(ctx) {
   // every installation that ever pressed Save.
   const channels = body.channels === undefined
     ? readChannels(stored[CHANNELS_KEY])
-    : tidyChannels(body.channels);
+    : tidyChannels(body.channels, PERMISSION_KEYS);
 
   await ctx.db.batch([
     setting(ctx.db, CHANNELS_KEY, JSON.stringify(channels)),

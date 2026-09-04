@@ -82,22 +82,78 @@ function kindsTab(data, reload) {
   // rather than forty separate writes as somebody works down it.
   const wanted = JSON.parse(JSON.stringify(data.channels ?? {}));
 
+  // On means: somebody ticked it, or nobody has touched it and the app sends
+  // it that way anyway. Both are stored as an answer to the same question, so
+  // the screen does not have to explain the difference to anybody.
   const isOn = (kind, way) => {
-    const row = wanted[kind];
-    return !row || (row[way] !== 0 && row[way] !== false);
+    const said = wanted[kind.key]?.[way];
+    if (said === 1 || said === true) return true;
+    if (said === 0 || said === false) return false;
+    return kind.ways.includes(way);
   };
 
   const box = (kind, way) => {
     const input = h('input', {
       type: 'checkbox',
-      checked: isOn(kind.key, way),
+      checked: isOn(kind, way),
+      'aria-label': `${kind.label} by ${way}`,
       onchange: () => {
         wanted[kind.key] = wanted[kind.key] ?? {};
-        if (input.checked) delete wanted[kind.key][way];
-        else wanted[kind.key][way] = 0;
+        wanted[kind.key][way] = input.checked ? 1 : 0;
       },
     });
     return input;
+  };
+
+  /**
+   * Who else this one goes to.
+   *
+   * Alongside whoever it already reaches rather than instead of them. Taking
+   * "your leave was approved" away from the person who asked for it is not a
+   * setting anybody wants, and offering it is how somebody switches it off by
+   * accident on a Friday afternoon.
+   *
+   * Permissions rather than names, so a notice sent to "whoever signs the
+   * period off" keeps reaching somebody promoted tomorrow and stops reaching
+   * somebody demoted yesterday.
+   */
+  const alsoFor = (kind) => {
+    const host = h('div.notice-also');
+    const chosen = new Set(wanted[kind.key]?.also ?? []);
+
+    const remember = () => {
+      wanted[kind.key] = wanted[kind.key] ?? {};
+      if (chosen.size) wanted[kind.key].also = [...chosen];
+      else delete wanted[kind.key].also;
+      draw();
+    };
+
+    const nameOf = (key) =>
+      (data.audiences ?? []).find((a) => a.key === key)?.label ?? key;
+
+    function draw() {
+      mount(host,
+        [...chosen].map((key) => h('button.notice-also-one', {
+          type: 'button',
+          title: 'Stop sending it to them',
+          onclick: () => { chosen.delete(key); remember(); },
+        }, nameOf(key), h('span.notice-also-x', '\u00d7'))),
+
+        h('select.notice-also-pick', {
+          onchange: (event) => {
+            if (!event.target.value) return;
+            chosen.add(event.target.value);
+            remember();
+          },
+        },
+        h('option', { value: '' }, chosen.size ? 'and…' : 'Also send to…'),
+        ...(data.audiences ?? [])
+          .filter((a) => !chosen.has(a.key))
+          .map((a) => h('option', { value: a.key }, a.label))));
+    }
+
+    draw();
+    return host;
   };
 
   const save = async (event) => {
@@ -117,10 +173,18 @@ function kindsTab(data, reload) {
 
   return h('div',
     h('p.muted', { style: { maxWidth: '52rem' } },
-      'A tick means this kind may interrupt somebody that way. Untick it and the notice '
-      + 'still happens and still shows in the bell, it just stops buzzing a phone or '
-      + 'landing in an inbox. A dash means this kind never went out that way in the first '
-      + 'place.'),
+      'A tick means this kind goes out that way. Untick it and the notice still happens '
+      + 'and still shows in the bell, it just stops buzzing a phone, landing in an inbox '
+      + 'or costing a text. Tick one that was never on and it starts going out that way '
+      + 'from the next one.'),
+    h('p.muted', { style: { maxWidth: '52rem' } },
+      h('strong', 'Texts cost money every time. '),
+      'Nothing texts unless it is ticked here, and a chatty kind ticked for text is a bill '
+      + 'at the end of the month rather than a setting.'),
+    h('p.muted', { style: { maxWidth: '52rem' } },
+      '"Also send to" adds a group alongside whoever the notice already reaches. It never '
+      + 'takes anybody away: the person a notice is about is always told, whatever else is '
+      + 'set here.'),
 
     ...groups.map((group) => {
       const mine = kinds.filter((k) => k.group === group.key);
@@ -135,11 +199,9 @@ function kindsTab(data, reload) {
             h('div.notice-what',
               h('strong', kind.label),
               h('small.muted', `${kind.who}. ${kind.when}.`),
-              kind.note ? h('small.notice-note', kind.note) : null),
-            ...WAYS.map(([way]) => h('span.notice-way',
-              kind.ways.includes(way)
-                ? box(kind, way)
-                : h('span.muted', { title: `This kind never goes out by ${way}` }, '·'))))),
+              kind.note ? h('small.notice-note', kind.note) : null,
+              alsoFor(kind)),
+            ...WAYS.map(([way]) => h('span.notice-way', box(kind, way))))),
         ));
     }),
 

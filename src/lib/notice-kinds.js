@@ -28,7 +28,15 @@ export const GROUPS = [
   ['house', 'The property'],
 ];
 
-/** ways: which routes this kind can take. Bell is always one and always on. */
+/**
+ * ways: the routes this kind takes unless somebody says otherwise. Not a
+ * limit. Every kind can be sent every way, and what is listed here is the
+ * app's own judgement about which of them are worth interrupting somebody
+ * over by default. A property that wants the lot has only to tick them.
+ *
+ * The bell is not in the list because it is not optional: every notice is
+ * recorded, and the list in the bell is the record of what happened.
+ */
 export const KINDS = [
   // The rota
   {
@@ -354,10 +362,70 @@ export function readChannels(value) {
 }
 
 /** Whether this kind may go out this way. Anything not said is yes. */
-export function goesOut(channels, kind, way) {
+export const WAYS = ['push', 'email', 'text'];
+
+/**
+ * Whether this kind goes out this way.
+ *
+ * Three answers rather than two, and the middle one is the point: a kind
+ * nobody has touched follows the app's default, a kind somebody has ticked
+ * goes out whether or not it ever did before, and a kind somebody has unticked
+ * stays quiet whatever the code that raised it wanted.
+ *
+ * `wanted` is what the raising code asked for, which it sometimes knows better
+ * than any setting can: a rota announcement carries no alert because the
+ * people it is about have already had one. That judgement holds until somebody
+ * overrules it on purpose.
+ */
+export function goesOut(channels, kind, way, wanted = null) {
   const row = channels?.[kind];
-  if (!row || typeof row !== 'object') return true;
-  return row[way] !== 0 && row[way] !== false;
+  const said = row && typeof row === 'object' ? row[way] : undefined;
+
+  // What somebody put on the screen wins, in either direction. That is the
+  // whole point of the screen.
+  if (said === 1 || said === true) return true;
+  if (said === 0 || said === false) return false;
+
+  // Nothing said, so the raising code may suppress but never force. Some of it
+  // knows things no setting can, and all of those are reasons to stay quiet:
+  // this person's phone has already buzzed once about this exact thing. A
+  // default in the code that could outvote the screen the other way would make
+  // the screen a decoration.
+  if (wanted === false) return false;
+
+  // And otherwise the app's default for this kind. A kind the catalogue does
+  // not list is something new in the code and not yet on the screen: worth a
+  // bell and an alert, and not worth spending money on unasked.
+  const known = BY_KEY.get(kind);
+  return known ? known.ways.includes(way) : way !== 'text';
+}
+
+/**
+ * Whether somebody has switched this off, and nothing more.
+ *
+ * For a caller that means to send: the rota's own texting has already worked
+ * out per person that a text is the only way of reaching them, and the only
+ * question left for the screen is whether the property wants that at all.
+ */
+export function notTurnedOff(channels, kind, way) {
+  const row = channels?.[kind];
+  const said = row && typeof row === 'object' ? row[way] : undefined;
+  return said !== 0 && said !== false;
+}
+
+/**
+ * Who else this kind goes to, beyond whoever it is already addressed to.
+ *
+ * Permissions rather than names, so a notice added for "whoever signs the
+ * period off" keeps reaching somebody promoted tomorrow and stops reaching
+ * somebody demoted yesterday. The built-in recipient is never taken away here:
+ * turning off "your leave was approved" for the person who asked for it is not
+ * a setting anybody wants and is a support call waiting to happen.
+ */
+export function alsoFor(channels, kind) {
+  const row = channels?.[kind];
+  const also = row && typeof row === 'object' ? row.also : null;
+  return Array.isArray(also) ? also.filter((p) => typeof p === 'string' && p) : [];
 }
 
 /**
@@ -367,15 +435,31 @@ export function goesOut(channels, kind, way) {
  * an "on" is the default and writing it down would freeze today's default into
  * every installation that ever pressed Save.
  */
-export function tidyChannels(input) {
+export function tidyChannels(input, permissions = null) {
+  const allowed = permissions ? new Set(permissions) : null;
   const out = {};
+
   for (const kind of KINDS) {
     const row = input?.[kind.key];
     if (!row || typeof row !== 'object') continue;
     const kept = {};
-    for (const way of kind.ways) {
-      if (row[way] === 0 || row[way] === false) kept[way] = 0;
+
+    for (const way of WAYS) {
+      const on = row[way] === 1 || row[way] === true;
+      const off = row[way] === 0 || row[way] === false;
+      const byDefault = kind.ways.includes(way);
+      // Only a disagreement with the default is worth writing down. Storing an
+      // agreement freezes today's judgement into an installation that pressed
+      // Save once, and the whole point of a default is that it moves.
+      if (on && !byDefault) kept[way] = 1;
+      if (off && byDefault) kept[way] = 0;
     }
+
+    const also = Array.isArray(row.also)
+      ? [...new Set(row.also.map(String).filter((p) => !allowed || allowed.has(p)))]
+      : [];
+    if (also.length) kept.also = also;
+
     if (Object.keys(kept).length) out[kind.key] = kept;
   }
   return out;

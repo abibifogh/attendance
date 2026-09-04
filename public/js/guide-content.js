@@ -2527,7 +2527,14 @@ export const GUIDE = [
       { p: 'Everything the app tells anybody is under Notifications: every kind of notice by '
         + 'what it actually says, with a switch for whether it may buzz a phone, land in an '
         + 'inbox or go out as a text. Turning one off does not stop the notice happening or '
-        + 'showing in the bell, it stops the interrupting.' },
+        + 'showing in the bell, it stops the interrupting. Ticking one that was never on '
+        + 'starts it going out that way from the next one.' },
+      { p: '"Also send to" copies another group in alongside whoever the notice already '
+        + 'reaches, so the general manager can see every leave request without being given a '
+        + 'permission they do not otherwise need. It only ever adds: the person a notice is '
+        + 'about is always told.' },
+      { note: 'Texts cost money every time, so nothing texts unless it is ticked for that '
+        + 'kind by name. A chatty kind ticked for text is a bill at the end of the month.' },
       { p: '"Who can be reached" is the one to look at first. It lists everybody on the rota '
         + 'and which of the three ways out exists for them, so the people nothing can reach '
         + 'are found now rather than the morning a rota goes out. A mobile number under People '

@@ -1,5 +1,6 @@
 import { isMissingTable } from './http.js';
-import { emailNotice, pushNotice } from './notify.js';
+import { emailNotice, pushNotice, textNotice } from './notify.js';
+import { CHANNELS_KEY, alsoFor, readChannels } from './notice-kinds.js';
 
 /**
  * In-app notifications.
@@ -30,7 +31,7 @@ const LEVELS = new Set(['info', 'warn', 'high']);
  */
 export async function createNotice(db, {
   kind, level = 'info', title, body, link, day, slot, actor, audience = null, userId = null,
-  emailAudience = undefined, email = true, push = true, report = false,
+  emailAudience = undefined, email = true, push = true, text = null, report = false,
 }, ctx = null) {
   if (!kind || !title) return report ? { id: null, buzzed: 0, emailed: 0 } : null;
 
@@ -42,7 +43,13 @@ export async function createNotice(db, {
   // rota going out is the only notice somebody is later asked to account for
   // person by person, and "we sent it" is not an answer to "Doreen never got
   // hers" unless the app wrote down what happened to Doreen's.
-  const outcome = { buzzed: 0, emailed: 0 };
+  const outcome = { buzzed: 0, emailed: 0, texted: 0 };
+
+  // Who else the property has asked to be copied on this kind. Read once and
+  // written onto the row, so the bell shows it to them as well and a notice
+  // always reaches whoever it reached when it was raised, whatever somebody
+  // changes afterwards.
+  let also = [];
 
   const post = async () => {
     const jobs = [];
@@ -51,9 +58,13 @@ export async function createNotice(db, {
     // correction is the clearest case: the person who asked for it is sitting
     // in the app watching for it, and a property with twenty corrections a
     // week would be sending twenty emails nobody reads.
-    if (email && ctx?.env) {
+    if (ctx?.env) {
       jobs.push(emailNotice(db, ctx.env, {
-        kind, level, title, body, link, actor, audience, userId,
+        kind, level, title, body, link, actor, audience, userId, also,
+        // What the raising code asked for, which a setting overrules only when
+        // somebody has said so on purpose. Some callers know something no
+        // setting can: that this person's phone has already buzzed once.
+        wanted: email,
         // Who gets it in an inbox, where that is a narrower set than who sees
         // it on screen. A request waiting on a decision is worth a bell to
         // everybody it affects and an email only to whoever can answer it: a
@@ -81,10 +92,25 @@ export async function createNotice(db, {
     // otherwise are the two that would arrive daily whether or not anything
     // had happened. It needs no `env`, since the push keys live in the
     // database, so it works from the cron as well as from a request.
-    if (push) {
-      jobs.push(pushNotice(db, { id: noticeId, kind, title, body, link, day, audience, userId })
-        .then((out) => { outcome.buzzed = out?.sent ? 1 : out?.tried ? -1 : 0; })
-        .catch((err) => { outcome.buzzed = -1; console.error('notice push failed', err); }));
+    jobs.push(pushNotice(db, {
+      id: noticeId, kind, title, body, link, day, audience, userId, also, wanted: push,
+    })
+      .then((out) => { outcome.buzzed = out?.sent ? 1 : out?.tried ? -1 : 0; })
+      .catch((err) => { outcome.buzzed = -1; console.error('notice push failed', err); }));
+
+    // And by text, where somebody has ticked it for this kind. Off for almost
+    // everything, because every one of them costs money.
+    //
+    // `text: false` is not a preference and no setting overrules it. It is a
+    // caller saying it is doing its own texting, which the rota does: it works
+    // out per person whether a text is the only way of reaching them, and a
+    // second one from here would be the same message twice at twice the price.
+    if (text !== false) {
+      jobs.push(textNotice(db, ctx?.env ?? null, {
+        kind, title, body, day, audience, userId, also, wanted: text,
+      })
+        .then((out) => { outcome.texted = out?.sent ? 1 : out?.tried ? -1 : 0; })
+        .catch((err) => { outcome.texted = -1; console.error('notice text failed', err); }));
     }
 
     if (!jobs.length) return;
@@ -103,9 +129,15 @@ export async function createNotice(db, {
   };
 
   try {
+    const settings = await db.prepare(
+      "SELECT value FROM settings WHERE key = 'notice_channels'",
+    ).first().catch(() => null);
+    also = alsoFor(readChannels(settings?.value), kind);
+
     const row = await db.prepare(
-      `INSERT INTO app_notices (kind, level, title, body, link, day, slot, actor, audience, user_id)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) RETURNING id`,
+      `INSERT INTO app_notices (kind, level, title, body, link, day, slot, actor, audience,
+                                user_id, also)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) RETURNING id`,
     ).bind(
       String(kind).slice(0, 40),
       LEVELS.has(level) ? level : 'info',
@@ -124,6 +156,7 @@ export async function createNotice(db, {
       // it to them: "somebody should look at this" is not a plan, and a bell
       // that rings for three people is a bell none of them owns.
       userId == null ? null : Number(userId),
+      also.length ? JSON.stringify(also) : null,
     ).first();
     noticeId = row?.id ?? null;
     await post();
@@ -156,11 +189,21 @@ export async function listNotices(db, userId, limit = 20, permissions = null) {
     // column fails outright where a missing property simply reads undefined.
     // An unaddressed notice is for everybody, which is what every row written
     // before this existed is.
+    // Who else the property asked to be copied in, as it stood when the notice
+    // was raised. Held on the row rather than looked up now, so what somebody
+    // was told about does not quietly change under them.
+    const alsoOn = (n) => {
+      if (!n.also || !permissions) return false;
+      try {
+        const list = JSON.parse(n.also);
+        return Array.isArray(list) && list.some((p) => permissions.includes(p));
+      } catch { return false; }
+    };
+
     const notices = (rows.results ?? []).filter((n) => {
-      // Addressed to one person: theirs alone, whatever permissions anybody
-      // else holds.
-      if (n.user_id != null) return Number(n.user_id) === Number(userId);
-      return !n.audience || !permissions || permissions.includes(n.audience);
+      // Addressed to one person: theirs, and anybody watching that kind.
+      if (n.user_id != null) return Number(n.user_id) === Number(userId) || alsoOn(n);
+      return !n.audience || !permissions || permissions.includes(n.audience) || alsoOn(n);
     });
 
     return {

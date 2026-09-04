@@ -146,7 +146,7 @@ test('a text goes out, and what happened is written down', async () => {
   try {
     const out = await sendTexts(db, KEYED, {
       messages: [{ to: '+233241234567', text: 'your rota is out' }],
-      kind: 'rota.published',
+      kind: 'rota.published.mine',
       day: '2026-08-31',
     });
     assert.equal(out.sent, 1);
@@ -169,7 +169,7 @@ test('a gateway that refuses is recorded, not thrown', async () => {
   const spy = pretend(() => new Response('no credit', { status: 402 }));
   try {
     const out = await sendTexts(db, KEYED, {
-      messages: [{ to: '+233241234567', text: 'x' }], kind: 'rota.published',
+      messages: [{ to: '+233241234567', text: 'x' }], kind: 'rota.published.mine',
     });
     assert.equal(out.sent, 0);
     assert.equal(out.failed, 1);
@@ -191,7 +191,7 @@ test('one bad number out of two does not stop the other', async () => {
         { to: '+233241234567', text: 'a' },
         { to: '+233551234567', text: 'b' },
       ],
-      kind: 'rota.published',
+      kind: 'rota.published.mine',
     });
     assert.equal(out.sent, 1);
     assert.equal(out.failed, 1);
@@ -208,7 +208,7 @@ test('a runaway list stops at the cap rather than spending', async () => {
     to: '+233241234567', text: `no ${i}`,
   }));
   try {
-    const out = await sendTexts(db, KEYED, { messages: many, kind: 'rota.published' });
+    const out = await sendTexts(db, KEYED, { messages: many, kind: 'rota.published.mine' });
     assert.equal(out.sent, MOST_IN_ONE_GO);
     assert.equal(out.skipped, 5);
   } finally {
@@ -219,7 +219,7 @@ test('a runaway list stops at the cap rather than spending', async () => {
 
 test('nobody to text is not an error', async () => {
   const { db } = setup(ON);
-  const out = await sendTexts(db, KEYED, { messages: [], kind: 'rota.published' });
+  const out = await sendTexts(db, KEYED, { messages: [], kind: 'rota.published.mine' });
   assert.equal(out.sent, 0);
   assert.equal(out.reason, 'nobody to text');
 });

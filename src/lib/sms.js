@@ -1,4 +1,4 @@
-import { CHANNELS_KEY, goesOut, readChannels } from './notice-kinds.js';
+import { CHANNELS_KEY, notTurnedOff, readChannels } from './notice-kinds.js';
 import { isMissingTable } from './http.js';
 
 /**
@@ -181,14 +181,20 @@ export async function sendTexts(db, env, { messages, kind, day = null }) {
     return { sent: 0, failed: 0, reason: 'settings unreadable', each: new Map() };
   }
 
-  // Switched off for this kind under Notifications. A text costs money, so
-  // this one is worth being able to turn off on its own.
-  if (!goesOut(readChannels(settings[CHANNELS_KEY]), kind, 'text')) {
+  const setup = smsSetup(settings, env);
+  if (!setup.on) return { sent: 0, failed: 0, reason: 'switched off', each: new Map() };
+
+  // Switched off for this kind under Notifications. A text costs money, so it
+  // is worth being able to turn one kind off without turning the gateway off.
+  //
+  // Asked for rather than defaulted: whatever reaches here is code that means
+  // to send a text, so only somebody unticking it on the screen stops it. The
+  // other way round, a kind that has never texted and has not been ticked, is
+  // decided before it gets this far.
+  if (!notTurnedOff(readChannels(settings[CHANNELS_KEY]), kind, 'text')) {
     return { sent: 0, failed: 0, reason: 'switched off for this kind', each: new Map() };
   }
 
-  const setup = smsSetup(settings, env);
-  if (!setup.on) return { sent: 0, failed: 0, reason: 'switched off', each: new Map() };
   if (!setup.ready) {
     return {
       sent: 0, failed: 0, reason: `not set up: ${setup.missing.join(', ')}`, each: new Map(),

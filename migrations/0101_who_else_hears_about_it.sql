@@ -1,0 +1,16 @@
+-- Who else hears about a notice.
+--
+-- A notice reaches whoever it names: one person, or whoever holds one
+-- permission, worked out when it is sent rather than from a list somebody has
+-- to keep up to date. That is right and it is not enough. A property wanting
+-- the general manager copied on every leave request had nowhere to say so, and
+-- the answer was to give them a permission they did not otherwise need, which
+-- hands out a screenful of other people's business to solve a mailing list.
+--
+-- So a notice can carry more audiences than one. The first is still the one
+-- the code chose, and it cannot be taken away: turning off "your leave was
+-- approved" for the person who asked is not a setting anybody wants. The rest
+-- are the property's own, set per kind under Notifications and read the same
+-- way, so somebody promoted tomorrow is included and somebody demoted
+-- yesterday is not.
+ALTER TABLE app_notices ADD COLUMN also TEXT;

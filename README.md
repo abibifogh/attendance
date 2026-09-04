@@ -687,12 +687,35 @@ has been sent** is the alert, email and text logs side by side. **Setup** is the
 addresses, the gateway and the devices, moved here from Users & data so there is
 one set of them rather than two that drift.
 
+Every kind can go out every way. What the app does by default is its own
+judgement about what is worth interrupting somebody over, and it is a starting
+point rather than a limit: a kind that has only ever rung a phone can be ticked
+for email and for text, and from the next one it goes out that way. Untick one
+and it stops. The code that raises a notice may still keep quiet where it knows
+something no setting can, that this person's phone has already buzzed once
+about this exact thing, but it can never switch on what the screen has switched
+off.
+
+Texts stay off unless they are ticked, kind by kind. Every one of them costs
+money, and a chatty kind ticked for text is a bill at the end of the month
+rather than a setting.
+
+**Also send to** puts another group alongside whoever a notice already reaches:
+the general manager copied on every leave request, without handing them a
+permission they do not otherwise need to solve what is really a mailing list.
+Permissions rather than names, so somebody promoted tomorrow is included and
+somebody demoted yesterday is not, and it only ever adds. The person a notice
+is about is always told, whatever else is set, because turning off "your leave
+was approved" for the person who asked is not a setting anybody wants. What was
+added is written onto the notice as it is raised, so what somebody has already
+been told about does not vanish out of their bell when the setting moves.
+
 The bell has no switch. Every notice is recorded whether or not anybody is
 interrupted about it, because the list in the bell is the record of what
 happened and a record with holes in it where somebody flipped a switch is worse
-than no record. What can be turned off is the interrupting. Only the offs are
-stored, so a property that presses Save today does not freeze today's defaults
-into every kind added afterwards.
+than no record. What can be turned off is the interrupting. Only a disagreement
+with the default is stored, so a property that presses Save today does not
+freeze today's judgement into every kind added afterwards.
 
 **A code of their own on payslips.** Signing in answers "is this their phone",
 once, in the morning. Opening a payslip is asked at a different moment:
