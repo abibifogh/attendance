@@ -491,6 +491,39 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 
 /* Typing the code that opens My payslips. Wide digits and a lot of space
    between them, because it is four characters typed with a thumb. */
+/* The screen that has to be answered before anything else is shown.
+   Over the top of everything rather than in place of it, so a half-written
+   leave request is still there underneath and still there afterwards. */
+.lock-screen {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px);
+}
+.lock-card {
+  width: min(22rem, 100%); text-align: center;
+  padding: 1.6rem 1.4rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 20px 60px rgba(0, 0, 0, .28);
+}
+.lock-mark { margin-bottom: .6rem; }
+.lock-card h2 { margin: 0 0 .3rem; font-size: 1.15rem; }
+.lock-row { display: flex; gap: .5rem; margin: 1rem 0 .3rem; }
+.lock-pin {
+  flex: 1; text-align: center;
+  font-size: 1.3rem; letter-spacing: .35rem; padding: .5rem .3rem .5rem .65rem;
+}
+.lock-said { min-height: 1.2rem; margin: 0; font-size: .85rem; color: var(--bad); }
+.lock-out { margin-top: .8rem; }
+
+/* Why the last session ended, where it ended by itself. */
+.login-why {
+  margin: 0 0 .9rem; padding: .5rem .7rem;
+  border-radius: 10px; font-size: .82rem;
+  background: var(--surface-2); color: var(--text-dim);
+}
+
 /* The one line that offers to put HIVE on a phone. Quiet, because it is a
    convenience rather than something anybody has to do, and it only ever
    appears once. */

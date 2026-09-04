@@ -11,6 +11,7 @@ import {
 import * as att from './routes/attendance.js';
 import * as suggest from './routes/suggest.js';
 import * as mine from './routes/me.js';
+import * as authLock from './routes/auth-lock.js';
 import { watchShifts } from './lib/shift-watch.js';
 import { watchTerminals } from './lib/terminal-watch.js';
 import { nightlyCopy } from './lib/backup.js';
@@ -56,6 +57,7 @@ export const ROUTES = [
   ['POST', '/api/auth/salt', 'public', passwordSalt],
   ['POST', '/api/auth/login', 'public', login],
   ['POST', '/api/auth/logout', 'public', logout],
+  ['POST', '/api/auth/unlock', null, authLock.unlock],
   ['GET', '/api/auth/me', 'public', me],
   ['POST', '/api/auth/change-credentials', null, changeCredentials],
 

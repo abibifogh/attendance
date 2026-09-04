@@ -1043,6 +1043,34 @@ the socket cannot be opened at all the app falls back to asking every couple of
 minutes, and stops the moment the socket is back: a deployment without the
 binding is slower, not broken.
 
+### Left alone, it lets go
+
+A screen left open in an office is a screen anybody walking past is signed in
+on. So the page watches for a touch, a key, a scroll or a click, and five
+minutes with none of them signs the person out and puts them back on the
+sign-in screen with a line saying that is why, rather than looking like
+something broke. Nothing is lost by it: whoever comes back types their PIN and
+carries on.
+
+Installed on a phone the rule is a different one, because switching to WhatsApp
+for ten seconds is not walking away. Coming back asks for the PIN over whatever
+was on screen, and the screen underneath is untouched, so a rota half filled in
+is still there once the digits are right. The digits are checked against the
+same login route everything else uses, which also means a login switched off
+while the phone was in a pocket does not open again.
+
+Two things it deliberately does not do. It does not count a file picker, a
+camera or a print dialog as leaving. Each of those takes the browser off the
+page by design, and being asked for a PIN because somebody chose a photograph
+is how everybody learns to resent the lock. And it does not shorten the session
+cookie: a kitchen tablet is signed in for sixty days on purpose, and only the
+page knows whether anybody has actually touched it, so the idle rule lives
+there and ends by calling the same sign-out the menu calls.
+
+Five minutes is `IDLE_MINUTES` in `public/js/guard-rules.js`, which holds the
+rules and nothing else, no browser in it, so what should happen after so long
+away can be tested at a desk.
+
 ### On a phone
 
 **It installs.** A web app manifest, real PNG icons at 192 and 512 including a

@@ -1,5 +1,6 @@
 import { api, onReachabilityChange, serverReachable, setUnauthorizedHandler } from './api.js';
 import { liveUp, onLive, startLive, stopLive } from './live.js';
+import { guard, unguard } from './guard.js';
 import { registerWorker, watchForInstall } from './install.js';
 import { h, holdBehindDialogs, keepScroll, mount, watchScreenHeight } from './util.js';
 import { renderLogin } from './views/login.js';
@@ -57,6 +58,9 @@ export const state = {
   // guide can name one the reader does not hold.
   permissionLabels: {},
   roleLabels: {},
+  // Why the last session ended, so the sign-in screen can say so rather than
+  // looking as though something went wrong.
+  signedOutBecause: null,
 };
 
 /**
@@ -224,10 +228,19 @@ export function replaceParams(path, params) {
  * three stores between them. This one does not, and inventing a section
  * heading for a list of ten would be furniture for its own sake.
  */
-async function signOut() {
+/**
+ * The way out, however it was reached.
+ *
+ * `why` is how the sign-in screen knows what to say. Being put back at a login
+ * screen with no explanation is the app looking broken; being told it went
+ * quiet because nobody touched it is the app doing its job.
+ */
+async function signOut(why = null) {
   stopLive();
+  unguard();
   await api.logout().catch(() => {});
   resetSession();
+  state.signedOutBecause = typeof why === 'string' ? why : null;
   render();
 }
 
@@ -449,10 +462,12 @@ export async function render({ quiet = false } = {}) {
       state.isRecovery = Boolean(isRecovery);
       state.permissions = permissions ?? [];
       state.mustChangePin = Boolean(mustChangePin);
+      state.signedOutBecause = null;
       startLive();
+      watchForTheRoom();
       if (!location.hash || !currentRoute()) navigate(defaultRoute());
       await render();
-    }));
+    }, state.signedOutBecause));
     return;
   }
 
@@ -711,6 +726,20 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) catchUp();
 });
 
+/**
+ * Nobody is standing here any more.
+ *
+ * Half of what this app holds is somebody else's business: their pay, their
+ * leave, who is off sick on Thursday. A phone put down on a bar with it open
+ * is a screen the room can read, so it does not stay open for the room.
+ */
+function watchForTheRoom() {
+  guard({
+    signOut,
+    who: () => ({ signsInWith: state.signedInWith, email: state.email }),
+  });
+}
+
 function resetSession() {
   state.role = null;
   state.name = null;
@@ -823,6 +852,9 @@ window.addEventListener('online', () => { api.me().catch(() => {}); });
   } catch { /* fall through to the login screen */ }
 
   if (state.role && !currentRoute()) navigate(defaultRoute());
-  if (state.role) startLive();
+  if (state.role) {
+    startLive();
+    watchForTheRoom();
+  }
   await render();
 })();

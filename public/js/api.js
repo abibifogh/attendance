@@ -145,6 +145,7 @@ export const api = {
     request('/api/auth/login', { method: 'POST', body: { email, passwordKey } }),
   changeCredentials: (body) => request('/api/auth/change-credentials', { method: 'POST', body }),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
+  unlock: (body) => request('/api/auth/unlock', { method: 'POST', body }),
   me: () => request('/api/auth/me'),
 
   // ----------------------------------------------------------- recruitment --

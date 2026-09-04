@@ -55,6 +55,17 @@ export const GUIDE = [
         + 'because the digits a supervisor has been using since opening day should not quietly '
         + 'become the keys to the property.' },
 
+      { sub: 'Left alone, it signs you out' },
+      { p: 'Five minutes with nobody touching the screen and HIVE signs you out. The sign-in '
+        + 'screen says that is why, so it does not read as something having gone wrong. An '
+        + 'office computer left open on Today is otherwise signed in for whoever walks past '
+        + 'it.' },
+      { p: 'On a phone with HIVE installed it is gentler than that. Switching to WhatsApp and '
+        + 'coming back asks for your PIN, over whatever you were on, and what you were on is '
+        + 'still underneath once you have typed it.' },
+      { note: 'Choosing a photograph, taking one, or printing does not count as leaving. Those '
+        + 'take you out of the app on purpose and put you straight back.' },
+
       { sub: 'Install it on your phone' },
       { steps: [
         'Open the site in your phone browser.',
