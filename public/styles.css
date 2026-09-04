@@ -459,6 +459,17 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 }
 .inline-check input { width: auto; margin: 0; }
 
+/* The other departments somebody may read. A row of ticks that wraps, with
+   room between them: run together they read as one long word. */
+.also-depts-list {
+  display: flex; flex-wrap: wrap; gap: .35rem .9rem;
+  margin-top: .3rem;
+}
+.also-depts-list label { margin: 0; }
+/* Dimmed while the switch above them is off, because nothing here does
+   anything until somebody may open the card at all. */
+.also-depts.is-off { opacity: .5; }
+
 /* Two ticks and the sentence that explains both, kept together so the note
    reads as being about the pair rather than about the second one. */
 .tick-block { display: grid; gap: .3rem; margin: .8rem 0; }

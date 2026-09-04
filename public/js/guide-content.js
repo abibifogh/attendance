@@ -171,9 +171,12 @@ export const GUIDE = [
         + 'a swap, without anybody having to read the grid out to you.' },
       { p: 'On a phone it goes day by day rather than as a grid, since a week of shift names '
         + 'across a small screen is something you drag sideways one name at a time.' },
-      { note: 'Your own department and nobody else\'s, and published shifts only. It does not '
-        + 'show clock times, lateness or leave balances, and where somebody is away it says '
-        + 'away and not why.' },
+      { p: 'If your work takes you into other parts of the building, your supervisor can name '
+        + 'those departments as well. A picker appears on the card and you can look at each '
+        + 'of them, with your own first.' },
+      { note: 'Only the departments named for you, and published shifts only. It does not show '
+        + 'clock times, lateness or leave balances, and where somebody is away it says away '
+        + 'and not why.' },
 
       { sub: 'My advance' },
       { p: 'If you have taken a salary advance, My advance shows what is left, what comes off '

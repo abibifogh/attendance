@@ -1,0 +1,19 @@
+-- The other departments somebody may see the rota for.
+--
+-- Their own department answers the ordinary question, who else is on tomorrow,
+-- and for most people that is the whole of it. It is not the whole of it for
+-- everybody. A maintenance man is called into every part of the building and
+-- needs to know when housekeeping are on the floor he is working on. A duty
+-- manager covers reception and the bar. A storekeeper issues to the kitchen.
+-- Each of them was being handed "see the rota", which is the whole property
+-- and everybody's week, to answer a question about one other department.
+--
+-- So the answer is a list, named per person. Empty is the ordinary state and
+-- means their own department and no other. What is in it is departments by
+-- name, the same names the rest of the app uses, because a department is not a
+-- row anywhere: it is a word on a staff record and on a shift.
+--
+-- IT DOES NOT WIDEN WHAT IS SHOWN, only whose week is on the page. A
+-- department rota is published shifts and the fact that somebody is away, and
+-- it stays that whichever department is being looked at.
+ALTER TABLE att_staff ADD COLUMN dept_rota_extra TEXT;

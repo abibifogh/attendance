@@ -460,9 +460,11 @@ async function askForLeave(data, reload) {
 function departmentCard() {
   const host = h('div');
 
-  const draw = async (from = null) => {
-    const data = await api.myDepartment(from).catch(() => null);
+  const draw = async (from = null, department = null) => {
+    const data = await api.myDepartment(from, department).catch(() => null);
     if (!data || !data.allowed) { mount(host); return; }
+
+    const many = (data.departments ?? []).length > 1;
 
     mount(host, card(`Who else is on in ${data.department}`, {
       note: `${data.people.length} ${data.people.length === 1 ? 'person' : 'people'}`,
@@ -470,13 +472,27 @@ function departmentCard() {
     },
     h('div.toolbar',
       h('button.btn-sm', {
-        onclick: () => draw(shiftDay(data.from, -7)), 'aria-label': 'The week before',
+        onclick: () => draw(shiftDay(data.from, -7), data.department),
+        'aria-label': 'The week before',
       }, '‹'),
       h('strong', `${fmtDayShort(data.from)} – ${fmtDayShort(data.to)}`),
       h('button.btn-sm', {
-        onclick: () => draw(shiftDay(data.from, 7)), 'aria-label': 'The week after',
+        onclick: () => draw(shiftDay(data.from, 7), data.department),
+        'aria-label': 'The week after',
       }, '›'),
-      h('button.btn-sm', { onclick: () => draw(null) }, 'This week'),
+      h('button.btn-sm', { onclick: () => draw(null, data.department) }, 'This week'),
+
+      // Only where there is more than one to choose between. A picker with a
+      // single entry is a control that does nothing, and somebody presses it
+      // anyway to find out.
+      many
+        ? h('select', {
+          'aria-label': 'Which department',
+          onchange: (event) => draw(data.from, event.target.value),
+        }, data.departments.map((name) => h('option', {
+          value: name, selected: name === data.department,
+        }, name === data.mine ? `${name} (yours)` : name)))
+        : null,
     ),
     h('div.dept-week', deptWeek(data)),
     h('div.dept-days', data.days.map((day) => deptDay(day, data))),

@@ -791,6 +791,19 @@ something on for everybody and waiting to hear who minds is the wrong order.
 first tick would open an empty week; somebody's own shifts are always their own
 to see whatever it says.
 
+**And some people need more than their own.** A maintenance man is called into
+every part of the building and needs to know when housekeeping are on the floor
+he is working on; a duty manager covers reception and the bar; a storekeeper
+issues to the kitchen. Each of them was being handed *See the rota*, which is
+the whole property and everybody's week, to answer a question about one other
+department. Under the two ticks is a row of the property's departments, and
+whichever are ticked appear in a picker on their card beside their own. It
+widens whose week is on the page and nothing else: it is still published shifts
+and the fact that somebody is away, whichever department is being read. On
+somebody else's department they are a visitor like anybody else, so a person
+kept off the list stays off it, and the always-see-yourself exception applies
+where it means something, on their own.
+
 What it withholds is everything a colleague is not owed. Nothing that has not
 been published, on the same rule as their own week. No clock times, no
 lateness, no leave balance, and no reason for a day away: that somebody is away

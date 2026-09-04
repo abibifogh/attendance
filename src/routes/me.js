@@ -184,6 +184,23 @@ function onShiftNow(ds, staffId, today) {
 }
 
 /**
+ * The departments named on a staff record, forgivingly.
+ *
+ * Stored as a list because a person may be trusted with two and no more, and
+ * anything unreadable means the same thing as nothing: their own department
+ * and no other. A broken setting must never quietly widen what somebody sees.
+ */
+export function readDepartments(value) {
+  if (!value) return [];
+  try {
+    const list = JSON.parse(value);
+    return Array.isArray(list) ? list.filter((d) => typeof d === 'string' && d.trim()) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Which days the property has actually promised, whatever is on them.
  *
  * A day with no shift on it means two completely different things and the app
@@ -640,32 +657,49 @@ export async function myDepartment(ctx) {
     .first())?.value || 'UTC';
   const today = todayIn(timezone);
 
-  const department = staff.department || null;
-  if (!staff.sees_dept_rota || !department) {
+  const mine = staff.department || null;
+  // Their own first, then whatever else they have been named for. Deduplicated
+  // and stripped of blanks, because a list edited on a form for two years
+  // eventually has an empty string in it.
+  const allowed = [...new Set([mine, ...readDepartments(staff.dept_rota_extra)]
+    .map((d) => (d ? String(d) : null))
+    .filter(Boolean))];
+
+  if (!staff.sees_dept_rota || !allowed.length) {
     return json({
       allowed: false,
-      department,
+      department: mine,
+      departments: [],
       // Two different noes, said apart, because only one of them is somebody
       // to ask about.
-      reason: department ? 'not_allowed' : 'no_department',
+      reason: mine ? 'not_allowed' : 'no_department',
       days: [],
       people: [],
     });
   }
 
-  const asked = ctx.url.searchParams.get('from');
-  const from = startOfWeek(isDay(asked) ? asked : today);
+  // Which of them they are looking at. Their own to begin with, because that
+  // is the question nine times in ten, and anything they have not been named
+  // for is answered with their own rather than refused: a stale bookmark
+  // should show them something rather than an error.
+  const asked = ctx.url.searchParams.get('department');
+  const department = asked && allowed.includes(asked) ? asked : allowed[0];
+
+  const askedFrom = ctx.url.searchParams.get('from');
+  const from = startOfWeek(isDay(askedFrom) ? askedFrom : today);
   const to = addDays(from, 6);
 
   const ds = await loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) });
 
   // Everybody in the department who is on the rota and shown on it, plus
   // themselves whatever their own switch says: somebody's own shifts are
-  // always their own to see.
+  // always their own to see. That exception is about their own department; on
+  // somebody else's they are a visitor like anybody else.
+  const own = department === mine;
   const people = ds.staff
     .filter((p) => p.active && (p.department || null) === department)
-    .filter((p) => p.on_rota !== 0 || p.id === staff.id)
-    .filter((p) => p.on_dept_rota !== 0 || p.id === staff.id)
+    .filter((p) => p.on_rota !== 0 || (own && p.id === staff.id))
+    .filter((p) => p.on_dept_rota !== 0 || (own && p.id === staff.id))
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
   const days = [];
@@ -676,6 +710,10 @@ export async function myDepartment(ctx) {
   return json({
     allowed: true,
     department,
+    // Every one they may look at, so the screen can offer them rather than
+    // making somebody guess that there are others.
+    departments: allowed,
+    mine,
     from,
     to,
     today,

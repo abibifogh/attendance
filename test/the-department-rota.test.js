@@ -45,6 +45,7 @@ const TEAM = [
   { id: 2, name: 'Kofi', department: 'Front Office' },
   { id: 3, name: 'Yaw', department: 'Front Office' },
   { id: 4, name: 'Esi', department: 'Housekeeping' },
+  { id: 5, name: 'Kojo', department: 'Housekeeping' },
 ];
 
 function setup() {
@@ -78,16 +79,23 @@ const asStaff = (id) => ({
   permissions: ['att_me'],
 });
 
-const ctx = (db, id, from = MON) => ({
+const ctx = (db, id, from = MON, department = null) => ({
   db,
   env: {},
-  url: new URL(`https://x/api/me/department?from=${from}`),
+  url: new URL(`https://x/api/me/department?from=${from}`
+    + (department ? `&department=${encodeURIComponent(department)}` : '')),
   session: asStaff(id),
   executionContext: null,
   request: new Request('https://x/'),
 });
 
-const ask = async (db, id, from = MON) => (await myDepartment(ctx(db, id, from))).json();
+const ask = async (db, id, from = MON, department = null) =>
+  (await myDepartment(ctx(db, id, from, department))).json();
+
+/** Name the other departments somebody may look at. */
+const alsoSees = (raw, id, names) => raw.prepare(
+  'UPDATE att_staff SET dept_rota_extra = ? WHERE id = ?',
+).run(JSON.stringify(names), id);
 
 /** A published shift, or a draft one when told to leave it unpublished. */
 const rota = (raw, staffId, day, published = 1) => raw.prepare(
@@ -257,4 +265,99 @@ test('a day inside a published week with nothing on it is a rest day', async () 
   assert.equal(dayOf(out, 'Kofi', MON).restDay, false, 'he is working');
   assert.equal(dayOf(out, 'Kofi', TUE).restDay, true, 'published week, nothing on it');
   assert.equal(dayOf(out, 'Ama', MON).restDay, true);
+});
+
+// ---------------------------------------------------------------------------
+// The other departments they may look at
+// ---------------------------------------------------------------------------
+
+test('their own is the only one until somebody names another', async () => {
+  const { db } = setup();
+  const out = await ask(db, 1);
+  assert.deepEqual(out.departments, ['Front Office']);
+  assert.equal(out.mine, 'Front Office');
+});
+
+test('a named department is offered and can be opened', async () => {
+  const { db, raw } = setup();
+  alsoSees(raw, 1, ['Housekeeping']);
+  for (const p of TEAM) rota(raw, p.id, MON);
+
+  const out = await ask(db, 1);
+  assert.deepEqual(out.departments, ['Front Office', 'Housekeeping']);
+  assert.equal(out.department, 'Front Office', 'their own to begin with');
+
+  const theirs = await ask(db, 1, MON, 'Housekeeping');
+  assert.equal(theirs.department, 'Housekeeping');
+  assert.deepEqual(theirs.people.map((p) => p.name), ['Esi', 'Kojo']);
+  assert.ok(!theirs.people.some((p) => p.isMe), 'she is not in that one');
+});
+
+test('a department nobody named for them is not opened by asking for it', async () => {
+  const { db, raw } = setup();
+  for (const p of TEAM) rota(raw, p.id, MON);
+
+  const out = await ask(db, 1, MON, 'Housekeeping');
+  assert.equal(out.department, 'Front Office', 'their own, rather than what was asked for');
+  assert.ok(!out.people.some((p) => p.name === 'Esi'));
+});
+
+test('somebody kept off the list is kept off the other departments too', async () => {
+  const { db, raw } = setup();
+  alsoSees(raw, 1, ['Housekeeping']);
+  raw.prepare('UPDATE att_staff SET on_dept_rota = 0 WHERE id = 5').run();
+  for (const p of TEAM) rota(raw, p.id, MON);
+
+  const out = await ask(db, 1, MON, 'Housekeeping');
+  assert.deepEqual(out.people.map((p) => p.name), ['Esi']);
+});
+
+test('the always-see-yourself exception is about your own department', async () => {
+  const { db, raw } = setup();
+  // She is kept off the list and given somebody else's department to read.
+  raw.prepare("UPDATE att_staff SET on_dept_rota = 0, department = 'Housekeeping' WHERE id = 1").run();
+  alsoSees(raw, 1, ['Front Office']);
+  for (const p of TEAM) rota(raw, p.id, MON);
+
+  // On her own she is still there, because her shifts are hers to see.
+  const home = await ask(db, 1, MON, 'Housekeeping');
+  assert.ok(home.people.some((p) => p.isMe));
+
+  // Reading the other one she is a visitor, and the switch holds.
+  const away = await ask(db, 1, MON, 'Front Office');
+  assert.ok(!away.people.some((p) => p.isMe));
+});
+
+test('somebody with no department of their own can still be given one to read', async () => {
+  const { db, raw } = setup();
+  raw.prepare('UPDATE att_staff SET department = NULL WHERE id = 1').run();
+  alsoSees(raw, 1, ['Housekeeping']);
+  for (const p of TEAM) rota(raw, p.id, MON);
+
+  const out = await ask(db, 1);
+  assert.equal(out.allowed, true);
+  assert.deepEqual(out.departments, ['Housekeeping']);
+  assert.equal(out.mine, null);
+});
+
+test('a broken list means their own department and no other', async () => {
+  const { db, raw } = setup();
+  raw.prepare("UPDATE att_staff SET dept_rota_extra = 'not json' WHERE id = 1").run();
+  for (const p of TEAM) rota(raw, p.id, MON);
+
+  const out = await ask(db, 1);
+  assert.deepEqual(out.departments, ['Front Office']);
+  const asked = await ask(db, 1, MON, 'Housekeeping');
+  assert.equal(asked.department, 'Front Office');
+});
+
+test('the switch above it still decides whether any of it shows', async () => {
+  const { db, raw } = setup();
+  raw.prepare('UPDATE att_staff SET sees_dept_rota = 0 WHERE id = 1').run();
+  alsoSees(raw, 1, ['Housekeeping']);
+
+  const out = await ask(db, 1);
+  assert.equal(out.allowed, false);
+  assert.equal(out.reason, 'not_allowed');
+  assert.deepEqual(out.departments, []);
 });

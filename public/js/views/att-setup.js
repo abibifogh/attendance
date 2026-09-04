@@ -353,6 +353,22 @@ function readWorksIn(staff) {
   }
 }
 
+/**
+ * The other departments somebody may read the rota for.
+ *
+ * Their own is not in here. It comes with the tick above and is not a choice
+ * anybody makes twice.
+ */
+function readAlsoSees(staff) {
+  if (!staff?.dept_rota_extra) return [];
+  try {
+    const parsed = JSON.parse(staff.dept_rota_extra);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 /** The shifts somebody has been picked out for one at a time. */
 function readWorksShifts(staff) {
   if (!staff?.works_shifts) return [];
@@ -719,6 +735,47 @@ async function staffTab(reload) {
 
     const remember = (node) => { clockOnly.push(node); return node; };
 
+    /**
+     * The other departments this person may look at.
+     *
+     * Their own answers the ordinary question and for most people that is the
+     * whole of it. A maintenance man is called into every part of the
+     * building; a duty manager covers reception and the bar; a storekeeper
+     * issues to the kitchen. Each of them was being handed the whole property
+     * to answer a question about one other department.
+     *
+     * Their own is not in the list, because it is not a choice: it comes with
+     * the tick above.
+     */
+    const alsoDepts = new Set(readAlsoSees(existing));
+    const alsoSees = h('div.also-depts');
+
+    const drawAlso = () => {
+      const others = areas.filter((name) => name !== (existing?.department ?? ''));
+      mount(alsoSees,
+        h('small.muted', { style: { display: 'block', marginTop: '.5rem' } },
+          'And the rota for these as well, if they need it:'),
+        others.length
+          ? h('div.also-depts-list', others.map((name) => h('label.inline-check',
+            h('input', {
+              type: 'checkbox',
+              checked: alsoDepts.has(name),
+              onchange: (e) => {
+                if (e.target.checked) alsoDepts.add(name); else alsoDepts.delete(name);
+              },
+            }),
+            h('span', name))))
+          : h('small.muted', 'There is only one department so far.'));
+    };
+    /** Dimmed and switched off while they may not open the card at all. */
+    const syncAlso = (on) => {
+      alsoSees.classList.toggle('is-off', !on);
+      for (const box of alsoSees.querySelectorAll('input')) box.disabled = !on;
+    };
+
+    drawAlso();
+    syncAlso(Boolean(existing?.sees_dept_rota));
+
     const body = h('div',
       h('div.field-row',
         field('Name', h('input', { type: 'text', name: 'name', required: true, maxlength: 120, value: existing?.name ?? '' })),
@@ -778,6 +835,9 @@ async function staffTab(reload) {
           h('input', {
             type: 'checkbox', name: 'seesDeptRota',
             checked: Boolean(existing?.sees_dept_rota),
+            // The list below does nothing until this is on, and a row of ticks
+            // that does nothing is a row somebody ticks and then wonders about.
+            onchange: (event) => syncAlso(event.target.checked),
           }),
           h('span', 'Can see the rota for their own department')),
         h('label.inline-check',
@@ -786,9 +846,10 @@ async function staffTab(reload) {
             checked: existing ? existing.on_dept_rota !== 0 : true,
           }),
           h('span', 'Their shifts show on it for the others')),
-        h('small.muted', 'Their own department and no other, published shifts only, and the '
-          + 'shifts alone: no clock times, no lateness, nothing anybody has asked for. Their '
-          + 'own shifts are always their own to see.')),
+        h('small.muted', 'Published shifts only, and the shifts alone: no clock times, no '
+          + 'lateness, nothing anybody has asked for. Their own shifts are always their own '
+          + 'to see.'),
+        alsoSees),
 
       field('Note', h('input', { type: 'text', name: 'note', maxlength: 300, value: existing?.note ?? '' })));
 
@@ -818,6 +879,7 @@ async function staffTab(reload) {
           onRota: form.get('tracking') === 'full',
           seesDeptRota: form.get('seesDeptRota') != null,
           onDeptRota: form.get('onDeptRota') != null,
+          alsoSeesDepts: [...alsoDepts],
           offDays: [...never],
           worksIn: [...chosen],
           // A shift inside a ticked department is already covered by it, and
