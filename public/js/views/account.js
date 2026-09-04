@@ -1,7 +1,8 @@
 import { api } from '../api.js';
 import { deriveLoginKey, prepareNewPassword } from '../crypto.js';
 import { h, mount, toast } from '../util.js';
-import { canPrompt, isApple, isInstalled, onInstallChange, promptInstall } from '../install.js';
+import { isInstalled, onInstallChange } from '../install.js';
+import { installCard } from './install-help.js';
 import {
   currentSubscription, disablePush, enablePush, needsHomeScreen, pushSupported, testPush,
   tooOldForAlerts,
@@ -426,45 +427,12 @@ export function openAccountDialog({
       style: { marginTop: '1.1rem', paddingTop: '.9rem', borderTop: '1px solid var(--border)' },
     });
 
-    const draw = () => {
-      const apple = isApple();
-
-      mount(host,
-        h('h3', { style: { fontSize: '.95rem', marginBottom: '.35rem' } }, 'Put HIVE on this device'),
-        h('p.muted', { style: { fontSize: '.85rem' } },
-          'It opens from the home screen like any other app — no address to type, no browser bars, '
-          + 'and it starts even before the signal does.'),
-
-        canPrompt()
-          ? h('button.btn-primary', {
-            onclick: async (event) => {
-              event.target.disabled = true;
-              const outcome = await promptInstall();
-              if (outcome === 'accepted') toast('Installed. Look for HIVE on your home screen.', 'good');
-              else { event.target.disabled = false; draw(); }
-            },
-          }, 'Install')
-          : apple
-            // No prompt exists on an iPhone, and the steps are the only useful
-            // thing the app can offer. Naming the button by its icon because
-            // Apple does not name it in words anywhere on the screen.
-            ? h('div.guide-note', { style: { marginTop: 0, fontSize: '.83rem' } },
-              h('strong', 'On an iPhone or iPad: '),
-              'press Share — the square with the arrow out of the top — then ',
-              h('strong', 'Add to Home Screen'), '. Safari is the only browser on iOS that can do it.')
-            : h('p.muted', { style: { fontSize: '.83rem', marginBottom: 0 } },
-              'Your browser has not offered this yet. In Chrome it is in the ⋮ menu as '
-              + '"Install" or "Add to Home screen"; Firefox on a phone calls it "Install".'),
-      );
-    };
+    const draw = () => mount(host, installCard(draw));
 
     draw();
     // The browser can decide the app is installable a moment after this dialog
     // opened, and a button that never appears is indistinguishable from one
     // that does not exist.
-    // Kept until the dialog closes rather than wired to it here: this runs
-    // while the dialog is still being built, so there is nothing yet to
-    // listen on.
     onClose.push(onInstallChange(draw));
     return host;
   }

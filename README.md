@@ -611,6 +611,27 @@ facts. Wanting to work is not being away, so *Would like to work* is none of
 the limit's business. The screen says it as the boxes are ticked and the server
 refuses it either way.
 
+**Saying how to install it on the phone somebody is holding.** Half the
+property never managed it, and the reason is not that they cannot follow
+instructions. On Android the menu item sits below *Desktop site*, past the
+bottom of a screen nobody thinks to scroll. On an iPhone it is behind an icon
+Apple never names in words. And a link sent on WhatsApp opens inside WhatsApp,
+where the option does not exist at all and the page looks completely normal
+while it does not.
+
+So the app names the browser somebody is actually holding and says where their
+button is: Chrome, Samsung Internet, Firefox, Opera and Safari each get their
+own steps rather than a description of a menu they do not have. A window opened
+by another app is named first, because it is the commonest case and the one
+nobody guesses, and on Android it gets an *Open in Chrome* button that hands the
+page over.
+
+It is offered once on *My shifts*, which is the screen staff actually open,
+rather than only under My account, which is where somebody goes to change a PIN
+and otherwise never. Dismissed for good rather than for a session: being asked
+every morning to install something is how somebody comes to ignore the app in
+general.
+
 **Who heard that the rota went out, and sending it again.** Publishing told
 everybody at once and then forgot what it had done. What came back was three
 numbers, and the question that arrives a day later is not a number: it is

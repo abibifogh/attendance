@@ -141,6 +141,18 @@ export const GUIDE = [
         + 'somebody signs the month off, having looked at the whole of it. A running total on a '
         + 'phone would be a number to argue about rather than an answer.' },
 
+      { sub: 'Putting it on your home screen' },
+      { p: 'HIVE can sit on your home screen like any other app: no address to type, no '
+        + 'browser bars, and your shifts are there before the signal is. My shifts offers it '
+        + 'once, and My account has it under "Put HIVE on this device" whenever you want it.' },
+      { p: 'On most Android phones the button is in the ⋮ menu at the top right, near the '
+        + 'bottom of the list under "Desktop site". The menu is longer than the screen, so '
+        + 'scroll it down. On an iPhone it is Share, the square with the arrow out of the top, '
+        + 'then Add to Home Screen, and Safari is the only browser on an iPhone that can do it.' },
+      { note: 'If you opened HIVE from a WhatsApp message it is running inside WhatsApp, not in '
+        + 'a browser, and there is nothing to press. Open it in Chrome first. The app says so '
+        + 'and offers the button when that is what has happened.' },
+
       { sub: 'A code on your payslips' },
       { p: 'Under My account you can put four digits on My payslips. It is separate from the '
         + 'six you sign in with, and it is asked for whenever you open the screen: handing '

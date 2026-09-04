@@ -477,6 +477,19 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 
 /* Typing the code that opens My payslips. Wide digits and a lot of space
    between them, because it is four characters typed with a thumb. */
+/* The one line that offers to put HIVE on a phone. Quiet, because it is a
+   convenience rather than something anybody has to do, and it only ever
+   appears once. */
+.install-nudge {
+  display: flex; flex-wrap: wrap; gap: .6rem; align-items: center;
+  justify-content: space-between;
+  margin: 0 0 1rem; padding: .7rem .9rem;
+  border: 1px dashed var(--border); border-radius: var(--radius);
+  background: var(--surface);
+}
+.install-nudge-what { display: grid; gap: .1rem; min-width: 12rem; }
+.install-nudge-what small { font-size: .8rem; line-height: 1.35; }
+
 /* Every kind of notice, and which ways out it may take. A grid rather than a
    table: the rows are of different heights because each one explains itself,
    and a table cell that wraps to three lines drags its whole row with it. */

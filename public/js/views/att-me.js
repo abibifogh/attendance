@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { navigate } from '../app.js';
 import { fmtDay, fmtDayShort, fmtNum, h, mount, shiftDay, toast } from '../util.js';
 import { card, emptyState } from './components.js';
+import { installNudge } from './install-help.js';
 import {
   asHours, field, formDialog, lateBy, shiftColour, shiftHours, shiftMinutes, showSheet,
 } from './att-shared.js';
@@ -102,6 +103,10 @@ export async function renderAttMe(params = {}) {
     ),
 
     balanceLine(data),
+
+    // Once, on the screen staff actually open. It lived under My account,
+    // which is where somebody goes to change a PIN and otherwise never.
+    installNudge(),
 
     card('Coming up', {
       note: `${thisWeek.filter((d) => d.shift).length} shift`
