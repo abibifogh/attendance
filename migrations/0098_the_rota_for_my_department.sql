@@ -1,0 +1,27 @@
+-- Seeing the rota for the people you work beside.
+--
+-- A member of staff sees their own week and nothing else, which is right for
+-- pay, lateness and leave and wrong for one ordinary question: who else is on
+-- tomorrow. Somebody wanting to swap a Saturday, or working out whether the
+-- bar is covered before they agree to something, was asking a supervisor to
+-- read it out.
+--
+-- So a department's rota can be opened by the people in it. Their own
+-- department and no other: the kitchen has no business reading reception's
+-- week, and "the whole property" is what att_rota_view already gives to
+-- somebody trusted with it.
+--
+-- TWO SWITCHES, BECAUSE THE QUESTION HAS TWO HALVES. Who may look is one
+-- thing; whose shifts they see is another, and a property may well want a new
+-- starter reading the week without a manager's own days being on it.
+--
+--   sees_dept_rota   This person may open their department's rota. Off to
+--                    begin with, because turning something on for everybody
+--                    and waiting to hear who minds is the wrong order.
+--
+--   on_dept_rota     This person's shifts appear on it. On to begin with, or
+--                    the first person given the first switch would open an
+--                    empty week. Somebody's own shifts are always their own to
+--                    see, whatever this says.
+ALTER TABLE att_staff ADD COLUMN sees_dept_rota INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE att_staff ADD COLUMN on_dept_rota INTEGER NOT NULL DEFAULT 1;

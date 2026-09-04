@@ -767,6 +767,26 @@ async function staffTab(reload) {
           ))
           : null,
       ),
+      // Who may read the department's week, and whose week is on it. Two
+      // questions rather than one, because a property may well want a new
+      // starter reading it without a manager's own days being shown.
+      h('div.tick-block',
+        h('label.inline-check',
+          h('input', {
+            type: 'checkbox', name: 'seesDeptRota',
+            checked: Boolean(existing?.sees_dept_rota),
+          }),
+          h('span', 'Can see the rota for their own department')),
+        h('label.inline-check',
+          h('input', {
+            type: 'checkbox', name: 'onDeptRota',
+            checked: existing ? existing.on_dept_rota !== 0 : true,
+          }),
+          h('span', 'Their shifts show on it for the others')),
+        h('small.muted', 'Their own department and no other, published shifts only, and the '
+          + 'shifts alone: no clock times, no lateness, nothing anybody has asked for. Their '
+          + 'own shifts are always their own to see.')),
+
       field('Note', h('input', { type: 'text', name: 'note', maxlength: 300, value: existing?.note ?? '' })));
 
     // Once now, so an existing payroll-only record opens without the questions
@@ -793,6 +813,8 @@ async function staffTab(reload) {
           active: form.get('active') !== 'false',
           onClock: form.get('tracking') !== 'payroll',
           onRota: form.get('tracking') === 'full',
+          seesDeptRota: form.get('seesDeptRota') != null,
+          onDeptRota: form.get('onDeptRota') != null,
           offDays: [...never],
           worksIn: [...chosen],
           // A shift inside a ticked department is already covered by it, and

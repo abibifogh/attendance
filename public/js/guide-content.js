@@ -141,6 +141,17 @@ export const GUIDE = [
         + 'somebody signs the month off, having looked at the whole of it. A running total on a '
         + 'phone would be a number to argue about rather than an answer.' },
 
+      { sub: 'Who else is on' },
+      { p: 'If your supervisor has switched it on for you, a card under the coming week shows '
+        + 'the rota for your own department: who is on which day, and what shift. It answers '
+        + 'the ordinary questions, whether the bar is covered on Saturday or who to ask about '
+        + 'a swap, without anybody having to read the grid out to you.' },
+      { p: 'On a phone it goes day by day rather than as a grid, since a week of shift names '
+        + 'across a small screen is something you drag sideways one name at a time.' },
+      { note: 'Your own department and nobody else\'s, and published shifts only. It does not '
+        + 'show clock times, lateness or leave balances, and where somebody is away it says '
+        + 'away and not why.' },
+
       { sub: 'My advance' },
       { p: 'If you have taken a salary advance, My advance shows what is left, what comes off '
         + 'your pay each month, and which payday is the last one. Underneath it is every month '

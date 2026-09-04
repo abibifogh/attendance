@@ -611,6 +611,33 @@ facts. Wanting to work is not being away, so *Would like to work* is none of
 the limit's business. The screen says it as the boxes are ticked and the server
 refuses it either way.
 
+**Staff can read their own department's week.** *My shifts* answers "when am I
+in" and used to answer nothing else, so the one ordinary question left over,
+who else is on tomorrow, meant asking a supervisor to read the grid out.
+*Who else is on in <department>* sits under the coming week and answers it: the
+people in their own department, the shifts they are on, and that somebody is
+away. Their own department and no other, because the kitchen has no business
+reading reception's week and "the whole property" is what *See the rota* is for.
+
+Two ticks on the staff record, because the question has two halves. *Can see
+the rota for their own department* is off to begin with, since turning
+something on for everybody and waiting to hear who minds is the wrong order.
+*Their shifts show on it for the others* is on, or the first person given the
+first tick would open an empty week; somebody's own shifts are always their own
+to see whatever it says.
+
+What it withholds is everything a colleague is not owed. Nothing that has not
+been published, on the same rule as their own week. No clock times, no
+lateness, no leave balance, and no reason for a day away: that somebody is away
+is the question, why they are away is not, and the answer does not carry the
+kind of leave at all. It is stripped in the answer rather than on the screen.
+
+On a phone it stops being a grid. Seven columns of shift names is a
+rota-builder's shape and comes to nine hundred pixels somebody drags sideways
+one name at a time, and the question being asked in a corridor is about a day
+anyway. So the day leads, the names hang off it, and the people who are not in
+gather on one line at the bottom rather than taking a row each.
+
 **Staff can put a picture to their name.** A grid of thirty names is read by
 face long before it is read by name, and everybody who has used Humanity looks
 for the face first. It is chosen under *My account*, shrunk in the browser

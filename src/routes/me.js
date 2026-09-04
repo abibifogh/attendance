@@ -582,6 +582,109 @@ export async function withdrawMyLeave(ctx, idParam) {
 }
 
 /**
+ * The rota for the department somebody works in.
+ *
+ * A member of staff sees their own week and nothing else, which is right for
+ * pay, lateness and leave and wrong for one ordinary question: who else is on
+ * tomorrow. Somebody wanting to swap a Saturday, or working out whether the
+ * bar is covered before agreeing to something, was asking a supervisor to read
+ * it out.
+ *
+ * THEIR OWN DEPARTMENT AND NO OTHER. The kitchen has no business reading
+ * reception's week, and "the whole property" is what att_rota_view already
+ * gives to somebody trusted with it. Somebody with no department set sees
+ * nothing but themselves, because there is no group to belong to.
+ *
+ * PUBLISHED ONLY, and the standing pattern, which is the arrangement people
+ * agreed to and has never needed publishing. A cell somebody has typed and not
+ * published is a plan, and a plan read as a promise is how a week ends up
+ * being argued about before it has been decided.
+ *
+ * And the shifts only. No clock times, no lateness, no leave balances, no
+ * notes, nothing anybody has asked for: this answers who is on, and it is not
+ * a way round everything else that is deliberately private.
+ */
+export async function myDepartment(ctx) {
+  const staff = await meOf(ctx);
+  const timezone = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'timezone'")
+    .first())?.value || 'UTC';
+  const today = todayIn(timezone);
+
+  const department = staff.department || null;
+  if (!staff.sees_dept_rota || !department) {
+    return json({
+      allowed: false,
+      department,
+      // Two different noes, said apart, because only one of them is somebody
+      // to ask about.
+      reason: department ? 'not_allowed' : 'no_department',
+      days: [],
+      people: [],
+    });
+  }
+
+  const asked = ctx.url.searchParams.get('from');
+  const from = startOfWeek(isDay(asked) ? asked : today);
+  const to = addDays(from, 6);
+
+  const ds = await loadDataset(ctx.db, { from: addDays(from, -1), to: addDays(to, 1) });
+
+  // Everybody in the department who is on the rota and shown on it, plus
+  // themselves whatever their own switch says: somebody's own shifts are
+  // always their own to see.
+  const people = ds.staff
+    .filter((p) => p.active && (p.department || null) === department)
+    .filter((p) => p.on_rota !== 0 || p.id === staff.id)
+    .filter((p) => p.on_dept_rota !== 0 || p.id === staff.id)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+  const days = [];
+  for (let day = from; day <= to; day = addDays(day, 1)) days.push(day);
+
+  return json({
+    allowed: true,
+    department,
+    from,
+    to,
+    today,
+    days,
+    me: staff.id,
+    people: people.map((person) => ({
+      id: person.id,
+      name: person.name,
+      // Their own row says so, because a grid of names is read by looking for
+      // your own first.
+      isMe: person.id === staff.id,
+      days: days.map((day) => {
+        const rostered = ds.rosterBy.get(`${person.id}|${day}`);
+        const schedule = scheduleFor(ds, person.id, day);
+        const settled = schedule.source === 'pattern'
+          || (schedule.source === 'roster' && Boolean(rostered?.published));
+        const shift = settled ? schedule.shift : null;
+        const leave = ds.leaveBy.get(`${person.id}|${day}`) ?? null;
+
+        return {
+          day,
+          shift: shift
+            ? {
+              name: shift.name,
+              starts_at: shift.starts_at,
+              ends_at: shift.ends_at,
+              colour: shift.colour ?? null,
+            }
+            : null,
+          // That somebody is away is what the question is really about, and it
+          // is on the rota anybody can read. Why they are away is not, so the
+          // kind of leave does not travel with it.
+          away: Boolean(leave),
+          holiday: ds.holidayBy.get(day)?.name ?? null,
+        };
+      }),
+    })),
+  });
+}
+
+/**
  * Say which days, or which hours of a day, you cannot work.
  *
  * Not leave. Nothing is approved and no entitlement is spent — it is the fact

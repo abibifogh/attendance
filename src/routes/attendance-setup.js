@@ -177,8 +177,9 @@ export async function createStaff(ctx) {
     row = await ctx.db.prepare(
       `INSERT INTO att_staff (employee_no, name, department, job_title, hired_on, leave_days,
                               days_per_week, user_id, note, on_rota, works_in, works_shifts,
-                              off_days, on_clock)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) RETURNING id`,
+                              off_days, on_clock, sees_dept_rota, on_dept_rota)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+       RETURNING id`,
     ).bind(
       employeeNo, name,
       str(body.department, 'Department', { max: 80 }),
@@ -193,6 +194,8 @@ export async function createStaff(ctx) {
       readWorksShifts(body.worksShifts),
       readOffDays(body.offDays),
       onClock ? 1 : 0,
+      bool(body.seesDeptRota, false) ? 1 : 0,
+      bool(body.onDeptRota, true) ? 1 : 0,
     ).first();
   } catch (err) {
     rethrowConstraint(err, {
@@ -232,7 +235,7 @@ export async function updateStaff(ctx, id) {
                             hired_on = ?5, left_on = ?6, leave_days = ?7, user_id = ?8,
                             active = ?9, note = ?10, days_per_week = ?12, on_rota = ?13,
                             works_in = ?14, works_shifts = ?15, off_days = ?16,
-                            on_clock = ?17
+                            on_clock = ?17, sees_dept_rota = ?18, on_dept_rota = ?19
        WHERE id = ?11`,
     ).bind(
       employeeNo,
@@ -252,6 +255,8 @@ export async function updateStaff(ctx, id) {
       readWorksShifts(body.worksShifts),
       readOffDays(body.offDays),
       onClock ? 1 : 0,
+      bool(body.seesDeptRota, existing.sees_dept_rota !== 0) ? 1 : 0,
+      bool(body.onDeptRota, existing.on_dept_rota !== 0) ? 1 : 0,
     ).run();
   } catch (err) {
     rethrowConstraint(err, {

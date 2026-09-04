@@ -459,6 +459,45 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 }
 .inline-check input { width: auto; margin: 0; }
 
+/* Two ticks and the sentence that explains both, kept together so the note
+   reads as being about the pair rather than about the second one. */
+.tick-block { display: grid; gap: .3rem; margin: .8rem 0; }
+.tick-block small.muted { font-size: .8rem; line-height: 1.4; }
+
+/* The department's week on a staff screen. The same grid the planner reads,
+   with everything a planner needs and a colleague does not left out. */
+.dept-rota th { text-align: left; font-size: .72rem; }
+.dept-rota td { vertical-align: top; padding: .35rem .4rem; }
+.dept-rota tbody tr.dept-me { background: var(--accent-soft); }
+.dept-shift { display: grid; gap: .05rem; }
+.dept-shift-name { font-size: .78rem; font-weight: 600; line-height: 1.25; }
+.dept-shift small { font-size: .7rem; }
+.dept-rota .rota-today { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.dept-week { overflow-x: auto; }
+
+/* The same week as a list of days, for a phone. Hidden here and shown at the
+   bottom of the file, where the handset widths are handled. */
+.dept-days { display: none; }
+.dept-day { padding: .7rem 0; border-bottom: 1px solid var(--border); }
+.dept-day:last-child { border-bottom: 0; }
+.dept-day-head { display: flex; align-items: baseline; gap: .45rem; margin-bottom: .45rem; }
+.dept-day-on { display: grid; gap: .35rem; }
+.dept-on {
+  display: grid; gap: .05rem;
+  padding: .4rem .55rem; border-radius: 8px;
+  background: var(--surface-2); border-left: 3px solid var(--border);
+}
+.dept-on[data-shift-colour]:not([data-shift-colour="0"]) {
+  background: color-mix(in srgb, var(--shift) 18%, var(--surface));
+  border-left-color: var(--shift);
+}
+/* Your own row is marked by the ring rather than the fill, so the shift's own
+   colour survives on it. */
+.dept-on.dept-me { box-shadow: inset 0 0 0 2px var(--accent); }
+.dept-on-who { font-weight: 600; font-size: .9rem; }
+.dept-day-off { margin: .45rem 0 0; }
+.dept-day-today .dept-day-head strong { color: var(--accent); }
+
 .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
 .toolbar input[type="date"], .toolbar input[type="month"], .toolbar select { width: auto; min-width: 150px; }
 
@@ -2475,6 +2514,16 @@ html { touch-action: manipulation; }
   /* A shift whose name is longer than the screen breaks rather than sticks
      out. Better a pill on two lines than a name nobody can finish reading. */
   .cover-map .pill { max-width: 100%; white-space: normal; }
+}
+
+/* 4. The department's week turns from a grid into a list of days.
+      Eight columns of shift names and times is a rota-builder's shape; on a
+      handset it is 900 pixels you drag sideways one name at a time. The
+      question being asked in a corridor is about a day anyway, so the day
+      leads and the names hang off it. */
+@media (max-width: 620px) {
+  .dept-week { display: none; }
+  .dept-days { display: block; }
 }
 
 /* 3. A dialog's heading is not a card's heading, and it was being given a

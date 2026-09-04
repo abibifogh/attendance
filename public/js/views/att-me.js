@@ -23,10 +23,14 @@ const MAX_UNAVAILABLE_DAYS = 2;
  * the wrong shape for the person on it, who is reading one column and is
  * holding a phone.
  *
- * What is deliberately not here: anybody else's shifts, and any overtime
- * figure. The first is not their business and the second is not settled until
- * somebody signs the month off — a running total on a phone is a number to
- * argue about, and the app should not be the one starting the argument.
+ * What is deliberately not here: any overtime figure. What somebody is owed is
+ * not settled until the month is signed off, and a running total on a phone is
+ * a number to argue about; the app should not be the one starting the
+ * argument.
+ *
+ * Anybody else's shifts are not here either, with one exception somebody has
+ * to switch on: the department card, which shows the week for the people they
+ * work beside and nothing that goes with it.
  */
 export async function renderAttMe(params = {}) {
   const host = h('div');
@@ -112,6 +116,8 @@ export async function renderAttMe(params = {}) {
       title: 'The rest of the four weeks',
       empty: 'Nothing further ahead has been published yet.',
     })),
+
+    departmentCard(),
 
     data.leave.length
       ? card('My leave', { note: `${data.leave.length}`, wide: true },
@@ -424,6 +430,126 @@ async function askForLeave(data, reload) {
     + `${done.days === 1 ? '' : 's'} if it is approved`
     + (done.estimated ? ', give or take — the rota does not reach that far yet.' : '.'), 'good');
   await reload();
+}
+
+/**
+ * Who else is on this week.
+ *
+ * The one question a member of staff has about anybody else's rota, and the
+ * only reason they were asking a supervisor to read it out: somebody wanting
+ * to swap a Saturday, or working out whether the bar is covered before
+ * agreeing to something.
+ *
+ * Their own department and no other, and the shifts only. No clock times, no
+ * lateness, no leave balances, nothing anybody has asked for. That somebody is
+ * away shows, because that is the question; why they are away does not.
+ *
+ * Loaded on its own after the page, so somebody who is not allowed it pays
+ * nothing for it and somebody who is does not wait on it to see their own
+ * week.
+ */
+function departmentCard() {
+  const host = h('div');
+
+  const draw = async (from = null) => {
+    const data = await api.myDepartment(from).catch(() => null);
+    if (!data || !data.allowed) { mount(host); return; }
+
+    mount(host, card(`Who else is on in ${data.department}`, {
+      note: `${data.people.length} ${data.people.length === 1 ? 'person' : 'people'}`,
+      wide: true,
+    },
+    h('div.toolbar',
+      h('button.btn-sm', {
+        onclick: () => draw(shiftDay(data.from, -7)), 'aria-label': 'The week before',
+      }, '‹'),
+      h('strong', `${fmtDayShort(data.from)} – ${fmtDayShort(data.to)}`),
+      h('button.btn-sm', {
+        onclick: () => draw(shiftDay(data.from, 7)), 'aria-label': 'The week after',
+      }, '›'),
+      h('button.btn-sm', { onclick: () => draw(null) }, 'This week'),
+    ),
+    h('div.dept-week', deptWeek(data)),
+    h('div.dept-days', data.days.map((day) => deptDay(day, data))),
+    ));
+  };
+
+  draw();
+  return host;
+}
+
+/**
+ * The week as a grid, for a screen wide enough to hold one.
+ *
+ * Names down the side, days across the top, which is the shape anybody who has
+ * seen a rota already knows how to read.
+ */
+function deptWeek(data) {
+  return h('table.table.dept-rota',
+    h('thead', h('tr',
+      h('th', 'Name'),
+      ...data.days.map((day) => h('th',
+        { class: day === data.today ? 'rota-today' : null },
+        h('div', weekdayOf(day)),
+        h('small.muted', String(Number(day.slice(8, 10)))))))),
+    h('tbody', data.people.map((person) => h('tr',
+      { class: person.isMe ? 'dept-me' : null },
+      h('td', person.name, person.isMe ? h('small.muted', ' (you)') : null),
+      ...person.days.map((entry) => h('td',
+        { class: entry.day === data.today ? 'rota-today' : null },
+        entry.away
+          ? h('small.muted', 'Away')
+          : entry.shift
+            ? h('div.dept-shift',
+              { 'data-shift-colour': String(entry.shift.colour ?? 0) },
+              h('span.dept-shift-name', entry.shift.name),
+              h('small.muted', `${entry.shift.starts_at}\u2013${entry.shift.ends_at}`))
+            : h('small.muted', '\u2014'))))))); 
+}
+
+/**
+ * One day, and who is on it.
+ *
+ * The phone shape, and a different one on purpose. Seven columns of shift
+ * names will not fit a phone at any size worth reading, and the question being
+ * asked in a corridor is about a day, not about a week: who is on tomorrow.
+ * So the day comes first and the names hang off it, and the people who are not
+ * in gather on one line at the bottom rather than taking a row each.
+ */
+function deptDay(day, data) {
+  const on = [];
+  const off = [];
+  const away = [];
+
+  for (const person of data.people) {
+    const entry = person.days.find((d) => d.day === day);
+    const label = person.name + (person.isMe ? ' (you)' : '');
+    if (entry?.away) away.push(label);
+    else if (entry?.shift) on.push({ label, shift: entry.shift, isMe: person.isMe });
+    else off.push(label);
+  }
+  on.sort((a, b) => String(a.shift.starts_at).localeCompare(String(b.shift.starts_at)));
+
+  return h('div.dept-day', { class: day === data.today ? 'dept-day-today' : null },
+    h('div.dept-day-head',
+      h('strong', weekdayOf(day)),
+      h('small.muted', fmtDayShort(day)),
+      day === data.today ? h('span.pill.good', 'Today') : null),
+    on.length
+      ? h('div.dept-day-on', on.map((row) => h('div.dept-on',
+        { class: row.isMe ? 'dept-me' : null, 'data-shift-colour': String(row.shift.colour ?? 0) },
+        h('span.dept-on-who', row.label),
+        h('small.muted', `${row.shift.name} \u00b7 ${row.shift.starts_at}\u2013${row.shift.ends_at}`))))
+      : h('p.muted', 'Nobody on this day.'),
+    off.length ? h('p.dept-day-off', h('small.muted', `Off: ${off.join(', ')}`)) : null,
+    away.length ? h('p.dept-day-off', h('small.muted', `Away: ${away.join(', ')}`)) : null,
+  );
+}
+
+/** Mon, Tue, Wed. Read off the day itself rather than the reader's clock. */
+function weekdayOf(day) {
+  return new Date(`${day}T12:00:00Z`)
+    .toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' });
 }
 
 /**

@@ -248,6 +248,7 @@ export const api = {
   myReport: (month) => request(`/api/me/report${month ? `?month=${month}` : ''}`),
   myAskForLeave: (body) => request('/api/me/leave', { method: 'POST', body }),
   myWithdrawLeave: (id) => request(`/api/me/leave/${id}/withdraw`, { method: 'POST', body: {} }),
+  myDepartment: (from) => request(`/api/me/department${from ? `?from=${from}` : ''}`),
   mySetAvailability: (body) => request('/api/me/availability', { method: 'POST', body }),
   myRunningLate: (body) => request('/api/me/running-late', { method: 'POST', body }),
   myPayslips: (month) => request(`/api/me/payslips${month ? `?month=${encodeURIComponent(month)}` : ''}`),

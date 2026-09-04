@@ -167,6 +167,7 @@ export const ROUTES = [
   ['GET', '/api/me/report', 'att_me', mine.myReport],
   ['POST', '/api/me/leave', 'att_me', mine.askForLeave],
   ['POST', '/api/me/leave/:id/withdraw', 'att_me', mine.withdrawMyLeave],
+  ['GET', '/api/me/department', 'att_me', mine.myDepartment],
   ['POST', '/api/me/availability', 'att_me', mine.setMyAvailability],
   // The face against their own name on the rota, chosen by them.
   ['POST', '/api/me/photo', 'att_me', mine.setMyPhoto],
