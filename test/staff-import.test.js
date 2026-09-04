@@ -163,11 +163,18 @@ function setup() {
 }
 
 const ADMIN = { user: { id: 1, name: 'Kwame', role: 'admin' }, permissions: ['att_setup'] };
-const ctx = (db, text) => ({
+// Somebody who can set the register up and cannot open an employee's record.
+// The commonest shape in a property: the person who keeps the rota is not the
+// person who keeps the bank accounts.
+const PLANNER = {
+  user: { id: 2, name: 'Yaa', role: 'manager' },
+  permissions: ['att_setup'],
+};
+const ctx = (db, text, session = ADMIN) => ({
   db,
   env: {},
   url: new URL('https://x/api/att/staff/import'),
-  session: ADMIN,
+  session,
   executionContext: null,
   request: new Request('https://x/', {
     method: 'POST',
@@ -329,4 +336,176 @@ test('a round trip through the template changes nothing', async () => {
 
   assert.equal(read.tally.nothing, true, 'what came down is what is already here');
   assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_staff').get().n, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Everything else about somebody
+// ---------------------------------------------------------------------------
+
+test('the template carries the whole record, not just the register', async () => {
+  const { raw, db } = setup();
+  raw.prepare(
+    `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
+     VALUES (1, '1', 'Kofi', 'Kitchen', '2020-01-06')`,
+  ).run();
+  raw.prepare(
+    `INSERT INTO hr_profile (staff_id, preferred_name, personal_phone, alt_phone,
+                             personal_email, date_of_birth, town, id_number, bank_name)
+     VALUES (1, 'Kofi', '024 123 4567', '055 999 1111', 'kofi@example.com',
+             '1996-07-14', 'Accra', 'GHA-123', 'Absa')`,
+  ).run();
+  raw.prepare(
+    `INSERT INTO hr_contact (staff_id, kind, name, phone, relationship)
+     VALUES (1, 'emergency', 'Adjoa', '020 987 6543', 'Sister')`,
+  ).run();
+
+  const body = await (await staffTemplate(ctx(db, ''))).text();
+  for (const shown of ['Kofi', '024 123 4567', '055 999 1111', 'kofi@example.com',
+    '1996-07-14', 'Accra', 'Adjoa', '020 987 6543', 'Sister', 'GHA-123', 'Absa']) {
+    assert.match(body, new RegExp(shown.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), shown);
+  }
+});
+
+test('the numbers are left off the sheet of somebody who cannot see them', async () => {
+  const { raw, db } = setup();
+  raw.prepare(
+    `INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (1, '1', 'Kofi', '2020-01-06')`,
+  ).run();
+  raw.prepare('INSERT INTO hr_profile (staff_id, id_number, account_number) VALUES (1, ?, ?)')
+    .run('GHA-123', '9988776655');
+
+  const mine = await (await staffTemplate(ctx(db, '', PLANNER))).text();
+  assert.ok(!mine.includes('GHA-123'), 'an ID number is not theirs to read');
+  assert.ok(!mine.includes('9988776655'));
+  assert.ok(!mine.includes('Account number'), 'and the column is not there to fill in');
+
+  // And it is on the sheet of somebody who could have opened the record.
+  const theirs = await (await staffTemplate(ctx(db, ''))).text();
+  assert.match(theirs, /GHA-123/);
+  assert.match(theirs, /Account number/);
+});
+
+test('a sheet fills in contact details, and a blank cell leaves what is there', async () => {
+  const { raw, db } = setup();
+  await applyStaffImport(ctx(db, 'Employee no,Name\n1,Kofi Mensah'));
+  const id = raw.prepare("SELECT id FROM att_staff WHERE employee_no = '1'").get().id;
+  raw.prepare('INSERT OR IGNORE INTO hr_profile (staff_id) VALUES (?)').run(id);
+  raw.prepare('UPDATE hr_profile SET personal_email = ? WHERE staff_id = ?')
+    .run('old@example.com', id);
+
+  const sheet = [
+    'Employee no,Phone,Other phone,Email,Town,Next of kin,Next of kin phone',
+    '1,024 111 2222,055 333 4444,,Accra,Adjoa Mensah,020 987 6543',
+  ].join('\n');
+  const out = await (await applyStaffImport(ctx(db, sheet))).json();
+  assert.equal(out.changed, 1);
+
+  const profile = raw.prepare('SELECT * FROM hr_profile WHERE staff_id = ?').get(id);
+  assert.equal(profile.personal_phone, '024 111 2222');
+  assert.equal(profile.alt_phone, '055 333 4444');
+  assert.equal(profile.town, 'Accra');
+  assert.equal(profile.personal_email, 'old@example.com', 'a blank cell is not an instruction');
+
+  const kin = raw.prepare('SELECT * FROM hr_contact WHERE staff_id = ?').get(id);
+  assert.equal(kin.name, 'Adjoa Mensah');
+  assert.equal(kin.phone, '020 987 6543');
+});
+
+test('next of kin already on file is changed rather than doubled', async () => {
+  const { raw, db } = setup();
+  await applyStaffImport(ctx(db, 'Employee no,Name\n1,Kofi Mensah'));
+  const id = raw.prepare("SELECT id FROM att_staff WHERE employee_no = '1'").get().id;
+  raw.prepare(
+    `INSERT INTO hr_contact (staff_id, kind, name, phone) VALUES (?, 'emergency', 'Adjoa', '020 1')`,
+  ).run(id);
+
+  await applyStaffImport(ctx(db, 'Employee no,Next of kin phone\n1,020 987 6543'));
+
+  const rows = raw.prepare('SELECT * FROM hr_contact WHERE staff_id = ?').all(id);
+  assert.equal(rows.length, 1, 'one person to ring, not two');
+  assert.equal(rows[0].name, 'Adjoa', 'their name is left alone');
+  assert.equal(rows[0].phone, '020 987 6543');
+});
+
+test('a number a sheet may not set is refused with a reason, not dropped', async () => {
+  const { raw, db } = setup();
+  await applyStaffImport(ctx(db, 'Employee no,Name\n1,Kofi Mensah'));
+  const sheet = 'Employee no,Account number,Town\n1,9988776655,Accra';
+
+  const read = await (await readStaffImport(ctx(db, sheet, PLANNER))).json();
+  const [line] = read.lines;
+  assert.ok(line.notes.some((n) => /manage employee records/i.test(n.why)),
+    JSON.stringify(line.notes));
+  // And the rest of the line still goes in: one column they may not touch does
+  // not throw away the eight they may.
+  assert.ok(line.changes.some((c) => c.label === 'Town'));
+
+  await applyStaffImport(ctx(db, sheet, PLANNER));
+  const id = raw.prepare("SELECT id FROM att_staff WHERE employee_no = '1'").get().id;
+  const profile = raw.prepare('SELECT * FROM hr_profile WHERE staff_id = ?').get(id);
+  assert.equal(profile.account_number, null, 'nothing was written');
+  assert.equal(profile.town, 'Accra');
+});
+
+test('a date of birth is read the same four ways a start date is', async () => {
+  const { raw, db } = setup();
+  await applyStaffImport(ctx(db, 'Employee no,Name\n1,Kofi Mensah'));
+  await applyStaffImport(ctx(db, 'Employee no,Date of birth\n1,14/07/1996'));
+
+  const id = raw.prepare("SELECT id FROM att_staff WHERE employee_no = '1'").get().id;
+  assert.equal(
+    raw.prepare('SELECT date_of_birth d FROM hr_profile WHERE staff_id = ?').get(id).d,
+    '1996-07-14',
+  );
+});
+
+test('the round trip still changes nothing with every column on it', async () => {
+  const { raw, db } = setup();
+  raw.prepare(
+    `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
+     VALUES (1, '1', 'Kofi', 'Kitchen', '2020-01-06')`,
+  ).run();
+  raw.prepare(
+    `INSERT INTO hr_profile (staff_id, preferred_name, personal_phone, alt_phone, personal_email,
+                             date_of_birth, gender, address_line, town, region, digital_address,
+                             id_type, id_number, ssnit_number, tin_number, pay_method,
+                             bank_name, bank_branch, account_name, account_number,
+                             momo_network, momo_number)
+     VALUES (1, 'Kofi', '024 1', '055 2', 'k@x.test', '1996-07-14', 'Male', '12 High St',
+             'Accra', 'Greater Accra', 'GA-183-9271', 'Ghana Card', 'GHA-123', 'C123', 'T456',
+             'bank', 'Absa', 'Osu', 'Kofi Mensah', '9988', 'MTN', '024 1')`,
+  ).run();
+  raw.prepare(
+    `INSERT INTO hr_contact (staff_id, kind, name, phone, relationship)
+     VALUES (1, 'emergency', 'Adjoa', '020 9', 'Sister')`,
+  ).run();
+
+  const sheet = await (await staffTemplate(ctx(db, ''))).text();
+  const read = await (await readStaffImport(ctx(db, sheet))).json();
+  assert.equal(read.tally.nothing, true, JSON.stringify(read.lines));
+});
+
+test('a sheet of nothing but phone numbers needs no name column', async () => {
+  const { raw, db } = setup();
+  await applyStaffImport(ctx(db, 'Employee no,Name\n1,Kofi Mensah\n2,Ama Boateng'));
+
+  const out = await (await applyStaffImport(ctx(db,
+    'Employee no,Phone\n1,024 111 2222\n2,055 333 4444'))).json();
+  assert.equal(out.changed, 2);
+  assert.deepEqual(out.failed, []);
+
+  const numbers = raw.prepare(
+    'SELECT personal_phone p FROM hr_profile ORDER BY staff_id',
+  ).all().map((r) => r.p);
+  assert.deepEqual(numbers, ['024 111 2222', '055 333 4444']);
+});
+
+test('but a number nobody has still needs one, and says how many', async () => {
+  const { db } = setup();
+  await applyStaffImport(ctx(db, 'Employee no,Name\n1,Kofi Mensah'));
+
+  await assert.rejects(
+    () => applyStaffImport(ctx(db, 'Employee no,Phone\n1,024 1\n99,024 2\n98,024 3')),
+    /a name column, for the 2 numbers on it that nobody here has/,
+  );
 });

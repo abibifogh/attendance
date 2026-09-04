@@ -336,7 +336,7 @@ export function bulkUpload({
     items: [
       // The upload first, because it is what somebody came for. The template
       // sits under it for the first time they do this.
-      { label: 'Upload a file', onClick: () => picker.click() },
+      { label: 'Upload a filled-in sheet', onClick: () => picker.click() },
       template
         ? {
           label: template.label ?? 'Download template',

@@ -611,6 +611,36 @@ facts. Wanting to work is not being away, so *Would like to work* is none of
 the limit's business. The screen says it as the boxes are ticked and the server
 refuses it either way.
 
+**Everybody's details in and out on one sheet.** The staff import already
+created people and set the register; what it did not carry was most of what a
+property actually keeps about somebody. Phone and email were two columns among
+thirteen, and everything else, the second number, the address, the date of
+birth, the person to ring when something has happened, was a form filled in one
+employee at a time. That is right for a new starter and hopeless for ninety
+people whose numbers are already sitting in a spreadsheet somebody typed years
+ago.
+
+*Staff details* under Setup takes the whole record down as a sheet with
+everybody already on it, and takes it back filled in. Known as, both phone
+numbers, email, date of birth, gender, address, town, region, digital address,
+and next of kin with their number and relationship, alongside the register and
+pay columns that were already there. A blank cell still leaves what is there
+alone: sending back two columns of phone numbers means setting two things, not
+wiping the rest.
+
+A name column is only needed where the sheet would create somebody. Filling in
+contact details for people already on file is the ordinary use of this and it
+no longer has to carry their names to do it; a number nobody has is still
+refused, and the refusal says how many.
+
+ID numbers, SSNIT and TIN, bank accounts and mobile money come down and go back
+only for somebody who can manage employee records. An import shows what it
+would change, from and to, which makes reading and writing the same act here:
+a sheet that could set a bank account would also show the one already on file
+to whoever opened it. For anybody else the columns are simply not on the sheet,
+and one arriving in an uploaded file is refused by name rather than dropped
+quietly.
+
 **A day off says so.** A blank cell meant two entirely different things and
 the screen said the same dash to both. If the fortnight has gone out and there
 is nothing against your name on Thursday, Thursday is your day off: somebody

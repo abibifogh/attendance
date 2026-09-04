@@ -2,7 +2,9 @@ import { siteOrigin } from '../lib/site.js';
 import {
   badRequest, bool, csvResponse, int, json, notFound, num, readJson, rethrowConstraint, str,
 } from '../lib/http.js';
-import { readStaffSheet, tallyOf } from '../lib/staff-import.js';
+import {
+  KIN_FIELDS, PROFILE_COLUMN, readStaffSheet, tallyOf,
+} from '../lib/staff-import.js';
 import { ratesFrom } from '../lib/tax.js';
 import { tiersFrom } from '../lib/statutory.js';
 import { EARLIEST } from '../lib/tax-tables.js';
@@ -1474,14 +1476,20 @@ export async function companyLogo(ctx) {
 
 /** Who the property already knows, in the shape the reader wants them. */
 async function registerNow(db) {
-  const [staff, profiles, pay, allowances] = await Promise.all([
+  const [staff, profiles, pay, allowances, kin] = await Promise.all([
     db.prepare('SELECT * FROM att_staff').all(),
-    db.prepare('SELECT staff_id, personal_phone, personal_email FROM hr_profile').all()
-      .catch(() => ({ results: [] })),
+    db.prepare('SELECT * FROM hr_profile').all().catch(() => ({ results: [] })),
     db.prepare('SELECT staff_id, basic, ssnit FROM pay_profile').all()
       .catch(() => ({ results: [] })),
     db.prepare('SELECT staff_id, name, amount, taxable FROM pay_allowance WHERE active = 1').all()
       .catch(() => ({ results: [] })),
+    // The first one only. A sheet has one column for next of kin and somebody
+    // may have two contacts on file; filling in the column changes the first
+    // and leaves the second where it is.
+    db.prepare(
+      `SELECT staff_id, name, phone, relationship FROM hr_contact
+        WHERE id IN (SELECT MIN(id) FROM hr_contact GROUP BY staff_id)`,
+    ).all().catch(() => ({ results: [] })),
   ]);
 
   const allowanceBy = new Map();
@@ -1495,8 +1503,20 @@ async function registerNow(db) {
     profiles: new Map((profiles.results ?? []).map((r) => [r.staff_id, r])),
     pay: new Map((pay.results ?? []).map((r) => [r.staff_id, r])),
     allowanceBy,
+    kinBy: new Map((kin.results ?? []).map((r) => [r.staff_id, r])),
   };
 }
+
+/**
+ * Whether this person may see and set the numbers.
+ *
+ * ID numbers and bank accounts are behind managing employee records, and an
+ * import preview shows what it would change from and to, which makes reading
+ * and writing the same act. So the sheet carries those columns only for
+ * somebody who could have opened the record anyway.
+ */
+const mayHoldNumbers = (ctx) => Boolean(ctx.session?.permissions?.includes('hr_manage'))
+  || ctx.session?.user?.role === 'admin';
 
 /** What the file would do, said before anything is done. */
 export async function readStaffImport(ctx) {
@@ -1504,7 +1524,10 @@ export async function readStaffImport(ctx) {
   const text = String(body.text ?? '');
   if (!text.trim()) throw badRequest('There is nothing in that file.');
 
-  const read = readStaffSheet(text, await registerNow(ctx.db));
+  const read = readStaffSheet(text, {
+    ...(await registerNow(ctx.db)),
+    sensitive: mayHoldNumbers(ctx),
+  });
   return json({ ...read, tally: tallyOf(read) });
 }
 
@@ -1521,7 +1544,10 @@ export async function applyStaffImport(ctx) {
   const text = String(body.text ?? '');
   if (!text.trim()) throw badRequest('There is nothing in that file.');
 
-  const read = readStaffSheet(text, await registerNow(ctx.db));
+  const read = readStaffSheet(text, {
+    ...(await registerNow(ctx.db)),
+    sensitive: mayHoldNumbers(ctx),
+  });
   if (read.missingColumns.length) {
     throw badRequest(`The sheet needs ${read.missingColumns.join(' and ')}.`);
   }
@@ -1633,20 +1659,54 @@ export async function applyStaffImport(ctx) {
         }
       }
 
-      // The two contact details, which live beside the record rather than in
-      // it. Written one column at a time so a sheet with only phone numbers on
-      // it cannot wipe an email address.
-      if (set.has('phone') || set.has('email')) {
+      // Everything that lives beside the record rather than in it: how to
+      // reach them, where they live, their numbers. Written one column at a
+      // time, so a sheet with only phone numbers on it cannot wipe an email
+      // address, and only the columns the sheet actually carried.
+      const profileSets = Object.entries(PROFILE_COLUMN)
+        .filter(([kind]) => set.has(kind));
+
+      if (profileSets.length) {
         await ctx.db.prepare(
           'INSERT OR IGNORE INTO hr_profile (staff_id) VALUES (?)',
         ).bind(staffId).run().catch(() => {});
-        if (set.has('phone')) {
-          await ctx.db.prepare('UPDATE hr_profile SET personal_phone = ?2 WHERE staff_id = ?1')
-            .bind(staffId, set.get('phone')).run().catch(() => {});
+        for (const [kind, column] of profileSets) {
+          await ctx.db.prepare(`UPDATE hr_profile SET ${column} = ?2 WHERE staff_id = ?1`)
+            .bind(staffId, set.get(kind)).run().catch(() => {});
         }
-        if (set.has('email')) {
-          await ctx.db.prepare('UPDATE hr_profile SET personal_email = ?2 WHERE staff_id = ?1')
-            .bind(staffId, set.get('email')).run().catch(() => {});
+      }
+
+      // The person to ring when something has happened. A row of its own,
+      // because somebody may have two and the sheet has one column: filling it
+      // in changes the first and leaves anybody else on file alone.
+      if (KIN_FIELDS.some((kind) => set.has(kind))) {
+        const held = await ctx.db.prepare(
+          'SELECT id FROM hr_contact WHERE staff_id = ? ORDER BY id LIMIT 1',
+        ).bind(staffId).first().catch(() => null);
+
+        if (held) {
+          const bits = [];
+          const binds = [];
+          const put = (column, value) => {
+            binds.push(value);
+            bits.push(`${column} = ?${binds.length}`);
+          };
+          if (set.has('nextOfKin')) put('name', set.get('nextOfKin'));
+          if (set.has('nextOfKinPhone')) put('phone', set.get('nextOfKinPhone'));
+          if (set.has('nextOfKinRelation')) put('relationship', set.get('nextOfKinRelation'));
+          binds.push(held.id);
+          await ctx.db.prepare(`UPDATE hr_contact SET ${bits.join(', ')} WHERE id = ?${binds.length}`)
+            .bind(...binds).run().catch(() => {});
+        } else if (set.has('nextOfKin')) {
+          // A contact with no name is nobody to ring, so a sheet that fills in
+          // a number and no name writes nothing rather than a blank row.
+          await ctx.db.prepare(
+            `INSERT INTO hr_contact (staff_id, kind, name, phone, relationship)
+             VALUES (?1, 'emergency', ?2, ?3, ?4)`,
+          ).bind(
+            staffId, set.get('nextOfKin'),
+            set.get('nextOfKinPhone') ?? null, set.get('nextOfKinRelation') ?? null,
+          ).run().catch(() => {});
         }
       }
 
@@ -1707,7 +1767,8 @@ export async function applyStaffImport(ctx) {
  * described.
  */
 export async function staffTemplate(ctx) {
-  const { staff, profiles, pay, allowanceBy } = await registerNow(ctx.db);
+  const { staff, profiles, pay, allowanceBy, kinBy } = await registerNow(ctx.db);
+  const numbers = mayHoldNumbers(ctx);
 
   // A column for each allowance the property actually uses, written the way
   // the payroll sheet writes them. A property with none yet gets one named
@@ -1724,9 +1785,20 @@ export async function staffTemplate(ctx) {
     ? allowances.map(([name, taxable]) => `Allowance: ${name}${taxable ? '' : ' (not taxable)'}`)
     : ['Allowance: Transport'];
 
-  const head = ['Employee no', 'Name', 'Department', 'Job title', 'Started', 'Left',
-    'Annual leave days', 'Days a week', 'Here for', 'Phone', 'Email', 'Basic salary',
-    'SSNIT', ...columns, 'Note'];
+  // The sensitive block only for somebody who could have opened the record
+  // anyway. A column nobody may fill in is a column somebody fills in and then
+  // wonders why nothing happened.
+  const NUMBERS = ['ID type', 'ID number', 'SSNIT number', 'TIN',
+    'Pay method', 'Bank', 'Branch', 'Account name', 'Account number',
+    'MoMo network', 'MoMo number'];
+
+  const head = ['Employee no', 'Name', 'Known as', 'Department', 'Job title', 'Started', 'Left',
+    'Annual leave days', 'Days a week', 'Here for',
+    'Phone', 'Other phone', 'Email',
+    'Date of birth', 'Gender', 'Address', 'Town', 'Region', 'Digital address',
+    'Next of kin', 'Next of kin phone', 'Next of kin relationship',
+    ...(numbers ? NUMBERS : []),
+    'Basic salary', 'SSNIT', ...columns, 'Note'];
 
   const rows = [head];
   const alive = staff.filter((s) => s.active).sort((a, b) => a.name.localeCompare(b.name));
@@ -1735,9 +1807,11 @@ export async function staffTemplate(ctx) {
     const profile = profiles.get(person.id);
     const money = pay.get(person.id);
     const mine = allowanceBy.get(person.id) ?? [];
+    const kin = kinBy.get(person.id);
     rows.push([
       person.employee_no,
       person.name,
+      profile?.preferred_name ?? '',
       person.department ?? '',
       person.job_title ?? '',
       person.hired_on ?? '',
@@ -1746,7 +1820,30 @@ export async function staffTemplate(ctx) {
       person.days_per_week ?? '',
       person.on_clock === 0 ? 'Payroll only' : person.on_rota === 0 ? 'Never rostered' : 'Rota',
       profile?.personal_phone ?? '',
+      profile?.alt_phone ?? '',
       profile?.personal_email ?? '',
+      profile?.date_of_birth ?? '',
+      profile?.gender ?? '',
+      profile?.address_line ?? '',
+      profile?.town ?? '',
+      profile?.region ?? '',
+      profile?.digital_address ?? '',
+      kin?.name ?? '',
+      kin?.phone ?? '',
+      kin?.relationship ?? '',
+      ...(numbers ? [
+        profile?.id_type ?? '',
+        profile?.id_number ?? '',
+        profile?.ssnit_number ?? '',
+        profile?.tin_number ?? '',
+        profile?.pay_method ?? '',
+        profile?.bank_name ?? '',
+        profile?.bank_branch ?? '',
+        profile?.account_name ?? '',
+        profile?.account_number ?? '',
+        profile?.momo_network ?? '',
+        profile?.momo_number ?? '',
+      ] : []),
       money ? Number(money.basic).toFixed(2) : '',
       money ? (money.ssnit ? 'Yes' : 'No') : '',
       ...allowances.map(([name]) => {
@@ -1758,10 +1855,31 @@ export async function staffTemplate(ctx) {
     ]);
   }
 
+  // A property with nobody on it yet gets one filled-in line rather than a row
+  // of empty headings, because a column somebody can see is easier to follow
+  // than a paragraph describing one. Built against the headings above so the
+  // two cannot drift apart and leave an example under the wrong columns.
   if (!alive.length) {
-    rows.push(['001', 'Kofi Mensah', 'Kitchen', 'Cook', '2024-03-01', '', '', '', 'Rota',
-      '024 123 4567', '', '1800.00', 'Yes', '200.00',
-      'An example — change it or delete the line']);
+    const shown = {
+      'Employee no': '001',
+      Name: 'Kofi Mensah',
+      'Known as': 'Kofi',
+      Department: 'Kitchen',
+      'Job title': 'Cook',
+      Started: '2024-03-01',
+      'Here for': 'Rota',
+      Phone: '024 123 4567',
+      Email: 'kofi@example.com',
+      'Date of birth': '1996-07-14',
+      Town: 'Accra',
+      'Next of kin': 'Adjoa Mensah',
+      'Next of kin phone': '020 987 6543',
+      'Next of kin relationship': 'Sister',
+      'Basic salary': '1800.00',
+      SSNIT: 'Yes',
+      Note: 'An example. Change it or delete the line',
+    };
+    rows.push(head.map((column) => shown[column] ?? ''));
   }
 
   return csvResponse('staff.csv', rows);

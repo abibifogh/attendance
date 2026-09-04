@@ -2290,6 +2290,19 @@ export const GUIDE = [
         ],
       } },
 
+      { sub: 'Everybody\u2019s details in one sheet' },
+      { p: 'Staff details, on the Staff tab, takes the whole register down as a spreadsheet '
+        + 'with everybody already on it: both phone numbers, email, date of birth, address, '
+        + 'next of kin and their number, alongside the department, start date and pay. Fill in '
+        + 'the gaps in Excel and send it back. Nothing is written until you have seen what the '
+        + 'file would do, line by line.' },
+      { p: 'A blank cell leaves what is there alone. Sending back two columns of phone numbers '
+        + 'sets two things; it does not wipe everything else. And a sheet that only fills in '
+        + 'details needs no name column, because those people are already on file.' },
+      { note: 'ID numbers, SSNIT, TIN and bank details are on the sheet only for somebody who '
+        + 'can manage employee records. The preview shows what it would change, from and to, so '
+        + 'a sheet that could set a bank account would also show the one already on file.' },
+
       { sub: 'Who the employer is' },
       { p: 'The first tab, and the one everything printed depends on. The name and address head '
         + 'every contract and letter; the logo, the registered name, the telephone number, the '

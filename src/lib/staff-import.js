@@ -152,7 +152,94 @@ const HEADINGS = [
   ['basic', ['basic', 'basic salary', 'salary', 'monthly salary', 'gross', 'basic pay']],
   ['ssnit', ['ssnit', 'on ssnit', 'ssnit member']],
   ['note', ['note', 'notes', 'remark', 'remarks', 'comment']],
+
+  // Everything else the property already keeps about somebody. The record was
+  // only ever fillable one person at a time on a form, which is right for one
+  // new starter and hopeless for ninety people whose numbers are sitting in a
+  // spreadsheet somebody else typed years ago.
+  ['preferredName', ['preferred name', 'known as', 'goes by', 'nickname', 'other name']],
+  ['dateOfBirth', ['date of birth', 'birthday', 'born', 'dob', 'birth date']],
+  ['gender', ['gender', 'sex']],
+  ['otherPhone', ['other phone', 'second phone', 'alt phone', 'alternative phone',
+    'other number', 'second number', 'another number']],
+  ['address', ['address', 'address line', 'street', 'house address', 'residence']],
+  ['town', ['town', 'city', 'suburb', 'area']],
+  ['region', ['region', 'state', 'province']],
+  ['digitalAddress', ['digital address', 'ghanapost', 'ghanapostgps', 'gps address',
+    'ghana post gps', 'gps']],
+
+  // Who to ring when something has happened. The one part of a staff record
+  // that is read in a hurry, and the one most often missing.
+  ['nextOfKin', ['next of kin', 'emergency contact', 'emergency name', 'kin',
+    'in case of emergency']],
+  ['nextOfKinPhone', ['next of kin phone', 'emergency phone', 'emergency number',
+    'kin phone', 'next of kin number']],
+  ['nextOfKinRelation', ['next of kin relationship', 'relationship', 'relation',
+    'emergency relationship']],
+
+  // Numbers and accounts. Only written by somebody who could already read
+  // them, and refused with a reason to anybody else.
+  ['idType', ['id type', 'identification', 'id kind', 'type of id']],
+  ['idNumber', ['id number', 'ghana card', 'ghana card number', 'id no', 'identification number',
+    'passport number', 'voter id']],
+  ['ssnitNumber', ['ssnit number', 'ssnit no', 'social security number']],
+  ['tinNumber', ['tin', 'tin number', 'tax number', 'tax identification number']],
+  ['payMethod', ['pay method', 'paid by', 'payment method', 'how they are paid']],
+  ['bankName', ['bank', 'bank name']],
+  ['bankBranch', ['branch', 'bank branch']],
+  ['accountName', ['account name', 'name on the account']],
+  ['accountNumber', ['account number', 'account no', 'bank account', 'bank account number']],
+  ['momoNetwork', ['momo network', 'mobile money network', 'momo provider', 'network']],
+  ['momoNumber', ['momo', 'momo number', 'mobile money', 'mobile money number']],
 ];
+
+/**
+ * The fields that live beside the record rather than in it.
+ *
+ * `att_staff` holds the register; `hr_profile` holds everything about the
+ * person. Split out here so the importer can write one row per table rather
+ * than a column list per field.
+ */
+export const PROFILE_COLUMN = {
+  preferredName: 'preferred_name',
+  dateOfBirth: 'date_of_birth',
+  gender: 'gender',
+  phone: 'personal_phone',
+  otherPhone: 'alt_phone',
+  email: 'personal_email',
+  address: 'address_line',
+  town: 'town',
+  region: 'region',
+  digitalAddress: 'digital_address',
+  idType: 'id_type',
+  idNumber: 'id_number',
+  ssnitNumber: 'ssnit_number',
+  tinNumber: 'tin_number',
+  payMethod: 'pay_method',
+  bankName: 'bank_name',
+  bankBranch: 'bank_branch',
+  accountName: 'account_name',
+  accountNumber: 'account_number',
+  momoNetwork: 'momo_network',
+  momoNumber: 'momo_number',
+};
+
+/** Next of kin, which is a row of its own because somebody may have two. */
+export const KIN_FIELDS = ['nextOfKin', 'nextOfKinPhone', 'nextOfKinRelation'];
+
+/**
+ * The columns only somebody who can already read them may write.
+ *
+ * An import shows what it would change, from and to, so a sheet that could set
+ * a bank account would also show the one that is there to whoever opened it.
+ * That is the whole of the reason this list exists: reading and writing are
+ * the same permission here because the preview makes them the same act.
+ */
+export const SENSITIVE = new Set([
+  'idType', 'idNumber', 'ssnitNumber', 'tinNumber',
+  'payMethod', 'bankName', 'bankBranch', 'accountName', 'accountNumber',
+  'momoNetwork', 'momoNumber',
+]);
 
 export function readColumns(header) {
   const known = new Map();
@@ -227,6 +314,28 @@ const LABELS = {
   basic: 'Basic salary',
   ssnit: 'SSNIT',
   note: 'Note',
+  preferredName: 'Known as',
+  dateOfBirth: 'Date of birth',
+  gender: 'Gender',
+  otherPhone: 'Other phone',
+  address: 'Address',
+  town: 'Town',
+  region: 'Region',
+  digitalAddress: 'Digital address',
+  nextOfKin: 'Next of kin',
+  nextOfKinPhone: 'Next of kin phone',
+  nextOfKinRelation: 'Next of kin relationship',
+  idType: 'ID type',
+  idNumber: 'ID number',
+  ssnitNumber: 'SSNIT number',
+  tinNumber: 'TIN',
+  payMethod: 'Pay method',
+  bankName: 'Bank',
+  bankBranch: 'Branch',
+  accountName: 'Account name',
+  accountNumber: 'Account number',
+  momoNetwork: 'MoMo network',
+  momoNumber: 'MoMo number',
 };
 
 const TRACKING_SAID = {
@@ -236,7 +345,7 @@ const TRACKING_SAID = {
 };
 
 /** What somebody's record currently says, in the shape a cell would set. */
-function standing(person, profile, pay, allowances = []) {
+function standing(person, profile, pay, allowances = [], kin = null) {
   if (!person) return { allowanceBy: new Map() };
   return {
     allowanceBy: new Map(allowances.map((a) => [norm(a.name), a])),
@@ -248,11 +357,17 @@ function standing(person, profile, pay, allowances = []) {
     leaveDays: person.leave_days ?? null,
     daysPerWeek: person.days_per_week ?? null,
     tracking: person.on_clock === 0 ? 'payroll' : (person.on_rota === 0 ? 'no-rota' : 'full'),
-    phone: profile?.personal_phone ?? null,
-    email: profile?.personal_email ?? null,
     basic: pay ? Number(pay.basic) : null,
     ssnit: pay ? pay.ssnit !== 0 : null,
     note: person.note ?? null,
+    // Everything that lives on the profile, read straight off the column it
+    // came from so there is one list of them rather than two that drift.
+    ...Object.fromEntries(
+      Object.entries(PROFILE_COLUMN).map(([kind, column]) => [kind, profile?.[column] ?? null]),
+    ),
+    nextOfKin: kin?.name ?? null,
+    nextOfKinPhone: kin?.phone ?? null,
+    nextOfKinRelation: kin?.relationship ?? null,
   };
 }
 
@@ -273,6 +388,7 @@ const said = (kind, value) => {
  */
 export function readStaffSheet(sheet, {
   staff = [], profiles = new Map(), pay = new Map(), allowanceBy = new Map(),
+  kinBy = new Map(), sensitive = false,
 } = {}) {
   const rows = parseCsv(sheet);
   if (!rows.length) {
@@ -290,7 +406,13 @@ export function readStaffSheet(sheet, {
   if (!columns.some((c) => c.kind === 'employeeNo')) {
     missingColumns.push('an employee number column');
   }
-  if (!columns.some((c) => c.kind === 'name')) missingColumns.push('a name column');
+
+  // A name column is wanted only where the sheet would create somebody. A
+  // property sending back two columns of phone numbers for people already on
+  // file has no reason to carry their names as well, and insisting on it made
+  // the ordinary use of this, filling in details, the awkward one.
+  const hasName = columns.some((c) => c.kind === 'name');
+  let strangers = 0;
 
   const lines = [];
   const skipped = [];
@@ -319,12 +441,21 @@ export function readStaffSheet(sheet, {
 
     const person = byNo.get(employeeNo) ?? null;
     if (!person && !name) {
-      skipped.push({ at, employeeNo, name, why: 'nobody of that number here, and no name to add' });
+      strangers += 1;
+      skipped.push({
+        at,
+        employeeNo,
+        name,
+        why: hasName
+          ? 'nobody of that number here, and no name to add'
+          : 'nobody of that number here, and the sheet has no name column to add one from',
+      });
       return;
     }
 
     const now = standing(
       person, profiles.get(person?.id), pay.get(person?.id), allowanceBy.get(person?.id) ?? [],
+      kinBy.get(person?.id),
     );
     const line = {
       at,
@@ -364,8 +495,19 @@ export function readStaffSheet(sheet, {
         continue;
       }
 
+      // A column somebody may not write is not silently dropped. Left unsaid,
+      // a sheet with a bank column in it would import looking as if it had
+      // worked and leave the accounts empty.
+      if (SENSITIVE.has(kind) && !sensitive) {
+        line.notes.push({
+          what: LABELS[kind],
+          why: 'only somebody who can manage employee records may set this',
+        });
+        continue;
+      }
+
       let value;
-      if (kind === 'hiredOn' || kind === 'leftOn') value = readDate(cell);
+      if (kind === 'hiredOn' || kind === 'leftOn' || kind === 'dateOfBirth') value = readDate(cell);
       else if (kind === 'leaveDays' || kind === 'daysPerWeek' || kind === 'basic') {
         value = readNumber(cell);
       } else if (kind === 'ssnit') value = readYesNo(cell);
@@ -401,6 +543,13 @@ export function readStaffSheet(sheet, {
     // and the person is quietly never created.
     if (line.adding || line.changes.length || line.notes.length) lines.push(line);
   });
+
+  if (strangers && !hasName) {
+    missingColumns.push(
+      `a name column, for the ${strangers} number${strangers === 1 ? '' : 's'} on it that `
+      + 'nobody here has',
+    );
+  }
 
   return { columns, unknown, lines, skipped, missingColumns };
 }

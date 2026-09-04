@@ -424,11 +424,14 @@ const readPosition = (form, name = 'position') => (
 function staffImportButton(reload) {
   return bulkUpload({
     accept: '.csv,text/csv',
-    title: 'A staff list as a CSV. Nothing is written until you have seen what it would do.',
+    label: 'Staff details',
+    title: 'Everybody on file as a spreadsheet: names, contacts, next of kin and pay. '
+      + 'Fill in the gaps and send it back. Nothing is written until you have seen what '
+      + 'it would do.',
     template: {
       href: '/api/att/staff/template',
       download: 'staff.csv',
-      label: 'Download template',
+      label: 'Download everybody as a sheet',
     },
     onFile: async (file) => {
       try {
