@@ -552,13 +552,6 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .who-strip.not-me .who-strip-label,
 .who-strip.not-me .who-strip-note { color: var(--accent); }
 
-/* Why the last session ended, where it ended by itself. */
-.login-why {
-  margin: 0 0 .9rem; padding: .5rem .7rem;
-  border-radius: 10px; font-size: .82rem;
-  background: var(--surface-2); color: var(--text-dim);
-}
-
 /* The one line that offers to put HIVE on a phone. Quiet, because it is a
    convenience rather than something anybody has to do, and it only ever
    appears once. */

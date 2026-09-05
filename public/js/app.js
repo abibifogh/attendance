@@ -65,9 +65,6 @@ export const state = {
   // guide can name one the reader does not hold.
   permissionLabels: {},
   roleLabels: {},
-  // Why the last session ended, so the sign-in screen can say so rather than
-  // looking as though something went wrong.
-  signedOutBecause: null,
 };
 
 /**
@@ -235,19 +232,12 @@ export function replaceParams(path, params) {
  * three stores between them. This one does not, and inventing a section
  * heading for a list of ten would be furniture for its own sake.
  */
-/**
- * The way out, however it was reached.
- *
- * `why` is how the sign-in screen knows what to say. Being put back at a login
- * screen with no explanation is the app looking broken; being told it went
- * quiet because nobody touched it is the app doing its job.
- */
-async function signOut(why = null) {
+/** The way out, however it was reached. */
+async function signOut() {
   stopLive();
   unguard();
   await api.logout().catch(() => {});
   resetSession();
-  state.signedOutBecause = typeof why === 'string' ? why : null;
   render();
 }
 
@@ -568,12 +558,11 @@ export async function render({ quiet = false } = {}) {
       // it the header opened nameless until the next reload.
       const me = await api.me().catch(() => null);
       adoptSession(me?.authenticated ? me : signedIn);
-      state.signedOutBecause = null;
       startLive();
       watchForTheRoom();
       if (!location.hash || !currentRoute()) navigate(defaultRoute());
       await render();
-    }, state.signedOutBecause));
+    }));
     return;
   }
 

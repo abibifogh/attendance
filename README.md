@@ -1089,9 +1089,11 @@ binding is slower, not broken.
 A screen left open in an office is a screen anybody walking past is signed in
 on. So the page watches for a touch, a key, a scroll or a click, and five
 minutes with none of them signs the person out and puts them back on the
-sign-in screen with a line saying that is why, rather than looking like
-something broke. Nothing is lost by it: whoever comes back types their PIN and
-carries on.
+sign-in screen. Plainly, with nothing said about why: a line explaining itself
+to whoever is standing there now also tells them the last person walked away,
+and the property would rather it just looked like the sign-in screen. Nothing
+is lost by it either way, since whoever comes back types their PIN and carries
+on.
 
 Installed on a phone the rule is a different one, because switching to WhatsApp
 for ten seconds is not walking away. Coming back asks for the PIN over whatever

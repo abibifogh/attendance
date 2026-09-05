@@ -113,7 +113,7 @@ function decide(awayMs) {
     installed: isInstalled(),
   });
 
-  if (answer === 'out') { onOut?.('idle'); return; }
+  if (answer === 'out') { onOut?.(); return; }
   if (answer === 'lock') showLock();
 }
 
@@ -177,7 +177,7 @@ function showLock() {
         box,
         h('button.btn.btn-primary', { onclick: open }, 'Open')),
       said,
-      h('button.btn-sm.lock-out', { onclick: () => onOut?.('locked') }, 'Sign out instead'),
+      h('button.btn-sm.lock-out', { onclick: () => onOut?.() }, 'Sign out instead'),
     ));
 
   document.body.append(screen);

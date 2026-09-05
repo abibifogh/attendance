@@ -1,19 +1,10 @@
-import { IDLE_MINUTES } from '../guard-rules.js';
 import { api } from '../api.js';
 import { deriveLoginKey } from '../crypto.js';
 import { h, mount } from '../util.js';
 import { BRAND, brandMark } from '../brand.js';
 
 /** PIN keypad. Big targets, no keyboard needed, works with gloves on. */
-/**
- * `why` is how the last session ended, where it ended by itself.
- *
- * Being put back at a sign-in screen with no explanation is the app looking
- * broken, and the first thing somebody does about an app that looks broken is
- * stop using it. Being told it went quiet because nobody touched it is the app
- * doing what it was told.
- */
-export function renderLogin(onSuccess, why = null) {
+export function renderLogin(onSuccess) {
   let pin = '';
   let busy = false;
 
@@ -133,12 +124,6 @@ export function renderLogin(onSuccess, why = null) {
         BRAND.full),
       h('p.muted', { style: { fontSize: '.88rem', marginBottom: '.9rem' } }, 'Sign in to continue'),
 
-      why === 'idle'
-        ? h('div.login-why',
-          `Signed out after ${IDLE_MINUTES} minutes with nobody touching the screen.`)
-        : why === 'locked'
-          ? h('div.login-why', 'Signed out.')
-          : null,
       modeToggle,
       pinPane,
       passwordPane,

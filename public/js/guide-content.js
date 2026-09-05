@@ -56,10 +56,9 @@ export const GUIDE = [
         + 'become the keys to the property.' },
 
       { sub: 'Left alone, it signs you out' },
-      { p: 'Five minutes with nobody touching the screen and HIVE signs you out. The sign-in '
-        + 'screen says that is why, so it does not read as something having gone wrong. An '
-        + 'office computer left open on Today is otherwise signed in for whoever walks past '
-        + 'it.' },
+      { p: 'Five minutes with nobody touching the screen and HIVE signs you out, back to the '
+        + 'sign-in screen with nothing said about it. An office computer left open on Today '
+        + 'is otherwise signed in for whoever walks past it.' },
       { p: 'On a phone with HIVE installed it is gentler than that. Switching to WhatsApp and '
         + 'coming back asks for your PIN, over whatever you were on, and what you were on is '
         + 'still underneath once you have typed it.' },
