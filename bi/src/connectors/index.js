@@ -3,6 +3,7 @@ import * as breakfast from './breakfast.js';
 import * as snpos from './snpos.js';
 import * as snlaundry from './snlaundry.js';
 import * as supabase from './supabase.js';
+import * as odoo from './odoo.js';
 import { emptyBundle } from './bundle.js';
 import { demoPull } from '../fixtures/demo.js';
 import { all } from '../lib/db.js';
@@ -43,6 +44,16 @@ const KINDS = {
     pull: snlaundry.pull,
     check: snlaundry.check,
     describes: 'Laundry charged, collected and left owing, by day and by shift.',
+  },
+  // The accounts. Unlike the four operational systems, Odoo records what the
+  // business was *invoiced* — documents from outside that somebody approved —
+  // which is the other half of every question about what things cost.
+  odoo_json2: {
+    transport: 'http',
+    secretFor: (sourceId) => `ODOO_KEY_${String(sourceId).toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`,
+    pull: odoo.pull,
+    check: odoo.check,
+    describes: 'Vendor bills, what was paid for them, and the accounts behind them.',
   },
   // Any Postgres database on Supabase, read over PostgREST. Unlike the four
   // above it knows nothing about its source's schema — the mapping from that

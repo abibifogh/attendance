@@ -116,6 +116,9 @@ async function clearWindow(db, from, to) {
   const tables = [
     'fact_revenue', 'fact_labour', 'fact_cost', 'fact_demand',
     'fact_service', 'fact_cash_control', 'fact_person_day', 'fact_usage',
+    // A bill is dated by its accounting date, which is a day, so it is
+    // replaced by window with everything else. Payroll is not — see below.
+    'fact_bill',
   ];
   for (const table of tables) {
     await run(db, `DELETE FROM ${table} WHERE day BETWEEN ?1 AND ?2`, from, to);
@@ -156,6 +159,41 @@ async function loadBundle(db, register, sourceId, bundle, config, from, to) {
         row.reasonCode || null, row.scheduled ? 1 : 0, minor(row.expectedMinutes),
         minor(row.workedMinutes),
         minor(row.lateMinutes), minor(row.overtimeMinutes), row.firstIn || null, row.lastOut || null));
+  }
+
+  // ------------------------------------------------------------ bills --
+  //
+  // Replaced by window like every other daily fact, keyed on the document's
+  // own id so a bill edited in Odoo is corrected here rather than duplicated.
+  for (const row of bundle.bills || []) {
+    if (!inWindow(row.day)) continue;
+    const supplierId = row.supplierName || row.supplier
+      ? await register.supplier(row.supplierName || row.supplier) : 0;
+    statements.push(db.prepare(`
+      INSERT INTO fact_bill
+        (source_id, external_id, day, due_day, supplier_id, line_id, vendor_ref,
+         state, payment_state, untaxed, tax, total, residual, from_order, currency)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+      ON CONFLICT (source_id, external_id) DO UPDATE SET
+        day = ?3, due_day = ?4, supplier_id = ?5, line_id = ?6, vendor_ref = ?7,
+        state = ?8, payment_state = ?9, untaxed = ?10, tax = ?11, total = ?12,
+        residual = ?13, from_order = ?14, currency = ?15`)
+      .bind(sourceId, row.externalId, row.day, row.dueDay || null, supplierId || null,
+        row.line || 'admin', row.vendorRef || null, row.state || '', row.paymentState || '',
+        minor(row.untaxed), minor(row.tax), minor(row.total), minor(row.residual),
+        row.fromOrder ? 1 : 0, row.currency || ''));
+  }
+
+  // ---------------------------------------------------------- accounts --
+  for (const row of bundle.accounts || []) {
+    if (!row.code) continue;
+    statements.push(db.prepare(`
+      INSERT INTO dim_account (source_id, code, name, kind)
+      VALUES (?1, ?2, ?3, ?4)
+      ON CONFLICT (source_id, code) DO UPDATE SET
+        name = CASE WHEN ?3 = '' THEN dim_account.name ELSE ?3 END,
+        kind = CASE WHEN ?4 = '' THEN dim_account.kind ELSE ?4 END`)
+      .bind(sourceId, row.code, row.name || '', row.kind || ''));
   }
 
   // ---------------------------------------------------------- payroll --
@@ -235,13 +273,17 @@ async function loadBundle(db, register, sourceId, bundle, config, from, to) {
     const itemId = await register.item(row.itemName, row.unit);
     statements.push(db.prepare(`
       INSERT INTO fact_purchase_line
-        (day, source_id, external_id, line_id, item_id, supplier_id, qty, unit, unit_cost, amount)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+        (day, source_id, external_id, line_id, item_id, supplier_id, qty, unit, unit_cost, amount,
+         account_code, tax, bill_id, ordered_qty)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
       ON CONFLICT (source_id, external_id) DO UPDATE SET
         day = ?1, line_id = ?4, item_id = ?5, supplier_id = ?6, qty = ?7, unit = ?8,
-        unit_cost = ?9, amount = ?10`)
+        unit_cost = ?9, amount = ?10, account_code = ?11, tax = ?12, bill_id = ?13,
+        ordered_qty = ?14`)
       .bind(row.day, sourceId, row.externalId, row.line, itemId, supplierId || null,
-        Number(row.qty) || 0, row.unit || null, minor(row.unitCost), minor(row.amount)));
+        Number(row.qty) || 0, row.unit || null, minor(row.unitCost), minor(row.amount),
+        row.accountCode || null, minor(row.tax || 0), row.billId || null,
+        row.orderedQty == null ? null : Number(row.orderedQty)));
     // A purchase is also a cost. Kept in both places on purpose: the line is
     // for comparing prices, the cost is for the margin, and making the margin
     // screen re-aggregate every invoice line is how a dashboard gets slow.

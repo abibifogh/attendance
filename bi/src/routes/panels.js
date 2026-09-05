@@ -5,6 +5,7 @@ import { resolveRange, addDays, todayIn } from '../lib/dates.js';
 import { pct, ratio, change } from '../lib/money.js';
 import { bare, dayName } from '../insight/labels.js';
 import { median, sum, groupBy, halves } from '../insight/stats.js';
+import { buyingAnalysis } from '../insight/buying.js';
 
 /**
  * The screens.
@@ -393,6 +394,65 @@ export async function suppliers(env, query) {
 }
 
 /** Work due against work done: housekeeping rounds and maintenance. */
+/**
+ * The books.
+ *
+ * Its own screen rather than a section of Buying, because the two answer
+ * different questions from different evidence. Buying reads what the
+ * operational systems recorded receiving; this reads what the business was
+ * invoiced and what the accounts did with it. Where they disagree is itself
+ * the finding, and that is only visible if both exist separately.
+ *
+ * Ninety days by default. A price trend needs more than a month to be a trend,
+ * and a payment pattern needs more than one cycle.
+ */
+export async function books(env, query) {
+  const { db, config, from, to } = await context(env, query, 90);
+
+  const bills = await all(db, `
+    SELECT b.*, s.name AS supplier
+      FROM fact_bill b
+      LEFT JOIN dim_supplier s ON s.id = b.supplier_id
+     WHERE b.day BETWEEN ?1 AND ?2`, from, to);
+
+  // Only lines that came from an accounting source. The other systems' lines
+  // are in the same table on purpose — that is how a price gets compared
+  // across the group — but this screen is about the books, and mixing a
+  // kitchen's own record of a delivery into "what we were invoiced" would make
+  // the totals disagree with Odoo for a reason nobody could find.
+  const lines = await all(db, `
+    SELECT p.*, s.name AS supplier, i.name AS item
+      FROM fact_purchase_line p
+      LEFT JOIN dim_supplier s ON s.id = p.supplier_id
+      LEFT JOIN dim_item i ON i.id = p.item_id
+     WHERE p.day BETWEEN ?1 AND ?2
+       AND p.bill_id IS NOT NULL`, from, to);
+
+  // As of the end of the window, not today. Re-reading last quarter should
+  // report what was overdue then, not what is overdue now.
+  const analysis = buyingAnalysis({ bills, lines, asOf: to });
+  // Only the accounting sources. A screen that says "nothing here" has to be
+  // able to tell "Odoo is not connected" from "Odoo is connected and this
+  // window is genuinely empty", and those are different sentences.
+  const health = (await sourceHealth(db)).filter((h) => h.id === 'odoo');
+
+  return {
+    range: { from, to },
+    demoMode: config.demoMode,
+    connected: health.filter((h) => h.status !== 'never run'),
+    ...analysis,
+    caveats: [
+      'A bill is what a supplier invoiced, which is not always what arrived. Where the kitchen '
+        + 'recorded a different quantity, the difference is on the Buying screen.',
+      'Draft bills are left out of every total here. They are somebody mid-entry, not a commitment.',
+      'A credit note counts as a negative purchase, so a supplier total is what was billed less '
+        + 'what was returned.',
+      'Prices are compared before tax, which is the only basis on which two suppliers can be '
+        + 'compared at all.',
+    ],
+  };
+}
+
 export async function service(env, query) {
   const { db, config, from, to } = await context(env, query, 30);
   const facts = await loadFacts(db, from, to);

@@ -6,6 +6,7 @@ import { renderLabour } from './views/labour.js';
 import { renderDemand } from './views/demand.js';
 import { renderCash } from './views/cash.js';
 import { renderSuppliers } from './views/suppliers.js';
+import { renderBooks } from './views/books.js';
 import { renderService } from './views/service.js';
 import { renderFindings } from './views/findings.js';
 import { renderSetup } from './views/setup.js';
@@ -37,6 +38,7 @@ const ROUTES = [
   { path: 'guests', label: 'Guests', render: renderDemand },
   { path: 'cash', label: 'Cash', render: renderCash },
   { path: 'buying', label: 'Buying', render: renderSuppliers },
+  { path: 'books', label: 'Books', render: renderBooks },
   { path: 'service', label: 'Service', render: renderService },
   { path: 'findings', label: 'Findings', render: renderFindings, needs: 'insight' },
   { path: 'accounts', label: 'Accounts', render: renderAccounts, needs: 'owner' },

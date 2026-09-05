@@ -4,7 +4,7 @@
  * Every connector answers in this one shape, whatever it had to do to get
  * there. That is the whole trick of this application: four systems that share
  * no field name, no money format and no idea of what a "day" is, each turned
- * into the same twelve lists by the one piece of code that understands it, and
+ * into the same fourteen lists by the one piece of code that understands it, and
  * never spoken of again in its own terms.
  *
  * A connector may leave any list empty. The laundry knows nothing about
@@ -36,6 +36,12 @@ export function emptyBundle() {
     // because a pay run is monthly and pretending otherwise would produce a
     // daily figure that reconciles with no payslip anybody could be shown.
     payroll: [],
+    // Vendor bills, at the grain the document exists in. What the business was
+    // invoiced, as opposed to what an operational system recorded receiving.
+    bills: [],
+    // The chart of accounts behind those bills, so spend can be grouped the
+    // way the books group it rather than the way this warehouse guesses.
+    accounts: [],
     // Anything the connector wants the run log to say.
     notes: [],
   };

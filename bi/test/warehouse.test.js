@@ -26,15 +26,21 @@ async function loaded() {
   return { raw, db, env, run };
 }
 
-test('a run loads every fact table from all four sources', async () => {
+test('a run loads every fact table from every source', async () => {
   const { raw, run } = await loaded();
   assert.equal(run.status, 'ok');
-  assert.equal(run.sources.length, 4);
+  // Counted from the registry rather than written out, so adding a source is
+  // one change rather than two — and so this test cannot pass by agreeing
+  // with a stale number it carries itself.
+  const registered = raw.prepare('SELECT COUNT(*) AS n FROM sources').get().n;
+  assert.equal(run.sources.length, registered);
+  assert.ok(registered >= 5, 'four operational systems and the books');
   for (const source of run.sources) assert.equal(source.status, 'demo');
 
   const counts = {};
   for (const table of ['fact_revenue', 'fact_labour', 'fact_cost', 'fact_demand',
-    'fact_service', 'fact_cash_control', 'fact_person_day', 'fact_usage', 'fact_purchase_line']) {
+    'fact_service', 'fact_cash_control', 'fact_person_day', 'fact_usage', 'fact_purchase_line',
+    'fact_bill']) {
     counts[table] = raw.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
     assert.ok(counts[table] > 0, `${table} should have rows`);
   }
@@ -170,7 +176,8 @@ test('the group totals add up from the rows underneath them', async () => {
 test('the run log records what each source did', async () => {
   const { db, run } = await loaded();
   const rows = await all(db, 'SELECT * FROM etl_source_run WHERE run_id = ?1', run.runId);
-  assert.equal(rows.length, 4);
+  const registered = await first(db, 'SELECT COUNT(*) AS n FROM sources');
+  assert.equal(rows.length, registered.n, 'one line per source, whatever the sources are');
   const etl = await first(db, 'SELECT * FROM etl_run WHERE id = ?1', run.runId);
   assert.equal(etl.status, 'ok');
   assert.ok(etl.finished_at, 'a finished run must say when it finished');
