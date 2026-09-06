@@ -1481,6 +1481,20 @@ Whichever it is, **the bell rings for the person who asked** — them by name an
 not every colleague who happens to hold the sign-off permission. They are the
 one waiting on it; a notice four people receive is a notice none of them owns.
 
+**Several at once.** A morning's queue is often nine questions all saying
+"please review", and answering them one at a time is nine dialogs, nine notes
+typed out and nine bells carrying the same sentence. Tick them and answer them
+together: the same words go on every thread and to everybody who asked. Each one
+still goes through the single-question handler, one at a time, so the rules, the
+audit line and the bell are the same as if they had been done by hand — and one
+that cannot be answered, already dealt with or its days signed since, is skipped
+and named rather than taking the other eight down with it.
+
+Signing several puts nothing on or off anybody's leave, whatever is sent. How
+many days come out of an entitlement is a decision about one person, and one
+figure spread across nine of them is not that decision. Charging days is done on
+the card, where their name is.
+
 **The days are on the question.** A card used to carry a sentence, a name and a
 row of counts: *1 absent, 1 under, 1 late*. Answering it therefore meant opening
 that person's record in another screen and holding the two side by side in your

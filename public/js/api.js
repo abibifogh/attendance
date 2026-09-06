@@ -223,6 +223,7 @@ export const api = {
   attDeciders: () => request('/api/att/deciders'),
   attRaiseQuery: (body) => request('/api/att/queries', { method: 'POST', body }),
   attAnswerQuery: (id, body) => request(`/api/att/queries/${id}/answer`, { method: 'POST', body }),
+  attAnswerQueries: (body) => request('/api/att/queries/answer', { method: 'POST', body }),
   attWithdrawQuery: (id) => request(`/api/att/queries/${id}/withdraw`, { method: 'POST' }),
 
   attBalances: (asOf) => request(`/api/att/balances${asOf ? `?asOf=${asOf}` : ''}`),

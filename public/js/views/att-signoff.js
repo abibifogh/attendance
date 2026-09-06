@@ -864,18 +864,62 @@ async function queriesTab(reload) {
           + 'answer it, and by them alone.');
   }
 
+  // Ticked, for answering several together. Only the ones that can still be
+  // answered, and only for whoever can answer them.
+  const answerable = data.canDecide ? [...waiting, ...back] : [];
+  const chosen = new Set();
+  const bar = h('div.bulk-clear', { hidden: true });
+
+  const refreshBar = () => {
+    bar.hidden = chosen.size === 0;
+    mount(bar,
+      h('span', h('strong', `${chosen.size} question${chosen.size === 1 ? '' : 's'} ticked`)),
+      h('div.btn-row',
+        h('button.btn-sm', {
+          onclick: () => {
+            chosen.clear();
+            for (const box of document.querySelectorAll('.query-tick input')) box.checked = false;
+            refreshBar();
+          },
+        }, 'Clear'),
+        h('button.btn.btn-primary', {
+          onclick: () => answerMany([...chosen], answerable, reload),
+        }, 'Answer them together')));
+  };
+
+  const pick = data.canDecide
+    ? {
+      has: (id) => chosen.has(id),
+      set: (id, on) => { if (on) chosen.add(id); else chosen.delete(id); refreshBar(); },
+    }
+    : null;
+
+  const tickAll = (on) => {
+    for (const q of answerable) { if (on) chosen.add(q.id); else chosen.delete(q.id); }
+    for (const box of document.querySelectorAll('.query-tick input')) box.checked = on;
+    refreshBar();
+  };
+
   return h('div',
+    answerable.length > 1
+      ? h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
+        'Tick more than one to answer them together. ',
+        h('button.link-button', { onclick: () => tickAll(true) }, `Tick all ${answerable.length}`))
+      : null,
+
+    bar,
+
     waiting.length
       ? h('div',
         h('h2.group-head', h('span.pill.warn', 'Waiting'), ' on an answer'),
-        waiting.map((q) => queryCard(q, data, reload)))
+        waiting.map((q) => queryCard(q, data, reload, pick)))
       : null,
 
     back.length
       ? h('div',
         h('h2.group-head', h('span.pill.good', 'Answered'),
           ' back with whoever asked — the days can be signed'),
-        back.map((q) => queryCard(q, data, reload)))
+        back.map((q) => queryCard(q, data, reload, pick)))
       : null,
 
     !waiting.length && !back.length
@@ -1383,7 +1427,7 @@ function daysBehind(q, data) {
     ));
 }
 
-function queryCard(q, data, reload) {
+function queryCard(q, data, reload, pick = null) {
   const mine = q.raisedBy === data.mine;
 
   const forMe = q.addressedTo != null && Number(q.addressedTo) === Number(data.myId);
@@ -1392,6 +1436,17 @@ function queryCard(q, data, reload) {
     note: `${fmtDay(q.from, { withYear: true })} – ${fmtDay(q.to, { withYear: true })} · ${q.days.length} day(s)`,
     wide: true,
     actions: h('div.btn-row',
+      // Ticking is for answering several with one sentence, which is what a
+      // queue of nine "please review" questions actually needs.
+      pick
+        ? h('label.tickline.query-tick', { title: 'Answer this one with the others' },
+          h('input', {
+            type: 'checkbox',
+            checked: pick.has(q.id),
+            'aria-label': `Tick ${q.staff.name}\u2019s question`,
+            onchange: (e) => pick.set(q.id, e.target.checked),
+          }))
+        : null,
       // Who was asked, so a queue of six is a queue of six with names on it.
       // Everybody who can answer still sees all of them — somebody on leave
       // must not take their questions with them — but whose it is shows.
@@ -1464,6 +1519,78 @@ function queryCard(q, data, reload) {
       `Raised by ${q.raisedBy} on ${fmtDay(String(q.raisedAt).slice(0, 10), { withYear: true })}. `
       + 'The days stay outstanding until this is settled.'),
   );
+}
+
+/**
+ * Answer several with one sentence.
+ *
+ * A queue of nine questions all saying "please review" is nine dialogs, nine
+ * notes typed out and nine bells carrying the same sentence. This is the same
+ * three answers, given once.
+ *
+ * SIGNING IN BULK PUTS NOTHING AGAINST ANYBODY'S LEAVE, and the dialog says so
+ * where somebody will read it. How many days come off an entitlement is a
+ * decision about one person, and one figure spread across nine of them is not
+ * that decision. Charging days is done on the card, where their name is.
+ */
+async function answerMany(ids, questions, reload) {
+  const chosen = questions.filter((q) => ids.includes(q.id));
+  if (!chosen.length) return;
+
+  const pick = (value, label, detail, checked = false) => h('label.answer-choice',
+    h('input', { type: 'radio', name: 'action', value, checked, required: true }),
+    h('span', h('strong', label), h('small.muted', detail)));
+
+  const done = await formDialog({
+    title: `${chosen.length} question${chosen.length === 1 ? '' : 's'}`,
+    submitLabel: 'Send',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
+        chosen.map((q) => q.staff.name).join(', ')),
+
+      h('div.answer-choices',
+        pick('direction', 'Answer them and hand them back',
+          ' \u2014 each person who asked gets the answer and can sign their days', true),
+        pick('close', 'Nothing needed \u2014 close them',
+          ' \u2014 the days go back to whoever asked, unblocked'),
+        pick('sign', 'Sign the days off myself, now',
+          ' \u2014 closes them under your name, with nothing against anybody\u2019s leave'),
+        pick('comment', 'Add a note and leave them open',
+          ' \u2014 the days stay blocked until somebody answers properly'),
+      ),
+
+      field('What to say', h('textarea', {
+        name: 'body', rows: 4, maxlength: 800,
+        placeholder: 'Charge these to sick leave and sign them.',
+      }), 'The same words go on every one of them, and to everybody who asked'),
+
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'Signing here puts nothing on or off anybody\u2019s leave. A figure spread across '
+        + `${chosen.length} people is not a decision about any of them \u2014 do that on the `
+        + 'card, one at a time.'),
+    ),
+    onSubmit: async (form) => {
+      const action = form.get('action');
+      const out = await api.attAnswerQueries({
+        ids, action, body: form.get('body'),
+      });
+      return { ...out, action };
+    },
+  });
+
+  if (!done) return;
+
+  const said = {
+    direction: 'answered and handed back',
+    sign: 'signed off',
+    close: 'closed',
+    comment: 'commented on, and still open',
+  }[done.action] ?? 'done';
+
+  toast(`${done.done.length} ${said}.`
+    + (done.skipped.length ? ` ${done.skipped.length} could not be: ${done.skipped[0].why}` : ''),
+  done.skipped.length ? 'warn' : 'good');
+  await reload();
 }
 
 /**

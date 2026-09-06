@@ -966,6 +966,63 @@ export async function answerQuery(ctx, id) {
   return json({ ok: true, status: 'resolved' });
 }
 
+/**
+ * Answer several at once.
+ *
+ * A queue of nine questions all saying "please review" is nine dialogs, nine
+ * notes typed out and nine bells for the same sentence. What somebody actually
+ * wants is to hand the lot back with one instruction, or close the ones that
+ * turned out to be nothing.
+ *
+ * Each one still goes through the single-question handler, one at a time. That
+ * is what makes it safe: the same rules, the same audit line each, the same
+ * bell to whoever asked, and a question that cannot be answered — already dealt
+ * with, or its days signed since — is skipped and named rather than taking the
+ * other eight down with it.
+ *
+ * SIGNING IN BULK PUTS NOTHING AGAINST ANYBODY'S LEAVE. How many days come off
+ * somebody's entitlement is a decision about that person, and one figure spread
+ * across nine of them is not that decision. Charging days is done one at a
+ * time, on the card, where their name is.
+ */
+export async function answerQueries(ctx) {
+  const body = await readJson(ctx.request);
+  const action = ['comment', 'direction', 'sign', 'close'].includes(body.action)
+    ? body.action : 'comment';
+  const text = str(body.body, 'What to say', { max: 800 });
+
+  const ids = [...new Set((Array.isArray(body.ids) ? body.ids : [])
+    .map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) throw badRequest('Tick at least one question.');
+  if (ids.length > 50) throw badRequest('That is more questions than one answer should carry.');
+
+  const done = [];
+  const skipped = [];
+  for (const id of ids) {
+    try {
+      // A fresh request each time: a body can only be read once, and the
+      // handler reads its own.
+      const answered = await answerQuery({
+        ...ctx,
+        request: new Request('https://x/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, body: text, daysApplied: 0, decision: body.decision }),
+        }),
+      }, id);
+      done.push({ id, ...(await answered.json()) });
+    } catch (err) {
+      skipped.push({ id, why: err?.message || String(err) });
+    }
+  }
+
+  await audit(ctx, 'attendance.query_answered_many', null, {
+    action, done: done.length, skipped: skipped.length,
+  });
+
+  return json({ ok: true, action, done, skipped });
+}
+
 /** Whoever raised it can take it back, having worked it out themselves. */
 export async function withdrawQuery(ctx, id) {
   const queryId = Number(id);

@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  answerQuery, listQueries, outstanding, raiseQuery, signDays,
+  answerQueries, answerQuery, listQueries, outstanding, raiseQuery, signDays,
 } from '../src/routes/signoff.js';
 
 /**
@@ -253,4 +253,67 @@ test('one forgotten question does not drag years of attendance in behind it', as
   assert.deepEqual(rows.find((q) => q.id === ancient).records, []);
   assert.equal(rows.find((q) => q.id === recent).records.length, 1,
     'and this week\u2019s question still has its day');
+});
+
+// ---------------------------------------------------------------------------
+// Several at once
+// ---------------------------------------------------------------------------
+
+const together = (db, body) => answerQueries(ctx(db, body)).then((r) => r.json());
+
+test('one sentence answers several questions', async () => {
+  const { db, raw } = setup();
+  const a = await askAbout(db, [DAYS[0]]);
+  const b = await askAbout(db, [DAYS[1]]);
+
+  const out = await together(db, {
+    ids: [a, b], action: 'direction', body: 'Charge these to sick leave and sign them.',
+  });
+
+  assert.equal(out.done.length, 2);
+  assert.equal(out.skipped.length, 0);
+  const rows = raw.prepare('SELECT status FROM att_query ORDER BY id').all();
+  assert.deepEqual(rows.map((r) => r.status), ['answered', 'answered']);
+
+  // The same words on each thread, and a bell each for whoever asked.
+  const notes = raw.prepare("SELECT * FROM att_query_note WHERE kind = 'direction'").all();
+  assert.equal(notes.length, 2);
+  for (const note of notes) assert.match(note.body, /sick leave/);
+});
+
+test('one that cannot be answered is named rather than taking the rest down', async () => {
+  const { db, raw } = setup();
+  const a = await askAbout(db, [DAYS[0]]);
+  const b = await askAbout(db, [DAYS[1]]);
+  await answerQuery(ctx(db, { action: 'close' }), b);
+
+  const out = await together(db, { ids: [a, b], action: 'close', body: 'Nothing in these.' });
+
+  assert.equal(out.done.length, 1);
+  assert.equal(out.skipped.length, 1);
+  assert.equal(out.skipped[0].id, b);
+  assert.match(out.skipped[0].why, /already been dealt with/);
+  assert.equal(raw.prepare("SELECT COUNT(*) AS n FROM att_query WHERE status = 'resolved'").get().n, 2);
+});
+
+test('signing several puts nothing against anybody’s leave', async () => {
+  // A figure spread across several people is not a decision about any of them.
+  // Whatever the caller sends, a bulk sign applies nothing.
+  const { db, raw } = setup();
+  const a = await askAbout(db, [DAYS[0]]);
+  const b = await askAbout(db, [DAYS[1]]);
+
+  await together(db, { ids: [a, b], action: 'sign', body: 'Both fine.', daysApplied: -3 });
+
+  const applied = raw.prepare('SELECT days_applied FROM att_period_review').all();
+  assert.equal(applied.length, 2);
+  for (const row of applied) assert.equal(row.days_applied, 0);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM att_leave_change').get().n, 0,
+    'and nobody is asked to approve one either');
+});
+
+test('an empty tick list is refused rather than quietly doing nothing', async () => {
+  const { db } = setup();
+  await assert.rejects(() => answerQueries(ctx(db, { ids: [], action: 'close' })),
+    /at least one question/);
 });

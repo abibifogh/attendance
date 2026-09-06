@@ -127,6 +127,8 @@ export const ROUTES = [
   // could actually answer one.
   ['GET', '/api/att/deciders', 'att_signoff', signoff.listDeciders],
   ['POST', '/api/att/queries/:id/answer', 'att_manage', signoff.answerQuery],
+  // The same answers, given to several questions in one go.
+  ['POST', '/api/att/queries/answer', 'att_manage', signoff.answerQueries],
   ['POST', '/api/att/queries/:id/withdraw', 'att_signoff', signoff.withdrawQuery],
 
   // Settling a day is a decision with somebody's name on it, so it sits behind

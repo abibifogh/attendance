@@ -1824,6 +1824,15 @@ export const GUIDE = [
       { p: 'Open their record goes further — the whole of that person’s week around '
         + 'those days, and it is where anything is actually changed. Inside the answer box it '
         + 'opens in its own tab, so you do not lose what you have typed.' },
+      { sub: 'Answering several at once' },
+      { p: 'A morning’s queue is often nine questions all saying "please review". Tick them '
+        + 'and press Answer them together: the same words go on every one, and to everybody who '
+        + 'asked. Anything that cannot be answered — already dealt with, its days signed '
+        + 'since — is skipped and named, so it does not take the rest down with it.' },
+      { note: 'Signing several at once puts nothing on or off anybody’s leave. How many '
+        + 'days come out of an entitlement is a decision about one person, so it is made on '
+        + 'their card, one at a time.' },
+
       { p: 'Whichever of the four you press, the bell rings for the person who asked — them '
         + 'and not every colleague who happens to be able to sign a period off. They are the '
         + 'one waiting on it.' },
