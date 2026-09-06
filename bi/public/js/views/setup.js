@@ -32,7 +32,7 @@ export async function renderSetup(root) {
     h('div.card',
       h('h2', 'The four systems'),
       h('p.sub', 'HIVE and the breakfast app are Cloudflare databases in this account, bound straight to this Worker: no key, no network, nothing to expire. The POS and the laundry are read over their own read-only APIs.'),
-      sources.sources.map((source) => sourceCard(source))),
+      sources.sources.map((source) => (source.kind === 'odoo_json2' ? odooCard(source) : sourceCard(source)))),
 
     h('div.card',
       h('h2', 'Loads'),
@@ -80,9 +80,7 @@ export async function renderSetup(root) {
               type: 'url', placeholder: 'https://reports.example.com',
               value: source.config.base || '', id: `base-${source.id}`,
             })),
-          h('p.small.muted', 'The key is a Worker secret, not a setting: ',
-            h('code', `wrangler secret put ${source.id === 'pos' ? 'POS_REPORTS_KEY' : 'LAUNDRY_TOKEN'}`),
-            '. It is never typed into this page, because a secret typed into a web form ends up in a browser history and a proxy log.'),
+          secretNote(source),
           h('button.btn', {
             onclick: async (event) => {
               const base = document.getElementById(`base-${source.id}`).value;
@@ -232,4 +230,133 @@ function standingCostForm(boot) {
       },
     }, 'Save'),
     said);
+}
+
+/**
+ * How the key gets in — which is never through this page.
+ *
+ * A secret typed into a web form ends up in a browser history, a proxy log and
+ * whatever restores that browser's tabs. It goes in as a repository secret and
+ * reaches the Worker through the Actions workflow, and this says so in the
+ * words of the buttons somebody actually presses rather than a terminal
+ * command nobody here runs.
+ */
+function secretNote(source) {
+  const name = source.secretName || '—';
+  return h('p.small.muted',
+    source.secretSet
+      ? h('span', 'The key is set on the Worker. ')
+      : h('strong', 'No key is set on the Worker yet. '),
+    'It is never typed into this page. Put it in GitHub under ',
+    h('strong', 'Settings → Secrets and variables → Actions'), ', then run ',
+    h('strong', 'Actions → Set Insight’s secrets'), '. The Worker knows it as ',
+    h('code', name), '.');
+}
+
+/**
+ * Odoo, which needs more than an address.
+ *
+ * The generic card offers one box, because three of the five sources need one
+ * box. Odoo needs four, and the last of them — how Odoo says which part of the
+ * business a cost belongs to — decides whether any of this is worth reading.
+ * Everything unmapped lands in admin, so a half-filled map does not break: it
+ * produces a large admin figure that is itself the prompt to finish it.
+ */
+function odooCard(source) {
+  const check = source.check || {};
+  const config = source.config || {};
+  const lines = (state.boot?.lines || []).map((l) => l.id);
+
+  const address = h('input', {
+    type: 'url', placeholder: 'https://yourcompany.odoo.com',
+    value: config.base || '', id: 'odoo-base',
+  });
+  const database = h('input', {
+    type: 'text', placeholder: 'usually blank', value: config.db || '', id: 'odoo-db',
+  });
+  const lineBy = h('select', { id: 'odoo-lineby' },
+    ...[['analytic', 'Analytic account'], ['category', 'Product category'], ['journal', 'Journal']]
+      .map(([value, label]) => h('option',
+        { value, ...((config.lineBy || 'analytic') === value ? { selected: 'selected' } : {}) }, label)));
+  const mapText = Object.entries(config.lineMap || {})
+    .map(([from, to]) => `${from} = ${to}`).join('\n');
+  const map = h('textarea', {
+    id: 'odoo-map', rows: '7', spellcheck: 'false',
+    placeholder: 'Kitchen = restaurant\nBar = bar\nLaundry = laundry',
+  });
+  map.value = mapText;
+
+  const said = h('p.small');
+
+  return h('div.card', { style: { marginBottom: '.7rem' } },
+    h('h3', source.label, ' ', h(`span.pill.${check.ok ? 'good' : 'warning'}`,
+      h('span.dot'), check.ok ? '✓ reading' : `! ${check.detail || 'not reading'}`)),
+    h('p.small.muted', source.describes),
+
+    h('label.field', 'Address',
+      address,
+      h('span.small.muted', 'Just the address, nothing after it. A custom domain is fine. '
+        + 'Anything on the end is discarded rather than rejected.')),
+
+    h('label.field', 'Database',
+      database,
+      h('span.small.muted', 'Leave this blank unless Check complains about it. Odoo needs it only '
+        + 'where one address serves several databases — and with a custom domain it is not the '
+        + 'subdomain, so guessing it is worse than leaving it empty.')),
+
+    secretNote(source),
+
+    h('label.field', 'How Odoo says which part of the business a cost belongs to',
+      lineBy,
+      h('span.small.muted', 'Open a recent vendor bill and look at a line. Whichever of these '
+        + 'distinguishes a restaurant purchase from a laundry one is the answer.')),
+
+    h('label.field', 'What each value means',
+      map,
+      h('span.small.muted', 'One per line, as ', h('code', 'Odoo value = part of the business'),
+        '. The parts are: ', h('code', lines.join(', ') || 'none loaded'),
+        '. Anything not listed here lands in admin on purpose — an unexplained lump of admin cost '
+        + 'is a prompt to finish this box, where spreading it quietly across the lines that earn '
+        + 'would flatter every one of them.')),
+
+    h('div.rangebar',
+      h('button.btn.primary', {
+        id: 'odoo-save',
+        onclick: async (event) => {
+          event.target.disabled = true;
+          said.textContent = 'Saving, then asking Odoo…';
+          try {
+            const lineMap = {};
+            for (const row of map.value.split('\n')) {
+              const at = row.indexOf('=');
+              if (at < 0) continue;
+              const from = row.slice(0, at).trim();
+              const to = row.slice(at + 1).trim();
+              if (from && to) lineMap[from] = to;
+            }
+            // Saving and checking are one button on purpose. They were two
+            // steps in the instructions and nobody would press the second.
+            const after = await api(`/sources/${source.id}`, {
+              method: 'POST',
+              body: {
+                base: address.value.trim(), db: database.value.trim(),
+                lineBy: lineBy.value, lineMap, enabled: true,
+              },
+            });
+            const mine = after.sources.find((x) => x.id === source.id);
+            said.textContent = mine?.check?.ok
+              ? `Saved. ${mine.check.detail}`
+              : `Saved, but Odoo did not answer: ${mine?.check?.detail || 'no reason given'}`;
+            said.style.color = mine?.check?.ok ? 'var(--good-text)' : 'var(--critical)';
+          } catch (err) {
+            said.textContent = err.message || 'That did not save.';
+            said.style.color = 'var(--critical)';
+          }
+          event.target.disabled = false;
+        },
+      }, 'Save and check'),
+      said),
+
+    source.lastError ? h('p.small', { style: { color: 'var(--critical)' } },
+      `Last error (${source.lastErrorAt}): ${source.lastError}`) : null);
 }

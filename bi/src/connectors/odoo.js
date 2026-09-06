@@ -48,17 +48,29 @@ const MAX_PAGES = 40;
  * in this file, and there is no code path that writes. That is not a promise
  * in a comment — it is the whole of the surface.
  */
-export function odooConfig(source, env) {
-  const config = source?.config || {};
-  const base = String(config.base || '').replace(/\/+$/, '');
+/**
+ * The connector's own view of its settings.
+ *
+ * Takes the same `(config, token)` every other connector here takes. It used
+ * to take `(source, env)` and dig the key out of the environment itself —
+ * which read well in its own tests, and could never work: the registry hands
+ * every connector `{ config, token }`, so both arguments arrived undefined,
+ * the address came out empty, and Odoo failed every check and every load with
+ * an error about the address. Nothing typed into Setup could have fixed it.
+ * The lesson is in `test/connectors.test.js`, which now dispatches every
+ * registered connector through the registry rather than calling it directly.
+ */
+export function odooConfig(config, token) {
+  const c = config || {};
+  const base = String(c.base || '').replace(/\/+$/, '');
   return {
     base,
-    db: config.db || '',
+    db: c.db || '',
     // How Odoo says which part of the business a cost belongs to. Set by an
     // owner, because only they know how their chart is arranged.
-    lineBy: config.lineBy || 'analytic',
-    lineMap: config.lineMap || {},
-    key: env?.[config.secretName || 'ODOO_API_KEY'] || '',
+    lineBy: c.lineBy || 'analytic',
+    lineMap: c.lineMap || {},
+    key: token || '',
   };
 }
 
@@ -190,9 +202,9 @@ export function accountKind(type) {
   return '';
 }
 
-export async function pull({ source, env, from, to, fetchImpl = fetch }) {
+export async function pull({ config: settings, token, from, to, fetchImpl = fetch }) {
   const bundle = emptyBundle();
-  const config = odooConfig(source, env);
+  const config = odooConfig(settings, token);
   const opts = { fetchImpl };
 
   // Bills, at the accounting date rather than the entry date. A bill keyed in
@@ -336,8 +348,8 @@ export function analyticName(distribution) {
  * say "the key is wrong" instead of a dashboard saying the business stopped
  * buying anything.
  */
-export async function check({ source, env, fetchImpl = fetch }) {
-  const config = odooConfig(source, env);
+export async function check({ config: settings, token, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
   try {
     const rows = await searchRead(config, 'res.company', [], ['id', 'name', 'currency_id'],
       { fetchImpl, timeoutMs: 10_000 });

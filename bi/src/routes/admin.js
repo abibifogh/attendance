@@ -131,11 +131,62 @@ export async function saveSource(env, id, body) {
   }
   if (body.binding !== undefined) config.binding = str(body.binding, 'Binding', { max: 60 }) || '';
 
+  // Odoo's own settings. The database is optional — Odoo Online needs it only
+  // where one domain serves several — so an empty value is a real answer and
+  // is stored as one rather than rejected.
+  if (body.db !== undefined) config.db = str(body.db, 'Database', { max: 120 }) || '';
+  if (body.lineBy !== undefined) {
+    const by = str(body.lineBy, 'Line by', { max: 20 }) || 'analytic';
+    if (!['analytic', 'category', 'journal'].includes(by)) {
+      throw badRequest('A cost can be attributed by analytic account, product category or journal');
+    }
+    config.lineBy = by;
+  }
+  if (body.lineMap !== undefined) config.lineMap = await cleanLineMap(env, body.lineMap);
+
   const enabled = body.enabled === undefined ? existing.enabled : (body.enabled ? 1 : 0);
   await run(env.DB, 'UPDATE sources SET config = ?2, enabled = ?3 WHERE id = ?1',
     id, JSON.stringify(config), enabled);
 
   return sources(env);
+}
+
+/**
+ * Which Odoo value means which part of the business.
+ *
+ * Checked against the lines that actually exist, because a map pointing at a
+ * line nobody has heard of does not fail — it silently attributes real money
+ * to nothing, and the cost simply disappears from every screen. Rejecting it
+ * here is the only place anybody is still looking.
+ *
+ * An unmapped value is not an error and is not filled in with a guess: it
+ * lands in `admin` at read time, on purpose, because an unexplained lump of
+ * admin cost is a prompt to fix the map. Spreading it across the lines that
+ * earn would flatter every one of them and nobody would ever notice.
+ */
+async function cleanLineMap(env, value) {
+  if (value == null || value === '') return {};
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw badRequest('The line map must be a set of Odoo values and the part of the business each means');
+  }
+  const entries = Object.entries(value);
+  if (entries.length > 200) throw badRequest('That is more mappings than this can hold');
+
+  const lines = await all(env.DB, 'SELECT id FROM dim_line');
+  const known = new Set(lines.map((l) => l.id));
+
+  const out = {};
+  for (const [key, line] of entries) {
+    const from = String(key).trim();
+    const to = String(line ?? '').trim();
+    if (!from || !to) continue;
+    if (from.length > 120) throw badRequest(`"${from.slice(0, 40)}…" is too long to be an Odoo value`);
+    if (!known.has(to)) {
+      throw badRequest(`There is no part of the business called "${to}". Known: ${[...known].sort().join(', ')}`);
+    }
+    out[from] = to;
+  }
+  return out;
 }
 
 /**

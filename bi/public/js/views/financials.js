@@ -31,6 +31,7 @@ export async function renderFinancials(root, { range }) {
       ? banner('demo', h('strong', 'Demonstration data.'), ' Every figure below is invented.')
       : null,
 
+    basisCard(data),
     standingCard(data, t),
     breakEvenCard(data, be),
     bridgeCard(data),
@@ -58,6 +59,54 @@ function stat(label, value, note) {
     h('div.label', label),
     h('div.value', value == null ? '—' : value),
     note ? h('div.note', note) : null);
+}
+
+/**
+ * Which system each line's purchases were read from.
+ *
+ * Only drawn once Odoo is posting, because before that there is no choice
+ * being made and a card explaining one would be noise. After that it is the
+ * most consequential thing on the screen that is not a number: it says which
+ * record of a purchase every figure below rests on.
+ */
+function basisCard(data) {
+  const b = data.costBasis;
+  if (!b || b.basis === 'operations') return null;
+
+  return h('div.card',
+    h('h2', 'Where these purchase figures come from'),
+    h('p.sub',
+      'A delivery can be written down twice — once by the kitchen that received it and once by '
+      + 'Odoo when the supplier’s bill arrives. Both are real records of the same crate, and adding '
+      + 'them would count it twice. So each line has exactly one record here, never a blend.'),
+
+    h('div.grid.two',
+      h('div',
+        h('div.label', 'Read from Odoo'),
+        h('p.sub', b.fromBooks.length
+          ? b.fromBooks.map((l) => l.label).join(', ')
+          : 'no line yet')),
+      h('div',
+        h('div.label', 'Read from the system that runs them'),
+        h('p.sub', b.uncovered.length
+          ? b.uncovered.map((l) => l.label).join(', ')
+          : 'none — Odoo covers every line that has a cost'))),
+
+    b.excluded > 0
+      ? h('p.sub',
+        `${money(b.excluded)} recorded by ${b.excludedLines.join(' and ')} is deliberately not counted, `
+        + 'because Odoo has already billed for the same goods. It is still in the warehouse — only '
+        + 'this reading of it picks one.')
+      : null,
+
+    b.uncovered.length
+      ? banner('warning',
+        h('strong', 'Odoo does not reach every line yet.'),
+        ` ${b.uncovered.map((l) => `${l.label} (${money(l.amount)})`).join(', ')} still come from the `
+        + 'operating systems, because no Odoo bill in this window was attributed to them. That is '
+        + 'usually the line map in Setup rather than missing bills — until it is fixed, those lines '
+        + 'are costed from a delivery note rather than an invoice.')
+      : null);
 }
 
 // ------------------------------------------------------------ where we are --
@@ -187,6 +236,16 @@ function whyNoBreakEven(data, be) {
 
 function bridgeCard(data) {
   const b = data.bridge;
+  if (data.costBasis && data.costBasis.comparable === false) {
+    return h('div.card',
+      h('h2', 'Why this period differs from the last'),
+      h('p.sub',
+        'Not shown for these two windows, because they are not costed the same way. Odoo covers a '
+        + 'different set of lines in this window than in the one before it, so a comparison would '
+        + 'report an enormous change in what was bought — caused entirely by a different system '
+        + 'answering the question. Move the range so both halves sit either side of the change, or '
+        + 'wait until Odoo has covered a full period.'));
+  }
   if (!b || !b.known) return null;
 
   return h('div.card',
