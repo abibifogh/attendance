@@ -1,5 +1,5 @@
 import { emptyBundle } from '../connectors/bundle.js';
-import { daysBetween, dow } from '../lib/dates.js';
+import { addDays, daysBetween, dow } from '../lib/dates.js';
 
 /**
  * A plausible group, for when the real one is not connected yet.
@@ -112,7 +112,125 @@ export function demoPull({ sourceId, from, to }) {
   if (sourceId === 'breakfast') return breakfast(days, guests);
   if (sourceId === 'pos') return pos(days, guests);
   if (sourceId === 'laundry') return laundry(days, guests);
+  if (sourceId === 'odoo') return odoo(days);
   return emptyBundle();
+}
+
+// ------------------------------------------------------------------- odoo --
+
+/**
+ * The books, invented.
+ *
+ * Built to demonstrate what the screen is for rather than to look busy, so it
+ * deliberately contains each of the things the analysis exists to find: one
+ * item bought from two suppliers at two prices, one invoice entered twice,
+ * some spend with no purchase order, one line with a quantity keyed wrongly,
+ * and a supplier who is paid late.
+ */
+/**
+ * What the books show being bought, and from whom.
+ *
+ * Priced from INGREDIENTS above rather than invented, because in a real
+ * property Odoo and the kitchen are two records of the *same* purchase. An
+ * earlier draft of this fixture gave the books their own prices, and the
+ * cross-system price rule immediately reported that eggs cost the kitchen 112%
+ * more than the restaurant — a finding that was entirely an artefact of two
+ * made-up numbers, and exactly the kind of thing a demonstration must not
+ * teach somebody to believe.
+ *
+ * The one thing deliberately not shared is the *supplier*: the same goods from
+ * two sellers at two prices is the finding this screen exists for, so it is
+ * built in on purpose and is true of the data rather than of the arithmetic.
+ */
+const ODOO_ITEMS = [
+  ['Eggs', ['Adom Foods', 'Makola Fresh']],
+  ['Rice', ['Adom Foods']],
+  ['Cooking oil', ['Makola Fresh', 'Kaneshie Provisions']],
+  ['Tomatoes', ['Adom Foods']],
+  ['Milk', ['Silver Star Distributors']],
+  ['Coffee', ['Kaneshie Provisions']],
+  ['Bread', ['Silver Star Distributors', 'Makola Fresh']],
+];
+
+/** The price and unit the rest of the demonstration already uses for a thing. */
+const ingredientBy = new Map(INGREDIENTS.map(([name, unit, cost]) => [name, { unit, cost }]));
+
+/** A supplier who charges more, so the price-gap table has something true to say. */
+const DEARER = { 'Makola Fresh': 1.18, 'Kaneshie Provisions': 1.09 };
+
+function odoo(days) {
+  const bundle = emptyBundle();
+  let billNo = 0;
+
+  for (const day of days) {
+    const r = rng(daySeed(day) + 31);
+    // Bills arrive on some days and not others, the way deliveries do.
+    if (r() > 0.55) continue;
+
+    for (const [name, sellers] of ODOO_ITEMS) {
+      if (r() > 0.45) continue;
+      const { unit, cost: base } = ingredientBy.get(name);
+      const supplier = sellers[Math.floor(r() * sellers.length)];
+      const factor = DEARER[supplier] ?? 1;
+      // A few percent of ordinary movement on top of the supplier's own level.
+      const unitCost = Math.round(base * factor * (0.97 + r() * 0.06));
+      const qty = 1 + Math.floor(r() * 12);
+
+      billNo += 1;
+      const id = `${day}-${billNo}`;
+      // One line in every hundred has its quantity keyed as 1 instead of 100,
+      // which is the commonest invoice mistake there is and the reason the
+      // outlier card exists.
+      const mistyped = r() > 0.99;
+      const lineCost = mistyped ? unitCost * 100 : unitCost;
+      const amount = lineCost * qty;
+      // Most buying goes through an order; a fifth does not.
+      const fromOrder = r() > 0.2;
+
+      bundle.bills.push({
+        externalId: id,
+        day,
+        dueDay: addDays(day, 30),
+        supplierName: supplier,
+        line: 'breakfast',
+        vendorRef: `INV-${1000 + billNo}`,
+        state: 'posted',
+        paymentState: r() > 0.35 ? 'paid' : 'not_paid',
+        untaxed: amount,
+        tax: 0,
+        total: amount,
+        residual: r() > 0.35 ? 0 : amount,
+        currency: 'GHS',
+        fromOrder,
+      });
+
+      bundle.purchaseLines.push({
+        day,
+        externalId: `${id}:1`,
+        billId: id,
+        line: 'breakfast',
+        supplierName: supplier,
+        itemName: name,
+        qty,
+        unit,
+        unitCost: lineCost,
+        amount,
+        tax: 0,
+        accountCode: '6010',
+      });
+    }
+  }
+
+  // The same invoice, entered twice. Nothing else in the demonstration shows
+  // what the duplicate card is for.
+  const twice = bundle.bills[Math.floor(bundle.bills.length / 3)];
+  if (twice) {
+    bundle.bills.push({ ...twice, externalId: `${twice.externalId}-again`, paymentState: 'paid', residual: 0 });
+  }
+
+  bundle.accounts.push({ code: '6010', name: 'Food and beverage purchases', kind: 'expense' });
+  bundle.notes.push('Demonstration data');
+  return bundle;
 }
 
 // ------------------------------------------------------------- attendance --

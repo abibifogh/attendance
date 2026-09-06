@@ -1,10 +1,12 @@
 import { all, first, groupConfig } from '../lib/db.js';
 import { loadFacts, totals } from '../insight/facts.js';
 import { analyse, sourceHealth } from '../insight/engine.js';
-import { resolveRange, addDays, todayIn } from '../lib/dates.js';
+import { resolveRange, addDays, todayIn, daysBetween } from '../lib/dates.js';
 import { pct, ratio, change } from '../lib/money.js';
 import { bare, dayName } from '../insight/labels.js';
 import { median, sum, groupBy, halves } from '../insight/stats.js';
+import { buyingAnalysis } from '../insight/buying.js';
+import { financialAnalysis } from '../insight/financials.js';
 
 /**
  * The screens.
@@ -44,6 +46,7 @@ export async function bootstrap(env) {
     assumptions: {
       defaultHourCost: config.defaultHourCost,
       labourTargetPct: config.labourTargetPct,
+      standingCostMonthly: config.standingCostMonthly,
     },
     lines: lines.map((l) => ({ id: l.id, label: l.label, revenueLine: l.revenue_line === 1 })),
     sources,
@@ -393,6 +396,190 @@ export async function suppliers(env, query) {
 }
 
 /** Work due against work done: housekeeping rounds and maintenance. */
+/**
+ * The books.
+ *
+ * Its own screen rather than a section of Buying, because the two answer
+ * different questions from different evidence. Buying reads what the
+ * operational systems recorded receiving; this reads what the business was
+ * invoiced and what the accounts did with it. Where they disagree is itself
+ * the finding, and that is only visible if both exist separately.
+ *
+ * Ninety days by default. A price trend needs more than a month to be a trend,
+ * and a payment pattern needs more than one cycle.
+ */
+export async function books(env, query) {
+  const { db, config, from, to } = await context(env, query, 90);
+
+  const bills = await all(db, `
+    SELECT b.*, s.name AS supplier
+      FROM fact_bill b
+      LEFT JOIN dim_supplier s ON s.id = b.supplier_id
+     WHERE b.day BETWEEN ?1 AND ?2`, from, to);
+
+  // Only lines that came from an accounting source. The other systems' lines
+  // are in the same table on purpose — that is how a price gets compared
+  // across the group — but this screen is about the books, and mixing a
+  // kitchen's own record of a delivery into "what we were invoiced" would make
+  // the totals disagree with Odoo for a reason nobody could find.
+  const lines = await all(db, `
+    SELECT p.*, s.name AS supplier, i.name AS item
+      FROM fact_purchase_line p
+      LEFT JOIN dim_supplier s ON s.id = p.supplier_id
+      LEFT JOIN dim_item i ON i.id = p.item_id
+     WHERE p.day BETWEEN ?1 AND ?2
+       AND p.bill_id IS NOT NULL`, from, to);
+
+  // As of the end of the window, not today. Re-reading last quarter should
+  // report what was overdue then, not what is overdue now.
+  const analysis = buyingAnalysis({ bills, lines, asOf: to });
+  // Only the accounting sources. A screen that says "nothing here" has to be
+  // able to tell "Odoo is not connected" from "Odoo is connected and this
+  // window is genuinely empty", and those are different sentences.
+  const health = (await sourceHealth(db)).filter((h) => h.id === 'odoo');
+
+  return {
+    range: { from, to },
+    demoMode: config.demoMode,
+    connected: health.filter((h) => h.status !== 'never run'),
+    ...analysis,
+    caveats: [
+      'A bill is what a supplier invoiced, which is not always what arrived. Where the kitchen '
+        + 'recorded a different quantity, the difference is on the Buying screen.',
+      'Draft bills are left out of every total here. They are somebody mid-entry, not a commitment.',
+      'A credit note counts as a negative purchase, so a supplier total is what was billed less '
+        + 'what was returned.',
+      'Prices are compared before tax, which is the only basis on which two suppliers can be '
+        + 'compared at all.',
+    ],
+  };
+}
+
+/**
+ * The yardstick: everything a decision needs, against something to judge it by.
+ *
+ * The rest of the app reports. This compares — every figure against the period
+ * before it, against what the day has to take to pay for itself, and against a
+ * shock it might have to survive.
+ *
+ * Two things make it different from the Money screen, and both are about the
+ * comparison rather than the numbers:
+ *
+ * The prior window is **exactly as long** as the current one, taken from the
+ * days immediately before it. Thirty days against twenty-eight is a 7% fall
+ * that came out of the calendar, and it would be reported here as a finding
+ * about the business.
+ *
+ * The standing cost is measured, not assumed. Nothing in these five systems
+ * records rent or electricity, so it is inferred from the relationship between
+ * what a day takes and what a day costs — and where that relationship is too
+ * weak to infer anything, the screen says so and declines the break-even
+ * rather than printing one.
+ */
+export async function financials(env, query) {
+  const { db, config, from, to } = await context(env, query, 30);
+  // Exactly as many days as the current window, ending the day before it
+  // starts. daysBetween hands back the days themselves, not a count.
+  const span = daysBetween(from, to).length;
+  const priorTo = addDays(from, -1);
+  const priorFrom = addDays(priorTo, -(span - 1));
+
+  const [facts, prior, bills] = await Promise.all([
+    loadFacts(db, from, to),
+    loadFacts(db, priorFrom, priorTo),
+    all(db, 'SELECT day, due_day, state, total, residual FROM fact_bill WHERE day BETWEEN ?1 AND ?2', from, to),
+  ]);
+
+  const lines = await all(db, 'SELECT * FROM dim_line ORDER BY sort_order');
+  const meta = new Map(lines.map((l) => [l.id, l]));
+
+  // One row per line, both windows in the same shape, because the bridge takes
+  // the two and every mismatch between them would show up as a business event.
+  const shape = (source) => [...groupBy(source.lineRows, (r) => r.line).entries()].map(([line, rows]) => ({
+    line,
+    label: meta.get(line)?.label || bare(line),
+    net: sum(rows.map((r) => r.net)),
+    cost: sum(rows.map((r) => r.cost)),
+    labour: sum(rows.map((r) => r.labourCost)),
+    contribution: sum(rows.map((r) => r.contribution)),
+    covers: sum(rows.map((r) => r.covers)),
+    orders: sum(rows.map((r) => r.orders)),
+    hours: sum(rows.map((r) => r.workedMinutes)) / 60,
+    days: source.dayList.length,
+  })).sort((a, b) => (meta.get(a.line)?.sort_order ?? 99) - (meta.get(b.line)?.sort_order ?? 99));
+
+  const asDaily = (source) => source.dayList.map((day) => {
+    const rows = source.forDay(day);
+    return {
+      day,
+      net: sum(rows.map((r) => r.net)),
+      cost: sum(rows.map((r) => r.cost)),
+      labour: sum(rows.map((r) => r.labourCost)),
+      contribution: sum(rows.map((r) => r.contribution)),
+    };
+  });
+
+  const t = totals(facts);
+  // Drafts are somebody mid-entry, not a commitment, and they are excluded
+  // here for the same reason they are excluded on the Books screen.
+  const posted = bills.filter((b) => b.state === 'posted');
+  const billed = sum(posted.map((b) => b.total));
+  const payable = sum(posted.map((b) => b.residual));
+
+  // The month the window ends in, so the forecast has something to run to.
+  // A range that is not a calendar month gets no forecast at all rather than
+  // one projected against a month it does not sit inside.
+  const endsMonth = to.slice(0, 7);
+  const wholeMonth = from.slice(0, 7) === endsMonth && from.endsWith('-01');
+  const daysInMonth = new Date(Date.UTC(Number(endsMonth.slice(0, 4)), Number(endsMonth.slice(5, 7)), 0)).getUTCDate();
+
+  const analysis = financialAnalysis({
+    currentDaily: asDaily(facts),
+    currentLines: shape(facts),
+    priorDaily: asDaily(prior),
+    priorLines: shape(prior),
+    charged: t.net,
+    collected: t.collected,
+    outstanding: t.outstanding,
+    billed,
+    paid: billed - payable,
+    payable,
+    daysInPeriod: wholeMonth ? daysInMonth : null,
+    // Given as a month, applied by the day, so a 17-day range is charged
+    // seventeen days of rent rather than a month of it.
+    standingPerDay: Math.round(config.standingCostMonthly / 30.44),
+  });
+
+  const priorTotals = totals(prior);
+
+  return {
+    range: { from, to, days: span },
+    priorRange: { from: priorFrom, to: priorTo, days: span },
+    demoMode: config.demoMode,
+    ...analysis,
+    movement: {
+      revenue: change(priorTotals.net, t.net),
+      contribution: change(priorTotals.contribution, t.contribution),
+      labour: change(priorTotals.labourCost, t.labourCost),
+      cost: change(priorTotals.cost, t.cost),
+    },
+    hasBooks: posted.length > 0,
+    caveats: [
+      'Rooms are in none of the connected systems, so every figure here is the group without its '
+        + 'rooms business. The break-even is the break-even of what is measured.',
+      'Purchases are treated as varying with takings and wages as fixed, because a rota is set a '
+        + 'week ahead and does not shrink because Tuesday was quiet. Both are measured, not modelled. '
+        + 'Rent, power, water and depreciation are in none of the connected systems and are taken '
+        + 'from Setup; left unset, every break-even here is understated by exactly that amount.',
+      wageBasisNote(facts, config),
+      'The previous period is the same number of days immediately before this one. It is not the '
+        + 'same period last year, so a seasonal business will read a season change as a decline.',
+      'Stock is not valued by any connected system, so the cash cycle excludes it and is shorter '
+        + 'than the real one by however long food sits on a shelf.',
+    ],
+  };
+}
+
 export async function service(env, query) {
   const { db, config, from, to } = await context(env, query, 30);
   const facts = await loadFacts(db, from, to);

@@ -2,10 +2,12 @@ import { api, setUnauthorizedHandler } from './api.js';
 import { h, mount, setCurrency, dayRange } from './util.js';
 import { renderBrief } from './views/brief.js';
 import { renderPnl } from './views/pnl.js';
+import { renderFinancials } from './views/financials.js';
 import { renderLabour } from './views/labour.js';
 import { renderDemand } from './views/demand.js';
 import { renderCash } from './views/cash.js';
 import { renderSuppliers } from './views/suppliers.js';
+import { renderBooks } from './views/books.js';
 import { renderService } from './views/service.js';
 import { renderFindings } from './views/findings.js';
 import { renderSetup } from './views/setup.js';
@@ -33,10 +35,12 @@ const ROUTES = [
   { path: 'hub', label: 'Hub', render: renderHub, needs: 'session' },
   { path: 'brief', label: 'Brief', render: renderBrief, needs: 'insight' },
   { path: 'money', label: 'Money', render: renderPnl },
+  { path: 'yardstick', label: 'Yardstick', render: renderFinancials },
   { path: 'labour', label: 'Labour', render: renderLabour },
   { path: 'guests', label: 'Guests', render: renderDemand },
   { path: 'cash', label: 'Cash', render: renderCash },
   { path: 'buying', label: 'Buying', render: renderSuppliers },
+  { path: 'books', label: 'Books', render: renderBooks },
   { path: 'service', label: 'Service', render: renderService },
   { path: 'findings', label: 'Findings', render: renderFindings, needs: 'insight' },
   { path: 'accounts', label: 'Accounts', render: renderAccounts, needs: 'owner' },

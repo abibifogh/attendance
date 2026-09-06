@@ -145,6 +145,10 @@ login form is worse than no button.
 ### The other screens
 
 **Money** — contribution by line, the whole table, and the days behind it.
+**Yardstick** — every figure against something to judge it by: what a day has
+to take to pay for itself, how far above or below that the period is, why it
+differs from the one before it broken into parts that add up exactly, what a
+10% shock of each kind would do, and whether the profit turned into money.
 **Labour** — revenue per hour worked, the week as it actually runs, what each
 department costs. **Guests** — everything expressed per guest night, which is
 what separates "the hotel is emptier" from "we are selling to fewer of the

@@ -121,3 +121,42 @@ export function groupBy(rows, pick) {
   }
   return out;
 }
+
+/**
+ * A least-squares line through (x, y), with the fit reported alongside it.
+ *
+ * Used for one thing: separating cost that moves with takings from cost that
+ * does not. The intercept is what a day costs when nothing is sold; the slope
+ * is what each extra cedi of takings costs to earn.
+ *
+ * Theil–Sen is the better line for a trend and is used for trends. It is the
+ * wrong tool here, because a median-of-slopes has no intercept worth trusting
+ * and the intercept is the entire point.
+ *
+ * `r2` comes back with the answer, not as an afterthought. A fixed-cost figure
+ * from a cloud of points is a made-up number, and the screen refuses to draw a
+ * break-even from a weak fit rather than presenting one that looks the same as
+ * a strong one.
+ */
+export function leastSquares(xs, ys, { minPoints = 8 } = {}) {
+  const pairs = xs.map((x, i) => [Number(x), Number(ys[i])])
+    .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+  if (pairs.length < minPoints) return null;
+
+  const mx = mean(pairs.map(([x]) => x));
+  const my = mean(pairs.map(([, y]) => y));
+  let sxy = 0; let sxx = 0; let syy = 0;
+  for (const [x, y] of pairs) {
+    sxy += (x - mx) * (y - my);
+    sxx += (x - mx) ** 2;
+    syy += (y - my) ** 2;
+  }
+  // Every day took the same money. There is no slope to find, and a business
+  // with no variation in takings cannot be asked which of its costs vary.
+  if (sxx === 0) return null;
+
+  const slope = sxy / sxx;
+  const intercept = my - slope * mx;
+  const r2 = syy === 0 ? null : Math.round((sxy ** 2 / (sxx * syy)) * 100) / 100;
+  return { slope, intercept, r2, n: pairs.length };
+}

@@ -59,6 +59,11 @@ export async function groupConfig(db) {
     currencySymbol: s.currency_symbol || 'GH₵',
     defaultHourCost: minor(s.default_hour_cost || 1200),
     labourTargetPct: Number(s.labour_target_pct || 30),
+    // Rent, power, water, licences, depreciation. In none of the connected
+    // systems and knowable only from the owner, so it is asked for. Left at
+    // nothing, every break-even is understated by exactly this much, and the
+    // screen that uses it says so rather than being quietly optimistic.
+    standingCostMonthly: minor(s.standing_cost_monthly || 0),
     demoMode: s.demo_mode === '1',
   };
 }

@@ -180,6 +180,7 @@ export async function settings(env, body) {
     currency_symbol: (v) => str(v, 'Currency symbol', { max: 8 }),
     default_hour_cost: (v) => String(Math.max(0, Math.round(Number(v) || 0))),
     labour_target_pct: (v) => String(Math.min(100, Math.max(0, Math.round(Number(v) || 0)))),
+    standing_cost_monthly: (v) => String(Math.max(0, Math.round(Number(v) || 0))),
     demo_mode: (v) => (v ? '1' : '0'),
   };
   for (const [key, clean] of Object.entries(allowed)) {
