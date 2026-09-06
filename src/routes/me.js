@@ -311,7 +311,13 @@ export async function myWeek(ctx) {
       // is not is a day still being worked out, and that stays its own answer.
       restDay: (settled && !shift) || (!shift && !draft && promised(day)),
       leave: leave ? (ds.reasonBy.get(leave.reason_code)?.label ?? leave.reason_code) : null,
-      holiday: ds.holidayBy.get(day)?.name ?? null,
+      // NO PUBLIC HOLIDAY. It used to be named under the day, and it answered a
+      // question nobody was asking here: this screen is when am I in, and a day
+      // with no shift on it is a day off whatever the calendar calls it. Worse,
+      // a holiday sitting beside a shift reads as an offer — that the day is
+      // theirs, or that it is worth more — and neither is this screen's to say.
+      // What a holiday does to the month is worked out at sign-off and shown on
+      // their report, where the arithmetic is.
       // The banner the row wears while somebody is at work on it.
       onShift: onShift && onShift.day === day
         ? { since: onShift.since, lateMinutes: onShift.lateMinutes, earlyIn: onShift.earlyIn }
@@ -799,7 +805,8 @@ export async function myDepartment(ctx) {
             // Nothing to say. A blank that is not a day off and not a week
             // nobody has published: they are simply somewhere else.
             elsewhere: visiting && !mineToday,
-            holiday: ds.holidayBy.get(day)?.name ?? null,
+            // And no public holiday, for the same reason as their own week: a
+            // colleague's rota is who is on, not what the calendar says.
           };
         }),
       };

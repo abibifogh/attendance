@@ -240,12 +240,22 @@ test('no clock times, no lateness and no pay travel with it', async () => {
   const out = await ask(db, 1);
   const cell = dayOf(out, 'Kofi', MON);
   assert.deepEqual(Object.keys(cell).sort(),
-    ['away', 'day', 'elsewhere', 'holiday', 'restDay', 'shift']);
+    ['away', 'day', 'elsewhere', 'restDay', 'shift']);
 
   const said = JSON.stringify(out);
   for (const leak of ['06:41', 'late', 'salary', 'punch']) {
     assert.equal(said.toLowerCase().includes(leak), false, leak);
   }
+});
+
+test('a public holiday is not on the department rota either', async () => {
+  const { db, raw } = setup();
+  raw.prepare("INSERT INTO att_holidays (day, name, active) VALUES (?, 'Republic Day', 1)").run(TUE);
+  everybodyAtHome(raw, TUE);
+
+  const out = await ask(db, 1);
+  assert.equal(JSON.stringify(out).includes('Republic Day'), false,
+    'a colleague\u2019s rota is who is on, not what the calendar says');
 });
 
 test('the week can be stepped back and forward', async () => {

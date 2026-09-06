@@ -313,6 +313,24 @@ test('a month says whether it can still change, and never who closed it', async 
   assert.ok(!/Ama/.test(JSON.stringify(out)), 'nobody is named');
 });
 
+test('a public holiday is not on their rota, whatever the calendar says', async () => {
+  // Their week answers one question — when am I in — and a day with no shift on
+  // it is a day off whatever it is called. A holiday named beside a shift reads
+  // as an offer, that the day is theirs or that it is worth more, and neither
+  // is this screen's to say.
+  const { db, raw } = setup();
+  raw.prepare("INSERT INTO att_holidays (day, name, active) VALUES (?, 'Republic Day', 1)")
+    .run(shiftDay(MON, 1));
+  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
+    .run(shiftDay(MON, 1));
+
+  const out = await week(db);
+  const day = out.days.find((d) => d.day === shiftDay(MON, 1));
+  assert.equal(day.shift.name, 'Early', 'the shift they are on is still the answer');
+  assert.equal('holiday' in day, false, 'and the holiday does not travel at all');
+  assert.equal(JSON.stringify(out).includes('Republic Day'), false);
+});
+
 test('public holidays count unless the property says otherwise', async () => {
   const { db, raw } = setup();
   raw.prepare("INSERT INTO att_holidays (day, name, active) VALUES ('2026-06-02', 'Republic Day', 1)")

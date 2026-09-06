@@ -337,7 +337,6 @@ function dayRow(entry, data) {
               : null)
         : null,
       what,
-      entry.holiday ? h('small.muted', entry.holiday) : null,
       entry.availability
         ? h('small.muted', entry.availability.status === 'preferred'
           ? `★ you asked for this day${entry.availability.from ? ` ${entry.availability.from}–${entry.availability.to}` : ''}`

@@ -844,6 +844,17 @@ lateness, no leave balance, and no reason for a day away: that somebody is away
 is the question, why they are away is not, and the answer does not carry the
 kind of leave at all. It is stripped in the answer rather than on the screen.
 
+**And no public holidays, on either of them.** Their own week used to name the
+holiday under the day. It answered a question nobody was asking there: the
+screen is *when am I in*, and a day with no shift on it is a day off whatever
+the calendar calls it. Worse, a holiday sitting beside a shift reads as an
+offer — that the day is theirs, or that it is worth more — and that is a
+conversation for the office, not a caption on a phone. What a holiday does to
+somebody's month is worked out at sign-off and shown on their own report, where
+the arithmetic is and where the property's own rule about counting them lives.
+The field stopped travelling with the answer as well as coming off the screen,
+so nothing can put it back by accident.
+
 On a phone it stops being a grid. Seven columns of shift names is a
 rota-builder's shape and comes to nine hundred pixels somebody drags sideways
 one name at a time, and the question being asked in a corridor is about a day

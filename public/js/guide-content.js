@@ -126,6 +126,9 @@ export const GUIDE = [
       { p: 'When your next shift is less than a day away, a countdown sits at the top and '
         + 'ticks. Further off than that it is a date rather than a countdown, and the list '
         + 'says it perfectly well.' },
+      { note: 'Public holidays are not marked here. This screen answers when you are in, and '
+        + 'a day with no shift on it is a day off whatever the calendar calls it. What a '
+        + 'holiday does to your month is on My report, where the arithmetic is.' },
 
       { sub: 'While you are at work' },
       { p: 'The moment the terminal has you clocked in, the countdown stops and the card turns '
