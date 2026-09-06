@@ -396,3 +396,37 @@ button.btn.wide { width: 100%; padding: .55rem; font-size: .95rem; margin-top: .
      worse than one that scrolls away. */
   header.top, nav.tabs { position: static; }
 }
+
+/* ------------------------------------------------------------- the window --
+   A button saying which days are on screen, opening a panel of the ranges
+   people ask for and two boxes for the one they ask for that nobody
+   anticipated. A panel rather than a row of buttons because the header already
+   carries five things and a phone has to fit all of them. */
+details.rangemenu { position: relative; }
+details.rangemenu > summary {
+  list-style: none; cursor: pointer; user-select: none; white-space: nowrap;
+}
+details.rangemenu > summary::-webkit-details-marker { display: none; }
+details.rangemenu > summary::after { content: ' ▾'; color: var(--muted); }
+details.rangemenu[open] > summary::after { content: ' ▴'; }
+
+.rangepanel {
+  position: absolute; right: 0; top: calc(100% + .35rem); z-index: 40;
+  width: min(23rem, calc(100vw - 2rem));
+  padding: .8rem; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); box-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+}
+.rangepresets { display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem; }
+.rangepresets .btn { width: 100%; padding: .35rem .2rem; font-size: .78rem; }
+.rangecustom {
+  display: grid; grid-template-columns: 1fr 1fr; gap: .5rem;
+  margin-top: .7rem; padding-top: .7rem; border-top: 1px solid var(--border);
+}
+.rangecustom .btn { grid-column: 1 / -1; }
+.rangepanel p.small { margin: .5rem 0 0; }
+
+/* On a narrow screen the panel is the width of the screen, so it hangs from
+   the left edge instead of the button and cannot run off it. */
+@media (max-width: 30rem) {
+  .rangepanel { right: auto; left: 0; }
+}

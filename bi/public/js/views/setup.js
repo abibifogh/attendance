@@ -13,8 +13,14 @@ import { state } from '../app.js';
  * screen at any price.
  */
 export async function renderSetup(root) {
-  const [sources, runs] = await Promise.all([api('/sources'), api('/runs')]);
-  const boot = state.boot || {};
+  // Bootstrap is re-read here rather than taken from `state.boot`, because
+  // this is the one screen that changes what bootstrap says. Loading a year of
+  // history and then being told the warehouse still starts where it did before
+  // is how somebody concludes the load did nothing.
+  const [sources, runs, boot] = await Promise.all([
+    api('/sources'), api('/runs'), api('/bootstrap').catch(() => state.boot || {}),
+  ]);
+  if (boot?.data) state.boot = boot;
 
   add(root, 
     sources.demoMode ? banner('demo',
@@ -37,8 +43,7 @@ export async function renderSetup(root) {
     h('div.card',
       h('h2', 'Loads'),
       h('p.sub', 'Every run, and what each source said. When a figure looks wrong, this is the first place to look: usually the day was never loaded.'),
-      h('div.rangebar',
-        h('button.btn.primary', { onclick: refresh }, 'Load and re-read now')),
+      loadControls(),
       table([
         { label: 'Run', get: (r) => `#${r.id}` },
         { label: 'Window', get: (r) => `${r.from} → ${r.to}` },
@@ -179,18 +184,65 @@ export async function renderSetup(root) {
     } catch (err) { alert(err.message); }
   }
 
-  async function refresh(event) {
-    event.target.disabled = true;
-    event.target.textContent = 'Loading…';
-    try {
-      const result = await api('/refresh', { method: 'POST', body: {} });
-      alert(`Loaded ${result.etl.rows} rows for ${result.etl.from} → ${result.etl.to}, and found ${result.analysed.findings} things worth saying.`);
-      state.reload();
-    } catch (err) {
-      alert(err.message);
-      event.target.disabled = false;
-      event.target.textContent = 'Load and re-read now';
-    }
+  /**
+   * Load, over whatever days are asked for.
+   *
+   * This was one button, and a press of it loaded the last ten days — which is
+   * right for a nightly run, whose job is to pick up late corrections, and
+   * useless for the thing people actually press it for. Somebody connecting a
+   * new source has a year of history sitting in it and no way to ask for any
+   * of it: they press Load, see ten days, look at a ninety-day screen showing
+   * nothing, and reasonably conclude the connection is broken. That happened
+   * here on the first day Odoo worked.
+   *
+   * So the plain press still takes the recent days, and beside it are the two
+   * boxes that go and get the rest.
+   */
+  function loadControls() {
+    const first = boot?.data?.firstDay || '';
+    const today = boot?.group?.today || new Date().toISOString().slice(0, 10);
+    const yesterday = shiftDay(today, -1);
+    const from = h('input', { type: 'date', max: today, value: shiftDay(yesterday, -364) });
+    const to = h('input', { type: 'date', max: today, value: yesterday });
+    const said = h('p.small');
+
+    const start = async (event, body, what) => {
+      event.target.disabled = true;
+      said.style.color = '';
+      said.textContent = `${what}… this can take a minute. Leave the page open.`;
+      try {
+        const result = await api('/refresh', { method: 'POST', body });
+        const per = (result.etl?.sources || []).map((x) => `${x.id}: ${x.status}`).join(' · ');
+        said.textContent = `${result.etl?.from} → ${result.etl?.to}: ${num(result.etl?.rows ?? 0)} rows. ${per}`;
+        state.reload();
+      } catch (err) {
+        said.textContent = err.message || 'That did not run.';
+        said.style.color = 'var(--critical)';
+        event.target.disabled = false;
+      }
+    };
+
+    return h('div',
+      h('div.rangebar',
+        h('button.btn.primary', {
+          onclick: (event) => start(event, {}, 'Reading the last ten days'),
+        }, 'Load and re-read now'),
+        h('span.small.muted', 'the last ten days — the same window the nightly run takes')),
+
+      h('div.rangebar',
+        h('label.field', 'From', from),
+        h('label.field', 'To', to),
+        h('button.btn', {
+          onclick: (event) => {
+            if (!from.value || !to.value) { said.textContent = 'Both dates, please.'; return; }
+            const a = from.value <= to.value ? from.value : to.value;
+            const b = from.value <= to.value ? to.value : from.value;
+            start(event, { from: a, to: b }, `Reading ${a} to ${b}`);
+          },
+        }, 'Load these days instead')),
+
+      said,
+      first ? h('p.small.muted', `The warehouse holds ${first} onwards.`) : null);
   }
 
   async function leaveDemo() {
@@ -230,6 +282,13 @@ function standingCostForm(boot) {
       },
     }, 'Save'),
     said);
+}
+
+/** A day, some days later or earlier. Whole days, UTC noon, no timezone drift. */
+function shiftDay(day, by) {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + by);
+  return d.toISOString().slice(0, 10);
 }
 
 /**
