@@ -552,6 +552,35 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .who-strip.not-me .who-strip-label,
 .who-strip.not-me .who-strip-note { color: var(--accent); }
 
+/* The days a sign-off question is about, on the question itself. Quieter than
+   the sign-off table it mirrors: this one is read, not worked. */
+.query-days { margin: 0 0 .7rem; }
+.query-days table { font-size: .86rem; }
+.query-days th { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; }
+.query-days td { padding-top: .35rem; padding-bottom: .35rem; }
+
+/* On a phone it stops being a table, like every other table in here. Four
+   columns of times and chips comes to more than a handset is wide, and the
+   flags — the reason somebody is reading this at all — are the half that ends
+   up off the right-hand edge. So: the date down the left, what was clocked and
+   what it came out as beside it, and the flags across the bottom. */
+@media (max-width: 720px) {
+  .query-days { overflow-x: visible; }
+  .query-days table, .query-days tbody, .query-days td { display: block; }
+  .query-days thead { display: none; }
+  .query-days tr {
+    display: grid; grid-template-columns: auto 1fr;
+    column-gap: .7rem; row-gap: .1rem;
+    padding: .45rem 0; border-bottom: 1px solid var(--border);
+  }
+  .query-days tr:last-child { border-bottom: 0; }
+  .query-days td { padding: 0; border: 0; }
+  .query-days td:nth-child(1) { grid-area: 1 / 1 / 3 / 2; }
+  .query-days td:nth-child(2) { grid-area: 1 / 2 / 2 / 3; }
+  .query-days td:nth-child(3) { grid-area: 2 / 2 / 3 / 3; }
+  .query-days td:nth-child(4) { grid-area: 3 / 1 / 4 / -1; margin-top: .2rem; }
+}
+
 /* The one line that offers to put HIVE on a phone. Quiet, because it is a
    convenience rather than something anybody has to do, and it only ever
    appears once. */

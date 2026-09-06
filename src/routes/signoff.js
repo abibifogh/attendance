@@ -629,6 +629,91 @@ export async function listDeciders(ctx) {
   return json({ people });
 }
 
+/**
+ * The days each question is about, as they actually came out.
+ *
+ * A question is a sentence and a row of counts: "1 absent, 1 late", and a
+ * colleague's name. Whoever has to answer it wants what the counts are counting
+ * — which day, what shift, what time the terminal read, and what the app made
+ * of it — and was having to open the person's record in another screen to see
+ * any of it. The two things being compared were never on the page at the same
+ * time.
+ *
+ * One dataset for every question on the screen rather than one each: the list
+ * is a queue of a handful, they cluster in the same few weeks, and loading the
+ * same fortnight nine times over to answer nine questions about it would be
+ * silly.
+ *
+ * The span it will load is capped, because the alternative is that one question
+ * nobody ever closed drags every day since into the answer, and the tab gets
+ * slower every month it is left there. Anything older comes back without its
+ * days and reads exactly as this screen did before. Half a year is well past
+ * where a sign-off question is a live piece of work and comfortably inside what
+ * a month-end argument reaches back to.
+ */
+const MOST_DAYS_BACK = 200;
+
+async function daysBehindQueries(db, list) {
+  const spans = list.filter((q) => isDay(q.from_day) && isDay(q.to_day));
+  if (!spans.length) return new Map();
+
+  const last = spans.reduce((a, q) => (q.to_day > a ? q.to_day : a), spans[0].to_day);
+  const earliest = spans.reduce((a, q) => (q.from_day < a ? q.from_day : a), spans[0].from_day);
+  const floor = addDays(last, -MOST_DAYS_BACK);
+  const from = earliest > floor ? earliest : floor;
+
+  const ds = await loadDataset(db, { from, to: last }).catch(() => null);
+  if (!ds) return new Map();
+
+  // Per person, because over and under are a judgement about somebody's whole
+  // period rather than about a day, and the flags on the card are counted the
+  // same way.
+  const byStaff = new Map();
+  for (const staffId of new Set(spans.map((q) => Number(q.staff_id)))) {
+    const staff = ds.staffById?.get(staffId) ?? null;
+    const records = computeRange(ds, staffId, from, last);
+    const oc = overUnder(records, {
+      holidays: ds.holidayBy,
+      expected: records.some((r) => r.scheduled),
+      perWeek: daysPerWeekFor(staff, ds.settings),
+      calendar: calendarFor(ds, staffId),
+    });
+    byStaff.set(staffId, {
+      byDay: new Map(records.map((r) => [r.day, r])),
+      counted: new Map([
+        ...oc.overs.map((o) => [o.day, 'over']),
+        ...oc.unders.map((u) => [u.day, 'under']),
+      ]),
+    });
+  }
+
+  const out = new Map();
+  for (const q of spans) {
+    const held = byStaff.get(Number(q.staff_id));
+    if (!held) continue;
+    out.set(q.id, parseDays(q.days)
+      .map((day) => {
+        const record = held.byDay.get(day);
+        if (!record) return null;
+        return {
+          day,
+          shift: record.shift_id ? ds.shiftById.get(record.shift_id)?.name ?? null : null,
+          scheduled: Boolean(record.scheduled),
+          in: record.first_in ?? null,
+          out: record.last_out ?? null,
+          minutes: record.worked_minutes ?? 0,
+          lateMinutes: Number(record.late_minutes) || 0,
+          earlyMinutes: Number(record.early_minutes) || 0,
+          status: record.status,
+          label: labelFor(record, ds.reasonBy),
+          issues: issuesOnDay(record, { counted: held.counted.get(day) ?? null }),
+        };
+      })
+      .filter(Boolean));
+  }
+  return out;
+}
+
 /** Everything waiting on somebody, and everything recently dealt with. */
 export async function listQueries(ctx) {
   const status = ctx.url.searchParams.get('status') || 'live';
@@ -670,6 +755,8 @@ export async function listQueries(ctx) {
     notesBy.get(note.query_id).push(note);
   }
 
+  const behind = await daysBehindQueries(ctx.db, list);
+
   return json({
     rows: list.map((q) => ({
       id: q.id,
@@ -677,6 +764,9 @@ export async function listQueries(ctx) {
       from: q.from_day,
       to: q.to_day,
       days: parseDays(q.days),
+      // The days themselves, as they came out. Empty where the question is old
+      // enough to be past the window this is willing to load.
+      records: behind.get(q.id) ?? [],
       issues: q.issues ? JSON.parse(q.issues) : null,
       reason: q.reason,
       status: q.status,

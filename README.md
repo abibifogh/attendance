@@ -1450,6 +1450,28 @@ Whichever it is, **the bell rings for the person who asked** — them by name an
 not every colleague who happens to hold the sign-off permission. They are the
 one waiting on it; a notice four people receive is a notice none of them owns.
 
+**The days are on the question.** A card used to carry a sentence, a name and a
+row of counts: *1 absent, 1 under, 1 late*. Answering it therefore meant opening
+that person's record in another screen and holding the two side by side in your
+head, which is the point at which somebody stops answering and starts leaving
+them. Each day the question is about is now on the card: the date, the shift
+they were due on, what the terminal read, what the app made of it, and the flags
+on it. The counts and what they are counting are finally the same piece of paper.
+
+It is read, not worked. Everything that changes a day is still done where it was
+already done, on their record or on the sign-off tab, because a second way to
+correct a clock time is two screens that can disagree about which one settled
+it. On a phone the table stops being a table: the date down the left, the times
+and the verdict beside it, and the flags underneath, since the flags are what
+somebody opened the screen for and they are the half that falls off the right of
+a handset.
+
+The days come out of one dataset for the whole screen rather than one query
+each, and the span it will load is capped at two hundred days. Otherwise a
+question nobody ever closed drags every day since into the answer, and the tab
+gets slower every month it is left open. Anything older comes back without its
+days and reads as the screen did before.
+
 Once a question has been handed back, signing the days it was about answers it
 automatically — though only when *every* day it asked about has been dealt
 with. A question about five days, three of which were signed, is still a

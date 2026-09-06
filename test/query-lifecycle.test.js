@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  answerQuery, outstanding, raiseQuery, signDays,
+  answerQuery, listQueries, outstanding, raiseQuery, signDays,
 } from '../src/routes/signoff.js';
 
 /**
@@ -180,4 +180,77 @@ test('a broken review table is heard rather than read as nothing signed', async 
   };
   await assert.rejects(() => outstanding(ctx(broken, null, WINDOW)), /connection lost/);
   assert.equal(raw.prepare('SELECT count(*) AS n FROM att_period_review').get().n, 1);
+});
+
+// ---------------------------------------------------------------------------
+// What the question is about
+// ---------------------------------------------------------------------------
+
+const questions = async (db) => (await listQueries(ctx(db, null, '?status=all'))).json();
+const onlyQuestion = async (db) => (await questions(db)).rows[0];
+
+/** Move a day's punches, so a day on the question is a day with something on it. */
+const clockedAt = (raw, day, inAt, outAt) => {
+  raw.prepare('DELETE FROM att_punches WHERE day = ? AND staff_id = 1').run(day);
+  for (const [at, dir] of [[inAt, 'in'], [outAt, 'out']].filter(([at]) => at)) {
+    raw.prepare(
+      `INSERT INTO att_punches (device_serial, employee_no, staff_id, at_utc, at_local, day,
+                                direction, dedupe_key)
+       VALUES ('D1', '1', 1, ?, ?, ?, ?, ?)`,
+    ).run(`${day} ${at}`, `${day} ${at}`, day, dir, `${day}-${at}-${dir}-x`);
+  }
+};
+
+test('a question carries the days it is about, and what was clocked on them', async () => {
+  // The whole point: the counts on the card and what they are counting are on
+  // the same card, rather than one screen apart.
+  const { db } = setup();
+  await askAbout(db, [DAYS[0], DAYS[1]]);
+
+  const q = await onlyQuestion(db);
+  assert.deepEqual(q.records.map((r) => r.day), [DAYS[0], DAYS[1]]);
+  assert.equal(q.records[0].shift, 'Morning');
+  assert.equal(q.records[0].in, '06:00');
+  assert.equal(q.records[0].out, '14:00');
+  assert.equal(q.records[0].label, 'Present');
+  assert.deepEqual(q.records[0].issues, []);
+});
+
+test('a late day says how late on the question itself', async () => {
+  const { db, raw } = setup();
+  clockedAt(raw, DAYS[0], '06:40:00', '14:00:00');
+  await askAbout(db, [DAYS[0]]);
+
+  const q = await onlyQuestion(db);
+  assert.equal(q.records[0].in, '06:40');
+  assert.ok(q.records[0].lateMinutes >= 30, `late by ${q.records[0].lateMinutes}`);
+  assert.ok(q.records[0].issues.includes('late'));
+});
+
+test('a day nobody clocked comes back saying so rather than lying about a time', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_punches WHERE day = ? AND staff_id = 1').run(DAYS[2]);
+  await askAbout(db, [DAYS[2]]);
+
+  const q = await onlyQuestion(db);
+  assert.equal(q.records[0].in, null);
+  assert.equal(q.records[0].out, null);
+  assert.equal(q.records[0].shift, 'Morning', 'the shift they were due on is still worth saying');
+});
+
+test('one forgotten question does not drag years of attendance in behind it', async () => {
+  // The days are read out of one dataset for the whole screen, so the span it
+  // covers is capped. A question left open since 2019 beside this week's comes
+  // back without its days rather than making everybody wait for six years of
+  // punches to load.
+  const { db, raw } = setup();
+  const recent = await askAbout(db, [DAYS[0]]);
+  const ancient = await askAbout(db, [DAYS[1]]);
+  raw.prepare("UPDATE att_query SET from_day = '2019-01-01', to_day = '2019-01-01', days = ? WHERE id = ?")
+    .run(JSON.stringify(['2019-01-01']), ancient);
+
+  const rows = (await questions(db)).rows;
+  assert.deepEqual(rows.find((q) => q.id === ancient).records, []);
+  assert.equal(rows.find((q) => q.id === recent).records.length, 1,
+    'and this week\u2019s question still has its day');
 });

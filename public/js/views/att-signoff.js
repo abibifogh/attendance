@@ -1187,6 +1187,64 @@ async function decide(edit, decision, reload) {
   if (done) { toast(decision === 'approve' ? 'Approved and settled.' : 'Sent back.', 'good'); await reload(); }
 }
 
+/**
+ * What the question is actually about: the days, as the terminal left them.
+ *
+ * The card used to say "1 absent, 1 late" and nothing else, so answering one
+ * meant opening the person's record in another screen and holding the two side
+ * by side in your head. The counts and what they are counting now sit on the
+ * same card: the day, the shift, what was clocked, what the app made of it, and
+ * the flags on it.
+ *
+ * Read only. Anything to be *done* about a day is done where it is done
+ * already, on their record or on the sign-off tab, and putting a second way to
+ * change a clock time here would be two screens that disagree about which one
+ * settled it.
+ */
+function daysBehind(q, data) {
+  if (!q.records?.length) return null;
+
+  const clocked = (d) => (d.in || d.out
+    ? `${d.in || '\u2014'} \u2192 ${d.out || '\u2014'}`
+    : 'nothing clocked');
+
+  // Only where the app has a figure and it says something the label does not.
+  // "Late" already says late; "34 min" says how much.
+  const byHow = (d) => [
+    d.lateMinutes > 0 ? `${d.lateMinutes} min late` : null,
+    d.earlyMinutes > 0 ? `${d.earlyMinutes} min early` : null,
+  ].filter(Boolean).join(', ');
+
+  return h('div.table-wrap.query-days',
+    h('table',
+      h('thead', h('tr',
+        h('th', 'Day'),
+        h('th', 'Clocked'),
+        h('th', 'What it came out as'),
+        h('th', ''),
+      )),
+      h('tbody', q.records.map((d) => h('tr',
+        h('td',
+          h('small', fmtDayShort(d.day)),
+          d.shift
+            ? h('small.muted', { style: { display: 'block' } }, d.shift)
+            : h('small.muted', { style: { display: 'block' } },
+              d.scheduled ? 'no shift named' : 'not scheduled')),
+        h('td', h('small.mono', clocked(d))),
+        h('td',
+          h('small', d.label),
+          byHow(d) ? h('small.muted', { style: { display: 'block' } }, byHow(d)) : null),
+        h('td', d.issues.length
+          ? h('div.chip-row', d.issues.map((key) => {
+            const issue = (data.issues ?? []).find((i) => i.key === key);
+            return h(`span.pill.${ISSUE_PILL[key] ?? ''}`, { title: issue?.detail ?? '' },
+              issue?.label ?? key);
+          }))
+          : h('span.muted', '\u2014')),
+      ))),
+    ));
+}
+
 function queryCard(q, data, reload) {
   const mine = q.raisedBy === data.mine;
 
@@ -1251,6 +1309,8 @@ function queryCard(q, data, reload) {
             `${n} ${key}`);
         }))
       : null,
+
+    daysBehind(q, data),
 
     h('div.thread', q.notes.map((note) => h('div.thread-note',
       h('div.thread-head',

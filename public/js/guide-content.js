@@ -1805,11 +1805,12 @@ export const GUIDE = [
           ['Sign it off', 'Done here, under your name. Closes the question.'],
         ],
       } },
-      { p: 'Open their record on the question — and again inside the answer box, where it '
-        + 'opens in its own tab so you do not lose what you have typed — shows the days the '
-        + 'question is about in full: the shifts, the clock times, what the rules made of each '
-        + 'one. A question cannot honestly be answered from a sentence and a chip reading '
-        + '"1 absent".' },
+      { p: 'Each question carries the days it is about: the date, the shift they were due on, '
+        + 'what the terminal read, what the app made of it, and the flags on it. A question '
+        + 'cannot honestly be answered from a sentence and a chip reading "1 absent".' },
+      { p: 'Open their record goes further — the whole of that person’s week around '
+        + 'those days, and it is where anything is actually changed. Inside the answer box it '
+        + 'opens in its own tab, so you do not lose what you have typed.' },
       { p: 'Whichever of the four you press, the bell rings for the person who asked — them '
         + 'and not every colleague who happens to be able to sign a period off. They are the '
         + 'one waiting on it.' },
