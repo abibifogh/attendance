@@ -35,6 +35,22 @@ const SOURCE = {
 const ENV = { ODOO_KEY_ODOO: 'a-key' };
 
 /**
+ * Call the connector the way the registry calls it: `{ config, token }`.
+ *
+ * These tests used to pass `{ source, env }`, which is the shape the connector
+ * was written to take and the shape nothing else in the app uses. Every test
+ * passed and Odoo could never connect — it read an empty address and reported
+ * "No Odoo address is configured" whatever was typed into Setup. Going through
+ * the same door the app goes through is the only thing that would have caught
+ * it, and `test/connectors.test.js` now does that for every connector.
+ */
+const asRegistry = ({ source = SOURCE, env = ENV, ...rest }) => ({
+  config: source.config,
+  token: env[source.config.secretName],
+  ...rest,
+});
+
+/**
  * An Odoo that answers from a script, and records what it was asked.
  *
  * Keyed by `model/method`, so a test says what each model returns without
@@ -86,7 +102,7 @@ test('a bill arrives in pesewas, not in cedis', async () => {
     'account.move/search_read': [move({})],
     'account.move.line/search_read': [moveLine({})],
   });
-  const bundle = await pull({ source: SOURCE, env: ENV, ...window, fetchImpl });
+  const bundle = await pull(asRegistry({ ...window, fetchImpl }));
 
   const bill = bundle.bills[0];
   // GH₵2,450.75. Written out because the entire risk is a factor of a hundred.
@@ -109,7 +125,7 @@ test('every money field is a whole number of pesewas', async () => {
     'account.move/search_read': [move({ amount_untaxed: 33.333, amount_tax: 5.0, amount_total: 38.333, amount_residual: 12.005 })],
     'account.move.line/search_read': [moveLine({ price_unit: 3.3333, price_subtotal: 33.333, price_total: 38.333 })],
   });
-  const bundle = await pull({ source: SOURCE, env: ENV, ...window, fetchImpl });
+  const bundle = await pull(asRegistry({ ...window, fetchImpl }));
   for (const row of [...bundle.bills, ...bundle.purchaseLines]) {
     for (const [field, value] of Object.entries(row)) {
       if (typeof value !== 'number') continue;
@@ -129,7 +145,7 @@ test('a credit note reduces a supplier rather than inflating it', async () => {
       moveLine({ id: 101, move_id: [2, 'CN/9'], quantity: 2, price_subtotal: 500, price_total: 500 }),
     ],
   });
-  const bundle = await pull({ source: SOURCE, env: ENV, ...window, fetchImpl });
+  const bundle = await pull(asRegistry({ ...window, fetchImpl }));
 
   const credit = bundle.bills.find((b) => b.externalId === '2');
   assert.equal(credit.total, -50_000, 'a return is a negative purchase');
@@ -146,7 +162,7 @@ test('only product lines are read, never tax or the payable', async () => {
     'account.move/search_read': [move({})],
     'account.move.line/search_read': [moveLine({})],
   });
-  await pull({ source: SOURCE, env: ENV, ...window, fetchImpl });
+  await pull(asRegistry({ ...window, fetchImpl }));
 
   const ask = fetchImpl.seen.find((s) => s.key === 'account.move.line/search_read');
   const domain = JSON.stringify(ask.body.domain);
@@ -162,7 +178,7 @@ test('a line records which account it hit, and whether an order was behind it', 
       moveLine({ id: 101, move_id: [2, 'BILL/2'], purchase_line_id: false }),
     ],
   });
-  const bundle = await pull({ source: SOURCE, env: ENV, ...window, fetchImpl });
+  const bundle = await pull(asRegistry({ ...window, fetchImpl }));
 
   assert.equal(bundle.purchaseLines[0].accountCode, '6010');
   assert.equal(bundle.bills.find((b) => b.externalId === '1').fromOrder, true);
@@ -175,7 +191,7 @@ test('a line records which account it hit, and whether an order was behind it', 
 
 test('it speaks JSON-2, at the endpoint that will still exist', async () => {
   const fetchImpl = fakeOdoo({ 'account.move/search_read': [move({})] });
-  await pull({ source: SOURCE, env: ENV, ...window, fetchImpl });
+  await pull(asRegistry({ ...window, fetchImpl }));
 
   const ask = fetchImpl.seen[0];
   // The old /jsonrpc and /xmlrpc/2 endpoints go away in Odoo Online 21.1.
@@ -194,9 +210,9 @@ test('it speaks JSON-2, at the endpoint that will still exist', async () => {
 
 test('the database header is sent only when a database was named', async () => {
   const fetchImpl = fakeOdoo({ 'account.move/search_read': [] });
-  await pull({
-    source: { ...SOURCE, config: { ...SOURCE.config, db: '' } }, env: ENV, ...window, fetchImpl,
-  });
+  await pull(asRegistry({
+    source: { ...SOURCE, config: { ...SOURCE.config, db: '' } }, ...window, fetchImpl,
+  }));
   assert.equal(fetchImpl.seen[0].headers['X-Odoo-Database'], undefined);
 });
 
@@ -204,7 +220,7 @@ test('paging is ordered by id, so nothing appears twice or not at all', async ()
   // 600 bills: two pages, and the second must not repeat the first.
   const many = Array.from({ length: 600 }, (_, i) => move({ id: i + 1, ref: `INV-${i}` }));
   const fetchImpl = fakeOdoo({ 'account.move/search_read': many });
-  const bundle = await pull({ source: SOURCE, env: ENV, ...window, fetchImpl });
+  const bundle = await pull(asRegistry({ ...window, fetchImpl }));
 
   assert.equal(bundle.bills.length, 600);
   assert.equal(new Set(bundle.bills.map((b) => b.externalId)).size, 600, 'no bill read twice');
@@ -216,7 +232,7 @@ test('paging is ordered by id, so nothing appears twice or not at all', async ()
 
 test('the window is asked for by accounting date, and drafts are not excluded', async () => {
   const fetchImpl = fakeOdoo({ 'account.move/search_read': [] });
-  await pull({ source: SOURCE, env: ENV, ...window, fetchImpl });
+  await pull(asRegistry({ ...window, fetchImpl }));
   const domain = JSON.stringify(fetchImpl.seen[0].body.domain);
 
   assert.match(domain, /"invoice_date",">=","2026-05-01"/);
@@ -234,7 +250,7 @@ test('the window is asked for by accounting date, and drafts are not excluded', 
 test('a refused key is a sentence somebody can act on', async () => {
   const fetchImpl = fakeOdoo({ 'account.move/search_read': 401 });
   await assert.rejects(
-    () => pull({ source: SOURCE, env: ENV, ...window, fetchImpl }),
+    () => pull(asRegistry({ ...window, fetchImpl })),
     /refused the API key/,
   );
 });
@@ -243,7 +259,7 @@ test('a missing key is caught before a request is made', async () => {
   let called = false;
   const fetchImpl = async () => { called = true; };
   await assert.rejects(
-    () => pull({ source: SOURCE, env: {}, ...window, fetchImpl }),
+    () => pull(asRegistry({ env: {}, ...window, fetchImpl })),
     /No Odoo API key/,
   );
   assert.equal(called, false);
@@ -252,22 +268,20 @@ test('a missing key is caught before a request is made', async () => {
 test('a wrong address says which thing to check', async () => {
   const fetchImpl = fakeOdoo({ 'account.move/search_read': 404 });
   await assert.rejects(
-    () => pull({ source: SOURCE, env: ENV, ...window, fetchImpl }),
+    () => pull(asRegistry({ ...window, fetchImpl })),
     /address is wrong/,
   );
 });
 
 test('the check reports what it connected to, or why it did not', async () => {
-  const ok = await check({
-    source: SOURCE,
-    env: ENV,
+  const ok = await check(asRegistry({
     fetchImpl: fakeOdoo({ 'res.company/search_read': [{ id: 1, name: 'Nice Operation', currency_id: [1, 'GHS'] }] }),
-  });
+  }));
   assert.equal(ok.ok, true);
   assert.match(ok.detail, /Nice Operation/);
   assert.match(ok.detail, /GHS/);
 
-  const bad = await check({ source: SOURCE, env: ENV, fetchImpl: fakeOdoo({ 'res.company/search_read': 401 }) });
+  const bad = await check(asRegistry({ fetchImpl: fakeOdoo({ 'res.company/search_read': 401 }) }));
   assert.equal(bad.ok, false);
   assert.match(bad.detail, /refused the API key/);
 });
@@ -275,7 +289,7 @@ test('the check reports what it connected to, or why it did not', async () => {
 /* --------------------------------------------------------------- lines -- */
 
 test('an analytic account maps to a part of the business', () => {
-  const config = odooConfig(SOURCE, ENV);
+  const config = odooConfig(SOURCE.config, ENV[SOURCE.config.secretName]);
   assert.equal(lineFor(config, { analytic: '12' }), 'restaurant');
   assert.equal(lineFor(config, { analytic: '13' }), 'laundry');
   // Unmapped lands in admin on purpose: an unexplained lump is a prompt to fix
@@ -285,7 +299,7 @@ test('an analytic account maps to a part of the business', () => {
 });
 
 test('the journal is the fallback when a line carries no analytic account', () => {
-  const config = odooConfig(SOURCE, ENV);
+  const config = odooConfig(SOURCE.config, ENV[SOURCE.config.secretName]);
   assert.equal(lineFor(config, { journal: 'Vendor Bills' }), 'admin');
   assert.equal(lineFor(config, { journal: 'vendor bills' }), 'admin', 'a chart is typed by people');
 });
@@ -315,7 +329,7 @@ test('a bill with no lines is still a bill', async () => {
     'account.move/search_read': [move({})],
     'account.move.line/search_read': [],
   });
-  const bundle = await pull({ source: SOURCE, env: ENV, ...window, fetchImpl });
+  const bundle = await pull(asRegistry({ ...window, fetchImpl }));
   assert.equal(bundle.bills.length, 1);
   assert.equal(bundle.purchaseLines.length, 0);
   assert.equal(bundle.bills[0].fromOrder, false, 'no lines means nothing traced to an order');
@@ -323,7 +337,7 @@ test('a bill with no lines is still a bill', async () => {
 
 test('nothing in the window is nothing, not an error', async () => {
   const fetchImpl = fakeOdoo({ 'account.move/search_read': [] });
-  const bundle = await pull({ source: SOURCE, env: ENV, ...window, fetchImpl });
+  const bundle = await pull(asRegistry({ ...window, fetchImpl }));
   assert.deepEqual(bundle.bills, []);
   assert.deepEqual(bundle.purchaseLines, []);
   // And no second call: there are no move ids to ask about.

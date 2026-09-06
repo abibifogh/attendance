@@ -5,7 +5,7 @@ import { freshDb } from './helpers.js';
 import { runEtl } from '../src/warehouse/etl.js';
 import { nameKey, orgKey, itemKey, Register } from '../src/warehouse/identity.js';
 import { all, first, groupConfig, setSetting } from '../src/lib/db.js';
-import { loadFacts, totals } from '../src/insight/facts.js';
+import { loadFacts, totals, chooseCostBasis } from '../src/insight/facts.js';
 
 /**
  * The loader, against a real database.
@@ -165,12 +165,57 @@ test('the group totals add up from the rows underneath them', async () => {
 
   const net = raw.prepare('SELECT SUM(net) AS n FROM fact_revenue').get().n;
   const labour = raw.prepare('SELECT SUM(labour_cost) AS n FROM fact_labour').get().n;
-  const cost = raw.prepare('SELECT SUM(amount) AS n FROM fact_cost').get().n;
 
   assert.equal(t.net, net);
   assert.equal(t.labourCost, labour);
-  assert.equal(t.cost, cost);
-  assert.equal(t.contribution, net - cost - labour);
+  // Deliberately NOT the whole of fact_cost. This assertion used to be
+  // SUM(amount) over the table, which quietly required the group cost to be
+  // every source added together — and so required the kitchen's delivery note
+  // and the supplier's invoice for the same crate to be counted twice. The
+  // total is the chosen basis, and the difference is what was rejected.
+  const everything = raw.prepare('SELECT SUM(amount) AS n FROM fact_cost').get().n;
+  const chosen = facts.costBasis.rows.reduce((a, r) => a + r.amount, 0);
+  assert.equal(t.cost, chosen);
+  assert.equal(chosen + facts.costBasis.excluded, everything, 'nothing may go missing unexplained');
+  assert.equal(t.contribution, net - chosen - labour);
+});
+
+test('a line the books cover is not also counted from the kitchen', async () => {
+  // Breakfast is the case that exists in this group's own data: stockcheck
+  // writes down the ingredients it took in, and Odoo posts the supplier's bill
+  // for the same food. Both are real records. Adding them is not.
+  const { raw, db } = await loaded();
+  const facts = await loadFacts(db, WINDOW.from, WINDOW.to);
+  const basis = facts.costBasis;
+
+  assert.ok(basis.excluded > 0, 'the demo warehouse must contain the double count to guard against');
+  assert.ok(basis.excludedLines.includes('breakfast'));
+
+  const breakfastSources = new Set(
+    basis.rows.filter((r) => r.line_id === 'breakfast').map((r) => r.source_id),
+  );
+  assert.deepEqual([...breakfastSources], ['odoo'], 'one record per line, and it is the books');
+
+  const bothInTable = raw.prepare(
+    "SELECT COUNT(DISTINCT source_id) AS n FROM fact_cost WHERE line_id = 'breakfast'",
+  ).get().n;
+  assert.ok(bothInTable > 1, 'both records are still in the warehouse — only the reading picks one');
+});
+
+test('a line the books do not reach keeps the cost from the system that runs it', async () => {
+  // The opposite error, and the quieter one. Odoo posts nothing against the
+  // restaurant in this window. A books-or-nothing switch would take the
+  // restaurant's entire food cost to zero and report its margin as a triumph.
+  const { db } = await loaded();
+  const facts = await loadFacts(db, WINDOW.from, WINDOW.to);
+  const basis = facts.costBasis;
+
+  const restaurant = basis.rows.filter((r) => r.line_id === 'restaurant');
+  assert.ok(restaurant.length > 0, 'the restaurant must still have a food cost');
+  assert.ok(restaurant.every((r) => r.source_id !== 'odoo'));
+  assert.ok(basis.uncovered.some((u) => u.line === 'restaurant'),
+    'and the screen must be able to say the books do not reach it');
+  assert.equal(basis.basis, 'books-in-part');
 });
 
 test('the run log records what each source did', async () => {
@@ -292,4 +337,56 @@ test('the page says whether the wage bill was measured or assumed', async () => 
   assert.match(wageBasisNote({ labour: half }, config), /\d+% of the bill/);
 
   assert.match(wageBasisNote({ labour: [] }, config), /No wage cost is recorded/);
+});
+
+// --------------------------------------------------- choosing a cost basis --
+
+const costRow = (line, source, amount) => ({
+  day: '2026-08-01', line_id: line, source_id: source, category: 'purchases',
+  supplier_id: 0, amount,
+});
+
+test('with no books, everything is read from the operating systems', () => {
+  const basis = chooseCostBasis(
+    [costRow('restaurant', 'pos', 500), costRow('breakfast', 'breakfast', 300)],
+    new Set(['odoo']),
+  );
+  assert.equal(basis.basis, 'operations');
+  assert.equal(basis.rows.length, 2);
+  assert.equal(basis.excluded, 0);
+});
+
+test('the books displace the operating system on the lines they reach, and only those', () => {
+  const basis = chooseCostBasis([
+    costRow('breakfast', 'breakfast', 300),
+    costRow('breakfast', 'odoo', 340),
+    costRow('restaurant', 'pos', 500),
+  ], new Set(['odoo']));
+
+  assert.equal(basis.rows.reduce((a, r) => a + r.amount, 0), 340 + 500);
+  assert.equal(basis.excluded, 300);
+  assert.deepEqual(basis.uncovered, [{ line: 'restaurant', amount: 500 }]);
+  assert.equal(basis.byLine.get('breakfast'), 'books');
+  assert.equal(basis.byLine.get('restaurant'), 'operations');
+});
+
+test('a line the books cover completely is not listed as uncovered', () => {
+  const basis = chooseCostBasis([
+    costRow('breakfast', 'breakfast', 300),
+    costRow('breakfast', 'odoo', 340),
+  ], new Set(['odoo']));
+  assert.equal(basis.basis, 'books');
+  assert.deepEqual(basis.uncovered, []);
+});
+
+test('two accounting sources are both books, and do not displace each other', () => {
+  // A second Odoo database, or a books source added later. Neither is an
+  // operating system, so neither may be dropped in favour of the other.
+  const basis = chooseCostBasis([
+    costRow('restaurant', 'odoo', 400),
+    costRow('restaurant', 'odoo-two', 100),
+    costRow('restaurant', 'pos', 900),
+  ], new Set(['odoo', 'odoo-two']));
+  assert.equal(basis.rows.reduce((a, r) => a + r.amount, 0), 500);
+  assert.equal(basis.excluded, 900);
 });

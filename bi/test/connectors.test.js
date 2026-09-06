@@ -6,7 +6,7 @@ import { pull as pullAttendance, lineForDepartment } from '../src/connectors/att
 import { pull as pullBreakfast } from '../src/connectors/breakfast.js';
 import { pull as pullPos } from '../src/connectors/snpos.js';
 import { pull as pullLaundry } from '../src/connectors/snlaundry.js';
-import { pullSource, readiness, listSources } from '../src/connectors/index.js';
+import { pullSource, readiness, listSources, checkSource, KINDS } from '../src/connectors/index.js';
 import { emptyBundle, mergeBundles } from '../src/connectors/bundle.js';
 
 /**
@@ -305,4 +305,66 @@ test('bundles merge without losing a list', () => {
   assert.equal(merged.revenue.length, 2);
   assert.equal(merged.people.length, 1);
   assert.deepEqual(merged.notes, ['a']);
+});
+
+// ------------------------------------------- every connector, through the door --
+
+/**
+ * Every registered connector, called the way the registry calls it.
+ *
+ * This exists because of a bug that every other test in this repository was
+ * blind to. The Odoo connector was written to take `{ source, env }` and read
+ * the key out of the environment itself; the registry hands every connector
+ * `{ db, config, token, from, to }`. Its own tests called it directly, in its
+ * own shape, and all nineteen passed — while in the deployed app both
+ * arguments arrived undefined, the address came out empty, and every check and
+ * every load failed with "No Odoo address is configured" no matter what was
+ * typed into Setup. It could never have worked, and nothing said so.
+ *
+ * A unit test cannot catch that by construction: it is a disagreement between
+ * two files about a calling convention, and testing either one alone confirms
+ * only that it agrees with itself. So these go through `checkSource` and
+ * `pullSource` — the same door the app goes through — and assert the one thing
+ * that distinguishes a wired connector from an unwired one: that the settings
+ * it was given actually reached it.
+ */
+test('every connector reads the settings the registry hands it', async () => {
+  const settings = {
+    base: 'https://example.invalid',
+    binding: 'NOPE_DB',
+    db: 'a-database',
+    projectRef: 'abcdefghijklmnopqrst',
+  };
+
+  for (const [kind, spec] of Object.entries(KINDS)) {
+    if (!spec.check) continue;
+    const source = { id: `probe-${kind}`, kind, config: { ...settings }, enabled: 1 };
+    const env = {};
+    const secret = spec.secretFor ? spec.secretFor(source.id) : null;
+    if (secret) env[secret] = 'a-key';
+
+    const result = await checkSource(source, env);
+
+    // Every one of these will fail to reach example.invalid, and that is fine.
+    // What must never happen is a connector reporting that it has no address
+    // or no key when the registry just handed it both — that is the signature
+    // of a connector wired to a shape nobody passes it.
+    assert.equal(typeof result.detail, 'string', `${kind} must explain itself`);
+    assert.doesNotMatch(result.detail, /no .*(address|key).*(configured|set)/i,
+      `${kind} did not receive the address and key the registry gave it`);
+  }
+});
+
+test('a connector that genuinely has no address still says so', async () => {
+  // The guard above must not be satisfiable by deleting the message. An empty
+  // address is a real condition and has to keep reporting itself.
+  for (const [kind, spec] of Object.entries(KINDS)) {
+    if (!spec.check || spec.transport !== 'http') continue;
+    const source = { id: `bare-${kind}`, kind, config: {}, enabled: 1 };
+    const env = {};
+    const secret = spec.secretFor ? spec.secretFor(source.id) : null;
+    if (secret) env[secret] = 'a-key';
+    const result = await checkSource(source, env);
+    assert.equal(result.ok, false, `${kind} cannot be reading from nowhere`);
+  }
 });

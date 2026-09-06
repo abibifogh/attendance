@@ -10,7 +10,7 @@ import { all } from '../lib/db.js';
  * number in the finding underneath it are the same number.
  */
 export async function loadFacts(db, from, to) {
-  const [days, revenue, labour, cost, demand, service, cash, personDays, purchases, usage] = await Promise.all([
+  const [days, revenue, labour, cost, demand, service, cash, personDays, purchases, usage, bookSources] = await Promise.all([
     all(db, 'SELECT * FROM dim_day WHERE day BETWEEN ?1 AND ?2 ORDER BY day', from, to),
     all(db, `SELECT day, line_id, SUM(gross) gross, SUM(discounts) discounts, SUM(net) net,
                     SUM(collected) collected, SUM(outstanding) outstanding, SUM(cash) cash,
@@ -18,8 +18,12 @@ export async function loadFacts(db, from, to) {
                     SUM(covers) covers, SUM(units) units
                FROM fact_revenue WHERE day BETWEEN ?1 AND ?2 GROUP BY day, line_id`, from, to),
     all(db, `SELECT * FROM fact_labour WHERE day BETWEEN ?1 AND ?2`, from, to),
-    all(db, `SELECT day, line_id, category, supplier_id, SUM(amount) amount
-               FROM fact_cost WHERE day BETWEEN ?1 AND ?2 GROUP BY day, line_id, category, supplier_id`, from, to),
+    // Kept split by source. Two systems can hold a record of the same food —
+    // the kitchen's own delivery note and the supplier's invoice — and adding
+    // them is the one thing that must never happen here.
+    all(db, `SELECT day, line_id, source_id, category, supplier_id, SUM(amount) amount
+               FROM fact_cost WHERE day BETWEEN ?1 AND ?2
+              GROUP BY day, line_id, source_id, category, supplier_id`, from, to),
     all(db, 'SELECT * FROM fact_demand WHERE day BETWEEN ?1 AND ?2', from, to),
     all(db, 'SELECT * FROM fact_service WHERE day BETWEEN ?1 AND ?2', from, to),
     // The link's confidence travels with the row. A variance attributed to a
@@ -41,7 +45,10 @@ export async function loadFacts(db, from, to) {
     all(db, `SELECT u.*, i.name item_name FROM fact_usage u
                LEFT JOIN dim_item i ON i.id = u.item_id
               WHERE u.day BETWEEN ?1 AND ?2`, from, to),
+    all(db, "SELECT id FROM sources WHERE kind = 'odoo_json2'"),
   ]);
+
+  const basis = chooseCostBasis(cost, new Set(bookSources.map((r) => r.id)));
 
   const dayList = days.map((d) => d.day);
   const byDay = new Map(days.map((d) => [d.day, d]));
@@ -83,7 +90,7 @@ export async function loadFacts(db, from, to) {
     bucket.absentCount += row.absent_count;
     bucket.scheduledCount += row.scheduled_count;
   }
-  for (const row of cost) {
+  for (const row of basis.rows) {
     const bucket = ensure(row.day, row.line_id);
     bucket.cost += row.amount;
     bucket.costByCategory[row.category] = (bucket.costByCategory[row.category] || 0) + row.amount;
@@ -106,7 +113,9 @@ export async function loadFacts(db, from, to) {
     days, dayList, byDay,
     lineRows: [...lines.values()].sort((a, b) => (a.day === b.day ? a.line.localeCompare(b.line) : a.day.localeCompare(b.day))),
     demand, demandByDay,
-    labour, service, cash, personDays, purchases, usage, cost,
+    labour, service, cash, personDays, purchases, usage,
+    cost: basis.rows,
+    costBasis: basis,
     /** Every row for one line, in date order. */
     forLine(line) {
       return this.lineRows.filter((r) => r.line === line);
@@ -149,4 +158,76 @@ export function totals(facts) {
   out.revenuePerGuest = out.guestNights > 0 ? Math.round(out.net / out.guestNights) : null;
   out.labourPct = out.net > 0 ? Math.round((out.labourCost / out.net) * 1000) / 10 : null;
   return out;
+}
+
+/**
+ * Which record of a purchase to believe.
+ *
+ * Two systems can hold the same food. The kitchen writes down what a delivery
+ * contained; weeks later the supplier invoices for it and Odoo posts the bill.
+ * Both land in `fact_cost` under different sources, and summing them counts
+ * every crate twice — which deflates contribution, raises the break-even and
+ * looks exactly like a bad month. It is the kind of fault that appears the day
+ * a new source is connected and is never traced back to that day.
+ *
+ * The choice is made **per line, never blended within a line**. Where the books
+ * have posted a cost against a line, the books are that line's record and the
+ * operating system's version of it is dropped. A bill is what was actually
+ * charged and agreed; a delivery note is what somebody in a kitchen wrote down
+ * at six in the morning.
+ *
+ * Per line rather than for the whole window, because Odoo rarely reaches every
+ * part of a hotel at once. In this group's own data, Odoo posts against
+ * breakfast, the till carries the restaurant's food and the maintenance store
+ * carries its own parts — so a single books-or-nothing switch would take the
+ * restaurant's entire food cost to zero and turn its margin into a triumph.
+ * That is a worse error than the double count it was meant to fix, and a
+ * quieter one.
+ *
+ * `uncovered` names the lines still being read from an operating system, which
+ * is the one thing this choice can hide. The line map in Setup is what moves
+ * them across, and the screens say so.
+ */
+export function chooseCostBasis(cost, bookSourceIds) {
+  const linesInBooks = new Set(
+    cost.filter((r) => bookSourceIds.has(r.source_id)).map((r) => r.line_id),
+  );
+
+  const rows = [];
+  const dropped = [];
+  for (const row of cost) {
+    // A line the books speak for is a line only the books speak for.
+    if (linesInBooks.has(row.line_id) && !bookSourceIds.has(row.source_id)) {
+      dropped.push(row);
+      continue;
+    }
+    rows.push(row);
+  }
+
+  const byLine = new Map();
+  for (const row of rows) {
+    const from = bookSourceIds.has(row.source_id) ? 'books' : 'operations';
+    byLine.set(row.line_id, from);
+  }
+  const uncovered = new Map();
+  for (const row of rows) {
+    if (bookSourceIds.has(row.source_id)) continue;
+    uncovered.set(row.line_id, (uncovered.get(row.line_id) || 0) + row.amount);
+  }
+
+  return {
+    basis: linesInBooks.size ? (uncovered.size ? 'books-in-part' : 'books') : 'operations',
+    rows,
+    sources: [...new Set(rows.map((r) => r.source_id))],
+    fromBooks: [...linesInBooks],
+    // What an operating system said about a line the books already cover, and
+    // is deliberately not being counted a second time.
+    excluded: dropped.reduce((a, r) => a + r.amount, 0),
+    excludedLines: [...new Set(dropped.map((r) => r.line_id))],
+    // Lines the books do not reach, still read from the system that runs them.
+    uncovered: [...uncovered.entries()]
+      .map(([line, amount]) => ({ line, amount }))
+      .sort((a, b) => b.amount - a.amount),
+    byLine,
+  };
 }

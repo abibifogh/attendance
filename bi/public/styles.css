@@ -240,7 +240,12 @@ input, select {
   background: var(--surface); color: var(--ink);
 }
 label.field { display: block; font-size: .8rem; color: var(--ink-2); margin-bottom: .7rem; }
-label.field input, label.field select { display: block; width: 100%; margin-top: .2rem; }
+label.field input, label.field select, label.field textarea { display: block; width: 100%; margin-top: .2rem; }
+/* A textarea is inline by default, so without this it floats beside its own
+   label and the help text wraps around it. */
+label.field textarea { font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .82rem; line-height: 1.5; padding: .45rem .55rem; resize: vertical;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink); }
 /* A tickbox and its words are one line, not a stacked field. Without this the
    box inherits `width: 100%` from the rule above and pushes its own label into
    the next column. */

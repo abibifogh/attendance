@@ -552,11 +552,31 @@ export async function financials(env, query) {
 
   const priorTotals = totals(prior);
 
+  // The two windows must be read on the same basis or the comparison is a
+  // comparison of bookkeeping, not of trading. If Odoo posted against a line
+  // this month and not last, the bridge would report an enormous change in
+  // what was bought — entirely because a different system was answering the
+  // question. Refused rather than drawn, and the screen says which is which.
+  const sameBasis = facts.costBasis.basis === prior.costBasis.basis
+    && facts.costBasis.fromBooks.slice().sort().join() === prior.costBasis.fromBooks.slice().sort().join();
+
   return {
     range: { from, to, days: span },
     priorRange: { from: priorFrom, to: priorTo, days: span },
     demoMode: config.demoMode,
     ...analysis,
+    ...(sameBasis ? {} : { bridge: null, lineBridges: [] }),
+    costBasis: {
+      basis: facts.costBasis.basis,
+      fromBooks: facts.costBasis.fromBooks.map((id) => ({ line: id, label: meta.get(id)?.label || bare(id) })),
+      excluded: facts.costBasis.excluded,
+      excludedLines: facts.costBasis.excludedLines.map((id) => meta.get(id)?.label || bare(id)),
+      uncovered: facts.costBasis.uncovered.map((u) => ({
+        line: u.line, label: meta.get(u.line)?.label || bare(u.line), amount: u.amount,
+      })),
+      comparable: sameBasis,
+      priorBasis: prior.costBasis.basis,
+    },
     movement: {
       revenue: change(priorTotals.net, t.net),
       contribution: change(priorTotals.contribution, t.contribution),
@@ -567,6 +587,13 @@ export async function financials(env, query) {
     caveats: [
       'Rooms are in none of the connected systems, so every figure here is the group without its '
         + 'rooms business. The break-even is the break-even of what is measured.',
+      facts.costBasis.basis === 'operations'
+        ? 'Purchases are what the operating systems recorded. Connect Odoo and the supplier’s own '
+          + 'invoice replaces the kitchen’s note of the same delivery.'
+        : 'Where Odoo has posted a bill against a line, that line’s purchases are Odoo’s figures and '
+          + 'nothing else — the operating system’s record of the same delivery is dropped rather than '
+          + 'added to it. Lines Odoo does not reach still come from the system that runs them, and are '
+          + 'named on the screen.',
       'Purchases are treated as varying with takings and wages as fixed, because a rota is set a '
         + 'week ahead and does not shrink because Tuesday was quiet. Both are measured, not modelled. '
         + 'Rent, power, water and depreciation are in none of the connected systems and are taken '
