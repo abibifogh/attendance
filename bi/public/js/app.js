@@ -185,11 +185,18 @@ async function renderApp() {
   function rangePicker() {
     if (!visible.some((r) => r.needs === 'insight')) return null;
 
-    const first = boot.data.firstDay || '2000-01-01';
+    const first = boot.data.firstDay || '';
     const today = boot.group.today;
     const summary = h('summary.btn');
-    const from = h('input', { type: 'date', min: first, max: today, id: 'range-from' });
-    const to = h('input', { type: 'date', min: first, max: today, id: 'range-to' });
+    // No lower bound. It was the first day the warehouse currently holds, which
+    // greyed out every year before the one that happened to have been loaded —
+    // and that is exactly backwards now that history can be fetched. Somebody
+    // wanting last year has to be able to ask for it *before* it exists here;
+    // asking is how they find out it has to be loaded, and the panel says so.
+    // The upper bound stays: a report about days that have not happened is not
+    // a question anybody is asking.
+    const from = h('input', { type: 'date', max: today, id: 'range-from' });
+    const to = h('input', { type: 'date', max: today, id: 'range-to' });
     const said = h('p.small.muted');
     const box = h('details.rangemenu', summary,
       h('div.rangepanel',
@@ -243,9 +250,26 @@ async function renderApp() {
       summary.textContent = dayRange(state.range.from, state.range.to);
       from.value = state.range.from;
       to.value = state.range.to;
-      say(state.range.to >= today
-        ? 'This range includes today, which is only half a day. Every line will look low.'
-        : '');
+      say(note());
+    }
+
+    /**
+     * The one sentence worth saying about the range that was chosen.
+     *
+     * Reaching past what has been loaded is the common one and used to be
+     * silent — the screens simply came back empty and left somebody to work
+     * out why. It is not an error and is not prevented; it is a prompt to go
+     * and fetch the days, which is now a thing that can be done.
+     */
+    function note() {
+      if (state.range.to >= today) {
+        return 'This range includes today, which is only half a day. Every line will look low.';
+      }
+      if (first && state.range.from < first) {
+        return `The warehouse only holds ${first} onwards, so the days before that will be empty. `
+          + 'Setup → Loads → "Load these days instead" goes and fetches them.';
+      }
+      return '';
     }
 
     function apply(a, b, note = '') {
