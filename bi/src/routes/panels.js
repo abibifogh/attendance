@@ -437,11 +437,22 @@ export async function books(env, query) {
   // able to tell "Odoo is not connected" from "Odoo is connected and this
   // window is genuinely empty", and those are different sentences.
   const health = (await sourceHealth(db)).filter((h) => h.id === 'odoo');
+  // What the last load actually covered. "No bills in this window" and "this
+  // window was never loaded" look identical on screen and need opposite
+  // actions, and until this was passed through the screen guessed — it told
+  // somebody to go and check for draft bills when the real answer was that the
+  // days he was looking at had never been fetched.
+  const lastRun = await first(db, 'SELECT from_day, to_day, finished_at FROM etl_run ORDER BY id DESC LIMIT 1');
+  const loaded = lastRun ? { from: lastRun.from_day, to: lastRun.to_day, at: lastRun.finished_at } : null;
+  const coversWindow = Boolean(loaded && loaded.from <= from && loaded.to >= to);
 
   return {
     range: { from, to },
     demoMode: config.demoMode,
     connected: health.filter((h) => h.status !== 'never run'),
+    odoo: health[0] || null,
+    loaded,
+    coversWindow,
     ...analysis,
     caveats: [
       'A bill is what a supplier invoiced, which is not always what arrived. Where the kitchen '

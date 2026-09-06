@@ -27,15 +27,7 @@ export async function renderBooks(root, { range }) {
       ? banner('demo', h('strong', 'Demonstration data.'), ' The bills below are invented.')
       : null,
 
-    nothing
-      ? h('div.card',
-        h('h2', 'Nothing from Odoo in this window'),
-        h('p.sub',
-          data.connected.length
-            ? 'Odoo is connected but has no vendor bills dated in these days. Widen the range, '
-              + 'or check that bills are being posted with an accounting date rather than left as drafts.'
-            : 'Odoo has not been connected yet. Add it under Setup, then load again.'))
-      : null,
+    nothing ? nothingCard(data) : null,
 
     !nothing ? h('div.card',
       h('h2', 'What was invoiced'),
@@ -186,6 +178,62 @@ function outliersCard(data) {
       { label: 'This line', num: true, get: (r) => money(r.unitCost) },
       { label: 'Away by', num: true, get: (r) => percent(r.awayBp / 100) },
     ], rows));
+}
+
+/**
+ * Why there is nothing here — which is three different situations.
+ *
+ * This card used to say one thing: that Odoo was connected and had no bills in
+ * these days, and to go and check whether they were still drafts. On the first
+ * day Odoo actually worked that sentence was wrong and sent somebody looking
+ * in Odoo for a problem that was in this app: the days on screen had never
+ * been fetched. A load reaches ten days back by default, so a ninety-day view
+ * of a source connected this morning is eighty days of guaranteed emptiness
+ * that nothing on the screen explained.
+ *
+ * Now it says which of the three it is, and each one names its own next step.
+ */
+function nothingCard(data) {
+  const odoo = data.odoo;
+  const loaded = data.loaded;
+
+  if (!data.connected.length) {
+    return h('div.card',
+      h('h2', 'Odoo has not been connected yet'),
+      h('p.sub', 'Add the address and the line map under Setup, press Save and check, then load.'));
+  }
+
+  if (odoo && odoo.status !== 'ok' && odoo.status !== 'demo') {
+    return h('div.card',
+      h('h2', 'Odoo did not answer on the last load'),
+      h('p.sub',
+        `It was asked and said: ${odoo.detail || odoo.status}. Nothing below is missing because of `
+        + 'the dates — it is missing because the last load could not read Odoo at all.'),
+      h('p.sub', 'Setup → Odoo (books) → Save and check will say whether it can be reached now.'));
+  }
+
+  if (!data.coversWindow) {
+    return h('div.card',
+      h('h2', 'These days have never been loaded'),
+      h('p.sub',
+        loaded
+          ? `The last load covered ${dayRange(loaded.from, loaded.to)}, and this screen is showing `
+            + `${dayRange(data.range.from, data.range.to)}. A load reaches ten days back by default, `
+            + 'so a source connected recently holds only the last ten days however far back you look. '
+            + 'The bills are in Odoo — they have simply not been fetched yet.'
+          : 'Nothing has ever been loaded.'),
+      h('p.sub',
+        h('strong', 'Setup → Load these days instead'), ' — put in the range you want and press it. '
+        + 'A year takes a couple of minutes and only has to be done once.'));
+  }
+
+  return h('div.card',
+    h('h2', 'Nothing from Odoo in this window'),
+    h('p.sub',
+      `These days were loaded (${loaded ? dayRange(loaded.from, loaded.to) : 'recently'}) and Odoo `
+      + 'was read successfully, so this is a real answer rather than a gap: there are no posted '
+      + 'vendor bills dated in these days. Bills still sitting as drafts are excluded on purpose, '
+      + 'and a bill takes the accounting date on it rather than the day it was keyed.'));
 }
 
 /** What is owed, by how late it is. */
