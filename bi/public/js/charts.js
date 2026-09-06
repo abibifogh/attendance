@@ -213,7 +213,13 @@ export function barChart(rows, { label, value, colour, format = moneyShort, heig
   const plotW = width - labelWidth - 74;
   const hasNegative = rows.some((r) => value(r) < 0);
   const zeroX = hasNegative ? plotX + plotW / 2 : plotX;
-  const scale = hasNegative ? (plotW / 2) / max : plotW / max;
+  // A negative bar grows leftwards and carries its value on its left-hand tip.
+  // At full extent that tip lands exactly where the row labels end, and the two
+  // print on top of each other — which only shows up on a chart that actually
+  // has a big negative in it. The gutter is the width of the widest value text
+  // plus its offset, so the longest bar stops short of the labels.
+  const GUTTER = 58;
+  const scale = hasNegative ? Math.max(1, plotW / 2 - GUTTER) / max : plotW / max;
 
   const marks = rows.flatMap((row, i) => {
     const v = value(row);

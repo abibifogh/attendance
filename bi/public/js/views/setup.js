@@ -14,6 +14,7 @@ import { state } from '../app.js';
  */
 export async function renderSetup(root) {
   const [sources, runs] = await Promise.all([api('/sources'), api('/runs')]);
+  const boot = state.boot || {};
 
   add(root, 
     sources.demoMode ? banner('demo',
@@ -47,6 +48,16 @@ export async function renderSetup(root) {
         { label: 'Rows', num: true, get: (r) => num(r.rows) },
         { label: 'Per source', get: (r) => r.sources.map((s) => `${s.id}: ${s.status}`).join(' · ') },
       ], runs.runs)),
+
+    h('div.card',
+      h('h2', 'The cost no system records'),
+      h('p.sub',
+        'Rent, power, water, licences, depreciation. None of these is in the tills, the clock, the '
+        + 'laundry, the kitchen or the books, because none of those is where a lease lives — and '
+        + 'without it the Yardstick screen understates what a day has to take by exactly that '
+        + 'amount. One number, in cedis a month, and it can be a rough one: a break-even that is '
+        + 'approximately right beats one that is precisely wrong by the whole rent.'),
+      standingCostForm(boot)),
 
     h('div.card',
       h('h2', 'Take the data away'),
@@ -189,4 +200,36 @@ export async function renderSetup(root) {
     await api('/refresh', { method: 'POST', body: {} });
     state.reload();
   }
+}
+
+/**
+ * The monthly standing cost, in cedis, stored in pesewas.
+ *
+ * The conversion happens here and only here. Everything behind this box is
+ * whole pesewas, and the one place a human types cedis is the one place they
+ * have to be multiplied.
+ */
+function standingCostForm(boot) {
+  const current = boot.assumptions?.standingCostMonthly ?? 0;
+  const input = h('input', {
+    type: 'number', min: '0', step: '1', value: String(current / 100),
+    'aria-label': 'Standing cost a month, in cedis',
+  });
+  const said = h('span.muted.small');
+
+  return h('div.rangebar',
+    h('label', { style: { marginRight: '.5rem' } }, 'Standing cost a month'),
+    input,
+    h('button.btn.primary', {
+      onclick: async () => {
+        const cedis = Number(input.value);
+        if (!Number.isFinite(cedis) || cedis < 0) { said.textContent = 'That is not an amount.'; return; }
+        said.textContent = 'Saving…';
+        try {
+          await api('/settings', { method: 'POST', body: { standing_cost_monthly: Math.round(cedis * 100) } });
+          said.textContent = `Saved. Break-even now includes ${money(Math.round(cedis * 100))} a month.`;
+        } catch (e) { said.textContent = e.message || 'That did not save.'; }
+      },
+    }, 'Save'),
+    said);
 }

@@ -43,6 +43,7 @@ const ROUTES = [
   ['GET', '/api/bootstrap', 'insight', (env) => panels.bootstrap(env)],
   ['GET', '/api/brief', 'insight', (env, ctx) => panels.brief(env, ctx.query)],
   ['GET', '/api/pnl', 'insight', (env, ctx) => panels.pnl(env, ctx.query)],
+  ['GET', '/api/financials', 'insight', (env, ctx) => panels.financials(env, ctx.query)],
   ['GET', '/api/labour', 'insight', (env, ctx) => panels.labour(env, ctx.query)],
   ['GET', '/api/demand', 'insight', (env, ctx) => panels.demand(env, ctx.query)],
   ['GET', '/api/cash', 'insight', (env, ctx) => panels.cash(env, ctx.query)],
