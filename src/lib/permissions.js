@@ -41,7 +41,8 @@ export const PERMISSIONS = [
   {
     key: 'att_signoff',
     label: 'Sign off attendance',
-    detail: 'Close a day, week or month off and move the days. Still no balances',
+    detail: 'Close a day, week or month off. Still no balances, and the days a sign-off puts '
+      + 'on or takes off somebody\u2019s leave wait for an administrator',
   },
   {
     key: 'att_manage',

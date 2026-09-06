@@ -58,6 +58,12 @@ const SIGNER = {
   permissions: ['att_signoff', 'att_reports', 'att_manage'],
 };
 const READER = { user: { id: 4, name: 'Yaw', role: 'viewer' }, permissions: ['att_reports'] };
+// The only person who may actually move a balance. Everybody else's figure is
+// a request — see leave-days-wait.test.js for the rule itself.
+const BOSS = {
+  user: { id: 5, name: 'Kwame', role: 'admin' },
+  permissions: ['att_signoff', 'att_reports', 'att_manage', 'att_setup'],
+};
 
 const ctx = (db, session, { body = null, query = '' } = {}) => ({
   db,
@@ -105,7 +111,7 @@ test('changing one moves the figure and keeps the days signed', async () => {
   review('2026-01-01', '2026-01-31', -4, 'Ama (manager)');
   const id = raw.prepare('SELECT id FROM att_period_review').get().id;
 
-  const out = await (await changeDaysApplied(ctx(db, SIGNER, {
+  const out = await (await changeDaysApplied(ctx(db, BOSS, {
     body: { daysApplied: -1, note: 'Meant minus one.' },
   }), id)).json();
 
@@ -119,7 +125,7 @@ test('changing one moves the figure and keeps the days signed', async () => {
   assert.equal(row.to_day, '2026-01-31');
   assert.equal(row.decision, 'approved');
   assert.match(row.note, /Meant minus one/);
-  assert.match(row.decided_by, /Ama/);
+  assert.match(row.decided_by, /Kwame/);
 
   // The old figure is on the record, because a balance that moved with no
   // account of what moved it is the thing this screen exists to prevent.
@@ -136,11 +142,11 @@ test('a figure that is not a whole number of days is refused', async () => {
   const id = raw.prepare('SELECT id FROM att_period_review').get().id;
 
   await assert.rejects(
-    () => changeDaysApplied(ctx(db, SIGNER, { body: { daysApplied: 1.5 } }), id),
+    () => changeDaysApplied(ctx(db, BOSS, { body: { daysApplied: 1.5 } }), id),
     /whole number/,
   );
   await assert.rejects(
-    () => changeDaysApplied(ctx(db, SIGNER, { body: { daysApplied: 900 } }), id),
+    () => changeDaysApplied(ctx(db, BOSS, { body: { daysApplied: 900 } }), id),
     /between -60 and 60/,
   );
   assert.equal(raw.prepare('SELECT days_applied FROM att_period_review WHERE id = ?').get(id).days_applied, -4);
@@ -151,7 +157,7 @@ test('changing it to what it already was does nothing and says so', async () => 
   review('2026-01-01', '2026-01-31', -4, 'Ama (manager)');
   const id = raw.prepare('SELECT id FROM att_period_review').get().id;
 
-  const out = await (await changeDaysApplied(ctx(db, SIGNER, {
+  const out = await (await changeDaysApplied(ctx(db, BOSS, {
     body: { daysApplied: -4 },
   }), id)).json();
   assert.equal(out.changed, false);

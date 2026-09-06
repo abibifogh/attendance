@@ -45,10 +45,16 @@ const PLANNER = {
   permissions: ['att_view', 'att_rota', 'att_signoff'],
 };
 
-/** Settles days and approves leave. The one questions go to. */
+/**
+ * Settles days and approves leave. The one questions go to.
+ *
+ * Holds the setup permission as well, which is what makes them the one who can
+ * actually move a leave balance rather than ask for it to be moved. See
+ * leave-days-wait.test.js for that rule on its own.
+ */
 const MANAGER = {
   user: { id: 1, name: 'Ama', role: 'manager' },
-  permissions: ['att_view', 'att_reports', 'att_manage', 'att_signoff'],
+  permissions: ['att_view', 'att_reports', 'att_manage', 'att_signoff', 'att_setup'],
 };
 
 function ctx(db, { body = null, query = '', session = PLANNER } = {}) {
@@ -226,8 +232,8 @@ test('pressing sign again after a failure that never answered is safe', async ()
   // moment: the reader has no way of knowing whether it went through, so they
   // press it again. The same days must settle to the same one record rather
   // than being refused for overlapping themselves or charged twice.
-  await signDays(ctx(db, { body: { staffId: 1, days, daysApplied: -1 } }));
-  await signDays(ctx(db, { body: { staffId: 1, days, daysApplied: -1 } }));
+  await signDays(ctx(db, { session: MANAGER, body: { staffId: 1, days, daysApplied: -1 } }));
+  await signDays(ctx(db, { session: MANAGER, body: { staffId: 1, days, daysApplied: -1 } }));
 
   const rows = raw.prepare('SELECT * FROM att_period_review').all();
   assert.equal(rows.length, 1, 'one record, not two');

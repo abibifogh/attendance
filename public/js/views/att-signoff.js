@@ -27,7 +27,8 @@ const PRESETS = [
   ['lastmonth', 'Last month'],
 ];
 
-const TABS = [['open', 'To sign off'], ['queries', 'Questions'], ['times', 'Clock changes']];
+const TABS = [['open', 'To sign off'], ['queries', 'Questions'], ['times', 'Clock changes'],
+  ['leave', 'Leave days']];
 
 /**
  * The person just acted on, so the list does not move out from under them.
@@ -80,7 +81,8 @@ export async function renderAttSignoff(params) {
     h('div.toolbar', tabs),
     tab === 'queries' ? await queriesTab(reload)
       : tab === 'times' ? await timesTab(range, reload)
-        : await openTab(params, range, reload),
+        : tab === 'leave' ? await leaveTab(reload)
+          : await openTab(params, range, reload),
   );
 
   return host;
@@ -588,11 +590,19 @@ async function sign(row, chosen, reload) {
       field('Days against their leave', h('input', {
         type: 'number', name: 'daysApplied', step: 1, min: -60, max: 60,
         value: String(difference),
-      }), difference === (row.difference ?? 0)
-        ? `The figures make it ${difference}. What actually moves is your call`
-        : `The figures make it ${difference} for the ${days.length} day`
-          + `${days.length === 1 ? '' : 's'} you ticked — ${row.difference ?? 0} over the whole `
-          + 'period. What actually moves is your call'),
+      }), (() => {
+        const figures = difference === (row.difference ?? 0)
+          ? `The figures make it ${difference}.`
+          : `The figures make it ${difference} for the ${days.length} day`
+            + `${days.length === 1 ? '' : 's'} you ticked — ${row.difference ?? 0} over the whole `
+            + 'period.';
+        // Said before they type it rather than after they press it. A number
+        // that quietly turns into a request is a number somebody thinks moved.
+        return can('att_setup')
+          ? `${figures} What actually moves is your call`
+          : `${figures} Anything other than 0 goes to an administrator to approve — the days `
+            + 'are signed either way, and the balance does not move until they say so';
+      })()),
 
       field('Note', h('input', {
         type: 'text', name: 'note', maxlength: 300,
@@ -609,7 +619,9 @@ async function sign(row, chosen, reload) {
 
   if (done) {
     toast(`${done.signed} day${done.signed === 1 ? '' : 's'} signed off`
-      + `${done.excluded ? `, ${done.excluded} left for later` : ''}.`, 'good');
+      + `${done.excluded ? `, ${done.excluded} left for later` : ''}.`
+      + `${done.leaveAsked ? ` ${sayDays(done.leaveAsked.days)} sent to an administrator.` : ''}`,
+    'good');
     keepInView(row.staff.id,
       `${done.signed} day${done.signed === 1 ? '' : 's'} signed just now`);
     await reload();
@@ -908,6 +920,132 @@ async function queriesTab(reload) {
  * question it answers — "has anything on this period been touched?" — is asked
  * at exactly the moment somebody is about to sign it.
  */
+// ---------------------------------------------------------------------------
+// Days on and off a leave balance
+// ---------------------------------------------------------------------------
+
+/** A figure as somebody would say it out loud. Mirrors src/lib/leave-days.js. */
+function sayDays(days) {
+  const n = Math.round(Number(days) || 0);
+  if (!n) return 'no change';
+  const word = Math.abs(n) === 1 ? 'day' : 'days';
+  return n > 0 ? `${n} ${word} back` : `${Math.abs(n)} ${word} off`;
+}
+
+/**
+ * What somebody has asked to take off, or give back to, a leave balance.
+ *
+ * Signing a month records one figure that is not a fact about the month but a
+ * decision about somebody's entitlement, and at this property the person who
+ * signs is the person who built the rota the shortfall is about. So the figure
+ * waits here. The days themselves were signed at the time — holding those up
+ * would stop the property working — and only the balance is held.
+ *
+ * Beside the clock changes rather than anywhere else, because it is the same
+ * shape of thing: somebody who can see what happened asking somebody who
+ * carries the consequence.
+ */
+async function leaveTab(reload) {
+  const { rows, canDecide } = await api.attLeaveChanges();
+  const waiting = rows.filter((r) => r.status === 'pending');
+  const done = rows.filter((r) => r.status !== 'pending');
+
+  if (!rows.length) {
+    return emptyState('Nothing waiting',
+      'Nobody has asked to move anybody\u2019s leave. When a period is signed off with days '
+      + 'on or off somebody\u2019s balance by anybody who is not an administrator, it waits '
+      + 'here and the balance stays where it is until you decide.');
+  }
+
+  const decide = async (row, approve) => {
+    const note = approve
+      ? window.prompt(`Approve ${sayDays(row.days)} against ${row.staff.name}\u2019s leave?\n\n`
+        + 'Anything to add (optional):', '')
+      : window.prompt(`Send this back to ${row.actor}?\n\n`
+        + 'Say why, so they know what to do instead:', '');
+    if (note === null) return;
+    if (!approve && !note.trim()) {
+      toast('Say why, so whoever asked knows what to do instead.', 'bad');
+      return;
+    }
+    try {
+      await api.attDecideLeaveChange(row.id, { approve, note: note.trim() || null });
+      toast(approve ? 'Approved. The balance has moved.' : 'Sent back. Nothing has moved.', 'good');
+      await reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
+  const row = (r) => h('tr',
+    h('td',
+      h('div', h('strong', r.staff.name)),
+      h('small.muted', `${fmtDayShort(r.from)} \u2013 ${fmtDayShort(r.to)}`)),
+    h('td',
+      h(`strong${r.days > 0 ? '.good-text' : '.bad-text'}`, sayDays(r.days)),
+      h('small.muted', { style: { display: 'block' } }, `it stands at ${sayDays(r.was)}`)),
+    h('td', h('small', r.reason || h('span.muted', 'no reason given'))),
+    h('td',
+      h('small', r.actor),
+      h('br'),
+      h('small.muted', String(r.at || '').slice(0, 16).replace('T', ' '))),
+    h('td', r.status === 'pending'
+      ? (canDecide
+        ? h('div.btn-row',
+          h('button.btn-sm', {
+            title: 'The days this is about, in full',
+            onclick: () => navigate('att-staff', { id: r.staff.id, from: r.from, to: r.to }),
+          }, 'Open their record'),
+          h('button.btn-sm.btn-primary', { onclick: () => decide(r, true) }, 'Approve'),
+          h('button.btn-sm', { onclick: () => decide(r, false) }, 'Send back'))
+        : h('span.pill.warn', 'Waiting on an administrator'))
+      : h('div',
+        h(`span.pill.${r.status === 'approved' ? 'good' : ''}`,
+          r.status === 'approved' ? 'Approved' : 'Sent back'),
+        h('small.muted', { style: { display: 'block' } },
+          `${r.decidedBy ?? ''}${r.decisionNote ? ` \u2014 ${r.decisionNote}` : ''}`))),
+  );
+
+  return h('div',
+    card('Waiting on an administrator', {
+      note: waiting.length
+        ? `${waiting.length} to decide`
+        : 'Nothing waiting',
+      wide: true,
+    },
+      waiting.length
+        ? h('div.table-wrap', h('table',
+          h('thead', h('tr',
+            h('th', 'Who, and which period'),
+            h('th', 'What is being asked'),
+            h('th', 'Why'),
+            h('th', 'Asked by'),
+            h('th', ''),
+          )),
+          h('tbody', waiting.map(row))))
+        : h('p.muted', { style: { margin: 0 } },
+          'Nothing is waiting. The days below have already been decided.'),
+      canDecide
+        ? h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+          'Approving writes the figure onto the sign-off, which is the only moment a balance '
+          + 'moves. Sending it back writes nothing at all: the balance is already where it was.')
+        : null),
+
+    done.length
+      ? card('Already decided', { note: `last ${done.length}`, wide: true },
+        h('div.table-wrap', h('table',
+          h('thead', h('tr',
+            h('th', 'Who, and which period'),
+            h('th', 'What was asked'),
+            h('th', 'Why'),
+            h('th', 'Asked by'),
+            h('th', ''),
+          )),
+          h('tbody', done.map(row)))))
+      : null,
+  );
+}
+
 async function timesTab(range, reload) {
   const { edits, pending, canApprove } = await api.attTimeEdits({
     from: range.from, to: range.to, limit: 400,

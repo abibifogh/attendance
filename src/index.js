@@ -114,6 +114,11 @@ export const ROUTES = [
   ['GET', '/api/att/staff/:id/adjustments', ['att_reports', 'att_signoff'], signoff.leaveAdjustments],
   ['POST', '/api/att/reviews/:id/days', 'att_signoff', signoff.changeDaysApplied],
   ['POST', '/api/att/sign-days/undo', 'att_signoff', signoff.reopenDays],
+  // Days on and off somebody's leave, and the administrator who says yes to
+  // them. Read by anybody who can sign a period, since the person waiting on
+  // an answer is usually the one who asked; decided by an administrator only.
+  ['GET', '/api/att/leave-changes', ['att_signoff', 'att_setup'], signoff.leaveChanges],
+  ['POST', '/api/att/leave-changes/:id/decide', 'att_setup', signoff.decideLeaveChange],
   // Raising a question is part of signing off; answering one is deciding, and
   // deciding is what settling a day and approving leave already need.
   ['GET', '/api/att/queries', ['att_signoff', 'att_manage'], signoff.listQueries],

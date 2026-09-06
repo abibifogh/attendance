@@ -1722,6 +1722,19 @@ export const GUIDE = [
         + 'somebody’s leave, and a screen that opened with everything selected would ask '
         + 'for one press to do that — including for the days nobody has looked at yet.' },
 
+      { sub: 'The days against somebody’s leave' },
+      { p: 'One figure on the sign-off is not a fact about the month: how many days it takes '
+        + 'off, or gives back to, that person’s entitlement. Unless you are an '
+        + 'administrator, that figure does not move anything when you press sign. The days are '
+        + 'signed as normal and the number goes to an administrator, who approves it or sends '
+        + 'it back. Until they answer, the balance stays exactly where it was.' },
+      { p: 'Both of you can see it under Sign-off → Leave days: what was asked, what it '
+        + 'stands at now, why, and who asked. Say why when you sign, because that is the only '
+        + 'thing the administrator has to go on.' },
+      { note: 'This is not about trusting anybody. Whoever builds the rota is usually the '
+        + 'person the shortfall is about, and one person should not both create a hole in the '
+        + 'week and charge a colleague’s leave for it.' },
+
       { sub: 'Clearing the easy ones in one press' },
       { p: 'The filter above the list has three settings — all, with issues, clean — and it '
         + 'narrows by day rather than by person: somebody with four good days and one '
@@ -2554,7 +2567,8 @@ export const GUIDE = [
           + 'settling a day. Everybody who holds it without Attendance setup is raising a '
           + 'request, not making a change.',
         'Sign off attendance is not in their defaults. Tick it and they can settle periods '
-          + 'while still never seeing anybody’s leave balance.',
+          + 'while still never seeing anybody’s leave balance — and the days a sign-off puts '
+          + 'on or takes off a balance still wait for an administrator.',
         'Manage employee records is what unmasks bank accounts and ID numbers, and the only '
           + 'thing that can open a scanned Ghana Card.',
         'Sign for the property is separate from writing letters, because whoever drafts is not '

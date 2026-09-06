@@ -215,6 +215,9 @@ export const api = {
   attLeaveAdjustments: (staffId) => request(`/api/att/staff/${staffId}/adjustments`),
   attChangeDaysApplied: (id, body) => request(`/api/att/reviews/${id}/days`, { method: 'POST', body }),
   attSignDays: (body) => request('/api/att/sign-days', { method: 'POST', body }),
+  attLeaveChanges: () => request('/api/att/leave-changes'),
+  attDecideLeaveChange: (id, body) =>
+    request(`/api/att/leave-changes/${id}/decide`, { method: 'POST', body }),
   attReopenDays: (body) => request('/api/att/sign-days/undo', { method: 'POST', body }),
   attQueries: (status) => request(`/api/att/queries${status ? `?status=${status}` : ''}`),
   attDeciders: () => request('/api/att/deciders'),

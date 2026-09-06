@@ -1423,6 +1423,37 @@ exists precisely so that somebody due at 06:00 who arrives at 06:01 is not
 late, and a screen that flagged them anyway would put a warning beside half the
 property every morning — which is how a list of warnings stops being read.
 
+**The days against somebody's leave wait for an administrator.** Signing a
+period records one figure that is not a fact about the month: how many days it
+takes off, or gives back to, that person's entitlement. Here the person who
+signs periods is the person who builds the rota, and the shortfall being charged
+is usually about the rota. A planner who is short of cover on a Tuesday, rosters
+somebody an extra day and then signs the month minus one has moved a colleague's
+leave to cover a hole in their own week, with nobody else in the loop. That is
+not a suspicion about anybody; it is the wrong number of hands on something that
+ends up in somebody's pay.
+
+So the figure is an administrator's to set, on the same footing as a clock-time
+change. Anybody else's becomes a request. The days themselves are signed as
+normal — settling the month is the planner's job and holding that up would stop
+the property working — and only the balance is held, at whatever it stood at,
+until somebody with *Attendance setup* approves the move. An administrator's own
+figure goes on at once, because asking somebody to approve their own request is
+a queue with one name in it.
+
+They sit under **Sign-off → Leave days**, with what is being asked, what it
+stands at now, why, and who asked. Approving writes the figure onto the sign-off,
+which is the only moment a balance moves; sending it back writes nothing at all,
+because the balance is already where it was. A request whose sign-off has since
+been reopened, or whose figure somebody else has already changed, is refused
+rather than applied: approving what a screen said last week over what the record
+says today is how two people both charge the same month.
+
+Three routes could write that figure — signing a set of days, signing a whole
+month, and correcting one afterwards — so the rule lives in `src/lib/leave-days.js`
+and all three call it. Three copies of a rule about somebody's leave is two
+copies too many.
+
 There are then two answers, not one:
 
 - **Sign off** — and that you knew what was in it is recorded with the

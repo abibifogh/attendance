@@ -9,6 +9,9 @@ import {
   calendarFor, computeRange, dayCredit, dayLedger, daysPerWeekFor, labelFor, leaveYearOf,
   loadDataset, overUnder, summarise,
 } from '../lib/attendance.js';
+import {
+  MOST_DAYS, askToMoveLeave, leaveDaysDecision, maySetLeaveDays, sayDays,
+} from '../lib/leave-days.js';
 import { addDays, diffDays, isDay, monthBounds, todayIn } from '../util/dates.js';
 
 /**
@@ -417,10 +420,21 @@ export async function signDays(ctx) {
   })));
 
   const decision = ['approved', 'waived'].includes(body.decision) ? body.decision : 'approved';
-  const daysApplied = decision === 'waived' ? 0 : Math.round(Number(body.daysApplied ?? oc.difference));
-  if (!Number.isFinite(daysApplied) || Math.abs(daysApplied) > 60) {
+  const asWritten = decision === 'waived' ? 0 : Math.round(Number(body.daysApplied ?? oc.difference));
+  if (!Number.isFinite(asWritten) || Math.abs(asWritten) > MOST_DAYS) {
     throw badRequest('That is not a sensible number of days.');
   }
+
+  // The figure against somebody's leave is an administrator's to set. Anybody
+  // else's is a request, and what already stood goes back on the row untouched
+  // — including where this span has been signed before and an administrator
+  // has already decided its figure, which a re-sign must not quietly undo.
+  const standing = Math.round(Number((existing.results ?? [])
+    .find((r) => r.from_day === from && r.to_day === to)?.days_applied) || 0);
+  const leave = leaveDaysDecision({
+    was: standing, days: asWritten, permissions: ctx.session.permissions,
+  });
+  const daysApplied = leave.apply;
 
   const excluded = [];
   for (let day = from; day <= to; day = addDays(day, 1)) {
@@ -454,12 +468,32 @@ export async function signDays(ctx) {
   // A question already open about these days is answered by signing them.
   await closeQueriesFor(ctx, staffId, chosen, 'signed', 'Signed off.');
 
+  let asked = null;
+  if (leave.propose) {
+    const review = await ctx.db.prepare(
+      'SELECT id FROM att_period_review WHERE staff_id = ?1 AND from_day = ?2 AND to_day = ?3',
+    ).bind(staffId, from, to).first().catch(() => null);
+    asked = await askToMoveLeave(ctx, {
+      staff, from, to, reviewId: review?.id ?? null, propose: leave.propose,
+      reason: str(body.note, 'Note', { max: 300 }),
+    });
+  }
+
   await audit(ctx, 'attendance.sign_days', staffId, {
     from, to, signed: chosen.length, excluded: excluded.length, daysApplied, issues: issues.counts,
   });
 
   return json({
-    ok: true, from, to, kind, signed: chosen.length, excluded: excluded.length, daysApplied,
+    ok: true,
+    from,
+    to,
+    kind,
+    signed: chosen.length,
+    excluded: excluded.length,
+    daysApplied,
+    // What was asked for and did not go on, so the screen can say so rather
+    // than showing a figure of zero and letting somebody think it worked.
+    leaveAsked: leave.propose ? { id: asked, days: leave.propose.days } : null,
   });
 }
 
@@ -1056,8 +1090,8 @@ export async function changeDaysApplied(ctx, idParam) {
   const body = await readJson(ctx.request);
 
   const days = Number(body.daysApplied);
-  if (!Number.isFinite(days) || Math.abs(days) > 60 || days % 1 !== 0) {
-    throw badRequest('Give a whole number of days, between -60 and 60.');
+  if (!Number.isFinite(days) || Math.abs(days) > MOST_DAYS || days % 1 !== 0) {
+    throw badRequest(`Give a whole number of days, between -${MOST_DAYS} and ${MOST_DAYS}.`);
   }
 
   const row = await ctx.db.prepare(
@@ -1070,6 +1104,23 @@ export async function changeDaysApplied(ctx, idParam) {
   const note = str(body.note, 'Note', { max: 300 });
   if (days === was && !note) {
     return json({ ok: true, changed: false, daysApplied: was });
+  }
+
+  // Same rule as signing: the balance is an administrator's to move, and
+  // anybody else asking is a request that leaves the figure where it is.
+  const leave = leaveDaysDecision({ was, days, permissions: ctx.session.permissions });
+  if (leave.propose) {
+    const asked = await askToMoveLeave(ctx, {
+      staff: { id: row.staff_id, name: row.name },
+      from: row.from_day,
+      to: row.to_day,
+      reviewId: row.id,
+      propose: leave.propose,
+      reason: note,
+    });
+    return json({
+      ok: true, changed: false, asked: true, daysApplied: was, wanted: days, id: asked,
+    });
   }
 
   await ctx.db.prepare(
@@ -1100,3 +1151,128 @@ export async function changeDaysApplied(ctx, idParam) {
 }
 
 export { effectiveDays };
+
+// ---------------------------------------------------------------------------
+// Leave days waiting on an administrator
+// ---------------------------------------------------------------------------
+
+/**
+ * What somebody has asked to take off, or give back to, a leave balance.
+ *
+ * Everything still waiting, and the last of what has been dealt with, because a
+ * queue that empties itself completely gives whoever cleared it no way of
+ * checking what they just did.
+ */
+export async function leaveChanges(ctx) {
+  const rows = await ctx.db.prepare(
+    `SELECT c.*, s.name AS staff_name, s.department
+       FROM att_leave_change c JOIN att_staff s ON s.id = c.staff_id
+      ORDER BY CASE c.status WHEN 'pending' THEN 0 ELSE 1 END, c.id DESC
+      LIMIT 100`,
+  ).all().catch(() => ({ results: [] }));
+
+  const list = (rows.results ?? []).map((r) => ({
+    id: r.id,
+    staff: { id: r.staff_id, name: r.staff_name, department: r.department },
+    from: r.from_day,
+    to: r.to_day,
+    was: Number(r.was) || 0,
+    days: Number(r.days) || 0,
+    reason: r.reason ?? null,
+    status: r.status,
+    actor: r.actor,
+    at: r.at_utc,
+    decidedBy: r.decided_by ?? null,
+    decidedAt: r.decided_at ?? null,
+    decisionNote: r.decision_note ?? null,
+  }));
+
+  return json({
+    rows: list,
+    pending: list.filter((r) => r.status === 'pending').length,
+    canDecide: maySetLeaveDays(ctx.session.permissions),
+  });
+}
+
+/**
+ * Approve it, or send it back.
+ *
+ * Approving writes the figure onto the sign-off it belongs to, which is the
+ * only moment anybody's balance moves. Sending it back writes nothing at all:
+ * the balance is already where it was, and there is nothing to undo.
+ *
+ * A request whose sign-off has since been reopened, or whose figure somebody
+ * else has already changed, is refused rather than applied. Approving what a
+ * screen said last week over what the record says today is how two people both
+ * charge the same month.
+ */
+export async function decideLeaveChange(ctx, idParam) {
+  const id = int(idParam, 'Request', { required: true, min: 1 });
+  const body = await readJson(ctx.request);
+  const approve = body.approve !== false;
+  const note = str(body.note, 'Note', { max: 300 });
+
+  const row = await ctx.db.prepare(
+    `SELECT c.*, s.name AS staff_name FROM att_leave_change c
+       JOIN att_staff s ON s.id = c.staff_id WHERE c.id = ?`,
+  ).bind(id).first();
+  if (!row) throw notFound('No such request.');
+  if (row.status !== 'pending') throw badRequest('That has already been dealt with.');
+
+  const review = row.review_id
+    ? await ctx.db.prepare('SELECT * FROM att_period_review WHERE id = ?')
+      .bind(row.review_id).first().catch(() => null)
+    : await ctx.db.prepare(
+      'SELECT * FROM att_period_review WHERE staff_id = ?1 AND from_day = ?2 AND to_day = ?3',
+    ).bind(row.staff_id, row.from_day, row.to_day).first().catch(() => null);
+
+  if (approve && !review) {
+    throw badRequest(
+      'The sign-off this was about has been reopened, so there is nothing to put the days on. '
+      + 'Send it back and let it be asked again once the period is signed.',
+    );
+  }
+
+  const standing = Math.round(Number(review?.days_applied) || 0);
+  if (approve && standing !== Math.round(Number(row.was) || 0)) {
+    throw badRequest(
+      `This asked to change ${sayDays(row.was)} to ${sayDays(row.days)}, and the sign-off now `
+      + `says ${sayDays(standing)}. Somebody has changed it since. Send this back and let them `
+      + 'ask again from where it stands.',
+    );
+  }
+
+  if (approve) {
+    await ctx.db.prepare(
+      `UPDATE att_period_review
+          SET days_applied = ?2, decided_by = ?3, decided_at = datetime('now')
+        WHERE id = ?1`,
+    ).bind(review.id, Math.round(Number(row.days) || 0), actorOf(ctx)).run();
+  }
+
+  await ctx.db.prepare(
+    `UPDATE att_leave_change
+        SET status = ?2, decided_by = ?3, decided_at = datetime('now'), decision_note = ?4
+      WHERE id = ?1`,
+  ).bind(id, approve ? 'approved' : 'refused', actorOf(ctx), note || null).run();
+
+  await audit(ctx, 'attendance.leave_days_decided', row.staff_id, {
+    request: id, from: row.from_day, to: row.to_day, was: row.was, days: row.days, approve, note,
+  });
+
+  await createNotice(ctx.db, {
+    kind: 'attendance.leave_days_decided',
+    level: approve ? 'info' : 'warn',
+    title: `${row.staff_name}: ${sayDays(row.days)} ${approve ? 'approved' : 'sent back'}`,
+    body: `${row.from_day} to ${row.to_day}, asked by ${row.actor}. `
+      + `${approve ? `The balance now moves ${sayDays(row.days)}.` : 'Nothing has moved.'}`
+      + `${note ? ` ${note}` : ''}`,
+    link: `#/att-staff?id=${row.staff_id}`,
+    actor: actorOf(ctx),
+    // The person who asked, by name. A notice four people receive is a notice
+    // none of them owns.
+    userId: row.actor_id ?? null,
+  }, ctx);
+
+  return json({ ok: true, approved: approve, daysApplied: approve ? row.days : standing });
+}

@@ -17,6 +17,7 @@ import { readNotification } from '../lib/push-events.js';
 import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from '../lib/device-shifts.js';
 import { getPepper } from '../lib/auth.js';
 import { allows } from '../lib/permissions.js';
+import { MOST_DAYS, askToMoveLeave, leaveDaysDecision } from '../lib/leave-days.js';
 import { createNotice } from '../lib/notices.js';
 import { terminalWarnings } from '../lib/terminal-watch.js';
 import { sweepLeavers } from '../lib/leaving.js';
@@ -4642,8 +4643,8 @@ export async function decidePeriod(ctx) {
 
   const decision = ['approved', 'waived'].includes(body.decision) ? body.decision : 'approved';
   // Whole days only, matching the rule that produced the figure.
-  const daysApplied = decision === 'waived' ? 0 : Math.round(Number(body.daysApplied ?? 0));
-  if (!Number.isFinite(daysApplied) || Math.abs(daysApplied) > 60) {
+  const asWritten = decision === 'waived' ? 0 : Math.round(Number(body.daysApplied ?? 0));
+  if (!Number.isFinite(asWritten) || Math.abs(asWritten) > MOST_DAYS) {
     throw badRequest('That is not a sensible number of days.');
   }
 
@@ -4688,6 +4689,19 @@ export async function decidePeriod(ctx) {
     calendar: calendarFor(ds, staffId),
   });
 
+  // The figure against somebody's leave is an administrator's to set. Anybody
+  // else's is a request: the span is signed as asked and the balance stays
+  // where it was until somebody decides. Same rule as the day-at-a-time screen,
+  // written in both places because a rule with a way round it is a suggestion.
+  const already = await ctx.db.prepare(
+    'SELECT days_applied FROM att_period_review WHERE staff_id = ?1 AND from_day = ?2 AND to_day = ?3',
+  ).bind(staffId, from, to).first().catch(() => null);
+  const standing = Math.round(Number(already?.days_applied) || 0);
+  const leave = leaveDaysDecision({
+    was: standing, days: asWritten, permissions: ctx.session.permissions,
+  });
+  const daysApplied = leave.apply;
+
   await ctx.db.prepare(
     `INSERT INTO att_period_review
        (staff_id, kind, from_day, to_day, scheduled_days, worked_days, difference,
@@ -4707,8 +4721,26 @@ export async function decidePeriod(ctx) {
     `${ctx.session.user.name} (${ctx.session.user.role})`,
   ).run();
 
+  if (leave.propose) {
+    const review = await ctx.db.prepare(
+      'SELECT id FROM att_period_review WHERE staff_id = ?1 AND from_day = ?2 AND to_day = ?3',
+    ).bind(staffId, from, to).first().catch(() => null);
+    await askToMoveLeave(ctx, {
+      staff, from, to, reviewId: review?.id ?? null, propose: leave.propose,
+      reason: str(body.note, 'Note', { max: 300 }),
+    });
+  }
+
   await audit(ctx, 'attendance.period_review', staffId, { from, to, kind, decision, daysApplied });
-  return json({ ok: true, from, to, kind, daysApplied, decision });
+  return json({
+    ok: true,
+    from,
+    to,
+    kind,
+    daysApplied,
+    decision,
+    leaveAsked: leave.propose ? { days: leave.propose.days } : null,
+  });
 }
 
 /** Undo a sign-off, so the span goes back to waiting. */

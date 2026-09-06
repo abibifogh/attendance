@@ -118,6 +118,23 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'attendance.leave_days_asked',
+    group: 'day',
+    label: 'Somebody asks to move a leave balance',
+    who: 'Administrators',
+    when: 'A period is signed off with days on or off somebody\u2019s leave, by somebody who '
+      + 'cannot move it themselves',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'attendance.leave_days_decided',
+    group: 'day',
+    label: 'A leave-day request was answered',
+    who: 'Whoever asked',
+    when: 'An administrator approves or sends back a change to a leave balance',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'attendance.terminal_quiet',
     group: 'day',
     label: 'A terminal has gone quiet',

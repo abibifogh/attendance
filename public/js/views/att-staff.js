@@ -604,7 +604,10 @@ async function showAdjustments(staff, reload) {
         field('Days against their leave', h('input', {
           type: 'number', name: 'daysApplied', step: 1, min: -60, max: 60,
           value: String(period.daysApplied),
-        }), 'Negative takes days off the entitlement, positive gives them back'),
+        }), can('att_setup')
+          ? 'Negative takes days off the entitlement, positive gives them back'
+          : 'Negative takes days off the entitlement, positive gives them back. It goes to an '
+            + 'administrator to approve, and the balance stays where it is until they do'),
         field('Why the change', h('input', { type: 'text', name: 'note', maxlength: 300 }),
           'Kept with the sign-off'),
         h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
@@ -618,10 +621,13 @@ async function showAdjustments(staff, reload) {
     });
     if (!done) return;
 
-    toast(done.changed
-      ? `Now ${done.daysApplied > 0 ? '+' : ''}${done.daysApplied}, was `
-        + `${done.was > 0 ? '+' : ''}${done.was}.`
-      : 'Nothing to change.', 'good');
+    toast(done.asked
+      ? `Sent to an administrator. Until they answer it stays at `
+        + `${done.daysApplied > 0 ? '+' : ''}${done.daysApplied}.`
+      : done.changed
+        ? `Now ${done.daysApplied > 0 ? '+' : ''}${done.daysApplied}, was `
+          + `${done.was > 0 ? '+' : ''}${done.was}.`
+        : 'Nothing to change.', 'good');
     data = await api.attLeaveAdjustments(staff.id);
     draw();
     // The balance above the sheet is now wrong, so the screen behind it is
