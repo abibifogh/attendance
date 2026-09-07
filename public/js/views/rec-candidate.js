@@ -298,7 +298,19 @@ function scoresCard(data, reload) {
         s.rating != null ? h('span.rec-rating', `${s.rating}/5`) : null,
         s.recommend ? h(`span.pill.rec-rec.is-${s.recommend}`, sayRecommend(s.recommend)) : null,
         h('small.muted', `${s.by ?? 'Somebody'} · ${fmtDay(String(s.at).slice(0, 10))}`
-          + `${s.packName ? ` · ${s.packName}` : ''}`)),
+          + `${s.packName ? ` · ${s.packName}` : ''}`),
+        // Whoever wrote it, and an administrator. A mark with somebody else's
+        // name on it, moved by a third party, is the one thing that would make
+        // this record unanswerable a year later.
+        s.mine
+          ? h('button.link-button.rec-correct', { onclick: () => correct(data, s, reload) },
+            'Correct it')
+          : null),
+      s.editedBy
+        ? h('small.muted.rec-edited',
+          `Corrected by ${s.editedBy} on ${fmtDay(String(s.editedAt).slice(0, 10))}. `
+          + 'What moved is on the trail below.')
+        : null,
       // Question by question, with the words as they stood when they were
       // asked. The set can be edited or retired afterwards and this does not
       // move, because a sheet that rewrites its own questions is not a record.
@@ -320,7 +332,7 @@ function scoresCard(data, reload) {
 const sayRecommend = (key) => ({ yes: 'Take them', maybe: 'Maybe', no: 'No' })[key] ?? key;
 
 /**
- * The sheet, question by question where the vacancy has a set of them.
+ * The marking sheet itself, shared by writing one and correcting one.
  *
  * The mark at the top is the average of what was actually given, and it counts
  * itself as you go. Not a box of its own beside the questions: two numbers that
@@ -331,65 +343,98 @@ const sayRecommend = (key) => ({ yes: 'Take them', maybe: 'Maybe', no: 'No' })[k
  * room at a property this size is the head of the department rather than
  * anybody who interviews for a living, and that is the half they are otherwise
  * being asked to supply out of their own head.
+ *
+ * "Not asked" is one of the choices rather than only the state it starts in.
+ * A mark put against the wrong line on a phone is the commonest thing that
+ * happens to a sheet, and with five radios and no sixth there is no way back
+ * off one.
  */
-async function score(data, reload) {
-  const questions = data.pack?.questions ?? [];
-  const marks = data.marks ?? [];
-  const given = new Map();
+function markingSheet({ name, note, items, marks }) {
+  const given = new Map(items.filter((i) => i.mark != null).map((i) => [i.key, i.mark]));
 
   const running = h('span.rec-running', 'nothing marked yet');
   const tally = () => {
     const got = [...given.values()].map(Number).filter((n) => n >= 1 && n <= 5);
     running.textContent = got.length
       ? `${Math.round((got.reduce((a, b) => a + b, 0) / got.length) * 10) / 10} out of 5, `
-        + `on ${got.length} of ${questions.length}`
+        + `on ${got.length} of ${items.length}`
       : 'nothing marked yet';
   };
+  tally();
+
+  // Last, so the five marks stay a row somebody reads left to right, and the
+  // way out sits at the end of it.
+  const choices = [...marks,
+    { mark: null, label: 'not asked', detail: 'It never came up, and it is left out of the mark.' }];
+
+  return h('div',
+    h('div.rec-sheet-head',
+      h('div',
+        h('strong', name),
+        note ? h('small.muted', { style: { display: 'block' } }, note) : null),
+      running),
+    h('ol.rec-sheet', items.map((it) => h('li',
+      h('div.rec-sheet-q', it.asked),
+      it.listenFor ? h('small.muted.rec-listen', `Listen for: ${it.listenFor}`) : null,
+      h('div.rec-sheet-marks', choices.map((m) => h(
+        `label.rec-sheet-mark${m.mark == null ? '.is-none' : ''}`,
+        { title: m.detail },
+        h('input', {
+          type: 'radio',
+          name: it.key,
+          value: m.mark == null ? '' : String(m.mark),
+          checked: (it.mark ?? null) === m.mark,
+          onchange: () => {
+            if (m.mark == null) given.delete(it.key); else given.set(it.key, m.mark);
+            tally();
+          },
+        }),
+        h('span',
+          m.mark == null ? null : h('strong', String(m.mark)),
+          h('small', m.label))))),
+      h('input.rec-sheet-note', {
+        type: 'text', name: `n${it.key}`, maxlength: 2000, value: it.note ?? '',
+        placeholder: 'What they actually said (optional)',
+      })))));
+}
+
+/** The two boxes under the sheet, the same on a new one and a corrected one. */
+const theRest = (was = {}) => [
+  field('Would you take them?', h('select', { name: 'recommend' },
+    h('option', { value: '' }, 'Not saying'),
+    h('option', { value: 'yes', selected: was.recommend === 'yes' }, 'Yes'),
+    h('option', { value: 'maybe', selected: was.recommend === 'maybe' }, 'Maybe'),
+    h('option', { value: 'no', selected: was.recommend === 'no' }, 'No'))),
+  field('Anything else', h('textarea', {
+    name: 'note', rows: 4, maxlength: 4000, value: was.note ?? '',
+  }),
+  'Written down while it is fresh. It stays on the record whichever way the decision goes.'),
+];
+
+/** A new sheet, question by question where the vacancy has a set of them. */
+async function score(data, reload) {
+  const questions = data.pack?.questions ?? [];
 
   const sheet = questions.length
-    ? h('div',
-      h('div.rec-sheet-head',
-        h('div',
-          h('strong', data.pack.name),
-          data.pack.note ? h('small.muted', { style: { display: 'block' } }, data.pack.note) : null),
-        running),
-      h('ol.rec-sheet', questions.map((q) => h('li',
-        h('div.rec-sheet-q', q.text),
-        q.listenFor ? h('small.muted.rec-listen', `Listen for: ${q.listenFor}`) : null,
-        h('div.rec-sheet-marks', marks.map((m) => h('label.rec-sheet-mark',
-          { title: m.detail },
-          h('input', {
-            type: 'radio',
-            name: `q${q.id}`,
-            value: String(m.mark),
-            onchange: () => { given.set(q.id, m.mark); tally(); },
-          }),
-          h('span', h('strong', String(m.mark)), h('small', m.label))))),
-        h('input.rec-sheet-note', {
-          type: 'text', name: `n${q.id}`, maxlength: 2000,
-          placeholder: 'What they actually said (optional)',
-        })))))
+    ? markingSheet({
+      name: data.pack.name,
+      note: data.pack.note,
+      marks: data.marks ?? [],
+      items: questions.map((q) => ({
+        key: `q${q.id}`, asked: q.text, listenFor: q.listenFor, mark: null, note: '',
+      })),
+    })
     : field('Out of five', h('select', { name: 'rating' },
       h('option', { value: '' }, 'Not marking'),
       [1, 2, 3, 4, 5].map((n) => h('option', { value: String(n) }, `${n}`))),
-    'No set of questions is on this vacancy. Put one on it under Recruitment → Questions and '
+    'No set of questions is on this vacancy. Put one on it under Recruitment \u2192 Questions and '
       + 'everybody who applies is asked the same ones.');
 
   const done = await formDialog({
     title: `What did you think of ${data.candidate.name}?`,
     submitLabel: 'Save it',
     wide: Boolean(questions.length),
-    body: h('div',
-      sheet,
-      field('Would you take them?', h('select', { name: 'recommend' },
-        h('option', { value: '' }, 'Not saying'),
-        h('option', { value: 'yes' }, 'Yes'),
-        h('option', { value: 'maybe' }, 'Maybe'),
-        h('option', { value: 'no' }, 'No'))),
-      field('Anything else', h('textarea', { name: 'note', rows: 4, maxlength: 4000 }),
-        'Written down while it is fresh. It stays on the record whichever way the '
-        + 'decision goes.'),
-    ),
+    body: h('div', sheet, ...theRest()),
     onSubmit: async (form) => api.recScoreCandidate(data.candidate.id, {
       rating: form.get('rating') || null,
       recommend: form.get('recommend') || null,
@@ -403,7 +448,59 @@ async function score(data, reload) {
     }),
   });
   if (!done) return;
-  toast(done.rating != null ? `Saved — ${done.rating} out of 5.` : 'Saved.', 'good');
+  toast(done.rating != null ? `Saved \u2014 ${done.rating} out of 5.` : 'Saved.', 'good');
+  await reload();
+}
+
+/**
+ * Correcting one that is already saved.
+ *
+ * The marks and the notes move. The questions do not: what is on the sheet is
+ * what that person was actually asked, so this reopens the sheet's own answers
+ * rather than whatever the set says today. Which is also why a sheet marked
+ * against a set that has since been reworded still opens, and opens as it was.
+ */
+async function correct(data, sheet, reload) {
+  const answers = sheet.answers ?? [];
+
+  const body = answers.length
+    ? markingSheet({
+      name: sheet.packName || 'The interview',
+      note: 'The questions are as they were asked. Only the marks and the notes move.',
+      marks: data.marks ?? [],
+      items: answers.map((a) => ({
+        key: `a${a.id}`, asked: a.asked, mark: a.mark ?? null, note: a.note ?? '',
+      })),
+    })
+    : field('Out of five', h('select', { name: 'rating' },
+      h('option', { value: '' }, 'Not marking'),
+      [1, 2, 3, 4, 5].map((n) => h('option', {
+        value: String(n), selected: sheet.rating === n,
+      }, `${n}`))));
+
+  const done = await formDialog({
+    title: `${data.candidate.name}, as ${sheet.by ?? 'somebody'} marked it`,
+    submitLabel: 'Save the correction',
+    wide: Boolean(answers.length),
+    body: h('div',
+      body,
+      ...theRest(sheet),
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'What moves goes on this person\u2019s trail with your name on it. The sheet is not '
+        + 'replaced and nothing is written twice.')),
+    onSubmit: async (form) => api.recCorrectScore(data.candidate.id, sheet.id, {
+      rating: form.get('rating') || null,
+      recommend: form.get('recommend') || null,
+      note: form.get('note') || null,
+      answers: answers.map((a) => ({
+        id: a.id,
+        mark: form.get(`a${a.id}`) || null,
+        note: form.get(`na${a.id}`) || null,
+      })),
+    }),
+  });
+  if (!done) return;
+  toast(done.changed ? `Corrected \u2014 ${done.changed}.` : 'Nothing moved.', 'good');
   await reload();
 }
 
@@ -745,6 +842,7 @@ const SAYS = {
   added: 'Added to the pipeline',
   stage: 'Moved',
   scored: 'Scored',
+  score_corrected: 'A score sheet was corrected',
   file: 'A file was filed',
   cv_sent: 'They sent a CV',
   details_sent: 'They confirmed their details',

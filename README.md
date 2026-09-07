@@ -2255,6 +2255,24 @@ disagree is a sheet nobody can read. A question nobody got to is left out rather
 than counted as nought, because an interview that ran short is not an interview
 that went badly.
 
+**A sheet can be corrected.** Somebody comes out of an interview, marks it on
+their phone, and finds a 4 against the wrong line, or has the whole of a good
+answer in their head and nothing in the box. Made to live with it they do the
+only thing left, which is to score the person a second time, and the record then
+holds two sheets for one interview with nothing saying which is meant. So the
+marks, the notes, the recommendation and the line at the bottom move. The
+questions do not, and nor does the number of them: what is on the sheet is what
+that person was actually asked. "Not asked" is one of the choices rather than
+only the state a question starts in, so a mark can be taken back off as well as
+changed.
+
+Who: whoever wrote it, and an administrator. Not everybody holding the
+recruitment permission — a mark with somebody else's name on it, moved by a
+third party, is the one thing that would make the record unanswerable a year
+later. Every correction goes on the candidate's trail saying what moved (*2.3 to
+2.8 out of 5, maybe to yes, 1 answer*) and who moved it, and the sheet itself
+carries who touched it last. Nothing about it is quiet.
+
 **And a sheet keeps the words it was marked against.** The question text is
 copied onto the answer, so a set edited in six months does not rewrite what
 somebody was asked in March, and retiring a set outright does not empty out the

@@ -5721,6 +5721,14 @@ tr:hover .rota-who-more,
   .rec-question-row > div:not(.rec-question-tools) { grid-column: 1 / -1; grid-row: 2; }
 }
 
+/* Correcting a sheet that is already saved. */
+.rec-correct { margin-left: auto; font-size: .82rem; }
+.rec-edited { display: block; margin: -.2rem 0 .4rem; }
+/* The way back off a mark. Quieter than the five and at the end of them, so
+   the row still reads as one to five. */
+.rec-sheet-mark.is-none { padding-left: .5rem; padding-right: .5rem; border-style: dashed; }
+.rec-sheet-mark.is-none small { font-style: italic; }
+
 /* Marking somebody against a set. */
 .rec-sheet-head {
   display: flex; align-items: center; justify-content: space-between; gap: .6rem;

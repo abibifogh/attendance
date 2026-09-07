@@ -183,6 +183,7 @@ export const api = {
   recMoveCandidates: (body) => request('/api/rec/candidates/stage', { method: 'POST', body }),
   recInviteMany: (body) => request('/api/rec/candidates/invites', { method: 'POST', body }),
   recScoreCandidate: (id, body) => request(`/api/rec/candidates/${id}/score`, { method: 'POST', body }),
+  recCorrectScore: (id, scoreId, body) => request(`/api/rec/candidates/${id}/scores/${scoreId}`, { method: 'POST', body }),
   recAddFile: (id, body) => request(`/api/rec/candidates/${id}/files`, { method: 'POST', body }),
   recRemoveFile: (id, fileId) => request(`/api/rec/candidates/${id}/files/${fileId}/remove`, { method: 'POST' }),
   recInvite: (id, body) => request(`/api/rec/candidates/${id}/invite`, { method: 'POST', body }),

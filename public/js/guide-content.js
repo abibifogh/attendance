@@ -2012,6 +2012,16 @@ export const GUIDE = [
       { note: 'A sheet keeps the words it was marked against. Reword a question next month, or '
         + 'take the whole set out of use, and an interview from March still reads back the way '
         + 'it was filled in.' },
+      { p: 'A sheet can be put right afterwards. Somebody marks one on their phone coming out '
+        + 'of the room and finds a 4 against the wrong line, and the only thing left otherwise '
+        + 'is to score the person again, which leaves two sheets for one interview and nothing '
+        + 'saying which is meant. Correct it changes the marks, the notes, the recommendation '
+        + 'and the line at the bottom. The questions do not move: what is on the sheet is what '
+        + 'that person was actually asked. Not asked is one of the choices, so a mark can come '
+        + 'back off as well as change.' },
+      { warn: 'A sheet is corrected by whoever wrote it, or by an administrator. Everybody else '
+        + 'sees it and cannot touch it. What moved goes on the candidate\u2019s trail with a '
+        + 'name against it, and the sheet says who touched it last.' },
       { warn: 'A vacancy with no set on it still works the old way, a mark out of five and a '
         + 'note. Nothing you have already written down changes.' },
 

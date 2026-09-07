@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { MARKS, PACKS, packForDepartment, sheetRating } from '../src/lib/interview-packs.js';
 import {
-  addCandidate, candidate, createRole, loadStandardPacks, questionPacks, removeQuestionPack,
-  saveQuestionPack, scoreCandidate, updateRole,
+  MARKS, PACKS, mayCorrect, packForDepartment, sheetRating, whatChanged,
+} from '../src/lib/interview-packs.js';
+import {
+  addCandidate, candidate, correctScore, createRole, loadStandardPacks, questionPacks,
+  removeQuestionPack, saveQuestionPack, scoreCandidate, updateRole,
 } from '../src/routes/recruitment.js';
 import { moveWithin } from '../public/js/util.js';
 
@@ -369,4 +371,229 @@ test('reordering a set does not disturb an interview already marked against it',
   assert.deepEqual(back.scores[0].answers.map((a) => a.mark), [5, 3],
     'the sheet reads back the way it was filled in');
   assert.match(back.pack.questions[0].text, /money/, 'and the set itself is in its new order');
+});
+
+// ---------------------------------------------------------------------------
+// Correcting a sheet that is already saved
+// ---------------------------------------------------------------------------
+
+/** Somebody else at the same desk, with their own login. */
+const asSomebodyElse = (db, body = null, permissions = ['rec_view', 'rec_manage']) => ({
+  ...ctx(db, body, permissions),
+  session: { user: { id: 7, name: 'Akos', role: 'manager' }, permissions },
+});
+
+const aSheet = async (db) => {
+  const pack = await aPack(db);
+  const who = await aCandidateFor(db, pack.id);
+  const asked = (await read(await candidate(ctx(db), who.id))).pack.questions;
+  await scoreCandidate(ctx(db, {
+    recommend: 'maybe',
+    note: 'Quiet, but she knew the work.',
+    answers: [
+      { questionId: asked[0].id, asked: asked[0].text, mark: 4, note: 'Top down, bathroom last.' },
+      { questionId: asked[1].id, asked: asked[1].text, mark: 2 },
+    ],
+  }), who.id);
+  const back = await read(await candidate(ctx(db), who.id));
+  return { pack, who, sheet: back.scores[0] };
+};
+
+test('a sheet is corrected by whoever wrote it, and by an administrator', () => {
+  const mine = { scored_by_id: 3, scored_by: 'Kwame (admin)' };
+  assert.equal(mayCorrect(mine, { userId: 3, permissions: ['rec_manage'] }), true);
+  assert.equal(mayCorrect(mine, { userId: 9, permissions: ['rec_manage'] }), false);
+  assert.equal(mayCorrect(mine, { userId: 9, permissions: ['att_setup'] }), true);
+  assert.equal(mayCorrect(null, { userId: 3, permissions: ['att_setup'] }), false);
+});
+
+test('a sheet written before logins were kept on one falls back to the name', () => {
+  // Weaker than an id, and meant to be: it only lets somebody move a sheet
+  // that already says they wrote it.
+  const old = { scored_by_id: null, scored_by: 'Akos (manager)' };
+  assert.equal(mayCorrect(old, { userId: 7, actor: 'Akos (manager)', permissions: [] }), true);
+  assert.equal(mayCorrect(old, { userId: 7, actor: 'Kwame (admin)', permissions: [] }), false);
+  assert.equal(mayCorrect({ scored_by_id: null, scored_by: null }, { actor: null }), false);
+});
+
+test('what moved is written out, not stored as "edited"', () => {
+  // The question a year later is not whether a sheet was touched. It is
+  // whether the mark went up after somebody had a word.
+  assert.equal(
+    whatChanged({ rating: 2, answers: [{ mark: 2 }] }, { rating: 4, answers: [{ mark: 4 }] }),
+    '2 to 4 out of 5, 1 answer',
+  );
+  assert.equal(
+    whatChanged({ recommend: 'no', note: 'a' }, { recommend: 'yes', note: 'b' }),
+    'no to yes, the note',
+  );
+  assert.equal(whatChanged({ rating: 3 }, { rating: 3 }), null);
+});
+
+test('correcting a mark moves the sheet, and the sheet works itself out again', async () => {
+  const { db } = setup();
+  const { who, sheet } = await aSheet(db);
+  assert.equal(sheet.rating, 3);
+
+  const out = await read(await correctScore(ctx(db, {
+    recommend: 'yes',
+    note: sheet.note,
+    answers: [
+      { id: sheet.answers[0].id, mark: 4, note: sheet.answers[0].note },
+      { id: sheet.answers[1].id, mark: 5, note: 'She did say, I wrote it down wrong.' },
+    ],
+  }), who.id, sheet.id));
+
+  assert.equal(out.rating, 4.5);
+  const back = await read(await candidate(ctx(db), who.id));
+  assert.equal(back.scores.length, 1, 'corrected, not scored a second time');
+  assert.equal(back.scores[0].rating, 4.5);
+  assert.equal(back.scores[0].recommend, 'yes');
+  assert.deepEqual(back.scores[0].answers.map((a) => a.mark), [4, 5]);
+  assert.match(back.scores[0].answers[1].note, /wrote it down wrong/);
+});
+
+test('a correction cannot rewrite what somebody was asked', async () => {
+  const { db } = setup();
+  const { pack, who, sheet } = await aSheet(db);
+
+  // The set is reworded in between, which is allowed and changes nothing here.
+  await saveQuestionPack(ctx(db, {
+    name: 'Housekeeping and rooms',
+    questions: [{ text: 'Something else entirely.' }],
+  }), pack.id);
+
+  await correctScore(ctx(db, {
+    answers: [{ id: sheet.answers[0].id, mark: 5, asked: 'A question nobody asked her' }],
+  }), who.id, sheet.id);
+
+  const back = await read(await candidate(ctx(db), who.id));
+  assert.match(back.scores[0].answers[0].asked, /checkout room/);
+  assert.equal(back.scores[0].answers.length, 2, 'and none were added or taken away');
+});
+
+test('an answer left out of a correction keeps what it had', async () => {
+  const { db } = setup();
+  const { who, sheet } = await aSheet(db);
+
+  await correctScore(ctx(db, {
+    answers: [{ id: sheet.answers[1].id, mark: 5 }],
+  }), who.id, sheet.id);
+
+  const back = await read(await candidate(ctx(db), who.id));
+  assert.deepEqual(back.scores[0].answers.map((a) => a.mark), [4, 5]);
+  assert.match(back.scores[0].answers[0].note, /Top down/);
+});
+
+test('somebody else at the same desk cannot move a mark with your name on it', async () => {
+  const { db } = setup();
+  const { who, sheet } = await aSheet(db);
+
+  await assert.rejects(
+    () => correctScore(asSomebodyElse(db, {
+      answers: [{ id: sheet.answers[0].id, mark: 1 }],
+    }), who.id, sheet.id),
+    /whoever wrote it, or by an administrator/,
+  );
+
+  const back = await read(await candidate(ctx(db), who.id));
+  assert.equal(back.scores[0].rating, 3, 'and nothing moved');
+});
+
+test('an administrator can, and the sheet says who touched it', async () => {
+  const { db } = setup();
+  const { who, sheet } = await aSheet(db);
+
+  await correctScore(asSomebodyElse(db, {
+    answers: [{ id: sheet.answers[0].id, mark: 1 }, { id: sheet.answers[1].id, mark: 1 }],
+  }, ['rec_view', 'att_setup']), who.id, sheet.id);
+
+  const back = await read(await candidate(ctx(db), who.id));
+  assert.equal(back.scores[0].rating, 1);
+  assert.match(back.scores[0].editedBy, /Akos/);
+  assert.ok(back.scores[0].editedAt, 'and when');
+});
+
+test('every correction lands on the trail with what moved', async () => {
+  const { db } = setup();
+  const { who, sheet } = await aSheet(db);
+
+  await correctScore(ctx(db, {
+    recommend: 'yes',
+    answers: [{ id: sheet.answers[0].id, mark: 5 }, { id: sheet.answers[1].id, mark: 5 }],
+  }), who.id, sheet.id);
+
+  const back = await read(await candidate(ctx(db), who.id));
+  const event = back.events.find((e) => e.kind === 'score_corrected');
+  assert.ok(event, 'nothing about this is quiet');
+  assert.match(event.detail, /3 to 5 out of 5/);
+  assert.match(event.detail, /2 answers/);
+  assert.match(event.actor, /Kwame/);
+});
+
+test('the screen is told whose sheets it may offer to correct', async () => {
+  const { db } = setup();
+  const { who } = await aSheet(db);
+
+  assert.equal((await read(await candidate(ctx(db), who.id))).scores[0].mine, true);
+  assert.equal((await read(await candidate(asSomebodyElse(db), who.id))).scores[0].mine, false);
+  assert.equal(
+    (await read(await candidate(asSomebodyElse(db, null, ['rec_view', 'att_setup']), who.id)))
+      .scores[0].mine,
+    true,
+  );
+});
+
+test('a sheet emptied out is not a correction', async () => {
+  const { db } = setup();
+  const { who, sheet } = await aSheet(db);
+
+  await assert.rejects(
+    () => correctScore(ctx(db, {
+      recommend: '',
+      note: '',
+      answers: sheet.answers.map((a) => ({ id: a.id, mark: '', note: '' })),
+    }), who.id, sheet.id),
+    /Leave something on it/,
+  );
+});
+
+test('a mark put against the wrong line can be taken back off', async () => {
+  const { db } = setup();
+  const { who, sheet } = await aSheet(db);
+
+  await correctScore(ctx(db, {
+    note: sheet.note,
+    answers: [{ id: sheet.answers[0].id, mark: 4 }, { id: sheet.answers[1].id, mark: '' }],
+  }), who.id, sheet.id);
+
+  const back = await read(await candidate(ctx(db), who.id));
+  assert.deepEqual(back.scores[0].answers.map((a) => a.mark), [4, null]);
+  assert.equal(back.scores[0].rating, 4, 'and it is left out of the mark rather than counted nought');
+});
+
+test('a plain mark out of five, on a vacancy with no set, corrects too', async () => {
+  const { db } = setup();
+  const id = (await read(await addCandidate(ctx(db, { name: 'Yaw Osei' })))).id;
+  await scoreCandidate(ctx(db, { rating: 2, note: 'Walked in.' }), id);
+  const sheet = (await read(await candidate(ctx(db), id))).scores[0];
+
+  await correctScore(ctx(db, { rating: 4, note: 'Walked in. Better than I first wrote.' }),
+    id, sheet.id);
+
+  const back = await read(await candidate(ctx(db), id));
+  assert.equal(back.scores[0].rating, 4);
+  assert.match(back.scores[0].note, /Better than I first wrote/);
+});
+
+test('a sheet belonging to another candidate is not reachable through this one', async () => {
+  const { db } = setup();
+  const { sheet } = await aSheet(db);
+  const other = (await read(await addCandidate(ctx(db, { name: 'Kojo Owusu' })))).id;
+
+  await assert.rejects(
+    () => correctScore(ctx(db, { answers: [{ id: sheet.answers[0].id, mark: 1 }] }),
+      other, sheet.id),
+    /not here/,
+  );
 });

@@ -10,7 +10,9 @@ import { claimOrphans, recompute } from '../lib/attendance-ingest.js';
 import { todayIn } from '../util/dates.js';
 import { mapLink, mapsKey } from '../lib/places.js';
 import { readCv } from '../lib/cv-read.js';
-import { MARKS, PACKS, packForDepartment, sheetRating } from '../lib/interview-packs.js';
+import {
+  MARKS, PACKS, mayCorrect, packForDepartment, sheetRating, whatChanged,
+} from '../lib/interview-packs.js';
 import { extractPdfText } from '../lib/pdf-text.js';
 import {
   CLOSED_STAGES, EMPLOYMENT, FILE_KINDS, LIVE_STAGES, SOURCES, STAGES, cutIntoSlots,
@@ -739,7 +741,10 @@ export async function candidate(ctx, id) {
   for (const a of answers.results ?? []) {
     if (!marksBy.has(a.score_id)) marksBy.set(a.score_id, []);
     marksBy.get(a.score_id).push({
-      asked: a.asked, mark: a.mark == null ? null : Number(a.mark), note: a.note ?? null,
+      id: a.id,
+      asked: a.asked,
+      mark: a.mark == null ? null : Number(a.mark),
+      note: a.note ?? null,
     });
   }
 
@@ -773,6 +778,15 @@ export async function candidate(ctx, id) {
       by: s.scored_by,
       at: s.at,
       packName: s.pack_name ?? null,
+      editedBy: s.edited_by ?? null,
+      editedAt: s.edited_at ?? null,
+      // Whether the screen offers this one a Correct button. Worked out here
+      // rather than guessed at on the front, which cannot see who wrote it.
+      mine: mayCorrect(s, {
+        userId: ctx.session?.user?.id ?? null,
+        actor: actorOf(ctx),
+        permissions: ctx.session.permissions,
+      }),
       answers: marksBy.get(s.id) ?? [],
     })),
     // What to ask this one, from the vacancy they applied for. Null where
@@ -1200,10 +1214,11 @@ export async function scoreCandidate(ctx, id) {
 
   const created = await ctx.db.prepare(
     `INSERT INTO rec_score (candidate_id, slot_id, rating, recommend, note, scored_by,
-                            pack_id, pack_name)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8) RETURNING id`,
+                            scored_by_id, pack_id, pack_name)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) RETURNING id`,
   ).bind(
     row.id, slot?.id ?? null, rating, recommend, note, actorOf(ctx),
+    ctx.session?.user?.id ?? null,
     answers.length ? pack?.id ?? null : null,
     answers.length ? pack?.name ?? null : null,
   ).first();
@@ -1227,6 +1242,111 @@ export async function scoreCandidate(ctx, id) {
   });
 
   return json({ ok: true, id: created.id, rating });
+}
+
+/**
+ * Correcting a sheet that is already saved.
+ *
+ * Somebody comes out of an interview, marks it on their phone, and finds a 4
+ * against the wrong line. Made to live with it they do the only thing left,
+ * which is to score the person again, and the record then holds two sheets for
+ * one interview with nothing saying which is meant.
+ *
+ * The marks, the notes, the recommendation and the line at the bottom move.
+ * The questions do not, and nor does the number of them: the words on an
+ * answer are what that person was actually asked. So this walks the answers
+ * that are already on the sheet and only touches what was given for them.
+ */
+export async function correctScore(ctx, id, scoreId) {
+  const row = await candidateOr404(ctx, id);
+  const sheet = await ctx.db.prepare('SELECT * FROM rec_score WHERE id = ? AND candidate_id = ?')
+    .bind(scoreId, row.id).first().catch(() => null);
+  if (!sheet) throw notFound('That sheet is not here.');
+
+  if (!mayCorrect(sheet, {
+    userId: ctx.session?.user?.id ?? null,
+    actor: actorOf(ctx),
+    permissions: ctx.session.permissions,
+  })) {
+    throw forbidden('A sheet is corrected by whoever wrote it, or by an administrator.');
+  }
+
+  const body = await readJson(ctx.request);
+  const held = await ctx.db.prepare(
+    'SELECT * FROM rec_answer WHERE score_id = ? ORDER BY position, id',
+  ).bind(sheet.id).all().catch(() => ({ results: [] }));
+  const existing = held.results ?? [];
+
+  // Marks come back keyed by the answer row, so a set edited in between cannot
+  // send a mark to the wrong line.
+  const sent = new Map();
+  for (const a of Array.isArray(body.answers) ? body.answers : []) {
+    const key = Number(a?.id);
+    if (Number.isInteger(key)) sent.set(key, a);
+  }
+
+  const answers = existing.map((a) => {
+    const given = sent.get(Number(a.id));
+    if (!given) return { id: a.id, mark: a.mark == null ? null : Number(a.mark), note: a.note ?? null };
+    return {
+      id: a.id,
+      mark: given.mark == null || given.mark === ''
+        ? null
+        : int(given.mark, 'A mark', { min: 1, max: 5 }),
+      note: str(given.note, 'What they said', { max: 2000 }) || null,
+    };
+  });
+
+  const rating = answers.length
+    ? sheetRating(answers)
+    : (body.rating == null || body.rating === ''
+      ? null
+      : int(body.rating, 'Rating', { min: 1, max: 5 }));
+
+  const recommend = body.recommend == null || body.recommend === ''
+    ? null
+    : String(body.recommend);
+  if (recommend && !['yes', 'maybe', 'no'].includes(recommend)) {
+    throw badRequest('Recommend is yes, maybe or no.');
+  }
+  const note = str(body.note, 'What you thought', { max: 4000 }) || null;
+  if (rating == null && !recommend && !note && !answers.some((a) => a.note)) {
+    throw badRequest('A sheet emptied out is not a correction. Leave something on it.');
+  }
+
+  const moved = whatChanged({
+    rating: sheet.rating == null ? null : Number(sheet.rating),
+    recommend: sheet.recommend ?? null,
+    note: sheet.note ?? null,
+    answers: existing.map((a) => ({
+      mark: a.mark == null ? null : Number(a.mark), note: a.note ?? null,
+    })),
+  }, {
+    rating, recommend, note, answers: answers.map(({ mark, note: n }) => ({ mark, note: n })),
+  });
+
+  await ctx.db.batch([
+    ctx.db.prepare(
+      `UPDATE rec_score SET rating = ?2, recommend = ?3, note = ?4,
+              edited_by = ?5, edited_at = datetime('now')
+        WHERE id = ?1`,
+    ).bind(sheet.id, rating, recommend, note, actorOf(ctx)),
+    ...answers.map((a) => ctx.db.prepare(
+      'UPDATE rec_answer SET mark = ?2, note = ?3 WHERE id = ?1',
+    ).bind(a.id, a.mark, a.note)),
+  ]);
+
+  // Nothing about this is quiet. The question a year later is not whether a
+  // sheet was touched, it is whether the mark went up after somebody had a
+  // word, so what moved is written out rather than stored as "edited".
+  await trail(ctx.db, {
+    candidateId: row.id,
+    kind: 'score_corrected',
+    detail: moved,
+    actor: actorOf(ctx),
+  });
+
+  return json({ ok: true, id: sheet.id, rating, changed: moved });
 }
 
 // ---------------------------------------------------------------------------

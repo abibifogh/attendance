@@ -473,6 +473,9 @@ export const ROUTES = [
   // Whoever sat in the interview writes what they thought, which is not the
   // same permission as moving somebody along.
   ['POST', '/api/rec/candidates/:id/score', 'rec_view', rec.scoreCandidate],
+  // And corrects it afterwards. Same permission to reach the route; who may
+  // actually move a given sheet is decided on the sheet itself.
+  ['POST', '/api/rec/candidates/:id/scores/:scoreId', 'rec_view', rec.correctScore],
   ['POST', '/api/rec/candidates/:id/files', 'rec_manage', rec.addFile],
   ['GET', '/api/rec/candidates/:id/files/:fileId', 'rec_view', rec.readFile],
   ['POST', '/api/rec/candidates/:id/files/:fileId/remove', 'rec_manage', rec.removeFile],

@@ -27,6 +27,8 @@
  * how a property ends up with a workforce that all came from the same place.
  */
 
+import { allows } from './permissions.js';
+
 /**
  * The mark on every question is out of five, and the same five everywhere.
  *
@@ -257,6 +259,54 @@ export function packForDepartment(department) {
  * that ran short is not an interview that went badly, and averaging in the
  * questions nobody got to would say it was.
  */
+/** Somebody who can correct a sheet that is not theirs. */
+export const CORRECTS_ANYWAY = 'att_setup';
+
+/**
+ * Whether this person may correct that sheet.
+ *
+ * The person who wrote it, and an administrator. Not everybody who can open
+ * recruitment: a mark with somebody else's name on it, moved by a third party,
+ * is the one thing that would make the record unanswerable a year later.
+ *
+ * Sheets written before logins were kept against a sheet have only a name to
+ * go on, so the name is matched as a fallback. That is weaker than an id and it
+ * is meant to be: it only ever lets somebody edit a sheet that already says
+ * they wrote it.
+ */
+export function mayCorrect(sheet, who = {}) {
+  if (!sheet) return false;
+  if (allows(CORRECTS_ANYWAY, who.permissions ?? [])) return true;
+  const mine = sheet.scored_by_id ?? sheet.scoredById ?? null;
+  if (mine != null && who.userId != null) return Number(mine) === Number(who.userId);
+  const by = sheet.scored_by ?? sheet.by ?? null;
+  return Boolean(by && who.actor && String(by) === String(who.actor));
+}
+
+/**
+ * What moved, in a line, for the trail.
+ *
+ * The point of writing it out rather than storing "edited" is the question
+ * anybody asks a year later, which is not whether a sheet was touched but
+ * whether the mark on it went up after somebody had a word.
+ */
+export function whatChanged(before = {}, after = {}) {
+  const said = [];
+  if (before.rating !== after.rating) {
+    said.push(`${before.rating ?? 'no mark'} to ${after.rating ?? 'no mark'} out of 5`);
+  }
+  if (before.recommend !== after.recommend) {
+    said.push(`${before.recommend ?? 'not saying'} to ${after.recommend ?? 'not saying'}`);
+  }
+  const moved = (after.answers ?? []).filter((a, i) => {
+    const was = (before.answers ?? [])[i];
+    return was && (was.mark !== a.mark || (was.note ?? null) !== (a.note ?? null));
+  }).length;
+  if (moved) said.push(`${moved} answer${moved === 1 ? '' : 's'}`);
+  if ((before.note ?? null) !== (after.note ?? null)) said.push('the note');
+  return said.join(', ') || null;
+}
+
 export function sheetRating(answers = []) {
   const marks = answers
     .map((a) => Number(a?.mark))
