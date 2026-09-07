@@ -39,10 +39,15 @@ const STAGE_TONE = {
 
 export async function renderRec(params) {
   const host = h('div');
-  const data = await api.recBoard();
+  const [data, questions] = await Promise.all([
+    api.recBoard(),
+    api.recQuestions().catch(() => ({ packs: [], standard: [], marks: [], canManage: false })),
+  ]);
+  data.questions = questions;
   const reload = async () => mount(host, await renderRec(params));
 
-  const tab = ['pipeline', 'roles', 'diary'].includes(params.tab) ? params.tab : 'pipeline';
+  const tab = ['pipeline', 'roles', 'diary', 'questions'].includes(params.tab)
+    ? params.tab : 'pipeline';
   const show = (next) => navigate('rec', { tab: next });
 
   const live = data.candidates.filter((c) => ['applied', 'shortlisted', 'interview', 'offer']
@@ -88,11 +93,14 @@ export async function renderRec(params) {
         h('button', { class: tab === 'roles' ? 'active' : '', onclick: () => show('roles') },
           'Vacancies', h('span.seg-count', String(data.roles.length))),
         h('button', { class: tab === 'diary' ? 'active' : '', onclick: () => show('diary') },
-          'Interviews', h('span.seg-count', String(data.diary.length))))),
+          'Interviews', h('span.seg-count', String(data.diary.length))),
+        h('button', { class: tab === 'questions' ? 'active' : '', onclick: () => show('questions') },
+          'Questions', h('span.seg-count', String(questions.packs?.length ?? 0))))),
 
     tab === 'pipeline' ? pipeline(data, reload) : null,
     tab === 'roles' ? roles(data, reload) : null,
     tab === 'diary' ? diary(data, reload) : null,
+    tab === 'questions' ? questionSets(questions, reload) : null,
   );
 
   return host;
@@ -412,6 +420,13 @@ async function openRole(role, data, reload) {
       field('What the job is, in a line or two', h('textarea', {
         name: 'detail', rows: 3, maxlength: 4000,
       }, role?.detail ?? '')),
+      field('Questions to ask at the interview', h('select', { name: 'packId' },
+        h('option', { value: '' }, 'None — a mark out of five and a note'),
+        (data.questions?.packs ?? []).filter((p) => p.active).map((p) => h('option', {
+          value: String(p.id), selected: String(role?.packId ?? '') === String(p.id),
+        }, `${p.name} · ${p.questions.length} question${p.questions.length === 1 ? '' : 's'}`))),
+      'Everybody who applies for this is asked the same ones and marked on each, which is what '
+        + 'makes six candidates comparable. Set them up under Questions.'),
       role
         ? field('State', h('select', { name: 'status' },
           ...[['open', 'Open'], ['on_hold', 'On hold'], ['filled', 'Filled'], ['closed', 'Closed']]
@@ -425,6 +440,159 @@ async function openRole(role, data, reload) {
   });
   if (!done) return;
   toast(role ? 'Saved.' : 'Vacancy open.', 'good');
+  await reload();
+}
+
+// ---------------------------------------------------------------------------
+// What to ask at an interview
+// ---------------------------------------------------------------------------
+
+/**
+ * The sets of questions, and the standard hotel ones to start from.
+ *
+ * An interview here was a mark out of five and a paragraph, which is a record
+ * of somebody's impression. Six impressions taken on six afternoons by three
+ * people are not comparable, and comparable is the one thing a hiring decision
+ * needs them to be. So the questions are written down first and everybody who
+ * applies for the same job is asked the same ones.
+ */
+function questionSets(data, reload) {
+  const missing = (data.standard ?? []).filter(
+    (std) => !(data.packs ?? []).some((p) => p.name.toLowerCase() === std.name.toLowerCase()));
+
+  const load = async () => {
+    try {
+      const out = await api.recStandardQuestions();
+      toast(out.added.length
+        ? `${out.added.length} set${out.added.length === 1 ? '' : 's'} added. They are yours to `
+          + 'edit now.'
+        : 'Everything standard is already here.', 'good');
+      await reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
+  return h('div',
+    data.canManage
+      ? h('div.toolbar',
+        h('div.btn-row',
+          h('button.btn-sm.btn-primary', { onclick: () => editPack(null, data, reload) },
+            'Write a set'),
+          missing.length
+            ? h('button.btn-sm', { onclick: load },
+              `Add the ${missing.length} standard hotel set${missing.length === 1 ? '' : 's'}`)
+            : null))
+      : null,
+
+    !data.packs?.length
+      ? card('Questions', { wide: true },
+        emptyState('Nothing written down yet',
+          'An interview with no questions written down is a mark out of five and a paragraph, '
+          + 'which is a record of an impression rather than of an answer. There are seven '
+          + 'standard hotel sets here to start from: front office, housekeeping, restaurant and '
+          + 'bar, kitchen, maintenance, security, and four to ask anybody. Load them and they '
+          + 'are yours to change.'))
+      : h('div.grid.grid-2', data.packs.map((pack) => card(pack.name, {
+        note: `${pack.questions.length} question${pack.questions.length === 1 ? '' : 's'}`,
+        actions: data.canManage
+          ? h('div.btn-row',
+            h('button.btn-sm', { onclick: () => editPack(pack, data, reload) }, 'Edit'),
+            h('button.btn-sm', {
+              onclick: async () => {
+                if (!confirmAction(`Take "${pack.name}" off the list?`
+                  + ' Interviews already marked against it keep their questions and their marks.')) return;
+                await api.recRemoveQuestions(pack.id);
+                toast('Off the list.');
+                await reload();
+              },
+            }, 'Retire'))
+          : null,
+      },
+      h('p.muted', { style: { marginTop: 0, fontSize: '.85rem' } },
+        [pack.department, pack.note].filter(Boolean).join(' · ') || 'For any vacancy'),
+      pack.usedBy
+        ? h('p.muted', { style: { fontSize: '.82rem' } },
+          `On ${pack.usedBy} vacanc${pack.usedBy === 1 ? 'y' : 'ies'}.`)
+        : h('p.muted', { style: { fontSize: '.82rem' } },
+          'Not on any vacancy yet. Put it on one under Vacancies.'),
+      h('ol.rec-questions', pack.questions.map((q) => h('li',
+        h('div', q.text),
+        q.listenFor ? h('small.muted', `Listen for: ${q.listenFor}`) : null)))))),
+  );
+}
+
+/** Write one, or change one. The questions are the form. */
+async function editPack(pack, data, reload) {
+  let rows = (pack?.questions ?? []).map((q) => ({ ...q }));
+  if (!rows.length) rows = [{ id: null, text: '', listenFor: '' }];
+
+  const list = h('div.rec-question-edit');
+
+  const paint = () => {
+    mount(list, rows.map((row, i) => h('div.rec-question-row',
+      h('div.rec-question-no', String(i + 1)),
+      h('div',
+        h('input', {
+          type: 'text', value: row.text, maxlength: 600, placeholder: 'What you will ask',
+          oninput: (e) => { row.text = e.target.value; },
+        }),
+        h('input', {
+          type: 'text', value: row.listenFor ?? '', maxlength: 800,
+          placeholder: 'What a good answer sounds like (optional, and the useful half)',
+          oninput: (e) => { row.listenFor = e.target.value; },
+        })),
+      h('button.link-button', {
+        type: 'button',
+        title: 'Take this question out',
+        onclick: () => { rows.splice(i, 1); if (!rows.length) rows.push({ id: null, text: '', listenFor: '' }); paint(); },
+      }, '✕'))));
+  };
+  paint();
+
+  const done = await formDialog({
+    title: pack ? pack.name : 'A set of questions',
+    submitLabel: pack ? 'Save' : 'Write it',
+    wide: true,
+    body: h('div',
+      h('div.grid.grid-2',
+        field('A name for the set', h('input', {
+          type: 'text', name: 'name', maxlength: 120, required: true,
+          value: pack?.name ?? '', placeholder: 'Housekeeping and rooms',
+        })),
+        field('Department', h('select', { name: 'department' },
+          h('option', { value: '' }, 'Any'),
+          (data.departments ?? []).map((d) => h('option', {
+            value: d, selected: pack?.department === d,
+          }, d))))),
+      field('What it is for', h('input', {
+        type: 'text', name: 'note', maxlength: 400, value: pack?.note ?? '',
+        placeholder: 'Room attendants, house porters and laundry',
+      })),
+      h('div.stat-label', { style: { margin: '.8rem 0 .4rem' } }, 'The questions'),
+      list,
+      h('div', { style: { marginTop: '.5rem' } },
+        h('button.btn-sm', {
+          type: 'button',
+          onclick: () => { rows.push({ id: null, text: '', listenFor: '' }); paint(); },
+        }, '+ Another question')),
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'Ask about what happened rather than what somebody would do: "tell me about a guest who '
+        + 'was angry" gets an account of something real, "how would you handle an angry guest" '
+        + 'gets the answer everybody knows they are supposed to give.'),
+    ),
+    onSubmit: async (form) => api.recSaveQuestions(pack?.id ?? null, {
+      name: form.get('name'),
+      department: form.get('department') || null,
+      note: form.get('note') || null,
+      questions: rows.filter((r) => r.text.trim()).map((r) => ({
+        id: r.id, text: r.text.trim(), listenFor: (r.listenFor ?? '').trim(),
+      })),
+    }),
+  });
+
+  if (!done) return;
+  toast(pack ? 'Saved.' : 'Written down.', 'good');
   await reload();
 }
 

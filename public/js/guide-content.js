@@ -1986,6 +1986,30 @@ export const GUIDE = [
         + 'ten days by default — shorter than a staff link, because it carries a diary and a '
         + 'diary three weeks old offers times that have been and gone.' },
 
+      { sub: 'What to ask at the interview' },
+      { p: 'Two people seen for the same job on different days get asked different questions, '
+        + 'and afterwards nobody can say which of them was better. A question set fixes that. '
+        + 'Write the questions once, put the set on the vacancy, and everybody who comes in '
+        + 'for that job is asked the same things and marked against the same words.' },
+      { p: 'Seven sets come ready made for a hotel: one for anybody whatever the job, then '
+        + 'front office and reception, housekeeping and rooms, restaurant and bar service, '
+        + 'the kitchen, maintenance and security. One press under Questions loads the lot. '
+        + 'They are yours after that, so reword them, drop what does not fit here and add '
+        + 'what does.' },
+      { p: 'Every question carries a line saying what to listen for in the answer. That is for '
+        + 'whoever is sitting in the room and has not interviewed anybody before, which at a '
+        + 'property this size is most of the panel most of the time.' },
+      { p: 'Marking is out of five and each mark is named rather than left to guess: nowhere '
+        + 'near, some way off, would do, good, exactly right. There is a box beside each one '
+        + 'for what they actually said. The sheet works out its own mark as it goes, averaging '
+        + 'only the questions you marked, so leaving one out because it never came up does not '
+        + 'count against the person.' },
+      { note: 'A sheet keeps the words it was marked against. Reword a question next month, or '
+        + 'take the whole set out of use, and an interview from March still reads back the way '
+        + 'it was filled in.' },
+      { warn: 'A vacancy with no set on it still works the old way, a mark out of five and a '
+        + 'note. Nothing you have already written down changes.' },
+
       { sub: 'Why somebody was not taken on' },
       { p: 'Turning somebody down asks for a reason in a line, and keeps it. That is the whole '
         + 'value of a recruitment record afterwards: the question anybody asks a year later is '

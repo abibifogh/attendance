@@ -10,6 +10,7 @@ import { claimOrphans, recompute } from '../lib/attendance-ingest.js';
 import { todayIn } from '../util/dates.js';
 import { mapLink, mapsKey } from '../lib/places.js';
 import { readCv } from '../lib/cv-read.js';
+import { MARKS, PACKS, packForDepartment, sheetRating } from '../lib/interview-packs.js';
 import { extractPdfText } from '../lib/pdf-text.js';
 import {
   CLOSED_STAGES, EMPLOYMENT, FILE_KINDS, LIVE_STAGES, SOURCES, STAGES, cutIntoSlots,
@@ -202,6 +203,8 @@ const shapeRole = (role) => ({
   openedOn: role.opened_on,
   neededBy: role.needed_by,
   closedOn: role.closed_on,
+  // Which set of questions everybody who applies for this is asked.
+  packId: role.pack_id ?? null,
 });
 
 const shapeCandidate = (row) => ({
@@ -269,8 +272,8 @@ export async function createRole(ctx) {
   const body = await readJson(ctx.request);
   const row = await ctx.db.prepare(
     `INSERT INTO rec_role (title, department, headcount, hiring_for, employment, detail,
-                           needed_by, created_by)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8) RETURNING id`,
+                           needed_by, created_by, pack_id)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) RETURNING id`,
   ).bind(
     str(body.title, 'What the job is', { required: true, max: 120 }),
     str(body.department, 'Department', { max: 80 }),
@@ -280,6 +283,7 @@ export async function createRole(ctx) {
     str(body.detail, 'What the job is', { max: 4000 }),
     readDayOrNull(body.neededBy, 'Needed by'),
     actorOf(ctx),
+    readPackId(body.packId),
   ).first();
 
   await audit(ctx, 'recruitment.role_open', row.id, { title: body.title });
@@ -297,7 +301,7 @@ export async function updateRole(ctx, id) {
   await ctx.db.prepare(
     `UPDATE rec_role
         SET title = ?2, department = ?3, headcount = ?4, hiring_for = ?5, employment = ?6,
-            detail = ?7, needed_by = ?8, status = ?9,
+            detail = ?7, needed_by = ?8, status = ?9, pack_id = ?10,
             closed_on = CASE WHEN ?9 IN ('filled','closed') THEN COALESCE(closed_on, date('now'))
                              ELSE NULL END,
             updated_at = datetime('now')
@@ -312,11 +316,20 @@ export async function updateRole(ctx, id) {
     body.detail === undefined ? role.detail : str(body.detail, 'What the job is', { max: 4000 }),
     body.neededBy === undefined ? role.needed_by : readDayOrNull(body.neededBy, 'Needed by'),
     status,
+    body.packId === undefined ? role.pack_id : readPackId(body.packId),
   ).run();
 
   await audit(ctx, 'recruitment.role_update', roleId, { status });
   return json({ ok: true });
 }
+
+/** Which set of questions, or none, which is a perfectly good answer. */
+const readPackId = (value) => {
+  if (value == null || value === '') return null;
+  const id = Number(value);
+  if (!Number.isInteger(id) || id < 1) throw badRequest('That is not a set of questions.');
+  return id;
+};
 
 const readStatus = (value) => {
   const status = String(value ?? '').trim();
@@ -687,7 +700,7 @@ export async function candidate(ctx, id) {
   const row = await candidateOr404(ctx, id);
   const { today, at } = await nowIn(ctx.db);
 
-  const [role, scores, files, invites, events, slot, slots] = await Promise.all([
+  const [role, scores, files, invites, events, slot, slots, answers, pack] = await Promise.all([
     row.role_id
       ? ctx.db.prepare('SELECT * FROM rec_role WHERE id = ?').bind(row.role_id).first()
       : Promise.resolve(null),
@@ -713,7 +726,22 @@ export async function candidate(ctx, id) {
           AND (role_id IS NULL OR role_id = ?2)
         ORDER BY day, starts_at LIMIT 60`,
     ).bind(today, row.role_id ?? -1).all().catch(() => ({ results: [] })),
+    ctx.db.prepare(
+      `SELECT a.* FROM rec_answer a JOIN rec_score s ON s.id = a.score_id
+        WHERE s.candidate_id = ? ORDER BY a.score_id, a.position, a.id`,
+    ).bind(row.id).all().catch(() => ({ results: [] })),
+    packFor(ctx.db, row),
   ]);
+
+  // The marks on each sheet, kept with the words they were given against. The
+  // set can be edited or retired afterwards and this does not move.
+  const marksBy = new Map();
+  for (const a of answers.results ?? []) {
+    if (!marksBy.has(a.score_id)) marksBy.set(a.score_id, []);
+    marksBy.get(a.score_id).push({
+      asked: a.asked, mark: a.mark == null ? null : Number(a.mark), note: a.note ?? null,
+    });
+  }
 
   return json({
     today,
@@ -744,7 +772,13 @@ export async function candidate(ctx, id) {
       note: s.note,
       by: s.scored_by,
       at: s.at,
+      packName: s.pack_name ?? null,
+      answers: marksBy.get(s.id) ?? [],
     })),
+    // What to ask this one, from the vacancy they applied for. Null where
+    // nobody has set any, which is the mark out of five and a line.
+    pack,
+    marks: MARKS.map(([mark, label, detail]) => ({ mark, label, detail })),
     files: (files.results ?? []).map((f) => ({
       id: f.id,
       kind: f.kind,
@@ -917,13 +951,238 @@ async function releaseSlots(db, candidateId, actor) {
 }
 
 /** What the interviewer thought, written down while it is fresh. */
+// ---------------------------------------------------------------------------
+// What to ask, and marking somebody against it
+// ---------------------------------------------------------------------------
+
+/**
+ * A set of questions, with the questions on it.
+ *
+ * Read by anybody who can see recruitment, because the person sitting in the
+ * interview is often not the person who wrote the set and needs to be able to
+ * read it beforehand.
+ */
+export async function questionPacks(ctx) {
+  const [packs, questions, roles] = await Promise.all([
+    ctx.db.prepare('SELECT * FROM rec_pack ORDER BY active DESC, name')
+      .all().catch(() => ({ results: [] })),
+    ctx.db.prepare('SELECT * FROM rec_question WHERE active = 1 ORDER BY pack_id, position, id')
+      .all().catch(() => ({ results: [] })),
+    ctx.db.prepare('SELECT id, title, department, pack_id FROM rec_role ORDER BY title')
+      .all().catch(() => ({ results: [] })),
+  ]);
+
+  const by = new Map();
+  for (const row of questions.results ?? []) {
+    if (!by.has(row.pack_id)) by.set(row.pack_id, []);
+    by.get(row.pack_id).push({
+      id: row.id, text: row.text, listenFor: row.listen_for ?? null, position: row.position,
+    });
+  }
+
+  const used = new Map();
+  for (const role of roles.results ?? []) {
+    if (role.pack_id == null) continue;
+    used.set(role.pack_id, (used.get(role.pack_id) ?? 0) + 1);
+  }
+
+  return json({
+    canManage: canManage(ctx),
+    marks: MARKS.map(([mark, label, detail]) => ({ mark, label, detail })),
+    packs: (packs.results ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      department: p.department ?? null,
+      note: p.note ?? null,
+      active: Boolean(p.active),
+      usedBy: used.get(p.id) ?? 0,
+      questions: by.get(p.id) ?? [],
+    })),
+    // The standard hotel ones, so the screen can offer what is missing by name
+    // rather than a button that says "add some" and surprises somebody.
+    standard: PACKS.map((p) => ({ name: p.name, department: p.department, count: p.questions.length })),
+    departments: (await setting(ctx.db, 'att_departments', '')).split('\n').filter(Boolean),
+  });
+}
+
+/** One set and its questions, written whole: the screen sends what it has. */
+export async function saveQuestionPack(ctx, id) {
+  const body = await readJson(ctx.request);
+  const packId = id == null ? null : Number(id);
+
+  const name = str(body.name, 'A name for the set', { required: true, max: 120 });
+  const department = str(body.department, 'Department', { max: 80 });
+  const note = str(body.note, 'Note', { max: 400 });
+  const active = body.active === undefined ? 1 : (body.active ? 1 : 0);
+
+  const asked = (Array.isArray(body.questions) ? body.questions : [])
+    .map((q) => ({
+      id: Number(q?.id) || null,
+      text: str(q?.text, 'A question', { max: 600 }),
+      listenFor: str(q?.listenFor, 'What a good answer sounds like', { max: 800 }),
+    }))
+    .filter((q) => q.text);
+  if (!asked.length) throw badRequest('A set with no questions in it is not a set. Add one.');
+  if (asked.length > 40) throw badRequest('Forty questions is a very long interview. Split it.');
+
+  let row;
+  if (packId) {
+    row = await ctx.db.prepare('SELECT * FROM rec_pack WHERE id = ?').bind(packId).first();
+    if (!row) throw notFound('No such set of questions.');
+    await ctx.db.prepare(
+      `UPDATE rec_pack SET name = ?2, department = ?3, note = ?4, active = ?5,
+                           updated_at = datetime('now') WHERE id = ?1`,
+    ).bind(packId, name, department || null, note || null, active).run();
+  } else {
+    row = await ctx.db.prepare(
+      `INSERT INTO rec_pack (name, department, note, active, created_by)
+       VALUES (?1,?2,?3,?4,?5) RETURNING id`,
+    ).bind(name, department || null, note || null, active, actorOf(ctx)).first();
+  }
+  const saved = packId ?? row.id;
+
+  // Questions that were on the set and are not on it now are switched off
+  // rather than deleted: a sheet somebody already marked points at them, and
+  // the answers keep the words either way, but there is no reason to break the
+  // link as well.
+  const keeping = new Set(asked.map((q) => q.id).filter(Boolean));
+  const before = await ctx.db.prepare('SELECT id FROM rec_question WHERE pack_id = ? AND active = 1')
+    .bind(saved).all().catch(() => ({ results: [] }));
+  const writes = [];
+  for (const old of before.results ?? []) {
+    if (!keeping.has(Number(old.id))) {
+      writes.push(ctx.db.prepare('UPDATE rec_question SET active = 0 WHERE id = ?').bind(old.id));
+    }
+  }
+  asked.forEach((q, i) => {
+    writes.push(q.id
+      ? ctx.db.prepare(
+        'UPDATE rec_question SET text = ?2, listen_for = ?3, position = ?4, active = 1 WHERE id = ?1',
+      ).bind(q.id, q.text, q.listenFor || null, i)
+      : ctx.db.prepare(
+        'INSERT INTO rec_question (pack_id, position, text, listen_for) VALUES (?1,?2,?3,?4)',
+      ).bind(saved, i, q.text, q.listenFor || null));
+  });
+  await ctx.db.batch(writes);
+
+  await audit(ctx, packId ? 'recruitment.pack_save' : 'recruitment.pack_new', saved,
+    { name, questions: asked.length });
+  return json({ ok: true, id: saved });
+}
+
+/**
+ * The standard hotel sets, loaded once.
+ *
+ * Only the ones that are not here already, by name, so pressing it twice does
+ * not double everything up. From the moment they land they are the property's
+ * own words: nothing reads this file again.
+ */
+export async function loadStandardPacks(ctx) {
+  const have = await ctx.db.prepare('SELECT name FROM rec_pack').all().catch(() => ({ results: [] }));
+  const already = new Set((have.results ?? []).map((r) => String(r.name).toLowerCase()));
+
+  const added = [];
+  for (const pack of PACKS) {
+    if (already.has(pack.name.toLowerCase())) continue;
+    const row = await ctx.db.prepare(
+      `INSERT INTO rec_pack (name, department, note, created_by)
+       VALUES (?1,?2,?3,?4) RETURNING id`,
+    ).bind(pack.name, pack.department, pack.note, actorOf(ctx)).first();
+    await ctx.db.batch(pack.questions.map((q, i) => ctx.db.prepare(
+      'INSERT INTO rec_question (pack_id, position, text, listen_for) VALUES (?1,?2,?3,?4)',
+    ).bind(row.id, i, q.text, q.listenFor)));
+    added.push(pack.name);
+  }
+
+  await audit(ctx, 'recruitment.packs_standard', null, { added: added.length });
+  return json({ ok: true, added, skipped: PACKS.length - added.length });
+}
+
+/** Off the list rather than out of the record: sheets already marked survive. */
+export async function removeQuestionPack(ctx, id) {
+  const packId = Number(id);
+  const row = await ctx.db.prepare('SELECT * FROM rec_pack WHERE id = ?').bind(packId).first();
+  if (!row) throw notFound('No such set of questions.');
+
+  await ctx.db.batch([
+    ctx.db.prepare("UPDATE rec_pack SET active = 0, updated_at = datetime('now') WHERE id = ?")
+      .bind(packId),
+    ctx.db.prepare('UPDATE rec_role SET pack_id = NULL WHERE pack_id = ?').bind(packId),
+  ]);
+
+  await audit(ctx, 'recruitment.pack_retire', packId, { name: row.name });
+  return json({ ok: true });
+}
+
+/**
+ * The questions to put in front of somebody interviewing this candidate.
+ *
+ * From the vacancy they applied for, since that is what says which kind of work
+ * this is. A candidate against no vacancy, or a vacancy nobody has chosen a set
+ * for, gets whichever standard set matches their department if there is one,
+ * and otherwise nothing — which is the old mark out of five and is a perfectly
+ * good answer for a casual taken on in an afternoon.
+ */
+export async function packFor(db, candidate) {
+  const role = candidate.role_id
+    ? await db.prepare('SELECT pack_id, department FROM rec_role WHERE id = ?')
+      .bind(candidate.role_id).first().catch(() => null)
+    : null;
+
+  let pack = role?.pack_id
+    ? await db.prepare('SELECT * FROM rec_pack WHERE id = ? AND active = 1')
+      .bind(role.pack_id).first().catch(() => null)
+    : null;
+
+  if (!pack) {
+    const wanted = packForDepartment(role?.department ?? null);
+    if (wanted) {
+      pack = await db.prepare('SELECT * FROM rec_pack WHERE name = ? AND active = 1')
+        .bind(wanted.name).first().catch(() => null);
+    }
+  }
+  if (!pack) return null;
+
+  const questions = await db.prepare(
+    'SELECT id, text, listen_for, position FROM rec_question WHERE pack_id = ? AND active = 1 '
+    + 'ORDER BY position, id',
+  ).bind(pack.id).all().catch(() => ({ results: [] }));
+
+  return {
+    id: pack.id,
+    name: pack.name,
+    note: pack.note ?? null,
+    questions: (questions.results ?? []).map((q) => ({
+      id: q.id, text: q.text, listenFor: q.listen_for ?? null,
+    })),
+  };
+}
+
 export async function scoreCandidate(ctx, id) {
   const row = await candidateOr404(ctx, id);
   const body = await readJson(ctx.request);
 
-  const rating = body.rating == null || body.rating === ''
-    ? null
-    : int(body.rating, 'Rating', { min: 1, max: 5 });
+  // Question by question where the vacancy has a set of them, and the sheet's
+  // mark is the average of what was actually given. Not a separate box beside
+  // them: two numbers that can disagree is a sheet nobody can read, and the
+  // one worth keeping is the one built out of the answers.
+  const pack = await packFor(ctx.db, row);
+  const answers = (Array.isArray(body.answers) ? body.answers : [])
+    .map((a, i) => ({
+      questionId: Number(a?.questionId) || null,
+      asked: str(a?.asked, 'The question', { max: 600 }),
+      mark: a?.mark == null || a?.mark === '' ? null : int(a.mark, 'A mark', { min: 1, max: 5 }),
+      note: str(a?.note, 'What they said', { max: 2000 }),
+      position: i,
+    }))
+    .filter((a) => a.asked);
+
+  const rating = answers.length
+    ? sheetRating(answers)
+    : (body.rating == null || body.rating === ''
+      ? null
+      : int(body.rating, 'Rating', { min: 1, max: 5 }));
+
   const recommend = body.recommend == null || body.recommend === ''
     ? null
     : String(body.recommend);
@@ -931,7 +1190,7 @@ export async function scoreCandidate(ctx, id) {
     throw badRequest('Recommend is yes, maybe or no.');
   }
   const note = str(body.note, 'What you thought', { max: 4000 });
-  if (rating == null && !recommend && !note) {
+  if (rating == null && !recommend && !note && !answers.some((a) => a.note)) {
     throw badRequest('Put something in: a mark, a recommendation or a line.');
   }
 
@@ -940,18 +1199,34 @@ export async function scoreCandidate(ctx, id) {
   ).bind(row.id).first().catch(() => null);
 
   const created = await ctx.db.prepare(
-    `INSERT INTO rec_score (candidate_id, slot_id, rating, recommend, note, scored_by)
-     VALUES (?1,?2,?3,?4,?5,?6) RETURNING id`,
-  ).bind(row.id, slot?.id ?? null, rating, recommend, note, actorOf(ctx)).first();
+    `INSERT INTO rec_score (candidate_id, slot_id, rating, recommend, note, scored_by,
+                            pack_id, pack_name)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8) RETURNING id`,
+  ).bind(
+    row.id, slot?.id ?? null, rating, recommend, note, actorOf(ctx),
+    answers.length ? pack?.id ?? null : null,
+    answers.length ? pack?.name ?? null : null,
+  ).first();
+
+  if (answers.length) {
+    await ctx.db.batch(answers.map((a) => ctx.db.prepare(
+      `INSERT INTO rec_answer (score_id, question_id, position, asked, mark, note)
+       VALUES (?1,?2,?3,?4,?5,?6)`,
+    ).bind(created.id, a.questionId, a.position, a.asked, a.mark, a.note || null)));
+  }
 
   await trail(ctx.db, {
     candidateId: row.id,
     kind: 'scored',
-    detail: [rating ? `${rating} out of 5` : null, recommend].filter(Boolean).join(', ') || null,
+    detail: [
+      rating ? `${rating} out of 5` : null,
+      answers.length ? `${answers.filter((a) => a.mark != null).length} of ${answers.length} asked` : null,
+      recommend,
+    ].filter(Boolean).join(', ') || null,
     actor: actorOf(ctx),
   });
 
-  return json({ ok: true, id: created.id });
+  return json({ ok: true, id: created.id, rating });
 }
 
 // ---------------------------------------------------------------------------

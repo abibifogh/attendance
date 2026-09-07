@@ -440,6 +440,13 @@ export const ROUTES = [
   // the property's books.
   ['GET', '/api/rec', 'rec_view', rec.board],
   ['POST', '/api/rec/roles', 'rec_manage', rec.createRole],
+  // What to ask at an interview. Read by anybody who can see recruitment,
+  // because whoever sits in the room is often not whoever wrote the questions.
+  ['GET', '/api/rec/questions', 'rec_view', rec.questionPacks],
+  ['POST', '/api/rec/questions', 'rec_manage', rec.saveQuestionPack],
+  ['POST', '/api/rec/questions/standard', 'rec_manage', rec.loadStandardPacks],
+  ['POST', '/api/rec/questions/:id', 'rec_manage', rec.saveQuestionPack],
+  ['POST', '/api/rec/questions/:id/remove', 'rec_manage', rec.removeQuestionPack],
   ['POST', '/api/rec/roles/:id', 'rec_manage', rec.updateRole],
   ['POST', '/api/rec/candidates', 'rec_manage', rec.addCandidate],
   // A pasted list, read and shown before anything is written. It creates

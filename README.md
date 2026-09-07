@@ -2205,6 +2205,58 @@ told why, rather than being sent a link that opens on an apology.
 > and one code shared by twenty is not really a code. Where you want one, make
 > that link on its own from their page.
 
+### What to ask, written down before the interview
+
+An interview was a mark out of five and a paragraph. That is a record of
+somebody's impression, and six impressions taken on six afternoons by three
+different people are not comparable — which is the one thing a hiring decision
+needs them to be. It is also how a hotel ends up hiring on how well somebody
+talked: the questions that actually separate a good room attendant from a poor
+one are not the ones that come to mind while a nervous stranger is sitting
+across the table.
+
+So the questions are set out in advance. A **set** belongs to a kind of work
+rather than to a vacancy — reception is reception whether the vacancy is opened
+in March or in November — and a vacancy points at one. Everybody who applies for
+that job is asked the same questions and marked on each, out of the same five,
+which are named rather than left as bare numbers: a "3" means whatever the
+person holding the pen thought it meant that afternoon.
+
+**Seven sets ship with it, written for a hotel.** Front office, housekeeping,
+restaurant and bar, kitchen, maintenance, security, and four to ask anybody.
+They load on one press, and from that moment they are the property's own words:
+nothing reads the file again. Every question comes with what a good answer
+sounds like, and that half is the useful half — whoever sits in the interview
+here is the head of the department rather than anybody who interviews for a
+living, and "what does good look like" is exactly what they are otherwise being
+asked to supply out of their own head at the moment they can least afford to.
+
+They ask about what happened rather than what somebody would do: *tell me about
+a guest who was angry* gets an account of something real, *how would you handle
+an angry guest* gets the answer everybody knows they are supposed to give. None
+of them ask about age, marital status, children, church, home town or politics —
+not because the law here is loud about it, but because none of it predicts
+whether somebody can strip a room in twenty minutes, and asking is how a
+property ends up with a workforce that all came from the same place. A test
+fails if any of those words appear.
+
+**The sheet's mark is the average of what was actually given**, counted as the
+interviewer marks, not a separate box beside the questions: two numbers that can
+disagree is a sheet nobody can read. A question nobody got to is left out rather
+than counted as nought, because an interview that ran short is not an interview
+that went badly.
+
+**And a sheet keeps the words it was marked against.** The question text is
+copied onto the answer, so a set edited in six months does not rewrite what
+somebody was asked in March, and retiring a set outright does not empty out the
+sheets that used it. Retiring also takes the set off the vacancies pointing at
+it, so nobody is offered questions that no longer exist.
+
+A vacancy with no set falls back to the standard set for its department if the
+property has loaded them, and a candidate against no vacancy at all gets the old
+mark out of five and a line — which is the right answer for a casual taken on in
+an afternoon.
+
 ### Why somebody was not taken on
 
 Turning somebody down asks for a reason in a line and keeps it. That is the

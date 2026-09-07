@@ -5682,6 +5682,62 @@ tr:hover .rota-who-more,
 .rec-scores p { margin: .25rem 0 0; font-size: .9rem; line-height: 1.45; }
 .rec-score-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .rec-rating { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* The questions a set holds, on the Questions tab. Numbered, because they are
+   asked in an order and the interviewer follows it down the page. */
+.rec-questions { margin: 0; padding-left: 1.2rem; display: grid; gap: .5rem; font-size: .88rem; }
+.rec-questions small { display: block; color: var(--text-dim); margin-top: .15rem; }
+
+/* Writing one. A row per question: the number, the two boxes, and a way out. */
+.rec-question-edit { display: grid; gap: .5rem; }
+.rec-question-row {
+  display: grid; grid-template-columns: 1.4rem 1fr auto; gap: .5rem; align-items: start;
+}
+.rec-question-no {
+  font-variant-numeric: tabular-nums; color: var(--text-dim); font-size: .85rem;
+  padding-top: .5rem;
+}
+.rec-question-row > div { display: grid; gap: .3rem; }
+/* On a handset the two boxes get the width and the number sits above them.
+   Side by side they came to about eight characters each, which is not a box
+   anybody can write a question in. */
+@media (max-width: 640px) {
+  .rec-question-row { grid-template-columns: 1fr auto; }
+  .rec-question-no { padding-top: 0; }
+  .rec-question-row > button { justify-self: end; align-self: start; }
+  .rec-question-row > div { grid-column: 1 / -1; }
+}
+
+/* Marking somebody against a set. */
+.rec-sheet-head {
+  display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  padding: .5rem .7rem; margin-bottom: .6rem;
+  border-radius: 10px; background: var(--surface-2);
+}
+.rec-running { font-variant-numeric: tabular-nums; font-weight: 600; font-size: .9rem; }
+.rec-sheet { margin: 0; padding-left: 1.2rem; display: grid; gap: 1rem; }
+.rec-sheet-q { font-weight: 600; font-size: .92rem; }
+.rec-listen { display: block; margin: .15rem 0 .4rem; }
+.rec-sheet-marks { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .35rem; }
+.rec-sheet-mark {
+  display: inline-flex; align-items: baseline; gap: .35rem; cursor: pointer;
+  padding: .3rem .6rem; border: 1px solid var(--border); border-radius: 999px;
+  font-size: .8rem; white-space: nowrap;
+}
+.rec-sheet-mark strong { font-variant-numeric: tabular-nums; }
+.rec-sheet-mark small { color: var(--text-dim); }
+.rec-sheet-mark:has(input:checked) {
+  border-color: var(--accent); background: var(--accent-soft); color: var(--accent);
+}
+.rec-sheet-mark:has(input:checked) small { color: inherit; }
+.rec-sheet-note { width: 100%; font-size: .85rem; }
+
+/* And what was marked, read back on the candidate. */
+.rec-answers {
+  margin: .4rem 0 0; padding-left: 1.1rem; display: grid; gap: .4rem; font-size: .85rem;
+}
+.rec-answer-head { display: flex; gap: .6rem; justify-content: space-between; }
+.rec-mark { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pill.rec-rec.is-yes { background: color-mix(in srgb, var(--good) 18%, var(--surface)); color: var(--good); }
 .pill.rec-rec.is-no  { background: color-mix(in srgb, var(--bad) 15%, var(--surface)); color: var(--bad); }
 

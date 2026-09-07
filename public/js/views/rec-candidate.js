@@ -289,44 +289,121 @@ async function book(data, reload) {
 function scoresCard(data, reload) {
   return card('What the interviewers thought', {
     note: data.scores.length ? `${data.scores.length}` : 'Nothing yet',
-    actions: h('button.btn-sm', { onclick: () => score(data, reload) }, 'Add a note'),
+    actions: h('button.btn-sm', { onclick: () => score(data, reload) },
+      data.pack ? 'Score the interview' : 'Add a note'),
   },
   data.scores.length
     ? h('ul.rec-scores', data.scores.map((s) => h('li',
       h('div.rec-score-head',
         s.rating != null ? h('span.rec-rating', `${s.rating}/5`) : null,
         s.recommend ? h(`span.pill.rec-rec.is-${s.recommend}`, sayRecommend(s.recommend)) : null,
-        h('small.muted', `${s.by ?? 'Somebody'} · ${fmtDay(String(s.at).slice(0, 10))}`)),
+        h('small.muted', `${s.by ?? 'Somebody'} · ${fmtDay(String(s.at).slice(0, 10))}`
+          + `${s.packName ? ` · ${s.packName}` : ''}`)),
+      // Question by question, with the words as they stood when they were
+      // asked. The set can be edited or retired afterwards and this does not
+      // move, because a sheet that rewrites its own questions is not a record.
+      s.answers?.length
+        ? h('ol.rec-answers', s.answers.map((a) => h('li',
+          h('div.rec-answer-head',
+            h('span', a.asked),
+            a.mark != null ? h('span.rec-mark', `${a.mark}/5`) : h('span.muted', 'not asked')),
+          a.note ? h('small.muted', a.note) : null)))
+        : null,
       s.note ? h('p', s.note) : null)))
     : emptyState('Nothing written down yet',
-      'Whoever sits in the interview writes what they thought here, while it is fresh.'));
+      data.pack
+        ? `Whoever sits in the interview marks them against "${data.pack.name}" here, `
+          + 'question by question, while it is fresh.'
+        : 'Whoever sits in the interview writes what they thought here, while it is fresh.'));
 }
 
 const sayRecommend = (key) => ({ yes: 'Take them', maybe: 'Maybe', no: 'No' })[key] ?? key;
 
+/**
+ * The sheet, question by question where the vacancy has a set of them.
+ *
+ * The mark at the top is the average of what was actually given, and it counts
+ * itself as you go. Not a box of its own beside the questions: two numbers that
+ * can disagree is a sheet nobody can read, and the one worth keeping is the one
+ * built out of the answers.
+ *
+ * What each question is listening for sits under it, because whoever is in the
+ * room at a property this size is the head of the department rather than
+ * anybody who interviews for a living, and that is the half they are otherwise
+ * being asked to supply out of their own head.
+ */
 async function score(data, reload) {
+  const questions = data.pack?.questions ?? [];
+  const marks = data.marks ?? [];
+  const given = new Map();
+
+  const running = h('span.rec-running', 'nothing marked yet');
+  const tally = () => {
+    const got = [...given.values()].map(Number).filter((n) => n >= 1 && n <= 5);
+    running.textContent = got.length
+      ? `${Math.round((got.reduce((a, b) => a + b, 0) / got.length) * 10) / 10} out of 5, `
+        + `on ${got.length} of ${questions.length}`
+      : 'nothing marked yet';
+  };
+
+  const sheet = questions.length
+    ? h('div',
+      h('div.rec-sheet-head',
+        h('div',
+          h('strong', data.pack.name),
+          data.pack.note ? h('small.muted', { style: { display: 'block' } }, data.pack.note) : null),
+        running),
+      h('ol.rec-sheet', questions.map((q) => h('li',
+        h('div.rec-sheet-q', q.text),
+        q.listenFor ? h('small.muted.rec-listen', `Listen for: ${q.listenFor}`) : null,
+        h('div.rec-sheet-marks', marks.map((m) => h('label.rec-sheet-mark',
+          { title: m.detail },
+          h('input', {
+            type: 'radio',
+            name: `q${q.id}`,
+            value: String(m.mark),
+            onchange: () => { given.set(q.id, m.mark); tally(); },
+          }),
+          h('span', h('strong', String(m.mark)), h('small', m.label))))),
+        h('input.rec-sheet-note', {
+          type: 'text', name: `n${q.id}`, maxlength: 2000,
+          placeholder: 'What they actually said (optional)',
+        })))))
+    : field('Out of five', h('select', { name: 'rating' },
+      h('option', { value: '' }, 'Not marking'),
+      [1, 2, 3, 4, 5].map((n) => h('option', { value: String(n) }, `${n}`))),
+    'No set of questions is on this vacancy. Put one on it under Recruitment → Questions and '
+      + 'everybody who applies is asked the same ones.');
+
   const done = await formDialog({
     title: `What did you think of ${data.candidate.name}?`,
     submitLabel: 'Save it',
+    wide: Boolean(questions.length),
     body: h('div',
-      h('div.grid.grid-2',
-        field('Out of five', h('select', { name: 'rating' },
-          h('option', { value: '' }, 'Not marking'),
-          [1, 2, 3, 4, 5].map((n) => h('option', { value: String(n) }, `${n}`)))),
-        field('Would you take them?', h('select', { name: 'recommend' },
-          h('option', { value: '' }, 'Not saying'),
-          h('option', { value: 'yes' }, 'Yes'),
-          h('option', { value: 'maybe' }, 'Maybe'),
-          h('option', { value: 'no' }, 'No')))),
-      field('What you thought', h('textarea', { name: 'note', rows: 5, maxlength: 4000 }),
+      sheet,
+      field('Would you take them?', h('select', { name: 'recommend' },
+        h('option', { value: '' }, 'Not saying'),
+        h('option', { value: 'yes' }, 'Yes'),
+        h('option', { value: 'maybe' }, 'Maybe'),
+        h('option', { value: 'no' }, 'No'))),
+      field('Anything else', h('textarea', { name: 'note', rows: 4, maxlength: 4000 }),
         'Written down while it is fresh. It stays on the record whichever way the '
         + 'decision goes.'),
     ),
-    onSubmit: async (form) => api.recScoreCandidate(data.candidate.id,
-      Object.fromEntries(form.entries())),
+    onSubmit: async (form) => api.recScoreCandidate(data.candidate.id, {
+      rating: form.get('rating') || null,
+      recommend: form.get('recommend') || null,
+      note: form.get('note') || null,
+      answers: questions.map((q) => ({
+        questionId: q.id,
+        asked: q.text,
+        mark: form.get(`q${q.id}`) || null,
+        note: form.get(`n${q.id}`) || null,
+      })),
+    }),
   });
   if (!done) return;
-  toast('Saved.', 'good');
+  toast(done.rating != null ? `Saved — ${done.rating} out of 5.` : 'Saved.', 'good');
   await reload();
 }
 
