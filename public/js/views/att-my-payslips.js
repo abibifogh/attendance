@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { h, money, mount, toast } from '../util.js';
 import { card, emptyState } from './components.js';
 import { niceMonth } from './att-shared.js';
-import { companyOf, fitPayslip, fitToWidth, payslipPage, showPayslips } from './payslip.js';
+import { companyOf, payslipPage, showPayslips } from './payslip.js';
 
 /**
  * My payslips.
@@ -17,9 +17,13 @@ import { companyOf, fitPayslip, fitToWidth, payslipPage, showPayslips } from './
  * stops being true. Nobody should be reading a number that is still being
  * argued about upstairs.
  *
- * THE NEWEST ONE IS ALREADY OPEN. Somebody comes here on payday to see one
- * month, so that month is on the screen when it loads and the others are a
- * list beside it rather than a step in front of it.
+ * THE MONTHS ARE THE SCREEN, AND THE SLIP OPENS OVER THEM. It used to be laid
+ * out on the page, an A4 sheet scaled down to whatever was in front of
+ * somebody, which on a phone is a full page of six-point type nobody reads
+ * without pinching. So it is behind a press now, in the same overlay a CV opens
+ * in: the paper large, with print and close on the bar above it, and the list
+ * of months untouched underneath. The same overlay the payroll has always used
+ * to look at somebody's slip, so the two screens show the paper the same way.
  *
  * The paper itself is the same page the payroll prints. A payslip somebody is
  * shown on a phone and a payslip handed to them at a desk have to be the same
@@ -55,15 +59,37 @@ export async function renderAttMyPayslips(params) {
     return host;
   }
 
-  const show = async (month) => mount(host, await renderAttMyPayslips({ ...params, month }));
   const company = companyOf();
-  const page = payslipPage({
-    line: data.line,
-    data,
-    month: { key: data.month, nice: niceMonth(data.month) },
-    company,
-  });
-  const paper = fitToWidth(page);
+
+  /**
+   * Open one, whichever it is.
+   *
+   * The month that arrived with the screen is already in hand; any other is
+   * fetched when it is asked for, which is one request for the month somebody
+   * actually wants rather than twelve nobody will look at. A code that has run
+   * out in the meantime comes back as locked, and the screen is redrawn to ask
+   * for it again rather than opening an empty sheet.
+   */
+  const open = async (month) => {
+    try {
+      const one = month === data.month ? data : await api.myPayslips(month);
+      if (one.locked || !one.line) {
+        mount(host, await renderAttMyPayslips({ ...params, month }));
+        return;
+      }
+      showPayslips([payslipPage({
+        line: one.line,
+        data: one,
+        month: { key: one.month ?? month, nice: niceMonth(one.month ?? month) },
+        company,
+      })], {
+        title: one.line?.staff?.name ?? 'Payslip',
+        subtitle: niceMonth(one.month ?? month),
+      });
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
 
   mount(host,
     h('div.page-head',
@@ -71,37 +97,22 @@ export async function renderAttMyPayslips(params) {
         h('h1', 'My payslips'),
         h('div.sub', `${data.months.length} month${data.months.length === 1 ? '' : 's'}, `
           + 'from the day each one was closed'),
-      ),
-      h('div.btn-row',
-        h('button.btn-sm', { onclick: () => showPayslips([payslipPage({
-          line: data.line, data, month: { key: data.month, nice: niceMonth(data.month) }, company,
-        })], {
-          title: data.line?.staff?.name ?? 'Payslip',
-          subtitle: niceMonth(data.month),
-        }) }, 'Print or save as PDF'))),
+      )),
 
-    // The months down one side and the slip beside them, so choosing another
-    // is one press rather than a press and a scroll back up.
-    h('div.slip-mine',
-      h('div.slip-mine-list',
-        card('Months', { note: `${data.months.length}` },
-          h('ul.slip-mine-months', data.months.map((m) => h('li',
-            h(`button.slip-mine-month${m.month === data.month ? '.is-on' : ''}`, {
-              type: 'button',
-              onclick: () => show(m.month),
-            },
-            h('span.slip-mine-when', niceMonth(m.month)),
-            h('strong.slip-mine-net', cash(m.net))))))),
-      ),
-      h('div.slip-mine-paper', paper.box)),
+    card('Months', { note: `${data.months.length}`, wide: true },
+      h('ul.slip-mine-months', data.months.map((m) => h('li.slip-mine-row',
+        h('button.slip-mine-month', {
+          type: 'button',
+          onclick: () => open(m.month),
+          title: `Open ${niceMonth(m.month)}`,
+        },
+        h('span.slip-mine-when', niceMonth(m.month)),
+        h('strong.slip-mine-net', cash(m.net))),
+        h('button.btn-sm', { onclick: () => open(m.month) }, 'Preview')))),
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'The slip opens over this screen, with print and close on it. It is the same page '
+        + 'the office prints and hands over.')),
   );
-
-  // Sized down to whatever is in front of somebody once it is on the page. A4
-  // is not a phone, and the same page has to fit both: first the body is
-  // shrunk until the slip fits the height of the sheet, then the whole sheet
-  // is scaled to the width there is for it. Both need it in the document
-  // before anything can be measured.
-  requestAnimationFrame(() => { fitPayslip(page); paper.fit(); });
 
   // Shut again the moment they leave the screen. Without this the window runs
   // its full length on a phone that has been put face-up on a bar.

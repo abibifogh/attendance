@@ -3921,6 +3921,19 @@ html { touch-action: manipulation; }
 .preview-bar .btn-row { margin-left: auto; }
 .preview-pages { display: grid; gap: 1rem; justify-items: center; padding-bottom: 2rem; }
 
+/* On a phone this is now how a member of staff reads their own payslip, so the
+   bar has to take a line rather than three: the name and the month on one, the
+   two buttons under them, and the shade tight to the edges so the sheet gets
+   the width. */
+@media (max-width: 640px) {
+  .preview-shade { padding: .5rem; }
+  .preview-wrap { gap: .6rem; }
+  .preview-bar { padding: .5rem .6rem; gap: .4rem .6rem; font-size: .9rem; }
+  .preview-bar .btn-row { margin-left: 0; width: 100%; }
+  .preview-bar .btn-row > * { flex: 1; }
+  .preview-pages { gap: .6rem; padding-bottom: 1rem; }
+}
+
 @media (max-width: 640px) {
   .compose-bar { position: static; }
   .compose-bar-end { margin-left: 0; }
@@ -5362,30 +5375,20 @@ tr:hover .rota-who-more,
    My payslips
    -------------------------------------------------------------------------- */
 
-/* The months down one side and the slip beside them. On a phone the list goes
-   above, because the slip is tall and a list underneath it is a list nobody
-   finds. */
-.slip-mine { display: grid; grid-template-columns: 16rem 1fr; gap: 1rem; align-items: start; }
-.slip-mine-paper { display: flex; justify-content: center; overflow-x: auto; }
-.slip-mine-months { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem; }
+/* A list of months, and the slip itself behind a press. It used to be laid out
+   on the page beside them, which on a phone is an A4 sheet shrunk to a column
+   of six-point type. */
+.slip-mine-months { list-style: none; margin: 0 0 .6rem; padding: 0; display: grid; gap: .25rem; }
+/* A month and the way into it. The month itself is the bigger target, since
+   that is what a thumb goes for, and the button says what pressing does. */
+.slip-mine-row { display: flex; align-items: center; gap: .5rem; }
+.slip-mine-row > .slip-mine-month { flex: 1; }
 .slip-mine-month {
   width: 100%; justify-content: space-between; text-align: left;
   padding: .5rem .6rem; font-size: .85rem;
 }
-.slip-mine-month.is-on {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
 .slip-mine-when { color: var(--text-dim); }
-.slip-mine-month.is-on .slip-mine-when { color: var(--text); }
 .slip-mine-net { font-variant-numeric: tabular-nums; }
-
-@media (max-width: 900px) {
-  .slip-mine { grid-template-columns: 1fr; }
-  /* Wide enough to need scrolling on a handset, so it scrolls in its own box
-     rather than taking the page sideways with it. */
-  .slip-mine-paper { justify-content: flex-start; }
-}
 
 /* The pay table, folded away until somebody is checking it. */
 .pay-people-head {

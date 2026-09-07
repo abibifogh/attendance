@@ -2474,18 +2474,24 @@ tier 1 / tier 2 split against the PAYE it was actually closed on. Payslips
 written before this keep working: they fall back to computing it, which is what
 they always did.
 
-**And the sheet is scaled to the screen rather than scrolled sideways on it.**
-A payslip is A4, 794 pixels across, and a phone is not. Shown at full size in
-a box a third as wide, what somebody got was the left-hand third of the
-document: every label with no figure beside it, and "NET PAY" with nothing
-after it, the one number the whole page exists to say sitting off the edge
-where the only way to it was to drag the paper across. My payslips now scales
-the sheet to whatever room there is and re-fits when the phone is turned.
-Nothing is reflowed and nothing is left out, because a payslip somebody is
-shown on a phone and a payslip handed to them at a desk have to be the same
-document or the first question is which one is right. On a desk it is
-untouched at full size, and Print still hands the printer 210 by 297
-millimetres, since the print stylesheet takes the scaling off again.
+**And the slip is behind a press rather than laid out on the screen.** A payslip
+is A4, 794 pixels across, and a phone is not. Shown at full size in a box a
+third as wide, what somebody got was the left-hand third of the document, with
+"NET PAY" off the right-hand edge; scaled to fit instead, they got the whole of
+it at six points, which is a document you have to pinch at to read a number you
+came for. Neither is a payslip.
+
+So *My payslips* is the months, one line each with what was paid, and Preview
+opens the slip over the screen — large, with print and close on the bar above
+it. It is the overlay the payroll has always used to look at somebody's slip, so
+the two screens show the same paper the same way, and the phone case got the
+tidying it needed now that a member of staff reads their own pay through it: the
+bar on one line, the buttons under it, and the sheet given the width.
+
+Nothing is reflowed and nothing is left out, because a payslip somebody is shown
+on a phone and a payslip handed to them at a desk have to be the same document
+or the first question is which one is right. Print still hands the printer 210
+by 297 millimetres, since the print stylesheet takes the scaling off again.
 
 ### The birthday message is yours to write, or to switch off
 

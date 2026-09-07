@@ -234,15 +234,19 @@ test('the sheet is scaled to the room, and never past full size', () => {
   assert.equal(widthScale(Number.NaN), 1);
 });
 
-test('my payslips scales the sheet rather than scrolling it', () => {
+test('my payslips opens the sheet over the screen rather than laying it out on it', () => {
+  // Scaling an A4 sheet into a phone column got the whole document onto the
+  // screen and made every line of it six points tall. So the months are the
+  // screen and the slip is behind a press, in the overlay the payroll has
+  // always used, which is large, scales itself, and has print and close on it.
   const view = readFileSync('public/js/views/att-my-payslips.js', 'utf8');
-  assert.match(view, /fitToWidth\(page\)/, 'the page is wrapped in something that scales');
-  assert.match(view, /paper\.fit\(\)/, 'and fitted once it is in the document');
-  assert.match(view, /'div\.slip-mine-paper', paper\.box/, 'the wrapper is what goes on the screen');
+  assert.match(view, /showPayslips\(\[payslipPage\(/, 'the slip goes into the overlay');
+  assert.match(view, /'Preview'/, 'and there is a button that says what it does');
+  assert.equal(/fitToWidth/.test(view), false, 'nothing is laid out on the page any more');
 
   const paper = readFileSync('public/js/views/payslip.js', 'utf8');
-  // Turning the phone changes the room, and the listener has to let go once
-  // the page is gone or every month chosen leaves another one behind.
-  assert.match(paper, /addEventListener\('resize', again\)/);
-  assert.match(paper, /if \(!box\.isConnected\)/);
+  // The overlay sizes each page down to whatever is in front of somebody, and
+  // print undoes it so the printer still gets 210 by 297 millimetres.
+  assert.match(paper, /Math\.min\(window\.innerWidth, 950\)/);
+  assert.match(paper, /for \(const page of pages\) fitPayslip\(page\)/);
 });

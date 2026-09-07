@@ -255,10 +255,10 @@ export const GUIDE = [
         + 'Rules. Left out, they go from the totals and from the day-by-day together.' },
 
       { sub: 'My payslips' },
-      { p: 'Every month that has been closed, newest already open, with the others listed '
-        + 'beside it. It is the same sheet the office prints and hands over, so the figure on '
-        + 'your phone and the figure on the paper are the same figure. Print or save as PDF '
-        + 'gives you a copy to keep.' },
+      { p: 'Every month that has been closed, one line each with what you were paid. Press '
+        + 'Preview and the slip opens over the screen, large, with Print or save as PDF and '
+        + 'Close on the bar above it. It is the same sheet the office prints and hands over, '
+        + 'so the figure on your phone and the figure on the paper are the same figure.' },
       { note: 'A month appears the day it is closed and never afterwards changes. While it is '
         + 'still open the figures are being worked out upstairs, and a number you write down '
         + 'from a draft is a number that can move.' },
