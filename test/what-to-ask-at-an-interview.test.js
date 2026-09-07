@@ -8,6 +8,7 @@ import {
   addCandidate, candidate, createRole, loadStandardPacks, questionPacks, removeQuestionPack,
   saveQuestionPack, scoreCandidate, updateRole,
 } from '../src/routes/recruitment.js';
+import { moveWithin } from '../public/js/util.js';
 
 /**
  * The questions, written down before the interview rather than during it.
@@ -293,4 +294,79 @@ test('a vacancy can be pointed at a different set afterwards', async () => {
   await updateRole(ctx(db, { packId: two.id }), who.roleId);
   const out = await read(await candidate(ctx(db), who.id));
   assert.equal(out.pack.name, 'Front office');
+});
+
+// ---------------------------------------------------------------------------
+// Putting them in order
+// ---------------------------------------------------------------------------
+
+test('a question can be moved to any place in the list, not just one step', () => {
+  const seven = [1, 2, 3, 4, 5, 6, 7];
+  assert.deepEqual(moveWithin([...seven], 6, 0), [7, 1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(moveWithin([...seven], 0, 6), [2, 3, 4, 5, 6, 7, 1]);
+  assert.deepEqual(moveWithin([...seven], 2, 3), [1, 2, 4, 3, 5, 6, 7]);
+});
+
+test('moving one leaves the rest in the order they were already in', () => {
+  // The whole point of putting seven first is that the other six are fine.
+  assert.deepEqual(moveWithin(['a', 'b', 'c', 'd'], 3, 1), ['a', 'd', 'b', 'c']);
+});
+
+test('an order that makes no sense is left alone rather than throwing', () => {
+  const list = ['a', 'b', 'c'];
+  for (const [from, to] of [[0, 0], [-1, 1], [1, 9], [1.5, 0], [NaN, 1]]) {
+    assert.deepEqual(moveWithin(list, from, to), ['a', 'b', 'c']);
+  }
+});
+
+test('the order they are saved in is the order they come back in', async () => {
+  const { db } = setup();
+  const pack = await aPack(db, {
+    questions: [
+      { text: 'The first one, easy, so they can hear their own voice.' },
+      { text: 'The middle one.' },
+      { text: 'The awkward one, once they have settled.' },
+    ],
+  });
+
+  const before = (await read(await questionPacks(ctx(db)))).packs[0].questions;
+  assert.match(before[0].text, /easy/);
+
+  // The last one goes to the top, exactly as the picker would send it.
+  const moved = moveWithin([...before], 2, 0);
+  await saveQuestionPack(ctx(db, {
+    name: 'Housekeeping and rooms',
+    questions: moved.map((q) => ({ id: q.id, text: q.text, listenFor: q.listenFor })),
+  }), pack.id);
+
+  const after = (await read(await questionPacks(ctx(db)))).packs[0].questions;
+  assert.deepEqual(after.map((q) => q.text), moved.map((q) => q.text));
+  assert.deepEqual(after.map((q) => q.id), moved.map((q) => q.id),
+    'the same questions, so a sheet already marked against one still points at it');
+  assert.deepEqual(after.map((q) => q.position), [0, 1, 2]);
+});
+
+test('reordering a set does not disturb an interview already marked against it', async () => {
+  const { db } = setup();
+  const pack = await aPack(db);
+  const who = await aCandidateFor(db, pack.id);
+  const asked = (await read(await candidate(ctx(db), who.id))).pack.questions;
+
+  await scoreCandidate(ctx(db, {
+    answers: [
+      { questionId: asked[0].id, asked: asked[0].text, position: 0, mark: 5 },
+      { questionId: asked[1].id, asked: asked[1].text, position: 1, mark: 3 },
+    ],
+  }), who.id);
+
+  const swapped = moveWithin([...asked], 1, 0);
+  await saveQuestionPack(ctx(db, {
+    name: 'Housekeeping and rooms',
+    questions: swapped.map((q) => ({ id: q.id, text: q.text, listenFor: q.listenFor })),
+  }), pack.id);
+
+  const back = await read(await candidate(ctx(db), who.id));
+  assert.deepEqual(back.scores[0].answers.map((a) => a.mark), [5, 3],
+    'the sheet reads back the way it was filled in');
+  assert.match(back.pack.questions[0].text, /money/, 'and the set itself is in its new order');
 });

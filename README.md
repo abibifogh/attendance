@@ -2240,6 +2240,15 @@ whether somebody can strip a room in twenty minutes, and asking is how a
 property ends up with a workforce that all came from the same place. A test
 fails if any of those words appear.
 
+**The order is part of the set.** An interview opens with something easy so the
+person in the chair can hear their own voice, and the awkward question is asked
+once they have settled, which means the order somebody writes the questions in
+is rarely the order they want to ask them in. The number beside each line is a
+picker: set the seventh to 1 and it goes to the top, the other six keeping the
+order they were already in. Arrows move one a place at a time. Reordering keeps
+the question rows themselves, so a sheet already marked against one still points
+at it.
+
 **The sheet's mark is the average of what was actually given**, counted as the
 interviewer marks, not a separate box beside the questions: two numbers that can
 disagree is a sheet nobody can read. A question nobody got to is left out rather

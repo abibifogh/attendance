@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { navigate } from '../app.js';
-import { confirmAction, fmtDay, h, mount, toast, todayISO } from '../util.js';
+import { confirmAction, fmtDay, h, mount, moveWithin, toast, todayISO } from '../util.js';
 import { card, dropdownMenu, emptyState, table } from './components.js';
 import { field, formDialog, placeField } from './att-shared.js';
 
@@ -529,9 +529,19 @@ async function editPack(pack, data, reload) {
 
   const list = h('div.rec-question-edit');
 
+  // The order is not decoration. An interview opens with something easy so the
+  // person in the chair can hear their own voice, and the awkward one is asked
+  // once they have settled. Somebody who writes the awkward one down first
+  // needs to move it, and moving it one step at a time down a list of ten is
+  // the sort of thing people give up on, so the number itself is the picker:
+  // set seven to one and it goes to the top, everything else keeping its order.
   const paint = () => {
     mount(list, rows.map((row, i) => h('div.rec-question-row',
-      h('div.rec-question-no', String(i + 1)),
+      h('select.rec-question-no', {
+        title: 'Where this question comes',
+        'aria-label': `Question ${i + 1} of ${rows.length}. Move it.`,
+        onchange: (e) => { moveWithin(rows, i, Number(e.target.value)); paint(); },
+      }, rows.map((_, n) => h('option', { value: n, selected: n === i }, String(n + 1)))),
       h('div',
         h('input', {
           type: 'text', value: row.text, maxlength: 600, placeholder: 'What you will ask',
@@ -542,11 +552,24 @@ async function editPack(pack, data, reload) {
           placeholder: 'What a good answer sounds like (optional, and the useful half)',
           oninput: (e) => { row.listenFor = e.target.value; },
         })),
-      h('button.link-button', {
-        type: 'button',
-        title: 'Take this question out',
-        onclick: () => { rows.splice(i, 1); if (!rows.length) rows.push({ id: null, text: '', listenFor: '' }); paint(); },
-      }, '✕'))));
+      h('div.rec-question-tools',
+        h('button.link-button', {
+          type: 'button',
+          title: 'Move it up one',
+          disabled: i === 0,
+          onclick: () => { moveWithin(rows, i, i - 1); paint(); },
+        }, '↑'),
+        h('button.link-button', {
+          type: 'button',
+          title: 'Move it down one',
+          disabled: i === rows.length - 1,
+          onclick: () => { moveWithin(rows, i, i + 1); paint(); },
+        }, '↓'),
+        h('button.link-button', {
+          type: 'button',
+          title: 'Take this question out',
+          onclick: () => { rows.splice(i, 1); if (!rows.length) rows.push({ id: null, text: '', listenFor: '' }); paint(); },
+        }, '✕')))));
   };
   paint();
 

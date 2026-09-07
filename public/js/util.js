@@ -243,6 +243,22 @@ export function debounce(fn, ms = 300) {
   };
 }
 
+/**
+ * Move one item of a list to another place in it, in place.
+ *
+ * Everything between the two shuffles up or down by one, which is what
+ * somebody means by "put seven first": the other six stay in the order they
+ * were already in. Out-of-range asks are ignored rather than throwing, since
+ * this is driven by a picker that a re-render can leave a moment behind.
+ */
+export function moveWithin(list, from, to) {
+  const last = list.length - 1;
+  if (!Number.isInteger(from) || !Number.isInteger(to)) return list;
+  if (from < 0 || from > last || to < 0 || to > last || from === to) return list;
+  list.splice(to, 0, list.splice(from, 1)[0]);
+  return list;
+}
+
 export function toast(message, kind = '') {
   const host = document.getElementById('toasts');
   if (!host) return;

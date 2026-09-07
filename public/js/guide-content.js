@@ -1999,6 +1999,11 @@ export const GUIDE = [
       { p: 'Every question carries a line saying what to listen for in the answer. That is for '
         + 'whoever is sitting in the room and has not interviewed anybody before, which at a '
         + 'property this size is most of the panel most of the time.' },
+      { p: 'The order is yours as well, and it matters: an interview opens with something easy '
+        + 'so the person in the chair can hear their own voice, and the awkward one is asked '
+        + 'once they have settled. The number beside each question is the picker. Set the '
+        + 'seventh one to 1 and it goes to the top, the other six keeping the order they were '
+        + 'already in, or nudge one a place at a time with the arrows.' },
       { p: 'Marking is out of five and each mark is named rather than left to guess: nowhere '
         + 'near, some way off, would do, good, exactly right. There is a box beside each one '
         + 'for what they actually said. The sheet works out its own mark as it goes, averaging '
