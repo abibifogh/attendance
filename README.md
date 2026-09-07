@@ -1171,6 +1171,30 @@ network interface — it stays true on a phone with two bars and no data, and
 true when the site itself is down. Whether the server answers is the question,
 and only a request answers it.
 
+**A file opened on a phone has a way back.** Every CV, scan and receipt was a
+link with `target="_blank"`. At a desk that is a tab you close. Installed on an
+iPhone it is a trap: a standalone window has no browser chrome at all, a
+same-origin link is kept by that window rather than handed to Safari, and the
+CV fills the screen with no back button, no tab strip and no ✕ anywhere. The app
+is gone until somebody force-quits it. On Android the system back gesture gets
+you out, which is survivable and still not something anybody should have to
+know.
+
+So on a phone the file now opens inside the app, over the screen it came from,
+with a ✕ that is always there. Most of these files are photographs — pictures of
+Ghana Cards and receipts taken on a phone — and a picture renders anywhere. A
+PDF is handed to whatever the browser has: an iPhone shows it, Chrome on Android
+refuses to show one inside a page, and a line under the frame says so rather
+than leaving somebody looking at a grey box.
+
+The other button saves rather than opens, which is the part worth writing down.
+*Open it outside* would be the same trap all over again on the phone that has
+the trap, because that is exactly the link iOS keeps. Saving never navigates:
+the file lands in the phone's downloads, whatever reads PDFs opens it from
+there, and the app is still sitting behind it. It stays an ordinary anchor with
+a real `href`, so long-press to copy and open-in-new-tab still work, and only
+the plain tap is intercepted. At a desk nothing changes at all.
+
 **And it fits the screen.** Figures go two across instead of one per row, which
 was costing a screen and a half of scrolling before the first line of the day.
 A card's heading, its note and its buttons each get their own line rather than

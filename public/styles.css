@@ -552,6 +552,25 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .who-strip.not-me .who-strip-label,
 .who-strip.not-me .who-strip-note { color: var(--accent); }
 
+/* A file opened without leaving the app: the CV, the Ghana Card, the receipt,
+   over whatever screen asked for it and with a ✕ that is always there. Bigger
+   than an ordinary dialog because the whole point is reading what is in it. */
+.file-view { max-width: 900px; width: 96vw; }
+.file-view .dialog-head { align-items: center; }
+.file-view .dialog-head h2 {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.file-view-body {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+  overflow: auto;
+}
+.file-view-frame { display: block; width: 100%; height: 70vh; border: 0; background: #fff; }
+.file-view-image { display: block; width: 100%; height: auto; }
+.file-view-note { font-size: .8rem; margin: .5rem 0 0; }
+@media (max-width: 900px) {
+  .file-view-frame { height: 68vh; height: 68dvh; }
+}
+
 /* The days a sign-off question is about, on the question itself. Quieter than
    the sign-off table it mirrors: this one is read, not worked. */
 .query-days { margin: 0 0 .7rem; }

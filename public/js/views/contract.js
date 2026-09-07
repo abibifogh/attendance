@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { fileLink } from '../file-view.js';
 import { fmtDay, h, mount, toast } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import { can, navigate } from '../app.js';
@@ -122,11 +123,17 @@ export async function renderContract(params) {
           },
           h('p.muted',
             'Your browser will not show this here. ',
-            h('a', { href: api.hrDocumentUrl(contract.document_id), target: '_blank', rel: 'noopener' },
-              'Open the scan'), '.')),
+            fileLink({
+              href: api.hrDocumentUrl(contract.document_id),
+              name: 'The signed contract',
+              label: 'Open the scan',
+            }), '.')),
           h('p.muted.no-print', { style: { fontSize: '.85rem' } },
-            h('a', { href: api.hrDocumentUrl(contract.document_id), target: '_blank', rel: 'noopener' },
-              'Open the scan in a new tab'),
+            fileLink({
+              href: api.hrDocumentUrl(contract.document_id),
+              name: 'The signed contract',
+              label: 'Open the scan on its own',
+            }),
             ' to print it — a scanned page prints from its own viewer, not from this one.'),
         )
         : h('div.contract-body', contract.body),

@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { fileLink } from '../file-view.js';
 import { fmtDay, h, mount, toast } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import { can, navigate, replaceParams } from '../app.js';
@@ -143,11 +144,19 @@ export async function renderLetter(params) {
         ? h('div',
           h('object.scan', { data: api.corrFileUrl(letter.file_id), type: letter.file_mime },
             h('p.muted', 'Your browser will not show this here. ',
-              h('a', { href: api.corrFileUrl(letter.file_id), target: '_blank', rel: 'noopener' },
-                'Open the letter'), '.')),
+              fileLink({
+                href: api.corrFileUrl(letter.file_id),
+                name: letter.reference ?? 'The letter',
+                mime: letter.file_mime,
+                label: 'Open the letter',
+              }), '.')),
           h('p.muted.no-print', { style: { fontSize: '.85rem' } },
-            h('a', { href: api.corrFileUrl(letter.file_id), target: '_blank', rel: 'noopener' },
-              'Open it in a new tab'), ' to print it.'))
+            fileLink({
+              href: api.corrFileUrl(letter.file_id),
+              name: letter.reference ?? 'The letter',
+              mime: letter.file_mime,
+              label: 'Open it on its own',
+            }), ' to print it.'))
         : letter.layout?.blocks?.length
           // As the page it will be, rather than as a wall of text. The same
           // renderer the composer and the signing page use, so what is filed
@@ -227,7 +236,7 @@ export async function renderLetter(params) {
     data.enclosures.length
       ? card('Enclosures', { note: `${data.enclosures.length}`, wide: true },
         h('ul', data.enclosures.map((f) => h('li',
-          h('a', { href: api.corrFileUrl(f.id), target: '_blank', rel: 'noopener' }, f.title),
+          fileLink({ href: api.corrFileUrl(f.id), name: f.title, mime: f.mime }),
           h('small.muted', ` — ${Math.round(f.bytes / 1024)} KB`)))))
       : null,
 

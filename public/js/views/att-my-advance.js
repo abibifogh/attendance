@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { fileLink } from '../file-view.js';
 import { confirmAction, fmtDay, h, money, mount, toast } from '../util.js';
 import { card, emptyState } from './components.js';
 import { advanceStatement, field, formDialog, niceMonth } from './att-shared.js';
@@ -105,9 +106,11 @@ function waitingCard(advance, reload, cash) {
       advance.reason ? ` — ${advance.reason}` : ''),
     advance.hasPaper
       ? h('p', { style: { margin: '.2rem 0 .6rem' } },
-        h('a.btn-sm', {
-          href: api.advancePaperUrl(advance.id), target: '_blank', rel: 'noopener',
-        }, 'The paper you attached'))
+        fileLink({
+          href: api.advancePaperUrl(advance.id),
+          name: 'The paper you attached',
+          className: 'btn-sm',
+        }))
       : null,
     h('p.muted', { style: { fontSize: '.88rem' } },
       'Nothing has been agreed and nothing will come off your pay until somebody says yes. '

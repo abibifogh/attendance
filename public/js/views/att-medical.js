@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { fileLink } from '../file-view.js';
 import { fmtDay, h, money, mount, toast, todayISO } from '../util.js';
 import { card, emptyState } from './components.js';
 import { field, formDialog } from './att-shared.js';
@@ -129,10 +130,10 @@ function receiptList(claim, cash) {
       r.what ? h('span.muted', ` · ${r.what}`) : null,
       r.spentOn ? h('span.muted', ` · ${fmtDay(r.spentOn)}`) : null),
     r.hasFile
-      ? h('a.btn-sm', {
+      ? fileLink({
         href: api.medicalReceiptUrl(r.id),
-        target: '_blank',
-        rel: 'noopener',
+        name: `Receipt \u2014 ${r.staffName ?? 'claim'}`,
+        className: 'btn-sm',
       }, 'See the bill')
       // Said rather than left blank. A bill with no picture is a decision
       // somebody made, and whoever is approving should know they are taking

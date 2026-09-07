@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { fileLink } from '../file-view.js';
 import { confirmAction, fmtDay, h, money, mount, toast, todayISO } from '../util.js';
 import { card, emptyState } from './components.js';
 import { field, formDialog } from './att-shared.js';
@@ -141,9 +142,12 @@ function claimBlock(claim, { cash, reload }) {
         r.what ? h('span.muted', ` · ${r.what}`) : null,
         r.spentOn ? h('span.muted', ` · ${fmtDay(r.spentOn)}`) : null),
       r.hasFile
-        ? h('a.btn-sm', {
-          href: api.medicalReceiptUrl(r.id), target: '_blank', rel: 'noopener',
-        }, 'See it')
+        ? fileLink({
+          href: api.medicalReceiptUrl(r.id),
+          name: 'Your receipt',
+          label: 'See it',
+          className: 'btn-sm',
+        })
         : h('span.muted', 'no picture')))));
 }
 

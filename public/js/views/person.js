@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { fileLink } from '../file-view.js';
 import { fmtDay, h, mount, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import { can, navigate, replaceParams } from '../app.js';
@@ -427,8 +428,12 @@ function documentsTab(data, reload) {
       body: h('div',
         h('p.muted', `${doc.filename || doc.title} · ${Math.round(doc.bytes / 1024)} KB, sent `
           + `${fmtDay(String(doc.uploaded_at).slice(0, 10))}`),
-        h('p', h('a', { href: api.hrDocumentUrl(doc.id), target: '_blank', rel: 'noopener' },
-          'Open it first ↗')),
+        h('p', fileLink({
+          href: api.hrDocumentUrl(doc.id),
+          name: doc.filename || doc.title,
+          mime: doc.mime,
+          label: 'Open it first ↗',
+        })),
         decision === 'accept'
           ? field('Expires', h('input', { type: 'date', name: 'expiresOn' }),
             'For a certificate that has to be renewed. Leave blank if it does not')
@@ -464,8 +469,7 @@ function documentsTab(data, reload) {
           label: 'Document',
           format: (v, r) => h('div',
             data.canManage
-              ? h('a', { href: api.hrDocumentUrl(r.id), target: '_blank', rel: 'noopener' },
-                r.filename || v)
+              ? fileLink({ href: api.hrDocumentUrl(r.id), name: r.filename || v, mime: r.mime })
               : h('span', r.filename || v),
             h('small.muted', `${v} · ${Math.round(r.bytes / 1024)} KB`)),
         },
@@ -515,7 +519,7 @@ function documentsTab(data, reload) {
           label: 'Document',
           format: (v, r) => h('div',
             data.canManage
-              ? h('a', { href: api.hrDocumentUrl(r.id), target: '_blank', rel: 'noopener' }, v)
+              ? fileLink({ href: api.hrDocumentUrl(r.id), name: r.filename || v, mime: r.mime })
               : h('span', v),
             h('small.muted', `${kindLabel(data, r.kind)} · ${Math.round(r.bytes / 1024)} KB`),
           ),
@@ -594,9 +598,12 @@ function checklist(data) {
           h('small.muted', row.detail),
         ),
         row.documentId
-          ? h('a.btn-sm', {
-            href: api.hrDocumentUrl(row.documentId), target: '_blank', rel: 'noopener',
-          }, 'Open')
+          ? fileLink({
+            href: api.hrDocumentUrl(row.documentId),
+            name: row.label ?? 'Document',
+            label: 'Open',
+            className: 'btn-sm',
+          })
           : null,
       );
     })),

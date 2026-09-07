@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { fileLink } from '../file-view.js';
 import {
   confirmAction, fmtDay, h, keepPlace, money, monthOf, mount, shiftMonth, toast, todayISO,
 } from '../util.js';
@@ -393,9 +394,12 @@ function requestsCard(data, reload, cash) {
       // The bill or the agreement they attached. Deciding a request for school
       // fees without opening it is deciding it on trust.
       req.hasPaper
-        ? h('a.btn-sm', {
-          href: api.advancePaperUrl(req.id), target: '_blank', rel: 'noopener',
-        }, 'See the paper')
+        ? fileLink({
+          href: api.advancePaperUrl(req.id),
+          name: `The paper \u2014 ${req.staffName ?? 'advance'}`,
+          label: 'See the paper',
+          className: 'btn-sm',
+        })
         : req.purpose && req.purpose !== 'other'
           ? h('span.pill.warn', 'nothing attached')
           : null),

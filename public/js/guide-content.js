@@ -101,6 +101,13 @@ export const GUIDE = [
         + 'done, and it keeps your place on the page rather than jumping to the top. A phone in '
         + 'a pocket does nothing at all and catches up the moment you look at it.' },
 
+      { sub: 'Opening a file on your phone' },
+      { p: 'A CV, a scan or a receipt opens inside HIVE with a ✕ at the top, rather than '
+        + 'filling the screen with no way back. Close it and you are where you were.' },
+      { note: 'Save it puts the file in your phone\u2019s downloads, which is how to read a '
+        + 'PDF that will not show here \u2014 whatever opens PDFs on your phone opens it, and '
+        + 'HIVE is still behind it. On a computer nothing changes: a file opens in a new tab.' },
+
       { sub: 'Printing' },
       { p: 'Anything with a Save as PDF button prints properly: the buttons, menus and tick '
         + 'boxes come off the page and what is left is something you could hand to somebody. '

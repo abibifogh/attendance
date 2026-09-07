@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { fileLink } from '../file-view.js';
 import { navigate } from '../app.js';
 import { confirmAction, fmtDay, h, mount, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
@@ -484,10 +485,11 @@ function filesCard(data, reload) {
   },
   data.files.length
     ? h('ul.rec-files', data.files.map((f) => h('li',
-      h('a', {
+      fileLink({
         href: `/api/rec/candidates/${person.id}/files/${f.id}`,
-        target: '_blank', rel: 'noopener',
-      }, f.filename || f.title),
+        name: f.filename || f.title,
+        mime: f.mime,
+      }),
       h('span.pill', f.kindLabel ?? f.kind),
       h('small.muted', `${Math.round(f.bytes / 1000)} KB · ${f.by ?? ''}`),
       data.canManage
