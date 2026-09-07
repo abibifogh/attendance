@@ -4550,15 +4550,29 @@ html { touch-action: manipulation; }
   .rota-bar select { min-width: 0; max-width: 9.5rem; font-size: .8rem; }
   .rota-bar input[type="date"] { min-width: 0; width: 9.5rem; font-size: .8rem; }
   .rota-bar .btn-sm { font-size: .78rem; }
-  .rota-page > .card { padding-left: .5rem; padding-right: .5rem; }
+  /* The grid is the whole of its card here, corner to corner.
+
+     What was happening instead: .table-wrap pulls itself out to the card's
+     edge with a negative margin and puts the width back as padding, and the
+     rule below took the padding away without taking the margin with it. So
+     the grid hung a centimetre outside the card on both sides, and the card's
+     own top corner showed above the row of days like something half drawn.
+     The card gives up its side padding instead, which is what was wanted: the
+     seven columns get the width and everything lines up with the bar above. */
+  .rota-page > .card { padding: 0 0 .4rem; }
   /* The page is what scrolls for the list below; the positions grid takes its
      own box back further down. */
   .rota-scroll {
     max-height: none;
     overflow: visible;
+    margin-left: 0;
+    margin-right: 0;
     padding-left: 0;
     padding-right: 0;
   }
+  /* The row of days is the top of the card now, so it takes the card's
+     corners with it rather than squaring them off. */
+  .rota-table thead { border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0; }
 
   /* ---- the people view as a list ---- */
   .rota-table:not(.rota-positions),

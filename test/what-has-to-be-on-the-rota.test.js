@@ -484,3 +484,35 @@ test('every cell says which column it is, so the phone layout can label it', () 
   assert.match(phone, /\.cover-map thead \{ display: none; \}/);
   assert.match(phone, /\.cover-map select \{ width: 100%; \}/);
 });
+
+/**
+ * The grid stays inside its card on a phone.
+ *
+ * `.table-wrap` pulls itself out to the card's edge with a negative margin and
+ * gives the width back as padding of its own, so the two cancel. The handset
+ * rules took the padding away and left the margin, and the grid then hung a
+ * centimetre outside the card on both sides: the card's top corner showed
+ * above the row of days, the seven columns ran past the rounded edge below it,
+ * and on a narrow enough handset the whole document went wider than the screen
+ * and the browser shrank the page to fit.
+ *
+ * So wherever the handset rules zero one, they zero the other.
+ */
+test('the rota grid does not hang outside its card on a handset', () => {
+  const css = readFileSync('public/styles.css', 'utf8');
+  const from = css.indexOf('the rota on a handset');
+  assert.ok(from > 0, 'the handset rules have to be findable');
+  const phone = css.slice(from);
+
+  const rule = phone.slice(phone.indexOf('.rota-scroll {'));
+  const body = rule.slice(0, rule.indexOf('}'));
+  assert.match(body, /padding-left:\s*0/);
+  assert.match(body, /margin-left:\s*0/, 'the negative margin goes with the padding');
+  assert.match(body, /padding-right:\s*0/);
+  assert.match(body, /margin-right:\s*0/);
+
+  // And the card gives up its own side padding instead, so the columns keep
+  // the width the negative margin was there to win them.
+  const card = phone.slice(phone.indexOf('.rota-page > .card {'));
+  assert.match(card.slice(0, card.indexOf('}')), /padding:\s*0/);
+});
