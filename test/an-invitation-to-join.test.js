@@ -8,6 +8,7 @@ import {
 } from '../src/lib/joining.js';
 import { cancelInvitation, inviteToJoin, joinHead, joinSet } from '../src/routes/joining.js';
 import { createUser, listUsers } from '../src/routes/admin.js';
+import { asPlainText, renderJoinInvite } from '../src/lib/notify.js';
 
 /**
  * Somebody being invited into a login, and choosing how they will get in.
@@ -374,4 +375,82 @@ test('a link lasts three days unless somebody says otherwise', async () => {
   await invite(db, made.user.id);
   const row = raw.prepare("SELECT julianday(expires_at) - julianday('now') AS days FROM user_invite").get();
   assert.ok(Math.abs(Number(row.days) - DAYS_TO_JOIN) < 0.01, `${row.days} days`);
+});
+
+// ---------------------------------------------------------------------------
+// The message, and what comes after it
+// ---------------------------------------------------------------------------
+
+test('the email looks like it came from the property', () => {
+  const out = renderJoinInvite({
+    propertyName: 'Somewhere Nice',
+    name: 'Ama Mensah',
+    url: 'https://staff.example/j/abc123',
+    days: 3,
+    ways: ['pin', 'password'],
+    siteUrl: 'https://staff.example',
+  });
+
+  assert.equal(out.subject, 'Your Somewhere Nice staff account');
+  // This one asks somebody to open a link and set a credential, which is the
+  // shape of every phishing mail anybody has ever had. Looking like it came
+  // from the place they work is the reader's only defence.
+  assert.match(out.html, /Somewhere Nice/);
+  assert.match(out.html, /Hello Ama,/);
+  assert.match(out.html, /<!doctype html>/i, 'a whole document, for the spam filters');
+  assert.match(out.html, /data-preheader/, 'and the line the inbox shows beside the subject');
+  assert.match(out.html, /Set up my account/);
+  // Printed in full as well as linked, for a client that will not follow it.
+  assert.equal(out.html.split('staff.example/j/abc123').length - 1, 2);
+  assert.match(out.html, /works once and lasts 3 days/);
+  assert.match(out.html, /If you were not expecting this/);
+});
+
+test('the email says what the person actually gets to choose', () => {
+  const both = renderJoinInvite({
+    propertyName: 'X', name: 'Ama', url: 'u', days: 3, ways: ['pin', 'password'],
+  });
+  assert.match(both.html, /a short number, or your email address and a password/);
+
+  const one = renderJoinInvite({
+    propertyName: 'X', name: 'Efua', url: 'u', days: 3, ways: ['password'],
+  });
+  assert.match(one.html, /set an email address and a password/);
+  assert.equal(/short number/.test(one.html), false);
+});
+
+test('it reads as well with the pictures off', () => {
+  const out = renderJoinInvite({
+    propertyName: 'Somewhere Nice', name: 'Ama', url: 'https://staff.example/j/x', days: 1,
+  });
+  const plain = asPlainText(out.html);
+  assert.match(plain, /Hello Ama/);
+  assert.match(plain, /Set up my account: https:\/\/staff\.example\/j\/x/);
+  assert.match(plain, /lasts 1 day\b/);
+  assert.equal(plain.includes('<'), false, 'no tags left in it');
+});
+
+test('the screen after it tells them how to put it on a phone, both kinds', () => {
+  const page = readFileSync('public/js/join.js', 'utf8');
+  assert.match(page, /On an iPhone/);
+  assert.match(page, /Add to Home Screen/);
+  assert.match(page, /On an Android phone/);
+  assert.match(page, /Add to Home screen/);
+  // The commonest way it fails, and the one nobody guesses: a link opened
+  // from WhatsApp opens inside WhatsApp, where there is no menu at all.
+  assert.match(page, /inAnotherApp\(\)/);
+  // Where the browser will offer its own button, that beats any instructions.
+  assert.match(page, /canPrompt\(\)/);
+  assert.match(page, /promptInstall\(\)/);
+
+  // And the page has to carry a manifest, or there is no offer to catch.
+  const html = readFileSync('public/join.html', 'utf8');
+  assert.match(html, /rel="manifest"/);
+});
+
+test('nobody is told that nobody can see what they picked', () => {
+  // Taken out. It was meant to reassure and it does the opposite: it raises a
+  // question the reader did not have.
+  const page = readFileSync('public/js/join.js', 'utf8');
+  assert.equal(/never sees what you pick/.test(page), false);
 });

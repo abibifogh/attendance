@@ -173,6 +173,10 @@ export const GUIDE = [
       { note: 'The link works once and lasts three days. If it has run out, or you have '
         + 'forgotten what you chose, ask for another one: nobody can read your number or your '
         + 'password back to you, so choosing again is the only way and it takes a moment.' },
+      { p: 'Once you are set up, the last screen shows you how to put HIVE on your home '
+        + 'screen, for an iPhone and for an Android both. It is worth the minute: it opens '
+        + 'like any other app after that, with no address to type, and your shifts are there '
+        + 'before the signal is.' },
 
       { sub: 'Putting it on your home screen' },
       { p: 'HIVE can sit on your home screen like any other app: no address to type, no '

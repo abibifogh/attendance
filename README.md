@@ -1201,6 +1201,26 @@ The link comes back on screen as well as going out, because half the addresses
 on file at a property like this are wrong and some properties have no email set
 up at all. What the email cannot do, a WhatsApp message can.
 
+**The email is dressed like everything else the property sends**: the same
+branded shell as the notices, the property's name at the top, a real sender
+name rather than a bare address, both an HTML and a plain-text part, and the
+link printed in full underneath the button for a client that will not follow
+it. That matters more on this message than on any other. It asks somebody to
+open a link and set a credential, which is the exact shape of every phishing
+mail anybody has ever had, and whether it looks like it came from the place
+they work is the reader's only defence.
+
+**And the last screen is where the app gets onto their phone.** Setting a way
+in used to drop them straight into HIVE. It stops on a done screen now, because
+that is the only moment anybody is looking at a screen about HIVE with nothing
+else to do, and it is the moment to say the app can live on their home screen.
+Both sets of steps are there, theirs first: Share then Add to Home Screen on an
+iPhone, the ⋮ menu scrolled past "Desktop site" on an Android. Where the
+browser will offer its own install button the button is shown instead, because
+a button beats any instructions; and where the page has been opened inside
+WhatsApp rather than a browser it says so, since that window can install
+nothing and looks completely normal while it cannot.
+
 ### On a phone
 
 **It installs.** A web app manifest, real PNG icons at 192 and 512 including a

@@ -634,6 +634,69 @@ export function renderNotice({ notice, propertyName, siteUrl }) {
 }
 
 /**
+ * The invitation to set up a login, in the same clothes as everything else.
+ *
+ * It matters more here than on any other message the property sends. This one
+ * asks somebody to open a link and set a credential, which is the exact shape
+ * of every phishing mail anybody has ever had, and the reader's only defence is
+ * whether it looks like it came from the place they work. So it carries the
+ * property's name at the top, says who it is for by name, says plainly what
+ * will happen and how long the link lasts, and prints the address in full
+ * underneath the button for anybody whose client will not follow it.
+ */
+export function renderJoinInvite({ propertyName, name, url, days, ways, siteUrl = null }) {
+  const first = String(name || '').split(' ')[0] || 'there';
+  const choice = (ways ?? []).length > 1
+    ? 'You choose how you sign in: a short number, or your email address and a password. '
+      + 'Whichever suits you, and you can change it later.'
+    : 'You will set an email address and a password.';
+  const lasts = `The link works once and lasts ${days} day${days === 1 ? '' : 's'}.`;
+
+  return {
+    subject: `Your ${propertyName} staff account`,
+    html: emailDocument({
+      title: `Your ${propertyName} staff account`,
+      preheader: `Set up how you sign in. ${lasts}`,
+      body: `
+      <div style="background:#f4f6f8;padding:24px">
+        <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:22px 24px">
+          <div style="font:600 12px/1.4 system-ui,sans-serif;color:#6f7884;letter-spacing:.06em;text-transform:uppercase">
+            ${esc(propertyName)}
+          </div>
+          <h1 style="font:650 19px/1.35 system-ui,sans-serif;color:#101418;margin:8px 0 0">
+            Your staff account
+          </h1>
+          <p style="font:15px/1.6 system-ui,sans-serif;color:#4a535e;margin:14px 0 0">
+            Hello ${esc(first)}, an account has been made for you on HIVE, which is where
+            ${esc(propertyName)} keeps the rota, attendance and payslips.
+          </p>
+          <p style="font:15px/1.6 system-ui,sans-serif;color:#4a535e;margin:10px 0 0">
+            ${esc(choice)}
+          </p>
+          <p style="margin:20px 0 0"><a href="${esc(url)}"
+             style="font:600 14px/1 system-ui,sans-serif;color:#fff;background:#1f5fd0;
+                    text-decoration:none;padding:11px 18px;border-radius:8px;display:inline-block">Set up my account</a></p>
+          <p style="font:12px/1.5 system-ui,sans-serif;color:#8b939d;margin:12px 0 0;word-break:break-all">
+            Or paste this into a browser: ${esc(url)}
+          </p>
+          <p style="font:13px/1.6 system-ui,sans-serif;color:#4a535e;margin:16px 0 0">
+            ${esc(lasts)} Once you are in, HIVE will show you how to put it on your phone's
+            home screen so your shifts are a tap away.
+          </p>
+          <p style="font:12px/1.5 system-ui,sans-serif;color:#8b939d;margin:22px 0 0;
+                    border-top:1px solid #e6e9ed;padding-top:12px">
+            If you were not expecting this, ignore it and tell ${esc(propertyName)}. Nobody can
+            open the account with this link once it has been used.${siteUrl
+    ? ` HIVE lives at ${esc(String(siteUrl).replace(/^https?:\/\//, ''))}.`
+    : ''}
+          </p>
+        </div>
+      </div>`,
+    }),
+  };
+}
+
+/**
  * Push one notice to the phones of whoever it is addressed to.
  *
  * The same audience rule the email uses, so a notice cannot reach one and not

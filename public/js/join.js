@@ -1,5 +1,9 @@
 import { h, mount, toast } from './util.js';
 import { prepareNewPassword } from './crypto.js';
+import {
+  canPrompt, inAnotherApp, isAndroid, isApple, isInstalled, onInstallChange, openInChromeUrl,
+  promptInstall, watchForInstall,
+} from './install.js';
 
 /**
  * Setting up the login somebody has been given.
@@ -75,7 +79,7 @@ function draw() {
     h('div.card',
       h('h2', `Hello ${packet.name}`),
       h('p', 'An account has been made for you. Choose how you would like to sign in. '
-        + 'You can change it later, and whoever set the account up never sees what you pick.'),
+        + 'You can change it later.'),
       h('div.join-ways',
         ways.includes('pin')
           ? h('button.join-way', { onclick: () => pinForm() },
@@ -202,22 +206,95 @@ async function send(body, error) {
   }
 }
 
+/**
+ * Done, and the one thing worth saying next.
+ *
+ * It does not go straight into the app any more. This is the only moment
+ * anybody is looking at a screen about HIVE with nothing else to do, and it is
+ * the moment to say the app can live on their home screen. Half the property
+ * never finds that on their own, and the reason is not that they cannot follow
+ * instructions: on Android the menu item sits below "Desktop site", past the
+ * bottom of a list nobody scrolls; on an iPhone it is behind an icon Apple
+ * never names in words.
+ *
+ * Both are shown rather than only the one they are holding, because plenty of
+ * people set this up on a laptop at the desk and put it on the phone in their
+ * pocket afterwards.
+ */
 function done(said) {
   toast('You are in.', 'good');
-  mount(root, shell(packet.property,
-    h('div.card.card-done',
-      h('div.done-mark', '✓'),
-      h('h2', 'That is set'),
-      h('p.muted', said.way === 'pin'
-        ? 'From now on you sign in with your number. Keep it to yourself.'
-        : `From now on you sign in with ${packet.email} and your password.`),
-      h('a.btn.btn-primary.btn-wide', { href: '/' }, 'Open HIVE'),
-    ),
-  ));
+  const draw = () => {
+    mount(root, shell(packet.property,
+      h('div.card.card-done',
+        h('div.done-mark', '✓'),
+        h('h2', 'That is set'),
+        h('p.muted', said.way === 'pin'
+          ? 'From now on you sign in with your number. Keep it to yourself.'
+          : `From now on you sign in with ${packet.email} and your password.`),
+        h('a.btn.btn-primary.btn-wide', { href: '/' }, 'Open HIVE'),
+      ),
+      isInstalled() ? null : putItOnYourPhone(draw),
+    ));
+  };
+  draw();
+  // The browser makes its mind up about installing a moment after the page
+  // loads, so the card is drawn again when it does. A button that never
+  // appears is indistinguishable from one that does not exist.
+  onInstallChange(draw);
+  watchForInstall();
   window.scrollTo(0, 0);
-  // Straight in, without asking them to press anything. The button above is
-  // for the browser that blocks this.
-  setTimeout(() => { window.location.href = '/'; }, 1200);
+}
+
+/** The two sets of steps, and the browser's own button where there is one. */
+function putItOnYourPhone(redraw) {
+  const apple = isApple();
+
+  const steps = (title, ...bits) => h('div.join-steps',
+    h('strong', title), h('p', ...bits));
+
+  const iphone = steps('On an iPhone',
+    'Open HIVE in Safari, press ', h('strong', 'Share'),
+    ' (the square with an arrow coming out of the top), then ',
+    h('strong', 'Add to Home Screen'),
+    '. Safari is the only browser on an iPhone that can do it, whatever the others say.');
+
+  const android = steps('On an Android phone',
+    'Press the ', h('strong', '⋮'), ' at the top right, then scroll the menu down to ',
+    h('strong', 'Add to Home screen'),
+    '. It sits below "Desktop site", past the bottom of the screen, which is why it looks '
+    + 'as though it is not there.');
+
+  return h('div.card',
+    h('h3', { style: { marginTop: 0 } }, 'Put HIVE on your phone'),
+    h('p.muted', 'It opens from your home screen like any other app: no address to type, no '
+      + 'browser bars, and your shifts are there before the signal is.'),
+
+    // A link opened from WhatsApp opens inside WhatsApp, where there is no
+    // menu and never was one. It is the commonest way this fails and the one
+    // nobody guesses, because the page looks completely normal.
+    inAnotherApp()
+      ? h('div.guide-note', { style: { marginTop: 0 } },
+        h('strong', 'This page is open inside another app rather than a browser. '),
+        'Windows like that cannot install anything. Open it in a browser first.',
+        isAndroid()
+          ? h('div.btn-row', { style: { marginTop: '.6rem' } },
+            h('a.btn.btn-sm', { href: openInChromeUrl(new URL('/', location.href).href) },
+              'Open in Chrome'))
+          : null)
+      : null,
+
+    canPrompt()
+      ? h('div', { style: { margin: '.2rem 0 .8rem' } },
+        h('button.btn.btn-primary.btn-wide', {
+          onclick: async () => { await promptInstall(); redraw(); },
+        }, 'Install it now'))
+      : null,
+
+    // Theirs first, the other underneath. Plenty of people set this up at a
+    // desk and put it on the phone in their pocket afterwards.
+    apple ? iphone : android,
+    apple ? android : iphone,
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@ import {
   storedPassword, throttleCheck, throttleFail, tokenTtl,
 } from '../lib/auth.js';
 import { effectivePermissions } from '../lib/permissions.js';
-import { sendEmail, senderNameOf, senderWithName } from '../lib/notify.js';
+import { renderJoinInvite, sendEmail, senderNameOf, senderWithName } from '../lib/notify.js';
 import { siteOrigin } from '../lib/site.js';
 import {
   DAYS_TO_JOIN, LEAST_PASSWORD, MOST_DAYS, readChoice, waysFor, whyNotOpen,
@@ -48,10 +48,6 @@ async function setting(db, key, fallback = null) {
 }
 
 const propertyName = (db) => setting(db, 'property_name', 'Somewhere Nice');
-
-const escapeHtml = (text) => String(text ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;');
 
 // ---------------------------------------------------------------------------
 // Making one
@@ -126,14 +122,7 @@ export async function inviteToJoin(ctx, id) {
   });
 }
 
-/**
- * The message itself.
- *
- * Named like everything else the property sends, and it says who it is from
- * and what happens next. A bare link from an address nobody recognises is the
- * shape of every phishing mail anybody has ever had, and the people opening
- * this are being asked to set a credential.
- */
+/** Send it, in the same clothes as everything else the property sends. */
 async function postIt(ctx, { user, email, url, days }) {
   const apiKey = ctx.env?.RESEND_API_KEY;
   const from = await setting(ctx.db, 'email_from');
@@ -144,28 +133,24 @@ async function postIt(ctx, { user, email, url, days }) {
 
   const name = await propertyName(ctx.db);
   const senderName = await setting(ctx.db, 'email_sender_name');
-  const ways = waysFor(user.role);
-  const choice = ways.length > 1
-    ? 'You choose how you sign in: a PIN, or your email address and a password. '
-      + 'Either is fine, and you can change it later.'
-    : 'You will set an email address and a password.';
+  const message = renderJoinInvite({
+    propertyName: name,
+    name: user.name,
+    url,
+    days,
+    ways: waysFor(user.role),
+    siteUrl: await siteOrigin(ctx.db, ctx.url.origin),
+  });
 
   await sendEmail({
     apiKey,
+    // Named like every other message the property sends. A link asking
+    // somebody to set a credential, arriving from a bare address, is the shape
+    // of every phishing mail anybody has ever had.
     from: senderWithName(from, senderNameOf({ email_sender_name: senderName })),
     to: email,
-    subject: `Your ${name} staff account`,
-    html: `<p>Hello ${escapeHtml(String(user.name).split(' ')[0])},</p>`
-      + `<p>An account has been made for you on HIVE, which is where ${escapeHtml(name)} keeps `
-      + 'the rota, attendance and payslips. Open the link below to set your way in.</p>'
-      + `<p><a href="${escapeHtml(url)}" style="display:inline-block;padding:12px 20px;`
-      + 'border-radius:10px;background:#2563eb;color:#fff;font-weight:600;text-decoration:none">'
-      + 'Set up my account</a></p>'
-      + `<p style="font-size:13px;color:#555">Or paste this into a browser:<br>${escapeHtml(url)}</p>`
-      + `<p>${escapeHtml(choice)}</p>`
-      + `<p>The link works once and lasts ${days} day${days === 1 ? '' : 's'}.</p>`
-      + '<p style="color:#666;font-size:13px">If you were not expecting this, ignore it and tell '
-      + `${escapeHtml(name)}. Nobody can open the account with this link once you have used it.</p>`,
+    subject: message.subject,
+    html: message.html,
   });
   return true;
 }

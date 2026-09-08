@@ -1842,6 +1842,10 @@ th.rota-today {
   border-color: var(--accent); background: var(--surface-2);
 }
 .join-way-mark { font-size: 1.4rem; line-height: 1.2; }
+.join-steps { margin-top: .9rem; }
+.join-steps strong { display: block; font-size: .9rem; }
+.join-steps p { margin: .25rem 0 0; font-size: .88rem; color: var(--text-dim); }
+.join-steps p strong { display: inline; color: var(--text); }
 .join-way strong { display: block; font-size: 1rem; }
 .join-way small { display: block; margin-top: .2rem; color: var(--text-dim); }
 
