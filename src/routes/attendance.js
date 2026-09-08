@@ -2030,6 +2030,34 @@ export async function exportRoster(ctx) {
   return csvResponse(`rota-${from}-to-${to}.csv`, rows);
 }
 
+/**
+ * The leave sitting on somebody's day, as the grid needs it.
+ *
+ * The grid used to be handed a reason code and print the word "Leave", which
+ * threw away the only interesting part. It gets the name now, and where the day
+ * falls in the stretch: the first of nine and the last of nine look identical
+ * on a wall of grey boxes and mean very different things to whoever is trying
+ * to cover them.
+ */
+function leaveOnTheGrid(ds, staffId, day) {
+  const request = ds.leaveBy.get(`${staffId}|${day}`);
+  if (!request) return null;
+  const reason = ds.reasonBy.get(request.reason_code);
+  const outOf = Math.max(1, diffDays(request.from_day, request.to_day) + 1);
+  return {
+    code: request.reason_code ?? null,
+    label: reason?.label ?? 'Leave',
+    kind: reason?.kind ?? 'leave',
+    from: request.from_day,
+    to: request.to_day,
+    // Counted over the whole request rather than the week on screen, so a
+    // fortnight split across two pages still says which day of the fortnight
+    // this is.
+    nth: Math.min(outOf, Math.max(1, diffDays(request.from_day, day) + 1)),
+    outOf,
+  };
+}
+
 export async function getRoster(ctx) {
   const timezone = await timezoneOf(ctx.db);
   const from = startOfWeek(readDay(ctx.url.searchParams.get('from'), todayIn(timezone)));
@@ -2253,7 +2281,7 @@ export async function getRoster(ctx) {
           // one, because it is a fact about last month rather than a gap: on
           // a rostered cell it is the reason they are on it.
           missedMeal: missedMeal.get(`${staff.id}|${day}`) ?? null,
-          leave: ds.leaveBy.get(`${staff.id}|${day}`)?.reason_code ?? null,
+          leave: leaveOnTheGrid(ds, staff.id, day),
           holiday: ds.holidayBy.get(day)?.name ?? null,
         };
       }),

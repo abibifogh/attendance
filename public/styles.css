@@ -1693,10 +1693,55 @@ th.rota-today {
 }
 .shift-key-hours { color: var(--text-faint); }
 .rota-weekend { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
-.rota-locked {
-  padding: .35rem .4rem; font-size: .78rem; text-align: center;
-  color: var(--text-faint); background: var(--surface-2); border-radius: var(--radius-sm);
+/* --------------------------------------------------------------------------
+   A day somebody is away
+   --------------------------------------------------------------------------
+   This used to be the word "Leave" in flat grey, the same four cells in a row
+   whether somebody was on annual leave booked in March or off sick from this
+   morning. It names the leave now, and the hatch is what tells a planner at a
+   glance that the cell is not a shift: a shift card is filled, an away card is
+   striped. The hue only says which kind, so it never has to be read to know
+   the person is not in.
+
+   Each look takes its colour from the same eleven the shifts use, so nothing
+   here needs its own palette to keep in step with dark mode. */
+.rota-away {
+  --away: var(--c11);
+  background:
+    repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--away) 16%, transparent) 0 3px,
+      transparent 3px 8px),
+    color-mix(in srgb, var(--away) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--away) 38%, var(--border));
+  border-left: 3px solid var(--away);
 }
+.rota-away[data-leave="annual"] { --away: var(--c7); }
+.rota-away[data-leave="sick"] { --away: var(--c5); }
+.rota-away[data-leave="compassionate"] { --away: var(--c9); }
+.rota-away[data-leave="parental"] { --away: var(--c8); }
+.rota-away[data-leave="study"] { --away: var(--c6); }
+.rota-away[data-leave="unpaid"] { --away: var(--c11); }
+.rota-away[data-leave="away"] { --away: var(--c2); }
+
+.rota-away-name {
+  display: flex; align-items: baseline; gap: .3rem;
+  width: 100%;
+  font-size: .8rem;
+  font-weight: 620;
+  color: var(--text);
+  /* Two words in a narrow column, rather than one word cut in half. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* Kept off the text baseline so a row of names still lines up across the week
+   whether or not the mark renders as a picture. */
+.rota-away-mark { flex: none; font-size: .8rem; line-height: 1; }
+.rota-away-when {
+  font-size: .7rem; line-height: 1.15;
+  color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+/* One of the two, never both. The long one on a screen with room for it. */
+.rota-away-when-short { display: none; }
 
 /* The unsaved-changes bar sticks to the top of the rota, because filling in a
    fortnight scrolls it a long way from any button at the bottom. */
@@ -4399,6 +4444,12 @@ html { touch-action: manipulation; }
 /* The hours are on the cell's own tooltip and in the dialog behind it. Thirteen
    more copies of 06:00–14:00 is not what the extra week was for. */
 .rota-table.rota-tight .rota-hours { display: none; }
+/* A leave day gives up the same thing at the same width: the name stays, the
+   run shrinks to a count. */
+.rota-table.rota-tight .rota-away-name { font-size: .68rem; }
+.rota-table.rota-tight .rota-away-when-long { display: none; }
+.rota-table.rota-tight .rota-away-when-short { display: inline; }
+.rota-table.rota-tight .rota-away-when { font-size: .62rem; }
 /* Only where somebody has actually named the day. "+ name" fourteen times a
    row is a column of prompts nobody asked for. */
 .rota-table.rota-tight .rota-title.rota-title-empty { display: none; }
@@ -4755,7 +4806,19 @@ html { touch-action: manipulation; }
   .rota-cellwrap .rota-meal-note,
   .rota-cellwrap .rota-title,
   .rota-cellwrap .rota-title-empty,
+  .rota-away-what,
+  .rota-away-when-long,
   .rota-add { display: none; }
+  /* A leave day at a seventh of a phone: the mark says what it is, the colour
+     backs it up, and the count says where in the run this day falls. The name
+     is on the wider screen and behind the cell. */
+  .rota-away-name { justify-content: center; }
+  .rota-away-mark { font-size: 1.05rem; }
+  .rota-away-when {
+    display: grid; justify-items: center;
+    font-size: .62rem; font-weight: 650; color: var(--text-dim);
+  }
+  .rota-away-when-short { display: block; }
   /* Except a double, which is the one thing on a cell somebody has to fix. */
   .rota-clash { padding: 0; border: 0; background: none; }
   .rota-clash-name, .rota-clash-drop { display: none; }

@@ -11,6 +11,11 @@ import {
   asHours, byDepartment, byPosition, earliestFirst, field, formDialog, nightMark,
   runsIntoTheNight, shiftColour, shiftHours, shiftLabel, shiftMinutes, shiftSelect,
 } from './att-shared.js';
+// `nameOf` here would collide with the drag-and-drop one further down, which
+// names a shift rather than a leave.
+import {
+  lookOf, markFor, nameOf as leaveName, sayTheLeave, sayTheStretch, sayTheStretchShort,
+} from '../leave-looks.js';
 
 /**
  * The rota.
@@ -496,6 +501,32 @@ export async function renderAttRota(params) {
   };
 
   /**
+   * A day somebody is away.
+   *
+   * It says which leave it is and where the day sits in the run, because a
+   * planner looking at Wednesday needs to know whether somebody is back on
+   * Thursday. Hatched rather than filled: it sits in the same family as the
+   * shift cards without ever being mistaken for one.
+   */
+  const leaveCell = (entry) => {
+    const leave = entry.leave;
+    // Nothing here wears .rota-cell: on a phone that class is the invisible
+    // dropdown covering the whole cell, and a leave day has nothing to open.
+    // The name goes with it on a phone too, where a cell is a seventh of the
+    // screen; the mark and the colour are what carry it at that width.
+    return h('div.rota-cellwrap.rota-away', {
+      'data-leave': lookOf(leave),
+      title: sayTheLeave(leave),
+    },
+    h('div.rota-away-name',
+      h('span.rota-away-mark', markFor(leave)),
+      h('span.rota-away-what', leaveName(leave))),
+    h('small.rota-away-when',
+      h('span.rota-away-when-long', sayTheStretch(leave)),
+      h('span.rota-away-when-short', sayTheStretchShort(leave))));
+  };
+
+  /**
    * The same cell with nothing in it to press.
    *
    * Built separately rather than by turning half a dozen things off in the
@@ -505,7 +536,7 @@ export async function renderAttRota(params) {
    * colour, and that is the whole of it.
    */
   const readOnlyCell = (row, entry) => {
-    if (entry.leave) return h('div.rota-locked', { title: 'Approved leave' }, 'Leave');
+    if (entry.leave) return leaveCell(entry);
 
     const shift = entry.shift_id == null ? null : shiftById.get(String(entry.shift_id));
     const wrap = h('div.rota-cellwrap.rota-cell-read', {
@@ -544,9 +575,7 @@ export async function renderAttRota(params) {
 
   const cell = (row, entry) => {
     if (!mayEdit) return readOnlyCell(row, entry);
-    if (entry.leave) {
-      return h('div.rota-locked', { title: 'Approved leave' }, 'Leave');
-    }
+    if (entry.leave) return leaveCell(entry);
 
     // "Cannot work this day", said before the dropdown so the planner reads it
     // before choosing. Rostering over it stays possible — some conflicts are
@@ -1498,7 +1527,7 @@ export async function renderAttRota(params) {
       row,
       entry,
       blocked: entry.leave
-        ? 'on leave'
+        ? `on ${leaveName(entry.leave).toLowerCase()}`
         : entry.availability?.status === 'unavailable'
           ? `cannot work${entry.availability.from ? ` ${entry.availability.from}–${entry.availability.to}` : ''}`
           : null,
@@ -2593,7 +2622,7 @@ async function markAvailability(row, data, reload) {
     return h('label.tickline', box,
       h('span', fmtDayShort(d.day),
         d.shift_id ? h('small.muted', ` (on ${shiftName(data, d.shift_id)})`) : null,
-        d.leave ? h('small.muted', ' (on leave)') : null));
+        d.leave ? h('small.muted', ` (on ${leaveName(d.leave).toLowerCase()})`) : null));
   });
 
   const done = await formDialog({

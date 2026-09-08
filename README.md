@@ -575,6 +575,21 @@ shift in it, it is the reason they are on it. A standing pattern counts as
 having been there, leave and a rostered day off both count as having missed it,
 and somebody who was not hired yet has missed nothing.
 
+**A day on leave is a striped card, not the word "Leave".** It used to be flat
+grey and identical whatever the leave was for, so four cells in a row told a
+planner four cells were gone and nothing else. The cell now names the leave in
+its own colour, with a mark in front of it, and says where the day falls in the
+run: *First of 4*, *Day 2 of 4*, *Last of 4*. The count is taken over the whole
+booking rather than the week on screen, so a fortnight split across two pages
+still says which day of the fortnight this is. The hatch is what carries the
+meaning at a glance: a shift card is filled, an away card is striped, and the
+hue only says which kind. On a phone the column is a seventh of the screen, so
+the name drops and the mark and a count (*2/4*) carry it; the full wording is on
+the card behind the cell. Nothing insists on the seeded reason codes: a look is
+found by code first, then by the words of the label, and a reason the property
+invented that nobody can place still gets a striped card with its own name on
+it.
+
 **Availability** is the fact a planner needs before the dropdown: days somebody
 cannot work (or asked to work), with the reason, shown in the cell. Not leave —
 nothing approved, nothing spent — and rostering over it stays possible, with

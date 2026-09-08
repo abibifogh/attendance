@@ -835,6 +835,15 @@ export const GUIDE = [
           + 'the leave first.',
       ] },
 
+      { sub: 'A day somebody is away' },
+      { p: 'A leave day is a striped card rather than a filled one, so it never reads as a '
+        + 'shift. It says which leave it is in its own colour, with a mark in front of it, and '
+        + 'under that where the day falls in the run: First of 4, Day 2 of 4, Last of 4. On a '
+        + 'phone the column is too narrow for the name, so the mark and the count carry it and '
+        + 'the full wording is on the card behind the cell.' },
+      { note: 'Reasons you add yourself get a look too, read off what you called them. Anything '
+        + 'the app cannot place still shows its own name on a striped card.' },
+
       { sub: 'Two shifts on one day' },
       { p: 'Putting somebody on a second shift no longer takes the first one away. Both are '
         + 'kept and both are marked: a ⚠ on each card in Positions view, and the second shift '
