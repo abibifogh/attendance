@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 
 import {
   NO_DEPARTMENT, byDepartment, sayHowItStands, standing, toDealWith,
 } from '../public/js/today-groups.js';
+import { day } from '../src/routes/attendance.js';
 
 /**
  * The morning screen, arranged the way somebody walks the building.
@@ -18,6 +20,56 @@ import {
  * What is kept is the order inside a department, because within one that
  * ordering was doing real work.
  */
+
+function d1(db) {
+  const st = (sql, binds = []) => ({
+    bind(...a) { return st(sql, a); },
+    async all() { return { results: db.prepare(sql).all(...binds) }; },
+    async first() { return db.prepare(sql).get(...binds) ?? null; },
+    async run() {
+      const r = db.prepare(sql).run(...binds);
+      return { success: true, meta: { changes: Number(r.changes ?? 0) } };
+    },
+  });
+  return {
+    prepare: (sql) => st(sql),
+    async batch(l) { const o = []; for (const s of l) o.push(await s.run()); return o; },
+  };
+}
+
+const TODAY = new Date().toISOString().slice(0, 10);
+
+/** One person on the rota, and one marked never rostered. */
+async function withStaff() {
+  const raw = new DatabaseSync(':memory:');
+  raw.exec('PRAGMA foreign_keys = ON;');
+  for (const f of readdirSync('migrations').filter((n) => n.endsWith('.sql')).sort()) {
+    raw.exec(readFileSync(`migrations/${f}`, 'utf8'));
+  }
+  raw.exec(`DELETE FROM att_staff; DELETE FROM att_days; DELETE FROM att_roster;
+            DELETE FROM att_shifts;`);
+  raw.exec("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'");
+  raw.prepare(
+    'INSERT INTO att_staff (id, employee_no, name, department, hired_on, on_rota, on_clock)'
+    + " VALUES (1, '1', 'Rostered', 'Kitchen', '2020-01-01', 1, 1)",
+  ).run();
+  raw.prepare(
+    'INSERT INTO att_staff (id, employee_no, name, department, hired_on, on_rota, on_clock)'
+    + " VALUES (2, '2', 'Casual', 'Kitchen', '2020-01-01', 0, 1)",
+  ).run();
+  return { raw, db: d1(raw) };
+}
+
+const ctx = (db) => ({
+  db,
+  env: {},
+  url: new URL('https://x/api/att/day'),
+  session: { user: { id: 1, name: 'Kwame', role: 'admin' }, permissions: ['att_view'] },
+  executionContext: null,
+  request: new Request('https://x/'),
+});
+
+const read = async (res) => JSON.parse(await res.text());
 
 const someone = (name, department, over = {}) => ({
   staff: { id: name.length, name, department, employee_no: name },
@@ -167,4 +219,44 @@ test('the download still carries everything with something against it', () => {
     someone('D', 'Kitchen', { colour: 'grey' }),
   ];
   assert.deepEqual(rows.filter(toDealWith).map((r) => r.staff.name), ['B', 'C']);
+});
+
+// ---------------------------------------------------------------------------
+// Who belongs on the morning list at all
+// ---------------------------------------------------------------------------
+
+test('somebody marked never rostered is not part of the morning', async () => {
+  const { db, raw } = await withStaff();
+  // No shift on any day, so every one of theirs sat here as a grey row with
+  // dashes across it. Six of them is six lines in every department that never
+  // say anything.
+  const out = await read(await day(ctx(db)));
+  assert.deepEqual(out.rows.map((r) => r.staff.name), ['Rostered']);
+
+  // Every other screen still has them: they do tap the terminal, and their
+  // record and their pay were never about who was supposed to be here.
+  assert.equal(raw.prepare("SELECT COUNT(*) n FROM att_staff WHERE on_rota = 0").get().n, 1);
+});
+
+test('unless they actually turned up, because a punch is a fact', async () => {
+  const { db, raw } = await withStaff();
+  // A real pair of punches, because the day is computed from those rather
+  // than read out of the day table.
+  const punch = (at, direction) => raw.prepare(
+    `INSERT INTO att_punches (device_serial, employee_no, staff_id, at_utc, at_local, day,
+                              direction, source, dedupe_key)
+     VALUES ('T1', '2', 2, ?1, ?1, ?2, ?3, 'test', ?4)`,
+  ).run(`${TODAY}T${at}:00Z`, TODAY, direction, `${TODAY}-${at}`);
+  punch('09:02', 'in');
+  punch('17:00', 'out');
+
+  const out = await read(await day(ctx(db)));
+  assert.deepEqual(out.rows.map((r) => r.staff.name).sort(), ['Casual', 'Rostered']);
+});
+
+test('somebody on the payroll and off the clock never reaches it either', async () => {
+  const { db, raw } = await withStaff();
+  raw.prepare('UPDATE att_staff SET on_clock = 0 WHERE id = 2').run();
+  const out = await read(await day(ctx(db)));
+  assert.deepEqual(out.rows.map((r) => r.staff.name), ['Rostered']);
 });

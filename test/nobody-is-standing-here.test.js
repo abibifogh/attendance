@@ -14,50 +14,50 @@ import { unlock } from '../src/routes/auth-lock.js';
  * leave, who is off sick on Thursday. A phone put down on a bar with the rota
  * open is a screen the room can read.
  *
- * Two answers, because there are two situations, and the difference matters:
- * untouched for five minutes and whoever was here has gone, so the session
- * ends; away behind another app and back again and they are standing right
- * there, so the PIN is asked and the session kept.
+ * One trigger, and it is time. Five minutes with nobody touching the screen
+ * and the PIN is asked, over the top of whatever was on it, so nothing anybody
+ * had half written is thrown away.
+ *
+ * It used to ask on the way back from another app as well. That was wrong:
+ * looking something up in WhatsApp and coming back is how people work, and an
+ * app that demands six digits every time somebody answers a message is an app
+ * they stop opening. Somebody who has really been away long enough for it to
+ * matter has also been away long enough for the clock to say so.
  */
 
 // ---------------------------------------------------------------------------
-// When to lock, and when to end it
+// When to ask
 // ---------------------------------------------------------------------------
 
-test('five minutes untouched ends the session', () => {
+test('five minutes untouched asks for the PIN', () => {
   assert.equal(IDLE_MINUTES, 5);
-  assert.equal(whatToDo({ idleMs: IDLE_MS }), 'out');
-  assert.equal(whatToDo({ idleMs: IDLE_MS + 1 }), 'out');
+  assert.equal(whatToDo({ idleMs: IDLE_MS }), 'lock');
+  assert.equal(whatToDo({ idleMs: IDLE_MS + 1 }), 'lock');
   assert.equal(whatToDo({ idleMs: IDLE_MS - 1 }), 'nothing');
 });
 
-test('coming back to the installed app asks for the PIN', () => {
-  assert.equal(whatToDo({ idleMs: 1000, awayMs: 4000, installed: true }), 'lock');
-  // However briefly. Handing somebody a phone for ten seconds is the case this
-  // is for, and ten seconds is long enough to read a payslip.
-  assert.equal(whatToDo({ idleMs: 1000, awayMs: 200, installed: true }), 'lock');
-});
-
-test('a browser tab is not asked, because that is how people work', () => {
-  // Looking something up in another tab and coming back is not a reason to
-  // ask anybody for anything, and an app that did it would be switched off by
-  // lunchtime.
-  assert.equal(whatToDo({ idleMs: 1000, awayMs: 60_000, installed: false }), 'nothing');
-});
-
-test('being away too long ends it rather than locking it', () => {
-  // Somebody away for an hour is gone whether or not they came back to the app
-  // themselves. A lock screen on a session that should have ended is a session
-  // that has not ended.
-  assert.equal(
-    whatToDo({ idleMs: IDLE_MS + 60_000, awayMs: IDLE_MS + 60_000, installed: true }),
-    'out',
-  );
-});
-
-test('nothing at all is quiet', () => {
+test('four minutes and fifty-nine seconds is somebody reading the screen', () => {
+  assert.equal(whatToDo({ idleMs: 4 * 60_000 }), 'nothing');
   assert.equal(whatToDo(), 'nothing');
-  assert.equal(whatToDo({ idleMs: 0, awayMs: null, installed: true }), 'nothing');
+});
+
+test('coming back from another app is not itself a reason to ask', () => {
+  // The old rule locked on any return to the installed app, however brief.
+  // Nothing about where the app has been is passed in any more, and passing
+  // it makes no difference: the clock is the whole of the decision.
+  assert.equal(whatToDo({ idleMs: 1000, awayMs: 4000, installed: true }), 'nothing');
+  assert.equal(whatToDo({ idleMs: 1000, awayMs: 600_000, installed: true }), 'nothing');
+});
+
+test('but a long enough trip reaches the same answer by the clock', () => {
+  // Away ten minutes with nobody touching it is five minutes untouched twice
+  // over, and it locks for that reason rather than for having been away.
+  assert.equal(whatToDo({ idleMs: 10 * 60_000 }), 'lock');
+});
+
+test('the limit is a number, so a property could be asked for another one', () => {
+  assert.equal(whatToDo({ idleMs: 90_000, limitMs: 60_000 }), 'lock');
+  assert.equal(whatToDo({ idleMs: 30_000, limitMs: 60_000 }), 'nothing');
 });
 
 test('a trip the app sent them on does not count', () => {
@@ -65,6 +65,16 @@ test('a trip the app sent them on does not count', () => {
   assert.equal(ownTrip(now + 5_000, now), true, 'still out choosing a file');
   assert.equal(ownTrip(now - 1, now), false, 'that was a different trip, long ago');
   assert.equal(ownTrip(null, now), false, 'nobody said they were going anywhere');
+});
+
+test('nothing signs anybody out on its own any more', () => {
+  const guard = readFileSync('public/js/guard.js', 'utf8');
+  // The lock goes over the top of what was there, so what somebody had half
+  // written is still underneath it. Signing them out threw that away.
+  assert.equal(/answer === 'out'/.test(guard), false);
+  assert.match(guard, /showLock\(\)/);
+  // And the door out is still on the lock screen, for whoever really is done.
+  assert.match(guard, /Sign out instead/);
 });
 
 // ---------------------------------------------------------------------------

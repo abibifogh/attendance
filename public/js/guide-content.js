@@ -55,15 +55,16 @@ export const GUIDE = [
         + 'because the digits a supervisor has been using since opening day should not quietly '
         + 'become the keys to the property.' },
 
-      { sub: 'Left alone, it signs you out' },
-      { p: 'Five minutes with nobody touching the screen and HIVE signs you out, back to the '
-        + 'sign-in screen with nothing said about it. An office computer left open on Today '
-        + 'is otherwise signed in for whoever walks past it.' },
-      { p: 'On a phone with HIVE installed it is gentler than that. Switching to WhatsApp and '
-        + 'coming back asks for your PIN, over whatever you were on, and what you were on is '
-        + 'still underneath once you have typed it.' },
-      { note: 'Choosing a photograph, taking one, or printing does not count as leaving. Those '
-        + 'take you out of the app on purpose and put you straight back.' },
+      { sub: 'Left alone, it asks for your PIN again' },
+      { p: 'Five minutes with nobody touching the screen and HIVE asks for your PIN. An office '
+        + 'computer left open on Today is otherwise signed in for whoever walks past it.' },
+      { p: 'It goes over the top of whatever you were on, and what you were on is still there '
+        + 'once you have typed it, so a leave request you had half written is not lost. If you '
+        + 'are actually finished, Sign out instead is on the same screen.' },
+      { note: 'Switching to WhatsApp and coming back does not ask for anything. Nor does '
+        + 'choosing a photograph, taking one, or printing. Only the clock decides: away for two '
+        + 'minutes and nothing happens, away for ten and it asks, exactly as it would if the '
+        + 'phone had been face up on the bar for ten.' },
 
       { sub: 'Install it on your phone' },
       { steps: [
@@ -449,6 +450,11 @@ export const GUIDE = [
       { p: 'Four and not more, on purpose. A colour that has to be explained is not doing its '
         + 'job, and the only three things anybody needs to pick out of a page of names are '
         + '"fine", "worth a word" and "deal with this".' },
+
+      { note: 'Anybody set to "Attendance, but never rostered" is left off this screen. They '
+        + 'have no shift to be measured against, so they were a row of dashes in their '
+        + 'department every day. Their attendance is still kept and every other screen has '
+        + 'them, and if they do clock in on a day, that day shows here.' },
 
       { sub: 'Not due yet, and on shift' },
       { p: 'The night porter due at 22:00 reads Not due yet all day, in grey, and somebody '

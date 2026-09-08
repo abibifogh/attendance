@@ -1,7 +1,6 @@
 import { api } from './api.js';
 import { deriveLoginKey } from './crypto.js';
 import { h, mount } from './util.js';
-import { isInstalled } from './install.js';
 import { IDLE_MINUTES, IDLE_MS, ownTrip, whatToDo } from './guard-rules.js';
 
 /**
@@ -12,12 +11,15 @@ import { IDLE_MINUTES, IDLE_MS, ownTrip, whatToDo } from './guard-rules.js';
  * somebody's pay, somebody's leave, who is off sick on Thursday. So the screen
  * does not stay open indefinitely for a room to read.
  *
- * TWO ANSWERS, BECAUSE THERE ARE TWO SITUATIONS. Untouched for five minutes
- * and the session ends: whoever was here has walked away and is not coming
- * back to this screen. Away behind another app and back again, on a phone with
- * HIVE installed, and the PIN is asked: they are standing right there, and
- * signing them out would be answering a small question with a large
- * annoyance.
+ * ONE ANSWER, AND ONE TRIGGER. Untouched for five minutes and the PIN is
+ * asked, over the top of whatever was on the screen. Nothing is lost: a
+ * half-written leave request is still underneath it and still there
+ * afterwards, because somebody who left the phone for six minutes is usually
+ * the same person coming back to it, and throwing their work away would be
+ * answering a small question with a large annoyance.
+ *
+ * It used to ask on the way back from another app as well, and that was
+ * wrong: looking something up in WhatsApp and coming back is how people work.
  *
  * WHAT COUNTS AS ACTIVITY is somebody touching the thing. Not the app talking
  * to itself: a punch landing on the terminal redraws this screen every few
@@ -27,7 +29,6 @@ import { IDLE_MINUTES, IDLE_MS, ownTrip, whatToDo } from './guard-rules.js';
 
 let watching = false;
 let lastTouch = Date.now();
-let hiddenAt = null;
 let expectingUntil = null;
 let ticker = null;
 let locked = false;
@@ -67,17 +68,14 @@ export function guard({ signOut, who }) {
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      hiddenAt = Date.now();
-      return;
-    }
-    // Back. Being brought to the front is not being touched, so the idle clock
-    // is left where it was: somebody who put the phone down twenty minutes ago
-    // and picked it up is still somebody whose session should have ended.
-    const away = hiddenAt == null ? null : Date.now() - hiddenAt;
-    hiddenAt = null;
+    if (document.hidden) return;
+    // Back, and coming back is not by itself a reason to ask for anything.
+    // Being brought to the front is not being touched either, so the clock is
+    // left where it was and it is the clock that decides: away two minutes and
+    // nothing happens, away ten and the PIN is asked, exactly as it would be
+    // for a phone left face up on the bar for ten.
     if (ownTrip(expectingUntil)) { expectingUntil = null; touched(); return; }
-    decide(away);
+    decide();
   });
 
   // The trips the app sends people on itself, caught in one place rather than
@@ -91,7 +89,7 @@ export function guard({ signOut, who }) {
   }, true);
   window.addEventListener('beforeprint', () => goingOutBriefly());
 
-  ticker = setInterval(() => decide(null), TICK_MS);
+  ticker = setInterval(decide, TICK_MS);
   touched();
 }
 
@@ -104,17 +102,9 @@ export function unguard() {
   document.querySelector('.lock-screen')?.remove();
 }
 
-function decide(awayMs) {
+function decide() {
   if (!watching || locked) return;
-
-  const answer = whatToDo({
-    idleMs: Date.now() - lastTouch,
-    awayMs,
-    installed: isInstalled(),
-  });
-
-  if (answer === 'out') { onOut?.(); return; }
-  if (answer === 'lock') showLock();
+  if (whatToDo({ idleMs: Date.now() - lastTouch }) === 'lock') showLock();
 }
 
 /**

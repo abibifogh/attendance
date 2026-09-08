@@ -103,6 +103,16 @@ confirm, 4 absent*), and a department with nothing against it says so and stops.
 A floor where the whole shift is on a rest day says *none on today* rather than
 *all in*, which would be the screen stating something plainly untrue.
 
+**Somebody marked never rostered is not part of the morning.** They have no
+shift on any day, so every one of theirs sat here as a grey row with dashes
+across it, and a property with six of them had six lines in every department
+that never say anything. Attendance is still kept for them and every other
+screen has them, because they do tap the terminal — this is the one screen that
+is a list of who was supposed to be here. The exception is a day they actually
+turned up on: a punch that happened is a fact, and a screen that hides one is
+worse than a screen with a spare row on it. Payroll-only people never reached
+attendance at all and still do not.
+
 **A shift that has not started is not an absence.** The night porter due at
 22:00 shows as *Not due yet* all day, in grey, and somebody halfway through a
 shift shows as *On shift since 06:02* rather than sitting in "waiting on a
@@ -1141,35 +1151,40 @@ the socket cannot be opened at all the app falls back to asking every couple of
 minutes, and stops the moment the socket is back: a deployment without the
 binding is slower, not broken.
 
-### Left alone, it lets go
+### Left alone, it asks again
 
 A screen left open in an office is a screen anybody walking past is signed in
 on. So the page watches for a touch, a key, a scroll or a click, and five
-minutes with none of them signs the person out and puts them back on the
-sign-in screen. Plainly, with nothing said about why: a line explaining itself
-to whoever is standing there now also tells them the last person walked away,
-and the property would rather it just looked like the sign-in screen. Nothing
-is lost by it either way, since whoever comes back types their PIN and carries
-on.
+minutes with none of them asks for the PIN again.
 
-Installed on a phone the rule is a different one, because switching to WhatsApp
-for ten seconds is not walking away. Coming back asks for the PIN over whatever
-was on screen, and the screen underneath is untouched, so a rota half filled in
-is still there once the digits are right. The digits are checked against the
-same login route everything else uses, which also means a login switched off
-while the phone was in a pocket does not open again.
+**One trigger, and it is time.** It used to ask on the way back from another app
+as well, on a phone with HIVE installed, on the reasoning that a phone handed to
+somebody for a moment is a phone that should be handed back locked. In practice
+that meant six digits every time anybody looked something up in WhatsApp and
+came back, which is how people work, and an app that charges for it is an app
+they stop opening. Somebody who really has been away long enough for it to
+matter has also been away long enough for the clock to say so, so the clock is
+the whole of the decision now.
+
+**And it locks rather than signing out.** The PIN screen goes over the top of
+whatever was there and cannot be dismissed, only answered or signed out of, so a
+rota half filled in is still underneath it and still there once the digits are
+right. Ending the session instead would answer a small question by throwing
+somebody's work away. The digits are checked against the same login route
+everything else uses, which also means a login switched off while the phone was
+in a pocket does not open again, and *Sign out instead* is on the screen for
+whoever really is finished.
 
 Two things it deliberately does not do. It does not count a file picker, a
-camera or a print dialog as leaving. Each of those takes the browser off the
-page by design, and being asked for a PIN because somebody chose a photograph
-is how everybody learns to resent the lock. And it does not shorten the session
-cookie: a kitchen tablet is signed in for sixty days on purpose, and only the
-page knows whether anybody has actually touched it, so the idle rule lives
-there and ends by calling the same sign-out the menu calls.
+camera or a print dialog as leaving: each takes the browser off the page by
+design, and being asked for a PIN because somebody chose a photograph is how
+everybody learns to resent the lock. And it does not shorten the session cookie:
+a kitchen tablet is signed in for sixty days on purpose, and only the page knows
+whether anybody has actually touched it, so the idle rule lives there.
 
 Five minutes is `IDLE_MINUTES` in `public/js/guard-rules.js`, which holds the
 rules and nothing else, no browser in it, so what should happen after so long
-away can be tested at a desk.
+untouched can be tested at a desk.
 
 ### Joining, and choosing your own way in
 

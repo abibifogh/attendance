@@ -614,6 +614,20 @@ export async function day(ctx) {
     const record = window[window.length - 1];
     if (!record) continue;
 
+    // Somebody marked "never rostered" is not part of the morning.
+    //
+    // They have no shift on any day, so every one of theirs sat on this screen
+    // as a grey row with dashes across it, and a property with six of them had
+    // six lines in every department that never say anything. Attendance is
+    // still kept for them and every other screen has them, because they do tap
+    // the terminal; this is the one screen that is a list of who was supposed
+    // to be here.
+    //
+    // Unless they actually turned up. A punch that happened is a fact, and a
+    // screen that hides one is worse than a screen with a spare row on it.
+    if (!onRota(staff) && !record.first_in && !record.last_out
+        && record.resolution !== 'resolved') continue;
+
     const isAbsent = (r) => r && (r.status === 'absent' || r.reason_code === 'absent');
     const isLate = (r) => r && (r.status === 'late' || r.status === 'late_early');
 
