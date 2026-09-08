@@ -172,6 +172,15 @@ export const GUIDE = [
       { note: 'If you opened HIVE from a WhatsApp message it is running inside WhatsApp, not in '
         + 'a browser, and there is nothing to press. Open it in Chrome first. The app says so '
         + 'and offers the button when that is what has happened.' },
+      { p: 'Once it is on your home screen it keeps itself up to date. An app opened from a '
+        + 'home screen is handed back the screen it had rather than being loaded again, so '
+        + 'without this it could sit on a version from last week and look wrong when the thing '
+        + 'you were complaining about was put right days ago. HIVE checks whenever you come '
+        + 'back to it and refreshes itself when there is something newer.' },
+      { note: 'It waits for a moment when you are not in the middle of anything: never while a '
+        + 'box is half typed, a dialog is open, or a screen is holding something you have not '
+        + 'saved. If it never gets that moment it never refreshes, so nothing you have done '
+        + 'goes anywhere.' },
 
       { sub: 'A code on your payslips' },
       { p: 'Under My account you can put four digits on My payslips. It is separate from the '

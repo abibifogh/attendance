@@ -5,6 +5,7 @@ import {
   throttleReset, tokenTtl, userForCredentials, userForPin, verifyPasswordKey,
 } from './lib/auth.js';
 import { PERMISSIONS, ROLES, allows, effectivePermissions } from './lib/permissions.js';
+import { versionOf } from './lib/version.js';
 import { whoIsMeant } from './lib/records-on-a-login.js';
 import {
   HttpError, badRequest, forbidden, isMissingTable, json, readJson, str, unauthorized,
@@ -581,6 +582,11 @@ export const ROUTES = [
   // else — see the note at the top of lib/live.js.
   ['GET', '/api/live', null, live.connect],
 
+  // Which deploy is answering. Asked by every screen when it comes back to
+  // the foreground, because an app on a home screen is handed back the page
+  // it already had rather than being reloaded — see lib/version.js.
+  ['GET', '/api/version', null, appVersion],
+
   ['GET', '/api/push/key', null, push.publicKey],
   ['GET', '/api/push/status', null, push.status],
   ['POST', '/api/push/subscribe', null, push.subscribe],
@@ -962,6 +968,11 @@ async function route(request, env, url, executionContext) {
  * address with no account gets a stable made-up salt, so this cannot be used to
  * find out who has an account.
  */
+/** The deploy this worker is. Cheap on purpose: it is asked often. */
+async function appVersion(ctx) {
+  return json({ version: versionOf(ctx.env) });
+}
+
 async function passwordSalt(ctx) {
   const body = await readJson(ctx.request);
   const email = str(body.email, 'Email address', { required: true, max: 200 });

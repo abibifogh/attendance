@@ -1161,6 +1161,33 @@ fallback. Nothing under `/api/` is cached at any time. A cached list of who to
 chase is yesterday's list, and somebody acting on yesterday's list is worse off
 than somebody who knows they are offline.
 
+**And it picks up a new version by itself.** A browser tab takes a deploy the
+next time it loads. An app on a home screen does not: closing it and opening it
+again hands back the page that was already there, so a phone can sit on a
+version from last week while everybody else has this week's. What that looks
+like from the other end is somebody saying a screen is wrong when it was fixed
+days ago.
+
+So the worker reports which deploy is answering, from Cloudflare's own version
+id, which moves on every deploy whether or not anybody remembered to bump a
+number. The app learns that on the way in and asks again whenever somebody
+comes back to the screen, and no more than once every three minutes: a phone in
+a pocket asking all night is somebody's data. When the answer stops matching,
+it refreshes.
+
+It refreshes **in the same gap the quiet data refresh uses** — nothing half
+typed, no dialog open, nothing unsaved, tab in front — and waits as long as it
+has to. Losing what somebody spent ten minutes filling in because a deploy
+happened is its own small disaster. The shell cache is emptied first: it fills
+a file at a time, so after a deploy it can hold a stylesheet from one version
+beside a script from another, and a reload on a poor signal is exactly when
+that mixture gets served.
+
+Where nothing can say which version is running — a local run, or a deploy made
+before the binding existed — nothing happens. Null rather than a guess: a stamp
+that changed on its own would have the app reloading itself for no reason,
+which is worse than the problem.
+
 **Which is why there is a bar.** The app now opens from a home screen whether
 or not anything can be reached, and a screen that opens is a screen somebody
 believes: *nobody absent, all settled* is a reasonable-looking morning and a

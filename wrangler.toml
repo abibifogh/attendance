@@ -69,6 +69,17 @@ database_id = "1df34f21-bfc6-43dc-b11a-1a57d7f691b0"
 # ends" has to be able to land: on a quarter-hourly run a shift ending at two
 # o'clock would be told at a quarter to, and one ending at ten past would be
 # told at two. Five minutes is what makes the number in the message true.
+# Which deploy is running.
+#
+# A phone with the app on its home screen does not reload it when somebody
+# closes and opens it again: iOS hands back the page that was already there,
+# which can be days and several deploys old. So the app asks the server which
+# version it is talking to and refreshes itself when the answer changes. This
+# binding is where the answer comes from, and it changes on every deploy
+# without anybody having to remember to bump anything.
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
 [triggers]
 crons = ["30 0 * * *", "*/5 * * * *"]
 

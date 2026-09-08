@@ -1,6 +1,7 @@
 import { actFor, api, onReachabilityChange, serverReachable, setUnauthorizedHandler } from './api.js';
 import { liveUp, onLive, startLive, stopLive } from './live.js';
 import { guard, unguard } from './guard.js';
+import { checkVersion, takeTheNewOne, waitingToRefresh } from './fresh.js';
 import { registerWorker, watchForInstall } from './install.js';
 import { h, holdBehindDialogs, keepScroll, mount, watchScreenHeight } from './util.js';
 import { renderLogin } from './views/login.js';
@@ -560,6 +561,7 @@ export async function render({ quiet = false } = {}) {
       adoptSession(me?.authenticated ? me : signedIn);
       startLive();
       watchForTheRoom();
+      checkVersion(api.version, { force: true });
       if (!location.hash || !currentRoute()) navigate(defaultRoute());
       await render();
     }));
@@ -760,6 +762,17 @@ function watching(topic) {
 }
 
 async function catchUp() {
+  // A new deploy is picked up in exactly the same gap, and for the same
+  // reason: an app opened from a home screen is handed back the page it
+  // already had, so nothing else ever brings a new version in. Reloading is
+  // the heavier of the two, so it goes first and this returns — the page is
+  // on its way out.
+  if (waitingToRefresh() && !document.hidden && state.role && !busy()
+      && !wouldBeLost() && serverReachable()) {
+    takeTheNewOne();
+    return;
+  }
+
   if (!pending) return;
   // Not gone — held. Somebody typing, or a dialog open, or a rota with staged
   // edits: the update waits for the screen to be free rather than taking the
@@ -813,12 +826,17 @@ onLive((event) => {
 
 // A held update, looked at again. Not a poll: nothing is fetched unless
 // something already told us there was a reason to.
-setInterval(() => { if (pending) catchUp(); }, RETRY_MS);
+setInterval(() => { if (pending || waitingToRefresh()) catchUp(); }, RETRY_MS);
 
-document.addEventListener('visibilitychange', () => {
+document.addEventListener('visibilitychange', async () => {
   // Back from a pocket, and this is the moment whatever arrived while it was
   // in there is worth putting on the screen.
-  if (!document.hidden) catchUp();
+  if (document.hidden) return;
+  catchUp();
+  // And the moment to find out whether the app itself has moved on. Closing
+  // and opening one on a home screen does not reload it, so without this the
+  // screen stays on whatever version it was opened with.
+  if (state.role && await checkVersion(api.version)) catchUp();
 });
 
 /**
@@ -942,6 +960,10 @@ window.addEventListener('online', () => { api.me().catch(() => {}); });
   if (state.role) {
     startLive();
     watchForTheRoom();
+    // Which version this screen is. Learned once, on the way in, so that
+    // every later answer has something to be compared against. Nothing waits
+    // for it.
+    checkVersion(api.version, { force: true });
   }
   await render();
 })();

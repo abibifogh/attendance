@@ -163,6 +163,7 @@ export const api = {
   logout: () => request('/api/auth/logout', { method: 'POST' }),
   unlock: (body) => request('/api/auth/unlock', { method: 'POST', body }),
   me: () => request('/api/auth/me'),
+  version: () => request('/api/version'),
 
   // ----------------------------------------------------------- recruitment --
   recBoard: () => request('/api/rec'),
