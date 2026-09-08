@@ -86,9 +86,7 @@ export function renderLogin(onSuccess) {
 
   password.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitPassword({ target: null }); });
 
-  const pinPane = h('div', display, error, keypad,
-    h('p.muted', { style: { fontSize: '.75rem', marginTop: '1rem' } },
-      'Everybody signs in with their own PIN, administrators included if they have set one.'));
+  const pinPane = h('div', display, error, keypad);
 
   const passwordPane = h('div.hidden',
     h('label.field', { style: { textAlign: 'left' } }, h('span', 'Email address'), email),
