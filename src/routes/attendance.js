@@ -614,19 +614,27 @@ export async function day(ctx) {
     const record = window[window.length - 1];
     if (!record) continue;
 
-    // Somebody marked "never rostered" is not part of the morning.
+    // Only the people this day was actually about.
     //
-    // They have no shift on any day, so every one of theirs sat on this screen
-    // as a grey row with dashes across it, and a property with six of them had
-    // six lines in every department that never say anything. Attendance is
-    // still kept for them and every other screen has them, because they do tap
-    // the terminal; this is the one screen that is a list of who was supposed
-    // to be here.
+    // This screen is the morning's list: who was supposed to be here, and what
+    // happened. Everybody else on the books was a row of dashes on it — the
+    // whole of housekeeping on their rest day, anybody marked never rostered,
+    // a department where nobody is on until the evening — and a page where
+    // most rows say nothing is a page where the rows that do say something
+    // get lost.
     //
-    // Unless they actually turned up. A punch that happened is a fact, and a
-    // screen that hides one is worse than a screen with a spare row on it.
-    if (!onRota(staff) && !record.first_in && !record.last_out
-        && record.resolution !== 'resolved') continue;
+    // Rostered, or on approved leave, which is the same pair the day totals
+    // have always counted: leave is a day accounted for against the rota, and
+    // "she is on leave" is the answer to the question the gap would otherwise
+    // raise.
+    //
+    // And whatever actually happened, whether anybody expected it or not. A
+    // punch is a fact and so is a day somebody settled by hand; a screen that
+    // hides either is worse than a screen with a spare row on it.
+    const wasOn = record.scheduled || record.status === 'leave';
+    const happened = record.first_in || record.last_out || record.resolution === 'resolved';
+    if (!onRota(staff) && !happened) continue;
+    if (!wasOn && !happened) continue;
 
     const isAbsent = (r) => r && (r.status === 'absent' || r.reason_code === 'absent');
     const isLate = (r) => r && (r.status === 'late' || r.status === 'late_early');
@@ -647,6 +655,10 @@ export async function day(ctx) {
   return json({
     day: target,
     today,
+    // Whether the property has anybody on the books at all. An empty list on a
+    // Sunday nobody is working and an empty list because nothing has been set
+    // up yet look identical and need opposite advice.
+    anybody: ds.staff.some((s) => onRota(s)),
     totals: summarise(rows, { shifts: ds.shiftById, reasons: ds.reasonBy }),
     clockWarnings: clocks,
     // Terminals nothing has been heard from. Shown above the list, because

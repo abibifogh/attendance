@@ -116,13 +116,23 @@ export async function renderAttToday(params) {
       quiet,
       clocks,
       birthdays,
-      emptyState(
-        'Nobody on the rota for this day',
-        can('att_setup')
-          ? 'Add your staff and their shifts in Attendance setup, then the terminal\'s punches will start '
-            + 'landing against them. Punches for people who are not set up yet are kept, not thrown away.'
-          : 'Nobody has been set up for attendance yet. An administrator can do it in Attendance setup.',
-      ),
+      // Two different empty screens wearing one sentence. A Sunday nobody is
+      // working needs nothing done about it; a property with nobody on the
+      // books needs somebody to go and set it up, and telling the first one to
+      // do the second is how a quiet day reads as a broken app.
+      data.anybody
+        ? emptyState(
+          'Nobody on for this day',
+          'Nobody is rostered and nobody clocked in. If that is wrong, the rota for this day is '
+          + 'where to put it right.',
+        )
+        : emptyState(
+          'Nobody on the rota for this day',
+          can('att_setup')
+            ? 'Add your staff and their shifts in Attendance setup, then the terminal\'s punches will start '
+              + 'landing against them. Punches for people who are not set up yet are kept, not thrown away.'
+            : 'Nobody has been set up for attendance yet. An administrator can do it in Attendance setup.',
+        ),
     );
     return host;
   }

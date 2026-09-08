@@ -212,6 +212,15 @@ test('they never appear on Today, however absent they look', async () => {
   ).run();
 
   const today = new Date().toISOString().slice(0, 10);
+  // Kofi is on a shift, because Today is now the list of who was rostered and
+  // somebody with no shift is nobody's morning either. The director is put on
+  // one too, which changes nothing: they are off the clock entirely.
+  for (const staffId of [1, 2]) {
+    raw.prepare(
+      "INSERT INTO att_roster (staff_id, day, shift_id, set_by, published) VALUES (?, ?, 1, 'test', 1)",
+    ).run(staffId, today);
+  }
+
   const out = await (await attDay({
     ...ctx(db, { query: `?day=${today}` }),
     session: { user: { id: 1, name: 'Kwame', role: 'admin' }, permissions: ['att_view'] },

@@ -103,15 +103,23 @@ confirm, 4 absent*), and a department with nothing against it says so and stops.
 A floor where the whole shift is on a rest day says *none on today* rather than
 *all in*, which would be the screen stating something plainly untrue.
 
-**Somebody marked never rostered is not part of the morning.** They have no
-shift on any day, so every one of theirs sat here as a grey row with dashes
-across it, and a property with six of them had six lines in every department
-that never say anything. Attendance is still kept for them and every other
-screen has them, because they do tap the terminal — this is the one screen that
-is a list of who was supposed to be here. The exception is a day they actually
-turned up on: a punch that happened is a fact, and a screen that hides one is
-worse than a screen with a spare row on it. Payroll-only people never reached
-attendance at all and still do not.
+**Only the people the day was actually about.** Rostered for it, or on approved
+leave — the same pair the day totals have always counted, because leave is a
+day accounted for against the rota and *she is on leave* is the answer to the
+question the gap would otherwise raise. Everybody else on the books was a row of
+dashes: the whole of housekeeping on their rest day, anybody set to *never
+rostered*, a department where nobody starts until the evening. A page where most
+rows say nothing is a page where the rows that do say something get lost, and
+the On duty tile now matches the names underneath it exactly.
+
+Whatever actually happened is kept whether anybody expected it or not. Somebody
+who turned up on a day off, or a day settled by hand, still shows: a punch is a
+fact, and a screen that hides one is worse than a screen with a spare row on it.
+Payroll-only people never reached attendance at all and still do not.
+
+An empty list needs the right words, so the screen is told whether the property
+has anybody on the books. A Sunday nobody is working and a property nothing has
+been set up on look identical and need opposite advice.
 
 **A shift that has not started is not an absence.** The night porter due at
 22:00 shows as *Not due yet* all day, in grey, and somebody halfway through a

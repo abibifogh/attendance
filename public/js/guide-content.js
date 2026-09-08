@@ -451,10 +451,11 @@ export const GUIDE = [
         + 'job, and the only three things anybody needs to pick out of a page of names are '
         + '"fine", "worth a word" and "deal with this".' },
 
-      { note: 'Anybody set to "Attendance, but never rostered" is left off this screen. They '
-        + 'have no shift to be measured against, so they were a row of dashes in their '
-        + 'department every day. Their attendance is still kept and every other screen has '
-        + 'them, and if they do clock in on a day, that day shows here.' },
+      { note: 'Only the people the day was about are on it: rostered for it, or on approved '
+        + 'leave. A rest day is not on the morning list, and neither is anybody set to '
+        + '"Attendance, but never rostered", because a page where most rows say nothing is a '
+        + 'page where the rows that do say something get lost. Anybody who turned up anyway '
+        + 'still shows, and every other screen still has everybody.' },
 
       { sub: 'Not due yet, and on shift' },
       { p: 'The night porter due at 22:00 reads Not due yet all day, in grey, and somebody '

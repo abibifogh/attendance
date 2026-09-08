@@ -40,7 +40,7 @@ function d1(db) {
 const TODAY = new Date().toISOString().slice(0, 10);
 
 /** One person on the rota, and one marked never rostered. */
-async function withStaff() {
+async function withStaff({ rostered = true } = {}) {
   const raw = new DatabaseSync(':memory:');
   raw.exec('PRAGMA foreign_keys = ON;');
   for (const f of readdirSync('migrations').filter((n) => n.endsWith('.sql')).sort()) {
@@ -57,6 +57,19 @@ async function withStaff() {
     'INSERT INTO att_staff (id, employee_no, name, department, hired_on, on_rota, on_clock)'
     + " VALUES (2, '2', 'Casual', 'Kitchen', '2020-01-01', 0, 1)",
   ).run();
+
+  // A shift, and the one on the rota actually put on it. Without this nobody
+  // is rostered and the morning list is empty by design.
+  raw.prepare(
+    `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes, grace_in_minutes)
+     VALUES (1, 'Breakfast', '06:00', '14:00', 0, 5)`,
+  ).run();
+  if (rostered) {
+    raw.prepare(
+      'INSERT INTO att_roster (staff_id, day, shift_id, set_by, published) '
+      + "VALUES (1, ?, 1, 'test', 1)",
+    ).run(TODAY);
+  }
   return { raw, db: d1(raw) };
 }
 
@@ -259,4 +272,39 @@ test('somebody on the payroll and off the clock never reaches it either', async 
   raw.prepare('UPDATE att_staff SET on_clock = 0 WHERE id = 2').run();
   const out = await read(await day(ctx(db)));
   assert.deepEqual(out.rows.map((r) => r.staff.name), ['Rostered']);
+});
+
+test('a rest day is not part of the morning either', async () => {
+  const { db } = await withStaff({ rostered: false });
+  // Nobody has a shift, so nobody was supposed to be here. A page where every
+  // row says nothing is a page where the rows that say something get lost.
+  const out = await read(await day(ctx(db)));
+  assert.deepEqual(out.rows, []);
+  // And the screen can tell "nobody on today" from "nothing set up yet".
+  assert.equal(out.anybody, true);
+});
+
+test('approved leave stays, because it answers the question the gap raises', async () => {
+  const { db, raw } = await withStaff({ rostered: false });
+  raw.prepare(
+    "INSERT INTO att_leave (staff_id, from_day, to_day, reason_code, status, days) "
+    + "VALUES (1, ?, ?, 'annual_leave', 'approved', 1)",
+  ).run(TODAY, TODAY);
+
+  const out = await read(await day(ctx(db)));
+  assert.deepEqual(out.rows.map((r) => r.staff.name), ['Rostered']);
+  assert.equal(out.rows[0].status, 'leave');
+});
+
+test('somebody rostered is there whatever the terminal did or did not see', async () => {
+  const { db } = await withStaff();
+  const out = await read(await day(ctx(db)));
+  assert.deepEqual(out.rows.map((r) => r.staff.name), ['Rostered']);
+});
+
+test('a property with nobody on the books says something different', async () => {
+  const { db, raw } = await withStaff({ rostered: false });
+  raw.exec('DELETE FROM att_staff');
+  const out = await read(await day(ctx(db)));
+  assert.equal(out.anybody, false);
 });
