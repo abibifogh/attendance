@@ -425,8 +425,16 @@ export const GUIDE = [
     lede: 'Ten minutes with a phone, every day, and the month looks after itself.',
     blocks: [
       { p: 'Today shows everybody who was rostered, what the terminal saw, and what the rules '
-        + 'made of it. What needs a decision is at the top; everything else is below it in the '
-        + 'order it happened.' },
+        + 'made of it.' },
+      { p: 'It is one card per department, with a colour against each name: red for absent, '
+        + 'amber for late or gone early, green for in, and a hollow amber ring for a day that '
+        + 'is waiting on you. So the question "is my department all in" is answered by looking '
+        + 'at one card rather than by reading four lists and remembering which names were in '
+        + 'which.' },
+      { note: 'Departments are in the same order every morning, and inside each one whatever '
+        + 'needs you comes first: days waiting on a decision, then absences, then lateness, '
+        + 'then everybody who simply turned up. The line beside a department says only what is '
+        + 'wrong, so a department with nothing against it says so and stops.' },
 
       { sub: 'The four colours' },
       { table: {

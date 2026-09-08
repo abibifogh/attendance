@@ -4,6 +4,7 @@ import { fmtDay, fmtNum, h, mount, shiftDay, toast, todayISO } from '../util.js'
 import { alertList, card, emptyState, exportButton, moreActions, table } from './components.js';
 import { printButton } from '../print.js';
 import { birthdayStrip } from './birthday.js';
+import { byDepartment, sayHowItStands, standing, toDealWith } from '../today-groups.js';
 import {
   clockCell, correctTimesDialog, field, formDialog, hoursCell, minutesCell, needsAttention,
   reasonSelect, statusPill, totalsLine,
@@ -13,8 +14,16 @@ import {
  * The morning screen.
  *
  * One job: show a supervisor what needs dealing with before they get on with
- * their day, in the order they should deal with it. Days waiting on a decision
- * first, then absences, then lateness, then everybody who simply turned up.
+ * their day. Arranged the way somebody actually walks the building — one card
+ * per department, everybody in it once, and a colour against the name saying
+ * whether they are absent, late or in.
+ *
+ * It used to be four lists by state. That is the right order for one person
+ * clearing a queue at a desk and the wrong shape for everybody else: a head of
+ * housekeeping wants her floor, not the property's absences, and "is my
+ * department all in" took reading four lists and remembering which names were
+ * in which. The order inside each card is the old order, because within a
+ * department it was doing real work.
  *
  * Everything else about attendance lives on other screens on purpose. Somebody
  * standing in a corridor with a phone wants a list and a couple of buttons, not
@@ -39,12 +48,11 @@ export async function renderAttToday(params) {
   // Only ever on the day itself, and never allowed to stop the morning list
   // loading. It is a nicety; the rest of this screen is the job.
   const birthdays = day === todayISO() ? await birthdayStrip().catch(() => null) : null;
-  const needing = data.rows.filter((r) => r.open);
-  const absent = data.rows.filter((r) => !r.open && r.colour === 'red');
-  const flagged = data.rows.filter((r) => !r.open && r.colour === 'amber');
-  const fine = data.rows.filter((r) => !r.open && (r.colour === 'green' || r.colour === 'grey'));
-  // The three groups below, together — which is exactly what the download is.
-  const issues = [...needing, ...absent, ...flagged];
+  // Everything with something against it. The list is no longer a section of
+  // the screen, but it is still exactly what the download is: whoever is about
+  // to walk round the building wants the eight names with something wrong,
+  // not the ninety who turned up.
+  const issues = data.rows.filter(toDealWith);
 
   const nav = h('div.toolbar',
     // Arrows on a phone, words on a desk. The date sits between them and the
@@ -185,12 +193,22 @@ export async function renderAttToday(params) {
     {
       key: 'staff',
       label: 'Name',
-      format: (v, r) => h('div',
-        h('div', h('a', {
-          href: `#/att-staff?id=${v.id}&day=${day}`,
-          onclick: (e) => { e.preventDefault(); navigate('att-staff', { id: v.id, day }); },
-        }, v.name)),
-        h('small.muted', v.department || `No. ${v.employee_no}`),
+      // The colour sits beside the name rather than only down the edge of the
+      // row. The department is the card's heading now, so what the second line
+      // said is said once at the top instead of against every person.
+      format: (v, r) => h('div.today-who',
+        h('span.today-dot', {
+          class: `is-${standing(r)}`,
+          title: r.open ? 'Waiting on a decision' : r.label,
+          'aria-label': r.open ? 'Waiting on a decision' : r.label,
+        }),
+        h('div',
+          h('div', h('a', {
+            href: `#/att-staff?id=${v.id}&day=${day}`,
+            onclick: (e) => { e.preventDefault(); navigate('att-staff', { id: v.id, day }); },
+          }, v.name)),
+          h('small.muted', `No. ${v.employee_no}`),
+        ),
       ),
     },
     { key: 'shift', label: 'Shift', format: (v) => (v ? h('div', h('div', v.name), h('small.muted', `${v.starts_at}–${v.ends_at}`)) : h('span.muted', '—')) },
@@ -228,10 +246,7 @@ export async function renderAttToday(params) {
     });
   }
 
-  const section = (title, rows, note, empty) => (rows.length
-    ? card(title, { note: note ?? `${rows.length}`, wide: true },
-      table(columns, rows, { rowClass: (r) => `row-att-${r.colour}` }))
-    : (empty ? card(title, { wide: true }, h('div.empty', h('p', empty))) : null));
+  const departments = byDepartment(data.rows);
 
   mount(host,
     h('div.page-head',
@@ -252,14 +267,10 @@ export async function renderAttToday(params) {
       tile('To confirm', fmtNum(data.totals.openCount, 0), data.totals.openCount ? 'waiting on you' : 'all settled', data.totals.openCount ? 'var(--warn)' : null),
     ),
 
-    section(
-      'Waiting on a decision', needing,
-      'A punch is missing, so the day is being held rather than counted as an absence',
-      null,
-    ),
-    section('Absent', absent, null, null),
-    section('Late or left early', flagged, null, null),
-    section('Everybody else', fine, `${fine.length} — nothing to deal with`, 'Nobody yet.'),
+    departments.map((group) => card(group.department, {
+      note: sayHowItStands(group),
+      wide: true,
+    }, table(columns, group.rows, { rowClass: (r) => `row-att-${r.colour}` }))),
   );
 
   return host;

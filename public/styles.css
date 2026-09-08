@@ -1433,6 +1433,26 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 /* The tint on a row of the day list. Kept to a left edge and a wash rather than
    a full-strength background — a page where every other row shouts is a page
    nobody scans. */
+/* The morning list, by department. The colour is beside the name as well as
+   down the edge of the row: the row tint answers "is anything wrong on this
+   page", the dot answers "what about her", and the second question is the one
+   somebody scanning a department is actually asking. */
+.today-who { display: flex; align-items: start; gap: .5rem; }
+.today-dot {
+  flex: none; width: .6rem; height: .6rem; margin-top: .42rem;
+  border-radius: 50%; background: var(--text-faint);
+}
+.today-dot.is-red { background: var(--bad); }
+.today-dot.is-amber { background: var(--warn); }
+.today-dot.is-green { background: var(--good); }
+/* Waiting on somebody rather than settled either way, so it is a ring rather
+   than a filled dot: the day is being held, not counted as anything yet. */
+.today-dot.is-open {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--warn);
+}
+.today-dot.is-grey { background: var(--border); }
+
 .row-att-red td:first-child   { box-shadow: inset 3px 0 var(--bad); }
 .row-att-amber td:first-child { box-shadow: inset 3px 0 var(--warn); }
 .row-att-green td:first-child { box-shadow: inset 3px 0 var(--good); }

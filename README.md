@@ -82,9 +82,26 @@ require anybody to go back and re-enter a month.
 
 ### Today — the morning screen
 
-The only screen most people open, and they open it every morning. What needs a
-decision first, then absences, then lateness, then everybody who simply turned
-up and did their job.
+The only screen most people open, and they open it every morning.
+
+**One card per department, and a colour against every name.** Red is absent,
+amber is late or gone early, green is in, and a hollow amber ring is a day being
+held for somebody to answer. It was four lists by state — waiting on a decision,
+absent, late, everybody else — which is the right order for one person clearing
+a queue at a desk and the wrong shape for everybody else who opens it. A head of
+housekeeping does not want the property's absences, she wants her floor, and "is
+my department all in" took reading four lists and remembering which names were
+in which.
+
+Departments come alphabetically, in the same order every morning: an order that
+rearranged itself would have people hunting for their own, and what they are
+looking for is a card in the same place as yesterday. Inside a card the old
+order is kept, because within a department it was doing real work — days waiting
+on a decision first, then absences, then lateness, then everybody who simply
+turned up. Each card says only what is wrong beside its name (*7 people · 1 to
+confirm, 4 absent*), and a department with nothing against it says so and stops.
+A floor where the whole shift is on a rest day says *none on today* rather than
+*all in*, which would be the screen stating something plainly untrue.
 
 **A shift that has not started is not an absence.** The night porter due at
 22:00 shows as *Not due yet* all day, in grey, and somebody halfway through a
