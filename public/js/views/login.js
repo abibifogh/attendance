@@ -91,10 +91,7 @@ export function renderLogin(onSuccess) {
   const passwordPane = h('div.hidden',
     h('label.field', { style: { textAlign: 'left' } }, h('span', 'Email address'), email),
     h('label.field', { style: { textAlign: 'left' } }, h('span', 'Password'), password),
-    h('button.btn-primary', { style: { width: '100%' }, onclick: submitPassword }, 'Sign in'),
-    h('p.muted', { style: { fontSize: '.75rem', marginTop: '1rem' } },
-      'Administrators always have an email address and a password. It is the only way to set '
-      + 'a payroll PIN.'));
+    h('button.btn-primary', { style: { width: '100%' }, onclick: submitPassword }, 'Sign in'));
 
   const showPin = (on) => {
     pinPane.classList.toggle('hidden', !on);
