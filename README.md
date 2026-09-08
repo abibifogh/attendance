@@ -587,6 +587,35 @@ has to say it is the day; but this app does not show one member of staff
 anybody else's week, and listing who is off would hand out exactly what the
 rest of it withholds.
 
+**And a department takes one unavailability a day.** The ceiling above is about
+the whole place: three away out of two dozen is survivable wherever they come
+from. This is a sharper problem and the ceiling never catches it. Two of the
+four housekeepers picking the same Thursday leaves the floor at half strength
+whatever the rest of the property is doing, and it happens in good faith,
+because a member of staff sees their own week and nobody else's. The second one
+cannot see the first one's request, so the first anybody hears of it is
+Thursday.
+
+So the first request holds the day for that department and the second is
+refused with the reason:
+
+> Somebody else in Housekeeping has already asked about Thursday 10 September,
+> and only one person from a department can be off on the same day. Choose
+> another day, or talk to your manager if it has to be that one.
+
+Waiting counts as much as agreed, for the same reason it does above. Turned
+down and taken back free the day again. Somebody with no department is in
+nobody's department and the rule says nothing about them, and *would like to
+work* is somebody offering rather than somebody leaving. Only unavailability
+counts here, not leave: leave is answered by a person who can see the week, and
+the ceiling above already holds against it.
+
+It names nobody, for the same reason the ceiling names nobody, and it sends
+them to their manager rather than leaving it at no. Somebody has to be able to
+say yes where the day genuinely matters, and that somebody can see both
+requests. As with the ceiling, it holds against what staff ask for and not
+against what a planner writes on their behalf.
+
 **Availability a member of staff asks for waits for approval.** What somebody
 sends from their own screen is a request, not a fact about the week, and a day
 that takes itself off the rota the moment it is typed hands the shape of the

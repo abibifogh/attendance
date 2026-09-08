@@ -319,6 +319,13 @@ export const GUIDE = [
       { note: 'The limit counts what is already on your record, not just what you have ticked '
         + 'this time. Monday saved now and Tuesday saved later is still two days in a row, and '
         + 'a third joined onto them is refused the same way.' },
+      { warn: 'And one person from a department a day. If somebody else in your department has '
+        + 'already asked about that day, yours is refused and the screen says so. Two of four '
+        + 'housekeepers on the same Thursday leaves the floor at half strength, and neither of '
+        + 'you can see the other\u2019s request, so the app holds the rule rather than leaving '
+        + 'it to luck.' },
+      { note: 'You are not told who asked. If the day really has to be that one, talk to your '
+        + 'manager: they can see both requests and they are the one who can say yes.' },
 
       { sub: 'Leaving something half-done' },
       { p: 'Anywhere you have typed something and not saved it \u2014 a rota you have moved '

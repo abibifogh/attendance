@@ -117,10 +117,87 @@ export function listNames(names) {
  * because seeing the names is their job.
  */
 export function dayFullMessage({ day }, cap, what = 'off') {
-  const when = new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', {
+  return `${cap === 1 ? 'Only one person' : `Only ${cap} people`} can be ${what} on any one `
+    + `day, and ${sayTheDay(day)} is already full. Try another day, or speak to whoever plans `
+    + 'the rota if it has to be that one.';
+}
+
+/** A day the way somebody would say it out loud. */
+export function sayTheDay(day) {
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', {
     weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC',
   });
-  return `${cap === 1 ? 'Only one person' : `Only ${cap} people`} can be ${what} on any one `
-    + `day, and ${when} is already full. Try another day, or speak to whoever plans the rota `
-    + 'if it has to be that one.';
+}
+
+// ---------------------------------------------------------------------------
+// One a day, per department
+// ---------------------------------------------------------------------------
+
+/**
+ * Two people out of the same department on the same day.
+ *
+ * The property-wide ceiling above is about the whole place: three people away
+ * out of two dozen is survivable wherever they come from. This is a different
+ * problem and a sharper one. Two of the four housekeepers picking the same
+ * Thursday leaves the floor at half strength whatever the rest of the property
+ * is doing, and it happens because neither of them can see the other's request:
+ * a member of staff sees their own week and nobody else's, so the second one
+ * asks in good faith and the first anybody hears of it is Thursday.
+ *
+ * So a department takes one a day, first asked. Only what people ask for
+ * themselves: a planner or a manager writing unavailability on somebody's
+ * behalf can see the whole week and is the person this sends them to.
+ */
+export const ONE_A_DAY = 1;
+
+/**
+ * Which of these days somebody else in the department has already asked about.
+ *
+ * Waiting counts as much as agreed. A request nobody has answered yet is still
+ * a request, and letting the second one through while the first is unanswered
+ * would mean the answer arrives too late to be an answer.
+ */
+export async function daysTakenInDepartment(db, { department, days, exceptStaffId = null }) {
+  const taken = new Set();
+  if (!department || !days?.length) return taken;
+
+  const sorted = [...days].sort();
+  const rows = await db.prepare(
+    `SELECT DISTINCT a.day
+       FROM att_availability a JOIN att_staff s ON s.id = a.staff_id
+      WHERE a.status = 'unavailable'
+        AND a.decision IN ('waiting', 'approved')
+        AND a.day BETWEEN ?1 AND ?2
+        AND s.department = ?3
+        AND s.active = 1
+        AND a.staff_id <> ?4`,
+  ).bind(sorted[0], sorted[sorted.length - 1], department, exceptStaffId ?? -1)
+    .all().catch(() => ({ results: [] }));
+
+  for (const row of rows.results ?? []) taken.add(row.day);
+  return taken;
+}
+
+/** The first of these days somebody else in the department already has. */
+export function firstDayTaken(days, taken) {
+  for (const day of [...days].sort()) if (taken.has(day)) return day;
+  return null;
+}
+
+/**
+ * Why this one cannot go through, in words that say what to do next.
+ *
+ * NO NAMES, for the same reason the ceiling above gives none. This screen
+ * belongs to a member of staff and the app does not show one member of staff
+ * anybody else's week. The reason is complete without it, and adding the name
+ * turns a scheduling fact into something two people argue about.
+ *
+ * It sends them to their manager rather than leaving it at no. Somebody has to
+ * be able to say yes to the second one where the day genuinely matters, and
+ * that somebody can see both requests.
+ */
+export function departmentTakenMessage(day, department) {
+  return `Somebody else in ${department} has already asked about ${sayTheDay(day)}, and only `
+    + 'one person from a department can be off on the same day. Choose another day, or talk to '
+    + 'your manager if it has to be that one.';
 }

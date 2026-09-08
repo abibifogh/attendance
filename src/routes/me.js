@@ -7,7 +7,8 @@ import {
 } from '../lib/attendance.js';
 import { createNotice } from '../lib/notices.js';
 import {
-  awayCap, dayFullMessage, daysBetween, firstDayFull, whoIsAway,
+  awayCap, dayFullMessage, daysBetween, daysTakenInDepartment, departmentTakenMessage,
+  firstDayFull, firstDayTaken, whoIsAway,
 } from '../lib/away.js';
 import { fromBase64 } from '../lib/files.js';
 import { storeFile } from './people.js';
@@ -931,6 +932,17 @@ export async function setMyAvailability(ctx) {
       cap,
     );
     if (full) throw badRequest(dayFullMessage(full, cap));
+
+    // And one a day per department, first asked. The ceiling above is about
+    // the whole property; two of the four housekeepers picking the same
+    // Thursday leaves the floor at half strength whatever the rest of the
+    // place is doing, and neither of them can see the other's request.
+    const taken = firstDayTaken(days, await daysTakenInDepartment(ctx.db, {
+      department: staff.department,
+      days,
+      exceptStaffId: staff.id,
+    }));
+    if (taken) throw badRequest(departmentTakenMessage(taken, staff.department));
   }
 
   const note = str(body.note, 'Note', { max: 200 });
