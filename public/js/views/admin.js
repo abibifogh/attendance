@@ -75,6 +75,48 @@ async function peopleTab(reload) {
     }
   };
 
+
+  /**
+   * Send somebody an invitation to set their own way in.
+   *
+   * The link comes back on screen as well as going out, because half the
+   * addresses on file here are wrong and the property may not have email set
+   * up at all. What the email cannot do, a WhatsApp message can.
+   */
+  const invite = async (row, again) => {
+    const email = window.prompt(
+      `Send ${row.name} an invitation to set up their own way in.\n\n`
+      + 'It goes to this address, and if they choose a password it is the one they will sign in '
+      + 'with. The link works once and lasts three days.',
+      row.invited?.email || row.email || '',
+    );
+    if (email == null || !email.trim()) return;
+    try {
+      const out = await api.inviteToJoin(row.id, { email: email.trim() });
+      await again();
+      // Shown once. Only a fingerprint of it is stored, so this is the only
+      // moment it exists anywhere the app can read.
+      window.prompt(out.sent
+        ? `Sent to ${out.email}. If it does not arrive, send them this link instead:`
+        : `${out.whyNot}\n\nSend them this link:`,
+        out.url);
+      toast(out.sent ? 'Invitation sent.' : 'Link made. Send it yourself.', out.sent ? 'good' : '');
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
+  const callItOff = async (row, again) => {
+    if (!window.confirm(`Cancel ${row.name}'s invitation? The link stops working straight away.`)) return;
+    try {
+      await api.cancelInvitation(row.id);
+      toast('Cancelled.');
+      await again();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
   const recovery = data.recovery ?? {};
 
   return h('div',
@@ -114,6 +156,13 @@ async function peopleTab(reload) {
               // because it is the half somebody forgets they handed out.
               ? `${r.email}${r.role === 'admin' && r.hasPin ? ' · and a PIN' : ''}`
               : `signs in with a ${r.signsInWith}`),
+            // An invitation still outstanding. On the list rather than inside
+            // the dialog, because it is a state that needs somebody to do
+            // something and one nobody would think to go looking for.
+            r.waiting
+              ? h('small.muted', { style: { display: 'block' } },
+                `${r.waiting}${r.invited ? ` · ${r.invited.email}` : ''}`)
+              : null,
             // Said on the list rather than only inside the dialog: a login that
             // opens somebody else's pay is worth being able to see without
             // opening every person in turn.
@@ -138,6 +187,14 @@ async function peopleTab(reload) {
           label: '',
           format: (v, r) => h('div.btn-row',
             h('button.btn-sm', { onclick: () => edit(r) }, 'Edit'),
+            // Sending it is the ordinary way in for somebody new, and the way
+            // back for anybody who has forgotten what they chose: they pick
+            // again rather than being handed something by somebody else.
+            h('button.btn-sm', { onclick: () => invite(r, reload) },
+              r.waiting ? 'Send it again' : 'Invite them'),
+            r.waiting && r.invited
+              ? h('button.btn-sm', { onclick: () => callItOff(r, reload) }, 'Cancel it')
+              : null,
             h('button.btn-sm', { onclick: () => remove(r) }, 'Remove'),
           ),
         },
@@ -397,10 +454,26 @@ function openUserDialog({ existing, data, reload }) {
       h('span', 'Take the code off their payslips, so they can open them and set a new one'))
     : null;
 
+  // How this login gets its way in.
+  //
+  // Typing somebody's PIN for them means it then has to travel to them across
+  // a desk or through a message, and it is a thing they never chose and will
+  // not remember. Inviting them means they pick — a number or a password,
+  // whichever suits how they actually work — and nobody else ever knows it.
+  const howIn = h('select',
+    h('option', { value: 'invite' }, 'Invite them by email, and they pick'),
+    h('option', { value: 'now' }, 'I will set a PIN for them now'));
+  const howInField = h('label.field',
+    h('span', 'How they sign in'),
+    howIn,
+    h('small.muted', 'An invitation lets them choose a PIN or a password for themselves. '
+      + 'It works once and lasts three days.'));
+
   const pinLabel = h('span', 'PIN');
   const pinHint = h('small.muted', { style: { display: 'none' } });
   const pinField = h('label.field', pinLabel, pin, pinHint);
-  const emailField = h('label.field', h('span', 'Email address'), email);
+  const emailLabel = h('span', 'Email address');
+  const emailField = h('label.field', emailLabel, email);
   const passwordField = h('label.field', h('span', 'Password'), password);
 
   const roleHint = h('p.muted', { style: { fontSize: '.85rem' } });
@@ -549,8 +622,21 @@ function openUserDialog({ existing, data, reload }) {
       : isAdmin ? 'none set' : '6 to 10 digits';
     dropPinRow.style.display = isAdmin && existing?.hasPin ? '' : 'none';
     if (!isAdmin || !existing?.hasPin) dropPin.checked = false;
+
+    // Only asked when the login is being made. Somebody already in the system
+    // is invited from the row on the list, where "send it again" is what the
+    // question actually is by then.
+    howInField.style.display = existing ? 'none' : '';
+    const inviting = !existing && howIn.value === 'invite';
+    // An administrator invited in still needs the address it goes to, which
+    // is also the one they will sign in with. Their password is theirs to
+    // choose on the link, so the box for it goes.
+    pinField.style.display = inviting ? 'none' : '';
+    passwordField.style.display = isAdmin && !inviting ? '' : 'none';
+    emailLabel.textContent = inviting ? 'Email address (the invitation goes here)' : 'Email address';
     showStaff();
   };
+  howIn.addEventListener('change', applyRole);
 
   roleSelect.addEventListener('change', () => { custom = null; applyRole(); });
   for (const c of checkboxes) {
@@ -572,6 +658,7 @@ function openUserDialog({ existing, data, reload }) {
       h('label.field', h('span', 'Name'), name),
       h('label.field', h('span', 'Role'), roleSelect),
       h('label.field', h('span', 'Status'), active),
+      howInField,
       pinField,
       emailField,
       passwordField,
@@ -643,8 +730,28 @@ function openUserDialog({ existing, data, reload }) {
 
       if (dropPayslipCode.checked) payload.clearPayslipCode = true;
 
+      // A login made with nothing in it yet, because the person is about to
+      // pick their own. It cannot be signed into until they do.
+      const inviting = !existing && howIn.value === 'invite';
+      if (inviting) {
+        payload.byInvitation = true;
+        payload.pin = '';
+        if (!payload.email) throw new Error('An invitation needs an email address to go to.');
+      }
+
       if (existing) await api.updateUser(existing.id, payload);
-      else await api.createUser(payload);
+      else {
+        const made = await api.createUser(payload);
+        if (inviting) {
+          const out = await api.inviteToJoin(made.user.id, { email: payload.email });
+          // Shown once. Only a fingerprint is stored, so this is the only
+          // moment the link exists anywhere the app can read it back.
+          window.prompt(out.sent
+            ? `Sent to ${out.email}. If it does not arrive, send them this link instead:`
+            : `${out.whyNot}\n\nSend them this link:`,
+            out.url);
+        }
+      }
 
       dialog.close();
       toast('Saved.', 'good');

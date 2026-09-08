@@ -161,6 +161,19 @@ export const GUIDE = [
         + 'somebody signs the month off, having looked at the whole of it. A running total on a '
         + 'phone would be a number to argue about rather than an answer.' },
 
+      { sub: 'Getting in the first time' },
+      { p: 'If somebody sent you an email with a link in it, that link is how you set up your '
+        + 'account. Open it and pick how you want to sign in: a short number, or your email '
+        + 'address and a password. Whichever you pick is yours. Nobody else is told it, not even '
+        + 'whoever made the account.' },
+      { p: 'A number is quickest on a phone or on the tablet by the door, and it is six to ten '
+        + 'digits. It cannot be all the same digit or a straight run like 123456, because those '
+        + 'are the first two things anybody tries. A password is better on a computer, where the '
+        + 'browser can remember it for you.' },
+      { note: 'The link works once and lasts three days. If it has run out, or you have '
+        + 'forgotten what you chose, ask for another one: nobody can read your number or your '
+        + 'password back to you, so choosing again is the only way and it takes a moment.' },
+
       { sub: 'Putting it on your home screen' },
       { p: 'HIVE can sit on your home screen like any other app: no address to type, no '
         + 'browser bars, and your shifts are there before the signal is. My shifts offers it '

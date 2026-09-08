@@ -366,6 +366,7 @@ function adoptSession(me) {
   state.email = me.email ?? null;
   state.isRecovery = Boolean(me.isRecovery);
   state.hasPin = Boolean(me.hasPin);
+  state.hasPassword = Boolean(me.hasPassword);
   state.signedInWith = me.signedInWith ?? 'pin';
   state.permissions = me.permissions || [];
   state.settings = me.settings || state.settings || {};
@@ -451,6 +452,7 @@ function shell(content) {
           email: state.email,
           isRecovery: state.isRecovery,
           hasPin: state.hasPin,
+          hasPassword: state.hasPassword,
           signedInWith: state.signedInWith,
           // Anybody who has to act on an exception is worth alerting; somebody
           // who only reads the month-end report is not, and would come to
@@ -859,6 +861,7 @@ function resetSession() {
   state.email = null;
   state.isRecovery = false;
   state.hasPin = false;
+  state.hasPassword = false;
   state.signedInWith = 'pin';
   state.permissions = [];
   state.staffId = null;

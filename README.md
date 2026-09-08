@@ -1125,6 +1125,53 @@ Five minutes is `IDLE_MINUTES` in `public/js/guard-rules.js`, which holds the
 rules and nothing else, no browser in it, so what should happen after so long
 away can be tested at a desk.
 
+### Joining, and choosing your own way in
+
+A login used to be made with its way in already decided: somebody typed a PIN
+into the form and then had to get that PIN to the person, across a desk or in a
+message. Both halves are the same problem. The thing that opens the account
+travels through a third party's hands, and it is a thing the person never chose
+and will not remember.
+
+So an account can be made empty and the person invited into it. Users & data →
+add somebody, and *How they sign in* offers **Invite them by email, and they
+pick**. The account is created with no PIN and no password, which means nothing
+matches it and nobody can sign in as them until they have chosen.
+
+**The choice is theirs.** The link opens on a page with two blocks on it: a
+short number, or an email address and a password. A housekeeper working off a
+tablet in a corridor wants six digits she can key with one hand while holding a
+pile of towels; whoever does the wages wants an address and a password their
+browser already fills in. Neither is right for the other and the app is in no
+position to know which of them somebody is. An administrator is the one
+exception and gets the password only: the password is what authorises changing
+a PIN, granting the payroll and everything else an administrator does, so an
+administrator holding six digits would be one who cannot be asked to prove
+anything.
+
+**A PIN is checked as it is chosen**: six to ten digits, not the same digit over
+and over, and not a straight run in either direction. A password is stretched in
+the browser, exactly as at sign-in, so the password itself never reaches the
+server. Setting it signs them straight in — making somebody choose a number and
+then immediately type it into a login box is a step that exists only because it
+was easier to build.
+
+**One use, three days.** Only a fingerprint of the token is kept, so a copy of
+the database opens nothing and a lost link is replaced rather than recovered.
+Making another cancels the one before it: two live links into one login is one
+more than anybody can keep track of. The account list says where each one has
+got to — made but not sent, sent, opened and not finished — because "opened and
+not finished" is nearly always a PIN that was already taken and somebody who
+needs a nudge.
+
+**And it is the way back.** Somebody who has forgotten what they chose is
+invited again and picks afresh, rather than being handed something by whoever
+runs the office. What they set is never visible to anybody else at any point.
+
+The link comes back on screen as well as going out, because half the addresses
+on file at a property like this are wrong and some properties have no email set
+up at all. What the email cannot do, a WhatsApp message can.
+
 ### On a phone
 
 **It installs.** A web app manifest, real PNG icons at 192 and 512 including a

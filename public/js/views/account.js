@@ -49,10 +49,14 @@ async function shrink(file, side = 480) {
  * digits are never enough to replace themselves with four other ones.
  */
 export function openAccountDialog({
-  role, name, email: myEmail, isRecovery, hasPin = false, canAlert = false, canPhoto = false,
-  canLockPayslips = false,
+  role, name, email: myEmail, isRecovery, hasPin = false, hasPassword = false,
+  canAlert = false, canPhoto = false, canLockPayslips = false,
 }) {
-  const usesPassword = role === 'admin';
+  // What they actually hold, not what the role implies. Anybody invited into a
+  // login picks how they sign in, so somebody on the rota may well hold a
+  // password and a screen asking them for a PIN they never set is a screen
+  // they cannot use.
+  const usesPassword = hasPassword || role === 'admin';
   // Only offered to people who would act on an alert. Somebody who reads the
   // month-end report has no use for a phone buzzing every morning.
   // Shown to anybody who would act on an alert, whether or not this browser

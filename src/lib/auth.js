@@ -358,12 +358,17 @@ export async function getSession(request, env, db) {
   // answer to "should we still be asking", and it lives here rather than in the
   // token because a token cannot hear about a PIN being changed on somebody's
   // other device.
+  // has_password the same way, and for the same reason as has_pin: anybody may
+  // hold a password now, because whoever is invited into a login picks how
+  // they sign in, so "administrator" no longer answers the question.
   const attempts = [
-    'SELECT id, name, role, permissions, active, staff_id, pin_ok, '
+    'SELECT id, name, role, permissions, active, staff_id, pin_ok, email, '
     + '(SELECT group_concat(staff_id) FROM user_staff WHERE user_id = users.id) AS also_staff, '
-    + 'pin_hash IS NOT NULL AS has_pin FROM users WHERE id = ?',
+    + 'pin_hash IS NOT NULL AS has_pin, password_hash IS NOT NULL AS has_password '
+    + 'FROM users WHERE id = ?',
     'SELECT id, name, role, permissions, active, staff_id, pin_ok, '
-    + 'pin_hash IS NOT NULL AS has_pin FROM users WHERE id = ?',
+    + 'pin_hash IS NOT NULL AS has_pin, password_hash IS NOT NULL AS has_password '
+    + 'FROM users WHERE id = ?',
     'SELECT id, name, role, permissions, active, pin_hash IS NOT NULL AS has_pin '
     + 'FROM users WHERE id = ?',
   ];

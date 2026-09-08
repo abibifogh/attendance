@@ -501,6 +501,8 @@ export const api = {
   createUser: (body) => request('/api/users', { method: 'POST', body }),
   updateUser: (id, body) => request(`/api/users/${id}`, { method: 'PUT', body }),
   deleteUser: (id) => request(`/api/users/${id}`, { method: 'DELETE' }),
+  inviteToJoin: (id, body) => request(`/api/users/${id}/invite`, { method: 'POST', body }),
+  cancelInvitation: (id) => request(`/api/users/${id}/invite/cancel`, { method: 'POST' }),
 
   pushKey: () => request('/api/push/key'),
   pushStatus: (endpoint) => request(`/api/push/status${endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ''}`),

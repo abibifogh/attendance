@@ -1,6 +1,7 @@
 import { CHANNELS_KEY, GROUPS, KINDS, readChannels, tidyChannels } from '../lib/notice-kinds.js';
 import { originOf } from '../lib/site.js';
 import { backupZip } from '../lib/backup.js';
+import { howItStands } from '../lib/joining.js';
 import { badRequest, bool, json, notFound, readJson, str } from '../lib/http.js';
 import {
   PIN_DIGITS, PIN_RULE, getPepper, hashPin, isReservedPin, markPinOk, normaliseEmail, pinLooksRight,
@@ -85,6 +86,12 @@ function setting(db, key, value) {
 function readCredentials(body, role, { existing = null } = {}) {
   const isAdmin = role === 'admin';
 
+  // An account nobody has set a way into yet, because the person is going to
+  // pick their own. It is not a login that works: with no PIN and no password
+  // nothing matches it, and it stays that way until somebody opens the link
+  // and chooses — see lib/joining.js.
+  const byInvitation = bool(body.byInvitation, false);
+
   if (isAdmin) {
     const email = normaliseEmail(str(body.email, 'Email address', { max: 200, fallback: '' }));
     if (!email && !existing?.email) throw badRequest('An administrator needs an email address to sign in with');
@@ -101,8 +108,13 @@ function readCredentials(body, role, { existing = null } = {}) {
       }
       : null;
 
-    if (!password && !existing?.password_hash) {
+    if (!password && !existing?.password_hash && !byInvitation) {
       throw badRequest(`An administrator needs a password of at least ${MIN_PASSWORD} characters`);
+    }
+    // An administrator invited in still needs the address the invitation goes
+    // to, which is also the one they will sign in with.
+    if (byInvitation && !email && !existing?.email) {
+      throw badRequest('An invitation needs an email address to go to');
     }
 
     // Theirs to have or not: blank leaves whatever they had, and the form
@@ -122,7 +134,7 @@ function readCredentials(body, role, { existing = null } = {}) {
   // Everyone else: a PIN, required on creation. Right for a supervisor holding
   // a phone in a corridor with one hand.
   const pin = str(body.pin, 'PIN', { max: 10, fallback: '' });
-  if (!pin && !existing?.pin_hash) {
+  if (!pin && !existing?.pin_hash && !byInvitation) {
     throw badRequest(`Give this person a PIN of ${PIN_DIGITS} to 10 digits`);
   }
   if (pin && !pinLooksRight(pin)) throw badRequest(PIN_RULE);
@@ -134,14 +146,27 @@ function readCredentials(body, role, { existing = null } = {}) {
   return { isAdmin, email: email || null, password: null, pin, clearPin: false };
 }
 
-function publicUser(row, alsoStaffIds = []) {
+/** What opens this account, in the words the accounts list shows. */
+function sayHowTheyGetIn(row) {
+  const pin = Boolean(row.pin_hash);
+  const password = typeof row.password_hash === 'string' && row.password_hash.startsWith('pbkdf2c$');
+  if (pin && password) return 'password or PIN';
+  if (password) return 'password';
+  if (pin) return 'pin';
+  return 'nothing yet';
+}
+
+function publicUser(row, alsoStaffIds = [], invite = null) {
   return {
     id: row.id,
     name: row.name,
     email: row.email ?? null,
-    signsInWith: row.role === 'admin'
-      ? (row.pin_hash ? 'password or PIN' : 'password')
-      : 'pin',
+    // What actually opens this account, rather than what the role implies.
+    // Anybody may now hold a password: whoever is invited in picks for
+    // themselves, and "pin" beside somebody who chose an address and a
+    // password would be the account list telling whoever reads it the wrong
+    // thing about how to help them back in.
+    signsInWith: sayHowTheyGetIn(row),
     // That they have put a code on their payslips, and when. Never the code:
     // there is nothing an administrator can read here, only something they can
     // take off for somebody who has forgotten it.
@@ -163,6 +188,17 @@ function publicUser(row, alsoStaffIds = []) {
     note: row.note ?? null,
     created_at: row.created_at,
     last_login_at: row.last_login_at,
+    // Where an invitation to set their own way in has got to, and nothing
+    // about the link itself: only its fingerprint is stored and there is
+    // nothing here to recover it from.
+    invited: invite && !invite.used_at && !invite.revoked_at
+      ? { email: invite.email, expiresAt: invite.expires_at, sentAt: invite.sent_at ?? null,
+        openedAt: invite.opened_at ?? null }
+      : null,
+    waiting: howItStands(invite, {
+      hasCredentials: Boolean(row.pin_hash)
+        || (typeof row.password_hash === 'string' && row.password_hash.startsWith('pbkdf2c$')),
+    }),
   };
 }
 
@@ -287,8 +323,21 @@ export async function listUsers(ctx) {
 
   const extras = await extraRecords(ctx.db);
 
+  // The invitation each account is waiting on, where it is waiting on one.
+  // The newest per login, because making another cancels the one before it.
+  const invites = await ctx.db.prepare(
+    `SELECT user_id, email, expires_at, sent_at, opened_at, used_at, revoked_at, chose
+       FROM user_invite ORDER BY user_id, id DESC`,
+  ).all().catch(() => ({ results: [] }));
+  const inviteBy = new Map();
+  for (const row of invites.results ?? []) {
+    if (!inviteBy.has(Number(row.user_id))) inviteBy.set(Number(row.user_id), row);
+  }
+
   return json({
-    users: (rows.results ?? []).map((row) => publicUser(row, extras.get(Number(row.id)) ?? [])),
+    users: (rows.results ?? []).map((row) => publicUser(
+      row, extras.get(Number(row.id)) ?? [], inviteBy.get(Number(row.id)) ?? null,
+    )),
     roles: ROLES,
     permissions: PERMISSIONS,
     staff: staff.results ?? [],

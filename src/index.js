@@ -22,6 +22,7 @@ import * as attSetup from './routes/attendance-setup.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
 import * as invite from './routes/invite.js';
+import * as joining from './routes/joining.js';
 import * as rec from './routes/recruitment.js';
 import * as hiring from './routes/hiring.js';
 import * as places from './routes/places.js';
@@ -510,6 +511,11 @@ export const ROUTES = [
   ['POST', '/api/c/:token/cv', 'public', hiring.file],
 
   // made for — see the note at the top of routes/invite.js.
+  // The other side of an invitation to join. Public, because the person
+  // opening it has no login yet — that is the whole point of it.
+  ['GET', '/api/j/:token', 'public', joining.joinHead],
+  ['POST', '/api/j/:token', 'public', joining.joinSet],
+
   ['GET', '/api/i/:token', 'public', invite.inviteHead],
   ['POST', '/api/i/:token/open', 'public', invite.inviteOpen],
   ['POST', '/api/i/:token/details', 'public', invite.inviteDetails],
@@ -576,6 +582,10 @@ export const ROUTES = [
   ['POST', '/api/users', 'users', admin.createUser],
   ['PUT', '/api/users/:id', 'users', admin.updateUser],
   ['DELETE', '/api/users/:id', 'users', admin.deleteUser],
+  // Inviting somebody into a login rather than typing their PIN for them and
+  // then having to get it to them — see the note at the top of lib/joining.js.
+  ['POST', '/api/users/:id/invite', 'users', joining.inviteToJoin],
+  ['POST', '/api/users/:id/invite/cancel', 'users', joining.cancelInvitation],
 
   // Being told, rather than asking every minute. A socket, held open for as
   // long as the tab is, carrying the fact that something changed and nothing
@@ -723,6 +733,14 @@ export default {
     // the system it can reach the better.
     if (url.pathname.startsWith('/c/')) {
       return servePage(env, url, request, '/hiring.html');
+    }
+
+    // And somebody setting up the login that has been made for them. Its own
+    // page again: it is opened by a person with no session, on a phone, from a
+    // link in their email, and the only thing it can reach is the account that
+    // link names.
+    if (url.pathname.startsWith('/j/')) {
+      return servePage(env, url, request, '/join.html');
     }
 
     // The same idea for a letter sent out for signature. A separate page from
@@ -1123,7 +1141,11 @@ async function me(ctx) {
     records: people.map((p) => ({
       id: p.id, name: p.name, employeeNo: p.employee_no, department: p.department ?? null,
     })),
-    signsInWith: session.user.role === 'admin' ? 'password' : 'pin',
+    // What actually opens this account, not what the role implies. Anybody
+    // invited in picks for themselves, so My account has to ask them to
+    // confirm with the credential they really hold.
+    signsInWith: session.user.has_password ? 'password' : 'pin',
+    hasPassword: Boolean(session.user.has_password),
     // What they typed to get here, so My account knows which credential it can
     // ask them to confirm with.
     signedInWith: session.via ?? 'pin',
@@ -1172,9 +1194,13 @@ async function changeCredentials(ctx) {
   ).bind(session.user.id).first();
   if (!row) throw badRequest('Your account could not be found');
 
-  // Administrators hold a password, and may hold a PIN alongside it; everyone
-  // else holds a PIN.
-  if (session.user.role === 'admin') {
+  // Whoever holds a password changes it here, and the password speaks for the
+  // PIN alongside it. Administrators always hold one; anybody else holds one
+  // because they picked it when they were invited in, and a screen that
+  // insisted on a PIN they never set would be a screen they cannot use.
+  const holdsPassword = typeof row.password_hash === 'string'
+    && row.password_hash.startsWith('pbkdf2c$');
+  if (holdsPassword) {
     const pepper = await getPepper(db);
     const currentKey = String(body.currentPasswordKey ?? '');
 
