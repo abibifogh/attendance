@@ -52,14 +52,22 @@ export async function renderAttMe(params = {}) {
   const behind = data.days.filter((d) => d.day < data.today && d.was).reverse();
   const next = upcoming.find((d) => d.shift);
 
-  // A week at a time. Four weeks of days on a phone is a page nobody reaches
-  // the bottom of, and the question this screen answers is almost always about
-  // this week. The rest is one press away and does not have to be scrolled
-  // past to get anywhere.
-  const thisWeek = upcoming.slice(0, 7);
-  const laterOn = upcoming.slice(7);
+  // A week at a time, and a whole one.
+  //
+  // It used to be the next seven days from today, which meant the card said
+  // "Mon 8 to Sun 14" over a list that started on Thursday, and the Prev week
+  // button walked backwards through a window that never lined up with a week
+  // anybody thinks in. Somebody asked what they were on this week and got the
+  // back half of it.
+  //
+  // So it is the seven days the heading names: Monday to Sunday, whichever
+  // week is being looked at, every day of it whether it has gone or not.
+  const weekEnd = shiftDay(data.from, 6);
+  const thisWeek = data.days.filter((d) => d.day >= data.from && d.day <= weekEnd);
+  const laterOn = data.days.filter((d) => d.day > weekEnd);
   const lastWeek = behind.slice(0, 7);
   const earlier = behind.slice(7);
+  const onThisWeek = data.today >= data.from && data.today <= weekEnd;
 
   mount(host,
     h('div.page-head',
@@ -85,22 +93,19 @@ export async function renderAttMe(params = {}) {
 
     data.onShift ? onShiftCard(data) : countdownCard(data),
 
-    // The dates the list below actually covers, and the arrows move by that
-    // much. Showing a four-week span over a card holding seven days is the
-    // screen disagreeing with itself.
+    // The week the list below covers, and buttons that say which way they go.
+    // Two chevrons either side of a date range is a control that reads as
+    // decoration until somebody presses one to find out, which on the screen
+    // most of the property opens is the wrong way round.
     h('div.toolbar',
       h('button.btn-sm', {
         onclick: () => reload({ from: shiftDay(data.from, -7) }),
-        'aria-label': 'The week before',
-      }, '‹'),
-      h('strong', thisWeek.length
-        ? `${fmtDayShort(thisWeek[0].day)} – ${fmtDayShort(thisWeek[thisWeek.length - 1].day)}`
-        : `${fmtDayShort(data.from)} – ${fmtDayShort(data.to)}`),
+      }, '\u2039 Prev week'),
+      h('strong', `${fmtDayShort(data.from)} \u2013 ${fmtDayShort(weekEnd)}`),
       h('button.btn-sm', {
         onclick: () => reload({ from: shiftDay(data.from, 7) }),
-        'aria-label': 'The week after',
-      }, '›'),
-      h('button.btn-sm', { onclick: () => reload({ from: null }) }, 'Today'),
+      }, 'Next week \u203a'),
+      onThisWeek ? null : h('button.btn-sm', { onclick: () => reload({ from: null }) }, 'This week'),
     ),
 
     balanceLine(data),
@@ -109,9 +114,9 @@ export async function renderAttMe(params = {}) {
     // which is where somebody goes to change a PIN and otherwise never.
     installNudge(),
 
-    card('Coming up', {
+    card(onThisWeek ? 'This week' : 'That week', {
       note: `${thisWeek.filter((d) => d.shift).length} shift`
-        + `${thisWeek.filter((d) => d.shift).length === 1 ? '' : 's'} this week`,
+        + `${thisWeek.filter((d) => d.shift).length === 1 ? '' : 's'}`,
       wide: true,
     },
     thisWeek.length
@@ -488,16 +493,17 @@ function departmentCard(params = {}) {
       note: `${data.people.length} ${data.people.length === 1 ? 'person' : 'people'}`,
       wide: true,
     },
+    // Named, like the card above it. Two chevrons either side of a date range
+    // read as decoration until somebody presses one to find out which way it
+    // goes, and this is the screen most of the property opens.
     h('div.toolbar',
       h('button.btn-sm', {
         onclick: () => draw(shiftDay(data.from, -7), data.department),
-        'aria-label': 'The week before',
-      }, '‹'),
-      h('strong', `${fmtDayShort(data.from)} – ${fmtDayShort(data.to)}`),
+      }, '\u2039 Prev week'),
+      h('strong', `${fmtDayShort(data.from)} \u2013 ${fmtDayShort(data.to)}`),
       h('button.btn-sm', {
         onclick: () => draw(shiftDay(data.from, 7), data.department),
-        'aria-label': 'The week after',
-      }, '›'),
+      }, 'Next week \u203a'),
       h('button.btn-sm', { onclick: () => draw(null, data.department) }, 'This week'),
 
       // Only where there is more than one to choose between. A picker with a

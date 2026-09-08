@@ -128,9 +128,10 @@ export const GUIDE = [
     blocks: [
 
       { sub: 'What you see' },
-      { p: 'Your shifts, and only yours. Four weeks at a time, starting on the Monday of '
-        + 'whatever week you are looking at, with the arrows to move a month either way and '
-        + 'Today to come back.' },
+      { p: 'Your shifts, and only yours. One week at a time, Monday to Sunday, with Prev week '
+        + 'and Next week to move it and This week to come back. It is the whole week, so on a '
+        + 'Thursday you can still see what Monday was, and See more opens the rest of the '
+        + 'month underneath it.' },
       { p: 'When your next shift is less than a day away, a countdown sits at the top and '
         + 'ticks. Further off than that it is a date rather than a countdown, and the list '
         + 'says it perfectly well.' },

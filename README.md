@@ -2781,6 +2781,23 @@ properties talking. Nothing here ever reads a birth year out loud: the record
 holds a full date because payroll and contracts need one, and a card announcing
 that somebody is fifty-three is not a kindness.
 
+### A week on somebody's own screen is a week
+
+My shifts shows one week, Monday to Sunday, with **Prev week** and **Next week**
+either side of the dates and **This week** offered only once you have left it.
+
+It used to be the next seven days from today. So on a Thursday the card headed
+*Mon 8 – Sun 14* listed Thursday to Wednesday: the heading and the list
+disagreed, and somebody asking what they were on this week got the back half of
+it. Prev week then walked backwards through a window that never lined up with a
+week anybody thinks in. The window the server sends has always started on a
+Monday; it was the screen that was slicing it from today.
+
+And it moved on two chevrons. A ‹ and a › either side of a date range read as
+decoration until somebody presses one to find out which way it goes, which on
+the screen most of the property opens is the wrong way round. The department
+card underneath it has the same two buttons now, for the same reason.
+
 ### A member of staff sees their own screens, even before they are linked
 
 A staff login that has not yet been pointed at somebody's staff record used to
