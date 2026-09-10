@@ -45,7 +45,7 @@ names the question:
 |---|---|
 | **My shifts** | Their own week, their own month |
 | **My pay** | Payslips, an advance, medical claims |
-| **Today** | Today, the week, the month, the leave book, sign-off |
+| **Attendance** | Today, the week, the month, the leave book, sign-off |
 | **Rota** | The rota, the workload behind it, the lunch list off it |
 | **People** | The records, and recruitment before them |
 | **Payroll** | The month's payroll, advances, medical claims |
@@ -56,9 +56,14 @@ names the question:
 Everything after the first screen in a group is a **tab across the top of the
 page**, drawn in the shell rather than inside any of the views, so moving
 between them never redraws the menu. Only the tabs somebody holds are drawn, in
-the menu and in the strip both: the same *Today* is five tabs for an
-administrator, four for whoever does the wages, two for a supervisor, and
+the menu and in the strip both: the same *Attendance* is five tabs for an
+administrator, four for whoever does the wages, four for a supervisor, and
 somebody who only reads the rota gets one screen with no strip at all.
+
+**A group is named for its domain, not for its first tab.** This one was called
+*Today*, which was the link over the week, the month, the leave book and
+sign-off: four things that are not today. Three of the five pages already headed
+themselves *Attendance*, and now the menu agrees with them.
 
 **A link never promises a screen its holder cannot open.** A permission list
 picked by hand can leave somebody with the workload and the lunch list but not

@@ -105,7 +105,7 @@ test('nothing hidden claims a group, and nothing sits in a group alone by accide
 test('an administrator reads nine links, where they read twenty-three', () => {
   const menu = labels(roleHolds('admin', 1), { staffId: 1 });
   assert.deepEqual(menu, [
-    'My shifts', 'My pay', 'Today', 'Rota', 'People', 'Payroll', 'Letters', 'Setup', 'Guide',
+    'My shifts', 'My pay', 'Attendance', 'Rota', 'People', 'Payroll', 'Letters', 'Setup', 'Guide',
   ]);
   assert.equal(menu.length, 9);
   assert.equal(ROUTE_LIST.filter((r) => !r.hidden).length, 23, 'and it is the same 23 screens');
@@ -123,7 +123,7 @@ test('a login with no staff record behind it gets none of the "my" screens', () 
   // An administrator holds att_me like every other permission and has nothing
   // of their own to show. A link that opens an apology is worse than no link.
   assert.deepEqual(labels(roleHolds('admin'), { staffId: null }), [
-    'Today', 'Rota', 'People', 'Payroll', 'Letters', 'Setup', 'Guide',
+    'Attendance', 'Rota', 'People', 'Payroll', 'Letters', 'Setup', 'Guide',
   ]);
 });
 
@@ -135,14 +135,14 @@ test('a rota reader still reads one screen and no tabs', () => {
 
 test('a supervisor reads three, and Today carries the leave book with it', () => {
   const menu = menuFor(roleHolds('supervisor'), { staffId: null });
-  assert.deepEqual(menu.map((g) => g.label), ['Today', 'Rota', 'Guide']);
+  assert.deepEqual(menu.map((g) => g.label), ['Attendance', 'Rota', 'Guide']);
   // No Week: that is the reports permission, which a supervisor is not given.
   assert.deepEqual(tabsOf(menu[0]).map((t) => t.label), ['Today', 'Month', 'Leave', 'Sign-off']);
 });
 
 test('a manager reads five, where the same person used to read fourteen', () => {
   const menu = menuFor(roleHolds('manager'), { staffId: null });
-  assert.deepEqual(menu.map((g) => g.label), ['Today', 'Rota', 'People', 'Letters', 'Guide']);
+  assert.deepEqual(menu.map((g) => g.label), ['Attendance', 'Rota', 'People', 'Letters', 'Guide']);
   assert.deepEqual(tabsOf(menu[0]).map((t) => t.label),
     ['Today', 'Week', 'Month', 'Leave', 'Sign-off']);
   assert.deepEqual(tabsOf(menu[1]).map((t) => t.label), ['Rota', 'Workload', 'Lunch']);
@@ -170,7 +170,7 @@ test('a link never promises a screen its holder cannot open', () => {
 
 test('whoever does the wages sees the payroll and not the setup', () => {
   const menu = labels(['att_view', 'hr_pay'], { staffId: null });
-  assert.deepEqual(menu, ['Today', 'Payroll', 'Guide']);
+  assert.deepEqual(menu, ['Attendance', 'Payroll', 'Guide']);
 });
 
 test('somebody who manages logins but does not set the property up lands on their own tab', () => {
@@ -214,7 +214,8 @@ test('Setup and Guide end the list without a heading over them', () => {
 test('a screen opened by its own address lights up the link it lives under', () => {
   const menu = menuFor(roleHolds('admin', 1), { staffId: 1 });
   for (const [path, label] of [
-    ['signoff', 'Today'], ['att-week', 'Today'], ['att-leave', 'Today'],
+    ['signoff', 'Attendance'], ['att-week', 'Attendance'], ['att-leave', 'Attendance'],
+    ['att-today', 'Attendance'], ['att-overview', 'Attendance'],
     ['att-lunch', 'Rota'], ['att-workload', 'Rota'],
     ['rec', 'People'], ['att-advances', 'Payroll'], ['admin', 'Setup'],
     ['att-my-payslips', 'My pay'], ['att-my-report', 'My shifts'],

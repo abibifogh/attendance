@@ -42,14 +42,15 @@ export const GUIDE = [
       { sub: 'Finding your way round' },
       { p: 'The menu down the side is at most nine entries, whoever you are. Each one names a '
         + 'question rather than a screen, and the screens that answer it are the row of tabs '
-        + 'across the top of the page: Today holds the week, the month, the leave book and '
-        + 'sign-off; Rota holds the workload and the lunch list; Payroll holds advances and '
-        + 'medical claims; Setup holds notifications and logins.' },
+        + 'across the top of the page: Attendance holds today, the week, the month, the leave '
+        + 'book and sign-off; Rota holds the workload and the lunch list; Payroll holds '
+        + 'advances and medical claims; Setup holds notifications and logins.' },
       { p: 'Only what you can open is drawn, in the menu and in the tabs both. So the same '
-        + 'Today is five tabs for an administrator, four for whoever does the wages and two for '
-        + 'a supervisor, and somebody who only reads the rota gets one screen and no tabs at '
-        + 'all. Nothing was taken away when the menu was shortened: every screen still has its '
-        + 'own address, so a link somebody sent you last year still opens what it always did.' },
+        + 'Attendance is five tabs for an administrator, four for whoever does the wages and '
+        + 'four for a supervisor, and somebody who only reads the rota gets one screen and no '
+        + 'tabs at all. Nothing was taken away when the menu was shortened: every screen still '
+        + 'has its own address, so a link somebody sent you last year still opens what it '
+        + 'always did.' },
 
       { sub: 'Signing in' },
       { p: 'Two ways, and neither needs anything installed. A PIN is for a phone in a corridor; '

@@ -91,7 +91,10 @@ const GROUPS = [
   // What is happening, and what is planned. The two screens somebody with a
   // job to do opens; everything under them is the same question at a
   // different zoom.
-  { key: 'day', label: 'Today', section: 'The day' },
+  // Named for the domain rather than for the first tab of it. "Today" was the
+  // link over the week, the month, the leave book and sign-off, four of which
+  // are not today, and three of these pages already head themselves this.
+  { key: 'day', label: 'Attendance', section: 'The day' },
   { key: 'rota', label: 'Rota', section: 'The day' },
   // The staff themselves: who they are, what they are owed, what has been
   // written to them.
