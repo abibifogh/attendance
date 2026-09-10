@@ -30,6 +30,53 @@ Runs entirely on Cloudflare: a Worker serves both the app and the API, with a D1
 
 ---
 
+## Nine things in the menu
+
+Twenty-three screens, and for a long time twenty-three links down the side. That
+is a list an administrator reads rather than uses, and it put the five screens
+answering *what happened* in among the three answering *who is on* with nothing
+saying so.
+
+The screens are all still here and all still have their own address. What
+changed is that the ones answering the same question share a link, and the link
+names the question:
+
+| Link | What is behind it |
+|---|---|
+| **My shifts** | Their own week, their own month |
+| **My pay** | Payslips, an advance, medical claims |
+| **Today** | Today, the week, the month, the leave book, sign-off |
+| **Rota** | The rota, the workload behind it, the lunch list off it |
+| **People** | The records, and recruitment before them |
+| **Payroll** | The month's payroll, advances, medical claims |
+| **Letters** | The correspondence register |
+| **Setup** | Setting the property up, notifications, logins |
+| **Guide** | The handbook |
+
+Everything after the first screen in a group is a **tab across the top of the
+page**, drawn in the shell rather than inside any of the views, so moving
+between them never redraws the menu. Only the tabs somebody holds are drawn, in
+the menu and in the strip both: the same *Today* is five tabs for an
+administrator, four for whoever does the wages, two for a supervisor, and
+somebody who only reads the rota gets one screen with no strip at all.
+
+**A link never promises a screen its holder cannot open.** A permission list
+picked by hand can leave somebody with the workload and the lunch list but not
+the rota itself, and a link reading *Rota* that cannot open the rota is a menu
+telling a lie. The link takes the name of the first screen they actually hold.
+
+Headings go over the list only once it is six links or longer. A supervisor's
+menu is three entries; putting THE DAY over one of them explains nothing and
+takes a line doing it. *Setup* and *Guide* sit at the bottom under no heading,
+because a section called "everything else" says nothing.
+
+Who sees what is the part of a menu that goes quietly wrong, and it is not
+something anybody finds by clicking around as themselves — so the grouping lives
+in `public/js/menu.js`, apart from the app, and the tests read the real route
+table out of `app.js` and put it through the real grouping, role by role.
+
+---
+
 ## The guide is in the app
 
 **Guide**, last in the menu, open to anybody signed in. It is the handbook, and

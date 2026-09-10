@@ -4,6 +4,7 @@ import { guard, unguard } from './guard.js';
 import { checkVersion, takeTheNewOne, waitingToRefresh } from './fresh.js';
 import { registerWorker, watchForInstall } from './install.js';
 import { h, holdBehindDialogs, keepScroll, mount, watchScreenHeight } from './util.js';
+import { groupOf, menuRuns, openGroups, tabsOf } from './menu.js';
 import { renderLogin } from './views/login.js';
 import { alreadyWelcomed, markWelcomed, welcomePanel } from './views/welcome.js';
 import { openAccountDialog, renderForcedPinChange } from './views/account.js';
@@ -69,52 +70,106 @@ export const state = {
 };
 
 /**
+ * The nine things in the menu, and the screens behind each of them.
+ *
+ * It was twenty-three, one link per screen, and an administrator opening the
+ * app was reading a list longer than most of them ever used. The screens are
+ * all still here and all still have their own address; what changed is that
+ * the ones that answer the same question now arrive together, and the menu
+ * names the question rather than every way of asking it.
+ *
+ * A group's first screen is the one its link opens. Everything after it is a
+ * tab across the top, and only the tabs somebody actually holds are drawn — so
+ * the same group is five tabs for an administrator, two for a supervisor and
+ * one, with no tabs at all, for a rota reader.
+ */
+const GROUPS = [
+  // Their own, and nobody else's. Two links for a member of staff, who holds
+  // nothing else and for whom this is the whole app.
+  { key: 'me', label: 'My shifts', section: 'Mine' },
+  { key: 'my-pay', label: 'My pay', section: 'Mine' },
+  // What is happening, and what is planned. The two screens somebody with a
+  // job to do opens; everything under them is the same question at a
+  // different zoom.
+  { key: 'day', label: 'Today', section: 'The day' },
+  { key: 'rota', label: 'Rota', section: 'The day' },
+  // The staff themselves: who they are, what they are owed, what has been
+  // written to them.
+  { key: 'people', label: 'People', section: 'The people' },
+  { key: 'pay', label: 'Payroll', section: 'The people' },
+  { key: 'letters', label: 'Letters', section: 'The people' },
+  // The tail. No heading over these two: one is opened twice a year and the
+  // other is the way out of being stuck, and a section called "everything
+  // else" is a section that says nothing.
+  { key: 'setup', label: 'Setup' },
+  { key: 'guide', label: 'Guide' },
+];
+
+/**
  * The screens, in the order somebody grows into them.
  *
- * Today first because it is the only one a supervisor opens, and they open it
- * every morning. Setup last because it is opened twice a year.
+ * Grouped, and inside a group in the order the tabs read left to right. The
+ * first of each group is the one the menu link opens, so it is the one most
+ * people want: Today before the week, the rota before the workload behind it,
+ * this month's payroll before the advances that feed it.
  */
 const ROUTES = [
   // First, and for most people the only one. A member of staff holds this and
   // nothing else, so it has to be the screen they land on.
-  { mine: true, path: 'att-me', label: 'My shifts', permission: 'att_me', render: renderAttMe, live: ['rota', 'attendance', 'leave', 'lunch'] },
+  { mine: true, group: 'me', tab: 'Shifts', path: 'att-me', label: 'My shifts', permission: 'att_me', render: renderAttMe, live: ['rota', 'attendance', 'leave', 'lunch'] },
   // Beside it, because the month is the other question somebody asks about
   // their own attendance and it is not one the week can answer.
-  { mine: true, path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport, live: ['attendance', 'leave'] },
-  // Money going the other way. Beside their own report because that is where
-  // somebody looks when they are working out what they will be paid.
-  { mine: true, path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
-  { mine: true, path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
-  { mine: true, path: 'att-my-payslips', label: 'My payslips', permission: 'att_me', render: renderAttMyPayslips, live: ['pay'] },
-  { path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday, live: ['attendance', 'rota', 'leave'] },
-  { path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek, live: ['attendance', 'rota', 'leave'] },
+  { mine: true, group: 'me', tab: 'Report', path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport, live: ['attendance', 'leave'] },
+
+  // Money going the other way. Its own link rather than a third tab on their
+  // week: what somebody is owed and what they worked are two different
+  // errands, and mixing them puts a payslip one slip of the thumb from the
+  // screen they check every morning.
+  { mine: true, group: 'my-pay', tab: 'Payslips', path: 'att-my-payslips', label: 'My payslips', permission: 'att_me', render: renderAttMyPayslips, live: ['pay'] },
+  { mine: true, group: 'my-pay', tab: 'Advance', path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
+  { mine: true, group: 'my-pay', tab: 'Claims', path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
+
+  { group: 'day', tab: 'Today', path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday, live: ['attendance', 'rota', 'leave'] },
+  { group: 'day', tab: 'Week', path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek, live: ['attendance', 'rota', 'leave'] },
   // The planner reads the month before building the next one. The one thing
   // they may not see — how much leave anybody has left — comes out of the
   // answer, not just off the screen.
-  { path: 'att-overview', label: 'Month', permission: ['att_reports', 'att_rota'], render: renderAttOverview, live: ['attendance', 'rota', 'leave'] },
+  { group: 'day', tab: 'Month', path: 'att-overview', label: 'Month', permission: ['att_reports', 'att_rota'], render: renderAttOverview, live: ['attendance', 'rota', 'leave'] },
+  { group: 'day', tab: 'Leave', path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave, live: ['leave', 'rota'] },
+  // Last of the five, because it is what closes a period rather than what
+  // reads one, and it is the only tab here that cannot be undone.
+  { group: 'day', tab: 'Sign-off', path: 'signoff', label: 'Sign-off', permission: 'att_signoff', render: renderAttSignoff, live: ['attendance', 'rota', 'leave'] },
+
   // Whoever builds it, and whoever only needs to know who is on. The screen
   // itself is the same grid; a reader gets it with nothing on it to press.
-  { path: 'att-rota', label: 'Rota', permission: ['att_rota', 'att_rota_view'], render: renderAttRota, live: ['rota', 'leave', 'attendance'] },
+  { group: 'rota', tab: 'Rota', path: 'att-rota', label: 'Rota', permission: ['att_rota', 'att_rota_view'], render: renderAttRota, live: ['rota', 'leave', 'attendance'] },
   // Beside the rota, because it is read while the rota is being built.
-  { path: 'att-workload', label: 'Workload', permission: ['att_rota', 'att_reports'], render: renderAttWorkload, live: ['rota', 'leave'] },
-  { path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave, live: ['leave', 'rota'] },
-  { path: 'signoff', label: 'Sign-off', permission: 'att_signoff', render: renderAttSignoff, live: ['attendance', 'rota', 'leave'] },
-  { path: 'people', label: 'People', permission: 'hr_view', render: renderPeople, live: ['people'] },
+  { group: 'rota', tab: 'Workload', path: 'att-workload', label: 'Workload', permission: ['att_rota', 'att_reports'], render: renderAttWorkload, live: ['rota', 'leave'] },
+  // And the lunch list is the rota read for a different purpose: who is in on
+  // Wednesday, so the kitchen knows how many to cook for.
+  { group: 'rota', tab: 'Lunch', path: 'att-lunch', label: 'Lunch', permission: 'lunch', render: renderAttLunch, live: ['lunch', 'rota'] },
+
+  { group: 'people', tab: 'People', path: 'people', label: 'People', permission: 'hr_view', render: renderPeople, live: ['people'] },
   // Before People starts: how somebody got onto the books at all.
-  { path: 'rec', label: 'Recruitment', permission: 'rec_view', render: renderRec, live: ['recruitment'] },
-  // Its own permission, the same one as what anybody earns.
-  { path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances, live: ['pay'] },
-  { path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
-  { path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayrollTab, live: ['pay', 'attendance'] },
-  { path: 'att-lunch', label: 'Lunch', permission: 'lunch', render: renderAttLunch, live: ['lunch', 'rota'] },
-  { path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters, live: ['letters'] },
-  { path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup, live: ['admin', 'rota', 'attendance'] },
-  { path: 'notifications', label: 'Notifications', permission: 'users', render: renderNotifications, live: ['admin'] },
-  { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin, live: ['admin'] },
+  { group: 'people', tab: 'Recruitment', path: 'rec', label: 'Recruitment', permission: 'rec_view', render: renderRec, live: ['recruitment'] },
+
+  { group: 'pay', tab: 'Payroll', path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayrollTab, live: ['pay', 'attendance'] },
+  // Both of these end up on a payslip, and both are held by whoever holds the
+  // payroll. They were three separate links for three parts of one job.
+  { group: 'pay', tab: 'Advances', path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances, live: ['pay'] },
+  { group: 'pay', tab: 'Medical claims', path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
+
+  { group: 'letters', tab: 'Letters', path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters, live: ['letters'] },
+
+  { group: 'setup', tab: 'Setup', path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup, live: ['admin', 'rota', 'attendance'] },
+  { group: 'setup', tab: 'Notifications', path: 'notifications', label: 'Notifications', permission: 'users', render: renderNotifications, live: ['admin'] },
+  { group: 'setup', tab: 'Users & data', path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin, live: ['admin'] },
+
   // Last in the menu and reachable by everybody. What it contains is filtered
   // to what the reader actually holds, so it is short for a supervisor and
   // long for an administrator without either of them being sent elsewhere.
-  { path: 'guide', label: 'Guide', permission: null, render: renderGuide },
+  { group: 'guide', tab: 'Guide', path: 'guide', label: 'Guide', permission: null, render: renderGuide },
+
   // Reached by clicking a name rather than from the menu.
   { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, live: ['attendance', 'rota', 'leave'], hidden: true },
   { path: 'person', label: 'Record', permission: 'hr_view', render: renderPerson, live: ['people'], hidden: true },
@@ -226,13 +281,6 @@ export function replaceParams(path, params) {
 // The shell
 // ---------------------------------------------------------------------------
 
-/**
- * Ten screens is about the limit for one flat list.
- *
- * The other apps in this operation group their navigation because they carry
- * three stores between them. This one does not, and inventing a section
- * heading for a list of ten would be furniture for its own sake.
- */
 /** The way out, however it was reached. */
 async function signOut() {
   stopLive();
@@ -242,16 +290,49 @@ async function signOut() {
   render();
 }
 
-function sidebar() {
-  const visible = ROUTES.filter((r) => allowed(r) && !r.hidden);
+/** The groups this login can open, worked out against what they hold. */
+function myGroups() {
+  return openGroups(ROUTES, GROUPS, allowed);
+}
+
+/** Which group the screen on the page belongs to. */
+function hereGroup(groups = myGroups()) {
+  return groupOf(groups, currentRoute()?.path);
+}
+
+/**
+ * The tabs across the top of a group that holds more than one screen.
+ *
+ * Above the page rather than inside each view, in the shell beside the who
+ * strip, because it belongs to the menu rather than to any of the screens
+ * under it. Anchors rather than buttons so the router handles them, which
+ * means a half-filled form gets the same warning it would from the menu.
+ */
+function groupStrip() {
+  const group = hereGroup();
+  if (!group || group.screens.length < 2) return null;
   const here = currentRoute()?.path;
 
+  return h('div.group-tabs.seg.seg-wrap', tabsOf(group).map((tab) => h('a', {
+    href: `#/${tab.path}`,
+    class: here === tab.path ? 'active' : '',
+  }, tab.label)));
+}
+
+function sidebar() {
+  const groups = myGroups();
+  const current = hereGroup(groups);
+
+  const link = (group) => h('a.side-link', {
+    href: `#/${group.screens[0].path}`,
+    class: current?.key === group.key ? 'side-link active' : 'side-link',
+    onclick: () => closeDrawer(),
+  }, group.label);
+
   return h('nav.sidebar',
-    h('div.side-group', visible.map((route) => h('a.side-link', {
-      href: `#/${route.path}`,
-      class: here === route.path ? 'side-link active' : 'side-link',
-      onclick: () => closeDrawer(),
-    }, route.label))),
+    menuRuns(groups).map((run) => h('div.side-group',
+      run.section ? h('div.side-section', run.section) : null,
+      run.groups.map(link))),
 
     // Only ever seen on a phone, where it is not on the header. Last in the
     // drawer, under everything else, because it is the one thing here nobody
@@ -498,7 +579,7 @@ function shell(content) {
       // Tapping the page behind an open drawer closes it, which is what every
       // phone user already expects to happen.
       h('div.nav-scrim', { onclick: closeDrawer }),
-      h('main.main', whoStrip(), content),
+      h('main.main', whoStrip(), groupStrip(), content),
     ),
   );
 

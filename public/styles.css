@@ -237,6 +237,15 @@ a { color: var(--accent); }
 
 .side-group { display: grid; gap: .1rem; margin-bottom: .5rem; }
 
+/* The name of a run of links. Not a button: nothing folds, nothing opens, and
+   a heading that looks pressable is a heading people press. Only drawn at all
+   once the menu is long enough to be worth dividing. */
+.side-section {
+  padding: .35rem .65rem .15rem;
+  color: var(--text-faint);
+  font-size: .68rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+}
+
 .side-head {
   display: flex; align-items: center; justify-content: space-between; gap: .4rem;
   width: 100%; padding: .4rem .55rem; margin-bottom: .1rem;
@@ -441,8 +450,10 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; }
 
 .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
-.seg button { border: none; background: transparent; border-radius: 999px; padding: .32rem .8rem; font-size: .82rem; color: var(--text-dim); }
-.seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.seg button, .seg a { border: none; background: transparent; border-radius: 999px; padding: .32rem .8rem; font-size: .82rem; color: var(--text-dim); }
+.seg a { text-decoration: none; line-height: 1.4; }
+.seg button.active, .seg a.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.seg a:hover { color: var(--text); }
 
 /* Many categories will not fit on one line of a phone, so this variant wraps. */
 .seg.seg-wrap { flex-wrap: wrap; max-width: 100%; }
@@ -535,6 +546,19 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 /* Whose "my" screens are being shown, on a login that carries more than one
    person's record. Above the page and quiet: for the handful of logins that
    have it, it is a heading rather than a control they came for. */
+/* The screens inside one menu entry, across the top of the page.
+   ---------------------------------------------------------------------------
+   The menu names the question ("Today", "Payroll"); this names the ways of
+   asking it. It sits above the page rather than inside any of the screens
+   under it, so moving between them never redraws the shell and the strip
+   cannot end up saying one thing on one screen and another on the next. */
+.group-tabs { display: inline-flex; margin: 0 0 .9rem; }
+/* Wide enough to wrap on a phone rather than run off the side. */
+@media (max-width: 640px) {
+  .group-tabs { display: flex; width: 100%; }
+  .group-tabs a { flex: 1 1 auto; text-align: center; padding: .32rem .5rem; }
+}
+
 .who-strip {
   display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
   margin: 0 0 .9rem; padding: .45rem .7rem;
