@@ -2791,7 +2791,7 @@ export async function publishRoster(ctx) {
       kind: 'rota.published',
       level: 'info',
       title: `Rota published: ${from} to ${to}`,
-      body: `${what} — confirmed by ${actor}. What was dashed is now solid.`
+      body: `${what} — confirmed by ${actor}.`
         + (message ? `\n\n${message}` : ''),
       link: `#/att-rota?from=${from}&to=${to}`,
       actor,
