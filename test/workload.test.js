@@ -119,7 +119,7 @@ test('a comfortable gap is not reported', async () => {
   assert.deepEqual(turnarounds(worked, 12), []);
 });
 
-test('the weekly rest is the longest unbroken stretch off duty', async () => {
+test('a week of nightly turnarounds is no hours off at all', async () => {
   // Seven mornings in a row, inside a rota that carries on afterwards — so the
   // only gaps are the sixteen hours between one shift and the next. A fixture
   // that simply stopped on the Sunday would be measuring the end of the data
@@ -133,7 +133,11 @@ test('the weekly rest is the longest unbroken stretch off duty', async () => {
   const rest = weeklyRest(worked, '2026-06-01', '2026-06-07');
 
   assert.equal(rest.length, 1, 'one seven-day stretch fits in seven days');
-  assert.equal(rest[0].hours, 16, 'never a 48-hour break, and 16 is the best of it');
+  assert.equal(rest[0].longest, 16, 'the best single break was the sixteen hours overnight');
+  // And none of it counts towards the week's forty-eight. Sixteen hours
+  // between a late and an early is not a day off, and adding up seven of them
+  // would give this person 112 hours off a week they never left.
+  assert.equal(rest[0].hours, 0, 'not one clear day in seven');
 });
 
 test('rest at the edge of what is known is not invented, and not clipped either', async () => {

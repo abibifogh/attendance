@@ -931,6 +931,16 @@ export const GUIDE = [
         + 'app expects everybody to get at least one a month and says so when somebody has not '
         + 'had theirs, which is the figure that otherwise goes unnoticed until somebody '
         + 'complains. Set the number, or turn it off, under Setup → Workload.' },
+      { sub: 'The 48 hours off' },
+      { p: 'Everybody should get 48 hours off in any seven days, and here they do not have to '
+        + 'be next to each other: off on the Wednesday and off on the Saturday is two days off. '
+        + 'A break has to be a clear day before it counts, so the hours between a late finish '
+        + 'and an early start are not rest \u2014 otherwise everybody would pass and the check '
+        + 'would never say anything.' },
+      { note: 'The law asks for the 48 in one unbroken run. A week that gets the time in pieces '
+        + 'keeps the house rule and not the law, so it still shows, as a quieter warning that '
+        + 'says which week and how long the longest break actually was. Worth knowing before '
+        + 'somebody from Labour asks; not worth changing the rota over this afternoon.' },
     ],
   },
 

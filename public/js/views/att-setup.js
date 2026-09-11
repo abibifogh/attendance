@@ -2506,11 +2506,14 @@ const WORKLOAD_LIMITS = [
   },
   {
     key: 'wl_weeklyRestHours',
-    label: 'Unbroken rest each week',
+    label: 'Rest each week',
     unit: 'hours',
     fallback: 48,
     law: 'Act 651 s.36',
-    hint: 'One stretch, not two days added together',
+    hint: 'Days off added up, in any seven days. A break has to be a clear day '
+      + 'to count, so the hours between a late and an early are not rest. The law '
+      + 'asks for the 48 in one run; a week that takes them in pieces is still '
+      + 'flagged, one step quieter.',
   },
   {
     key: 'wl_weeklyHours',

@@ -60,7 +60,12 @@ import { absMinutes, calendarFor, daysPerWeekFor, scheduleFor, shiftWindow } fro
 export const LIMITS = {
   // Act 651
   dailyRestHours: { value: 12, law: 'Act 651 s.35', label: 'Rest between shifts' },
-  weeklyRestHours: { value: 48, law: 'Act 651 s.36', label: 'Unbroken rest each week' },
+  // Forty-eight hours off in every seven days, which this property counts
+  // across the week rather than in one run: two days off on the Wednesday and
+  // the Saturday is two days off. The law asks for the forty-eight
+  // consecutive, and that is still checked and still said, one step quieter,
+  // so nobody reads a clean rota here as a rota a labour officer would pass.
+  weeklyRestHours: { value: 48, law: 'Act 651 s.36', label: 'Rest each week' },
   weeklyHours: { value: 40, law: 'Act 651 s.33', label: 'Hours in a week' },
   dailyHours: { value: 9, law: 'Act 651 ss.33–34', label: 'Hours in a day' },
 
@@ -254,20 +259,39 @@ export function turnarounds(worked, limitHours) {
 }
 
 /**
- * The longest unbroken stretch off duty around every rolling seven days.
+ * How much time off duty every rolling seven days holds, two ways.
  *
- * The gaps are measured between actual shifts, not clipped at the edge of the
- * window being asked about. That distinction is the whole thing: an ordinary
- * Monday-to-Friday week gives 64 hours off from Friday afternoon to Monday
- * morning, and a window that happens to end on the Saturday would call the
- * same weekend 34 hours and report a property breaking the law every week of
- * its life. A warning that cries wolf on a normal rota is worse than no
- * warning, because it is the one people switch off.
+ * `hours` is the property's own rule: the days off added up. Forty-eight hours
+ * in the week, and they do not have to be next to each other — off on the
+ * Wednesday and off on the Saturday is two days off, and a rota built that way
+ * was being reported as breaking a rule it keeps.
  *
- * So: find every gap between consecutive shifts across the whole timeline,
- * then ask of each seven-day stretch which of those gaps it touches, and how
- * long the best of them was.
+ * `longest` is the law's: forty-eight *consecutive* hours in every seven days.
+ * Kept because a property whose own rule is the looser of the two still wants
+ * to know which weeks would not survive being asked about.
+ *
+ * They clip differently, and each is right for its own question.
+ *
+ * The longest run is measured between actual shifts and never clipped at the
+ * edge of the window. That distinction is the whole reason this function is
+ * not four lines: an ordinary Monday-to-Friday week gives 64 hours off from
+ * Friday afternoon to Monday morning, and a window that happens to end on the
+ * Saturday would call the same weekend 34 hours and report a property breaking
+ * the law every week of its life. A warning that cries wolf on a normal rota
+ * is worse than no warning, because it is the one people switch off.
+ *
+ * The total is clipped, because it has to be: an unclipped sum could credit a
+ * week with rest that fell entirely outside it, and could pass 168 hours in a
+ * 168-hour week, which is not an answer to anything.
+ *
+ * And only real breaks count towards it. Adding up the twelve hours between
+ * yesterday's late and this morning's early would give everybody 90 hours off
+ * a week and the check would never fire again. A break has to be a clear day
+ * before it is a day off, which is what anybody means by hours off.
  */
+
+/** The shortest thing anybody would call a day off. */
+export const CLEAR_DAY_MINUTES = 24 * 60;
 export function weeklyRest(worked, from, to) {
   const shifts = worked.filter((w) => !w.leave && w.shift).sort((a, b) => a.start - b.start);
 
@@ -292,14 +316,24 @@ export function weeklyRest(worked, from, to) {
     const windowStart = absMinutes(start, '00:00');
     const windowEnd = windowStart + 7 * 1440;
 
-    // Any rest that overlaps these seven days counts for them, however far
-    // either side of the boundary it runs.
     let best = 0;
+    let total = 0;
     for (const gap of gaps) {
       if (gap.end <= windowStart || gap.start >= windowEnd) continue;
+      // The law's question. Any rest that overlaps these seven days counts for
+      // them in full, however far either side of the boundary it runs.
       best = Math.max(best, gap.end - gap.start);
+      // The property's. Only the part inside the week, and only if that part
+      // is a clear day in its own right.
+      const inside = Math.min(gap.end, windowEnd) - Math.max(gap.start, windowStart);
+      if (inside >= CLEAR_DAY_MINUTES) total += inside;
     }
-    weeks.push({ from: start, to: end, hours: Math.round((best / 60) * 10) / 10 });
+    weeks.push({
+      from: start,
+      to: end,
+      hours: Math.round((total / 60) * 10) / 10,
+      longest: Math.round((best / 60) * 10) / 10,
+    });
   }
   return weeks;
 }
@@ -411,21 +445,51 @@ export function assessPerson(ds, staff, from, to, limits = limitsFrom(ds?.settin
       limits.dailyRestHours.law));
   }
 
-  // Every seven-day stretch, not every calendar week: the law asks for a
-  // 48-hour break in *any* seven days, so a fortnight is eight overlapping
-  // questions rather than two. Reported as the worst one, because eight counts
-  // of the same run of shifts reads as eight problems.
+  // Every seven-day stretch, not every calendar week: the question is asked of
+  // *any* seven days, so a fortnight is eight overlapping questions rather than
+  // two. Reported as the worst one, because eight counts of the same run of
+  // shifts reads as eight problems.
+  //
+  // The property's own rule first, because that is the one being broken. The
+  // days off added up, whether or not they were next to each other.
   const thinWeeks = rest.filter((w) => w.hours < limits.weeklyRestHours.value);
   if (thinWeeks.length) {
     const worst = thinWeeks.reduce((a, b) => (a.hours <= b.hours ? a : b));
     const all = thinWeeks.length === rest.length;
     findings.push(finding(HIGH, 'weekly-rest',
       all
-        ? `Never a full ${limits.weeklyRestHours.value} hours off, at any point`
+        ? `Never a full ${limits.weeklyRestHours.value} hours off in any seven days`
         : `${thinWeeks.length} week${thinWeeks.length === 1 ? '' : 's'} without a proper `
           + `${limits.weeklyRestHours.value} hours off`,
-      `The longest clear run they got was ${sayHours(worst.hours)}, in the week beginning `
-      + `${sayDay(worst.from)}.`,
+      // Only the house rule's own number. The unbroken figure is deliberately
+      // measured without clipping at the edge of the week, so quoting it here
+      // would name hours that mostly fell outside the seven days being
+      // complained about: "not one clear day off, the best break being 29
+      // hours" is two true sentences that read as a contradiction.
+      `${worst.hours ? `Only ${sayHours(worst.hours)} off` : 'Not one clear day off'}`
+      + ` in the seven days from ${sayDay(worst.from)}.`,
+      limits.weeklyRestHours.law));
+  }
+
+  // AND THE LAW'S, WHICH IS THE STRICTER OF THE TWO.
+  //
+  // Act 651 s.36 asks for the forty-eight consecutively, and this property
+  // counts them across the week. A week that keeps the house rule and not the
+  // law is not a week anybody needs chasing about today, and it is a week
+  // somebody should know about before a labour officer asks. So it is said,
+  // one step quieter, and only where the loud one has not already said it.
+  const brokenUp = rest.filter((w) => w.hours >= limits.weeklyRestHours.value
+    && w.longest < limits.weeklyRestHours.value);
+  if (brokenUp.length) {
+    const worst = brokenUp.reduce((a, b) => (a.longest <= b.longest ? a : b));
+    findings.push(finding(WARN, 'weekly-rest-split',
+      `${brokenUp.length === rest.length ? 'Their' : `${brokenUp.length}`} `
+      + `${brokenUp.length === rest.length ? `${limits.weeklyRestHours.value} hours off come`
+        : `week${brokenUp.length === 1 ? '' : 's'} take the `
+          + `${limits.weeklyRestHours.value} hours`} in more than one piece`,
+      `They get the time. The longest single break in the seven days from `
+      + `${sayDay(worst.from)} was ${sayHours(worst.longest)}, and the law asks for the `
+      + `${limits.weeklyRestHours.value} in one run.`,
       limits.weeklyRestHours.law));
   }
 

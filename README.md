@@ -1245,6 +1245,33 @@ a plan.
 > a property in breach every week of its life. A warning that cries wolf on a
 > normal rota is the one people switch off.
 
+**The forty-eight is counted across the week, not in one run.** The law asks
+for the forty-eight *consecutive*, and this property does not roster that way:
+somebody off on the Wednesday and off again on the Saturday has had two days
+off, and the check was flagging a week that keeps the house rule. So the loud
+finding is now the days off added up over any seven days.
+
+Two things had to be decided to make that mean anything.
+
+**A break has to be a clear day before it is a day off.** Adding up the twelve
+hours between last night's late and this morning's early would give everybody
+ninety hours off a week they never left, and the check would never fire again.
+Only breaks of twenty-four hours or more count towards the total.
+
+**And the total is clipped to the week, where the unbroken figure is not.**
+They are two questions and they need opposite treatment. An unclipped sum could
+credit a week with rest that fell entirely outside it, or pass 168 hours in a
+168-hour week; an unbroken run clipped at the boundary is the cried wolf above.
+So the same weekend is 58 hours towards this week's total and 64 hours of
+unbroken rest, and both numbers are right.
+
+**The law's own reading did not go away.** A week that takes its forty-eight in
+pieces raises a quieter warning that says exactly that, cites s.36, and gives
+the longest single break. A clean rota under the house rule is not the same
+thing as a rota a labour officer would pass, and nobody should be able to
+confuse the two by reading this screen. The two never fire about the same week:
+the quiet one is only for weeks the loud one has already let through.
+
 ### Every screen is live
 
 These screens are read as boards. Somebody leaves Today open on the office
