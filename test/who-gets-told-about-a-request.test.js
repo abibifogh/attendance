@@ -156,9 +156,15 @@ test('asking about a day rings the planner and mails only the people who answer'
   assert.ok(notice, 'the notice was written');
   assert.equal(notice.audience, 'att_rota');
 
-  // The inbox does not.
-  assert.equal(sent.length, 1, 'one mail went out');
-  const to = sent[0].to;
+  // The inbox does not. One call to the provider carrying one message per
+  // person, so nobody is handed anybody else's address.
+  assert.equal(sent.length, 1, 'one call to the provider');
+  const batch = sent[0];
+  assert.ok(Array.isArray(batch), 'a batch of messages, not one message to a list');
+  for (const one of batch) {
+    assert.equal(one.to.length, 1, `addressed to ${one.to.join(', ')}`);
+  }
+  const to = batch.flatMap((one) => one.to);
   assert.ok(!to.includes('planner@example.com'), `the planner was mailed: ${to.join(', ')}`);
   assert.ok(to.includes('manager@example.com'));
   assert.ok(to.includes('supervisor@example.com'));

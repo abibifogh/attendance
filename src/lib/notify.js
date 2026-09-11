@@ -172,32 +172,77 @@ ${body}
 </body></html>`;
 }
 
+/** How many messages the provider takes in one batch. */
+const MOST_IN_A_BATCH = 100;
+
+/**
+ * Send it, and never to more than one person at a time.
+ *
+ * NOBODY SEES ANYBODY ELSE'S ADDRESS. Passing the whole list as `to` put every
+ * recipient in the header, so a rota going out to the property showed each of
+ * them everyone else's address — staff, the owners, and whoever is on a
+ * personal address they never gave the rest of the house. That is somebody
+ * else's personal data handed out by a rota notification, and no message this
+ * app sends has ever wanted it.
+ *
+ * So a list becomes one message each. Done here rather than at the four places
+ * that call this, because the next thing to send mail would have had the same
+ * hole in it and nobody would have looked.
+ *
+ * One message each rather than one message blind-copied, which is the other
+ * way round it. A bcc with nothing in `to` reads as bulk mail to a filter and
+ * as a mistake to a person, and it costs the same.
+ */
 export async function sendEmail({
   apiKey, from, to, subject, html, text, replyTo = null, headers = null,
 }) {
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from,
-      to,
-      subject,
-      html,
-      // Both parts, always. See asPlainText above.
-      text: text || asPlainText(html),
-      ...(replyTo ? { reply_to: replyTo } : {}),
-      ...(headers ? { headers } : {}),
-    }),
+  const each = (Array.isArray(to) ? to : [to])
+    .map((one) => String(one ?? '').trim())
+    .filter(Boolean);
+  if (!each.length) throw new Error('No address to send to.');
+
+  const message = (one) => ({
+    from,
+    to: [one],
+    subject,
+    html,
+    // Both parts, always. See asPlainText above.
+    text: text || asPlainText(html),
+    ...(replyTo ? { reply_to: replyTo } : {}),
+    ...(headers ? { headers } : {}),
   });
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    throw new Error(`Email provider returned ${response.status}: ${detail.slice(0, 300)}`);
+  const post = async (path, payload) => {
+    const response = await fetch(`https://api.resend.com/${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(`Email provider returned ${response.status}: ${detail.slice(0, 300)}`);
+    }
+    return response.json().catch(() => ({}));
+  };
+
+  if (each.length === 1) return post('emails', message(each[0]));
+
+  // A hundred at a time, which is what the provider takes. Twenty-four people
+  // is one call rather than twenty-four, so a rota going out is still one
+  // round trip in practice.
+  const sent = [];
+  for (let i = 0; i < each.length; i += MOST_IN_A_BATCH) {
+    // Sequential on purpose: the provider rate-limits, and a property large
+    // enough to need a second batch is large enough to be told off for firing
+    // them all at once.
+    // eslint-disable-next-line no-await-in-loop
+    const out = await post('emails/batch', each.slice(i, i + MOST_IN_A_BATCH).map(message));
+    sent.push(...(Array.isArray(out?.data) ? out.data : [out]));
   }
-  return response.json().catch(() => ({}));
+  return { data: sent };
 }
 
 /**

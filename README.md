@@ -1635,6 +1635,7 @@ free. What the app now does on its own:
   subject instead of scraping the property name twice.
 - **A reply-to that reaches a person.** Staff do reply to these, and a reply
   that vanishes teaches them the mail is not worth reading.
+- **One message each, never one message to everybody.** See below.
 
 The rest is DNS, and the app cannot do it: **SPF and DKIM** come with verifying
 the domain at the provider, and **DMARC** is a record you add yourself. Without
@@ -1650,8 +1651,26 @@ a sign-off down or fail one; a send that does fail lands in the email log and
 nowhere else. The sender is `hive@niceoperation.com`, and one switch on Users &
 data → Notifications turns the whole thing off.
 
-The morning digest is deliberately left as it was: one message, to the typed
-recipient list, and only when there is something to do about it. Emailing its
+**Nobody is handed anybody else's address.** A message going to more than one
+person used to put the whole list in `to`, so a rota going out to the property
+showed every recipient every other recipient: the staff, the owners, and
+whoever is on a personal address they never gave the rest of the house. That is
+somebody else's personal data handed out by a rota notification, and no message
+this app sends has ever wanted it.
+
+A list is now one message each, sent to the provider in batches of a hundred so
+twenty-four people is still one round trip. One message each rather than one
+blind-copied, which is the other way round it: a bcc with nothing in `to` reads
+as bulk mail to a filter and as a mistake to a person, and it costs the same.
+
+Fixed in the one function that talks to the provider rather than at the four
+places that call it, because the next thing to send mail would have had the
+same hole in it and nobody would have looked. A test walks `src/` and fails if
+anything but that function ever mentions the mail API again.
+
+The morning digest is deliberately left as it was in every other respect: one
+letter, to the typed recipient list, and only when there is something to do
+about it. Emailing its
 notice as well would put two messages about the same morning in the same inbox,
 which is how people learn to ignore both.
 
