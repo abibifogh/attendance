@@ -2499,7 +2499,8 @@ export const GUIDE = [
       { sub: 'Everybody\u2019s details in one sheet' },
       { p: 'Staff details, on the Staff tab, takes the whole register down as a spreadsheet '
         + 'with everybody already on it: both phone numbers, email, date of birth, address, '
-        + 'next of kin and their number, alongside the department, start date and pay. Fill in '
+        + 'the emergency contact and their number, alongside the department, start date and '
+        + 'pay. Fill in '
         + 'the gaps in Excel and send it back. Nothing is written until you have seen what the '
         + 'file would do, line by line.' },
       { p: 'A blank cell leaves what is there alone. Sending back two columns of phone numbers '

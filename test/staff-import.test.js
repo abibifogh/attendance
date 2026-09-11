@@ -509,3 +509,78 @@ test('but a number nobody has still needs one, and says how many', async () => {
     /a name column, for the 2 numbers on it that nobody here has/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// An emergency contact, not a next of kin
+// ---------------------------------------------------------------------------
+
+/**
+ * These columns were labelled "Next of kin" and have always written a row
+ * whose kind is 'emergency', because what a starter form asks for is who to
+ * ring today. Next of kin is a statement about somebody's estate, it is
+ * declared on a signed form of its own, and the two are not the same person
+ * often enough for the label to have been harmless.
+ *
+ * The old spellings are still read. A property that filled in last year's
+ * sheet and sends it back this year is not doing anything wrong.
+ */
+
+test('the column is called what it is, and it writes an emergency contact', async () => {
+  const { db, raw } = setup();
+  await applyStaffImport(ctx(db, 'Employee no,Name\n1,Kofi Mensah'));
+
+  const out = await (await applyStaffImport(ctx(db, [
+    'Employee no,Emergency contact,Emergency contact phone,Relationship to them',
+    '1,Adjoa Mensah,020 987 6543,Sister',
+  ].join('\n')))).json();
+  assert.equal(out.ok, true);
+
+  const row = raw.prepare(
+    `SELECT c.kind, c.name, c.phone, c.relationship FROM hr_contact c
+       JOIN att_staff s ON s.id = c.staff_id WHERE s.employee_no = '1'`,
+  ).get();
+  assert.equal(row.kind, 'emergency', 'which is what it has always written');
+  assert.equal(row.name, 'Adjoa Mensah');
+  assert.equal(row.phone, '020 987 6543');
+  assert.equal(row.relationship, 'Sister');
+});
+
+test('and last year’s sheet, which said next of kin, still reads', async () => {
+  const { db, raw } = setup();
+  await applyStaffImport(ctx(db, 'Employee no,Name\n1,Kofi Mensah'));
+  await applyStaffImport(ctx(db, [
+    'Employee no,Next of kin,Next of kin phone,Next of kin relationship',
+    '1,Adjoa Mensah,020 987 6543,Sister',
+  ].join('\n')));
+
+  const row = raw.prepare(
+    `SELECT c.name, c.relationship FROM hr_contact c
+       JOIN att_staff s ON s.id = c.staff_id WHERE s.employee_no = '1'`,
+  ).get();
+  assert.equal(row.name, 'Adjoa Mensah');
+  assert.equal(row.relationship, 'Sister');
+});
+
+test('the words next of kin are off the columns and off the screens', () => {
+  // Two things are allowed to keep saying it, and the rule tells them apart by
+  // shape. A heading the importer *reads* is lower case inside quotes, and
+  // last year's sheet still has to import. A comment explaining the difference
+  // is a comment. Anything else with a capital N is a label somebody sees.
+  for (const file of [
+    'src/lib/staff-import.js', 'src/routes/attendance-setup.js',
+    'public/js/views/att-setup.js', 'public/js/guide-content.js',
+  ]) {
+    const said = readFileSync(file, 'utf8').split('\n')
+      .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+      .filter((line) => /next.of.kin/i.test(line))
+      .filter((line) => !/'[^']*next of kin[^']*'/.test(line));
+    assert.deepEqual(said, [], `${file} still says it: ${said.join(' | ')}`);
+  }
+});
+
+test('nothing in the code still calls it kin', () => {
+  for (const file of ['src/lib/staff-import.js', 'src/routes/attendance-setup.js']) {
+    const src = readFileSync(file, 'utf8');
+    assert.equal(/nextOfKin|KIN_FIELDS/.test(src), false, `${file}`);
+  }
+});

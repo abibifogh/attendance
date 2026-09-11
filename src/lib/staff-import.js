@@ -170,12 +170,21 @@ const HEADINGS = [
 
   // Who to ring when something has happened. The one part of a staff record
   // that is read in a hurry, and the one most often missing.
-  ['nextOfKin', ['next of kin', 'emergency contact', 'emergency name', 'kin',
-    'in case of emergency']],
-  ['nextOfKinPhone', ['next of kin phone', 'emergency phone', 'emergency number',
-    'kin phone', 'next of kin number']],
-  ['nextOfKinRelation', ['next of kin relationship', 'relationship', 'relation',
-    'emergency relationship']],
+  //
+  // AN EMERGENCY CONTACT, NOT A NEXT OF KIN. These columns were labelled next
+  // of kin and have always written a row whose kind is 'emergency', because
+  // what a starter form asks for is who to ring today. Next of kin is a
+  // statement about somebody's estate, it is declared on a signed form of its
+  // own, and the two are not the same person often enough for the label to
+  // have been harmless. The old spellings are still read, so a sheet somebody
+  // filled in last year still imports.
+  ['emergencyContact', ['emergency contact', 'emergency contact name', 'emergency name',
+    'in case of emergency', 'next of kin', 'kin']],
+  ['emergencyPhone', ['emergency contact phone', 'emergency phone', 'emergency number',
+    'emergency contact number', 'next of kin phone', 'kin phone', 'next of kin number']],
+  ['emergencyRelation', ['relationship to them', 'emergency relationship',
+    'relationship to emergency contact', 'relationship', 'relation',
+    'next of kin relationship']],
 
   // Numbers and accounts. Only written by somebody who could already read
   // them, and refused with a reason to anybody else.
@@ -224,8 +233,8 @@ export const PROFILE_COLUMN = {
   momoNumber: 'momo_number',
 };
 
-/** Next of kin, which is a row of its own because somebody may have two. */
-export const KIN_FIELDS = ['nextOfKin', 'nextOfKinPhone', 'nextOfKinRelation'];
+/** The emergency contact, a row of its own because somebody may have two. */
+export const CONTACT_FIELDS = ['emergencyContact', 'emergencyPhone', 'emergencyRelation'];
 
 /**
  * The columns only somebody who can already read them may write.
@@ -322,9 +331,9 @@ const LABELS = {
   town: 'Town',
   region: 'Region',
   digitalAddress: 'Digital address',
-  nextOfKin: 'Next of kin',
-  nextOfKinPhone: 'Next of kin phone',
-  nextOfKinRelation: 'Next of kin relationship',
+  emergencyContact: 'Emergency contact',
+  emergencyPhone: 'Emergency contact phone',
+  emergencyRelation: 'Relationship to them',
   idType: 'ID type',
   idNumber: 'ID number',
   ssnitNumber: 'SSNIT number',
@@ -365,9 +374,9 @@ function standing(person, profile, pay, allowances = [], kin = null) {
     ...Object.fromEntries(
       Object.entries(PROFILE_COLUMN).map(([kind, column]) => [kind, profile?.[column] ?? null]),
     ),
-    nextOfKin: kin?.name ?? null,
-    nextOfKinPhone: kin?.phone ?? null,
-    nextOfKinRelation: kin?.relationship ?? null,
+    emergencyContact: kin?.name ?? null,
+    emergencyPhone: kin?.phone ?? null,
+    emergencyRelation: kin?.relationship ?? null,
   };
 }
 

@@ -3,7 +3,7 @@ import {
   badRequest, bool, csvResponse, int, json, notFound, num, readJson, rethrowConstraint, str,
 } from '../lib/http.js';
 import {
-  KIN_FIELDS, PROFILE_COLUMN, readStaffSheet, tallyOf,
+  CONTACT_FIELDS, PROFILE_COLUMN, readStaffSheet, tallyOf,
 } from '../lib/staff-import.js';
 import { ratesFrom } from '../lib/tax.js';
 import { tiersFrom } from '../lib/statutory.js';
@@ -1507,7 +1507,7 @@ async function registerNow(db) {
       .catch(() => ({ results: [] })),
     db.prepare('SELECT staff_id, name, amount, taxable FROM pay_allowance WHERE active = 1').all()
       .catch(() => ({ results: [] })),
-    // The first one only. A sheet has one column for next of kin and somebody
+    // The first one only. A sheet has one column for the emergency contact and somebody
     // may have two contacts on file; filling in the column changes the first
     // and leaves the second where it is.
     db.prepare(
@@ -1703,7 +1703,7 @@ export async function applyStaffImport(ctx) {
       // The person to ring when something has happened. A row of its own,
       // because somebody may have two and the sheet has one column: filling it
       // in changes the first and leaves anybody else on file alone.
-      if (KIN_FIELDS.some((kind) => set.has(kind))) {
+      if (CONTACT_FIELDS.some((kind) => set.has(kind))) {
         const held = await ctx.db.prepare(
           'SELECT id FROM hr_contact WHERE staff_id = ? ORDER BY id LIMIT 1',
         ).bind(staffId).first().catch(() => null);
@@ -1715,21 +1715,21 @@ export async function applyStaffImport(ctx) {
             binds.push(value);
             bits.push(`${column} = ?${binds.length}`);
           };
-          if (set.has('nextOfKin')) put('name', set.get('nextOfKin'));
-          if (set.has('nextOfKinPhone')) put('phone', set.get('nextOfKinPhone'));
-          if (set.has('nextOfKinRelation')) put('relationship', set.get('nextOfKinRelation'));
+          if (set.has('emergencyContact')) put('name', set.get('emergencyContact'));
+          if (set.has('emergencyPhone')) put('phone', set.get('emergencyPhone'));
+          if (set.has('emergencyRelation')) put('relationship', set.get('emergencyRelation'));
           binds.push(held.id);
           await ctx.db.prepare(`UPDATE hr_contact SET ${bits.join(', ')} WHERE id = ?${binds.length}`)
             .bind(...binds).run().catch(() => {});
-        } else if (set.has('nextOfKin')) {
+        } else if (set.has('emergencyContact')) {
           // A contact with no name is nobody to ring, so a sheet that fills in
           // a number and no name writes nothing rather than a blank row.
           await ctx.db.prepare(
             `INSERT INTO hr_contact (staff_id, kind, name, phone, relationship)
              VALUES (?1, 'emergency', ?2, ?3, ?4)`,
           ).bind(
-            staffId, set.get('nextOfKin'),
-            set.get('nextOfKinPhone') ?? null, set.get('nextOfKinRelation') ?? null,
+            staffId, set.get('emergencyContact'),
+            set.get('emergencyPhone') ?? null, set.get('emergencyRelation') ?? null,
           ).run().catch(() => {});
         }
       }
@@ -1820,7 +1820,7 @@ export async function staffTemplate(ctx) {
     'Annual leave days', 'Days a week', 'Here for',
     'Phone', 'Other phone', 'Email',
     'Date of birth', 'Gender', 'Address', 'Town', 'Region', 'Digital address',
-    'Next of kin', 'Next of kin phone', 'Next of kin relationship',
+    'Emergency contact', 'Emergency contact phone', 'Relationship to them',
     ...(numbers ? NUMBERS : []),
     'Basic salary', 'SSNIT', ...columns, 'Note'];
 
@@ -1896,9 +1896,9 @@ export async function staffTemplate(ctx) {
       Email: 'kofi@example.com',
       'Date of birth': '1996-07-14',
       Town: 'Accra',
-      'Next of kin': 'Adjoa Mensah',
-      'Next of kin phone': '020 987 6543',
-      'Next of kin relationship': 'Sister',
+      'Emergency contact': 'Adjoa Mensah',
+      'Emergency contact phone': '020 987 6543',
+      'Relationship to them': 'Sister',
       'Basic salary': '1800.00',
       SSNIT: 'Yes',
       Note: 'An example. Change it or delete the line',

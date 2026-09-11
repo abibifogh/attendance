@@ -441,7 +441,7 @@ function staffImportButton(reload) {
   return bulkUpload({
     accept: '.csv,text/csv',
     label: 'Staff details',
-    title: 'Everybody on file as a spreadsheet: names, contacts, next of kin and pay. '
+    title: 'Everybody on file as a spreadsheet: names, contacts, emergency contacts and pay. '
       + 'Fill in the gaps and send it back. Nothing is written until you have seen what '
       + 'it would do.',
     template: {

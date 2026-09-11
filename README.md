@@ -794,7 +794,7 @@ ago.
 *Staff details* under Setup takes the whole record down as a sheet with
 everybody already on it, and takes it back filled in. Known as, both phone
 numbers, email, date of birth, gender, address, town, region, digital address,
-and next of kin with their number and relationship, alongside the register and
+and the emergency contact with their number and relationship, alongside the register and
 pay columns that were already there. A blank cell still leaves what is there
 alone: sending back two columns of phone numbers means setting two things, not
 wiping the rest.
@@ -3693,7 +3693,7 @@ one dead.
 
 Personal details, address and GhanaPost GPS, identification (Ghana Card, SSNIT,
 TIN), how they are paid, what a first-aider would need, emergency contacts and
-next of kin, education, previous employment, and scanned documents.
+emergency contacts, education, previous employment, and scanned documents.
 
 Two permissions. **Employee records** reads the file with the private numbers
 masked — `•••• 4321` rather than blank, so a supervisor can see that a bank
