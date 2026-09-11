@@ -723,6 +723,10 @@ export const GUIDE = [
       { note: 'The row is not there on a week with nothing outstanding. It follows the '
         + 'department filter with the rest of the screen, so looking at Housekeeping does '
         + 'not show you the breakfasts nobody is on either.' },
+      { p: 'Setting somebody’s cell to Off puts a card there: the day still needs its '
+        + 'breakfast, and what changed is only who is cooking it. Dragging the shift onto '
+        + 'somebody else does not, because the day is still covered — the shift went to '
+        + 'them rather than to nobody.' },
 
       { sub: 'Writing down days somebody cannot work' },
       { p: 'The ⋯ beside a name on People view. Tick the days, say whether it is "cannot '

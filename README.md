@@ -547,6 +547,22 @@ were promised reads as a change rather than as news. Only where the shift was
 really on the rota, because a shift showing from somebody's standing pattern
 is an assumption about a normal week rather than a shift they were put on.
 
+**Unless somebody else in the same save is taking it on.** Dragging Ama's
+breakfast onto Kofi is one gesture and two changes: Kofi is on it, and Ama's
+cell is Off. Read on its own the second half is indistinguishable from letting
+a shift go, so the save was manufacturing an empty breakfast on a day that had
+been covered the whole time, and the planner came back from a move they had
+just made to a hole they had to explain. The batch now knows the difference:
+a shift somebody else in it is taking up was moved, and only what nobody picks
+up leaves a slot behind.
+
+Counted rather than flagged, because the arithmetic matters. Two people can
+come off the same breakfast on the same day while only one of the two is being
+handed on, and the one that really was given up still has to leave its slot.
+Dropped on somebody already down for that shift, nothing was taken up at all,
+so the one let go is a real hole. Moved onto another day, the day it left is
+genuinely short of it. Three cases, one count.
+
 **A day with a shift on it claims its own punches, however early they are.**
 There is an accepted stretch either side of a shift, three hours before and
 four after by default, and its job is to decide *which* shift a punch belongs

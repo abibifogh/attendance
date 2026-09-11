@@ -3325,6 +3325,37 @@ export async function saveRoster(ctx) {
     }
   };
 
+  // WHAT THIS BATCH MOVES, AS AGAINST WHAT IT GIVES UP.
+  //
+  // Setting a cell to Off leaves the shift standing on the day as an empty
+  // slot, because the day still needs covering. A move is not that. Dragging
+  // Ama's breakfast onto Kofi sends two changes in one save — Kofi is on it,
+  // Ama's cell is Off — and reading the second on its own manufactured an
+  // unfilled breakfast on a day that had been covered the whole time. The
+  // planner then had a hole to explain that they had just filled.
+  //
+  // Counted rather than flagged. Two people can come off the same shift on the
+  // same day while only one of the two is being handed on, and the one that
+  // really was given up still has to leave its slot behind.
+  const takenUp = new Map();
+  for (const entry of entries) {
+    // Only the plain "this person now works this" changes take a shift up. A
+    // row addressed by id is the same row changing hands and leaves nothing
+    // behind; a slot is a shift with nobody on it to begin with.
+    if (entry.id != null || entry.slot || entry.clear) continue;
+    const shift = Number(entry.shiftId);
+    const staff = Number(entry.staffId);
+    if (!(shift > 0) || !(staff > 0)) continue;
+    const when = dayOf(entry);
+    // Somebody already down for it is not taking anything up: the shift on
+    // their day is not the one being let go of.
+    const has = (heldBy.get(`${staff}|${when}`) ?? [])
+      .some((r) => Number(r.shift_id) === shift);
+    if (has) continue;
+    const key = `${when}|${shift}`;
+    takenUp.set(key, (takenUp.get(key) ?? 0) + 1);
+  }
+
   const mark = (staffId, day) => {
     if (!staffId) return;
     const range = touched.get(staffId) ?? { from: day, to: day };
@@ -3566,6 +3597,13 @@ export async function saveRoster(ctx) {
     // should not manufacture a hole for it.
     if (shiftId == null) {
       for (const row of held.filter((r) => r.shift_id != null)) {
+        // Unless somebody in this same save is taking it on. Then it was
+        // moved, not dropped, and there is no hole to mark.
+        const going = takenUp.get(`${day}|${Number(row.shift_id)}`) ?? 0;
+        if (going > 0) {
+          takenUp.set(`${day}|${Number(row.shift_id)}`, going - 1);
+          continue;
+        }
         statements.push(ctx.db.prepare(
           `INSERT INTO att_roster (staff_id, day, shift_id, title, set_by, set_at, published)
            VALUES (NULL, ?1, ?2, ?3, ?4, datetime('now'), 0)`,
