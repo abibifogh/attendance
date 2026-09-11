@@ -1980,9 +1980,22 @@ export async function exportRoster(ctx) {
     'Starts', 'Ends', 'Hours', 'Named', 'State', 'Set by', 'Note',
   ]];
 
+  // The department's own people, and anybody else on one of its shifts in the
+  // window. The same rule the grid reads by, because an export is a printout
+  // of the screen and a housekeeper covering reception's nights belongs on
+  // reception's rota in both or in neither.
+  const coversFor = (staffId) => days.some((day) => {
+    if (ds.leaveBy.has(`${staffId}|${day}`)) return false;
+    const held = ds.rosterAllBy.get(`${staffId}|${day}`);
+    const on = held?.length
+      ? held.map((r) => (r.shift_id ? ds.shiftById.get(r.shift_id) : null))
+      : [scheduleFor(ds, staffId, day).shift];
+    return on.some((shift) => shift && (shift.department || '') === only);
+  });
+
   for (const staff of ds.staff) {
     if (!onRota(staff)) continue;
-    if (only && (staff.department || '') !== only) continue;
+    if (only && (staff.department || '') !== only && !coversFor(staff.id)) continue;
     if (tag && !parseTags(staff.tags).includes(tag)) continue;
 
     for (const day of days) {

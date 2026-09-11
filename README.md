@@ -598,8 +598,32 @@ clearing the people off must not take it with them, or the week comes back
 apparently no longer needing anybody. There is a tick box for taking those off
 as well. Published days are likewise left alone unless it is asked for, because
 people have planned their lives around those. Approved leave is never touched.
-A department or tag filter narrows it to whoever was on screen, and every day
+A tag filter narrows it to whoever was on screen; a department filter narrows
+it to whoever is *filed* under that department, which since the grid started
+showing people who are only covering is no longer the same thing. The dialog
+says so, because clearing a covering housekeeper's period because he did one
+reception night would take his own department's fortnight with him. Every day
 cleared leaves its own entry in *What changed*.
+
+**Filtering a department brings out its rota, not its filing.** A rota is the
+shifts that have to be worked, not a list of who is filed under which heading.
+A housekeeper covering reception's Tuesday nights is on reception those nights
+in every sense the screen is for: reception has to know who is on, and whoever
+is filling the rest of the week has to know he is already spoken for. Filtering
+by his record left him off, so a fortnight with two receptionists and a visitor
+read as two people and a hole in it.
+
+So the filter is now the department's own people plus anybody on one of its
+shifts in the window, which is the rule the staff-facing department rota has
+always read by. A doubled day counts either of its shifts; a day on approved
+leave counts neither, because he is away and the shift is not his that day.
+The visitor's row is marked *covering* under their own department, so nobody
+reads it as a filter that has gone wrong, and their days elsewhere stay on the
+row — a planner about to ask him for Thursday needs to see that Thursday is
+already housekeeping's.
+
+The CSV export reads the same rule. An export is a printout of the screen, and
+a name on one and not the other is a bug reported as a missing person.
 
 **Who works it** is a list rather than a dropdown. It had grown into a wall of
 sentences: a name, then every department and named shift that person is set up
@@ -1018,6 +1042,20 @@ somebody's month is worked out at sign-off and shown on their own report, where
 the arithmetic is and where the property's own rule about counting them lives.
 The field stopped travelling with the answer as well as coming off the screen,
 so nothing can put it back by accident.
+
+**The planner's grid is the one screen that does name them.** The kitchen still
+has to cook on the sixth of March, so somebody has to be asked to come in, and
+whoever is filling the column needs to know which day they are asking about
+before they ask. It was on the grid already as a tooltip on a dropdown, which
+is to say it was not on the grid. The day is now named in the header and tinted
+faintly down the column — warm and weak, because it has to be visible across a
+fortnight without competing with the shift colours, which are what the grid is
+actually for. Squeezed past a week the column has no room for a name and the
+tint carries it alone.
+
+Nothing enforces the split in the drawing, and nothing needs to. The grid is
+behind the two rota permissions, a member of staff holds neither, and the rota
+they do open is a different screen that has never been sent a holiday.
 
 On a phone it stops being a grid. Seven columns of shift names is a
 rota-builder's shape and comes to nine hundred pixels somebody drags sideways

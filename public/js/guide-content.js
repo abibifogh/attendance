@@ -716,6 +716,25 @@ export const GUIDE = [
         + 'is opening on Saturday" without reading twenty-four rows. Show a week, a fortnight or '
         + 'four weeks; filter by department or tag; the date box opens a calendar and snaps to '
         + 'the Monday.' },
+      { note: 'Filtering a department brings out its own people and anybody else on one of its '
+        + 'shifts in the window, marked "covering" under their name. A housekeeper doing two '
+        + 'of reception\u2019s nights is on reception those nights, and leaving him off made the '
+        + 'fortnight read as short-staffed when it was not. Their days in their own department '
+        + 'stay on the row, so you can see when they are already spoken for.' },
+      { warn: 'Clear a period is the exception, and the dialog says so: it only reaches people '
+        + 'whose record says that department. Clearing somebody who is only covering would '
+        + 'take their own department\u2019s days with it.' },
+      { sub: 'Public holidays' },
+      { p: 'A public holiday is named in the column header and tints the column, so you know '
+        + 'which day you are asking somebody to come in on before you ask. Set them under '
+        + 'Setup \u2192 Holidays. Past a week the column is too narrow for the name and the '
+        + 'tint says it on its own; the day still names itself when you hover a cell.' },
+      { note: 'This is the only screen that names them. Staff do not see holidays on their own '
+        + 'week or on their department\u2019s rota: beside a shift it reads as an offer, that '
+        + 'the day is theirs or that it is worth more, and that is a conversation for the '
+        + 'office. What a holiday does to somebody\u2019s month is worked out at sign-off and '
+        + 'shown on their own report.' },
+
       { sub: 'The shifts nobody is on' },
       { p: 'They are the first row of People view, above the names, under '
         + '"Nobody on it yet". One card per shift per day, and the row says how many are '

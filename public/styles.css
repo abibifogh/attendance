@@ -1672,6 +1672,20 @@ th.rota-today {
 }
 .rota-avail.rota-avail-pref { color: var(--good); }
 
+/* Here for a shift rather than for their record. Quiet: it is a footnote to
+   the department under the name, not a badge. */
+.rota-covering {
+  margin-left: .3rem;
+  padding: .02rem .3rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: .62rem; font-weight: 650;
+  text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
 /* Tags under the name: the facts a planner filters by that are not a
    department. */
 .rota-tags { display: flex; gap: .25rem; flex-wrap: wrap; margin-top: .15rem; }
@@ -5219,6 +5233,32 @@ body.rota-dragging .pos-add { pointer-events: none; }
    because on a rostered cell it is the reason they are on it rather than a
    complaint that they are not.
    -------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------
+   A public holiday
+   --------------------------------------------------------------------------
+   Named in the header and tinted down the column, on the planner's screen and
+   on no screen a member of staff opens. The tint is warm and weak: it has to
+   be visible across a fortnight without competing with the shift colours,
+   which are the thing the grid is actually for. */
+.rota-table th.rota-holiday,
+.rota-table td.rota-holiday {
+  background: color-mix(in srgb, var(--warn) 9%, transparent);
+}
+.rota-table th.rota-holiday { box-shadow: inset 0 3px 0 color-mix(in srgb, var(--warn) 70%, transparent); }
+.rota-holiday-name {
+  display: block;
+  margin-top: .1rem;
+  font-size: .6rem; font-weight: 700;
+  letter-spacing: .03em; text-transform: uppercase;
+  color: var(--warn);
+  /* Two words on a wide screen, cut rather than stacked on a narrow one. */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+/* At a fortnight and past it the column is too narrow for a name, and the
+   tint and the tooltip say it instead. */
+.rota-table.rota-tight .rota-holiday-name,
+.rota-table.rota-tightest .rota-holiday-name { display: none; }
+
 .rota-table th.rota-meal-day {
   box-shadow: inset 0 3px 0 var(--accent);
 }

@@ -1058,11 +1058,39 @@ export async function renderAttRota(params) {
     refreshSaveBar();
   };
 
-  // Which rows this view shows. Filtering is by person — a department, a tag —
-  // and never changes what Save or Publish covers: the window is the window.
+  /**
+   * Whether this person is on one of the department's shifts in this window.
+   *
+   * A rota is the shifts that have to be worked, not a list of who is filed
+   * under which heading. A housekeeper covering reception's Tuesday nights is
+   * on reception those nights in every sense the screen is for: reception has
+   * to know who is on, and whoever is filling the rest of the week has to know
+   * he is already spoken for. Filtering by his record left him off, so the
+   * fortnight read as two people and a hole.
+   *
+   * Both shifts of a doubled day count, because either of them can be the
+   * department's.
+   */
+  const coversFor = (row, department) => row.days.some((entry) => {
+    if (entry.leave) return false;
+    const ids = [entry.shift_id, ...(entry.extra ?? []).map((x) => x.shift_id)];
+    return ids.some((id) => id != null
+      && (shiftById.get(String(id))?.department || '') === department);
+  });
+
+  // Everybody on this department's rota, and only them. A tag stays a fact
+  // about the person, because a tag is not something a shift can have.
+  //
+  // Filtering never changes what Save or Publish covers: the window is the
+  // window, and a planner who narrows the screen to read it has not decided
+  // anything about the people it hid.
+  const covering = new Set();
   const visible = data.rows.filter((row) => {
-    if (params.department && (row.staff.department || '') !== params.department) return false;
     if (params.tag && !(row.staff.tags ?? []).includes(params.tag)) return false;
+    if (!params.department) return true;
+    if ((row.staff.department || '') === params.department) return true;
+    if (!coversFor(row, params.department)) return false;
+    covering.add(row.staff.id);
     return true;
   });
 
@@ -1091,12 +1119,46 @@ export async function renderAttRota(params) {
   const weekStart = (day) => day !== data.days[0]
     && new Date(`${day}T12:00:00Z`).getUTCDay() === 1;
 
+  /**
+   * The public holidays in the window, by day.
+   *
+   * Named on this screen and on no screen a member of staff opens. A holiday
+   * is a fact a planner needs before they fill a column — the kitchen still
+   * has to cook on the sixth of March and somebody has to be asked to come in
+   * — and it is the wrong thing to put in front of the person being asked. On
+   * their own week it reads as an offer, that the day is theirs or that it is
+   * worth more, and neither is a promise this screen is allowed to make. What
+   * a holiday does to somebody's month is arithmetic, and it is settled at
+   * sign-off and shown on their report where the arithmetic is.
+   *
+   * Nothing here has to enforce that. The rota grid is behind the two rota
+   * permissions and a member of staff holds neither; their own department's
+   * rota is a different screen, and it has never been sent a holiday.
+   */
+  const holidayOn = new Map((data.coverage ?? [])
+    .filter((c) => c.holiday)
+    .map((c) => [c.day, c.holiday]));
+
   const dayClass = (day) => [
     isWeekend(day) ? 'rota-weekend' : '',
+    holidayOn.has(day) ? 'rota-holiday' : '',
     day < data.today ? 'rota-past' : '',
     day === data.today ? 'rota-today' : '',
     weekStart(day) ? 'rota-week-start' : '',
   ].filter(Boolean).join(' ');
+
+  /**
+   * The holiday's own name, under the date.
+   *
+   * The name rather than a mark, because "Independence Day" and "Farmers' Day"
+   * are not the same conversation with the people being asked to work them.
+   * Squeezed to a fortnight the column is too narrow for it and the tint and
+   * the tooltip carry it instead.
+   */
+  const holidayMark = (day) => (holidayOn.has(day)
+    ? h('span.rota-holiday-name', { title: `Public holiday: ${holidayOn.get(day)}` },
+      holidayOn.get(day))
+    : null);
 
   // Today, said in the header rather than left to a shade.
   //
@@ -1124,6 +1186,7 @@ export async function renderAttRota(params) {
       // these are.
       h('small.muted', span > 7 ? String(Number(day.slice(8, 10))) : fmtDayShort(day)),
       todayMark(day),
+      holidayMark(day),
     )),
   );
 
@@ -1165,7 +1228,14 @@ export async function renderAttRota(params) {
                   markAvailability(row, data, reload);
                 },
               }, '⋯') : null),
-            h('small.muted', row.staff.department || `No. ${row.staff.employee_no}`),
+            h('small.muted', row.staff.department || `No. ${row.staff.employee_no}`,
+              // Here because of a shift rather than because of their record.
+              // Their own department is already under their name, which says
+              // most of it; this says the rest, so nobody reads the row as a
+              // filter that has gone wrong.
+              covering.has(row.staff.id)
+                ? h('span.rota-covering', { title: `Covering ${params.department}` }, 'covering')
+                : null),
             // What this window already has them down for. The number a planner
             // is weighing every time they fill a cell, and it was on the
             // Workload screen and nowhere near the decision.
@@ -2124,6 +2194,7 @@ export async function renderAttRota(params) {
           h('div', new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })),
           h('small.muted', span > 7 ? String(Number(day.slice(8, 10))) : fmtDayShort(day)),
           todayMark(day),
+          holidayMark(day),
         )),
       )),
       positionsBody,
@@ -2510,8 +2581,16 @@ async function clearPeriod(data, params, reload) {
         + 'that. Published days are left alone unless you tick the other: people have '
         + 'planned their lives around them. Approved leave is never touched.'
         + (filtered
-          ? ` Only ${params.department || `people tagged ${params.tag}`}, because that is `
-            + 'what the grid is filtered to.'
+          ? (params.department
+            // Said exactly, because the grid is wider than this is. Somebody
+            // covering reception is on the filtered grid and is not reception,
+            // and clearing their period would take their own department's
+            // days with it.
+            ? ` Only people whose record says ${params.department}. Anybody on the grid `
+              + 'because they are covering one of its shifts is left alone, since clearing '
+              + 'their period would take their own department’s days with it.'
+            : ` Only people tagged ${params.tag}, because that is what the grid is `
+              + 'filtered to.')
           : ' Everybody on the rota.')),
     ),
     onSubmit: async (form) => api.attClearRoster({
