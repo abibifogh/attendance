@@ -1818,6 +1818,42 @@ th.rota-today {
 }
 
 /* ===========================================================================
+   The directory
+   ---------------------------------------------------------------------------
+   A name, a number and an address. Read on a phone by somebody who needs to
+   ring a colleague, so the number is a tap target rather than a line of text
+   to copy out.
+   =========================================================================== */
+.dir-search {
+  min-width: 12rem; max-width: 100%;
+}
+.dir-note { font-size: .82rem; margin: -.4rem 0 1rem; }
+.dir-list { display: grid; gap: .1rem; }
+.dir-row {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: .2rem 1rem; padding: .5rem .1rem;
+  border-bottom: 1px solid var(--border);
+}
+.dir-row:last-child { border-bottom: 0; }
+.dir-name { flex: 1 1 11rem; font-weight: 600; }
+.dir-ways { display: flex; flex-wrap: wrap; gap: .2rem 1.1rem; }
+.dir-way {
+  display: inline-flex; align-items: baseline; gap: .35rem;
+  font-size: .86rem; color: var(--accent); text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+.dir-way:hover { text-decoration: underline; }
+.dir-mark { color: var(--text-faint); font-size: .8em; }
+
+/* On a phone the two ways stack under the name, each a full row so a thumb
+   cannot miss one and dial the other. */
+@media (max-width: 640px) {
+  .dir-row { display: grid; gap: .25rem; padding: .6rem .1rem; }
+  .dir-ways { display: grid; gap: .35rem; }
+  .dir-way { font-size: .9rem; }
+}
+
+/* ===========================================================================
    Employee records
    ---------------------------------------------------------------------------
    Two audiences in one stylesheet. The office screens reuse everything above;

@@ -17,6 +17,7 @@ import { renderAttWorkload } from './views/att-workload.js';
 import { renderAttMe } from './views/att-me.js';
 import { renderAttMyReport } from './views/att-my-report.js';
 import { renderAttMyPayslips } from './views/att-my-payslips.js';
+import { renderDirectory } from './views/directory.js';
 import { renderAttMyAdvance } from './views/att-my-advance.js';
 import { renderAttAdvances } from './views/att-advances.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
@@ -101,6 +102,9 @@ const GROUPS = [
   { key: 'people', label: 'People', section: 'The people' },
   { key: 'pay', label: 'Payroll', section: 'The people' },
   { key: 'letters', label: 'Letters', section: 'The people' },
+  // Reachable by everybody, so it cannot live under People, which is the
+  // personnel records and their permission.
+  { key: 'directory', label: 'Directory', section: 'The people' },
   // The tail. No heading over these two: one is opened twice a year and the
   // other is the way out of being stuck, and a section called "everything
   // else" is a section that says nothing.
@@ -163,6 +167,10 @@ const ROUTES = [
   { group: 'pay', tab: 'Medical claims', path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
 
   { group: 'letters', tab: 'Letters', path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters, live: ['letters'] },
+
+  // Signed in and nothing more. A number a colleague cannot look up is a
+  // number they ask an administrator for, and that opens a personnel record.
+  { group: 'directory', tab: 'Directory', path: 'directory', label: 'Directory', permission: null, render: renderDirectory, live: ['people'] },
 
   { group: 'setup', tab: 'Setup', path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup, live: ['admin', 'rota', 'attendance'] },
   { group: 'setup', tab: 'Notifications', path: 'notifications', label: 'Notifications', permission: 'users', render: renderNotifications, live: ['admin'] },

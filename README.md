@@ -30,6 +30,36 @@ Runs entirely on Cloudflare: a Worker serves both the app and the API, with a D1
 
 ---
 
+## A number for a colleague
+
+Somebody needs to reach the person covering their shift. Until now that meant
+asking an administrator to open a personnel record, which shows a date of
+birth, an ID number and a bank account to somebody who wanted a phone number.
+
+So there is a **Directory**: a name, a department, a phone number and an email
+address, grouped by department with a search box over them. On a phone the
+number dials and the address opens a message, because that is what somebody
+holding a phone came for. Nothing else about anybody is on the page.
+
+**The safety is in the query rather than in the drawing.** The route selects
+four columns. A whole record read out and then filtered on the way to the
+browser is the same screen one careless edit away from being a personnel file;
+four columns are four columns, and what is not in the query cannot leak. A test
+asserts the select list has four entries and no star.
+
+**It is off until the property turns it on**, under Setup → Rules. It shows
+every colleague's personal number to everybody who works here, and that is a
+decision about personal data rather than a default an upgrade gets to make.
+Anybody with neither a number nor an address is simply not listed, because a
+row of blanks is a name somebody reads twice before working out the directory
+cannot help them.
+
+Reachable by anybody signed in, which is why it is a link of its own rather
+than a tab under People: People is the personnel records and carries their
+permission, and a directory nobody can open is a list.
+
+---
+
 ## Nine things in the menu
 
 Twenty-three screens, and for a long time twenty-three links down the side. That

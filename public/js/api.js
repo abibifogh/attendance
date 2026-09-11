@@ -271,6 +271,8 @@ export const api = {
   // A member of staff, looking at their own. None of these takes a staff id:
   // who you are comes off the session, so there is no version of somebody
   // else's week to ask for.
+  // Names, numbers and addresses. Everybody signed in, and nothing else on it.
+  directory: () => request('/api/directory'),
   myWeek: (from) => request(`/api/me/week${from ? `?from=${from}` : ''}`),
   myReport: (month) => request(`/api/me/report${month ? `?month=${month}` : ''}`),
   myAskForLeave: (body) => request('/api/me/leave', { method: 'POST', body }),

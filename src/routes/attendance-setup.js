@@ -1208,6 +1208,10 @@ const SETTINGS = new Map([
   // reasonably want to settle them before publishing them to twenty-four
   // people. Shown unless somebody turns it off.
   ['att_show_balance', (v) => (v === '0' || v === 'false' ? '0' : '1')],
+  // Off unless somebody says otherwise, which is the other way round from the
+  // balance above: that is a person's own figure, and this is everybody's
+  // personal number shown to everybody.
+  ['hr_directory', (v) => (v === '1' || v === 'true' ? '1' : '0')],
 
   // Whether the app tells somebody their shift has started and nothing has
   // been recorded against it.

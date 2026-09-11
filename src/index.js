@@ -13,6 +13,7 @@ import {
 import * as att from './routes/attendance.js';
 import * as suggest from './routes/suggest.js';
 import * as mine from './routes/me.js';
+import * as directory from './routes/directory.js';
 import * as authLock from './routes/auth-lock.js';
 import { watchShifts } from './lib/shift-watch.js';
 import { watchTerminals } from './lib/terminal-watch.js';
@@ -178,6 +179,8 @@ export const ROUTES = [
   // A member of staff, looking at their own. Every route resolves who they are
   // from the session, so none of them takes a staff id and none of them has a
   // version of "somebody else's" to get wrong.
+  // Everybody signed in, because a directory nobody can open is a list.
+  ['GET', '/api/directory', null, directory.staffDirectory],
   ['GET', '/api/me/week', 'att_me', mine.myWeek],
   ['GET', '/api/me/report', 'att_me', mine.myReport],
   ['POST', '/api/me/leave', 'att_me', mine.askForLeave],

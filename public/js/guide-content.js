@@ -435,6 +435,26 @@ export const GUIDE = [
 
   // =========================================================================
   {
+    key: 'directory',
+    title: 'The directory',
+    permission: null,
+    lede: 'A number for a colleague, without asking anybody.',
+    blocks: [
+      { p: 'Names, phone numbers and email addresses, grouped by department, with a box at the '
+        + 'top to find somebody. Press a number on a phone and it dials; press an address and it '
+        + 'opens a new message. That is the whole screen: nothing else about anybody is on it.' },
+      { p: 'It is how you reach whoever is covering your shift, or the person who has the store '
+        + 'key, without asking an administrator to open a personnel record.' },
+      { note: 'Somebody with neither a number nor an address on file is not listed. If that is '
+        + 'you and you would like to be, tell whoever keeps the records.' },
+      { warn: 'These are personal numbers, shared so the property can reach each other. They '
+        + 'are not for anything else, and not for anybody outside.' },
+      { p: 'An administrator turns the whole thing on or off under Setup \u2192 Rules, in "What '
+        + 'staff see". It is off until somebody turns it on.' },
+    ],
+  },
+
+  {
     key: 'today',
     title: 'The morning list',
     permission: 'att_view',

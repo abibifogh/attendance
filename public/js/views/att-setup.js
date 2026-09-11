@@ -2417,6 +2417,21 @@ async function rulesTab(reload) {
 
       card('What staff see', { note: 'On My shifts and My report' },
         h('label.field',
+          h('span', 'The staff directory'),
+          h('select', { name: 'hr_directory' },
+            h('option', { value: '0', selected: (s.hr_directory ?? '0') !== '1' },
+              'Off — nobody can open it'),
+            h('option', { value: '1', selected: (s.hr_directory ?? '0') === '1' },
+              'On — everybody signed in can look somebody up'),
+          )),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'A name, a phone number and an email address, and nothing else on the page. It is '
+          + 'how somebody reaches the person covering their shift without asking an '
+          + 'administrator to open a personnel record. It does show every colleague\u2019s '
+          + 'personal number to everybody who works here, which is why it is off until you '
+          + 'turn it on. Anybody with neither a number nor an address is simply not on it.'),
+
+        h('label.field',
           h('span', 'How much leave they have left'),
           h('select', { name: 'att_show_balance' },
             h('option', { value: '1', selected: (s.att_show_balance ?? '1') !== '0' },
