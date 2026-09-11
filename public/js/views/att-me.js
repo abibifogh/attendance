@@ -316,10 +316,12 @@ function dayRow(entry, data) {
         // this is the one somebody can plan around: a day with nothing on it
         // in a week that has gone out is a day off, and it was decided.
         ? h('span.pill', 'Rest day')
-        : entry.pending
-          ? h('span.pill.warn', 'Being worked out')
-          // The other thing the dash meant: nobody has said yet.
-          : h('small.muted', 'Not out yet');
+        // The other thing the dash meant: nobody has said yet. A day the
+        // planner is part way through says this too, and deliberately. It used
+        // to say "Being worked out", which handed staff the shape of an
+        // unpublished week: the days with something on them stood out from the
+        // days without, and both were still being moved around.
+        : h('small.muted', 'Not out yet');
 
   return h('div.me-day', {
     class: [entry.day === data.today ? 'me-today' : '', entry.onShift ? 'me-on-shift' : '']

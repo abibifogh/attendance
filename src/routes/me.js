@@ -302,10 +302,19 @@ export async function myWeek(ctx) {
         }
         : null,
       title: settled ? (rostered?.title ?? null) : null,
-      // A day the planner has decided and not yet published shows as pending
-      // rather than as nothing, so somebody looking at a blank Thursday knows
-      // whether it is a day off or a day still being worked out.
-      pending: draft,
+      // NOTHING ABOUT A DRAFT LEAVES THIS ROUTE.
+      //
+      // A day being worked on used to be marked as such, so somebody could
+      // tell a blank Thursday that is a day off from a blank Thursday nobody
+      // has decided. Well meant, and it published the rota early by the back
+      // door: five days reading "Being worked out" beside one reading "Not out
+      // yet" tells a member of staff exactly which days they are on before
+      // anybody has promised them anything, and the Wednesday they can see is
+      // empty is the one they make plans on. Then the draft changes, because a
+      // draft is a planner thinking out loud, and the app has misled them.
+      //
+      // `draft` stays a local fact and is used below, where its only job is to
+      // stop an undecided day being called a day off. It is not sent.
       // A day off, said as one. Either somebody wrote Off in the cell, or the
       // week around it has been published and nothing was put against their
       // name, which is the same fact arrived at from the other side. What it

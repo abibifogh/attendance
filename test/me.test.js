@@ -100,14 +100,19 @@ test('an unpublished shift is not shown, and a published one is', async () => {
   let out = await week(db);
   let day = out.days.find((d) => d.day === shiftDay(MON, 1));
   assert.equal(day.shift, null, 'a draft is a planner thinking out loud');
-  assert.equal(day.pending, true, 'and it says so rather than looking like a day off');
+  // AND NOTHING SAYS THERE IS ONE. A day being worked on used to be marked as
+  // such, which handed staff the shape of an unpublished week: the days with
+  // something on them stood out from the days without. The plan for the day
+  // is the whole of what this screen reads, and it reads the same either way.
+  const plan = (d) => ({ shift: d.shift, title: d.title, restDay: d.restDay, leave: d.leave });
+  assert.deepEqual(plan(day), plan(out.days.find((d) => d.day === shiftDay(MON, 5))),
+    'a day with a draft on it reads exactly like a day with nothing on it');
 
   await publishRoster(ctx(db, PLANNER, { body: { from: MON, to: shiftDay(MON, 6) } }));
 
   out = await week(db);
   day = out.days.find((d) => d.day === shiftDay(MON, 1));
-  assert.equal(day.shift.name, 'Early');
-  assert.equal(day.pending, false);
+  assert.equal(day.shift.name, 'Early', 'and once it is published, there it is');
 });
 
 test('a standing pattern shows without ever being published', async () => {
@@ -636,8 +641,8 @@ test('a day still being worked out is not a day off either', async () => {
 
   const out = await week(db);
   const day = out.days.find((d) => d.day === shiftDay(MON, 2));
-  assert.equal(day.pending, true);
-  assert.equal(day.restDay, false);
+  assert.equal(day.restDay, false, 'somebody is deciding, so the answer is not no');
+  assert.equal(day.shift, null, 'and it is not yes either');
 });
 
 test('an explicit Off is a rest day whether or not a window was published', async () => {

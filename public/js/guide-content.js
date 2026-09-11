@@ -161,9 +161,10 @@ export const GUIDE = [
         + 'A clock ticking down to a shift you are already standing on is the app arguing with '
         + 'the room.' },
       { p: 'It goes back to a countdown when you clock out, or when the shift finishes.' },
-      { note: 'Only shifts that have been published show here. A blank day where you expected '
-        + 'something usually means the rota for it is still being worked out — the day says so '
-        + 'when that is why.' },
+      { note: 'Only shifts that have been published show here. A day reading "Not out yet" '
+        + 'means exactly that: nothing has been promised for it, whether or not somebody is '
+        + 'part way through deciding. A week still being built looks empty to you, on purpose, '
+        + 'because a draft changes and a rota you can plan around does not.' },
 
       { sub: 'How the days behind you came out' },
       { p: 'Open "How the days behind me came out" and every past day carries what the app '

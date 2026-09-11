@@ -798,10 +798,27 @@ the property has not made.
 The publish log tells them apart, because it is the record of the decision
 rather than a guess at one: a day inside a window somebody pressed Publish on
 is a day the property has spoken about. So *My shifts* now says **Rest day**
-where it used to show a dash, **Being worked out** where a draft is sitting
-unpublished, and **Not out yet** where nobody has said. The department rota
-does the same, and on a phone the people who are off are listed apart from the
-people nobody has decided about yet.
+where it used to show a dash, and **Not out yet** where nobody has said. The
+department rota does the same, and on a phone the people who are off are
+listed apart from the people nobody has decided about yet.
+
+**A day being worked on says nothing.** It briefly said *Being worked out*,
+which was the same reasoning taken one step too far: it drew the difference
+between a blank day with a draft on it and a blank day with nothing on it, and
+that difference is the unpublished rota. Five days reading *Being worked out*
+beside one reading *Not out yet* hands somebody next week's shape before
+anybody has promised them anything. They read the empty Wednesday as their day
+off and make plans on it, the draft moves, because a draft is a planner
+thinking out loud, and the app has lied to them by being helpful.
+
+So a day being worked on now reads exactly like a day nobody has touched, and
+the flag saying which is not sent at all rather than merely not drawn: a field
+a browser has been given is a field anybody who opens the network tab has read,
+and it would put the unpublished rota one keystroke from every member of staff.
+Not sending it also means a phone still running last week's copy of the app
+stops showing it, which a change to the screen alone would not have done. What
+survives is the half of the reasoning that was true: once the week has gone
+out, a blank day is a day off and says so.
 
 **Saying how to install it on the phone somebody is holding.** Half the
 property never managed it, and the reason is not that they cannot follow
