@@ -101,10 +101,12 @@ test('a name, a department, a number and an address', async () => {
   const out = await look(db);
   assert.equal(out.on, true);
   assert.deepEqual(out.people.find((p) => p.name === 'Ama Mensah'), {
+    id: 1,
     name: 'Ama Mensah',
     department: 'Reception',
     phone: '024 111 2222',
     email: 'ama@example.test',
+    hasPhoto: false,
   });
 });
 
@@ -119,7 +121,8 @@ test('and not one thing more, whatever else the record holds', async () => {
   // Belt and braces: the shape itself, so a new column on hr_profile cannot
   // quietly join the answer.
   for (const person of (await look(db)).people) {
-    assert.deepEqual(Object.keys(person).sort(), ['department', 'email', 'name', 'phone']);
+    assert.deepEqual(Object.keys(person).sort(),
+      ['department', 'email', 'hasPhoto', 'id', 'name', 'phone']);
   }
 });
 
@@ -183,16 +186,20 @@ test('the screen is a link of its own, reachable without any permission', () => 
   assert.equal(/group: 'people'.*path: 'directory'/.test(app), false);
 });
 
-test('the query names its four columns and no others', () => {
+test('the query names its columns and no others', () => {
   const route = readFileSync('src/routes/directory.js', 'utf8');
   // The people query, not the one-line settings read above it.
   // The query itself, which starts a template literal. Matching bare SELECT
   // finds the word in the comment above it first.
   const select = route.match(/`SELECT([\s\S]*?)FROM att_staff/)[1];
-  assert.match(select, /s\.name/);
-  assert.match(select, /s\.department/);
-  assert.match(select, /personal_phone/);
-  assert.match(select, /personal_email/);
+  for (const column of [/s\.id/, /s\.name/, /s\.department/, /personal_phone/,
+    /personal_email/, /kind = 'photo'/]) {
+    assert.match(select, column);
+  }
   assert.equal(/\*/.test(select), false, 'never SELECT *, which is the whole record');
-  assert.equal(select.split(',').length, 4, 'four columns, and a fifth is a decision');
+  // A name, a department, the two ways of reaching somebody, and enough to put
+  // a face against the name. Anything past that is a decision, not a tidy-up:
+  // the count is here so adding one has to be done on purpose.
+  assert.equal(select.split(',').length, 6, 'six, and a seventh is a decision');
+  assert.equal((select.match(/AS has_photo/g) ?? []).length, 1);
 });

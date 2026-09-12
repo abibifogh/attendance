@@ -351,3 +351,44 @@ export function bulkUpload({
 export function emptyState(title, detail) {
   return h('div.card.empty', h('h3', title), h('p', detail));
 }
+
+/**
+ * A face against a name.
+ *
+ * The passport photograph where somebody has sent one in, and where they have
+ * not, their initials on a colour taken from the name. The colour is worked
+ * out from the letters rather than stored, so the same person is the same
+ * colour on every screen and a new starter needs nothing set up.
+ *
+ * `src` is where the picture lives, and differs by screen because the
+ * permission does: the rota asks for a planner's and the directory asks for
+ * the directory being on. A picture that will not load leaves the initials
+ * showing rather than a broken image.
+ */
+export function face(name, { src = null, size = null } = {}) {
+  const letters = String(name || '?')
+    .split(/\s+/).filter(Boolean).slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase();
+
+  let hash = 0;
+  for (const ch of String(name || '')) hash = (hash * 31 + ch.charCodeAt(0)) % 360;
+
+  const box = h('div.face', {
+    style: { '--face': `${hash}deg`, ...(size ? { '--face-size': size } : {}) },
+    // The name is beside it. A screen reader reading it twice is worse than
+    // not reading the picture at all.
+    'aria-hidden': 'true',
+  }, h('span.face-letters', letters));
+
+  if (src) {
+    box.append(h('img.face-photo', {
+      src,
+      alt: '',
+      loading: 'lazy',
+      onerror: (e) => e.target.remove(),
+    }));
+  }
+  return box;
+}

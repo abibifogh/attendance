@@ -37,15 +37,38 @@ asking an administrator to open a personnel record, which shows a date of
 birth, an ID number and a bank account to somebody who wanted a phone number.
 
 So there is a **Directory**: a name, a department, a phone number and an email
-address, grouped by department with a search box over them. On a phone the
-number dials and the address opens a message, because that is what somebody
-holding a phone came for. Nothing else about anybody is on the page.
+address. On a phone the number dials and the address opens a message, because
+that is what somebody holding a phone came for. Nothing else about anybody is
+on the page.
 
-**The safety is in the query rather than in the drawing.** The route selects
-four columns. A whole record read out and then filtered on the way to the
-browser is the same screen one careless edit away from being a personnel file;
-four columns are four columns, and what is not in the query cannot leak. A test
-asserts the select list has four entries and no star.
+**A card each, with a face on it.** It began as a list of names with the
+numbers pushed to the far edge, which on a wide screen is a page you read with
+a ruler: the eye carries a name across six inches of nothing to reach the thing
+it came for. Now each person is a card, as many across as the screen fits and
+one column on a phone, with the two ways of reaching them under the name. The
+face is the rota's, the same photograph where somebody has sent one in and the
+same initials on a colour taken from their name where they have not, because
+the usual way of finding somebody is knowing what they look like. One helper
+draws it on both screens rather than each screen having its own.
+
+Above the list, a row of departments with counts, since "who is on reception"
+is how the question arrives and typing it is the slower answer. The search
+looks at the department as well as the name, for the people who type it anyway,
+and the line under the row says how many of the whole list is left.
+
+**The safety is in the query rather than in the drawing.** The route names its
+columns: the four above, plus the person's id and whether there is a photograph
+on file. A whole record read out and then filtered on the way to the browser is
+the same screen one careless edit away from being a personnel file; named
+columns are named columns, and what is not in the query cannot leak. A test
+counts the select list and asserts there is no star, so a seventh column has to
+be added on purpose.
+
+**The face has its own route**, on the same switch as the rest of the page. The
+rota's photograph route asks for a planner's permission and keeps it; widening
+that one to reach this screen would have handed every face to anybody who could
+open the rota's api. This one answers only while the directory is on, and only
+for somebody still on the books.
 
 **It is off until the property turns it on**, under Setup → Rules. It shows
 every colleague's personal number to everybody who works here, and that is a
@@ -57,6 +80,12 @@ cannot help them.
 Reachable by anybody signed in, which is why it is a link of its own rather
 than a tab under People: People is the personnel records and carries their
 permission, and a directory nobody can open is a list.
+
+The copy button beside a number is drawn on a desk and never on a phone. On a
+desk a telephone link does nothing and the next thing anybody does is read the
+number out to themselves while typing it somewhere else; on a phone the link
+already dials, and a second control beside it is a thumb-sized mistake waiting
+to happen.
 
 ---
 

@@ -181,6 +181,9 @@ export const ROUTES = [
   // version of "somebody else's" to get wrong.
   // Everybody signed in, because a directory nobody can open is a list.
   ['GET', '/api/directory', null, directory.staffDirectory],
+  // The face beside the name. Its own route rather than the rota's, which
+  // asks for a planner's permission and would leave this page faceless.
+  ['GET', '/api/directory/photo/:id', null, directory.directoryPhoto],
   ['GET', '/api/me/week', 'att_me', mine.myWeek],
   ['GET', '/api/me/report', 'att_me', mine.myReport],
   ['POST', '/api/me/leave', 'att_me', mine.askForLeave],

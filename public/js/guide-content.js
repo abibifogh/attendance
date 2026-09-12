@@ -443,11 +443,18 @@ export const GUIDE = [
     permission: null,
     lede: 'A number for a colleague, without asking anybody.',
     blocks: [
-      { p: 'Names, phone numbers and email addresses, grouped by department, with a box at the '
-        + 'top to find somebody. Press a number on a phone and it dials; press an address and it '
-        + 'opens a new message. That is the whole screen: nothing else about anybody is on it.' },
+      { p: 'A card for each person: their face, their name, and the two ways of reaching them. '
+        + 'Press a number on a phone and it dials; press an address and it opens a new message. '
+        + 'That is the whole screen: nothing else about anybody is on it.' },
+      { p: 'They are grouped by department, with a row of departments above the list to jump '
+        + 'between them, and a box to search. The search looks at departments too, so typing '
+        + '"reception" finds reception.' },
+      { p: 'The face is the passport photograph on file, the same one that shows on the rota. '
+        + 'Anybody who has not sent one in has their initials instead, on a colour of their own.' },
       { p: 'It is how you reach whoever is covering your shift, or the person who has the store '
         + 'key, without asking an administrator to open a personnel record.' },
+      { note: 'On a computer, a Copy button appears beside a number when you point at a card, '
+        + 'for when you are about to type it into something else.' },
       { note: 'Somebody with neither a number nor an address on file is not listed. If that is '
         + 'you and you would like to be, tell whoever keeps the records.' },
       { warn: 'These are personal numbers, shared so the property can reach each other. They '
