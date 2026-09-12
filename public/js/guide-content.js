@@ -226,6 +226,23 @@ export const GUIDE = [
         + 'It does not lock the office out either: payroll reads your payslip as it always '
         + 'has, because a query about your tax has to be answerable.' },
 
+      { sub: 'Giving up a shift' },
+      { p: 'If your supervisor has turned it on, Swaps sits beside My shifts. Press '
+        + '\u201cGive up a shift\u201d, pick the one you cannot work, and it goes to the '
+        + 'colleagues who could cover it: everybody who works that shift, is free that day '
+        + 'and is not on leave.' },
+      { p: 'You can also tick one or two people by name to ask them first. Leave the board '
+        + 'switched on behind them and everybody else sees it too if they say no; switch it '
+        + 'off and only the people you named ever see it.' },
+      { p: 'Taking somebody else\u2019s shift is a request, not a done thing. It stays on '
+        + 'their rota until a manager says yes, and then it is on yours. You are told either '
+        + 'way.' },
+      { note: 'Nothing changes on the rota until it is approved, so do not make plans on a '
+        + 'shift you have offered until you have seen it go. You can take it back off the '
+        + 'board at any point before then.' },
+      { warn: 'There is a cut-off. A shift starting sooner than that has to be sorted out '
+        + 'with your supervisor rather than here. By then somebody has to be told, not asked.' },
+
       { sub: 'Who else is on' },
       { p: 'If your supervisor has switched it on for you, a card under the coming week shows '
         + 'the rota for your own department: who is on which day, and what shift. It answers '

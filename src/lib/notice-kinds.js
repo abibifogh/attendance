@@ -60,6 +60,41 @@ export const KINDS = [
       + 'about have already had one.',
   },
 
+  {
+    key: 'swap.offered',
+    group: 'rota',
+    label: 'A shift is going',
+    who: 'The people who could cover it, or the ones it was put to by name',
+    when: 'Somebody gives up a shift',
+    ways: ['push'],
+    note: 'Only the people who could actually take it. A shift offered to everybody is how '
+      + 'a phone gets muted, and the muted phone then misses the rota going out.',
+  },
+  {
+    key: 'swap.taken',
+    group: 'rota',
+    label: 'Somebody has taken your shift',
+    who: 'Whoever gave it up',
+    when: 'A colleague takes a shift off the board',
+    ways: ['push'],
+  },
+  {
+    key: 'swap.waiting',
+    group: 'rota',
+    label: 'A swap is waiting on you',
+    who: 'Whoever sets the rota',
+    when: 'Somebody takes a shift and it needs approving',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'swap.decided',
+    group: 'rota',
+    label: 'A swap has been settled',
+    who: 'Both people',
+    when: 'A swap is approved or turned down',
+    ways: ['push', 'email'],
+  },
+
   // The working day
   {
     key: 'attendance.not_clocked_in',

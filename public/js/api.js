@@ -284,6 +284,17 @@ export const api = {
     return request(`/api/me/department${q.size ? `?${q}` : ''}`);
   },
   mySetAvailability: (body) => request('/api/me/availability', { method: 'POST', body }),
+
+  // Giving up a shift, and taking one.
+  swaps: () => request('/api/swaps'),
+  swapsOfferable: () => request('/api/swaps/offerable'),
+  swapsCover: (rosterId) => request(`/api/swaps/cover?rosterId=${rosterId}`),
+  swapsTheirs: (staffId) => request(`/api/swaps/theirs?staffId=${staffId}`),
+  swapOffer: (body) => request('/api/swaps', { method: 'POST', body }),
+  swapTake: (id) => request(`/api/swaps/${id}/take`, { method: 'POST', body: {} }),
+  swapDrop: (id) => request(`/api/swaps/${id}/drop`, { method: 'POST', body: {} }),
+  swapQueue: () => request('/api/swaps/queue'),
+  swapDecide: (id, body) => request(`/api/swaps/${id}/decide`, { method: 'POST', body }),
   myRunningLate: (body) => request('/api/me/running-late', { method: 'POST', body }),
   myPayslips: (month) => request(`/api/me/payslips${month ? `?month=${encodeURIComponent(month)}` : ''}`),
   myPayslipLock: () => request('/api/me/payslip-lock'),

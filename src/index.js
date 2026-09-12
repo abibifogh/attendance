@@ -14,6 +14,7 @@ import * as att from './routes/attendance.js';
 import * as suggest from './routes/suggest.js';
 import * as mine from './routes/me.js';
 import * as directory from './routes/directory.js';
+import * as swaps from './routes/swaps.js';
 import * as authLock from './routes/auth-lock.js';
 import { watchShifts } from './lib/shift-watch.js';
 import { watchTerminals } from './lib/terminal-watch.js';
@@ -190,6 +191,20 @@ export const ROUTES = [
   ['POST', '/api/me/leave/:id/withdraw', 'att_me', mine.withdrawMyLeave],
   ['GET', '/api/me/department', 'att_me', mine.myDepartment],
   ['POST', '/api/me/availability', 'att_me', mine.setMyAvailability],
+
+  // Giving up a shift, and taking one. Their own shifts to give and their own
+  // colleagues to give them to, so it sits behind the same permission as the
+  // rest of their week.
+  ['GET', '/api/swaps', 'att_me', swaps.swapBoard],
+  ['GET', '/api/swaps/offerable', 'att_me', swaps.whatICanOffer],
+  ['GET', '/api/swaps/cover', 'att_me', swaps.coverFor],
+  ['GET', '/api/swaps/theirs', 'att_me', swaps.theirShifts],
+  ['POST', '/api/swaps', 'att_me', swaps.offerSwap],
+  ['POST', '/api/swaps/:id/take', 'att_me', swaps.takeSwap],
+  ['POST', '/api/swaps/:id/drop', 'att_me', swaps.dropSwap],
+  // And the one screen that changes the rota, which is the rota's permission.
+  ['GET', '/api/swaps/queue', ['att_rota', 'att_manage'], swaps.swapQueue],
+  ['POST', '/api/swaps/:id/decide', ['att_rota', 'att_manage'], swaps.decideSwap],
   // The face against their own name on the rota, chosen by them.
   ['POST', '/api/me/photo', 'att_me', mine.setMyPhoto],
   ['DELETE', '/api/me/photo', 'att_me', mine.clearMyPhoto],

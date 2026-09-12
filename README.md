@@ -30,6 +30,57 @@ Runs entirely on Cloudflare: a Worker serves both the app and the API, with a D1
 
 ---
 
+## Giving up a shift, and taking one
+
+Somebody cannot work Saturday. The way that used to go was a phone call: ask
+around, get a name, ring the supervisor, and the grid gets edited on somebody's
+word with no record of who agreed to what.
+
+**Swaps** is that conversation with the app keeping notes. A person puts a shift
+up from their own week; the colleagues who could actually work it are told once;
+one of them takes it; whoever holds the rota says yes. Drawn from how Humanity
+does it, in this app's own words: one board, three tabs, no new menu entry.
+
+**The rota changes once, at the end.** Offering does nothing to it. Taking does
+nothing to it. The approval is the single moment a roster row changes hands, and
+until then the shift belongs to the person it always belonged to. A shift
+half-attached to two people is the state a rota must never be in, which is why
+none of this lives in the grid.
+
+**Who is offered it is worked out, not typed.** Anybody who can work that shift
+(the same `works_in` and `works_shifts` the rota already reads), is free that
+day, and is not on leave or marked unavailable. The offer dialog says how many
+that is before anything is sent: six faces and nought are the same screen with a
+very different decision on it.
+
+**And it can be put to people by name.** Tick the colleagues you want asked
+first, one or several, and either leave the board on behind them or keep it to
+the people you named. Naming somebody who cannot cover it is refused with the
+reason, because an offer they cannot accept is a message, not an offer. Somebody
+who says no drops off the list and it passes to the rest; the last no closes it.
+
+**A swap is the other half.** Their shift for one of yours, put to one person,
+both rows moving at once and both of them agreeing before a manager sees it.
+
+**Every rule is asked twice.** Once when somebody takes a shift, so nobody is
+offered a night they cannot work, and again at the approval, because a fortnight
+is long enough for the week to be rebuilt, the shift deleted, the person put on
+something else or the day signed off. The approval re-reads the roster row and
+refuses out loud rather than writing something nobody agreed to. A signed-off day
+is closed: those hours have been counted, charged and agreed.
+
+**What the manager sees before the button** comes from the same workload rules
+the Workload screen uses: a turnaround under the 12 hours Act 651 s.35 asks for,
+a week over the hours the property counts, a week short of its 48 hours off, a
+run of days without one off. Red does not block the approval. It refuses to be
+quiet about it.
+
+Off until somebody turns it on, under Setup → Rules, along with how close to a
+shift it can still be given up (a day to begin with), whether approval is always
+needed or only when something is flagged, and a cap per person per month.
+
+---
+
 ## A number for a colleague
 
 Somebody needs to reach the person covering their shift. Until now that meant

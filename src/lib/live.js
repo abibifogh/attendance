@@ -73,6 +73,9 @@ const BY_PATH = [
   ['/api/att/leave', 'leave'],
   ['/api/me/leave', 'leave'],
   ['/api/me/availability', 'rota'],
+  // A swap is a rota change from the moment it is approved, and every screen
+  // that draws the rota wants to hear about the ones still going too.
+  ['/api/swaps', 'rota'],
   ['/api/me/medical', 'pay'],
   ['/api/me/advances', 'pay'],
   ['/api/me/running-late', 'attendance'],

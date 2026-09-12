@@ -1213,6 +1213,15 @@ const SETTINGS = new Map([
   // personal number shown to everybody.
   ['hr_directory', (v) => (v === '1' || v === 'true' ? '1' : '0')],
 
+  // Swaps. Off until the property asks for it, for the same reason as the
+  // directory: it changes what staff can do to the rota, and a rota is the one
+  // thing here everybody has already arranged their week around.
+  ['swaps_on', (v) => (v === '1' || v === 'true' ? '1' : '0')],
+  ['swap_notice_hours', (v) => String(int(v, 'How long before a shift', { min: 0, max: 336 }))],
+  ['swap_approval', (v) => (v === 'clean' ? 'clean' : 'always')],
+  ['swap_cross_department', (v) => (v === '1' || v === 'true' ? '1' : '0')],
+  ['swap_monthly_cap', (v) => String(int(v, 'How many a month', { min: 0, max: 99 }))],
+
   // Whether the app tells somebody their shift has started and nothing has
   // been recorded against it.
   ['att_late_nudge', (v) => (v === '0' || v === 'false' ? '0' : '1')],

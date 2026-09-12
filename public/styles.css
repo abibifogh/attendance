@@ -446,6 +446,13 @@ input:focus, select:focus, textarea:focus {
   outline-offset: 1px; border-color: var(--accent);
 }
 label.field { display: block; margin-bottom: .7rem; }
+/* Two or three short fields that belong together on one line, and stack on a
+   phone rather than shrinking to nothing. */
+.form-row {
+  display: grid; gap: 0 .7rem; align-items: end;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+.form-grid { display: grid; gap: .1rem; }
 label.field > span { display: block; font-size: .78rem; font-weight: 620; color: var(--text-dim); margin-bottom: .25rem; }
 .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; }
 
@@ -1901,6 +1908,90 @@ th.rota-today {
   .dir-grid { grid-template-columns: 1fr; }
   .dir-card { padding: .7rem; background: var(--surface); }
   .dir-way { font-size: .92rem; padding: .3rem 0; }
+}
+
+/* ===========================================================================
+   Swaps
+   ---------------------------------------------------------------------------
+   A card each on the board, a row each in the queue. The card is read by
+   somebody deciding whether to give up an evening; the row is read by somebody
+   deciding whether to let them, which is why the warnings live on the row and
+   the reason lives on the card.
+   =========================================================================== */
+.swap-grid {
+  display: grid; gap: .6rem;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+}
+.swap-card {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: .7rem .8rem;
+  display: grid; gap: .5rem; align-content: start;
+}
+.swap-when { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+.swap-day { font-weight: 700; font-size: 1rem; }
+.swap-when .pill { margin-left: auto; }
+.swap-shift { display: flex; align-items: center; gap: .5rem; }
+.swap-swatch {
+  width: .5rem; height: 2.1rem; border-radius: 999px; flex: none;
+  background: var(--shift, var(--border-strong));
+}
+.swap-name { font-weight: 650; line-height: 1.25; }
+.swap-hours { font-size: .82rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.swap-from { display: flex; align-items: center; gap: .45rem; font-size: .84rem; color: var(--text-dim); }
+.swap-from strong { color: var(--text); }
+.swap-back { font-size: .84rem; }
+.swap-note { font-size: .84rem; color: var(--text-dim); font-style: italic; }
+.swap-foot { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.swap-foot .spacer { flex: 1; }
+.swap-why { font-style: italic; }
+
+/* The queue */
+.swap-row {
+  display: grid; grid-template-columns: 7rem 1fr auto; gap: .6rem 1rem; align-items: start;
+  padding: .75rem .1rem; border-bottom: 1px solid var(--border);
+}
+.swap-row:last-child { border-bottom: 0; }
+.swap-move { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.swap-arrow { color: var(--text-faint); font-size: .84rem; }
+.swap-flags { display: grid; gap: .2rem; margin-top: .3rem; }
+.swap-flag { font-size: .82rem; color: var(--text-dim); }
+.swap-flag.high { color: var(--bad); }
+.swap-flag.warn { color: var(--warn); }
+.swap-flag.ok { color: var(--good); }
+
+.swap-done { display: grid; gap: .3rem; }
+.swap-done-row {
+  display: flex; gap: .45rem; align-items: baseline; flex-wrap: wrap; font-size: .86rem;
+}
+
+/* Putting one up */
+.swap-ask { display: grid; gap: .4rem; }
+.swap-ask-head { font-weight: 650; font-size: .9rem; }
+.swap-ask-note { font-size: .82rem; margin: 0; }
+.swap-who {
+  display: grid; gap: .15rem; max-height: 15rem; overflow: auto;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: .35rem; background: var(--surface-2);
+}
+.swap-pick {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .3rem .35rem; border-radius: 8px; cursor: pointer;
+}
+.swap-pick:hover { background: var(--surface-3); }
+/* Inputs in this app are full-width by default, which is right for a text box
+   and turns a tick box into a 540px bar. */
+.swap-pick input[type="checkbox"],
+.swap-open input[type="checkbox"] { width: 1.1rem; height: 1.1rem; flex: none; margin: 0; padding: 0; }
+.swap-pick-who { font-size: .9rem; font-weight: 600; }
+.swap-open { display: flex; align-items: flex-start; gap: .5rem; font-size: .86rem; cursor: pointer; }
+.swap-count { font-size: .84rem; color: var(--accent); margin: 0; font-weight: 600; }
+.swap-count.is-none { color: var(--bad); }
+.swap-small { font-size: .8rem; margin: 0; }
+
+@media (max-width: 640px) {
+  .swap-grid { grid-template-columns: 1fr; }
+  .swap-row { grid-template-columns: 1fr; }
+  .swap-row .btn-row { justify-content: flex-start; }
 }
 
 /* ===========================================================================

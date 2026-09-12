@@ -18,6 +18,7 @@ import { renderAttMe } from './views/att-me.js';
 import { renderAttMyReport } from './views/att-my-report.js';
 import { renderAttMyPayslips } from './views/att-my-payslips.js';
 import { renderDirectory } from './views/directory.js';
+import { renderSwapQueue, renderSwaps } from './views/swaps.js';
 import { renderAttMyAdvance } from './views/att-my-advance.js';
 import { renderAttAdvances } from './views/att-advances.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
@@ -127,6 +128,9 @@ const ROUTES = [
   // Beside it, because the month is the other question somebody asks about
   // their own attendance and it is not one the week can answer.
   { mine: true, group: 'me', tab: 'Report', path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport, live: ['attendance', 'leave'] },
+  // Beside their own week, because giving up a Saturday is a thing you do
+  // while looking at the Saturday.
+  { mine: true, group: 'me', tab: 'Swaps', path: 'swaps', label: 'Swaps', permission: 'att_me', render: renderSwaps, live: ['rota'] },
 
   // Money going the other way. Its own link rather than a third tab on their
   // week: what somebody is owed and what they worked are two different
@@ -151,6 +155,8 @@ const ROUTES = [
   // itself is the same grid; a reader gets it with nothing on it to press.
   { group: 'rota', tab: 'Rota', path: 'att-rota', label: 'Rota', permission: ['att_rota', 'att_rota_view'], render: renderAttRota, live: ['rota', 'leave', 'attendance'] },
   // Beside the rota, because it is read while the rota is being built.
+  // The queue that changes the grid, next to the grid it changes.
+  { group: 'rota', tab: 'Swaps', path: 'att-swaps', label: 'Swaps', permission: ['att_rota', 'att_manage'], render: renderSwapQueue, live: ['rota'] },
   { group: 'rota', tab: 'Workload', path: 'att-workload', label: 'Workload', permission: ['att_rota', 'att_reports'], render: renderAttWorkload, live: ['rota', 'leave'] },
   // And the lunch list is the rota read for a different purpose: who is in on
   // Wednesday, so the kitchen knows how many to cook for.

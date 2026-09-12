@@ -78,10 +78,10 @@ const roleHolds = (role, staffId = null) => effectivePermissions({ role, staff_i
 // The table itself
 // ---------------------------------------------------------------------------
 
-test('the app reads out as ten groups and twenty-four screens', () => {
+test('the app reads out as ten groups and twenty-six screens', () => {
   assert.equal(GROUP_LIST.length, 10);
   const inMenu = ROUTE_LIST.filter((r) => !r.hidden);
-  assert.equal(inMenu.length, 24, 'nothing was dropped, only regrouped');
+  assert.equal(inMenu.length, 26, 'nothing was dropped, only regrouped');
   for (const route of inMenu) {
     assert.ok(route.group, `${route.path} is in the menu with no group`);
     assert.ok(GROUP_LIST.some((g) => g.key === route.group), `${route.path}: no such group`);
@@ -109,14 +109,14 @@ test('an administrator reads ten links, where they read twenty-three', () => {
     'Setup', 'Guide',
   ]);
   assert.equal(menu.length, 10);
-  assert.equal(ROUTE_LIST.filter((r) => !r.hidden).length, 24, 'and it is the same 24 screens');
+  assert.equal(ROUTE_LIST.filter((r) => !r.hidden).length, 26, 'and it is the same screens');
 });
 
 test('a member of staff reads four, and their own week is the first', () => {
   const menu = menuFor(['att_me']);
   assert.deepEqual(menu.map((g) => g.label), ['My shifts', 'My pay', 'Directory', 'Guide']);
   assert.equal(menu[0].screens[0].path, 'att-me');
-  assert.deepEqual(tabsOf(menu[0]).map((t) => t.label), ['Shifts', 'Report']);
+  assert.deepEqual(tabsOf(menu[0]).map((t) => t.label), ['Shifts', 'Report', 'Swaps']);
   assert.deepEqual(tabsOf(menu[1]).map((t) => t.label), ['Payslips', 'Advance', 'Claims']);
 });
 
@@ -147,7 +147,7 @@ test('a manager reads six, where the same person used to read fourteen', () => {
     ['Attendance', 'Rota', 'People', 'Letters', 'Directory', 'Guide']);
   assert.deepEqual(tabsOf(menu[0]).map((t) => t.label),
     ['Today', 'Week', 'Month', 'Leave', 'Sign-off']);
-  assert.deepEqual(tabsOf(menu[1]).map((t) => t.label), ['Rota', 'Workload', 'Lunch']);
+  assert.deepEqual(tabsOf(menu[1]).map((t) => t.label), ['Rota', 'Swaps', 'Workload', 'Lunch']);
   assert.deepEqual(tabsOf(menu[2]).map((t) => t.label), ['People', 'Recruitment']);
 });
 

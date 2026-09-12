@@ -2432,6 +2432,46 @@ async function rulesTab(reload) {
           + 'turn it on. Anybody with neither a number nor an address is simply not on it.'),
 
         h('label.field',
+          h('span', 'Swapping shifts'),
+          h('select', { name: 'swaps_on' },
+            h('option', { value: '0', selected: (s.swaps_on ?? '0') !== '1' },
+              'Off \u2014 a shift only moves when a planner moves it'),
+            h('option', { value: '1', selected: (s.swaps_on ?? '0') === '1' },
+              'On \u2014 staff can give up a shift and take one'),
+          )),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'A member of staff who cannot work a shift puts it in front of the colleagues who '
+          + 'could cover it, rather than ringing round. Nothing moves on the rota until '
+          + 'somebody with the rota approves it, and the warnings the Workload screen uses '
+          + 'are shown before they do.'),
+
+        h('div.form-row',
+          h('label.field',
+            h('span', 'Up to how long before it starts'),
+            h('select', { name: 'swap_notice_hours' },
+              [['12', '12 hours'], ['24', 'A day'], ['48', 'Two days'], ['72', 'Three days'],
+                ['168', 'A week']].map(([v, label]) => h('option', {
+                value: v, selected: String(s.swap_notice_hours ?? '24') === v,
+              }, label)))),
+          h('label.field',
+            h('span', 'Approval'),
+            h('select', { name: 'swap_approval' },
+              h('option', { value: 'always', selected: (s.swap_approval ?? 'always') !== 'clean' },
+                'Always, whatever the swap looks like'),
+              h('option', { value: 'clean', selected: s.swap_approval === 'clean' },
+                'Only when something is flagged'))),
+          h('label.field',
+            h('span', 'Most in a month, each'),
+            h('input', {
+              type: 'number', name: 'swap_monthly_cap', min: '0', max: '99',
+              value: String(s.swap_monthly_cap ?? '0'),
+            }))),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'Nought is no limit. "Only when something is flagged" lets a swap through where '
+          + 'nothing at all comes up: nobody over their hours, nobody short of rest, nobody '
+          + 'working seven days. Anything else still waits for a person.'),
+
+        h('label.field',
           h('span', 'How much leave they have left'),
           h('select', { name: 'att_show_balance' },
             h('option', { value: '1', selected: (s.att_show_balance ?? '1') !== '0' },
