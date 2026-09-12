@@ -53,8 +53,10 @@ draws it on both screens rather than each screen having its own.
 
 Above the list, a row of departments with counts, since "who is on reception"
 is how the question arrives and typing it is the slower answer. The search
-looks at the department as well as the name, for the people who type it anyway,
-and the line under the row says how many of the whole list is left.
+looks at the department as well as the name, for the people who type it anyway.
+Narrow it either way and a line appears saying how much of the list is left;
+on the whole list there is no line, because the heading has already said how
+many people there are.
 
 **The safety is in the query rather than in the drawing.** The route names its
 columns: the four above, plus the person's id and whether there is a photograph

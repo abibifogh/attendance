@@ -146,10 +146,11 @@ export async function renderDirectory() {
 
     const people = filterPeople(data.people, showing);
     const all = data.people.length;
-    note.textContent = people.length === all
-      ? 'Personal numbers, shared so the property can reach each other. '
-        + 'Not for anything else.'
-      : `${people.length} of ${all} people.`;
+    // How much of the list is left, and only once some of it is not. The whole
+    // list needs no caption: the heading has already said how many there are.
+    const narrowed = people.length !== all;
+    note.textContent = narrowed ? `${people.length} of ${all} people.` : '';
+    note.hidden = !narrowed;
 
     if (!people.length) {
       mount(list, emptyState('Nobody by that name',
@@ -175,8 +176,6 @@ export async function renderDirectory() {
           : `${data.people.length} people`)),
       search),
     chips,
-    // Said once, at the top, rather than beside every number. Anybody reading
-    // this is holding a colleague's personal mobile.
     note,
     list);
   return host;

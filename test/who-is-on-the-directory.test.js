@@ -106,6 +106,16 @@ test('the number dials and the address writes', () => {
   assert.match(view, /href: `mailto:/);
 });
 
+test('nothing under the chips until some of the list is missing', () => {
+  const view = readFileSync('public/js/views/directory.js', 'utf8');
+  // The page used to carry a standing caption about personal numbers. The
+  // heading already says how many people there are, and a line that never
+  // changes is a line nobody reads twice.
+  assert.equal(view.includes('shared so the property can reach'), false);
+  assert.match(view, /note\.hidden = !narrowed/);
+  assert.match(view, /\$\{people\.length\} of \$\{all\} people/);
+});
+
 test('the copy button belongs to a desk, and a phone never draws it', () => {
   const view = readFileSync('public/js/views/directory.js', 'utf8');
   assert.match(view, /navigator\.clipboard\.writeText\(value\)/);
