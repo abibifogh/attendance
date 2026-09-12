@@ -240,7 +240,7 @@ test('no clock times, no lateness and no pay travel with it', async () => {
   const out = await ask(db, 1);
   const cell = dayOf(out, 'Kofi', MON);
   assert.deepEqual(Object.keys(cell).sort(),
-    ['away', 'day', 'elsewhere', 'restDay', 'shift']);
+    ['away', 'day', 'elsewhere', 'restDay', 'shift', 'title']);
 
   const said = JSON.stringify(out);
   for (const leak of ['06:41', 'late', 'salary', 'punch']) {

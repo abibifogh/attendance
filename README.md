@@ -1062,6 +1062,17 @@ lateness, no leave balance, and no reason for a day away: that somebody is away
 is the question, why they are away is not, and the answer does not carry the
 kind of leave at all. It is stripped in the answer rather than on the screen.
 
+**What is not withheld is the note on the shift.** A cell on the grid can carry
+a line of its own, and the planner writes it precisely because the shift's own
+name does not say the whole job: Breakfast helper with "+ lunch" on it is a
+different day from a plain Breakfast helper. The person it belongs to has
+always seen it on their own week. Nobody else did, so a colleague reading the
+department rota to find out who is doing lunch saw a name that told them the
+opposite. The note now travels with the shift, on the week table and on the
+phone's day list, and no further: a day nobody has published carries neither
+the shift nor the note, and a visitor's day somewhere else carries neither
+either.
+
 **And no public holidays, on either of them.** Their own week used to name the
 holiday under the day. It answered a question nobody was asking there: the
 screen is *when am I in*, and a day with no shift on it is a day off whatever

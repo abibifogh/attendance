@@ -714,12 +714,16 @@ export async function myDepartment(ctx) {
   // below reads it rather than asking again, because whether somebody belongs
   // on this page is the same question as what their days say.
   const own = department === mine;
+  // The shift and the note the planner wrote on it. The note is part of the
+  // shift, not an aside: "+ lunch" on a breakfast helper is the difference
+  // between a colleague knowing who is doing lunch and having to ask.
   const settledShift = (personId, day) => {
     const rostered = ds.rosterBy.get(`${personId}|${day}`);
     const schedule = scheduleFor(ds, personId, day);
     const settled = schedule.source === 'pattern'
       || (schedule.source === 'roster' && Boolean(rostered?.published));
-    return settled ? schedule.shift : null;
+    if (!settled) return { shift: null, title: null };
+    return { shift: schedule.shift, title: rostered?.title || null };
   };
 
   // The department's own people, and anybody else covering one of its shifts.
@@ -735,7 +739,7 @@ export async function myDepartment(ctx) {
     if (!person.active) continue;
     if ((person.department || null) === department) continue;
     for (const day of days) {
-      if (settledShift(person.id, day)?.department === department) {
+      if (settledShift(person.id, day).shift?.department === department) {
         covering.add(person.id);
         break;
       }
@@ -784,7 +788,7 @@ export async function myDepartment(ctx) {
         visiting,
         homeDepartment: visiting ? (person.department || null) : null,
         days: days.map((day) => {
-          const shift = settledShift(person.id, day);
+          const { shift, title } = settledShift(person.id, day);
           const here = !visiting || shift?.department === department;
           const mineToday = here ? shift : null;
           const leave = ds.leaveBy.get(`${person.id}|${day}`) ?? null;
@@ -799,6 +803,10 @@ export async function myDepartment(ctx) {
                 colour: mineToday.colour ?? null,
               }
               : null,
+            // What the planner wrote on that cell. Anybody who can see the
+            // shift can see the note on it, because a shift whose name says
+            // one thing and whose note says another is only half told.
+            title: mineToday ? (title ?? null) : null,
             // Off, rather than a dash that could equally mean nobody has
             // looked at this week yet. Somebody reading it to work out who to
             // ask about a Saturday needs the difference.

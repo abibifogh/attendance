@@ -559,6 +559,9 @@ function deptWeek(data) {
           : entry.shift
             ? h('div.dept-shift',
               { 'data-shift-colour': String(entry.shift.colour ?? 0) },
+              // The planner's note above the shift's own name, the same way
+              // round as somebody's own week reads it.
+              entry.title ? h('span.dept-shift-title', entry.title) : null,
               h('span.dept-shift-name', entry.shift.name),
               h('small.muted', `${entry.shift.starts_at}\u2013${entry.shift.ends_at}`))
             : entry.restDay
@@ -591,7 +594,9 @@ function deptDay(day, data) {
       + (person.visiting && person.homeDepartment ? ` (${person.homeDepartment})` : '');
 
     if (entry?.away) away.push(label);
-    else if (entry?.shift) on.push({ label, shift: entry.shift, isMe: person.isMe });
+    else if (entry?.shift) {
+      on.push({ label, shift: entry.shift, title: entry.title ?? null, isMe: person.isMe });
+    }
     // Somebody covering who is not here today is simply not on this day. They
     // are working elsewhere or they are not, and neither is this department's
     // business to publish.
@@ -613,6 +618,7 @@ function deptDay(day, data) {
       ? h('div.dept-day-on', on.map((row) => h('div.dept-on',
         { class: row.isMe ? 'dept-me' : null, 'data-shift-colour': String(row.shift.colour ?? 0) },
         h('span.dept-on-who', row.label),
+        row.title ? h('span.dept-on-title', row.title) : null,
         h('small.muted', `${row.shift.name} \u00b7 ${row.shift.starts_at}\u2013${row.shift.ends_at}`))))
       : h('p.muted', 'Nobody on this day.'),
     off.length ? h('p.dept-day-off', h('small.muted', `Off: ${off.join(', ')}`)) : null,

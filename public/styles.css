@@ -496,6 +496,7 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .dept-visiting { display: block; font-size: .7rem; }
 .dept-shift { display: grid; gap: .05rem; }
 .dept-shift-name { font-size: .78rem; font-weight: 600; line-height: 1.25; }
+.dept-shift-title { font-size: .68rem; font-weight: 650; color: var(--text-dim); }
 .dept-shift small { font-size: .7rem; }
 .dept-rota .rota-today { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .dept-week { overflow-x: auto; }
@@ -738,6 +739,7 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
    colour survives on it. */
 .dept-on.dept-me { box-shadow: inset 0 0 0 2px var(--accent); }
 .dept-on-who { font-weight: 600; font-size: .9rem; }
+.dept-on-title { font-size: .72rem; font-weight: 650; color: var(--text-dim); }
 .dept-day-off { margin: .45rem 0 0; }
 .dept-day-today .dept-day-head strong { color: var(--accent); }
 

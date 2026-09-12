@@ -236,6 +236,9 @@ export const GUIDE = [
       { p: 'If your work takes you into other parts of the building, your supervisor can name '
         + 'those departments as well. A picker appears on the card and you can look at each '
         + 'of them, with your own first.' },
+      { p: 'A note the planner wrote on a shift is shown with it. A shift called Breakfast '
+        + 'helper with \u201c+ lunch\u201d written on it is a different day from a plain one, '
+        + 'and that is exactly the thing worth knowing about a colleague.' },
       { p: 'Anybody covering one of your department\u2019s shifts is on it for that week, '
         + 'whatever department their own record says, and their row says where they are from. '
         + 'The days they are working elsewhere are blank: that is their own department\u2019s '
