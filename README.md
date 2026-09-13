@@ -1219,6 +1219,16 @@ property has finished with them. Removing a login takes its extra records with
 it, written out rather than left to a foreign key, which is not enforced
 everywhere this app runs.
 
+**Leave on a day off counts for nothing, in either direction.** A week off is
+written into the leave book as a range, Monday to Sunday, so the two rest days
+inside it arrive marked as leave like every other day. Crediting them handed
+somebody two days more than the week ever expected, and the sign-off then put
+the Sunday in front of a manager with "nothing clocked", "Sick leave" and
+"Worked unrostered" on the same card. Nothing was worked and nothing was owed:
+the day is neither delivered nor missed. The leave book has always counted it
+this way, and a rest day inside a fortnight off is not charged against the
+balance either.
+
 Two things it deliberately does not do. It does not route anybody's
 notifications: a published shift, an approved advance and a birthday still go
 to that person's own login and nowhere else, so a record on somebody else's
@@ -2238,7 +2248,7 @@ reconcile.
 | **Calendar** | What the month expected: five days out of every seven, less a whole day for each public holiday |
 | **Rostered** | What the rota asked of them. There for comparison; it does not enter the arithmetic |
 | **Worked** | Days clocked in *and* out of. Whole days only |
-| **On leave** | Days on approved leave |
+| **On leave** | Days on approved leave that the rota asked for. Leave falling on a rest day is not a day delivered |
 | **Over / under** | `Worked + On leave − Calendar`, and what the sign-off proposes |
 
 Five out of seven rather than Monday to Friday: the rota runs across all seven

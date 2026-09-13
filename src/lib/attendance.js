@@ -1504,12 +1504,26 @@ export function dayLedger(record, {
 } = {}) {
   const worked = Boolean(record.first_in && record.last_out);
   const onLeave = record.status === 'leave';
+  // LEAVE COUNTS AS A DAY DELIVERED ONLY ON A DAY THAT WAS ASKED FOR.
+  //
+  // A week of sick leave is recorded against every date in it, rest days
+  // included, because that is what somebody types into the leave book: from
+  // Monday to Sunday. Crediting all seven handed a person two days more than
+  // the week expected of them, and the sign-off screen then showed the rest
+  // day as an extra day delivered, labelled "Worked unrostered" beside
+  // "nothing clocked". Both halves of that were wrong: nothing was worked, and
+  // nothing was owed.
+  //
+  // The leave book already counts it this way. A rest day inside a fortnight
+  // off is not charged against the balance either, and the two figures
+  // disagreeing about the same Sunday is how a month stops adding up.
+  const credited = worked || (onLeave && Boolean(record.scheduled));
   return {
     // Named `owed` rather than `credit` on purpose: `credit` already means the
     // half-a-day-for-a-short-shift figure everywhere else in this file, and two
     // things called credit that differ on a five-hour Wednesday is a bug
     // waiting to be written.
-    owed: worked || onLeave ? 1 : 0,
+    owed: credited ? 1 : 0,
     // A month somebody has been told what it expected is that, spread evenly
     // across its days so a part of it still adds up. The five-in-seven rule
     // only answers for the months nobody has said anything about — which is
@@ -1618,11 +1632,14 @@ export function overUnder(records, {
     // worked. Listing every quiet Sunday as a "day missed" because it carries
     // five sevenths of an expectation would be arithmetically consistent and
     // completely useless to read.
+    // An over is a day worked. Not a day on leave: leave on a day the rota did
+    // not ask for is neither delivered nor missed, and it has no business on a
+    // list of days somebody is about to be paid or charged for.
     if (led.owed && !record.scheduled) {
       overs.push({
         day: record.day,
         minutes: record.worked_minutes || 0,
-        why: led.onLeave ? 'On leave on a day off' : 'Worked a day the rota did not ask for',
+        why: 'Worked a day the rota did not ask for',
       });
     }
     if (!led.owed && record.scheduled && expected) {
