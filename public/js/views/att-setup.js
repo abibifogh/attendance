@@ -2232,6 +2232,24 @@ function staleness(stamp, mode) {
 // Rules
 // ---------------------------------------------------------------------------
 
+/**
+ * A band of related rules, with a heading and a line saying what they decide.
+ *
+ * Ten cards in one grid is a wall. The bands are the order somebody would ask
+ * the questions in: what a day at work means, then time off, then what staff
+ * can do for themselves, then what their phone says, then the property's own
+ * particulars.
+ */
+function band(title, lead, ...cards) {
+  return h('div.rules-band',
+    h('div.rules-band-head',
+      h('h3', title),
+      lead ? h('p.muted', lead) : null,
+    ),
+    h('div.grid.grid-2', ...cards),
+  );
+}
+
 async function rulesTab(reload) {
   const data = await api.attBootstrap();
   const s = data.settings;
@@ -2241,9 +2259,13 @@ async function rulesTab(reload) {
     event.preventDefault();
     try {
       const result = await api.attUpdateSettings(Object.fromEntries(new FormData(form).entries()));
-      toast(result.recomputed
-        ? `Saved — ${result.recomputed} days worked out again.`
-        : 'Saved.', 'good');
+      if (!result.changed.length) {
+        toast('Nothing had changed.', 'good');
+      } else {
+        toast(result.recomputed
+          ? `Saved — ${result.recomputed} days worked out again.`
+          : 'Saved.', 'good');
+      }
       await reload();
     } catch (err) {
       toast(err.message, 'bad');
@@ -2251,25 +2273,33 @@ async function rulesTab(reload) {
   };
   form.addEventListener('submit', save);
 
-  form.append(
-    h('div.grid.grid-2',
-      // Who this property is. It goes on every contract issued and on the head
-      // of every printed report, so it belongs on a screen rather than in
-      // whatever the first migration happened to seed.
-      card('Links', { note: 'How long a link to a member of staff lasts' },
-        h('label.field',
-          h('span', 'A link to a member of staff lasts'),
-          h('input', {
-            type: 'number', name: 'hr_link_days', min: 1, max: 90,
-            value: s.hr_link_days ?? 21,
-          }),
-          h('small.muted', 'Days before a details or signing link stops working'),
-        ),
-        h('p.muted', { style: { fontSize: '.85rem' } },
-          'The property\u2019s own name, address and logo moved to the Company tab, '
-          + 'where the rest of what goes on a payslip is set.'),
-      ),
+  // The bar at the foot of the page follows you down it and says how much is
+  // waiting to be saved. This screen is long enough that somebody changing one
+  // box at the top would otherwise scroll past nine cards wondering whether
+  // they had already pressed Save.
+  const count = h('span.muted');
+  const button = h('button.btn.btn-primary', { type: 'submit', disabled: true }, 'Save the rules');
+  const bar = h('div.rules-save', count, button);
+  let before = null;
+  const dirt = () => {
+    const now = new FormData(form);
+    if (before === null) return 0;
+    let n = 0;
+    for (const [key, value] of now.entries()) if (before.get(key) !== value) n += 1;
+    return n;
+  };
+  const check = () => {
+    const n = dirt();
+    button.disabled = n === 0;
+    count.textContent = n === 0
+      ? 'Nothing changed yet'
+      : n === 1 ? '1 change waiting' : `${n} changes waiting`;
+  };
+  form.addEventListener('input', check);
+  form.addEventListener('change', check);
 
+  form.append(
+    band('A day at work', 'What the terminal records, and what the app makes of it.',
       card('When a punch is missing', { note: 'The decision that matters most' },
         h('label.field',
           h('span', 'A day with only one of the two taps'),
@@ -2282,51 +2312,10 @@ async function rulesTab(reload) {
               'Credit the scheduled shift and flag it'),
           ),
         ),
-        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+        h('p.muted.rules-note',
           'The terminal marks these absent because it has no way to ask anybody. Holding them costs '
           + 'somebody a minute each morning and stops the system quietly refusing to pay for shifts '
           + 'that were actually worked.'),
-      ),
-
-      card('Annual leave', { note: 'Labour Act 2003 defaults' },
-        h('div.field-row',
-          h('label.field', h('span', 'Days a year'),
-            h('input', { type: 'number', name: 'att_leave_days', min: 0, max: 365, step: 0.5, value: s.att_leave_days ?? 15 })),
-          h('label.field', h('span', 'Working days a week'),
-            h('input', { type: 'number', name: 'att_days_per_week', min: 0.5, max: 7, step: 0.5, value: s.att_days_per_week ?? 5 }),
-            h('small.muted', 'What a month expects of somebody. Five out of seven by default, '
-              + 'and settable per person under Staff')),
-          h('label.field', h('span', 'Qualifying service (months)'),
-            h('input', { type: 'number', name: 'att_leave_qualify_months', min: 0, max: 60, value: s.att_leave_qualify_months ?? 12 })),
-        ),
-        h('div.field-row',
-          h('label.field', h('span', 'Carried over'),
-            h('input', { type: 'number', name: 'att_leave_carryover_days', min: 0, max: 365, step: 0.5, value: s.att_leave_carryover_days ?? 0 })),
-          h('label.field', h('span', 'Leave year starts'),
-            h('input', { type: 'text', name: 'att_leave_year_starts', pattern: '\\d{2}-\\d{2}', value: s.att_leave_year_starts ?? '01-01', placeholder: '01-01' })),
-        ),
-        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
-          'Fifteen working days after twelve months is the statutory floor. A property may be more '
-          + 'generous, and one person can be given their own figure on their record.'),
-      ),
-
-      card('How many can be off at once', { note: 'Holds against what staff ask for' },
-        h('div.field-row',
-          h('label.field', h('span', 'People off on any one day'),
-            h('input', {
-              type: 'number', name: 'att_away_cap', min: 0, max: 200,
-              value: s.att_away_cap ?? 3,
-            })),
-        ),
-        h('p.muted', { style: { fontSize: '.85rem' } },
-          'Leave and unavailability together. A member of staff asking for a day that already '
-          + 'has this many people off is told the day is full rather than refused without a '
-          + 'reason, so they can see it is the day and not them. They are not told who: this '
-          + 'app does not show one member of staff anybody else’s week.'),
-        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
-          'It does not stand in your way. Leave or unavailability written on somebody’s behalf '
-          + 'goes straight in: you can see the whole week, and you are the person who would '
-          + 'have approved it. Nought means nobody may ask.'),
       ),
 
       card('Reading the terminal', { note: 'Rarely worth changing' },
@@ -2338,127 +2327,113 @@ async function rulesTab(reload) {
           h('label.field', h('span', 'and after (min)'),
             h('input', { type: 'number', name: 'att_window_after', min: 0, max: 720, value: s.att_window_after ?? 240 })),
         ),
-        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+        h('p.muted.rules-note',
           'The window decides which shift a punch belongs to. Wide enough for somebody who arrives an '
           + 'hour early, narrow enough that a night shift\'s clock-out is not claimed by the morning.'),
       ),
 
-      card('Departments', { note: 'One per line', wide: true },
-        h('label.field',
-          h('textarea', {
-            name: 'att_departments',
-            rows: 8,
-            style: { width: '100%', fontFamily: 'inherit', fontSize: '.9rem' },
-          }, s.att_departments ?? '')),
-        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
-          'What the dropdown offers when you add somebody. Reports group by department, so this '
-          + 'list is what stops "Kitchen" and "kitchen" being counted as two. Taking one out here '
-          + 'moves nobody — it only stops it being offered, and it keeps appearing for as long as '
-          + 'anybody is still in it.'),
+      card('If the terminal goes quiet', { note: 'Nought switches it off' },
+        h('label.field', h('span', 'Minutes of silence before it counts as quiet'),
+          h('input', { type: 'number', name: 'att_terminal_quiet_minutes', min: 0, max: 1440, value: s.att_terminal_quiet_minutes ?? 60 })),
+        h('p.muted.rules-note',
+          'When nothing has been heard from a terminal for this long and somebody was due to start, '
+          + 'everybody who can manage attendance is told, and the shifts that began in the silence are '
+          + 'held for a decision instead of being marked absent.'),
       ),
 
-      card('Chasing', {},
+      card('Chasing', { note: 'When absence becomes a conversation' },
         h('label.field', h('span', 'Raise the alarm after this many absences in a row'),
           h('input', { type: 'number', name: 'att_escalate_after', min: 1, max: 30, value: s.att_escalate_after ?? 3 })),
-        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+        h('p.muted.rules-note',
           'Changes the tone of the note the person receives, and rings the bell for anybody who can '
           + 'manage the rota.'),
       ),
+    ),
 
-      card('If the terminal goes quiet', {},
-        h('label.field', h('span', 'Minutes of silence before it counts as quiet'),
-          h('input', { type: 'number', name: 'att_terminal_quiet_minutes', min: 0, max: 1440, value: s.att_terminal_quiet_minutes ?? 60 })),
-        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
-          'When nothing has been heard from a terminal for this long and somebody was due to start, '
-          + 'everybody who can manage attendance is told, and the shifts that began in the silence are '
-          + 'held for a decision instead of being marked absent. Zero switches this off.'),
+    band('Time off', 'What everybody is entitled to, and how much of the property can be away at once.',
+      card('Annual leave', { note: 'Labour Act 2003 defaults' },
+        h('div.field-row',
+          h('label.field', h('span', 'Days a year'),
+            h('input', { type: 'number', name: 'att_leave_days', min: 0, max: 365, step: 0.5, value: s.att_leave_days ?? 15 })),
+          h('label.field', h('span', 'Working days a week'),
+            h('input', { type: 'number', name: 'att_days_per_week', min: 0.5, max: 7, step: 0.5, value: s.att_days_per_week ?? 5 })),
+          h('label.field', h('span', 'Qualifying service (months)'),
+            h('input', { type: 'number', name: 'att_leave_qualify_months', min: 0, max: 60, value: s.att_leave_qualify_months ?? 12 })),
+        ),
+        h('div.field-row',
+          h('label.field', h('span', 'Carried over'),
+            h('input', { type: 'number', name: 'att_leave_carryover_days', min: 0, max: 365, step: 0.5, value: s.att_leave_carryover_days ?? 0 })),
+          h('label.field', h('span', 'Leave year starts'),
+            h('input', { type: 'text', name: 'att_leave_year_starts', pattern: '\\d{2}-\\d{2}', value: s.att_leave_year_starts ?? '01-01', placeholder: '01-01' })),
+        ),
+        h('p.muted.rules-note',
+          'Fifteen working days after twelve months is the statutory floor. A property may be more '
+          + 'generous, and one person can be given their own figure on their record. Working days a '
+          + 'week is what a month expects of somebody, and is settable per person under Staff.'),
       ),
 
-      card('What the terminal tells them', { note: 'On their own phone' },
-        h('label.field',
-          h('span', 'When they clock in and out'),
-          h('select', { name: 'att_clock_push' },
-            h('option', { value: '1', selected: (s.att_clock_push ?? '1') !== '0' },
-              'Send them the time it recorded'),
-            h('option', { value: '0', selected: (s.att_clock_push ?? '1') === '0' },
-              'Say nothing'),
-          )),
-        h('p.muted', { style: { fontSize: '.85rem' } },
-          'The terminal beeps and shows a name, which does not say what time went down or '
-          + 'whether it counts as late. This does, on the phone of the person who tapped and '
-          + 'nobody else, at the moment it happens.'),
-
-        h('label.field',
-          h('span', 'When a shift has started and nothing has been recorded'),
-          h('select', { name: 'att_late_nudge' },
-            h('option', { value: '1', selected: (s.att_late_nudge ?? '1') !== '0' },
-              'Chase them every half hour until they clock in'),
-            h('option', { value: '0', selected: (s.att_late_nudge ?? '1') === '0' },
-              'Say nothing'),
-          )),
-        h('p.muted', { style: { fontSize: '.85rem' } },
-          'It waits out the grace the shift already allows, stops the moment a clock-in is '
-          + 'recorded, and stops on its own when the shift has ended.'),
-
-        h('label.field',
-          h('span', 'Ten minutes before their shift ends'),
-          h('select', { name: 'att_clockout_nudge' },
-            h('option', { value: '1', selected: (s.att_clockout_nudge ?? '1') !== '0' },
-              'Remind them to clock out before they leave'),
-            h('option', { value: '0', selected: (s.att_clockout_nudge ?? '1') === '0' },
-              'Say nothing'),
-          )),
-        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
-          'Only to somebody who clocked in and has not clocked out yet, and once per shift. '
-          + 'A day with one tap is held back rather than counted, so this is the cheapest way '
-          + 'to stop the pile of days somebody has to reconstruct at the end of the month. '
-          + 'All of these need notifications turned on in the browser on their phone.'),
+      card('How many can be off at once', { note: 'Holds against what staff ask for' },
+        h('label.field', h('span', 'People off on any one day'),
+          h('input', {
+            type: 'number', name: 'att_away_cap', min: 0, max: 200,
+            value: s.att_away_cap ?? 3,
+          })),
+        h('p.muted.rules-note',
+          'Leave and unavailability together. A member of staff asking for a day that already '
+          + 'has this many people off is told the day is full rather than refused without a '
+          + 'reason, so they can see it is the day and not them. They are not told who: this '
+          + 'app does not show one member of staff anybody else’s week.'),
+        h('p.muted.rules-note',
+          'It does not stand in your way. Leave or unavailability written on somebody’s behalf '
+          + 'goes straight in: you can see the whole week, and you are the person who would '
+          + 'have approved it. Nought means nobody may ask.'),
       ),
+    ),
 
-      card('What staff see', { note: 'On My shifts and My report' },
+    band('What staff can do for themselves',
+      'Each of these opens a screen on twenty-four phones, so each is off until you turn it on.',
+      card('The staff directory', { note: 'Off by default' },
         h('label.field',
-          h('span', 'The staff directory'),
+          h('span', 'Looking a colleague up'),
           h('select', { name: 'hr_directory' },
             h('option', { value: '0', selected: (s.hr_directory ?? '0') !== '1' },
               'Off — nobody can open it'),
             h('option', { value: '1', selected: (s.hr_directory ?? '0') === '1' },
               'On — everybody signed in can look somebody up'),
           )),
-        h('p.muted', { style: { fontSize: '.85rem' } },
+        h('p.muted.rules-note',
           'A name, a phone number and an email address, and nothing else on the page. It is '
           + 'how somebody reaches the person covering their shift without asking an '
-          + 'administrator to open a personnel record. It does show every colleague\u2019s '
+          + 'administrator to open a personnel record. It does show every colleague’s '
           + 'personal number to everybody who works here, which is why it is off until you '
           + 'turn it on. Anybody with neither a number nor an address is simply not on it.'),
+      ),
 
+      card('The staff handbook', { note: 'Off by default' },
         h('label.field',
-          h('span', 'The staff handbook'),
+          h('span', 'Reading and signing the chapters'),
           h('select', { name: 'handbook_on' },
             h('option', { value: '0', selected: (s.handbook_on ?? '0') !== '1' },
-              'Off \u2014 only the office can see it'),
+              'Off — only the office can see it'),
             h('option', { value: '1', selected: (s.handbook_on ?? '0') === '1' },
-              'On \u2014 staff can read it and sign what it asks for'),
+              'On — staff can read it and sign what it asks for'),
           )),
-        h('p.muted', { style: { fontSize: '.85rem' } },
+        h('p.muted.rules-note',
           'The chapters are written and published one at a time under Handbook, and nothing '
           + 'reaches a phone until you publish it. Turn this on once there is something in '
           + 'there worth opening.'),
+      ),
 
-        h('label.field',
-          h('span', 'Swapping shifts'),
-          h('select', { name: 'swaps_on' },
-            h('option', { value: '0', selected: (s.swaps_on ?? '0') !== '1' },
-              'Off \u2014 a shift only moves when a planner moves it'),
-            h('option', { value: '1', selected: (s.swaps_on ?? '0') === '1' },
-              'On \u2014 staff can give up a shift and take one'),
-          )),
-        h('p.muted', { style: { fontSize: '.85rem' } },
-          'A member of staff who cannot work a shift puts it in front of the colleagues who '
-          + 'could cover it, rather than ringing round. Nothing moves on the rota until '
-          + 'somebody with the rota approves it, and the warnings the Workload screen uses '
-          + 'are shown before they do.'),
-
+      card('Swapping shifts', { note: 'Off by default', wide: true },
         h('div.form-row',
+          h('label.field',
+            h('span', 'Giving up a shift, and taking one'),
+            h('select', { name: 'swaps_on' },
+              h('option', { value: '0', selected: (s.swaps_on ?? '0') !== '1' },
+                'Off — a shift only moves when a planner moves it'),
+              h('option', { value: '1', selected: (s.swaps_on ?? '0') === '1' },
+                'On — staff can give up a shift and take one'),
+            )),
           h('label.field',
             h('span', 'Up to how long before it starts'),
             h('select', { name: 'swap_notice_hours' },
@@ -2479,34 +2454,43 @@ async function rulesTab(reload) {
               type: 'number', name: 'swap_monthly_cap', min: '0', max: '99',
               value: String(s.swap_monthly_cap ?? '0'),
             }))),
-        h('p.muted', { style: { fontSize: '.85rem' } },
+        h('p.muted.rules-note',
+          'A member of staff who cannot work a shift puts it in front of the colleagues who '
+          + 'could cover it, rather than ringing round. Nothing moves on the rota until '
+          + 'somebody with the rota approves it, and the warnings the Workload screen uses '
+          + 'are shown before they do.'),
+        h('p.muted.rules-note',
           'Nought is no limit. "Only when something is flagged" lets a swap through where '
           + 'nothing at all comes up: nobody over their hours, nobody short of rest, nobody '
           + 'working seven days. Anything else still waits for a person.'),
+      ),
 
+      card('How much leave they have left', { note: 'On My shifts' },
         h('label.field',
-          h('span', 'How much leave they have left'),
+          h('span', 'Their own balance'),
           h('select', { name: 'att_show_balance' },
             h('option', { value: '1', selected: (s.att_show_balance ?? '1') !== '0' },
               'Show it on their screen'),
             h('option', { value: '0', selected: (s.att_show_balance ?? '1') === '0' },
               'Keep it off their screen'),
           )),
-        h('p.muted', { style: { fontSize: '.85rem' } },
+        h('p.muted.rules-note',
           'It is their own figure, so nothing here is confidential either way. Turn it off while '
           + 'the balances are still being tidied up after an import: a number in front of somebody '
           + 'is a number they will ask about, and it should be right before it is published to '
           + 'everybody. They can still ask for leave with it off.'),
+      ),
 
+      card('Public holidays on their report', { note: 'On My report' },
         h('label.field',
-          h('span', 'Public holidays on their monthly report'),
+          h('span', 'In the figure they read'),
           h('select', { name: 'att_report_holidays' },
             h('option', { value: '1', selected: (s.att_report_holidays ?? '1') !== '0' },
               'Count them'),
             h('option', { value: '0', selected: (s.att_report_holidays ?? '1') === '0' },
               'Leave them out'),
           )),
-        h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+        h('p.muted.rules-note',
           'A property that pays for public holidays wants them in the figure; one that treats '
           + 'them as ordinary rest days does not. Left out, they go from the totals and from the '
           + 'day-by-day together, so the two halves of the report cannot disagree. This changes '
@@ -2514,10 +2498,89 @@ async function rulesTab(reload) {
           + 'always did.'),
       ),
     ),
-    h('div.btn-row', { style: { marginTop: '1rem' } },
-      h('button.btn.btn-primary', { type: 'submit' }, 'Save the rules'),
+
+    band('What their phone tells them',
+      'All three need notifications turned on in the browser on the phone itself.',
+      card('When they clock in and out', {},
+        h('label.field',
+          h('span', 'The time it recorded'),
+          h('select', { name: 'att_clock_push' },
+            h('option', { value: '1', selected: (s.att_clock_push ?? '1') !== '0' },
+              'Send them the time it recorded'),
+            h('option', { value: '0', selected: (s.att_clock_push ?? '1') === '0' },
+              'Say nothing'),
+          )),
+        h('p.muted.rules-note',
+          'The terminal beeps and shows a name, which does not say what time went down or '
+          + 'whether it counts as late. This does, on the phone of the person who tapped and '
+          + 'nobody else, at the moment it happens.'),
+      ),
+
+      card('When a shift has started and nothing is recorded', {},
+        h('label.field',
+          h('span', 'Chasing a clock-in'),
+          h('select', { name: 'att_late_nudge' },
+            h('option', { value: '1', selected: (s.att_late_nudge ?? '1') !== '0' },
+              'Chase them every half hour until they clock in'),
+            h('option', { value: '0', selected: (s.att_late_nudge ?? '1') === '0' },
+              'Say nothing'),
+          )),
+        h('p.muted.rules-note',
+          'It waits out the grace the shift already allows, stops the moment a clock-in is '
+          + 'recorded, and stops on its own when the shift has ended.'),
+      ),
+
+      card('Ten minutes before their shift ends', {},
+        h('label.field',
+          h('span', 'A reminder to clock out'),
+          h('select', { name: 'att_clockout_nudge' },
+            h('option', { value: '1', selected: (s.att_clockout_nudge ?? '1') !== '0' },
+              'Remind them to clock out before they leave'),
+            h('option', { value: '0', selected: (s.att_clockout_nudge ?? '1') === '0' },
+              'Say nothing'),
+          )),
+        h('p.muted.rules-note',
+          'Only to somebody who clocked in and has not clocked out yet, and once per shift. '
+          + 'A day with one tap is held back rather than counted, so this is the cheapest way '
+          + 'to stop the pile of days somebody has to reconstruct at the end of the month.'),
+      ),
     ),
+
+    band('The property itself', 'Set once, and left alone for months at a time.',
+      card('Departments', { note: 'One per line' },
+        h('label.field',
+          h('textarea', {
+            name: 'att_departments',
+            rows: 8,
+            style: { width: '100%', fontFamily: 'inherit', fontSize: '.9rem' },
+          }, s.att_departments ?? '')),
+        h('p.muted.rules-note',
+          'What the dropdown offers when you add somebody. Reports group by department, so this '
+          + 'list is what stops "Kitchen" and "kitchen" being counted as two. Taking one out here '
+          + 'moves nobody: it only stops it being offered, and it keeps appearing for as long as '
+          + 'anybody is still in it.'),
+      ),
+
+      card('Links', { note: 'How long a link to a member of staff lasts' },
+        h('label.field',
+          h('span', 'A link to a member of staff lasts'),
+          h('input', {
+            type: 'number', name: 'hr_link_days', min: 1, max: 90,
+            value: s.hr_link_days ?? 21,
+          }),
+          h('small.muted', 'Days before a details or signing link stops working'),
+        ),
+        h('p.muted.rules-note',
+          'The property’s own name, address and logo are on the Company tab, '
+          + 'where the rest of what goes on a payslip is set.'),
+      ),
+    ),
+
+    bar,
   );
+
+  before = new FormData(form);
+  check();
 
   return h('div',
     form,

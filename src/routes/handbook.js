@@ -95,6 +95,36 @@ function asEdit(chapter, counts = null) {
   };
 }
 
+
+/**
+ * The departments and tags a chapter can be aimed at.
+ *
+ * Departments come from the list Setup keeps, plus anything somebody is
+ * actually in that the list has forgotten: a chapter aimed at a department
+ * nobody is in reaches nobody, and a department the list has lost still has
+ * people in it.
+ */
+async function audienceOf(db, people) {
+  const set = (await db.prepare("SELECT value FROM settings WHERE key = 'att_departments'")
+    .first().catch(() => null))?.value ?? '';
+
+  const departments = new Set(String(set).split('\n').map((d) => d.trim()).filter(Boolean));
+  const tags = new Set();
+  for (const person of people) {
+    if (person.department) departments.add(String(person.department).trim());
+    for (const tag of parseList(person.tags)) tags.add(tag);
+  }
+
+  const count = (match) => people.filter(match).length;
+  return {
+    departments: [...departments].sort((a, b) => a.localeCompare(b))
+      .map((name) => ({ name, people: count((p) => p.department === name) })),
+    tags: [...tags].sort((a, b) => a.localeCompare(b))
+      .map((name) => ({ name, people: count((p) => parseList(p.tags).includes(name)) })),
+    everybody: people.length,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Reading it
 // ---------------------------------------------------------------------------
@@ -151,11 +181,20 @@ export async function readHandbook(ctx) {
         .filter((d) => !all.some((c) => c.code === d.code))
         .map((d) => ({ code: d.code, title: d.title })),
       asks: ASKS,
+      // Who there is to aim a chapter at. Typed department names are how a
+      // chapter ends up going to "Kitchen " and reaching nobody, so the screen
+      // offers the real ones: the departments the property has set up, and
+      // every tag anybody actually carries.
+      audience: await audienceOf(ctx.db, people),
     };
   }
 
+  const property = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'property_name'")
+    .first().catch(() => null))?.value || null;
+
   return json({
     on,
+    property,
     me: staff ? { id: staff.id, name: staff.name } : null,
     chapters: forMe.map((c) => asRead(c, { done: hasDone(c, mine) })),
     outstanding: outstanding.map((c) => ({ id: c.id, title: c.live_title || c.title })),

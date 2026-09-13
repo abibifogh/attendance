@@ -1359,17 +1359,50 @@ export function cleanDepartments(value) {
 }
 
 /**
+ * The settings a stored day is worked out from.
+ *
+ * These are the only ones worth rebuilding the last sixty days for. Everything
+ * else on the rules screen decides what a screen shows or what a phone is
+ * told, and turning the directory on has never changed anybody's hours. A
+ * settings form that recomputes three thousand records whichever box you
+ * touched teaches people to be afraid of it.
+ */
+const CHANGES_A_VERDICT = new Set([
+  'att_missing_punch',
+  'att_min_gap_minutes',
+  'att_window_before',
+  'att_window_after',
+  'att_days_per_week',
+  'att_leave_days',
+  'att_leave_carryover_days',
+  'att_leave_qualify_months',
+  'att_leave_year_starts',
+  'att_escalate_after',
+  'att_rotation_anchor',
+  'timezone',
+]);
+
+/**
  * Change the rules, then make the reports agree with them.
  *
- * Every one of these changes what a past day means, so the last sixty days are
- * recomputed and the number of days affected is reported back. Silently
- * changing three thousand records is not something a settings form should do
- * without saying so.
+ * A form posts every box on it, changed or not, so what is actually different
+ * is worked out here against what is stored. Only those are written, only
+ * those are audited, and the days are only worked out again when one of them
+ * was a setting a past day depends on.
  */
 export async function updateSettings(ctx) {
   const body = await readJson(ctx.request);
   const statements = [];
   const changed = [];
+
+  const stored = new Map();
+  for (const row of (await ctx.db.prepare('SELECT key, value FROM settings').all()).results ?? []) {
+    stored.set(row.key, row.value);
+  }
+  // Writing a value it already holds is not a change, and the audit trail is
+  // more use for saying who turned the handbook on than for saying who pressed
+  // Save with nothing typed.
+  const differs = (key, value) => (stored.has(key) ? String(stored.get(key)) !== value : true);
 
   for (const [key, validate] of SETTINGS) {
     const short = key.replace(/^att_/, '');
@@ -1379,6 +1412,7 @@ export async function updateSettings(ctx) {
     // a property that types a website in and then stops having one has to be
     // able to take it off the payslip again.
     if (value === '' && CLEARABLE.has(key)) {
+      if (!differs(key, '')) continue;
       statements.push(ctx.db.prepare(
         "INSERT INTO settings (key, value) VALUES (?1, '') ON CONFLICT(key) DO UPDATE SET value = ''",
       ).bind(key));
@@ -1386,21 +1420,26 @@ export async function updateSettings(ctx) {
       continue;
     }
     if (value == null || value === '') continue;
+    const clean = validate(String(value));
+    if (!differs(key, clean)) continue;
     statements.push(ctx.db.prepare(
       'INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2',
-    ).bind(key, validate(String(value))));
+    ).bind(key, clean));
     changed.push(key);
   }
 
   if (!statements.length) return json({ ok: true, changed: [], recomputed: 0 });
   await ctx.db.batch(statements);
 
-  const timezone = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'timezone'").first())?.value || 'UTC';
-  const today = todayIn(timezone);
-  const result = await recompute(ctx.db, { from: addDays(today, -60), to: today });
+  let recomputed = 0;
+  if (changed.some((key) => CHANGES_A_VERDICT.has(key))) {
+    const timezone = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'timezone'").first())?.value || 'UTC';
+    const today = todayIn(timezone);
+    recomputed = (await recompute(ctx.db, { from: addDays(today, -60), to: today })).days;
+  }
 
   await audit(ctx, 'attendance.settings', null, { changed });
-  return json({ ok: true, changed, recomputed: result.days });
+  return json({ ok: true, changed, recomputed });
 }
 
 /**

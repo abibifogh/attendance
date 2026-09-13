@@ -62,8 +62,19 @@ new year or an incident that made everybody's memory worth testing.
 **Who a chapter is for** is nothing named (everybody), a list of departments, or
 a list of staff tags. Food and drink safety is the kitchen's; the team
 leadership charter is whoever carries the *Team lead* tag, in whatever
-department. The office sees the count against the people it applies to — *1 of
-24 done* — and can open the list of who has not.
+department. It is ticked rather than typed: the picker offers the departments
+Setup holds and every tag somebody actually carries, each with the number of
+people behind it, because a department name typed with a trailing space is a
+chapter that reaches nobody. The office sees the count against the people it
+applies to, *1 of 24 done*, and can open the list of who has not.
+
+**It reads like a book rather than a form.** A numbered contents page, then one
+chapter at a time on a column about seventy characters wide, with the next and
+previous chapter at the foot of it. A line in capitals on its own is a heading,
+a line starting with a dash is a bullet, a line starting with a number is a
+numbered point, and the typist's line breaks are joined back up so nothing wraps
+twice on a phone. What the chapter asks sits at the end of the words, not the
+top.
 
 **Eighteen chapters come with it**, written for a hotel rather than adapted from
 an office: welcome, conduct and ethics, guest service, equal opportunity,
@@ -77,7 +88,9 @@ They arrive as **drafts**, every one. A handbook is the property's word rather
 than the app's, and eighteen chapters appearing on twenty-four phones because
 somebody pressed a button once is the thing this feature exists to prevent.
 Nothing is on any staff screen until Setup → Rules turns the handbook on and
-somebody publishes a chapter.
+somebody publishes a chapter. Publishing with the handbook still switched off is
+the one thing that catches people out, so the office side says so plainly and
+offers the switch on the same screen.
 
 **Contracts already go out from here**, with the templates under People. There
 is now one more: *Contract of employment — hotel and hostel staff*, in the

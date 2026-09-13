@@ -13,6 +13,7 @@ import {
   whoHasNot,
 } from '../src/routes/handbook.js';
 import { STANDARD_TEMPLATES } from '../src/lib/ghana-templates.js';
+import { readAsBlocks } from '../public/js/views/handbook.js';
 
 /**
  * The staff handbook.
@@ -493,4 +494,75 @@ test('a published chapter that asks for nothing is not counted as waiting', () =
   assert.equal(hasDone(chapter, []), true);
   assert.equal(liveAsksOf(chapter), 'read');
   assert.equal(wouldBeANewVersion({ ...chapter, body: 'a', live_body: 'a', title: 't', live_title: 't' }), false);
+});
+
+// ---------------------------------------------------------------------------
+// Setting it like a book
+// ---------------------------------------------------------------------------
+
+test('a chapter reads as headings, paragraphs and lists', () => {
+  const shape = readAsBlocks([
+    'A short opening.',
+    '',
+    'TURN UP',
+    'Be at your post, in uniform, ready to work at the start of your shift, which',
+    'is a line the typist wrapped and not a new paragraph.',
+    '',
+    '- Clock in yourself',
+    '- Clock out yourself',
+    '',
+    '1. First',
+    '2. Second',
+  ].join('\n'));
+
+  assert.deepEqual(shape.map((b) => b.kind), ['text', 'heading', 'text', 'bullets', 'numbers']);
+  assert.equal(shape[1].text, 'TURN UP');
+  // The typist's wrap is joined back up, so it reads as one sentence.
+  assert.match(shape[2].text, /your shift, which is a line/);
+  assert.deepEqual(shape[3].items, ['Clock in yourself', 'Clock out yourself']);
+  assert.deepEqual(shape[4].items, ['First', 'Second']);
+});
+
+test('a heading is a line in capitals on its own, and nothing else is', () => {
+  const shape = readAsBlocks('IT AND ACCEPTABLE USE\nNot a heading, because it has lower case.');
+  assert.equal(shape[0].kind, 'heading');
+  assert.equal(shape[1].kind, 'text');
+
+  // A single shouted word inside a sentence does not make a heading of it.
+  assert.equal(readAsBlocks('Tell your manager. ALWAYS.')[0].kind, 'text');
+});
+
+test('a chapter with nothing in it draws nothing', () => {
+  assert.deepEqual(readAsBlocks(''), []);
+  assert.deepEqual(readAsBlocks(null), []);
+  assert.deepEqual(readAsBlocks('\n\n\n'), []);
+});
+
+test('the screen reads one chapter at a time, from the published words', () => {
+  const view = readFileSync('public/js/views/handbook.js', 'utf8');
+  // A contents page and a chapter page, not an accordion of everything at once.
+  assert.match(view, /hb-contents/);
+  assert.match(view, /hb-page-head/);
+  assert.match(view, /All chapters/);
+  // And the office is told when publishing reaches nobody.
+  assert.match(view, /Staff cannot see any of this yet/);
+  assert.match(view, /handbook_on: '1'/);
+});
+
+test('who a chapter is for is ticked from what the property has', async () => {
+  const { db } = setup();
+  const view = readFileSync('public/js/views/handbook.js', 'utf8');
+  // Nothing typed: a typed department name is a chapter that reaches nobody.
+  assert.match(view, /audiencePicker/);
+  assert.equal(/placeholder: 'Kitchen, Housekeeping'/.test(view), false);
+
+  const out = await readHandbook(ctx(db, asOffice())).then((r) => r.json());
+  const names = out.manage.audience.departments.map((d) => d.name);
+  assert.ok(names.includes('Kitchen'));
+  assert.ok(names.includes('Housekeeping'));
+  assert.equal(out.manage.audience.everybody, TEAM.length);
+
+  const leads = out.manage.audience.tags.find((t) => t.name === 'Team lead');
+  assert.ok(leads, 'a tag somebody actually carries is offered');
+  assert.ok(leads.people >= 1);
 });

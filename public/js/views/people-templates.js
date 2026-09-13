@@ -5,6 +5,22 @@ import { navigate } from '../app.js';
 import { field, formDialog } from './att-shared.js';
 
 /**
+ * What each kind is for, in the words the screen uses.
+ *
+ * The kind is not decoration: the Letters screen offers correspondence and
+ * nothing else, and a contract offered there would come out with unfilled
+ * placeholders down the middle of it.
+ */
+const KINDS = [
+  ['contract', 'Contract'],
+  ['letter', 'HR letter, issued to one person'],
+  ['policy', 'Policy to acknowledge'],
+  ['correspondence', 'Letter template, for the Letters screen'],
+];
+
+const KIND_LABEL = Object.fromEntries(KINDS);
+
+/**
  * The words a contract is made from.
  *
  * A template is not a contract. Issuing one copies the words out and freezes
@@ -14,7 +30,7 @@ import { field, formDialog } from './att-shared.js';
  */
 export async function renderPeopleTemplates() {
   const host = h('div');
-  const { rows, placeholders } = await api.hrTemplates();
+  const { rows, placeholders, missing = [] } = await api.hrTemplates();
   const reload = async () => mount(host, await renderPeopleTemplates());
 
   const edit = async (existing) => {
@@ -28,9 +44,10 @@ export async function renderPeopleTemplates() {
             value: existing?.name ?? '', placeholder: 'Contract of employment — permanent',
           })),
           field('Kind', h('select', { name: 'kind' },
-            ['contract', 'letter', 'policy'].map((k) => h('option', {
-              value: k, selected: existing?.kind === k,
-            }, k === 'contract' ? 'Contract' : k === 'letter' ? 'Letter' : 'Policy to acknowledge')))),
+            KINDS.map(([k, label]) => h('option', {
+              value: k, selected: (existing?.kind ?? 'contract') === k,
+            }, label))),
+          'A letter template is the only kind the Letters screen offers'),
         ),
 
         h('details', { open: !existing },
@@ -113,11 +130,33 @@ export async function renderPeopleTemplates() {
         h('div.sub', 'What a contract is made from'),
       ),
       h('div.btn-row',
-        h('button.btn-sm', { onclick: () => navigate('people') }, '‹ People'),
-        h('button.btn-sm', { onclick: loadStandard }, 'Load the standard set'),
+        h('button.btn-sm', { onclick: () => navigate('people') }, '\u2039 People'),
+        h('button.btn-sm', {
+          onclick: loadStandard,
+          class: missing.length ? 'btn-sm btn-primary' : 'btn-sm',
+        }, missing.length
+          ? `Load the standard set (${missing.length} new)`
+          : 'Load the standard set'),
         h('button.btn.btn-primary', { onclick: () => edit(null) }, '+ New template'),
       ),
     ),
+
+    // A standard template written since this property last loaded the set is
+    // invisible otherwise: the button reads like something already done, and
+    // the new contract is simply not in the list.
+    missing.length && rows.length
+      ? h('div.alert.info',
+        h('span.alert-icon', '\u2139\ufe0f'),
+        h('div',
+          h('div.alert-title', missing.length === 1
+            ? 'One standard template is not here yet'
+            : `${missing.length} standard templates are not here yet`),
+          h('div.alert-detail', `${missing.map((t) => t.name).join(', ')}. `
+            + 'Loading the set adds only these. Anything you have edited is left alone.'),
+          h('button.btn.btn-sm.btn-primary', {
+            style: { marginTop: '.6rem' }, onclick: loadStandard,
+          }, 'Add them')))
+      : null,
 
     rows.length ? null : starterCard(loadStandard),
 
@@ -126,8 +165,10 @@ export async function renderPeopleTemplates() {
         {
           key: 'name',
           label: 'Name',
+          // The kind is the band heading, so it is not repeated on the row.
+          // Retired is not a kind and does need saying.
           format: (v, r) => h('div', h('div', v),
-            h('small.muted', `${r.kind}${r.active ? '' : ' · retired'}`)),
+            r.active ? null : h('small.muted', 'Retired')),
         },
         {
           key: 'uses',
@@ -150,6 +191,9 @@ export async function renderPeopleTemplates() {
           ),
         },
       ], rows, {
+        groupBy: (r) => KIND_LABEL[r.kind] ?? 'Other',
+        groupNoun: ['template', 'templates'],
+        groupOrder: KINDS.map(([, label]) => label),
         rowClass: (r) => (r.active ? '' : 'row-muted'),
         empty: 'No templates yet. The new-template button starts you off with one that has the '
           + 'particulars Ghana’s Labour Act asks for.',

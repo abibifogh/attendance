@@ -6,13 +6,14 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   acceptSubmission, addDocument, countersignContract, createInvite,
   fileSignedContract, getContract, getDocument, getPerson, issueContract,
-  listPeople, listSubmissions, loadStandardTemplates, rejectSubmission,
+  listPeople, listSubmissions, listTemplates, loadStandardTemplates, rejectSubmission,
   revokeInvite, saveList, savePerson, saveTemplate,
 } from '../src/routes/people.js';
 import {
   inviteDecline, inviteDetails, inviteHead, inviteOpen, inviteSign, inviteViewed,
 } from '../src/routes/invite.js';
 import { hashBody } from '../src/lib/people.js';
+import { STANDARD_TEMPLATES } from '../src/lib/ghana-templates.js';
 import { createHash } from 'node:crypto';
 
 /**
@@ -629,6 +630,58 @@ test('the standard templates load once and do not duplicate', async () => {
   const again = await read(await loadStandardTemplates(ctx(db, { body: {} })));
   assert.equal(again.added, 0, 'loading twice adds nothing');
   assert.equal(raw.prepare('SELECT COUNT(*) n FROM hr_template').get().n, first.total);
+});
+
+test('the list says which standard templates are not here yet', async () => {
+  const { raw, db } = await setup();
+
+  // Nothing loaded: everything is missing, and the screen can say so.
+  const empty = await read(await listTemplates(ctx(db, {})));
+  assert.equal(empty.missing.length, STANDARD_TEMPLATES.length);
+
+  await loadStandardTemplates(ctx(db, { body: {} }));
+  const full = await read(await listTemplates(ctx(db, {})));
+  assert.deepEqual(full.missing, [], 'nothing missing once the set is in');
+
+  // A property that loaded the set before a new standard was written has no
+  // other way of finding out. Delete one to stand for that.
+  raw.prepare("DELETE FROM hr_template WHERE code = 'contract_hotel'").run();
+  const after = await read(await listTemplates(ctx(db, {})));
+  assert.deepEqual(after.missing.map((t) => t.code), ['contract_hotel']);
+  assert.match(after.missing[0].name, /hotel and hostel/);
+});
+
+test('the hotel contract is in the standard set, and loads as a contract', async () => {
+  const { raw, db } = await setup();
+  await loadStandardTemplates(ctx(db, { body: {} }));
+
+  const row = raw.prepare("SELECT * FROM hr_template WHERE code = 'contract_hotel'").get();
+  assert.ok(row, 'the hotel contract is there to be found');
+  assert.equal(row.kind, 'contract');
+  assert.match(row.name, /hotel and hostel staff/);
+  // The particulars a Ghanaian contract has to carry, and the handbook with it.
+  for (const words of ['Act 651', 'probation', 'handbook']) {
+    assert.match(row.body.toLowerCase(), new RegExp(words.toLowerCase()));
+  }
+  assert.equal(/\$\{FOOTER\}/.test(row.body), false, 'the footer is interpolated, not printed');
+});
+
+test('every kind of template can be written and edited, correspondence included', async () => {
+  const { raw, db } = await setup();
+
+  for (const kind of ['contract', 'letter', 'policy', 'correspondence']) {
+    const made = await read(await saveTemplate(ctx(db, {
+      body: { name: `A ${kind}`, kind, body: 'Words.' },
+    })));
+    assert.equal(raw.prepare('SELECT kind FROM hr_template WHERE id = ?').get(made.id).kind, kind);
+  }
+
+  // And the screen offers all four, or the Letters composer has templates
+  // nobody can create.
+  const view = readFileSync('public/js/views/people-templates.js', 'utf8');
+  for (const kind of ['contract', 'letter', 'policy', 'correspondence']) {
+    assert.ok(view.includes(`['${kind}',`), `${kind} is offered on the screen`);
+  }
 });
 
 test('a template edited into the property’s own words survives a reload', async () => {

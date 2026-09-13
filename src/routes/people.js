@@ -836,9 +836,17 @@ export async function rejectSubmission(ctx, id) {
 
 export async function listTemplates(ctx) {
   const rows = await ctx.db.prepare('SELECT * FROM hr_template ORDER BY active DESC, name').all();
+  const held = new Set((rows.results ?? []).map((t) => t.code).filter(Boolean));
+
   return json({
     rows: (rows.results ?? []).map((t) => ({ ...t, uses: placeholdersIn(t.body) })),
     placeholders: PLACEHOLDERS,
+    // What the standard set would add that is not here. A property that loaded
+    // the set a year ago has no way of knowing a new one has been written
+    // since, and "Load the standard set" reads like something already done.
+    missing: STANDARD_TEMPLATES
+      .filter((t) => !held.has(t.code))
+      .map((t) => ({ code: t.code, name: t.name, kind: t.kind })),
   });
 }
 

@@ -49,6 +49,9 @@ export async function renderLetters(params) {
         h('button.btn-sm', { onclick: () => navigate('letter-parties') }, 'Address book'),
         h('button.btn-sm', { onclick: () => navigate('letter-signing') }, 'Signature & stamp'),
         data.canWrite
+          ? h('button.btn-sm', { onclick: () => navigate('people-templates') }, 'Templates')
+          : null,
+        data.canWrite
           ? h('button.btn.btn-primary', { onclick: () => compose(data, reload) }, '+ New letter')
           : null,
       ),

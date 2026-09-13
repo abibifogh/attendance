@@ -20,6 +20,7 @@
 
 /** The lines that close a chapter somebody signs. */
 const SIGNED = `
+
 If you are unsure about anything in this chapter, ask your supervisor or the
 office before you sign it. Signing says you have read it and understood it, not
 that you agree with every word of it.`;
