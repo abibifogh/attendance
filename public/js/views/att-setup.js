@@ -2432,6 +2432,19 @@ async function rulesTab(reload) {
           + 'turn it on. Anybody with neither a number nor an address is simply not on it.'),
 
         h('label.field',
+          h('span', 'The staff handbook'),
+          h('select', { name: 'handbook_on' },
+            h('option', { value: '0', selected: (s.handbook_on ?? '0') !== '1' },
+              'Off \u2014 only the office can see it'),
+            h('option', { value: '1', selected: (s.handbook_on ?? '0') === '1' },
+              'On \u2014 staff can read it and sign what it asks for'),
+          )),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          'The chapters are written and published one at a time under Handbook, and nothing '
+          + 'reaches a phone until you publish it. Turn this on once there is something in '
+          + 'there worth opening.'),
+
+        h('label.field',
           h('span', 'Swapping shifts'),
           h('select', { name: 'swaps_on' },
             h('option', { value: '0', selected: (s.swaps_on ?? '0') !== '1' },

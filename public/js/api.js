@@ -285,6 +285,15 @@ export const api = {
   },
   mySetAvailability: (body) => request('/api/me/availability', { method: 'POST', body }),
 
+  // The handbook. Everybody reads it; the people who write it get the rest.
+  handbook: () => request('/api/handbook'),
+  handbookAck: (id, body) => request(`/api/handbook/${id}/ack`, { method: 'POST', body }),
+  handbookSave: (body) => request('/api/handbook', { method: 'POST', body }),
+  handbookPublish: (id, body) => request(`/api/handbook/${id}/publish`, { method: 'POST', body }),
+  handbookRetire: (id) => request(`/api/handbook/${id}/retire`, { method: 'POST', body: {} }),
+  handbookInstall: () => request('/api/handbook/install', { method: 'POST', body: {} }),
+  handbookWho: (id) => request(`/api/handbook/${id}/who`),
+
   // Giving up a shift, and taking one.
   swaps: () => request('/api/swaps'),
   swapsOfferable: () => request('/api/swaps/offerable'),

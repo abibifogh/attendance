@@ -207,6 +207,109 @@ Dated {{today}}.${FOOTER}`,
   },
 
   {
+    code: 'contract_hotel',
+    name: 'Contract of employment \u2014 hotel and hostel staff',
+    kind: 'contract',
+    satisfies: 'contract',
+    detail: 'The property\u2019s own wording: shifts, weekends, the handbook, and a three-month '
+      + 'probation.',
+    body: `EMPLOYMENT CONTRACT
+
+BETWEEN {{property}} of {{property_address}} ("the Company")
+AND {{name}} of {{address}} ("the Employee"), employee number {{employee_no}}.
+
+The Company operates hotel and hostel accommodation and the food and drink that
+goes with it. The Company wishes to employ the Employee on the terms below, and
+the Employee agrees to them.
+
+1. TERM
+1.1 Employment begins on {{start_date}}.
+1.2 The first {{probation}} is a probation period. During it either side may end
+    this contract with seven days' written notice.
+1.3 After probation either side may end it with {{notice}} written notice, or
+    payment in lieu. Nothing in this clause affects either side's right to end
+    the contract on any ground the Labour Act, 2003 (Act 651) allows.
+1.4 The contract is reviewed each year and may be kept, changed by agreement, or
+    brought to an end in accordance with clause 1.3.
+
+2. THE JOB
+2.1 The Employee is engaged as {{job_title}} in {{department}}.
+2.2 The Employee will give the Company their full working time and attention,
+    and will carry out the duties set out in Schedule A.
+2.3 From time to time the Employee may be asked to do other work within their
+    skill and competence, as the business needs.
+2.4 The place of work is {{workplace}}.
+
+3. HOURS
+3.1 A normal shift is eight hours and a normal week is forty hours, worked to
+    the published rota. {{hours}}
+3.2 The Employee is entitled to a break of at least one hour in a shift, which
+    does not count towards the hours in clause 3.1.
+3.3 This is a hotel. The Employee may be rostered on weekends and public
+    holidays, and those hours count towards the forty in clause 3.1.
+3.4 Where the Employee works a public holiday falling on a weekday, they are
+    given a paid day off in lieu.
+3.5 There will be at least twelve hours between the end of one shift and the
+    start of the next, and at least forty-eight hours off in every seven days.
+3.6 The Company may review normal hours where the needs of the business require
+    it, having given reasonable notice.
+
+4. PAY
+4.1 {{salary}}
+4.2 Pay is monthly, by bank transfer, less PAYE and the Employee's SSNIT
+    contribution. No other deduction is made without the Employee's written
+    agreement or a requirement of law.
+
+5. LEAVE
+5.1 {{leave_days}} of paid annual leave a year, taken at times agreed with the
+    Company, once twelve months of continuous service are complete.
+5.2 Public holidays, sick leave with a medical certificate, and maternity leave
+    are as set out in Act 651 and in the staff handbook.
+
+6. THE STAFF HANDBOOK
+6.1 The staff handbook sets out how the Company runs day to day: conduct, guest
+    service, safety, confidentiality and the grievance and disciplinary
+    procedures.
+6.2 The Employee will read it and keep to it. The Company may change it, and
+    will tell the Employee when it does.
+6.3 Where the handbook and this contract differ, this contract comes first.
+
+7. CONFIDENTIALITY
+7.1 The Employee will not, during employment or after it, pass on or use for
+    themselves anything confidential learned here. That includes guest details,
+    bookings, prices, suppliers and anything about a colleague.
+7.2 Guest personal data is handled under the Data Protection Act, 2012
+    (Act 843) and the Company's own notice.
+
+8. PROPERTY AND EXPENSES
+8.1 Uniform, keys, cards, tools and equipment stay the Company's property and
+    are returned when employment ends.
+8.2 Expenses are reimbursed only where they were approved in writing
+    beforehand, on production of receipts. Travel the Company requires includes
+    reasonable lodging and meals.
+
+9. THE EMPLOYEE CONFIRMS
+9.1 No other contract or obligation stops them entering into this one or doing
+    this job.
+9.2 The information they have given the Company is true.
+
+10. GENERAL
+10.1 Any change to this contract must be in writing and agreed by both sides.
+10.2 {{collective_agreement}}
+10.3 This contract is governed by the laws of the Republic of Ghana. Disputes
+     may be taken to the National Labour Commission.
+10.4 {{note}}
+
+SCHEDULE A \u2014 DUTIES
+As set out in the job description for {{job_title}}, and as varied under clause
+2.3 from time to time.
+
+Signed by the Employee: {{name}}
+Signed for the Company: {{property}}
+Dated {{today}}.${FOOTER}`,
+  },
+
+  {
     code: 'contract_fixed',
     name: 'Contract of employment — fixed term',
     kind: 'contract',

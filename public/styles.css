@@ -1911,6 +1911,66 @@ th.rota-today {
 }
 
 /* ===========================================================================
+   The handbook
+   ---------------------------------------------------------------------------
+   Read on a phone, in a corridor, by somebody who has been asked to sign it.
+   So: a list of closed chapters, one open at a time, and the thing it asks of
+   them at the bottom of the words rather than the top.
+   =========================================================================== */
+.hb-list { display: grid; gap: .7rem; }
+.hb-chapter { margin-bottom: 0; }
+.hb-head-row { display: flex; align-items: center; gap: .6rem; }
+.hb-title {
+  flex: 1; display: flex; align-items: center; gap: .5rem;
+  /* Buttons in this app centre their contents, which is right for a button
+     and wrong for a chapter heading that happens to be one. */
+  justify-content: flex-start; text-align: left;
+  border: 0; background: transparent; padding: 0; cursor: pointer;
+  font: inherit; font-weight: 700; font-size: 1.02rem; color: var(--text);
+}
+.hb-title:hover { background: transparent; }
+.hb-title:hover { color: var(--accent); }
+.hb-caret { color: var(--text-faint); font-size: .8rem; }
+.hb-summary { font-size: .88rem; margin: .3rem 0 0; }
+.hb-done .hb-title { color: var(--text-dim); }
+
+.hb-body { margin-top: .8rem; max-width: 44rem; }
+.hb-body p {
+  margin: 0 0 .7rem; font-size: .95rem; line-height: 1.6;
+  white-space: pre-wrap; overflow-wrap: break-word;
+}
+.hb-head {
+  font-size: .78rem; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--text-dim); font-weight: 700; margin: 1.1rem 0 .4rem;
+}
+.hb-body > .hb-head:first-child { margin-top: 0; }
+
+.hb-ask {
+  margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
+}
+.hb-ask p { margin: 0; font-size: .86rem; flex: 1; min-width: 12rem; }
+.hb-waiting { margin-bottom: 1rem; }
+
+/* The office half */
+.hb-rows { display: grid; gap: .1rem; }
+.hb-row {
+  display: flex; gap: .6rem 1rem; align-items: center; flex-wrap: wrap;
+  padding: .6rem .1rem; border-bottom: 1px solid var(--border);
+}
+.hb-row:last-child { border-bottom: 0; }
+.hb-row > div:first-child { flex: 1; min-width: 14rem; }
+.hb-row-title { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; font-weight: 650; }
+.hb-row-sub { font-size: .82rem; }
+.hb-who { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .6rem; }
+.hb-again { display: flex; align-items: center; gap: .5rem; font-size: .9rem; cursor: pointer; }
+.hb-again input[type="checkbox"] { width: 1.1rem; height: 1.1rem; flex: none; margin: 0; }
+
+@media (max-width: 640px) {
+  .hb-row .btn-row { width: 100%; }
+}
+
+/* ===========================================================================
    Swaps
    ---------------------------------------------------------------------------
    A card each on the board, a row each in the queue. The card is read by

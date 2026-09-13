@@ -95,6 +95,17 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
 
+  {
+    key: 'handbook.published',
+    group: 'rota',
+    label: 'A handbook chapter needs reading',
+    who: 'Everybody it applies to',
+    when: 'A chapter that asks for a tick or a signature is published',
+    ways: ['push', 'email'],
+    note: 'Only the chapters that ask for something back. A reference page appearing quietly '
+      + 'is not news.',
+  },
+
   // The working day
   {
     key: 'attendance.not_clocked_in',

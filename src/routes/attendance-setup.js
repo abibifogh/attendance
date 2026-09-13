@@ -1212,6 +1212,10 @@ const SETTINGS = new Map([
   // balance above: that is a person's own figure, and this is everybody's
   // personal number shown to everybody.
   ['hr_directory', (v) => (v === '1' || v === 'true' ? '1' : '0')],
+  // Whether staff see the handbook at all. Off until there is something in it
+  // worth opening: an empty page on every phone teaches people that the app
+  // has nothing to say.
+  ['handbook_on', (v) => (v === '1' || v === 'true' ? '1' : '0')],
 
   // Swaps. Off until the property asks for it, for the same reason as the
   // directory: it changes what staff can do to the rota, and a rota is the one

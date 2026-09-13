@@ -15,6 +15,7 @@ import * as suggest from './routes/suggest.js';
 import * as mine from './routes/me.js';
 import * as directory from './routes/directory.js';
 import * as swaps from './routes/swaps.js';
+import * as handbook from './routes/handbook.js';
 import * as authLock from './routes/auth-lock.js';
 import { watchShifts } from './lib/shift-watch.js';
 import { watchTerminals } from './lib/terminal-watch.js';
@@ -195,6 +196,16 @@ export const ROUTES = [
   // Giving up a shift, and taking one. Their own shifts to give and their own
   // colleagues to give them to, so it sits behind the same permission as the
   // rest of their week.
+  // The handbook. Everybody signed in may read it, because a rule nobody can
+  // find is not a rule; writing it is a personnel job and sits behind theirs.
+  ['GET', '/api/handbook', null, handbook.readHandbook],
+  ['POST', '/api/handbook/:id/ack', null, handbook.acknowledge],
+  ['POST', '/api/handbook', 'hr_manage', handbook.saveChapter],
+  ['POST', '/api/handbook/:id/publish', 'hr_manage', handbook.publishChapter],
+  ['POST', '/api/handbook/:id/retire', 'hr_manage', handbook.retireChapter],
+  ['POST', '/api/handbook/install', 'hr_manage', handbook.installStandard],
+  ['GET', '/api/handbook/:id/who', ['hr_view', 'hr_manage'], handbook.whoHasNot],
+
   ['GET', '/api/swaps', 'att_me', swaps.swapBoard],
   ['GET', '/api/swaps/offerable', 'att_me', swaps.whatICanOffer],
   ['GET', '/api/swaps/cover', 'att_me', swaps.coverFor],

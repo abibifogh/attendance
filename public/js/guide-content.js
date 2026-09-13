@@ -455,6 +455,37 @@ export const GUIDE = [
 
   // =========================================================================
   {
+    key: 'handbook',
+    title: 'The handbook',
+    permission: null,
+    lede: 'The property\u2019s rules, and the ones you are asked to sign.',
+    blocks: [
+      { p: 'A chapter for each thing: how we look after guests, how the rota works, what to '
+        + 'do if something goes wrong, what happens to a guest\u2019s details. Press a title '
+        + 'to open it.' },
+      { p: 'Some chapters are there to be read. Some ask you to tick to say you have read '
+        + 'them. A few ask you to sign, because they form part of your contract. The label on '
+        + 'the right of each one says which.' },
+      { p: 'Anything still waiting on you is listed at the top of the page, and you are told '
+        + 'once when a new one is published.' },
+      { note: 'A chapter that is changed in a way that matters is put to you again. What you '
+        + 'ticked before stays on your record against the words you actually saw.' },
+      { p: 'Some chapters are only for some people: food safety is the kitchen\u2019s, and the '
+        + 'leadership charter is for supervisors. You see the ones that apply to you.' },
+      { sub: 'Writing it' },
+      { p: 'Whoever manages personnel records can write and publish chapters here. Editing a '
+        + 'chapter changes nothing on anybody\u2019s screen until you press Publish, and '
+        + '"Add the standard chapters" puts eighteen written for a hotel in as drafts to read '
+        + 'and change first.' },
+      { p: 'Each chapter says who it is for: everybody, some departments, or people with a '
+        + 'tag on their record. Beside that is how many of them have done what it asks, and '
+        + '"Who has not" lists the names.' },
+      { warn: 'The whole thing is off until Setup \u2192 Rules turns it on, and each chapter '
+        + 'is off until you publish it. Nothing here reaches a phone by accident.' },
+    ],
+  },
+
+  {
     key: 'directory',
     title: 'The directory',
     permission: null,

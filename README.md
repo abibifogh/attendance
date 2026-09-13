@@ -30,6 +30,64 @@ Runs entirely on Cloudflare: a Worker serves both the app and the API, with a D1
 
 ---
 
+## The handbook
+
+A hotel's rules live in three places: a Word file on somebody's laptop, a
+printout in the office that is two versions old, and whatever the supervisor on
+duty remembers. When something goes wrong the question is always the same and
+never answerable: was this person told, and told what exactly.
+
+**Handbook** is a chapter per rule, and everybody signed in can read it. It sits
+beside Directory, because those are the two screens the whole property may open.
+
+**Every chapter carries two bodies, and that is the whole design.** One is what
+an administrator is working on; the other is what the property is reading.
+Editing does nothing to the second, and Publish is the one moment they meet.
+This is the rota's draft-and-publish again, for the same reason: half-written
+words in front of twenty-four people are worse than no words at all.
+
+**A chapter asks one of three things.** To be read, which records nothing. To be
+read and ticked. Or to be signed, with a typed name, the same way a contract is.
+The screen says which, and anything still waiting on somebody sits at the top of
+their page.
+
+**An acknowledgement is against a version and a hash of the exact words.** "She
+acknowledged the handbook" is not an answer when the handbook has been rewritten
+since. A chapter republished with changed words moves to the next version and
+everybody is asked again; a change to the summary or the running order does not,
+because nobody acknowledged the summary. Republishing the same words asks nobody
+anything, unless the property ticks *ask everybody again*, which is there for a
+new year or an incident that made everybody's memory worth testing.
+
+**Who a chapter is for** is nothing named (everybody), a list of departments, or
+a list of staff tags. Food and drink safety is the kitchen's; the team
+leadership charter is whoever carries the *Team lead* tag, in whatever
+department. The office sees the count against the people it applies to — *1 of
+24 done* — and can open the list of who has not.
+
+**Eighteen chapters come with it**, written for a hotel rather than adapted from
+an office: welcome, conduct and ethics, guest service, equal opportunity,
+dignity at work, grievance, discipline, hours and clocking, leave and absence,
+pay, guest confidentiality and data protection, IT security, health and safety,
+food safety, keys and cash, social media, leaving, and the charter for team
+leads. Plain sentences, what to do rather than what is forbidden, and the
+Ghanaian statute named where it sets the floor.
+
+They arrive as **drafts**, every one. A handbook is the property's word rather
+than the app's, and eighteen chapters appearing on twenty-four phones because
+somebody pressed a button once is the thing this feature exists to prevent.
+Nothing is on any staff screen until Setup → Rules turns the handbook on and
+somebody publishes a chapter.
+
+**Contracts already go out from here**, with the templates under People. There
+is now one more: *Contract of employment — hotel and hostel staff*, in the
+property's own shape — three-month probation, eight-hour shifts, weekends and
+public holidays as ordinary working days with a day off in lieu, twelve hours
+between shifts, and the handbook incorporated by reference. It fills itself in
+from the record and is signed and countersigned like the others.
+
+---
+
 ## Giving up a shift, and taking one
 
 Somebody cannot work Saturday. The way that used to go was a phone call: ask

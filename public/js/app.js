@@ -19,6 +19,7 @@ import { renderAttMyReport } from './views/att-my-report.js';
 import { renderAttMyPayslips } from './views/att-my-payslips.js';
 import { renderDirectory } from './views/directory.js';
 import { renderSwapQueue, renderSwaps } from './views/swaps.js';
+import { renderHandbook } from './views/handbook.js';
 import { renderAttMyAdvance } from './views/att-my-advance.js';
 import { renderAttAdvances } from './views/att-advances.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
@@ -106,6 +107,9 @@ const GROUPS = [
   // Reachable by everybody, so it cannot live under People, which is the
   // personnel records and their permission.
   { key: 'directory', label: 'Directory', section: 'The people' },
+  // The rules, beside the numbers. Everybody signed in can read both, which is
+  // why neither of them sits under People and its permission.
+  { key: 'handbook', label: 'Handbook', section: 'The people' },
   // The tail. No heading over these two: one is opened twice a year and the
   // other is the way out of being stuck, and a section called "everything
   // else" is a section that says nothing.
@@ -177,6 +181,7 @@ const ROUTES = [
   // Signed in and nothing more. A number a colleague cannot look up is a
   // number they ask an administrator for, and that opens a personnel record.
   { group: 'directory', tab: 'Directory', path: 'directory', label: 'Directory', permission: null, render: renderDirectory, live: ['people'] },
+  { group: 'handbook', tab: 'Handbook', path: 'handbook', label: 'Handbook', permission: null, render: renderHandbook, live: ['people'] },
 
   { group: 'setup', tab: 'Setup', path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup, live: ['admin', 'rota', 'attendance'] },
   { group: 'setup', tab: 'Notifications', path: 'notifications', label: 'Notifications', permission: 'users', render: renderNotifications, live: ['admin'] },
