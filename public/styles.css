@@ -3339,9 +3339,22 @@ html { touch-action: manipulation; }
    page underneath instead of the dialog is a phone whose owner concludes the
    dialog does not scroll. Only on a handset: a desk browser already holds the
    page still for a modal, and taking its scrollbar away shifts the whole
-   layout sideways for as long as the dialog is open. */
+   layout sideways for as long as the dialog is open.
+
+   Pinned, not just hidden. `overflow: hidden` alone is ignored by Safari on
+   iOS, and by anything else once the swipe starts on a dialog with nowhere of
+   its own to scroll — a short form, entirely on screen, which is the case
+   somebody actually hits. The offset the page was at is written on to `top` by
+   the script that adds this class, and put back when it takes it off. */
 @media (max-width: 620px) {
-  html.has-modal, html.has-modal body { overflow: hidden; }
+  html.has-modal { overflow: hidden; }
+  html.has-modal body {
+    position: fixed;
+    left: 0;
+    right: 0;
+    width: 100%;
+    overflow: hidden;
+  }
 }
 
 .app-dialog-narrow { max-width: 420px; }

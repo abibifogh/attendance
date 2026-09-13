@@ -546,7 +546,16 @@ export async function askForLeave(ctx) {
       + 'manages the rota and they can record it for you.');
   }
 
-  const halfDay = ['start', 'end', 'both'].includes(body.halfDay) ? body.halfDay : null;
+  // Half days were taken out of both leave forms. Nothing can send one any
+  // more except a page somebody has had open since before the change, and
+  // silently charging them a whole day for what they asked to be a half is
+  // worse than saying so: the refusal makes them reload, and the option is
+  // gone when they do.
+  if (['start', 'end', 'both'].includes(body.halfDay)) {
+    throw badRequest('Half days are no longer part of a leave request. Reload the page and '
+      + 'ask for the whole day.');
+  }
+  const halfDay = null;
 
   const ds = await loadDataset(ctx.db, { from, to });
   const count = leaveDaysFor({ from, to, staffId: staff.id, ds, halfDay });

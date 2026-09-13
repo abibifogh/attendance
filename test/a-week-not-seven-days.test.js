@@ -133,3 +133,15 @@ test('the way back to this week is only offered when you have left it', () => {
   // people the row is decoration.
   assert.match(view, /onThisWeek \? null : h\('button\.btn-sm'/);
 });
+
+test('opening the screen shows this week, whatever the address says', () => {
+  const view = readFileSync('public/js/views/att-me.js', 'utf8');
+  // A week is only held for as long as somebody is standing on the screen
+  // having walked to it. Somebody who looked at Christmas in October and came
+  // back the next morning wants today, which is the question this screen is
+  // for.
+  assert.match(view, /const from = params\.walked \? \(params\.from \|\| null\) : null;/);
+  assert.match(view, /renderAttMe\(\{ \.\.\.params, walked: true, \.\.\.next \}\)/);
+  // And the address stops carrying a week, since opening it never reads one.
+  assert.equal(/replaceParams\('att-me', \{ from:/.test(view), false);
+});

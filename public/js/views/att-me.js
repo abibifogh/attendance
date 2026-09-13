@@ -36,10 +36,19 @@ const MAX_UNAVAILABLE_DAYS = 2;
  */
 export async function renderAttMe(params = {}) {
   const host = h('div');
-  const from = params.from || null;
+  // OPENING THE SCREEN SHOWS THIS WEEK, ALWAYS.
+  //
+  // The week used to come out of the address, so somebody who walked forward
+  // to look at Christmas and came back the next morning was still looking at
+  // Christmas — and the first question this screen exists to answer is what
+  // they are on today. A week is only held for as long as somebody is standing
+  // on the screen having walked to it, which is what `walked` says.
+  const from = params.walked ? (params.from || null) : null;
+  params.from = from;
   const data = await api.myWeek(from).catch((err) => ({ error: err.message }));
 
-  const reload = async (next = {}) => mount(host, await renderAttMe({ ...params, ...next }));
+  const reload = async (next = {}) => mount(host,
+    await renderAttMe({ ...params, walked: true, ...next }));
 
   if (data.error) {
     mount(host,
@@ -414,9 +423,9 @@ async function askForLeave(data, reload) {
         (data.showBalance && data.balance
           ? `You have ${fmtNum(data.balance.remaining ?? 0, 1)} days left. `
           : '')
-        + 'Only working days are charged: rest days and public holidays inside the period '
-        + 'cost nothing. Ask as far ahead as you like — the rota does not have to reach '
-        + 'that far yet, and the days are settled when it is approved.'),
+        + 'Whole days only. Only working days are charged: rest days and public holidays '
+        + 'inside the period cost nothing. Ask as far ahead as you like, the rota does not '
+        + 'have to reach that far yet, and the days are settled when it is approved.'),
       field('Type', h('select', { name: 'reason', required: true },
         h('option', { value: '' }, 'Choose…'),
         data.reasons.map((r) => h('option', { value: r.code }, r.label)))),
@@ -424,12 +433,6 @@ async function askForLeave(data, reload) {
         field('First day', h('input', { type: 'date', name: 'from', required: true, min: data.today })),
         field('Last day', h('input', { type: 'date', name: 'to', required: true, min: data.today })),
       ),
-      field('Half day', h('select', { name: 'halfDay' },
-        h('option', { value: '' }, 'No, full days throughout'),
-        h('option', { value: 'start' }, 'Back for the afternoon of the first day'),
-        h('option', { value: 'end' }, 'Off from the afternoon of the last day'),
-        h('option', { value: 'both' }, 'Half day at each end'),
-      )),
       field('Why', h('input', { type: 'text', name: 'note', maxlength: 500 }),
         'Your manager sees this'),
     ),
@@ -437,7 +440,6 @@ async function askForLeave(data, reload) {
       reason: form.get('reason'),
       from: form.get('from'),
       to: form.get('to'),
-      halfDay: form.get('halfDay') || null,
       note: form.get('note') || null,
     }),
   });
@@ -489,7 +491,7 @@ function departmentCard(params = {}, week = null) {
   const remember = (department, mine) => {
     const held = whatToRemember({ department, mine });
     params.dept = held.dept;
-    replaceParams('att-me', { from: params.from ?? null, ...held });
+    replaceParams('att-me', held);
   };
 
   const draw = async (department = null) => {

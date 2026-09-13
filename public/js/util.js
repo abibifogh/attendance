@@ -359,12 +359,36 @@ export function watchScreenHeight() {
  * whose owner concludes the dialog does not scroll. Marked on the document
  * rather than handled in each of the five places a dialog is opened, because
  * the one that gets forgotten is the one somebody is stuck in.
+ *
+ * `overflow: hidden` is not enough, which is the thing everybody discovers
+ * second. Safari on iOS scrolls the page anyway, and so does anything else
+ * where the swipe starts on a dialog that has nowhere of its own to go: a
+ * short form, entirely on screen, is the worst case rather than the easy one.
+ * The body is pinned instead, held at the offset it was already at, and put
+ * back where it was when the dialog closes. Without that last part the page
+ * jumps to the top every time somebody cancels a dialog, which is its own
+ * complaint.
  */
 export function holdBehindDialogs() {
-  const sync = () => {
-    const open = Boolean(document.querySelector('dialog[open]'));
-    document.documentElement.classList.toggle('has-modal', open);
+  let heldAt = null;
+
+  const hold = () => {
+    if (heldAt !== null) return;
+    heldAt = Math.round(window.scrollY || document.documentElement.scrollTop || 0);
+    document.body.style.top = `-${heldAt}px`;
+    document.documentElement.classList.add('has-modal');
   };
+
+  const release = () => {
+    if (heldAt === null) return;
+    const back = heldAt;
+    heldAt = null;
+    document.documentElement.classList.remove('has-modal');
+    document.body.style.top = '';
+    window.scrollTo(0, back);
+  };
+
+  const sync = () => (document.querySelector('dialog[open]') ? hold() : release());
   new MutationObserver(sync).observe(document.documentElement, {
     childList: true, subtree: true, attributeFilter: ['open'],
   });
