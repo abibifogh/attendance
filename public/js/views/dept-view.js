@@ -11,12 +11,16 @@
  *
  * So the choice goes in the address, where a redraw reads it back. The rule
  * for what is worth writing down: only a departure from what the card opens on
- * anyway. Their own department and this week are the defaults, and an address
- * that spelled them out would follow everybody around for nothing.
+ * anyway. Their own department is the default, and an address that spelled it
+ * out would follow everybody around for nothing.
+ *
+ * The week is not here. It belongs to the page, which has one week selector at
+ * the top of it for both their own shifts and their colleagues': two selectors
+ * a screen apart, each moving one half of the answer, is a way of asking
+ * somebody to hold two dates in their head to read one week.
  */
-export function whatToRemember({ from = null, department = null, mine = null } = {}) {
+export function whatToRemember({ department = null, mine = null } = {}) {
   return {
     dept: department && department !== mine ? department : null,
-    deptFrom: from || null,
   };
 }

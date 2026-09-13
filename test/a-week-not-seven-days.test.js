@@ -110,14 +110,21 @@ test('the screen slices the week it names, not seven days from today', () => {
   assert.equal(/upcoming\.slice\(0, 7\)/.test(view), false);
 });
 
-test('the buttons say which way they go', () => {
+test('the buttons say which way they go, and there is one set of them', () => {
   const view = readFileSync('public/js/views/att-me.js', 'utf8');
-  // Both cards on the screen: their own week, and their department's.
-  assert.equal((view.match(/Prev week'\)/g) ?? []).length, 2);
-  assert.equal((view.match(/Next week \\u203a'\)/g) ?? []).length, 2);
-  // And the chevrons on their own are gone from both.
+  // One week selector for the page, at the top. Their own shifts and their
+  // department's week are two halves of the same question, and two selectors a
+  // screen apart asked somebody to hold two dates in their head to read one
+  // week.
+  assert.equal((view.match(/Prev week'\)/g) ?? []).length, 1);
+  assert.equal((view.match(/Next week \\u203a'\)/g) ?? []).length, 1);
+  // And the chevrons on their own are gone.
   assert.equal(/}, '‹'\)/.test(view), false);
   assert.equal(/}, '›'\)/.test(view), false);
+  // The department card is handed the week the page settled on and says so,
+  // rather than choosing one of its own.
+  assert.match(view, /departmentCard\(params, data\.from\)/);
+  assert.match(view, /the week chosen at the top of this page/);
 });
 
 test('the way back to this week is only offered when you have left it', () => {

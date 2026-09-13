@@ -93,10 +93,11 @@ export async function renderAttMe(params = {}) {
 
     data.onShift ? onShiftCard(data) : countdownCard(data),
 
-    // The week the list below covers, and buttons that say which way they go.
-    // Two chevrons either side of a date range is a control that reads as
-    // decoration until somebody presses one to find out, which on the screen
-    // most of the property opens is the wrong way round.
+    // The week the whole page covers: their own shifts and, further down, who
+    // else in their department is on. Buttons that say which way they go,
+    // because two chevrons either side of a date range is a control that reads
+    // as decoration until somebody presses one to find out, and this is the
+    // screen most of the property opens.
     h('div.toolbar',
       h('button.btn-sm', {
         onclick: () => reload({ from: shiftDay(data.from, -7) }),
@@ -128,7 +129,7 @@ export async function renderAttMe(params = {}) {
       empty: 'Nothing further ahead has been published yet.',
     })),
 
-    departmentCard(params),
+    departmentCard(params, data.from),
 
     data.leave.length
       ? card('My leave', { note: `${data.leave.length}`, wide: true },
@@ -449,12 +450,17 @@ async function askForLeave(data, reload) {
 }
 
 /**
- * Who else is on this week.
+ * Who else is on, in the week the page is showing.
  *
  * The one question a member of staff has about anybody else's rota, and the
  * only reason they were asking a supervisor to read it out: somebody wanting
  * to swap a Saturday, or working out whether the bar is covered before
  * agreeing to something.
+ *
+ * ONE WEEK SELECTOR FOR THE PAGE. This card used to carry its own, so the two
+ * halves of the same question could be showing two different weeks with a
+ * screen between them and nothing to say so. The buttons at the top move both.
+ * Which department is a separate question and keeps its own control.
  *
  * Their own department and no other, and the shifts only. No clock times, no
  * lateness, no leave balances, nothing anybody has asked for. That somebody is
@@ -464,11 +470,12 @@ async function askForLeave(data, reload) {
  * nothing for it and somebody who is does not wait on it to see their own
  * week.
  */
-function departmentCard(params = {}) {
+function departmentCard(params = {}, week = null) {
   const host = h('div');
 
   /**
-   * What it is showing, kept in the address rather than in this closure.
+   * Which department it is showing, kept in the address rather than in this
+   * closure.
    *
    * The screen redraws itself whenever the live socket says something has
    * changed, which on a working property is every punch on the terminal, all
@@ -476,56 +483,45 @@ function departmentCard(params = {}) {
    * each time: somebody picked Security, read two lines, and was back on their
    * own department before they had finished. Held here it survives the redraw,
    * a reload, and being sent to somebody as a link.
+   *
+   * The week is not held here. It is the page's week, chosen once at the top.
    */
-  const remember = (from, department, mine) => {
-    const held = whatToRemember({ from, department, mine });
+  const remember = (department, mine) => {
+    const held = whatToRemember({ department, mine });
     params.dept = held.dept;
-    params.deptFrom = held.deptFrom;
     replaceParams('att-me', { from: params.from ?? null, ...held });
   };
 
-  const draw = async (from = null, department = null) => {
-    const data = await api.myDepartment(from, department).catch(() => null);
+  const draw = async (department = null) => {
+    const data = await api.myDepartment(week, department).catch(() => null);
     if (!data || !data.allowed) { mount(host); return; }
-    remember(from, data.department, data.mine);
+    remember(data.department, data.mine);
 
     const many = (data.departments ?? []).length > 1;
 
     mount(host, card(`Who else is on in ${data.department}`, {
       note: `${data.people.length} ${data.people.length === 1 ? 'person' : 'people'}`,
       wide: true,
-    },
-    // Named, like the card above it. Two chevrons either side of a date range
-    // read as decoration until somebody presses one to find out which way it
-    // goes, and this is the screen most of the property opens.
-    h('div.toolbar',
-      h('button.btn-sm', {
-        onclick: () => draw(shiftDay(data.from, -7), data.department),
-      }, '\u2039 Prev week'),
-      h('strong', `${fmtDayShort(data.from)} \u2013 ${fmtDayShort(data.to)}`),
-      h('button.btn-sm', {
-        onclick: () => draw(shiftDay(data.from, 7), data.department),
-      }, 'Next week \u203a'),
-      h('button.btn-sm', { onclick: () => draw(null, data.department) }, 'This week'),
-
-      // Only where there is more than one to choose between. A picker with a
-      // single entry is a control that does nothing, and somebody presses it
-      // anyway to find out.
-      many
-        ? h('select', {
+      // The week is the one at the top of the page, and saying so is cheaper
+      // than letting somebody wonder whether this card is showing a different
+      // one. Which department is a different question and keeps its control.
+      actions: many
+        ? h('select.dept-pick', {
           'aria-label': 'Which department',
-          onchange: (event) => draw(data.from, event.target.value),
+          onchange: (event) => draw(event.target.value),
         }, data.departments.map((name) => h('option', {
           value: name, selected: name === data.department,
         }, name === data.mine ? `${name} (yours)` : name)))
         : null,
-    ),
+    },
+    h('p.muted.dept-week-said', `${fmtDayShort(data.from)} \u2013 ${fmtDayShort(data.to)}, `
+      + 'the week chosen at the top of this page'),
     h('div.dept-week', deptWeek(data)),
     h('div.dept-days', data.days.map((day) => deptDay(day, data))),
     ));
   };
 
-  draw(params.deptFrom ?? null, params.dept ?? null);
+  draw(params.dept ?? null);
   return host;
 }
 

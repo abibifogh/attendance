@@ -6561,3 +6561,12 @@ tr:hover .rota-who-more,
   box-shadow: 0 -2px 10px rgb(0 0 0 / 6%);
 }
 .rules-save .btn { flex: none; }
+
+/* Which week the department card is showing, said once. It follows the
+   selector at the top of the page rather than carrying one of its own. */
+.dept-week-said { margin: 0 0 .7rem; font-size: .82rem; }
+
+/* Which department, in the head of the card. Selects in this app run the full
+   width of whatever holds them, which is right in a form and wrong beside a
+   card's title. */
+.dept-pick { width: auto; min-width: 10rem; max-width: 15rem; }

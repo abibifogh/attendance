@@ -521,28 +521,44 @@ test('a choice is written down and a default is not', () => {
   // What it opens on anyway is not worth an address that follows everybody
   // around for nothing.
   assert.deepEqual(
-    whatToRemember({ from: null, department: 'Front Office', mine: 'Front Office' }),
-    { dept: null, deptFrom: null },
+    whatToRemember({ department: 'Front Office', mine: 'Front Office' }),
+    { dept: null },
   );
 
-  // A department they chose, and a week they walked to, are both choices.
+  // A department they chose is a choice.
   assert.deepEqual(
-    whatToRemember({ from: '2099-09-14', department: 'Security', mine: 'Front Office' }),
-    { dept: 'Security', deptFrom: '2099-09-14' },
+    whatToRemember({ department: 'Security', mine: 'Front Office' }),
+    { dept: 'Security' },
   );
 
   // Somebody with no department of their own is on a choice from the start.
   assert.deepEqual(
-    whatToRemember({ from: null, department: 'Housekeeping', mine: null }),
-    { dept: 'Housekeeping', deptFrom: null },
+    whatToRemember({ department: 'Housekeeping', mine: null }),
+    { dept: 'Housekeeping' },
   );
 });
 
 test('nothing at all is a safe answer', () => {
-  assert.deepEqual(whatToRemember(), { dept: null, deptFrom: null });
-  assert.deepEqual(whatToRemember({}), { dept: null, deptFrom: null });
+  assert.deepEqual(whatToRemember(), { dept: null });
+  assert.deepEqual(whatToRemember({}), { dept: null });
+  assert.deepEqual(whatToRemember({ department: '', mine: '' }), { dept: null });
+});
+
+test('the week is the page’s, not the card’s', () => {
+  // A week passed in is not written down, because the card no longer chooses
+  // one: the selector at the top of My shifts moves both halves of the page.
   assert.deepEqual(
-    whatToRemember({ from: '', department: '', mine: '' }),
-    { dept: null, deptFrom: null },
+    whatToRemember({ from: '2099-09-14', department: 'Security', mine: 'Front Office' }),
+    { dept: 'Security' },
   );
+
+  const view = readFileSync('public/js/views/att-me.js', 'utf8');
+  // One selector, at the top, and the card is handed the week it settled on.
+  assert.match(view, /departmentCard\(params, data\.from\)/);
+  assert.match(view, /api\.myDepartment\(week, department\)/);
+  // And no second set of week buttons inside the card.
+  const cardAt = view.indexOf('function departmentCard');
+  const card = view.slice(cardAt, view.indexOf('function deptWeek'));
+  assert.equal(/Prev week/.test(card), false, 'the card has no week buttons of its own');
+  assert.equal(/This week/.test(card), false);
 });
