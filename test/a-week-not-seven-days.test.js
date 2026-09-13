@@ -134,14 +134,22 @@ test('the way back to this week is only offered when you have left it', () => {
   assert.match(view, /onThisWeek \? null : h\('button\.btn-sm'/);
 });
 
-test('opening the screen shows this week, whatever the address says', () => {
+test('opening the screen shows this week, and a redraw keeps the week walked to', () => {
   const view = readFileSync('public/js/views/att-me.js', 'utf8');
-  // A week is only held for as long as somebody is standing on the screen
-  // having walked to it. Somebody who looked at Christmas in October and came
-  // back the next morning wants today, which is the question this screen is
-  // for.
-  assert.match(view, /const from = params\.walked \? \(params\.from \|\| null\) : null;/);
-  assert.match(view, /renderAttMe\(\{ \.\.\.params, walked: true, \.\.\.next \}\)/);
-  // And the address stops carrying a week, since opening it never reads one.
-  assert.equal(/replaceParams\('att-me', \{ from:/.test(view), false);
+  const app = readFileSync('public/js/app.js', 'utf8');
+
+  // Two things at once. The week lives in the address, because that is the
+  // only place a live redraw reads, and the live socket rebuilds this page
+  // every time the terminal hears a punch.
+  assert.match(view, /const from = params\.from \|\| null;/);
+  assert.match(view, /replaceParams\('att-me', \{ from: merged\.from \?\? null/);
+  // The department card writes the week back with its own choice rather than
+  // dropping it, or walking a week would forget it on the next redraw.
+  assert.match(view, /replaceParams\('att-me', \{ from: params\.from \?\? null, \.\.\.held \}\)/);
+
+  // And the router clears it on arrival, so somebody who looked at Christmas
+  // in October and came back the next morning gets today.
+  assert.match(app, /freshEach: \['from'\]/);
+  assert.match(app, /if \(route\.path !== arrivedAt\)/);
+  assert.match(app, /route\.freshEach\?\.length/);
 });

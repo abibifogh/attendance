@@ -545,8 +545,8 @@ test('nothing at all is a safe answer', () => {
 });
 
 test('the week is the page’s, not the card’s', () => {
-  // A week passed in is not written down, because the card no longer chooses
-  // one: the selector at the top of My shifts moves both halves of the page.
+  // A week passed in is not the card's to remember: it belongs to the page,
+  // and the selector at the top of My shifts moves both halves at once.
   assert.deepEqual(
     whatToRemember({ from: '2099-09-14', department: 'Security', mine: 'Front Office' }),
     { dept: 'Security' },
@@ -561,4 +561,15 @@ test('the week is the page’s, not the card’s', () => {
   const card = view.slice(cardAt, view.indexOf('function deptWeek'));
   assert.equal(/Prev week/.test(card), false, 'the card has no week buttons of its own');
   assert.equal(/This week/.test(card), false);
+});
+
+test('the card does not drop the page’s week when it writes its own choice', () => {
+  // The card writes the address every time it draws. Writing only its own
+  // department took the week out with it, and the next live redraw — one per
+  // punch on the terminal — rebuilt the whole page on this week while the
+  // person was reading next week.
+  const view = readFileSync('public/js/views/att-me.js', 'utf8');
+  const cardAt = view.indexOf('function departmentCard');
+  const card = view.slice(cardAt, view.indexOf('function deptWeek'));
+  assert.match(card, /replaceParams\('att-me', \{ from: params\.from \?\? null, \.\.\.held \}\)/);
 });

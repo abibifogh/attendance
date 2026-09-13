@@ -36,19 +36,27 @@ const MAX_UNAVAILABLE_DAYS = 2;
  */
 export async function renderAttMe(params = {}) {
   const host = h('div');
-  // OPENING THE SCREEN SHOWS THIS WEEK, ALWAYS.
+  // THE WEEK LIVES IN THE ADDRESS, AND ARRIVING HERE CLEARS IT.
   //
-  // The week used to come out of the address, so somebody who walked forward
-  // to look at Christmas and came back the next morning was still looking at
-  // Christmas — and the first question this screen exists to answer is what
-  // they are on today. A week is only held for as long as somebody is standing
-  // on the screen having walked to it, which is what `walked` says.
-  const from = params.walked ? (params.from || null) : null;
-  params.from = from;
+  // Two things have to be true at once. Opening the screen shows this week,
+  // whatever it was left on: somebody who walked forward to look at Christmas
+  // and came back the next morning wants today, which is the question this
+  // screen exists to answer. And the week somebody walked to has to survive a
+  // redraw, because the live socket rebuilds this page from the address every
+  // time the terminal hears a punch, which on a busy morning is constantly.
+  //
+  // So the address holds it, which is the only place a redraw reads, and the
+  // router drops it on the way in. See `freshEach` on the route.
+  const from = params.from || null;
   const data = await api.myWeek(from).catch((err) => ({ error: err.message }));
 
-  const reload = async (next = {}) => mount(host,
-    await renderAttMe({ ...params, walked: true, ...next }));
+  const reload = async (next = {}) => {
+    const merged = { ...params, ...next };
+    // Written down before the redraw, not after, so a live update landing in
+    // the middle of this finds the week they just chose.
+    replaceParams('att-me', { from: merged.from ?? null, dept: merged.dept ?? null });
+    mount(host, await renderAttMe(merged));
+  };
 
   if (data.error) {
     mount(host,
@@ -491,7 +499,7 @@ function departmentCard(params = {}, week = null) {
   const remember = (department, mine) => {
     const held = whatToRemember({ department, mine });
     params.dept = held.dept;
-    replaceParams('att-me', held);
+    replaceParams('att-me', { from: params.from ?? null, ...held });
   };
 
   const draw = async (department = null) => {

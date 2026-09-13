@@ -133,7 +133,10 @@ const GROUPS = [
 const ROUTES = [
   // First, and for most people the only one. A member of staff holds this and
   // nothing else, so it has to be the screen they land on.
-  { mine: true, group: 'me', tab: 'Shifts', path: 'att-me', label: 'My shifts', permission: 'att_me', render: renderAttMe, live: ['rota', 'attendance', 'leave', 'lunch'] },
+  // `freshEach` is what does not survive arriving here. The week is written to
+  // the address so a live redraw keeps it, and dropped on the way in so the
+  // screen always opens on this week.
+  { mine: true, group: 'me', tab: 'Shifts', path: 'att-me', label: 'My shifts', permission: 'att_me', render: renderAttMe, live: ['rota', 'attendance', 'leave', 'lunch'], freshEach: ['from'] },
   // Beside it, because the month is the other question somebody asks about
   // their own attendance and it is not one the week can answer.
   { mine: true, group: 'me', tab: 'Report', path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport, live: ['attendance', 'leave'] },
@@ -282,6 +285,15 @@ function defaultRoute() {
 }
 
 /** Query params live after the route: #/att-today?day=2026-08-08 */
+/**
+ * Which screen was last arrived at, as opposed to redrawn.
+ *
+ * Null until the first draw, so the first screen of a session counts as an
+ * arrival too: somebody opening the app on My shifts wants this week whatever
+ * a bookmark says.
+ */
+let arrivedAt = null;
+
 export function routeParams() {
   const query = location.hash.split('?')[1] || '';
   return Object.fromEntries(new URLSearchParams(query));
@@ -729,6 +741,26 @@ export async function render({ quiet = false } = {}) {
   if (!route) {
     navigate(defaultRoute());
     return;
+  }
+
+  // ARRIVING AT A SCREEN IS NOT THE SAME AS IT REDRAWING UNDER YOU.
+  //
+  // Both come through here, and a handful of things in the address are worth
+  // keeping through the second and not through the first. My shifts is the
+  // one: it opens on this week however it was left, but the week somebody
+  // walked to has to survive a live update, and on a working property that is
+  // every punch on the terminal all morning. Held in the address, which is the
+  // only place a redraw reads, and cleared on the way in.
+  if (route.path !== arrivedAt) {
+    arrivedAt = route.path;
+    if (route.freshEach?.length) {
+      const params = routeParams();
+      let dropped = false;
+      for (const key of route.freshEach) {
+        if (key in params) { delete params[key]; dropped = true; }
+      }
+      if (dropped) replaceParams(route.path, params);
+    }
   }
 
   // Whatever the last view asked us not to interrupt went with it, and a
