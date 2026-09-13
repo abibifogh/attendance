@@ -582,7 +582,7 @@ export async function bootstrap(ctx) {
         // the head of a report, so they travel with the bootstrap rather than
         // being fetched again by each screen that needs them.
         || key.startsWith('company_')
-        || ['timezone', 'property_name', 'property_address', 'hr_link_days'].includes(key)),
+        || SCREEN_SWITCHES.has(key)),
     ),
     open: Number(open?.n ?? 0),
     unknownEmployees: Number(unknown?.n ?? 0),
@@ -2422,6 +2422,28 @@ function sayDay(day) {
     weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC',
   });
 }
+
+/**
+ * The settings the Setup screen shows that are not `att_` anything.
+ *
+ * A LIST RATHER THAN A PREFIX, and it is the same list the Rules form posts.
+ * A key the form posts and the bootstrap does not send back is worse than a
+ * missing value: the screen draws the default, somebody saves anything at all,
+ * and the default is written over what was really there. That is how the staff
+ * directory, the handbook and swaps all sat switched off however many times
+ * anybody turned them on.
+ *
+ * Nothing goes in here that a browser has no business holding. The pepper, the
+ * lunch token and the maps key stay on the server, which is why this is named
+ * rather than `hr_` and `swap` matched by prefix.
+ */
+const SCREEN_SWITCHES = new Set([
+  'timezone', 'property_name', 'property_address',
+  'hr_link_days', 'hr_directory',
+  'handbook_on',
+  'swaps_on', 'swap_notice_hours', 'swap_approval', 'swap_monthly_cap',
+  'swap_cross_department',
+]);
 
 /** A handful of settings, read as one round trip. */
 async function readSettings(db, keys) {
