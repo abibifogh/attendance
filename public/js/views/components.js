@@ -349,7 +349,9 @@ export function bulkUpload({
 }
 
 export function emptyState(title, detail) {
-  return h('div.card.empty', h('h3', title), h('p', detail));
+  // A heading on its own is a fine empty state. Passing nothing used to leave
+  // an empty paragraph holding the card open, and passing null wrote the word.
+  return h('div.card.empty', h('h3', title), detail ? h('p', detail) : null);
 }
 
 /**

@@ -32,11 +32,7 @@ export async function renderDirectory() {
   if (!data.on) {
     mount(host,
       h('div.page-head', h('div', h('h1', 'Directory'))),
-      emptyState('The directory is turned off',
-        'An administrator can turn it on under Setup → Rules, in "What staff see". '
-        + 'It shows every '
-        + 'colleague’s phone number and email address to everybody signed in, '
-        + 'which is a decision about personal numbers rather than a setting.'));
+      emptyState('The directory is turned off'));
     return host;
   }
 
