@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { refreshSession } from '../app.js';
 import { deriveLoginKey, prepareNewPassword } from '../crypto.js';
 import { h, mount, toast } from '../util.js';
 import { isInstalled, onInstallChange } from '../install.js';
@@ -378,6 +379,8 @@ export function openAccountDialog({
         await api.setMyPhoto({ ...shrunk, filename: file.name });
         pick.value = '';
         said.textContent = '';
+        // The header carries their face, so it has to hear about this.
+        await refreshSession();
         toast('That is your picture now.', 'good');
       } catch (err) {
         said.textContent = err.message;
@@ -392,6 +395,7 @@ export function openAccountDialog({
         await api.clearMyPhoto();
         pick.value = '';
         said.textContent = '';
+        await refreshSession();
         toast('Taken off. Your initials will show instead.', 'good');
       } catch (err) {
         said.textContent = err.message;

@@ -6583,3 +6583,10 @@ tr:hover .rota-who-more,
    width of whatever holds them, which is right in a form and wrong beside a
    card's title. */
 .dept-pick { width: auto; min-width: 10rem; max-width: 15rem; }
+
+/* Their own face in the corner of the header, in place of a drawing of a
+   person. The button is a ghost button and the face is the whole of it, so it
+   loses the padding a text button needs. */
+.topbar-account .face { --face-size: 1.7rem; }
+.topbar-account .face-letters { font-size: .62rem; }
+.topbar-account:has(.face) { padding: .2rem; border-radius: 50%; }

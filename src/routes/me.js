@@ -11,7 +11,7 @@ import {
   firstDayFull, firstDayTaken, whoIsAway,
 } from '../lib/away.js';
 import { fromBase64 } from '../lib/files.js';
-import { storeFile } from './people.js';
+import { readFile, storeFile } from './people.js';
 import {
   addDays, diffDays, isDay, isMonth, monthBounds, monthOf, nowIn, startOfWeek, todayIn,
 } from '../util/dates.js';
@@ -1077,6 +1077,35 @@ export async function setMyPhoto(ctx) {
 }
 
 /** Take it off again. */
+/**
+ * Their own face, for their own screen.
+ *
+ * The directory has one of these and so does the rota, and both are gated on
+ * seeing somebody else: the directory being switched on, or holding the rota.
+ * Neither is the right test for a person looking at a picture of themselves,
+ * and without a third one the only face in the app that nobody could see was
+ * their own.
+ */
+export async function myPhoto(ctx) {
+  const staff = await meOf(ctx);
+  const row = await ctx.db.prepare(
+    `SELECT * FROM hr_document
+      WHERE staff_id = ?1 AND kind = 'photo'
+      ORDER BY uploaded_at DESC, id DESC LIMIT 1`,
+  ).bind(staff.id).first().catch(() => null);
+  if (!row) throw notFound('No photograph on file.');
+
+  const content = await readFile(ctx.db, row);
+  return new Response(content, {
+    headers: {
+      'Content-Type': row.mime || 'image/jpeg',
+      // Private: it is somebody's face, and no shared cache has any business
+      // holding it.
+      'Cache-Control': 'private, max-age=86400',
+    },
+  });
+}
+
 export async function clearMyPhoto(ctx) {
   const staff = await meOf(ctx);
   const rows = await ctx.db.prepare(

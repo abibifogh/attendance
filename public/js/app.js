@@ -45,12 +45,17 @@ import { renderLetterCompose } from './views/letter-compose.js';
 import { renderLetterParties } from './views/letter-parties.js';
 import { renderLetterSigning } from './views/letter-signing.js';
 import { BRAND, brandMark } from './brand.js';
+import { face } from './views/components.js';
 
 export const state = {
   role: null,
   name: null,
   email: null,
   isRecovery: false,
+  // Whether they have sent in a photograph, for the face in the header, and
+  // when: a browser holds a face for a day, and a new one has to get past it.
+  hasPhoto: false,
+  photoAt: null,
   // Signed in on a PIN shorter than the rule. Nothing else in the app draws
   // while this is set, and it stays set until they choose a longer one.
   mustChangePin: false,
@@ -462,12 +467,29 @@ function showing(staffId) {
   }
 }
 
+/**
+ * Ask again who is signed in, and redraw.
+ *
+ * For the handful of things somebody changes about themselves from inside the
+ * app: a photograph is the one that shows, in the corner of the header, on
+ * every screen. Cheaper and less surprising than reloading the page, which
+ * would throw away whatever they had half filled in behind the dialog.
+ */
+export async function refreshSession() {
+  const me = await api.me().catch(() => null);
+  if (!me?.authenticated) return;
+  adoptSession(me);
+  await render();
+}
+
 /** Everything about who is signed in, from one answer, in one place. */
 function adoptSession(me) {
   state.role = me.role ?? state.role;
   state.name = me.name ?? state.name;
   state.email = me.email ?? null;
   state.isRecovery = Boolean(me.isRecovery);
+  state.hasPhoto = Boolean(me.hasPhoto);
+  state.photoAt = me.photoAt ?? null;
   state.hasPin = Boolean(me.hasPin);
   state.hasPassword = Boolean(me.hasPassword);
   state.signedInWith = me.signedInWith ?? 'pin';
@@ -574,10 +596,20 @@ function shell(content) {
           canLockPayslips: can('att_me'),
         }),
       },
-      // The icon is what shows on a phone and the words are what show on a
-      // desk. Both are always in the button so the label is never only a
-      // tooltip, which a finger cannot hover over.
-      h('span.only-phone', '👤'),
+      // Their own face rather than a drawing of a person: the photograph they
+      // sent in, or their initials on the colour their name works out to,
+      // which is the same face the directory and the rota put beside them. It
+      // also says at a glance which of two logins a shared handset is on.
+      //
+      // Cache-busted on the version rather than on every draw, or the header
+      // would fetch the picture again on every redraw the live socket causes,
+      // which on a busy morning is every punch on the terminal.
+      h('span.only-phone', face(state.name, {
+        src: state.hasPhoto
+          ? `/api/me/photo?v=${encodeURIComponent(state.photoAt ?? '')}`
+          : null,
+        size: '1.7rem',
+      })),
       h('span.only-desk', 'My account')),
 
       // Sign out is in the drawer on a phone. It was the last thing on a row
@@ -971,6 +1003,8 @@ function resetSession() {
   state.name = null;
   state.email = null;
   state.isRecovery = false;
+  state.hasPhoto = false;
+  state.photoAt = null;
   state.hasPin = false;
   state.hasPassword = false;
   state.signedInWith = 'pin';

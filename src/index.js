@@ -217,6 +217,7 @@ export const ROUTES = [
   ['GET', '/api/swaps/queue', ['att_rota', 'att_manage'], swaps.swapQueue],
   ['POST', '/api/swaps/:id/decide', ['att_rota', 'att_manage'], swaps.decideSwap],
   // The face against their own name on the rota, chosen by them.
+  ['GET', '/api/me/photo', 'att_me', mine.myPhoto],
   ['POST', '/api/me/photo', 'att_me', mine.setMyPhoto],
   ['DELETE', '/api/me/photo', 'att_me', mine.clearMyPhoto],
   ['POST', '/api/me/running-late', 'att_me', mine.tellThemImLate],
@@ -1155,10 +1156,27 @@ async function me(ctx) {
     people = records.map((id) => by.get(id)).filter(Boolean);
   }
 
+  // Whether they have sent in a photograph, and when. One boolean and a
+  // timestamp rather than the picture itself: the header wants a face, asking
+  // for one that is not there is a broken image on every screen in the app,
+  // and the timestamp is what lets a new picture past a browser holding the
+  // old one for a day.
+  const staffId = Number(session.user.staff_id) || 0;
+  const photo = staffId
+    ? await ctx.db.prepare(
+      `SELECT uploaded_at FROM hr_document
+        WHERE staff_id = ? AND kind = 'photo'
+        ORDER BY uploaded_at DESC, id DESC LIMIT 1`,
+    ).bind(staffId).first().catch(() => null)
+    : null;
+
   return json({
     authenticated: true,
     role: session.user.role,
     name: session.user.name,
+    // Their own face, for the corner of the header.
+    hasPhoto: Boolean(photo),
+    photoAt: photo?.uploaded_at ?? null,
     email: session.user.email ?? null,
     userId: session.user.id,
     isRecovery: Boolean(session.user.isRecovery),
