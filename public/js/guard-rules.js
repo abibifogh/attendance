@@ -37,6 +37,41 @@ export function whatToDo({ idleMs = 0, limitMs = IDLE_MS } = {}) {
 }
 
 /**
+ * And the same question on the way in.
+ *
+ * Closing the app and opening it again is not a reload: on a phone it comes
+ * back out of memory with the session cookie still good for weeks, so the app
+ * used to open straight on somebody's pay with nobody having proved they were
+ * the person who put the phone down. The clock has to survive the app being
+ * shut, which means it has to be written down.
+ *
+ * NO STAMP MEANS LOCK. A session that is still good with nothing on record of
+ * anybody having opened it is the case this is for: the app was closed weeks
+ * ago, or the cookie has been carried to a browser that was never signed in on
+ * it. Signing in writes the stamp itself, so a sign-in is never followed by
+ * being asked for the same PIN again.
+ *
+ * Unless the phone cannot remember anything at all, which is what `remembers`
+ * says. A browser with storage refused would otherwise look exactly like a
+ * session nobody has opened, every single time, and lock somebody out of an
+ * app they have just signed into. Nothing was written down, so nothing can be
+ * concluded, and the five-minute clock in memory is left to do the work.
+ *
+ * A stamp from the future locks. A clock that has been put back is how
+ * somebody would try it, and there is no honest reading of it anyway.
+ */
+export function lockOnOpening({
+  lastSeen = null, now = Date.now(), limitMs = IDLE_MS, remembers = true,
+} = {}) {
+  if (!remembers) return false;
+  if (lastSeen == null || lastSeen === '') return true;
+  const seen = Number(lastSeen);
+  if (!Number.isFinite(seen) || seen <= 0) return true;
+  if (seen > now) return true;
+  return whatToDo({ idleMs: now - seen, limitMs }) === 'lock';
+}
+
+/**
  * A trip the app sent them on itself, and the clock forgiven for it.
  *
  * A file picker for their photograph, a print dialog for a payslip, a share

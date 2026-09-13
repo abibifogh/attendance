@@ -1,7 +1,7 @@
 import { badRequest, json, readJson, str, unauthorized } from '../lib/http.js';
 import {
-  getPepper, hashPin, isReservedPin, throttleCheck, throttleFail, throttleReset,
-  verifyPasswordKey,
+  getPepper, hashPin, isReservedPin, markPinOk, pinLooksRight, throttleCheck,
+  throttleFail, throttleReset, verifyPasswordKey,
 } from '../lib/auth.js';
 
 /**
@@ -52,13 +52,17 @@ export async function unlock(ctx) {
   }
 
   const row = await db.prepare(
-    'SELECT id, pin_hash, password_hash, active FROM users WHERE id = ?',
+    'SELECT id, pin_hash, password_hash, active, pin_ok FROM users WHERE id = ?',
   ).bind(Number(session.user.id)).first().catch(() => null);
   if (!row || !row.active) {
     throw unauthorized('This login is no longer active. Sign in again.');
   }
 
   const pepper = await getPepper(db);
+
+  // Whether the PIN they used is long enough. Only knowable here, where the
+  // digits themselves are: a hash says nothing about length.
+  let short = false;
 
   if (body.passwordKey) {
     if (!row.password_hash) await wrong();
@@ -68,8 +72,16 @@ export async function unlock(ctx) {
     const typed = str(body.pin, 'PIN', { max: 64, fallback: '' });
     if (!typed || !row.pin_hash) await wrong();
     if (await hashPin(typed, pepper) !== row.pin_hash) await wrong();
+
+    // The same reckoning the sign-in does, and for the same reason. Unlocking
+    // with six digits is proof the six digits are theirs, which settles an
+    // account nobody has signed into since the rule changed. Unlocking with
+    // four is where the people who were set up before it are actually found:
+    // a session lasts two months, so a sign-in may be a long way off.
+    if (pinLooksRight(typed)) await markPinOk(db, row.id);
+    else short = !row.pin_ok;
   }
 
   await throttleReset(db, ip);
-  return json({ ok: true });
+  return json({ ok: true, mustChangePin: short });
 }

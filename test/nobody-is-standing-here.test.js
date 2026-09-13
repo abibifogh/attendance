@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { IDLE_MINUTES, IDLE_MS, ownTrip, whatToDo } from '../public/js/guard-rules.js';
+import {
+  IDLE_MINUTES, IDLE_MS, lockOnOpening, ownTrip, whatToDo,
+} from '../public/js/guard-rules.js';
 import { hashPin, getPepper } from '../src/lib/auth.js';
 import { unlock } from '../src/routes/auth-lock.js';
 
@@ -170,4 +172,112 @@ test('the break-glass sign-in is opened by the secret it came in on', async () =
 
   assert.equal((await unlockFor(db, { pin: '9182736' }, session, env)).ok, true);
   await assert.rejects(() => unlockFor(db, { pin: '481920' }, session, env), /not your PIN/);
+});
+
+// ---------------------------------------------------------------------------
+// Opening the app is the same question
+// ---------------------------------------------------------------------------
+
+/**
+ * Closing the app and opening it again is not a reload.
+ *
+ * A staff session lasts two months, so a phone that was signed in once opened
+ * straight on somebody's pay for the rest of it, with nobody having proved
+ * they were the person who put it down. The clock that answers this has to
+ * survive the app being shut, which means it has to be written down, and this
+ * is the rule that reads it back.
+ */
+
+const MINUTE = 60 * 1000;
+
+test('a phone put down an hour ago is asked for the PIN on opening', () => {
+  const now = 1_000_000_000_000;
+  assert.equal(lockOnOpening({ lastSeen: now - 60 * MINUTE, now }), true);
+  assert.equal(lockOnOpening({ lastSeen: now - (IDLE_MINUTES + 1) * MINUTE, now }), true);
+});
+
+test('and a reload thirty seconds later is not', () => {
+  const now = 1_000_000_000_000;
+  assert.equal(lockOnOpening({ lastSeen: now - 30_000, now }), false);
+  assert.equal(lockOnOpening({ lastSeen: now, now }), false);
+  // Exactly on the limit locks, the same way the idle clock does.
+  assert.equal(lockOnOpening({ lastSeen: now - IDLE_MS, now }), true);
+});
+
+test('nothing written down means nobody has opened it, which means ask', () => {
+  const now = 1_000_000_000_000;
+  // A session still good on a phone with no record of anybody using it. The
+  // sign-in writes the stamp itself, so this is never a fresh sign-in.
+  assert.equal(lockOnOpening({ lastSeen: null, now }), true);
+  assert.equal(lockOnOpening({ lastSeen: '', now }), true);
+  assert.equal(lockOnOpening({ lastSeen: 'yesterday', now }), true);
+  assert.equal(lockOnOpening({ lastSeen: 0, now }), true);
+});
+
+test('a clock that has been put back is not a way through', () => {
+  const now = 1_000_000_000_000;
+  assert.equal(lockOnOpening({ lastSeen: now + 60 * MINUTE, now }), true);
+});
+
+test('a phone that cannot remember anything is not locked out of the app', () => {
+  const now = 1_000_000_000_000;
+  // A private window refuses storage, so every load looks like a session
+  // nobody has opened. Nothing was written down, so nothing can be concluded,
+  // and the clock in memory is left to do the work.
+  assert.equal(lockOnOpening({ lastSeen: null, now, remembers: false }), false);
+  assert.equal(lockOnOpening({ lastSeen: now - 60 * MINUTE, now, remembers: false }), false);
+});
+
+test('the screen writes the clock down, and takes it away on the way out', () => {
+  const guard = readFileSync('public/js/guard.js', 'utf8');
+  assert.match(guard, /localStorage\.setItem\(SEEN_KEY/);
+  assert.match(guard, /lockOnOpening\(\{ lastSeen: seen, remembers: remembers\(\) \}\)/);
+  // Leaving is worth writing down on its own: a phone locked with the app on
+  // screen fires pagehide and nothing else.
+  assert.match(guard, /'pagehide', 'blur'/);
+  assert.match(guard, /export function forgetSeen/);
+  assert.match(guard, /forgetSeen\(\);/);
+
+  // And signing in says so, before the watch starts, or somebody would be
+  // asked for the PIN they had just typed.
+  const app = readFileSync('public/js/app.js', 'utf8');
+  assert.match(app, /justProved\(\);\n\s+startLive\(\);/);
+});
+
+// ---------------------------------------------------------------------------
+// A PIN from before the rule changed
+// ---------------------------------------------------------------------------
+
+test('unlocking with four digits asks them to lengthen it', async () => {
+  const { raw, db } = await setup();
+  const pepper = await getPepper(db);
+  raw.prepare('UPDATE users SET pin_hash = ?, pin_ok = 0 WHERE id = 1')
+    .run(await hashPin('1234', pepper));
+
+  const out = await unlockFor(db, { pin: '1234' }, asUser(1));
+  assert.equal(out.ok, true, 'it is still their PIN and still opens the app');
+  assert.equal(out.mustChangePin, true);
+  assert.equal(raw.prepare('SELECT pin_ok FROM users WHERE id = 1').get().pin_ok, 0);
+});
+
+test('unlocking with six settles the account without asking anything', async () => {
+  const { raw, db } = await setup();
+  assert.equal(raw.prepare('SELECT pin_ok FROM users WHERE id = 1').get().pin_ok, 0);
+
+  const out = await unlockFor(db, { pin: '481920' }, asUser(1));
+  assert.equal(out.mustChangePin, false);
+  assert.equal(raw.prepare('SELECT pin_ok FROM users WHERE id = 1').get().pin_ok, 1,
+    'signing the account off as long enough, so it is never asked again');
+});
+
+test('an account already settled is not asked, whatever it types', async () => {
+  const { raw, db } = await setup();
+  const pepper = await getPepper(db);
+  // Somebody who lengthened their PIN elsewhere and whose row says so. A short
+  // PIN cannot open it anyway, but the flag is the thing being tested.
+  raw.prepare('UPDATE users SET pin_hash = ?, pin_ok = 1 WHERE id = 1')
+    .run(await hashPin('1234', pepper));
+
+  const out = await unlockFor(db, { pin: '1234' }, asUser(1));
+  assert.equal(out.mustChangePin, false);
 });

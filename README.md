@@ -1552,6 +1552,24 @@ everything else uses, which also means a login switched off while the phone was
 in a pocket does not open again, and *Sign out instead* is on the screen for
 whoever really is finished.
 
+**Opening the app asks it too.** Closing the app and opening it again is not a
+reload: on a phone it comes back with the session cookie still good for weeks,
+and a clock held only in memory could not see the gap because the app it lived
+in was gone. So the moment somebody last touched the screen is written down
+where being shut cannot reach it, and opening the app measures against that. A
+phone put down last night asks for the PIN; a reload thirty seconds later does
+not. Nothing written down at all means nobody on record has opened it, which
+also asks — signing in writes the stamp itself, so a sign-in is never followed
+by being asked for the same digits twice. The one exception is a browser that
+refuses storage altogether, where nothing was written down and so nothing can be
+concluded; there the five-minute clock in memory does the work on its own.
+
+**And it is where a PIN from before the six-digit rule is caught.** A staff
+session lasts two months, so waiting for the next sign-in to notice a four-digit
+PIN could mean waiting most of a year. Unlocking is the same proof as signing
+in: six digits settles the account for good, and four sends them straight to the
+screen that asks for a longer one.
+
 Two things it deliberately does not do. It does not count a file picker, a
 camera or a print dialog as leaving: each takes the browser off the page by
 design, and being asked for a PIN because somebody chose a photograph is how

@@ -1,6 +1,6 @@
 import { actFor, api, onReachabilityChange, serverReachable, setUnauthorizedHandler } from './api.js';
 import { liveUp, onLive, startLive, stopLive } from './live.js';
-import { guard, unguard } from './guard.js';
+import { guard, justProved, unguard } from './guard.js';
 import { checkVersion, takeTheNewOne, waitingToRefresh } from './fresh.js';
 import { registerWorker, watchForInstall } from './install.js';
 import { h, holdBehindDialogs, keepScroll, mount, watchScreenHeight } from './util.js';
@@ -664,6 +664,10 @@ export async function render({ quiet = false } = {}) {
       // it the header opened nameless until the next reload.
       const me = await api.me().catch(() => null);
       adoptSession(me?.authenticated ? me : signedIn);
+      // Before the watch starts. Signing in is somebody proving who they are,
+      // and the watch would otherwise open on a phone with nothing written
+      // down and ask them for the same PIN a second time.
+      justProved();
       startLive();
       watchForTheRoom();
       checkVersion(api.version, { force: true });
@@ -955,6 +959,10 @@ function watchForTheRoom() {
   guard({
     signOut,
     who: () => ({ signsInWith: state.signedInWith, email: state.email }),
+    // Somebody who unlocked with a PIN from before the six-digit rule. The
+    // forced-change screen is drawn in place of the app, the same as it is at
+    // sign-in, so there is nothing behind it to get back to.
+    shortPin: () => { state.mustChangePin = true; render(); },
   });
 }
 
