@@ -465,6 +465,13 @@ export const PLACEHOLDERS = [
   { key: 'address', label: 'Home address' },
   { key: 'id_type', label: 'ID document' },
   { key: 'property', label: 'Property name' },
+  // The name on the certificate of incorporation, which is the party to a
+  // contract. The trading name above is what everybody calls the place and is
+  // usually not the same thing, and a contract made in a name that does not
+  // exist at the Registrar is a contract somebody can argue about. Falls back
+  // to the trading name where the office has not filled the registered one in,
+  // because a blank party is worse than an imprecise one.
+  { key: 'company_legal_name', label: 'Registered company name' },
   { key: 'property_address', label: 'Property address' },
   { key: 'leave_days', label: 'Annual leave' },
   { key: 'today', label: 'Today’s date' },

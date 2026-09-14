@@ -918,6 +918,10 @@ export async function issueContract(ctx, id) {
     id_type: profile?.id_type,
     property: await setting(ctx.db, 'property_name', 'Somewhere Nice'),
     property_address: await setting(ctx.db, 'property_address', ''),
+    // The party to the contract, which is the registered company and not the
+    // trading name. Company tab, under Setup.
+    company_legal_name: (await setting(ctx.db, 'company_legal_name', ''))
+      || await setting(ctx.db, 'property_name', 'Somewhere Nice'),
     // Never less than the fifteen working days section 20 of Act 651 requires,
     // whatever the settings happen to say. A contract promising twelve would be
     // void as to that term and an embarrassment to have issued.

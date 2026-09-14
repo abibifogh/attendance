@@ -448,9 +448,10 @@ test('there is a contract written for a hotel, with the handbook in it', () => {
 
   // The things a hotel contract has to settle and an office one does not.
   // Line breaks are where they fall in a document meant to be read on paper,
-  // so the whitespace in these is deliberately loose.
-  for (const phrase of [/weekends and public\s+holidays/i, /day off in lieu/i,
-    /twelve hours between/i, /probation/i, /staff handbook/i]) {
+  // so the whitespace in these is deliberately loose. Numbers are written out
+  // and then figured, the way the property's own lawyer drafts them.
+  for (const phrase of [/weekends and public\s+holidays/i, /in lieu of the public\s+holiday/i,
+    /twelve \(12\) hours between/i, /probation/i, /staff handbook/i]) {
     assert.match(contract.body, phrase);
   }
   // And it is filled in from the record rather than typed each time.

@@ -66,247 +66,516 @@ export const STANDARD_TEMPLATES = [
     detail: 'The full agreement, with the particulars section 13 of Act 651 requires.',
     body: `CONTRACT OF EMPLOYMENT
 
-Made under the Labour Act, 2003 (Act 651)
+This Contract of Employment (hereinafter referred to as the "Contract") states
+the terms and conditions that govern the contractual agreement between
+{{company_legal_name}}, a company incorporated under the laws of the Republic of
+Ghana and having its principal place of business at {{property_address}}
+(hereinafter referred to as the "Company"), and {{name}} of {{address}}, holder
+of {{id_type}}, employee number {{employee_no}} (hereinafter referred to as the
+"Employee"), who agrees to be bound by this Contract.
 
-BETWEEN {{property}} ("the Employer")
-AND {{name}} of {{address}} ("the Worker"),
-holding {{id_type}}, employee number {{employee_no}}.
+WHEREAS, the Company is engaged in the operation of hotel and hostel facilities
+and the food and beverage services incidental thereto; and
 
-1. ENGAGEMENT AND DATE OF COMMENCEMENT
-   The Employer engages the Worker as {{job_title}} in the {{department}}
-   department. Employment begins on {{start_date}} and continues until ended
-   by either party in accordance with clause 11.
+WHEREAS, the Company desires to employ and retain the services of the Employee,
+and the Employee desires to render such services, upon the terms and conditions
+hereinafter set forth; and
 
-2. PLACE OF WORK
-   {{workplace}} The Worker may be asked to work at any other premises of the
-   Employer within reasonable travelling distance.
+WHEREAS, this Contract is made pursuant to sections 12 and 13 of the Labour Act,
+2003 (Act 651), which require a contract of employment for six months or more to
+be in writing and the principal terms thereof to be furnished to the worker in
+writing.
 
-3. DUTIES
-   The Worker shall carry out the duties of the position, together with any
-   other reasonable duties assigned, faithfully and to the best of their
-   ability, and shall obey the lawful instructions of the Employer.
-   The duties of the position are set out in the job description given to the
-   Worker, which forms part of this contract.
+NOW, THEREFORE, in consideration of the mutual covenants and promises made by
+the parties hereto, the Company and the Employee (individually, each a "Party"
+and collectively, the "Parties") covenant and agree as follows:
 
-4. PROBATION
-   The first {{probation}} is probationary. During this period either party may
-   end the employment on one week's notice, or one week's pay in lieu.
-   Confirmation in the post will be given in writing.
+1. TERM AND COMMENCEMENT
 
-5. REMUNERATION
-   {{salary}}
-   Payment is monthly in arrears, by the last working day of each month, into
-   the account the Worker has given to the Employer.
-   The Employer deducts from the Worker's pay only what the law requires or
-   permits: income tax under the pay-as-you-earn system, the Worker's pension
-   contribution, and anything the Worker has agreed to in writing.
+1.1 The term of this Contract shall commence on {{start_date}} (the "Start
+    Date") and shall continue for an indefinite duration until terminated in
+    accordance with clause 11 hereof.
+1.2 The Parties agree and acknowledge that the first {{probation}} of the
+    Contract period shall constitute a probationary period, during which either
+    Party may terminate this Contract by seven (7) days' written notice to the
+    other, or payment in lieu thereof.
+1.3 Confirmation of the Employee in the Position following the probationary
+    period shall be communicated in writing.
+1.4 This Contract shall be subject to annual review and may accordingly be
+    maintained, amended by agreement of the Parties, or terminated in
+    accordance with clause 11.
 
-6. PENSION AND SOCIAL SECURITY
-   Under the National Pensions Act, 2008 (Act 766) the Employer contributes 13%
-   of the Worker's basic salary and deducts 5.5% from it, making 18.5%, of
-   which 13.5% is paid to the Social Security and National Insurance Trust
-   under the first tier and 5% to an approved second-tier scheme.
-   The Employer shall register the Worker with SSNIT and remit contributions
-   within the time the Act allows.
+2. DUTIES AND PLACE OF WORK
 
-7. HOURS OF WORK
-   {{hours}}
-   Hours are set by the published rota. Under section 33 of Act 651 the normal
-   working week is forty hours; work beyond that is by agreement and is paid at
-   the rate agreed between the parties or set by the Employer's overtime policy.
-   The Worker is entitled to a daily rest period and to at least thirty-six
-   consecutive hours of rest in each period of seven days.
+2.1 The Company shall employ the Employee as {{job_title}} in the
+    {{department}} department (the "Position").
+2.2 The Employee accepts employment with the Company upon the terms and
+    conditions set forth in this Contract and agrees to devote their full
+    working time and attention (reasonable periods of illness excepted) to the
+    performance of their duties hereunder, faithfully and to the best of their
+    ability, and to obey the lawful and reasonable instructions of the Company.
+2.3 In general, the Employee shall perform all of the duties described in
+    Exhibit A attached hereto and the job description furnished to the
+    Employee, which shall form part of this Contract.
+2.4 Notwithstanding clause 2.3, in addition to the duties which the Position
+    normally entails, the Employee may from time to time be required to
+    undertake additional or other duties necessary to meet the needs of the
+    business and which are within the Employee's skill or competence level.
+2.5 The place of work shall be {{workplace}} The Employee may be required to
+    work at any other premises of the Company within reasonable travelling
+    distance.
 
-8. ANNUAL LEAVE
-   The Worker is entitled to {{leave_days}} of paid annual leave in each
-   calendar year of continuous service, which is not less than the fifteen
-   working days required by section 20 of Act 651. Leave is taken at a time
-   agreed with the Employer, and the Employer will not require the Worker to
-   take leave in place of a public holiday or during a period of sick leave.
+3. HOURS OF WORK AND REST PERIODS
 
-9. SICK LEAVE, MATERNITY AND OTHER ABSENCE
-   Absence through illness must be reported to the Worker's supervisor as early
-   as possible on the first day, and a medical certificate produced for any
-   absence of more than two days.
-   A female Worker is entitled to maternity leave of not less than twelve weeks
-   on full pay in addition to annual leave, with the further leave the law
-   allows for a caesarean or multiple birth, and to nursing breaks on return.
-   Public holidays gazetted under the Public Holidays Act are paid days off.
+3.1 Normal working hours shall not exceed eight (8) hours in a day or forty
+    (40) hours in a week, as provided by section 33 of Act 651. Actual hours
+    shall be scheduled by the published rota. {{hours}}
+3.2 The Employee shall be entitled to a break of not less than one (1) hour in
+    a shift, exclusive of the hours referred to in clause 3.1.
+3.3 Work performed beyond the hours specified in clause 3.1 shall be by
+    agreement and shall be remunerated in accordance with section 35 of Act 651
+    and the Company's overtime policy.
+3.4 The Employee shall be entitled to a daily rest period and to not less than
+    thirty-six (36) consecutive hours of rest in each period of seven (7) days.
+3.5 The Company reserves the right to review the Employee's normal hours of
+    work should the needs of the business so dictate, upon reasonable notice to
+    the Employee.
 
-10. CONDUCT, PROPERTY AND GUESTS
-    The Worker shall observe the Employer's rules on attendance, uniform,
-    appearance, health and safety, and the handling of money and property.
-    Guests' property, information and privacy are to be respected absolutely.
-    Tips and gratuities are dealt with under the Employer's published policy.
+4. COMPENSATION AND BENEFITS
 
-11. NOTICE OF TERMINATION
-    After probation, either party may end this contract by giving the other
-    written notice as required by section 17 of Act 651:
-      (a) one month, or one month's pay in lieu, where the contract is for
-          three years or more;
-      (b) two weeks, or two weeks' pay in lieu, where it is for less than
-          three years;
-      (c) seven days where the engagement is from week to week.
-    The parties have agreed a notice period of {{notice}}, which shall apply
-    where it is longer than the statutory minimum.
+4.1 In consideration for the performance of the duties hereunder, the Employee
+    shall be entitled to the compensation and benefits described in Exhibit B
+    attached hereto.
+4.2 Compensation shall be paid monthly in arrears, by the last working day of
+    each month, into the account nominated by the Employee.
+4.3 The Company shall deduct from the Employee's remuneration only such sums as
+    are required or permitted by law, namely income tax under the pay-as-you-earn
+    system and the Employee's statutory pension contribution, together with any
+    sum to which the Employee has consented in writing.
 
-12. SUMMARY DISMISSAL
-    The Employer may end this contract without notice for gross misconduct,
-    which includes theft or dishonesty, wilful damage, violence or threats,
-    being unfit for duty through drink or drugs, serious breach of health,
-    safety or food hygiene rules, and serious breach of the duty owed to
-    guests. Before doing so the Employer shall put the allegation to the Worker
-    and give the Worker a fair opportunity to answer it.
+5. PENSION AND SOCIAL SECURITY
 
-13. UNFAIR TERMINATION
-    Nothing in this contract removes the Worker's protection under section 63
-    of Act 651. A termination is unfair if the reason is, among others, that
-    the Worker joined or took part in a trade union, sought office as a
-    workers' representative, brought a complaint against the Employer, was
-    pregnant or absent on maternity leave, or is disabled, or where the reason
-    is race, colour, ethnic origin, sex, religion, creed, social or economic
-    status or political opinion.
+5.1 Pursuant to the National Pensions Act, 2008 (Act 766), the Company shall
+    contribute thirteen per cent (13%) of the Employee's basic salary and shall
+    deduct five and one-half per cent (5.5%) therefrom, making eighteen and
+    one-half per cent (18.5%) in aggregate, of which thirteen and one-half per
+    cent (13.5%) shall be remitted to the Social Security and National Insurance
+    Trust under the first tier and five per cent (5%) to an approved second-tier
+    scheme.
+5.2 The Company shall register the Employee with the Trust and shall remit all
+    contributions within the time prescribed by the said Act.
 
-14. REDUNDANCY
-    Where the Worker's employment is ended because of a closure, an
-    arrangement or an amalgamation, the Worker is entitled to redundancy pay
-    negotiated in accordance with section 65 of Act 651.
+6. ANNUAL LEAVE AND OTHER ABSENCE
 
-15. GRIEVANCES AND DISCIPLINE
-    A Worker with a grievance should raise it with their supervisor, and if it
-    is not settled, with management in writing. A Worker may be accompanied by
-    a colleague or a union representative at any disciplinary or grievance
-    meeting. Nothing here prevents either party from referring a dispute to the
-    National Labour Commission.
+6.1 The Employee shall be entitled to {{leave_days}} of paid annual leave in
+    each calendar year of continuous service, being not less than the fifteen
+    (15) working days required by section 20 of Act 651, to be taken at such
+    time as may be agreed with the Company.
+6.2 The Company shall not require the Employee to take annual leave in place of
+    a public holiday or during a period of certified sick leave.
+6.3 Absence through illness shall be reported to the Employee's supervisor as
+    early as practicable on the first day of absence, and a medical certificate
+    shall be produced in respect of any absence exceeding two (2) days.
+6.4 A female Employee shall be entitled to maternity leave of not less than
+    twelve (12) weeks on full pay in addition to annual leave, together with
+    such further leave as section 57 of Act 651 allows in the case of a
+    caesarean or multiple birth, and to nursing breaks upon her return.
+6.5 Public holidays gazetted under the Public Holidays Act shall be paid days
+    off. Where the Employee is required to work a public holiday falling on a
+    weekday, the Employee shall be granted a paid day off in lieu.
 
-16. CONFIDENTIALITY
-    The Worker shall not, during employment or after it ends, disclose
-    information about guests, colleagues, or the business of the Employer,
-    except where the law requires it.
+7. CONDUCT, PROPERTY AND GUESTS
 
-17. PERSONAL DATA
-    The Employer holds and uses the Worker's personal data to run the
-    employment, meet its obligations to SSNIT and the Ghana Revenue Authority,
-    and keep the personnel record the Labour Act requires. It is held in
-    accordance with the Data Protection Act, 2012 (Act 843) and is not shared
-    outside the property except where the law requires. The Worker may ask to
-    see it and to have it corrected.
+7.1 The Employee shall observe the Company's rules relating to attendance,
+    uniform, appearance, health and safety, food hygiene, and the handling of
+    money and property.
+7.2 The property, information and privacy of guests shall be respected
+    absolutely.
+7.3 Uniform, keys, access cards, tools and equipment shall remain the property
+    of the Company and shall be returned upon the termination of employment.
+7.4 Tips and gratuities shall be dealt with in accordance with the Company's
+    published policy.
 
-18. ENTIRE AGREEMENT AND VARIATION
-    This contract, with the job description and the staff handbook, is the
-    whole of the agreement between the parties. Any change must be in writing
-    and agreed by both.
+8. CONFIDENTIALITY
 
-19. GOVERNING LAW
-    This contract is governed by the laws of the Republic of Ghana.
+8.1 During and after the Employment Period, the Employee shall not divulge or
+    appropriate to their own use, or to the use of others, any secret or
+    confidential information or knowledge pertaining to the business of the
+    Company obtained by them in any way while employed by the Company, save
+    where disclosure is required by law.
+8.2 Confidential information includes, without limitation, guest details and
+    bookings, rates, supplier terms, and information concerning colleagues.
 
-The Worker confirms that this contract has been read to and by them, that they
-understand it, and that they have been given a copy.
+9. PERSONAL DATA
 
-Dated {{today}}.${FOOTER}`,
+9.1 The Company holds and processes the Employee's personal data for the
+    purposes of administering the employment, discharging its obligations to
+    the Social Security and National Insurance Trust and the Ghana Revenue
+    Authority, and maintaining the personnel record required by Act 651.
+9.2 Such data is held in accordance with the Data Protection Act, 2012
+    (Act 843) and shall not be disclosed outside the Company save where
+    required by law. The Employee may request access to it and its correction.
+
+10. EXPENSES
+
+10.1 The Employee shall not be entitled to reimbursement for any expense except
+     such as has been approved in writing by the Company in advance.
+10.2 Where the Company requires travel by the Employee, the Company shall
+     reimburse the Employee for such travel expenses, together with reasonable
+     lodging and meal expenses, upon presentation of receipts.
+
+11. TERMINATION
+
+11.1 After the probationary period, either Party may terminate this Contract by
+     giving the other written notice in accordance with section 17 of Act 651,
+     namely:
+       (a) one (1) month, or one month's pay in lieu, where the contract is for
+           three (3) years or more;
+       (b) two (2) weeks, or two weeks' pay in lieu, where it is for less than
+           three (3) years;
+       (c) seven (7) days where the engagement is from week to week.
+11.2 The Parties have agreed a notice period of {{notice}}, which shall apply
+     where it is longer than the statutory minimum prescribed in clause 11.1.
+11.3 The Employee agrees and acknowledges that, just as the Employee has the
+     right to terminate their employment with the Company at any time on any
+     ground not contrary to the provisions of Act 651, the Company has the same
+     right and may terminate the employment of the Employee at any time on the
+     same grounds.
+11.4 The Company may terminate this Contract without notice for gross
+     misconduct, which includes theft or dishonesty, wilful damage, violence or
+     threats of violence, being unfit for duty through drink or drugs, serious
+     breach of health, safety or food hygiene rules, and serious breach of the
+     duty owed to guests. Before doing so the Company shall put the allegation
+     to the Employee and afford the Employee a fair opportunity to answer it.
+11.5 Nothing in this Contract shall derogate from the protection afforded to the
+     Employee by section 63 of Act 651. A termination shall be unfair if the
+     reason for it is, among others, that the Employee joined or took part in
+     the activities of a trade union, sought office as a workers'
+     representative, brought a complaint against the Company, was pregnant or
+     absent on maternity leave, or is disabled; or where the reason is race,
+     colour, ethnic origin, sex, religion, creed, social or economic status or
+     political opinion.
+11.6 Where the employment of the Employee is terminated by reason of a closure,
+     arrangement or amalgamation, the Employee shall be entitled to redundancy
+     pay negotiated in accordance with section 65 of Act 651.
+
+12. GRIEVANCES AND DISCIPLINE
+
+12.1 An Employee having a grievance shall raise it with their supervisor and,
+     failing settlement, with management in writing.
+12.2 The Employee may be accompanied by a colleague or a trade union
+     representative at any disciplinary or grievance meeting.
+12.3 Nothing herein shall prevent either Party from referring an unsettled
+     dispute to the National Labour Commission.
+
+13. EMPLOYEE REPRESENTATIONS AND WARRANTIES
+
+The Employee represents and warrants to the Company as follows:
+13.1 There is no employment contract or other contractual obligation to which
+     the Employee is subject which prevents the Employee from entering into
+     this Contract or from performing fully the Employee's duties hereunder.
+13.2 The information furnished by the Employee to the Company in connection
+     with this engagement is true and complete.
+
+14. COLLECTIVE AGREEMENT
+
+{{collective_agreement}}
+
+15. ENTIRE AGREEMENT
+
+This Contract, together with the job description, the Exhibits hereto and the
+staff handbook, constitutes the entire agreement between the Parties and
+supersedes all prior understandings, whether written or oral, relating to the
+subject matter hereof.
+
+16. NO MODIFICATION UNLESS IN WRITING
+
+No modification of this Contract shall be valid unless in writing and agreed
+upon by both Parties.
+
+17. SEVERABILITY
+
+If any provision of this Contract is held to be invalid or unenforceable, the
+remaining provisions shall continue in full force and effect.
+
+18. APPLICABLE LAW
+
+This Contract and the interpretation of its terms shall be governed by and
+construed in accordance with the laws of the Republic of Ghana.
+
+19. COUNTERPARTS
+
+This Contract may be executed in two or more counterparts, any one of which
+shall be deemed the original without reference to the others.
+
+20. FURTHER PROVISIONS
+
+{{note}}
+
+IN WITNESS WHEREOF, the Employee has hereunto set their hand, and the Company
+has caused these presents to be executed in its name and on its behalf, all as
+of the day and year first above written.
+
+SIGNED by the Employee:
+
+    ..................................................
+    {{name}}
+    Date: {{today}}
+
+
+SIGNED for and on behalf of {{company_legal_name}}:
+
+    ..................................................
+    Name:
+    Position:
+    Date:
+
+EXHIBIT A — EMPLOYEE DUTIES
+
+In general, the duties of the Position to be filled by the Employee shall
+encompass the following:
+
+A.1 The duties set out in the job description for {{job_title}} furnished to the
+    Employee.
+A.2 Any other duties assigned to the Employee to meet the needs of the
+    Company's operations. Without limitation, this may include duties in the
+    areas of reception, housekeeping, kitchen, food and beverage service,
+    maintenance and grounds.
+
+EXHIBIT B — COMPENSATION AND BENEFITS
+
+B.1 REMUNERATION
+    {{salary}}
+    The said sum has been determined having regard to statutory deductions,
+    including the Employee's social security contribution and income tax.
+
+B.2 ANNUAL LEAVE
+    {{leave_days}} of paid annual leave in each calendar year of continuous
+    service, as provided in clause 6.1.
+
+B.3 STATUTORY BENEFITS
+    The Company shall grant the Employee such other statutory benefits as are
+    stipulated in the Labour Act, 2003 (Act 651) as and when the need arises.${FOOTER}`,
   },
 
   {
     code: 'contract_hotel',
-    name: 'Contract of employment \u2014 hotel and hostel staff',
+    name: 'Contract of employment — hotel and hostel staff',
     kind: 'contract',
     satisfies: 'contract',
-    detail: 'The property\u2019s own wording: shifts, weekends, the handbook, and a three-month '
+    detail: 'The property’s own wording: shifts, weekends, the handbook, and a three-month '
       + 'probation.',
-    body: `EMPLOYMENT CONTRACT
+    body: `CONTRACT OF EMPLOYMENT
 
-BETWEEN {{property}} of {{property_address}} ("the Company")
-AND {{name}} of {{address}} ("the Employee"), employee number {{employee_no}}.
+This Contract of Employment (hereinafter referred to as the "Contract") states
+the terms and conditions that govern the contractual agreement between
+{{company_legal_name}}, a company incorporated under the laws of the Republic of
+Ghana and having its principal place of business at {{property_address}}
+(hereinafter referred to as the "Company"), and {{name}} of {{address}}, holder
+of {{id_type}}, employee number {{employee_no}} (hereinafter referred to as the
+"Employee"), who agrees to be bound by this Contract.
 
-The Company operates hotel and hostel accommodation and the food and drink that
-goes with it. The Company wishes to employ the Employee on the terms below, and
-the Employee agrees to them.
+WHEREAS, the Company is engaged in the operation of hotel and hostel facilities;
+and
+
+WHEREAS, the Company desires to employ and retain the services of the Employee
+according to the terms and conditions herein.
+
+NOW, THEREFORE, in consideration of the mutual covenants and promises made by
+the parties hereto, the Company and the Employee (individually, each a "Party"
+and collectively, the "Parties") covenant and agree as follows:
 
 1. TERM
-1.1 Employment begins on {{start_date}}.
-1.2 The first {{probation}} is a probation period. During it either side may end
-    this contract with seven days' written notice.
-1.3 After probation either side may end it with {{notice}} written notice, or
-    payment in lieu. Nothing in this clause affects either side's right to end
-    the contract on any ground the Labour Act, 2003 (Act 651) allows.
-1.4 The contract is reviewed each year and may be kept, changed by agreement, or
-    brought to an end in accordance with clause 1.3.
 
-2. THE JOB
-2.1 The Employee is engaged as {{job_title}} in {{department}}.
-2.2 The Employee will give the Company their full working time and attention,
-    and will carry out the duties set out in Schedule A.
-2.3 From time to time the Employee may be asked to do other work within their
-    skill and competence, as the business needs.
-2.4 The place of work is {{workplace}}.
+1.1 The term of this Contract shall commence on {{start_date}} (the "Start
+    Date").
+1.2 Both Parties agree and acknowledge that the first {{probation}} of the
+    Contract period shall be a probation period, during which period either
+    Party may terminate this Contract with seven (7) days' written notice.
+1.3 The Contract shall be subject to annual review and may accordingly be
+    maintained, amended or abrogated.
+1.4 The Employee agrees and acknowledges that, just as the Employee has the
+    right to terminate their employment with the Company at any time on any
+    ground not contrary to the provisions of the Labour Act, 2003 (Act 651),
+    the Company has the same right and may terminate the employment of the
+    Employee at any time on the same grounds.
+1.5 Either Party may terminate the said employment with {{notice}} written
+    notice to the other Party, or payment in lieu thereof.
 
-3. HOURS
-3.1 A normal shift is eight hours and a normal week is forty hours, worked to
-    the published rota. {{hours}}
-3.2 The Employee is entitled to a break of at least one hour in a shift, which
-    does not count towards the hours in clause 3.1.
-3.3 This is a hotel. The Employee may be rostered on weekends and public
-    holidays, and those hours count towards the forty in clause 3.1.
-3.4 Where the Employee works a public holiday falling on a weekday, they are
-    given a paid day off in lieu.
-3.5 There will be at least twelve hours between the end of one shift and the
-    start of the next, and at least forty-eight hours off in every seven days.
-3.6 The Company may review normal hours where the needs of the business require
-    it, having given reasonable notice.
+2. DUTIES
 
-4. PAY
-4.1 {{salary}}
-4.2 Pay is monthly, by bank transfer, less PAYE and the Employee's SSNIT
-    contribution. No other deduction is made without the Employee's written
-    agreement or a requirement of law.
+2.1 The Company shall employ the Employee as {{job_title}} in the
+    {{department}} department (the "Position").
+2.2 The Employee accepts employment with the Company on the terms and
+    conditions set forth in this Contract, and agrees to devote their full time
+    and attention (reasonable periods of illness excepted) to the performance
+    of their duties under this Contract.
+2.3 In general, the Employee shall perform all the duties as described in
+    Exhibit A attached hereto.
+2.4 Notwithstanding clause 2.3, in addition to the duties which the job
+    normally entails, the Employee may from time to time be required to
+    undertake additional or other duties necessary to meet the needs of the
+    business and which are within the Employee's skill or competence level.
+2.5 The place of work shall be {{workplace}}
 
-5. LEAVE
-5.1 {{leave_days}} of paid annual leave a year, taken at times agreed with the
-    Company, once twelve months of continuous service are complete.
-5.2 Public holidays, sick leave with a medical certificate, and maternity leave
-    are as set out in Act 651 and in the staff handbook.
+3. HOURS OF WORK
 
-6. THE STAFF HANDBOOK
-6.1 The staff handbook sets out how the Company runs day to day: conduct, guest
-    service, safety, confidentiality and the grievance and disciplinary
-    procedures.
-6.2 The Employee will read it and keep to it. The Company may change it, and
-    will tell the Employee when it does.
-6.3 Where the handbook and this contract differ, this contract comes first.
+3.1 The Employee shall be scheduled for an eight (8) hour shift each day for a
+    minimum of forty (40) hours each week. Scheduling shall be done in a just
+    manner, respecting the Employee's needs where possible. {{hours}}
+3.2 The Employee is entitled to a break of one (1) hour, exclusive of the
+    working hours aforementioned in clause 3.1.
+3.3 With respect to the nature of the Company's operations, the Employee may be
+    scheduled to work on weekends and public holidays. This shall count towards
+    the forty (40) hours that the Employee is required to work each week as
+    stipulated in clause 3.1.
+3.4 In instances where the Employee is scheduled to work on a public holiday
+    that falls on a work weekday, the Employee shall be entitled to a paid leave
+    in the future in lieu of the public holiday.
+3.5 For the avoidance of doubt, work weekdays used in clause 3.4 shall be
+    deemed to mean Monday to Friday.
+3.6 There shall be not less than twelve (12) hours between the end of one shift
+    and the commencement of the next, and not less than forty-eight (48) hours
+    of rest in every period of seven (7) days.
+3.7 The Company reserves the right to review the Employee's normal hours of
+    work should the needs of the business so dictate.
 
-7. CONFIDENTIALITY
-7.1 The Employee will not, during employment or after it, pass on or use for
-    themselves anything confidential learned here. That includes guest details,
-    bookings, prices, suppliers and anything about a colleague.
-7.2 Guest personal data is handled under the Data Protection Act, 2012
-    (Act 843) and the Company's own notice.
+4. COMPENSATION AND BENEFITS
 
-8. PROPERTY AND EXPENSES
-8.1 Uniform, keys, cards, tools and equipment stay the Company's property and
-    are returned when employment ends.
-8.2 Expenses are reimbursed only where they were approved in writing
-    beforehand, on production of receipts. Travel the Company requires includes
-    reasonable lodging and meals.
+4.1 In consideration for the performance of the duties hereunder, the Employee
+    shall be entitled to compensation and benefits as described in Exhibit B
+    attached hereto.
+4.2 Compensation shall be paid by the Company monthly, by bank transfer, less
+    income tax under the pay-as-you-earn system and the Employee's statutory
+    social security contribution. No other deduction shall be made without the
+    written consent of the Employee or a requirement of law.
 
-9. THE EMPLOYEE CONFIRMS
-9.1 No other contract or obligation stops them entering into this one or doing
-    this job.
-9.2 The information they have given the Company is true.
+5. THE STAFF HANDBOOK
 
-10. GENERAL
-10.1 Any change to this contract must be in writing and agreed by both sides.
-10.2 {{collective_agreement}}
-10.3 This contract is governed by the laws of the Republic of Ghana. Disputes
-     may be taken to the National Labour Commission.
-10.4 {{note}}
+5.1 The staff handbook sets out the manner in which the Company conducts its
+    operations from day to day, including conduct, guest service, health and
+    safety, confidentiality, and the grievance and disciplinary procedures.
+5.2 The Employee shall read the staff handbook and shall comply with it. The
+    Company may amend the handbook and shall notify the Employee upon doing so.
+5.3 Where the handbook and this Contract are inconsistent, this Contract shall
+    prevail.
 
-SCHEDULE A \u2014 DUTIES
-As set out in the job description for {{job_title}}, and as varied under clause
-2.3 from time to time.
+6. CONFIDENTIALITY
 
-Signed by the Employee: {{name}}
-Signed for the Company: {{property}}
-Dated {{today}}.${FOOTER}`,
+6.1 During and after the Employment Period, the Employee shall not divulge or
+    appropriate to their own use, or to the use of others, any secret or
+    confidential information or knowledge pertaining to the business of the
+    Company obtained by them in any way while employed by the Company. Such
+    information includes, without limitation, guest details and bookings,
+    rates, supplier terms, and information concerning colleagues.
+6.2 Guest personal data shall be handled in accordance with the Data Protection
+    Act, 2012 (Act 843) and the Company's own data protection notice.
+
+7. COMPANY PROPERTY AND EXPENSES
+
+7.1 Uniform, keys, access cards, tools and equipment shall remain the property
+    of the Company and shall be returned upon the termination of employment.
+7.2 The Employee shall not be entitled to reimbursement for any expense except
+    such as has been approved in writing by the Company in advance, upon
+    presentation of receipts. Should the Company require travel by the
+    Employee, the Company shall reimburse such travel expenses together with
+    reasonable lodging and meal expenses.
+
+8. EMPLOYEE REPRESENTATIONS AND WARRANTIES
+
+The Employee represents and warrants to the Company the following:
+8.1 There is no employment contract or any other contractual obligation to
+    which the Employee is subject which prevents the Employee from entering
+    into this Contract or from performing fully the Employee's duties under
+    this Contract.
+8.2 The information furnished by the Employee to the Company is true and
+    complete.
+
+9. STATUTORY PROTECTION
+
+9.1 Nothing in this Contract shall derogate from the protection afforded to the
+    Employee by section 63 of Act 651 in respect of unfair termination.
+9.2 Nothing herein shall prevent either Party from referring an unsettled
+    dispute to the National Labour Commission.
+
+10. COLLECTIVE AGREEMENT
+
+{{collective_agreement}}
+
+11. NO MODIFICATION UNLESS IN WRITING
+
+No modification of this Contract shall be valid unless in writing and agreed
+upon by both Parties.
+
+12. APPLICABLE LAW
+
+This Contract and the interpretation of its terms shall be governed by and
+construed in accordance with the laws of the Republic of Ghana.
+
+13. COUNTERPARTS
+
+This Contract may be executed in two or more counterparts, any one of which
+shall be deemed the original without reference to the others.
+
+14. FURTHER PROVISIONS
+
+{{note}}
+
+IN WITNESS WHEREOF, the Employee has hereunto set their hand, and the Company
+has caused these presents to be executed in its name and on its behalf, all as
+of the day and year first above written.
+
+SIGNED by the Employee:
+
+    ..................................................
+    {{name}}
+    Date: {{today}}
+
+
+SIGNED for and on behalf of {{company_legal_name}}:
+
+    ..................................................
+    Name:
+    Position:
+    Date:
+
+EXHIBIT A — EMPLOYEE DUTIES
+
+In general, the duties of the Position to be filled by the Employee shall
+encompass the following:
+
+A.1 The duties set out in the job description for {{job_title}} furnished to the
+    Employee.
+A.2 Any other duties assigned to the Employee to meet the needs of the
+    Company's operations. Without limitation, this may include duties in the
+    following areas: reception, housekeeping, kitchen, food and beverage
+    service, construction, gardening and maintenance.
+
+EXHIBIT B — COMPENSATION AND BENEFITS
+
+B.1 COMPENSATION
+    {{salary}}
+    The said sum has been determined having regard to statutory deductions,
+    including the Employee's social security contribution and income tax.
+    Should the Employee work more shifts than are required, the Company shall
+    grant the Employee a paid leave in the future, or cash consideration as
+    compensation.
+
+B.2 ANNUAL LEAVE
+    The Employee shall be entitled to {{leave_days}} of paid annual leave. This
+    entitlement shall be built after the initial twelve (12) months of
+    employment and shall be granted by the Company having regard to work
+    schedules at the time of applying for the leave.
+
+B.3 STATUTORY BENEFITS
+    The Company shall grant the Employee such other statutory benefits as are
+    stipulated in the Labour Act, 2003 (Act 651), such as maternity leave, as
+    and when the need arises.
+
+B.4 PENSION
+    The Company shall register the Employee with the Social Security and
+    National Insurance Trust and shall contribute in accordance with the
+    National Pensions Act, 2008 (Act 766).${FOOTER}`,
   },
 
   {
@@ -317,67 +586,132 @@ Dated {{today}}.${FOOTER}`,
     detail: 'For a season, a project or a named period. Ends on its own date.',
     body: `FIXED TERM CONTRACT OF EMPLOYMENT
 
-Made under the Labour Act, 2003 (Act 651)
+This Fixed Term Contract of Employment (hereinafter referred to as the
+"Contract") states the terms and conditions that govern the contractual
+agreement between {{company_legal_name}}, a company incorporated under the laws
+of the Republic of Ghana and having its principal place of business at
+{{property_address}} (hereinafter referred to as the "Company"), and {{name}} of
+{{address}}, holder of {{id_type}}, employee number {{employee_no}} (hereinafter
+referred to as the "Employee"), who agrees to be bound by this Contract.
 
-BETWEEN {{property}} ("the Employer")
-AND {{name}} of {{address}} ("the Worker"),
-holding {{id_type}}, employee number {{employee_no}}.
+WHEREAS, the Company is engaged in the operation of hotel and hostel facilities;
+and
 
-1. ENGAGEMENT AND TERM
-   The Employer engages the Worker as {{job_title}} in the {{department}}
-   department for a fixed term beginning on {{start_date}} and ending on
-   {{end_date}}, unless ended earlier under clause 8.
-   This contract ends on that date without further notice from either party.
-   It does not renew automatically. Any continuation must be agreed in writing.
+WHEREAS, the Company desires to engage the services of the Employee for a fixed
+period, and the Employee desires to render such services, upon the terms and
+conditions hereinafter set forth.
+
+NOW, THEREFORE, in consideration of the mutual covenants and promises made by
+the parties hereto, the Company and the Employee (individually, each a "Party"
+and collectively, the "Parties") covenant and agree as follows:
+
+1. TERM
+
+1.1 The term of this Contract shall commence on {{start_date}} and shall expire
+    on {{end_date}}, unless terminated earlier in accordance with clause 8.
+1.2 This Contract shall determine upon the said expiry date without further
+    notice from either Party.
+1.3 This Contract shall not renew automatically. Any continuation of the
+    employment beyond the expiry date must be agreed between the Parties in
+    writing.
 
 2. DUTIES AND PLACE OF WORK
-   The Worker shall carry out the duties of the position and any other
-   reasonable duties assigned, at {{workplace}}.
 
-3. REMUNERATION
-   {{salary}}
-   Payment is monthly in arrears, less income tax under the pay-as-you-earn
-   system and the Worker's pension contribution.
+2.1 The Company shall employ the Employee as {{job_title}} in the
+    {{department}} department (the "Position").
+2.2 The Employee shall perform the duties of the Position together with such
+    other reasonable duties as may be assigned, at {{workplace}}
+2.3 The Employee agrees to devote their full working time and attention to the
+    performance of their duties hereunder.
+
+3. COMPENSATION
+
+3.1 {{salary}}
+3.2 Compensation shall be paid monthly in arrears, less income tax under the
+    pay-as-you-earn system and the Employee's statutory pension contribution.
 
 4. PENSION AND SOCIAL SECURITY
-   The Employer shall register the Worker with SSNIT and contribute under the
-   National Pensions Act, 2008 (Act 766) for the duration of this contract.
+
+The Company shall register the Employee with the Social Security and National
+Insurance Trust and shall contribute in accordance with the National Pensions
+Act, 2008 (Act 766) for the duration of this Contract.
 
 5. HOURS OF WORK
-   {{hours}} Hours are set by the published rota and are subject to the daily
-   and weekly rest periods required by Act 651.
+
+5.1 Normal working hours shall not exceed eight (8) hours in a day or forty (40)
+    hours in a week. Actual hours shall be scheduled by the published rota.
+    {{hours}}
+5.2 The daily and weekly rest periods prescribed by the Labour Act, 2003
+    (Act 651) shall apply to this Contract.
 
 6. ANNUAL LEAVE
-   The Worker is entitled to paid annual leave in proportion to the length of
-   this contract, calculated on the basis of {{leave_days}} for a full calendar
-   year of continuous service. Untaken leave at the end of the term is paid.
 
-7. CONDUCT
-   The Worker shall observe the Employer's rules on attendance, uniform,
-   health and safety, food hygiene, and the handling of money, property and
-   guests' information.
+The Employee shall be entitled to paid annual leave in proportion to the length
+of this Contract, calculated on the basis of {{leave_days}} for a full calendar
+year of continuous service. Leave untaken at the expiry of the term shall be
+paid.
 
-8. ENDING IT EARLY
-   Either party may end this contract before its date by giving two weeks'
-   written notice, or two weeks' pay in lieu. The Employer may end it without
-   notice for gross misconduct, having first put the allegation to the Worker
-   and heard the answer.
+7. CONDUCT AND CONFIDENTIALITY
 
-9. UNFAIR TERMINATION
-   Section 63 of Act 651 applies to this contract as it does to any other.
-   Ending a fixed term early for a reason that section names is unfair
-   whatever this contract says.
+7.1 The Employee shall observe the Company's rules relating to attendance,
+    uniform, health and safety, food hygiene, and the handling of money,
+    property and guests' information.
+7.2 The Employee shall not, during the term or after it, divulge any
+    confidential information pertaining to guests, colleagues or the business
+    of the Company.
+7.3 The Company holds the Employee's personal data in accordance with the Data
+    Protection Act, 2012 (Act 843) for the purposes of the employment and its
+    statutory obligations.
 
-10. CONFIDENTIALITY AND PERSONAL DATA
-    The Worker shall not disclose information about guests, colleagues or the
-    business of the Employer, during the term or after it. The Employer holds
-    the Worker's personal data under the Data Protection Act, 2012 (Act 843)
-    for the purposes of the employment and its statutory obligations.
+8. EARLY TERMINATION
 
-11. GOVERNING LAW
-    The laws of the Republic of Ghana.
+8.1 Either Party may terminate this Contract before the expiry date by giving
+    two (2) weeks' written notice to the other, or two weeks' pay in lieu
+    thereof.
+8.2 The Company may terminate this Contract without notice for gross
+    misconduct, having first put the allegation to the Employee and afforded
+    the Employee a fair opportunity to answer it.
+8.3 Section 63 of Act 651 applies to this Contract as it does to any other. The
+    early termination of a fixed term for a reason named in that section shall
+    be unfair notwithstanding anything in this Contract.
 
-Dated {{today}}.${FOOTER}`,
+9. NO MODIFICATION UNLESS IN WRITING
+
+No modification of this Contract shall be valid unless in writing and agreed
+upon by both Parties.
+
+10. APPLICABLE LAW
+
+This Contract and the interpretation of its terms shall be governed by and
+construed in accordance with the laws of the Republic of Ghana. Unsettled
+disputes may be referred to the National Labour Commission.
+
+11. COUNTERPARTS
+
+This Contract may be executed in two or more counterparts, any one of which
+shall be deemed the original without reference to the others.
+
+12. FURTHER PROVISIONS
+
+{{note}}
+
+IN WITNESS WHEREOF, the Employee has hereunto set their hand, and the Company
+has caused these presents to be executed in its name and on its behalf, all as
+of the day and year first above written.
+
+SIGNED by the Employee:
+
+    ..................................................
+    {{name}}
+    Date: {{today}}
+
+
+SIGNED for and on behalf of {{company_legal_name}}:
+
+    ..................................................
+    Name:
+    Position:
+    Date:${FOOTER}`,
   },
 
   {
@@ -389,75 +723,109 @@ Dated {{today}}.${FOOTER}`,
       + 'never got a written contract.',
     body: `WRITTEN STATEMENT OF PARTICULARS OF EMPLOYMENT
 
-Given under section 13 of the Labour Act, 2003 (Act 651), which requires an
-employer to furnish a worker with a written statement of the main terms of the
-contract of employment within two months of the employment beginning.
+This Written Statement of Particulars of Employment (hereinafter referred to as
+the "Statement") is furnished by {{company_legal_name}}, a company incorporated
+under the laws of the Republic of Ghana and having its principal place of
+business at {{property_address}} (hereinafter referred to as the "Employer"), to
+{{name}} of {{address}}, holder of {{id_type}} (hereinafter referred to as the
+"Worker").
 
-THE EMPLOYER
-   Name:                {{property}}
-   Address:             {{property_address}}
+WHEREAS, section 13 of the Labour Act, 2003 (Act 651) requires an employer to
+furnish a worker with a written statement of the particulars of the contract of
+employment within two (2) months of the commencement of the employment; and
 
-THE WORKER
-   Name:                {{name}}
-   Address:             {{address}}
-   Identification:      {{id_type}}
-   Employee number:     {{employee_no}}
+WHEREAS, the Employer wishes to record the principal terms upon which the Worker
+is and has been employed.
 
-THE EMPLOYMENT
-   Job title:           {{job_title}}
-   Department:          {{department}}
-   Place of work:       {{workplace}}
-   Date of engagement:  {{start_date}}
-   Nature:              Continuous employment of an indefinite duration,
-                        unless ended in accordance with the notice below.
+NOW, THEREFORE, the Employer hereby furnishes the following particulars:
 
-   Remuneration:        {{salary}}
-   Paid:                Monthly in arrears, by bank transfer or mobile money to
-                        the account the Worker has given, less pay-as-you-earn
-                        income tax and the Worker's pension contribution.
+1. THE PARTIES
 
-   Hours of work:       {{hours}}
-                        Normal working hours do not exceed eight in a day or
-                        forty in a week, as provided by section 33 of Act 651.
-                        Actual hours are set by the published rota.
+1.1 Employer: {{company_legal_name}}, trading as {{property}}, of
+    {{property_address}}.
+1.2 Worker: {{name}} of {{address}}, holder of {{id_type}}, employee number
+    {{employee_no}}.
 
-   Rest periods:        A daily rest period, and not less than thirty-six
-                        consecutive hours of rest in each period of seven days.
+2. THE EMPLOYMENT
 
-   Annual leave:        {{leave_days}} of paid leave in each calendar year of
-                        continuous service, being not less than the fifteen
-                        working days required by section 20 of Act 651, taken
-                        at a time agreed with the Employer.
+2.1 Position: {{job_title}}, in the {{department}} department.
+2.2 Place of work: {{workplace}}
+2.3 Date of engagement: {{start_date}}.
+2.4 Nature of the contract: continuous employment of an indefinite duration,
+    until terminated in accordance with paragraph 8 hereof.
 
-   Sick leave:          Paid sick leave on production of a medical certificate,
-                        in accordance with the Employer's policy and the Act.
+3. REMUNERATION
 
-   Maternity leave:     Not less than twelve weeks on full pay, in addition to
-                        annual leave, under section 57 of Act 651.
+3.1 {{salary}}
+3.2 Interval of payment: monthly in arrears, by bank transfer or mobile money
+    to the account nominated by the Worker, less income tax under the
+    pay-as-you-earn system and the Worker's statutory pension contribution.
 
-   Pension:             Registered with SSNIT under the National Pensions Act,
-                        2008 (Act 766). The Employer contributes 13% of basic
-                        salary and deducts 5.5%.
+4. HOURS OF WORK AND REST PERIODS
 
-   Notice to end it:    {{notice}}, and in any event not less than the period
-                        required by section 17 of Act 651 — one month where the
-                        contract is for three years or more, two weeks where it
-                        is for less, seven days where the engagement is from
-                        week to week.
+4.1 {{hours}}
+4.2 Normal working hours shall not exceed eight (8) in a day or forty (40) in a
+    week, as provided by section 33 of Act 651. Actual hours are scheduled by
+    the published rota.
+4.3 The Worker is entitled to a daily rest period and to not less than
+    thirty-six (36) consecutive hours of rest in each period of seven (7) days.
 
-   Discipline and
-   grievances:          As set out in the staff handbook, a copy of which has
-                        been given to the Worker. A worker may be accompanied
-                        at any disciplinary or grievance meeting, and may refer
-                        an unsettled dispute to the National Labour Commission.
+5. LEAVE
 
-   Collective
-   agreement:           {{collective_agreement}}
+5.1 Annual leave: {{leave_days}} of paid leave in each calendar year of
+    continuous service, being not less than the fifteen (15) working days
+    required by section 20 of Act 651, to be taken at a time agreed with the
+    Employer.
+5.2 Sick leave: paid sick leave upon production of a medical certificate, in
+    accordance with the Employer's policy and the said Act.
+5.3 Maternity leave: not less than twelve (12) weeks on full pay in addition to
+    annual leave, under section 57 of Act 651.
 
-The Worker confirms having received this statement and a copy of the staff
-handbook, and having had the contents explained where asked.
+6. PENSION AND SOCIAL SECURITY
 
-Dated {{today}}.${FOOTER}`,
+The Worker is registered with the Social Security and National Insurance Trust
+under the National Pensions Act, 2008 (Act 766). The Employer contributes
+thirteen per cent (13%) of basic salary and deducts five and one-half per cent
+(5.5%).
+
+7. DISCIPLINE, GRIEVANCES AND COLLECTIVE AGREEMENT
+
+7.1 Discipline and grievances are dealt with as set out in the staff handbook, a
+    copy of which has been furnished to the Worker. The Worker may be
+    accompanied at any disciplinary or grievance meeting, and may refer an
+    unsettled dispute to the National Labour Commission.
+7.2 Collective agreement: {{collective_agreement}}
+
+8. TERMINATION
+
+8.1 Notice: {{notice}}, and in any event not less than the period required by
+    section 17 of Act 651, namely one (1) month where the contract is for three
+    (3) years or more, two (2) weeks where it is for less, and seven (7) days
+    where the engagement is from week to week.
+8.2 Nothing in this Statement derogates from the protection afforded to the
+    Worker by section 63 of Act 651 in respect of unfair termination.
+
+9. FURTHER PROVISIONS
+
+{{note}}
+
+The Worker hereby acknowledges receipt of this Statement and of a copy of the
+staff handbook, and confirms that the contents hereof have been explained where
+explanation was sought.
+
+SIGNED by the Worker:
+
+    ..................................................
+    {{name}}
+    Date: {{today}}
+
+
+SIGNED for and on behalf of {{company_legal_name}}:
+
+    ..................................................
+    Name:
+    Position:
+    Date:${FOOTER}`,
   },
 
   {
@@ -468,51 +836,98 @@ Dated {{today}}.${FOOTER}`,
     detail: 'For day work and short cover. Sections 74 to 77 of Act 651.',
     body: `TERMS OF ENGAGEMENT — CASUAL OR TEMPORARY WORK
 
-Made under sections 74 to 77 of the Labour Act, 2003 (Act 651)
+These Terms of Engagement (hereinafter referred to as the "Terms") state the
+terms and conditions that govern the contractual agreement between
+{{company_legal_name}}, a company incorporated under the laws of the Republic of
+Ghana and having its principal place of business at {{property_address}}
+(hereinafter referred to as the "Employer"), and {{name}} of {{address}}, holder
+of {{id_type}}, employee number {{employee_no}} (hereinafter referred to as the
+"Worker"), who agrees to be bound by these Terms.
 
-BETWEEN {{property}} ("the Employer")
-AND {{name}} of {{address}} ("the Worker"),
-holding {{id_type}}, employee number {{employee_no}}.
+WHEREAS, the Employer from time to time requires casual or temporary labour in
+the operation of its hotel and hostel facilities; and
 
-1. THE ARRANGEMENT
-   The Worker is engaged as {{job_title}} on a casual basis from
-   {{start_date}}. Work is offered as and when the Employer needs it and the
-   Worker is free to accept or decline. There is no obligation on either side
-   to offer or accept work on any particular day.
+WHEREAS, these Terms are made having regard to sections 74 to 77 of the Labour
+Act, 2003 (Act 651), which provide for the engagement of casual and temporary
+workers.
 
-2. WHAT A CASUAL WORKER IS ENTITLED TO
-   Under Act 651 a casual worker is entitled to:
-     (a) be given the same medical facilities as a permanent worker;
-     (b) be paid for overtime under section 35;
-     (c) be paid for a public holiday that falls on a day worked;
-     (d) a minimum wage not less than the national daily minimum wage.
-   Nothing in this document reduces any of those.
+NOW, THEREFORE, the Employer and the Worker (individually, each a "Party" and
+collectively, the "Parties") covenant and agree as follows:
 
-3. PAY
-   {{salary}}
-   Paid at the end of the engagement or with the following payroll, whichever
-   the Employer has told the Worker, less any deduction the law requires.
+1. THE ENGAGEMENT
+
+1.1 The Worker is engaged as {{job_title}} on a casual basis with effect from
+    {{start_date}}.
+1.2 Work shall be offered as and when the Employer requires it, and the Worker
+    shall be free to accept or decline any offer of work.
+1.3 There shall be no obligation upon either Party to offer or to accept work on
+    any particular day.
+1.4 The place of work shall be {{workplace}}
+
+2. ENTITLEMENTS OF A CASUAL WORKER
+
+2.1 Pursuant to Act 651, a casual worker is entitled:
+      (a) to be given the same medical facilities as a permanent worker;
+      (b) to be paid for overtime work in accordance with section 35;
+      (c) to be paid for a public holiday which falls on a day upon which the
+          worker has worked;
+      (d) to a minimum wage not less than the national daily minimum wage.
+2.2 Nothing in these Terms shall operate to reduce any of the entitlements set
+    out in clause 2.1.
+
+3. REMUNERATION
+
+3.1 {{salary}}
+3.2 Payment shall be made at the conclusion of the engagement or with the
+    following payroll, as the Employer shall have notified the Worker, less any
+    deduction required by law.
 
 4. HOURS AND REST
-   Hours are those of the shift offered and accepted. The daily and weekly rest
-   periods in Act 651 apply.
 
-5. BECOMING A PERMANENT WORKER
-   Where a worker is employed by the same employer for six months or more, or
-   for the equivalent number of working days within a year, section 12 of Act
-   651 requires the employment to be secured by a written contract. The
-   Employer will issue one at that point.
+Hours shall be those of the shift offered and accepted. The daily and weekly
+rest periods prescribed by Act 651 shall apply.
+
+5. CONVERSION TO PERMANENT EMPLOYMENT
+
+Where a worker is employed by the same employer for six (6) months or more, or
+for the equivalent number of working days within a year, section 12 of Act 651
+requires the employment to be secured by a written contract. The Employer shall
+issue such a contract at that point.
 
 6. CONDUCT AND CONFIDENTIALITY
-   The Worker shall observe the Employer's rules on health, safety and food
-   hygiene, and shall not disclose anything about guests, colleagues or the
-   business of the Employer.
 
-7. ENDING IT
-   Either party may end this arrangement at any time. Work already done is paid
-   for in full.
+6.1 The Worker shall observe the Employer's rules relating to health, safety and
+    food hygiene.
+6.2 The Worker shall not divulge any information concerning guests, colleagues
+    or the business of the Employer.
 
-Dated {{today}}.${FOOTER}`,
+7. TERMINATION
+
+Either Party may terminate this engagement at any time. Work already performed
+shall be paid for in full.
+
+8. APPLICABLE LAW
+
+These Terms and the interpretation thereof shall be governed by and construed in
+accordance with the laws of the Republic of Ghana.
+
+9. FURTHER PROVISIONS
+
+{{note}}
+
+SIGNED by the Worker:
+
+    ..................................................
+    {{name}}
+    Date: {{today}}
+
+
+SIGNED for and on behalf of {{company_legal_name}}:
+
+    ..................................................
+    Name:
+    Position:
+    Date:${FOOTER}`,
   },
 
   {

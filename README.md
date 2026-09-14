@@ -3930,12 +3930,13 @@ refused with the size in the message rather than truncated.
 
 ### The standard set, and what a file must contain
 
-**People → Templates → Load the standard set** puts in ten documents written
+**People → Templates → Load the standard set** puts in fifteen documents written
 from the statutes that apply to a hotel in Ghana:
 
 | Document | Built from |
 |---|---|
 | Contract of employment — permanent | Act 651 ss.10–13, 17, 20, 33, 57, 63, 65 |
+| Contract of employment — hotel and hostel staff | The property's own terms, in the property's own register |
 | Contract of employment — fixed term | The same, ending on its own date |
 | Terms of engagement — casual worker | Act 651 ss.74–77 |
 | Written statement of particulars | Act 651 s.13 — the two-month statement |
@@ -3947,8 +3948,24 @@ from the statutes that apply to a hotel in Ghana:
 | Next of kin declaration | The page nobody reads until the worst day |
 
 They come in as ordinary templates. Edit them into your own words and loading
-the set again never touches them — it only adds what is missing, matched on the
-code each came in under.
+the set again never touches them: it only adds what is missing, matched on the
+code each came in under, and the button says how many are new.
+
+**The five contracts are drafted as contracts.** Parties defined in a preamble,
+recitals saying why the document is being made, decimal clause numbering so one
+clause can refer to another, exhibits for the duties and the pay, an execution
+block, and the boilerplate that makes a written agreement hold together: entire
+agreement, no modification unless in writing, governing law, counterparts. They
+read formally on purpose. A contract is the document produced when somebody
+disputes what was agreed, and one drafted like a leaflet invites the argument
+that the parties never intended to be bound by it.
+
+The party to each of them is `{{company_legal_name}}`, the name on the
+certificate of incorporation, which is set on **Setup → Company**. It is
+usually not the trading name, and a contract made in a name that is not at the
+Registrar is one somebody can argue about. Where the registered name has not
+been filled in, the trading name is used, because a blank party is worse than
+an imprecise one.
 
 > **A starting point, not legal advice.** No Ghanaian lawyer has settled these.
 > They exist so a small hotel starts from something with the statutory
