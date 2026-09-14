@@ -849,20 +849,66 @@ export async function myDepartment(ctx) {
  * person who actually knows it. Rostering over one stays possible, because
  * some conflicts are deliberate and the grid should show them.
  *
- * Two days, and that is the whole of it. Being away for a week is leave: it is
- * approved by somebody, it comes off a balance, and there is a record of who
- * agreed to it. Marked here instead, the same week would be none of those
- * things, which is how somebody ends up away for five days that nobody signed
- * for. So the limit is not a tidiness rule, it is the line between the two
- * screens, and the answer sends them to the other one.
+ * Two days in any one week, and that is the whole of it. Being away for a week
+ * is leave: it is approved by somebody, it comes off a balance, and there is a
+ * record of who agreed to it. Marked here instead, the same week would be none
+ * of those things, which is how somebody ends up away for five days that
+ * nobody signed for. So the limit is not a tidiness rule, it is the line
+ * between the two screens, and the answer sends them to the other one.
  *
- * Counted across the run, not just this request. Ticking Monday, saving, then
- * ticking Tuesday and Wednesday is the same week off arrived at in two
- * presses, and a limit that stops only the first way of asking is not a limit.
- * Scattered days are left alone: three separate Sundays are three separate
- * facts, not a spell of absence.
+ * PER WEEK, MONDAY TO SUNDAY, which is the week this app builds rotas in. It
+ * was once two days per request, which refused somebody marking a Wednesday
+ * this week and a Wednesday next: four scattered days across a month read as
+ * asking for four days off, and they are not — they are four separate
+ * Wednesdays, and no week is any thinner for them. A rule that cannot tell
+ * those apart is a rule people work around by saving four times.
+ *
+ * Two rules, because one of them cannot see what the other can. The week
+ * count is what the rota cares about. The run of consecutive days catches a
+ * spell that straddles a week boundary: Saturday to Tuesday is two days in
+ * each week and four days away.
+ *
+ * Both are counted across the record and not just this request. Ticking
+ * Monday, saving, then ticking Tuesday and Wednesday is the same week arrived
+ * at in two presses, and a limit that stops only the first way of asking is
+ * not a limit.
  */
 export const MAX_UNAVAILABLE_DAYS = 2;
+
+/**
+ * The week with the most unavailable days in it, Monday to Sunday.
+ *
+ * PER WEEK, NOT PER MONTH. The limit used to be two days per request and two
+ * in a row, which meant somebody marking a Wednesday this week and a Wednesday
+ * next week was refused: four scattered days across a month read as asking for
+ * four days off. They are not. They are four separate Wednesdays, and a rule
+ * that cannot tell the difference is a rule people work around by making four
+ * separate requests.
+ *
+ * So the question is now the one the rota actually cares about: how thin does
+ * any single week get. Monday to Sunday, because that is the week this app
+ * builds rotas in and a limit measured over a different week from the rota is
+ * a limit nobody can reason about.
+ *
+ * Counted across the record and not just this request, or ticking one day,
+ * saving, and ticking two more is the same week arrived at in two presses.
+ */
+export function busiestWeek(asking, standing = []) {
+  const all = [...new Set([...asking, ...standing])];
+  const weeks = new Map();
+  for (const day of all) {
+    const week = startOfWeek(day);
+    weeks.set(week, (weeks.get(week) ?? 0) + 1);
+  }
+
+  let worst = null;
+  for (const [week, days] of weeks) {
+    if (!worst || days > worst.days || (days === worst.days && week < worst.week)) {
+      worst = { week, days };
+    }
+  }
+  return worst ?? { week: null, days: 0 };
+}
 
 /** The day before, and the day after, as ISO dates. */
 function stepDay(day, by) {
@@ -918,13 +964,6 @@ export async function setMyAvailability(ctx) {
 
   // Wanting to work is not being away, so it is none of the limit's business.
   if (status === 'unavailable') {
-    if (days.length > MAX_UNAVAILABLE_DAYS) {
-      throw badRequest(
-        `${MAX_UNAVAILABLE_DAYS} days at most. For longer than that, ask for leave instead, `
-        + 'so it is approved and counted.',
-      );
-    }
-
     const held = await ctx.db.prepare(
       `SELECT day FROM att_availability
         WHERE staff_id = ?1 AND status = 'unavailable' AND day >= ?2
@@ -936,6 +975,22 @@ export async function setMyAvailability(ctx) {
     // them keeps that honest either way.
     const standing = (held.results ?? [])
       .map((r) => r.day).filter((d) => !days.includes(d));
+
+    // TWO DAYS IN ANY ONE WEEK. Scattered days across a month are scattered
+    // days: four separate Wednesdays are four separate facts and empty no
+    // week. What the rota cannot absorb is one week going thin.
+    const worst = busiestWeek(days, standing);
+    if (worst.days > MAX_UNAVAILABLE_DAYS) {
+      throw badRequest(
+        `${MAX_UNAVAILABLE_DAYS} days in any one week at most, and the week of `
+        + `${worst.week} would have ${worst.days}. For longer than that, ask for leave `
+        + 'instead, so it is approved and counted.',
+      );
+    }
+
+    // And not a spell that straddles two of them. Saturday to Tuesday is two
+    // days in each week and four days away, which is the thing the week rule
+    // on its own cannot see.
     const run = longestRun(days, standing);
     if (run > MAX_UNAVAILABLE_DAYS) {
       throw badRequest(

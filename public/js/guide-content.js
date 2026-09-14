@@ -352,13 +352,16 @@ export const GUIDE = [
       { p: 'A whole day, or a few hours of one. An appointment until nine in the morning and an '
         + 'evening class are different problems, and only the first one clashes with a '
         + 'breakfast shift.' },
-      { warn: 'Two days at a time, and no more than two in a row. Anything longer is leave: it '
-        + 'is approved by somebody, it comes off your balance, and there is a record of who '
-        + 'agreed to it. Marked here instead it would be none of those things, so the screen '
-        + 'sends you to Ask for leave rather than taking it.' },
+      { warn: 'Two days in any one week, and no more than two in a row. The week runs Monday '
+        + 'to Sunday, so a day in one week and two in the next is fine and three in the same '
+        + 'week is not. Anything longer is leave: it is approved by somebody, it comes off '
+        + 'your balance, and there is a record of who agreed to it. Marked here instead it '
+        + 'would be none of those things, so the screen sends you to Ask for leave rather '
+        + 'than taking it.' },
       { note: 'The limit counts what is already on your record, not just what you have ticked '
-        + 'this time. Monday saved now and Tuesday saved later is still two days in a row, and '
-        + 'a third joined onto them is refused the same way.' },
+        + 'this time. Monday saved now and Tuesday saved later is still the same week, and a '
+        + 'third day joined onto them is refused the same way. The run matters too: Saturday '
+        + 'to Tuesday is only two days in each week and still four days away.' },
       { warn: 'And one person from a department a day. If somebody else in your department has '
         + 'already asked about that day, yours is refused and the screen says so. Two of four '
         + 'housekeepers on the same Thursday leaves the floor at half strength, and neither of '
@@ -838,7 +841,7 @@ export const GUIDE = [
         + 'some clashes are deliberate and the grid should show them rather than pretend they '
         + 'cannot happen. If somebody is actually going to be away, that is leave.' },
       { note: 'What you write here does not wait for an answer, because you are the answer. '
-        + 'The two-day limit on the staff screen is not on this one either: that limit stops '
+        + 'The two-days-a-week limit on the staff screen is not on this one either: it stops '
         + 'unavailability being used as a week off nobody agreed to, and here it is you doing '
         + 'the agreeing.' },
 

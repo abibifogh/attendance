@@ -4,7 +4,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import { decideAvailability, getRoster, setAvailability, waitingAvailability } from '../src/routes/attendance.js';
-import { setMyAvailability } from '../src/routes/me.js';
+import { MAX_UNAVAILABLE_DAYS, busiestWeek, setMyAvailability } from '../src/routes/me.js';
+import {
+  MAX_UNAVAILABLE_DAYS as ON_SCREEN_MAX, busiestWeek as onScreen,
+} from '../public/js/availability-rules.js';
 
 /**
  * Availability somebody asks for, and somebody else agrees to.
@@ -262,13 +265,39 @@ test('an answered mark reads as a fact rather than a question', async () => {
  * line between the two screens, and what is pinned down below is that the line
  * holds however somebody arrives at it.
  */
-test('three days at once is refused, and the answer says where to go instead', async () => {
+test('three days in one week is refused, and the answer says where to go instead', async () => {
   const { db, raw } = setup();
+  // Monday, Tuesday and Wednesday of the same week.
   await assert.rejects(
     () => ask(db, { days: ['2099-09-14', '2099-09-15', '2099-09-16'], status: 'unavailable' }),
-    /2 days at most.*ask for leave/i,
+    /2 days in any one week at most.*ask for leave/is,
   );
   assert.equal(rows(raw).length, 0, 'and nothing was written');
+});
+
+test('two days in one week and two in the next is four days and is allowed', async () => {
+  const { db, raw } = setup();
+  // The whole point of the rule being per week. Four scattered days across a
+  // fortnight empty no week, and used to be refused for being four.
+  await ask(db, {
+    days: ['2099-09-14', '2099-09-16', '2099-09-21', '2099-09-23'],
+    status: 'unavailable',
+  });
+  assert.equal(rows(raw).length, 4);
+});
+
+test('a spell that straddles two weeks is still a spell', async () => {
+  const { db, raw } = setup();
+  // Saturday to Tuesday: two days in each week, and four days away. The week
+  // count cannot see it and the run of consecutive days can.
+  await assert.rejects(
+    () => ask(db, {
+      days: ['2099-09-19', '2099-09-20', '2099-09-21', '2099-09-22'],
+      status: 'unavailable',
+    }),
+    /2 days in a row at most.*would make 4/is,
+  );
+  assert.equal(rows(raw).length, 0);
 });
 
 test('two days is fine', async () => {
@@ -283,18 +312,18 @@ test('a third day joined onto two already there is refused', async () => {
 
   await assert.rejects(
     () => ask(db, { days: ['2099-09-16'], status: 'unavailable' }),
-    /2 days in a row at most.*would make 3/i,
+    /2 days in any one week at most.*would have 3/is,
   );
   assert.equal(rows(raw).length, 2, 'the two already there are left alone');
 });
 
-test('one day at a time is still one week off, and is stopped the same way', async () => {
+test('one day at a time is still the same week, and is stopped the same way', async () => {
   const { db } = setup();
   await ask(db, { days: ['2099-09-14'], status: 'unavailable' });
   await ask(db, { days: ['2099-09-15'], status: 'unavailable' });
   await assert.rejects(
     () => ask(db, { days: ['2099-09-16'], status: 'unavailable' }),
-    /2 days in a row at most/,
+    /2 days in any one week at most/,
   );
 });
 
@@ -305,7 +334,7 @@ test('a day that fills the gap between two marks makes a run of three', async ()
 
   await assert.rejects(
     () => ask(db, { days: ['2099-09-15'], status: 'unavailable' }),
-    /would make 3/,
+    /would have 3/,
   );
 });
 
@@ -442,4 +471,64 @@ test('the rota screen is where it is written from', () => {
   assert.match(view, /rota-who-more/);
   // And only for somebody who may change the rota.
   assert.match(view, /mayEdit \? h\('button\.rota-who-more'/);
+});
+
+// ---------------------------------------------------------------------------
+// The rule itself, and the screen's copy of it
+// ---------------------------------------------------------------------------
+
+test('the busiest week is Monday to Sunday, and says which week', () => {
+  // 2099-09-14 is a Monday.
+  assert.deepEqual(busiestWeek(['2099-09-14']), { week: '2099-09-14', days: 1 });
+  assert.deepEqual(busiestWeek(['2099-09-20']), { week: '2099-09-14', days: 1 },
+    'Sunday belongs to the week that began on the Monday');
+  assert.deepEqual(busiestWeek(['2099-09-21']), { week: '2099-09-21', days: 1 });
+
+  // Saturday and Sunday, then Monday and Tuesday: two in each.
+  assert.equal(busiestWeek(['2099-09-19', '2099-09-20', '2099-09-21', '2099-09-22']).days, 2);
+  // And four in one.
+  assert.deepEqual(
+    busiestWeek(['2099-09-14', '2099-09-15', '2099-09-17', '2099-09-20']),
+    { week: '2099-09-14', days: 4 },
+  );
+});
+
+test('it counts what is asked for together with what is already there', () => {
+  assert.equal(busiestWeek(['2099-09-16'], ['2099-09-14', '2099-09-15']).days, 3);
+  // A day named in both is one day, not two.
+  assert.equal(busiestWeek(['2099-09-14'], ['2099-09-14']).days, 1);
+});
+
+test('nothing at all is nought, not a crash', () => {
+  assert.deepEqual(busiestWeek([]), { week: null, days: 0 });
+  assert.deepEqual(busiestWeek([], []), { week: null, days: 0 });
+});
+
+test('where two weeks tie, the earlier one is named', () => {
+  // Otherwise the message would point at a different week on each save for no
+  // reason anybody reading it could see.
+  const out = busiestWeek(['2099-09-14', '2099-09-15', '2099-09-21', '2099-09-22']);
+  assert.deepEqual(out, { week: '2099-09-14', days: 2 });
+});
+
+test('the screen’s copy of the rule agrees with the server’s', () => {
+  // The browser never loads a worker module, so the rule is written out twice.
+  // This is what stops the two drifting: the screen would warn on a week the
+  // server allows, or worse, stay quiet on one it refuses.
+  const cases = [
+    [],
+    ['2099-09-14'],
+    ['2099-09-20'],
+    ['2099-09-14', '2099-09-15', '2099-09-16'],
+    ['2099-09-19', '2099-09-20', '2099-09-21', '2099-09-22'],
+    ['2099-09-14', '2099-09-21', '2099-09-28'],
+    ['2099-12-31', '2100-01-01'],
+  ];
+  for (const days of cases) {
+    assert.deepEqual(onScreen(days), busiestWeek(days), JSON.stringify(days));
+  }
+
+  // And the figure itself.
+  assert.equal(ON_SCREEN_MAX, MAX_UNAVAILABLE_DAYS);
+  assert.equal(MAX_UNAVAILABLE_DAYS, 2);
 });

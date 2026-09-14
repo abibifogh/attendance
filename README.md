@@ -1003,19 +1003,22 @@ it was approved; turning it down tells them that, with whatever reason was
 given. A planner writing availability on somebody's behalf is already the
 decision, so it goes straight in.
 
-**Two days, and no more.** *Create unavailability* on the staff screen takes a
-day or two: a christening on Saturday, a clinic appointment on Tuesday. A week
-is leave, and leave is approved by somebody, comes off a balance and leaves a
-record of who agreed to it. Marked as unavailability instead, the same week
-would be none of those things, which is how somebody ends up away for five days
-that nobody signed for. So the limit is not tidiness, it is the line between
-the two screens, and the third tick says so and sends them to *Ask for leave*.
-It is counted across the run rather than the request, because Monday saved now
-and Tuesday saved later is the same week arrived at in two presses. Days
-scattered about are left alone: three separate Sundays are three separate
-facts. Wanting to work is not being away, so *Would like to work* is none of
-the limit's business. The screen says it as the boxes are ticked and the server
-refuses it either way.
+**Two days in a week, and no more.** *Create unavailability* on the staff
+screen takes a day or two out of a week: a christening on Saturday, a clinic
+appointment on Tuesday. A week is leave, and leave is approved by somebody,
+comes off a balance and leaves a record of who agreed to it. Marked as
+unavailability instead, the same week would be none of those things, which is
+how somebody ends up away for five days that nobody signed for. So the limit is
+not tidiness, it is the line between the two screens, and the third tick in a
+week says so and sends them to *Ask for leave*. The week runs Monday to Sunday
+and is counted across the record rather than the request, because Monday saved
+now and Tuesday saved later is the same week arrived at in two presses. Two
+days in a row is the other half of the rule, because Saturday to Tuesday is
+only two days in each week and still four days away. Weeks apart are left
+alone: three Sundays in three different weeks are three separate facts. Wanting
+to work is not being away, so *Would like to work* is none of the limit's
+business. The screen says it as the boxes are ticked and the server refuses it
+either way.
 
 **Everybody's details in and out on one sheet.** The staff import already
 created people and set the register; what it did not carry was most of what a

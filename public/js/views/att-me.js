@@ -4,14 +4,10 @@ import { fmtDay, fmtDayShort, fmtNum, h, mount, shiftDay, toast } from '../util.
 import { card, emptyState } from './components.js';
 import { whatToRemember } from './dept-view.js';
 import { installNudge } from './install-help.js';
+import { MAX_UNAVAILABLE_DAYS, busiestWeek } from '../availability-rules.js';
 import {
   asHours, field, formDialog, lateBy, shiftColour, shiftHours, shiftMinutes, showSheet,
 } from './att-shared.js';
-
-// How many days somebody can say they cannot work in one go. Kept in step with
-// the same figure in src/routes/me.js, which is the one that actually holds:
-// this one is here so the screen can say it before the server has to.
-const MAX_UNAVAILABLE_DAYS = 2;
 
 /**
  * My shifts.
@@ -648,11 +644,11 @@ function weekdayOf(day) {
  * It is the fact the planner needs before they pick a shift, put in by the one
  * person who actually knows it.
  *
- * Two days at a time, because that is the size of thing this is for: a
+ * Two days in any one week, because that is the size of thing this is for: a
  * christening on Saturday, a clinic appointment on Tuesday. A week off is
  * leave, and asking for it here would be asking for a week away without any
- * of it being approved, counted or taken off a balance. So the third tick
- * says so and sends them next door.
+ * of it being approved, counted or taken off a balance. So the third tick in
+ * the same week says so and sends them next door.
  */
 async function editMyAvailability(data, reload) {
   const ahead = data.days.filter((d) => d.day >= data.today);
@@ -667,14 +663,17 @@ async function editMyAvailability(data, reload) {
   const tally = h('p.muted', { style: { fontSize: '.85rem', minHeight: '1.2rem' } });
   const ticks = [];
   const cannotWork = () => status.value !== 'preferred';
-  const count = () => ticks.filter((t) => t.checked).length;
+  const picked = () => ticks.filter((t) => t.checked).map((t) => t.value);
 
   const paint = () => {
-    const n = count();
-    const over = cannotWork() && n > MAX_UNAVAILABLE_DAYS;
+    const days = picked();
+    const n = days.length;
+    const worst = busiestWeek(days);
+    const over = cannotWork() && worst.days > MAX_UNAVAILABLE_DAYS;
     tally.textContent = over
-      ? `${n} days ticked. Unavailability is for a day or two. For anything longer, `
-        + 'close this and use Ask for leave instead.'
+      ? `${worst.days} days ticked in the week of ${fmtDayShort(worst.week)}. `
+        + 'Unavailability is for a day or two in a week. For a whole week off, close this '
+        + 'and use Ask for leave instead.'
       : n
         ? `${n} day${n === 1 ? '' : 's'} ticked.`
         : '';
@@ -702,8 +701,8 @@ async function editMyAvailability(data, reload) {
     body: h('div',
       h('p.muted', { style: { fontSize: '.85rem' } },
         'This is not leave. Nothing is approved and no days are spent. It shows in the cell '
-        + 'so whoever builds the rota sees it before they put you on something. Two days at a '
-        + 'time. For longer than that, ask for leave.'),
+        + 'so whoever builds the rota sees it before they put you on something. Two days in '
+        + 'any one week. For a whole week off, ask for leave.'),
       dayList,
       tally,
       field('Kind', status),
@@ -716,10 +715,15 @@ async function editMyAvailability(data, reload) {
     onSubmit: async (form) => {
       const days = form.getAll('day');
       if (!days.length) throw new Error('Tick at least one day.');
-      if (form.get('status') !== 'preferred' && days.length > MAX_UNAVAILABLE_DAYS) {
-        throw new Error(
-          `${MAX_UNAVAILABLE_DAYS} days at most. For longer than that, ask for leave instead.`,
-        );
+      if (form.get('status') !== 'preferred') {
+        const worst = busiestWeek(days);
+        if (worst.days > MAX_UNAVAILABLE_DAYS) {
+          throw new Error(
+            `${MAX_UNAVAILABLE_DAYS} days in any one week at most, and the week of `
+            + `${fmtDayShort(worst.week)} would have ${worst.days}. For longer than that, ask `
+            + 'for leave instead.',
+          );
+        }
       }
       return api.mySetAvailability({
         days,
