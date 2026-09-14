@@ -6590,3 +6590,116 @@ tr:hover .rota-who-more,
 .topbar-account .face { --face-size: 1.7rem; }
 .topbar-account .face-letters { font-size: .62rem; }
 .topbar-account:has(.face) { padding: .2rem; border-radius: 50%; }
+
+/* ===========================================================================
+   A first week
+   ---------------------------------------------------------------------------
+   The one screen in this app that opens with a welcome rather than a figure.
+   Somebody's first morning is not the moment for a progress bar, so the
+   greeting and the words from the owner come first and the checklist follows.
+   =========================================================================== */
+.ob-hero { margin-bottom: 1.2rem; }
+.ob-hero-eyebrow {
+  font-size: .74rem; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--brand-mark);
+}
+.ob-hero-name {
+  margin: .2rem 0 0; font-size: 2rem; line-height: 1.1;
+  letter-spacing: -.02em; text-wrap: balance;
+}
+.ob-hero-line { margin: .45rem 0 0; font-size: 1.05rem; color: var(--text-dim); }
+
+.ob-welcomes { display: grid; gap: .8rem; margin-bottom: 1.2rem; }
+.ob-welcome {
+  margin: 0; padding: 1.1rem 1.2rem;
+  border: 1px solid var(--border); border-left: 3px solid var(--brand-mark);
+  border-radius: var(--radius); background: var(--surface);
+}
+.ob-welcome-words p {
+  margin: 0 0 .7rem; font-size: 1rem; line-height: 1.65; max-width: 40rem;
+}
+.ob-welcome-words p:last-child { margin-bottom: 0; }
+.ob-welcome-who {
+  display: flex; align-items: center; gap: .7rem;
+  margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--border);
+}
+.ob-welcome-name { font-weight: 650; }
+.ob-welcome-role { font-size: .85rem; }
+
+/* How far somebody has got. */
+.ob-bar {
+  height: 8px; border-radius: 99px; background: var(--surface-3);
+  overflow: hidden; margin: .2rem 0 .9rem;
+}
+.ob-bar-fill {
+  height: 100%; border-radius: 99px; background: var(--good);
+  transition: width .3s ease;
+}
+
+/* The checklist. */
+.ob-steps { display: grid; gap: .1rem; }
+.ob-step {
+  display: flex; align-items: flex-start; gap: .8rem;
+  padding: .75rem .1rem; border-bottom: 1px solid var(--border);
+}
+.ob-step:last-child { border-bottom: 0; }
+.ob-tick {
+  flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: .78rem; font-weight: 700;
+  background: var(--surface-3); color: var(--text-dim);
+}
+.ob-done .ob-tick { background: var(--good); color: #fff; }
+.ob-step-text { flex: 1; min-width: 0; }
+.ob-step-title { font-weight: 650; line-height: 1.35; }
+.ob-done .ob-step-title { color: var(--text-dim); }
+.ob-step-detail { margin: .25rem 0 0; font-size: .88rem; line-height: 1.55; }
+.ob-step-how { margin: .25rem 0 0; font-size: .82rem; }
+.ob-step > .btn-sm { flex: none; margin-top: .1rem; }
+
+/* The same rows, with a box to tick, on the office side. */
+.ob-tickable { cursor: pointer; }
+.ob-tickable input[type="checkbox"] {
+  width: 1.15rem; height: 1.15rem; flex: none; margin: .15rem 0 0;
+}
+.ob-tickable input:disabled { cursor: not-allowed; }
+
+/* Who is being onboarded. */
+.ob-people { display: grid; gap: .1rem; }
+.ob-person {
+  width: 100%; display: flex; align-items: center; gap: .8rem;
+  padding: .7rem .1rem; border: 0; border-bottom: 1px solid var(--border);
+  background: transparent; cursor: pointer; text-align: left;
+  justify-content: flex-start; font: inherit; color: var(--text); border-radius: 0;
+}
+.ob-person:last-child { border-bottom: 0; }
+.ob-person:hover { background: var(--surface-2); }
+.ob-person-text { flex: 1; min-width: 0; }
+.ob-person-name { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; font-weight: 650; }
+.ob-person-sub { font-size: .82rem; }
+.ob-person-count {
+  flex: none; font-variant-numeric: tabular-nums; font-size: .85rem; color: var(--text-dim);
+}
+.ob-mini-bar {
+  height: 4px; border-radius: 99px; background: var(--surface-3);
+  overflow: hidden; margin-top: .4rem; max-width: 16rem;
+}
+.ob-mini-fill { height: 100%; border-radius: 99px; background: var(--good); }
+
+/* The steps themselves, as the office writes them. */
+.ob-rows { display: grid; gap: .1rem; }
+.ob-row {
+  display: flex; gap: .6rem 1rem; align-items: center; flex-wrap: wrap;
+  padding: .6rem .1rem; border-bottom: 1px solid var(--border);
+}
+.ob-row:last-child { border-bottom: 0; }
+.ob-row > div:first-child { flex: 1; min-width: 14rem; }
+.ob-row-title { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; font-weight: 650; }
+.ob-row-sub { font-size: .82rem; }
+
+@media (max-width: 640px) {
+  .ob-hero-name { font-size: 1.6rem; }
+  .ob-row .btn-row { width: 100%; }
+  .ob-step > .btn-sm { width: 100%; margin-top: .4rem; }
+  .ob-step { flex-wrap: wrap; }
+}

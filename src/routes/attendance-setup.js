@@ -11,6 +11,7 @@ import { EARLIEST } from '../lib/tax-tables.js';
 import { ghanaHolidays, toMinutes } from '../lib/attendance.js';
 import { listeningHostSettings } from '../lib/push-events.js';
 import { claimOrphans, hashDeviceToken, recompute } from '../lib/attendance-ingest.js';
+import { beginFor } from './onboarding.js';
 import { settleLeaving } from '../lib/leaving.js';
 import { getPepper } from '../lib/auth.js';
 import { asBytes, fromBase64 } from '../lib/files.js';
@@ -236,6 +237,12 @@ export async function createStaff(ctx) {
   if (claimed.claimed) {
     await recompute(ctx.db, { staffIds: [row.id], from: claimed.from, to: claimed.to });
   }
+  // A first week, for somebody who has just been given one. Silent when
+  // onboarding is switched off, and silent on failure: the new hire nobody set
+  // up is the one who is missed, and a checklist failing must never be the
+  // reason somebody could not be added to the rota.
+  await beginFor(ctx.db, row.id, `${ctx.session.user.name} (added to the staff list)`);
+
   await audit(ctx, 'attendance.staff_create', row.id, { employeeNo, name, onClock });
 
   return json({ ok: true, id: row.id, claimedPunches: claimed.claimed });
@@ -1156,6 +1163,10 @@ const CLEARABLE = new Set([
   // Taking a maps key off has to be possible, and blank is the way anybody
   // would try to do it.
   'maps_key', 'maps_region',
+  // And the welcomes: a property that writes one and then thinks better of it
+  // has to be able to take it back off.
+  'ob_owner_name', 'ob_owner_role', 'ob_owner_words',
+  'ob_md_name', 'ob_md_role', 'ob_md_words',
 ]);
 
 const SETTINGS = new Map([
@@ -1216,6 +1227,20 @@ const SETTINGS = new Map([
   // worth opening: an empty page on every phone teaches people that the app
   // has nothing to say.
   ['handbook_on', (v) => (v === '1' || v === 'true' ? '1' : '0')],
+
+  // A first week. Off until somebody has written the welcome and looked at the
+  // checklist: a new hire landed on an empty list learns on their first
+  // morning that the app is not kept up, which is the opposite of the point.
+  ['onboarding_on', (v) => (v === '1' || v === 'true' ? '1' : '0')],
+  // The two welcomes. Blank words mean that card is not drawn at all, so a
+  // property with an owner and no managing director gets one rather than one
+  // and an empty space.
+  ['ob_owner_name', (v) => str(v, 'Owner name', { max: 120, fallback: '' })],
+  ['ob_owner_role', (v) => str(v, 'Owner title', { max: 120, fallback: '' })],
+  ['ob_owner_words', (v) => str(v, 'What the owner says', { max: 3000, fallback: '' })],
+  ['ob_md_name', (v) => str(v, 'Managing director name', { max: 120, fallback: '' })],
+  ['ob_md_role', (v) => str(v, 'Managing director title', { max: 120, fallback: '' })],
+  ['ob_md_words', (v) => str(v, 'What the managing director says', { max: 3000, fallback: '' })],
 
   // Swaps. Off until the property asks for it, for the same reason as the
   // directory: it changes what staff can do to the rota, and a rota is the one

@@ -294,6 +294,17 @@ export const api = {
   handbookInstall: () => request('/api/handbook/install', { method: 'POST', body: {} }),
   handbookWho: (id) => request(`/api/handbook/${id}/who`),
 
+  // A first week.
+  myOnboarding: () => request('/api/onboarding/mine'),
+  onboardings: () => request('/api/onboarding'),
+  onboardingFor: (staffId) => request(`/api/onboarding/staff/${staffId}`),
+  onboardingStart: (staffId) => request(`/api/onboarding/staff/${staffId}/start`, { method: 'POST', body: {} }),
+  onboardingFinish: (staffId) => request(`/api/onboarding/staff/${staffId}/finish`, { method: 'POST', body: {} }),
+  onboardingTick: (stepId, body) => request(`/api/onboarding/step/${stepId}/tick`, { method: 'POST', body }),
+  onboardingSaveStep: (body) => request('/api/onboarding/step', { method: 'POST', body }),
+  onboardingRemoveStep: (id) => request(`/api/onboarding/step/${id}`, { method: 'DELETE' }),
+  onboardingInstall: () => request('/api/onboarding/standard', { method: 'POST', body: {} }),
+
   // Giving up a shift, and taking one.
   swaps: () => request('/api/swaps'),
   swapsOfferable: () => request('/api/swaps/offerable'),

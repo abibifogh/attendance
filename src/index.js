@@ -13,6 +13,7 @@ import {
 import * as att from './routes/attendance.js';
 import * as suggest from './routes/suggest.js';
 import * as mine from './routes/me.js';
+import * as onboarding from './routes/onboarding.js';
 import * as directory from './routes/directory.js';
 import * as swaps from './routes/swaps.js';
 import * as handbook from './routes/handbook.js';
@@ -198,6 +199,19 @@ export const ROUTES = [
   // rest of their week.
   // The handbook. Everybody signed in may read it, because a rule nobody can
   // find is not a rule; writing it is a personnel job and sits behind theirs.
+  // ------------------------------------------------------------ a first week --
+  // Their own, so no permission beyond being signed in: a new hire holds
+  // nothing at all and this is the first screen they are sent to.
+  ['GET', '/api/onboarding/mine', null, onboarding.myOnboarding],
+  ['GET', '/api/onboarding', ['hr_view', 'hr_manage'], onboarding.onboardings],
+  ['GET', '/api/onboarding/staff/:id', ['hr_view', 'hr_manage'], onboarding.onboardingFor],
+  ['POST', '/api/onboarding/staff/:id/start', 'hr_manage', onboarding.startOnboarding],
+  ['POST', '/api/onboarding/staff/:id/finish', 'hr_manage', onboarding.finishOnboarding],
+  ['POST', '/api/onboarding/step/:id/tick', 'hr_manage', onboarding.tickStep],
+  ['POST', '/api/onboarding/step', 'hr_manage', onboarding.saveStep],
+  ['DELETE', '/api/onboarding/step/:id', 'hr_manage', onboarding.removeStep],
+  ['POST', '/api/onboarding/standard', 'hr_manage', onboarding.installStandard],
+
   ['GET', '/api/handbook', null, handbook.readHandbook],
   ['POST', '/api/handbook/:id/ack', null, handbook.acknowledge],
   ['POST', '/api/handbook', 'hr_manage', handbook.saveChapter],
@@ -1170,6 +1184,11 @@ async function me(ctx) {
     ).bind(staffId).first().catch(() => null)
     : null;
 
+  // Whether the app should open on their first week. One indexed lookup: a row
+  // in ob_state that has not been finished, and nothing at all for everybody
+  // else, which is what keeps the people already on the payroll off it.
+  const startingOut = await onboarding.landsOnOnboarding(ctx.db, staffId);
+
   return json({
     authenticated: true,
     role: session.user.role,
@@ -1177,6 +1196,8 @@ async function me(ctx) {
     // Their own face, for the corner of the header.
     hasPhoto: Boolean(photo),
     photoAt: photo?.uploaded_at ?? null,
+    // A new hire lands here rather than on a rota that has nothing on it yet.
+    startingOut,
     email: session.user.email ?? null,
     userId: session.user.id,
     isRecovery: Boolean(session.user.isRecovery),

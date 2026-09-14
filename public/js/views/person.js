@@ -63,6 +63,20 @@ export async function renderPerson(params) {
         h('button.btn-sm', { onclick: () => navigate('people') }, '‹ Everybody'),
         h('button.btn-sm', { onclick: () => navigate('att-staff', { id }) }, 'Attendance →'),
         data.canManage
+          ? h('button.btn-sm', {
+            title: 'The welcome and the checklist a new hire is landed on',
+            onclick: async () => {
+              if (!window.confirm(`Start a first week for ${data.person.name}? They will be `
+                + 'landed on the welcome and the checklist next time they sign in, until it is '
+                + 'done.')) return;
+              try {
+                await api.onboardingStart(id);
+                toast('Started. It is under First weeks.', 'good');
+              } catch (err) { toast(err.message || 'That did not work.', 'bad'); }
+            },
+          }, 'Start a first week')
+          : null,
+        data.canManage
           ? h('button.btn.btn-primary', { onclick: () => sendLink(data, reload) }, 'Send them a link')
           : null,
       ),

@@ -35,6 +35,7 @@ import { renderPeople } from './views/people.js';
 import { renderRec } from './views/rec.js';
 import { renderRecCandidate } from './views/rec-candidate.js';
 import { renderPerson } from './views/person.js';
+import { renderOnboarding, renderOnboardingDesk } from './views/onboarding.js';
 import { renderPeopleTemplates } from './views/people-templates.js';
 import { renderPeopleForm } from './views/people-form.js';
 import { renderGuide } from './views/guide.js';
@@ -56,6 +57,9 @@ export const state = {
   // when: a browser holds a face for a day, and a new one has to get past it.
   hasPhoto: false,
   photoAt: null,
+  // Somebody with a first week still open. Decides where the app lands them
+  // and whether the checklist is in their menu at all.
+  startingOut: false,
   // Signed in on a PIN shorter than the rule. Nothing else in the app draws
   // while this is set, and it stays set until they choose a longer one.
   mustChangePin: false,
@@ -94,6 +98,11 @@ export const state = {
 const GROUPS = [
   // Their own, and nobody else's. Two links for a member of staff, who holds
   // nothing else and for whom this is the whole app.
+  // A new hire's own first week, above their own shifts because on the morning
+  // it is there it is the more useful of the two: they have no shifts yet. It
+  // leaves the menu the day it is finished, which is the whole difference
+  // between a checklist and a screen.
+  { key: 'first-week', label: 'My first week', section: 'Mine' },
   { key: 'me', label: 'My shifts', section: 'Mine' },
   { key: 'my-pay', label: 'My pay', section: 'Mine' },
   // What is happening, and what is planned. The two screens somebody with a
@@ -115,6 +124,8 @@ const GROUPS = [
   // The rules, beside the numbers. Everybody signed in can read both, which is
   // why neither of them sits under People and its permission.
   { key: 'handbook', label: 'Handbook', section: 'The people' },
+  // Everybody's first week, for whoever runs them.
+  { key: 'first-weeks', label: 'First weeks', section: 'The people' },
   // The tail. No heading over these two: one is opened twice a year and the
   // other is the way out of being stuck, and a section called "everything
   // else" is a section that says nothing.
@@ -191,6 +202,15 @@ const ROUTES = [
   { group: 'directory', tab: 'Directory', path: 'directory', label: 'Directory', permission: null, render: renderDirectory, live: ['people'] },
   { group: 'handbook', tab: 'Handbook', path: 'handbook', label: 'Handbook', permission: null, render: renderHandbook, live: ['people'] },
 
+  // A first week. The new hire's own is hidden from the menu once it is over,
+  // and the office one sits with the rest of the people screens.
+  // `only` is the second half of the question `permission` asks. A new hire
+  // holds no permission at all, so nothing but the session itself can say
+  // whether this screen is theirs, and it stops being theirs the day the list
+  // is done rather than staying in the menu for the next two years.
+  { mine: true, group: 'first-week', tab: 'My first week', path: 'onboarding', label: 'My first week', permission: null, only: () => state.startingOut, render: renderOnboarding, live: ['people'] },
+  { group: 'first-weeks', tab: 'First weeks', path: 'onboarding-desk', label: 'First weeks', permission: ['hr_view', 'hr_manage'], render: renderOnboardingDesk, live: ['people'] },
+
   { group: 'setup', tab: 'Setup', path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup, live: ['admin', 'rota', 'attendance'] },
   { group: 'setup', tab: 'Notifications', path: 'notifications', label: 'Notifications', permission: 'users', render: renderNotifications, live: ['admin'] },
   { group: 'setup', tab: 'Users & data', path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin, live: ['admin'] },
@@ -256,7 +276,10 @@ function nothingElseToShow() {
 }
 
 function allowed(route) {
-  return Boolean(route) && can(route.permission);
+  if (!route || !can(route.permission)) return false;
+  // A screen can also be closed for a reason that is not a permission: a first
+  // week belongs to somebody having one.
+  return route.only ? Boolean(route.only()) : true;
 }
 
 function currentRoute() {
@@ -273,6 +296,14 @@ function currentRoute() {
  * they just cleared. So the last resort is the first route they can open.
  */
 function defaultRoute() {
+  // A NEW HIRE LANDS ON THEIR FIRST WEEK, whatever else they can open. It is
+  // the one morning where the most useful screen is not the one with today's
+  // work on it: they have no shifts yet, and what they need is the welcome and
+  // the list. It stops being the landing the day the list is done.
+  if (state.startingOut && allowed(ROUTES.find((r) => r.path === 'onboarding'))) {
+    return 'onboarding';
+  }
+
   const preferred = ['att-today', 'att-overview', 'att-rota', 'signoff', 'att-leave', 'people',
     'letters', 'att-setup', 'notifications', 'admin',
     // A member of staff holds none of the above, and their own week is the
@@ -502,6 +533,7 @@ function adoptSession(me) {
   state.isRecovery = Boolean(me.isRecovery);
   state.hasPhoto = Boolean(me.hasPhoto);
   state.photoAt = me.photoAt ?? null;
+  state.startingOut = Boolean(me.startingOut);
   state.hasPin = Boolean(me.hasPin);
   state.hasPassword = Boolean(me.hasPassword);
   state.signedInWith = me.signedInWith ?? 'pin';
@@ -1037,6 +1069,7 @@ function resetSession() {
   state.isRecovery = false;
   state.hasPhoto = false;
   state.photoAt = null;
+  state.startingOut = false;
   state.hasPin = false;
   state.hasPassword = false;
   state.signedInWith = 'pin';

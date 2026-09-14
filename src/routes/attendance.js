@@ -2443,6 +2443,9 @@ const SCREEN_SWITCHES = new Set([
   'handbook_on',
   'swaps_on', 'swap_notice_hours', 'swap_approval', 'swap_monthly_cap',
   'swap_cross_department',
+  'onboarding_on',
+  'ob_owner_name', 'ob_owner_role', 'ob_owner_words',
+  'ob_md_name', 'ob_md_role', 'ob_md_words',
 ]);
 
 /** A handful of settings, read as one round trip. */

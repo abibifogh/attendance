@@ -30,6 +30,58 @@ Runs entirely on Cloudflare: a Worker serves both the app and the API, with a D1
 
 ---
 
+## A first week
+
+A new hire's first day at a hotel is a person being walked round by whoever
+happens to be free, told six things they will not remember, and handed a
+uniform. What they signed, what they were shown and what they were told is
+afterwards a matter of whose memory you ask, which is exactly the question that
+matters when something goes wrong in month three.
+
+**They land on a welcome, not on an empty rota.** Signing in for the first time
+opens **My first week**: a greeting, a word from the owner and a word from the
+managing director in their own words, and then the checklist. It is the one
+morning where the most useful screen is not the one with today's work on it,
+because they have no shifts yet. The link leaves the menu the day the list is
+done, which is the whole difference between a checklist and a screen.
+
+**The checklist orchestrates, it does not duplicate.** Almost everything a new
+hire has to do already exists in this app, so a step either names where its
+proof lives or is ticked by a person:
+
+| Step | How it is answered |
+|---|---|
+| Send us your details | Ticks itself when the office accepts their particulars |
+| Get your documents on file | Ticks itself when every document the file requires is held and unexpired |
+| Read and sign your contract | Ticks itself when a contract issued to them comes back signed |
+| Read the handbook and sign what it asks | Ticks itself when nothing in the handbook is waiting on them |
+| Everything else | A person ticks it, and their name goes against it |
+
+Nothing is written down twice, so the list cannot come to disagree with the
+thing it reports on. A contract that is not signed **cannot** be ticked off by
+hand, however much anybody would like to close the list — the route refuses it.
+
+**Sixteen standard steps come with it**, written for a hotel rather than adapted
+from an office: the walk round front and back of house, the fire exits and the
+assembly point, the face on the clocking terminal, the uniform and the badge,
+the keys, a whole shift alongside somebody who knows it, how the pay works, and
+a sit-down again after a month. The kitchen's health certificate is aimed at the
+food departments and is on nobody else's list. They install as ordinary steps
+and are the property's own from that moment: edit one and loading the set again
+never touches it.
+
+**A row is the whole of who is onboarding.** Nobody already on the payroll is
+dragged through a first week the morning this ships. One begins on its own for
+anybody added to the staff list while onboarding is on, and by hand from
+**Start a first week** on somebody's record. It closes itself the moment the
+last step is done, and the office can settle somebody in early — a first week
+that will not close because a health certificate is still with the printer is a
+first week that follows somebody into their second year.
+
+Off until **Setup → Rules** turns it on, where the two welcomes are also
+written. A welcome left blank is not shown at all, so a property with an owner
+and no managing director gets one card rather than one and an empty space.
+
 ## The handbook
 
 A hotel's rules live in three places: a Word file on somebody's laptop, a

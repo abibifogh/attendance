@@ -2424,6 +2424,54 @@ async function rulesTab(reload) {
           + 'there worth opening.'),
       ),
 
+      card('A first week for new hires', { note: 'Off by default', wide: true },
+        h('div.form-row',
+          field('The welcome and the checklist', h('select', { name: 'onboarding_on' },
+            h('option', { value: '0', selected: (s.onboarding_on ?? '0') !== '1' },
+              'Off \u2014 nobody gets one'),
+            h('option', { value: '1', selected: (s.onboarding_on ?? '0') === '1' },
+              'On \u2014 anybody added from now on gets one'))),
+        ),
+        h('p.muted.rules-note',
+          'A new hire signing in for the first time lands on a welcome and a checklist rather '
+          + 'than on a rota with nothing on it yet. The list is written under First weeks, and '
+          + 'the parts of it that already live elsewhere \u2014 the contract, the handbook, the '
+          + 'documents \u2014 tick themselves off as they are done.'),
+        h('p.muted.rules-note',
+          'Turning it on changes nothing for anybody already here. A first week begins for '
+          + 'whoever is added to the staff list after this, and for anybody the office starts '
+          + 'one for by hand.'),
+
+        h('div.form-row',
+          field('Who the first welcome is from', h('input', {
+            type: 'text', name: 'ob_owner_name', maxlength: 120,
+            value: s.ob_owner_name ?? '', placeholder: 'Their name',
+          })),
+          field('And their title', h('input', {
+            type: 'text', name: 'ob_owner_role', maxlength: 120,
+            value: s.ob_owner_role ?? 'Owner',
+          }))),
+        field('What they say', h('textarea', {
+          name: 'ob_owner_words', rows: 5, maxlength: 3000,
+          style: { width: '100%', fontFamily: 'inherit' },
+        }, s.ob_owner_words ?? ''),
+        'Left blank, this welcome is not shown at all. A blank line starts a new paragraph.'),
+
+        h('div.form-row',
+          field('Who the second is from', h('input', {
+            type: 'text', name: 'ob_md_name', maxlength: 120,
+            value: s.ob_md_name ?? '', placeholder: 'Their name',
+          })),
+          field('And their title', h('input', {
+            type: 'text', name: 'ob_md_role', maxlength: 120,
+            value: s.ob_md_role ?? 'Managing Director',
+          }))),
+        field('What they say', h('textarea', {
+          name: 'ob_md_words', rows: 5, maxlength: 3000,
+          style: { width: '100%', fontFamily: 'inherit' },
+        }, s.ob_md_words ?? '')),
+      ),
+
       card('Swapping shifts', { note: 'Off by default', wide: true },
         h('div.form-row',
           h('label.field',
