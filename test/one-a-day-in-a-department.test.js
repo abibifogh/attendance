@@ -151,6 +151,31 @@ test('changing your own mind about a day you already have is not being second', 
   }, asStaff(0)));
 });
 
+test('a day already theirs comes back through even when a colleague has it too', async () => {
+  const { db } = setup();
+  await cannotWork(db, 0, [DAY]);
+  // A planner put Esi down for the same day, which the test below this one
+  // says they are allowed to do. Ama's Thursday is still Ama's, so sending it
+  // again alongside a new day is not asking for it a second time. The staff
+  // screen used to send every day already marked along with whatever was being
+  // asked for, and this is the refusal that came back: told somebody else had
+  // the day, about the day she was holding.
+  await setAvailability(ctx(db, {
+    staffId: 2, days: [DAY], status: 'unavailable', note: 'Agreed at the meeting',
+  }, PLANNER));
+  await cannotWork(db, 0, [DAY, '2099-09-17']);
+});
+
+test('the day that is new in that pair is still held to the rule', async () => {
+  const { db } = setup();
+  await cannotWork(db, 0, [DAY]);
+  await cannotWork(db, 1, ['2099-09-17']);
+  // Ama holds the 10th and Esi asked first for the 17th. Sending both refuses
+  // the 17th and says so, rather than the 10th she already has.
+  const said = await cannotWork(db, 0, [DAY, '2099-09-17']).catch((err) => err.message);
+  assert.match(said, /Thursday 17 September/);
+});
+
 test('a day somebody was turned down for is free again', async () => {
   const { db, raw } = setup();
   await cannotWork(db, 0);

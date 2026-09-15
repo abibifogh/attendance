@@ -197,6 +197,30 @@ test('their own days do not count against them', async () => {
   assert.equal(out.ok, true);
 });
 
+test('a day already theirs is not counted against them when the day is full', async () => {
+  const { db, raw } = setup(1);
+  rota(raw, 1, DAY);
+  await cannotWork(db, 0);
+  // A planner put somebody else down for the same day, which fills it at a
+  // ceiling of one. The day is still on this person's own record, so sending
+  // it again alongside a new day is not another person arriving on it.
+  raw.prepare(
+    `INSERT INTO att_availability (staff_id, day, status, set_by, decision)
+     VALUES (2, ?, 'unavailable', 'Yaa (planner)', 'approved')`,
+  ).run(DAY);
+  const out = await (await cannotWork(db, 0, [DAY, '2099-09-18'])).json();
+  assert.equal(out.ok, true);
+});
+
+test('the day that is new in that pair still meets the ceiling', async () => {
+  const { db, raw } = setup(1);
+  rota(raw, 1, DAY);
+  await cannotWork(db, 0);
+  await cannotWork(db, 1, ['2099-09-18']);
+  const said = await cannotWork(db, 0, [DAY, '2099-09-18']).catch((err) => err.message);
+  assert.match(said, /18 September/);
+});
+
 test('leave somebody withdrew or was refused frees the day again', async () => {
   const { db, raw } = setup(1);
   rota(raw, 1, DAY); rota(raw, 2, DAY);

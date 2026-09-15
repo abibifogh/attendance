@@ -362,6 +362,10 @@ export const GUIDE = [
         + 'this time. Monday saved now and Tuesday saved later is still the same week, and a '
         + 'third day joined onto them is refused the same way. The run matters too: Saturday '
         + 'to Tuesday is only two days in each week and still four days away.' },
+      { note: 'The boxes start empty every time. A day you have already marked says so '
+        + 'beside the date, and what became of it. Tick it again only if it has changed: '
+        + 'asking for a day a second time puts it back to waiting, even if somebody had '
+        + 'already approved it.' },
       { warn: 'And one person from a department a day. If somebody else in your department has '
         + 'already asked about that day, yours is refused and the screen says so. Two of four '
         + 'housekeepers on the same Thursday leaves the floor at half strength, and neither of '

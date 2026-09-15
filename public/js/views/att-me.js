@@ -680,17 +680,35 @@ async function editMyAvailability(data, reload) {
     tally.classList.toggle('bad-text', over);
   };
 
+  // NOTHING IS TICKED TO BEGIN WITH. The boxes used to open ticked on every
+  // day already marked, which read as "this is what I am asking for" and was
+  // not: unticking one did nothing, and saving sent those days again. So a day
+  // marked in one week came along to a request about another, went back to
+  // waiting after somebody had already approved it, and was weighed against
+  // the department rule a second time. The dialog is called Create
+  // unavailability, so it starts at nothing and says what is already there.
+  // A day turned down is deleted rather than kept as a no, so there are only
+  // ever two answers to report on one that is still here.
+  const already = (d) => {
+    if (!d.availability) return null;
+    const what = d.availability.status === 'preferred' ? 'asked to work' : 'cannot work';
+    return `${what}, ${d.availability.decision === 'approved' ? 'approved' : 'waiting'}`;
+  };
+
   const dayList = h('div.avail-days', ahead.map((d) => {
     const tick = h('input', {
       type: 'checkbox', name: 'day', value: d.day,
-      checked: d.availability?.status === 'unavailable',
       onchange: paint,
     });
     ticks.push(tick);
+    const said = already(d);
     return h('label.tickline', tick,
       h('span', fmtDayShort(d.day),
-        d.shift ? h('small.muted', ` (on ${d.shift.name})`) : null));
+        d.shift ? h('small.muted', ` (on ${d.shift.name})`) : null,
+        said ? h('small.muted', ` \u00b7 ${said}`) : null));
   }));
+
+  const anyAlready = ahead.some((d) => already(d));
 
   status.onchange = paint;
   paint();
@@ -704,6 +722,11 @@ async function editMyAvailability(data, reload) {
         + 'so whoever builds the rota sees it before they put you on something. Two days in '
         + 'any one week. For a whole week off, ask for leave.'),
       dayList,
+      anyAlready
+        ? h('p.muted', { style: { fontSize: '.8rem' } },
+          'Days you have already marked say so beside the date. Ticking one asks for it '
+          + 'again, which puts it back to waiting, so leave it alone unless it has changed.')
+        : null,
       tally,
       field('Kind', status),
       h('div.field-row',

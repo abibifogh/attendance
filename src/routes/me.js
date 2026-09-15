@@ -336,6 +336,9 @@ export async function myWeek(ctx) {
         ? {
           status: avail.status, note: avail.note ?? null,
           from: avail.from_time ?? null, to: avail.to_time ?? null,
+          // What became of it. The staff screen needs it to say which of their
+          // own marks is still waiting on somebody and which one is settled.
+          decision: avail.decision ?? 'waiting',
         }
         : null,
       // How the day came out, for days behind them only. Deliberately without
@@ -973,8 +976,15 @@ export async function setMyAvailability(ctx) {
     // the record as well would have a re-save of the same two days read as a
     // run of two, which it is, and a re-save of one day read as one. Removing
     // them keeps that honest either way.
-    const standing = (held.results ?? [])
-      .map((r) => r.day).filter((d) => !days.includes(d));
+    const heldDays = new Set((held.results ?? []).map((r) => r.day));
+    const standing = [...heldDays].filter((d) => !days.includes(d));
+
+    // A DAY THEY ALREADY HOLD IS NOT A FRESH CLAIM ON IT. The two rules below
+    // are about a day being taken twice, and a day already on this person's
+    // own record was taken by them when they first asked. Re-sending it, which
+    // the staff screen used to do on its own, had them refused for the very
+    // day they were holding. So the checks look at what is new here.
+    const fresh = days.filter((d) => !heldDays.has(d));
 
     // TWO DAYS IN ANY ONE WEEK. Scattered days across a month are scattered
     // days: four separate Wednesdays are four separate facts and empty no
@@ -1003,27 +1013,31 @@ export async function setMyAvailability(ctx) {
     // unavailability empties the rota exactly as much as a day off asked for
     // as leave, so a property that can spare three people can spare three
     // people however they went about it.
-    const cap = await awayCap(ctx.db);
-    const sorted = [...days].sort();
-    const full = firstDayFull(
-      days,
-      await whoIsAway(ctx.db, {
-        from: sorted[0], to: sorted[sorted.length - 1], exceptStaffId: staff.id,
-      }),
-      cap,
-    );
-    if (full) throw badRequest(dayFullMessage(full, cap));
+    const sorted = [...fresh].sort();
+    if (sorted.length) {
+      const cap = await awayCap(ctx.db);
+      const full = firstDayFull(
+        fresh,
+        await whoIsAway(ctx.db, {
+          from: sorted[0], to: sorted[sorted.length - 1], exceptStaffId: staff.id,
+        }),
+        cap,
+      );
+      if (full) throw badRequest(dayFullMessage(full, cap));
+    }
 
     // And one a day per department, first asked. The ceiling above is about
     // the whole property; two of the four housekeepers picking the same
     // Thursday leaves the floor at half strength whatever the rest of the
     // place is doing, and neither of them can see the other's request.
-    const taken = firstDayTaken(days, await daysTakenInDepartment(ctx.db, {
-      department: staff.department,
-      days,
-      exceptStaffId: staff.id,
-    }));
-    if (taken) throw badRequest(departmentTakenMessage(taken, staff.department));
+    if (fresh.length) {
+      const taken = firstDayTaken(fresh, await daysTakenInDepartment(ctx.db, {
+        department: staff.department,
+        days: fresh,
+        exceptStaffId: staff.id,
+      }));
+      if (taken) throw badRequest(departmentTakenMessage(taken, staff.department));
+    }
   }
 
   const note = str(body.note, 'Note', { max: 200 });
