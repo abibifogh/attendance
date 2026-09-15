@@ -11,7 +11,7 @@ import {
   firstDayFull, firstDayTaken, whoIsAway,
 } from '../lib/away.js';
 import { fromBase64 } from '../lib/files.js';
-import { readFile, storeFile } from './people.js';
+import { contractWithTrail, readFile, storeFile } from './people.js';
 import {
   addDays, diffDays, isDay, isMonth, monthBounds, monthOf, nowIn, startOfWeek, todayIn,
 } from '../util/dates.js';
@@ -1231,4 +1231,95 @@ export async function tellThemImLate(ctx) {
   ).run().catch(() => {});
 
   return json({ ok: true, minutes, day: today });
+}
+
+/**
+ * Their own signed contract, and the evidence behind it.
+ *
+ * WHY THIS EXISTS. The property has been able to open a signed contract, read
+ * the certificate under it and print the whole thing since the day signing was
+ * built. The person who actually signed it could not. They saw the words once,
+ * on a link that expires, pressed a button, and after that the only copy of
+ * their own employment contract was on somebody else's screen. Anybody asking
+ * them for it — a bank, a landlord, a visa office — was asking for something
+ * they had no way of producing.
+ *
+ * WHAT THEY GET IS THE SAME DOCUMENT. Not a summary of it and not a second
+ * rendering: the same body, the same fingerprint, the same event chain, the
+ * same certificate of signature, off the same query the property's copy uses.
+ * A staff copy that showed less than the office copy would be worth less than
+ * the office copy, and the whole point of it is that it is worth the same.
+ *
+ * SIGNED ONES ONLY. A draft is the property still deciding, and one that is
+ * sent but unsigned is already in front of them on the link that carries it.
+ * What belongs here is what they agreed to.
+ */
+export async function myContracts(ctx) {
+  const staff = await meOf(ctx);
+  const rows = await ctx.db.prepare(
+    `SELECT id, title, origin, status, signed_at, signer_name, employer_name, employer_at,
+            issued_at, document_id
+       FROM hr_contract
+      WHERE staff_id = ? AND status = 'signed'
+      ORDER BY COALESCE(signed_at, issued_at) DESC, id DESC`,
+  ).bind(staff.id).all().catch(() => ({ results: [] }));
+
+  return json({
+    me: { name: staff.name, employeeNo: staff.employee_no },
+    contracts: rows.results ?? [],
+  });
+}
+
+/** One of theirs, with the trail. Somebody else's is not theirs. */
+export async function myContract(ctx, id) {
+  const staff = await meOf(ctx);
+  const mine = await ctx.db.prepare(
+    "SELECT id FROM hr_contract WHERE id = ? AND staff_id = ? AND status = 'signed'",
+  ).bind(Number(id), staff.id).first();
+  if (!mine) throw notFound('No such contract of yours.');
+
+  const found = await contractWithTrail(ctx.db, mine.id);
+  if (!found) throw notFound('No such contract of yours.');
+  return json(found);
+}
+
+/**
+ * The scan, where the contract was signed on paper.
+ *
+ * Most people here signed on paper years before any of this existed, and their
+ * contract is an image of a page rather than words in a row. It is still their
+ * contract, so they can read it and they can take a copy.
+ *
+ * TWO DISPOSITIONS, ONE FILE. Inline is what the page embeds, so the scan is
+ * on the screen they landed on rather than behind a download they have to go
+ * and find. `?download=1` is the button that says Download, and it has to be
+ * an attachment or the phone opens it in a viewer and never saves it.
+ */
+export async function myContractFile(ctx, id) {
+  const staff = await meOf(ctx);
+  const contract = await ctx.db.prepare(
+    `SELECT id, title, document_id FROM hr_contract
+      WHERE id = ? AND staff_id = ? AND status = 'signed'`,
+  ).bind(Number(id), staff.id).first();
+  // Two different answers, because they are two different facts. Somebody
+  // else's contract is not theirs whether or not a scan hangs off it, and
+  // saying "there is no file" about a contract they may not read would be
+  // telling them something about it.
+  if (!contract) throw notFound('No such contract of yours.');
+  if (!contract.document_id) throw notFound('There is no file on this one.');
+
+  const row = await ctx.db.prepare('SELECT * FROM hr_document WHERE id = ?')
+    .bind(contract.document_id).first();
+  if (!row) throw notFound('There is no file on this one.');
+
+  const content = await readFile(ctx.db, row);
+  const name = (row.filename || `${contract.title}.pdf`).replace(/["\\]/g, '');
+  const wantsFile = ctx.url.searchParams.get('download') === '1';
+  return new Response(content, {
+    headers: {
+      'Content-Type': row.mime || 'application/octet-stream',
+      'Content-Disposition': `${wantsFile ? 'attachment' : 'inline'}; filename="${name}"`,
+      'Cache-Control': 'private, no-store',
+    },
+  });
 }

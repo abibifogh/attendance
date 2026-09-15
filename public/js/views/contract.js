@@ -28,11 +28,22 @@ export async function renderContract(params) {
     return host;
   }
 
-  const { contract, events } = await api.hrContract(id);
-  const reload = async () => mount(host, await renderContract({ id }));
+  // THE SAME PAGE, READ BY THE PERSON IT IS ABOUT. `mine` swaps the endpoint
+  // for the one that will only ever hand back this reader's own contracts, and
+  // takes the office's buttons off. Everything below it — the words, the two
+  // signatures, the fingerprint, the certificate, the chain of events — is
+  // identical, because a staff copy showing less than the office copy would be
+  // worth less than the office copy, and the point of it is that it is worth
+  // the same.
+  const mine = Boolean(params.mine);
+  const { contract, events } = mine ? await api.myContract(id) : await api.hrContract(id);
+  const reload = async () => mount(host, await renderContract({ id, mine: params.mine }));
   // The buttons follow the permission, not the caller. Whoever may read a
   // contract may not necessarily countersign one.
-  const canManage = can('hr_manage');
+  const canManage = !mine && can('hr_manage');
+  const scanUrl = mine
+    ? api.myContractFileUrl(id)
+    : api.hrDocumentUrl(contract.document_id);
 
   const countersign = async () => {
     const pad = signaturePad({ height: 130 });
@@ -71,8 +82,10 @@ export async function renderContract(params) {
         h('div.sub', `${contract.staff_name} · ${STATUS[contract.status]?.[1] ?? contract.status}`),
       ),
       h('div.btn-row',
-        h('button.btn-sm', { onclick: () => navigate('person', { id: contract.staff_id, tab: 'contracts' }) },
-          '‹ Their record'),
+        mine
+          ? h('button.btn-sm', { onclick: () => navigate('att-my-contracts') }, '‹ My contracts')
+          : h('button.btn-sm', { onclick: () => navigate('person', { id: contract.staff_id, tab: 'contracts' }) },
+            '‹ Their record'),
         printButton({
           title: contract.title,
           subtitle: `${contract.staff_name} · employee ${contract.employee_no}`,
@@ -87,6 +100,17 @@ export async function renderContract(params) {
           : null,
       ),
     ),
+
+    // Said once, on the screen, and only to the person who came here to get a
+    // copy of their own contract. The print dialog is the download: it is the
+    // only route to a PDF that works the same on a phone, on a laptop and in
+    // whatever browser somebody actually has.
+    mine
+      ? h('p.muted.no-print', { style: { fontSize: '.85rem', marginTop: '-.4rem' } },
+        'Save as PDF gives you all of it: the words you agreed to, both signatures, and the '
+        + 'certificate of signature underneath them. On a phone the same button opens your '
+        + 'print sheet, where the destination to choose is Save as PDF.')
+      : null,
 
     // The one thing on this page worth shouting about. Checked on the server
     // every time the contract is read: the stored words are hashed again and
@@ -118,23 +142,33 @@ export async function renderContract(params) {
       contract.origin === 'paper'
         ? h('div',
           h('object.scan', {
-            data: api.hrDocumentUrl(contract.document_id),
+            data: scanUrl,
             type: 'application/pdf',
           },
           h('p.muted',
             'Your browser will not show this here. ',
             fileLink({
-              href: api.hrDocumentUrl(contract.document_id),
+              href: scanUrl,
               name: 'The signed contract',
               label: 'Open the scan',
             }), '.')),
           h('p.muted.no-print', { style: { fontSize: '.85rem' } },
             fileLink({
-              href: api.hrDocumentUrl(contract.document_id),
+              href: scanUrl,
               name: 'The signed contract',
               label: 'Open the scan on its own',
             }),
-            ' to print it — a scanned page prints from its own viewer, not from this one.'),
+            ' to print it — a scanned page prints from its own viewer, not from this one.',
+            // Save as PDF at the top of this page prints the certificate, not
+            // the scan, because the browser will not print somebody else's
+            // embedded viewer. So the scan gets a download of its own.
+            mine
+              ? h('span', ', or ', fileLink({
+                href: api.myContractFileUrl(id, true),
+                name: 'The signed contract',
+                label: 'download the file itself',
+              }), '.')
+              : null),
         )
         : h('div.contract-body', contract.body),
 

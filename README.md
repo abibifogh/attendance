@@ -4085,6 +4085,31 @@ opened afterwards**. If the stored text no longer produces it, the screen says
 so in red and says not to rely on it — which is precisely the thing a signature
 is supposed to be able to prove.
 
+#### Their own copy of it
+
+The office could open a signed contract, read the certificate under it and
+print the lot from the day signing was built. The person who signed it could
+not. They saw the words once, on a link that expires, pressed a button, and
+after that the only copy of their own employment contract was on somebody
+else's screen — so every bank, landlord and visa office that asked them for it
+was asking for something they had no way of producing.
+
+**My contract**, in their own part of the menu, is the same page the office
+reads. Not a summary and not a second rendering: the same body off the same
+query, the same fingerprint rechecked on the way out, the same two signatures,
+the same certificate and the same chain of events. A staff copy worth less than
+the office copy is not worth carrying to a bank.
+
+**Save as PDF** is the download, through the browser's own print dialog, which
+is the one route to a PDF that works the same on a phone and on a laptop. What
+comes out carries the words, both signatures and the certificate under them.
+Where the contract was signed on paper, the scan downloads as the file it is.
+
+Signed ones only. A draft is the property still making up its mind, and one
+that is sent and unsigned is already in front of them on the link carrying it.
+The route hands back nothing but the reader's own: a contract number that
+belongs to somebody else is not found, whoever asks.
+
 > Ghana's Electronic Transactions Act 2008 (Act 772) gives an electronic
 > signature the same effect as a written one where it is uniquely linked to the
 > signatory and under their control, and recognises a typed name or a drawn mark

@@ -325,6 +325,23 @@ export const GUIDE = [
         + 'still open the figures are being worked out upstairs, and a number you write down '
         + 'from a draft is a number that can move.' },
 
+      { sub: 'My contract' },
+      { p: 'Your signed employment contract, in your own part of the menu, and it is the same '
+        + 'page the office reads rather than a copy of it. The words you agreed to, your '
+        + 'signature and the property\u2019s, and under them the certificate of signature: the '
+        + 'fingerprint of the text, when you signed, from where, on what, and every step in '
+        + 'between from the day it was issued.' },
+      { p: 'Press Save as PDF for a copy to keep or send on. On a phone the same button opens '
+        + 'your print sheet, and the destination to choose there is Save as PDF. That is what '
+        + 'a bank or a landlord is asking for when they ask whether an electronic contract is '
+        + 'a real one: not the words on their own, but the evidence underneath them.' },
+      { note: 'Signed ones only. A contract still waiting on your signature is on the link the '
+        + 'office sent you, not here. If you signed on paper years ago, it appears as a scan '
+        + 'once the office has filed it.' },
+      { warn: 'Nothing on it can be changed, by you or by anybody. If something on your '
+        + 'contract is wrong, tell the office: a signed contract is replaced by a new one that '
+        + 'says what it supersedes, never edited.' },
+
       { sub: 'How many can be off at once' },
       { p: 'Only so many people may be off on any one day, leave and unavailability counted '
         + 'together. Ask for a day that is already full and you are told so, and told it is '

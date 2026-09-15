@@ -40,6 +40,7 @@ import { renderPeopleTemplates } from './views/people-templates.js';
 import { renderPeopleForm } from './views/people-form.js';
 import { renderGuide } from './views/guide.js';
 import { renderContract } from './views/contract.js';
+import { renderMyContracts } from './views/my-contracts.js';
 import { renderLetters } from './views/letters.js';
 import { renderLetter } from './views/letter.js';
 import { renderLetterCompose } from './views/letter-compose.js';
@@ -105,6 +106,11 @@ const GROUPS = [
   { key: 'first-week', label: 'My first week', section: 'Mine' },
   { key: 'me', label: 'My shifts', section: 'Mine' },
   { key: 'my-pay', label: 'My pay', section: 'Mine' },
+  // Their own paperwork. Not under My pay, which is what they are owed, and
+  // not under My shifts, which is where they are expected: a contract is the
+  // terms the other two are settled by, and somebody looking for it is on an
+  // errand of its own, usually because a bank or a landlord has asked.
+  { key: 'my-file', label: 'My documents', section: 'Mine' },
   // What is happening, and what is planned. The two screens somebody with a
   // job to do opens; everything under them is the same question at a
   // different zoom.
@@ -162,6 +168,10 @@ const ROUTES = [
   { mine: true, group: 'my-pay', tab: 'Payslips', path: 'att-my-payslips', label: 'My payslips', permission: 'att_me', render: renderAttMyPayslips, live: ['pay'] },
   { mine: true, group: 'my-pay', tab: 'Advance', path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
   { mine: true, group: 'my-pay', tab: 'Claims', path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
+
+  // Their own signed contract, the same document and the same certificate of
+  // signature the office reads, with Save as PDF on it.
+  { mine: true, group: 'my-file', tab: 'Contract', path: 'att-my-contracts', label: 'My contract', permission: 'att_me', render: renderMyContracts, live: ['people'] },
 
   { group: 'day', tab: 'Today', path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday, live: ['attendance', 'rota', 'leave'] },
   { group: 'day', tab: 'Week', path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek, live: ['attendance', 'rota', 'leave'] },
@@ -227,6 +237,10 @@ const ROUTES = [
   { path: 'people-templates', label: 'Templates', permission: 'hr_manage', render: renderPeopleTemplates, hidden: true },
   { path: 'people-form', label: 'What to ask for', permission: 'hr_manage', render: renderPeopleForm, hidden: true },
   { path: 'contract', label: 'Contract', permission: 'hr_view', render: renderContract, live: ['people'], hidden: true },
+  // The same page, read by the person it is about. A separate path because the
+  // permission is the whole difference: hr_view reads anybody's, att_me reads
+  // your own, and the route that decides which is not the place to be clever.
+  { path: 'my-contract', label: 'My contract', permission: 'att_me', render: (params) => renderContract({ ...params, mine: true }), live: ['people'], hidden: true },
   { path: 'letter', label: 'Letter', permission: 'corr_view', render: renderLetter, live: ['letters'], hidden: true },
   // Writing one. Its own screen rather than a dialog: the page is the point.
   { path: 'letter-compose', label: 'Write', permission: 'corr_write', render: renderLetterCompose, hidden: true },

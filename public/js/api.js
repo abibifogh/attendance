@@ -316,6 +316,10 @@ export const api = {
   swapQueue: () => request('/api/swaps/queue'),
   swapDecide: (id, body) => request(`/api/swaps/${id}/decide`, { method: 'POST', body }),
   myRunningLate: (body) => request('/api/me/running-late', { method: 'POST', body }),
+  myContracts: () => request('/api/me/contracts'),
+  myContract: (id) => request(`/api/me/contracts/${id}`),
+  myContractFileUrl: (id, download = false) => `/api/me/contracts/${id}/file${download ? '?download=1' : ''}`,
+
   myPayslips: (month) => request(`/api/me/payslips${month ? `?month=${encodeURIComponent(month)}` : ''}`),
   myPayslipLock: () => request('/api/me/payslip-lock'),
   mySetPayslipLock: (body) => request('/api/me/payslip-lock', { method: 'POST', body }),

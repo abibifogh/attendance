@@ -952,18 +952,18 @@ export async function issueContract(ctx, id) {
   return json({ ok: true, id: created.id, hash });
 }
 
-export async function getContract(ctx, id) {
-  const contract = await ctx.db.prepare(
+export async function contractWithTrail(db, id) {
+  const contract = await db.prepare(
     `SELECT c.*, p.name staff_name, p.employee_no
        FROM hr_contract c JOIN att_staff p ON p.id = c.staff_id WHERE c.id = ?`,
   ).bind(Number(id)).first();
-  if (!contract) throw notFound('No such contract.');
+  if (!contract) return null;
 
   // Everything that happened to this contract, and everything that happened to
   // the link carrying it. The chain has to be unbroken to be worth anything:
   // "issued, link sent, link opened, document read, signed" is evidence, and
   // the same list with the middle two missing is an assertion with a timestamp.
-  const events = await ctx.db.prepare(
+  const events = await db.prepare(
     `SELECT kind, detail, at_utc, ip, agent FROM hr_event
       WHERE contract_id = ?1
          OR (contract_id IS NULL AND invite_id IN
@@ -971,7 +971,7 @@ export async function getContract(ctx, id) {
       ORDER BY id`,
   ).bind(contract.id).all();
 
-  return json({
+  return {
     contract: {
       ...contract,
       // Proof rather than assertion: the hash is recomputed from the stored
@@ -980,7 +980,13 @@ export async function getContract(ctx, id) {
       intact: await hashBody(contract.body) === contract.body_hash,
     },
     events: events.results ?? [],
-  });
+  };
+}
+
+export async function getContract(ctx, id) {
+  const found = await contractWithTrail(ctx.db, id);
+  if (!found) throw notFound('No such contract.');
+  return json(found);
 }
 
 /**

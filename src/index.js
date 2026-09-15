@@ -235,6 +235,13 @@ export const ROUTES = [
   ['POST', '/api/me/photo', 'att_me', mine.setMyPhoto],
   ['DELETE', '/api/me/photo', 'att_me', mine.clearMyPhoto],
   ['POST', '/api/me/running-late', 'att_me', mine.tellThemImLate],
+  // Their own signed contract, the same document and the same certificate the
+  // office sees. The file route is for the ones signed on paper, where the
+  // contract is a scan rather than words.
+  ['GET', '/api/me/contracts', 'att_me', mine.myContracts],
+  ['GET', '/api/me/contracts/:id', 'att_me', mine.myContract],
+  ['GET', '/api/me/contracts/:id/file', 'att_me', mine.myContractFile],
+
   ['GET', '/api/me/payslips', 'att_me', payroll.myPayslips],
   ['GET', '/api/me/payslip-lock', 'att_me', payroll.myPayslipLock],
   ['POST', '/api/me/payslip-lock', 'att_me', payroll.setMyPayslipLock],

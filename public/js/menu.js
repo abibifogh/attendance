@@ -17,8 +17,13 @@
  *
  * A supervisor's menu is two entries long. Putting THE DAY over one of them
  * explains nothing and takes a line doing it.
+ *
+ * Seven rather than six since a member of staff got their own contract. Their
+ * menu is six links, and cutting it gave them MINE over three, THE PEOPLE over
+ * a single Directory, and the last two under nothing: two lines of heading for
+ * a list that was already readable in one look.
  */
-export const HEADINGS_FROM = 6;
+export const HEADINGS_FROM = 7;
 
 /**
  * The groups this login can open, and which screens of each.

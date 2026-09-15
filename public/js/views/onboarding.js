@@ -21,9 +21,24 @@ import { field, formDialog } from './att-shared.js';
 const GO = {
   details: { label: 'Send your details', to: null },
   documents: { label: 'My account', to: null },
-  contract: { label: 'My documents', to: null },
+  // Before they sign, the contract is on the link the office sent them and
+  // there is nothing of it here to open. After they sign, their own copy is,
+  // and this checklist is the first place anybody will look for it.
+  contract: {
+    label: 'My documents',
+    to: null,
+    done: { label: 'Open my contract', to: 'att-my-contracts' },
+  },
   handbook: { label: 'Open the handbook', to: 'handbook' },
 };
+
+/** Where a step sends them, which is not the same place before and after. */
+function goFor(step) {
+  const go = GO[step.source];
+  if (!go) return null;
+  const which = step.done ? go.done : go;
+  return which?.to ? which : null;
+}
 
 const readableDate = (iso) => {
   if (!iso) return null;
@@ -70,21 +85,22 @@ export async function renderOnboarding() {
     const { progress } = data;
     const done = progress.done === progress.of;
 
-    const stepRow = (step, at) => h('div.ob-step', { class: step.done ? 'ob-step ob-done' : null },
-      h('span.ob-tick', step.done ? '✓' : String(at + 1)),
-      h('div.ob-step-text',
-        h('div.ob-step-title', step.title),
-        step.detail ? h('p.ob-step-detail', step.detail) : null,
-        step.done
-          ? h('p.muted.ob-step-how', readableDate(step.doneAt)
-            ? `Done, ${readableDate(step.doneAt)}`
-            : 'Done')
-          : h('p.muted.ob-step-how', howItIsAnswered(step))),
-      !step.done && GO[step.source]?.to
-        ? h('button.btn-sm', {
-          type: 'button', onclick: () => navigate(GO[step.source].to),
-        }, GO[step.source].label)
-        : null);
+    const stepRow = (step, at) => {
+      const go = goFor(step);
+      return h('div.ob-step', { class: step.done ? 'ob-step ob-done' : null },
+        h('span.ob-tick', step.done ? '✓' : String(at + 1)),
+        h('div.ob-step-text',
+          h('div.ob-step-title', step.title),
+          step.detail ? h('p.ob-step-detail', step.detail) : null,
+          step.done
+            ? h('p.muted.ob-step-how', readableDate(step.doneAt)
+              ? `Done, ${readableDate(step.doneAt)}`
+              : 'Done')
+            : h('p.muted.ob-step-how', howItIsAnswered(step))),
+        go
+          ? h('button.btn-sm', { type: 'button', onclick: () => navigate(go.to) }, go.label)
+          : null);
+    };
 
     mount(host,
       // The welcome, and it comes first. Somebody's first morning is not the
