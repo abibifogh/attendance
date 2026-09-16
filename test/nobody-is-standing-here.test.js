@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  IDLE_MINUTES, IDLE_MS, lockOnOpening, ownTrip, whatToDo,
+  IDLE_MINUTES, IDLE_MS, asksFor, lockOnOpening, ownTrip, whatToDo,
 } from '../public/js/guard-rules.js';
 import { hashPin, getPepper } from '../src/lib/auth.js';
 import { unlock } from '../src/routes/auth-lock.js';
@@ -280,4 +280,65 @@ test('an account already settled is not asked, whatever it types', async () => {
 
   const out = await unlockFor(db, { pin: '1234' }, asUser(1));
   assert.equal(out.mustChangePin, false);
+});
+
+// ---------------------------------------------------------------------------
+// What it asks for
+// ---------------------------------------------------------------------------
+
+/**
+ * The lock used to ask for whatever the session said somebody last signed in
+ * with, and offer no way to correct it: a lock asking for the wrong credential
+ * could only be got past by signing out, which on a phone means signing in
+ * from scratch. So it asks for what they hold, and where they hold both it
+ * prefers what they last used and lets them say otherwise.
+ */
+
+test('a member of staff is asked for their PIN, with nothing to swap to', () => {
+  assert.deepEqual(asksFor({ signsInWith: 'pin', hasPin: true, hasPassword: false }),
+    { ask: 'pin', canSwap: false });
+});
+
+test('an administrator who signed in by password is asked for it, and can swap', () => {
+  assert.deepEqual(
+    asksFor({ signsInWith: 'password', hasPin: true, hasPassword: true, email: 'a@b.c' }),
+    { ask: 'password', canSwap: true },
+  );
+});
+
+test('the same administrator who signed in by PIN is asked for the PIN', () => {
+  assert.deepEqual(
+    asksFor({ signsInWith: 'pin', hasPin: true, hasPassword: true, email: 'a@b.c' }),
+    { ask: 'pin', canSwap: true },
+  );
+});
+
+test('somebody with no PIN is never asked for one', () => {
+  // The bug this half is about. An old session predating the field reads as a
+  // PIN whoever it belongs to, and an administrator who holds no PIN was being
+  // asked for one and told it was not theirs, which was true and useless.
+  assert.deepEqual(
+    asksFor({ signsInWith: 'pin', hasPin: false, hasPassword: true, email: 'a@b.c' }),
+    { ask: 'password', canSwap: false },
+  );
+});
+
+test('a password with no address behind it is not offered', () => {
+  // There is nothing to ask the server for a salt against.
+  assert.deepEqual(asksFor({ signsInWith: 'password', hasPin: true, hasPassword: true }),
+    { ask: 'pin', canSwap: false });
+});
+
+test('the break-glass sign-in is its own answer and never swaps', () => {
+  // What opens it is the secret it came in on, which is not promised to be
+  // digits, so it is the one lock that keeps a field.
+  assert.deepEqual(asksFor({ isRecovery: true, hasPin: true, hasPassword: true, email: 'a@b.c' }),
+    { ask: 'secret', canSwap: false });
+});
+
+test('asked nothing at all, it asks for a PIN', () => {
+  // Most of the property holds a PIN and nothing else, so that is the answer
+  // when there is nothing to go on.
+  assert.deepEqual(asksFor(), { ask: 'pin', canSwap: false });
+  assert.deepEqual(asksFor({}), { ask: 'pin', canSwap: false });
 });

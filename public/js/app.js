@@ -1068,7 +1068,15 @@ document.addEventListener('visibilitychange', async () => {
 function watchForTheRoom() {
   guard({
     signOut,
-    who: () => ({ signsInWith: state.signedInWith, email: state.email }),
+    // What they hold as well as what they last used. The lock asks for the
+    // wrong credential otherwise, and used to give no way to correct it.
+    who: () => ({
+      signsInWith: state.signedInWith,
+      email: state.email,
+      hasPin: state.hasPin,
+      hasPassword: state.hasPassword,
+      isRecovery: state.isRecovery,
+    }),
     // Somebody who unlocked with a PIN from before the six-digit rule. The
     // forced-change screen is drawn in place of the app, the same as it is at
     // sign-in, so there is nothing behind it to get back to.

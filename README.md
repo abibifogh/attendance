@@ -1607,6 +1607,29 @@ everything else uses, which also means a login switched off while the phone was
 in a pocket does not open again, and *Sign out instead* is on the screen for
 whoever really is finished.
 
+**The digits go in on the keypad, not into a field.** A PIN box is a password
+input, and a password input on a phone is standing in a busy road. Every
+browser engine overrides `autocomplete="off"` on a password field where it
+holds a credential for the origin, so the saved site password gets filled in on
+its own; a software keyboard can add a space from predictive text, or hold the
+last character in composition until the field is blurred, which happens after
+the button has already read the value. None of it shows, because the field
+draws dots either way, so somebody is looking at what appears to be their own
+PIN being refused — on the phone, while the same PIN works on a laptop. So the
+lock uses the same keypad the sign-in does. Buttons appending to a string
+cannot be autofilled, cannot be composed, and cannot hold anything that is not
+a digit.
+
+**And it asks for what somebody holds, not only what they last used.** It used
+to read the credential off the session, which is a guess: a session predating
+the field reads as a PIN whoever it belongs to, and an administrator who signed
+in by password on Monday may have held a PIN since Tuesday. Guessing is fine.
+Guessing with no way to correct it was not, because the only way past a lock
+asking for the wrong thing was *Sign out instead*, which on a phone means
+signing in from scratch. Now it asks for what is actually on the account, and
+where somebody holds both it prefers what they last used and puts *Use my
+password instead* under it.
+
 **Opening the app asks it too.** Closing the app and opening it again is not a
 reload: on a phone it comes back with the session cookie still good for weeks,
 and a clock held only in memory could not see the gap because the app it lived

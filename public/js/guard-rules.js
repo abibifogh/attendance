@@ -83,3 +83,34 @@ export function lockOnOpening({
 export function ownTrip(pendingUntil, now = Date.now()) {
   return pendingUntil != null && now <= pendingUntil;
 }
+
+/**
+ * What the lock asks for, and what it can offer instead.
+ *
+ * WHY THIS IS A DECISION AND NOT A LOOKUP. The lock used to ask for whatever
+ * the session said somebody last signed in with, and that is a guess. An old
+ * session predating the field reads as a PIN whoever it belongs to; a session
+ * says nothing about an administrator who signed in by password on Monday and
+ * has held a PIN since Tuesday. Guessing is fine. Guessing with no way to
+ * correct it is not, and the only way past a lock asking for the wrong thing
+ * was Sign out instead, which on a phone means signing in again from scratch.
+ *
+ * So: ask for what they hold. Where they hold both, prefer what they last used
+ * and let them say otherwise.
+ *
+ * The break-glass sign-in has no account behind it. What opens it is the
+ * secret it came in on, which is not promised to be digits, so it is its own
+ * answer and it is never swappable.
+ */
+export function asksFor({
+  signsInWith = 'pin', hasPin = true, hasPassword = false, email = null, isRecovery = false,
+} = {}) {
+  if (isRecovery) return { ask: 'secret', canSwap: false };
+
+  // A password is only usable where there is an address to salt it against.
+  const password = Boolean(hasPassword && email);
+  if (!password) return { ask: 'pin', canSwap: false };
+  if (!hasPin) return { ask: 'password', canSwap: false };
+
+  return { ask: signsInWith === 'password' ? 'password' : 'pin', canSwap: true };
+}

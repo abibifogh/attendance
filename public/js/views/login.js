@@ -1,61 +1,27 @@
 import { api } from '../api.js';
 import { deriveLoginKey } from '../crypto.js';
 import { h, mount } from '../util.js';
+import { pinKeypad } from '../keypad.js';
 import { BRAND, brandMark } from '../brand.js';
 
 /** PIN keypad. Big targets, no keyboard needed, works with gloves on. */
 export function renderLogin(onSuccess) {
-  let pin = '';
-  let busy = false;
-
-  const display = h('div.pin-display', '');
   const error = h('p.muted', { style: { minHeight: '1.2rem', fontSize: '.85rem' } }, '');
 
-  const paint = () => { display.textContent = '•'.repeat(pin.length); };
-
-  const submit = async () => {
-    if (busy || !pin) return;
-    busy = true;
-    error.textContent = 'Checking…';
-    try {
-      const result = await api.login(pin);
-      onSuccess(result);
-    } catch (err) {
-      error.textContent = err.message;
-      pin = '';
-      paint();
-      display.animate(
-        [{ transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }],
-        { duration: 180, iterations: 2 },
-      );
-    } finally {
-      busy = false;
-    }
-  };
-
-  const press = (digit) => {
-    if (pin.length >= 12) return;
-    pin += digit;
-    paint();
-    error.textContent = '';
-  };
-
-  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
-  const keypad = h('div.keypad',
-    keys.map((k) => h('button', { onclick: () => press(k) }, k)),
-    h('button.btn-ghost', {
-      onclick: () => { pin = pin.slice(0, -1); paint(); },
-    }, '⌫'),
-    h('button', { onclick: () => press('0') }, '0'),
-    h('button.btn-primary', { onclick: submit }, '→'),
-  );
-
-  const onKeydown = (event) => {
-    if (/^\d$/.test(event.key)) press(event.key);
-    else if (event.key === 'Backspace') { pin = pin.slice(0, -1); paint(); }
-    else if (event.key === 'Enter') submit();
-  };
-  window.addEventListener('keydown', onKeydown);
+  const pad = pinKeypad({
+    onChange: () => { error.textContent = ''; },
+    onSubmit: async (pin) => {
+      error.textContent = 'Checking…';
+      try {
+        onSuccess(await api.login(pin));
+      } catch (err) {
+        error.textContent = err.message;
+        pad.clear();
+        pad.shake();
+      }
+    },
+  });
+  pad.listen();
 
   // The other way in. An administrator must have an email address and a
   // password and may also have a PIN, so both panes are theirs; the keypad
@@ -86,7 +52,7 @@ export function renderLogin(onSuccess) {
 
   password.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitPassword({ target: null }); });
 
-  const pinPane = h('div', display, error, keypad);
+  const pinPane = h('div', pad.display, error, pad.keypad);
 
   const passwordPane = h('div.hidden',
     h('label.field', { style: { textAlign: 'left' } }, h('span', 'Email address'), email),
@@ -97,8 +63,8 @@ export function renderLogin(onSuccess) {
     pinPane.classList.toggle('hidden', !on);
     passwordPane.classList.toggle('hidden', on);
     error.textContent = '';
-    if (on) window.addEventListener('keydown', onKeydown);
-    else window.removeEventListener('keydown', onKeydown);
+    if (on) pad.listen();
+    else pad.stopListening();
   };
 
   const modeToggle = h('div.seg', { style: { marginBottom: '.9rem' } },
@@ -129,7 +95,7 @@ export function renderLogin(onSuccess) {
   // with it so keystrokes are not captured by a detached view.
   const observer = new MutationObserver(() => {
     if (!wrap.isConnected) {
-      window.removeEventListener('keydown', onKeydown);
+      pad.stopListening();
       observer.disconnect();
     }
   });

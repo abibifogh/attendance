@@ -535,6 +535,14 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 }
 .lock-said { min-height: 1.2rem; margin: 0; font-size: .85rem; color: var(--bad); }
 .lock-out { margin-top: .8rem; }
+/* The keypad, the same one the sign-in uses. A PIN is not typed into a field
+   here: a password field on a phone gets filled by the browser's own password
+   manager whatever autocomplete says, and the dots look identical either way. */
+.lock-pad { margin-top: .6rem; }
+.lock-pad .pin-display { margin: .2rem 0 .8rem; }
+.lock-asks { font-size: .88rem; }
+/* The way out of a wrong guess about which credential somebody holds. */
+.lock-swap { display: block; margin: .6rem auto 0; }
 
 /* The people already chosen on a login, each with a way to take them off.
    Names rather than a column of ticks: the answer is almost always nobody. */

@@ -1,7 +1,10 @@
 import { api } from './api.js';
 import { deriveLoginKey } from './crypto.js';
-import { h, mount } from './util.js';
-import { IDLE_MINUTES, IDLE_MS, lockOnOpening, ownTrip, whatToDo } from './guard-rules.js';
+import { h } from './util.js';
+import { pinKeypad } from './keypad.js';
+import {
+  IDLE_MINUTES, IDLE_MS, asksFor, lockOnOpening, ownTrip, whatToDo,
+} from './guard-rules.js';
 
 /**
  * Watching for the person having gone.
@@ -42,6 +45,7 @@ let ticker = null;
 let locked = false;
 let onOut = null;
 let onShortPin = null;
+let releasePad = () => {};
 let whoIsIn = () => ({ signsInWith: 'pin', email: null });
 
 const TICK_MS = 15_000;
@@ -192,6 +196,7 @@ export function guard({ signOut, who, shortPin }) {
 export function unguard() {
   watching = false;
   locked = false;
+  releasePad();
   forgetSeen();
   clearInterval(ticker);
   ticker = null;
@@ -216,70 +221,122 @@ function showLock() {
   locked = true;
 
   const me = whoIsIn() ?? {};
-  // An administrator signs in with a password and may hold no PIN at all, so
-  // asking for one would be asking for something they do not have.
-  const byPassword = me.signsInWith === 'password';
+  // What they are asked for is what they hold, not only what they last signed
+  // in with, and where they hold both they can say which. Worked out next door
+  // where it can be reasoned about on its own.
+  const { ask, canSwap } = asksFor(me);
+  const recovery = ask === 'secret';
+  let byPassword = ask === 'password';
+
+  const said = h('p.lock-said');
+  const say = (words) => { said.textContent = words; };
+
+  const finish = (out) => {
+    locked = false;
+    touched();
+    writeSeen();
+    releasePad();
+    screen.remove();
+    // A PIN from before the rule changed. Said here rather than saved for
+    // their next sign-in, because a session lasts two months and the next
+    // sign-in may never come.
+    if (out?.mustChangePin) onShortPin?.();
+  };
+
+  // The digits, on the same keypad the sign-in uses. Not a password field: see
+  // the note at the top of keypad.js for what a password field on a phone does
+  // to a PIN without showing it.
+  const pad = pinKeypad({
+    onChange: () => say(''),
+    onSubmit: async (pin) => {
+      say('Checking\u2026');
+      try {
+        finish(await api.unlock({ pin }));
+      } catch (err) {
+        say(err.message);
+        pad.clear();
+        pad.shake();
+      }
+    },
+  });
+
+  // A password, or a recovery secret. Here a field is right and autofill is
+  // welcome: it is the browser offering the thing it was given to keep.
   const box = h('input.lock-pin', {
     type: 'password',
-    inputMode: byPassword ? 'text' : 'numeric',
-    autocomplete: byPassword ? 'current-password' : 'off',
-    placeholder: byPassword ? 'Your password' : 'Your PIN',
-    'aria-label': byPassword ? 'Your password' : 'Your PIN',
+    autocomplete: recovery ? 'off' : 'current-password',
+    placeholder: recovery ? 'The PIN you signed in with' : 'Your password',
+    'aria-label': recovery ? 'The PIN you signed in with' : 'Your password',
   });
-  const said = h('p.lock-said');
 
-  const open = async (event) => {
+  const openTyped = async (event) => {
     const typed = box.value;
-    if (!typed) { said.textContent = 'Type it in first.'; return; }
+    if (!typed) { say('Type it in first.'); return; }
     event.target.disabled = true;
-    said.textContent = 'Checking…';
+    say('Checking\u2026');
     try {
-      let out;
-      if (byPassword) {
-        const params = await api.passwordSalt(me.email);
-        out = await api.unlock({
-          passwordKey: await deriveLoginKey(typed, params.salt, params.iterations),
-        });
+      if (recovery) {
+        finish(await api.unlock({ pin: typed }));
       } else {
-        out = await api.unlock({ pin: typed });
+        const params = await api.passwordSalt(me.email);
+        finish(await api.unlock({
+          passwordKey: await deriveLoginKey(typed, params.salt, params.iterations),
+        }));
       }
-      locked = false;
-      touched();
-      writeSeen();
-      screen.remove();
-      // A PIN from before the rule changed. Said here rather than saved for
-      // their next sign-in, because a session lasts two months and the next
-      // sign-in may never come.
-      if (out?.mustChangePin) onShortPin?.();
     } catch (err) {
-      said.textContent = err.message;
+      say(err.message);
       box.value = '';
       event.target.disabled = false;
       box.focus();
     }
   };
 
+  const typedPane = h('div',
+    h('div.lock-row', box, h('button.btn.btn-primary', { onclick: openTyped }, 'Open')));
+  const padPane = h('div.lock-pad', pad.display, pad.keypad);
+
+  // The way out of a wrong guess. Only where there is somewhere to go: most of
+  // the property holds a PIN and nothing else, and offering them a password
+  // they do not have is worse than not offering.
+  const asks = h('p.muted.lock-asks', recovery
+    ? 'Type the PIN you signed in with to carry on.'
+    : 'Nothing you were doing has been lost.');
+
+  const swap = h('button.btn-sm.lock-swap');
+  const showPassword = (on) => {
+    byPassword = on;
+    typedPane.classList.toggle('hidden', !on);
+    padPane.classList.toggle('hidden', on);
+    swap.textContent = on ? 'Use my PIN instead' : 'Use my password instead';
+    asks.textContent = `${on ? 'Type your password' : 'Tap your PIN'} to carry on. `
+      + 'Nothing you were doing has been lost.';
+    say('');
+    if (on) { pad.stopListening(); setTimeout(() => box.focus(), 0); } else { pad.clear(); pad.listen(); }
+  };
+  swap.onclick = () => showPassword(!byPassword);
+
   const screen = h('div.lock-screen',
     h('div.lock-card',
       h('div.lock-mark', h('img', { src: '/icons/hive-192.png', alt: '', width: 44, height: 44 })),
       h('h2', 'Welcome back'),
-      h('p.muted', byPassword
-        ? 'Type your password to carry on.'
-        : 'Type your PIN to carry on. Nothing you were doing has been lost.'),
-      h('div.lock-row',
-        box,
-        h('button.btn.btn-primary', { onclick: open }, 'Open')),
+      asks,
+      recovery ? typedPane : h('div', typedPane, padPane),
       said,
+      canSwap ? swap : null,
       h('button.btn-sm.lock-out', { onclick: () => onOut?.() }, 'Sign out instead'),
     ));
 
+  // Signing out from here takes the screen away without answering it, and the
+  // keypad listens on the window rather than on a field of its own.
+  releasePad = () => { pad.stopListening(); releasePad = () => {}; };
+
   document.body.append(screen);
-  // Enter is what a thumb reaches for on a numeric keypad; the button is for
-  // everybody else.
   box.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') screen.querySelector('.btn-primary').click();
+    if (event.key === 'Enter') typedPane.querySelector('.btn-primary').click();
   });
-  setTimeout(() => box.focus(), 0);
+  // Recovery has no pane to swap to, so it is shown as it stands.
+  if (recovery) setTimeout(() => box.focus(), 0);
+  else showPassword(byPassword);
 }
 
 export { IDLE_MINUTES, IDLE_MS };
