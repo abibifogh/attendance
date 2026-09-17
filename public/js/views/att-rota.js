@@ -3307,6 +3307,22 @@ function shiftQuestions(draft, reload) {
 }
 
 /**
+ * Where the number a day was aiming at came from.
+ *
+ * Only ever one of four, and each has a different answer. A planner who
+ * disagrees with the number needs to know which.
+ */
+const WHERE_FROM = {
+  shift: 'That is what the shift asks for under Setup \u2192 Shifts.',
+  history: 'The shift does not say how many it needs, so this is what the last few weeks did. '
+    + 'Set People needed under Setup \u2192 Shifts to fix it.',
+  cards: 'The shift does not say how many it needs, so this is the number of cards already on '
+    + 'the day. Set People needed under Setup \u2192 Shifts to fix it.',
+  floor: 'The shift does not say how many it needs and there is nothing behind it to go on, so '
+    + 'one was assumed.',
+};
+
+/**
  * A first draft of the blanks, offered before anything is written.
  *
  * Two steps on purpose. The server proposes and writes nothing; this shows
@@ -3380,11 +3396,14 @@ async function suggest(from, to, reload) {
   // Grouped by person, because that is the unit somebody checks. Twelve rows
   // reading "Kofi, Early" are one decision about Kofi, not twelve.
   const byPerson = new Map();
+  // Which heading a line sits under. A slot nobody could be found for has no
+  // person, and a spare card being taken off is not a placement at all, so
+  // each gets its own rather than being filed under somebody.
+  const headingOf = (entry) => (entry.drop
+    ? 'Spare cards to take off'
+    : entry.empty ? 'Nobody yet' : entry.staff);
   for (const entry of plan.entries) {
-    // A slot nobody could be found for still goes on the grid, because the
-    // shift has to be there. Grouped under its own heading rather than under
-    // a person, since there is no person: it is the question, not an answer.
-    const who = entry.empty ? 'Nobody yet' : entry.staff;
+    const who = headingOf(entry);
     if (!byPerson.has(who)) byPerson.set(who, []);
     byPerson.get(who).push(entry);
   }
@@ -3392,11 +3411,13 @@ async function suggest(from, to, reload) {
 
   const countLine = h('strong');
   const refresh = () => {
-    const live = plan.entries.filter((e) => !dropped.has(e.empty ? 'Nobody yet' : e.staff));
+    const live = plan.entries.filter((e) => !dropped.has(headingOf(e)));
     const holes = live.filter((e) => e.empty).length;
-    const n = live.length - holes;
+    const offs = live.filter((e) => e.drop).length;
+    const n = live.length - holes - offs;
     countLine.textContent = `${n} shift${n === 1 ? '' : 's'}`
-      + (holes ? `, and ${holes} left empty for somebody to fill` : '');
+      + (holes ? `, ${holes} left empty for somebody to fill` : '')
+      + (offs ? `, and ${offs} spare card${offs === 1 ? '' : 's'} taken off` : '');
   };
   refresh();
 
@@ -3500,6 +3521,11 @@ async function suggest(from, to, reload) {
                 + `day${list.length === 1 ? '' : 's'} short`),
               h('div.finding-detail',
                 list.map((g) => `${fmtDayShort(g.day)} (${g.short} of ${g.wanted})`).join(', ')),
+              // Where the number it was aiming at came from. A planner looking
+              // at "2 of 2" on a shift they think of as a one-person job can
+              // otherwise only guess, and the thing to change is different in
+              // each case.
+              h('div.finding-detail', WHERE_FROM[list[0].wantedFrom] ?? ''),
               h('div.finding-detail', list[0].why))))))
         : null,
     ),
@@ -3508,9 +3534,7 @@ async function suggest(from, to, reload) {
       // What is still ticked, turned into changes Save understands. The
       // mapping lives in draft-entries.js so it can be tested without a
       // browser, which is exactly what it was missing.
-      const entries = draftEntries(
-        plan.entries.filter((e) => !dropped.has(e.empty ? 'Nobody yet' : e.staff)),
-      );
+      const entries = draftEntries(plan.entries.filter((e) => !dropped.has(headingOf(e))));
       if (!entries.length) throw new Error('Nothing is ticked, so there is nothing to put on.');
       return api.attSaveRoster({ entries });
     },
@@ -3518,7 +3542,16 @@ async function suggest(from, to, reload) {
 
   if (!done) return;
   if (done === true) return;
-  toast(`${done.changed} draft shift${done.changed === 1 ? '' : 's'} added. `
-    + 'Adjust them, then publish when you are happy.', 'good');
+  // Said as what it did rather than as one number. A draft that only took
+  // spare cards off a day added nothing, and saying it added four shifts is
+  // the screen telling somebody the opposite of what happened.
+  const live = plan.entries.filter((e) => !dropped.has(headingOf(e)));
+  const offs = live.filter((e) => e.drop).length;
+  const put = live.length - offs;
+  toast([
+    put ? `${put} draft shift${put === 1 ? '' : 's'} added` : null,
+    offs ? `${offs} spare card${offs === 1 ? '' : 's'} taken off` : null,
+  ].filter(Boolean).join(', ')
+    + `. ${put ? 'Adjust them, then publish when you are happy.' : ''}`, 'good');
   await reload();
 }

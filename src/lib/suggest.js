@@ -171,12 +171,28 @@ export function suggestRota({
           continue;
         }
 
-        // Four things can say how many people a shift wants, and the largest
-        // of them wins. What the shift itself asks for is the plain answer; the
-        // last few weeks are the fallback for a shift that has never said;
-        // empty slots already sitting on the day are a request in their own
-        // right, because somebody put three reception cards there on purpose;
-        // and a shift on the rota at all wants at least somebody.
+        // WHAT THE SHIFT SAYS IS WHAT THE DRAFT AIMS AT, and nothing raises it.
+        //
+        // People needed used to be one of four numbers with the largest
+        // winning, and the other three could outvote it. Two of them did.
+        // Empty cards already on the day counted as a request in their own
+        // right, so a shift asking for one person on a day carrying two spare
+        // cards was read as wanting two — and since the draft then left two
+        // cards behind, every later draft read two again. It could not be got
+        // back to one by asking; the cards had to be deleted by hand, and
+        // nothing on the screen said so. The weeks behind could outvote it
+        // too, so a shift cut from two people to one went on proposing two
+        // until the history aged out.
+        //
+        // A number typed into People needed is a decision. It is the target,
+        // it is a ceiling as much as a floor, and nought means the draft puts
+        // nobody on.
+        //
+        // WHERE THE SHIFT HAS NOT SAID, the old reckoning stands and the
+        // largest wins: the last few weeks are the fallback; empty slots
+        // sitting on the day are a request, because somebody put three
+        // reception cards there on purpose; and a shift on the rota at all
+        // wants at least somebody.
         //
         // THAT LAST ONE IS WHY EVERY SHIFT GETS CREATED. A shift with nothing
         // asked for, no history and no cards used to come out at nought and be
@@ -196,8 +212,41 @@ export function suggestRota({
         const open = openRows.length;
 
         const already = people.filter((p) => onThisShift(ds, proposed, p.id, day, shift.id)).length;
-        const target = Math.max(asked == null ? usual : asked, already + open, 1);
-        if (!target) continue;
+        const target = asked == null ? Math.max(usual, already + open, 1) : asked;
+
+        // Where that number came from, so a planner reading "2 of 2" on a
+        // shift they think of as a one-person job can see which of the three
+        // it is and go and change the right thing.
+        const targetFrom = asked != null ? 'shift'
+          : usual >= target ? 'history'
+            : already + open >= target ? 'cards'
+              : 'floor';
+
+        // How many of the empty cards on the day the target has room for. The
+        // rest are spare, and a spare card is the thing that was making this
+        // stick: it is nobody's shift, it is above what the property asked
+        // for, and left there it teaches the next draft to ask for it again.
+        // Offered for removal rather than removed, like every other line on a
+        // draft, and only where the shift has said a number — a shift that has
+        // said nothing has not been contradicted by anybody.
+        const room = Math.max(0, target - already);
+        if (asked != null) {
+          for (const slot of openRows.slice(room)) {
+            entries.push({
+              staffId: null,
+              day,
+              shiftId: shift.id,
+              rowId: Number(slot.id),
+              why: `${shift.name} asks for ${asked === 1 ? 'one person' : `${asked} people`} a day`
+                + `, and this card is over that`,
+              breach: null,
+              second: false,
+              // Not a placement at all. Says to take the empty card off the
+              // day, which is the only line on a draft that removes anything.
+              drop: true,
+            });
+          }
+        }
 
         let short = target - already;
         if (short <= 0) continue;
@@ -230,8 +279,10 @@ export function suggestRota({
             || String(a.person.name).localeCompare(String(b.person.name)));
 
         // An empty slot standing on the day is filled rather than added
-        // alongside, or three reception cards would come back as six.
-        const toFill = [...openRows];
+        // alongside, or three reception cards would come back as six. Only the
+        // ones the target has room for: the spares above it are on their way
+        // off the day, not waiting for somebody.
+        const toFill = openRows.slice(0, room);
 
         const place = (personId, note, breach = null) => {
           const slot = toFill.shift();
@@ -376,6 +427,7 @@ export function suggestRota({
             shift: shift.name,
             short,
             wanted: target,
+            wantedFrom: targetFrom,
             onlyPerson: theirs,
             // An optional shift nobody was spare for is not a gap, it is the
             // answer. Reported all the same, under its own heading, because
@@ -407,7 +459,10 @@ export function suggestRota({
     // placements and three holes is a different week from fourteen
     // placements, and the button should not claim the second.
     empties: entries.filter((e) => e.empty),
-    filled: entries.filter((e) => !e.empty).length,
+    // Cards to take off, counted apart from both. Taking a spare card off a
+    // day is not filling a shift and the button must not say it is.
+    drops: entries.filter((e) => e.drop),
+    filled: entries.filter((e) => !e.empty && !e.drop).length,
     considered,
     habits: [...wanted.entries()]
       .map(([key, n]) => {

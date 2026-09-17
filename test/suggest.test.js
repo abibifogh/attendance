@@ -233,3 +233,131 @@ test('an overnight shift overlaps a window in the evening and in the small hours
   assert.equal(overlaps(early, '18:00', '21:00'), false);
   assert.equal(overlaps(early, '14:00', '15:00'), false, 'touching the end is not overlapping');
 });
+
+// ---------------------------------------------------------------------------
+// How many the shift asks for
+// ---------------------------------------------------------------------------
+
+/**
+ * People needed used to be one of four numbers with the largest winning, and
+ * two of the others could outvote it.
+ *
+ * Empty cards already on the day counted as a request in their own right, so a
+ * shift asking for one person on a day carrying two spare cards was read as
+ * wanting two. The draft then left two cards behind, so the next draft read
+ * two again: asking for a draft could not get it back to one, and nothing on
+ * the screen said the cards had to be deleted by hand. The weeks behind could
+ * outvote it too, so a shift cut from two people to one went on proposing two
+ * until the history aged out.
+ */
+
+/** An empty card standing on a day with nobody on it. */
+const slotOn = (raw, day, shiftId = 1) => raw.prepare(
+  'INSERT INTO att_roster (staff_id, day, shift_id, set_by, published) VALUES (NULL, ?, ?, ?, 0)',
+).run(day, shiftId, 'test');
+
+const onDay = (out, day, shiftId = 1) => out.entries
+  .filter((e) => e.day === day && Number(e.shiftId) === shiftId);
+
+test('what the shift asks for is not raised by cards already on the day', async () => {
+  const { db, raw } = setup();
+  raw.prepare('UPDATE att_shifts SET needed = 1 WHERE id = 1').run();
+  slotOn(raw, MON);
+  slotOn(raw, MON);
+
+  const out = await run(db);
+  const placed = onDay(out, MON).filter((e) => !e.drop);
+  assert.equal(placed.length, 1, 'one person, because that is what the shift asks for');
+});
+
+test('the spare cards are offered for removal, and they are the empty ones', async () => {
+  const { db, raw } = setup();
+  raw.prepare('UPDATE att_shifts SET needed = 1 WHERE id = 1').run();
+  slotOn(raw, MON);
+  slotOn(raw, MON);
+
+  const drops = onDay(await run(db), MON).filter((e) => e.drop);
+  assert.equal(drops.length, 1);
+  assert.equal(drops[0].staffId, null, 'never a card somebody is on');
+  assert.ok(drops[0].rowId, 'it names the row to take off');
+  assert.match(drops[0].why, /asks for one person a day/);
+});
+
+test('a card somebody is on is never offered for removal', async () => {
+  const { db, raw } = setup();
+  raw.prepare('UPDATE att_shifts SET needed = 1 WHERE id = 1').run();
+  raw.prepare(
+    'INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 0)',
+  ).run(MON);
+  slotOn(raw, MON);
+
+  const lines = onDay(await run(db), MON);
+  const drops = lines.filter((e) => e.drop);
+  assert.equal(drops.length, 1, 'the empty one goes');
+  assert.equal(drops[0].staffId, null);
+  assert.equal(lines.filter((e) => !e.drop).length, 0, 'the day is already covered');
+});
+
+test('a shift that has said nothing still reads the cards as a request', async () => {
+  // Three reception cards put there on purpose are an instruction, and a shift
+  // nobody has given a number to has not been contradicted by anybody.
+  const { db, raw } = setup();
+  slotOn(raw, MON);
+  slotOn(raw, MON);
+
+  const lines = onDay(await run(db), MON);
+  assert.equal(lines.filter((e) => e.drop).length, 0, 'nothing is taken off');
+  assert.equal(lines.length, 2, 'both cards are still wanted');
+});
+
+test('what the shift asks for is not raised by the weeks behind either', async () => {
+  const { db, raw } = setup();
+  // Two people on the Early every Monday for a month, then the shift is cut
+  // to one. The draft follows the shift, not the habit.
+  seedHabit(raw, { staffId: 1, days: [0] });
+  seedHabit(raw, { staffId: 2, days: [0] });
+  raw.prepare('UPDATE att_shifts SET needed = 1 WHERE id = 1').run();
+
+  const placed = onDay(await run(db), MON).filter((e) => !e.drop);
+  assert.equal(placed.length, 1);
+});
+
+test('nought means the draft puts nobody on', async () => {
+  // It used to be floored at one, so a shift told to take nobody took one.
+  const { db, raw } = setup();
+  raw.prepare('UPDATE att_shifts SET needed = 0 WHERE id = 1').run();
+  seedHabit(raw);
+
+  assert.equal(onDay(await run(db), MON).filter((e) => !e.drop).length, 0);
+});
+
+/** Everybody marked as unable to work the day, so the shift goes short. */
+const allAway = (raw, day) => {
+  for (const id of [1, 2, 3]) {
+    raw.prepare(
+      `INSERT INTO att_availability (staff_id, day, status, set_by, decision)
+       VALUES (?, ?, 'unavailable', 'test', 'approved')`,
+    ).run(id, day);
+  }
+};
+
+test('a gap says where the number it was aiming at came from', async () => {
+  const { db, raw } = setup();
+  raw.prepare("UPDATE att_shifts SET needed = 1, cover = 'must' WHERE id = 1").run();
+  allAway(raw, MON);
+
+  const gap = (await run(db)).gaps.find((g) => g.day === MON && g.shift === 'Early');
+  assert.equal(gap?.wantedFrom, 'shift');
+  assert.equal(gap?.wanted, 1);
+});
+
+test('and says so when it is guessing from the weeks behind', async () => {
+  // The line that tells a planner the shift has not said, and that setting
+  // People needed is the thing to change.
+  const { db, raw } = setup();
+  seedHabit(raw);
+  allAway(raw, MON);
+
+  const gap = (await run(db)).gaps.find((g) => g.day === MON && g.shift === 'Early');
+  assert.equal(gap?.wantedFrom, 'history');
+});

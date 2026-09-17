@@ -2718,6 +2718,19 @@ export const GUIDE = [
         + 'reception means three, whether or not the last few weeks managed it. Left blank the '
         + 'draft copies what those weeks actually did, which is right for a shift that has been '
         + 'running and no use at all for one you added yesterday.' },
+      { p: 'A number typed here is a ceiling as much as a floor. The weeks behind cannot raise '
+        + 'it, so a shift cut from two people to one drops to one on the next draft rather than '
+        + 'waiting for the history to age out, and cards already sitting on the day cannot '
+        + 'raise it either. Nought means the draft puts nobody on.' },
+      { note: 'Where a day is carrying more empty cards than the shift asks for, the draft '
+        + 'offers to take the spare ones off, and they appear in the list under Spare cards to '
+        + 'take off for you to untick if you want them kept. Only cards nobody is on, and only '
+        + 'where the shift has said a number: three cards put on a shift that has never said '
+        + 'how many it needs are read as you asking for three.' },
+      { p: 'Where the draft could not fill something, the list says which of the three the '
+        + 'number came from: what the shift asks for, what the last few weeks did, or the cards '
+        + 'already on the day. A shift you think of as a one-person job showing "2 of 2" has '
+        + 'usually never been given a number.' },
 
       { sub: 'When a shift is wanted, and when it is not' },
       { p: 'Every shift on the rota is wanted, every day it is allowed to run. That is the '

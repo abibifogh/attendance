@@ -428,6 +428,16 @@ test('a hole in the draft is sent as an empty slot, not as nobody', () => {
     'nothing goes out as a change with nobody on it');
 });
 
+test('a spare card goes out as a removal, not as a change setting it to nobody', () => {
+  // Read as a change it would be a change to what the card already is, which
+  // writes nothing and leaves the card where it was.
+  const out = draftEntries([
+    { staffId: null, day: MONDAY, shiftId: 1, rowId: 91, drop: true },
+  ]);
+
+  assert.deepEqual(out[0], { id: 91, day: MONDAY, remove: true });
+});
+
 test('a draft with a hole in it saves, hole and all', async () => {
   const { raw, db } = setup();
   cover(raw, 1, 'must');
