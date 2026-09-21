@@ -49,26 +49,41 @@ export async function renderAttMyLunch(params = {}) {
 
   const mine = data.days.filter((d) => d.rostered);
   const thisIsTheWeek = data.monday === data.orderingFor;
+  const weekEnd = shiftDay(data.monday, 6);
+  const onThisWeek = data.today >= data.monday && data.today <= weekEnd;
 
   mount(host,
     h('div.page-head',
       h('div',
         h('h1', 'My lunch'),
         h('div.sub', `Week of ${fmtDayShort(data.monday)}`
+          + (onThisWeek ? ' · this week' : '')
           + (thisIsTheWeek ? ' · the week being ordered' : '')),
       ),
       h('div.btn-row',
         h('button.btn-sm', { onclick: () => reload({ week: shiftDay(data.monday, -7) }) }, '‹'),
-        h('button.btn-sm', { onclick: () => reload({ week: null }) }, 'The coming week'),
+        onThisWeek
+          ? null
+          : h('button.btn-sm', { onclick: () => reload({ week: null }) }, 'This week'),
+        thisIsTheWeek
+          ? null
+          : h('button.btn-sm', {
+            onclick: () => reload({ week: data.orderingFor }),
+          }, 'The week being ordered'),
         h('button.btn-sm', { onclick: () => reload({ week: shiftDay(data.monday, 7) }) }, '›'),
       ),
     ),
 
-    stateLine(data),
+    stateLine(data, reload),
 
     card('My week', { wide: true, note: `${mine.filter((d) => d.taking).length} lunches` },
       mine.length
-        ? h('div.me-list', mine.map((day) => dayRow(day, data, reload)))
+        ? h('div',
+          h('div.me-list', mine.map((day) => dayRow(day, data, reload))),
+          data.open ? null : h('p.muted', { style: { fontSize: '.8rem', marginBottom: 0 } },
+            `Changes are asked for at least ${data.noticeHours} hours before the day. Lunch is `
+            + 'bought and prepared ahead, so a day closer than that is already being cooked: '
+            + 'find whoever runs the kitchen and ask them in person.'))
         : h('p.muted', 'You are not down to work any day this week, so there is no lunch to '
           + 'order. If you are coming in anyway, ask whoever runs the kitchen to put you down.')),
 
@@ -87,15 +102,30 @@ export async function renderAttMyLunch(params = {}) {
  * Not "the window is closed at 09:14". Somebody standing in a corridor wants
  * to know whether they can change Thursday, and if not, who can.
  */
-function stateLine(data) {
+function stateLine(data, reload) {
   if (data.open) {
     return h('div.alert.info', { style: { display: 'block' } },
-      h('div.alert-title', 'The list is open'),
+      h('div.alert-title', 'The list is open for this week'),
       h('div.alert-detail', 'Change any day yourself and it takes effect straight away. '
         + (data.closesOn ? `It shuts ${whenShort(data.closesOn)}.` : '')));
   }
+
+  // Open, but for a week that is not the one on screen. The ordinary case,
+  // now that this opens on the week we are in: what is in front of them is
+  // settled, and the one they can still change freely is next door.
+  if (data.windowOpen) {
+    return h('div.alert.warn', { style: { display: 'block' } },
+      h('div.alert-title', 'This week is settled'),
+      h('div.alert-detail',
+        'The kitchen has already bought for it, so a change to these days is asked for rather '
+        + 'than made. The list is open now for the week of '
+        + `${fmtDayShort(data.orderingFor)}, and you can change that one yourself.`),
+      h('button.btn-sm', { style: { marginTop: '.4rem' },
+        onclick: () => reload({ week: data.orderingFor }) }, 'Go to that week'));
+  }
+
   return h('div.alert.warn', { style: { display: 'block' } },
-    h('div.alert-title', 'The list is shut for this week'),
+    h('div.alert-title', 'The list is shut'),
     h('div.alert-detail', 'The count has gone to the kitchen, so a change is asked for rather '
       + 'than made, and whoever runs the kitchen decides. '
       + (data.opensOn ? `It opens again ${whenShort(data.opensOn)}.` : '')));
@@ -127,22 +157,44 @@ function dayRow(day, data, reload) {
         : null),
     h('div.me-was',
       h(`span.pill${pill ? `.${pill}` : ''}`, said),
-      day.asking
-        ? h('button.btn-sm', {
-          style: { marginLeft: '.4rem' },
-          onclick: async () => {
-            try {
-              await api.myLunchWithdraw(day.asking.id);
-              toast('Taken back.');
-              await reload();
-            } catch (err) { toast(err.message, 'bad'); }
-          },
-        }, 'Take it back')
-        : h('button.btn-sm', {
-          style: { marginLeft: '.4rem' },
-          onclick: () => changeDay(day, data, reload),
-        }, data.open ? 'Change' : 'Ask to change')),
+      changeButton(day, data, reload)),
   );
+}
+
+/**
+ * The one thing they can do about a day, or the reason there is nothing.
+ *
+ * NO BUTTON ON A DAY THAT IS TOO CLOSE. The food is bought and prepared ahead
+ * of the meal, so a request landing on the morning of the day is news rather
+ * than a request. A button that opens a dialog the server then refuses is
+ * worse than no button, and the day says why instead: the reason is the useful
+ * part, because what it tells somebody is to go and find a person.
+ */
+function changeButton(day, data, reload) {
+  if (day.asking) {
+    return h('button.btn-sm', {
+      style: { marginLeft: '.4rem' },
+      onclick: async () => {
+        try {
+          await api.myLunchWithdraw(day.asking.id);
+          toast('Taken back.');
+          await reload();
+        } catch (err) { toast(err.message, 'bad'); }
+      },
+    }, 'Take it back');
+  }
+
+  // While the list is open it is not a request at all, so the notice period
+  // has nothing to say about it.
+  if (!data.open && day.tooLate) {
+    return h('small.muted', { style: { display: 'block', marginTop: '.2rem' } },
+      day.day < data.today ? 'Gone' : 'Too close to change');
+  }
+
+  return h('button.btn-sm', {
+    style: { marginLeft: '.4rem' },
+    onclick: () => changeDay(day, data, reload),
+  }, data.open ? 'Change' : 'Ask to change');
 }
 
 /** What the kitchen said, kept where they can read it again. */

@@ -352,6 +352,12 @@ export const GUIDE = [
         + 'same button asks instead. Say why: a reason is what somebody says yes to. It shows '
         + 'as waiting until it is answered, you can take it back until then, and the answer '
         + 'stays on the screen afterwards rather than being said once and gone.' },
+      { warn: 'A day closer than 24 hours cannot be asked about at all, and the button is not '
+        + 'there on it. Lunch is bought and prepared ahead, so a day that close is already '
+        + 'being cooked. Find whoever runs the kitchen and ask them in person.' },
+      { note: 'It opens on the week you are in rather than the week being ordered, because "am '
+        + 'I down for lunch today" is the question. The week being ordered is one press away '
+        + 'and the buttons name both.' },
       { note: 'You can only ask about a day you are down to work, or one the kitchen has '
         + 'already put you down for. If you are coming in on a day off, ask them to put you '
         + 'down rather than asking here.' },
@@ -2447,6 +2453,10 @@ export const GUIDE = [
         + 'everybody eating are under that so the count can be checked rather than trusted.' },
       { p: '"of 9 in" beside a count says how many are rostered that day, so eight out of nine '
         + 'reads differently from eight out of twenty.' },
+      { note: 'It opens on the week you are in, not the week being ordered. What the screen '
+        + 'gets asked most is about today: how many are eating at noon, who is on the list, '
+        + 'whether somebody was put down. The week you are buying for is a press away and the '
+        + 'banner at the top links straight to it.' },
       { p: '"Still to say" is everybody on the rota who has answered nothing. Saying no counts '
         + 'as answering; these are the ones the kitchen would be guessing about. Put somebody '
         + 'down from there when they tell you in person rather than sending them to the link.' },

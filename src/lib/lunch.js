@@ -306,3 +306,39 @@ export function unanswered({ week, rosteredBy = new Map(), orders = [], staff = 
 
   return out.sort((a, b) => b.days.length - a.days.length || a.name.localeCompare(b.name));
 }
+
+/** How long before a day the kitchen stops taking changes to it. */
+export const NOTICE_HOURS = 24;
+
+/**
+ * Whether there is still time to ask for a day to be changed.
+ *
+ * WHY A DAY THAT HAS NOT HAPPENED IS STILL TOO LATE. The food is bought and
+ * prepared ahead of the meal, so a request landing on the morning of the day
+ * is not a request, it is news. Worse, the app answering "asked, the kitchen
+ * will tell you" for a Thursday that is already being cooked teaches people
+ * that asking works when it cannot, and the first they hear otherwise is at
+ * noon with no plate.
+ *
+ * MEASURED TO THE START OF THE DAY rather than to the meal. Lunch is at noon
+ * and the shopping is done the day before, so midnight is the honest line: it
+ * is the point past which the kitchen has committed to the day. Counting to
+ * noon would let somebody ask at ten in the morning for the day after
+ * tomorrow's lunch and be told yes, then find the shopping was done last
+ * night.
+ *
+ * Local wall clock on both sides, in one place, so nothing is an hour out.
+ * Ghana does not move its clocks and a property that did would be an hour out
+ * twice a year on a rule about a whole day, which is the right amount of
+ * wrong.
+ */
+export function tooLateFor(day, now, hours = NOTICE_HOURS) {
+  const { date, minutes } = atOf(now);
+  const nowAt = Date.UTC(
+    ...String(date).split('-').map((n, i) => (i === 1 ? Number(n) - 1 : Number(n))),
+  ) + minutes * 60_000;
+  const dayAt = Date.UTC(
+    ...String(day).split('-').map((n, i) => (i === 1 ? Number(n) - 1 : Number(n))),
+  );
+  return dayAt - nowAt < hours * 3_600_000;
+}

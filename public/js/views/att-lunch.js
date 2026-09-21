@@ -32,18 +32,26 @@ export async function renderAttLunch(params = {}) {
   }
 
   const { summary, window } = data;
+  // Two different weeks, and the screen has to be able to name both. The one
+  // being ordered is what the kitchen buys against; the one we are standing in
+  // is what it cooks today, and that is the one it opens on.
   const thisIsTheWeek = data.monday === window.monday;
+  const weekEnd = shiftDay(data.monday, 6);
+  const onThisWeek = data.today >= data.monday && data.today <= weekEnd;
 
   mount(host,
     h('div.page-head.no-print',
       h('div',
         h('h1', 'Lunch'),
         h('div.sub', `Week of ${fmtDayShort(data.monday)}`
+          + (onThisWeek ? ' · this week' : '')
           + (thisIsTheWeek ? ' · the week being ordered' : '')),
       ),
       h('div.btn-row',
         h('button.btn-sm', { onclick: () => reload({ week: shiftDay(data.monday, -7) }) }, '‹'),
-        h('button.btn-sm', { onclick: () => reload({ week: null }) }, 'The coming week'),
+        onThisWeek
+          ? null
+          : h('button.btn-sm', { onclick: () => reload({ week: null }) }, 'This week'),
         h('button.btn-sm', { onclick: () => reload({ week: shiftDay(data.monday, 7) }) }, '›'),
         h('button.btn.btn-primary', { onclick: () => printReport({
           title: `Lunch, week of ${fmtDayShort(data.monday)}`,
@@ -212,7 +220,9 @@ function windowLine(data, window, thisIsTheWeek, reload) {
           : `When it opens it will be for the week of ${fmtDayShort(window.monday)}.`)),
     thisIsTheWeek ? null : h('button.btn-sm', {
       style: { marginLeft: 'auto' },
-      onclick: () => reload({ week: null }),
+      // Named rather than left as "the default". The default is this week now,
+      // and this button is the one that goes to the other one.
+      onclick: () => reload({ week: window.monday }),
     }, 'Go to that week'));
 }
 

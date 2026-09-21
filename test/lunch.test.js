@@ -4,8 +4,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  daysFor, first, menuWeek, readTime, saidNo, scheduleFrom, showTime, summarise, unanswered,
-  weekDays, windowFor,
+  NOTICE_HOURS, daysFor, first, menuWeek, readTime, saidNo, scheduleFrom, showTime, summarise,
+  tooLateFor, unanswered, weekDays, windowFor,
 } from '../src/lib/lunch.js';
 
 /**
@@ -614,7 +614,9 @@ test('the kitchen counts plates, not the people who said yes', async () => {
       ],
     }), token, '1');
 
-    const week = await (await lunch.lunchWeek(ctxFor(db, '/api/lunch'))).json();
+    // Asked for by name. The screen opens on the week we are standing in, not
+    // the one being ordered, so the week this test is about has to be said.
+    const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
     assert.equal(week.monday, MON);
     assert.equal(week.summary.plates, 2);
     assert.deepEqual(week.summary.columns[0].names, ['Henry']);
@@ -707,7 +709,7 @@ test('the kitchen can put anybody down, on a day the rota does not have them', a
     assert.equal(out.saved, 2);
     assert.equal(out.name, 'Ama Serwaa');
 
-    const week = await (await lunch.lunchWeek(ctxFor(db, '/api/lunch'))).json();
+    const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
     const fri = week.summary.columns.find((c) => c.day === friday);
     assert.deepEqual(fri.names, ['Ama'], 'she is on the count even though she is not on the rota');
   });
@@ -912,7 +914,7 @@ test('once it is shut, the same button asks instead', async () => {
   const lunch = await import('../src/routes/lunch.js');
 
   // The Tuesday of the week itself: ordering has closed and the count is out.
-  await atDay('2026-08-25', async () => {
+  await atDay(MON, async () => {
     const out = await (await lunch.askLunchChange(
       asHenry(db, '/api/me/lunch', { day: WED, want: true, note: 'Working through' }),
     )).json();
@@ -935,7 +937,7 @@ test('the kitchen is told, and the request is on their screen', async () => {
   withLogin(raw);
   const lunch = await import('../src/routes/lunch.js');
 
-  await atDay('2026-08-25', async () => {
+  await atDay(MON, async () => {
     await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
     const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
 
@@ -957,7 +959,7 @@ test('saying yes changes the plate as well as the answer', async () => {
   withLogin(raw);
   const lunch = await import('../src/routes/lunch.js');
 
-  await atDay('2026-08-25', async () => {
+  await atDay(MON, async () => {
     await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
     const id = raw.prepare('SELECT id FROM lunch_change').get().id;
 
@@ -978,7 +980,7 @@ test('saying no writes no plate, and the answer is theirs to read', async () => 
   withLogin(raw);
   const lunch = await import('../src/routes/lunch.js');
 
-  await atDay('2026-08-25', async () => {
+  await atDay(MON, async () => {
     await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
     const id = raw.prepare('SELECT id FROM lunch_change').get().id;
     await lunch.decideLunchChange(
@@ -1000,7 +1002,7 @@ test('the answer goes to the person who asked and nobody else', async () => {
   withLogin(raw);
   const lunch = await import('../src/routes/lunch.js');
 
-  await atDay('2026-08-25', async () => {
+  await atDay(MON, async () => {
     await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
     const id = raw.prepare('SELECT id FROM lunch_change').get().id;
     await lunch.decideLunchChange(ctxFor(db, `/api/lunch/changes/${id}`, { decision: 'approved' }), id);
@@ -1018,7 +1020,7 @@ test('asking twice about one day is changing your mind, not two questions', asyn
   withLogin(raw);
   const lunch = await import('../src/routes/lunch.js');
 
-  await atDay('2026-08-25', async () => {
+  await atDay(MON, async () => {
     await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
     await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true, note: 'Second thoughts' }));
 
@@ -1033,7 +1035,7 @@ test('a day they are not down to work has no lunch on it to change', async () =>
   withLogin(raw);
   const lunch = await import('../src/routes/lunch.js');
 
-  await atDay('2026-08-25', async () => {
+  await atDay(MON, async () => {
     await assert.rejects(
       () => lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: '2026-08-28', want: true })),
       /not down to work that day/,
@@ -1047,7 +1049,7 @@ test('asking for what they already have is refused rather than queued', async ()
   raw.prepare('INSERT INTO lunch_order (staff_id, day, taking) VALUES (1, ?, 1)').run(WED);
   const lunch = await import('../src/routes/lunch.js');
 
-  await atDay('2026-08-25', async () => {
+  await atDay(MON, async () => {
     await assert.rejects(
       () => lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true })),
       /already down for lunch/,
@@ -1061,7 +1063,7 @@ test('a request can be taken back while nobody has answered it', async () => {
   withLogin(raw);
   const lunch = await import('../src/routes/lunch.js');
 
-  await atDay('2026-08-25', async () => {
+  await atDay(MON, async () => {
     await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
     const id = raw.prepare('SELECT id FROM lunch_change').get().id;
     await lunch.withdrawLunchChange(asHenry(db, `/api/me/lunch/changes/${id}`), id);
@@ -1090,7 +1092,7 @@ test('a decision already made is not made twice', async () => {
   withLogin(raw);
   const lunch = await import('../src/routes/lunch.js');
 
-  await atDay('2026-08-25', async () => {
+  await atDay(MON, async () => {
     await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
     const id = raw.prepare('SELECT id FROM lunch_change').get().id;
     await lunch.decideLunchChange(ctxFor(db, `/api/lunch/changes/${id}`, { decision: 'approved' }), id);
@@ -1100,4 +1102,135 @@ test('a decision already made is not made twice', async () => {
       /nothing waiting on that/,
     );
   });
+});
+
+// ---------------------------------------------------------------------------
+// The week it opens on, and how late is too late
+// ---------------------------------------------------------------------------
+
+test('both screens open on the week we are standing in', async () => {
+  // It used to open on the week ordering points at, which answers "what am I
+  // buying" and none of the other questions this screen gets asked. Most of
+  // what anybody opens it for is today.
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay(THU, async () => {
+    const kitchen = await (await lunch.lunchWeek(ctxFor(db, '/api/lunch'))).json();
+    assert.equal(kitchen.monday, '2026-08-17', 'the Monday of the week containing the Thursday');
+    assert.equal(kitchen.window.monday, MON, 'and it still says which week is being ordered');
+
+    const theirs = await (await lunch.myLunch(asHenry(db, '/api/me/lunch'))).json();
+    assert.equal(theirs.monday, '2026-08-17');
+    assert.equal(theirs.orderingFor, MON);
+  });
+});
+
+test('a week asked for by name is still the week that comes back', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay(THU, async () => {
+    const out = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
+    assert.equal(out.monday, MON);
+  });
+});
+
+test('twenty-four hours is in time and anything less is not', () => {
+  // Measured to the start of the day rather than to the meal: the shopping is
+  // done the day before, so midnight is the point the kitchen has committed.
+  assert.equal(tooLateFor('2026-08-26', '2026-08-24 10:00'), false, 'two days out');
+  assert.equal(tooLateFor('2026-08-25', '2026-08-24 00:00'), false, 'exactly twenty-four hours');
+  assert.equal(tooLateFor('2026-08-25', '2026-08-24 00:01'), true, 'a minute inside it');
+  assert.equal(tooLateFor('2026-08-25', '2026-08-24 10:00'), true, 'tomorrow, this morning');
+  assert.equal(tooLateFor('2026-08-24', '2026-08-24 10:00'), true, 'today');
+  assert.equal(tooLateFor('2026-08-23', '2026-08-24 10:00'), true, 'a day that has gone');
+  assert.equal(NOTICE_HOURS, 24);
+});
+
+test('a day too close to change is refused rather than queued', async () => {
+  // Answering "asked, the kitchen will tell you" about a day already being
+  // cooked teaches people that asking works when it cannot, and the first they
+  // hear otherwise is at noon with no plate.
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  // Monday of the week itself: Tuesday is fourteen hours off.
+  await atDay(MON, async () => {
+    await assert.rejects(
+      () => lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: '2026-08-25', want: true })),
+      /too close to change/,
+    );
+  });
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM lunch_change').get().n, 0);
+});
+
+test('a day that has already gone is refused too', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay(WED, async () => {
+    await assert.rejects(
+      () => lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: MON, want: true })),
+      /too close to change/,
+    );
+  });
+});
+
+test('the screen says which days are past asking about', async () => {
+  // Worked out on the server so the button and the route agree. A button the
+  // server would refuse is worse than no button.
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay(MON, async () => {
+    const mine = await (await lunch.myLunch(asHenry(db, `/api/me/lunch?week=${MON}`))).json();
+    const by = new Map(mine.days.map((d) => [d.day, d]));
+
+    assert.equal(by.get(MON).tooLate, true, 'today');
+    assert.equal(by.get('2026-08-25').tooLate, true, 'tomorrow');
+    assert.equal(by.get(WED).tooLate, false, 'the day after');
+    assert.equal(mine.noticeHours, 24);
+  });
+});
+
+test('while the list is open the notice period has nothing to say', async () => {
+  // Nothing has been bought, so there is nothing to give notice about. The
+  // days in an open window are a week away in any case.
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay(THU, async () => {
+    const out = await (await lunch.askLunchChange(
+      asHenry(db, '/api/me/lunch', { day: MON, want: true }),
+    )).json();
+    assert.equal(out.changed, true);
+  });
+});
+
+test('with the list open, any day of that week changes outright', async () => {
+  // Not only its Monday. The week a day belongs to was being worked out by
+  // counting seven days forward from the day itself, so the comparison asked
+  // whether the day WAS the ordering Monday rather than whether it was in the
+  // ordering week, and a Wednesday went into the approval queue with the list
+  // wide open.
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay(THU, async () => {
+    const out = await (await lunch.askLunchChange(
+      asHenry(db, '/api/me/lunch', { day: WED, want: true }),
+    )).json();
+    assert.equal(out.changed, true, 'changed, not queued');
+  });
+
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM lunch_change').get().n, 0);
+  assert.equal(raw.prepare('SELECT taking FROM lunch_order WHERE day = ?').get(WED).taking, 1);
 });

@@ -3,10 +3,10 @@ import { createNotice } from '../lib/notices.js';
 import { getPepper, hashPin } from '../lib/auth.js';
 import { loadDataset, scheduleFor } from '../lib/attendance.js';
 import { siteOrigin } from '../lib/site.js';
-import { dow, nowIn, todayIn } from '../util/dates.js';
+import { dow, nowIn, startOfWeek, todayIn } from '../util/dates.js';
 import {
-  DAY_NAMES, daysFor, first, menuWeek, readTime, saidNo, scheduleFrom, showTime, summarise,
-  unanswered, weekDays, windowFor,
+  DAY_NAMES, NOTICE_HOURS, daysFor, first, menuWeek, readTime, saidNo, scheduleFrom, showTime,
+  summarise, tooLateFor, unanswered, weekDays, windowFor,
 } from '../lib/lunch.js';
 
 /**
@@ -109,8 +109,16 @@ export async function lunchWeek(ctx) {
   const today = todayIn(settings.timezone);
   const window = windowFor(nowIn(settings.timezone), settings.schedule);
 
+  // THE WEEK WE ARE IN, NOT THE ONE BEING ORDERED. It used to open on the week
+  // ordering points at, which is the right answer to "what am I buying" and
+  // the wrong one to every other question this screen gets asked. Most of what
+  // anybody opens it for is today: how many are eating at noon, who is on the
+  // list, whether somebody was put down. Opening on a week that has not begun
+  // meant the count on the screen was never the count in the kitchen, and the
+  // way back to now was a button nobody pressed because nothing said they were
+  // anywhere else. The week being ordered is a press away and says so.
   const asked = ctx.url.searchParams.get('week');
-  const monday = /^\d{4}-\d{2}-\d{2}$/.test(asked ?? '') ? asked : window.monday;
+  const monday = /^\d{4}-\d{2}-\d{2}$/.test(asked ?? '') ? asked : startOfWeek(today);
   const week = weekDays(monday);
 
   const [{ ds, byStaff }, menu, orders, asking] = await Promise.all([
@@ -595,8 +603,12 @@ export async function myLunch(ctx) {
   const settings = await settingsOf(ctx.db);
   const window = windowFor(nowIn(settings.timezone), settings.schedule);
 
+  // The week they are in, for the same reason the kitchen's screen opens on it:
+  // "am I down for lunch today" is the question, and an answer about a week
+  // that has not started is not an answer to it.
   const asked = ctx.url.searchParams.get('week');
-  const monday = /^\d{4}-\d{2}-\d{2}$/.test(asked ?? '') ? asked : window.monday;
+  const today = todayIn(settings.timezone);
+  const monday = /^\d{4}-\d{2}-\d{2}$/.test(asked ?? '') ? asked : startOfWeek(today);
   const week = weekDays(monday);
   const thisIsTheWeek = monday === window.monday;
 
@@ -619,14 +631,21 @@ export async function myLunch(ctx) {
     who: { id: staff.id, name: staff.name, first: first(staff.name) },
     monday,
     week,
-    today: todayIn(settings.timezone),
+    today,
     on: settings.on,
     // Open means they change it themselves. Shut means they ask.
     open: settings.on && window.open && thisIsTheWeek,
+    // Whether it is taking answers at all, which is a different question from
+    // whether it is taking them for the week on screen. Standing on this week
+    // while the list is open for next week is the ordinary case now that the
+    // screen opens on the week we are in, and "it opens again on Thursday" is
+    // the wrong thing to say to somebody when it is open at that moment.
+    windowOpen: settings.on && window.open,
     orderingFor: window.monday,
     opensOn: window.opensOn,
     closesOn: window.closesOn,
     closesAfter: window.closesAfter,
+    noticeHours: NOTICE_HOURS,
     days: week.map((day) => {
       const pending = waitingOn.get(day) ?? null;
       return {
@@ -637,7 +656,13 @@ export async function myLunch(ctx) {
         rostered: mine.includes(day),
         // Null is "you have not said", which is not the same as no.
         taking: answers.has(day) ? answers.get(day) : null,
-        asking: pending ? { id: pending.id, want: Boolean(pending.want), note: pending.note ?? null } : null,
+        asking: pending
+          ? { id: pending.id, want: Boolean(pending.want), note: pending.note ?? null }
+          : null,
+        // Whether there is still time to ask about it. Worked out here rather
+        // than on the screen so the button and the route agree: a button the
+        // server would refuse is worse than no button.
+        tooLate: tooLateFor(day, nowIn(settings.timezone)),
       };
     }),
     // Everything answered, so the record of a refusal is theirs to read rather
@@ -677,7 +702,13 @@ export async function askLunchChange(ctx) {
   const want = body.want === true || body.want === 1 || body.want === '1';
   const note = str(body.note, 'Note', { max: 200 });
 
-  const week = weekDays(day);
+  // THE WEEK THE DAY BELONGS TO. weekDays counts seven days forward from
+  // whatever it is handed, so passing the day itself made the "week" start on
+  // that day. Harmless for reading the rota, and wrong for the comparison
+  // below: it asked whether the day WAS the ordering Monday rather than
+  // whether it was in the ordering week, so with the list wide open a
+  // Wednesday went into the approval queue and only a Monday changed outright.
+  const week = weekDays(startOfWeek(day));
   const [{ byStaff }, held] = await Promise.all([
     rosteredIn(ctx.db, week),
     ctx.db.prepare('SELECT taking FROM lunch_order WHERE staff_id = ?1 AND day = ?2')
@@ -706,9 +737,22 @@ export async function askLunchChange(ctx) {
   // ordered, nobody has read the number, and putting a member of staff in a
   // queue to change an answer they could change on the link a minute ago
   // would be the app inventing an approval for its own sake.
-  if (window.open && weekDays(window.monday)[0] === week[0]) {
+  if (window.open && week[0] === window.monday) {
     await answer(ctx.db, staff.id, day, want, `${staff.name} (staff)`);
     return json({ ok: true, changed: true, day, taking: want });
+  }
+
+  // A DAY TOO CLOSE TO ASK ABOUT. The food is bought and prepared ahead of the
+  // meal, so a request landing on the morning of the day is not a request, it
+  // is news. Refused rather than queued: answering "the kitchen will tell you"
+  // about a Thursday already being cooked teaches people that asking works
+  // when it cannot, and the first they hear otherwise is at noon.
+  if (tooLateFor(day, nowIn(settings.timezone))) {
+    throw badRequest(
+      `${dayName(day)} is too close to change. Lunch is bought and prepared ahead of the day, `
+      + `so changes are asked for at least ${NOTICE_HOURS} hours before it. Find whoever runs `
+      + 'the kitchen and ask them in person.',
+    );
   }
 
   // Shut. The order has gone to the kitchen, so it is asked for and waits.
