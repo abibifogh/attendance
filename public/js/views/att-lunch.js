@@ -113,7 +113,34 @@ export async function renderAttLunch(params = {}) {
           h('div', h('small.muted', person.days.map((d) => fmtDayShort(d)).join(' · ')))),
         h('button.btn-sm.no-print', {
           onclick: () => putThemDown(person, data, reload),
-        }, 'Put them down'))))) 
+        }, 'Put them down')))))
+      : null,
+
+    // EVERY ANSWER IS SOMEWHERE ON THIS PAGE. Without this one, saying no put
+    // somebody in neither list: not under a day, because they are not eating,
+    // and not in the chase list, because they answered. Somebody who filled
+    // the form in appeared nowhere, and "but I did order" could not be checked
+    // against anything.
+    data.declined?.length
+      ? card('Said no', {
+        wide: true,
+        cls: 'no-print',
+        note: `${data.declined.length} ${data.declined.length === 1 ? 'person' : 'people'}`,
+      },
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Answered, and not eating. Nothing to chase. It is here so that somebody who says they '
+        + 'answered can be found, and so a no can be turned into a yes if they change their '
+        + 'mind.'),
+      h('div.lunch-waiting', data.declined.map((person) => h('div.lunch-waiting-row',
+        h('div',
+          h('strong', person.name),
+          h('div', h('small.muted', `no for ${person.days.map((d) => fmtDayShort(d)).join(' \u00b7 ')}`))),
+        h('button.btn-sm.no-print', {
+          // Nothing ticked to begin with. The days against this name are the
+          // ones they said no to, and opening the dialog with those ticked
+          // would be the screen proposing the opposite of what they said.
+          onclick: () => putThemDown({ ...person, days: [] }, data, reload, { anyDay: true }),
+        }, 'Put them down')))))
       : null,
 
     linkCard(data, reload),

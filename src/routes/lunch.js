@@ -4,8 +4,8 @@ import { loadDataset, scheduleFor } from '../lib/attendance.js';
 import { siteOrigin } from '../lib/site.js';
 import { dow, nowIn, todayIn } from '../util/dates.js';
 import {
-  DAY_NAMES, daysFor, first, menuWeek, readTime, scheduleFrom, showTime, summarise, unanswered,
-  weekDays, windowFor,
+  DAY_NAMES, daysFor, first, menuWeek, readTime, saidNo, scheduleFrom, showTime, summarise,
+  unanswered, weekDays, windowFor,
 } from '../lib/lunch.js';
 
 /**
@@ -120,6 +120,12 @@ export async function lunchWeek(ctx) {
   ]);
 
   const staff = ds.staff.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name }));
+  // Everybody the register has ever had, for reading an order back. An order
+  // is a fact and a plate is a plate: somebody who ordered on the Monday and
+  // was made a leaver on the Tuesday is still eating on the Wednesday, and
+  // naming them off the active list alone quietly took their plates off the
+  // count. Chasing is a different question and still only asks the active.
+  const everybody = ds.staff.map((s) => ({ id: s.id, name: s.name }));
   const rows = orders.results ?? [];
 
   return json({
@@ -151,9 +157,13 @@ export async function lunchWeek(ctx) {
       meal: menu.get(dayOfWeek(day))?.meal ?? null,
       note: menu.get(dayOfWeek(day))?.note ?? null,
     })),
-    summary: summarise({ week, menu, orders: rows, staff }),
+    summary: summarise({ week, menu, orders: rows, staff: everybody }),
     // Who is down to work and has said nothing. The only list worth chasing.
     waiting: unanswered({ week, rosteredBy: byStaff, orders: rows, staff }),
+    // And who answered no. Not a list to chase, a list to check: without it
+    // an answer of "no" is indistinguishable from never having answered, and
+    // somebody who filled the form in appears nowhere on the page.
+    declined: saidNo({ week, orders: rows, staff: everybody }),
     // Everybody, so the kitchen can put down a person the rota does not have
     // in this week at all.
     staff,
@@ -490,6 +500,22 @@ export async function lunchSay(ctx, token, staffParam) {
       `INSERT INTO lunch_order (staff_id, day, taking, at) VALUES (?1, ?2, ?3, datetime('now'))
        ON CONFLICT (staff_id, day) DO UPDATE SET taking = ?3, at = datetime('now')`,
     ).bind(staffId, day, entry.taking ? 1 : 0));
+  }
+
+  // SAVING NOTHING IS NOT SAVING. Every day sent can be dropped by the check
+  // above, and this used to answer that with ok and a count of nought, on
+  // which the page thanked them and closed. Somebody who answered on a phone
+  // that had the page open from before the rota changed under them went away
+  // certain they had ordered, and appeared on nothing the kitchen reads: no
+  // order to count, and nothing to chase, because they are no longer down to
+  // work the days they answered for. Told plainly instead, while they are
+  // still standing there and can do something about it.
+  if (said.length && !statements.length) {
+    throw badRequest(
+      'None of those days could be saved: the rota for this week has changed since this page '
+      + 'was opened, and you are not down to work the days it is showing. Open the link again '
+      + 'to see the week as it stands, and tell whoever runs the kitchen if it still looks wrong.',
+    );
   }
 
   if (statements.length) await ctx.db.batch(statements);

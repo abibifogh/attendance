@@ -4,8 +4,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  daysFor, first, menuWeek, readTime, scheduleFrom, showTime, summarise, unanswered, weekDays,
-  windowFor,
+  daysFor, first, menuWeek, readTime, saidNo, scheduleFrom, showTime, summarise, unanswered,
+  weekDays, windowFor,
 } from '../src/lib/lunch.js';
 
 /**
@@ -280,13 +280,72 @@ test('the busiest day is the one the kitchen plans around', () => {
   assert.equal(out.busiest.heads, 3);
 });
 
-test('an order for somebody who has left is not counted', () => {
+test('an order naming nobody the register has is not counted', () => {
+  // Not a leaver: a leaver is still a row in the register and is still eating.
+  // This is an order whose staff id answers to nothing at all.
   const out = summarise({
     week: WEEK,
     staff: STAFF,
     orders: [{ staff_id: 1, day: MON, taking: 1 }, { staff_id: 99, day: MON, taking: 1 }],
   });
   assert.deepEqual(out.columns[0].names, ['Kwame']);
+});
+
+// ---------------------------------------------------------------------------
+// Who said no
+// ---------------------------------------------------------------------------
+
+/**
+ * There were two lists, and between them they lost people.
+ *
+ * Somebody who answers no is in neither: not under a day, because they are not
+ * eating, and not in the chase list, because saying no is answering. So a
+ * person who filled the form in and ticked nothing appeared nowhere on the
+ * kitchen's page, and "but I did answer" could not be checked against
+ * anything. Every answer is now somewhere.
+ */
+
+test('a no is an answer, and it is on the page', () => {
+  const out = saidNo({
+    week: WEEK,
+    staff: STAFF,
+    orders: [
+      { staff_id: 1, day: MON, taking: 0 },
+      { staff_id: 1, day: '2026-08-25', taking: 0 },
+      { staff_id: 2, day: MON, taking: 1 },
+    ],
+  });
+
+  assert.equal(out.length, 1, 'only the one who said no');
+  assert.equal(out[0].name, 'Kwame Mensah');
+  assert.deepEqual(out[0].days, [MON, '2026-08-25']);
+});
+
+test('a day outside the week is not part of this week’s answer', () => {
+  const out = saidNo({
+    week: WEEK,
+    staff: STAFF,
+    orders: [{ staff_id: 1, day: '2026-09-07', taking: 0 }],
+  });
+  assert.deepEqual(out, []);
+});
+
+test('the longest no is first, and ties go by name', () => {
+  const out = saidNo({
+    week: WEEK,
+    staff: STAFF,
+    orders: [
+      { staff_id: 2, day: MON, taking: 0 },
+      { staff_id: 1, day: MON, taking: 0 },
+      { staff_id: 1, day: '2026-08-25', taking: 0 },
+      { staff_id: 3, day: MON, taking: 0 },
+    ],
+  });
+  assert.deepEqual(out.map((p) => p.name), ['Kwame Mensah', 'Ama Boateng', 'Yaa Asantewaa Darko']);
+});
+
+test('nobody who said nothing turns up under the ones who said no', () => {
+  assert.deepEqual(saidNo({ week: WEEK, staff: STAFF, orders: [] }), []);
 });
 
 test('a first name is the first word of it', () => {
@@ -676,4 +735,101 @@ test('somebody the kitchen put down can change it themselves', async () => {
     )).json();
     assert.equal(said.saved, 1);
   });
+});
+
+// ---------------------------------------------------------------------------
+// The ways somebody vanished
+// ---------------------------------------------------------------------------
+
+/**
+ * "He says he ordered, and he is on neither list."
+ *
+ * Three separate ways that could be true, all of them silent, and between them
+ * they made the question unanswerable. Saying no put somebody in neither list.
+ * An order belonging to a leaver was dropped from the count without a word. And
+ * a save that wrote nothing at all answered with ok.
+ */
+
+test('a save that writes nothing says so rather than thanking them', async () => {
+  const { db, raw } = property();
+  const lunch = await import('../src/routes/lunch.js');
+  const token = (await (await lunch.makeLink(ctxFor(db, '/api/lunch/link', {}))).json())
+    .url.split('/lunch/')[1];
+
+  // The rota changed under a page somebody already had open: Henry is off the
+  // week entirely by the time he presses the button.
+  raw.prepare('DELETE FROM att_roster WHERE staff_id = 1').run();
+
+  await atDay(THU, async () => {
+    await assert.rejects(
+      () => lunch.lunchSay(ctxFor(db, '/x', {
+        days: [{ day: MON, taking: true }, { day: WED, taking: true }],
+      }), token, '1'),
+      /rota for this week has changed/,
+    );
+  });
+
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM lunch_order').get().n, 0);
+});
+
+test('a save with one day it can keep is still a save', async () => {
+  // The refusal above must not fire whenever anything is dropped, or a week
+  // with one stale day in it would lose the days that were fine.
+  const { db, raw } = property();
+  const lunch = await import('../src/routes/lunch.js');
+  const token = (await (await lunch.makeLink(ctxFor(db, '/api/lunch/link', {}))).json())
+    .url.split('/lunch/')[1];
+
+  await atDay(THU, async () => {
+    const out = await (await lunch.lunchSay(ctxFor(db, '/x', {
+      days: [{ day: MON, taking: true }, { day: '2026-08-28', taking: true }],
+    }), token, '1')).json();
+    assert.equal(out.saved, 1);
+  });
+
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM lunch_order').get().n, 1);
+});
+
+test('answering no puts somebody on the page rather than off it', async () => {
+  const { db, raw } = property();
+  const lunch = await import('../src/routes/lunch.js');
+  const token = (await (await lunch.makeLink(ctxFor(db, '/api/lunch/link', {}))).json())
+    .url.split('/lunch/')[1];
+
+  await atDay(THU, async () => {
+    await lunch.lunchSay(ctxFor(db, '/x', {
+      days: [{ day: MON, taking: false }, { day: '2026-08-25', taking: false },
+        { day: WED, taking: false }],
+    }), token, '1');
+  });
+
+  const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
+
+  assert.equal(week.summary.plates, 0, 'he is not eating');
+  assert.equal(week.waiting.find((p) => p.name === 'Henry Aryee'), undefined,
+    'and he is not being chased, because he answered');
+  // The list that was missing. Without it he is on nothing at all.
+  assert.deepEqual(week.declined.map((p) => p.name), ['Henry Aryee']);
+  assert.equal(week.declined[0].days.length, 3);
+});
+
+test('a leaver’s plates are still on the count', async () => {
+  // An order is a fact and a plate is a plate. Somebody who ordered on the
+  // Monday and was made a leaver on the Tuesday is still eating on the
+  // Wednesday, and the count used to drop them without a word.
+  const { db, raw } = property();
+  const lunch = await import('../src/routes/lunch.js');
+  const token = (await (await lunch.makeLink(ctxFor(db, '/api/lunch/link', {}))).json())
+    .url.split('/lunch/')[1];
+
+  await atDay(THU, async () => {
+    await lunch.lunchSay(ctxFor(db, '/x', {
+      days: [{ day: MON, taking: true }, { day: WED, taking: true }],
+    }), token, '1');
+  });
+  raw.prepare('UPDATE att_staff SET active = 0 WHERE id = 1').run();
+
+  const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
+  assert.equal(week.summary.plates, 2);
+  assert.deepEqual(week.summary.columns[0].names, ['Henry']);
 });

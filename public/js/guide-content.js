@@ -2436,6 +2436,14 @@ export const GUIDE = [
       { p: '"Still to say" is everybody on the rota who has answered nothing. Saying no counts '
         + 'as answering; these are the ones the kitchen would be guessing about. Put somebody '
         + 'down from there when they tell you in person rather than sending them to the link.' },
+      { p: '"Said no" is everybody who answered and is not eating. Nothing to chase. It is on '
+        + 'the page so that every answer is somewhere: look for a name there first when '
+        + 'somebody says they answered and you cannot find them under a day. Put them down '
+        + 'from there if they have changed their mind.' },
+      { note: 'Between those two lists and the names under the days, everybody who has '
+        + 'answered is accounted for. A name on none of the three has not answered and is not '
+        + 'on the rota for the week either, which usually means the week was redrawn after '
+        + 'they opened the link.' },
       { note: 'Print the week gives the kitchen a sheet, and your print dialog will save it as '
         + 'a PDF if you choose that as the destination.' },
     ],

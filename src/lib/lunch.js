@@ -197,6 +197,12 @@ export function summarise({ week, menu = new Map(), orders = [], staff = [] }) {
   const byId = new Map(staff.map((s) => [Number(s.id), s]));
 
   const columns = week.map((day) => {
+    // EVERYBODY, NOT ONLY THE ACTIVE. This used to be handed the list the
+    // picker is built from, which is active staff, and an order it could not
+    // find a name for was dropped by the filter below without a word. So
+    // somebody who ordered on Monday and was made a leaver on Tuesday took
+    // their plates off the count with them, and the kitchen cooked short for
+    // a person who was still in the building.
     const taking = orders
       .filter((o) => o.day === day && o.taking)
       .map((o) => byId.get(Number(o.staff_id)))
@@ -250,6 +256,37 @@ export function menuWeek(rows = []) {
 
 /** The first name, which is what a kitchen list is written in. */
 export const first = (name) => String(name ?? '').trim().split(/\s+/)[0] ?? '';
+
+/**
+ * Who said no, and for which days.
+ *
+ * WHY THIS IS ON THE SCREEN AT ALL. There were two lists, and between them
+ * they lost people. A person who said no is in neither: not in the names under
+ * a day, because they are not eating, and not in the chase list, because
+ * saying no is answering. So somebody who filled the form in and ticked
+ * nothing appeared nowhere, and the kitchen being told "but I did answer" had
+ * no way of telling whether they had. Every answer is now somewhere on the
+ * page, which is the only version of this that can be checked.
+ */
+export function saidNo({ week, orders = [], staff = [] }) {
+  const byId = new Map(staff.map((s) => [Number(s.id), s]));
+  const out = new Map();
+
+  for (const order of orders) {
+    if (order.taking) continue;
+    if (!week.includes(order.day)) continue;
+    const person = byId.get(Number(order.staff_id));
+    if (!person) continue;
+    if (!out.has(person.id)) {
+      out.set(person.id, { id: Number(person.id), name: person.name, days: [] });
+    }
+    out.get(person.id).days.push(order.day);
+  }
+
+  return [...out.values()]
+    .map((p) => ({ ...p, days: p.days.sort() }))
+    .sort((a, b) => b.days.length - a.days.length || a.name.localeCompare(b.name));
+}
 
 /**
  * Who has not answered for a day they are down to work.
