@@ -116,6 +116,31 @@ export async function renderAttLunch(params = {}) {
         }, 'Put them down')))))
       : null,
 
+    // ABOVE EVERYTHING THAT IS ONLY READING. The rest of this screen is a
+    // count and three lists; this is the one part somebody has to decide
+    // about, and a decision under a fold is a decision that waits a week.
+    data.changes?.length
+      ? card('Waiting on you', {
+        wide: true,
+        cls: 'no-print',
+        note: `${data.changes.length} to answer`,
+      },
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Asked for after the list shut, so the count you ordered against has already gone. '
+        + 'Saying yes changes the plate as well, so there is nothing to remember afterwards.'),
+      h('div.lunch-waiting', data.changes.map((ask) => h('div.lunch-waiting-row',
+        h('div',
+          h('strong', ask.name),
+          h('div', h('small.muted',
+            `${ask.want ? 'Wants lunch on' : 'Wants to come off'} ${fmtDayShort(ask.day)}`
+            + `${ask.note ? ` \u00b7 \u201c${ask.note}\u201d` : ''}`))),
+        h('div.btn-row',
+          h('button.btn-sm', { onclick: () => decideChange(ask, 'declined', reload) }, 'No'),
+          h('button.btn.btn-primary.btn-sm', {
+            onclick: () => decideChange(ask, 'approved', reload),
+          }, 'Yes')))))) 
+      : null,
+
     // EVERY ANSWER IS SOMEWHERE ON THIS PAGE. Without this one, saying no put
     // somebody in neither list: not under a day, because they are not eating,
     // and not in the chase list, because they answered. Somebody who filled
@@ -438,4 +463,38 @@ async function putAnybodyDown(data, reload) {
   const person = people.find((p) => p.id === chosen.id);
   const rostered = data.rosteredBy?.[String(chosen.id)] ?? [];
   return putThemDown({ ...person, days: rostered }, data, reload, { anyDay: true });
+}
+
+/**
+ * Yes or no to a change, with a line to say why where it is no.
+ *
+ * A refusal reaches the person who asked, so it needs something in it. Yes
+ * does not: the plate changing is the whole message.
+ */
+async function decideChange(ask, decision, reload) {
+  const yes = decision === 'approved';
+
+  const done = await formDialog({
+    title: ask.name,
+    submitLabel: yes ? 'Yes, change it' : 'No',
+    body: h('div',
+      h('p', h('strong', `${ask.want ? 'Lunch on' : 'Off lunch on'} ${fmtDayShort(ask.day)}`)),
+      ask.note ? h('p.muted', { style: { fontSize: '.85rem' } }, `\u201c${ask.note}\u201d`) : null,
+      h('p.muted', { style: { fontSize: '.85rem' } }, yes
+        ? 'They go down as ' + (ask.want ? 'eating' : 'not eating')
+          + ' straight away, and the count above changes with it.'
+        : 'They are told, so say what you can. Nobody else sees this.'),
+      field(yes ? 'Anything to add' : 'Why', h('input', {
+        type: 'text', name: 'note', maxlength: 300,
+      }), yes ? 'Optional' : 'They read this'),
+    ),
+    onSubmit: async (form) => api.lunchDecideChange(ask.id, {
+      decision,
+      note: form.get('note') || null,
+    }),
+  });
+
+  if (!done) return;
+  toast(yes ? 'Changed, and they have been told.' : 'Answered.', yes ? 'good' : '');
+  await reload();
 }

@@ -316,6 +316,10 @@ export const api = {
   swapQueue: () => request('/api/swaps/queue'),
   swapDecide: (id, body) => request(`/api/swaps/${id}/decide`, { method: 'POST', body }),
   myRunningLate: (body) => request('/api/me/running-late', { method: 'POST', body }),
+  myLunch: (week) => request(`/api/me/lunch${week ? `?week=${encodeURIComponent(week)}` : ''}`),
+  myLunchAsk: (body) => request('/api/me/lunch', { method: 'POST', body }),
+  myLunchWithdraw: (id) => request(`/api/me/lunch/changes/${id}`, { method: 'DELETE' }),
+
   myContracts: () => request('/api/me/contracts'),
   myContract: (id) => request(`/api/me/contracts/${id}`),
   myContractFileUrl: (id, download = false) => `/api/me/contracts/${id}/file${download ? '?download=1' : ''}`,
@@ -468,6 +472,7 @@ export const api = {
   lunchMakeLink: () => request('/api/lunch/link', { method: 'POST', body: {} }),
   lunchSwitch: (body) => request('/api/lunch/switch', { method: 'POST', body }),
   lunchSetSchedule: (body) => request('/api/lunch/schedule', { method: 'POST', body }),
+  lunchDecideChange: (id, body) => request(`/api/lunch/changes/${id}`, { method: 'POST', body }),
   attRemoveLogo: () => request('/api/att/company/logo', { method: 'DELETE' }),
   attRecompute: (body) => request('/api/att/recompute', { method: 'POST', body }),
 

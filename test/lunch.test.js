@@ -833,3 +833,271 @@ test('a leaver’s plates are still on the count', async () => {
   assert.equal(week.summary.plates, 2);
   assert.deepEqual(week.summary.columns[0].names, ['Henry']);
 });
+
+// ---------------------------------------------------------------------------
+// Their own lunch, and asking for it to be different
+// ---------------------------------------------------------------------------
+
+/**
+ * All of this used to happen on an address outside the app, so a member of
+ * staff had no way of reading back their own answer, and once the window shut
+ * no way of changing it but finding somebody in a kitchen.
+ *
+ * Two states, and the difference between them is the whole design. Open, and
+ * changing your mind is changing your mind: nothing has been ordered and
+ * queueing for a change to a number nobody has read would be ceremony. Shut,
+ * and the count has gone, so it is asked for and the kitchen decides.
+ */
+
+/** A login pointed at Henry, who works Monday to Wednesday. */
+function withLogin(raw) {
+  raw.prepare(
+    'INSERT INTO users (id, name, role, active, staff_id) VALUES (50, ?, ?, 1, 1)',
+  ).run('Henry', 'staff');
+  raw.prepare("INSERT INTO settings (key, value) VALUES ('lunch_on', '1') "
+    + 'ON CONFLICT (key) DO UPDATE SET value = excluded.value').run();
+}
+
+const HENRY = { user: { id: 50, name: 'Henry', role: 'staff', staff_id: 1 }, permissions: ['att_me'] };
+
+const asHenry = (db, path, body) => ({
+  ...ctxFor(db, path, body),
+  session: HENRY,
+});
+
+const myWeek = async (db) => (await (await import('../src/routes/lunch.js'))
+  .myLunch(asHenry(db, `/api/me/lunch?week=${MON}`))).json();
+
+test('a member of staff can read back what they said', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  raw.prepare('INSERT INTO lunch_order (staff_id, day, taking) VALUES (1, ?, 1)').run(MON);
+  raw.prepare('INSERT INTO lunch_order (staff_id, day, taking) VALUES (1, ?, 0)').run(WED);
+
+  await atDay(THU, async () => {
+    const mine = await myWeek(db);
+    const by = new Map(mine.days.map((d) => [d.day, d]));
+
+    assert.equal(by.get(MON).taking, true, 'eating');
+    assert.equal(by.get(WED).taking, false, 'said no, which is not the same as said nothing');
+    assert.equal(by.get('2026-08-25').taking, null, 'has not said');
+    // The whole week is drawn, days off included, or three rows on a seven-day
+    // week read as the app having lost half of it.
+    assert.equal(mine.days.length, 7);
+    assert.equal(by.get('2026-08-27').rostered, false);
+  });
+});
+
+test('while the list is open, changing it is changing it', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay(THU, async () => {
+    const out = await (await lunch.askLunchChange(
+      asHenry(db, '/api/me/lunch', { day: MON, want: true }),
+    )).json();
+
+    assert.equal(out.changed, true, 'no queue, because nothing has been ordered yet');
+    assert.equal(out.asked, undefined);
+  });
+
+  assert.equal(raw.prepare('SELECT taking FROM lunch_order WHERE day = ?').get(MON).taking, 1);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM lunch_change').get().n, 0);
+});
+
+test('once it is shut, the same button asks instead', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  // The Tuesday of the week itself: ordering has closed and the count is out.
+  await atDay('2026-08-25', async () => {
+    const out = await (await lunch.askLunchChange(
+      asHenry(db, '/api/me/lunch', { day: WED, want: true, note: 'Working through' }),
+    )).json();
+
+    assert.equal(out.changed, false);
+    assert.equal(out.asked, true);
+  });
+
+  const row = raw.prepare('SELECT * FROM lunch_change').get();
+  assert.equal(row.day, WED);
+  assert.equal(row.want, 1);
+  assert.equal(row.decision, 'waiting');
+  assert.equal(row.note, 'Working through');
+  // And nothing is on the count until somebody says so.
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM lunch_order').get().n, 0);
+});
+
+test('the kitchen is told, and the request is on their screen', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay('2026-08-25', async () => {
+    await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
+    const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
+
+    assert.equal(week.changes.length, 1);
+    assert.equal(week.changes[0].name, 'Henry Aryee');
+    assert.equal(week.changes[0].want, true);
+    assert.equal(week.changes[0].day, WED);
+  });
+
+  const notice = raw.prepare('SELECT kind, title FROM app_notices ORDER BY id DESC LIMIT 1').get();
+  assert.equal(notice.kind, 'lunch.change_asked');
+  assert.match(notice.title, /Henry Aryee/);
+});
+
+test('saying yes changes the plate as well as the answer', async () => {
+  // One action on purpose. An approval that left somebody to remember to tick
+  // the box afterwards is the failure the queue exists to stop.
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay('2026-08-25', async () => {
+    await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
+    const id = raw.prepare('SELECT id FROM lunch_change').get().id;
+
+    await lunch.decideLunchChange(
+      ctxFor(db, `/api/lunch/changes/${id}`, { decision: 'approved', note: 'Fine' }), id,
+    );
+
+    const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
+    assert.equal(week.summary.plates, 1, 'the plate is on the count');
+    assert.equal(week.changes.length, 0, 'and it is off the queue');
+  });
+
+  assert.equal(raw.prepare('SELECT taking FROM lunch_order WHERE day = ?').get(WED).taking, 1);
+});
+
+test('saying no writes no plate, and the answer is theirs to read', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay('2026-08-25', async () => {
+    await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
+    const id = raw.prepare('SELECT id FROM lunch_change').get().id;
+    await lunch.decideLunchChange(
+      ctxFor(db, `/api/lunch/changes/${id}`, { decision: 'declined', note: 'Already ordered' }), id,
+    );
+
+    assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM lunch_order').get().n, 0);
+
+    // Kept where they can read it again rather than said once in a buzz.
+    const mine = await myWeek(db);
+    assert.equal(mine.answered.length, 1);
+    assert.equal(mine.answered[0].decision, 'declined');
+    assert.equal(mine.answered[0].decisionNote, 'Already ordered');
+  });
+});
+
+test('the answer goes to the person who asked and nobody else', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay('2026-08-25', async () => {
+    await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
+    const id = raw.prepare('SELECT id FROM lunch_change').get().id;
+    await lunch.decideLunchChange(ctxFor(db, `/api/lunch/changes/${id}`, { decision: 'approved' }), id);
+  });
+
+  const notice = raw.prepare(
+    "SELECT user_id, audience FROM app_notices WHERE kind = 'lunch.change_decided'",
+  ).get();
+  assert.equal(notice.user_id, 50, 'theirs');
+  assert.equal(notice.audience, null, 'and not the noticeboard: it is what somebody is eating');
+});
+
+test('asking twice about one day is changing your mind, not two questions', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay('2026-08-25', async () => {
+    await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
+    await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true, note: 'Second thoughts' }));
+
+    const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
+    assert.equal(week.changes.length, 1, 'one thing to answer, not two');
+    assert.equal(week.changes[0].note, 'Second thoughts');
+  });
+});
+
+test('a day they are not down to work has no lunch on it to change', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay('2026-08-25', async () => {
+    await assert.rejects(
+      () => lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: '2026-08-28', want: true })),
+      /not down to work that day/,
+    );
+  });
+});
+
+test('asking for what they already have is refused rather than queued', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  raw.prepare('INSERT INTO lunch_order (staff_id, day, taking) VALUES (1, ?, 1)').run(WED);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay('2026-08-25', async () => {
+    await assert.rejects(
+      () => lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true })),
+      /already down for lunch/,
+    );
+  });
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM lunch_change').get().n, 0);
+});
+
+test('a request can be taken back while nobody has answered it', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay('2026-08-25', async () => {
+    await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
+    const id = raw.prepare('SELECT id FROM lunch_change').get().id;
+    await lunch.withdrawLunchChange(asHenry(db, `/api/me/lunch/changes/${id}`), id);
+
+    const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
+    assert.equal(week.changes.length, 0);
+  });
+});
+
+test('and not somebody else’s', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  raw.prepare(
+    "INSERT INTO lunch_change (id, staff_id, day, want) VALUES (77, 2, ?, 1)",
+  ).run(WED);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await assert.rejects(
+    () => lunch.withdrawLunchChange(asHenry(db, '/api/me/lunch/changes/77'), 77),
+    /nothing of yours waiting/,
+  );
+});
+
+test('a decision already made is not made twice', async () => {
+  const { db, raw } = property();
+  withLogin(raw);
+  const lunch = await import('../src/routes/lunch.js');
+
+  await atDay('2026-08-25', async () => {
+    await lunch.askLunchChange(asHenry(db, '/api/me/lunch', { day: WED, want: true }));
+    const id = raw.prepare('SELECT id FROM lunch_change').get().id;
+    await lunch.decideLunchChange(ctxFor(db, `/api/lunch/changes/${id}`, { decision: 'approved' }), id);
+
+    await assert.rejects(
+      () => lunch.decideLunchChange(ctxFor(db, `/api/lunch/changes/${id}`, { decision: 'declined' }), id),
+      /nothing waiting on that/,
+    );
+  });
+});

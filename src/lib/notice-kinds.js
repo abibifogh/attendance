@@ -373,6 +373,23 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
 
+  {
+    key: 'lunch.change_asked',
+    group: 'house',
+    label: 'Somebody wants their lunch changed',
+    who: 'Whoever runs the kitchen',
+    when: 'The list is shut and a member of staff asks for a day to be changed',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'lunch.change_decided',
+    group: 'house',
+    label: 'Your lunch change was answered',
+    who: 'Whoever asked',
+    when: 'The kitchen says yes or no',
+    ways: ['push'],
+  },
+
   // The property
   {
     key: 'birthday.today',

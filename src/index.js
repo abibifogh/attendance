@@ -324,6 +324,14 @@ export const ROUTES = [
   ['POST', '/api/lunch/link', 'lunch', lunch.makeLink],
   ['POST', '/api/lunch/switch', 'lunch', lunch.setOpen],
   ['POST', '/api/lunch/schedule', 'lunch', lunch.setSchedule],
+  // Yes or no to a change somebody asked for after the list shut. Approving
+  // writes the plate as well, so nothing is left to be remembered afterwards.
+  ['POST', '/api/lunch/changes/:id', 'lunch', lunch.decideLunchChange],
+
+  // Their own. What they are down for, and asking for it to be different.
+  ['GET', '/api/me/lunch', 'att_me', lunch.myLunch],
+  ['POST', '/api/me/lunch', 'att_me', lunch.askLunchChange],
+  ['DELETE', '/api/me/lunch/changes/:id', 'att_me', lunch.withdrawLunchChange],
 
   // The public half. Nothing here needs a session; the token is the whole of
   // the check, and what it opens is first names, rostered days and meals.

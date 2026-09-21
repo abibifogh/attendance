@@ -41,6 +41,7 @@ import { renderPeopleForm } from './views/people-form.js';
 import { renderGuide } from './views/guide.js';
 import { renderContract } from './views/contract.js';
 import { renderMyContracts } from './views/my-contracts.js';
+import { renderAttMyLunch } from './views/att-my-lunch.js';
 import { renderLetters } from './views/letters.js';
 import { renderLetter } from './views/letter.js';
 import { renderLetterCompose } from './views/letter-compose.js';
@@ -160,6 +161,10 @@ const ROUTES = [
   // Beside their own week, because giving up a Saturday is a thing you do
   // while looking at the Saturday.
   { mine: true, group: 'me', tab: 'Swaps', path: 'swaps', label: 'Swaps', permission: 'att_me', render: renderSwaps, live: ['rota'] },
+  // What they are down to eat, beside the week they are down to work. The
+  // whole lunch list used to happen on an address outside the app, so a member
+  // of staff had no way of reading back their own answer.
+  { mine: true, group: 'me', tab: 'Lunch', path: 'att-my-lunch', label: 'My lunch', permission: 'att_me', render: renderAttMyLunch, live: ['lunch'], freshEach: ['week'] },
 
   // Money going the other way. Its own link rather than a third tab on their
   // week: what somebody is owed and what they worked are two different

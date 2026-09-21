@@ -1,4 +1,5 @@
 import { badRequest, forbidden, json, notFound, readJson, str } from '../lib/http.js';
+import { createNotice } from '../lib/notices.js';
 import { getPepper, hashPin } from '../lib/auth.js';
 import { loadDataset, scheduleFor } from '../lib/attendance.js';
 import { siteOrigin } from '../lib/site.js';
@@ -112,11 +113,19 @@ export async function lunchWeek(ctx) {
   const monday = /^\d{4}-\d{2}-\d{2}$/.test(asked ?? '') ? asked : window.monday;
   const week = weekDays(monday);
 
-  const [{ ds, byStaff }, menu, orders] = await Promise.all([
+  const [{ ds, byStaff }, menu, orders, asking] = await Promise.all([
     rosteredIn(ctx.db, week),
     menuMap(ctx.db),
     ctx.db.prepare('SELECT * FROM lunch_order WHERE day BETWEEN ?1 AND ?2')
       .bind(week[0], week[6]).all().catch(() => ({ results: [] })),
+    // What is waiting on the kitchen. Asked for after the list shut, so the
+    // count has already been read and somebody has to decide.
+    ctx.db.prepare(
+      `SELECT c.id, c.staff_id, c.day, c.want, c.note, c.asked_at, s.name
+         FROM lunch_change c JOIN att_staff s ON s.id = c.staff_id
+        WHERE c.decision = 'waiting' AND c.day BETWEEN ?1 AND ?2
+        ORDER BY c.day, c.id`,
+    ).bind(week[0], week[6]).all().catch(() => ({ results: [] })),
   ]);
 
   const staff = ds.staff.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name }));
@@ -164,6 +173,17 @@ export async function lunchWeek(ctx) {
     // an answer of "no" is indistinguishable from never having answered, and
     // somebody who filled the form in appears nowhere on the page.
     declined: saidNo({ week, orders: rows, staff: everybody }),
+    // Changes asked for after the list shut, waiting on somebody here. The one
+    // list on this screen that is a decision rather than a reading.
+    changes: (asking.results ?? []).map((c) => ({
+      id: c.id,
+      staffId: c.staff_id,
+      name: c.name,
+      day: c.day,
+      want: Boolean(c.want),
+      note: c.note ?? null,
+      askedAt: c.asked_at,
+    })),
     // Everybody, so the kitchen can put down a person the rota does not have
     // in this week at all.
     staff,
@@ -520,4 +540,283 @@ export async function lunchSay(ctx, token, staffParam) {
 
   if (statements.length) await ctx.db.batch(statements);
   return json({ ok: true, saved: statements.length });
+}
+
+// ---------------------------------------------------------------------------
+// A member of staff's own lunch
+// ---------------------------------------------------------------------------
+
+/**
+ * The person this login is, for the lunch screens.
+ *
+ * The same reckoning every other "my" screen uses. Kept here rather than
+ * imported so this file still answers the public link without reaching into
+ * the signed-in half of the app.
+ */
+async function meOf(ctx) {
+  const staffId = Number(ctx.session?.user?.staff_id) || 0;
+  if (!staffId) {
+    throw forbidden(
+      'This login is not linked to a staff record yet, so there is nothing of yours to show. '
+      + 'Ask whoever set it up to point it at you under Users.',
+    );
+  }
+  const staff = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(staffId).first();
+  if (!staff?.active) throw notFound('The staff record this login points at is gone.');
+  return staff;
+}
+
+/** Their own open and answered requests for a week. */
+async function changesFor(db, staffId, week) {
+  const rows = await db.prepare(
+    `SELECT * FROM lunch_change
+      WHERE staff_id = ?1 AND day BETWEEN ?2 AND ?3 AND decision <> 'withdrawn'
+      ORDER BY day, id`,
+  ).bind(staffId, week[0], week[6]).all().catch(() => ({ results: [] }));
+  return rows.results ?? [];
+}
+
+/**
+ * What I am down for, and what I can do about it.
+ *
+ * THE ANSWER USED TO LIVE NOWHERE THEY COULD SEE IT. The whole lunch list
+ * happened on one address outside the app: find your name, tick the boxes, and
+ * that was the last anybody saw of their own answer. Once the window shut
+ * there was no screen that would tell them what they had said, so "am I down
+ * for Thursday?" was a question you asked a person.
+ *
+ * TWO STATES, AND THE SCREEN SAYS WHICH. While the list is open, changing
+ * their mind is changing their mind: nothing has been ordered and a queue for
+ * a number nobody has read yet would be ceremony. Once it is shut the order
+ * has gone to the kitchen, so a change is asked for and waits.
+ */
+export async function myLunch(ctx) {
+  const staff = await meOf(ctx);
+  const settings = await settingsOf(ctx.db);
+  const window = windowFor(nowIn(settings.timezone), settings.schedule);
+
+  const asked = ctx.url.searchParams.get('week');
+  const monday = /^\d{4}-\d{2}-\d{2}$/.test(asked ?? '') ? asked : window.monday;
+  const week = weekDays(monday);
+  const thisIsTheWeek = monday === window.monday;
+
+  const [{ byStaff }, menu, orders, changes] = await Promise.all([
+    rosteredIn(ctx.db, week),
+    menuMap(ctx.db),
+    ctx.db.prepare('SELECT day, taking FROM lunch_order WHERE staff_id = ?1 AND day BETWEEN ?2 AND ?3')
+      .bind(staff.id, week[0], week[6]).all().catch(() => ({ results: [] })),
+    changesFor(ctx.db, staff.id, week),
+  ]);
+
+  const answers = new Map((orders.results ?? []).map((r) => [r.day, Boolean(r.taking)]));
+  const waitingOn = new Map(changes.filter((c) => c.decision === 'waiting').map((c) => [c.day, c]));
+
+  // Days they are down to work, and any day the kitchen has already put them
+  // down for over and above the rota, which is the same rule the link uses.
+  const mine = [...new Set([...(byStaff.get(Number(staff.id)) ?? []), ...answers.keys()])];
+
+  return json({
+    who: { id: staff.id, name: staff.name, first: first(staff.name) },
+    monday,
+    week,
+    today: todayIn(settings.timezone),
+    on: settings.on,
+    // Open means they change it themselves. Shut means they ask.
+    open: settings.on && window.open && thisIsTheWeek,
+    orderingFor: window.monday,
+    opensOn: window.opensOn,
+    closesOn: window.closesOn,
+    closesAfter: window.closesAfter,
+    days: week.map((day) => {
+      const pending = waitingOn.get(day) ?? null;
+      return {
+        day,
+        name: DAY_NAMES[dow(day)],
+        meal: menu.get(dayOfWeek(day))?.meal ?? null,
+        note: menu.get(dayOfWeek(day))?.note ?? null,
+        rostered: mine.includes(day),
+        // Null is "you have not said", which is not the same as no.
+        taking: answers.has(day) ? answers.get(day) : null,
+        asking: pending ? { id: pending.id, want: Boolean(pending.want), note: pending.note ?? null } : null,
+      };
+    }),
+    // Everything answered, so the record of a refusal is theirs to read rather
+    // than something they are told once in a notification and never again.
+    answered: changes
+      .filter((c) => c.decision !== 'waiting')
+      .map((c) => ({
+        id: c.id,
+        day: c.day,
+        want: Boolean(c.want),
+        decision: c.decision,
+        decidedBy: c.decided_by,
+        decidedAt: c.decided_at,
+        decisionNote: c.decision_note ?? null,
+      })),
+  });
+}
+
+/**
+ * Change it, or ask for it to be changed.
+ *
+ * One route for both, because from where the person is standing it is one
+ * action: they want Thursday changed. Which of the two it turns into is the
+ * clock's business, not theirs, and the reply says which happened so the
+ * screen never has to guess.
+ */
+export async function askLunchChange(ctx) {
+  const staff = await meOf(ctx);
+  const settings = await settingsOf(ctx.db);
+  if (!settings.on) throw badRequest('The lunch list is switched off.');
+
+  const window = windowFor(nowIn(settings.timezone), settings.schedule);
+  const body = await readJson(ctx.request);
+
+  const day = str(body.day, 'Day', { required: true, max: 10 });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw badRequest('That is not a date.');
+  const want = body.want === true || body.want === 1 || body.want === '1';
+  const note = str(body.note, 'Note', { max: 200 });
+
+  const week = weekDays(day);
+  const [{ byStaff }, held] = await Promise.all([
+    rosteredIn(ctx.db, week),
+    ctx.db.prepare('SELECT taking FROM lunch_order WHERE staff_id = ?1 AND day = ?2')
+      .bind(staff.id, day).first().catch(() => null),
+  ]);
+
+  // A day they are down to work, or one the kitchen has already put them down
+  // for. Anything else is asking about a day nobody expects them, which is the
+  // same line the link draws and for the same reason.
+  const allowed = new Set([...(byStaff.get(Number(staff.id)) ?? [])]);
+  if (held) allowed.add(day);
+  if (!allowed.has(day)) {
+    throw badRequest(
+      'You are not down to work that day, so there is no lunch on it to change. If you are '
+      + 'coming in anyway, ask whoever runs the kitchen to put you down.',
+    );
+  }
+
+  if (held && Boolean(held.taking) === want) {
+    throw badRequest(want
+      ? 'You are already down for lunch that day.'
+      : 'You are already down as not eating that day.');
+  }
+
+  // WHILE THE LIST IS OPEN, CHANGING IT IS CHANGING IT. Nothing has been
+  // ordered, nobody has read the number, and putting a member of staff in a
+  // queue to change an answer they could change on the link a minute ago
+  // would be the app inventing an approval for its own sake.
+  if (window.open && weekDays(window.monday)[0] === week[0]) {
+    await answer(ctx.db, staff.id, day, want, `${staff.name} (staff)`);
+    return json({ ok: true, changed: true, day, taking: want });
+  }
+
+  // Shut. The order has gone to the kitchen, so it is asked for and waits.
+  // Asking twice about the same day is changing your mind about the day, not a
+  // second thing for the kitchen to answer.
+  await ctx.db.prepare(
+    `UPDATE lunch_change SET decision = 'withdrawn', decided_at = datetime('now')
+      WHERE staff_id = ?1 AND day = ?2 AND decision = 'waiting'`,
+  ).bind(staff.id, day).run();
+
+  await ctx.db.prepare(
+    'INSERT INTO lunch_change (staff_id, day, want, note) VALUES (?1, ?2, ?3, ?4)',
+  ).bind(staff.id, day, want ? 1 : 0, note).run();
+
+  await createNotice(ctx.db, {
+    kind: 'lunch.change_asked',
+    level: 'info',
+    title: `${staff.name} wants ${want ? 'lunch on' : 'to come off'} ${dayName(day)}`,
+    body: `${dayName(day)} ${day}. ${want ? 'Asking to be put down.' : 'Asking to be taken off.'}`
+      + `${note ? ` "${note}"` : ''} The list was shut when they asked, so it is waiting for you.`,
+    link: '#/att-lunch',
+    actor: `${staff.name} (staff)`,
+    audience: 'lunch',
+  }, ctx);
+
+  return json({ ok: true, changed: false, asked: true, day, want });
+}
+
+/** Taking it back, while nobody has answered it. */
+export async function withdrawLunchChange(ctx, id) {
+  const staff = await meOf(ctx);
+  const row = await ctx.db.prepare(
+    "SELECT * FROM lunch_change WHERE id = ? AND staff_id = ? AND decision = 'waiting'",
+  ).bind(Number(id), staff.id).first();
+  if (!row) throw notFound('There is nothing of yours waiting on that.');
+
+  await ctx.db.prepare(
+    "UPDATE lunch_change SET decision = 'withdrawn', decided_at = datetime('now') WHERE id = ?",
+  ).bind(row.id).run();
+  return json({ ok: true });
+}
+
+// ---------------------------------------------------------------------------
+// And the kitchen's answer
+// ---------------------------------------------------------------------------
+
+/**
+ * Yes or no to a change, and yes writes the order.
+ *
+ * The decision and the plate are one action on purpose. An approval that left
+ * somebody to remember to tick the box afterwards is an approval that gets
+ * lost between the screen and the kitchen, which is the failure this whole
+ * queue exists to stop.
+ */
+export async function decideLunchChange(ctx, id) {
+  const body = await readJson(ctx.request);
+  const decision = body.decision === 'approved' ? 'approved'
+    : body.decision === 'declined' ? 'declined' : null;
+  if (!decision) throw badRequest('Say approved or declined.');
+
+  const row = await ctx.db.prepare(
+    `SELECT c.*, s.name AS staff_name
+       FROM lunch_change c JOIN att_staff s ON s.id = c.staff_id
+      WHERE c.id = ? AND c.decision = 'waiting'`,
+  ).bind(Number(id)).first();
+  if (!row) throw notFound('There is nothing waiting on that.');
+
+  // The login this record hangs on, which is how the answer reaches the person
+  // who asked rather than the noticeboard.
+  const theirLogin = await ctx.db.prepare(
+    'SELECT id FROM users WHERE staff_id = ? AND active = 1 LIMIT 1',
+  ).bind(row.staff_id).first().catch(() => null);
+
+  const note = str(body.note, 'Note', { max: 300 });
+  const actor = actorOf(ctx);
+
+  await ctx.db.prepare(
+    `UPDATE lunch_change
+        SET decision = ?2, decided_by = ?3, decided_at = datetime('now'), decision_note = ?4
+      WHERE id = ?1`,
+  ).bind(row.id, decision, actor, note).run();
+
+  if (decision === 'approved') {
+    await answer(ctx.db, row.staff_id, row.day, Boolean(row.want), actor);
+  }
+
+  await audit(ctx, 'lunch.change_decide', row.id, {
+    name: row.staff_name, day: row.day, want: Boolean(row.want), decision,
+  });
+
+  await createNotice(ctx.db, {
+    kind: 'lunch.change_decided',
+    level: decision === 'approved' ? 'good' : 'warn',
+    title: decision === 'approved'
+      ? `Your lunch for ${dayName(row.day)} was changed`
+      : `Your lunch change for ${dayName(row.day)} was not agreed`,
+    body: decision === 'approved'
+      ? `You are now down as ${row.want ? 'eating' : 'not eating'} on ${dayName(row.day)}.`
+        + `${note ? ` ${note}` : ''}`
+      : `${note || 'No reason was given.'} Speak to whoever runs the kitchen if it matters.`,
+    link: '#/att-my-lunch',
+    actor,
+    // Theirs alone. Nobody else has any business being told what somebody is
+    // eating on Thursday.
+    audience: null,
+    userId: theirLogin?.id ?? null,
+    email: false,
+  }, ctx);
+
+  return json({ ok: true, decision, day: row.day });
 }

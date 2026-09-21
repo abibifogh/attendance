@@ -342,6 +342,20 @@ export const GUIDE = [
         + 'contract is wrong, tell the office: a signed contract is replaced by a new one that '
         + 'says what it supersedes, never edited.' },
 
+      { sub: 'My lunch' },
+      { p: 'What you are down to eat this week, day by day, with the meal against each one. '
+        + 'It is the same answer the kitchen is reading, so it settles "am I down for '
+        + 'Thursday?" without asking anybody.' },
+      { p: 'While the list is open, press Change on a day and it changes. Nothing has been '
+        + 'ordered yet and nobody has to agree to it.' },
+      { p: 'Once the list has shut, the kitchen has already ordered against the count, so the '
+        + 'same button asks instead. Say why: a reason is what somebody says yes to. It shows '
+        + 'as waiting until it is answered, you can take it back until then, and the answer '
+        + 'stays on the screen afterwards rather than being said once and gone.' },
+      { note: 'You can only ask about a day you are down to work, or one the kitchen has '
+        + 'already put you down for. If you are coming in on a day off, ask them to put you '
+        + 'down rather than asking here.' },
+
       { sub: 'How many can be off at once' },
       { p: 'Only so many people may be off on any one day, leave and unavailability counted '
         + 'together. Ask for a day that is already full and you are told so, and told it is '
@@ -2446,6 +2460,14 @@ export const GUIDE = [
         + 'they opened the link.' },
       { note: 'Print the week gives the kitchen a sheet, and your print dialog will save it as '
         + 'a PDF if you choose that as the destination.' },
+
+      { sub: 'Changes asked for after the list shut' },
+      { p: '"Waiting on you" sits at the top of the screen when somebody has asked for a day '
+        + 'to be changed. They can only ask once the list is shut, because while it is open '
+        + 'they change it themselves on their own screen and nothing has been ordered yet.' },
+      { p: 'Say yes and the plate changes with the answer, so there is nothing to remember '
+        + 'afterwards and the count above moves as you press it. Say no and write a line: they '
+        + 'are told, and that line is what they read.' },
     ],
   },
 

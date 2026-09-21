@@ -84,10 +84,10 @@ const roleHolds = (role, staffId = null) => effectivePermissions({ role, staff_i
 // The table itself
 // ---------------------------------------------------------------------------
 
-test('the app reads out as fourteen groups and thirty screens', () => {
+test('the app reads out as fourteen groups and thirty-one screens', () => {
   assert.equal(GROUP_LIST.length, 14);
   const inMenu = ROUTE_LIST.filter((r) => !r.hidden);
-  assert.equal(inMenu.length, 30, 'nothing was dropped, only regrouped');
+  assert.equal(inMenu.length, 31, 'nothing was dropped, only regrouped');
   for (const route of inMenu) {
     assert.ok(route.group, `${route.path} is in the menu with no group`);
     assert.ok(GROUP_LIST.some((g) => g.key === route.group), `${route.path}: no such group`);
@@ -115,7 +115,7 @@ test('an administrator reads thirteen links, where they read twenty-three', () =
     'Letters', 'Directory', 'Handbook', 'First weeks', 'Setup', 'Guide',
   ]);
   assert.equal(menu.length, 13);
-  assert.equal(ROUTE_LIST.filter((r) => !r.hidden).length, 30, 'and it is the same screens');
+  assert.equal(ROUTE_LIST.filter((r) => !r.hidden).length, 31, 'and it is the same screens');
 });
 
 test('a new hire has one more link than they will have next month', () => {
@@ -152,7 +152,7 @@ test('a member of staff reads six, and their own week is the first', () => {
   assert.deepEqual(menu.map((g) => g.label),
     ['My shifts', 'My pay', 'My documents', 'Directory', 'Handbook', 'Guide']);
   assert.equal(menu[0].screens[0].path, 'att-me');
-  assert.deepEqual(tabsOf(menu[0]).map((t) => t.label), ['Shifts', 'Report', 'Swaps']);
+  assert.deepEqual(tabsOf(menu[0]).map((t) => t.label), ['Shifts', 'Report', 'Swaps', 'Lunch']);
   assert.deepEqual(tabsOf(menu[1]).map((t) => t.label), ['Payslips', 'Advance', 'Claims']);
   // Their own signed contract. A link of its own rather than a fourth tab
   // under My pay: it is not pay, it is the terms pay is settled by. One screen,
