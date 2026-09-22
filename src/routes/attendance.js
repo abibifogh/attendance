@@ -24,7 +24,9 @@ import { sweepLeavers } from '../lib/leaving.js';
 import { notifyClockings } from '../lib/clock-alerts.js';
 import { daysBetween, parseDays } from '../lib/signoff.js';
 import { refuseUnsettled } from './signoff.js';
-import { emailExceptions, pingExceptions } from '../lib/notify.js';
+import {
+  emailExceptions, emailPersonally, isEmail, pingExceptions,
+} from '../lib/notify.js';
 import { firstUsableNumber, sendTexts } from '../lib/sms.js';
 import { originOf } from '../lib/site.js';
 import {
@@ -2503,6 +2505,38 @@ function shortEnoughToText({ what, from, to, first, siteUrl, message }) {
 }
 
 /**
+ * The first address that looks like one, login before personnel record.
+ *
+ * The login's own is preferred where it exists, because that is the address
+ * somebody chose to sign in with and the one the rest of the app writes to.
+ * The personnel record is what almost everybody actually has.
+ */
+function linesFor({ what, from, to, first, held, message }) {
+  return [
+    `${what} for ${sayDay(from)} to ${sayDay(to)}.`,
+    first
+      ? `First: ${sayDay(first.day)}, ${first.shift_name ?? 'a shift'}`
+        + `${first.starts_at ? ` ${first.starts_at}\u2013${first.ends_at}` : ''}.`
+      : null,
+    // A day being remade matters more than a new one: somebody may have
+    // arranged their week around the version this replaces.
+    held.again
+      ? `${held.again} of ${held.again === 1 ? 'them is' : 'them are'} a change to what you `
+        + 'were told before, so it is worth another look.'
+      : null,
+    message || null,
+  ].filter(Boolean);
+}
+
+function firstUsableEmail(...addresses) {
+  for (const address of addresses) {
+    const clean = String(address ?? '').trim();
+    if (isEmail(clean)) return clean;
+  }
+  return null;
+}
+
+/**
  * Tell each person what their own week says, one message at a time.
  *
  * A rota going out used to be one announcement to everybody: "the rota for
@@ -2539,6 +2573,12 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null
     const held = byStaff.get(row.staff_id) ?? {
       userId: row.user_id ?? null,
       phone: firstUsableNumber(row.personal_phone, row.alt_phone),
+      // THE ADDRESS ON THEIR RECORD, not only the one on their login. A login
+      // needs a PIN and nothing else, so most of them carry no address at all,
+      // and half the property has no login in the first place. The address
+      // somebody typed when they joined is on the personnel record, and mail
+      // that will not look there is mail that does not arrive.
+      email: firstUsableEmail(row.login_email, row.personal_email),
       shifts: [],
       off: 0,
       again: 0,
@@ -2554,9 +2594,13 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null
       ctx.db,
       [...byStaff.values()].map((one) => one.userId).filter((id) => id != null),
     ),
-    readSettings(ctx.db, ['sms_reach', 'site_url']),
+    readSettings(ctx.db, ['sms_reach', 'site_url', 'rota_email_always']),
   ]);
   const everybodyGetsAText = house.sms_reach === 'all';
+  // Off, and the property's to turn on. A phone that buzzed has been told, and
+  // sending the same thing again by email is how a fortnightly rota turns into
+  // a mailbox nobody opens. Some properties want the paper trail anyway.
+  const mailEverybody = house.rota_email_always === '1';
   const siteUrl = originOf(house.site_url);
   const texts = [];
 
@@ -2599,29 +2643,29 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null
     };
     each.push(line);
 
-    // No login is nothing to ring a bell on. Counted and handed back, because
-    // a planner who thinks the whole kitchen has been told should be told
-    // otherwise. A text still went out above if there is a number on record.
+    // No login is nothing to ring a bell on, and it used to be the end of it:
+    // no row, no push, no mail, and a text only if there was a number. Most of
+    // this property has no login. The address on their personnel record is
+    // still an address, so it is written to, and the count says they heard.
     if (held.userId == null) {
       noLogin += 1;
-      if (!held.phone) silent += 1;
+      if (held.email) {
+        const posted = await emailPersonally(ctx.db, ctx.env, {
+          kind: 'rota.published.mine',
+          title: count ? `Your shifts are out: ${what}` : 'Your rota is out',
+          body: linesFor({ what, from, to, first, held, message }).join(' '),
+          link: '#/att-me',
+          day: first?.day ?? from,
+          to: held.email,
+        });
+        line.emailed = posted.sent > 0 ? 1 : 0;
+        if (posted.sent > 0) told += 1;
+      }
+      if (!held.phone && !line.emailed) silent += 1;
       continue;
     }
 
-    const lines = [
-      `${what} for ${sayDay(from)} to ${sayDay(to)}.`,
-      first
-        ? `First: ${sayDay(first.day)}, ${first.shift_name ?? 'a shift'}`
-          + `${first.starts_at ? ` ${first.starts_at}–${first.ends_at}` : ''}.`
-        : null,
-      // A day being remade matters more than a new one: somebody may have
-      // arranged their week around the version this replaces.
-      held.again
-        ? `${held.again} of ${held.again === 1 ? 'them is' : 'them are'} a change to what you `
-          + 'were told before, so it is worth another look.'
-        : null,
-      message || null,
-    ].filter(Boolean);
+    const lines = linesFor({ what, from, to, first, held, message });
 
     const went = await createNotice(ctx.db, {
       kind: 'rota.published.mine',
@@ -2636,8 +2680,12 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null
       push: true,
       // Mail only where the alert cannot land. Somebody whose phone buzzed has
       // been told; sending them the same thing again by email is how a
-      // fortnightly rota turns into a mailbox nobody opens.
-      email: !buzzed,
+      // fortnightly rota turns into a mailbox nobody opens. A property that
+      // wants the paper trail regardless says so under Setup.
+      email: mailEverybody || !buzzed,
+      // And to the address on their record where their login has none, which
+      // is most of them: a login needs a PIN and nothing else.
+      emailTo: held.email,
       // The texting is done below rather than here, one message per person and
       // only where it is the only way of reaching them. A second one out of
       // the notice would be the same message twice at twice the price.
@@ -2747,10 +2795,13 @@ export async function publishRoster(ctx) {
   const affected = told === 'none' ? { results: [] } : await ctx.db.prepare(
     `SELECT r.staff_id, r.day, r.shift_id, r.ever_published,
             sh.name AS shift_name, sh.starts_at, sh.ends_at,
-            hp.personal_phone, hp.alt_phone,
+            hp.personal_phone, hp.alt_phone, hp.personal_email,
             (SELECT u.id FROM users u
               WHERE u.staff_id = r.staff_id AND u.active = 1
-              ORDER BY u.id LIMIT 1) AS user_id
+              ORDER BY u.id LIMIT 1) AS user_id,
+            (SELECT u.email FROM users u
+              WHERE u.staff_id = r.staff_id AND u.active = 1
+              ORDER BY u.id LIMIT 1) AS login_email
        FROM att_roster r
        LEFT JOIN att_shifts sh ON sh.id = r.shift_id
        LEFT JOIN hr_profile hp ON hp.staff_id = r.staff_id
@@ -3037,10 +3088,13 @@ export async function publishAgain(ctx, id) {
   const rows = await ctx.db.prepare(
     `SELECT r.staff_id, r.day, r.shift_id, r.ever_published,
             sh.name AS shift_name, sh.starts_at, sh.ends_at,
-            hp.personal_phone, hp.alt_phone,
+            hp.personal_phone, hp.alt_phone, hp.personal_email,
             (SELECT u.id FROM users u
               WHERE u.staff_id = r.staff_id AND u.active = 1
-              ORDER BY u.id LIMIT 1) AS user_id
+              ORDER BY u.id LIMIT 1) AS user_id,
+            (SELECT u.email FROM users u
+              WHERE u.staff_id = r.staff_id AND u.active = 1
+              ORDER BY u.id LIMIT 1) AS login_email
        FROM att_roster r
        LEFT JOIN att_shifts sh ON sh.id = r.shift_id
        LEFT JOIN hr_profile hp ON hp.staff_id = r.staff_id

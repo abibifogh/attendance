@@ -42,6 +42,7 @@ function setup() {
   for (const [key, value] of Object.entries({
     sms_enabled: '1', sms_provider: 'arkesel', sms_sender: 'HIVE',
     site_url: 'https://staff.niceoperation.com',
+    email_from: 'hive@niceoperation.com',
   })) {
     raw.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
   }
@@ -53,19 +54,23 @@ function setup() {
 }
 
 /** Somebody on the rota, with as much or as little of a way to reach them. */
-function person(raw, { id, name, login = null, phone = null, subscribed = false }) {
+function person(raw, {
+  id, name, login = null, phone = null, subscribed = false,
+  email = null, loginEmail = null,
+}) {
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
      VALUES (?, ?, ?, 'Kitchen', '2020-01-01')`,
   ).run(id, String(id), name);
-  if (phone) {
-    raw.prepare('INSERT INTO hr_profile (staff_id, personal_phone) VALUES (?, ?)')
-      .run(id, phone);
+  if (phone || email) {
+    raw.prepare(
+      'INSERT INTO hr_profile (staff_id, personal_phone, personal_email) VALUES (?, ?, ?)',
+    ).run(id, phone, email);
   }
   if (login) {
     raw.prepare(
-      "INSERT INTO users (id, name, role, active, staff_id) VALUES (?, ?, 'staff', 1, ?)",
-    ).run(login, name, id);
+      "INSERT INTO users (id, name, role, active, staff_id, email) VALUES (?, ?, 'staff', 1, ?, ?)",
+    ).run(login, name, id, loginEmail);
   }
   if (subscribed) {
     raw.prepare(
@@ -89,7 +94,7 @@ const ctx = (db, body = null, env = {}) => ({
   }),
 });
 
-const KEYED = { SMS_API_KEY: 'test-key' };
+const KEYED = { SMS_API_KEY: 'test-key', RESEND_API_KEY: 'test-mail' };
 const WEEK = { from: '2026-06-01', to: '2026-06-07' };
 
 function pretend() {
@@ -302,4 +307,127 @@ test('the planner’s note rides along when it fits, and is dropped when it does
   sent = spy.seen[0].body.message;
   assert.ok(!sent.includes('xxx'), 'a note that would double the bill is left out');
   assert.ok(sent.length <= 160);
+});
+
+// ---------------------------------------------------------------------------
+// The address, and where it is found
+// ---------------------------------------------------------------------------
+
+/**
+ * A login needs a PIN and nothing else, so most of them carry no address, and
+ * most of this property has no login at all. Mail that only looks at the login
+ * is mail that does not arrive: the address somebody typed when they joined is
+ * on their personnel record, under People.
+ */
+
+/** Every address a Resend call went to, in order. */
+const mailedTo = (spy) => spy.seen
+  .filter((call) => call.url.includes('api.resend.com'))
+  .flatMap((call) => (call.body.to ?? []).concat(
+    (call.body.batch ?? []).flatMap((one) => one.to ?? []),
+  ));
+
+async function publishWith(db, people) {
+  await rosterFor(db, people);
+  const spy = pretend();
+  try {
+    return { done: await (await publishRoster(ctx(db, WEEK, KEYED))).json(), spy };
+  } finally {
+    spy.stop();
+  }
+}
+
+test('the address on their record is used where their login has none', async () => {
+  const { raw, db } = setup();
+  person(raw, { id: 1, name: 'Ama', login: 11, email: 'ama@example.com' });
+
+  const { spy } = await publishWith(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
+  assert.deepEqual(mailedTo(spy), ['ama@example.com']);
+});
+
+test('the login’s own address wins where there is one', async () => {
+  // It is the address somebody chose to sign in with, and the one the rest of
+  // the app writes to.
+  const { raw, db } = setup();
+  person(raw, {
+    id: 1, name: 'Ama', login: 11, loginEmail: 'ama@work.com', email: 'ama@home.com',
+  });
+
+  const { spy } = await publishWith(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
+  assert.deepEqual(mailedTo(spy), ['ama@work.com']);
+});
+
+test('somebody with no login at all is still written to', async () => {
+  // Most of the property. There is no bell to ring and no alert to send, and
+  // it used to end there: no row, no mail, and a text only if there was a
+  // number on file.
+  const { raw, db } = setup();
+  person(raw, { id: 1, name: 'Kwabena', email: 'kwabena@example.com' });
+
+  const { done, spy } = await publishWith(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
+
+  assert.deepEqual(mailedTo(spy), ['kwabena@example.com']);
+  assert.equal(done.noLogin, 1, 'still counted, because there is still no bell for them');
+  assert.equal(done.told, 1, 'but they heard');
+  assert.equal(done.silent, 0, 'and they are not among the unreachable');
+});
+
+test('no login and no address anywhere is still nobody reached', async () => {
+  const { raw, db } = setup();
+  person(raw, { id: 1, name: 'Yaw' });
+
+  const { done, spy } = await publishWith(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
+
+  assert.deepEqual(mailedTo(spy), []);
+  assert.equal(done.silent, 1, 'the planner is told to go and find them');
+});
+
+// ---------------------------------------------------------------------------
+// Who gets one at all
+// ---------------------------------------------------------------------------
+
+test('a phone that buzzed is not mailed as well', async () => {
+  // The default, and the reason it is the default: the same message twice is
+  // how a fortnightly rota turns into a mailbox nobody opens.
+  const { raw, db } = setup();
+  person(raw, {
+    id: 1, name: 'Kofi', login: 11, email: 'kofi@example.com', subscribed: true,
+  });
+
+  const { spy } = await publishWith(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
+  assert.deepEqual(mailedTo(spy), []);
+});
+
+test('and is mailed as well where the property has asked for it', async () => {
+  const { raw, db } = setup();
+  raw.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('rota_email_always', '1')")
+    .run();
+  person(raw, {
+    id: 1, name: 'Kofi', login: 11, email: 'kofi@example.com', subscribed: true,
+  });
+
+  const { spy } = await publishWith(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
+  assert.deepEqual(mailedTo(spy), ['kofi@example.com']);
+});
+
+test('the setting starts off, so nothing changes until somebody turns it on', async () => {
+  const { raw } = setup();
+  const row = raw.prepare("SELECT value FROM settings WHERE key = 'rota_email_always'").get();
+  assert.equal(row.value, '0');
+});
+
+test('publishing quietly mails nobody, whatever the setting says', async () => {
+  const { raw, db } = setup();
+  raw.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('rota_email_always', '1')")
+    .run();
+  person(raw, { id: 1, name: 'Ama', login: 11, email: 'ama@example.com' });
+
+  await rosterFor(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
+  const spy = pretend();
+  try {
+    await publishRoster(ctx(db, { ...WEEK, notify: 'none' }, KEYED));
+  } finally {
+    spy.stop();
+  }
+  assert.deepEqual(mailedTo(spy), []);
 });

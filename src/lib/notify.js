@@ -884,7 +884,19 @@ export async function emailNotice(db, env, notice) {
       ...notice,
       audience: notice.emailAudience === undefined ? notice.audience : notice.emailAudience,
     });
-    if (!people.length) return { sent: 0, tried: 0, reason: 'nobody to send to' };
+
+    // AN ADDRESS THE CALLER ALREADY KNOWS, where the logins do not have one.
+    // A login needs a PIN and nothing else, so a notice addressed to one
+    // person often has nobody to write to even though the property has had
+    // their address since the day they joined. Added rather than substituted,
+    // because a login with an address on it is still theirs and somebody
+    // copied in by the property does not stop being copied in.
+    const named = [...new Set((Array.isArray(notice.emailTo) ? notice.emailTo : [notice.emailTo])
+      .map((a) => String(a ?? '').trim())
+      .filter((a) => isEmail(a)))];
+
+    const addresses = [...new Set([...people.map((p) => p.email), ...named])];
+    if (!addresses.length) return { sent: 0, tried: 0, reason: 'nobody to send to' };
 
     const { subject, html } = renderNotice({
       notice,
@@ -892,7 +904,7 @@ export async function emailNotice(db, env, notice) {
       siteUrl: originOf(settings.site_url),
     });
 
-    const to = people.map((p) => p.email);
+    const to = addresses;
     await sendEmail({
       apiKey,
       from: senderWithName(from, senderNameOf(settings)),
@@ -914,5 +926,70 @@ export async function emailNotice(db, env, notice) {
     ).bind('notice', null, null, 'failed', String(err.message).slice(0, 500))
       .run().catch(() => {});
     return { sent: 0, tried: 1, reason: err.message };
+  }
+}
+
+/**
+ * One notice, mailed to an address the caller already knows.
+ *
+ * WHY THIS IS NOT emailNotice. That one works out who to write to from the
+ * logins, which is the right rule for "whoever plans the rota should hear
+ * this" and the wrong one for a message addressed to a person. Most of this
+ * property has no login at all, and plenty of the logins that exist have no
+ * address on them, because a login needs a PIN and nothing else. Their email
+ * is on their personnel record, where somebody typed it when they joined, and
+ * a notice that cannot reach it is a notice that does not reach them.
+ *
+ * NO ROW IN THE BELL. A notice belongs to a login, and a person with no login
+ * has no bell to put one in. Writing one anyway with nobody's name on it is
+ * how a message about one person's Saturday ends up on everybody's list, so
+ * this sends and records the send, and nothing else.
+ *
+ * Held to the same switches as any other mail: the property's master switch,
+ * and the email channel for this kind. Never throws.
+ */
+export async function emailPersonally(db, env, { kind, title, body, link, day, to, wanted }) {
+  const clean = [...new Set((Array.isArray(to) ? to : [to]).filter((a) => isEmail(a)))];
+  if (!clean.length) return { sent: 0, tried: 0, reason: 'no address' };
+
+  try {
+    const rows = await db.prepare('SELECT key, value FROM settings').all();
+    const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
+
+    if (settings.notice_email === '0') return { sent: 0, tried: 0, reason: 'switched off' };
+    if (!goesOut(readChannels(settings[CHANNELS_KEY]), kind, 'email', wanted)) {
+      return { sent: 0, tried: 0, reason: 'switched off for this kind' };
+    }
+    const apiKey = env?.RESEND_API_KEY;
+    const from = (settings.email_from || '').trim();
+    if (!apiKey || !from) return { sent: 0, tried: 0, reason: 'not configured' };
+
+    const { subject, html } = renderNotice({
+      notice: { kind, title, body, link, day },
+      propertyName: settings.property_name || 'HIVE',
+      siteUrl: originOf(settings.site_url),
+    });
+
+    await sendEmail({
+      apiKey,
+      from: senderWithName(from, senderNameOf(settings)),
+      to: clean,
+      subject,
+      html,
+      replyTo: (settings.email_reply_to || '').trim() || null,
+    });
+
+    await db.prepare(
+      'INSERT INTO email_log (kind, day, recipients, status, detail) VALUES (?, ?, ?, ?, ?)',
+    ).bind('notice', day ?? null, clean.join(', '), 'sent', String(kind).slice(0, 60))
+      .run().catch(() => {});
+
+    return { sent: clean.length, tried: clean.length };
+  } catch (err) {
+    await db.prepare(
+      'INSERT INTO email_log (kind, day, recipients, status, detail) VALUES (?, ?, ?, ?, ?)',
+    ).bind('notice', day ?? null, clean.join(', '), 'failed', String(err.message).slice(0, 500))
+      .run().catch(() => {});
+    return { sent: 0, tried: clean.length, reason: err.message };
   }
 }

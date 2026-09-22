@@ -791,14 +791,23 @@ export const GUIDE = [
         + 'number fixes, and told and not looked at, which sending it again will not.' },
 
       { p: 'Three ways out, so nobody is missed. An alert where the phone can take one. An '
-        + 'email where it cannot, to the address on their login. And a text to anybody the '
-        + 'first two miss, which is the only thing that reaches an old iPhone and the only '
-        + 'thing that reaches somebody with no login at all. Whoever got the alert does not '
-        + 'also get the email; two messages about one rota is how people learn to ignore '
-        + 'both. The dialog says afterwards how many were told, how many were texted, and '
-        + 'how many could not be reached at all.' },
+        + 'email where it cannot. And a text to anybody the first two miss, which is the only '
+        + 'thing that reaches an old iPhone. Whoever got the alert does not also get the '
+        + 'email; two messages about one rota is how people learn to ignore both. The dialog '
+        + 'says afterwards how many were told, how many were texted, and how many could not '
+        + 'be reached at all.' },
+      { p: 'The email goes to the address on their login where there is one, and otherwise to '
+        + 'the address on their record under People. That second one matters more than it '
+        + 'sounds: signing in needs a PIN and nothing else, so most logins carry no address, '
+        + 'and most of the property has no login at all. Somebody with neither a login nor an '
+        + 'alert still gets the email if their record has an address on it.' },
+      { note: 'Under Users & data → Notifications, "Who gets a published rota by email" '
+        + 'changes the first rule. Everybody whose week changed sends it whether or not their '
+        + 'phone buzzed, for a property that wants the week in writing either way. Only people '
+        + 'an alert cannot reach is the default and the quieter answer.' },
       { note: 'Texts have to be set up first, under Users & data → Notifications, and they '
-        + 'cost money each time. Numbers come from each person’s record under People.' },
+        + 'cost money each time. Numbers come from each person’s record under People, and '
+        + 'so do email addresses.' },
       { sub: 'The days stay where you can see them' },
       { p: 'Ask for a fortnight and you get a fortnight on one screen rather than one to scroll '
         + 'sideways through. Past a week the cells give up what the eye can do without: the '

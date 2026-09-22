@@ -1,0 +1,15 @@
+-- Emailing a published rota to somebody whose phone already buzzed.
+--
+-- Off, and the property's to turn on. The order of preference has always been
+-- push, then email, then text, and mail only where the alert cannot land: a
+-- phone that buzzed has been told, and sending the same thing again by email
+-- is how a fortnightly rota turns into a mailbox nobody opens.
+--
+-- That is the right default and it is not the right rule everywhere. A
+-- property that wants the week in writing, for people who read email at a desk
+-- or for a record of what was sent and when, has no way to ask for it. This is
+-- the way to ask.
+--
+-- It changes nothing about who is told. The rota still reaches only the people
+-- it changed something for, and only where the planner chose to tell anybody.
+INSERT OR IGNORE INTO settings (key, value) VALUES ('rota_email_always', '0');

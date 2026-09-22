@@ -584,6 +584,10 @@ export async function getNotifications(ctx) {
     smsProvider: sms.provider,
     smsSender: settings.sms_sender ?? '',
     smsReach: sms.reach,
+    // Whether a published rota is mailed to people whose phone already buzzed.
+    // 'gap' is the default and the cheaper answer; 'all' is for a property
+    // that wants the week in writing whatever else went out.
+    rotaEmailReach: settings.rota_email_always === '1' ? 'all' : 'gap',
     smsProviders: PROVIDERS,
     smsReady: sms.ready,
     smsMissing: sms.missing,
@@ -710,6 +714,9 @@ export async function updateNotifications(ctx) {
   const smsReach = body.smsReach === 'all' ? 'all' : (body.smsReach === 'gap' ? 'gap'
     : (stored.sms_reach === 'all' ? 'all' : 'gap'));
 
+  const rotaEmailReach = body.rotaEmailReach === 'all' ? '1'
+    : (body.rotaEmailReach === 'gap' ? '0' : (stored.rota_email_always === '1' ? '1' : '0'));
+
   const emailEnabled = bool(body.emailEnabled, stored.att_email_enabled === '1') ? '1' : '0';
   const pushEnabled = bool(body.pushEnabled, stored.push_on_exception !== '0') ? '1' : '0';
   const inApp = bool(body.inAppEnabled, stored.notices_enabled !== '0') ? '1' : '0';
@@ -745,6 +752,7 @@ export async function updateNotifications(ctx) {
     setting(ctx.db, 'sms_provider', smsProvider),
     setting(ctx.db, 'sms_sender', smsSender),
     setting(ctx.db, 'sms_reach', smsReach),
+    setting(ctx.db, 'rota_email_always', rotaEmailReach),
   ]);
 
   await audit(ctx, 'notifications.update', null, {

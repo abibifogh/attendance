@@ -43,6 +43,15 @@ export function alertsSetup(data, reload) {
       'Only phones that cannot show an alert'),
     h('option', { value: 'all', selected: data.smsReach === 'all' },
       'Everybody whose week changed'));
+  // The same shape as "Who gets a text", and the same reasoning. A phone that
+  // buzzed has been told; mailing it again is how a fortnightly rota turns
+  // into a mailbox nobody opens. Some properties want the week in writing
+  // anyway, and this is how they say so.
+  const rotaEmailReach = h('select',
+    h('option', { value: 'gap', selected: data.rotaEmailReach !== 'all' },
+      'Only people an alert cannot reach'),
+    h('option', { value: 'all', selected: data.rotaEmailReach === 'all' },
+      'Everybody whose week changed'));
   const testNumber = h('input', { type: 'tel', maxlength: 20, placeholder: '024 123 4567' });
 
   const save = async () => {
@@ -61,6 +70,7 @@ export function alertsSetup(data, reload) {
         smsProvider: smsProvider.value,
         smsSender: smsSender.value.trim(),
         smsReach: smsReach.value,
+        rotaEmailReach: rotaEmailReach.value,
       });
       toast('Saved.', 'good');
       await reload();
@@ -103,6 +113,12 @@ export function alertsSetup(data, reload) {
         h('label.inline-check', emailEnabled, h('span', 'The morning email digest')),
         h('label.inline-check', noticeEmail,
           h('span', 'Email every notice as well as ringing the bell')),
+        h('label.field', { style: { marginTop: '.6rem' } },
+          h('span', 'Who gets a published rota by email'), rotaEmailReach,
+          h('small.muted', 'A phone that showed the alert has been told, so by default the '
+            + 'email goes only to the people it could not reach. Where there is no address on '
+            + 'somebody\u2019s login the one from their record under People is used, which is '
+            + 'the only address most of the property has.')),
         h('p.muted', { style: { fontSize: '.85rem' } },
           'A notice goes only to whoever it names — the person it is addressed to, or whoever holds '
           + 'the permission it is for, worked out when it is sent rather than from a list somebody '

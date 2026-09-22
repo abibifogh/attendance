@@ -31,7 +31,8 @@ const LEVELS = new Set(['info', 'warn', 'high']);
  */
 export async function createNotice(db, {
   kind, level = 'info', title, body, link, day, slot, actor, audience = null, userId = null,
-  emailAudience = undefined, email = true, push = true, text = null, report = false,
+  emailAudience = undefined, emailTo = null, email = true, push = true, text = null,
+  report = false,
 }, ctx = null) {
   if (!kind || !title) return report ? { id: null, buzzed: 0, emailed: 0 } : null;
 
@@ -60,7 +61,12 @@ export async function createNotice(db, {
     // week would be sending twenty emails nobody reads.
     if (ctx?.env) {
       jobs.push(emailNotice(db, ctx.env, {
-        kind, level, title, body, link, actor, audience, userId, also,
+        kind, level, title, body, link, day, actor, audience, userId, also,
+        // An address the raising code already knows, for the people the logins
+        // cannot reach. Most of this property has no login, and a login that
+        // exists often carries no address, because signing in needs a PIN and
+        // nothing else.
+        emailTo,
         // What the raising code asked for, which a setting overrules only when
         // somebody has said so on purpose. Some callers know something no
         // setting can: that this person's phone has already buzzed once.
