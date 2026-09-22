@@ -52,7 +52,7 @@ function personRow(person, picked) {
         : null),
     h('div.heard-ways',
       mark(person.buzzed, 'Alert on their phone', 'No device with alerts turned on'),
-      mark(person.emailed, 'Email', 'No email address on their login'),
+      mark(person.emailed, 'Email', 'No email address on their login or their record'),
       mark(person.texted, 'Text message', 'No mobile number on their record'),
       person.opened ? h('span.pill.good', 'Opened') : null),
   );

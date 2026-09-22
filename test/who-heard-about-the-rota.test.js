@@ -181,7 +181,7 @@ test('the reason nothing landed is said plainly enough to act on', async () => {
   const done = await publish(db);
   const out = await read(await publishTold(ctx(db), done.publishId));
 
-  assert.match(byName(out.people, 'Esi').why, /No login and no mobile number/);
+  assert.match(byName(out.people, 'Esi').why, /No login, no email address and no mobile number/);
   assert.match(byName(out.people, 'Yaw').why, /no alerts turned on/);
   // And the two are not the same sentence, because the fix is not the same.
   assert.notEqual(byName(out.people, 'Esi').why, byName(out.people, 'Yaw').why);

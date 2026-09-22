@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { publishRoster, saveRoster } from '../src/routes/attendance.js';
+import { publishHistory, publishRoster, saveRoster } from '../src/routes/attendance.js';
 
 /**
  * Publishing a rota has to reach the person, not the app.
@@ -53,10 +53,32 @@ function setup() {
   return { raw, db: d1(raw) };
 }
 
+/**
+ * A subscription the push can actually be encrypted for.
+ *
+ * The keys matter. A made-up p256dh fails inside the encryption before any
+ * request is made, so every push in these tests used to come back as tried and
+ * failed — which happens to be indistinguishable from a real phone that has
+ * been wiped, and meant the tests could not tell a working alert from a dead
+ * one. A genuine P-256 public key and a sixteen-byte auth secret make the
+ * difference testable.
+ */
+async function realKeys() {
+  const b64url = (bytes) => Buffer.from(bytes).toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const pair = await crypto.subtle.generateKey(
+    { name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'],
+  );
+  return {
+    p256dh: b64url(await crypto.subtle.exportKey('raw', pair.publicKey)),
+    auth: b64url(crypto.getRandomValues(new Uint8Array(16))),
+  };
+}
+
 /** Somebody on the rota, with as much or as little of a way to reach them. */
 function person(raw, {
   id, name, login = null, phone = null, subscribed = false,
-  email = null, loginEmail = null,
+  email = null, loginEmail = null, keys = null,
 }) {
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
@@ -73,10 +95,12 @@ function person(raw, {
     ).run(login, name, id, loginEmail);
   }
   if (subscribed) {
+    // Without real keys the encryption throws and the push reads as tried and
+    // failed, which is a dead handset rather than a working one.
     raw.prepare(
       `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
-       VALUES (?, ?, 'k', 'a')`,
-    ).run(login, `https://push.example/${login}`);
+       VALUES (?, ?, ?, ?)`,
+    ).run(login, `https://push.example/${login}`, keys?.p256dh ?? 'k', keys?.auth ?? 'a');
   }
 }
 
@@ -101,7 +125,13 @@ function pretend() {
   const real = globalThis.fetch;
   const seen = [];
   globalThis.fetch = async (url, options) => {
-    seen.push({ url: String(url), body: JSON.parse(options?.body ?? '{}') });
+    // A push body is encrypted bytes, not JSON. Parsing everything used to
+    // throw inside the stub, which the sender counted as the push failing, so
+    // no alert in these tests ever succeeded and a working phone could not be
+    // told from a wiped one.
+    let body = {};
+    try { body = JSON.parse(options?.body ?? '{}'); } catch { body = {}; }
+    seen.push({ url: String(url), body });
     return new Response('{}', { status: 200 });
   };
   return { seen, stop() { globalThis.fetch = real; } };
@@ -113,7 +143,10 @@ async function rosterFor(db, entries) {
 
 test('the one an alert cannot reach gets a text, the one it can does not', async () => {
   const { raw, db } = setup();
-  person(raw, { id: 1, name: 'Kofi', login: 11, phone: '024 123 4567', subscribed: true });
+  person(raw, {
+    id: 1, name: 'Kofi', login: 11, phone: '024 123 4567', subscribed: true,
+    keys: await realKeys(),
+  });
   person(raw, { id: 2, name: 'Ama', login: 12, phone: '0551234567' });
 
   await rosterFor(db, [
@@ -131,7 +164,10 @@ test('the one an alert cannot reach gets a text, the one it can does not', async
 
   assert.equal(done.told, 2, 'both had a notice raised');
   assert.equal(done.texted, 1, 'only the one with no way to be alerted was texted');
-  assert.deepEqual(spy.seen[0].body.recipients, ['+233551234567'], 'and it was Ama');
+  // Found rather than assumed to be first: the alert that landed is a call in
+  // this list too, now that the stub no longer chokes on an encrypted body.
+  const text = spy.seen.find((call) => call.body?.recipients);
+  assert.deepEqual(text.body.recipients, ['+233551234567'], 'and it was Ama');
 });
 
 test('a text says what the week holds, not that a rota exists', async () => {
@@ -255,10 +291,11 @@ test('an unset gateway is quiet rather than broken', async () => {
 
 test('email fills the gap the alert leaves, and only that gap', async () => {
   const { raw, db } = setup();
+  const keys = await realKeys();
   raw.prepare(
     "INSERT OR REPLACE INTO settings (key, value) VALUES ('email_from', 'hive@niceoperation.com')",
   ).run();
-  person(raw, { id: 1, name: 'Kofi', login: 11, subscribed: true });
+  person(raw, { id: 1, name: 'Kofi', login: 11, subscribed: true, keys });
   person(raw, { id: 2, name: 'Ama', login: 12 });
   raw.prepare("UPDATE users SET email = 'kofi@niceoperation.com' WHERE id = 11").run();
   raw.prepare("UPDATE users SET email = 'ama@niceoperation.com' WHERE id = 12").run();
@@ -392,6 +429,7 @@ test('a phone that buzzed is not mailed as well', async () => {
   const { raw, db } = setup();
   person(raw, {
     id: 1, name: 'Kofi', login: 11, email: 'kofi@example.com', subscribed: true,
+    keys: await realKeys(),
   });
 
   const { spy } = await publishWith(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
@@ -404,6 +442,7 @@ test('and is mailed as well where the property has asked for it', async () => {
     .run();
   person(raw, {
     id: 1, name: 'Kofi', login: 11, email: 'kofi@example.com', subscribed: true,
+    keys: await realKeys(),
   });
 
   const { spy } = await publishWith(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
@@ -430,4 +469,70 @@ test('publishing quietly mails nobody, whatever the setting says', async () => {
     spy.stop();
   }
   assert.deepEqual(mailedTo(spy), []);
+});
+
+// ---------------------------------------------------------------------------
+// A subscription is not a working phone
+// ---------------------------------------------------------------------------
+
+/**
+ * The failure behind "she says she got nothing and the screen says not
+ * reached".
+ *
+ * A push subscription says somebody once stood there and turned alerts on. The
+ * handset may since have been wiped, the app removed, the permission revoked,
+ * or the gateway may simply refuse it. The decision to skip the email was made
+ * before any of that was known, on the strength of the row alone, so those
+ * people got nothing at all — no alert, because it failed, and no email,
+ * because the app believed the alert had landed.
+ */
+
+test('a dead subscription no longer swallows the email', async () => {
+  const { raw, db } = setup();
+  // Keys the encryption cannot use: the same shape a wiped handset leaves
+  // behind, and the push is refused before it reaches the gateway.
+  person(raw, { id: 1, name: 'Kofi', login: 11, email: 'kofi@example.com', subscribed: true });
+
+  const { done, spy } = await publishWith(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
+
+  assert.deepEqual(mailedTo(spy), ['kofi@example.com'], 'the email the alert displaced');
+  assert.equal(done.told, 1);
+
+  const line = raw.prepare('SELECT buzzed, emailed FROM rota_publish_told').get();
+  assert.equal(line.buzzed, -1, 'tried and refused, which is what it was');
+  assert.equal(line.emailed, 1, 'and the fallback is recorded, so they read as reached');
+});
+
+test('the count says reached, which is the thing the planner sees', async () => {
+  const { raw, db } = setup();
+  person(raw, { id: 1, name: 'Kofi', login: 11, email: 'kofi@example.com', subscribed: true });
+  await publishWith(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
+
+  const history = await (await publishHistory(ctx(db))).json();
+  assert.equal(history.publishes[0].reached, 1);
+  assert.equal(history.publishes[0].missed, 0);
+});
+
+test('an alert that landed still displaces the email', async () => {
+  // The fallback is for a push that failed, not for every push.
+  const { raw, db } = setup();
+  person(raw, {
+    id: 1, name: 'Kofi', login: 11, email: 'kofi@example.com', subscribed: true,
+    keys: await realKeys(),
+  });
+
+  const { spy } = await publishWith(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
+  assert.deepEqual(mailedTo(spy), []);
+  assert.equal(raw.prepare('SELECT buzzed FROM rota_publish_told').get().buzzed, 1);
+});
+
+test('a failed alert with no address anywhere is still not reached', async () => {
+  const { raw, db } = setup();
+  person(raw, { id: 1, name: 'Kofi', login: 11, subscribed: true });
+
+  const { done } = await publishWith(db, [{ staffId: 1, day: '2026-06-02', shiftId: 1 }]);
+  const history = await (await publishHistory(ctx(db))).json();
+
+  assert.equal(history.publishes[0].missed, 1, 'and the planner is told so');
+  assert.equal(done.told, 1, 'a notice was still raised; it is the bell they have not seen');
 });

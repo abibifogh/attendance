@@ -801,6 +801,11 @@ export const GUIDE = [
         + 'sounds: signing in needs a PIN and nothing else, so most logins carry no address, '
         + 'and most of the property has no login at all. Somebody with neither a login nor an '
         + 'alert still gets the email if their record has an address on it.' },
+      { note: 'An alert that is sent and refused counts as no alert, so the email goes anyway. '
+        + 'A phone that was wiped, or had the app removed, leaves behind a subscription that '
+        + 'looks live until something is actually sent to it, and those people used to get '
+        + 'nothing at all: no alert, because it failed, and no email, because the app thought '
+        + 'the alert had landed.' },
       { note: 'Under Users & data → Notifications, "Who gets a published rota by email" '
         + 'changes the first rule. Everybody whose week changed sends it whether or not their '
         + 'phone buzzed, for a property that wants the week in writing either way. Only people '

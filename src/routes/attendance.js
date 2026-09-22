@@ -2697,6 +2697,31 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null
     line.noticeId = went?.id ?? null;
     line.buzzed = went?.buzzed ?? 0;
     line.emailed = went?.emailed ?? 0;
+
+    // THE PUSH WAS TRIED AND DID NOT LAND, so the email it displaced goes now.
+    //
+    // A subscription row is not a working phone. It says somebody once stood
+    // there and turned alerts on; the handset may since have been wiped, the
+    // app removed, the permission revoked, or the gateway may simply refuse
+    // it. The decision to skip the email was taken before any of that was
+    // known, on the strength of the row, so those people got nothing at all
+    // and were counted as not reached — which is the whole of what the planner
+    // sees, with no way to tell it from a person with no address on file.
+    //
+    // Only where nothing was even attempted by mail. An email that was tried
+    // and refused is a different problem and sending it twice does not fix it.
+    if (line.buzzed === -1 && line.emailed === 0 && held.email) {
+      const posted = await emailPersonally(ctx.db, ctx.env, {
+        kind: 'rota.published.mine',
+        title: count ? `Your shifts are out: ${what}` : 'Your rota is out',
+        body: lines.join(' '),
+        link: '#/att-me',
+        day: first?.day ?? from,
+        to: held.email,
+      });
+      if (posted.sent > 0) line.emailed = 1;
+    }
+
     told += 1;
   }
 
@@ -2958,7 +2983,7 @@ export async function publishTold(ctx, id) {
 
   const rows = await ctx.db.prepare(
     `SELECT t.*, s.name, s.department,
-            hp.personal_phone, hp.alt_phone,
+            hp.personal_phone, hp.alt_phone, hp.personal_email,
             u.email AS login_email,
             (SELECT COUNT(*) FROM push_subscriptions ps WHERE ps.user_id = t.user_id) AS devices,
             (SELECT r.last_id FROM app_notice_reads r WHERE r.user_id = t.user_id)     AS seen_to
@@ -3026,6 +3051,9 @@ export async function publishTold(ctx, id) {
 function whyNothingLanded(row) {
   const tried = [row.buzzed, row.emailed, row.texted].some((n) => Number(n) === -1);
   const phone = Boolean(firstUsableNumber(row.personal_phone, row.alt_phone));
+  // Either address. A login needs a PIN and nothing else, so most carry none,
+  // and the one on their record under People is what a published rota uses.
+  const email = Boolean(firstUsableEmail(row.login_email, row.personal_email));
   const devices = Number(row.devices ?? 0);
 
   if (tried) {
@@ -3033,14 +3061,19 @@ function whyNothingLanded(row) {
       + 'The send log under Notifications says what came back.';
   }
   if (row.user_id == null) {
+    if (email) {
+      return 'No login, and the email did not go. Check the From address and the key under '
+        + 'Notifications, and that this kind still has email ticked.';
+    }
     return phone
-      ? 'No login, and no text went. Texts may be switched off or the gateway may be out '
-        + 'of credit.'
-      : 'No login and no mobile number on their record. Nothing in the app can reach them.';
+      ? 'No login and no email address, and no text went. Texts may be switched off or the '
+        + 'gateway may be out of credit.'
+      : 'No login, no email address and no mobile number. Nothing in the app can reach them. '
+        + 'Add one to their record under People.';
   }
-  if (devices === 0 && !row.login_email && !phone) {
-    return 'A login with no alerts turned on, no email address and no mobile number. '
-      + 'Any one of the three would do.';
+  if (devices === 0 && !email && !phone) {
+    return 'A login with no alerts turned on, no email address on it or on their record, and '
+      + 'no mobile number. Any one of the three would do.';
   }
   return 'Nothing was sent. Check that this kind of notice is still switched on under '
     + 'Notifications.';
