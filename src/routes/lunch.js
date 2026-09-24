@@ -1,9 +1,10 @@
 import { badRequest, forbidden, json, notFound, readJson, str } from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
+import { emailPersonally, firstUsableEmail } from '../lib/notify.js';
 import { getPepper, hashPin } from '../lib/auth.js';
 import { loadDataset, scheduleFor } from '../lib/attendance.js';
 import { siteOrigin } from '../lib/site.js';
-import { dow, nowIn, startOfWeek, todayIn } from '../util/dates.js';
+import { addDays, dow, nowIn, startOfWeek, todayIn } from '../util/dates.js';
 import {
   DAY_NAMES, NOTICE_HOURS, daysFor, first, menuWeek, readTime, saidNo, scheduleFrom, showTime,
   summarise, tooLateFor, unanswered, weekDays, windowFor,
@@ -31,6 +32,16 @@ const hashLunchToken = (token, pepper) => hashPin(`lunch:${token}`, pepper);
 // "Thursday" rather than "2026-08-20". The screens format dates themselves;
 // this is for the one message that goes out as plain text.
 const dayName = (day) => DAY_NAMES[(new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7] ?? day;
+
+// And "24 August", for the same reason. A date in an email is read by a person
+// rather than parsed by anything, and 2026-08-24 is the app talking to itself.
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+const sayTheDate = (day) => {
+  const at = new Date(`${day}T12:00:00Z`);
+  if (Number.isNaN(at.getTime())) return day;
+  return `${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]}`;
+};
 
 /** Which day of the week a date is, 1 for Monday through 7 for Sunday. */
 const dayOfWeek = (day) => dow(day) + 1;
@@ -205,6 +216,12 @@ export async function lunchWeek(ctx) {
       people: [...byStaff.values()].filter((days) => days.includes(day)).length,
     })),
     property: settings.property,
+    // Whether everybody has been told what they are down to eat, and for which
+    // week. The receipt goes on its own when the list shuts; this is so the
+    // button can say whether it has happened rather than leaving somebody to
+    // press it and wonder.
+    toldFor: (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'lunch_told_for'")
+      .first().catch(() => null))?.value ?? null,
   });
 }
 
@@ -863,4 +880,174 @@ export async function decideLunchChange(ctx, id) {
   }, ctx);
 
   return json({ ok: true, decision, day: row.day });
+}
+
+// ---------------------------------------------------------------------------
+// Telling everybody what they are down for
+// ---------------------------------------------------------------------------
+
+/**
+ * One person's week, in the words the email uses.
+ *
+ * SAID AS DAYS AND MEALS, not as a count. "Three lunches" is the kitchen's
+ * unit and it is no use to the person reading: what they want to know is
+ * whether Thursday is one of them, and what it is.
+ *
+ * A WEEK OF NOTHING IS STILL AN ANSWER and still worth sending. Somebody who
+ * ticked nothing has said they are not eating, and the whole reason they
+ * cannot check that on the list is that the list is the kitchen's. This is the
+ * only thing that tells them it registered.
+ */
+export function lunchLines({ days, menu, taking }) {
+  const eating = days.filter((day) => taking.get(day) === true);
+  const not = days.filter((day) => taking.get(day) === false);
+
+  const saying = (day) => {
+    const meal = menu.get(dayOfWeek(day))?.meal;
+    return `${dayName(day)} ${sayTheDate(day)}${meal ? `: ${meal}` : ''}`;
+  };
+
+  if (!eating.length) {
+    return [
+      'You are not down for lunch on any day this week.',
+      not.length
+        ? `You said no to ${not.length} ${not.length === 1 ? 'day' : 'days'}.`
+        : null,
+      'If that is wrong, open My lunch in the app and ask for it to be changed.',
+    ].filter(Boolean);
+  }
+
+  return [
+    `You are down for ${eating.length} lunch${eating.length === 1 ? '' : 'es'} this week:`,
+    ...eating.map((day) => `• ${saying(day)}`),
+    not.length ? `Not eating on ${not.map((day) => dayName(day)).join(', ')}.` : null,
+    'If any of that is wrong, open My lunch in the app. While the list is open you can change '
+      + 'it yourself; once it has shut you can ask the kitchen.',
+  ].filter(Boolean);
+}
+
+/**
+ * Tell each person what they are down to eat.
+ *
+ * WHY IT IS SENT AT ALL. Ordering happens on a link that a person opens once
+ * and closes, and everything after that lives on the kitchen's screen. So the
+ * answer to "what did I put down for Thursday" was in a building rather than
+ * in anybody's hands, and the first anybody found out they had got it wrong
+ * was at noon with no plate in front of them.
+ *
+ * EVERYBODY WHO ANSWERED, and only them. Somebody who said nothing has nothing
+ * to confirm, and mailing them "you did not answer" is a chase rather than a
+ * receipt: the chase is on the kitchen's screen, by name, where somebody can
+ * do something about it.
+ *
+ * THE ADDRESS IS THE ONE THEY HAVE. Their login's where it has one, otherwise
+ * the one on their record under People, which is what almost everybody
+ * actually has.
+ */
+export async function tellThemWhatTheyOrdered(db, env, { monday, ctx = null }) {
+  const week = weekDays(monday);
+
+  const [menu, rows] = await Promise.all([
+    menuMap(db),
+    db.prepare(
+      `SELECT o.staff_id, o.day, o.taking, s.name, hp.personal_email,
+              (SELECT u.email FROM users u
+                WHERE u.staff_id = o.staff_id AND u.active = 1
+                ORDER BY u.id LIMIT 1) AS login_email
+         FROM lunch_order o
+         JOIN att_staff s ON s.id = o.staff_id
+         LEFT JOIN hr_profile hp ON hp.staff_id = o.staff_id
+        WHERE o.day BETWEEN ?1 AND ?2 AND s.active = 1
+        ORDER BY o.day`,
+    ).bind(week[0], week[6]).all().catch(() => ({ results: [] })),
+  ]);
+
+  const byStaff = new Map();
+  for (const row of rows.results ?? []) {
+    const held = byStaff.get(row.staff_id) ?? {
+      name: row.name,
+      email: firstUsableEmail(row.login_email, row.personal_email),
+      days: [],
+      taking: new Map(),
+    };
+    held.days.push(row.day);
+    held.taking.set(row.day, Boolean(row.taking));
+    byStaff.set(row.staff_id, held);
+  }
+
+  const property = (await db.prepare("SELECT value FROM settings WHERE key = 'property_name'")
+    .first().catch(() => null))?.value || 'the property';
+
+  let sent = 0;
+  let noAddress = 0;
+  for (const held of byStaff.values()) {
+    if (!held.email) { noAddress += 1; continue; }
+    const posted = await emailPersonally(db, env, {
+      kind: 'lunch.what_you_ordered',
+      title: `Lunch at ${property}, week of ${sayTheDate(monday)}`,
+      body: lunchLines({ days: held.days.sort(), menu, taking: held.taking }).join('\n'),
+      link: '#/att-my-lunch',
+      day: monday,
+      to: held.email,
+    });
+    if (posted.sent > 0) sent += 1;
+  }
+
+  void ctx;
+  return { people: byStaff.size, sent, noAddress };
+}
+
+/**
+ * Send it now, for the week on screen.
+ *
+ * Its own button as well as the automatic one. A kitchen that has just put
+ * four people down by hand wants to tell them without waiting for anything,
+ * and a week that was sent before somebody changed their mind is a week worth
+ * sending again.
+ */
+export async function tellLunch(ctx) {
+  const settings = await settingsOf(ctx.db);
+  const body = await readJson(ctx.request);
+
+  const asked = str(body.week, 'Week', { max: 10 });
+  const monday = /^\d{4}-\d{2}-\d{2}$/.test(asked ?? '')
+    ? startOfWeek(asked)
+    : startOfWeek(todayIn(settings.timezone));
+
+  const out = await tellThemWhatTheyOrdered(ctx.db, ctx.env, { monday, ctx });
+  await put(ctx.db, 'lunch_told_for', monday);
+  await audit(ctx, 'lunch.tell', monday, out);
+  return json({ ok: true, monday, ...out });
+}
+
+/**
+ * And on its own, the moment the list shuts.
+ *
+ * WHY THE CLOSE AND NOT THE ANSWER. Somebody ticking boxes on a Thursday is
+ * not finished: they come back on Saturday and change Wednesday, and a receipt
+ * for every press would be four emails about one week. The close is the moment
+ * the answer stops moving, which is the moment worth writing down.
+ *
+ * ONCE PER WEEK, and the week it was last done for is written down, because
+ * this is reached from a cron that fires every five minutes and an inbox with
+ * twelve identical receipts in it is worse than none.
+ */
+export async function tellLunchOnClosing(db, env, { now = null } = {}) {
+  const settings = await settingsOf(db);
+  if (!settings.on) return { sent: 0, reason: 'switched off' };
+
+  const at = now ?? nowIn(settings.timezone);
+  const window = windowFor(at, settings.schedule);
+  // Open means the answers are still moving. What we want is the week that has
+  // just stopped: the one before whichever window is now being pointed at.
+  if (window.open) return { sent: 0, reason: 'still open' };
+
+  const monday = addDays(window.monday, -7);
+  const already = (await db.prepare("SELECT value FROM settings WHERE key = 'lunch_told_for'")
+    .first().catch(() => null))?.value ?? '';
+  if (already >= monday) return { sent: 0, reason: 'already told' };
+
+  const out = await tellThemWhatTheyOrdered(db, env, { monday });
+  await put(db, 'lunch_told_for', monday);
+  return { monday, ...out };
 }

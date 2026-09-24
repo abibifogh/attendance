@@ -374,6 +374,16 @@ export const KINDS = [
   },
 
   {
+    key: 'lunch.what_you_ordered',
+    group: 'house',
+    label: 'What you are down to eat this week',
+    who: 'Everybody who answered the lunch list',
+    when: 'The list shuts, or the kitchen sends it',
+    ways: ['email'],
+    note: 'A receipt rather than an alert. Ordering happens on a link somebody opens once, so '
+      + 'without this the only copy of their own answer is on the kitchen\u2019s screen.',
+  },
+  {
     key: 'lunch.change_asked',
     group: 'house',
     label: 'Somebody wants their lunch changed',

@@ -473,6 +473,7 @@ export const api = {
   lunchSwitch: (body) => request('/api/lunch/switch', { method: 'POST', body }),
   lunchSetSchedule: (body) => request('/api/lunch/schedule', { method: 'POST', body }),
   lunchDecideChange: (id, body) => request(`/api/lunch/changes/${id}`, { method: 'POST', body }),
+  lunchTell: (week) => request('/api/lunch/tell', { method: 'POST', body: { week } }),
   attRemoveLogo: () => request('/api/att/company/logo', { method: 'DELETE' }),
   attRecompute: (body) => request('/api/att/recompute', { method: 'POST', body }),
 

@@ -7,6 +7,12 @@ import {
   NOTICE_HOURS, daysFor, first, menuWeek, readTime, saidNo, scheduleFrom, showTime, summarise,
   tooLateFor, unanswered, weekDays, windowFor,
 } from '../src/lib/lunch.js';
+import {
+  lunchLines as saidOut, lunchWeek, tellLunch, tellLunchOnClosing, tellThemWhatTheyOrdered,
+} from '../src/routes/lunch.js';
+
+/** The kitchen's screen for one week, which several tests read back. */
+const lunchWeekOf = (db, monday) => lunchWeek(ctxFor(db, `/api/lunch?week=${monday}`));
 
 /**
  * The weekly lunch list.
@@ -443,8 +449,9 @@ function property() {
   return { raw, db: d1(raw) };
 }
 
-const ctxFor = (db, path, body) => ({
+const ctxFor = (db, path, body, env = {}) => ({
   db,
+  env,
   url: new URL(`https://staff.example.test${path}`),
   session: { user: { id: 1, name: 'Kwame', role: 'admin' }, permissions: ['lunch'] },
   request: new Request(`https://staff.example.test${path}`, body === undefined ? {} : {
@@ -1233,4 +1240,198 @@ test('with the list open, any day of that week changes outright', async () => {
 
   assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM lunch_change').get().n, 0);
   assert.equal(raw.prepare('SELECT taking FROM lunch_order WHERE day = ?').get(WED).taking, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Telling everybody what they are down to eat
+// ---------------------------------------------------------------------------
+
+/**
+ * Ordering happens on a link somebody opens once and closes, and everything
+ * after that lives on the kitchen's screen. So the answer to "what did I put
+ * down for Thursday" was in a building rather than in anybody's hands, and the
+ * first they found out they had it wrong was at noon with no plate.
+ */
+
+const mailsSent = (raw) => raw.prepare(
+  "SELECT recipients, status FROM email_log WHERE detail = 'lunch.what_you_ordered' ORDER BY id",
+).all();
+
+/** A property where email works and there is a menu to name. */
+function mailing(raw) {
+  for (const [key, value] of Object.entries({
+    lunch_on: '1',
+    email_from: 'hive@niceoperation.com',
+    property_name: 'Somewhere Nice',
+    site_url: 'https://staff.niceoperation.com',
+  })) {
+    raw.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+  }
+  raw.prepare("INSERT INTO lunch_menu_week (dow, meal) VALUES (1, 'Jollof'), (3, 'Waakye')").run();
+}
+
+/** Every Resend call, so the words can be read back. */
+function watchMail() {
+  const real = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes('resend')) sent.push(JSON.parse(options?.body ?? '{}'));
+    return new Response('{}', { status: 200 });
+  };
+  return { sent, stop() { globalThis.fetch = real; } };
+}
+
+const MAILED = { RESEND_API_KEY: 'k' };
+
+test('the words say the days and the meals, not a count', () => {
+  const menu = new Map([[1, { meal: 'Jollof' }], [3, { meal: 'Waakye' }]]);
+  const lines = saidOut({
+    days: [MON, '2026-08-25', WED],
+    menu,
+    taking: new Map([[MON, true], ['2026-08-25', false], [WED, true]]),
+  }).join('\n');
+
+  assert.match(lines, /down for 2 lunches/);
+  assert.match(lines, /Monday 24 August: Jollof/);
+  assert.match(lines, /Wednesday 26 August: Waakye/);
+  assert.match(lines, /Not eating on Tuesday/);
+});
+
+test('a week of nothing is an answer, and it is still worth sending', () => {
+  // The only thing that tells somebody their no registered: they cannot see
+  // the list, because the list is the kitchen's.
+  const lines = saidOut({
+    days: [MON],
+    menu: new Map(),
+    taking: new Map([[MON, false]]),
+  }).join('\n');
+
+  assert.match(lines, /not down for lunch on any day/);
+  assert.match(lines, /said no to 1 day/);
+});
+
+test('everybody who answered is told, at the address they have', async () => {
+  const { db, raw } = property();
+  mailing(raw);
+  // Henry has a login with no address on it, which is most logins.
+  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'henry@example.com')")
+    .run();
+  raw.prepare('INSERT INTO lunch_order (staff_id, day, taking) VALUES (1, ?, 1)').run(MON);
+
+  const spy = watchMail();
+  let out;
+  try {
+    out = await tellThemWhatTheyOrdered(db, MAILED, { monday: MON });
+  } finally {
+    spy.stop();
+  }
+
+  assert.equal(out.sent, 1);
+  assert.deepEqual(spy.sent[0].to, ['henry@example.com']);
+  assert.match(spy.sent[0].subject, /Lunch at Somewhere Nice, week of 24 August/);
+});
+
+test('somebody who said nothing is not sent a receipt for nothing', async () => {
+  // There is nothing to confirm. Chasing them is the kitchen's screen, by
+  // name, where somebody can do something about it.
+  const { db, raw } = property();
+  mailing(raw);
+  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'henry@example.com')")
+    .run();
+
+  const spy = watchMail();
+  try {
+    const out = await tellThemWhatTheyOrdered(db, MAILED, { monday: MON });
+    assert.equal(out.people, 0);
+    assert.equal(out.sent, 0);
+  } finally {
+    spy.stop();
+  }
+  assert.deepEqual(mailsSent(raw), []);
+});
+
+test('somebody with no address anywhere is counted rather than lost', async () => {
+  const { db, raw } = property();
+  mailing(raw);
+  raw.prepare('INSERT INTO lunch_order (staff_id, day, taking) VALUES (1, ?, 1)').run(MON);
+
+  const spy = watchMail();
+  try {
+    const out = await tellThemWhatTheyOrdered(db, MAILED, { monday: MON });
+    assert.equal(out.people, 1);
+    assert.equal(out.sent, 0);
+    assert.equal(out.noAddress, 1, 'and the screen says so, so somebody can add one');
+  } finally {
+    spy.stop();
+  }
+});
+
+test('it goes on its own when the list shuts, and only once', async () => {
+  const { db, raw } = property();
+  mailing(raw);
+  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'henry@example.com')")
+    .run();
+  raw.prepare('INSERT INTO lunch_order (staff_id, day, taking) VALUES (1, ?, 1)').run(MON);
+
+  const spy = watchMail();
+  try {
+    // The Tuesday of the week itself: the list shut at midnight on the Monday.
+    await atDay('2026-08-25', async () => {
+      const first = await tellLunchOnClosing(db, MAILED);
+      assert.equal(first.monday, MON);
+      assert.equal(first.sent, 1);
+
+      // The cron fires every five minutes. An inbox with twelve identical
+      // receipts in it is worse than none.
+      const again = await tellLunchOnClosing(db, MAILED);
+      assert.equal(again.sent, 0);
+      assert.equal(again.reason, 'already told');
+    });
+  } finally {
+    spy.stop();
+  }
+  assert.equal(spy.sent.length, 1);
+});
+
+test('nothing goes while the list is still taking answers', async () => {
+  const { db, raw } = property();
+  mailing(raw);
+  raw.prepare('INSERT INTO lunch_order (staff_id, day, taking) VALUES (1, ?, 1)').run(MON);
+
+  const spy = watchMail();
+  try {
+    await atDay(THU, async () => {
+      const out = await tellLunchOnClosing(db, MAILED);
+      assert.equal(out.sent, 0);
+      assert.equal(out.reason, 'still open');
+    });
+  } finally {
+    spy.stop();
+  }
+});
+
+test('the button sends the week it is asked for, and records it', async () => {
+  const { db, raw } = property();
+  mailing(raw);
+  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'henry@example.com')")
+    .run();
+  raw.prepare('INSERT INTO lunch_order (staff_id, day, taking) VALUES (1, ?, 1)').run(MON);
+
+  const spy = watchMail();
+  try {
+    const out = await (await tellLunch(
+      ctxFor(db, '/api/lunch/tell', { week: WED }, MAILED),
+    )).json();
+    // Asked for a Wednesday, sent for its Monday: a week is a week.
+    assert.equal(out.monday, MON);
+    assert.equal(out.sent, 1);
+  } finally {
+    spy.stop();
+  }
+
+  const told = raw.prepare("SELECT value FROM settings WHERE key = 'lunch_told_for'").get();
+  assert.equal(told.value, MON);
+
+  const week = await (await lunchWeekOf(db, MON)).json();
+  assert.equal(week.toldFor, MON, 'so the button can say it has been sent');
 });

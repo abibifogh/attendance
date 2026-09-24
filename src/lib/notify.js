@@ -101,6 +101,23 @@ export function isEmail(value) {
 export const senderNameOf = (settings = {}) => String(settings.email_sender_name ?? '').trim()
   || 'HIVE';
 
+/**
+ * The first address that looks like one, login before personnel record.
+ *
+ * The login's own is preferred where it exists, because that is the address
+ * somebody chose to sign in with and the one the rest of the app writes to.
+ * The personnel record is what almost everybody actually has: signing in needs
+ * a PIN and nothing else, so most logins carry no address, and most of a
+ * property this size has no login at all.
+ */
+export function firstUsableEmail(...addresses) {
+  for (const address of addresses) {
+    const clean = String(address ?? '').trim();
+    if (isEmail(clean)) return clean;
+  }
+  return null;
+}
+
 export function senderWithName(from, senderName) {
   const address = String(from || '').trim();
   if (!address) return '';

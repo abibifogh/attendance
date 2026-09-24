@@ -25,7 +25,7 @@ import { notifyClockings } from '../lib/clock-alerts.js';
 import { daysBetween, parseDays } from '../lib/signoff.js';
 import { refuseUnsettled } from './signoff.js';
 import {
-  emailExceptions, emailPersonally, isEmail, pingExceptions,
+  emailExceptions, emailPersonally, firstUsableEmail, pingExceptions,
 } from '../lib/notify.js';
 import { firstUsableNumber, sendTexts } from '../lib/sms.js';
 import { originOf } from '../lib/site.js';
@@ -2526,14 +2526,6 @@ function linesFor({ what, from, to, first, held, message }) {
       : null,
     message || null,
   ].filter(Boolean);
-}
-
-function firstUsableEmail(...addresses) {
-  for (const address of addresses) {
-    const clean = String(address ?? '').trim();
-    if (isEmail(clean)) return clean;
-  }
-  return null;
 }
 
 /**

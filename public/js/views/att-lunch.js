@@ -85,6 +85,11 @@ export async function renderAttLunch(params = {}) {
               : h('span.muted', 'nobody'))))))),
       h('div.btn-row.no-print', { style: { marginTop: '.5rem' } },
         h('button.btn-sm', { onclick: () => putAnybodyDown(data, reload) }, 'Put somebody down'),
+        // The receipt goes on its own when the list shuts. This is for a
+        // kitchen that has just put four people down by hand and wants to tell
+        // them now, and for a week worth sending again after a change.
+        h('button.btn-sm', { onclick: () => tellThem(data, reload) },
+          data.toldFor === data.monday ? 'Send it again' : 'Tell everybody what they ordered'),
         h('p.muted', { style: { fontSize: '.85rem', margin: 0 } },
           'The number is what you order against. The names under it are so you can check it.'))),
 
@@ -507,4 +512,31 @@ async function decideChange(ask, decision, reload) {
   if (!done) return;
   toast(yes ? 'Changed, and they have been told.' : 'Answered.', yes ? 'good' : '');
   await reload();
+}
+
+/**
+ * Emailing everybody their own week.
+ *
+ * Asked first, because it is a message to the whole property and a button that
+ * sends one without asking is a button somebody presses twice.
+ */
+async function tellThem(data, reload) {
+  const again = data.toldFor === data.monday;
+  if (!confirmAction(
+    'Email everybody who answered for this week, saying which days they are down for and what '
+    + 'is being served? Anybody who said nothing gets nothing: there is nothing to confirm, '
+    + 'and chasing them is what the lists below are for.'
+    + (again ? '\n\nThis week has already been sent once.' : ''),
+  )) return;
+
+  try {
+    const out = await api.lunchTell(data.monday);
+    toast(out.sent
+      ? `${out.sent} told.${out.noAddress ? ` ${out.noAddress} have no email address on file.` : ''}`
+      : 'Nobody could be told: no email addresses on file, or email is not set up.',
+    out.sent ? 'good' : 'bad');
+    await reload();
+  } catch (err) {
+    toast(err.message, 'bad');
+  }
 }

@@ -2485,6 +2485,18 @@ export const GUIDE = [
       { note: 'Print the week gives the kitchen a sheet, and your print dialog will save it as '
         + 'a PDF if you choose that as the destination.' },
 
+      { sub: 'Telling everybody what they ordered' },
+      { p: 'When the list shuts, everybody who answered gets an email saying which days they '
+        + 'are down for and what is being served on each. It goes on its own, once, at the '
+        + 'moment the answers stop moving, and it is the only copy of their own answer anybody '
+        + 'outside this screen has: ordering happens on a link somebody opens once and closes.' },
+      { p: 'Tell everybody what they ordered on the week card sends it now, or again after you '
+        + 'have changed something. Somebody who said nothing gets nothing, because there is '
+        + 'nothing to confirm and chasing them is what Still to say is for.' },
+      { note: 'It goes to the address on their login if there is one, and otherwise to the one '
+        + 'on their record under People, which is the only address most of the property has. '
+        + 'The count afterwards says how many had no address at all.' },
+
       { sub: 'Changes asked for after the list shut' },
       { p: '"Waiting on you" sits at the top of the screen when somebody has asked for a day '
         + 'to be changed. They can only ask once the list is shut, because while it is open '

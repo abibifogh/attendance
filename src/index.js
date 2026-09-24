@@ -327,6 +327,9 @@ export const ROUTES = [
   // Yes or no to a change somebody asked for after the list shut. Approving
   // writes the plate as well, so nothing is left to be remembered afterwards.
   ['POST', '/api/lunch/changes/:id', 'lunch', lunch.decideLunchChange],
+  // Telling everybody what they are down to eat. Sent on its own when the list
+  // shuts; this is the button for sending it now, or again.
+  ['POST', '/api/lunch/tell', 'lunch', lunch.tellLunch],
 
   // Their own. What they are down for, and asking for it to be different.
   ['GET', '/api/me/lunch', 'att_me', lunch.myLunch],
@@ -911,6 +914,18 @@ export default {
       });
       if (heard.quiet) console.log(`Attendance: ${heard.quiet} terminal(s) quiet`);
       if (heard.back) console.log(`Attendance: ${heard.back} terminal(s) back`);
+
+      // And the lunch receipts, the moment the list stops taking answers. On
+      // the frequent tick rather than the nightly one because the window
+      // closes at an hour the property chose, and a receipt that arrives the
+      // following morning is a receipt for a week already being cooked. It
+      // writes down the week it has done, so firing every five minutes cannot
+      // send it twice.
+      const lunched = await lunch.tellLunchOnClosing(env.DB, env).catch((err) => {
+        console.error('Lunch receipts failed', err);
+        return { sent: 0 };
+      });
+      if (lunched.sent) console.log(`Lunch: ${lunched.sent} told what they ordered`);
 
       if (!nightly) return;
 
