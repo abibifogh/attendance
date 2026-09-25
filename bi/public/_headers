@@ -1,0 +1,17 @@
+# Workers static assets read this file the way Pages does.
+#
+# The app is a handful of JavaScript modules loaded by a plain <script> tag,
+# with no build step and no version in their names. Left to itself a browser
+# keeps a module for a while after it has changed, so a deploy that adds a tab
+# is a deploy some people do not see until they happen to reload hard — which
+# is exactly what happened the day the Reports tab shipped. `no-cache` does
+# not mean "do not cache": it means ask the server whether the copy is still
+# good, and the ETag makes that answer a 304 with no body.
+/js/*
+  Cache-Control: no-cache
+/styles.css
+  Cache-Control: no-cache
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
