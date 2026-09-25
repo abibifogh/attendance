@@ -7,6 +7,7 @@ import { issueCode, redeemCode, systemsFor } from './lib/sso.js';
 import * as panels from './routes/panels.js';
 import * as admin from './routes/admin.js';
 import * as accounts from './routes/accounts.js';
+import * as reports from './routes/reports.js';
 import { first } from './lib/db.js';
 import { loadFacts } from './insight/facts.js';
 import { groupConfig } from './lib/db.js';
@@ -71,13 +72,32 @@ const ROUTES = [
   ['POST', '/api/accounts/:id/access', 'owner', (env, ctx) => accounts.setAccess(env, ctx.params.id, ctx.body, ctx.account)],
   ['POST', '/api/systems/:id', 'owner', (env, ctx) => accounts.saveSystem(env, ctx.params.id, ctx.body)],
   ['GET', '/api/sso/log', 'owner', (env) => accounts.handoffLog(env)],
+
+  // Reports made elsewhere, published behind a PIN. Publishing is a multipart
+  // upload, so the handler reads the request itself rather than a JSON body.
+  ['GET', '/api/reports', 'owner', (env) => reports.list(env)],
+  ['POST', '/api/reports', 'owner', (env, ctx) => reports.publish(env, ctx.request, ctx.account)],
+  ['POST', '/api/reports/:slug/remove', 'owner', (env, ctx) => reports.remove(env, ctx.params.slug)],
+  ['POST', '/api/reports/:slug/files/:name/remove', 'owner', (env, ctx) => reports.removeFile(env, ctx.params.slug, ctx.params.name)],
+  ['POST', '/api/report-pins', 'owner', (env, ctx) => reports.createPin(env, ctx.body, ctx.account)],
+  ['POST', '/api/report-pins/:id/revoke', 'owner', (env, ctx) => reports.revokePin(env, ctx.params.id)],
 ];
 ;
 
 export default {
   async fetch(request, env, execution) {
     const url = new URL(request.url);
-    if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+    if (!url.pathname.startsWith('/api/')) {
+      // A published report lives at its own address, in front of the app's
+      // own files. Anything that is not one falls through to them as before.
+      try {
+        const served = await reports.serve(request, env, url);
+        if (served) return served;
+      } catch (err) {
+        return errorResponse(err);
+      }
+      return env.ASSETS.fetch(request);
+    }
 
     try {
       const match = findRoute(request.method, url.pathname);

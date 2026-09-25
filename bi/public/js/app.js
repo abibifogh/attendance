@@ -13,6 +13,7 @@ import { renderFindings } from './views/findings.js';
 import { renderSetup } from './views/setup.js';
 import { renderHub } from './views/hub.js';
 import { renderAccounts } from './views/accounts.js';
+import { renderReports } from './views/reports.js';
 import { renderLogin as renderLoginView } from './views/login.js';
 
 export const state = {
@@ -44,6 +45,7 @@ const ROUTES = [
   { path: 'service', label: 'Service', render: renderService },
   { path: 'findings', label: 'Findings', render: renderFindings, needs: 'insight' },
   { path: 'accounts', label: 'Accounts', render: renderAccounts, needs: 'owner' },
+  { path: 'reports', label: 'Reports', render: renderReports, needs: 'owner' },
   { path: 'setup', label: 'Setup', render: renderSetup, needs: 'owner' },
 ];
 
