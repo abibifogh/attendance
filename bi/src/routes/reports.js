@@ -258,45 +258,93 @@ const escape = (s) => String(s).replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /**
- * The door: a title, four digits, one button. No script, because a page that
- * exists to be simple should not need one.
+ * The door: Insight's mark, the report's name, four digits, one button.
+ *
+ * Drawn with the same tokens as the rest of Insight, in both themes, so the
+ * person who was sent a link sees the thing they were told they would see.
+ * The first version of this put its dark-mode rule above the rule it was
+ * meant to override, so in the dark the card stayed white while the text went
+ * pale: a title nobody could read over a black box. Tokens, declared once and
+ * swapped once, cannot be ordered wrongly.
+ *
+ * No script. A page that exists to be simple should not need one.
  */
 function pinPage(report, { status = 200, error = '', locked = false } = {}) {
   const html = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex, nofollow">
 <title>${escape(report.title)}</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
-         font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
-         background: #f4f4f1; color: #1a1a19; }
-  @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } .card { background: #1c1c1b; border-color: #333; } input { background: #111; color: #eee; border-color: #444; } }
-  .card { width: min(22rem, calc(100vw - 2rem)); padding: 1.6rem; border: 1px solid #ddd;
-          border-radius: 12px; background: #fff; }
-  h1 { font-size: 1.05rem; margin: 0 0 .25rem; }
-  p { margin: .25rem 0 1rem; color: #666; font-size: .92rem; }
-  label { display: block; font-size: .8rem; color: #666; margin-bottom: .3rem; }
-  input { width: 100%; box-sizing: border-box; font: inherit; font-size: 1.6rem; letter-spacing: .5em;
-          text-align: center; padding: .5rem; border: 1px solid #ccc; border-radius: 8px; }
-  button { width: 100%; margin-top: .8rem; font: inherit; padding: .6rem; border: 0; border-radius: 8px;
-           background: #2a78d6; color: #fff; cursor: pointer; }
-  button[disabled] { opacity: .5; cursor: default; }
-  .err { color: #b3261e; font-size: .9rem; margin: .6rem 0 0; }
+  :root {
+    color-scheme: light dark;
+    --plane: #f9f9f7; --surface: #fcfcfb; --surface-2: #f2f1ed;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --border: rgba(11, 11, 11, .10); --accent: #2a78d6; --accent-ink: #ffffff;
+    --critical: #d03b3b; --shadow: 0 10px 30px rgba(11, 11, 11, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --plane: #0d0d0d; --surface: #1a1a19; --surface-2: #232322;
+      --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --border: rgba(255, 255, 255, .12); --accent: #3987e5;
+      --critical: #e66767; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center;
+    padding: 1rem; font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--plane); color: var(--ink);
+  }
+  .card {
+    width: min(23rem, 100%); padding: 1.75rem; border: 1px solid var(--border);
+    border-radius: 14px; background: var(--surface); box-shadow: var(--shadow);
+  }
+  .brand { display: flex; align-items: center; gap: .55rem; margin-bottom: 1.25rem;
+           font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .brand svg { width: 22px; height: 22px; flex: none; }
+  h1 { font-size: 1.2rem; line-height: 1.3; font-weight: 650; margin: 0 0 .35rem; color: var(--ink); letter-spacing: -.01em; }
+  p.sub { margin: 0 0 1.35rem; color: var(--ink-2); font-size: .92rem; }
+  label { display: block; font-size: .78rem; color: var(--ink-2); margin-bottom: .4rem; }
+  input {
+    width: 100%; font: inherit; font-size: 1.9rem; line-height: 1; font-variant-numeric: tabular-nums;
+    letter-spacing: .55em; text-indent: .55em; text-align: center; padding: .7rem .5rem;
+    color: var(--ink); background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+    outline: none; -webkit-appearance: none; appearance: none;
+  }
+  input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent); }
+  input:disabled { opacity: .5; }
+  button {
+    width: 100%; margin-top: .9rem; min-height: 46px; font: inherit; font-weight: 600; font-size: .98rem;
+    border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-ink); cursor: pointer;
+  }
+  button:hover:not([disabled]) { filter: brightness(1.06); }
+  button[disabled] { opacity: .45; cursor: default; }
+  .err { display: flex; gap: .55rem; align-items: flex-start; margin: .9rem 0 0; padding: .6rem .75rem;
+         border-left: 3px solid var(--critical); border-radius: 8px; background: var(--surface-2);
+         color: var(--ink); font-size: .9rem; }
+  .err b { color: var(--critical); flex: none; }
+  .foot { margin: 1.25rem 0 0; font-size: .78rem; color: var(--muted); }
 </style>
 </head>
 <body>
 <form class="card" method="post" action="/${escape(report.slug)}/pin" autocomplete="off">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" role="img" aria-label="Insight"><rect x="2.5" y="13.5" width="3.6" height="8" rx="1.4" fill="#2a78d6"/><rect x="8.1" y="9" width="3.6" height="12.5" rx="1.4" fill="#eda100"/><rect x="13.7" y="11.2" width="3.6" height="10.3" rx="1.4" fill="#1baf7a"/><rect x="19.3" y="4.5" width="3.6" height="17" rx="1.4" fill="#eb6834"/></svg>
+    <span>Nice Operation · Insight</span>
+  </div>
   <h1>${escape(report.title)}</h1>
-  <p>This report is for a small number of people. Enter the PIN you were given.</p>
-  <label for="pin">PIN</label>
+  <p class="sub">This report is for a small number of people. Enter the PIN you were given.</p>
+  <label for="pin">Your PIN</label>
   <input id="pin" name="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" minlength="4"
          autocomplete="one-time-code" autofocus required ${locked ? 'disabled' : ''}>
-  <button type="submit" ${locked ? 'disabled' : ''}>Open</button>
-  ${error ? `<p class="err">${escape(error)}</p>` : ''}
+  <button type="submit" ${locked ? 'disabled' : ''}>Open the report</button>
+  ${error ? `<p class="err" role="alert"><b>!</b><span>${escape(error)}</span></p>` : ''}
+  <p class="foot">Four digits, given to you personally. If you don’t have one, ask whoever sent you this link.</p>
 </form>
 </body>
 </html>`;
