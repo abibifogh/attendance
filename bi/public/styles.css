@@ -259,6 +259,8 @@ label.check input { width: auto; margin: 0; flex: none; }
   margin-bottom: 1rem; border: 1px solid var(--border); background: var(--surface-2); }
 .banner.demo    { border-left: 3px solid var(--warning); }
 .banner.problem { border-left: 3px solid var(--critical); }
+.banner.warning { border-left: 3px solid var(--serious); }
+.banner.good    { border-left: 3px solid var(--good); }
 
 .muted { color: var(--muted); }
 .small { font-size: .82rem; }

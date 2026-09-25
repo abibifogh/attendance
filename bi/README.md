@@ -156,6 +156,8 @@ people who are here". **Cash** — charged, collected, still owed, and every til
 close. **Buying** — group spend per supplier, and the same item bought twice at
 two prices. **Service** — checks due against checks done, next to who was on.
 **Setup** — where the four systems are connected, and every load that has run.
+**Reports** — a finished report made elsewhere, published at its own address
+behind a PIN per reader; see `docs/reports.md`.
 
 ### Getting the data out
 
