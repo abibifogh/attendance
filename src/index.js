@@ -311,6 +311,9 @@ export const ROUTES = [
   // screen here, so it sits behind the same permission as the wages.
   ['GET', '/api/medical', 'hr_pay', medical.medical],
   ['POST', '/api/medical/allowances', 'hr_pay', medical.setAllowances],
+  // The office's own sheet: read and matched first, written only when asked.
+  ['POST', '/api/medical/sheet/check', 'hr_pay', medical.checkSheet],
+  ['POST', '/api/medical/sheet', 'hr_pay', medical.importSheet],
   ['POST', '/api/medical/claims/:id/decide', 'hr_pay', medical.decideClaim],
   // Readable by whoever decides the claim and by whoever handed the bill in.
   // The check is on the receipt itself — see `receipt`.

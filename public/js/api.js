@@ -357,6 +357,8 @@ export const api = {
   // ------------------------------------------------------------- medical --
   medical: (year) => request(`/api/medical${year ? `?year=${year}` : ''}`),
   medicalSetAllowances: (body) => request('/api/medical/allowances', { method: 'POST', body }),
+  medicalSheetCheck: (body) => request('/api/medical/sheet/check', { method: 'POST', body }),
+  medicalSheetImport: (body) => request('/api/medical/sheet', { method: 'POST', body }),
   medicalDecide: (id, body) => request(`/api/medical/claims/${id}/decide`, { method: 'POST', body }),
   medicalReceiptUrl: (id) => `/api/medical/receipt/${id}`,
 

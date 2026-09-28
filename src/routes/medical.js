@@ -4,6 +4,7 @@ import { readFile, storeFile } from './people.js';
 import {
   MAX_RECEIPTS, checkAgainst, claimTotal, round2, standingOf, yearOf,
 } from '../lib/medical.js';
+import { MONTHS, matchStaff, readMedicalSheet } from '../lib/medical-sheet.js';
 import { isDay, todayIn } from '../util/dates.js';
 
 /**
@@ -239,6 +240,165 @@ export async function setAllowances(ctx) {
 
   await audit(ctx, 'medical.allowances', year, { set, removed });
   return json({ ok: true, year, set, removed });
+}
+
+// --------------------------------------------------------------------------
+// From a sheet
+// --------------------------------------------------------------------------
+
+/**
+ * Claims brought in from the office's sheet carry this as their decision, so
+ * bringing the sheet in again replaces them rather than adding them twice,
+ * and a claim somebody made in HIVE is never mistaken for one of them.
+ */
+export const FROM_SHEET = 'Brought in from the medical sheet';
+
+/** What HIVE already holds for everybody this year, so the check can say what would change. */
+async function heldFor(db, year) {
+  const [allowances, claims] = await Promise.all([
+    db.prepare('SELECT * FROM hr_medical_allowance WHERE year = ?').bind(year).all(),
+    db.prepare('SELECT staff_id, status, amount, approved, decision FROM hr_medical_claim WHERE year = ?')
+      .bind(year).all(),
+  ]);
+  const held = {};
+  const of = (id) => {
+    held[id] ??= { allowance: null, opening: null, claims: 0, approved: 0, waiting: 0, fromSheet: 0 };
+    return held[id];
+  };
+  for (const a of allowances.results ?? []) {
+    Object.assign(of(a.staff_id), { allowance: round2(a.allowance), opening: round2(a.opening) });
+  }
+  for (const c of claims.results ?? []) {
+    const mine = of(c.staff_id);
+    if (c.decision === FROM_SHEET) { mine.fromSheet += 1; continue; }
+    if (c.status === 'approved') { mine.claims += 1; mine.approved = round2(mine.approved + (c.approved ?? c.amount)); }
+    if (c.status === 'requested') { mine.claims += 1; mine.waiting = round2(mine.waiting + c.amount); }
+  }
+  return held;
+}
+
+/**
+ * What a sheet says, and who in HIVE each name is. Writes nothing.
+ *
+ * Matched against everybody in HIVE, including people who have left: a sheet
+ * kept all year has the people who were here in March on it.
+ */
+export async function checkSheet(ctx) {
+  const body = await readJson(ctx.request);
+  const { timezone, currency, defaultAllowance } = await settingsOf(ctx.db);
+  const year = Number.isInteger(body.year) ? body.year : Number(todayIn(timezone).slice(0, 4));
+  if (year < 2000 || year > 2100) throw badRequest('That is not a year.');
+  if (!Array.isArray(body.rows) || !body.rows.length) throw badRequest('That sheet is empty.');
+  if (body.rows.length > 2000) throw badRequest('That sheet is longer than a staff list can be.');
+
+  let read;
+  try {
+    read = readMedicalSheet(body.rows.map((r) => (Array.isArray(r) ? r.slice(0, 60) : [])));
+  } catch (err) {
+    throw badRequest(err.message);
+  }
+
+  const staff = (await ctx.db.prepare(
+    'SELECT id, name, department, active FROM att_staff ORDER BY name',
+  ).all()).results ?? [];
+
+  return json({
+    year,
+    currency,
+    defaultAllowance,
+    people: read.people.map((p) => ({ ...p, match: matchStaff(p.name, staff) })),
+    left: read.left,
+    staff: staff.map((s) => ({
+      id: s.id, name: s.name, department: s.department ?? null, active: Boolean(s.active),
+    })),
+    held: await heldFor(ctx.db, year),
+  });
+}
+
+/**
+ * Bring the sheet in, for the people somebody has matched.
+ *
+ * Two ways, because there are two honest readings of a year half kept on
+ * paper. 'balance' starts each person on what the sheet says is left today,
+ * and HIVE takes it from there. 'history' starts them on the year's allowance
+ * plus what they brought forward, and writes each month's paper claims in as
+ * approved claims, so the year reads the same in HIVE as on the sheet.
+ *
+ * A balance cannot start below nothing. Somebody who claimed more than they
+ * had starts on nothing, with what they went over written in the note, in
+ * 'balance'; in 'history' the claims themselves carry them below it.
+ *
+ * Claims people made in HIVE are left exactly as they are. Only what an
+ * earlier bringing-in wrote is replaced.
+ */
+export async function importSheet(ctx) {
+  const body = await readJson(ctx.request);
+  const { timezone } = await settingsOf(ctx.db);
+  const year = Number.isInteger(body.year) ? body.year : Number(todayIn(timezone).slice(0, 4));
+  if (year < 2000 || year > 2100) throw badRequest('That is not a year.');
+  const mode = body.mode === 'history' ? 'history' : 'balance';
+  const rows = Array.isArray(body.rows) ? body.rows : [];
+  if (!rows.length) throw badRequest('Nobody is matched to bring in.');
+
+  const known = new Map(((await ctx.db.prepare('SELECT id, name FROM att_staff').all()).results ?? [])
+    .map((s) => [s.id, s]));
+  const seen = new Set();
+  const clean = rows.map((line) => {
+    const staffId = int(line.staffId, 'Who', { required: true, min: 1 });
+    const person = known.get(staffId);
+    if (!person) throw badRequest('One of those people is not in HIVE.');
+    if (seen.has(staffId)) throw badRequest(`${person.name} is matched to two rows of the sheet.`);
+    seen.add(staffId);
+    const months = Array.isArray(line.months) ? line.months : [];
+    if (months.length !== 12) throw badRequest(`${person.name}'s months did not come through.`);
+    return {
+      staffId,
+      person,
+      allowance: round2(num(line.allowance, `${person.name}'s allowance`, { required: true, min: 0, max: 1_000_000 })),
+      broughtForward: round2(num(line.broughtForward ?? 0, `${person.name}'s balance brought forward`, { min: -1_000_000, max: 1_000_000 })),
+      months: months.map((m, i) => round2(num(m ?? 0, `${person.name}'s ${MONTHS[i]}`, { min: 0, max: 1_000_000 }))),
+    };
+  });
+
+  const actor = actorOf(ctx);
+  let claimsWritten = 0;
+  for (const line of clean) {
+    const claimed = round2(line.months.reduce((n, m) => n + m, 0));
+    const start = round2(line.allowance + line.broughtForward);
+    const left = round2(start - claimed);
+    const opening = mode === 'history' ? Math.max(0, start) : Math.max(0, left);
+    const note = mode === 'history'
+      ? `From the sheet: ${line.broughtForward} brought forward.`
+      : `From the sheet: ${line.broughtForward} brought forward, ${claimed} claimed on paper`
+        + (left < 0 ? `, ${round2(-left)} over.` : '.');
+
+    await ctx.db.prepare(
+      `INSERT INTO hr_medical_allowance (staff_id, year, allowance, opening, note, set_by)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+       ON CONFLICT (staff_id, year) DO UPDATE
+         SET allowance = ?3, opening = ?4, note = ?5, set_by = ?6, set_at = datetime('now')`,
+    ).bind(line.staffId, year, line.allowance, round2(opening), note, actor).run();
+
+    await ctx.db.prepare(
+      'DELETE FROM hr_medical_claim WHERE staff_id = ?1 AND year = ?2 AND decision = ?3',
+    ).bind(line.staffId, year, FROM_SHEET).run();
+
+    if (mode !== 'history') continue;
+    for (let i = 0; i < 12; i += 1) {
+      if (!line.months[i]) continue;
+      const day = `${year}-${String(i + 1).padStart(2, '0')}-01 00:00:00`;
+      await ctx.db.prepare(
+        `INSERT INTO hr_medical_claim
+           (staff_id, year, amount, approved, what, status, asked_at, decided_by, decided_at, decision)
+         VALUES (?1, ?2, ?3, ?3, ?4, 'approved', ?5, ?6, ?5, ?7)`,
+      ).bind(line.staffId, year, line.months[i], `Paid on paper, ${MONTHS[i]} ${year}`, day, actor, FROM_SHEET)
+        .run();
+      claimsWritten += 1;
+    }
+  }
+
+  await audit(ctx, 'medical.sheet', year, { mode, people: clean.length, claims: claimsWritten });
+  return json({ ok: true, year, mode, people: clean.length, claims: claimsWritten });
 }
 
 /** Approve a claim, or turn it down. Either way the person is told. */

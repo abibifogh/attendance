@@ -4,6 +4,7 @@ import { fmtDay, h, money, mount, toast, todayISO } from '../util.js';
 import { card, emptyState } from './components.js';
 import { field, formDialog } from './att-shared.js';
 import { replaceParams } from '../app.js';
+import { readXlsx } from '../xlsx-read.js';
 
 /**
  * The medical allowance, and the claims against it.
@@ -51,6 +52,7 @@ export async function renderAttMedical(params) {
           onclick: () => reload({ year: year + 1 }),
           'aria-label': 'The year after',
         }, `${year + 1} ›`),
+        sheetButton(data, reload),
         h('button.btn-sm.btn-primary', {
           onclick: () => setAllowances(data, reload),
         }, 'Set the year’s allowances')),
@@ -387,6 +389,201 @@ async function setAllowances(data, reload) {
     await reload();
   });
 }
+
+// --------------------------------------------------------------------------
+// From the office's sheet
+// --------------------------------------------------------------------------
+
+/** The button, and the file picker behind it. */
+function sheetButton(data, reload) {
+  const picker = h('input', {
+    type: 'file',
+    accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    style: { display: 'none' },
+    onchange: async (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      try {
+        const sheets = await readXlsx(await file.arrayBuffer());
+        // The sheet named for the year, where there is one, else the first.
+        const sheet = sheets.find((s) => s.name.trim() === String(data.year)) ?? sheets[0];
+        if (!sheet) throw new Error('There is nothing in that file.');
+        const read = await api.medicalSheetCheck({ year: data.year, rows: sheet.rows });
+        await showSheet(read, sheet.name, reload);
+      } catch (err) {
+        toast(err.message, 'bad');
+      }
+    },
+  });
+  return h('span', picker, h('button.btn-sm', {
+    title: 'Read the office’s medical sheet and match it to people in HIVE. Nothing is saved '
+      + 'until you say so.',
+    onclick: () => picker.click(),
+  }, 'From a sheet'));
+}
+
+const MATCH = {
+  same: ['Same name', 'good'],
+  close: ['Close match', 'good'],
+  check: ['Check', 'warn'],
+  none: ['Not found', 'bad'],
+};
+
+/** What the sheet says, who each name is, and the button that brings it in. */
+async function showSheet(read, sheetName, reload) {
+  const cash = (n) => money(n, read.currency);
+  // Figures in the table without the currency on each, so all seven columns
+  // fit; the headings say what it is in.
+  const fig = (n) => Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const byId = new Map(read.staff.map((s) => [s.id, s]));
+  const chosen = read.people.map((p) => ({
+    ...p,
+    staffId: p.match.staffId,
+    allowance: p.allowance ?? read.defaultAllowance ?? 0,
+  }));
+
+  const counts = h('span.muted.pay-set-count');
+  const warnings = h('div');
+  const recount = () => {
+    const matched = chosen.filter((p) => p.staffId).length;
+    counts.textContent = `${chosen.length} on the sheet · ${matched} matched · `
+      + `${chosen.length - matched} left out`;
+    const twice = new Map();
+    for (const p of chosen) if (p.staffId) twice.set(p.staffId, (twice.get(p.staffId) ?? 0) + 1);
+    const doubled = [...twice.entries()].filter(([, n]) => n > 1).map(([id]) => byId.get(id)?.name);
+    mount(warnings, doubled.length
+      ? h('div.alert.warn', `${doubled.join(', ')} ${doubled.length === 1 ? 'is' : 'are'} matched to `
+        + 'two rows of the sheet. Pick the right row for each.')
+      : null);
+  };
+
+  // Everybody in HIVE, the people who have left at the end and marked, so a
+  // name on a sheet kept since January can still be matched to them.
+  const options = [...read.staff].sort((a, b) => Number(b.active) - Number(a.active)
+    || a.name.localeCompare(b.name));
+
+  const already = (staffId) => {
+    const held = staffId ? read.held[staffId] : null;
+    if (!held) return h('span.muted', staffId ? 'nothing yet' : '');
+    const bits = [];
+    if (held.opening != null) bits.push(`starts on ${cash(held.opening)}`);
+    if (held.claims) bits.push(`${held.claims} claim${held.claims === 1 ? '' : 's'} made in HIVE (${cash(held.approved + held.waiting)})`);
+    if (held.fromSheet) bits.push('brought in before');
+    // Claims made in HIVE stay put. If the same bill is on the sheet it would
+    // be counted twice, and only the office can tell.
+    return h(held.claims ? 'span.med-sheet-warn' : 'span.muted', bits.join(' · ') || 'nothing yet');
+  };
+
+  const rows = chosen.map((p) => {
+    const [label, tone] = MATCH[p.match.level];
+    const pill = h(`span.pill.${tone}`, label);
+    const held = h('td.med-sheet-held', already(p.staffId));
+    const pickOne = h('select', {
+      'aria-label': `Who ${p.name} is in HIVE`,
+      onchange: (e) => {
+        p.staffId = Number(e.target.value) || null;
+        mount(held, already(p.staffId));
+        line.classList.toggle('adv-skipped', !p.staffId);
+        recount();
+      },
+    },
+    h('option', { value: '' }, 'Leave out'),
+    // The likely ones first, where HIVE had to guess.
+    p.match.level === 'check' && p.match.candidates.length
+      ? h('optgroup', { label: 'Could be' }, p.match.candidates.map((c) => h('option', { value: c.id },
+        `${c.name}${c.active ? '' : ' (left)'}`)))
+      : null,
+    h('optgroup', { label: 'Everybody in HIVE' }, options.map((s) => h('option', {
+      value: s.id, selected: s.id === p.staffId,
+    }, `${s.name}${s.active ? '' : ' (left)'}`))));
+
+    const left = round2(p.allowance + p.broughtForward - p.claimed);
+    const line = h(`tr${p.staffId ? '' : '.adv-skipped'}`,
+      h('td', h('strong', p.name), p.notes.length ? h('div.muted.med-sheet-note', p.notes.join(' ')) : null),
+      h('td', h('div.med-sheet-who', pickOne, pill)),
+      h('td.num', fig(p.broughtForward)),
+      h('td.num', fig(p.allowance + p.broughtForward)),
+      h('td.num', fig(p.claimed)),
+      h(`td.num${left < 0 ? '.med-sheet-over' : ''}`, fig(left)),
+      held);
+    return line;
+  });
+  recount();
+
+  const balance = h('input', { type: 'radio', name: 'med-sheet-mode', value: 'balance', checked: true });
+  const history = h('input', { type: 'radio', name: 'med-sheet-mode', value: 'history' });
+
+  const over = chosen.filter((p) => p.allowance + p.broughtForward - p.claimed < 0);
+  const skipped = read.left.map((l) => `row ${l.row}, ${l.why}${l.figures.length ? ` (${l.figures.join(', ')})` : ''}`);
+
+  const done = await formDialog({
+    title: `Medical allowances for ${read.year}, from a sheet`,
+    submitLabel: 'Bring them in',
+    wide: 'xl',
+    help: h('dl.pay-set-help',
+      h('dt', 'Matching'),
+      h('dd', 'Every name is looked for among everybody in HIVE, including people who have '
+        + 'left. Same name and Close match are chosen for you. Check means HIVE found only a '
+        + 'first name, or two people equally close, so pick the right one. Anybody left out '
+        + 'is not touched.'),
+      h('dt', 'Left today'),
+      h('dd', 'What the year was worth, plus what they brought forward, less what they have '
+        + 'claimed on the sheet. In red where they claimed more than they had.'),
+      h('dt', 'Already in HIVE'),
+      h('dd', 'What HIVE holds for them this year. A claim made in HIVE is kept as it is. If '
+        + 'the same bill is also on the sheet it will be counted twice, so check those.'),
+      h('dt', 'Starting point'),
+      h('dd', 'What is left today starts them on the sheet’s balance, and HIVE takes it '
+        + 'from there. Nobody can start below nothing, so somebody who went over starts on '
+        + 'nothing and the note says by how much. Brought forward and each month writes '
+        + 'every month’s paper claims into HIVE as approved claims, so they can see their '
+        + 'whole year. Bringing the sheet in again replaces what it wrote before.')),
+    body: h('div',
+      String(sheetName).trim() && String(sheetName).trim() !== String(read.year)
+        && /^\d{4}$/.test(String(sheetName).trim())
+        ? h('div.alert.warn', `This sheet is called ${sheetName}, and it is going into ${read.year}.`)
+        : null,
+      h('div.pay-set-bar', counts),
+      warnings,
+      h('div.med-sheet-mode',
+        h('label.tickline', balance, h('span', 'Start from what is left today')),
+        h('label.tickline', history, h('span', 'Start from what they brought forward, and record each month’s paper claims'))),
+      h('div.table-wrap.med-set-wrap.pay-set-wrap', h('table.med-set.pay-set.med-sheet',
+        h('thead', h('tr',
+          h('th', 'On the sheet'), h('th', 'In HIVE'),
+          h('th.num', `B/F (${read.currency})`), h('th.num', `${read.year} total`),
+          h('th.num', 'Claimed'), h('th.num', 'Left today'), h('th', 'Already in HIVE'))),
+        h('tbody', rows))),
+      over.length
+        ? h('p.muted.med-sheet-foot', `Claimed more than they had: ${over.map((p) => `${p.name} `
+          + `(${cash(round2(p.allowance + p.broughtForward - p.claimed))})`).join(', ')}.`)
+        : null,
+      skipped.length
+        ? h('p.muted.med-sheet-foot', `Not brought in from the sheet: ${skipped.join('; ')}.`)
+        : null),
+    onSubmit: async () => {
+      const picked = chosen.filter((p) => p.staffId);
+      if (!picked.length) throw new Error('Nobody is matched. Pick who each name is first.');
+      return api.medicalSheetImport({
+        year: read.year,
+        mode: history.checked ? 'history' : 'balance',
+        rows: picked.map((p) => ({
+          staffId: p.staffId,
+          allowance: p.allowance,
+          broughtForward: p.broughtForward,
+          months: p.months,
+        })),
+      });
+    },
+  });
+  if (!done) return;
+  toast(`Brought in ${done.people} ${done.people === 1 ? 'person' : 'people'} for ${done.year}`
+    + (done.claims ? `, with ${done.claims} paper claims.` : '.'), 'good');
+  await reload();
+}
+
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 const tile = (label, value, sub) => h('div.stat',
   h('div.stat-label', label),

@@ -1439,6 +1439,27 @@ export const GUIDE = [
       { note: 'Unticking somebody takes the year off them and leaves their claims alone. What '
         + 'was paid does not stop being true because the arrangement ended.' },
 
+      { sub: 'From the office\u2019s sheet' },
+      { p: 'From a sheet reads the spreadsheet the office kept before HIVE, as an .xlsx straight '
+        + 'from Excel or Google Sheets: a row a person, the balance brought forward, a column a '
+        + 'month and what is left. It needs a name column and the months along one heading row.' },
+      { steps: [
+        'Every name is looked for among everybody in HIVE, including people who have left. The '
+          + 'same name, in any order, or a close match with a middle name or a letter spelt '
+          + 'differently, is chosen for you.',
+        'Check means HIVE found only a first name, or two people equally close. Pick who it is, '
+          + 'or leave them out. Anybody left out is not touched.',
+        'Already in HIVE shows claims somebody made in HIVE this year. They are kept, so if the '
+          + 'same bill is on the sheet, it would count twice.',
+        'Choose where they start. What is left today starts them on the sheet\u2019s balance. '
+          + 'Brought forward and each month writes every month\u2019s paper claims in as '
+          + 'approved claims, so they see the whole year.',
+        'Nothing is saved until you press Bring them in, and bringing the sheet in again '
+          + 'replaces what it wrote before rather than adding to it.',
+      ] },
+      { note: 'The totals row and any figures with no name against them are left out, and the '
+        + 'form says which rows so nothing disappears without a word.' },
+
       { sub: 'Deciding a claim' },
       { p: 'A claim arrives with its bills — up to ten of them, each with an amount, what it '
         + 'was for and usually a photograph you can open. The person’s remaining balance is '

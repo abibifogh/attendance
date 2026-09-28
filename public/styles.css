@@ -4065,6 +4065,16 @@ html { touch-action: manipulation; }
 .pay-set-help dt { font-weight: 600; }
 .pay-set-help dd { margin: 0; color: var(--text-dim); }
 
+/* The office's sheet, matched against HIVE before anything is written. */
+.med-sheet-who { display: flex; align-items: center; gap: .4rem; }
+.med-sheet-who select { flex: none; width: 13rem; max-width: 13rem; }
+.med-sheet-note { font-size: .78rem; white-space: normal; }
+.med-sheet-held { font-size: .8rem; white-space: normal; min-width: 9rem; }
+.med-sheet-warn { color: var(--warn); }
+.med-sheet-over { color: var(--bad); font-weight: 600; }
+.med-sheet-mode { display: grid; gap: .15rem; margin-bottom: .6rem; }
+.med-sheet-foot { font-size: .82rem; margin-top: .6rem; }
+
 /* One bill on a claim. */
 .med-lines { display: grid; gap: .5rem; }
 .med-line {
