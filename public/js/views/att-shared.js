@@ -452,9 +452,26 @@ export function showSheet({ title, body }) {
  * Uses a real <dialog>, so Escape closes it and the browser handles the focus
  * trap — both of which a hand-rolled overlay gets wrong.
  */
-export function formDialog({ title, body, submitLabel = 'Save', onSubmit, wide = false }) {
+export function formDialog({ title, body, submitLabel = 'Save', onSubmit, wide = false, help = null }) {
   return new Promise((resolve) => {
     const form = h('form', { method: 'dialog' });
+    // How the form works, kept behind a ? beside the close rather than above
+    // the fields. Somebody filling it in for the tenth time does not need five
+    // paragraphs between them and the first box.
+    const helpPanel = help ? h('div.dialog-help-panel', { hidden: true }, help) : null;
+    const helpButton = help
+      ? h('button.dialog-close.dialog-help', {
+        type: 'button',
+        'aria-label': 'How this works',
+        'aria-expanded': 'false',
+        title: 'How this works',
+        onclick: () => {
+          helpPanel.hidden = !helpPanel.hidden;
+          helpButton.setAttribute('aria-expanded', String(!helpPanel.hidden));
+          helpButton.classList.toggle('is-open', !helpPanel.hidden);
+        },
+      }, '?')
+      : null;
     // Styled by class rather than inline, so the phone rules can win. An
     // inline width beats any stylesheet, which is how a dialog ended up 92% of
     // a handset with its buttons off the bottom.
@@ -464,11 +481,13 @@ export function formDialog({ title, body, submitLabel = 'Save', onSubmit, wide =
     const dialog = h(`dialog.app-dialog${room}`,
       h('div.dialog-head',
         h('h2', title),
-        h('button.dialog-close', {
-          type: 'button',
-          'aria-label': 'Close',
-          onclick: () => { dialog.close(); resolve(null); },
-        }, '✕'),
+        h('div.dialog-head-tools',
+          helpButton,
+          h('button.dialog-close', {
+            type: 'button',
+            'aria-label': 'Close',
+            onclick: () => { dialog.close(); resolve(null); },
+          }, '✕')),
       ),
       form,
     );
@@ -477,7 +496,10 @@ export function formDialog({ title, body, submitLabel = 'Save', onSubmit, wide =
     let busy = false;
 
     const submit = h('button.btn.btn-primary', { type: 'submit' }, submitLabel);
+    // At the top of the form rather than in the head, which stays pinned
+    // while the rest scrolls and would take the whole dialog with it.
     form.append(
+      ...(helpPanel ? [helpPanel] : []),
       body,
       error,
       h('div.btn-row',

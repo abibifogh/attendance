@@ -3669,10 +3669,14 @@ on her bonus schemes". That was wrong, and the payroll was built on it. 2,480
 was Linda's August: 1,850 fixed and a 630 bonus. In a month she scores 589 she
 takes home 2,439. Treated as a standing figure with the bonus inside it, the
 allowance absorbed whatever she scored, so the scores changed what the payslip
-called the money and not a pesewa of what anybody was paid. Every figure
-carried the bonus of whichever month it was typed in, and checked against the
-August sheet sixteen people were being paid an earlier month's bonus: GHS 618
-short across the payroll, and the two whose bonus had fallen overpaid.
+called the money and not a pesewa of what anybody was paid. And checked
+against the August sheet, sixteen people differed for a plainer reason: nobody
+had a take-home entered at all, so each was paid their basic, a standing
+allowance that was the balancing figure from an earlier month, and a bonus
+scored differently from the sheet's. GHS 618 short across the payroll. The fix
+is a fixed take-home with + bonus ticked, the old allowances cleared (0114
+did that, and only once July 2026 was closed, so July's payslips stand), and
+the month's scores checked against the sheet.
 
 So a take-home says which it is, beside the figure, with a **+ bonus** tick.
 

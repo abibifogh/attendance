@@ -1804,10 +1804,9 @@ export const GUIDE = [
             + 'managers.'],
         ],
       } },
-      { warn: 'Get this the wrong way round and it is wrong every month. A performance bonus '
-        + 'with + bonus unticked pays whatever bonus the figure was typed in with, for ever: '
-        + 'that is how, by August, sixteen people were being paid an earlier month\u2019s bonus. '
-        + 'A new take-home starts ticked for that reason.' },
+      { warn: 'Get this the wrong way round and it is wrong every month. With + bonus unticked '
+        + 'a performance bonus never changes what somebody is paid, however they score. A new '
+        + 'take-home starts ticked for that reason.' },
       { steps: [
         'Enter their basic salary.',
         'Enter what they take home, and tick + bonus if their bonus goes on top of it.',
@@ -1822,6 +1821,10 @@ export const GUIDE = [
         'Somebody whose basic and bonus already carry them past the figure gets no allowance, '
           + 'and no pay cut either. The payroll names them under the table.',
         'An allowance you did agree is left alone. The worked-out one tops it up.',
+        'An allowance left over from an earlier month shows in orange beside a take-home, '
+          + 'because it adds nothing to their pay. Clear it with the \u2715 beside it, or clear '
+          + 'every one of them with the button above the table.',
+        'The ? at the top of the form explains each column, for whoever needs it.',
         'A figure stored before the tick existed means the whole amount until somebody '
           + 'enters the fixed part and ticks it. Nothing was converted on its own, because '
           + 'nothing in the payroll says which month\u2019s bonus is inside an old figure.',

@@ -1858,6 +1858,41 @@ async function editPeople(data, reload) {
   // nothing a figure from before this app could tell it.
   const yearly = data.rates?.bonusCapBasis === 'annual';
 
+  const cash = (n) => money(n, data.currency);
+  const allowanceTotal = (list) => list.reduce((n, a) => n + (Number(a.amount) || 0), 0);
+  const hasTakeHome = (mine) => mine.takeHome !== '' && mine.takeHome != null;
+
+  // A line above the table saying how far through the form somebody is, and
+  // the one tidy-up they are most likely to want: allowances typed in by hand
+  // for people whose take-home now works the allowance out anyway.
+  const repaints = [];
+  const count = h('span.muted.pay-set-count');
+  const clearNote = h('span.muted.pay-set-count', { hidden: true });
+  const clearStale = h('button.btn-sm', {
+    type: 'button',
+    hidden: true,
+    onclick: () => {
+      let cleared = 0;
+      for (const mine of state.values()) {
+        if (!mine.onPayroll || !hasTakeHome(mine) || !mine.allowances.length) continue;
+        mine.allowances = [];
+        cleared += 1;
+      }
+      for (const repaint of repaints) repaint();
+      tally();
+      clearNote.textContent = `Cleared for ${cleared}. Save the payroll to keep it.`;
+      clearNote.hidden = false;
+    },
+  });
+  const tally = () => {
+    const on = [...state.values()].filter((m) => m.onPayroll);
+    const withTakeHome = on.filter(hasTakeHome).length;
+    const stale = on.filter((m) => hasTakeHome(m) && m.allowances.length).length;
+    count.textContent = `${on.length} on the payroll · ${withTakeHome} with a take-home`;
+    clearStale.hidden = stale === 0;
+    clearStale.textContent = `Clear allowances for the ${stale} with a take-home`;
+  };
+
   const rows = data.staff.map((person) => {
     const mine = state.get(person.id);
 
@@ -1878,28 +1913,81 @@ async function editPeople(data, reload) {
       'aria-label': `${person.name}'s bonus figures are what they receive`,
       onchange: (e) => { mine.bonusIsNet = e.target.checked; },
     });
-    // What they take home. Left empty, their bonus comes off their scores the
-    // way it always has; given a figure, the bonus is worked back from it
-    // every month and nobody types it again.
-    const takeHome = h('input.med-amount', {
-      type: 'number', step: '0.01', min: '0', value: mine.takeHome,
-      placeholder: 'as entered',
-      'aria-label': `What ${person.name} takes home`,
-      onchange: (e) => { mine.takeHome = e.target.value === '' ? '' : Number(e.target.value); },
-    });
-    // Whether the month's bonus goes on top of that figure or is already
+    // Whether the month's bonus goes on top of the take-home or is already
     // inside it. The difference is the whole of whether a score changes
-    // somebody's pay, so it is asked beside the figure rather than elsewhere.
+    // somebody's pay, so it sits right beside the figure. It means nothing
+    // without one, so it waits for a figure before it can be ticked.
     const plusBonus = h('input', {
       type: 'checkbox', checked: mine.takeHomeFixed,
       'aria-label': `${person.name}'s bonus is added on top of their take-home`,
       onchange: (e) => { mine.takeHomeFixed = e.target.checked; },
     });
-    const allowanceCount = h('span.muted',
-      mine.allowances.length ? `${mine.allowances.length}` : 'none');
-    // What the return will say about them, so somebody can see at a glance
-    // which rows are still on the fallback.
-    const returnSummary = h('span.muted', sayReturn(mine));
+    // What they take home. Left empty, they are paid what is entered; given a
+    // figure, the allowance is worked back from it every month.
+    const takeHome = h('input.med-amount', {
+      type: 'number', step: '0.01', min: '0', value: mine.takeHome,
+      placeholder: 'as entered',
+      'aria-label': `What ${person.name} takes home`,
+      oninput: (e) => {
+        mine.takeHome = e.target.value === '' ? '' : Number(e.target.value);
+        settle();
+        paintAllowances();
+        tally();
+      },
+    });
+
+    // The allowances typed in by hand, as the amount rather than a count, so
+    // a figure left over from an earlier month is plain to see. Where there is
+    // a take-home they count towards it and add nothing to pay, so they are
+    // marked and can be cleared on the spot.
+    const allowanceCell = h('span.pay-allow');
+    const paintAllowances = () => {
+      const sum = allowanceTotal(mine.allowances);
+      const inside = hasTakeHome(mine) && mine.allowances.length > 0;
+      allowanceCell.classList.toggle('is-inside', inside);
+      allowanceCell.title = inside
+        ? 'Counts towards the take-home, so it adds nothing to their pay. Clear it if the take-home covers everything.'
+        : '';
+      mount(allowanceCell,
+        h('button.btn-sm', {
+          type: 'button',
+          'aria-label': `${person.name}'s allowances`,
+          onclick: async () => {
+            const next = await editAllowances(person, mine.allowances, data);
+            if (!next) return;
+            mine.allowances = next;
+            paintAllowances();
+            tally();
+          },
+        }, mine.allowances.length ? cash(sum) : 'Add'),
+        mine.allowances.length
+          ? h('button.btn-ghost.btn-sm', {
+            type: 'button',
+            'aria-label': `Clear ${person.name}'s allowances`,
+            title: 'Clear',
+            onclick: () => {
+              mine.allowances = [];
+              paintAllowances();
+              tally();
+            },
+          }, '✕')
+          : null);
+    };
+    paintAllowances();
+    repaints.push(paintAllowances);
+
+    // What the return will say about them, on the button that changes it, so
+    // somebody can see at a glance which rows are still on the fallback.
+    const returnButton = h('button.btn-sm.pay-set-return', {
+      type: 'button',
+      title: 'Grade, residency and reliefs for the GRA return',
+      onclick: async () => {
+        const next = await editForReturn(person, mine, data);
+        if (!next) return;
+        Object.assign(mine, next);
+        returnButton.textContent = sayReturn(mine);
+      },
+    }, sayReturn(mine));
 
     // What they have already had as bonus this year, before this app was
     // keeping it. The 5% rate is capped at 15% of the year's basic and the
@@ -1913,104 +2001,107 @@ async function editPeople(data, reload) {
       })
       : null;
 
+    const settle = () => {
+      const off = !mine.onPayroll;
+      basic.disabled = off;
+      ssnit.disabled = off;
+      netBonus.disabled = off;
+      takeHome.disabled = off;
+      plusBonus.disabled = off || !hasTakeHome(mine);
+      if (opening) opening.disabled = off;
+      line.classList.toggle('adv-skipped', off);
+    };
     const tick = h('input', {
       type: 'checkbox', checked: mine.onPayroll,
       'aria-label': `${person.name} is on the payroll`,
       onchange: (e) => {
         mine.onPayroll = e.target.checked;
-        basic.disabled = !e.target.checked;
-        ssnit.disabled = !e.target.checked;
-        netBonus.disabled = !e.target.checked;
-        takeHome.disabled = !e.target.checked;
-        plusBonus.disabled = !e.target.checked;
-        line.classList.toggle('adv-skipped', !e.target.checked);
+        settle();
+        tally();
       },
     });
-    basic.disabled = !mine.onPayroll;
-    ssnit.disabled = !mine.onPayroll;
-    netBonus.disabled = !mine.onPayroll;
-    takeHome.disabled = !mine.onPayroll;
-    plusBonus.disabled = !mine.onPayroll;
 
-    const line = h(`tr${mine.onPayroll ? '' : '.adv-skipped'}`,
+    const line = h('tr',
       h('td', h('label.tickline', tick, h('span', person.name))),
       h('td.num', basic),
-      // Both ticks in one cell, one above the other. A column each pushed the
-      // allowances button off the side of the dialog.
-      h('td',
-        h('label.tickline', ssnit, h('span', 'SSNIT')),
-        h('label.tickline', netBonus, h('span', 'Net bonus'))),
-      h('td.num', takeHome, h('label.tickline', { style: { justifyContent: 'flex-end' } },
-        plusBonus, h('span', '+ bonus'))),
+      h('td.num', h('div.pay-th', takeHome,
+        h('label.tickline', { title: 'Add this month’s bonus on top' }, plusBonus, h('span', '+ bonus')))),
+      h('td.num', allowanceCell),
+      h('td.tick', ssnit),
+      h('td.tick', netBonus),
       yearly ? h('td.num', opening) : null,
-      h('td.num',
-        allowanceCount,
-        h('button.btn-sm', {
-          type: 'button',
-          style: { marginLeft: '.4rem' },
-          onclick: async () => {
-            const next = await editAllowances(person, mine.allowances, data);
-            if (!next) return;
-            mine.allowances = next;
-            allowanceCount.textContent = next.length ? `${next.length}` : 'none';
-          },
-        }, 'Allowances')),
-      h('td.num',
-        returnSummary,
-        h('button.btn-sm', {
-          type: 'button',
-          style: { marginLeft: '.4rem' },
-          onclick: async () => {
-            const next = await editForReturn(person, mine, data);
-            if (!next) return;
-            Object.assign(mine, next);
-            returnSummary.textContent = sayReturn(mine);
-          },
-        }, 'Return')));
+      h('td', returnButton));
+    line.dataset.name = person.name.toLowerCase();
+    settle();
     return line;
   });
+  tally();
+
+  const find = h('input', {
+    type: 'search',
+    placeholder: 'Find somebody',
+    'aria-label': 'Find somebody',
+    oninput: (e) => {
+      const wanted = e.target.value.trim().toLowerCase();
+      for (const row of rows) row.hidden = Boolean(wanted) && !row.dataset.name.includes(wanted);
+    },
+  });
+
+  // Everything the form used to say above the table, one line per column, for
+  // whoever wants it. It opens from the ? beside the close.
+  const help = h('dl.pay-set-help',
+    h('dt', 'On the payroll'),
+    h('dd', 'Tick everybody this month’s payroll covers. Anybody unticked keeps their '
+      + 'figures and is left out.'),
+    h('dt', 'Basic'),
+    h('dd', 'Their monthly basic salary. SSNIT is worked on this alone: 5.5% from them and '
+      + '13% from the property.'),
+    h('dt', 'Takes home'),
+    h('dd', 'What they are paid after tax and SSNIT. HIVE works out the allowance that gets '
+      + 'them there, every month. With + bonus ticked it is their fixed pay and this '
+      + 'month’s scored bonus goes on top, so 1,850 with a score of 630 takes home 2,480. '
+      + 'Untick it for a flat amount that already includes the bonus, like a casual on 600. '
+      + 'Leave it empty to pay basic, allowances and scored bonus as entered.'),
+    h('dt', 'Advances and cuts'),
+    h('dd', 'An advance being repaid, or anything docked off a bonus, comes off after the '
+      + 'take-home is worked out, so it still costs them what it should.'),
+    h('dt', 'Allowances'),
+    h('dd', 'Named allowances entered by hand. Where there is a take-home they count towards '
+      + 'it and HIVE tops up the rest, so they add nothing to pay. Clear them when the '
+      + 'take-home covers everything.'),
+    h('dt', 'SSNIT'),
+    h('dd', 'Untick for anybody it does not apply to.'),
+    h('dt', 'Net bonus'),
+    h('dd', 'Ticked where the bonus figures are what the person receives, and the property '
+      + 'carries the tax. Untick where they were worked out gross already, or the tax is '
+      + 'paid twice.'),
+    yearly ? h('dt', `Bonus in ${year}`) : null,
+    yearly
+      ? h('dd', `Bonus already paid in ${year} in months before HIVE ran the payroll. The 5% `
+        + 'rate stops at 15% of the year’s basic, so the ceiling needs to know. Leave it '
+        + 'empty if every month was done here.')
+      : null,
+    h('dt', 'GRA return'),
+    h('dd', 'Grade, residency and reliefs for the GRA form. Left alone it uses their job '
+      + 'title and puts them down as resident and full time.'));
 
   const done = await formDialog({
     title: 'Pay and allowances',
     submitLabel: 'Save the payroll',
     wide: 'xl',
+    help,
     body: h('div',
-      h('p.muted', { style: { fontSize: '.85rem' } },
-        'Tick everybody the payroll covers and give their monthly basic. SSNIT is 5.5% from '
-        + 'them and 13% from the property, on basic salary alone. Untick it for anybody it '
-        + 'does not apply to.'),
-      h('p.muted', { style: { fontSize: '.85rem' } },
-        'Bonus is net where the figures agreed are what the person receives. The property then '
-        + 'carries the tax on top and it shows in their allowance. Untick it for anybody whose '
-        + 'bonus figures were worked out gross already, or the tax gets paid twice.'),
-      h('p.muted', { style: { fontSize: '.85rem' } },
-        'Takes home is what the person is on, and the allowance is worked out from it every '
-        + 'month so nobody recalculates it. With + bonus ticked it is their fixed take-home, '
-        + 'and this month\u2019s scored bonus is added on top: somebody on 1,850 who scores '
-        + '630 takes home 2,480. Untick it for a flat amount where the bonus is part of the '
-        + 'whole figure, like a casual on 600; their score then does not change what they are '
-        + 'paid. Leave the figure empty and they are paid their basic, allowances and scored '
-        + 'bonus as entered.'),
-      h('p.muted', { style: { fontSize: '.85rem' } },
-        'Either way it is measured before any advance they are repaying and before anything '
-        + 'docked off their bonus, so both still cost them what they are meant to.'),
-      h('p.muted', { style: { fontSize: '.85rem' } },
-        'GRA return is the grade, the residency and any reliefs the form asks about somebody. '
-        + 'Left alone, the form uses their job title and puts them down as resident and full '
-        + 'time, which is right for most people. Change it here when it changes for them.'),
-      yearly
-        ? h('p.muted', { style: { fontSize: '.85rem' } },
-          `Bonus already had in ${year} is for months this app did not run. The 5% rate on a `
-          + `bonus reaches 15% of the year's basic and the rest goes through the bands, so the `
-          + 'ceiling has to know what was paid before it. Leave it at nothing where every '
-          + 'month of the year was done here.')
-        : null,
-      h('div.table-wrap.med-set-wrap', h('table.med-set',
+      h('div.pay-set-bar', find, count, clearStale, clearNote),
+      h('div.table-wrap.med-set-wrap.pay-set-wrap', h('table.med-set.pay-set',
         h('thead', h('tr',
-          h('th', 'On the payroll'), h('th.num', 'Basic'), h('th', ''),
+          h('th', 'Name'),
+          h('th.num', 'Basic'),
           h('th.num', 'Takes home'),
-          yearly ? h('th.num', `Bonus already had in ${year}`) : null,
-          h('th.num', 'Allowances'), h('th.num', 'GRA return'),
+          h('th.num', 'Allowances'),
+          h('th.tick', 'SSNIT'),
+          h('th.tick', 'Net bonus'),
+          yearly ? h('th.num', `Bonus in ${year}`) : null,
+          h('th', 'GRA return'),
         )),
         h('tbody', rows)))),
     onSubmit: async () => api.payrollProfiles({
