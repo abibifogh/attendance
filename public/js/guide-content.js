@@ -1671,10 +1671,26 @@ export const GUIDE = [
 
       { sub: 'From a spreadsheet' },
       { p: 'A month\u2019s figures can come in from a sheet instead of being typed. Bulk '
-        + 'upload \u2192 Download template gives you this month as it stands, not a blank '
-        + 'form: a row per person, and a column for the basic, each allowance the property '
-        + 'uses, and a score against each scheme somebody is under. Change what changed and '
-        + 'send it back with Upload a file.' },
+        + 'upload \u2192 Download this month\u2019s sheet gives you an .xlsx laid out like the '
+        + 'office\u2019s bonus sheet, already filled in: the basic, the take-home and + bonus '
+        + 'on the left, then each department with its schemes under it, the bonus in money, '
+        + 'Deductions and a Total that adds itself up as you type, and any advance due. Change '
+        + 'what changed and send it back with Upload a filled-in sheet.' },
+      { list: [
+        'Bonus columns are money: what the scheme pays the person this month. For a scored '
+          + 'scheme HIVE works the score back out, so 320 on a scheme worth 400 is a score of '
+          + '80. A figure above what the scheme pays at a full score is refused.',
+        'A scheme that covers several departments has a column under each, as on the office\u2019s '
+          + 'sheet. Put the figure in any of them; two different figures on one line are refused.',
+        'Take-home and + bonus (Yes or No) set what the person is on. Write none in Take-home to '
+          + 'take one away; a blank leaves it as it is.',
+        'Deductions is the total docked off the bonus. Anything docked on the payroll screen '
+          + 'with a reason stays, and the sheet makes up the rest. The person is told, as they are '
+          + 'for one entered on the screen.',
+        'The office\u2019s own bonus sheet reads too, with its headings over two rows and the '
+          + 'schemes named on their own, as long as the names match the people in HIVE.',
+        'A CSV still works, and \u2026/input/template?as=csv still gives the old plain one.',
+      ] },
       { p: 'What it would do sits on the screen until you agree to it, person by person and '
         + 'figure by figure. Nothing is written before you press the button.' },
       { list: [

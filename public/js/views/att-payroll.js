@@ -13,6 +13,7 @@ import { printReport } from '../print.js';
 import { niceMonth } from './att-advances.js';
 import { companyOf, payslipPage, showPayslips } from './payslip.js';
 import { returnsSheet } from './pay-returns.js';
+import { readXlsx } from '../xlsx-read.js';
 
 /**
  * The payroll.
@@ -753,19 +754,29 @@ function exportButton(data, month, closed) {
 
 function importButton(month, reload) {
   return bulkUpload({
-    accept: '.csv,text/csv',
+    accept: '.xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     title: 'Take the month down as a spreadsheet, or send one back. Nothing is written '
       + 'until you agree to it.',
     template: {
       href: `/api/payroll/input/template?month=${encodeURIComponent(month)}`,
-      download: `payroll-${month}.csv`,
-      label: 'Download template',
+      download: `payroll-input-${month}.xlsx`,
+      label: 'Download this month\u2019s sheet',
     },
     onFile: async (file) => {
       try {
-        const text = await file.text();
-        const read = await api.payrollReadInput({ month, text });
-        await showImport({ month, text, read, reload });
+        // A spreadsheet is read here and sent as its rows; a CSV goes as text.
+        // Either way the server reads it the same, twice: once to show what it
+        // would do, and again when the button says do it.
+        let input;
+        if (/\.xlsx$/i.test(file.name) || file.type.includes('spreadsheetml')) {
+          const sheets = await readXlsx(await file.arrayBuffer());
+          if (!sheets.length) throw new Error('There is nothing in that file.');
+          input = { rows: sheets[0].rows };
+        } else {
+          input = { text: await file.text() };
+        }
+        const read = await api.payrollReadInput({ month, ...input });
+        await showImport({ month, input, read, reload });
       } catch (err) {
         toast(err.message, 'bad');
       }
@@ -774,7 +785,7 @@ function importButton(month, reload) {
 }
 
 /** What the file would do, and the button that does it. */
-async function showImport({ month, text, read, reload }) {
+async function showImport({ month, input, read, reload }) {
   const { tally } = read;
   const wanted = read.willCreate ?? { allowances: [], schemes: [] };
 
@@ -789,9 +800,9 @@ async function showImport({ month, text, read, reload }) {
       line.changes.length
         ? h('ul.pay-import-changes', line.changes.map((c) => h('li',
           `${c.label}: `,
-          h('span.muted', c.from === null ? 'nothing' : String(c.from)),
+          h('span.muted', (c.fromShown ?? c.from) === null ? 'nothing' : String(c.fromShown ?? c.from)),
           ' to ',
-          h('strong', String(c.to)),
+          h('strong', (c.toShown ?? c.to) === null ? 'nothing' : String(c.toShown ?? c.to)),
           c.kind === 'allowance' && c.taxable === false ? h('span.muted', ', not taxed') : null,
           // Introducing an allowance is a bigger thing than changing a figure
           // in one, so the line says which it is.
@@ -853,7 +864,7 @@ async function showImport({ month, text, read, reload }) {
       lines.length ? h('div.pay-import-list', lines) : null),
 
     onSubmit: () => (tally.changes
-      ? api.payrollApplyInput({ month, text, create: make.checked })
+      ? api.payrollApplyInput({ month, ...input, create: make.checked })
       : Promise.resolve({ basics: 0, allowances: 0, scores: 0 })),
   });
 
@@ -863,7 +874,9 @@ async function showImport({ month, text, read, reload }) {
   if (created) bits.push(`${created} made`);
   if (done.basics) bits.push(`${done.basics} salaries`);
   if (done.allowances) bits.push(`${done.allowances} allowances`);
-  if (done.scores) bits.push(`${done.scores} scores`);
+  if (done.scores) bits.push(`${done.scores} bonuses`);
+  if (done.takeHomes) bits.push(`${done.takeHomes} take-homes`);
+  if (done.deductions) bits.push(`${done.deductions} deductions`);
   // What it named and was not allowed to make, so an untouched column is never
   // just an absence somebody has to notice.
   if (done.notMade?.length) {

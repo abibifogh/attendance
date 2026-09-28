@@ -126,8 +126,31 @@ export function readColumns(header, { allowances = [], schemes = [] } = {}) {
       columns.push({ index, kind: 'employeeNo' });
       return;
     }
-    if (['name', 'employee', 'employee name', 'staff'].includes(key)) {
+    if (['name', 'employee', 'employee name', 'staff', 'staff name', 'name of employee'].includes(key)) {
       columns.push({ index, kind: 'name' });
+      return;
+    }
+    // What the person takes home, and whether this month's bonus goes on top
+    // of it. Both move from month to month, so both are on the sheet.
+    if (['take-home', 'take home', 'takes home', 'take home pay', 'take-home pay'].includes(key)) {
+      columns.push({ index, kind: 'takeHome' });
+      return;
+    }
+    if (['+ bonus', '+bonus', 'plus bonus', 'bonus on top'].includes(key)) {
+      columns.push({ index, kind: 'plusBonus' });
+      return;
+    }
+    // Money docked off the bonus this month. The office's own sheet calls it
+    // Deductions, and it sits beside the schemes it comes out of.
+    if (['deductions', 'deduction', 'docked', 'bonus deductions', 'penalties'].includes(key)) {
+      columns.push({ index, kind: 'deductions' });
+      return;
+    }
+    // Columns a sheet carries for the person reading it, which say nothing
+    // HIVE should set. Known, so they are not reported as strangers.
+    if (['department', 'dept', 'role', 'total', 'totals', 'net', 'net bonus', 'total bonus',
+      'bonus total', 'sn', 's/n'].includes(key)) {
+      columns.push({ index, kind: 'ignore' });
       return;
     }
     if (['basic', 'basic salary', 'salary'].includes(key)) {
@@ -150,6 +173,16 @@ export function readColumns(header, { allowances = [], schemes = [] } = {}) {
     const scored = key.match(/^(score|bonus|amount)\s*[:\-]\s*(.+)$/);
     if (scored && byScheme.has(norm(scored[2]))) {
       columns.push({ index, kind: 'score', scheme: byScheme.get(norm(scored[2])) });
+      return;
+    }
+
+    // A scheme named on its own, the way the office's bonus sheet heads its
+    // columns. That column is money: what the scheme pays the person this
+    // month, whatever kind of scheme it is. HIVE works the score or the rung
+    // back out of it. An allowance of the same name keeps the bare heading,
+    // since that is what a bare heading has always meant.
+    if (byScheme.has(key) && !byAllowance.has(key)) {
+      columns.push({ index, kind: 'score', scheme: byScheme.get(key), money: true });
       return;
     }
 
@@ -239,12 +272,16 @@ export function readColumns(header, { allowances = [], schemes = [] } = {}) {
  * would change about them, plus the lines that matched nobody. Nothing is
  * written; the caller decides whether to.
  */
-export function readSheet(text, {
+export function readSheet(input, {
   staff = [], allowances = [], schemes = [], profiles = new Map(),
   allowanceBy = new Map(), scoreBy = new Map(), awardBy = new Map(), tierBy = new Map(),
   memberOf = new Map(), advanceDue = new Map(), advanceHeld = new Set(),
+  worthBy = new Map(), deductionBy = new Map(),
 } = {}) {
-  const rows = parseCsv(text);
+  // The text of a CSV, or the rows of a spreadsheet already read.
+  const rows = Array.isArray(input)
+    ? input.map((r) => (Array.isArray(r) ? r.map((c) => (c == null ? '' : c)) : []))
+    : parseCsv(input);
   if (!rows.length) {
     return {
       columns: [],
@@ -256,8 +293,41 @@ export function readSheet(text, {
     };
   }
 
-  const [header, ...body] = rows;
+  // The heading row is the first that names who each line is. A sheet laid
+  // out like the office's has a title, a note and a row of departments above
+  // it, and those are not headings.
+  let top = 0;
+  for (let r = 0; r < Math.min(rows.length, 15); r += 1) {
+    const found = readColumns(rows[r], { allowances, schemes }).columns;
+    if (found.some((c) => c.kind === 'name' || c.kind === 'employeeNo')) { top = r; break; }
+  }
+  // The office's own bonus sheet splits its headings over two rows: the name
+  // and the departments on one, the schemes under each department on the
+  // next. Where the row below names schemes, the two are read as one, the
+  // lower row's words winning wherever it has any.
+  let header = rows[top];
+  let first = top + 1;
+  const next = rows[top + 1] ?? [];
+  const merged = Array.from({ length: Math.max(header.length, next.length) },
+    (_, i) => (String(next[i] ?? '').trim() ? next[i] : header[i]));
+  const count = (cells) => readColumns(cells, { allowances, schemes }).columns
+    .filter((c) => c.kind === 'score').length;
+  if (count(merged) > count(header)) {
+    header = merged;
+    first = top + 2;
+  }
+  const body = rows.slice(first);
   const { columns, unknown } = readColumns(header, { allowances, schemes });
+
+  // A scheme can have a column under more than one department. Each person's
+  // figure is in one of them, so the columns are read together, per scheme.
+  const schemeKey = (col) => (col.scheme.id != null ? `id:${col.scheme.id}` : `name:${norm(col.scheme.name)}`);
+  const schemeColumns = new Map();
+  for (const col of columns) {
+    if (col.kind !== 'score') continue;
+    if (!schemeColumns.has(schemeKey(col))) schemeColumns.set(schemeKey(col), []);
+    schemeColumns.get(schemeKey(col)).push(col);
+  }
 
   const byNo = new Map(staff.map((s) => [cleanNo(s.employee_no), s]));
   const byName = new Map(staff.map((s) => [norm(s.name), s]));
@@ -271,7 +341,7 @@ export function readSheet(text, {
   const skipped = [];
 
   body.forEach((cells, i) => {
-    const at = i + 2; // The line number in the file, header counted.
+    const at = first + i + 1; // The line number in the file, headings counted.
     const get = (kind) => {
       const col = columns.find((c) => c.kind === kind);
       return col ? cells[col.index] : undefined;
@@ -279,6 +349,8 @@ export function readSheet(text, {
 
     const employeeNo = cleanNo(get('employeeNo'));
     const name = String(get('name') ?? '').trim();
+    // The totals along the bottom are the sheet adding itself up.
+    if (/^totals?$/i.test(employeeNo) || /^totals?$/i.test(name)) return;
     const person = (employeeNo && byNo.get(employeeNo)) || (name && byName.get(norm(name))) || null;
 
     if (!person) {
@@ -364,12 +436,99 @@ export function readSheet(text, {
       }
 
       if (col.kind === 'score') {
+        // Where a scheme has several columns, the one with a figure in it
+        // speaks for all of them, and the others are passed over.
+        const siblings = schemeColumns.get(schemeKey(col)) ?? [col];
+        if (siblings.length > 1) {
+          const filled = siblings.filter((c) => String(cells[c.index] ?? '').trim() !== '');
+          if (filled[0] !== col && !(filled.length === 0 && siblings[0] === col)) continue;
+          const figures = new Set(filled.map((c) => String(readMoney(cells[c.index]))));
+          if (figures.size > 1) {
+            line.notes.push({
+              what: col.scheme.name,
+              why: 'there are two different figures for it on this line, so neither is used',
+            });
+            continue;
+          }
+        }
+
         const paysAmount = col.scheme.kind === 'amount';
         const byTier = col.scheme.kind === 'tier';
         // A scheme that does not exist yet has nobody under it, so membership
         // cannot be the test. Everybody with a figure in the column is who it
         // would cover.
         const isNew = Boolean(col.isNew);
+
+        // A column of money on a scheme that is scored or tiered. The money is
+        // what the person gets, and HIVE turns it back into the score or the
+        // rung that pays exactly that.
+        if (col.money && !paysAmount && !isNew) {
+          const value = readMoney(cell);
+          if (value === null) continue;
+          if (Number.isNaN(value) || value < 0) {
+            line.notes.push({ what: col.scheme.name, why: 'not a figure' });
+            continue;
+          }
+          if (col.scheme.active === false) {
+            line.notes.push({ what: col.scheme.name, why: 'that scheme is retired, so nothing would be paid on it' });
+            continue;
+          }
+          if (!(memberOf.get(person.id) ?? []).includes(col.scheme.id)) {
+            if (value > 0) line.notes.push({ what: col.scheme.name, why: 'not under this scheme' });
+            continue;
+          }
+          const key = `${col.scheme.id}|${person.id}`;
+          if (byTier) {
+            const rungs = tierScores(col.scheme.tiers);
+            const rung = rungs.find((s) => round2(tierAmount(col.scheme.tiers, s)) === value);
+            if (rung == null) {
+              line.notes.push({
+                what: col.scheme.name,
+                why: `${value.toFixed(2)} is not what any of its scores pays. It pays `
+                  + `${rungs.map((s) => round2(tierAmount(col.scheme.tiers, s)).toFixed(2)).join(', ') || 'nothing yet'}`,
+              });
+              continue;
+            }
+            const was = tierBy.get(key) ?? null;
+            const wasMoney = was == null ? null : round2(tierAmount(col.scheme.tiers, was) ?? 0);
+            if (wasMoney !== value) {
+              line.changes.push({
+                kind: 'score', schemeId: col.scheme.id, schemeName: col.scheme.name,
+                label: col.scheme.name, from: was, to: rung, byTier: true,
+                worth: tierAmount(col.scheme.tiers, rung),
+                fromShown: wasMoney, toShown: value,
+              });
+            }
+            continue;
+          }
+          const worth = round2(worthBy.get(key) ?? col.scheme.amount ?? 0);
+          if (!(worth > 0)) {
+            line.notes.push({
+              what: col.scheme.name,
+              why: 'the scheme has no amount set for a full score, so a figure cannot be turned into one',
+            });
+            continue;
+          }
+          const score = round2((value / worth) * 100);
+          if (score > 100) {
+            line.notes.push({
+              what: col.scheme.name,
+              why: `${value.toFixed(2)} is more than it pays at a full score (${worth.toFixed(2)})`,
+            });
+            continue;
+          }
+          const was = round2(scoreBy.get(key) ?? 0);
+          const wasMoney = round2(worth * (was / 100));
+          if (wasMoney !== value) {
+            line.changes.push({
+              kind: 'score', schemeId: col.scheme.id, schemeName: col.scheme.name,
+              label: col.scheme.name, from: wasMoney, to: value,
+              score, worth, money: true,
+            });
+          }
+          continue;
+        }
+
         const value = paysAmount ? readMoney(cell) : readScore(cell);
         if (value === null) continue;
 
@@ -430,6 +589,71 @@ export function readSheet(text, {
             ...(isNew ? { isNew: true } : {}),
           });
         }
+        continue;
+      }
+
+      if (col.kind === 'takeHome' || col.kind === 'plusBonus' || col.kind === 'deductions') {
+        const raw = String(cell ?? '').trim();
+        if (!raw) continue;
+        const profile = profiles.get(person.id);
+        if (!profile) {
+          line.notes.push({ what: col.kind === 'deductions' ? 'Deductions' : 'Take-home', why: 'not on the payroll yet' });
+          continue;
+        }
+
+        if (col.kind === 'takeHome') {
+          // A word rather than a figure takes the take-home away, and they are
+          // paid what is entered again. A blank never does: blank is "as it is".
+          const clearing = /^(none|clear|as entered|-|—)$/i.test(raw);
+          const value = clearing ? null : readMoney(raw);
+          if (!clearing && (Number.isNaN(value) || value < 0)) {
+            line.notes.push({ what: 'Take-home', why: 'not a figure' });
+            continue;
+          }
+          const from = profile.take_home == null ? null : round2(profile.take_home);
+          if (from !== value) {
+            line.changes.push({ kind: 'takeHome', label: 'Take-home', from, to: value });
+          }
+          continue;
+        }
+
+        if (col.kind === 'plusBonus') {
+          const yes = /^(yes|y|true|1|ticked|x|✓|✔|on top|fixed)$/i.test(raw);
+          const no = /^(no|n|false|0|included|whole)$/i.test(raw);
+          if (!yes && !no) {
+            line.notes.push({ what: '+ bonus', why: 'write Yes where the bonus goes on top, No where it is included' });
+            continue;
+          }
+          const from = profile.take_home_basis === 'fixed';
+          if (from !== yes) {
+            line.changes.push({
+              kind: 'takeHomeBasis', label: '+ bonus', from: from ? 'Yes' : 'No', to: yes ? 'Yes' : 'No', fixed: yes,
+            });
+          }
+          continue;
+        }
+
+        // Deductions: set as a total, the way the sheet holds them. Those
+        // entered on the screen carry a reason each and stay; the sheet's own
+        // share is the rest.
+        const value = readMoney(raw);
+        if (Number.isNaN(value) || value < 0) {
+          line.notes.push({ what: 'Deductions', why: 'not a figure' });
+          continue;
+        }
+        const held = deductionBy.get(person.id) ?? { total: 0, fromSheet: 0 };
+        const from = round2(held.total);
+        const others = round2(held.total - held.fromSheet);
+        if (from === value) continue;
+        if (value < others) {
+          line.notes.push({
+            what: 'Deductions',
+            why: `${others.toFixed(2)} is already docked with a reason on the payroll screen. Take `
+              + 'those off there to go lower',
+          });
+          continue;
+        }
+        line.changes.push({ kind: 'deduction', label: 'Deductions', from, to: value, others });
         continue;
       }
 
@@ -524,15 +748,15 @@ export function readSheet(text, {
 
 /** What a run of the file comes to, for the sentence above the Apply button. */
 export function tallyOf(read) {
-  const counts = { basic: 0, allowance: 0, score: 0 };
+  const counts = { basic: 0, allowance: 0, score: 0, takeHome: 0, takeHomeBasis: 0, deduction: 0 };
   for (const line of read.lines) {
-    for (const change of line.changes) counts[change.kind] += 1;
+    for (const change of line.changes) counts[change.kind] = (counts[change.kind] ?? 0) + 1;
   }
   const create = read.willCreate ?? { allowances: [], schemes: [] };
   return {
     people: read.lines.filter((l) => l.changes.length).length,
     ...counts,
-    changes: counts.basic + counts.allowance + counts.score,
+    changes: Object.values(counts).reduce((n, c) => n + c, 0),
     notes: read.lines.reduce((n, l) => n + l.notes.length, 0),
     skipped: read.skipped.length,
     // How many things it would make. Nothing is made unless somebody says so.

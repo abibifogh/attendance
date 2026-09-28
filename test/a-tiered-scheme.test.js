@@ -306,7 +306,7 @@ test('the template writes the rung, blank where nobody has picked one', async ()
   }));
 
   const { inputTemplate } = await import('../src/routes/payroll.js');
-  const csv = await (await inputTemplate(ctx(db, WAGES, { query: `?month=${MONTH}` }))).text();
+  const csv = await (await inputTemplate(ctx(db, WAGES, { query: `?month=${MONTH}&as=csv` }))).text();
   const lines = csv.trim().split('\n');
   assert.match(lines[0], /Score: Nkoso/);
   assert.match(lines[1], /,6$|,6,/, 'Ama is on a 6');

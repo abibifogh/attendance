@@ -13,6 +13,7 @@ import {
 } from '../lib/statutory.js';
 import { ratesOn } from '../lib/tax-tables.js';
 import { readSheet, tallyOf } from '../lib/pay-import.js';
+import { inputSheet } from '../lib/pay-input-sheet.js';
 import { isAdmin } from '../lib/payroll-access.js';
 import {
   CODE_RULE, MAX_TRIES, OPEN_MINUTES, afterAWrongTry, codeIsObvious, codeLooksRight,
@@ -701,8 +702,28 @@ async function sheetContext(ctx, month) {
     memberOf,
     advanceDue,
     advanceHeld,
+    // What each person gets at a full score on each scheme: the award as it
+    // was when they were scored, else the scheme's own. A column of money is
+    // turned back into a score against this.
+    worthBy: new Map(data.schemes.flatMap((scheme) => (data.memberBy.get(scheme.id) ?? [])
+      .map((m) => {
+        const held = data.scores.find((r) => r.scheme_id === scheme.id && r.staff_id === m.staff_id);
+        return [`${scheme.id}|${m.staff_id}`, round2(held?.amount ?? scheme.amount ?? 0)];
+      }))),
+    // What is docked off each person's bonus this month, and how much of that
+    // came from a sheet rather than being entered with a reason.
+    deductionBy: (data.penalties ?? []).reduce((map, p) => {
+      const mine = map.get(p.staff_id) ?? { total: 0, fromSheet: 0 };
+      mine.total = round2(mine.total + round2(p.amount));
+      if (p.reason === FROM_THE_SHEET) mine.fromSheet = round2(mine.fromSheet + round2(p.amount));
+      map.set(p.staff_id, mine);
+      return map;
+    }, new Map()),
   };
 }
+
+/** The reason on a deduction set from the payroll sheet, so the next sheet can replace it. */
+const FROM_THE_SHEET = 'Deductions on the payroll sheet';
 
 /**
  * This month's sheet, already filled in.
@@ -713,9 +734,58 @@ async function sheetContext(ctx, month) {
  * under them.
  */
 export async function inputTemplate(ctx) {
-  const { timezone } = await settingsOf(ctx.db);
+  const { timezone, currency, property, settings } = await settingsOf(ctx.db);
   const month = monthFrom(ctx.url, timezone);
   const c = await sheetContext(ctx, month);
+
+  // The spreadsheet, laid out like the office's own bonus sheet, unless a
+  // plain CSV is asked for by something that only reads those.
+  if (ctx.url.searchParams.get('as') !== 'csv') {
+    const lines = linesOf(c.data, month);
+    const lineBy = new Map(lines.map((l) => [l.staff.id, l]));
+    const people = [];
+    for (const person of c.staff) {
+      const line = lineBy.get(person.id);
+      const profile = c.profiles.get(person.id);
+      if (!line || !profile) continue;
+      people.push({
+        id: person.id,
+        employeeNo: person.employee_no ?? '',
+        name: person.name,
+        department: person.department ?? null,
+        basic: round2(profile.basic),
+        takeHome: profile.take_home == null ? null : round2(profile.take_home),
+        takeHomeFixed: profile.take_home_basis === 'fixed',
+        schemes: line.bonus?.schemes ?? [],
+      });
+    }
+    const deductionBy = new Map();
+    for (const p of c.data.penalties ?? []) {
+      deductionBy.set(p.staff_id, round2((deductionBy.get(p.staff_id) ?? 0) + round2(p.amount)));
+    }
+    const employer = settings.company_name || property || 'Payroll';
+    const sheet = inputSheet({
+      title: `${employer} \u2014 payroll input for ${month}`,
+      month,
+      currency,
+      people,
+      schemes: c.data.schemes.map((s) => ({
+        id: s.id, name: s.name, active: Boolean(s.active), departments: readDepartments(s),
+      })),
+      departmentOrder: String(settings.att_departments ?? '').split('\n').map((d) => d.trim()).filter(Boolean),
+      allowances: c.allowances,
+      allowanceBy: c.allowanceBy,
+      deductionBy,
+      advanceDue: c.advanceDue,
+    });
+    return new Response(workbook([sheet]), {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="payroll-input-${month}.xlsx"`,
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
 
   const header = [
     'Employee no', 'Name', 'Basic',
@@ -768,10 +838,21 @@ export async function inputTemplate(ctx) {
 }
 
 /** What the file would do, said before anything is done. */
-export async function readInput(ctx) {
-  const body = await readJson(ctx.request);
+/** The file as it came: a spreadsheet's rows, or a CSV's text. */
+function inputOf(body) {
+  if (Array.isArray(body.rows)) {
+    if (!body.rows.length) throw badRequest('There is nothing in that file.');
+    if (body.rows.length > 2000) throw badRequest('That sheet is longer than a payroll can be.');
+    return body.rows.map((r) => (Array.isArray(r) ? r.slice(0, 200) : []));
+  }
   const text = String(body.text ?? '');
   if (!text.trim()) throw badRequest('There is nothing in that file.');
+  return text;
+}
+
+export async function readInput(ctx) {
+  const body = await readJson(ctx.request);
+  const text = inputOf(body);
 
   const { timezone } = await settingsOf(ctx.db);
   const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
@@ -790,8 +871,7 @@ export async function readInput(ctx) {
  */
 export async function applyInput(ctx) {
   const body = await readJson(ctx.request);
-  const text = String(body.text ?? '');
-  if (!text.trim()) throw badRequest('There is nothing in that file.');
+  const text = inputOf(body);
 
   const { timezone } = await settingsOf(ctx.db);
   const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
@@ -840,10 +920,44 @@ export async function applyInput(ctx) {
   let basics = 0;
   let allowances = 0;
   let scores = 0;
+  let takeHomes = 0;
+  let deductions = 0;
   const notMade = [];
 
   for (const line of read.lines) {
     for (const change of line.changes) {
+      if (change.kind === 'takeHome') {
+        // Taking a take-home away takes what it meant with it.
+        await ctx.db.prepare(
+          `UPDATE pay_profile SET take_home = ?2,
+             take_home_basis = CASE WHEN ?2 IS NULL THEN NULL ELSE take_home_basis END,
+             set_by = ?3, set_at = datetime('now') WHERE staff_id = ?1`,
+        ).bind(line.staffId, change.to, actor).run();
+        takeHomes += 1;
+        continue;
+      }
+      if (change.kind === 'takeHomeBasis') {
+        await ctx.db.prepare(
+          `UPDATE pay_profile SET take_home_basis = ?2, set_by = ?3, set_at = datetime('now')
+            WHERE staff_id = ?1 AND take_home IS NOT NULL`,
+        ).bind(line.staffId, change.fixed ? 'fixed' : null, actor).run();
+        takeHomes += 1;
+        continue;
+      }
+      if (change.kind === 'deduction') {
+        await ctx.db.prepare(
+          'DELETE FROM pay_penalty WHERE run_id = ?1 AND staff_id = ?2 AND reason = ?3',
+        ).bind(run.id, line.staffId, FROM_THE_SHEET).run();
+        const extra = round2(change.to - change.others);
+        if (extra > 0) {
+          await ctx.db.prepare(
+            'INSERT INTO pay_penalty (run_id, staff_id, amount, reason, actor) VALUES (?1, ?2, ?3, ?4, ?5)',
+          ).bind(run.id, line.staffId, extra, FROM_THE_SHEET, actor).run();
+          await tellOfDeduction(ctx, line.staffId, extra, month);
+        }
+        deductions += 1;
+        continue;
+      }
       if (change.kind === 'basic') {
         await ctx.db.prepare(
           "UPDATE pay_profile SET basic = ?2, set_by = ?3, set_at = datetime('now') WHERE staff_id = ?1",
@@ -882,8 +996,12 @@ export async function applyInput(ctx) {
         // tiered one stores the rung and the money that rung is worth.
         // Everything downstream works the award out as the award scaled by the
         // score, so all three kinds land as one line on a payslip.
-        const score = change.paysAmount || change.byTier ? 100 : change.to;
-        const award = change.paysAmount ? change.to : (change.byTier ? change.worth : null);
+        // A figure given in money on a scored scheme arrives as the score that
+        // pays it, with the award it was worked against kept beside it.
+        const score = change.paysAmount || change.byTier ? 100 : (change.money ? change.score : change.to);
+        const award = change.paysAmount
+          ? change.to
+          : (change.byTier || change.money ? change.worth : null);
         const tier = change.byTier ? change.to : null;
         await ctx.db.prepare(
           `INSERT INTO pay_score (run_id, scheme_id, staff_id, score, amount, tier)
@@ -897,7 +1015,7 @@ export async function applyInput(ctx) {
   }
 
   await audit(ctx, 'payroll.input', month, {
-    basics, allowances, scores, skipped: read.skipped.length, made,
+    basics, allowances, scores, takeHomes, deductions, skipped: read.skipped.length, made,
   });
   return json({
     ok: true,
@@ -905,6 +1023,8 @@ export async function applyInput(ctx) {
     basics,
     allowances,
     scores,
+    takeHomes,
+    deductions,
     // What the file made, and what it named and was not allowed to make.
     made,
     notMade,
@@ -2052,6 +2172,29 @@ export async function removeSeverance(ctx, idParam) {
   await ctx.db.prepare('DELETE FROM pay_severance WHERE id = ?').bind(id).run();
   await audit(ctx, 'payroll.severance.removed', row.staff_id, { amount: row.amount });
   return json({ ok: true });
+}
+
+/**
+ * Tell somebody money has come off their bonus, now rather than on payday.
+ * The same message whether it was entered on the screen or came in on a sheet.
+ */
+async function tellOfDeduction(ctx, staffId, amount, month, reason = null) {
+  const { currency } = await settingsOf(ctx.db);
+  const person = await ctx.db.prepare(
+    'SELECT u.id AS user_id FROM users u WHERE u.staff_id = ? AND u.active = 1',
+  ).bind(staffId).first().catch(() => null);
+  if (!person?.user_id) return;
+  await createNotice(ctx.db, {
+    kind: 'payroll.penalty',
+    level: 'warn',
+    title: `${money(amount, currency)} has come off your bonus for ${month}`,
+    body: reason ?? 'Set on this month\u2019s payroll sheet. Ask the office if it is not what you expected.',
+    link: '#/att-my-report',
+    actor: actorOf(ctx),
+    userId: person.user_id,
+    push: true,
+    email: false,
+  }, ctx);
 }
 
 export async function addPenalty(ctx) {

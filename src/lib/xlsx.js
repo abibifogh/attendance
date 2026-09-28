@@ -98,7 +98,8 @@ export const S = {
  * A bare number, string or null is the common case and is read as such. An
  * object says more: `{ v, s }` to give it a style, and `{ v, text: true }` to
  * keep something that looks like a number as text, which is what a TIN and an
- * employee number need or the leading zero goes.
+ * employee number need or the leading zero goes. `{ f, v }` is a formula, with
+ * `v` the figure it comes to today.
  */
 function cellXml(value, col, row) {
   const at = cellRef(col, row);
@@ -107,6 +108,13 @@ function cellXml(value, col, row) {
     : { v: value };
   const style = cell.s ? ` s="${cell.s}"` : '';
   const v = cell.v;
+
+  // A formula, with the value it comes to written beside it so the sheet
+  // shows the right figure before anything has recalculated it.
+  if (cell.f) {
+    const cached = typeof v === 'number' && Number.isFinite(v) ? `<v>${v}</v>` : '';
+    return `<c r="${at}"${style}><f>${esc(cell.f)}</f>${cached}</c>`;
+  }
 
   if (v == null || v === '') return style ? `<c r="${at}"${style}/>` : '';
   if (typeof v === 'number' && Number.isFinite(v) && !cell.text) {

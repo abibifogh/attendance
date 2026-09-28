@@ -369,7 +369,7 @@ test('the template offers money for one and a score for the other', async () => 
     body: { month: MONTH, rows: [{ schemeId: scheme.id, staffId: 1, amount: 350 }] },
   }));
 
-  const body = await (await inputTemplate(ctx(db, { query: `?month=${MONTH}` }))).text();
+  const body = await (await inputTemplate(ctx(db, { query: `?month=${MONTH}&as=csv` }))).text();
   const lines = body.trim().split('\n');
   assert.match(lines[0], /Bonus: Housing/);
   assert.match(lines[0], /Score: Guest scores/);
@@ -392,7 +392,7 @@ test('a round trip through the month’s template changes nothing', async () => 
     },
   }));
 
-  const sheet = await (await inputTemplate(ctx(db, { query: `?month=${MONTH}` }))).text();
+  const sheet = await (await inputTemplate(ctx(db, { query: `?month=${MONTH}&as=csv` }))).text();
   const out = await read(await readInput(ctx(db, { body: { month: MONTH, text: sheet } })));
   assert.equal(out.tally.changes, 0, 'what came down is what is already here');
 });
