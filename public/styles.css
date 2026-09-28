@@ -4024,6 +4024,38 @@ html { touch-action: manipulation; }
 .med-set td { padding: .3rem .35rem; }
 .med-amount { width: 7rem; text-align: right; }
 
+/* A ? beside a figure on the month's table, and the little card it opens. */
+.pay-cell-why { display: inline-flex; align-items: center; justify-content: flex-end; gap: .35rem; }
+.pay-why-wrap { position: relative; display: inline-flex; }
+.pay-why {
+  width: 1.25rem; height: 1.25rem; padding: 0; flex: none;
+  display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface-2); color: var(--text-dim);
+  font-size: .72rem; font-weight: 700; line-height: 1; cursor: pointer;
+}
+.pay-why:hover, .pay-why[aria-expanded="true"] {
+  border-color: var(--accent); color: var(--accent); background: var(--accent-soft);
+}
+.pay-why:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (pointer: coarse) {
+  /* Bigger to the thumb than it looks. */
+  .pay-why { position: relative; }
+  .pay-why::after { content: ""; position: absolute; inset: -.6rem; }
+}
+.pay-why-pop {
+  position: fixed; z-index: 30;
+  width: max-content; max-width: 17rem;
+  padding: .6rem .75rem; text-align: left; white-space: normal;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+  font-size: .8rem; line-height: 1.4; font-weight: 400;
+}
+.pay-why-pop dl { display: grid; grid-template-columns: 1fr auto; gap: .2rem .8rem; margin: 0; }
+.pay-why-pop dt { color: var(--text-dim); }
+.pay-why-pop dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+.pay-why-pop p { margin: .45rem 0 0; color: var(--text-dim); }
+
 /* Pay and allowances: one short line per person, the header held in place
    while the names scroll under it. */
 .pay-set-bar {

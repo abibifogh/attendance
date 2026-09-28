@@ -233,10 +233,16 @@ export async function renderAttPayroll(params) {
           // and a screen that disagreed with the payslip is a question nobody
           // should have to answer twice.
           h('td.num', line.slip?.allowanceTotal || line.allowanceTotal
-            ? h('div',
+            ? h('div.pay-cell-why',
               cash(line.slip?.allowanceTotal ?? line.allowanceTotal),
+              // What the figure is made of, behind a ? rather than written out
+              // on every row, where it doubled the width of the column.
               line.slip?.carried
-                ? h('small.muted', ` with ${cash(line.slip.carried)} on the bonus`)
+                ? whyBehind([
+                  ['Allowances', cash(Math.round((line.slip.allowanceTotal - line.slip.carried) * 100) / 100)],
+                  ['Tax the property carries on the bonus', cash(line.slip.carried)],
+                ], 'The property pays the tax on the bonus, so the payslip shows it with the '
+                  + 'allowances.')
                 : null)
             : h('span.muted', '—')),
           h('td.num', line.bonus.net
@@ -2125,6 +2131,52 @@ async function editPeople(data, reload) {
   if (!done) return;
   toast(`${done.set} on the payroll.`, 'good');
   await reload();
+}
+
+/**
+ * A small ? beside a figure, opening what the figure is made of.
+ *
+ * It sits inside a row that opens the payslip when pressed, so the press stops
+ * here; and it closes on the next press anywhere else, which is what somebody
+ * expects of a little card that popped up.
+ */
+function whyBehind(parts, note = null) {
+  const pop = h('div.pay-why-pop', { hidden: true, role: 'tooltip' },
+    h('dl', parts.map(([label, value]) => [h('dt', label), h('dd', value)])),
+    note ? h('p', note) : null);
+  const close = (e) => {
+    if (e?.type === 'click' && wrap.contains(e.target)) return;
+    pop.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', close, true);
+  };
+  const button = h('button.pay-why', {
+    type: 'button',
+    'aria-label': 'What this is made of',
+    'aria-expanded': 'false',
+    onclick: (e) => {
+      e.stopPropagation();
+      const opening = pop.hidden;
+      if (opening) {
+        // Placed against the screen rather than the table, which scrolls
+        // sideways and would clip a card that hangs below its last row.
+        const at = button.getBoundingClientRect();
+        pop.hidden = false;
+        const width = pop.offsetWidth;
+        const below = at.bottom + 6 + pop.offsetHeight <= window.innerHeight;
+        pop.style.left = `${Math.max(8, Math.min(at.right - width, window.innerWidth - width - 8))}px`;
+        pop.style.top = below ? `${at.bottom + 6}px` : `${Math.max(8, at.top - pop.offsetHeight - 6)}px`;
+        document.addEventListener('click', close, true);
+        window.addEventListener('scroll', close, { capture: true, once: true });
+      } else {
+        close();
+      }
+      button.setAttribute('aria-expanded', String(opening));
+    },
+    onkeydown: (e) => { e.stopPropagation(); if (e.key === 'Escape') close(); },
+  }, '?');
+  const wrap = h('span.pay-why-wrap', button, pop);
+  return wrap;
 }
 
 /** The three things the GRA form asks, in a line short enough for a cell. */
