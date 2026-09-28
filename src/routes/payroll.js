@@ -300,9 +300,11 @@ function linesFrom(data, month) {
       // Older profiles have nothing written here and every figure in them was
       // entered as a net promise, so the absence reads as net.
       bonusIsNet: profile.bonus_is_net == null ? true : Boolean(profile.bonus_is_net),
-      // What they take home, where one has been agreed. The bonus is worked
-      // back from it rather than read off their scores.
+      // What they take home, where one has been agreed, and what that figure
+      // means. 'fixed' is the part before the bonus, with the month's scored
+      // bonus added on top; anything else is the whole amount, bonus included.
       takeHome: profile.take_home == null ? null : round2(profile.take_home),
+      takeHomeBasis: profile.take_home_basis === 'fixed' ? 'fixed' : 'total',
       // What the GRA has issued them a certificate for. Off before the bands,
       // like the pension, and nought for almost everybody.
       relief: round2(profile.gra_relief ?? 0),
@@ -606,6 +608,9 @@ export async function payroll(ctx) {
         // Null where nobody has agreed one, which is the ordinary case and
         // means their scores decide the bonus.
         takeHome: profile?.take_home == null ? null : round2(profile.take_home),
+        // Whether that figure is before the bonus, with the month's bonus
+        // added on top, or the whole amount with the bonus inside it.
+        takeHomeFixed: profile?.take_home_basis === 'fixed',
         // What the GRA form says about them. Empty means nobody has said, and
         // the form falls back to the job title and to resident and full time.
         graPosition: profile?.gra_position ?? '',
@@ -1710,12 +1715,25 @@ export async function setProfiles(ctx) {
       : round2(num(line.takeHome, 'Take-home', { min: 0, max: 10_000_000 }));
     const clearTakeHome = saidTakeHome && (line.takeHome == null || line.takeHome === '');
 
+    // What the take-home means, said outright rather than inferred. Absent
+    // leaves it as it is, like every other field here, so an upload or an
+    // older screen cannot change what somebody's figure means; true is the
+    // part before the bonus; false is the whole amount. Cleared with the
+    // figure, because a meaning with no figure to attach to is nothing.
+    const saidBasis = Object.prototype.hasOwnProperty.call(line, 'takeHomeFixed')
+      && line.takeHomeFixed != null;
+    const basis = clearTakeHome ? 'clear'
+      : saidBasis ? (line.takeHomeFixed ? 'fixed' : 'total')
+        : null;
+
     await ctx.db.prepare(
       `INSERT INTO pay_profile (staff_id, basic, ssnit, note, set_by, bonus_opening,
                                 bonus_opening_year, bonus_is_net,
-                                gra_position, gra_residency, gra_relief, take_home)
+                                gra_position, gra_residency, gra_relief, take_home,
+                                take_home_basis)
        VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(?6, 0), ?7, COALESCE(?8, 1),
-               ?9, ?10, COALESCE(?11, 0), ?12)
+               ?9, ?10, COALESCE(?11, 0), ?12,
+               CASE WHEN ?14 = 'fixed' THEN 'fixed' ELSE NULL END)
        ON CONFLICT (staff_id) DO UPDATE
          SET basic = ?2, ssnit = ?3, note = ?4, set_by = ?5, set_at = datetime('now'),
              bonus_opening = COALESCE(?6, bonus_opening),
@@ -1726,11 +1744,16 @@ export async function setProfiles(ctx) {
              gra_relief = COALESCE(?11, gra_relief),
              -- Cleared where the box was emptied, left alone where the form
              -- never asked, set where a figure came.
-             take_home = CASE WHEN ?13 = 1 THEN NULL ELSE COALESCE(?12, take_home) END`,
+             take_home = CASE WHEN ?13 = 1 THEN NULL ELSE COALESCE(?12, take_home) END,
+             take_home_basis = CASE
+               WHEN ?14 = 'clear' THEN NULL
+               WHEN ?14 = 'fixed' THEN 'fixed'
+               WHEN ?14 = 'total' THEN NULL
+               ELSE take_home_basis END`,
     ).bind(staffId, basic, line.ssnit === false ? 0 : 1,
       str(line.note, 'Note', { max: 300 }), actorOf(ctx),
       opening, said ? openingYear : null, netBonus,
-      graPosition, graResidency, graRelief, takeHome, clearTakeHome ? 1 : 0).run();
+      graPosition, graResidency, graRelief, takeHome, clearTakeHome ? 1 : 0, basis).run();
 
     if (Array.isArray(line.allowances)) {
       await ctx.db.prepare('DELETE FROM pay_allowance WHERE staff_id = ?').bind(staffId).run();

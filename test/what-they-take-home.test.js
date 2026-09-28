@@ -11,14 +11,26 @@ import { addAdvance } from '../src/routes/advances.js';
 /**
  * A take-home agreed with somebody, and the allowance worked out from it.
  *
- * What is agreed at this property is what lands in the hand, bonus included:
- * Linda is on 2,480 a month and scores what she scores. The allowance is
- * simply whatever is left to make that figure come out, and it was being
- * worked out on a spreadsheet and typed in by hand every month.
+ * TWO MEANINGS, AND THIS FILE ONCE ASSUMED THERE WAS ONE. It used to say that
+ * what is agreed at this property is what lands in the hand, bonus included:
+ * "Linda is on 2,480 a month and scores what she scores". That was the mistake.
+ * 2,480 was Linda's August — 1,850 fixed and a 630 bonus — and in a month she
+ * scores 589 she takes home 2,439. Built on the first reading, the scores
+ * could not change anybody's pay, and by August sixteen people were being paid
+ * whatever bonus their figure had been typed in with.
+ *
+ * So a take-home says which it is. 'fixed' is the part before the bonus, with
+ * the month's scored bonus on top, which is how most of the property is paid.
+ * The whole amount, bonus included, is still right for a flat rate where the
+ * bonus is a way of arranging the money: the casuals on 600, the managers. The
+ * tests near the top are about the whole amount, because that is what every
+ * figure stored before this change means; the ones at the bottom are the fixed
+ * part.
  */
 
 const TIERS = { tier1: 0.135, tier2: 0.05 };
 const line = (o) => computeLine({
+  takeHomeBasis: o.basis ?? 'total',
   staff: { id: 1, name: o.name ?? 'Ama' },
   basic: o.basic,
   allowances: o.allow ? [{ name: 'Allowance', amount: o.allow, taxable: true }] : [],
@@ -230,7 +242,10 @@ test('a take-home set once is used every month without anybody typing it again',
   }
 });
 
-test('it holds when a score moves, which is the whole point', async () => {
+test('a whole amount holds when a score moves', async () => {
+  // Right for a flat rate, where the bonus is part of how the figure is
+  // arranged. Exactly wrong for a performance bonus, which is what the fixed
+  // take-home at the bottom of this file is for.
   const { db } = setup();
   await setProfiles(ctx(db, {
     body: { rows: [{ staffId: 1, basic: 800, ssnit: true, takeHome: 2480, allowances: [] }] },
@@ -337,4 +352,135 @@ test('the whole August payroll lands on the sheet, with nothing entered but a ta
     const line = data.lines.find((l) => l.staff.name === name);
     assert.equal(line.net, want, `${name} lands on ${want}`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// A fixed take-home, with the month's bonus on top
+// ---------------------------------------------------------------------------
+
+test('a fixed take-home plus the month’s bonus reproduces the property’s own sheet', () => {
+  // Off the August sheet: fixed salary, the month's bonus, the advance, and
+  // what the sheet says they were paid. The sheet carries four decimals and
+  // this pays in pesewas, so a pesewa either way is the sheet's rounding.
+  for (const [name, basic, ssnit, fixed, bonus, loan, sheetNet] of [
+    ['Linda Attipoe', 800, true, 1850, 630, 500, 1980.0045],
+    ['Abdul Hamid Iddrisu', 800, true, 1000, 610, 0, 1609.996625],
+    ['Patience Torto', 800, false, 1000, 230, 0, 1229.9975],
+    ['Douglas Eshun Sekyi', 800, true, 2500, 760, 0, 3260.00075],
+    ['Robert Dotse', 587.8, true, 800, 260, 0, 1060.004825],
+    ['Vivian Ahiadorme', 587.8, true, 900, 630, 1200, 329.999075],
+  ]) {
+    const l = line({
+      name, basic, ssnit, basis: 'fixed', takeHome: fixed, bonus, bonusIsNet: true, loan,
+    });
+    assert.ok(Math.abs(l.net - sheetNet) <= 0.01, `${name}: ${l.net} against the sheet's ${sheetNet}`);
+  }
+});
+
+test('on a fixed take-home the score changes the pay, which is what a score is for', () => {
+  const at = (bonus) => line({ basic: 800, basis: 'fixed', takeHome: 1850, bonus, bonusIsNet: true });
+  assert.equal(at(630).net, 2480, 'a 630 month');
+  assert.equal(at(589).net, 2439, 'a 589 month');
+  assert.equal(at(0).net, 1850, 'a month with nothing scored is the fixed part');
+});
+
+test('the same figures on the whole-amount reading do not move, which was the fault', () => {
+  const at = (bonus) => line({ basic: 800, takeHome: 2439, bonus, bonusIsNet: true });
+  assert.equal(at(630).net, 2439);
+  assert.equal(at(520).net, 2439, 'a lower score, the same pay');
+});
+
+test('the line says which it was, and what the bonus added', () => {
+  const l = line({ basic: 800, basis: 'fixed', takeHome: 1850, bonus: 630, bonusIsNet: true });
+  assert.equal(l.takeHomeBasis, 'fixed');
+  assert.equal(l.takeHome, 1850, 'the fixed part, as agreed');
+  assert.equal(l.bonusOnTop, 630);
+  assert.equal(l.takeHomeTarget, 2480, 'and what that came to this month');
+});
+
+test('money docked off a bonus still costs them on a fixed take-home', () => {
+  // The target is reached on a clean month and the penalty applied after it,
+  // so the allowance cannot grow to cancel what was docked.
+  const clean = line({ basic: 800, basis: 'fixed', takeHome: 1850, bonus: 630, bonusIsNet: true });
+  const docked = line({
+    basic: 800, basis: 'fixed', takeHome: 1850, bonus: 630, bonusIsNet: true, docked: 100,
+  });
+  assert.equal(clean.net, 2480);
+  assert.equal(docked.net, 2380);
+});
+
+test('an advance still comes off after a fixed take-home, not out of it', () => {
+  const l = line({ basic: 800, basis: 'fixed', takeHome: 1850, bonus: 630, bonusIsNet: true, loan: 500 });
+  assert.equal(l.net, 1980);
+});
+
+test('a gross bonus on a fixed take-home lands in full, as the sheet has it', () => {
+  // Joshua is on a gross bonus. His sheet pays him fixed plus the whole of it:
+  // 1,500 and 295.83, and 1,795.82 in his hand. The gross setting then says
+  // only which column carries the tax.
+  const l = line({ basic: 800, ssnit: false, basis: 'fixed', takeHome: 1500, bonus: 295.83, bonusIsNet: false });
+  assert.ok(Math.abs(l.net - 1795.82) <= 0.01, `${l.net}`);
+});
+
+// ---------------------------------------------------------------------------
+// Saying which it is
+// ---------------------------------------------------------------------------
+
+const basisOf = (raw) => raw.prepare('SELECT take_home, take_home_basis FROM pay_profile WHERE staff_id = 1').get();
+
+test('a figure saved as fixed is paid as fixed, month after month', async () => {
+  const { db, raw } = setup();
+  await setProfiles(ctx(db, {
+    body: { rows: [{ staffId: 1, basic: 800, ssnit: true, takeHome: 1850, takeHomeFixed: true, allowances: [] }] },
+  }));
+  assert.equal(basisOf(raw).take_home_basis, 'fixed');
+
+  const scheme = await read(await saveScheme(ctx(db, {
+    body: { name: 'Housekeeping', amount: 630, departments: [], staffIds: [1] },
+  })));
+  await setScores(ctx(db, { body: { month: MONTH, rows: [{ schemeId: scheme.id, staffId: 1, score: 100 }] } }));
+
+  const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
+  assert.equal(data.lines[0].net, 2480);
+  assert.equal(data.lines[0].takeHomeBasis, 'fixed');
+  assert.equal(data.staff[0].takeHomeFixed, true, 'and the screen is told');
+});
+
+test('a figure already stored keeps its meaning when nothing says otherwise', async () => {
+  // Every take-home in the database before this change includes an old bonus.
+  // An upload, or a screen from before this, that does not mention the
+  // meaning must not quietly turn 2,439 into a fixed salary and pay the bonus
+  // twice.
+  const { db, raw } = setup();
+  await setProfiles(ctx(db, {
+    body: { rows: [{ staffId: 1, basic: 800, ssnit: true, takeHome: 2439, allowances: [] }] },
+  }));
+  assert.equal(basisOf(raw).take_home_basis, null, 'the whole amount');
+
+  await setProfiles(ctx(db, {
+    body: { rows: [{ staffId: 1, basic: 800, ssnit: true, takeHome: 2439, allowances: [] }] },
+  }));
+  assert.equal(basisOf(raw).take_home_basis, null, 'still the whole amount');
+});
+
+test('it can be switched back to the whole amount, for a flat rate', async () => {
+  const { db, raw } = setup();
+  await setProfiles(ctx(db, {
+    body: { rows: [{ staffId: 1, basic: 587.8, ssnit: true, takeHome: 549.68, takeHomeFixed: true, allowances: [] }] },
+  }));
+  await setProfiles(ctx(db, {
+    body: { rows: [{ staffId: 1, basic: 587.8, ssnit: true, takeHome: 600, takeHomeFixed: false, allowances: [] }] },
+  }));
+  assert.deepEqual({ ...basisOf(raw) }, { take_home: 600, take_home_basis: null });
+});
+
+test('emptying the figure clears its meaning with it', async () => {
+  const { db, raw } = setup();
+  await setProfiles(ctx(db, {
+    body: { rows: [{ staffId: 1, basic: 800, ssnit: true, takeHome: 1850, takeHomeFixed: true, allowances: [] }] },
+  }));
+  await setProfiles(ctx(db, {
+    body: { rows: [{ staffId: 1, basic: 800, ssnit: true, takeHome: '', takeHomeFixed: true, allowances: [] }] },
+  }));
+  assert.deepEqual({ ...basisOf(raw) }, { take_home: null, take_home_basis: null });
 });

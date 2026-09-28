@@ -577,11 +577,27 @@ function takeHomeNote(data, cash) {
   const over = worked.filter((l) => l.overshoots);
   const one = over.length === 1;
 
+  // Which of them have the month's bonus added on top of a fixed take-home,
+  // and which have it inside a whole amount. Said because the second kind
+  // does not move when a score does, and somebody reading the scores should
+  // know which lines they are changing.
+  const onTop = worked.filter((l) => l.takeHomeBasis === 'fixed').length;
+  const inside = worked.length - onTop;
+  const split = onTop && inside
+    ? `${onTop} have this month\u2019s bonus added on top of a fixed take-home; ${inside} `
+      + `${inside === 1 ? 'has' : 'have'} it inside a whole amount, so their score does not `
+      + 'change what they are paid. '
+    : inside
+      ? `${inside === 1 ? 'That take-home includes' : 'Every one of those take-homes includes'} `
+        + 'the bonus, so the scores do not change what anybody is paid. '
+      : '';
+
   return h('p.muted', { style: { fontSize: '.85rem' } },
     worked.length === 1
       ? 'One allowance is worked out from an agreed take-home rather than entered. '
       : `${worked.length} allowances are worked out from an agreed take-home rather than `
         + 'entered. ',
+    split,
     over.length
       ? h('span',
         over.map((l, at) => h('span', at ? ', ' : '', h('strong', l.staff.name))),
@@ -1795,8 +1811,12 @@ function peopleCard(data, reload, cash) {
               + 'carries the tax and it goes into their allowance.' }, 'net')),
         h('td.num', person.takeHome == null
           ? h('span.muted', { title: 'They are paid what is entered against them.' }, 'as entered')
-          : h('strong', { title: 'The allowance is worked out from this every month.' },
-            cash(person.takeHome)))))))))
+          : person.takeHomeFixed
+            ? h('span', { title: 'Fixed take-home. This month\u2019s scored bonus goes on top.' },
+              h('strong', cash(person.takeHome)), h('small.muted', ' + bonus'))
+            : h('span', { title: 'The whole amount, with the bonus inside it. Their score does '
+                + 'not change what they are paid.' },
+              h('strong', cash(person.takeHome)), h('small.muted', ' incl. bonus')))))))))
     : h('p.muted', 'Nobody yet.'));
 }
 
@@ -1818,6 +1838,11 @@ async function editPeople(data, reload) {
     // take-home of nothing, which is a real if unlikely answer, and it must
     // not be what an empty box means.
     takeHome: s.takeHome == null ? '' : s.takeHome,
+    // What the take-home means. A figure already stored keeps the meaning it
+    // was stored with. A new one is the fixed part, with the month's bonus on
+    // top, because that is how most of the property is paid; the tick is
+    // there for the flat rates where the bonus is part of the whole amount.
+    takeHomeFixed: s.takeHome == null ? true : Boolean(s.takeHomeFixed),
     bonusOpening: s.bonusOpening ?? 0,
     // What the GRA form says about them. Blank means nobody has said, and the
     // form still falls back to their job title and to resident and full time.
@@ -1862,6 +1887,14 @@ async function editPeople(data, reload) {
       'aria-label': `What ${person.name} takes home`,
       onchange: (e) => { mine.takeHome = e.target.value === '' ? '' : Number(e.target.value); },
     });
+    // Whether the month's bonus goes on top of that figure or is already
+    // inside it. The difference is the whole of whether a score changes
+    // somebody's pay, so it is asked beside the figure rather than elsewhere.
+    const plusBonus = h('input', {
+      type: 'checkbox', checked: mine.takeHomeFixed,
+      'aria-label': `${person.name}'s bonus is added on top of their take-home`,
+      onchange: (e) => { mine.takeHomeFixed = e.target.checked; },
+    });
     const allowanceCount = h('span.muted',
       mine.allowances.length ? `${mine.allowances.length}` : 'none');
     // What the return will say about them, so somebody can see at a glance
@@ -1889,6 +1922,7 @@ async function editPeople(data, reload) {
         ssnit.disabled = !e.target.checked;
         netBonus.disabled = !e.target.checked;
         takeHome.disabled = !e.target.checked;
+        plusBonus.disabled = !e.target.checked;
         line.classList.toggle('adv-skipped', !e.target.checked);
       },
     });
@@ -1896,6 +1930,7 @@ async function editPeople(data, reload) {
     ssnit.disabled = !mine.onPayroll;
     netBonus.disabled = !mine.onPayroll;
     takeHome.disabled = !mine.onPayroll;
+    plusBonus.disabled = !mine.onPayroll;
 
     const line = h(`tr${mine.onPayroll ? '' : '.adv-skipped'}`,
       h('td', h('label.tickline', tick, h('span', person.name))),
@@ -1905,7 +1940,8 @@ async function editPeople(data, reload) {
       h('td',
         h('label.tickline', ssnit, h('span', 'SSNIT')),
         h('label.tickline', netBonus, h('span', 'Net bonus'))),
-      h('td.num', takeHome),
+      h('td.num', takeHome, h('label.tickline', { style: { justifyContent: 'flex-end' } },
+        plusBonus, h('span', '+ bonus'))),
       yearly ? h('td.num', opening) : null,
       h('td.num',
         allowanceCount,
@@ -1948,12 +1984,16 @@ async function editPeople(data, reload) {
         + 'carries the tax on top and it shows in their allowance. Untick it for anybody whose '
         + 'bonus figures were worked out gross already, or the tax gets paid twice.'),
       h('p.muted', { style: { fontSize: '.85rem' } },
-        'Takes home is what the person is actually on, bonus included. Give it and the '
-        + 'allowance is worked out from it every month \u2014 whatever they score and '
-        + 'whatever the tax does \u2014 so nobody recalculates it. Leave it empty and they '
-        + 'are paid their basic, their allowances and their scored bonus as entered. It is '
-        + 'measured before any advance they are repaying and before anything docked off '
-        + 'their bonus, so both still cost them what they are meant to.'),
+        'Takes home is what the person is on, and the allowance is worked out from it every '
+        + 'month so nobody recalculates it. With + bonus ticked it is their fixed take-home, '
+        + 'and this month\u2019s scored bonus is added on top: somebody on 1,850 who scores '
+        + '630 takes home 2,480. Untick it for a flat amount where the bonus is part of the '
+        + 'whole figure, like a casual on 600; their score then does not change what they are '
+        + 'paid. Leave the figure empty and they are paid their basic, allowances and scored '
+        + 'bonus as entered.'),
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Either way it is measured before any advance they are repaying and before anything '
+        + 'docked off their bonus, so both still cost them what they are meant to.'),
       h('p.muted', { style: { fontSize: '.85rem' } },
         'GRA return is the grade, the residency and any reliefs the form asks about somebody. '
         + 'Left alone, the form uses their job title and puts them down as resident and full '
@@ -1981,6 +2021,7 @@ async function editPeople(data, reload) {
         ssnit: v.ssnit,
         bonusIsNet: v.bonusIsNet,
         takeHome: v.takeHome,
+        takeHomeFixed: v.takeHomeFixed,
         graPosition: v.graPosition,
         graResidency: v.graResidency,
         graRelief: v.graRelief,

@@ -1,0 +1,24 @@
+-- A take-home that is the fixed part, with the month's bonus added on top.
+--
+-- WHAT WENT WRONG. A take-home was one figure per person with the bonus
+-- already inside it: the allowance was worked out so that net pay landed on
+-- that figure whatever anybody scored. That is right for somebody paid a flat
+-- amount, where the "bonus" is a way of arranging the money rather than a
+-- reward. It is wrong for somebody on a fixed salary plus a performance bonus
+-- that changes every month, which is most of this property. Their stored
+-- figure carried whichever month's bonus it was typed in with, the scores
+-- could not move it, and by August sixteen people were being paid a July
+-- bonus — GHS 618 short across the payroll against the sheet it was checked
+-- against.
+--
+-- SO IT IS SAID PER PERSON. 'fixed' means the take-home is what they are on
+-- before the bonus, and the month's scored bonus is added on top. Empty means
+-- what it always has: the take-home is the whole amount, bonus included. The
+-- casual staff on a flat 600 and the managers whose bonus is part of how the
+-- salary is arranged are right as they are and stay that way.
+--
+-- Nothing is converted here. A stored figure that includes an old bonus cannot
+-- be turned into a fixed salary by arithmetic, because nothing in the database
+-- says which month's bonus is inside it. Every existing figure keeps its
+-- meaning until somebody enters the fixed part and says so.
+ALTER TABLE pay_profile ADD COLUMN take_home_basis TEXT;

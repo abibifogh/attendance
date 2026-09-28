@@ -1787,14 +1787,32 @@ export const GUIDE = [
         + 'month splits: so many by transfer, so many by hand.' },
 
       { sub: 'Paying somebody an agreed take-home' },
-      { p: 'What is usually agreed with somebody is what they take home, bonus included \u2014 '
-        + 'not what their allowance is. Nobody sits down and agrees a transport allowance of '
-        + '1,437.64. So put the take-home in Takes home, under Set pay and allowances, score '
-        + 'them as usual, and the allowance is worked out from there every month.' },
+      { p: 'What is agreed with somebody is what they take home, not what their allowance is. '
+        + 'Nobody sits down and agrees a transport allowance of 1,437.64. So put the take-home '
+        + 'in Takes home, under Set pay and allowances, and the allowance is worked out from '
+        + 'there every month.' },
+      { p: 'There are two kinds of take-home, and the tick beside the figure says which.' },
+      { table: {
+        head: ['', 'What the figure is', 'Who it is for'],
+        rows: [
+          ['+ bonus ticked', 'Their fixed take-home. This month\u2019s scored bonus is added on '
+            + 'top: 1,850 and a 630 bonus is 2,480 this month, 2,439 in a month they score 589.',
+            'Anybody on a salary plus a performance bonus. Most of the property.'],
+          ['+ bonus unticked', 'The whole amount, bonus inside it. The score moves money between '
+            + 'the bonus and the allowance and does not change what they are paid.',
+            'A flat rate where the bonus is a way of arranging the money: casuals on 600, the '
+            + 'managers.'],
+        ],
+      } },
+      { warn: 'Get this the wrong way round and it is wrong every month. A performance bonus '
+        + 'with + bonus unticked pays whatever bonus the figure was typed in with, for ever: '
+        + 'that is how, by August, sixteen people were being paid an earlier month\u2019s bonus. '
+        + 'A new take-home starts ticked for that reason.' },
       { steps: [
         'Enter their basic salary.',
-        'Enter what they take home, bonus and all.',
-        'Score them on their bonus schemes as you always have.',
+        'Enter what they take home, and tick + bonus if their bonus goes on top of it.',
+        'Score them on their bonus schemes. With + bonus ticked, the score is what changes '
+          + 'their pay, so check it before the month closes.',
         'The allowance, the SSNIT and the tax are worked out. Nobody types them.',
       ] },
       { list: [
@@ -1804,6 +1822,9 @@ export const GUIDE = [
         'Somebody whose basic and bonus already carry them past the figure gets no allowance, '
           + 'and no pay cut either. The payroll names them under the table.',
         'An allowance you did agree is left alone. The worked-out one tops it up.',
+        'A figure stored before the tick existed means the whole amount until somebody '
+          + 'enters the fixed part and ticks it. Nothing was converted on its own, because '
+          + 'nothing in the payroll says which month\u2019s bonus is inside an old figure.',
       ] },
       { note: 'Leave Takes home empty and nothing changes for that person: they are paid their '
         + 'basic, whatever allowances are entered against them, and their scored bonus.' },

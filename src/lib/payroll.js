@@ -351,15 +351,43 @@ export function computeLine(given) {
   const wanted = terms.takeHome;
   if (wanted == null || wanted === '') return finish(oneLine({ ...terms, topUp: 0 }));
 
-  const target = round2(wanted);
   const clean = { ...terms, penalties: [], loans: [] };
   const reach = (pence) => oneLine({ ...clean, topUp: pence / 100 }).net;
+
+  // WHAT THE TARGET IS DEPENDS ON WHAT THE TAKE-HOME MEANS.
+  //
+  // 'fixed': the take-home is what they are on before the bonus, and the
+  // month's bonus goes on top. Somebody on 1,850 who scores 630 takes home
+  // 2,480 this month and 2,439 in a month they score 589. This is how most of
+  // the property is paid, and it is the only reading under which the scores
+  // mean anything: with the bonus inside a standing figure, a score moved money
+  // between two columns of a payslip and nobody's pay at all.
+  //
+  // Otherwise the take-home is the whole amount, bonus included, which is right
+  // for a flat rate where the bonus is a way of arranging the money rather than
+  // a reward for anything.
+  //
+  // The bonus added is what they scored, before anything docked off it. The
+  // target is reached on a clean month and the penalty is applied afterwards,
+  // for the same reason the advance is: it is meant to cost them, and a target
+  // read after it would grow the allowance to cancel it out.
+  //
+  // In full, whichever way the bonus figures were agreed. On a fixed take-home
+  // the bonus is added to what they take home, so it lands; the net and gross
+  // setting decides only which column carries the tax. That is what the
+  // property's own sheet does for the one person on a gross bonus.
+  const fixed = terms.takeHomeBasis === 'fixed';
+  const bonusOnTop = fixed ? oneLine({ ...clean, topUp: 0 }).bonus.earned : 0;
+  const target = round2(round2(wanted) + bonusOnTop);
+  const about = fixed
+    ? { takeHome: round2(wanted), takeHomeBasis: 'fixed', bonusOnTop, takeHomeTarget: target }
+    : { takeHome: target, takeHomeBasis: 'total' };
 
   // Their basic and their bonus already carry them past it. They get no
   // allowance, and no money is taken off them to bring them back down: that
   // would be a pay cut arrived at by arithmetic nobody agreed to.
   if (reach(0) >= target) {
-    return finish({ ...oneLine({ ...terms, topUp: 0 }), takeHome: target, workedOut: 0, overshoots: true });
+    return finish({ ...oneLine({ ...terms, topUp: 0 }), ...about, workedOut: 0, overshoots: true });
   }
 
   let low = 0;
@@ -374,7 +402,7 @@ export function computeLine(given) {
   }
 
   const topUp = round2(low / 100);
-  return finish({ ...oneLine({ ...terms, topUp }), takeHome: target, workedOut: topUp, overshoots: false });
+  return finish({ ...oneLine({ ...terms, topUp }), ...about, workedOut: topUp, overshoots: false });
 }
 
 /** What a whole run comes to, for the page that has to sign it off. */

@@ -3639,8 +3639,7 @@ through `asBytes`.
 
 ### What somebody takes home, and the allowance worked out from it
 
-What is agreed with people here is not an allowance, it is a take-home. Linda
-is on 2,480 a month and scores what she scores on her bonus schemes; the
+What is agreed with people here is not an allowance, it is a take-home. The
 allowance is simply whatever is left to make that figure come out once the
 pension and the tax have had their say. Nobody sits down and agrees a transport
 allowance of 1,437.64.
@@ -3657,11 +3656,46 @@ Three things go in and three come out.
 |---|---|
 | Basic salary | The allowance |
 | Bonus scores, as always | SSNIT and PAYE |
-| What they take home, bonus included | What the month costs the property |
+| What they take home, and whether the bonus goes on top | What the month costs the property |
 
 Leave the take-home empty and nothing changes for that person: they are paid
 their basic, whatever allowances are entered against them, and their scored
 bonus. This is an addition, not a change of rule.
+
+#### Two kinds of take-home, and the mistake that made it two
+
+This section used to say "Linda is on 2,480 a month and scores what she scores
+on her bonus schemes". That was wrong, and the payroll was built on it. 2,480
+was Linda's August: 1,850 fixed and a 630 bonus. In a month she scores 589 she
+takes home 2,439. Treated as a standing figure with the bonus inside it, the
+allowance absorbed whatever she scored, so the scores changed what the payslip
+called the money and not a pesewa of what anybody was paid. Every figure
+carried the bonus of whichever month it was typed in, and checked against the
+August sheet sixteen people were being paid an earlier month's bonus: GHS 618
+short across the payroll, and the two whose bonus had fallen overpaid.
+
+So a take-home says which it is, beside the figure, with a **+ bonus** tick.
+
+- **Ticked** — the fixed take-home, with the month's scored bonus added on top.
+  Salary plus a performance bonus, which is most of the property.
+- **Unticked** — the whole amount, bonus inside it, and the score does not move
+  it. Right for a flat rate where the bonus is a way of arranging the money:
+  the casuals on 600, the managers.
+
+Given the August sheet's fixed salaries and August bonuses, this reproduces the
+sheet's net pay for all twenty-five people, GHS 43,033.71 against the sheet's
+43,033.72.
+
+A new take-home starts ticked. Nothing stored before the tick existed was
+converted: an old figure includes an old bonus, and nothing in the database
+says which month's, so it keeps meaning the whole amount until somebody enters
+the fixed part and ticks it. An upload or an older screen that does not mention
+the tick leaves the meaning as it is, so it cannot turn 2,439 into a fixed
+salary and pay the bonus twice.
+
+**With + bonus ticked, the scores are pay.** Before, a wrong score was a
+labelling error; now it is a wrong payslip. Check them before the month
+closes.
 
 **It is searched for rather than calculated, and it has to be.** An extra cedi
 of allowance is taxable, so it yields less than a cedi of take-home, and how
