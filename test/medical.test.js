@@ -404,3 +404,102 @@ test('one person’s claims are never in another person’s answer', async () =>
   assert.equal(hers.claims.length, 0);
   assert.equal(hers.standing.left, 1000);
 });
+
+// ---------------------------------------------------------------------------
+// Several pictures on one bill
+// ---------------------------------------------------------------------------
+
+/** Two different one-pixel images, so the test can tell which came back. */
+const GIF = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const pic = (base64, mime, filename) => ({ base64, mime, filename });
+
+test('a bill takes up to five pictures, and each one comes back as itself', async () => {
+  const { raw, db } = setup();
+  await giveAllowance(db, [{ staffId: 1, qualifies: true, allowance: 1000 }]);
+
+  const sent = await read(await claim(ctx(db, KOFI, {
+    body: {
+      receipts: [{
+        amount: 80,
+        what: 'Pharmacy',
+        spentOn: today,
+        files: [pic(PIXEL, 'image/png', 'receipt.png'), pic(GIF, 'image/gif', 'prescription.gif')],
+      }],
+    },
+  })));
+
+  const mine = await read(await myMedical(ctx(db, KOFI)));
+  const [bill] = mine.claims.find((c) => c.id === sent.id).receipts;
+  assert.equal(mine.maxFiles, 5);
+  assert.equal(bill.hasFile, true);
+  assert.deepEqual(bill.files.map((f) => [f.name, f.mime]),
+    [['receipt.png', 'image/png'], ['prescription.gif', 'image/gif']], 'in the order they were added');
+
+  const first = await receipt(ctx(db, KOFI), bill.id);
+  assert.equal(first.headers.get('Content-Type'), 'image/png', 'no file asked for is the first');
+  const second = await receipt(ctx(db, KOFI, { query: `?file=${bill.files[1].id}` }), bill.id);
+  assert.equal(second.headers.get('Content-Type'), 'image/gif');
+  assert.equal(Buffer.from(await second.arrayBuffer()).toString('base64'), GIF);
+
+  // The first stays where anything older looks for it.
+  const row = raw.prepare('SELECT document_id FROM hr_medical_receipt WHERE id = ?').get(bill.id);
+  const firstFile = raw.prepare('SELECT document_id FROM hr_medical_receipt_file WHERE id = ?').get(bill.files[0].id);
+  assert.equal(row.document_id, firstFile.document_id);
+});
+
+test('a sixth picture on one bill is refused, and nothing is written', async () => {
+  const { raw, db } = setup();
+  await giveAllowance(db, [{ staffId: 1, qualifies: true, allowance: 1000 }]);
+  await assert.rejects(claim(ctx(db, KOFI, {
+    body: { receipts: [{ amount: 80, spentOn: today, files: new Array(6).fill(pic(PIXEL, 'image/png', 'p.png')) }] },
+  })), /Five is the most/);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM hr_medical_claim').get().n, 0);
+});
+
+test('a screen that still sends one picture as `file` still works', async () => {
+  const { db } = setup();
+  await giveAllowance(db, [{ staffId: 1, qualifies: true, allowance: 1000 }]);
+  const sent = await read(await claim(ctx(db, KOFI, {
+    body: { receipts: [{ amount: 40, spentOn: today, file: pic(PIXEL, 'image/png', 'old.png') }] },
+  })));
+  const mine = await read(await myMedical(ctx(db, KOFI)));
+  const [bill] = mine.claims.find((c) => c.id === sent.id).receipts;
+  assert.deepEqual(bill.files.map((f) => f.name), ['old.png']);
+});
+
+test('a picture from somebody else’s bill cannot be fetched through yours', async () => {
+  const { db } = setup();
+  await giveAllowance(db, [
+    { staffId: 1, qualifies: true, allowance: 1000 },
+    { staffId: 2, qualifies: true, allowance: 1000 },
+  ]);
+  const kofi = await read(await claim(ctx(db, KOFI, {
+    body: { receipts: [{ amount: 40, spentOn: today, files: [pic(PIXEL, 'image/png', 'k.png')] }] },
+  })));
+  const ama = await read(await claim(ctx(db, AMA, {
+    body: { receipts: [{ amount: 40, spentOn: today, files: [pic(GIF, 'image/gif', 'a.gif')] }] },
+  })));
+  const kofiBill = (await read(await myMedical(ctx(db, KOFI)))).claims.find((c) => c.id === kofi.id).receipts[0];
+  const amaBill = (await read(await myMedical(ctx(db, AMA)))).claims.find((c) => c.id === ama.id).receipts[0];
+
+  await assert.rejects(receipt(ctx(db, KOFI, { query: `?file=${amaBill.files[0].id}` }), kofiBill.id),
+    /No such picture/);
+});
+
+test('pictures sent before a bill could have several are listed as its first', () => {
+  const raw = new DatabaseSync(':memory:');
+  raw.exec('PRAGMA foreign_keys = ON;');
+  const files = readdirSync('migrations').filter((n) => n.endsWith('.sql')).sort();
+  for (const f of files.filter((n) => n < '0115')) raw.exec(readFileSync(`migrations/${f}`, 'utf8'));
+  raw.exec(`INSERT INTO att_staff (id, employee_no, name, department, hired_on) VALUES (91, '91', 'Esi', 'X', '2020-01-01');
+    INSERT INTO hr_document (id, staff_id, kind, title, filename, mime, bytes, content, parts)
+      VALUES (501, 91, 'medical_receipt', 'Bill', 'old.png', 'image/png', 1, x'00', 1);
+    INSERT INTO hr_medical_claim (id, staff_id, year, amount) VALUES (61, 91, 2026, 50);
+    INSERT INTO hr_medical_receipt (id, claim_id, amount, document_id) VALUES (71, 61, 50, 501);
+    INSERT INTO hr_medical_receipt (id, claim_id, amount, document_id) VALUES (72, 61, 10, NULL);`);
+  for (const f of files.filter((n) => n >= '0115')) raw.exec(readFileSync(`migrations/${f}`, 'utf8'));
+  assert.deepEqual(
+    raw.prepare('SELECT receipt_id, document_id, seq FROM hr_medical_receipt_file').all().map((r) => ({ ...r })),
+    [{ receipt_id: 71, document_id: 501, seq: 0 }],
+  );
+});

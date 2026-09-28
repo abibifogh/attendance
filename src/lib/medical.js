@@ -29,6 +29,16 @@ export const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 /** As many bills as somebody will photograph in one sitting. */
 export const MAX_RECEIPTS = 10;
 
+/**
+ * Pictures on one bill: the receipt, the prescription, a second page. Five
+ * covers what a bill really comes with, and keeps a whole claim to a size a
+ * phone on a hotel's Wi-Fi can send.
+ */
+export const MAX_FILES = 5;
+
+/** The most one picture may weigh once the phone has shrunk it. A PDF is sent as it is. */
+export const MAX_FILE_BYTES = 2_000_000;
+
 export const STATUSES = ['requested', 'approved', 'rejected', 'withdrawn'];
 
 /** The year a claim belongs to, from the day it was spent or asked. */

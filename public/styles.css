@@ -4075,6 +4075,62 @@ html { touch-action: manipulation; }
 .med-sheet-mode { display: grid; gap: .15rem; margin-bottom: .6rem; }
 .med-sheet-foot { font-size: .82rem; margin-top: .6rem; }
 
+/* Making a claim. Each bill a card; its pictures as chips with a thumbnail,
+   so somebody can see they attached the receipt and not their lock screen. */
+.claim-left {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .6rem;
+  padding: .6rem .8rem; margin-bottom: .8rem;
+  border-radius: var(--radius-sm); background: var(--accent-soft);
+}
+.claim-left strong { font-size: 1.15rem; font-variant-numeric: tabular-nums; color: var(--accent); }
+.claim-bills { display: grid; gap: .65rem; }
+.claim-bill {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: .6rem .75rem .7rem;
+  display: grid; gap: .5rem;
+}
+.claim-bill-head { display: flex; align-items: center; justify-content: space-between; min-height: 1.9rem; }
+.claim-bill-head strong { font-size: .9rem; }
+.claim-bill-grid { display: grid; grid-template-columns: 9rem 10rem minmax(0, 1fr); gap: .5rem; }
+.claim-bill-grid .field { margin-bottom: 0; }
+.claim-bill-grid input { width: 100%; }
+.claim-amount input { text-align: right; font-variant-numeric: tabular-nums; }
+.claim-files-row { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+.claim-files { display: contents; }
+.claim-file {
+  display: inline-flex; align-items: center; gap: .4rem; max-width: 15rem;
+  padding: .2rem .25rem .2rem .2rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  font-size: .8rem;
+}
+.claim-file img, .claim-file-pdf {
+  width: 2.1rem; height: 2.1rem; flex: none; border-radius: 6px; object-fit: cover;
+}
+.claim-file-pdf {
+  display: grid; place-items: center; font-size: .65rem; font-weight: 700;
+  background: var(--bad-soft); color: var(--bad);
+}
+.claim-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.claim-file-size { flex: none; font-size: .72rem; }
+.claim-file-off {
+  flex: none; width: 1.6rem; height: 1.6rem; padding: 0; border: 0; border-radius: 999px;
+  background: transparent; color: var(--text-dim); cursor: pointer;
+}
+.claim-file-off:hover { background: var(--border); color: var(--text); }
+.claim-files-add { display: inline-flex; align-items: center; gap: .5rem; }
+.claim-add-file { border-style: dashed; }
+.claim-add-file[hidden], .claim-bill-head [hidden] { display: none; }
+.claim-file-status:empty { display: none; }
+.claim-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-top: .7rem;
+}
+.claim-total { font-weight: 600; font-variant-numeric: tabular-nums; }
+.claim-over {
+  margin-top: .5rem; padding: .45rem .65rem; border-radius: var(--radius-sm);
+  background: var(--warn-soft); color: var(--warn); font-size: .84rem;
+}
+.med-receipt-files { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; }
+
 /* One bill on a claim. */
 .med-lines { display: grid; gap: .5rem; }
 .med-line {
@@ -4094,6 +4150,9 @@ html { touch-action: manipulation; }
   .med-table th:nth-child(n+3), .med-table td:nth-child(n+3) { display: none; }
   .med-line-main { grid-template-columns: 1fr 1fr; }
   .med-line-main input:nth-child(2) { grid-column: 1 / -1; }
+  .claim-bill-grid { grid-template-columns: 1fr 1fr; }
+  .claim-what { grid-column: 1 / -1; }
+  .claim-file { max-width: 100%; }
   .med-set-wrap { max-height: 16rem; }
   .med-amount { width: 5.5rem; }
   .pay-set-wrap { max-height: 58vh; }

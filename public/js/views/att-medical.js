@@ -132,11 +132,12 @@ function receiptList(claim, cash) {
       r.what ? h('span.muted', ` · ${r.what}`) : null,
       r.spentOn ? h('span.muted', ` · ${fmtDay(r.spentOn)}`) : null),
     r.hasFile
-      ? fileLink({
-        href: api.medicalReceiptUrl(r.id),
-        name: `Receipt \u2014 ${r.staffName ?? 'claim'}`,
+      ? h('div.med-receipt-files', (r.files?.length ? r.files : [{ id: null }]).map((f, i, all) => fileLink({
+        href: api.medicalReceiptUrl(r.id, f.id),
+        name: `Receipt \u2014 ${r.staffName ?? 'claim'}${all.length > 1 ? ` (${i + 1} of ${all.length})` : ''}`,
+        label: all.length > 1 ? `Picture ${i + 1}` : 'See the bill',
         className: 'btn-sm',
-      }, 'See the bill')
+      })))
       // Said rather than left blank. A bill with no picture is a decision
       // somebody made, and whoever is approving should know they are taking
       // it on trust.

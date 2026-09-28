@@ -298,10 +298,13 @@ export const GUIDE = [
       { sub: 'My claims' },
       { p: 'If the property gives you a medical allowance, My claims shows how much of this '
         + 'year’s is left and what happened to everything you have sent in.' },
-      { p: 'Make a claim takes the bills one at a time: how much, what it was for, when, and a '
-        + 'photograph taken on the phone in your hand. The pictures are made smaller before '
-        + 'they are sent, so a camera photograph is fine. Ten bills at most on one claim — send '
-        + 'the rest as a second one.' },
+      { p: 'Make a claim takes the bills one at a time: how much, what it was for, when, and '
+        + 'its pictures. Each bill takes up to five photos or PDFs, so the receipt, the '
+        + 'prescription and a second page can all go on the same bill. Photos are made smaller '
+        + 'before they are sent, so a camera photograph is fine. Ten bills at most on one claim; '
+        + 'send the rest as a second one.' },
+      { p: 'Your balance for the year is at the top of the form. Going over it is allowed, and '
+        + 'the form says by how much. The office decides.' },
       { note: 'Nothing comes off your allowance until somebody approves it, and a claim can be '
         + 'approved for less than you asked if part of it is not covered. Either way you are '
         + 'told, with the reason. While it is still waiting you can take it back.' },
@@ -1462,7 +1465,8 @@ export const GUIDE = [
 
       { sub: 'Deciding a claim' },
       { p: 'A claim arrives with its bills — up to ten of them, each with an amount, what it '
-        + 'was for and usually a photograph you can open. The person’s remaining balance is '
+        + 'was for and usually its pictures, up to five a bill, each one a button to open. The '
+        + 'person’s remaining balance is '
         + 'shown beside it, because a claim on its own is a number to say yes to and a claim '
         + 'beside a balance is a decision.' },
       { list: [

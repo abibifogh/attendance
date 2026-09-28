@@ -2,7 +2,7 @@ import { badRequest, forbidden, int, json, notFound, num, readJson, str } from '
 import { createNotice } from '../lib/notices.js';
 import { readFile, storeFile } from './people.js';
 import {
-  MAX_RECEIPTS, checkAgainst, claimTotal, round2, standingOf, yearOf,
+  MAX_FILES, MAX_FILE_BYTES, MAX_RECEIPTS, checkAgainst, claimTotal, round2, standingOf, yearOf,
 } from '../lib/medical.js';
 import { MONTHS, matchStaff, readMedicalSheet } from '../lib/medical-sheet.js';
 import { isDay, todayIn } from '../util/dates.js';
@@ -64,7 +64,21 @@ async function claimsFor(db, { year, staffId = null }) {
          LEFT JOIN hr_document d ON d.id = r.document_id
         WHERE r.claim_id IN (${ids.map(() => '?').join(',')}) ORDER BY r.id`,
     ).bind(...ids).all();
-    for (const receipt of receipts.results ?? []) byClaim.get(receipt.claim_id)?.push(receipt);
+    const files = await db.prepare(
+      `SELECT f.id, f.receipt_id, d.mime, d.bytes, d.filename FROM hr_medical_receipt_file f
+         JOIN hr_medical_receipt r ON r.id = f.receipt_id
+         JOIN hr_document d ON d.id = f.document_id
+        WHERE r.claim_id IN (${ids.map(() => '?').join(',')}) ORDER BY f.receipt_id, f.seq, f.id`,
+    ).bind(...ids).all().catch(() => ({ results: [] }));
+    const filesBy = new Map();
+    for (const f of files.results ?? []) {
+      if (!filesBy.has(f.receipt_id)) filesBy.set(f.receipt_id, []);
+      filesBy.get(f.receipt_id).push(f);
+    }
+    for (const receipt of receipts.results ?? []) {
+      receipt.files = filesBy.get(receipt.id) ?? [];
+      byClaim.get(receipt.claim_id)?.push(receipt);
+    }
   }
 
   return { claims: rows, byClaim };
@@ -89,9 +103,14 @@ const shapeClaim = (claim, receipts) => ({
     spentOn: r.spent_on,
     // The picture is fetched separately, so a list of claims is not a list of
     // photographs nobody asked to download.
-    hasFile: Boolean(r.document_id),
+    hasFile: Boolean(r.document_id) || (r.files ?? []).length > 0,
     mime: r.mime ?? null,
     bytes: r.bytes ?? null,
+    // Every picture on the bill. A bill from before there could be several
+    // has its one picture listed here too, copied across when the table came.
+    files: (r.files ?? []).map((f) => ({
+      id: f.id, mime: f.mime ?? null, bytes: f.bytes ?? null, name: f.filename ?? null,
+    })),
   })),
 });
 
@@ -495,7 +514,19 @@ export async function receipt(ctx, idParam) {
        FROM hr_medical_receipt r JOIN hr_medical_claim c ON c.id = r.claim_id
       WHERE r.id = ?`,
   ).bind(id).first();
-  if (!row?.document_id) throw notFound('No such receipt.');
+  if (!row) throw notFound('No such receipt.');
+
+  // One of several pictures on the bill, by its id. Looked up against this
+  // bill, so a file id from somebody else's claim finds nothing here.
+  const fileId = Number(ctx.url?.searchParams.get('file')) || 0;
+  if (fileId) {
+    const picked = await ctx.db.prepare(
+      'SELECT document_id FROM hr_medical_receipt_file WHERE id = ?1 AND receipt_id = ?2',
+    ).bind(fileId, id).first();
+    if (!picked) throw notFound('No such picture on that bill.');
+    row.document_id = picked.document_id;
+  }
+  if (!row.document_id) throw notFound('No such receipt.');
 
   const mine = Number(ctx.session.user.staff_id) || 0;
   const canSeeEverybody = (ctx.session.permissions ?? []).includes('hr_pay');
@@ -548,6 +579,7 @@ export async function myMedical(ctx) {
     year,
     currency,
     maxReceipts: MAX_RECEIPTS,
+    maxFiles: MAX_FILES,
     standing: standingOf(allowance, claims),
     claims: claims.map((c) => shapeClaim(c, byClaim.get(c.id) ?? [])),
     years: (years.results ?? []).map((r) => r.year),
@@ -585,11 +617,28 @@ export async function claim(ctx) {
     const amount = round2(num(r.amount, `Bill ${i + 1}`, { required: true, min: 0.01, max: 1_000_000 }));
     const spentOn = isDay(r.spentOn) ? String(r.spentOn) : today;
     if (spentOn > today) throw badRequest(`Bill ${i + 1} is dated in the future.`);
+    // `files` for up to five; `file` from a screen that only ever sent one.
+    const files = (Array.isArray(r.files) ? r.files : r.file ? [r.file] : [])
+      .filter((f) => f && f.base64);
+    if (files.length > MAX_FILES) {
+      throw badRequest(`Bill ${i + 1} has ${files.length} pictures. Five is the most on one bill.`);
+    }
     return {
       amount,
       spentOn,
       what: str(r.what, `What bill ${i + 1} was for`, { max: 200 }),
-      file: r.file ?? null,
+      files: files.map((f, n) => {
+        const bytes = fromBase64(f.base64);
+        if (bytes.length > MAX_FILE_BYTES) {
+          throw badRequest(`Picture ${n + 1} on bill ${i + 1} is too large. Photograph it instead, `
+            + 'and it will be made smaller before it is sent.');
+        }
+        return {
+          bytes,
+          filename: str(f.filename, 'File name', { max: 120 }) || 'receipt',
+          mime: str(f.mime, 'File type', { max: 80 }) || 'image/jpeg',
+        };
+      }),
     };
   });
 
@@ -612,23 +661,29 @@ export async function claim(ctx) {
   ).bind(staffId, year, total, str(body.what, 'What it is for', { max: 300 })).first();
 
   for (const line of cleaned) {
-    let documentId = null;
-    if (line.file?.base64) {
-      documentId = await storeFile(ctx, staffId, {
+    const documents = [];
+    for (const file of line.files) {
+      documents.push(await storeFile(ctx, staffId, {
         kind: 'medical_receipt',
         title: line.what || `Medical bill ${line.spentOn}`,
-        filename: str(line.file.filename, 'File name', { max: 120 }) || 'receipt',
-        mime: str(line.file.mime, 'File type', { max: 80 }) || 'image/jpeg',
-        bytes: fromBase64(line.file.base64),
+        filename: file.filename,
+        mime: file.mime,
+        bytes: file.bytes,
         expiresOn: null,
         by: `${staff.name} (staff)`,
-      });
+      }));
     }
 
-    await ctx.db.prepare(
+    const receipt = await ctx.db.prepare(
       `INSERT INTO hr_medical_receipt (claim_id, what, amount, spent_on, document_id)
-       VALUES (?1, ?2, ?3, ?4, ?5)`,
-    ).bind(created.id, line.what, line.amount, line.spentOn, documentId).run();
+       VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id`,
+    ).bind(created.id, line.what, line.amount, line.spentOn, documents[0] ?? null).first();
+
+    for (let seq = 0; seq < documents.length; seq += 1) {
+      await ctx.db.prepare(
+        'INSERT INTO hr_medical_receipt_file (receipt_id, document_id, seq) VALUES (?1, ?2, ?3)',
+      ).bind(receipt.id, documents[seq], seq).run();
+    }
   }
 
   await audit(ctx, 'medical.claim', created.id, { year, total, bills: cleaned.length });

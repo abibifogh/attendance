@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { fileLink } from '../file-view.js';
 import { confirmAction, fmtDay, h, money, mount, toast, todayISO } from '../util.js';
 import { card, emptyState } from './components.js';
-import { field, formDialog } from './att-shared.js';
+import { formDialog } from './att-shared.js';
 
 /**
  * My medical claims.
@@ -12,7 +12,7 @@ import { field, formDialog } from './att-shared.js';
  * everything else is the working behind them.
  *
  * THE BILLS ARE THE CLAIM. Adding one is an amount, what it was for, and a
- * photograph — taken on the phone that is already in their hand, shrunk before
+ * photograph or several — taken on the phone that is already in their hand, shrunk before
  * it is sent, because a claim that has to be emailed to somebody is a claim
  * that gets made three weeks late. Ten bills is the ceiling; the form says so
  * before somebody hits it rather than after.
@@ -142,12 +142,12 @@ function claimBlock(claim, { cash, reload }) {
         r.what ? h('span.muted', ` · ${r.what}`) : null,
         r.spentOn ? h('span.muted', ` · ${fmtDay(r.spentOn)}`) : null),
       r.hasFile
-        ? fileLink({
-          href: api.medicalReceiptUrl(r.id),
-          name: 'Your receipt',
-          label: 'See it',
+        ? h('div.med-receipt-files', (r.files?.length ? r.files : [{ id: null }]).map((f, i, all) => fileLink({
+          href: api.medicalReceiptUrl(r.id, f.id),
+          name: all.length > 1 ? `Your receipt (${i + 1} of ${all.length})` : 'Your receipt',
+          label: all.length > 1 ? `Picture ${i + 1}` : 'See it',
           className: 'btn-sm',
-        })
+        })))
         : h('span.muted', 'no picture')))));
 }
 
@@ -158,71 +158,132 @@ function claimBlock(claim, { cash, reload }) {
 /**
  * A claim, bill by bill.
  *
- * Rows are added one at a time and the total adds itself up as they go, so
- * nobody is asked to type a figure that the app could work out and then
- * disagree with. Each picture is shrunk here on the phone before it is sent:
- * a four-megabyte camera photograph of a pharmacy receipt is legible at a
- * fraction of that, and refusing the upload would send the whole thing back to
- * a paper tray.
+ * Each bill is a small card: how much, when, what for, and its pictures, up
+ * to five, because a bill often comes with a prescription or a second page.
+ * The total adds itself up as bills go on, so nobody is asked to type a
+ * figure the app could work out and then disagree with. Each picture is
+ * shrunk here on the phone before it is sent: a four-megabyte camera
+ * photograph of a pharmacy receipt is legible at a fraction of that, and
+ * refusing the upload would send the whole thing back to a paper tray.
  */
 async function makeClaim(data, reload, cash) {
+  const FILES = data.maxFiles ?? 5;
   const rows = [];
-  const list = h('div.med-lines');
-  const total = h('div.med-total');
-  const addBtn = h('button.btn-sm', { type: 'button' }, 'Add another bill');
+  const list = h('div.claim-bills');
+  const total = h('div.claim-total');
+  const overNote = h('div.claim-over', { hidden: true });
+  const addBtn = h('button.btn-sm', { type: 'button' }, '+ Add another bill');
+  const left = data.standing ? data.standing.left : null;
 
   const retotal = () => {
     const sum = rows.reduce((n, r) => n + (Number(r.amount.value) || 0), 0);
     total.textContent = `${rows.length} bill${rows.length === 1 ? '' : 's'} · ${cash(sum)}`;
     addBtn.disabled = rows.length >= MAX;
-    addBtn.textContent = rows.length >= MAX ? 'Ten bills is the most on one claim' : 'Add another bill';
+    addBtn.textContent = rows.length >= MAX ? 'Ten bills is the most on one claim' : '+ Add another bill';
+    // Said, not stopped. The office may still cover a bill past the
+    // allowance, so going over is allowed and simply made plain.
+    overNote.hidden = !(left != null && sum > left);
+    if (left != null && sum > left) {
+      overNote.textContent = `That is ${cash(sum - left)} more than you have left. You can still `
+        + 'send it; the office decides.';
+    }
+    rows.forEach((r, i) => {
+      r.title.textContent = `Bill ${i + 1}`;
+      r.remove.hidden = rows.length === 1;
+    });
   };
 
   const addRow = () => {
     if (rows.length >= MAX) return;
 
     const amount = h('input', {
-      type: 'number', step: '0.01', min: '0.01', required: true,
-      'aria-label': 'How much', placeholder: '0.00', oninput: retotal,
+      type: 'number', step: '0.01', min: '0.01', required: true, inputmode: 'decimal',
+      placeholder: '0.00', oninput: retotal,
     });
-    const what = h('input', { type: 'text', maxlength: 200, placeholder: 'Pharmacy, consultation…', 'aria-label': 'What for' });
-    const spentOn = h('input', { type: 'date', value: todayISO(), max: todayISO(), 'aria-label': 'When' });
-    const status = h('small.muted');
-    const picker = h('input', { type: 'file', accept: 'image/*,application/pdf', style: { display: 'none' } });
-
-    const row = { amount, what, spentOn, file: null };
-
-    const pick = h('button.btn-sm', { type: 'button', onclick: () => picker.click() }, 'Photograph the bill');
-    picker.addEventListener('change', async () => {
-      const file = picker.files?.[0];
-      if (!file) return;
-      status.textContent = 'Making it smaller…';
-      try {
-        row.file = await shrink(file);
-        status.textContent = `${file.name.slice(0, 28)} · ${Math.round(row.file.bytes / 1024)} KB`;
-        pick.textContent = 'Use a different picture';
-      } catch (err) {
-        row.file = null;
-        status.textContent = err.message;
-      }
+    const spentOn = h('input', { type: 'date', value: todayISO(), max: todayISO() });
+    const what = h('input', { type: 'text', maxlength: 200, placeholder: 'Pharmacy, consultation, lab test…' });
+    const title = h('strong');
+    const chips = h('div.claim-files');
+    const count = h('small.muted');
+    const status = h('small.muted.claim-file-status');
+    const picker = h('input', {
+      type: 'file', accept: 'image/*,application/pdf', multiple: true, style: { display: 'none' },
     });
+    const pick = h('button.btn-sm.claim-add-file', { type: 'button', onclick: () => picker.click() },
+      '+ Add photos or PDF');
 
-    const line = h('div.med-line',
-      h('div.med-line-main', amount, what, spentOn),
-      h('div.med-line-file', pick, picker, status,
-        h('button.btn-ghost.btn-sm', {
+    const row = { amount, what, spentOn, files: [], title, remove: null };
+
+    const repaint = () => {
+      mount(chips, row.files.map((f) => h('div.claim-file', { title: f.filename },
+        f.preview
+          ? h('img', { src: f.preview, alt: '' })
+          : h('span.claim-file-pdf', 'PDF'),
+        h('span.claim-file-name', f.filename),
+        h('span.muted.claim-file-size', `${Math.max(1, Math.round(f.bytes / 1024))} KB`),
+        h('button.claim-file-off', {
           type: 'button',
-          'aria-label': 'Take this bill off',
+          'aria-label': `Take ${f.filename} off`,
           onclick: () => {
-            const at = rows.indexOf(row);
-            if (at >= 0) rows.splice(at, 1);
-            line.remove();
-            retotal();
+            row.files.splice(row.files.indexOf(f), 1);
+            if (f.preview) URL.revokeObjectURL(f.preview);
+            repaint();
           },
-        }, '✕')));
+        }, '✕'))));
+      count.textContent = row.files.length ? `${row.files.length} of ${FILES}` : `Up to ${FILES}`;
+      pick.disabled = row.files.length >= FILES;
+      pick.hidden = row.files.length >= FILES;
+    };
+
+    picker.addEventListener('change', async () => {
+      const chosen = [...(picker.files ?? [])];
+      picker.value = '';
+      if (!chosen.length) return;
+      const room = FILES - row.files.length;
+      const taking = chosen.slice(0, room);
+      const problems = [];
+      if (chosen.length > room) {
+        const over = chosen.length - room;
+        problems.push(`Only ${FILES} fit on one bill, so ${over} ${over === 1 ? 'was' : 'were'} left off.`);
+      }
+      status.textContent = taking.length === 1 ? 'Making it smaller…' : `Making ${taking.length} pictures smaller…`;
+      for (const file of taking) {
+        try {
+          const small = await shrink(file);
+          small.preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+          row.files.push(small);
+        } catch (err) {
+          problems.push(`${file.name}: ${err.message}`);
+        }
+      }
+      status.textContent = problems.join(' ');
+      repaint();
+    });
+
+    row.remove = h('button.btn-ghost.btn-sm', {
+      type: 'button',
+      'aria-label': 'Take this bill off',
+      onclick: () => {
+        const at = rows.indexOf(row);
+        if (at >= 0) rows.splice(at, 1);
+        for (const f of row.files) if (f.preview) URL.revokeObjectURL(f.preview);
+        billCard.remove();
+        retotal();
+      },
+    }, '✕');
+
+    const billCard = h('div.claim-bill',
+      h('div.claim-bill-head', title, row.remove),
+      h('div.claim-bill-grid',
+        h('label.field.claim-amount', h('span', `Amount (${data.currency})`), amount),
+        h('label.field', h('span', 'Date on the bill'), spentOn),
+        h('label.field.claim-what', h('span', 'What for'), what)),
+      h('div.claim-files-row', chips, h('div.claim-files-add', pick, count), picker),
+      status);
 
     rows.push(row);
-    list.append(line);
+    list.append(billCard);
+    repaint();
     retotal();
     amount.focus();
   };
@@ -233,20 +294,24 @@ async function makeClaim(data, reload, cash) {
   const done = await formDialog({
     title: 'Claim for medical bills',
     submitLabel: 'Send the claim',
+    help: h('div',
+      h('p', 'A claim is a request. Somebody in the office decides, and you are told either way.'),
+      h('p', `Put each bill on separately, up to ten on one claim. Each bill takes up to ${FILES} `
+        + 'photos or PDFs: the receipt, the prescription, a second page. Photos are made smaller '
+        + 'on your phone before they are sent.'),
+      h('p', { style: { marginBottom: 0 } }, 'A bill with no picture can still be sent, but whoever '
+        + 'decides is taking it on trust, so bring the paper one to the office.')),
     body: h('div',
-      h('p.muted', { style: { fontSize: '.85rem' } },
-        data.standing
-          ? `${cash(data.standing.left)} is left of your allowance this year. A claim is a `
-            + 'request — somebody decides, and you are told either way.'
-          : 'A claim is a request. Somebody decides, and you are told either way.'),
-      field('What the claim is about', h('input', {
-        type: 'text', name: 'what', maxlength: 300, placeholder: 'Optional',
-      })),
+      left != null
+        ? h('div.claim-left',
+          h('span.muted', `Left for ${data.year}`),
+          h('strong', cash(left)))
+        : null,
+      h('label.field', h('span', 'What is the claim about?'),
+        h('input', { type: 'text', name: 'what', maxlength: 300, placeholder: 'Optional, e.g. malaria treatment' })),
       list,
-      h('div.med-line-foot', addBtn, total),
-      h('p.muted', { style: { fontSize: '.8rem', marginBottom: 0 } },
-        'Ten bills at most on one claim. A bill with no picture can still be sent, but whoever '
-        + 'decides is taking it on trust — bring the paper one to the office.')),
+      h('div.claim-foot', addBtn, total),
+      overNote),
     onSubmit: async (form) => {
       const receipts = rows
         .filter((r) => Number(r.amount.value) > 0)
@@ -254,11 +319,9 @@ async function makeClaim(data, reload, cash) {
           amount: Number(r.amount.value),
           what: r.what.value,
           spentOn: r.spentOn.value,
-          file: r.file
-            ? { base64: r.file.base64, mime: r.file.mime, filename: r.file.filename }
-            : null,
+          files: r.files.map((f) => ({ base64: f.base64, mime: f.mime, filename: f.filename })),
         }));
-      if (!receipts.length) throw new Error('Put at least one bill on the claim.');
+      if (!receipts.length) throw new Error('Put an amount on at least one bill.');
       return api.myMedicalClaim({ what: form.get('what'), receipts });
     },
   });
