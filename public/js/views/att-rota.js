@@ -871,6 +871,21 @@ export async function renderAttRota(params) {
       `${waiting ? '⏳ ' : ''}${avail.status === 'preferred' ? '★ asked to work' : '✕ cannot work'}`
       + availWindow));
     }
+    // Leave asked for and not answered yet, said the way a day somebody cannot
+    // work is said. Once it is approved the whole cell turns into the leave;
+    // until then it is a question, and the week should not be built over it
+    // without somebody noticing.
+    const asked = entry.leaveAsked;
+    if (asked) {
+      const span = asked.from === asked.to
+        ? fmtDayShort(asked.from)
+        : `${fmtDayShort(asked.from)} to ${fmtDayShort(asked.to)}`;
+      parts.push(h('small.rota-avail.rota-avail-waiting.rota-avail-leave', {
+        title: `Asked for ${asked.label.toLowerCase()}, ${span}`
+          + `${asked.days ? ` (${asked.days} day${asked.days === 1 ? '' : 's'})` : ''}`
+          + `${asked.note ? `: ${asked.note}` : ''}. Waiting on an answer under Leave.`,
+      }, `⏳ ${asked.label} asked`));
+    }
     // Room under the shift for a second one. Empty until somebody goes looking
     // for it: a plus on every cell of a grid of a hundred and sixty-eight is a
     // hundred and sixty-eight invitations nobody asked for, and a second shift
@@ -1600,7 +1615,9 @@ export async function renderAttRota(params) {
         ? `on ${leaveName(entry.leave).toLowerCase()}`
         : entry.availability?.status === 'unavailable'
           ? `cannot work${entry.availability.from ? ` ${entry.availability.from}–${entry.availability.to}` : ''}`
-          : null,
+          : entry.leaveAsked
+            ? `asked for ${entry.leaveAsked.label.toLowerCase()}`
+            : null,
       busy: entry.shift_id != null
         ? shiftById.get(String(entry.shift_id))?.name ?? 'another shift'
         : null,

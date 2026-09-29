@@ -2073,6 +2073,22 @@ function leaveOnTheGrid(ds, staffId, day) {
   };
 }
 
+/** A leave request covering the day that nobody has decided yet, as the grid shows it. */
+function leaveAskedFor(ds, staffId, day) {
+  const request = (ds.requestsByStaff.get(staffId) ?? [])
+    .find((r) => r.status === 'pending' && r.from_day <= day && r.to_day >= day);
+  if (!request) return null;
+  const reason = ds.reasonBy.get(request.reason_code);
+  return {
+    id: request.id,
+    label: reason?.label ?? 'Leave',
+    from: request.from_day,
+    to: request.to_day,
+    days: Number(request.days) || null,
+    note: request.reason ?? null,
+  };
+}
+
 export async function getRoster(ctx) {
   const timezone = await timezoneOf(ctx.db);
   const from = startOfWeek(readDay(ctx.url.searchParams.get('from'), todayIn(timezone)));
@@ -2297,6 +2313,12 @@ export async function getRoster(ctx) {
           // a rostered cell it is the reason they are on it.
           missedMeal: missedMeal.get(`${staff.id}|${day}`) ?? null,
           leave: leaveOnTheGrid(ds, staff.id, day),
+          // Leave asked for and not answered yet. Shown to whoever plans the
+          // rota the way a day somebody says they cannot work is, so the week
+          // is not built over a request that is sitting in the Leave screen.
+          // A reader sees leave once it is approved, and not before: what
+          // somebody has asked for is between them and whoever decides.
+          leaveAsked: reader ? null : leaveAskedFor(ds, staff.id, day),
           holiday: ds.holidayBy.get(day)?.name ?? null,
         };
       }),
