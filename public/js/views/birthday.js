@@ -83,7 +83,8 @@ const firstName = (person) => (person.preferred || person.name).split(/\s+/)[0];
 
 /** The wording off the setup screen, with the two placeholders filled in. */
 function fillFor(text, person, property) {
-  const fallback = `Everybody at ${property || 'work'} hopes you have a lovely day.`;
+  const fallback = 'May your day be as remarkable and bright as you are. Cheers to another great '
+    + `year ahead, from all of us here at ${property || 'work'}.`;
   return String(text || fallback)
     .replace(/\{name\}/g, firstName(person))
     .replace(/\{property\}/g, property || 'work')
@@ -266,8 +267,7 @@ function paint(canvas, { name, line, property }) {
   ctx.fillText(String(name), size / 2, size * 0.50);
 
   ctx.globalAlpha = 0.88;
-  ctx.font = '400 40px system-ui, -apple-system, Segoe UI, sans-serif';
-  wrapped(ctx, String(line || ''), size / 2, size * 0.65, size * 0.76, 54);
+  message(ctx, String(line || ''), size / 2, size * 0.65, size * 0.76, size * 0.84);
 
   if (property) {
     ctx.globalAlpha = 0.6;
@@ -286,12 +286,35 @@ function fitted(ctx, text, maxWidth, startPx, template) {
   } while (ctx.measureText(text).width > maxWidth && px > 40);
 }
 
-/** Two or three lines of a message, centred, never wider than the card. */
-function wrapped(ctx, text, x, y, maxWidth, lineHeight) {
+/**
+ * The message, centred, never wider than the card and never cut short.
+ *
+ * It used to stop at three lines, and a message of four lost its last line,
+ * which is where "from all of us here at" says who it is from. So the type
+ * steps down until the whole message fits above the name at the foot, and
+ * only a message too long for any legible size is shortened, with an ellipsis
+ * saying so.
+ */
+function message(ctx, text, x, top, maxWidth, bottom) {
+  for (let px = 40; px >= 28; px -= 2) {
+    ctx.font = `400 ${px}px system-ui, -apple-system, Segoe UI, sans-serif`;
+    const lineHeight = Math.round(px * 1.35);
+    const lines = linesOf(ctx, text, maxWidth);
+    if (top + (lines.length - 1) * lineHeight <= bottom || px === 28) {
+      const room = Math.max(1, Math.floor((bottom - top) / lineHeight) + 1);
+      const shown = lines.length > room
+        ? [...lines.slice(0, room - 1), `${lines[room - 1]}\u2026`]
+        : lines;
+      shown.forEach((row, i) => ctx.fillText(row, x, top + i * lineHeight));
+      return;
+    }
+  }
+}
+
+function linesOf(ctx, text, maxWidth) {
   const words = text.split(/\s+/).filter(Boolean);
   const lines = [];
   let current = '';
-
   for (const word of words) {
     const next = current ? `${current} ${word}` : word;
     if (ctx.measureText(next).width > maxWidth && current) {
@@ -302,8 +325,7 @@ function wrapped(ctx, text, x, y, maxWidth, lineHeight) {
     }
   }
   if (current) lines.push(current);
-
-  lines.slice(0, 3).forEach((row, i) => ctx.fillText(row, x, y + i * lineHeight));
+  return lines;
 }
 
 /** A stable number from a name, so the same person gets the same card. */

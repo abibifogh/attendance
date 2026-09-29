@@ -110,7 +110,8 @@ export function daysUntil(monthDayText, from) {
 /** The wording as it ships, before anybody has edited it. */
 export const WORDING = {
   title: 'Happy birthday, {name}',
-  line: 'Everybody at {property} hopes you have a lovely day.',
+  line: 'May your day be as remarkable and bright as you are. Cheers to another great year '
+    + 'ahead, from all of us here at {property}.',
   prompt: 'They have been told. What they will remember is somebody saying it out loud, '
     + 'and there is a card ready to send on the Today screen.',
 };
