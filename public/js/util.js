@@ -280,7 +280,9 @@ export function toast(message, kind = '') {
         try { host.hidePopover?.(); } catch { /* nothing open to hide */ }
       }
     }, 250);
-  }, kind === 'bad' ? 5000 : 2600);
+    // Long enough to read: a sentence of advice gone in two and a half seconds
+    // is a message nobody got.
+  }, kind === 'bad' ? 5000 : (String(message).length > 90 ? 6000 : 2600));
 }
 
 export function confirmAction(message) {

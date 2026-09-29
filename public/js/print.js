@@ -1,6 +1,6 @@
 import { state } from './app.js';
 import { BRAND, brandMark } from './brand.js';
-import { h } from './util.js';
+import { h, toast } from './util.js';
 
 /**
  * Turning a report into a PDF.
@@ -34,8 +34,8 @@ export function printReport({ title, subtitle, note, footer, onePage = false }) 
   const header = h('div.print-header',
     h('div.print-brand',
       brandMark('1.05em'),
-      h('strong', state.settings.property_name || BRAND.name),
-      state.settings.property_name
+      h('strong', state.settings?.property_name || BRAND.name),
+      state.settings?.property_name
         ? h('span', { style: { color: '#6b7280', fontWeight: 400 } }, ` · ${BRAND.name}`)
         : null,
     ),
@@ -80,8 +80,40 @@ export function printReport({ title, subtitle, note, footer, onePage = false }) 
   window.addEventListener('afterprint', after);
   setTimeout(() => { if (cleanup) cleanup(); }, 60_000);
 
-  // Give the browser a frame to lay the header out before the dialog opens.
-  requestAnimationFrame(() => window.print());
+  // Called now, inside the tap, and not a frame later. Safari on a phone only
+  // opens the print sheet for a call it can trace to somebody's tap, and a
+  // requestAnimationFrame in between is enough to lose that: the button did
+  // nothing at all. The header needs no frame to be laid out, because asking
+  // for the print lays the page out first.
+  let opened = false;
+  const open = () => { opened = true; };
+  window.addEventListener('beforeprint', open, { once: true });
+  try {
+    window.print();
+  } catch {
+    // Nothing: the note below covers a browser that refused.
+  }
+
+  // A phone that will not print from here says so, rather than leaving a
+  // button that seems to do nothing. The app added to a home screen is the
+  // usual one: some phones have no print sheet in that window at all.
+  setTimeout(() => {
+    window.removeEventListener('beforeprint', open);
+    // The page is left as it is: a phone that opened its sheet without saying
+    // so is still printing it, and the header must be there when it does.
+    if (opened || document.visibilityState !== 'visible') return;
+    toast(installed()
+      ? 'No print sheet? Some phones will not print from the home-screen app. Open HIVE in '
+        + 'Safari or Chrome and press Save as PDF there.'
+      : 'No print sheet? Use your browser\u2019s own menu: Share, then Print, and choose Save '
+        + 'as PDF.', 'warn');
+  }, 1500);
+}
+
+/** Running as an app added to the home screen rather than in the browser. */
+function installed() {
+  return window.matchMedia?.('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
 }
 
 /** The button every report screen carries. */

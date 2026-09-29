@@ -969,7 +969,7 @@ export function noteFor(record, { shift = null, streak = 0, weekCount = 0, reaso
       }
       return `You clocked in at ${record.first_in} but there is no clock-out.${lateBit} `
         + 'The day is being held until your supervisor confirms what time you left. '
-        + 'Always clock out — it is what turns your morning into paid hours.';
+        + 'Always clock out — it is what turns your shift into paid hours.';
     }
 
     case 'missing_in': {
