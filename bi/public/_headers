@@ -15,3 +15,7 @@
   Cache-Control: no-cache
 /index.html
   Cache-Control: no-cache
+# The vendored libraries are fixed versions (see vendor/README.md). Upgrading
+# one means a new file name, so a week's cache is safe.
+/vendor/*
+  Cache-Control: public, max-age=604800

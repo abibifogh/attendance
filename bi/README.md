@@ -157,7 +157,10 @@ close. **Buying** — group spend per supplier, and the same item bought twice a
 two prices. **Service** — checks due against checks done, next to who was on.
 **Setup** — where the four systems are connected, and every load that has run.
 **Reports** — a finished report made elsewhere, published at its own address
-behind a PIN per reader; see `docs/reports.md`.
+behind a PIN per reader; see `docs/reports.md`. **Shifts** — the front desk's
+control sheet done from the source records: each shift's cash against its
+hand-over count, every card and MoMo payment against the terminal and the bank,
+and the exceptions grouped by what went wrong; see `docs/shifts.md`.
 
 ### Getting the data out
 
@@ -510,11 +513,13 @@ src/
     stats.js         the small amount of statistics this app is entitled to
     engine.js        runs the rules, ranks and stores what they find
     rules/           labour, demand, cash, supply, service
+  shifts/            ASSD journal, bank statement and terminal readers, and the matcher
   routes/            the panels behind each screen, plus accounts
   fixtures/demo.js   the invented hotel
 scripts/setup.mjs    the terminal version of the Set up Insight workflow
 public/              the dashboard and the hub: no framework, no build step
 docs/sso.md          the hand-off protocol, and a handler per platform
+docs/shifts.md       how shift reconciliation reads its files and what each exception means
 ```
 
 ### Where the logic lives

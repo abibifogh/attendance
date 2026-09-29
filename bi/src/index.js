@@ -8,6 +8,7 @@ import * as panels from './routes/panels.js';
 import * as admin from './routes/admin.js';
 import * as accounts from './routes/accounts.js';
 import * as reports from './routes/reports.js';
+import * as shiftRoutes from './routes/shifts.js';
 import { first } from './lib/db.js';
 import { loadFacts } from './insight/facts.js';
 import { groupConfig } from './lib/db.js';
@@ -54,6 +55,18 @@ const ROUTES = [
   ['GET', '/api/findings', 'insight', (env, ctx) => panels.findings(env, ctx.query)],
   ['POST', '/api/findings/:id', 'insight', (env, ctx) => admin.decideFinding(env, ctx.params.id, ctx.body)],
   ['GET', '/api/export', 'insight', exportCsv],
+
+  // Shift reconciliation. Reading it and typing into it — a count at
+  // hand-over, an expense total, an answer — is for anybody who reads the
+  // numbers, signed with their name. Loading the three files is an owner's.
+  ['GET', '/api/shifts', 'insight', (env, ctx) => shiftRoutes.shifts(env, ctx.query, ctx.account)],
+  ['POST', '/api/shifts/count', 'insight', (env, ctx) => shiftRoutes.saveCount(env, ctx.body, ctx.account)],
+  ['POST', '/api/shifts/expense', 'insight', (env, ctx) => shiftRoutes.saveExpense(env, ctx.body, ctx.account)],
+  ['POST', '/api/shifts/expense/pull', 'insight', (env, ctx) => shiftRoutes.pullOrders(env, ctx.body)],
+  ['POST', '/api/shifts/answer', 'insight', (env, ctx) => shiftRoutes.saveAnswer(env, ctx.body, ctx.account)],
+  ['POST', '/api/shifts/journal', 'owner', (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account)],
+  ['POST', '/api/shifts/bank', 'owner', (env, ctx) => shiftRoutes.uploadBank(env, ctx.body, ctx.account)],
+  ['POST', '/api/shifts/terminal', 'owner', (env, ctx) => shiftRoutes.uploadTerminal(env, ctx.body, ctx.account)],
 
   // Loading and configuring. Owners only: these change what every other screen
   // in the group is built on.
