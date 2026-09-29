@@ -4201,15 +4201,11 @@ export async function requestLeave(ctx) {
 
   const ds = await loadDataset(ctx.db, { from, to });
   const count = leaveDaysFor({ from, to, staffId, ds, halfDay });
-  // Only refused when every day in the span has an answer and none of them is
-  // a working day. A span the rota has not reached is not that: it is a span
-  // nobody has built yet, and it is the commonest kind of leave request there
-  // is.
-  if (count.allSettled) {
-    throw badRequest('Every day in that period is already a rest day or a public holiday for '
-      + 'them, so there is no leave to take.');
-  }
-  const days = count.days;
+  // A span of nothing but rest days and public holidays goes through, charged
+  // nothing. It used to be refused as having no leave in it, but somebody
+  // travelling over their days off still wants it on the record: it is what
+  // stops them being called in, and what the rota shows while they are away.
+  const days = count.allSettled ? 0 : count.days;
 
   const clash = await ctx.db.prepare(
     `SELECT id FROM att_leave

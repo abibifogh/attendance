@@ -109,15 +109,15 @@ test('somebody with a standing pattern is not guessed at', async () => {
 
 test('a pattern that says nothing about Saturday is saying they do not work it', async () => {
   // The silence in a Monday-to-Friday pattern is an answer, not a gap. Reading
-  // it as a gap would put half a day of leave on everybody's weekend — and it
-  // makes the weekend the one span there really is no leave to take in.
+  // it as a gap would put half a day of leave on everybody's weekend. A weekend
+  // of leave still goes through, because somebody travelling wants it on the
+  // record; it just costs them nothing.
   const { db } = setup();
-  await assert.rejects(
-    () => requestLeave(ctx(db, PLANNER, {
-      body: { staffId: 2, reason: 'annual_leave', from: '2026-12-12', to: '2026-12-13' },
-    })),
-    /already a rest day or a public holiday/,
-  );
+  const out = await (await requestLeave(ctx(db, PLANNER, {
+    body: { staffId: 2, reason: 'annual_leave', from: '2026-12-12', to: '2026-12-13' },
+  }))).json();
+  assert.equal(out.ok, true);
+  assert.equal(out.days, 0, 'no working day in it, so nothing is charged');
 });
 
 test('part of a span rostered means the blanks in it are decisions, not gaps', async () => {
@@ -135,19 +135,30 @@ test('part of a span rostered means the blanks in it are decisions, not gaps', a
   assert.equal(out.estimated, false);
 });
 
-test('a week of public holidays has no leave in it, and says so', async () => {
+test('leave over nothing but public holidays is recorded and charges nothing', async () => {
   const { db, raw } = setup();
   for (const day of ['2026-12-07', '2026-12-08', '2026-12-09']) {
     raw.prepare(
       "INSERT INTO att_holidays (day, name, active) VALUES (?, 'Test', 1)",
     ).run(day);
   }
-  await assert.rejects(
-    () => requestLeave(ctx(db, PLANNER, {
-      body: { staffId: 2, reason: 'annual_leave', from: '2026-12-07', to: '2026-12-09' },
-    })),
-    /already a rest day or a public holiday/,
-  );
+  const out = await (await requestLeave(ctx(db, PLANNER, {
+    body: { staffId: 2, reason: 'annual_leave', from: '2026-12-07', to: '2026-12-09' },
+  }))).json();
+  assert.equal(out.days, 0);
+  assert.equal(raw.prepare('SELECT days, status FROM att_leave WHERE id = ?').get(out.id).days, 0);
+});
+
+test('somebody can ask for leave over days they are not working, and it costs them nothing', async () => {
+  const { db, raw } = setup();
+  for (const day of ['2026-12-12', '2026-12-13']) {
+    raw.prepare("INSERT INTO att_holidays (day, name, active) VALUES (?, 'Test', 1)").run(day);
+  }
+  const out = await (await askForLeave(ctx(db, KOFI, {
+    body: { reason: 'annual_leave', from: '2026-12-12', to: '2026-12-13' },
+  }))).json();
+  assert.equal(out.ok, true);
+  assert.equal(raw.prepare('SELECT days FROM att_leave WHERE id = ?').get(out.id).days, 0);
 });
 
 test('the estimate is settled when the rota catches up', async () => {

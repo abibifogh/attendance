@@ -565,13 +565,10 @@ export async function askForLeave(ctx) {
   // ASKING BEFORE THE ROTA REACHES THAT FAR IS THE POINT. A week in December
   // asked for in August used to be refused for not being rostered, which told
   // people to wait until a fortnight before — the opposite of what anybody
-  // planning a rota wants. The only honest refusal left is a span that is
-  // already all rest days and holidays.
-  if (count.allSettled) {
-    throw badRequest('Every day in that period is already a rest day or a public holiday for '
-      + 'you, so there is no leave to take.');
-  }
-  const days = count.days;
+  // planning a rota wants. A span that is all rest days and holidays goes
+  // through too, charged nothing: somebody away over their days off still
+  // wants it known, and the office still decides it.
+  const days = count.allSettled ? 0 : count.days;
 
   const clash = await ctx.db.prepare(
     `SELECT id FROM att_leave
