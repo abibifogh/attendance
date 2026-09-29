@@ -363,3 +363,29 @@ export async function check({ config: settings, token, fetchImpl = fetch }) {
     return { ok: false, detail: String(err?.message ?? err) };
   }
 }
+
+/**
+ * Purchase orders by their names (`P00412`), for the shift expense check.
+ *
+ * Read-only, like everything else here: one `search_read` on `purchase.order`.
+ * Returns what the shift screen shows — vendor, total, state and whether it
+ * has been billed — and lists the names Odoo did not recognise, so a typo in
+ * a PO number is said out loud rather than read as "no expense".
+ */
+export async function purchaseOrders({ config: settings, token, names, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const wanted = [...new Set((names || []).map((n) => String(n).trim()).filter(Boolean))];
+  if (!wanted.length) return { orders: [], unknown: [] };
+  const rows = await searchRead(config, 'purchase.order', [['name', 'in', wanted]],
+    ['name', 'partner_id', 'amount_total', 'state', 'invoice_status', 'date_order'], { fetchImpl });
+  const orders = rows.map((r) => ({
+    name: String(r.name || ''),
+    vendor: refName(r.partner_id),
+    total: toMinor(r.amount_total),
+    state: String(r.state || ''),
+    billed: String(r.invoice_status || ''),
+    orderedOn: r.date_order ? String(r.date_order).slice(0, 10) : null,
+  }));
+  const found = new Set(orders.map((o) => o.name.toUpperCase()));
+  return { orders, unknown: wanted.filter((n) => !found.has(n.toUpperCase())) };
+}

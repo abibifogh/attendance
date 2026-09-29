@@ -14,6 +14,7 @@ import { renderSetup } from './views/setup.js';
 import { renderHub } from './views/hub.js';
 import { renderAccounts } from './views/accounts.js';
 import { renderReports } from './views/reports.js';
+import { renderShifts } from './views/shifts.js';
 import { renderLogin as renderLoginView } from './views/login.js';
 
 export const state = {
@@ -40,6 +41,7 @@ const ROUTES = [
   { path: 'labour', label: 'Labour', render: renderLabour },
   { path: 'guests', label: 'Guests', render: renderDemand },
   { path: 'cash', label: 'Cash', render: renderCash },
+  { path: 'shifts', label: 'Shifts', render: renderShifts },
   { path: 'buying', label: 'Buying', render: renderSuppliers },
   { path: 'books', label: 'Books', render: renderBooks },
   { path: 'service', label: 'Service', render: renderService },

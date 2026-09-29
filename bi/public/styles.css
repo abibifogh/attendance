@@ -432,3 +432,75 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 @media (max-width: 30rem) {
   .rangepanel { right: auto; left: 0; }
 }
+
+/* ------------------------------------------------------------- shifts --
+   The control sheet as three cards a day. Every mark is an icon and a word as
+   well as a colour, so nothing depends on telling red from orange. */
+.good-text { color: var(--good-text); }
+.segmented { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 1rem; }
+.segmented .btn.on { background: var(--ink); color: var(--plane); border-color: var(--ink); }
+
+details.card > summary { cursor: pointer; list-style: none; }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::before { content: '▸ '; color: var(--muted); }
+details.card[open] > summary::before { content: '▾ '; }
+details.card[open] > summary { margin-bottom: .6rem; }
+.uploads .upload h3 { margin: .2rem 0 .3rem; font-size: .95rem; }
+.uploads .upload { border-top: 1px solid var(--border); padding-top: .6rem; }
+.uploads .upload input[type='file'] { max-width: 100%; }
+
+.daystrip { display: flex; gap: .35rem; overflow-x: auto; padding-bottom: .4rem; margin-bottom: .6rem; }
+.daychip {
+  flex: 0 0 auto; display: grid; justify-items: center; gap: .05rem; min-width: 4.2rem;
+  padding: .35rem .5rem; border-radius: var(--radius); cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink); font: inherit;
+}
+.daychip strong { font-size: .82rem; }
+.daychip .mark { font-size: .75rem; font-weight: 700; }
+.daychip.good .mark { color: var(--good-text); }
+.daychip.warning .mark { color: var(--serious); }
+.daychip.critical .mark { color: var(--critical); }
+.daychip.none { color: var(--muted); }
+.daychip.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+h2.dayhead { margin: .4rem 0 .8rem; }
+
+.card.shift { display: flex; flex-direction: column; gap: .5rem; }
+.shifthead { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; justify-content: space-between; }
+dl.ledger { display: grid; grid-template-columns: 1fr auto; gap: .2rem .8rem; margin: 0; font-size: .86rem; }
+dl.ledger dt { color: var(--ink-2); }
+dl.ledger dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+dl.ledger dd.short { color: var(--critical); font-weight: 600; }
+dl.ledger dd.over { color: var(--serious); font-weight: 600; }
+ul.checks { list-style: none; margin: 0; padding: .5rem 0 0; border-top: 1px solid var(--border); font-size: .84rem; }
+ul.checks li { display: flex; gap: .45rem; padding: .12rem 0; }
+ul.checks .mark { width: 1rem; text-align: center; font-weight: 700; flex: none; }
+ul.checks li.good .mark { color: var(--good-text); }
+ul.checks li.warning .mark { color: var(--serious); }
+ul.checks li.critical .mark { color: var(--critical); }
+ul.checks li.info .mark { color: var(--muted); }
+details.countform { border-top: 1px solid var(--border); padding-top: .4rem; }
+details.countform summary { cursor: pointer; color: var(--ink-2); }
+
+.exgroup .exhead { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.exgroup .exhead h3 { margin: 0; flex: 1 1 16rem; }
+.exgroup.critical { border-left: 4px solid var(--critical); }
+.exgroup.warning { border-left: 4px solid var(--serious); }
+.exgroup.info { border-left: 4px solid var(--axis); }
+.exrow {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 22rem); gap: .6rem 1rem;
+  padding: .6rem 0; border-top: 1px solid var(--border);
+}
+.exrow p { margin: .2rem 0 0; font-size: .86rem; }
+.exrow.answered { opacity: .72; }
+.exanswer { display: flex; flex-wrap: wrap; gap: .35rem; align-content: start; }
+.exanswer select, .exanswer input { flex: 1 1 10rem; min-width: 0; }
+@media (max-width: 640px) { .exrow { grid-template-columns: 1fr; } }
+
+.bars { display: grid; gap: .35rem; }
+.barrow { display: grid; grid-template-columns: 6.5rem 1fr 6.5rem; align-items: center; gap: .5rem; font-size: .85rem; }
+.barrow .val { text-align: right; font-variant-numeric: tabular-nums; }
+.barrow .track { position: relative; height: .9rem; background: var(--surface-2); border-radius: 3px; }
+.barrow .track::after { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--axis); }
+.barrow .bar { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.barrow .bar.over { background: var(--series-4); }
+.barrow .bar.short { background: var(--series-8); }
