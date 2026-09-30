@@ -1113,9 +1113,22 @@ export const GUIDE = [
         'A span somebody has already been through by hand is not guessed at: the days they '
           + 'left empty are days off, not gaps.',
       ] },
-      { note: 'The one request still refused is a span that is entirely rest days and public '
-        + 'holidays for that person — those days are already theirs, so there is nothing to '
-        + 'take.' },
+      { note: 'A span that is entirely rest days and public holidays goes through and costs '
+        + 'nothing. Somebody away over their days off still wants it on the record, and the rota '
+        + 'shows them away.' },
+
+      { sub: 'What it costs, and putting it right' },
+      { list: [
+        'Leave costs the days on it: what the rota said when it was recorded, what whoever '
+          + 'approved it charged, or what somebody corrected it to. Not a day for every '
+          + 'calendar day it covers, even though every day shows as leave on the rota.',
+        'Recording leave you approve yourself has a Days charged box. Leave it empty for the '
+          + 'rota’s figure, or fill it in where the rota is not finished yet.',
+        'Press the days on any approved leave to correct them. It shows what the rota makes it '
+          + 'now, asks why, and tells the person.',
+        'A day ruled as leave on somebody’s record, with no approved leave around it, '
+          + 'still counts a day.',
+      ] },
 
       { sub: 'What kind of leave it is, is yours to say' },
       { p: 'Whoever asks picks the option they know the name of, which is usually annual '

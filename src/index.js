@@ -403,6 +403,7 @@ export const ROUTES = [
   ['GET', '/api/att/leave/:id/days', 'att_manage', att.leaveDays],
   ['POST', '/api/att/leave/:id/decide', 'att_manage', att.decideLeave],
   ['POST', '/api/att/leave/:id/type', 'att_manage', att.setLeaveType],
+  ['POST', '/api/att/leave/:id/days', 'att_manage', att.setLeaveDays],
   ['DELETE', '/api/att/leave/:id', 'att_manage', att.cancelLeave],
 
   // ----------------------------------------------------------------- setup --

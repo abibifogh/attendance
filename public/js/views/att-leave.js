@@ -56,6 +56,13 @@ export async function renderAttLeave(params = {}) {
           field('Last day', h('input', { type: 'date', name: 'to', required: true })),
         ),
         field('Reason', h('input', { type: 'text', name: 'note', maxlength: 500 })),
+        // Only for whoever approves it as they record it. Somebody sending it
+        // for approval gets the rota's figure, and the approver decides.
+        decides
+          ? field('Days charged', h('input', {
+            type: 'number', name: 'daysCharged', min: 0, step: 0.5, placeholder: 'as the rota says',
+          }), 'Leave empty for what the rota says. Fill it in where the rota is not right yet.')
+          : null,
         h('p.muted', { style: { fontSize: '.82rem' } },
           'Only rostered days are charged. Rest days and public holidays inside the period cost nothing.'),
       ),
@@ -65,6 +72,7 @@ export async function renderAttLeave(params = {}) {
         from: form.get('from'),
         to: form.get('to'),
         note: form.get('note') || null,
+        daysCharged: form.get('daysCharged') ? Number(form.get('daysCharged')) : null,
       }),
     });
 
@@ -192,6 +200,48 @@ export async function renderAttLeave(params = {}) {
     await reload();
   };
 
+  /**
+   * Say what a leave really costs, after it has gone in.
+   *
+   * The figure is the rota's on the day the leave was recorded, and the rota is
+   * not always finished by then. Offered from the figure itself, with what the
+   * rota says now beside it, so correcting it is one box rather than
+   * cancelling and typing the whole leave in again.
+   */
+  const redays = async (row) => {
+    const now = await api.attLeaveDays(row.id).catch(() => null);
+    const span = Math.round((new Date(`${row.to_day}T12:00:00Z`) - new Date(`${row.from_day}T12:00:00Z`)) / 86400000) + 1;
+    const was = Number(row.days);
+    const rota = now ? Number(now.days) : null;
+    const done = await formDialog({
+      title: `${row.staff_name}'s leave`,
+      submitLabel: 'Save the days',
+      body: h('div',
+        h('p', `${fmtDay(row.from_day)} to ${fmtDay(row.to_day)}, recorded as `
+          + `${fmtNum(was, was % 1 ? 1 : 0)} day${was === 1 ? '' : 's'}.`),
+        rota != null && rota !== was
+          ? h('p.muted', { style: { fontSize: '.85rem' } },
+            `The rota now makes it ${fmtNum(rota, rota % 1 ? 1 : 0)} day${rota === 1 ? '' : 's'}`
+            + `${now?.stillEstimated ? ', though it still does not cover all of it' : ''}.`)
+          : null,
+        field('Days charged', h('input', {
+          type: 'number', name: 'days', min: 0, max: span, step: 0.5, required: true,
+          value: rota != null && rota !== was ? rota : was,
+        }), `of the ${span} calendar day${span === 1 ? '' : 's'} it covers`),
+        field('Why', h('input', { type: 'text', name: 'note', maxlength: 300 }), 'They see this'),
+      ),
+      onSubmit: async (form) => api.attSetLeaveDays(row.id, {
+        days: Number(form.get('days')),
+        note: form.get('note') || null,
+      }),
+    });
+    if (!done) return;
+    toast(done.unchanged
+      ? 'Nothing changed.'
+      : `Now ${fmtNum(done.days, done.days % 1 ? 1 : 0)} day${done.days === 1 ? '' : 's'}.`, 'good');
+    await reload();
+  };
+
   const cancel = async (row) => {
     if (!window.confirm(
       `Cancel ${row.staff_name}'s ${row.reason_label?.toLowerCase() ?? 'leave'} `
@@ -236,10 +286,19 @@ export async function renderAttLeave(params = {}) {
       align: 'right',
       // A figure asked for before the rota reached that far is a guess, and a
       // guess printed as a fact is the thing somebody argues about later.
-      format: (v, r) => (r.estimated
-        ? h('span', { title: 'Estimated: the rota did not reach that far when it was asked for. '
-          + 'It is settled when it is approved.' }, fmtNum(v, v % 1 ? 1 : 0), h('small.muted', ' est.'))
-        : fmtNum(v, v % 1 ? 1 : 0)),
+      format: (v, r) => {
+        const shown = r.estimated
+          ? h('span', { title: 'Estimated: the rota did not reach that far when it was asked for. '
+            + 'It is settled when it is approved.' }, fmtNum(v, v % 1 ? 1 : 0), h('small.muted', ' est.'))
+          : fmtNum(v, v % 1 ? 1 : 0);
+        // Approved leave can be corrected from the figure. A request still
+        // waiting has its days set when it is approved.
+        return decides && r.status === 'approved'
+          ? h('button.pill.pill-button', {
+            type: 'button', title: 'Correct how many days this costs', onclick: () => redays(r),
+          }, shown)
+          : shown;
+      },
     },
     { key: 'paid', label: 'Paid', format: (v) => (v ? h('span.pill.good', 'Paid') : h('span.pill', 'Unpaid')) },
     { key: 'reason', label: 'Reason', format: (v) => (v ? h('small', v) : h('span.muted', '—')) },

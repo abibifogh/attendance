@@ -1,5 +1,5 @@
 import {
-  badRequest, csvResponse, int, json, notFound, readJson, str,
+  badRequest, csvResponse, int, json, notFound, num, readJson, str,
 } from '../lib/http.js';
 import {
   alwaysOff, colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysFor,
@@ -4205,7 +4205,22 @@ export async function requestLeave(ctx) {
   // nothing. It used to be refused as having no leave in it, but somebody
   // travelling over their days off still wants it on the record: it is what
   // stops them being called in, and what the rota shows while they are away.
-  const days = count.allSettled ? 0 : count.days;
+  // Approved outright when the person recording it can approve leave anyway;
+  // making a manager approve their own entry is ceremony, not control.
+  const canApprove = ctx.session.permissions.includes('att_manage');
+
+  // What the rota says it costs, unless whoever is recording and approving it
+  // says otherwise. The rota is not always right on the day leave goes in, and
+  // a figure agreed with the person is theirs to put down. Somebody who can
+  // only ask gets the rota's figure; the manager decides at approval.
+  let days = count.allSettled ? 0 : count.days;
+  let estimated = count.estimated;
+  if (canApprove && body.daysCharged != null && body.daysCharged !== '') {
+    const span = diffDays(from, to) + 1;
+    days = num(body.daysCharged, 'Days charged', { min: 0, max: span });
+    if ((days * 2) % 1 !== 0) throw badRequest('Days go in halves: 1, 1.5, 2 and so on.');
+    estimated = false;
+  }
 
   const clash = await ctx.db.prepare(
     `SELECT id FROM att_leave
@@ -4214,9 +4229,6 @@ export async function requestLeave(ctx) {
   ).bind(staffId, to, from).first();
   if (clash) throw badRequest('That overlaps leave already booked for this person.');
 
-  // Approved outright when the person recording it can approve leave anyway;
-  // making a manager approve their own entry is ceremony, not control.
-  const canApprove = ctx.session.permissions.includes('att_manage');
   const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
 
   const row = await ctx.db.prepare(
@@ -4232,7 +4244,7 @@ export async function requestLeave(ctx) {
     ctx.session.user.id ?? null,
     canApprove ? actor : null,
     canApprove ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null,
-    count.estimated ? 1 : 0,
+    estimated ? 1 : 0,
   ).first();
 
   if (canApprove) await recompute(ctx.db, { staffIds: [staffId], from, to });
@@ -4242,7 +4254,7 @@ export async function requestLeave(ctx) {
     ok: true,
     id: row?.id ?? null,
     days,
-    estimated: count.estimated,
+    estimated,
     status: canApprove ? 'approved' : 'pending',
   });
 }
@@ -4383,6 +4395,58 @@ export async function leaveDays(ctx, id) {
       ? Number(request.days)
       : now.estimated ? span : Math.max(now.days, Number(request.days)),
   });
+}
+
+/**
+ * Correct how many days a leave costs, after it has been recorded.
+ *
+ * The count is taken from the rota on the day the leave is put in, and then
+ * frozen so a later edit to the rota cannot quietly move somebody's balance.
+ * But the rota is not always right on that day: a weekend that was down as
+ * rest days turns out to have a shift in it, or the office agrees a figure
+ * with the person that is not the rota's. Cancelling and typing it all in
+ * again was the only way to change it. This says the figure, with a reason,
+ * and tells them.
+ */
+export async function setLeaveDays(ctx, id) {
+  const body = await readJson(ctx.request);
+  const request = await ctx.db.prepare('SELECT * FROM att_leave WHERE id = ?')
+    .bind(Number(id)).first();
+  if (!request) throw notFound('No such leave.');
+  if (!['pending', 'approved'].includes(request.status)) {
+    throw badRequest('That leave was not approved, so there is nothing it costs to correct.');
+  }
+
+  const span = diffDays(request.from_day, request.to_day) + 1;
+  const days = num(body.days, 'Days', { required: true, min: 0, max: span });
+  if ((days * 2) % 1 !== 0) throw badRequest('Days go in halves: 1, 1.5, 2 and so on.');
+  const note = str(body.note, 'Why', { max: 300 });
+
+  if (days === Number(request.days) && !request.estimated) {
+    return json({ ok: true, days, unchanged: true });
+  }
+
+  await ctx.db.prepare('UPDATE att_leave SET days = ?2, estimated = 0 WHERE id = ?1')
+    .bind(request.id, days).run();
+  await audit(ctx, 'attendance.leave_days', request.id, {
+    from: Number(request.days), to: days, note,
+  });
+
+  const person = await ctx.db.prepare(
+    'SELECT u.id AS user_id FROM users u WHERE u.staff_id = ? AND u.active = 1',
+  ).bind(request.staff_id).first().catch(() => null);
+  await createNotice(ctx.db, {
+    kind: 'attendance.leave_days',
+    level: 'info',
+    title: `Your leave from ${request.from_day} to ${request.to_day} now costs `
+      + `${days} day${days === 1 ? '' : 's'}`,
+    body: `It was ${Number(request.days)}.${note ? ` ${note}` : ''}`,
+    link: '#/att-me',
+    actor: `${ctx.session.user.name} (${ctx.session.user.role})`,
+    userId: person?.user_id ?? request.requested_by_id ?? null,
+  }, ctx);
+
+  return json({ ok: true, days, was: Number(request.days) });
 }
 
 /**

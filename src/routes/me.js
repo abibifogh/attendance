@@ -368,7 +368,10 @@ export async function myWeek(ctx) {
     ? leaveBalance({
       staff,
       records: year.results ?? [],
-      requests: (requests.results ?? []).filter((r) => r.status === 'pending'),
+      // Approved as well as waiting: approved leave is charged at what it was
+      // approved for, and every one of them is needed for that, not only the
+      // forty most recent the list on screen shows.
+      requests: ds.requestsByStaff.get(staff.id) ?? [],
       settings: ds.settings,
       asOf: today,
       reasons: ds.reasonBy,

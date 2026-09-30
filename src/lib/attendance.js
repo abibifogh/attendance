@@ -1277,25 +1277,49 @@ export function leaveBalance({
       / (diffDays(year.start, year.end) + 1)) * 2) / 2
     : entitlementDays;
 
-  // Taken: days already charged to a leave reason that comes off the balance.
+  // Approved leave is charged what the leave says it costs, not a day for
+  // every calendar day it covers.
+  //
+  // THIS WAS COUNTED DAY BY DAY, and approved leave marks every day it spans
+  // as leave, rest days included, because a planner looking at that Saturday
+  // needs to see the person is away. So a week off charged at five days came
+  // to seven once it was over, and two days over a weekend charged at nothing
+  // came to two. The figure on the leave is the one somebody decided, at
+  // approval or when it was recorded, and it is the one that counts.
+  //
+  // Started or finished, it is taken; not started yet, it is booked. The two
+  // add up the same, so what is left does not move on the day it begins.
+  const approved = requests.filter((r) => r.status === 'approved'
+    && reasons.get(r.reason_code)?.deducts_leave
+    && r.from_day <= year.end && r.to_day >= year.start);
+  const coveredByLeave = (staffDay) => approved
+    .some((r) => r.from_day <= staffDay && r.to_day >= staffDay);
+
   let taken = 0;
+  let booked = 0;
+  let pending = 0;
+  for (const request of approved) {
+    if (request.from_day > asOf) booked += Number(request.days) || 0;
+    else taken += Number(request.days) || 0;
+  }
+
+  // And a day charged to leave that no approved leave covers: a supervisor
+  // ruling an absence as annual leave, say. Those are a day each.
   for (const record of records) {
     if (record.day < year.start || record.day > year.end) continue;
+    if (coveredByLeave(record.day)) continue;
     const reason = reasons.get(record.reason_code);
     if (reason?.deducts_leave) taken += 1;
   }
 
-  // Booked: approved requests whose days have not been charged yet, plus
-  // anything still waiting on a decision. Shown apart from `taken` so a manager
-  // can see the difference between spent and committed.
-  let booked = 0;
-  let pending = 0;
+  // Anything still waiting on a decision, shown apart so a manager can see
+  // what is asked for as against what is committed.
   for (const request of requests) {
+    if (request.status !== 'pending') continue;
     const reason = reasons.get(request.reason_code);
     if (!reason?.deducts_leave) continue;
     if (request.from_day > year.end || request.to_day < year.start) continue;
-    if (request.status === 'pending') pending += request.days;
-    else if (request.status === 'approved' && request.from_day > asOf) booked += request.days;
+    pending += Number(request.days) || 0;
   }
 
   // Signed-off months, in days. Negative is a shortfall charged to the

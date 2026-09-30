@@ -425,6 +425,7 @@ export const api = {
   attRequestLeave: (body) => request('/api/att/leave', { method: 'POST', body }),
   attDecideLeave: (id, body) => request(`/api/att/leave/${id}/decide`, { method: 'POST', body }),
   attSetLeaveType: (id, body) => request(`/api/att/leave/${id}/type`, { method: 'POST', body }),
+  attSetLeaveDays: (id, body) => request(`/api/att/leave/${id}/days`, { method: 'POST', body }),
   attLeaveDays: (id) => request(`/api/att/leave/${id}/days`),
   attCancelLeave: (id) => request(`/api/att/leave/${id}`, { method: 'DELETE' }),
 
