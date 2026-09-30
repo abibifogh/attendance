@@ -1593,7 +1593,10 @@ export const GUIDE = [
       { sub: 'Starting a month from the one before' },
       { p: 'Most of a month\u2019s scoring is last month\u2019s scoring with two or three lines '
         + 'changed, and typing thirty scores again to change two is how a wrong one gets typed. '
-        + 'Start from last month brings the scores across and you touch only what moved.' },
+        + 'Copy last month’s scores, on the Bonus schemes card (or Start from last month at '
+        + 'the top of the page), brings the scores across and you touch only what moved. It '
+        + 'asks which month to copy from, last month unless you change it, and replaces any '
+        + 'scores already typed into this one.' },
       { list: [
         'Salaries, allowances and who is under which scheme are standing things, not monthly '
           + 'ones. There was never anything to copy there and there still is not.',

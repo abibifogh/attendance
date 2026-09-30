@@ -307,8 +307,8 @@ async function startFrom(month, reload) {
   const penalties = h('input', { type: 'checkbox', name: 'penalties' });
 
   const done = await formDialog({
-    title: `Start ${niceMonth(month)} from an earlier month`,
-    submitLabel: 'Bring it across',
+    title: `Copy scores into ${niceMonth(month)}`,
+    submitLabel: 'Copy the scores',
     body: h('div',
       h('p.muted', { style: { fontSize: '.9rem', marginTop: 0 } },
         'Salaries, allowances and who is under which scheme are not monthly things, so they are '
@@ -1323,9 +1323,19 @@ function schemesCard(data, month, closed, reload, cash) {
   return card('Bonus schemes', {
     wide: true,
     note: data.schemes.length ? `${data.schemes.length}` : 'none yet',
-    actions: h('button.btn-sm.btn-primary', {
-      onclick: () => editScheme(null, data, reload),
-    }, 'New scheme'),
+    actions: h('div.btn-row',
+      // Beside the scores it fills, rather than only up in the page's own
+      // toolbar where it was easy to go a month without noticing. Same dialog:
+      // it says which month and that it replaces what is already typed.
+      !closed && data.schemes.length
+        ? h('button.btn-sm', {
+          title: 'Bring last month’s scores across, so only what changed is typed',
+          onclick: () => startFrom(month, reload),
+        }, 'Copy last month’s scores')
+        : null,
+      h('button.btn-sm.btn-primary', {
+        onclick: () => editScheme(null, data, reload),
+      }, 'New scheme')),
   },
   h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
     'A scheme either pays a share of one figure, scored per person, or a set figure agreed '
