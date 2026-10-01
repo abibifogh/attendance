@@ -54,16 +54,24 @@ export function sheetTime(value) {
   return null;
 }
 
-/** Find the header row and the columns this needs, by name. */
+/**
+ * Find the header row and the columns this needs, by name.
+ *
+ * Two layouts are read. The **Finacle export** (XLSX) has one amount column, a
+ * debit/credit flag, posting flags and a posting time. The **internet-banking
+ * statement** (an HTML page the bank saves with an .xls name) has Trans Date,
+ * Reference, Value Date, Debit, Credit, Balance and Remarks: no posting time,
+ * and only rows that were actually posted.
+ */
 export function statementColumns(rows) {
-  for (let i = 0; i < Math.min(rows.length, 20); i += 1) {
+  for (let i = 0; i < Math.min(rows.length, 40); i += 1) {
     const row = (rows[i] || []).map((c) => String(c ?? '').trim().toUpperCase());
+    const at = (name) => row.indexOf(name);
     if (row.includes('TRAN ID') && row.includes('TRAN PARTICULAR')) {
-      const at = (name) => row.indexOf(name);
       return {
+        layout: 'finacle',
         headerRow: i,
         tranId: at('TRAN ID'),
-        srl: at('PART TRAN SRL NUM'),
         partType: at('PART TRAN TYPE'),
         posted: at('PSTD FLG'),
         tranDate: at('TRAN DATE'),
@@ -74,8 +82,27 @@ export function statementColumns(rows) {
         deleted: at('DEL FLG'),
       };
     }
+    if (row.includes('TRANS DATE') && row.includes('REMARKS') && row.includes('DEBIT') && row.includes('CREDIT')) {
+      return {
+        layout: 'internet',
+        headerRow: i,
+        tranId: at('REFERENCE'),
+        tranDate: at('TRANS DATE'),
+        debit: at('DEBIT'),
+        credit: at('CREDIT'),
+        particular: at('REMARKS'),
+      };
+    }
   }
   return null;
+}
+
+/** `1,080.00`, `1080`, or a number → pesewas; anything else → null. */
+export function statementMoney(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? toMinor(value) : null;
+  const text = String(value ?? '').replace(/,/g, '').trim();
+  if (!text || !/^-?\d+(\.\d+)?$/.test(text)) return null;
+  return toMinor(Number(text));
 }
 
 /** One particular → what kind of row it is, and what it says. */
@@ -108,38 +135,64 @@ export function classify(particular, partType) {
  * Rows (arrays, as the browser sends them) → the rows worth keeping.
  *
  * Returns the kept rows plus counts of what was dropped and why, so the
- * upload can say "471 rows the bank itself had deleted were ignored" rather
- * than leaving somebody to wonder why the totals moved.
+ * upload can say how many rows the bank itself had deleted rather than
+ * leaving somebody to wonder why the totals moved.
+ *
+ * A row's id is its day, the bank's reference, its amount and its text — the
+ * same in either layout, so a month loaded once from Finacle and again from
+ * internet banking is one month, not two. A batch of card credits shares one
+ * reference; a row repeated exactly within a batch is told apart by its place
+ * in the batch, which is also the same in both.
  */
 export function parseStatement(rows) {
   const cols = statementColumns(rows);
-  if (!cols) return { rows: [], error: 'This does not look like the bank statement: there is no TRAN ID / TRAN PARTICULAR header.' };
+  if (!cols) {
+    return { rows: [], error: 'This does not look like the bank statement: there is no TRAN ID / TRAN PARTICULAR or Trans Date / Remarks header.' };
+  }
+  const finacle = cols.layout === 'finacle';
 
   const kept = [];
   const counts = { flagged: 0, other: 0, unreadable: 0 };
+  const seen = new Map();
   let flaggedAmount = 0;
   for (const raw of rows.slice(cols.headerRow + 1)) {
     if (!raw || raw.length <= cols.particular) continue;
     const tranId = String(raw[cols.tranId] ?? '').trim();
     if (!tranId) continue;
-    const partType = String(raw[cols.partType] ?? '').trim().toUpperCase();
-    const amount = toMinor(raw[cols.amount]);
-    const tranAt = sheetTime(raw[cols.tranDate]);
-    if (!tranAt || !Number.isFinite(amount)) { counts.unreadable += 1; continue; }
+    const particular = String(raw[cols.particular] ?? '').replace(/\s+/g, ' ').trim();
 
-    const what = classify(raw[cols.particular], partType);
+    let amount;
+    let partType;
+    if (finacle) {
+      amount = statementMoney(raw[cols.amount]);
+      partType = String(raw[cols.partType] ?? '').trim().toUpperCase();
+    } else {
+      const debit = statementMoney(raw[cols.debit]) || 0;
+      const credit = statementMoney(raw[cols.credit]) || 0;
+      amount = debit || credit;
+      partType = debit ? 'D' : 'C';
+    }
+    const tranAt = sheetTime(raw[cols.tranDate]);
+    if (!tranAt || amount == null) { counts.unreadable += 1; continue; }
+
+    const what = classify(particular, partType);
     if (what.kind === 'other') { counts.other += 1; continue; }
 
-    const posted = String(raw[cols.posted] ?? '').trim().toUpperCase() === 'Y';
-    const deleted = String(raw[cols.deleted] ?? '').trim().toUpperCase() === 'Y';
-    if (!posted || deleted) { counts.flagged += 1; flaggedAmount += amount; continue; }
+    if (finacle) {
+      const posted = String(raw[cols.posted] ?? '').trim().toUpperCase() === 'Y';
+      const deleted = String(raw[cols.deleted] ?? '').trim().toUpperCase() === 'Y';
+      if (!posted || deleted) { counts.flagged += 1; flaggedAmount += amount; continue; }
+    }
 
-    const postedAt = sheetTime(raw[cols.postedAt]);
-    const srl = String(raw[cols.srl] ?? '').trim();
+    const postedAt = finacle ? sheetTime(raw[cols.postedAt]) : null;
+    const day = tranAt.slice(0, 10);
+    const base = `${day}|${tranId}|${partType}${amount}|${particular}`;
+    const n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
     kept.push({
-      id: `${tranAt.slice(0, 10)}|${tranId}|${srl}`,
+      id: n === 1 ? base : `${base}#${n}`,
       kind: what.kind,
-      day: tranAt.slice(0, 10),
+      day,
       // A MoMo row's own stamp is the moment the guest paid; the posting time
       // is when the bank got round to it. Cards have neither — only the day.
       at: what.kind === 'momo' ? (what.stampedAt || postedAt) : null,
@@ -151,8 +204,8 @@ export function parseStatement(rows) {
       last4: what.last4 || null,
       approval: what.approval || null,
       terminal: what.terminal || null,
-      reference: what.reference || String(raw[cols.ref] ?? '').trim() || null,
+      reference: what.reference || (finacle ? String(raw[cols.ref] ?? '').trim() : tranId) || null,
     });
   }
-  return { rows: kept, counts, flaggedAmount };
+  return { rows: kept, counts, flaggedAmount, layout: cols.layout };
 }

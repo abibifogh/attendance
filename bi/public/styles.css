@@ -504,3 +504,6 @@ details.countform summary { cursor: pointer; color: var(--ink-2); }
 .barrow .bar { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
 .barrow .bar.over { background: var(--series-4); }
 .barrow .bar.short { background: var(--series-8); }
+ul.movelist { list-style: none; margin: .3rem 0; padding: 0; font-size: .84rem; }
+ul.movelist li { padding: .25rem 0; border-top: 1px solid var(--border); }
+details.moves summary, details.modes summary { cursor: pointer; color: var(--ink-2); }

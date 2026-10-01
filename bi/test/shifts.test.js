@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { freshDb } from './helpers.js';
 import {
-  assdMoney, assdDate, journalWindow, mergeEntry, parseJournal, segment, methodOf,
+  assdMoney, assdDate, journalWindow, mergeEntry, parseJournal, segment, methodOf, labelMovements,
 } from '../src/shifts/assd.js';
 import { parseTerminalCsv, csvRow, unwrap } from '../src/shifts/terminal.js';
 import { parseStatement, classify, sheetTime } from '../src/shifts/bank.js';
@@ -48,8 +48,10 @@ const sale = (user, seq, date, pays, guest = 'Test Guest / 1 Example Road') => b
 function journal() {
   return [
     ...PAGE,
-    ...sale('ALPHA', 300500, '28.07.26', []),
-    ...marker('ALPHA', 300501, '01.08.26'),
+    ...sale('ALPHA', 300498, '28.07.26', []),
+    ...marker('ALPHA', 300499, '01.08.26'),
+    // The opening count at hand-over.
+    ...block('Money Count', 'ALPHA', 300500, '01.08.26', '001', ['. .   00002   100 GHS   1   100,00   100,00 GHS', '100,00 GHS']),
     // A block split by a page break, repeating its header.
     'Reservation   ALPHA   Test Guest / 1 Example Road',
     '01-104-300502   001/9300502-   01.08.26   SOMEWHERE /',
@@ -67,7 +69,10 @@ function journal() {
       '. .   00099   Total Expenses PAID   1   50,00   50,00 GHS', '150,00 GHS']),
     ...block('Cash Movement', 'ALPHA', 300508, '01.08.26', '001', ['01.08.26   -150,00 GHS', '0,00 GHS']),
     ...block('Cash Movement', 'ALPHA', 300509, '01.08.26', '015', ['01.08.26   150,00 GHS', '0,00 GHS']),
-    ...block('End cash deficit/surplus', 'ALPHA', 300510, '01.08.26', '001', [
+    // The closing count: 318 where 320 was due.
+    ...block('Money Count', 'ALPHA', 300510, '01.08.26', '001', [
+      '. .   00002   100 GHS   3   100,00   300,00 GHS', '. .   00010   2 GHS   9   2,00   18,00 GHS', '318,00 GHS']),
+    ...block('End cash deficit/surplus', 'ALPHA', 300512, '01.08.26', '001', [
       '01.08.26   Deficit cash POS   0   0,00   -2,00 GHS   0', '01.08.26   Cash   -2,00 GHS', '-2,00 GHS']),
     // Back office, on another register: never a shift's money.
     ...block('Accounting', 'DELTA', 300511, '01.08.26', '015', [
@@ -78,6 +83,9 @@ function journal() {
     ...sale('BRAVO', 300522, '01.08.26', [card('01.08.26', '150,00')]),
     ...sale('BRAVO', 300523, '01.08.26', [card('01.08.26', '250,00')]),
     ...sale('BRAVO', 300524, '01.08.26', [card('01.08.26', '640,00')]),
+    // BRAVO's first count finds 8 less than ALPHA left; the drawer then holds.
+    ...block('Money Count', 'BRAVO', 300525, '01.08.26', '001', ['. .   00002   100 GHS   3   100,00   300,00 GHS', '. .   00020   10 GHS   1   10,00   10,00 GHS', '310,00 GHS']),
+    ...block('Money Count', 'BRAVO', 300526, '01.08.26', '001', ['. .   00002   100 GHS   3   100,00   300,00 GHS', '. .   00020   10 GHS   1   10,00   10,00 GHS', '310,00 GHS']),
 
     // The night's marker carries the next morning's date, as ASSD does.
     ...marker('CHARLIE', 300530, '02.08.26'),
@@ -155,7 +163,12 @@ test('the journal becomes shifts, cut at each hand-over', () => {
   assert.equal(alpha.laundry, 7000);
   assert.equal(alpha.laundryCash, 7000);
   assert.equal(alpha.drawerOut, 15000, 'only the front drawer’s side of the movement');
-  assert.equal(alpha.expensesCounted, 5000);
+  assert.equal(alpha.expensesMoved, 5000, 'the receipts on the count before the movement');
+  assert.equal(alpha.safeMoved, 10000, 'and the notes on it');
+  assert.equal(alpha.moves[0].kind, 'split');
+  assert.equal(alpha.opening.total, 10000);
+  assert.equal(alpha.closing.total, 31800);
+  assert.equal(alpha.countVariance, -200, 'the same figure ASSD booked');
   assert.deepEqual(alpha.booked.map((b) => [b.when, b.amount]), [['close', -200]]);
   assert.deepEqual(alpha.backOffice.map((b) => b.user), ['DELTA'], 'register 015 is not the drawer');
   assert.equal(alpha.prepaid + alpha.other, 0);
@@ -316,7 +329,9 @@ test('the whole screen, from the three files', async () => {
   const kinds = out.exceptions.map((x) => `${x.kind}:${x.amount}`).sort();
   assert.deepEqual(kinds, [
     'double-charge:4500',
+    'drawer-short:-200',
     'failed:88300',
+    'handover-gap:-800',
     'keying:27600',
     'not-found:64000',
     'not-recorded:3500',
@@ -332,21 +347,82 @@ test('the whole screen, from the three files', async () => {
   assert.equal(out.coverage.terminal.from, '2026-08-01');
 });
 
-test('hand-over counts carry from one shift to the next', async () => {
+test('the drawer, from ASSD’s own counts, and a recount when one is typed', async () => {
   const env = await loaded();
-  await routes.saveCount(env, { day: '2026-08-01', slot: 'morning', opening: '100', closing: '318' }, OWNER);
-  await routes.saveCount(env, { day: '2026-08-01', slot: 'afternoon', closing: '300' }, OWNER);
-  const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
-  const [alpha, bravo] = out.days[0].shifts;
-  // 100 + 370 cash − 150 out = 320 expected; counted 318.
+  let out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+  let [alpha, bravo] = out.days[0].shifts;
+  // 100 counted + 370 cash − 150 moved = 320 due; ASSD counted 318.
+  assert.equal(alpha.register.opening, 10000);
+  assert.equal(alpha.register.openingFrom, 'assd');
   assert.equal(alpha.register.expected, 32000);
+  assert.equal(alpha.register.closing, 31800);
+  assert.equal(alpha.register.closingFrom, 'assd');
   assert.equal(alpha.register.variance, -200);
-  assert.equal(alpha.register.expenses, 5000, 'the receipts ASSD counted, until the sheet is typed');
-  assert.equal(bravo.register.opening, 31800);
-  assert.equal(bravo.register.openingFrom, '2026-08-01|morning');
-  assert.equal(bravo.register.variance, -1800);
-  const person = out.people.find((p) => p.user === 'ALPHA');
-  assert.equal(person.variance, -200);
+  assert.equal(alpha.register.expenses, 5000);
+  assert.equal(alpha.register.toSafe, 10000);
+  assert.equal(alpha.register.unlabelled, 0);
+  assert.deepEqual(bravo.register.handoverGap, { amount: -800, from: 'ALPHA' });
+  assert.equal(bravo.register.variance, 0);
+  assert.equal(out.people.find((p) => p.user === 'ALPHA').variance, -200);
+
+  await routes.saveCount(env, { day: '2026-08-01', slot: 'morning', closing: '320' }, OWNER);
+  await routes.saveExpense(env, { day: '2026-08-01', slot: 'morning', sheetTotal: '150' }, OWNER);
+  out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+  [alpha] = out.days[0].shifts;
+  assert.equal(alpha.register.closingFrom, 'typed');
+  assert.equal(alpha.register.variance, 0);
+  assert.equal(alpha.register.expenses, 15000, 'the sheet, once typed');
+  assert.equal(alpha.register.toSafe, 0);
+  assert.ok(!out.exceptions.some((x) => x.kind === 'drawer-short'));
+});
+
+test('what each cash movement was', () => {
+  const counts = [
+    { seq: 1, notes: 61200, receipts: 176300, total: 237500 },
+    { seq: 4, notes: 230000, receipts: 44000, total: 274000 },
+  ];
+  const moves = labelMovements([
+    { seq: 2, user: 'A', amount: 1763000, countsBefore: 1 },
+    { seq: 3, user: 'M', amount: -1763000, countsBefore: 1 },
+    { seq: 3.5, user: 'A', amount: 176300, countsBefore: 1 },
+    { seq: 5, user: 'B', amount: 274000, countsBefore: 2 },
+    { seq: 6, user: 'B', amount: 41500, countsBefore: 2 },
+  ], counts);
+  assert.deepEqual(moves.map((m) => m.kind), ['corrected', 'expenses', 'split', 'unlabelled']);
+  assert.equal(moves[0].reversedByUser, 'M');
+  assert.deepEqual([moves[2].expenses, moves[2].safe], [44000, 230000]);
+  const part = labelMovements([{ seq: 9, user: 'C', amount: 169300, countsBefore: 1 }], [{ seq: 8, notes: 118400, receipts: 154500, total: 272900 }]);
+  assert.deepEqual([part[0].kind, part[0].expenses], ['part', 154500]);
+  const safe = labelMovements([{ seq: 9, user: 'C', amount: 500000, countsBefore: 1 }], [{ seq: 8, notes: 500000, receipts: 0, total: 500000 }]);
+  assert.equal(safe[0].kind, 'safe');
+});
+
+test('the internet-banking statement reads the same as the Finacle export', () => {
+  const page = [
+    ['Account No: 0000000000'],
+    ['Opening Balance: 1,000.00'],
+    ['Trans Date', 'Reference', 'Value Date', 'Debit', 'Credit', 'Balance', 'Remarks'],
+    ['03-Aug-2026', 'T1', '03-Aug-2026', '0.00', '5.00', '1,005.00', '411111************0001_01-Aug-2026_A1B2C31_TERM0001'],
+    ['03-Aug-2026', 'T2', '03-Aug-2026', '0.05', '0.00', '1,004.95', 'comm_411111************0001_01-Aug-2026_A1B2C31_TERM0001'],
+    ['01-Aug-2026', 'T3', '01-Aug-2026', '0.00', '500.00', '1,504.95', 'GTB/TESTHOTEL//REF12345601/08/2026 15:15:00'],
+    ['05-Aug-2026', 'T6', '05-Aug-2026', '1,060.00', '0.00', '444.95', '411111************0008_02-Aug-2026_A1B2C39'],
+    ['05-Aug-2026', 'T7', '05-Aug-2026', '50.00', '0.00', '394.95', 'A SUPPLIER PAYMENT'],
+  ];
+  const parsed = parseStatement(page);
+  assert.equal(parsed.layout, 'internet');
+  assert.deepEqual(parsed.rows.map((r) => r.kind), ['card', 'commission', 'momo', 'card-reversal']);
+  assert.equal(parsed.rows[3].amount, 106000, 'thousands commas read');
+  assert.equal(parsed.rows[2].at, '2026-08-01 15:15:00');
+  assert.equal(parsed.counts.other, 1);
+
+  // The same rows from the Finacle export get the same ids.
+  const finacle = parseStatement([
+    BANK_HEADER,
+    ['T1', '1', 'C', 'Y', serial('2026-08-03'), serial('2026-08-03', '12:00:00'), 5, '411111************0001_01-Aug-2026_A1B2C31_TERM0001', '1', 'N'],
+    ['T3', '1', 'C', 'Y', serial('2026-08-01'), serial('2026-08-01', '15:15:00'), 500, 'GTB/TESTHOTEL//REF12345601/08/2026 15:15:00', 'REF1', 'N'],
+  ]);
+  const ids = new Set(parsed.rows.map((r) => r.id));
+  assert.ok(finacle.rows.every((r) => ids.has(r.id)));
 });
 
 test('answers stick to their exception, and the same file twice changes nothing', async () => {

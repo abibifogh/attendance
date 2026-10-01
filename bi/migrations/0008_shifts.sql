@@ -1,9 +1,9 @@
 -- Shift reconciliation: the control sheet, done from the source records.
 --
--- Three uploads and four things a person types. The uploads are ASSD's detail
--- journal, the bank statement and the card terminal report; what is typed is
--- the counted cash at each hand-over, the expense sheet's total and its Odoo
--- PO numbers, and an answer to each exception.
+-- Three uploads and a few things a person types. The uploads are ASSD's
+-- detail journal, the bank statement and the card terminal report; what is
+-- typed is the expense sheet's total and its Odoo PO numbers, an answer to
+-- each exception, and, only when wanted, a recount of the drawer.
 --
 -- Only what a shift needs is kept. The journal's guest names and addresses
 -- never reach the server (the browser sends lines, the server keeps amounts);
@@ -81,9 +81,9 @@ CREATE TABLE IF NOT EXISTS shift_upload (
   at         TEXT NOT NULL
 );
 
--- The cash counted at hand-over, typed by a person. `closing` is what was in
--- the drawer when the shift ended; `opening` is typed only for the first
--- shift, or to restart the chain after a gap.
+-- A recount of the drawer, typed by a person. ASSD's own Money Counts are
+-- used unless one is typed here: `closing` replaces the shift's last count,
+-- `opening` its first, for a spot check or a count ASSD got wrong.
 CREATE TABLE IF NOT EXISTS shift_count (
   day        TEXT NOT NULL,
   slot       TEXT NOT NULL,
