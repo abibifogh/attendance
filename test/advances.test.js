@@ -182,15 +182,20 @@ test('somebody asks, somebody decides, and both are told', async () => {
   assert.equal(mine.totals.owed, 0);
   assert.equal(mine.advances[0].status, 'requested');
 
-  // The office is the only one who can change the period, and does here.
+  // The office is the only one who can change the period, and does here. It
+  // starts next month, counted from whenever the tests run: a schedule is
+  // never projected into a month already behind us, so a fixed month here
+  // made this test pass in September and fail from October.
+  const now = new Date();
+  const monthAhead = (n) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + n, 1)).toISOString().slice(0, 7);
   await decideAdvance(ctx(db, WAGES, {
-    body: { approve: true, amount: 900, months: 3, takenOn: '2026-09-02', startMonth: '2026-09' },
+    body: { approve: true, amount: 900, months: 3, takenOn: now.toISOString().slice(0, 10), startMonth: monthAhead(1) },
   }), asked.id);
 
   mine = await read(await myAdvances(ctx(db, KOFI)));
   assert.equal(mine.totals.owed, 900);
   assert.equal(mine.advances[0].monthly, 300);
-  assert.equal(mine.advances[0].finishes, '2026-11');
+  assert.equal(mine.advances[0].finishes, monthAhead(3));
   assert.equal(mine.advances[0].schedule.length, 3);
 
   const told = notices(raw).at(-1);
