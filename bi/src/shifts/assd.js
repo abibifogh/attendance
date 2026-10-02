@@ -17,16 +17,22 @@ import { toMinor } from '../lib/money.js';
  * and cut that way, 20 of 21 shifts in the first week of August 2026 agree
  * with the control sheet to the cedi.
  *
- * **Expenses and safe drops are both Cash Movements.** A Money Count at
- * hand-over lists the notes and a `Total Expenses PAID` line for the receipts;
- * a Cash Movement then takes that total out of register 001, the front-desk
- * drawer, into register 015. Every movement is posted twice, once per
- * register, so only the 001 side is read. A mistaken movement put back by
- * somebody else is a positive 001 line, and the drawer's movement is the net.
+ * **The Money Count is a count of the drawer.** Its denomination lines are
+ * the notes and coins in it, and its `Total Expenses PAID` line is receipts
+ * for things bought out of it. A shift's first count is its opening, its last
+ * is its closing, and the next shift's first count should equal that.
  *
- * **The Money Count is what leaves the drawer, not what stays in it.** People
- * type through the prompt on every open — 0, 0, 2, 2, 50, 2 — so it is read for
- * its expense line and never as a closing balance.
+ * **Expenses and safe drops are both Cash Movements.** A Cash Movement takes
+ * money out of register 001, the front-desk drawer, into register 015, and
+ * says nothing about why. Every movement is posted twice, once per register,
+ * so only the 001 side is read. What a movement was comes from the count done
+ * just before it (see `labelMovements`). A mistaken movement put back by
+ * somebody else is an equal movement the other way.
+ *
+ * **ASSD balances the drawer itself.** Opening count + cash taken − cash
+ * moved out, against the closing count, is the figure ASSD books as an
+ * `End cash deficit/surplus`. In the first week of August 2026 the two agreed
+ * on every shift.
  *
  * Money comes out in whole pesewas. ASSD prints `1.763,00` and `-2.740,00`.
  */
@@ -41,8 +47,9 @@ const ADMIN = new Set([
 /**
  * ASSD's own booking of a drawer that did not agree, when a user opened or
  * closed it: `End cash deficit/surplus`, with a `Cash -2,00` line. It is not
- * takings and is never added to cash; it is shown beside the typed count, as
- * what ASSD itself was told.
+ * takings and is never added to cash. It equals the closing count less what
+ * should have been in the drawer, which is how the reading of counts and
+ * movements here is checked.
  */
 const DEFICIT = /^(Begin|End) cash deficit\/surplus$/;
 
@@ -255,6 +262,7 @@ export function summarise(shift) {
     endSeq: shift.entries.length ? shift.entries[shift.entries.length - 1].seq : shift.startSeq,
     markerDate: shift.markerDate,
     cash: 0, card: 0, prepaid: 0, other: 0,
+    modes: {},
     laundry: 0, laundryCash: 0,
     drawerOut: 0,
     expensesCounted: 0,
@@ -262,8 +270,15 @@ export function summarise(shift) {
     cards: [],
     users: {},
     backOffice: [],
+    opening: null,
+    closing: null,
+    moves: [],
+    expensesMoved: 0,
+    safeMoved: 0,
+    unlabelledMoved: 0,
   };
-  let lastCountExpenses = null;
+  const counts = [];
+  const movements = [];
 
   for (const e of shift.entries) {
     s.users[e.user] = (s.users[e.user] || 0) + 1;
@@ -277,6 +292,7 @@ export function summarise(shift) {
     let paidOther = 0;
     for (const p of e.payments) {
       s[p.method] += p.amount;
+      s.modes[p.label] = (s.modes[p.label] || 0) + p.amount;
       if (p.method === 'cash') paidCash += p.amount;
       else paidOther += p.amount;
       if (p.method === 'card') s.cards.push({ seq: e.seq, date: p.date, amount: p.amount, user: e.user });
@@ -290,17 +306,94 @@ export function summarise(shift) {
     if (DEFICIT.test(e.kind) && e.booked) {
       s.booked.push({ seq: e.seq, user: e.user, when: e.kind.startsWith('End') ? 'close' : 'open', amount: e.booked });
     }
-    if (e.kind === 'Money Count' && e.expensesCounted !== null) lastCountExpenses = e.expensesCounted;
-    if (e.kind === 'Cash Movement' && e.register === DRAWER) {
-      s.drawerOut -= e.movement;
-      // The expense receipts counted just before a movement out left with it.
-      // Each count is used once, so a count repeated three times is not three
-      // lots of expenses.
-      if (e.movement < 0 && lastCountExpenses) {
-        s.expensesCounted += Math.min(lastCountExpenses, -e.movement);
-        lastCountExpenses = null;
-      }
+    if (e.kind === 'Money Count') {
+      const receipts = e.expensesCounted || 0;
+      counts.push({ seq: e.seq, user: e.user, notes: e.counted, receipts, total: e.counted + receipts, at: movements.length });
     }
+    if (e.kind === 'Cash Movement') movements.push({ seq: e.seq, user: e.user, amount: -e.movement, countsBefore: counts.length });
+  }
+
+  s.drawerOut = movements.reduce((t, m) => t + m.amount, 0);
+  s.opening = counts[0] || null;
+  s.closing = counts.length > 1 ? counts[counts.length - 1] : null;
+  s.moves = labelMovements(movements, counts);
+  for (const m of s.moves) {
+    if (m.kind === 'expenses') s.expensesMoved += m.amount;
+    else if (m.kind === 'safe') s.safeMoved += m.amount;
+    else if (m.kind === 'split') { s.expensesMoved += m.expenses; s.safeMoved += m.safe; }
+    else if (m.kind === 'part') { s.expensesMoved += m.expenses; s.unlabelledMoved += m.amount - m.expenses; }
+    else if (m.kind === 'unlabelled') s.unlabelledMoved += m.amount;
+  }
+  s.expensesCounted = s.expensesMoved;
+  // The drawer by ASSD's own counts: what the shift's first count found,
+  // plus the cash it took, less what it moved out, against its last count.
+  // ASSD books the same difference as an End cash deficit/surplus.
+  if (s.opening && s.closing) {
+    s.expected = s.opening.total + s.cash - s.drawerOut;
+    s.countVariance = s.closing.total - s.expected;
+  } else {
+    s.expected = null;
+    s.countVariance = null;
   }
   return s;
+}
+
+/**
+ * What each Cash Movement out of the drawer was.
+ *
+ * A movement says only an amount: front drawer to the back office. What
+ * labels it is the Money Count done just before it, whose notes are cash and
+ * whose "Total Expenses PAID" line is the receipts for what was bought out of
+ * the drawer. So, in order:
+ *
+ * - a movement put straight back by an equal movement the other way is a
+ *   correction, and both are set aside (a 17,630 keyed for 1,763);
+ * - a movement equal to the count's notes plus receipts is both: the receipts
+ *   are expenses and the notes went to the safe;
+ * - a movement no bigger than the receipts is expenses;
+ * - a movement bigger than the receipts is the receipts as expenses and the
+ *   rest not labelled;
+ * - a movement equal to the count's notes, with no receipts, is cash to the
+ *   safe;
+ * - anything else is not labelled in ASSD. The expense sheet's total, typed on
+ *   the Shifts screen, settles it.
+ *
+ * Each count's receipts are used once.
+ */
+export function labelMovements(movements, counts) {
+  const out = [];
+  const done = new Set();
+  for (let i = 0; i < movements.length; i += 1) {
+    if (done.has(i)) continue;
+    const m = movements[i];
+    const undo = movements.findIndex((x, j) => j > i && !done.has(j) && x.amount === -m.amount);
+    if (m.amount !== 0 && undo >= 0) {
+      done.add(i);
+      done.add(undo);
+      out.push({ seq: m.seq, user: m.user, amount: m.amount, kind: 'corrected', reversedBy: movements[undo].seq, reversedByUser: movements[undo].user });
+      continue;
+    }
+    if (m.amount <= 0) {
+      out.push({ seq: m.seq, user: m.user, amount: m.amount, kind: 'returned' });
+      continue;
+    }
+    const before = counts.slice(0, m.countsBefore);
+    const withReceipts = [...before].reverse().find((c) => c.receipts && !c.used);
+    const last = before[before.length - 1];
+    if (withReceipts && withReceipts.notes + withReceipts.receipts === m.amount) {
+      withReceipts.used = true;
+      out.push({ seq: m.seq, user: m.user, amount: m.amount, kind: 'split', expenses: withReceipts.receipts, safe: withReceipts.notes, count: withReceipts.seq });
+    } else if (withReceipts && m.amount <= withReceipts.receipts) {
+      withReceipts.used = true;
+      out.push({ seq: m.seq, user: m.user, amount: m.amount, kind: 'expenses', count: withReceipts.seq });
+    } else if (withReceipts) {
+      withReceipts.used = true;
+      out.push({ seq: m.seq, user: m.user, amount: m.amount, kind: 'part', expenses: withReceipts.receipts, count: withReceipts.seq });
+    } else if (last && !last.receipts && last.notes === m.amount) {
+      out.push({ seq: m.seq, user: m.user, amount: m.amount, kind: 'safe', count: last.seq });
+    } else {
+      out.push({ seq: m.seq, user: m.user, amount: m.amount, kind: 'unlabelled' });
+    }
+  }
+  return out;
 }

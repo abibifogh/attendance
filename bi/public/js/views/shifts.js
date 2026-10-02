@@ -171,8 +171,8 @@ export async function renderShifts(root, { range }) {
         slot('Card terminal report', 'The CSV from the bank’s merchant portal: every tap, approved or declined, to the second.',
           '.csv,text/csv', 'terminal',
           c.terminal ? `Loaded: ${shortDay(c.terminal.from)} – ${shortDay(c.terminal.to)}` : 'Nothing loaded yet.'),
-        slot('GTBank statement', 'The Finacle customer statement, as the XLSX it comes in. Card settlements, MoMo and commission are read from it.',
-          '.xlsx,.xls', 'bank',
+        slot('GTBank statement', 'The statement from GTBank internet banking, as the .xls it downloads (the Finacle XLSX works too). Card settlements, MoMo and commission are read from it.',
+          '.xls,.xlsx,.htm,.html', 'bank',
           c.bank ? `Loaded: ${shortDay(c.bank.from)} – ${shortDay(c.bank.to)}` : 'Nothing loaded yet.')));
   }
 
@@ -190,8 +190,8 @@ export async function renderShifts(root, { range }) {
     return h('div.grid.four', { style: { marginBottom: '1rem' } },
       tile({ label: 'Cash received', value: t.cash, unit: 'money', note: `${num(t.shifts)} shifts · ${money(t.drawerOut)} left the drawer` }),
       tile({ label: 'Card + MoMo in ASSD', value: recorded, unit: 'money', note: `${money(t.received)} arrived on the terminal and by MoMo` }),
-      tile({ label: 'Counted variance', value: t.counted ? t.variance : null, unit: 'money',
-        note: t.counted ? `${num(t.counted)} of ${num(t.shifts)} shifts counted at hand-over` : 'No hand-over counts typed yet' }),
+      tile({ label: 'Drawer variance', value: t.counted ? t.variance : null, unit: 'money',
+        note: t.counted ? `${num(t.counted)} of ${num(t.shifts)} shifts with an opening and closing count` : 'No counts in these days yet' }),
       tile({ label: 'Exceptions waiting', value: t.open, note: t.open ? 'Card and MoMo differences without an answer' : 'Every difference answered or explained' }));
   }
 
@@ -254,27 +254,37 @@ export async function renderShifts(root, { range }) {
     const r = s.register || {};
     const variance = r.variance;
     const checks = [];
-    if (variance == null) checks.push(['info', 'i', r.closing == null ? 'No count typed at hand-over yet' : 'No opening to count from']);
-    else if (variance === 0) checks.push(['good', '✓', 'Cash agrees with the count']);
-    else checks.push([Math.abs(variance) >= 5000 ? 'critical' : 'warning', '!', `Cash ${variance > 0 ? 'over' : 'short'} by ${money(Math.abs(variance))}`]);
+    if (variance == null) checks.push(['info', 'i', s.open ? 'The journal ends before this shift’s closing count' : 'No closing count in ASSD for this shift']);
+    else if (variance === 0) checks.push(['good', '✓', `The drawer agrees with ${r.closingFrom === 'typed' ? 'the recount' : 'ASSD’s closing count'}`]);
+    else checks.push([variance < 0 ? 'critical' : 'warning', '!', `Drawer ${variance > 0 ? 'over' : 'short'} by ${money(Math.abs(variance))}`]);
+    if (r.handoverGap) {
+      checks.push(['warning', '!', `Opened ${money(Math.abs(r.handoverGap.amount))} ${r.handoverGap.amount < 0 ? 'below' : 'above'} ${nameOf(r.handoverGap.from)}’s closing count`]);
+    }
     const lines = s.cardLines;
     if (!lines) checks.push(['info', '·', 'No card or MoMo this shift']);
     else if (s.cardFound === lines) checks.push(['good', '✓', `Card + MoMo ${money(s.card)} · ${lines} of ${lines} found`]);
     else checks.push(['warning', '!', `Card + MoMo ${money(s.card)} · ${s.cardFound} of ${lines} found`]);
     const exp = s.expense;
-    if (exp?.sheetTotal != null || s.expensesCounted) {
+    if (exp?.sheetTotal != null || r.expenses) {
       const sheet = exp?.sheetTotal;
       const odoo = exp?.odooTotal;
       const agree = sheet != null && odoo != null && sheet === odoo;
       checks.push([agree ? 'good' : (sheet != null && odoo != null ? 'warning' : 'info'), agree ? '✓' : 'i',
-        `Expenses ${money(sheet ?? s.expensesCounted)}${odoo != null ? ` · Odoo ${money(odoo)}` : exp?.poNumbers ? ' · Odoo not read yet' : ' · no PO numbers yet'}`]);
+        `Expenses ${money(sheet ?? r.expenses)}${odoo != null ? ` · Odoo ${money(odoo)}` : exp?.poNumbers ? ' · Odoo not read yet' : ' · no PO numbers yet'}`]);
     }
     if (s.laundry) checks.push(['info', 'i', `Laundry ${money(s.laundry)}${s.laundryCash ? `, ${money(s.laundryCash)} in cash` : ''}`]);
-    for (const b of s.booked || []) {
-      checks.push([b.amount === 0 ? 'good' : 'info', 'i',
-        `ASSD booked a ${b.amount < 0 ? 'deficit' : 'surplus'} of ${money(Math.abs(b.amount))} at ${nameOf(b.user)}’s ${b.when === 'close' ? 'close' : 'open'}`]);
+    const corrected = (s.moves || []).filter((m) => m.kind === 'corrected');
+    for (const m of corrected) {
+      checks.push(['info', 'i', `A movement of ${money(m.amount)} was keyed and put back by ${nameOf(m.reversedByUser)}`]);
     }
-    if (s.exceptions) checks.push(['warning', '!', `${s.exceptions} card or MoMo exception${s.exceptions === 1 ? '' : 's'} below`]);
+    if (s.exceptions) checks.push(['warning', '!', `${s.exceptions} exception${s.exceptions === 1 ? '' : 's'} below`]);
+
+    const outNote = !s.drawerOut ? 'nothing moved out'
+      : [r.expenses ? `${money(r.expenses)} expenses${r.expensesFrom === 'sheet' ? ' (sheet)' : ''}` : null,
+        r.toSafe ? `${money(r.toSafe)} to the safe` : null,
+        r.unlabelled ? `${money(r.unlabelled)} not labelled` : null].filter(Boolean).join(' · ');
+    const counted = r.closingFrom === 'typed' ? `recounted by ${r.countedBy}`
+      : r.closingFrom === 'assd' ? `ASSD count${r.receiptsAtClose ? `, incl. ${money(r.receiptsAtClose)} receipts` : ''}` : '';
 
     return h('div.card.shift',
       h('div.shifthead',
@@ -282,36 +292,81 @@ export async function renderShifts(root, { range }) {
         s.double ? h('span.pill', 'covered two slots') : null,
         s.open ? h('span.pill.warning', 'journal ends here') : null),
       h('dl.ledger',
-        row('Opening', r.opening == null ? '—' : money(r.opening),
-          r.openingFrom === 'typed' ? 'typed' : r.opening != null ? 'the last count' : 'no count before this shift'),
-        row('+ Cash received', money(s.cash), s.laundryCash ? `includes ${money(s.laundryCash)} laundry` : ''),
-        row('− Left the drawer', money(s.drawerOut),
-          !s.drawerOut ? 'Cash Movements in ASSD'
-            : r.expenses == null ? 'type the expense total to split it'
-              : `${money(r.expenses)} expenses · ${money(r.toSafe)} to the safe`),
-        row('= Expected closing', r.expected == null ? '—' : money(r.expected)),
-        row('Counted closing', r.closing == null ? '—' : money(r.closing), r.countedBy ? `typed by ${r.countedBy}` : ''),
+        row('Opening count', r.opening == null ? '—' : money(r.opening),
+          r.openingFrom === 'typed' ? 'typed' : r.openingFrom === 'assd' ? 'ASSD, at hand-over' : r.openingFrom === 'carried' ? 'the last count' : ''),
+        row('+ Cash taken', money(s.cash), s.laundryCash ? `includes ${money(s.laundryCash)} laundry` : ''),
+        row('− Moved out of the drawer', money(s.drawerOut), outNote),
+        row('= Should be in the drawer', r.expected == null ? '—' : money(r.expected)),
+        row('Closing count', r.closing == null ? '—' : money(r.closing), counted),
         row('Variance', variance == null ? '—' : signed(variance), '', variance ? (variance > 0 ? 'over' : 'short') : '')),
+      modesList(s),
       h('ul.checks', checks.map(([tone, mark, text]) => h(`li.${tone}`, h('span.mark', mark), text))),
+      movesList(s),
       countForm(s));
+  }
+
+  /** How the shift was paid, in ASSD's own words. */
+  function modesList(s) {
+    const modes = Object.entries(s.modes || {}).filter(([, v]) => v);
+    if (!modes.length) return null;
+    const word = (label) => {
+      const t = label.toUpperCase();
+      if (/\bCASH\b/.test(t)) return 'Cash';
+      if (/CR\.|CREDIT CARD/.test(t)) return 'Card and MoMo';
+      if (/PRE-?BAN/.test(t)) return 'Prepaid by bank transfer';
+      if (/PREPAID CC/.test(t)) return 'Prepaid by card online';
+      return label;
+    };
+    return h('details.modes',
+      h('summary.small', `Taken by every method: ${money(modes.reduce((t, [, v]) => t + v, 0))}`),
+      h('dl.ledger.small', modes.map(([label, v]) => row(word(label), money(v), label))),
+      h('p.small.muted', 'Only cash goes into the drawer. Card and MoMo are checked against the terminal and the bank; prepayments were paid before the guest arrived.'));
+  }
+
+  /** Every Cash Movement out of the drawer, and what it was. */
+  function movesList(s) {
+    const moves = s.moves || [];
+    if (!moves.length) return null;
+    const what = (m) => ({
+      expenses: 'Expenses — receipts counted before it',
+      safe: 'To the safe — notes counted before it',
+      split: `${money(m.expenses)} expenses and ${money(m.safe)} to the safe, as counted before it`,
+      part: `${money(m.expenses)} expenses as counted; ${money(m.amount - m.expenses)} not labelled`,
+      unlabelled: 'Not labelled in ASSD: no count before it said what it was',
+      corrected: `Keyed in error and put back by ${nameOf(m.reversedByUser)} (ASSD ${m.reversedBy})`,
+      returned: 'Put back into the drawer',
+    })[m.kind] || m.kind;
+    return h('details.moves',
+      h('summary.small', `How the cash moved: ${moves.length} movement${moves.length === 1 ? '' : 's'}`),
+      h('ul.movelist', moves.map((m) => h('li',
+        h('span', m.kind === 'corrected' ? h('s', money(m.amount)) : h('strong', money(m.amount))),
+        h('span.small', ` ${what(m)} · ${nameOf(m.user)}, ASSD ${m.seq}`)))),
+      h('p.small.muted', 'Every movement goes from the front drawer to the back office. ASSD records only the amount, so what a movement was comes from the Money Count done just before it: its notes are cash for the safe, its “Total Expenses PAID” line is the receipts. Typing the expense sheet’s total settles anything not labelled.'));
   }
 
   function row(label, value, note = '', tone = '') {
     return [h('dt', label, note ? h('span.small.muted', ` ${note}`) : null), h(`dd${tone ? `.${tone}` : ''}`, value)];
   }
 
+  /**
+   * A recount, typed by a person. ASSD's own closing count is used unless
+   * one is typed: this is for a spot check, or for a count ASSD got wrong.
+   */
   function countForm(s) {
+    if (s.open) return null;
     const r = s.register || {};
-    const closing = h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal', value: cedis(r.closing), placeholder: '0.00' });
-    const opening = h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal', value: r.openingFrom === 'typed' ? cedis(r.opening) : '', placeholder: 'only for the first count' });
+    const closing = h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal',
+      value: r.closingFrom === 'typed' ? cedis(r.closing) : '', placeholder: r.closing != null ? cedis(r.closing) : '0.00' });
+    const needOpening = r.openingFrom == null || r.openingFrom === 'typed';
+    const opening = h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal',
+      value: r.openingFrom === 'typed' ? cedis(r.opening) : '', placeholder: 'only if ASSD has no opening count' });
     const note = h('input', { type: 'text', maxlength: '400', value: r.note || '', placeholder: 'optional' });
     const said = h('span.small');
-    const needOpening = r.opening == null || r.openingFrom === 'typed';
     return h('details.countform',
-      h('summary.small', r.closing == null ? 'Type the hand-over count' : 'Change the hand-over count'),
-      h('p.small.muted', 'Counted by the person taking over the drawer: what is actually in it when this shift ends.'),
-      h('label.field', 'Counted closing (GH₵)', closing),
-      needOpening ? h('label.field', 'Opening (GH₵), only if nothing was counted before', opening) : null,
+      h('summary.small', r.closingFrom === 'typed' ? 'Change the recount' : 'Recount the drawer (optional)'),
+      h('p.small.muted', 'ASSD’s own closing count is used unless a recount is typed here — for a spot check, or when ASSD’s count is wrong. Clear the box and save to go back to ASSD’s count.'),
+      h('label.field', 'Recounted closing (GH₵)', closing),
+      needOpening ? h('label.field', 'Opening (GH₵)', opening) : null,
       h('label.field', 'Note', note),
       h('button.btn.primary', {
         onclick: async () => {
@@ -321,7 +376,7 @@ export async function renderShifts(root, { range }) {
             await load();
           } catch (err) { said.textContent = err.message; }
         },
-      }, 'Save the count'), ' ', said);
+      }, 'Save the recount'), ' ', said);
   }
 
   function matchCard(s) {
@@ -470,6 +525,10 @@ export async function renderShifts(root, { range }) {
       case 'regrouped': return `The shift’s unmatched lines (${x.lines.map((a) => money(a)).join(' + ')}) add up to exactly its unmatched payments (${x.events.map((ev) => money(ev.amount)).join(' + ')}): the same money, split differently.`;
       case 'other-shift': return `Paid ${e.kind === 'momo' ? 'by MoMo' : 'by card'} at ${when(e.at)}${x.otherShift ? `, on ${nameOf(x.otherShift.user)}’s ${SLOT_LABEL[x.otherShift.slot].toLowerCase()} shift of ${shortDay(x.otherShift.day)}` : ''}, and keyed on this one.`;
       case 'corrected': return `Keyed and then reversed in the same shift (ASSD ${x.pair}).`;
+      case 'drawer-short':
+      case 'drawer-over': return `Should have held ${money(x.expected)}; ${x.closingFrom === 'typed' ? 'the recount' : 'ASSD’s closing count'} found ${money(x.closing)}.`;
+      case 'handover-gap': return `The first count of this shift found ${money(Math.abs(x.amount))} ${x.amount < 0 ? 'less' : 'more'} than ${nameOf(x.from)}’s closing count. Cash went missing, or was added, between the two counts.`;
+      case 'movement-corrected': return `${nameOf(x.by)} moved ${money(x.amount)} out of the drawer and ${nameOf(x.reversedBy)} put it back (ASSD ${x.reversedSeq}). The net is nothing; the slip is listed so it can be seen.`;
       case 'bank-only': return `A card credit on the bank statement, card …${e.last4}, tapped ${shortDay(e.day)}, with no record on the terminal report.`;
       default: return x.kind;
     }
@@ -489,20 +548,21 @@ export async function renderShifts(root, { range }) {
     });
     return h('div.card',
       h('h3', 'The drawer, from one count to the next'),
-      h('p.sub', 'Cash and what left the drawer come from ASSD. Only the count is typed, by the person taking over. Each '
-        + 'shift opens on the last count, so a difference lands on the person who was holding the drawer and on nobody else. '
-        + 'ASSD’s own booked deficit or surplus is shown beside it.'),
+      h('p.sub', 'All from ASSD: the Money Count at each hand-over, the cash taken, and every Cash Movement out of the drawer, '
+        + 'labelled as expenses or cash to the safe by the count done just before it. A difference lands on the person who was '
+        + 'holding the drawer and on nobody else, and is the same figure ASSD books as a deficit or surplus. '
+        + 'A closing marked * is a recount typed here.'),
       table([
         { label: 'Shift', get: ({ s }) => h('span', { style: { whiteSpace: 'nowrap' } }, `${weekday(s.day)} ${shortDay(s.day)} · ${{ morning: 'AM', afternoon: 'PM', night: 'Night' }[s.slot]}`) },
         { label: 'Person', get: ({ s }) => nameOf(s.user) },
-        { label: 'Opening', num: true, get: ({ r }) => (r.opening == null ? '—' : money(r.opening)) },
-        { label: '+ Cash', num: true, get: ({ s }) => money(s.cash) },
-        { label: '− Left drawer', num: true, get: ({ s }) => money(s.drawerOut) },
-        { label: 'of which expenses', num: true, get: ({ r }) => (r.expenses == null ? 'not split' : money(r.expenses)) },
-        { label: '= Expected', num: true, get: ({ r }) => (r.expected == null ? '—' : money(r.expected)) },
-        { label: 'Counted', num: true, get: ({ r }) => (r.closing == null ? '—' : money(r.closing)) },
+        { label: 'Opening count', num: true, get: ({ r }) => (r.opening == null ? '—' : money(r.opening)) },
+        { label: '+ Cash taken', num: true, get: ({ s }) => money(s.cash) },
+        { label: '− Expenses', num: true, get: ({ r }) => (r.expenses ? money(r.expenses) : '') },
+        { label: '− To the safe', num: true, get: ({ r }) => (r.toSafe ? money(r.toSafe) : '') },
+        { label: '− Not labelled', num: true, get: ({ r }) => (r.unlabelled ? money(r.unlabelled) : '') },
+        { label: '= Should hold', num: true, get: ({ r }) => (r.expected == null ? '—' : money(r.expected)) },
+        { label: 'Closing count', num: true, get: ({ r }) => (r.closing == null ? '—' : `${money(r.closing)}${r.closingFrom === 'typed' ? ' *' : ''}`) },
         { label: 'Variance', num: true, get: ({ r }) => signed(r.variance) },
-        { label: 'ASSD booked', num: true, get: ({ s }) => ((s.booked || []).length ? s.booked.map((b) => signed(b.amount)).join(' ') : '') },
         { label: 'Person to date', num: true, get: ({ mtd }) => (mtd == null ? '' : signed(mtd)) },
       ], rows));
   }
@@ -514,9 +574,9 @@ export async function renderShifts(root, { range }) {
     const widest = Math.max(1, ...people.map((p) => Math.abs(p.variance)));
     return [
       h('div.card',
-        h('h3', 'Counted variance by person'),
-        h('p.sub', 'Over and short at the hand-over counts, per person, over these days. Nothing is plugged: a count that '
-          + 'is not typed is not guessed.'),
+        h('h3', 'Drawer variance by person'),
+        h('p.sub', 'Over and short against the closing counts, per person, over these days. Nothing is plugged: a shift '
+          + 'without a count is not guessed.'),
         h('div.bars', people.map((p) => h('div.barrow',
           h('span.who', nameOf(p.user)),
           h('span.track', h('span.bar', {

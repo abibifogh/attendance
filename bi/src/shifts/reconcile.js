@@ -553,6 +553,8 @@ export const GROUPS = [
     help: 'ASSD says card or MoMo; no approved card, no MoMo receipt and no bank credit of that amount anywhere near the shift.' },
   { id: 'double', title: 'The same card charged twice', severity: 'critical',
     help: 'Two approved charges to one card for the same amount within half an hour, and only one in ASSD. The guest is owed a refund, or ASSD is missing a payment.' },
+  { id: 'drawer', title: 'The drawer did not agree with its count', severity: 'critical',
+    help: 'Opening count, plus the cash taken, less what was moved out, against the count at the end of the shift — ASSD’s own counts unless somebody typed a recount. Also listed: a hand-over where the next person’s first count differed from the last person’s closing count.' },
   { id: 'keying', title: 'Keying slips: transposed digits, one digit off, a decimal in the wrong place', severity: 'warning',
     help: 'The terminal took one amount and ASSD records a slightly different one. The difference is real money on one side or the other.' },
   { id: 'duplicate', title: 'Keyed twice in ASSD', severity: 'warning',
@@ -562,7 +564,7 @@ export const GROUPS = [
   { id: 'settlement', title: 'Did not reach the bank, or went back out', severity: 'warning',
     help: 'Approved card payments with no bank credit after six days, card reversals, and refunds keyed in ASSD.' },
   { id: 'explained', title: 'Explained by the matcher — check the explanation', severity: 'info',
-    help: 'Differences the rules could account for: the same money split differently, keyed on the next shift, a mistake and its correction, a card credit from outside the terminal report.' },
+    help: 'Differences the rules could account for: the same money split differently, keyed on the next shift, a mistake and its correction, a cash movement keyed wrong and put back, a card credit from outside the terminal report.' },
 ];
 
 const GROUP = {

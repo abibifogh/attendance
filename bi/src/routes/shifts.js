@@ -82,8 +82,11 @@ export async function uploadBank(env, body, account) {
   const kinds = {};
   for (const r of parsed.rows) kinds[r.kind] = (kinds[r.kind] || 0) + 1;
   const note = `${kinds.card || 0} card credits, ${kinds.momo || 0} MoMo, ${kinds['card-reversal'] || 0} reversals, `
-    + `${kinds.commission || 0} commission rows. ${parsed.counts.flagged} rows the bank itself marked deleted or unposted were ignored`
-    + ` (${(parsed.flaggedAmount / 100).toLocaleString('en-GB', { minimumFractionDigits: 2 })}), and ${parsed.counts.other + (Number(body?.leftOut) || 0)} other rows (salaries, suppliers, transfers) were not kept.`;
+    + `${kinds.commission || 0} commission rows.`
+    + (parsed.counts.flagged
+      ? ` ${parsed.counts.flagged} rows the bank itself marked deleted or unposted were ignored (${(parsed.flaggedAmount / 100).toLocaleString('en-GB', { minimumFractionDigits: 2 })}).`
+      : '')
+    + ` ${parsed.counts.other + (Number(body?.leftOut) || 0)} other rows (salaries, suppliers, transfers) were not kept.`;
   await logUpload(env, 'bank', body?.name, days[0] ?? null, days[days.length - 1] ?? null, parsed.rows.length, note, account);
   return { ok: true, kind: 'bank', rows: parsed.rows.length, from: days[0] ?? null, to: days[days.length - 1] ?? null, note };
 }
@@ -261,9 +264,13 @@ export async function shifts(env, query, account) {
     ...bank.filter((b) => b.kind === 'momo' && b.at).map((b) => ({
       id: `b:${b.id}`, kind: 'momo', amount: b.amount, at: b.at, exact: b.at_exact === 1, source: 'bank',
     })),
-    // Card credits for days the terminal report does not cover: by day only.
+    // Card credits for days the terminal report does not cover, and MoMo
+    // received in a batch with no time on it: by day only.
     ...bank.filter((b) => b.kind === 'card' && !coverage.terminalDays.has(b.card_day || b.day)).map((b) => ({
       id: `b:${b.id}`, kind: 'card', amount: b.amount, day: b.card_day || b.day, last4: b.last4, approval: b.approval, source: 'bank',
+    })),
+    ...bank.filter((b) => b.kind === 'momo' && !b.at).map((b) => ({
+      id: `b:${b.id}`, kind: 'momo', amount: b.amount, day: b.day, source: 'bank',
     })),
   ];
   const declines = terminal.filter((t) => !t.approved).map((t) => ({
@@ -294,38 +301,76 @@ export async function shifts(env, query, account) {
   const expenses = await all(env.DB, 'SELECT * FROM shift_expense WHERE day BETWEEN ?1 AND ?2', from, to);
   const answers = await all(env.DB, 'SELECT * FROM shift_answer');
   const answerOf = new Map(answers.map((a) => [a.key, { answer: a.answer, note: a.note, by: a.by_name, at: a.at }]));
-  for (const x of exceptions) x.answer = answerOf.get(x.key) || null;
 
   const countOf = new Map(counts.map((c) => [`${c.day}|${c.slot}`, c]));
   const expenseOf = new Map(expenses.map((e) => [`${e.day}|${e.slot}`, e]));
 
-  // The register, in slot order, each opening the previous closing.
+  // The register, in slot order. ASSD counts the drawer at every hand-over:
+  // a shift's first Money Count is its opening and its last is its closing.
+  // A count typed here is a recount, and when there is one it is used instead.
   const ordered = [...result.shifts].sort((a, b) => a.slot - b.slot);
   const register = new Map();
-  let carried = null;
-  let carriedFrom = null;
+  let previousClosing = null;
   for (const s of ordered) {
     const typed = countOf.get(`${s.day}|${s.slotName}`);
     const expense = expenseOf.get(`${s.day}|${s.slotName}`);
-    const opening = typed?.opening ?? carried;
-    const openingFrom = typed?.opening != null ? 'typed' : carriedFrom;
+    const assdOpening = s.opening?.total ?? null;
+    const opening = typed?.opening ?? assdOpening ?? previousClosing?.amount ?? null;
+    const openingFrom = typed?.opening != null ? 'typed' : assdOpening != null ? 'assd' : previousClosing ? 'carried' : null;
     const out = s.drawerOut;
     const expected = opening == null ? null : opening + s.cash - out;
-    const closing = typed?.closing ?? null;
-    // Expenses are what the sheet says when it has been typed, else the
-    // receipts ASSD's own hand-over count listed, else not split at all:
-    // guessing would put an expense in the safe or cash in the expenses.
-    const expensesPaid = expense?.sheet_total ?? (s.expensesCounted || (out ? null : 0));
+    const closing = typed?.closing ?? s.closing?.total ?? null;
+    const closingFrom = typed?.closing != null ? 'typed' : s.closing ? 'assd' : null;
+    // Expenses: the expense sheet when it has been typed; otherwise what the
+    // counts before each movement label as receipts. Whatever no count
+    // labels stays "not labelled" rather than being guessed into either.
+    const sheet = expense?.sheet_total ?? null;
+    const expenses = sheet ?? s.expensesMoved;
+    const toSafe = sheet != null ? Math.max(0, out - sheet) : s.safeMoved;
+    const unlabelled = sheet != null ? 0 : s.unlabelledMoved;
     register.set(s.index, {
       opening, openingFrom, cashIn: s.cash, laundryCash: s.laundryCash, out,
-      expenses: expensesPaid, toSafe: expensesPaid == null ? null : Math.max(0, out - expensesPaid),
-      expensesFrom: expense?.sheet_total != null ? 'sheet' : s.expensesCounted ? 'assd' : null,
-      expected, closing, variance: expected != null && closing != null ? closing - expected : null,
+      expenses, toSafe, unlabelled, expensesFrom: sheet != null ? 'sheet' : 'assd',
+      expected, closing, closingFrom,
+      receiptsAtClose: closingFrom === 'assd' ? s.closing.receipts : null,
+      variance: expected != null && closing != null ? closing - expected : null,
+      assdVariance: s.countVariance,
+      // The incoming person's first count against the outgoing person's last.
+      handoverGap: previousClosing && assdOpening != null && previousClosing.amount !== assdOpening
+        ? { amount: assdOpening - previousClosing.amount, from: previousClosing.user } : null,
       note: typed?.note || null, countedBy: typed?.by_name || null, countedAt: typed?.at || null,
     });
-    carried = closing;
-    carriedFrom = closing != null ? `${s.day}|${s.slotName}` : null;
+    previousClosing = closing != null ? { amount: closing, user: s.user } : null;
   }
+
+  // The drawer's own exceptions: a count that did not agree, a hand-over
+  // where the next count differed from the last, and a movement keyed wrong
+  // and put back.
+  for (const s of ordered.filter((x) => inRange(x.day))) {
+    const r = register.get(s.index);
+    const base = { day: s.day, slot: s.slotName, user: s.user, event: null };
+    if (r.variance) {
+      exceptions.push({
+        ...base, key: `drawer:${s.day}:${s.slotName}`, kind: r.variance < 0 ? 'drawer-short' : 'drawer-over',
+        group: 'drawer', severity: r.variance < 0 ? 'critical' : 'warning', amount: r.variance,
+        expected: r.expected, closing: r.closing, closingFrom: r.closingFrom,
+      });
+    }
+    if (r.handoverGap) {
+      exceptions.push({
+        ...base, key: `handover:${s.day}:${s.slotName}`, kind: 'handover-gap', group: 'drawer', severity: 'warning',
+        amount: r.handoverGap.amount, from: r.handoverGap.from,
+      });
+    }
+    for (const m of s.moves.filter((x) => x.kind === 'corrected')) {
+      exceptions.push({
+        ...base, key: `movement:${m.seq}`, kind: 'movement-corrected', group: 'explained', severity: 'info',
+        seq: m.seq, amount: m.amount, by: m.user, reversedBy: m.reversedByUser, reversedSeq: m.reversedBy,
+      });
+    }
+  }
+
+  for (const x of exceptions) x.answer = answerOf.get(x.key) || null;
 
   const byDay = new Map(daysBetween(from, to).map((d) => [d, []]));
   for (const s of placed) {
@@ -339,6 +384,8 @@ export async function shifts(env, query, account) {
       startSeq: s.startSeq, endSeq: s.endSeq,
       cash: s.cash, card: s.card, prepaid: s.prepaid, other: s.other, laundry: s.laundry, laundryCash: s.laundryCash,
       drawerOut: s.drawerOut, expensesCounted: s.expensesCounted, booked: s.booked,
+      modes: s.modes, moves: s.moves, opening: s.opening, closing: s.closing,
+      expensesMoved: s.expensesMoved, safeMoved: s.safeMoved, unlabelledMoved: s.unlabelledMoved,
       lines: s.lines,
       cardFound: found.length, cardLines: cardLines.length,
       cardFoundAmount: found.reduce((t, l) => t + l.amount, 0),

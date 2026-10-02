@@ -158,8 +158,8 @@ two prices. **Service** — checks due against checks done, next to who was on.
 **Setup** — where the four systems are connected, and every load that has run.
 **Reports** — a finished report made elsewhere, published at its own address
 behind a PIN per reader; see `docs/reports.md`. **Shifts** — the front desk's
-control sheet done from the source records: each shift's cash against its
-hand-over count, every card and MoMo payment against the terminal and the bank,
+control sheet done from the source records: each shift's cash, how it was
+moved out and its hand-over counts, every card and MoMo payment against the terminal and the bank,
 and the exceptions grouped by what went wrong; see `docs/shifts.md`.
 
 ### Getting the data out
