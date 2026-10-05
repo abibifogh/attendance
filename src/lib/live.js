@@ -64,6 +64,7 @@ export const TOPICS = {
  * below can sit under the general ones in any order.
  */
 const BY_PATH = [
+  ['/api/hr-faq', 'people'],
   ['/api/att/roster', 'rota'],
   ['/api/att/shifts', 'rota'],
   ['/api/att/patterns', 'rota'],

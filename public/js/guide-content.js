@@ -533,6 +533,40 @@ export const GUIDE = [
   },
 
   {
+    key: 'hr-faq',
+    title: 'The HR FAQ',
+    permission: null,
+    lede: 'Quick answers to the questions staff ask most, on top of the handbook.',
+    blocks: [
+      { p: 'What to do when you are sick, how to ask for leave, what not to do on duty, how '
+        + 'your bonus is worked out. Each answer is a few lines and ends with a button that '
+        + 'opens the screen in HIVE that does the thing, or the handbook chapter the rule '
+        + 'comes from. Topics across the top; the search looks through every answer at once.' },
+      { p: 'Ask HR a question sends what the FAQ did not answer to whoever holds HR. The '
+        + 'answer comes back on the same screen, under My questions, and you are told when it '
+        + 'does. One question at a time.' },
+      { sub: 'Writing it' },
+      { p: 'Managing the FAQ, under the list, holds every question with its state. What staff '
+        + 'read is the published copy: edit as much as you like and nothing changes on their '
+        + 'screen until you press Publish. A published question edited since shows as Edited '
+        + 'until its changes are published.' },
+      { list: [
+        'Answers are plain text: a blank line between paragraphs, "- " for a list, "1. " for '
+          + 'steps. Nothing typed into an answer can become a link or a script.',
+        'Where it sends them picks from the screens HIVE has, with your own words on the '
+          + 'button. An answer cannot link out of the app.',
+        'Retire takes a question off the screen and keeps it; Remove is for a draft nobody '
+          + 'read.',
+        'Tell staff about changes sends one short notice to everybody with a login. It is on '
+          + 'request, so four typo fixes are not four notifications.',
+        'Add the standard questions brings in any of the shipped set the property has not '
+          + 'got, as drafts, and never writes over one that has been edited.',
+        'Waiting on you lists what people have asked. Answering tells them, and a tick adds '
+          + 'the answer to the FAQ as a draft so the next person finds it without asking.',
+      ] },
+    ],
+  },
+  {
     key: 'directory',
     title: 'The directory',
     permission: null,

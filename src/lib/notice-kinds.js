@@ -96,6 +96,30 @@ export const KINDS = [
   },
 
   {
+    key: 'hr_faq.changed',
+    group: 'people',
+    label: 'The HR FAQ has been updated',
+    who: 'Everybody, when HR chooses to say so',
+    when: 'HR presses "Tell staff" after changing answers',
+    ways: ['push'],
+  },
+  {
+    key: 'hr_faq.asked',
+    group: 'people',
+    label: 'Somebody has a question for HR',
+    who: 'Whoever holds HR',
+    when: 'A member of staff asks a question the FAQ did not answer',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'hr_faq.answered',
+    group: 'people',
+    label: 'HR has answered your question',
+    who: 'The person who asked',
+    when: 'HR answers',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'handbook.published',
     group: 'rota',
     label: 'A handbook chapter needs reading',

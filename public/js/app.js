@@ -20,6 +20,7 @@ import { renderAttMyPayslips } from './views/att-my-payslips.js';
 import { renderDirectory } from './views/directory.js';
 import { renderSwapQueue, renderSwaps } from './views/swaps.js';
 import { renderHandbook } from './views/handbook.js';
+import { renderHrFaq } from './views/hr-faq.js';
 import { renderAttMyAdvance } from './views/att-my-advance.js';
 import { renderAttAdvances } from './views/att-advances.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
@@ -216,6 +217,9 @@ const ROUTES = [
   // number they ask an administrator for, and that opens a personnel record.
   { group: 'directory', tab: 'Directory', path: 'directory', label: 'Directory', permission: null, render: renderDirectory, live: ['people'] },
   { group: 'handbook', tab: 'Handbook', path: 'handbook', label: 'Handbook', permission: null, render: renderHandbook, live: ['people'] },
+  // The quick answers on top of the rules, a tab beside them rather than a
+  // link of their own: a staff member's menu stays a short plain list.
+  { group: 'handbook', tab: 'HR FAQ', path: 'hr-faq', label: 'HR FAQ', permission: null, render: renderHrFaq, live: ['people'] },
 
   // A first week. The new hire's own is hidden from the menu once it is over,
   // and the office one sits with the rest of the people screens.

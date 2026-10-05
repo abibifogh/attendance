@@ -17,6 +17,7 @@ import * as onboarding from './routes/onboarding.js';
 import * as directory from './routes/directory.js';
 import * as swaps from './routes/swaps.js';
 import * as handbook from './routes/handbook.js';
+import * as hrFaq from './routes/hr-faq.js';
 import * as authLock from './routes/auth-lock.js';
 import { watchShifts } from './lib/shift-watch.js';
 import { watchTerminals } from './lib/terminal-watch.js';
@@ -219,6 +220,18 @@ export const ROUTES = [
   ['POST', '/api/handbook/:id/retire', 'hr_manage', handbook.retireChapter],
   ['POST', '/api/handbook/install', 'hr_manage', handbook.installStandard],
   ['GET', '/api/handbook/:id/who', ['hr_view', 'hr_manage'], handbook.whoHasNot],
+
+  // The HR FAQ. Everybody signed in reads it; HR writes it and answers what
+  // it did not cover.
+  ['GET', '/api/hr-faq', null, hrFaq.readFaq],
+  ['POST', '/api/hr-faq/ask', null, hrFaq.ask],
+  ['POST', '/api/hr-faq', 'hr_manage', hrFaq.saveEntry],
+  ['POST', '/api/hr-faq/install', 'hr_manage', hrFaq.installStandard],
+  ['POST', '/api/hr-faq/tell', 'hr_manage', hrFaq.tellStaff],
+  ['POST', '/api/hr-faq/:id/publish', 'hr_manage', hrFaq.publishEntry],
+  ['POST', '/api/hr-faq/:id/retire', 'hr_manage', hrFaq.retireEntry],
+  ['DELETE', '/api/hr-faq/:id', 'hr_manage', hrFaq.removeEntry],
+  ['POST', '/api/hr-faq/questions/:id/answer', 'hr_manage', hrFaq.answerQuestion],
 
   ['GET', '/api/swaps', 'att_me', swaps.swapBoard],
   ['GET', '/api/swaps/offerable', 'att_me', swaps.whatICanOffer],

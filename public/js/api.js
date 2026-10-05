@@ -294,6 +294,17 @@ export const api = {
   handbookInstall: () => request('/api/handbook/install', { method: 'POST', body: {} }),
   handbookWho: (id) => request(`/api/handbook/${id}/who`),
 
+  // The HR FAQ.
+  hrFaq: () => request('/api/hr-faq'),
+  hrFaqAsk: (body) => request('/api/hr-faq/ask', { method: 'POST', body }),
+  hrFaqSave: (body) => request('/api/hr-faq', { method: 'POST', body }),
+  hrFaqInstall: () => request('/api/hr-faq/install', { method: 'POST', body: {} }),
+  hrFaqTell: (body) => request('/api/hr-faq/tell', { method: 'POST', body }),
+  hrFaqPublish: (id) => request(`/api/hr-faq/${id}/publish`, { method: 'POST', body: {} }),
+  hrFaqRetire: (id) => request(`/api/hr-faq/${id}/retire`, { method: 'POST', body: {} }),
+  hrFaqRemove: (id) => request(`/api/hr-faq/${id}`, { method: 'DELETE' }),
+  hrFaqAnswer: (id, body) => request(`/api/hr-faq/questions/${id}/answer`, { method: 'POST', body }),
+
   // A first week.
   myOnboarding: () => request('/api/onboarding/mine'),
   onboardings: () => request('/api/onboarding'),

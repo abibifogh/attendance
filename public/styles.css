@@ -6876,3 +6876,75 @@ tr:hover .rota-who-more,
   .ob-step > .btn-sm { width: 100%; margin-top: .4rem; }
   .ob-step { flex-wrap: wrap; }
 }
+
+/* --------------------------------------------------------------------------
+   The HR FAQ
+   -------------------------------------------------------------------------- */
+
+.faq-top { display: grid; gap: .6rem; margin-bottom: .8rem; }
+.faq-search { width: 100%; max-width: 32rem; border-radius: 999px; padding-left: 1rem; }
+.faq-tabs { display: flex; gap: .35rem; overflow-x: auto; padding-bottom: .2rem; scrollbar-width: none; }
+.faq-tabs::-webkit-scrollbar { display: none; }
+.faq-tab {
+  flex: none; display: inline-flex; align-items: center; gap: .35rem;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
+  font: inherit; font-size: .84rem; font-weight: 600; padding: .4rem .8rem; border-radius: 999px; cursor: pointer;
+}
+.faq-tab[aria-selected="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.faq-tab-n { font-size: .72rem; opacity: .7; font-variant-numeric: tabular-nums; }
+.faq-group-title {
+  font-size: .74rem; letter-spacing: .07em; text-transform: uppercase; color: var(--text-faint);
+  margin: .9rem 0 .4rem;
+}
+.faq-card { padding: 0; overflow: hidden; }
+.faq-item + .faq-item { border-top: 1px solid var(--border); }
+.faq-q {
+  width: 100%; text-align: left; background: none; border: 0; font: inherit; color: var(--text);
+  padding: .8rem .95rem; display: flex; gap: .7rem; align-items: flex-start; cursor: pointer;
+}
+.faq-q:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.faq-mark {
+  flex: none; width: 1.4rem; height: 1.4rem; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+  display: grid; place-items: center; font-weight: 800; font-size: .85rem;
+  transition: transform .15s;
+}
+.faq-q[aria-expanded="true"] .faq-mark { transform: rotate(45deg); }
+.faq-qt { font-weight: 600; flex: 1; min-width: 0; }
+.faq-answer { padding: 0 .95rem .9rem 3.05rem; font-size: .93rem; }
+.faq-answer p { margin: 0 0 .5rem; max-width: 62ch; }
+.faq-list { margin: 0 0 .5rem; padding-left: 1.2rem; max-width: 62ch; }
+.faq-list li + li { margin-top: .2rem; }
+.faq-links { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .3rem; }
+.faq-link {
+  border: 0; background: var(--accent-soft); color: var(--accent); font: inherit;
+  font-size: .8rem; font-weight: 700; padding: .3rem .7rem; border-radius: 999px; cursor: pointer;
+}
+.faq-link:hover { filter: brightness(.95); }
+.faq-empty { padding: 1.2rem; text-align: center; margin: 0; }
+.faq-asked { display: grid; gap: .6rem; }
+.faq-asked-row { display: grid; gap: .4rem; padding: .6rem 0; border-top: 1px solid var(--border); }
+.faq-asked-row:first-child { border-top: 0; padding-top: 0; }
+.faq-asked-answer { background: var(--surface-2); border-radius: var(--radius-sm); padding: .6rem .8rem; font-size: .9rem; }
+.faq-asked-answer p:last-child { margin-bottom: 0; }
+.faq-open { background: var(--warn-soft); border-radius: var(--radius-sm); padding: .7rem .9rem; margin-bottom: .8rem; }
+.faq-open h3 { margin: 0 0 .4rem; font-size: .9rem; color: var(--warn); }
+.faq-open-row { display: flex; justify-content: space-between; gap: .8rem; align-items: center; padding: .45rem 0; flex-wrap: wrap; }
+.faq-open-row + .faq-open-row { border-top: 1px solid var(--note-border, var(--border)); }
+.faq-edit-list { display: grid; }
+.faq-edit-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: .6rem; align-items: center;
+  padding: .55rem 0; border-top: 1px solid var(--border);
+}
+.faq-edit-row.is-retired .faq-edit-main { opacity: .6; }
+.faq-edit-main { min-width: 0; }
+.faq-edit-state { display: flex; gap: .3rem; flex-wrap: wrap; }
+.faq-edit-actions { flex-wrap: nowrap; }
+@media (max-width: 640px) {
+  .faq-edit-row { grid-template-columns: minmax(0, 1fr); }
+  .faq-answer { padding-left: .95rem; }
+}
+.faq-link-picks { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.faq-link-picks .pill { display: inline-flex; align-items: center; gap: .3rem; }
+.faq-link-off { border: 0; background: none; color: inherit; cursor: pointer; font-size: .8rem; padding: 0 .1rem; }
+.faq-asked-row .pill { justify-self: start; }
