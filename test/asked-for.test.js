@@ -224,6 +224,70 @@ test('answering one day of a run leaves the rest waiting', async () => {
   ]);
 });
 
+test('a run can be answered day by day: yes to one, no to the other', async () => {
+  const { db, raw } = setup();
+  await ask(db, { days: DAYS, status: 'unavailable', note: 'Graduation' });
+
+  const done = await (await decide(db, {
+    staffId: 1, approve: [DAYS[0]], decline: [DAYS[1]], note: 'We need you on the 15th.',
+  })).json();
+  assert.deepEqual(done, { ok: true, decision: 'mixed', days: 2, approved: 1, declined: 1 });
+  assert.deepEqual(rows(raw).map((r) => [r.day, r.decision]), [[DAYS[0], 'approved']],
+    'the agreed day stands and the declined one is ordinary again');
+
+  const told = notices(raw).filter((n) => n.kind === 'attendance.availability_decided');
+  assert.equal(told.length, 1, 'one answer, so one notice');
+  assert.match(told[0].title, /Partly agreed: Mon 14 Sept? yes, Tue 15 Sept? no/);
+  assert.match(told[0].body, /has been agreed.*has not been agreed.*We need you on the 15th\./s);
+  assert.equal(told[0].user_id, 9);
+});
+
+test('answering only some days of a run leaves the rest waiting', async () => {
+  const { db, raw } = setup();
+  await ask(db, { days: DAYS, status: 'unavailable' });
+
+  const done = await (await decide(db, { staffId: 1, approve: [], decline: [DAYS[1]] })).json();
+  assert.equal(done.decision, 'declined');
+  assert.deepEqual(rows(raw).map((r) => [r.day, r.decision]), [[DAYS[0], 'waiting']]);
+  assert.deepEqual((await waiting(db)).waiting[0].days, [DAYS[0]]);
+});
+
+test('agree all and decline all still work through the lists', async () => {
+  const { db, raw } = setup();
+  await ask(db, { days: DAYS, status: 'unavailable' });
+  const done = await (await decide(db, { staffId: 1, approve: DAYS, decline: [] })).json();
+  assert.deepEqual(done, { ok: true, decision: 'approved', days: 2, approved: 2, declined: 0 });
+  assert.deepEqual(rows(raw).map((r) => r.decision), ['approved', 'approved']);
+});
+
+test('a day cannot be agreed and declined in the same answer', async () => {
+  const { db } = setup();
+  await ask(db, { days: DAYS, status: 'unavailable' });
+  await assert.rejects(
+    () => decide(db, { staffId: 1, approve: [DAYS[0]], decline: [DAYS[0]] }),
+    /both agreed and declined/,
+  );
+  await assert.rejects(() => decide(db, { staffId: 1, approve: [], decline: [] }), /Say which days/);
+});
+
+test('separate days are listed, not spanned, on the screen and in the notice alike', async () => {
+  const { sayAskedDays: onServer } = await import('../src/lib/asked-days.js');
+  const { sayAskedDays: onPage } = await import('../public/js/availability-rules.js');
+  for (const days of [
+    ['2026-10-18', '2026-11-15'],
+    ['2026-10-24', '2026-10-25'],
+    ['2026-10-24'],
+    ['2026-10-01', '2026-10-02', '2026-10-09'],
+    [],
+  ]) {
+    assert.equal(onPage(days), onServer(days), days.join(','));
+  }
+  assert.match(onServer(['2026-10-18', '2026-11-15']), /^Sun 18 Oct and Sun 15 Nov$/);
+  assert.match(onServer(['2026-10-24', '2026-10-25']), /^Sat 24 Oct to Sun 25 Oct$/);
+  assert.match(onServer(['2026-10-01', '2026-10-02', '2026-10-09']),
+    /^Thu 1 Oct to Fri 2 Oct and Fri 9 Oct$/);
+});
+
 // ---------------------------------------------------------------------------
 // And the grid says which is which
 // ---------------------------------------------------------------------------

@@ -987,8 +987,11 @@ export const GUIDE = [
       { sub: 'What staff have asked for' },
       { p: 'Availability a member of staff sends from their own screen arrives as a request '
         + 'rather than a fact. Asked for on the toolbar carries the count of what is waiting; '
-        + 'open it, and approve or turn down each one. Approving puts the mark in the cell and '
-        + 'tells them it was approved. Turning it down tells them that too, with your reason. '
+        + 'open it, and approve or turn down each one. Where somebody asked for more than one '
+        + 'day, Agree all and Decline all answer the lot; Day by day lets you agree some days, '
+        + 'decline others and leave the rest waiting, and they get one message that says all '
+        + 'of it. Approving puts the mark in the cell and tells them it was approved. Turning '
+        + 'it down tells them that too, with your reason. '
         + 'What you write on somebody\u2019s behalf is already the decision, so it goes in.' },
 
       { sub: 'Taking the rota out' },

@@ -5,6 +5,7 @@ import {
 import { bulkUpload, card, emptyState, moreActions, table } from './components.js';
 import { showPublishHistory, showWhoHeard } from './rota-heard.js';
 import { printButton } from '../print.js';
+import { sayAskedDays } from '../availability-rules.js';
 import { draftEntries } from './draft-entries.js';
 import { can, holdRefresh, navigate, replaceParams, warnBeforeLeaving } from '../app.js';
 import {
@@ -2510,43 +2511,119 @@ async function answerRequests(reload) {
   }
 
   const said = (row) => (row.status === 'preferred' ? 'Asked to work' : 'Cannot work');
-  const when = (row) => (row.days.length === 1
-    ? fmtDayShort(row.days[0])
-    : `${row.days.length} days, ${fmtDayShort(row.days[0])} to `
-      + `${fmtDayShort(row.days[row.days.length - 1])}`);
+  // Separate days are listed rather than spanned: two Saturdays a month apart
+  // used to read as "18 Oct to 15 Nov", which is a month off nobody asked for.
+  const when = (days) => (days.length === 1
+    ? sayAskedDays(days)
+    : `${days.length} days: ${sayAskedDays(days)}`);
 
+  let rows = waiting;
   const list = h('div.ask-list');
-  const draw = (rows) => mount(list, rows.length
-    ? rows.map((row) => {
-      const answer = async (decision) => {
-        try {
-          await api.attDecideAvailability({
-            staffId: row.staffId, days: row.days, decision,
-          });
-          toast(decision === 'approved'
-            ? `Agreed, and ${row.staff} has been told.`
-            : `Declined, and ${row.staff} has been told.`, decision === 'approved' ? 'good' : 'bad');
-          draw(rows.filter((r) => r !== row));
-        } catch (err) {
-          toast(err.message, 'bad');
-        }
-      };
-
-      return h('div.ask-row',
-        h('div.ask-what',
-          h('div.ask-who', row.staff,
-            h('small.muted', ` · ${row.department || 'no department'}`)),
-          h('div.ask-when', `${said(row)} — ${when(row)}`
-            + (row.fromTime ? `, ${row.fromTime} to ${row.toTime}` : '')),
-          row.note ? h('div.ask-note', row.note) : null),
-        h('div.btn-row',
-          h('button.btn-sm.btn-primary', { onclick: () => answer('approved') }, 'Agree'),
-          h('button.btn-sm', { onclick: () => answer('declined') }, 'Decline')),
-      );
-    })
+  const draw = () => mount(list, rows.length
+    ? rows.map(askRow)
     : h('p.muted', 'Nothing left to answer.'));
 
-  draw(waiting);
+  // One call however the answer was given, so the person gets one notice that
+  // says all of it. Days nobody chose stay in the queue for later.
+  async function send(row, approve, decline) {
+    try {
+      const done = await api.attDecideAvailability({ staffId: row.staffId, approve, decline });
+      const what = done.decision === 'approved' ? 'Agreed'
+        : done.decision === 'declined' ? 'Declined'
+          : `${done.approved} agreed and ${done.declined} declined`;
+      toast(`${what}, and ${row.staff} has been told.`, done.decision === 'declined' ? 'bad' : 'good');
+      const answered = new Set([...approve, ...decline]);
+      const left = row.days.filter((day) => !answered.has(day));
+      rows = left.length
+        ? rows.map((r) => (r === row ? { ...row, days: left } : r))
+        : rows.filter((r) => r !== row);
+      draw();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  }
+
+  function askRow(row) {
+    const many = row.days.length > 1;
+    const head = h('div.ask-what',
+      h('div.ask-who', row.staff,
+        h('small.muted', ` · ${row.department || 'no department'}`)),
+      h('div.ask-when', `${said(row)} — ${when(row.days)}`
+        + (row.fromTime ? `, ${row.fromTime} to ${row.toTime}` : '')),
+      row.note ? h('div.ask-note', row.note) : null);
+
+    if (!many) {
+      return h('div.ask-row', head,
+        h('div.btn-row',
+          h('button.btn-sm.btn-primary', { onclick: () => send(row, row.days, []) }, 'Agree'),
+          h('button.btn-sm', { onclick: () => send(row, [], row.days) }, 'Decline')));
+    }
+
+    // More than one day: the whole lot in one press, or each day on its own.
+    const choice = new Map();
+    const tally = h('span.ask-days-tally');
+    const sendChosen = h('button.btn-sm.btn-primary', {
+      disabled: true,
+      onclick: () => send(
+        row,
+        row.days.filter((day) => choice.get(day) === 'approve'),
+        row.days.filter((day) => choice.get(day) === 'decline'),
+      ),
+    }, 'Send answers');
+
+    const refresh = () => {
+      const yes = [...choice.values()].filter((v) => v === 'approve').length;
+      const no = choice.size - yes;
+      const left = row.days.length - choice.size;
+      sendChosen.disabled = !choice.size;
+      tally.textContent = choice.size
+        ? `${yes} to agree, ${no} to decline${left ? `, ${left} left waiting` : ''}`
+        : 'Choose an answer for each day. A day you leave stays waiting.';
+    };
+
+    const dayLine = (day) => {
+      const yes = h('button.btn-sm.ask-pick.ask-pick-yes', {
+        type: 'button', 'aria-pressed': 'false', onclick: () => pick('approve'),
+      }, 'Agree');
+      const no = h('button.btn-sm.ask-pick.ask-pick-no', {
+        type: 'button', 'aria-pressed': 'false', onclick: () => pick('decline'),
+      }, 'Decline');
+      function pick(what) {
+        if (choice.get(day) === what) choice.delete(day);
+        else choice.set(day, what);
+        yes.setAttribute('aria-pressed', String(choice.get(day) === 'approve'));
+        no.setAttribute('aria-pressed', String(choice.get(day) === 'decline'));
+        refresh();
+      }
+      return h('div.ask-day',
+        h('span.ask-day-name', sayAskedDays([day])),
+        h('div.btn-row', yes, no));
+    };
+
+    const panel = h('div.ask-days', { hidden: true },
+      ...row.days.map(dayLine),
+      h('div.ask-days-foot', tally, sendChosen));
+    refresh();
+
+    const toggle = h('button.btn-sm.btn-ghost', {
+      type: 'button',
+      'aria-expanded': 'false',
+      onclick: () => {
+        panel.hidden = !panel.hidden;
+        toggle.setAttribute('aria-expanded', String(!panel.hidden));
+        toggle.textContent = panel.hidden ? 'Day by day' : 'Hide days';
+      },
+    }, 'Day by day');
+
+    return h('div.ask-row', head,
+      h('div.btn-row',
+        h('button.btn-sm.btn-primary', { onclick: () => send(row, row.days, []) }, 'Agree all'),
+        h('button.btn-sm', { onclick: () => send(row, [], row.days) }, 'Decline all'),
+        toggle),
+      panel);
+  }
+
+  draw();
 
   await formDialog({
     title: 'What people have asked for',
@@ -2555,7 +2632,9 @@ async function answerRequests(reload) {
       h('p.muted', { style: { fontSize: '.85rem' } },
         'A day somebody marks for themselves waits here until it is answered. Agreeing '
         + 'leaves the mark on the grid for the rota to be built around; declining takes it '
-        + 'off, and the day is ordinary again. Either way they are told.'),
+        + 'off, and the day is ordinary again. Where somebody asked for more than one day, '
+        + 'answer them all at once or open Day by day to agree some and decline others. '
+        + 'Either way they are told, in one message.'),
       list,
     ),
     onSubmit: async () => true,

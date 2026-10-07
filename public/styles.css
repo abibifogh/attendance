@@ -6113,6 +6113,31 @@ tr:hover .rota-who-more,
 .ask-when { font-size: .82rem; color: var(--text-dim); }
 .ask-note { font-size: .8rem; color: var(--text-faint); font-style: italic; }
 
+/* More than one day: answered in one press, or day by day underneath. */
+.ask-list .ask-row { flex-wrap: wrap; }
+.ask-days {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  border-top: 1px solid var(--border);
+  padding-top: .5rem;
+}
+.ask-days[hidden] { display: none; }
+.ask-day { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.ask-day-name { font-size: .85rem; }
+.ask-pick[aria-pressed="true"].ask-pick-yes { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ask-pick[aria-pressed="true"].ask-pick-no { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
+.ask-days-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  flex-wrap: wrap;
+  padding-top: .25rem;
+}
+.ask-days-tally { font-size: .8rem; color: var(--text-dim); }
+
 /* A mark nobody has answered yet reads as a question rather than a fact. */
 .rota-avail-waiting { color: var(--warn); }
 

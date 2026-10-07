@@ -19,6 +19,7 @@ import { getPepper } from '../lib/auth.js';
 import { allows } from '../lib/permissions.js';
 import { MOST_DAYS, askToMoveLeave, leaveDaysDecision } from '../lib/leave-days.js';
 import { createNotice } from '../lib/notices.js';
+import { sayAskedDays } from '../lib/asked-days.js';
 import { terminalWarnings } from '../lib/terminal-watch.js';
 import { sweepLeavers } from '../lib/leaving.js';
 import { notifyClockings } from '../lib/clock-alerts.js';
@@ -3253,13 +3254,33 @@ export async function setAvailability(ctx) {
  */
 export async function decideAvailability(ctx) {
   const body = await readJson(ctx.request);
-  const decision = body.decision === 'approved' ? 'approved'
-    : body.decision === 'declined' ? 'declined' : null;
-  if (!decision) throw badRequest('Say approved or declined.');
-
   const staffId = int(body.staffId, 'Staff', { required: true, min: 1 });
-  const days = [...new Set((Array.isArray(body.days) ? body.days : []).map(String))]
+  const readList = (list) => [...new Set((Array.isArray(list) ? list : []).map(String))]
     .filter((d) => readDay(d, null));
+
+  // Two ways of answering. One decision for a list of days, which is how a
+  // run of days is agreed or declined in one press. Or a list to agree and a
+  // list to decline, which is how somebody answers day by day: yes to the
+  // Friday, no to the Saturday. Either way it is one answer, and the person
+  // gets one notice that says all of it rather than one per day.
+  const split = Array.isArray(body.approve) || Array.isArray(body.decline);
+  let approve = [];
+  let decline = [];
+  if (split) {
+    approve = readList(body.approve);
+    decline = readList(body.decline);
+    if (approve.some((day) => decline.includes(day))) {
+      throw badRequest('A day cannot be both agreed and declined.');
+    }
+  } else {
+    const decision = body.decision === 'approved' ? 'approved'
+      : body.decision === 'declined' ? 'declined' : null;
+    if (!decision) throw badRequest('Say approved or declined.');
+    if (decision === 'approved') approve = readList(body.days);
+    else decline = readList(body.days);
+  }
+
+  const days = [...approve, ...decline];
   if (!days.length) throw badRequest('Say which days.');
   if (days.length > 62) throw badRequest('Two months of days at most in one go.');
 
@@ -3277,24 +3298,32 @@ export async function decideAvailability(ctx) {
 
   const actor = `${ctx.session.user.name} (${ctx.session.user.role})`;
   const note = str(body.note, 'Note', { max: 300 });
-  const settled = found.map((row) => row.day).sort();
+  const isWaiting = new Set(found.map((row) => row.day));
+  const agreed = approve.filter((day) => isWaiting.has(day)).sort();
+  const refused = decline.filter((day) => isWaiting.has(day)).sort();
 
-  const statements = settled.map((day) => (decision === 'approved'
-    ? ctx.db.prepare(
+  const statements = [
+    ...agreed.map((day) => ctx.db.prepare(
       `UPDATE att_availability
           SET decision = 'approved', decided_by = ?1, decided_at = datetime('now'),
               decision_note = ?2
         WHERE staff_id = ?3 AND day = ?4`,
-    ).bind(actor, note, staffId, day)
+    ).bind(actor, note, staffId, day)),
     // Declined leaves nothing behind. A mark on the grid that has been said no
     // to still reads as a mark, and the answer belongs in the notice.
-    : ctx.db.prepare(
+    ...refused.map((day) => ctx.db.prepare(
       'DELETE FROM att_availability WHERE staff_id = ? AND day = ?',
-    ).bind(staffId, day)));
+    ).bind(staffId, day)),
+  ];
   await ctx.db.batch(statements);
 
+  const decision = !refused.length ? 'approved' : !agreed.length ? 'declined' : 'mixed';
   await audit(ctx, 'attendance.availability_decide', staffId, {
-    decision, days: settled, note: note || undefined,
+    decision,
+    days: [...agreed, ...refused].sort(),
+    approved: decision === 'mixed' ? agreed : undefined,
+    declined: decision === 'mixed' ? refused : undefined,
+    note: note || undefined,
   });
 
   // Their login, so the answer reaches them rather than the noticeboard.
@@ -3304,23 +3333,33 @@ export async function decideAvailability(ctx) {
     'SELECT id FROM users WHERE staff_id = ? AND active = 1 LIMIT 1',
   ).bind(staffId).first().catch(() => null);
 
-  const span = settled.length === 1
-    ? settled[0]
-    : `${settled[0]} to ${settled[settled.length - 1]}`;
   const asked = found[0]?.status === 'preferred' ? 'asking to work' : 'saying you cannot work';
+  const yes = sayAskedDays(agreed);
+  const no = sayAskedDays(refused);
+  const those = refused.length === 1 ? 'that day is' : 'those days are';
+  const why = note ? ` ${note}` : ' Speak to your manager for the reason.';
+
+  let title;
+  let text;
+  if (decision === 'approved') {
+    title = `Agreed: ${yes}`;
+    text = `What you sent in ${asked} on ${yes} has been agreed. `
+      + `The rota will be built around it.${note ? ` ${note}` : ''}`;
+  } else if (decision === 'declined') {
+    title = `Not agreed: ${no}`;
+    text = `What you sent in ${asked} on ${no} has not been agreed, so ${those} `
+      + `ordinary again.${why}`;
+  } else {
+    title = `Partly agreed: ${yes} yes, ${no} no`;
+    text = `You sent in ${asked}. ${yes} has been agreed, and the rota will be built `
+      + `around it. ${no} has not been agreed, so ${those} ordinary again.${why}`;
+  }
 
   await createNotice(ctx.db, {
     kind: 'attendance.availability_decided',
     level: decision === 'approved' ? 'good' : 'warn',
-    title: decision === 'approved'
-      ? `Agreed: ${span}`
-      : `Not agreed: ${span}`,
-    body: decision === 'approved'
-      ? `What you sent in ${asked} on ${span} has been agreed. `
-        + 'The rota will be built around it.'
-        + (note ? ` ${note}` : '')
-      : `What you sent in ${asked} on ${span} has not been agreed, so those days are `
-        + `ordinary again.${note ? ` ${note}` : ' Speak to your manager for the reason.'}`,
+    title,
+    body: text,
     link: '#/att-me',
     actor,
     // The person who asked, and nobody else: this is an answer to them.
@@ -3333,7 +3372,9 @@ export async function decideAvailability(ctx) {
     push: true,
   }, ctx);
 
-  return json({ ok: true, decision, days: settled.length });
+  const out = { ok: true, decision, days: agreed.length + refused.length };
+  if (split) Object.assign(out, { approved: agreed.length, declined: refused.length });
+  return json(out);
 }
 
 /**
