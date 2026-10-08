@@ -43,6 +43,7 @@ import * as lunch from './routes/lunch.js';
 import * as sign from './routes/sign.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
+import * as till from './routes/till.js';
 import * as live from './lib/live.js';
 import { handleSsoArrival } from './lib/sso-consumer.js';
 import { todayIn } from './util/dates.js';
@@ -189,6 +190,20 @@ export const ROUTES = [
   // asks for a planner's permission and would leave this page faceless.
   ['GET', '/api/directory/photo/:id', null, directory.directoryPhoto],
   ['GET', '/api/me/week', 'att_me', mine.myWeek],
+
+  // My till: closing a front-desk shift, and answering for the shifts that did
+  // not agree. Insight does the checking over the till link; these keep what
+  // the person wrote, signed with their own PIN.
+  ['GET', '/api/me/till', 'till', till.myTill],
+  ['POST', '/api/me/till', 'till', till.closeShift],
+  ['POST', '/api/me/till/po', 'till', till.lookUpPo],
+  ['GET', '/api/me/till/issues', 'till', till.myIssues],
+  ['POST', '/api/me/till/answer', 'till', till.answer],
+  // And Insight asking, server to server. No session reaches these; each
+  // request is signed with the secret the two share for the sign-in hand-off.
+  ['POST', '/api/link/till/recover', 'public', till.linkRecover],
+  ['POST', '/api/link/till/reopen', 'public', till.linkReopen],
+  ['POST', '/api/link/till/tell', 'public', till.linkTell],
   ['GET', '/api/me/report', 'att_me', mine.myReport],
   ['POST', '/api/me/leave', 'att_me', mine.askForLeave],
   ['POST', '/api/me/leave/:id/withdraw', 'att_me', mine.withdrawMyLeave],

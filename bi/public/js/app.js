@@ -41,7 +41,8 @@ const ROUTES = [
   { path: 'labour', label: 'Labour', render: renderLabour },
   { path: 'guests', label: 'Guests', render: renderDemand },
   { path: 'cash', label: 'Cash', render: renderCash },
-  { path: 'shifts', label: 'Shifts', render: renderShifts },
+  // The one screen a supervisor gets, with the parts an admin gave them.
+  { path: 'shifts', label: 'Shifts', render: renderShifts, needs: 'shifts' },
   { path: 'buying', label: 'Buying', render: renderSuppliers },
   { path: 'books', label: 'Books', render: renderBooks },
   { path: 'service', label: 'Service', render: renderService },
@@ -59,6 +60,7 @@ function allowed(route) {
   if (!me) return false;
   if (route.needs === 'session') return true;
   if (me.isOwner || me.bootstrap) return true;
+  if (route.needs === 'shifts') return Boolean(me.till?.role);
   if (route.needs === 'owner') return false;
   return me.canSeeReports === true;
 }
@@ -92,7 +94,7 @@ async function renderApp() {
   // can actually see reports — and a failure there costs the reports, not the
   // front door.
   let boot = null;
-  if (visible.some((r) => r.needs === 'insight')) {
+  if (visible.some((r) => r.needs === 'insight' || r.needs === 'shifts')) {
     boot = await api('/bootstrap').catch(() => null);
   }
   boot = boot ?? {
@@ -140,14 +142,14 @@ async function renderApp() {
     if (visible.some((r) => r.path === path)) return path;
     // The hub for anybody whose account is only a way into the other systems;
     // the brief for anybody who came here for the numbers.
-    return visible.some((r) => r.path === 'brief') ? 'brief' : 'hub';
+    return visible.some((r) => r.path === 'brief') ? 'brief' : visible.some((r) => r.path === 'shifts') ? 'shifts' : 'hub';
   }
 
   async function go(path) {
     const route = visible.find((r) => r.path === path) || visible[0];
     // The window rides in the address, so a reload keeps it and a link to a
     // screen is a link to the days somebody was actually looking at.
-    const want = route.needs === 'insight'
+    const want = route.needs === 'insight' || route.needs === 'shifts'
       ? `#/${route.path}?from=${state.range.from}&to=${state.range.to}`
       : `#/${route.path}`;
     if (location.hash !== want) location.hash = want;
@@ -157,7 +159,7 @@ async function renderApp() {
     }
     // The window means nothing on the hub or the accounts screen, so neither
     // the label nor the picker appears there.
-    const windowed = route.needs === 'insight';
+    const windowed = route.needs === 'insight' || route.needs === 'shifts';
     if (picker) picker.style.display = windowed ? '' : 'none';
     mount(view, h('p.muted', 'Reading…'));
     try {

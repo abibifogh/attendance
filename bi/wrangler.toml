@@ -30,6 +30,14 @@ binding = "BREAKFAST_DB"
 database_name = "breakfast"
 database_id = "9862ed78-69f0-4dfe-a36f-7fe3bd9020c1"
 
+# HIVE itself, for the till link: turning a shortage into an advance on the
+# next payslip, reopening a closing report, and telling people. A service
+# binding, so the call never leaves Cloudflare; every request is still signed
+# (src/lib/link.js), because HIVE's front door is public.
+[[services]]
+binding = "HIVE"
+service = "niceoperation-attendance"
+
 [vars]
 # Nothing secret lives here. Everything below is a Worker secret, set with
 # `wrangler secret put`:

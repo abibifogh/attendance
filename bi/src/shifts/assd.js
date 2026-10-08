@@ -64,7 +64,11 @@ const HEAD = /^([A-Z][A-Za-z]+(?: [A-Za-z/]+){0,4})\s{2,}([A-Z][A-Z0-9]+)\b/;
 const NUMBER = /^\s*\d\d-\d{3}-(\d{4,})\s+(\S+)\s+(\d\d\.\d\d\.\d\d)\b/;
 const MONEY = /-?\d{1,3}(?:\.\d{3})*,\d\d/g;
 const PAYMENT = /^\s*(\d\d\.\d\d\.\d\d)\s+(?!\d{3}\s)(.+?)\s+(-?\d{1,3}(?:\.\d{3})*,\d\d)\s*GHS\s*$/;
-const ARTICLE = /^\s*(\d\d\.\d\d\.\d\d)\s+(\d{3})\s+(.+?)\s{2,}(-?\d+)\s+(.*)$/;
+// The date is `. .` on a line that gives something back: a deposit refunded
+// prints its article with a minus quantity and no date of its own.
+const ARTICLE = /^\s*(\d\d\.\d\d\.\d\d|\.\s*\.)\s+(\d{3})\s+(.+?)\s{2,}(-?\d+)\s+(.*)$/;
+/** A line of an Items Count: `. .   405   Padlock Deposit   7   30,00   210,00 GHS`. */
+const ITEM = /^\s*\.\s*\.\s+(\d{3})\s+(.+?)\s{2,}(-?\d+)\s+/;
 const COUNT = /^\s*\.\s*\.\s+(\d{5})\s+(.+?)\s{2,}(\d+)\s+(\d{1,3}(?:\.\d{3})*,\d\d)\s+(\d{1,3}(?:\.\d{3})*,\d\d)\s*GHS/;
 const MOVEMENT = /^\s*(\d\d\.\d\d\.\d\d)\s+(-?\d{1,3}(?:\.\d{3})*,\d\d)\s*GHS\s*$/;
 
@@ -102,6 +106,7 @@ export function mergeEntry(stored, fresh, window) {
     ...fresh,
     payments: [...stored.payments.filter((p) => !inside(p.date)), ...fresh.payments],
     laundry: [...(stored.laundry || []).filter((l) => !inside(l.date)), ...fresh.laundry],
+    items: [...(stored.items || []).filter((i) => !inside(i.date)), ...(fresh.items || [])],
   };
 }
 
@@ -178,6 +183,11 @@ function readBlock(b) {
     register: String(b.ref || '').split('/')[0] || null,
     payments: [],
     laundry: [],
+    // Articles sold or given back, by number: what a rental's deposits and
+    // refunds are read from. `qty` is negative for a refund.
+    items: [],
+    // An Items Count: how many of each article ASSD says are at the desk.
+    stock: null,
     expensesCounted: null,
     counted: 0,
     movement: 0,
@@ -193,6 +203,11 @@ function readBlock(b) {
         if (c[1] === '00099' || /expenses/i.test(c[2])) entry.expensesCounted = (entry.expensesCounted || 0) + amount;
         else entry.counted += amount;
       }
+      continue;
+    }
+    if (b.kind === 'Items Count') {
+      const item = ITEM.exec(line);
+      if (item) entry.stock = { ...(entry.stock || {}), [item[1]]: Number(item[3]) };
       continue;
     }
     if (b.kind === 'Cash Movement') {
@@ -211,9 +226,12 @@ function readBlock(b) {
     if (article) {
       const amounts = article[5].match(MONEY) || [];
       const amount = amounts.length ? assdMoney(amounts[amounts.length - 1]) : 0;
-      if (article[2] === LAUNDRY_ARTICLE || /laundry/i.test(article[3])) {
+      const dated = /\d/.test(article[1]);
+      if (dated && (article[2] === LAUNDRY_ARTICLE || /laundry/i.test(article[3]))) {
         entry.laundry.push({ date: assdDate(article[1]), amount });
       }
+      const qty = Number(article[4]);
+      if (qty) entry.items.push({ date: dated ? assdDate(article[1]) : b.date, code: article[2], qty });
       continue;
     }
     const pay = PAYMENT.exec(line);
@@ -276,6 +294,12 @@ export function summarise(shift, corrections = new Map()) {
     cash: 0, card: 0, prepaid: 0, other: 0,
     modes: {},
     laundry: 0, laundryCash: 0,
+    // Articles by number, net of refunds: a rental's deposits taken less
+    // deposits given back on this shift.
+    items: {},
+    // ASSD's own Items Count at the start and the end of the shift.
+    stockStart: null,
+    stockEnd: null,
     drawerOut: 0,
     expensesCounted: 0,
     booked: [],
@@ -314,6 +338,12 @@ export function summarise(shift, corrections = new Map()) {
     // Laundry paid in cash: a laundry sale settled wholly in cash. A mixed
     // settlement is counted as card, because the cash it drew is unknowable.
     if (laundry && paidCash >= laundry && !paidOther) s.laundryCash += laundry;
+
+    if (e.stock) {
+      if (!s.stockStart) s.stockStart = e.stock;
+      s.stockEnd = e.stock;
+    }
+    if (!ADMIN.has(e.kind)) for (const i of e.items || []) s.items[i.code] = (s.items[i.code] || 0) + i.qty;
 
     if (DEFICIT.test(e.kind) && e.booked) {
       s.booked.push({ seq: e.seq, user: e.user, when: e.kind.startsWith('End') ? 'close' : 'open', amount: e.booked });

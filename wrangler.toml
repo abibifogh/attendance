@@ -43,6 +43,14 @@ database_id = "1df34f21-bfc6-43dc-b11a-1a57d7f691b0"
 # binding = "BACKUPS"
 # bucket_name = "hive-backups"
 
+# Insight, for the till link: what the closing form asks, whether a PO is in
+# Odoo, and what is on somebody's list. A service binding, so the call never
+# leaves Cloudflare; every request is still signed (src/lib/till-link.js),
+# because Insight's front door is public.
+[[services]]
+binding = "INSIGHT"
+service = "niceoperation-insight"
+
 [vars]
 # Nothing secret lives here. SESSION_SECRET, MANAGER_PIN and RESEND_API_KEY are
 # Worker secrets, set with `wrangler secret put`.

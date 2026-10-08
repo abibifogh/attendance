@@ -22,6 +22,7 @@ import { renderSwapQueue, renderSwaps } from './views/swaps.js';
 import { renderHandbook } from './views/handbook.js';
 import { renderHrFaq } from './views/hr-faq.js';
 import { renderAttMyAdvance } from './views/att-my-advance.js';
+import { renderAttMyTill, renderAttMyTillIssues } from './views/att-my-till.js';
 import { renderAttAdvances } from './views/att-advances.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
 import { renderAttLunch } from './views/att-lunch.js';
@@ -50,6 +51,12 @@ import { renderLetterParties } from './views/letter-parties.js';
 import { renderLetterSigning } from './views/letter-signing.js';
 import { BRAND, brandMark } from './brand.js';
 import { face } from './views/components.js';
+
+/**
+ * Permissions that are about somebody's own record: their shifts, and closing
+ * their own till. A login pointed at nobody has nothing of its own to show.
+ */
+const OWN_RECORD = new Set(['att_me', 'till']);
 
 export const state = {
   role: null,
@@ -107,6 +114,9 @@ const GROUPS = [
   // between a checklist and a screen.
   { key: 'first-week', label: 'My first week', section: 'Mine' },
   { key: 'me', label: 'My shifts', section: 'Mine' },
+  // The front desk's own: closing a shift and answering for it. Only for the
+  // people given "My till", which is the front desk and nobody else.
+  { key: 'till', label: 'My till', section: 'Mine' },
   { key: 'my-pay', label: 'My pay', section: 'Mine' },
   // Their own paperwork. Not under My pay, which is what they are owed, and
   // not under My shifts, which is where they are expected: a contract is the
@@ -166,6 +176,11 @@ const ROUTES = [
   // whole lunch list used to happen on an address outside the app, so a member
   // of staff had no way of reading back their own answer.
   { mine: true, group: 'me', tab: 'Lunch', path: 'att-my-lunch', label: 'My lunch', permission: 'att_me', render: renderAttMyLunch, live: ['lunch'], freshEach: ['week'] },
+
+  // Closing a front-desk shift, and the shifts that did not agree. Two tabs on
+  // one link: the second is where somebody goes the morning after.
+  { mine: true, group: 'till', tab: 'Close shift', path: 'att-my-till', label: 'Close shift', permission: 'till', render: renderAttMyTill },
+  { mine: true, group: 'till', tab: 'To sort out', path: 'att-my-till-issues', label: 'To sort out', permission: 'till', render: renderAttMyTillIssues },
 
   // Money going the other way. Its own link rather than a third tab on their
   // week: what somebody is owed and what they worked are two different
@@ -282,7 +297,7 @@ export function can(permission) {
   // with no way out of it. One screen that explains why it is empty beats an
   // app that appears to contain nothing.
   return needed.some((p) => state.permissions.includes(p)
-    && (p !== 'att_me' || state.staffId != null || nothingElseToShow()));
+    && (!OWN_RECORD.has(p) || state.staffId != null || nothingElseToShow()));
 }
 
 /**
@@ -294,7 +309,7 @@ function nothingElseToShow() {
   return !ROUTES.some((route) => {
     if (route.hidden || !route.permission) return false;
     const needed = Array.isArray(route.permission) ? route.permission : [route.permission];
-    return needed.some((p) => p !== 'att_me' && state.permissions.includes(p));
+    return needed.some((p) => !OWN_RECORD.has(p) && state.permissions.includes(p));
   });
 }
 

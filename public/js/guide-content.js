@@ -2507,6 +2507,54 @@ export const GUIDE = [
 
   // =========================================================================
   {
+    key: 'till',
+    title: 'My till',
+    permission: 'till',
+    lede: 'Closing a front-desk shift, on the desk PC or on a phone, and answering for the shifts that did not agree.',
+    blocks: [
+      { p: 'This replaces the Google Form. It asks only what nobody else can say: ASSD\u2019s own '
+        + 'figures, the card machine report and the laundry are read by Insight from the files it '
+        + 'already holds, so nobody copies them off a screen any more.' },
+
+      { sub: 'Closing a shift' },
+      { steps: [
+        'Open My till → Close shift. The shift is chosen from the clock; change it if you are '
+          + 'closing an earlier one.',
+        'Say whether your opening float was correct. If not, how much it was out by and why.',
+        'Type the cash in the drawer now, as one total.',
+        'Say whether you moved cash to the safe. If you did, the number on each envelope and the '
+          + 'amount in it.',
+        'For each expense paid from the drawer, the PO number and what you paid. Find in Odoo '
+          + 'checks it there and then.',
+        'Count the padlocks at the start and at the end.',
+        'Look for the scale and the hair dryer. If one is not at the desk, which guest has it, '
+          + 'or where it is.',
+        'Sign and send, with your own PIN.',
+      ] },
+      { note: 'An expense counts only when Odoo has a confirmed PO for it, up to the PO\u2019s '
+        + 'total, and a PO counts once: one already claimed on another shift is refused. Cash '
+        + 'that left the drawer with no envelope and no confirmed PO is treated as short until '
+        + 'a PO is found.' },
+
+      { sub: 'To sort out' },
+      { p: 'Only the shifts that did not agree: the drawer short or over, cash out with no '
+        + 'envelope or PO, or a rental count that ASSD\u2019s deposits and refunds do not explain. '
+        + 'Add the PO, explain, or say you will pay it back. Each one leaves the list when it is '
+        + 'settled, and you are told.' },
+      { list: [
+        'A PO that Odoo confirms clears the shortage it covers by itself.',
+        '"I\u2019ll pay it back" is your agreement. If it is taken from your pay, it shows under '
+          + 'My pay → My advance and comes off one payslip.',
+        'A supervisor may send it back to you for more.',
+      ] },
+      { note: 'Who is told when a shift is closed, and what supervisors can see, is set in '
+        + 'Insight → Shifts → Till settings. Give somebody "My till" under Users to put the '
+        + 'closing form in front of them.' },
+    ],
+  },
+
+  // =========================================================================
+  {
     key: 'lunch',
     title: 'Lunch',
     permission: 'lunch',
