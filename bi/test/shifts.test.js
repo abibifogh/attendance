@@ -393,6 +393,8 @@ test('what each cash movement was', () => {
   assert.deepEqual([moves[2].expenses, moves[2].safe], [44000, 230000]);
   const part = labelMovements([{ seq: 9, user: 'C', amount: 169300, countsBefore: 1 }], [{ seq: 8, notes: 118400, receipts: 154500, total: 272900 }]);
   assert.deepEqual([part[0].kind, part[0].expenses], ['part', 154500]);
+  const receiptsOnly = labelMovements([{ seq: 9, user: 'C', amount: 101800, countsBefore: 1 }], [{ seq: 8, notes: 0, receipts: 101800, total: 101800 }]);
+  assert.equal(receiptsOnly[0].kind, 'expenses', 'a count of receipts alone, moved whole, is expenses');
   const safe = labelMovements([{ seq: 9, user: 'C', amount: 500000, countsBefore: 1 }], [{ seq: 8, notes: 500000, receipts: 0, total: 500000 }]);
   assert.equal(safe[0].kind, 'safe');
 });

@@ -382,7 +382,10 @@ export function labelMovements(movements, counts) {
     const last = before[before.length - 1];
     if (withReceipts && withReceipts.notes + withReceipts.receipts === m.amount) {
       withReceipts.used = true;
-      out.push({ seq: m.seq, user: m.user, amount: m.amount, kind: 'split', expenses: withReceipts.receipts, safe: withReceipts.notes, count: withReceipts.seq });
+      // A count of receipts and nothing else, moved whole, is expenses alone.
+      out.push(withReceipts.notes
+        ? { seq: m.seq, user: m.user, amount: m.amount, kind: 'split', expenses: withReceipts.receipts, safe: withReceipts.notes, count: withReceipts.seq }
+        : { seq: m.seq, user: m.user, amount: m.amount, kind: 'expenses', count: withReceipts.seq });
     } else if (withReceipts && m.amount <= withReceipts.receipts) {
       withReceipts.used = true;
       out.push({ seq: m.seq, user: m.user, amount: m.amount, kind: 'expenses', count: withReceipts.seq });
