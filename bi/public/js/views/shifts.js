@@ -65,7 +65,28 @@ const MODES = [
 ];
 const TONE = { good: 'var(--sh-good)', warn: 'var(--sh-warn)', bad: 'var(--sh-bad)', open: 'var(--sh-info)' };
 const SEVERITY_COLOUR = { critical: 'var(--sh-bad)', warning: 'var(--sh-warn)', info: 'var(--sh-info)' };
-const VIEWS = [['week', 'Week'], ['shift', 'Shift'], ['exceptions', 'Exceptions'], ['people', 'People'], ['files', 'Files']];
+const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['shift', 'Shift'], ['exceptions', 'Exceptions'], ['people', 'People'], ['files', 'Files']];
+const PERIODS = ['day', 'week', 'month'];
+
+/** Day arithmetic on `YYYY-MM-DD`, at noon UTC so no clock change moves it. */
+const plusDays = (day, n) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const weekdayOf = (day) => (new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7; // Monday 0 … Sunday 6
+const monthStart = (day) => `${day.slice(0, 7)}-01`;
+const monthEnd = (day) => { const d = new Date(`${monthStart(day)}T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() + 1, 0); return d.toISOString().slice(0, 10); };
+const plusMonths = (day, n) => { const d = new Date(`${monthStart(day)}T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 10); };
+
+/** The days a period covers, and what to call it. Weeks run Monday to Sunday, as the rota does. */
+function periodOf(mode, anchor) {
+  if (mode === 'day') {
+    return { from: anchor, to: anchor, label: new Date(`${anchor}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) };
+  }
+  if (mode === 'month') {
+    return { from: monthStart(anchor), to: monthEnd(anchor), label: new Date(`${anchor}T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }) };
+  }
+  const from = plusDays(anchor, -weekdayOf(anchor));
+  const to = plusDays(from, 6);
+  return { from, to, label: `Week of ${shortDay(from)} to ${shortDay(to)} ${to.slice(0, 4)}` };
+}
 
 const nameOf = (user) => (user ? user.charAt(0) + user.slice(1).toLowerCase() : 'Nobody named');
 const dayText = (day, opts = { weekday: 'short', day: 'numeric', month: 'short' }) => new Date(`${day}T12:00:00Z`)
@@ -116,6 +137,13 @@ export async function renderShifts(root, { range }) {
   let colours = {};
   let section = store.get('section', 'week');
   if (!VIEWS.some(([id]) => id === section)) section = 'week';
+  // Day, week or month, and the day it is anchored on. The anchor follows the
+  // window chosen at the top of Insight until somebody moves it here.
+  let mode = store.get('mode', PERIODS.includes(section) ? section : 'week');
+  if (!PERIODS.includes(mode)) mode = 'week';
+  let anchor = store.get('anchorFor', '') === range.to ? store.get('anchor', range.to) : range.to;
+  let period = periodOf(mode, anchor);
+  let jumped = false;
   let currentId = store.get('shift', null);
   let filter = 'all';
   let showAnswered = false;
@@ -123,7 +151,15 @@ export async function renderShifts(root, { range }) {
   const drafts = {};
 
   async function load(notice = null) {
-    data = await api(`/shifts?from=${range.from}&to=${range.to}`);
+    period = periodOf(mode, anchor);
+    data = await api(`/shifts?from=${period.from}&to=${period.to}`);
+    // A first visit on days the journal does not reach goes to the newest
+    // days it does, once, rather than opening on an empty page.
+    if (!jumped && !data.days.some((d) => d.shifts.length) && data.coverage?.journal?.to && data.coverage.journal.to < period.from) {
+      jumped = true;
+      return moveTo(data.coverage.journal.to, notice);
+    }
+    jumped = true;
     shifts = [];
     for (const d of [...data.days].sort((a, b) => (a.day < b.day ? -1 : 1))) {
       for (const s of d.shifts) shifts.push({ ...s, id: `${s.day}|${s.slot}`, dayTotals: d.totals, dayLaundry: d.laundry });
@@ -138,14 +174,34 @@ export async function renderShifts(root, { range }) {
     paint(notice);
   }
 
-  function go(next, shiftId = null) {
+  async function go(next, shiftId = null, day = null) {
     section = next;
     if (shiftId) currentId = shiftId;
     store.set('section', section);
     if (currentId) store.set('shift', currentId);
-    paint();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (PERIODS.includes(next) && (next !== mode || (day && day !== anchor))) {
+      mode = next;
+      if (day) anchor = day;
+      remember();
+      return load();
+    }
+    paint();
   }
+
+  function remember() {
+    store.set('mode', mode);
+    store.set('anchor', anchor);
+    store.set('anchorFor', range.to);
+  }
+
+  /** Move the period: a day, a week or a month at a time, or to a given day. */
+  function moveTo(day, notice = null) {
+    anchor = day;
+    remember();
+    return load(notice);
+  }
+  const step = (n) => moveTo(mode === 'day' ? plusDays(anchor, n) : mode === 'week' ? plusDays(anchor, 7 * n) : plusMonths(anchor, n));
 
   // ------------------------------------------------------------- facts --
 
@@ -208,7 +264,8 @@ export async function renderShifts(root, { range }) {
       notice,
       h('div.sh-head',
         h('h1', 'Shifts'),
-        h('span', has ? `${shortDay(range.from)} to ${shortDay(range.to)} · ${shifts.length} shift${shifts.length === 1 ? '' : 's'} · ${new Set(shifts.map((s) => s.user)).size} people` : `${shortDay(range.from)} to ${shortDay(range.to)}`)),
+        h('span', has ? `${shifts.length} shift${shifts.length === 1 ? '' : 's'} · ${new Set(shifts.map((s) => s.user)).size} ${new Set(shifts.map((s) => s.user)).size === 1 ? 'person' : 'people'}` : 'No shifts loaded for these days')),
+      periodBar(),
       data.journalEndsInside ? banner('warning',
         `The journal loaded so far stops inside the ${SLOT[data.journalEndsInside.slot].label.toLowerCase()} shift of `
         + `${shortDay(data.journalEndsInside.day)}, so that shift is shown as far as it goes. Export ASSD one day past the last shift you want to read.`) : null,
@@ -218,13 +275,24 @@ export async function renderShifts(root, { range }) {
       }, label, id === 'exceptions' && open ? h('span.sh-badge', String(open)) : null))),
       v);
     if (!has && section !== 'files') return mount(v, nothingYet());
-    ({ week, shift: shiftView, exceptions: exceptionsView, people: peopleView, files: filesView })[section](v);
+    ({ day: dayView, week, month: monthView, shift: shiftView, exceptions: exceptionsView, people: peopleView, files: filesView })[section](v);
+  }
+
+  /** ‹ the period › and a way back to the newest shifts loaded. */
+  function periodBar() {
+    const latest = data.coverage?.journal?.to || null;
+    const away = latest && (latest < period.from || latest > period.to);
+    return h('div.sh-period',
+      h('button.sh-arrow', { type: 'button', 'aria-label': `Previous ${mode}`, onclick: () => step(-1) }, '‹'),
+      h('strong.sh-plabel', period.label),
+      h('button.sh-arrow', { type: 'button', 'aria-label': `Next ${mode}`, onclick: () => step(1) }, '›'),
+      away ? h('button.btn', { type: 'button', onclick: () => moveTo(latest) }, `Latest: ${shortDay(latest)}`) : null);
   }
 
   function nothingYet() {
     const c = data.coverage || {};
     return h('div.card',
-      h('h2', 'No shifts in these days yet'),
+      h('h2', `No shifts in this ${mode} yet`),
       h('p.sh-sub', c.journal
         ? `The ASSD journal loaded so far covers ${shortDay(c.journal.from)} to ${shortDay(c.journal.to)}. Choose days inside that, or load the journal for these.`
         : 'Load the ASSD detail journal to begin. The bank statement and the card terminal report make the card and MoMo checks possible; the journal alone already gives the cash.'),
@@ -283,24 +351,6 @@ export async function renderShifts(root, { range }) {
     }
     const wrap = h('div.sh-weekwrap', grid);
 
-    const max = Math.max(1, ...days.map((d) => Math.max(d.totals.cardRecorded, d.totals.received)));
-    const bars = h('div.sh-bars', { style: `grid-template-columns: repeat(${days.length}, minmax(${days.length > 14 ? 28 : 44}px, 1fr)); min-width: ${days.length * (days.length > 14 ? 32 : 50)}px` },
-      days.map((d) => {
-        const gap = d.totals.received - d.totals.cardRecorded;
-        const first = SLOTS.map((sl) => byId.get(`${d.day}|${sl}`)).find(Boolean);
-        return h('button.sh-bar', {
-          type: 'button',
-          title: `${dayText(d.day)}: recorded ${money(d.totals.cardRecorded)}, arrived ${money(d.totals.received)}, bank commission ${money(d.totals.commission)}`,
-          onclick: () => first && go('shift', first.id),
-        },
-        h('div.pair',
-          h('b', { style: `height:${(d.totals.cardRecorded / max) * 100}%;background:var(--sh-card)` }),
-          h('b', { style: `height:${(d.totals.received / max) * 100}%;background:var(--series-3)` })),
-        h('small', dayText(d.day, { weekday: 'short', day: 'numeric' }),
-          first ? h('em', { style: `color:${gap === 0 ? 'var(--sh-good-ink)' : Math.abs(gap) < 10000 ? 'var(--sh-warn-ink)' : 'var(--sh-bad-ink)'}` },
-            gap === 0 ? '✓ equal' : `${gap > 0 ? '+' : '−'}${whole(Math.abs(gap))}`) : h('em', '·')));
-      }));
-
     mount(v,
       h('section.card',
         h('div.sh-cardhead',
@@ -312,16 +362,184 @@ export async function renderShifts(root, { range }) {
             h('span', h('i', { style: 'background:var(--sh-bad)' }), 'Answer needed'),
             MODES.slice(0, 3).map(([, label, c]) => h('span', h('i', { style: `background:${c}` }), label === 'Prepaid by bank transfer' ? 'Prepaid' : label)))),
         wrap),
-      h('section.card',
-        h('div.sh-cardhead',
-          h('div', h('h2', 'Card and MoMo: recorded against arrived'),
-            h('p.sh-sub', 'What ASSD says was paid by card or MoMo each day, beside what the terminal approved and MoMo received for the same shifts. Tap a day to open its first shift.')),
-          h('div.sh-legend',
-            h('span', h('i', { style: 'background:var(--sh-card)' }), 'Recorded in ASSD'),
-            h('span', h('i', { style: 'background:var(--series-3)' }), 'Arrived'))),
-        h('div', { style: 'overflow-x:auto' }, bars)));
+      cardBars(days));
     // The newest days are the ones looked at; start the grid there.
     requestAnimationFrame(() => { wrap.scrollLeft = wrap.scrollWidth; });
+  }
+
+  /** Card and MoMo recorded in ASSD against what arrived, a pair of bars a day. Tap a day to open it. */
+  function cardBars(days) {
+    const max = Math.max(1, ...days.map((d) => Math.max(d.totals.cardRecorded, d.totals.received)));
+    const bars = h('div.sh-bars', { style: `grid-template-columns: repeat(${days.length}, minmax(${days.length > 14 ? 28 : 44}px, 1fr)); min-width: ${days.length * (days.length > 14 ? 32 : 50)}px` },
+      days.map((d) => {
+        const gap = d.totals.received - d.totals.cardRecorded;
+        const has = SLOTS.some((sl) => byId.has(`${d.day}|${sl}`));
+        return h('button.sh-bar', {
+          type: 'button',
+          title: `${dayText(d.day)}: recorded ${money(d.totals.cardRecorded)}, arrived ${money(d.totals.received)} (${signed(d.totals.received - d.totals.cardRecorded)}), bank commission ${money(d.totals.commission)}`,
+          onclick: () => has && go('day', null, d.day),
+        },
+        h('div.pair',
+          h('b', { style: `height:${(d.totals.cardRecorded / max) * 100}%;background:var(--sh-card)` }),
+          h('b', { style: `height:${(d.totals.received / max) * 100}%;background:var(--series-3)` })),
+        h('small', dayText(d.day, { weekday: days.length > 14 ? undefined : 'short', day: 'numeric' }),
+          // A month has no room for figures under every day: a mark there, the figure on hover.
+          has ? h('em', { style: `color:${gap === 0 ? 'var(--sh-good-ink)' : Math.abs(gap) < 10000 ? 'var(--sh-warn-ink)' : 'var(--sh-bad-ink)'}` },
+            gap === 0 ? '✓' : days.length > 14 ? '!' : `${gap > 0 ? '+' : '−'}${whole(Math.abs(gap))}`) : h('em', '·')));
+      }));
+    return h('section.card',
+      h('div.sh-cardhead',
+        h('div', h('h2', 'Card and MoMo: recorded against arrived'),
+          h('p.sh-sub', 'What ASSD says was paid by card or MoMo each day, beside what the terminal approved and MoMo received for the same shifts. Tap a day to open it.')),
+        h('div.sh-legend',
+          h('span', h('i', { style: 'background:var(--sh-card)' }), 'Recorded in ASSD'),
+          h('span', h('i', { style: 'background:var(--series-3)' }), 'Arrived'))),
+      h('div', { style: 'overflow-x:auto' }, bars));
+  }
+
+  // --------------------------------------------------------------- day --
+
+  /** One day: its three shifts side by side, the day against the money that arrived, and what does not agree. */
+  function dayView(v) {
+    const d = data.days.find((x) => x.day === anchor) || data.days[data.days.length - 1];
+    const mine = SLOTS.map((sl) => byId.get(`${d.day}|${sl}`)).filter(Boolean);
+    const cash = mine.reduce((t, s) => t + s.cash, 0);
+    const out = mine.reduce((t, s) => t + s.drawerOut, 0);
+    const gap = d.totals.received - d.totals.cardRecorded;
+    const top = Math.max(1, d.totals.cardRecorded, d.totals.received);
+    const hbar = (label, amount, colour) => h('div.sh-hbar',
+      h('span', label), h('span.sh-track', h('b.sh-seg', { style: `left:0;width:${(amount / top) * 100}%;background:${colour}` })), h('b.num', money(amount)));
+    const l = d.laundry;
+    const exs = data.exceptions.filter((x) => x.day === d.day);
+    mount(v,
+      h('div.sh-days', SLOTS.map((sl) => {
+        const s = byId.get(`${d.day}|${sl}`);
+        return s ? dayCard(s) : h('div.sh-daycard.empty',
+          h('div.top', glyph(sl), h('span', `${SLOT[sl].label} · ${SLOT[sl].hours}`)),
+          h('p', 'Not in the journal yet.'));
+      })),
+      h('section.card',
+        h('div.sh-cardhead', h('div', h('h2', 'The day against the money that arrived'),
+          h('p.sh-sub', 'All three shifts together: the cash taken and moved out, and card and MoMo recorded in ASSD beside what the terminal approved and MoMo received.'))),
+        h('div.sh-daysum',
+          h('div', h('small', 'Cash taken'), h('b.num', money(cash))),
+          h('div', h('small', 'Moved out of the drawer'), h('b.num', money(out))),
+          h('div', h('small', 'Bank commission on the cards'), h('b.num', money(d.totals.commission)))),
+        hbar('Recorded in ASSD', d.totals.cardRecorded, 'var(--sh-card)'),
+        hbar('Arrived', d.totals.received, 'var(--series-3)'),
+        h('p', { style: `font-weight:600;color:${gap === 0 ? 'var(--sh-good-ink)' : 'var(--sh-bad-ink)'}` },
+          gap === 0 ? '✓ Every card and MoMo payment found' : `${signed(gap)} between what arrived and what ASSD recorded. See the exceptions below.`),
+        l && (l.assd || l.system != null) ? h('p.sh-sub', l.system == null
+          ? `Laundry in ASSD: ${money(l.assd)}. The laundry system has nothing for this day in Insight yet.`
+          : `Laundry: ${money(l.assd)} in ASSD, ${money(l.system)} in the laundry system${l.assd === l.system ? ', they agree.' : '.'}`) : null),
+      exs.length ? h('section.card',
+        h('div.sh-cardhead', h('h2', `What does not agree on ${shortDay(d.day)}`)),
+        h('div.sh-exgrid', exs.map(exceptionCard))) : null);
+  }
+
+  /** A shift as a large card on the Day view: the drawer in four lines, how it was paid, and what is open. */
+  function dayCard(s) {
+    const r = s.register || {};
+    const t = tone(s);
+    const m = modesOf(s);
+    const toAnswer = exceptionsOf(s).filter((x) => !x.answer && x.severity !== 'info').length;
+    const cardLines = s.lines.filter((l) => l.amount > 0);
+    const v = r.variance;
+    return h(`button.sh-daycard.${t}`, { type: 'button', onclick: () => go('shift', s.id) },
+      h('div.top', glyph(s.slot), h('span', `${SLOT[s.slot].label} · ${SLOT[s.slot].hours}`),
+        h(`span.sh-status.${t}`, { good: '✓ Agrees', warn: '! Look at it', bad: '! Answer needed', open: 'Journal ends here' }[t])),
+      h('div.sh-who', avatar(s.user, true), h('b', { style: 'font-size:1.1rem' }, nameOf(s.user))),
+      h('dl.sh-mini',
+        h('dt', 'Opening count'), h('dd.num', money(r.opening)),
+        h('dt', '+ Cash taken'), h('dd.num', money(s.cash)),
+        h('dt', '− Moved out'), h('dd.num', money(s.drawerOut)),
+        h('dt', 'Closing count'), h('dd.num', money(r.closing))),
+      h('div.sh-dayvar', v == null ? h('span.sh-chip.none', s.open ? 'journal ends here' : 'no closing count')
+        : v === 0 ? h('span.sh-chip.ok', '✓ The drawer agrees')
+          : h(`span.sh-chip.${v > 0 ? 'over' : 'short'}`, `${v > 0 ? 'Over' : 'Short'} ${money(Math.abs(v))}`)),
+      mixBar(s),
+      h('div.sh-mixkey', MODES.filter(([k]) => m[k] > 0).map(([k, label, c]) => h('span', h('i', { style: `background:${c}` }), `${label === 'Card and MoMo' ? 'Card' : label.replace('Prepaid by ', 'Prepaid ')} ${whole(m[k])}`))),
+      h('div.sh-fig',
+        h('span', cardLines.length ? `${s.cardFound} of ${cardLines.length} card and MoMo found` : 'No card or MoMo'),
+        toAnswer ? h('span.sh-chip.short', `${toAnswer} to answer`) : null),
+      h('span.sh-open', 'Open the shift →'));
+  }
+
+  // ------------------------------------------------------------- month --
+
+  /** The month as a calendar: each day with its three shifts as coloured bars, and the month's numbers by week. */
+  function monthView(v) {
+    const first = period.from;
+    const last = period.to;
+    const start = plusDays(first, -weekdayOf(first));
+    const end = plusDays(last, 6 - weekdayOf(last));
+    const cells = [];
+    for (let d = start; d <= end; d = plusDays(d, 1)) cells.push(d);
+    const dayOf_ = new Map(data.days.map((d) => [d.day, d]));
+    const cal = h('div.sh-month',
+      ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((w) => h('div.sh-mhead', w)),
+      cells.map((day) => {
+        if (day < first || day > last) return h('div.sh-mcell.out', h('span.n', String(Number(day.slice(8)))));
+        const ss = SLOTS.map((sl) => byId.get(`${day}|${sl}`));
+        const any = ss.some(Boolean);
+        const open = data.exceptions.filter((x) => x.day === day && !x.answer && x.severity !== 'info').length;
+        const d = dayOf_.get(day);
+        const cell = h(`div.sh-mcell${any ? '' : '.none'}${day === anchor ? '.sel' : ''}`, {
+          role: any ? 'button' : null, tabindex: any ? '0' : null, title: any ? `Open ${dayText(day)}` : 'Not in the journal',
+        },
+        h('div.sh-mtop', h('span.n', String(Number(day.slice(8)))), open ? h('span.sh-chip.short', String(open)) : null),
+        h('div.sh-mslots', ss.map((s, i) => (s
+          ? h('button.sh-mslot', {
+            type: 'button', style: `background:${TONE[tone(s)]}`, title: `${nameOf(s.user)} · ${SLOT[SLOTS[i]].label}`,
+            onclick: (e) => { e.stopPropagation(); go('shift', s.id); },
+          }, (s.user || '?')[0])
+          : h('span.sh-mslot.empty')))),
+        any && d ? h('small.num', `Cash ${whole(ss.reduce((t, s) => t + (s?.cash || 0), 0))}`) : null);
+        if (any) {
+          const open_ = () => go('day', null, day);
+          cell.addEventListener('click', open_);
+          cell.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open_(); } });
+        }
+        return cell;
+      }));
+
+    // Week by week, Monday to Sunday, within the month.
+    const weeks = [];
+    for (let w = start; w <= last; w = plusDays(w, 7)) {
+      const from = w < first ? first : w;
+      const to = plusDays(w, 6) > last ? last : plusDays(w, 6);
+      const ss = shifts.filter((s) => s.day >= from && s.day <= to);
+      if (!ss.length) continue;
+      weeks.push({
+        from, to, count: ss.length,
+        cash: ss.reduce((t, s) => t + s.cash, 0),
+        card: ss.reduce((t, s) => t + s.card, 0),
+        variance: ss.reduce((t, s) => t + (s.register?.variance || 0), 0),
+        open: data.exceptions.filter((x) => x.day >= from && x.day <= to && !x.answer && x.severity !== 'info').length,
+      });
+    }
+    mount(v,
+      h('section.card',
+        h('div.sh-cardhead',
+          h('div', h('h2', `${period.label}, day by day`),
+            h('p.sh-sub', 'Each day shows its morning, afternoon and night as coloured bars with the initial of whoever held the drawer. Tap a bar for that shift, or the day for all three.')),
+          h('div.sh-legend',
+            h('span', h('i', { style: 'background:var(--sh-good)' }), 'Agrees'),
+            h('span', h('i', { style: 'background:var(--sh-warn)' }), 'Look at it'),
+            h('span', h('i', { style: 'background:var(--sh-bad)' }), 'Answer needed'),
+            h('span', h('i', { style: 'background:var(--sh-info)' }), 'Journal ends'))),
+        h('div', { style: 'overflow-x:auto' }, cal)),
+      weeks.length ? h('section.card',
+        h('div.sh-cardhead', h('h2', 'Week by week')),
+        table([
+          { label: 'Week', get: (w) => h('button.sh-link', { type: 'button', onclick: () => go('week', null, w.from) }, `${shortDay(w.from)} to ${shortDay(w.to)}`) },
+          { label: 'Shifts', num: true, get: (w) => num(w.count) },
+          { label: 'Cash taken', num: true, get: (w) => money(w.cash) },
+          { label: 'Card and MoMo', num: true, get: (w) => money(w.card) },
+          { label: 'Drawer variance', num: true, get: (w) => signed(w.variance) },
+          { label: 'To answer', num: true, get: (w) => (w.open ? h('span.sh-chip.short', String(w.open)) : h('span.sh-chip.ok', '✓')) },
+        ], weeks)) : null,
+      cardBars([...data.days].sort((a, b) => (a.day < b.day ? -1 : 1))));
   }
 
   // ------------------------------------------------------------- shift --
