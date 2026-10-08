@@ -811,3 +811,9 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh .tl-fields label { display: grid; gap: .2rem; font-size: .78rem; color: var(--ink-2); }
 .sh .sh-ex .hd .sh-pick { grid-column: 2; justify-self: start; gap: .35rem; font-size: .8rem; color: var(--ink-2); }
 .sh .tl-issue textarea { font: inherit; font-size: .86rem; }
+
+/* Switching period: the old view stays, dimmed, until the new one is read. */
+.sh.sh-loading { opacity: .55; pointer-events: none; transition: opacity .15s .1s; }
+.sh.sh-loading::before { content: 'Reading…'; position: fixed; top: 4.5rem; left: 50%; transform: translateX(-50%); z-index: 20; background: var(--ink); color: var(--plane); padding: .35rem .8rem; border-radius: 999px; font-size: .82rem; }
+.sh .sh-track { overflow: hidden; }
+.sh .sh-zero { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink-2); z-index: 1; border-radius: 1px; }

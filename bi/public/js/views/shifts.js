@@ -101,6 +101,8 @@ const signed = (minor) => (minor == null ? '—' : minor === 0 ? money(0) : `${m
 const whole = (minor) => (minor == null ? '—' : `${minor < 0 ? '−' : ''}${num(Math.abs(minor) / 100)}`);
 const cedis = (minor) => (minor == null ? '' : (minor / 100).toFixed(2));
 const typedMinor = (value) => (value === '' || value == null ? null : Math.round(Number(value) * 100));
+/** A share of a bar, kept inside it whatever the numbers do. */
+const pct = (part, whole) => Math.max(0, Math.min(100, (part / whole) * 100));
 const store = {
   get(key, fallback) { try { return sessionStorage.getItem(`insight-shifts-${key}`) ?? fallback; } catch { return fallback; } },
   set(key, value) { try { sessionStorage.setItem(`insight-shifts-${key}`, value); } catch { /* private mode */ } },
@@ -171,15 +173,47 @@ export async function renderShifts(root, { range }) {
 
   const till = tillViews({ who, period: () => period });
 
-  async function load(notice = null) {
+  // Each period's data, once read, kept for as long as the screen is open, so
+  // going back to a day, week or month already seen is instant. Anything that
+  // changes the numbers (a save, an answer, an upload) empties it.
+  const cache = new Map();
+  const keyOf = (p) => `${p.from}|${p.to}`;
+  function fetchPeriod(p) {
+    const key = keyOf(p);
+    if (!cache.has(key)) {
+      cache.set(key, api(`/shifts?from=${p.from}&to=${p.to}`).catch((err) => { cache.delete(key); throw err; }));
+    }
+    return cache.get(key);
+  }
+  /** Read the other views of the same days ahead, quietly, so switching to them waits for nothing. */
+  function readAhead() {
+    if (!canShifts) return;
+    const others = [...periods.filter((m) => m !== mode).map((m) => periodOf(m, anchor)),
+      periodOf(mode, mode === 'day' ? plusDays(anchor, -1) : mode === 'week' ? plusDays(anchor, -7) : plusMonths(anchor, -1))];
+    setTimeout(() => { for (const p of others) fetchPeriod(p).catch(() => {}); }, 400);
+  }
+
+  /**
+   * Show the period. `cached` for moving around, where a period already read
+   * is shown as it was; without it, everything is read again, because
+   * something has just changed.
+   */
+  async function load(notice = null, { cached = false } = {}) {
     period = periodOf(mode, anchor);
-    data = canShifts ? await api(`/shifts?from=${period.from}&to=${period.to}`)
-      : { days: [], exceptions: [], people: [], totals: {}, coverage: {}, uploads: [], canUpload: false, groups: [] };
+    if (!cached) cache.clear();
+    const waitingFor = canShifts && !cache.has(keyOf(period));
+    if (waitingFor && view.firstChild) view.classList.add('sh-loading');
+    try {
+      data = canShifts ? await fetchPeriod(period)
+        : { days: [], exceptions: [], people: [], totals: {}, coverage: {}, uploads: [], canUpload: false, groups: [] };
+    } finally {
+      view.classList.remove('sh-loading');
+    }
     // A first visit on days the journal does not reach goes to the newest
     // days it does, once, rather than opening on an empty page.
     if (!jumped && !data.days.some((d) => d.shifts.length) && data.coverage?.journal?.to && data.coverage.journal.to < period.from) {
       jumped = true;
-      return moveTo(data.coverage.journal.to, notice);
+      return moveTo(data.coverage.journal.to, notice, { cached: true });
     }
     jumped = true;
     shifts = [];
@@ -194,6 +228,7 @@ export async function renderShifts(root, { range }) {
       currentId = (flagged || shifts[shifts.length - 1])?.id || null;
     }
     paint(notice);
+    readAhead();
   }
 
   async function go(next, shiftId = null, day = null) {
@@ -206,7 +241,7 @@ export async function renderShifts(root, { range }) {
       mode = next;
       if (day) anchor = day;
       remember();
-      return load();
+      return load(null, { cached: true });
     }
     paint();
   }
@@ -218,10 +253,10 @@ export async function renderShifts(root, { range }) {
   }
 
   /** Move the period: a day, a week or a month at a time, or to a given day. */
-  function moveTo(day, notice = null) {
+  function moveTo(day, notice = null, { cached = true } = {}) {
     anchor = day;
     remember();
-    return load(notice);
+    return load(notice, { cached });
   }
   const step = (n) => moveTo(mode === 'day' ? plusDays(anchor, n) : mode === 'week' ? plusDays(anchor, 7 * n) : plusMonths(anchor, n));
 
@@ -407,8 +442,8 @@ export async function renderShifts(root, { range }) {
           onclick: () => has && go('day', null, d.day),
         },
         h('div.pair',
-          h('b', { style: `height:${(d.totals.cardRecorded / max) * 100}%;background:var(--sh-card)` }),
-          h('b', { style: `height:${(d.totals.received / max) * 100}%;background:var(--series-3)` })),
+          h('b', { style: `height:${pct(d.totals.cardRecorded, max)}%;background:var(--sh-card)` }),
+          h('b', { style: `height:${pct(d.totals.received, max)}%;background:var(--series-3)` })),
         h('small', dayText(d.day, { weekday: days.length > 14 ? undefined : 'short', day: 'numeric' }),
           // A month has no room for figures under every day: a mark there, the figure on hover.
           has ? h('em', { style: `color:${gap === 0 ? 'var(--sh-good-ink)' : Math.abs(gap) < 10000 ? 'var(--sh-warn-ink)' : 'var(--sh-bad-ink)'}` },
@@ -435,7 +470,7 @@ export async function renderShifts(root, { range }) {
     const gap = d.totals.received - d.totals.cardRecorded;
     const top = Math.max(1, d.totals.cardRecorded, d.totals.received);
     const hbar = (label, amount, colour) => h('div.sh-hbar',
-      h('span', label), h('span.sh-track', h('b.sh-seg', { style: `left:0;width:${(amount / top) * 100}%;background:${colour}` })), h('b.num', money(amount)));
+      h('span', label), h('span.sh-track', h('b.sh-seg', { style: `left:0;width:${pct(amount, top)}%;background:${colour}` })), h('b.num', money(amount)));
     const l = d.laundry;
     const exs = data.exceptions.filter((x) => x.day === d.day);
     mount(v,
@@ -679,12 +714,21 @@ export async function renderShifts(root, { range }) {
         from: 0, to: n.closing ?? 0, total: true, amt: money(n.closing),
         c: n.variance == null ? 'var(--muted)' : n.variance === 0 ? 'var(--sh-good)' : n.variance > 0 ? 'var(--sh-warn)' : 'var(--sh-bad)',
       });
+      // One scale for every bar, from the lowest point to the highest. The
+      // lowest is below nothing when more left the drawer than was in it:
+      // then nought sits part-way along, marked, and the bars stay inside
+      // their track rather than running out over the labels.
       const top = Math.max(1, ...steps.map((x) => Math.max(x.from, x.to)));
+      const low = Math.min(0, ...steps.map((x) => Math.min(x.from, x.to)));
+      const span = top - low;
+      const pos = (value) => ((value - low) / span) * 100;
       mount(fall, steps.map((x) => h(`div.sh-frow${x.total ? '.total' : ''}`,
         h('span.lab', x.lab, x.sm ? h('small', x.sm) : null),
-        h('span.sh-track', h(`b.sh-seg${x.hatch ? '.hatch' : ''}`, {
-          style: `left:${(Math.min(x.from, x.to) / top) * 100}%;width:${(Math.abs(x.to - x.from) / top) * 100}%;background:${x.c}`,
-        })),
+        h('span.sh-track',
+          low < 0 ? h('i.sh-zero', { style: `left:${pos(0)}%`, title: 'Nothing' }) : null,
+          h(`b.sh-seg${x.hatch ? '.hatch' : ''}`, {
+            style: `left:${pos(Math.min(x.from, x.to))}%;width:${(Math.abs(x.to - x.from) / span) * 100}%;background:${x.c}`,
+          })),
         h('span.amt.num', x.amt))));
 
       const cls = n.variance == null ? 'none' : n.variance === 0 ? 'ok' : n.variance > 0 ? 'over' : 'short';

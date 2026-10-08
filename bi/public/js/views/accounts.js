@@ -161,8 +161,32 @@ export async function renderAccounts(root) {
     // this screen again and whoever made it would be back to the shared
     // password to try once more.
     const noOwnerYet = !accounts.some((a) => a.isOwner && a.active);
-    const owner = h('input', { type: 'checkbox', checked: account?.isOwner ?? (isNew && noOwnerYet) });
     const active = h('input', { type: 'checkbox', checked: account?.active ?? true });
+
+    // The level, chosen in one place when somebody is added rather than
+    // ticked in the grid afterwards. Owner and admin see everything here; a
+    // supervisor sees Shifts only, with the parts set under Till settings.
+    const insightGrant = account?.access?.find((a) => a.systemId === 'insight');
+    const current = account?.isOwner ? 'owner'
+      : insightGrant ? (insightGrant.role === 'supervisor' ? 'supervisor' : 'admin')
+        : account ? 'none' : (noOwnerYet ? 'owner' : 'supervisor');
+    const LEVELS = [
+      ['owner', 'Owner', 'Everything, every system, and can manage these accounts.'],
+      ['admin', 'Admin', 'Every report and all of Shifts, including the till settings. Cannot manage accounts or Setup.'],
+      ['supervisor', 'Supervisor', 'Shifts only, with the parts an admin chooses under Shifts → Till settings → Supervisor access.'],
+      ['none', 'No reports', 'Only the hub: a way into the other systems ticked below.'],
+    ];
+    const level = h('select', { required: true }, LEVELS.map(([value, label]) => h('option', { value, selected: value === current }, label)));
+    const levelNote = h('p.small.muted', { style: { margin: '.2rem 0 .8rem' } });
+    const others = systems.filter((sys) => sys.id !== 'insight');
+    const ticks = others.map((sys) => h('input', { type: 'checkbox', checked: Boolean(account?.isOwner || account?.access?.some((a) => a.systemId === sys.id)) }));
+    const showLevel = () => {
+      levelNote.textContent = LEVELS.find(([v]) => v === level.value)[2]
+        + (level.value === 'owner' && noOwnerYet && isNew ? ' Chosen because nobody is an owner yet: an account without it cannot open this screen.' : '');
+      for (const t of ticks) t.disabled = level.value === 'owner';
+    };
+    level.addEventListener('change', showLevel);
+    showLevel();
 
     const message = h('p.small', { style: { color: 'var(--critical)', margin: '.4rem 0 0' } });
 
@@ -174,16 +198,25 @@ export async function renderAccounts(root) {
           event.preventDefault();
           message.textContent = '';
           try {
-            const fresh = await api('/accounts', {
+            let fresh = await api('/accounts', {
               method: 'POST',
               body: {
                 id: account?.id,
                 name: name.value,
                 email: email.value,
-                isOwner: owner.checked,
+                isOwner: level.value === 'owner',
                 active: active.checked,
               },
             });
+            // Then what they may reach, on the account just saved.
+            const saved = fresh.accounts.find((a) => a.email.toLowerCase() === email.value.trim().toLowerCase());
+            if (saved && level.value !== 'owner') {
+              const access = others.filter((sys, i) => ticks[i].checked)
+                .map((sys) => ({ systemId: sys.id, role: saved.access.find((a) => a.systemId === sys.id)?.role || '' }));
+              if (level.value === 'admin') access.push({ systemId: 'insight', role: '' });
+              if (level.value === 'supervisor') access.push({ systemId: 'insight', role: 'supervisor' });
+              fresh = await api(`/accounts/${saved.id}/access`, { method: 'POST', body: { access } });
+            }
             dialog.close();
             dialog.remove();
             paint(fresh);
@@ -201,10 +234,11 @@ export async function renderAccounts(root) {
       h('p.small.muted', { style: { marginTop: '-.3rem' } },
         'This is what the other systems match them on, so it has to be the address they use there too.'),
 
-      h('label.check', owner, 'Owner'),
-      h('p.small.muted', { style: { margin: '-.5rem 0 .8rem 1.55rem' } },
-        'Reaches every system without being granted them one at a time, and can manage these accounts. '
-        + (noOwnerYet && isNew ? 'Ticked because nobody is an owner yet — an account without it cannot open this screen.' : '')),
+      h('label.field', 'Access level', level),
+      levelNote,
+      others.length ? h('div',
+        h('p.small', { style: { margin: '0 0 .3rem', fontWeight: '600' } }, 'Can also open, from the hub'),
+        others.map((sys, i) => h('label.check', ticks[i], sys.label))) : null,
 
       isNew ? null : h('div',
         h('label.check', active, 'Can sign in'),
