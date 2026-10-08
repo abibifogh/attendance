@@ -4,6 +4,13 @@ import { table, banner } from './components.js';
 import { prepareNewPassword } from '../crypto.js';
 import { state } from '../app.js';
 
+/** An invitation's state, in the word the owner sees. */
+const STATUS = {
+  sent: 'Not opened', opened: 'Opened', asked: 'Asked again', expired: 'Expired', joined: 'Joined', withdrawn: 'Withdrawn',
+};
+const when = (sql) => (sql ? new Date(`${String(sql).replace(' ', 'T')}Z`)
+  .toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) : '');
+
 /**
  * Who may sign in, and what each of them may reach.
  *
@@ -12,10 +19,20 @@ import { state } from '../app.js';
  * the till", and that is a column, not five separate pages.
  */
 export async function renderAccounts(root) {
-  const data = await api('/accounts');
+  const [data, invited] = await Promise.all([api('/accounts'), api('/invitations').catch(() => ({ invitations: [] }))]);
   const view = h('div');
   add(root, view);
+  let invitations = invited.invitations;
+  let flash = null;
   paint(data);
+
+  /** After any change to invitations: both lists, since an invitation makes an account. */
+  async function repaint(message = null) {
+    flash = message;
+    const [fresh, inv] = await Promise.all([api('/accounts'), api('/invitations')]);
+    invitations = inv.invitations;
+    paint(fresh);
+  }
 
   function paint(data) {
     const { accounts, systems } = data;
@@ -31,6 +48,9 @@ export async function renderAccounts(root) {
         h('strong', 'Nobody here is an owner yet. '),
         'Add yourself and tick ', h('em', 'Owner'), ' — an account without it cannot reach this screen, '
         + 'and the shared password is the only other way back in.') : null,
+
+      inviteCard(systems, accounts),
+      invitationsCard(),
 
       h('div.card',
         h('h2', 'Who can sign in'),
@@ -67,10 +87,12 @@ export async function renderAccounts(root) {
                     onchange: (event) => toggle(account, system, event.target.checked),
                   }))),
               h('td',
+                account.hasPassword ? null : h('button.btn', { onclick: () => inviteAgain(account) }, 'Invite'),
+                account.hasPassword ? null : ' ',
                 h('button.btn', { onclick: () => setPassword(account) }, 'Set password'),
                 ' ',
                 h('button.btn', { onclick: () => edit(account, systems, accounts) }, 'Edit'))))))),
-        h('button.btn.primary', { style: { marginTop: '.8rem' }, onclick: () => edit(null, systems, accounts) }, 'Add somebody')),
+        h('button.btn', { style: { marginTop: '.8rem' }, onclick: () => edit(null, systems, accounts) }, 'Add without an invitation')),
 
       h('div.card',
         h('h2', 'Where each system lives'),
@@ -118,6 +140,166 @@ export async function renderAccounts(root) {
               ', and set the same value on ', system.label,
               ' along with the handler from ', h('code', 'bi/docs/sso.md'), '.')));
     }
+  }
+
+  /**
+   * Invite somebody: who they are, what they may reach, and a link that lets
+   * them choose their own password. The owner never knows it.
+   */
+  function inviteCard(systems, accounts) {
+    const noOwnerYet = !accounts.some((a) => a.isOwner && a.active);
+    let level = noOwnerYet ? 'owner' : 'supervisor';
+    const name = h('input', { type: 'text', autocomplete: 'off', required: true });
+    const email = h('input', { type: 'email', autocomplete: 'off', required: true });
+    const note = h('textarea.inv-note', { rows: 2, maxLength: 400, placeholder: 'Goes in the email, under your name.' });
+    const LEVELS = [
+      ['owner', 'Owner', 'Everything, every system, and manages accounts'],
+      ['admin', 'Admin', 'Every report and all of Shifts'],
+      ['supervisor', 'Supervisor', 'Shifts only, as set in Till settings'],
+      ['none', 'No reports', 'The hub only: a way into other systems'],
+    ];
+    const others = systems.filter((sys) => sys.id !== 'insight');
+    const ticks = others.map((sys) => h('input', { type: 'checkbox', checked: sys.id === 'attendance' }));
+    const levelButtons = LEVELS.map(([value, label, words]) => h('button', {
+      type: 'button',
+      class: value === level ? 'on' : '',
+      onclick: () => {
+        level = value;
+        levelButtons.forEach((b, i) => b.classList.toggle('on', LEVELS[i][0] === value));
+        ticks.forEach((t) => { t.disabled = value === 'owner'; });
+      },
+    }, label, h('span', words)));
+    const message = h('p.small.form-error');
+
+    const send = async (how, button) => {
+      message.textContent = '';
+      if (!name.value.trim() || !email.value.trim()) { message.textContent = 'A name and an email address, please.'; return; }
+      button.disabled = true;
+      try {
+        const out = await api('/invitations', {
+          method: 'POST',
+          body: {
+            name: name.value, email: email.value, level, note: note.value, how,
+            systems: others.filter((sys, i) => ticks[i].checked).map((sys) => sys.id),
+          },
+        });
+        await repaint(outcome(out));
+      } catch (err) {
+        message.textContent = err.message;
+        button.disabled = false;
+      }
+    };
+    const sendButton = h('button.btn.primary', { type: 'button', onclick: (e) => send('email', e.target) }, 'Send invitation');
+    const linkButton = h('button.btn', { type: 'button', onclick: (e) => send('link', e.target) }, 'Copy the link instead');
+    ticks.forEach((t) => { t.disabled = level === 'owner'; });
+    // Shown once: the next repaint, for whatever reason, should not repeat it.
+    const shown = flash;
+    flash = null;
+
+    return h('div.card',
+      h('h2', 'Invite somebody'),
+      h('p.sub', 'They get a link, choose their own password, and are in. You never handle it.'),
+      h('div.grid.two',
+        h('label.field', 'Name', name),
+        h('label.field', 'Email address', email)),
+      h('p.small', { style: { margin: '0 0 .2rem', fontWeight: '600' } }, 'Access level'),
+      h('div.inv-levels', levelButtons),
+      others.length ? h('div',
+        h('p.small', { style: { margin: '0 0 .3rem', fontWeight: '600' } }, 'Can also open, from the hub'),
+        h('div.inv-ticks', others.map((sys, i) => h('label.check', ticks[i], sys.label)))) : null,
+      h('label.field', 'A note from you (optional)', note),
+      message,
+      h('div.inv-actions', sendButton, linkButton,
+        h('span.small.muted', 'The link works once and lasts 7 days.')),
+      shown ? flashBox(shown) : null);
+  }
+
+  /** What happened, in a sentence, with the link to hand on when there is one. */
+  function outcome(out) {
+    if (out.emailed) return { text: `Invitation sent to ${out.to}. It lasts until ${out.expires}.` };
+    if (out.emailError) {
+      return { warn: true, text: `Could not email ${out.to}: ${out.emailError} Send them this link yourself; it works once, until ${out.expires}.`, link: out.link };
+    }
+    return { text: `Here is the link for ${out.to}. Paste it into WhatsApp or a message; it works once, until ${out.expires}.`, link: out.link };
+  }
+
+  function flashBox(message) {
+    const box = h(message.warn ? 'div.inv-flash.warn' : 'div.inv-flash', message.text);
+    if (message.link) {
+      const copy = h('button.btn', {
+        type: 'button',
+        onclick: async () => {
+          try { await navigator.clipboard.writeText(message.link); copy.textContent = 'Copied'; } catch { copy.textContent = 'Select the link and copy it'; }
+        },
+      }, 'Copy link');
+      add(box, h('div', { style: { margin: '.45rem 0 .3rem' } }, h('code', message.link)), copy);
+      // Straight onto the clipboard too, since that is what was asked for.
+      navigator.clipboard?.writeText(message.link).then(() => { copy.textContent = 'Copied'; }).catch(() => {});
+    }
+    return box;
+  }
+
+  function invitationsCard() {
+    if (!invitations.length) return null;
+    return h('div.card',
+      h('h2', 'Invitations'),
+      h('p.sub', 'Resending sends a fresh link; the old one stops working. Somebody who opens an old or expired link can ask you for a new one, and it shows here as Asked again.'),
+      invitations.map((inv) => {
+        const history = [
+          `Sent ${when(inv.createdAt)}${inv.by ? ` by ${inv.by}` : ''}${inv.via === 'link' ? ' as a link' : ''}`,
+          inv.sends > 1 ? `sent ${inv.sends} times in all` : null,
+          inv.openedAt && !inv.usedAt ? `opened ${when(inv.openedAt)}` : null,
+          inv.askedAt ? `asked for a new link ${when(inv.askedAt)}` : null,
+          inv.usedAt ? `joined ${when(inv.usedAt)}` : null,
+          inv.emailError && !inv.usedAt ? `the email did not go: ${inv.emailError}` : null,
+        ].filter(Boolean).join(' · ');
+        const live = inv.status !== 'joined';
+        return h('div.inv-row',
+          h('div.inv-who',
+            h('div', h('strong', inv.name), h('span.small.muted', ` · ${inv.level}`)),
+            h('div.small.muted', inv.email),
+            h('div.small.muted', history)),
+          h(`span.inv-status.${inv.status}`, STATUS[inv.status] || inv.status),
+          live ? h('div.inv-buttons',
+            h('button.btn', { onclick: (e) => act(e.target, `/invitations/${inv.id}/resend`, { how: 'email' }) }, inv.status === 'withdrawn' ? 'Invite again' : 'Resend'),
+            h('button.btn', { onclick: (e) => act(e.target, `/invitations/${inv.id}/resend`, { how: 'link' }) }, 'New link to copy'),
+            inv.status === 'withdrawn' ? null : h('button.btn', {
+              onclick: (e) => {
+                if (!confirm(`Withdraw the invitation to ${inv.email}? The link stops working and their account is switched off until you invite them again.`)) return;
+                act(e.target, `/invitations/${inv.id}/withdraw`, {}, `Withdrawn. The link to ${inv.email} no longer works.`);
+              },
+            }, 'Withdraw')) : null);
+      }));
+  }
+
+  async function act(button, path, body, said = null) {
+    button.disabled = true;
+    try {
+      const out = await api(path, { method: 'POST', body });
+      await repaint(said ? { text: said } : outcome(out));
+      view.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+      alert(err.message);
+      button.disabled = false;
+    }
+  }
+
+  /** Somebody on the grid who never set a password: invite them as they are. */
+  async function inviteAgain(account) {
+    const level = account.isOwner ? 'owner'
+      : account.access.some((a) => a.systemId === 'insight' && a.role === 'supervisor') ? 'supervisor'
+        : account.access.some((a) => a.systemId === 'insight') ? 'admin' : 'none';
+    try {
+      const out = await api('/invitations', {
+        method: 'POST',
+        body: {
+          name: account.name, email: account.email, level, how: 'email',
+          systems: account.access.filter((a) => a.systemId !== 'insight').map((a) => a.systemId),
+        },
+      });
+      await repaint(outcome(out));
+      view.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) { alert(err.message); }
   }
 
   async function setInsight(account, how) {
@@ -221,7 +403,7 @@ export async function renderAccounts(root) {
             dialog.remove();
             paint(fresh);
             if (isNew) {
-              alert(`Added ${name.value}.\n\nNow press "Set password" on their row — they cannot sign in until they have one.`);
+              alert(`Added ${name.value}.\n\nNow press "Invite" on their row, so they choose a password, or "Set password" to choose one for them.`);
             }
           } catch (err) {
             message.textContent = err.message;

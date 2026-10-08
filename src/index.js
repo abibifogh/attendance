@@ -204,6 +204,7 @@ export const ROUTES = [
   ['POST', '/api/link/till/recover', 'public', till.linkRecover],
   ['POST', '/api/link/till/reopen', 'public', till.linkReopen],
   ['POST', '/api/link/till/tell', 'public', till.linkTell],
+  ['POST', '/api/link/mail', 'public', till.linkMail],
   ['GET', '/api/me/report', 'att_me', mine.myReport],
   ['POST', '/api/me/leave', 'att_me', mine.askForLeave],
   ['POST', '/api/me/leave/:id/withdraw', 'att_me', mine.withdrawMyLeave],

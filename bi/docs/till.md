@@ -96,6 +96,7 @@ minutes, or altered on the way, is refused.
 | Insight | `/api/link/till/recover` | A shortage as a one-month advance |
 | Insight | `/api/link/till/reopen` | Reopen a signed report |
 | Insight | `/api/link/till/tell` | Tell people something was settled, sent back or needs approving |
+| Insight | `/api/link/mail` | Send one email from HIVE's address: an invitation, or word that somebody joined (see `invitations.md`) |
 
 Insight also reads HIVE's database directly, read-only, as it always has:
 the reports, the POs claimed and the answers are HIVE's tables.

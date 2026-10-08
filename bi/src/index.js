@@ -10,6 +10,7 @@ import * as accounts from './routes/accounts.js';
 import * as reports from './routes/reports.js';
 import * as shiftRoutes from './routes/shifts.js';
 import * as till from './routes/till.js';
+import * as invitations from './routes/invitations.js';
 import { verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
 import { loadFacts } from './insight/facts.js';
@@ -35,6 +36,12 @@ const ROUTES = [
   // only endpoint in the app that hands out an identity, and it hands out
   // exactly one, once, to the system a code was minted for.
   ['POST', '/api/sso/redeem', 'public', ssoRedeem],
+
+  // An invitation's link. The token in the body is the only credential, and
+  // each one works for one person, once, for a week.
+  ['POST', '/api/invite/look', 'public', (env, ctx) => invitations.look(env, ctx.body)],
+  ['POST', '/api/invite/accept', 'public', (env, ctx) => invitations.accept(env, ctx.body)],
+  ['POST', '/api/invite/ask', 'public', (env, ctx) => invitations.ask(env, ctx.body, { origin: ctx.url.origin })],
 
   // The hub. Everybody who can sign in can see it, whatever else they can
   // reach — it is the reason most people will open this at all.
@@ -104,6 +111,10 @@ const ROUTES = [
   ['POST', '/api/accounts/:id/access', 'owner', (env, ctx) => accounts.setAccess(env, ctx.params.id, ctx.body, ctx.account)],
   ['POST', '/api/systems/:id', 'owner', (env, ctx) => accounts.saveSystem(env, ctx.params.id, ctx.body)],
   ['GET', '/api/sso/log', 'owner', (env) => accounts.handoffLog(env)],
+  ['GET', '/api/invitations', 'owner', async (env) => ({ invitations: await invitations.list(env) })],
+  ['POST', '/api/invitations', 'owner', (env, ctx) => invitations.invite(env, ctx.body, ctx.account, { origin: ctx.url.origin })],
+  ['POST', '/api/invitations/:id/resend', 'owner', (env, ctx) => invitations.resend(env, ctx.params.id, ctx.body, ctx.account, { origin: ctx.url.origin })],
+  ['POST', '/api/invitations/:id/withdraw', 'owner', (env, ctx) => invitations.withdraw(env, ctx.params.id)],
 
   // Reports made elsewhere, published behind a PIN. Publishing is a multipart
   // upload, so the handler reads the request itself rather than a JSON body.

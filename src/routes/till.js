@@ -6,6 +6,7 @@ import { createNotice } from '../lib/notices.js';
 import { callLink, verifyLink } from '../lib/till-link.js';
 import { addDays, nowIn, todayIn } from '../util/dates.js';
 import { firstMonthFor } from '../lib/advances.js';
+import { isEmail, sendEmail, senderWithName } from '../lib/notify.js';
 
 /**
  * My till: closing a front-desk shift, and answering for it.
@@ -511,5 +512,53 @@ export async function linkTell(ctx) {
       userId: Number(p.userId), push: p.push !== false, email: Boolean(p.email), text: false,
     }, ctx);
   }
+  return json({ ok: true });
+}
+
+/**
+ * Send one email for Insight: an invitation, or word that somebody joined.
+ *
+ * Insight has no mail provider of its own and should not grow one. HIVE
+ * already holds the key, the sending address and a log of what went, so
+ * Insight asks it over the same signed link and the mail comes from the
+ * address staff already know. One recipient per call, and nothing is ever
+ * addressed from what the body says: the sender is HIVE's own.
+ */
+export async function linkMail(ctx) {
+  const body = await fromInsight(ctx);
+  const to = String(body.to ?? '').trim();
+  if (!isEmail(to)) throw badRequest('That is not an email address.');
+  const subject = str(body.subject, 'Subject', { required: true, max: 200 });
+  const html = str(body.html, 'Message', { required: true, max: 60000 });
+  const text = str(body.text, 'Plain text', { max: 20000 }) || undefined;
+  const kind = /^[a-z_.]{1,40}$/.test(String(body.kind ?? '')) ? body.kind : 'insight';
+
+  const rows = await ctx.db.prepare('SELECT key, value FROM settings WHERE key IN (\'email_from\', \'email_reply_to\')').all();
+  const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
+  const log = (status, detail) => ctx.db.prepare(
+    'INSERT INTO email_log (kind, day, recipients, status, detail) VALUES (?, ?, ?, ?, ?)',
+  ).bind(kind, todayIn(), to, status, detail ? String(detail).slice(0, 500) : null).run().catch(() => {});
+
+  const missing = !ctx.env.RESEND_API_KEY ? 'HIVE has no email provider key set'
+    : !settings.email_from ? 'HIVE has no "from" address set (Setup → Email)' : null;
+  if (missing) {
+    await log('skipped', missing);
+    throw new HttpError(503, `Could not email: ${missing}.`);
+  }
+  try {
+    await sendEmail({
+      apiKey: ctx.env.RESEND_API_KEY,
+      from: senderWithName(settings.email_from, str(body.senderName, 'Sender', { max: 60 }) || 'Insight'),
+      to,
+      subject,
+      html,
+      text,
+      replyTo: isEmail(body.replyTo) ? body.replyTo : ((settings.email_reply_to || '').trim() || null),
+    });
+  } catch (err) {
+    await log('failed', err.message);
+    throw new HttpError(502, `The email provider refused it: ${err.message}`);
+  }
+  await log('sent');
   return json({ ok: true });
 }
