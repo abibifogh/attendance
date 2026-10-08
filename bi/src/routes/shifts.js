@@ -208,6 +208,97 @@ export async function pullOrders(env, body) {
   return { ok: true, ...result };
 }
 
+/**
+ * The corrections people have made to Cash Movements in a run of the journal,
+ * as `summarise` wants them: a movement that is left out is listed under both
+ * of a reversed pair's numbers.
+ */
+async function correctionsFor(env, lo, hi) {
+  let rows = [];
+  try {
+    rows = await all(env.DB, 'SELECT * FROM shift_movement WHERE (seq BETWEEN ?1 AND ?2) OR (pair BETWEEN ?1 AND ?2)', lo, hi);
+  } catch (err) {
+    if (!/no such table/i.test(String(err?.message))) throw err;
+  }
+  const out = new Map();
+  for (const r of rows) {
+    const who = { note: r.note, by: r.by_name, at: r.at };
+    if (r.kind === 'duplicate') out.set(r.seq, { kind: 'excluded', reason: 'duplicate', pair: r.pair, ...who });
+    else if (r.kind === 'reverses') {
+      out.set(r.seq, { kind: 'excluded', reason: 'reverses', pair: r.pair, ...who });
+      out.set(r.pair, { kind: 'excluded', reason: 'reversed-by', pair: r.seq, ...who });
+    } else out.set(r.seq, { kind: r.kind, expenses: r.expenses, ...who });
+  }
+  return out;
+}
+
+/** A Cash Movement on the front drawer, with the amount it took out (negative: put back). */
+async function drawerMovement(env, seq) {
+  const row = await first(env.DB, 'SELECT seq, kind, register, data FROM assd_entry WHERE seq = ?1', seq);
+  if (!row || row.kind !== 'Cash Movement' || row.register !== DRAWER) return null;
+  let data = {};
+  try { data = JSON.parse(row.data); } catch { data = {}; }
+  return { seq: row.seq, amount: -(data.movement || 0) };
+}
+
+/**
+ * Correct what a Cash Movement was.
+ *
+ * `kind` is one of: `expenses`, `safe`, `split` (with `expenses`, the part
+ * that was expenses), `duplicate` (with `pair`, the movement it repeats),
+ * `reverses` (with `pair`, the movement it puts back, which may be on
+ * another shift), or `clear` to undo whatever was said about this movement.
+ */
+export async function saveMovement(env, body, account) {
+  const seq = Number(body?.seq);
+  if (!Number.isInteger(seq)) throw badRequest('Which movement? Its ASSD number is needed.');
+  const kind = String(body?.kind || '');
+  const note = str(body?.note, 'Note', { max: 400 });
+
+  if (kind === 'clear') {
+    await run(env.DB, "DELETE FROM shift_movement WHERE seq = ?1 OR (kind = 'reverses' AND pair = ?1)", seq);
+    return { ok: true };
+  }
+  if (!['expenses', 'safe', 'split', 'duplicate', 'reverses'].includes(kind)) {
+    throw badRequest('Say what the movement was: expenses, safe, split, duplicate or reverses.');
+  }
+  const move = await drawerMovement(env, seq);
+  if (!move) throw badRequest(`ASSD ${seq} is not a Cash Movement out of the front drawer.`);
+
+  let expenses = null;
+  let pair = null;
+  let rowSeq = seq;
+  if (kind === 'expenses' || kind === 'safe' || kind === 'split') {
+    if (move.amount <= 0) throw badRequest('That movement put money back into the drawer; only one taken out can be expenses or the safe.');
+    if (kind === 'split') {
+      expenses = cedis(body?.expenses, 'The expenses part');
+      if (expenses == null || expenses <= 0 || expenses >= move.amount) {
+        throw badRequest('The expenses part must be more than nothing and less than the whole movement.');
+      }
+    }
+  } else {
+    const other = await drawerMovement(env, Number(body?.pair));
+    if (!other || other.seq === seq) throw badRequest('Choose the other movement it goes with.');
+    if (kind === 'duplicate') {
+      if (move.amount <= 0 || other.amount !== move.amount) throw badRequest('A duplicate has to be the same amount taken out.');
+      pair = other.seq;
+    } else {
+      if (other.amount !== -move.amount) throw badRequest('A reversal has to be the same amount the other way.');
+      // Stored on the movement that put money back, pointing at the one it undoes.
+      rowSeq = move.amount < 0 ? seq : other.seq;
+      pair = move.amount < 0 ? other.seq : seq;
+    }
+    const taken = await first(env.DB, `SELECT seq FROM shift_movement
+      WHERE kind IN ('duplicate', 'reverses') AND seq <> ?1 AND (seq IN (?2, ?3) OR pair IN (?2, ?3))`, rowSeq, rowSeq, pair);
+    if (taken) throw badRequest(`One of those movements is already matched (ASSD ${taken.seq}). Undo that first.`);
+  }
+
+  await run(env.DB, `INSERT INTO shift_movement (seq, kind, expenses, pair, note, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    ON CONFLICT (seq) DO UPDATE SET kind = ?2, expenses = ?3, pair = ?4, note = ?5, by_name = ?6, at = ?7`,
+  rowSeq, kind, expenses, pair, note, who(account), now());
+  return { ok: true };
+}
+
 export async function saveAnswer(env, body, account) {
   const key = str(body?.key, 'Exception', { required: true, max: 200 });
   const answer = str(body?.answer, 'Answer', { max: 60 });
@@ -251,7 +342,8 @@ export async function shifts(env, query, account) {
   // The journal ends inside its last shift unless a later hand-over exists.
   const open = !after?.seq && lastMarker?.seq === markers[markers.length - 1].seq;
 
-  const { shifts: raw } = segment(entries);
+  const corrections = await correctionsFor(env, lo, hi);
+  const { shifts: raw } = segment(entries, corrections);
   const lo3 = addDays(from, -3);
   const hi3 = addDays(to, 3);
   const terminal = await all(env.DB, 'SELECT * FROM terminal_txn WHERE day BETWEEN ?1 AND ?2', lo3, hi3);
@@ -321,20 +413,27 @@ export async function shifts(env, query, account) {
     const expected = opening == null ? null : opening + s.cash - out;
     const closing = typed?.closing ?? s.closing?.total ?? null;
     const closingFrom = typed?.closing != null ? 'typed' : s.closing ? 'assd' : null;
-    // Expenses: the expense sheet when it has been typed; otherwise what the
-    // counts before each movement label as receipts. Whatever no count
-    // labels stays "not labelled" rather than being guessed into either.
+    // Expenses: what each movement was, as the count before it labelled it
+    // or as a person corrected it. The expense sheet's total only settles
+    // what nothing labelled: the part of it not yet accounted for is
+    // expenses, the rest went to the safe. Where the sheet and the labelled
+    // movements disagree, the gap is shown rather than written over.
     const sheet = expense?.sheet_total ?? null;
-    const expenses = sheet ?? s.expensesMoved;
-    const toSafe = sheet != null ? Math.max(0, out - sheet) : s.safeMoved;
+    const fromSheet = sheet != null ? Math.min(s.unlabelledMoved, Math.max(0, sheet - s.expensesMoved)) : 0;
+    const expenses = s.expensesMoved + fromSheet;
+    const toSafe = s.safeMoved + (sheet != null ? s.unlabelledMoved - fromSheet : 0);
     const unlabelled = sheet != null ? 0 : s.unlabelledMoved;
     register.set(s.index, {
       opening, openingFrom, cashIn: s.cash, laundryCash: s.laundryCash, out,
-      expenses, toSafe, unlabelled, expensesFrom: sheet != null ? 'sheet' : 'assd',
+      expenses, toSafe, unlabelled, expensesFrom: fromSheet ? 'sheet' : 'assd',
+      sheetGap: sheet != null && sheet !== expenses ? sheet - expenses : null,
+      corrected: s.corrected,
       expected, closing, closingFrom,
       receiptsAtClose: closingFrom === 'assd' ? s.closing.receipts : null,
       variance: expected != null && closing != null ? closing - expected : null,
-      assdVariance: s.countVariance,
+      // What ASSD itself booked at the close; it differs from the variance
+      // only once somebody has corrected a movement on this shift.
+      assdVariance: s.booked.filter((b) => b.when === 'close').reduce((t, b) => t + b.amount, 0),
       // The incoming person's first count against the outgoing person's last.
       handoverGap: previousClosing && assdOpening != null && previousClosing.amount !== assdOpening
         ? { amount: assdOpening - previousClosing.amount, from: previousClosing.user } : null,
@@ -370,6 +469,48 @@ export async function shifts(env, query, account) {
     }
   }
 
+  // Where each movement sits, so a pair across two shifts can name the other.
+  const moveHome = new Map();
+  for (const s of result.shifts) for (const m of s.moves) moveHome.set(m.seq, { day: s.day, slot: s.slotName, user: s.user, amount: m.amount });
+  for (const s of result.shifts) for (const m of s.moves) if (m.pair) m.pairShift = moveHome.get(m.pair) || null;
+
+  // Suggestions: the same amount moved out twice on a shift that came out
+  // over, and money put back into a drawer that matches a movement out on
+  // another shift. Each comes with the correction that would settle it.
+  const live = (m) => !['corrected', 'excluded'].includes(m.kind);
+  for (const s of ordered.filter((x) => inRange(x.day))) {
+    const r = register.get(s.index);
+    const base = { day: s.day, slot: s.slotName, user: s.user, event: null };
+    if (r.variance > 0) {
+      const outs = s.moves.filter((m) => live(m) && m.amount > 0);
+      const seen = new Map();
+      for (const m of outs) {
+        const first = seen.get(m.amount);
+        if (first && m.amount <= r.variance) {
+          exceptions.push({
+            ...base, key: `movement-twice:${m.seq}`, kind: 'movement-twice', group: 'drawer', severity: 'warning',
+            seq: m.seq, amount: m.amount, pair: first.seq,
+            action: { kind: 'duplicate', seq: m.seq, pair: first.seq },
+          });
+        } else if (!first) seen.set(m.amount, m);
+      }
+    }
+    for (const back of s.moves.filter((m) => live(m) && m.amount < 0)) {
+      const candidates = ordered
+        .filter((o) => o !== s)
+        .flatMap((o) => o.moves.filter((m) => live(m) && m.amount === -back.amount).map((m) => ({ m, o, v: register.get(o.index)?.variance ?? 0 })))
+        .sort((a, b) => (b.v > 0) - (a.v > 0) || Math.abs(a.m.seq - back.seq) - Math.abs(b.m.seq - back.seq));
+      if (!candidates.length) continue;
+      const { m, o } = candidates[0];
+      exceptions.push({
+        ...base, key: `movement-reversal:${back.seq}`, kind: 'movement-reversal', group: 'drawer', severity: 'warning',
+        seq: back.seq, amount: -back.amount, pair: m.seq,
+        pairShift: { day: o.day, slot: o.slotName, user: o.user },
+        action: { kind: 'reverses', seq: back.seq, pair: m.seq },
+      });
+    }
+  }
+
   for (const x of exceptions) x.answer = answerOf.get(x.key) || null;
 
   const byDay = new Map(daysBetween(from, to).map((d) => [d, []]));
@@ -383,7 +524,7 @@ export async function shifts(env, query, account) {
       day: s.day, slot: s.slotName, user: s.user, users: s.users, double: s.double, open: s.open,
       startSeq: s.startSeq, endSeq: s.endSeq,
       cash: s.cash, card: s.card, prepaid: s.prepaid, other: s.other, laundry: s.laundry, laundryCash: s.laundryCash,
-      drawerOut: s.drawerOut, expensesCounted: s.expensesCounted, booked: s.booked,
+      drawerOut: s.drawerOut, expensesCounted: s.expensesCounted, booked: s.booked, corrected: s.corrected,
       modes: s.modes, moves: s.moves, opening: s.opening, closing: s.closing,
       expensesMoved: s.expensesMoved, safeMoved: s.safeMoved, unlabelledMoved: s.unlabelledMoved,
       lines: s.lines,

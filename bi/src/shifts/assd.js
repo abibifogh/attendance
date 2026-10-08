@@ -236,7 +236,7 @@ function readBlock(b) {
  * started before the file did. It is returned separately, not dropped and not
  * folded into the first shift, because the first shift did not take it.
  */
-export function segment(entries) {
+export function segment(entries, corrections = new Map()) {
   const shifts = [];
   const before = [];
   let current = null;
@@ -251,11 +251,23 @@ export function segment(entries) {
     if (current) current.entries.push(e);
     else before.push(e);
   }
-  return { shifts: shifts.map(summarise), before };
+  return { shifts: shifts.map((sh) => summarise(sh, corrections)), before };
 }
 
-/** The money of one shift, as ASSD recorded it. */
-export function summarise(shift) {
+/**
+ * The money of one shift, as ASSD recorded it, with any corrections a person
+ * made to its Cash Movements.
+ *
+ * `corrections` maps a movement's ASSD number to what somebody said about it:
+ * - `{ kind: 'expenses' | 'safe' }`, or `{ kind: 'split', expenses }`: what the
+ *   movement really was, whatever the count before it suggested;
+ * - `{ kind: 'excluded', reason, pair }`: a movement that did not really move
+ *   cash, because it duplicates another (`duplicate`), or because it and a
+ *   movement on another shift undo each other (`reverses`, `reversed-by`).
+ *   It is left out of the drawer, which is what puts right the surplus on one
+ *   shift and the deficit on the other.
+ */
+export function summarise(shift, corrections = new Map()) {
   const s = {
     user: shift.user,
     startSeq: shift.startSeq,
@@ -313,10 +325,26 @@ export function summarise(shift) {
     if (e.kind === 'Cash Movement') movements.push({ seq: e.seq, user: e.user, amount: -e.movement, countsBefore: counts.length });
   }
 
-  s.drawerOut = movements.reduce((t, m) => t + m.amount, 0);
+  const kept = [];
+  const excluded = [];
+  for (const m of movements) {
+    const c = corrections.get(m.seq);
+    if (c?.kind === 'excluded') {
+      excluded.push({ seq: m.seq, user: m.user, amount: m.amount, kind: 'excluded', reason: c.reason, pair: c.pair, manual: manualOf(c) });
+    } else kept.push(m);
+  }
+  s.drawerOut = kept.reduce((t, m) => t + m.amount, 0);
   s.opening = counts[0] || null;
   s.closing = counts.length > 1 ? counts[counts.length - 1] : null;
-  s.moves = labelMovements(movements, counts);
+  const labelled = labelMovements(kept, counts).map((m) => {
+    const c = corrections.get(m.seq);
+    if (!c || !['expenses', 'safe', 'split'].includes(c.kind) || m.amount <= 0 || m.kind === 'corrected') return m;
+    const fixed = { seq: m.seq, user: m.user, amount: m.amount, kind: c.kind, auto: m.kind, manual: manualOf(c) };
+    if (c.kind === 'split') { fixed.expenses = Math.min(m.amount, Math.max(0, c.expenses || 0)); fixed.safe = m.amount - fixed.expenses; }
+    return fixed;
+  });
+  s.moves = [...labelled, ...excluded].sort((a, b) => a.seq - b.seq);
+  s.corrected = s.moves.some((m) => m.manual);
   for (const m of s.moves) {
     if (m.kind === 'expenses') s.expensesMoved += m.amount;
     else if (m.kind === 'safe') s.safeMoved += m.amount;
@@ -337,6 +365,8 @@ export function summarise(shift) {
   }
   return s;
 }
+
+const manualOf = (c) => ({ by: c.by || null, at: c.at || null, note: c.note || null });
 
 /**
  * What each Cash Movement out of the drawer was.

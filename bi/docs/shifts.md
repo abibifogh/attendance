@@ -45,6 +45,7 @@ overlaps an older one replaces the overlapping days and keeps the rest.
 | --- | --- | --- |
 | A recount of the drawer | Anybody who reads the numbers | Optional. ASSD's own closing count is used unless one is typed, for a spot check or when ASSD's count is wrong. |
 | Expense-sheet total and Odoo PO numbers | Admin | Per shift with expenses. **Save and read from Odoo** fetches vendor, total and state for each PO. Nothing in Odoo is changed. |
+| A correction to a cash movement | Anybody who reads the numbers | When a movement was labelled wrong, moved twice, or put back on another shift. |
 | An answer to an exception | Admin | When one appears. |
 
 Everything typed is signed with the name of whoever typed it.
@@ -69,13 +70,30 @@ Everything typed is signed with the name of whoever typed it.
   (register 001) to the back office (015). ASSD records only the amount, so
   what it was comes from the Money Count done just before it: the receipts are
   expenses and the notes are cash to the safe. A movement put straight back by
-  an equal one the other way is a correction, such as 17,630 keyed for 1,763.
-  A movement with no count before it is shown as not labelled until the
-  expense sheet's total is typed.
+  an equal one the other way on the same shift is a correction, such as 17,630
+  keyed for 1,763. A movement with no count before it is shown as not
+  labelled.
+- **The expense sheet's total** settles only what nothing labelled: the part
+  of it not already counted as expenses is expenses, the rest went to the
+  safe. If the sheet and the labelled movements disagree, the gap is shown on
+  the shift rather than written over.
+- **Correcting a movement.** Under "Where the cash went", Correct on any
+  movement says what it really was:
+  - expenses, cash to the safe, or a split of the two;
+  - a duplicate of another movement on the same shift, moved twice but taken
+    out once. It is left out of the drawer, which clears the surplus;
+  - put back on another shift. A movement into the drawer on a later shift
+    that undoes one moved out earlier: both are left out, which clears the
+    surplus on the first shift and the deficit on the second.
+  Every correction is signed with who made it and can be undone. Insight also
+  suggests the likely ones as exceptions: the same amount moved twice on a
+  shift that counted over, and money put back that matches a movement out on
+  another shift. "Match them" applies the suggestion.
 - **The register.** Opening count + cash taken − cash moved out = what should
   be in the drawer. The variance is the closing count minus that. It is the
   same figure ASSD books as an End cash deficit/surplus. On the first week of
-  August 2026 the two agreed on every shift.
+  August 2026 the two agreed on every shift. Once a movement is corrected the
+  two can differ, and the shift says what ASSD booked before the correction.
 - **Laundry.** ASSD's laundry sales for the day are compared with the laundry
   system's figures for the same day, once the laundry system is loaded.
 
@@ -97,7 +115,7 @@ code and card, to check each one arrived.
 
 | Group | What it means |
 | --- | --- |
-| The drawer did not agree with its count | The closing count differed from what should have been in the drawer, or the next person's first count differed from the last closing count. |
+| The drawer did not agree with its count | The closing count differed from what should have been in the drawer, or the next person's first count differed from the last closing count. Also here: the same amount moved out twice on a shift that counted over, and money put back that matches a movement out on another shift, each with a button to match them. |
 | Recorded as paid, but the payment failed | The terminal declined the amount and never approved it afterwards, yet ASSD has it as paid by card. |
 | Recorded as card or MoMo, no payment found | Nothing of that amount arrived near the shift. |
 | The same card charged twice | Two approved charges to one card, same amount, within 30 minutes, and ASSD has one. |

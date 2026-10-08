@@ -698,3 +698,14 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
   .sh-exgrid { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .sh * { transition: none !important; } }
+
+/* correcting a cash movement */
+.sh-moveend { display: inline-flex; align-items: center; gap: .6rem; }
+.sh-manual { display: block; color: var(--sh-warn-ink); }
+.sh-fix { margin: .35rem 0 .2rem; }
+.sh-fixbox { display: grid; gap: .55rem; padding: .75rem .8rem; border: 1px dashed var(--sh-line); border-radius: 10px; background: var(--surface); }
+.sh-fixbox .sh-sub { margin: 0; }
+.sh-fixrow { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; font-size: .85rem; }
+.sh-fixrow input[type='text'] { flex: 1 1 14rem; }
+.sh-fixrow input[type='number'] { width: 8.5rem; }
+.sh-fixrow select { max-width: 100%; min-width: 0; flex: 1 1 16rem; }
