@@ -15,7 +15,8 @@ import { renderHub } from './views/hub.js';
 import { renderAccounts } from './views/accounts.js';
 import { renderReports } from './views/reports.js';
 import { renderShifts } from './views/shifts.js';
-import { renderLogin as renderLoginView } from './views/login.js';
+import { renderLogin as renderLoginView, markGlyph } from './views/login.js';
+import { renderJoin } from './views/join.js';
 
 export const state = {
   boot: null,
@@ -72,6 +73,16 @@ setUnauthorizedHandler(() => renderLogin());
 start();
 
 async function start() {
+  // An invitation's link opens its own page, signed in or not: the person
+  // following it may be on a shared desk PC where somebody else is signed in.
+  const invited = /^#join=([A-Za-z0-9_-]+)/.exec(location.hash);
+  if (invited) {
+    return renderJoin(root, invited[1], () => {
+      history.replaceState(null, '', location.pathname);
+      state.me = null;
+      start();
+    });
+  }
   const me = await api('/auth/me').catch(() => ({ signedIn: false, configured: false }));
   state.me = me;
   if (!me.signedIn) return renderLogin(me);
@@ -122,7 +133,7 @@ async function renderApp() {
 
   mount(root,
     h('header.top',
-      h('span.brand', boot.group.name, ' · Insight'),
+      h('span.brand', markGlyph(), boot.group.name, ' · Insight'),
       h('span.spacer'),
       h('span.small.muted', state.me.account?.name || ''),
       picker,
@@ -134,7 +145,7 @@ async function renderApp() {
     h('main', view));
 
   state.reload = () => go(current());
-  window.addEventListener('hashchange', () => go(current()));
+  window.addEventListener('hashchange', () => (location.hash.startsWith('#join=') ? start() : go(current())));
   await go(current());
 
   function current() {

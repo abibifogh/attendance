@@ -24,6 +24,14 @@ import { s } from './util.js';
  *   Restaurant series-3, aqua
  *   Breakfast  series-4, yellow
  *   Insight    all four, which is what it is
+ *
+ * And the four sources that are not somewhere a person signs in, but that
+ * Insight reads all the same and the sign-in page now shows:
+ *
+ *   Accounts (Odoo)        series-5, magenta
+ *   Front desk (ASSD)      series-7, violet
+ *   Card terminal          ink-2, slate: it is a box, not a part of the business
+ *   Bank                   series-6, green
  */
 
 /** 22px of drawing on a 24 box, so the shapes optically match at a glance. */
@@ -124,6 +132,45 @@ const laundry = () => svg('Laundry', 'var(--series-2)',
     fill: 'none', stroke: 'var(--mark)', 'stroke-width': 1.7, 'stroke-linejoin': 'round',
   }));
 
+/** A tinted body with an outline in the mark's colour: what every mark here is made of. */
+const body = (d) => [
+  s('path', { d, fill: 'var(--mark)', opacity: 0.16 }),
+  s('path', {
+    d, fill: 'none', stroke: 'var(--mark)', 'stroke-width': 1.7, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+  }),
+];
+const line = (d, width = 1.7) => s('path', {
+  d, fill: 'none', stroke: 'var(--mark)', 'stroke-width': width, 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+});
+
+/**
+ * Accounts: a receipt with a torn foot.
+ *
+ * What Odoo holds that nothing else does is the bill somebody approved; a
+ * ledger book is the other obvious drawing, and at this size it is a rectangle.
+ */
+const accounts = () => svg('Accounts (Odoo)', 'var(--series-5)',
+  ...body('M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4-2 1.4Z'),
+  line('M9 8h6M9 11.5h6M9 15h3.5'));
+
+/** Front desk: a room key, which is the desk's whole job. A bell would be a second dome beside the restaurant's. */
+const desk = () => svg('Front desk (ASSD)', 'var(--series-7)',
+  ...body('M8.2 4.6a4.6 4.6 0 1 1 0 9.2 4.6 4.6 0 1 1 0-9.2Z'),
+  s('circle', { cx: 8.2, cy: 9.2, r: 1.3, fill: 'currentColor' }),
+  line('M11.5 12.4 19.8 20.6M16.4 17.4l2-2M18.6 19.6l1.6-1.6'));
+
+/** Card terminal: a card, its stripe, and the number. */
+const card = () => svg('Card terminal', 'var(--ink-2)',
+  ...body('M5 5.5h14a2.5 2.5 0 0 1 2.5 2.5v8a2.5 2.5 0 0 1-2.5 2.5H5A2.5 2.5 0 0 1 2.5 16V8A2.5 2.5 0 0 1 5 5.5Z'),
+  line('M2.8 10h18.4'),
+  line('M6.2 14.6h4'));
+
+/** Bank: a pediment on columns, the drawing every banking app has taught people. */
+const bank = () => svg('Bank', 'var(--series-6)',
+  ...body('M3.5 9 12 3.8 20.5 9Z'),
+  line('M6.5 11.5v5.5M10.2 11.5v5.5M13.8 11.5v5.5M17.5 11.5v5.5'),
+  line('M3.5 19.6h17'));
+
 /**
  * Insight: four bars of different heights.
  *
@@ -162,6 +209,10 @@ const MARKS = {
   housekeeping: breakfast,
   pos,
   laundry,
+  odoo: accounts,
+  assd: desk,
+  card,
+  bank,
 };
 
 /** The mark for a system id, always a node. */

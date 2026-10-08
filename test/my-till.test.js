@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  answer, closeShift, closedSummary, linkRecover, linkReopen, lookUpPo, myTill, shiftAt,
+  answer, closeShift, closedSummary, linkMail, linkRecover, linkReopen, lookUpPo, myTill, shiftAt,
 } from '../src/routes/till.js';
 import { signLink, verifyLink } from '../src/lib/till-link.js';
 import { getPepper, hashPin } from '../src/lib/auth.js';
@@ -225,4 +225,37 @@ test('what a closed shift says without the amounts', () => {
   const r = { cash: 100000, toSafe: false, envelopes: [], expenses: [{ paid: 500, counted: false }], floatOk: false, floatDiff: -2000, checks: [], rentals: {} };
   assert.equal(closedSummary(r, false), 'Drawer counted · nothing to the safe · an expense with no confirmed PO · float not right.');
   assert.doesNotMatch(closedSummary(r, false), /GH₵/);
+});
+
+test('Insight can send one email through HIVE, only when it signs the request', async () => {
+  const { db, raw } = await setup();
+  raw.exec("INSERT INTO settings (key, value) VALUES ('email_from', 'desk@hotel.test') ON CONFLICT (key) DO UPDATE SET value = excluded.value");
+  const path = '/api/link/mail';
+  const body = JSON.stringify({ to: 'new.person@example.test', subject: 'You are invited', html: '<p>Hello</p>', kind: 'insight_invite' });
+  const call = (headers, env = {}) => linkMail({
+    db, env: { INSIGHT_SSO_SECRET: SECRET, RESEND_API_KEY: 'k', ...env }, url: new URL(`https://x${path}`), session: null, executionContext: null,
+    request: new Request(`https://x${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body }),
+  });
+
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { sent.push([String(url), JSON.parse(init.body)]); return Response.json({ id: 'x' }); };
+  try {
+    await assert.rejects(call({}), /did not come from Insight/);
+    assert.equal(sent.length, 0);
+
+    const out = await (await call(await signLink(SECRET, path, body))).json();
+    assert.equal(out.ok, true);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0][0], /resend\.com\/emails$/);
+    assert.deepEqual(sent[0][1].to, ['new.person@example.test']);
+    // From HIVE's own address, under Insight's name; never from the request.
+    assert.equal(sent[0][1].from, '"Insight" <desk@hotel.test>');
+    assert.ok(sent[0][1].text, 'a plain-text part goes with it');
+    assert.equal(raw.prepare("SELECT status FROM email_log WHERE kind = 'insight_invite'").get().status, 'sent');
+
+    await assert.rejects(call(await signLink(SECRET, path, body), { RESEND_API_KEY: '' }), /no email provider key/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

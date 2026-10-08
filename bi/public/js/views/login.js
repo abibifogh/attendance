@@ -1,12 +1,13 @@
 import { h, s, mount } from '../util.js';
 import { api } from '../api.js';
 import { deriveLoginKey } from '../crypto.js';
+import { systemMark } from '../glyphs.js';
 
 /**
  * The way in.
  *
  * It is the only screen anybody sees before they have any idea what this is, so
- * it says so — four named systems flowing into one, in the same colours the
+ * it says so — every source Insight reads, flowing into one, in the same colours the
  * rest of the app gives those systems. That is not decoration: somebody who
  * arrives at a bare password box on an unfamiliar domain does not know whether
  * they are in the right place, and a picture of the four applications they use
@@ -19,51 +20,69 @@ import { deriveLoginKey } from '../crypto.js';
  * offering it as an equal choice makes it the one people pick.
  */
 
-/** The four sources, in the fixed colours the rest of the app gives them. */
+/**
+ * Everything Insight reads, in the colours and marks the rest of the app gives
+ * them. Five are systems read live; three are files somebody uploads after a
+ * shift, drawn dotted, because "why is yesterday's bank not in" is answered by
+ * knowing which of these come by themselves.
+ */
 const SOURCES = [
-  { label: 'HIVE', colour: 'var(--series-1)', what: 'who was here' },
-  { label: 'Breakfast', colour: 'var(--series-4)', what: 'guests and stock' },
-  { label: 'Restaurant', colour: 'var(--series-3)', what: 'sales and cash' },
-  { label: 'Laundry', colour: 'var(--series-2)', what: 'charged and collected' },
+  { id: 'attendance', label: 'HIVE', colour: 'var(--series-1)', what: 'who was here' },
+  { id: 'assd', label: 'Front desk', colour: 'var(--series-7)', what: 'the shift journal', file: true },
+  { id: 'breakfast', label: 'Breakfast', colour: 'var(--series-4)', what: 'guests and stock' },
+  { id: 'pos', label: 'Restaurant', colour: 'var(--series-3)', what: 'sales and cash' },
+  { id: 'laundry', label: 'Laundry', colour: 'var(--series-2)', what: 'charged and collected' },
+  { id: 'odoo', label: 'Accounts', colour: 'var(--series-5)', what: 'bills and POs' },
+  { id: 'card', label: 'Card terminal', colour: 'var(--ink-2)', what: 'card takings', file: true },
+  { id: 'bank', label: 'Bank', colour: 'var(--series-6)', what: 'what landed', file: true },
 ];
 
+/** A mark placed inside the picture, at a size the picture chooses. */
+function markAt(id, x, y, size) {
+  const mark = systemMark(id);
+  mark.removeAttribute('class');
+  for (const [k, v] of Object.entries({ x, y, width: size, height: size })) mark.setAttribute(k, v);
+  return mark;
+}
+
 /**
- * Four systems converging into one.
+ * Eight sources converging into one.
  *
  * Hand-drawn SVG rather than an image, so it inherits the theme's own colours
  * and stays sharp at any size. The curves are the point: the whole tool is the
- * claim that these four things belong on one page.
+ * claim that these things belong on one page.
  */
 function convergence() {
-  const width = 420;
-  const height = 300;
-  const startX = 46;
-  const endX = 330;
+  const width = 460;
+  const height = 420;
+  const startX = 196;
+  const endX = 360;
   const midY = height / 2;
-  const rows = SOURCES.map((_, i) => 44 + i * ((height - 88) / 3));
+  const rows = SOURCES.map((_, i) => 30 + i * ((height - 60) / (SOURCES.length - 1)));
 
   return s('svg', {
     viewBox: `0 0 ${width} ${height}`, class: 'converge', role: 'img',
-    'aria-label': 'HIVE, breakfast, the restaurant and the laundry, four separate systems, flowing together into one.',
+    'aria-label': `${SOURCES.map((x) => x.label).join(', ')}: eight separate sources, flowing together into one.`,
   },
   // The paths first, so the labelled nodes sit on top of them.
   ...SOURCES.map((source, i) => s('path', {
-    d: `M${startX} ${rows[i]} C ${startX + 110} ${rows[i]}, ${endX - 110} ${midY}, ${endX} ${midY}`,
+    d: `M${startX} ${rows[i]} C ${startX + 90} ${rows[i]}, ${endX - 90} ${midY}, ${endX} ${midY}`,
     fill: 'none', stroke: source.colour, 'stroke-width': 2, 'stroke-linecap': 'round',
-    opacity: 0.85, class: 'flow', style: `--i:${i}`,
+    opacity: 0.85, class: source.file ? 'flow file' : 'flow', style: `--i:${i}`,
   })),
 
   ...SOURCES.map((source, i) => s('g', { class: 'node', style: `--i:${i}` },
     s('circle', {
-      cx: startX, cy: rows[i], r: 5.5, fill: source.colour,
-      stroke: 'var(--surface)', 'stroke-width': 2,
+      cx: startX, cy: rows[i], r: 5, fill: source.colour,
+      stroke: 'var(--surface-2)', 'stroke-width': 2,
     }),
+    markAt(source.id, startX - 38, rows[i] - 11, 22),
     s('text', {
-      x: startX - 14, y: rows[i] - 2, 'text-anchor': 'end',
+      x: startX - 46, y: rows[i] - 1, 'text-anchor': 'end',
       fill: 'var(--ink)', 'font-size': 12.5, 'font-weight': 600,
     }, source.label),
     s('text', {
-      x: startX - 14, y: rows[i] + 13, 'text-anchor': 'end',
+      x: startX - 46, y: rows[i] + 13, 'text-anchor': 'end',
       fill: 'var(--muted)', 'font-size': 10.5,
     }, source.what))),
 
@@ -74,10 +93,10 @@ function convergence() {
   }),
   s('circle', { cx: endX, cy: midY, r: 8, fill: 'var(--series-1)', class: 'core' }),
   s('text', {
-    x: endX + 26, y: midY - 1, fill: 'var(--ink)', 'font-size': 13, 'font-weight': 600,
+    x: endX + 24, y: midY - 1, fill: 'var(--ink)', 'font-size': 13, 'font-weight': 600,
   }, 'One ledger'),
   s('text', {
-    x: endX + 26, y: midY + 14, fill: 'var(--muted)', 'font-size': 10.5,
+    x: endX + 24, y: midY + 14, fill: 'var(--muted)', 'font-size': 10.5,
   }, 'and what it means'));
 }
 
@@ -146,25 +165,35 @@ export function renderLogin(root, me = {}, onSignedIn) {
         form,
         message,
 
-        h('p.small.muted.signin-foot',
-          'HIVE · Breakfast & rooms · Restaurant POS · Laundry'))),
+        h('div.small.muted.signin-foot',
+          ['attendance', 'breakfast', 'pos', 'laundry', 'odoo'].map((id) => {
+            const source = SOURCES.find((x) => x.id === id);
+            return h('span', systemMark(id), source.label);
+          })))),
 
     h('div.signin-art',
       h('div.art-inner',
-        h('p.eyebrow', 'Four systems, one ledger'),
+        h('p.eyebrow', 'Five systems, three files, one ledger'),
         h('h2', 'The questions that need\ntwo systems at once.'),
         convergence(),
+        h('div.small.muted.converge-key',
+          h('span', h('i.solid'), 'read live'),
+          h('span', h('i.dotted'), 'uploaded after each shift')),
         h('p.small.muted',
           'Is the wage bill rising because the hotel is busier, or just rising? '
           + 'Do the kitchen and the restaurant pay the same supplier the same price? '
           + 'Nothing could ask, until now.')))));
 }
 
-/** A small mark: four bars of different heights, the shape of the whole idea. */
-function markGlyph() {
-  return s('svg', { viewBox: '0 0 32 32', class: 'mark-svg', 'aria-hidden': 'true' },
-    s('rect', { x: 2, y: 17, width: 5, height: 11, rx: 2, fill: 'var(--series-1)' }),
-    s('rect', { x: 10, y: 11, width: 5, height: 17, rx: 2, fill: 'var(--series-4)' }),
-    s('rect', { x: 18, y: 14, width: 5, height: 14, rx: 2, fill: 'var(--series-3)' }),
-    s('rect', { x: 26, y: 5, width: 5, height: 23, rx: 2, fill: 'var(--series-2)' }));
+/**
+ * The app's mark: the four systems' bars, the tallest dotted into an i. The
+ * same drawing as the browser tab and the phone's home screen (public/icon.svg).
+ */
+export function markGlyph() {
+  return s('svg', { viewBox: '8 6 48 48', class: 'mark-svg', 'aria-hidden': 'true' },
+    s('rect', { x: 13, y: 34, width: 7, height: 18, rx: 3, fill: 'var(--series-1)' }),
+    s('rect', { x: 23, y: 27, width: 7, height: 25, rx: 3, fill: 'var(--series-4)' }),
+    s('rect', { x: 33, y: 30, width: 7, height: 22, rx: 3, fill: 'var(--series-3)' }),
+    s('rect', { x: 43, y: 22, width: 7, height: 30, rx: 3, fill: 'var(--series-2)' }),
+    s('circle', { cx: 46.5, cy: 14, r: 4.2, fill: 'var(--ink)' }));
 }

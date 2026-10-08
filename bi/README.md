@@ -420,10 +420,13 @@ HIVE, in the ordinary way.
 Each stands alone. The app works after every one of them and says on screen
 what it still cannot see.
 
-**Make yourself an account.** **Accounts → Add somebody**, tick owner, set a
-password. The shared password still works as a way back in, but it deliberately
-cannot be handed over to another system — a password out of a config file is
-not a person.
+**Make yourself an account.** **Accounts → Add without an invitation**, choose
+Owner, then **Set password**. The shared password still works as a way back in,
+but it deliberately cannot be handed over to another system — a password out
+of a config file is not a person.
+
+**Invite everybody else.** **Accounts → Invite somebody**: they get an email
+with a link, choose their own password, and are in; see `docs/invitations.md`.
 
 **Connect the POS and the laundry.** Add repository secrets
 `INSIGHT_POS_REPORTS_KEY` and `INSIGHT_LAUNDRY_TOKEN`, run **Set Insight's
@@ -521,6 +524,7 @@ src/
 scripts/setup.mjs    the terminal version of the Set up Insight workflow
 public/              the dashboard and the hub: no framework, no build step
 docs/sso.md          the hand-off protocol, and a handler per platform
+docs/invitations.md  inviting people, resending, and what each dead link says
 docs/shifts.md       how shift reconciliation reads its files and what each exception means
 ```
 
