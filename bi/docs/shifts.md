@@ -5,12 +5,23 @@ from them. It lives on the **Shifts** tab.
 
 ## The screen
 
-Five views, chosen with the buttons under the four totals at the top.
+Seven views, chosen with the buttons under the four totals at the top. The
+first three choose the period; the arrows beside its name step a day, a
+week (Monday to Sunday) or a month at a time, and **Latest** jumps to the
+newest shifts loaded. Every other view, and the totals, follow the period.
 
-- **Week**: every shift in the chosen days as a tile. Green agrees, amber
-  needs a look, red needs an answer. Each tile shows who held the drawer,
-  the cash taken, how the drawer came out, and a bar of how guests paid.
-  Below it, card and MoMo recorded in ASSD against what arrived, day by day.
+- **Day**: the day's three shifts as large cards, each with the drawer in
+  four lines, how it came out, how guests paid and what is open; the day's
+  cash, card and MoMo against what arrived, commission and laundry; and the
+  day's exceptions, ready to answer.
+- **Week**: every shift in the week as a tile. Green agrees, amber needs a
+  look, red needs an answer. Each tile shows who held the drawer, the cash
+  taken, how the drawer came out, and a bar of how guests paid. Below it,
+  card and MoMo recorded in ASSD against what arrived, day by day.
+- **Month**: a calendar. Each day shows its morning, afternoon and night as
+  coloured bars with the initial of whoever held the drawer; tap a bar for
+  the shift or the day for all three. Below it, the month week by week and
+  card and MoMo against what arrived.
 - **Shift**: one shift's story. The drawer as bars from the opening count,
   plus cash, less expenses and the safe, to the closing count. How the shift
   was paid. Every card and MoMo payment placed on the clock. Where the cash

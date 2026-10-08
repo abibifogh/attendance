@@ -709,3 +709,53 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh-fixrow input[type='text'] { flex: 1 1 14rem; }
 .sh-fixrow input[type='number'] { width: 8.5rem; }
 .sh-fixrow select { max-width: 100%; min-width: 0; flex: 1 1 16rem; }
+
+/* day, week and month */
+.sh-period { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; }
+.sh-plabel { font-size: 1.05rem; min-width: 12rem; text-align: center; }
+.sh-days { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: .8rem; }
+.sh-daycard {
+  --tone: var(--sh-good);
+  display: grid; gap: .6rem; align-content: start; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--tone) 40%, var(--border)); border-radius: var(--radius); padding: 1rem;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tone) 12%, var(--surface)), var(--surface) 55%);
+  transition: transform .15s, box-shadow .15s;
+}
+.sh-daycard:hover { transform: translateY(-2px); box-shadow: 0 10px 24px color-mix(in srgb, var(--tone) 22%, transparent); }
+.sh-daycard.warn { --tone: var(--sh-warn); } .sh-daycard.bad { --tone: var(--sh-bad); } .sh-daycard.open { --tone: var(--sh-info); }
+.sh-daycard.empty { --tone: var(--sh-info); border-style: dashed; background: transparent; color: var(--muted); cursor: default; }
+.sh-daycard.empty:hover { transform: none; box-shadow: none; }
+.sh-daycard .top { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; color: var(--ink-2); font-size: .85rem; }
+.sh-daycard .top .sh-status { margin-left: auto; }
+.sh-mini { display: grid; grid-template-columns: 1fr auto; gap: .2rem .8rem; margin: 0; font-size: .86rem; }
+.sh-mini dt { color: var(--ink-2); }
+.sh-mini dd { margin: 0; text-align: right; }
+.sh-dayvar .sh-chip { font-size: .9rem; padding: .25rem .65rem; }
+.sh-mixkey { display: flex; flex-wrap: wrap; gap: .25rem .7rem; font-size: .76rem; color: var(--ink-2); }
+.sh-mixkey span { display: inline-flex; align-items: center; gap: .3rem; }
+.sh-mixkey i { width: 8px; height: 8px; border-radius: 2px; }
+.sh-open { color: var(--series-1); font-size: .82rem; font-weight: 600; }
+.sh-daysum { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .6rem; margin-bottom: .8rem; }
+.sh-daysum div { display: grid; gap: .1rem; padding: .6rem .7rem; border-radius: 10px; background: var(--surface-2); }
+.sh-daysum small { color: var(--ink-2); }
+.sh-daysum b { font-size: 1.1rem; }
+.sh-hbar { display: grid; grid-template-columns: 9rem minmax(0, 1fr) 7rem; gap: .6rem; align-items: center; font-size: .86rem; margin: .3rem 0; }
+.sh-hbar b { text-align: right; }
+.sh-month { display: grid; grid-template-columns: repeat(7, minmax(92px, 1fr)); gap: .35rem; min-width: 680px; }
+.sh-mhead { text-align: center; color: var(--muted); font-size: .78rem; font-weight: 600; padding-bottom: .2rem; }
+.sh-mcell {
+  min-height: 92px; border: 1px solid var(--border); border-radius: 10px; padding: .4rem; display: grid; gap: .3rem; align-content: start;
+  background: var(--surface); cursor: pointer; transition: box-shadow .15s, transform .15s;
+}
+.sh-mcell:hover { box-shadow: 0 6px 16px rgba(0, 0, 0, .08); transform: translateY(-1px); }
+.sh-mcell.sel { box-shadow: 0 0 0 2px var(--ink); }
+.sh-mcell.out { background: transparent; border-style: dashed; color: var(--muted); cursor: default; opacity: .5; }
+.sh-mcell.none { cursor: default; background: transparent; }
+.sh-mcell.out:hover, .sh-mcell.none:hover { box-shadow: none; transform: none; }
+.sh-mcell small { color: var(--ink-2); font-size: .72rem; }
+.sh-mtop { display: flex; align-items: center; justify-content: space-between; }
+.sh-mtop .n { font-weight: 700; }
+.sh-mslots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+.sh-mslot { height: 22px; border: 0; border-radius: 5px; color: #fff; font-size: .68rem; font-weight: 700; cursor: pointer; padding: 0; }
+.sh-mslot.empty { background: var(--surface-2); cursor: default; }
+@media (max-width: 520px) { .sh-hbar { grid-template-columns: 6rem minmax(0, 1fr) 5.6rem; } }
