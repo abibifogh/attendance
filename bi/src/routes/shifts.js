@@ -365,37 +365,48 @@ export async function shifts(env, query, account) {
   if (daysBetween(from, to).length > MAX_DAYS) from = addDays(to, -(MAX_DAYS - 1));
   const canUpload = Boolean(account?.isOwner || account?.bootstrap);
 
-  const uploads = await all(env.DB, 'SELECT kind, name, from_day, to_day, rows, note, by_name, at FROM shift_upload ORDER BY id DESC LIMIT 40');
+  // Everything that depends only on the days asked for, read at once. Each
+  // query is a round trip to D1, and fourteen of them one after another was
+  // most of the wait when switching between Day, Week and Month.
+  const lo3 = addDays(from, -3);
+  const hi3 = addDays(to, 3);
+  const optional = (promise) => promise.catch(() => []);
+  const [uploads, markers, lastMarker, terminal, bank, counts, expenses, answers, links, laundrySystem] = await Promise.all([
+    all(env.DB, 'SELECT kind, name, from_day, to_day, rows, note, by_name, at FROM shift_upload ORDER BY id DESC LIMIT 40'),
+    all(env.DB, `SELECT seq, day FROM assd_entry WHERE kind = ?1 AND day BETWEEN ?2 AND ?3 ORDER BY seq`, MARKER, addDays(from, -2), addDays(to, 2)),
+    first(env.DB, 'SELECT MAX(seq) AS seq FROM assd_entry WHERE kind = ?1', MARKER),
+    all(env.DB, 'SELECT * FROM terminal_txn WHERE day BETWEEN ?1 AND ?2', lo3, hi3),
+    all(env.DB, `SELECT * FROM bank_card_txn WHERE (day BETWEEN ?1 AND ?2) OR (card_day BETWEEN ?1 AND ?2)`, lo3, addDays(to, 10)),
+    all(env.DB, 'SELECT * FROM shift_count WHERE day BETWEEN ?1 AND ?2', addDays(from, -3), to),
+    all(env.DB, 'SELECT * FROM shift_expense WHERE day BETWEEN ?1 AND ?2', from, to),
+    all(env.DB, 'SELECT * FROM shift_answer'),
+    optional(all(env.DB, 'SELECT * FROM shift_link ORDER BY id')),
+    optional(all(env.DB, `SELECT day, SUM(net) AS net, SUM(cash) AS cash FROM fact_revenue
+      WHERE line_id = 'laundry' AND day BETWEEN ?1 AND ?2 GROUP BY day`, from, to)),
+  ]);
   const coverage = coverageOf(uploads);
   const base = { range: { from, to }, canUpload, uploads: uploads.slice(0, 12).map(uploadView), coverage, groups: GROUPS };
 
   // The journal around the window: from the hand-over two days before it to
   // the first hand-over more than two days after it.
-  const markers = await all(env.DB, `SELECT seq, day FROM assd_entry WHERE kind = ?1 AND day BETWEEN ?2 AND ?3 ORDER BY seq`,
-    MARKER, addDays(from, -2), addDays(to, 2));
   if (!markers.length) return { ...base, days: [], exceptions: [], people: [], totals: null, empty: 'journal' };
   const lo = markers[0].seq;
   const after = await first(env.DB, 'SELECT MIN(seq) AS seq FROM assd_entry WHERE kind = ?1 AND seq > ?2 AND day > ?3',
     MARKER, markers[markers.length - 1].seq, addDays(to, 2));
   const hi = after?.seq ? after.seq - 1 : Number.MAX_SAFE_INTEGER;
-  const rows = await all(env.DB, 'SELECT seq, kind, staff, day, register, data FROM assd_entry WHERE seq BETWEEN ?1 AND ?2 ORDER BY seq', lo, hi);
+  // The journal itself, what people corrected in it, and what a supervisor
+  // proposed and an admin has not yet decided: at once again.
+  const [rows, corrections, pendingRows] = await Promise.all([
+    all(env.DB, 'SELECT seq, kind, staff, day, register, data FROM assd_entry WHERE seq BETWEEN ?1 AND ?2 ORDER BY seq', lo, hi),
+    correctionsFor(env, lo, hi),
+    optional(all(env.DB, `SELECT * FROM shift_movement WHERE status = 'pending' AND ((seq BETWEEN ?1 AND ?2) OR (pair BETWEEN ?1 AND ?2))`, lo, hi)),
+  ]);
   const entries = rows.map(entryOf);
-  const lastMarker = await first(env.DB, 'SELECT MAX(seq) AS seq FROM assd_entry WHERE kind = ?1', MARKER);
   // The journal ends inside its last shift unless a later hand-over exists.
   const open = !after?.seq && lastMarker?.seq === markers[markers.length - 1].seq;
 
-  const corrections = await correctionsFor(env, lo, hi);
   const { shifts: raw } = segment(entries, corrections);
-  // Corrections a supervisor proposed and an admin has not yet decided.
-  let proposed = new Map();
-  try {
-    proposed = new Map((await all(env.DB, `SELECT * FROM shift_movement WHERE status = 'pending' AND ((seq BETWEEN ?1 AND ?2) OR (pair BETWEEN ?1 AND ?2))`, lo, hi))
-      .map((r) => [r.seq, { kind: r.kind, expenses: r.expenses, pair: r.pair, note: r.note, by: r.by_name, at: r.at }]));
-  } catch { proposed = new Map(); }
-  const lo3 = addDays(from, -3);
-  const hi3 = addDays(to, 3);
-  const terminal = await all(env.DB, 'SELECT * FROM terminal_txn WHERE day BETWEEN ?1 AND ?2', lo3, hi3);
-  const bank = await all(env.DB, `SELECT * FROM bank_card_txn WHERE (day BETWEEN ?1 AND ?2) OR (card_day BETWEEN ?1 AND ?2)`, lo3, addDays(to, 10));
+  const proposed = new Map(pendingRows.map((r) => [r.seq, { kind: r.kind, expenses: r.expenses, pair: r.pair, note: r.note, by: r.by_name, at: r.at }]));
 
   const events = [
     ...terminal.filter((t) => t.approved && t.kind === 'card').map((t) => ({
@@ -437,9 +448,6 @@ export async function shifts(env, query, account) {
   }
 
   // What people typed.
-  const counts = await all(env.DB, 'SELECT * FROM shift_count WHERE day BETWEEN ?1 AND ?2', addDays(from, -3), to);
-  const expenses = await all(env.DB, 'SELECT * FROM shift_expense WHERE day BETWEEN ?1 AND ?2', from, to);
-  const answers = await all(env.DB, 'SELECT * FROM shift_answer');
   const answerOf = new Map(answers.map((a) => [a.key, { answer: a.answer, note: a.note, by: a.by_name, at: a.at }]));
 
   const countOf = new Map(counts.map((c) => [`${c.day}|${c.slot}`, c]));
@@ -562,8 +570,6 @@ export async function shifts(env, query, account) {
   for (const x of exceptions) x.answer = answerOf.get(x.key) || null;
 
   // Exceptions reconciled together: each one is answered by the group.
-  let links = [];
-  try { links = await all(env.DB, 'SELECT * FROM shift_link ORDER BY id'); } catch { links = []; }
   const linkOf = new Map();
   for (const l of links) {
     let keys = [];
@@ -610,11 +616,6 @@ export async function shifts(env, query, account) {
     if (e.register !== DRAWER) continue;
     for (const l of e.laundry) if (inRange(l.date)) laundryAssd.set(l.date, (laundryAssd.get(l.date) || 0) + l.amount);
   }
-  let laundrySystem = [];
-  try {
-    laundrySystem = await all(env.DB, `SELECT day, SUM(net) AS net, SUM(cash) AS cash FROM fact_revenue
-      WHERE line_id = 'laundry' AND day BETWEEN ?1 AND ?2 GROUP BY day`, from, to);
-  } catch { laundrySystem = []; }
   const laundryOf = new Map(laundrySystem.map((r) => [r.day, r]));
 
   // Money that reached the bank, by the day the guest paid.
