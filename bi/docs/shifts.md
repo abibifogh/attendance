@@ -3,6 +3,25 @@
 The front desk's control sheet, done from the source records instead of typed
 from them. It lives on the **Shifts** tab.
 
+## The screen
+
+Five views, chosen with the buttons under the four totals at the top.
+
+- **Week**: every shift in the chosen days as a tile. Green agrees, amber
+  needs a look, red needs an answer. Each tile shows who held the drawer,
+  the cash taken, how the drawer came out, and a bar of how guests paid.
+  Below it, card and MoMo recorded in ASSD against what arrived, day by day.
+- **Shift**: one shift's story. The drawer as bars from the opening count,
+  plus cash, less expenses and the safe, to the closing count. How the shift
+  was paid. Every card and MoMo payment placed on the clock. Where the cash
+  went, with the Odoo purchase orders. Typing a recount or the expense
+  sheet's total moves the picture at once; Save keeps it.
+- **Exceptions**: everything that does not agree, grouped and filterable.
+  One tap answers it, with an optional note.
+- **People**: each person's shifts, cash and cards, and net drawer variance.
+- **Files**: the three uploads (choose a file or drop it on its box), and a
+  strip showing which days of the month each file covers.
+
 ## What you load, and how often
 
 All three are loaded on the Shifts tab under **Load files**, by an owner. The

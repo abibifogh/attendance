@@ -1,137 +1,783 @@
-import { add, h, mount, money, num, shortDay } from '../util.js';
+import { add, h, mount, money, num, shortDay, s as svg } from '../util.js';
 import { api } from '../api.js';
-import { table, banner, severityPill } from './components.js';
+import { table, banner } from './components.js';
 import { readJournalPdf, readStatement, readTerminalCsv } from '../shift-files.js';
 
 /**
- * Shifts: the control sheet, done from the source records.
+ * Shifts: the front desk's control sheet, done from the source records.
  *
- * Four views of one reconciliation. **Days** is the one opened every morning:
- * yesterday's three shifts, each answering whether the cash adds up, whether
- * the card and MoMo money arrived, and whether the expenses are in Odoo.
- * **Exceptions** is every payment that does not agree, grouped by what went
- * wrong, each with a box for the answer. **Register** is the drawer from one
- * counted hand-over to the next. **People** is the month by person.
+ * Five views of one reconciliation:
+ * - **Week**: every shift in the window as a coloured tile (green agrees,
+ *   amber needs a look, red needs an answer), and card and MoMo recorded
+ *   against what arrived, day by day.
+ * - **Shift**: one shift's story. The drawer as a waterfall from the opening
+ *   count to the closing count, how the shift was paid, card and MoMo placed
+ *   on the clock, and where the cash went. A recount or the expense sheet's
+ *   total previews as it is typed and is saved with one button.
+ * - **Exceptions**: everything that does not agree, grouped by what went
+ *   wrong, each answered with one tap.
+ * - **People**: each person's shifts and how their drawer came out.
+ * - **Files**: the three uploads, and which days each one covers.
+ *
+ * Every state is shown as a word or an icon as well as a colour.
  */
 
-const SLOT_LABEL = { morning: 'Morning', afternoon: 'Afternoon', night: 'Night' };
-const SLOT_HOURS = { morning: '06:00–14:00', afternoon: '14:00–22:00', night: '22:00–06:00' };
+const SLOTS = ['morning', 'afternoon', 'night'];
+const SLOT = {
+  morning: { label: 'Morning', hours: '06:00–14:00', start: 6 },
+  afternoon: { label: 'Afternoon', hours: '14:00–22:00', start: 14 },
+  night: { label: 'Night', hours: '22:00–06:00', start: 22 },
+};
 const ANSWERS = [
-  'Explained', 'Corrected in ASSD', 'Guest paid another way', 'Guest owes — chasing',
-  'Deposit for a later stay', 'Refund due to the guest', 'Staff member to account for it', 'Not a problem',
+  'Explained', 'Corrected in ASSD', 'Guest paid another way', 'Guest owes, chasing',
+  'Deposit for a later stay', 'Refund due to the guest', 'Staff to account for it', 'Not a problem',
 ];
+const KIND = {
+  failed: ['Paid by card, but the card was declined', '×'],
+  'not-found': ['Recorded as card or MoMo, no payment arrived', '?'],
+  zero: ['A card payment of nothing', '0'],
+  'double-charge': ['The same card charged twice', '2'],
+  'drawer-short': ['The drawer was short', '−'],
+  'drawer-over': ['The drawer was over', '+'],
+  'handover-gap': ['The hand-over count did not match', '≠'],
+  transposition: ['Digits swapped', '⇄'],
+  decimal: ['A decimal in the wrong place', '.'],
+  keying: ['A keying slip', '#'],
+  duplicate: ['Keyed twice in ASSD', '2'],
+  'not-recorded': ['Paid, but not in ASSD', '!'],
+  'never-settled': ['Never reached the bank', '⌛'],
+  reversal: ['The bank took it back', '↺'],
+  refund: ['A refund keyed in ASSD', '↺'],
+  regrouped: ['The same money, split differently', '='],
+  'other-shift': ['Paid on one shift, keyed on another', '→'],
+  corrected: ['A mistake and its correction', '✓'],
+  'movement-corrected': ['A cash movement keyed wrong and put back', '✓'],
+  'bank-only': ['In the bank, not on the terminal', '?'],
+};
+const MODES = [
+  ['cash', 'Cash', 'var(--sh-cash)'],
+  ['card', 'Card and MoMo', 'var(--sh-card)'],
+  ['bank', 'Prepaid by bank transfer', 'var(--sh-bank)'],
+  ['online', 'Prepaid by card online', 'var(--sh-online)'],
+  ['other', 'Other', 'var(--sh-info)'],
+];
+const TONE = { good: 'var(--sh-good)', warn: 'var(--sh-warn)', bad: 'var(--sh-bad)', open: 'var(--sh-info)' };
+const SEVERITY_COLOUR = { critical: 'var(--sh-bad)', warning: 'var(--sh-warn)', info: 'var(--sh-info)' };
+const VIEWS = [['week', 'Week'], ['shift', 'Shift'], ['exceptions', 'Exceptions'], ['people', 'People'], ['files', 'Files']];
 
-const sectionKey = 'insight-shifts-section';
 const nameOf = (user) => (user ? user.charAt(0) + user.slice(1).toLowerCase() : 'Nobody named');
-const longDay = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', {
-  weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
-});
-const weekday = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' });
+const dayText = (day, opts = { weekday: 'short', day: 'numeric', month: 'short' }) => new Date(`${day}T12:00:00Z`)
+  .toLocaleDateString('en-GB', { ...opts, timeZone: 'UTC' });
 const time = (at) => (at ? String(at).slice(11, 16) : '');
 const when = (at, day) => (at ? `${shortDay(String(at).slice(0, 10))} ${time(at)}` : (day ? shortDay(day) : ''));
-const signed = (minor) => (minor == null ? '—' : `${minor > 0 ? '+' : ''}${money(minor)}`);
-const cedis = (minor) => (minor == null ? '' : String(minor / 100));
+const signed = (minor) => (minor == null ? '—' : minor === 0 ? money(0) : `${minor > 0 ? '+' : '−'}${money(Math.abs(minor))}`);
+const whole = (minor) => (minor == null ? '—' : `${minor < 0 ? '−' : ''}${num(Math.abs(minor) / 100)}`);
+const cedis = (minor) => (minor == null ? '' : (minor / 100).toFixed(2));
+const typedMinor = (value) => (value === '' || value == null ? null : Math.round(Number(value) * 100));
+const store = {
+  get(key, fallback) { try { return sessionStorage.getItem(`insight-shifts-${key}`) ?? fallback; } catch { return fallback; } },
+  set(key, value) { try { sessionStorage.setItem(`insight-shifts-${key}`, value); } catch { /* private mode */ } },
+};
+
+/** The way ASSD wrote a payment method → one of five words. */
+function modeOf(label) {
+  const t = String(label).toUpperCase();
+  if (/\bCASH\b/.test(t)) return 'cash';
+  if (/CR\.|CREDIT CARD/.test(t)) return 'card';
+  if (/PRE-?BAN/.test(t)) return 'bank';
+  if (/PREPAID CC/.test(t)) return 'online';
+  return 'other';
+}
+
+/** One colour per person, from Insight's fixed series, by the order they first appear. */
+function paletteFor(users) {
+  const slots = ['--series-1', '--series-2', '--series-3', '--series-5', '--series-6', '--series-7', '--series-4', '--series-8'];
+  const out = {};
+  [...new Set(users)].sort().forEach((u, i) => { out[u] = `var(${slots[i % slots.length]})`; });
+  return out;
+}
+
+const GLYPHS = {
+  morning: '<svg class="sh-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="5" fill="var(--series-4)"/><g stroke="var(--series-4)" stroke-width="2" stroke-linecap="round"><path d="M12 3v3M4.5 6.5l2 2M19.5 6.5l-2 2M2 13h3M19 13h3"/></g><path d="M3 20h18" stroke="var(--muted)" stroke-width="2" stroke-linecap="round"/></svg>',
+  afternoon: '<svg class="sh-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17a7 7 0 0 1 14 0z" fill="var(--series-2)"/><path d="M3 20h18" stroke="var(--muted)" stroke-width="2" stroke-linecap="round"/><g stroke="var(--series-2)" stroke-width="2" stroke-linecap="round"><path d="M12 4v3M5.5 8l1.8 1.8M18.5 8l-1.8 1.8"/></g></svg>',
+  night: '<svg class="sh-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3.5A8.5 8.5 0 1 0 20.5 15 7 7 0 0 1 15.5 3.5z" fill="var(--series-7)"/><circle cx="19" cy="5" r="1.2" fill="var(--series-4)"/></svg>',
+};
+const glyph = (slot) => h('span', { html: GLYPHS[slot], style: 'display:inline-flex' });
 
 export async function renderShifts(root, { range }) {
-  const view = h('div');
+  const view = h('div.sh');
   add(root, view);
-  let data = null;
-  let section = 'days';
-  try { section = sessionStorage.getItem(sectionKey) || 'days'; } catch { /* private mode */ }
-  let chosenDay = null;
-  let showAnswered = false;
 
-  await load();
+  let data = null;
+  let shifts = [];
+  let byId = new Map();
+  let colours = {};
+  let section = store.get('section', 'week');
+  if (!VIEWS.some(([id]) => id === section)) section = 'week';
+  let currentId = store.get('shift', null);
+  let filter = 'all';
+  let showAnswered = false;
+  // What is being typed and not yet saved, per shift: a recount, a sheet total.
+  const drafts = {};
 
   async function load(notice = null) {
     data = await api(`/shifts?from=${range.from}&to=${range.to}`);
-    const withShifts = data.days.filter((d) => d.shifts.length);
-    if (!chosenDay || !data.days.some((d) => d.day === chosenDay)) chosenDay = withShifts[0]?.day || data.days[0]?.day || null;
+    shifts = [];
+    for (const d of [...data.days].sort((a, b) => (a.day < b.day ? -1 : 1))) {
+      for (const s of d.shifts) shifts.push({ ...s, id: `${s.day}|${s.slot}`, dayTotals: d.totals, dayLaundry: d.laundry });
+    }
+    byId = new Map(shifts.map((s) => [s.id, s]));
+    colours = paletteFor(shifts.map((s) => s.user));
+    if (!byId.has(currentId)) {
+      // The latest shift with something to answer, else the latest shift.
+      const flagged = [...shifts].reverse().find((s) => tone(s) === 'bad');
+      currentId = (flagged || shifts[shifts.length - 1])?.id || null;
+    }
     paint(notice);
   }
 
-  function go(next) {
+  function go(next, shiftId = null) {
     section = next;
-    try { sessionStorage.setItem(sectionKey, next); } catch { /* private mode */ }
+    if (shiftId) currentId = shiftId;
+    store.set('section', section);
+    if (currentId) store.set('shift', currentId);
     paint();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
+
+  // ------------------------------------------------------------- facts --
+
+  const exceptionsOf = (s) => data.exceptions.filter((x) => x.day === s.day && x.slot === s.slot);
+  const waiting = () => data.exceptions.filter((x) => x.severity !== 'info' && !x.answer);
+
+  /** The register with what is being typed applied, so the screen moves as somebody types. */
+  function numbers(s) {
+    const r = s.register || {};
+    const d = drafts[s.id] || {};
+    // A recount being typed wins; a cleared box falls back to ASSD's own count.
+    const closing = d.recount !== undefined ? (d.recount ?? s.closing?.total ?? null) : r.closing;
+    const sheet = d.sheet !== undefined ? d.sheet : (s.expense?.sheetTotal ?? null);
+    const expenses = sheet != null ? sheet : s.expensesMoved;
+    const toSafe = sheet != null ? Math.max(0, s.drawerOut - sheet) : s.safeMoved;
+    const unlabelled = sheet != null ? 0 : s.unlabelledMoved;
+    const variance = r.expected != null && closing != null ? closing - r.expected : null;
+    const recounted = d.recount !== undefined ? d.recount != null : r.closingFrom === 'typed';
+    return { ...r, closing, expenses, toSafe, unlabelled, variance, recounted, sheetTyped: sheet != null };
+  }
+
+  function tone(s) {
+    if (s.open) return 'open';
+    const open = exceptionsOf(s).filter((x) => !x.answer);
+    const v = s.register?.variance;
+    if (open.some((x) => x.severity === 'critical')) return 'bad';
+    if (v != null && v < 0 && open.length) return 'bad';
+    if (open.some((x) => x.severity === 'warning') || (v && open.length)) return 'warn';
+    return 'good';
+  }
+
+  const avatar = (user, large = false) => h(`span.sh-av${large ? '.lg' : ''}`, { style: `--pc:${colours[user] || 'var(--sh-info)'}` }, (user || '?')[0]);
+  const chip = (v, open) => (open ? h('span.sh-chip.none', 'ends here')
+    : v == null ? h('span.sh-chip.none', 'no count')
+      : v === 0 ? h('span.sh-chip.ok', '✓ agrees')
+        : h(`span.sh-chip.${v > 0 ? 'over' : 'short'}`, `${v > 0 ? '+' : '−'}${whole(Math.abs(v))}`));
+  const modesOf = (s) => {
+    const out = {};
+    for (const [label, amount] of Object.entries(s.modes || {})) out[modeOf(label)] = (out[modeOf(label)] || 0) + amount;
+    return out;
+  };
+  const mixBar = (s) => {
+    const m = modesOf(s);
+    const total = MODES.reduce((t, [k]) => t + Math.max(0, m[k] || 0), 0);
+    return h('div.sh-mix', total ? MODES.filter(([k]) => m[k] > 0)
+      .map(([k, , c]) => h('b', { style: `width:${(m[k] / total) * 100}%;background:${c}` })) : null);
+  };
+
+  // ------------------------------------------------------------- frame --
 
   function paint(notice = null) {
-    const open = data.exceptions.filter((x) => !x.answer && x.severity !== 'info').length;
+    const open = waiting().length;
+    const has = shifts.length > 0;
+    const v = h('div.sh-view');
     mount(view,
       notice,
-      intro(),
-      data.canUpload ? uploads() : coverageNote(),
-      data.days.some((d) => d.shifts.length) ? [
-        summaryTiles(),
-        h('div.segmented', { role: 'tablist' },
-          [['days', 'Days'], ['exceptions', `Exceptions${open ? ` · ${open}` : ''}`], ['register', 'Register'], ['people', 'People']]
-            .map(([id, label]) => h('button.btn', {
-              role: 'tab', 'aria-selected': String(section === id), class: section === id ? 'on' : '', onclick: () => go(id),
-            }, label))),
-        section === 'exceptions' ? exceptionsView()
-          : section === 'register' ? registerView()
-            : section === 'people' ? peopleView()
-              : daysView(),
-      ] : nothingYet());
-  }
-
-  // ------------------------------------------------------------ framing --
-
-  function intro() {
-    return h('div.card',
-      h('h2', 'Shifts'),
-      h('p.sub',
-        'Each shift, from ASSD’s own journal: what the person holding the drawer took in cash and by card or MoMo, '
-        + 'what left the drawer, and whether the card and MoMo money actually arrived. Shifts run 06–14, 14–22 and '
-        + '22–06, and a night belongs to the day it starts. ASSD’s hand-over marker decides where one shift ends and '
-        + 'the next begins, so an overlap of a few minutes settles itself.'),
+      h('div.sh-head',
+        h('h1', 'Shifts'),
+        h('span', has ? `${shortDay(range.from)} to ${shortDay(range.to)} · ${shifts.length} shift${shifts.length === 1 ? '' : 's'} · ${new Set(shifts.map((s) => s.user)).size} people` : `${shortDay(range.from)} to ${shortDay(range.to)}`)),
       data.journalEndsInside ? banner('warning',
-        `The journal loaded so far stops inside the ${SLOT_LABEL[data.journalEndsInside.slot].toLowerCase()} shift of `
-        + `${shortDay(data.journalEndsInside.day)}, so that shift is shown as far as it goes. Export ASSD one day past the last `
-        + 'shift you want to read.') : null);
+        `The journal loaded so far stops inside the ${SLOT[data.journalEndsInside.slot].label.toLowerCase()} shift of `
+        + `${shortDay(data.journalEndsInside.day)}, so that shift is shown as far as it goes. Export ASSD one day past the last shift you want to read.`) : null,
+      has ? kpis() : null,
+      h('div.sh-tabs', { role: 'tablist' }, VIEWS.map(([id, label]) => h('button', {
+        type: 'button', role: 'tab', 'aria-selected': String(section === id), onclick: () => go(id),
+      }, label, id === 'exceptions' && open ? h('span.sh-badge', String(open)) : null))),
+      v);
+    if (!has && section !== 'files') return mount(v, nothingYet());
+    ({ week, shift: shiftView, exceptions: exceptionsView, people: peopleView, files: filesView })[section](v);
   }
 
   function nothingYet() {
     const c = data.coverage || {};
     return h('div.card',
-      h('h3', 'No shifts in these days yet'),
-      h('p', c.journal
+      h('h2', 'No shifts in these days yet'),
+      h('p.sh-sub', c.journal
         ? `The ASSD journal loaded so far covers ${shortDay(c.journal.from)} to ${shortDay(c.journal.to)}. Choose days inside that, or load the journal for these.`
-        : 'Load the ASSD detail journal for these days to begin. The bank statement and the card terminal report make the card and MoMo checks possible; the journal alone already gives the cash.'));
+        : 'Load the ASSD detail journal to begin. The bank statement and the card terminal report make the card and MoMo checks possible; the journal alone already gives the cash.'),
+      data.canUpload ? h('p', h('button.btn.primary', { onclick: () => go('files') }, 'Load the files')) : null);
   }
 
-  function coverageNote() {
-    const c = data.coverage || {};
-    const parts = [
-      c.journal ? `ASSD journal ${shortDay(c.journal.from)}–${shortDay(c.journal.to)}` : 'no ASSD journal',
-      c.terminal ? `card terminal ${shortDay(c.terminal.from)}–${shortDay(c.terminal.to)}` : 'no terminal report',
-      c.bank ? `bank statement to ${shortDay(c.bank.to)}` : 'no bank statement',
+  function kpis() {
+    const t = data.totals;
+    const open = waiting().length;
+    const tile = (go_, colour, label, value, note, extra = null, valueColour = null) => h('button.sh-kpi', { type: 'button', onclick: () => go(go_) },
+      h('span.l', h('i', { style: `background:${colour}` }), label),
+      h('span.v.num', { style: valueColour ? `color:${valueColour}` : '' }, value),
+      extra,
+      h('span.n', note));
+    return h('div.sh-kpis',
+      tile('week', 'var(--sh-cash)', 'Cash taken', money(t.cash), `${money(t.drawerOut)} moved out to expenses and the safe`),
+      tile('week', 'var(--sh-card)', 'Card and MoMo', money(t.card), `${money(t.received)} arrived on the terminal and by MoMo`,
+        h('span.sh-meter', h('b', { style: `width:${t.received ? Math.min(100, (t.card / Math.max(t.card, t.received)) * 100) : 0}%;background:var(--sh-card)` }))),
+      tile('people', 'var(--sh-warn)', 'Drawer variance', t.counted ? signed(t.variance) : '—',
+        t.counted ? `${t.counted} of ${t.shifts} shifts with an opening and closing count` : 'No counts in these days yet'),
+      tile('exceptions', 'var(--sh-bad)', 'Waiting for an answer', String(open),
+        open ? 'Differences somebody has to explain' : 'Everything answered or explained', null, open ? 'var(--sh-bad-ink)' : 'var(--sh-good-ink)'));
+  }
+
+  // -------------------------------------------------------------- week --
+
+  function week(v) {
+    const days = [...data.days].sort((a, b) => (a.day < b.day ? -1 : 1));
+    const grid = h('div.sh-week', { style: `grid-template-columns: 6.6rem repeat(${days.length}, minmax(118px, 1fr)); min-width: ${110 + days.length * 126}px` });
+    add(grid, h('div'));
+    for (const d of days) {
+      const ss = SLOTS.map((sl) => byId.get(`${d.day}|${sl}`)).filter(Boolean);
+      add(grid, h('div.sh-col',
+        h('b', dayText(d.day, { weekday: 'short' })),
+        h('small', dayText(d.day, { day: 'numeric', month: 'short' })),
+        h('div.dots', ss.map((s) => h('i', { style: `background:${TONE[tone(s)]}` })))));
+    }
+    for (const sl of SLOTS) {
+      add(grid, h('div.sh-row', h('b', glyph(sl), SLOT[sl].label), h('small', SLOT[sl].hours)));
+      for (const d of days) {
+        const s = byId.get(`${d.day}|${sl}`);
+        if (!s) { add(grid, h('div.sh-tile.empty', 'Not in the journal yet')); continue; }
+        const t = tone(s);
+        const toAnswer = exceptionsOf(s).filter((x) => !x.answer && x.severity !== 'info').length;
+        const cardLines = s.lines.filter((l) => l.amount > 0);
+        add(grid, h(`button.sh-tile.${t}${s.id === currentId ? '.sel' : ''}`, {
+          type: 'button', title: `${nameOf(s.user)} · ${SLOT[sl].label} · ${dayText(s.day)}`, onclick: () => go('shift', s.id),
+        },
+        h('span.sh-who', avatar(s.user), h('b', nameOf(s.user))),
+        h('span.sh-fig', h('span.num', `Cash ${whole(s.cash)}`), chip(s.register?.variance, s.open)),
+        mixBar(s),
+        h('span.sh-fig',
+          h('span', cardLines.length ? `${s.cardFound}/${cardLines.length} card` : 'no card'),
+          toAnswer ? h('span.sh-chip.short', `${toAnswer} to answer`) : null)));
+      }
+    }
+    const wrap = h('div.sh-weekwrap', grid);
+
+    const max = Math.max(1, ...days.map((d) => Math.max(d.totals.cardRecorded, d.totals.received)));
+    const bars = h('div.sh-bars', { style: `grid-template-columns: repeat(${days.length}, minmax(${days.length > 14 ? 28 : 44}px, 1fr)); min-width: ${days.length * (days.length > 14 ? 32 : 50)}px` },
+      days.map((d) => {
+        const gap = d.totals.received - d.totals.cardRecorded;
+        const first = SLOTS.map((sl) => byId.get(`${d.day}|${sl}`)).find(Boolean);
+        return h('button.sh-bar', {
+          type: 'button',
+          title: `${dayText(d.day)}: recorded ${money(d.totals.cardRecorded)}, arrived ${money(d.totals.received)}, bank commission ${money(d.totals.commission)}`,
+          onclick: () => first && go('shift', first.id),
+        },
+        h('div.pair',
+          h('b', { style: `height:${(d.totals.cardRecorded / max) * 100}%;background:var(--sh-card)` }),
+          h('b', { style: `height:${(d.totals.received / max) * 100}%;background:var(--series-3)` })),
+        h('small', dayText(d.day, { weekday: 'short', day: 'numeric' }),
+          first ? h('em', { style: `color:${gap === 0 ? 'var(--sh-good-ink)' : Math.abs(gap) < 10000 ? 'var(--sh-warn-ink)' : 'var(--sh-bad-ink)'}` },
+            gap === 0 ? '✓ equal' : `${gap > 0 ? '+' : '−'}${whole(Math.abs(gap))}`) : h('em', '·')));
+      }));
+
+    mount(v,
+      h('section.card',
+        h('div.sh-cardhead',
+          h('div', h('h2', 'Every shift, at a glance'),
+            h('p.sh-sub', 'Each tile is one person holding the drawer. Green agrees, amber needs a look, red needs an answer. Open any tile for the whole story.')),
+          h('div.sh-legend',
+            h('span', h('i', { style: 'background:var(--sh-good)' }), 'Agrees'),
+            h('span', h('i', { style: 'background:var(--sh-warn)' }), 'Look at it'),
+            h('span', h('i', { style: 'background:var(--sh-bad)' }), 'Answer needed'),
+            MODES.slice(0, 3).map(([, label, c]) => h('span', h('i', { style: `background:${c}` }), label === 'Prepaid by bank transfer' ? 'Prepaid' : label)))),
+        wrap),
+      h('section.card',
+        h('div.sh-cardhead',
+          h('div', h('h2', 'Card and MoMo: recorded against arrived'),
+            h('p.sh-sub', 'What ASSD says was paid by card or MoMo each day, beside what the terminal approved and MoMo received for the same shifts. Tap a day to open its first shift.')),
+          h('div.sh-legend',
+            h('span', h('i', { style: 'background:var(--sh-card)' }), 'Recorded in ASSD'),
+            h('span', h('i', { style: 'background:var(--series-3)' }), 'Arrived'))),
+        h('div', { style: 'overflow-x:auto' }, bars)));
+    // The newest days are the ones looked at; start the grid there.
+    requestAnimationFrame(() => { wrap.scrollLeft = wrap.scrollWidth; });
+  }
+
+  // ------------------------------------------------------------- shift --
+
+  function shiftView(v) {
+    const s = byId.get(currentId) || shifts[shifts.length - 1];
+    const i = shifts.indexOf(s);
+    const status = h('span');
+    const fall = h('div.sh-fall');
+    const vbox = h('div');
+    const checksList = h('ul.sh-checks');
+    const unsaved = h('span.sh-unsaved');
+    const said = h('span.small');
+    const r = s.register || {};
+    const draft = drafts[s.id] || (drafts[s.id] = {});
+
+    const recount = h('input', {
+      id: 'sh-recount', type: 'number', inputmode: 'decimal', step: '0.01', min: '0', disabled: s.open,
+      placeholder: s.closing?.total != null ? cedis(s.closing.total) : '0.00',
+      value: draft.recount !== undefined ? cedis(draft.recount) : (r.closingFrom === 'typed' ? cedis(r.closing) : ''),
+    });
+    const sheet = h('input', {
+      id: 'sh-sheet', type: 'number', inputmode: 'decimal', step: '0.01', min: '0', disabled: !s.drawerOut && s.expense?.sheetTotal == null,
+      placeholder: s.drawerOut ? 'labels the movements' : 'nothing moved out',
+      value: draft.sheet !== undefined ? cedis(draft.sheet) : cedis(s.expense?.sheetTotal),
+    });
+    const needOpening = r.openingFrom == null || r.openingFrom === 'typed';
+    const opening = needOpening ? h('input', {
+      id: 'sh-opening', type: 'number', inputmode: 'decimal', step: '0.01', min: '0', placeholder: 'only if ASSD has none',
+      value: r.openingFrom === 'typed' ? cedis(r.opening) : '',
+    }) : null;
+    recount.addEventListener('input', () => { draft.recount = typedMinor(recount.value); redraw(); });
+    sheet.addEventListener('input', () => { draft.sheet = typedMinor(sheet.value); redraw(); });
+
+    async function save() {
+      said.textContent = 'Saving…';
+      try {
+        await api('/shifts/count', { method: 'POST', body: { day: s.day, slot: s.slot, closing: recount.value, opening: opening ? opening.value : null, note: r.note || '' } });
+        if (s.drawerOut || s.expense) {
+          await api('/shifts/expense', { method: 'POST', body: { day: s.day, slot: s.slot, sheetTotal: sheet.value, poNumbers: s.expense?.poNumbers || '' } });
+        }
+        delete drafts[s.id];
+        await load(banner('good', `Saved for ${nameOf(s.user)}’s ${SLOT[s.slot].label.toLowerCase()} shift of ${shortDay(s.day)}.`));
+      } catch (err) { said.textContent = err.message; }
+    }
+
+    mount(v,
+      h('section.card',
+        h('div.sh-shifthead',
+          h('button.sh-arrow', { type: 'button', disabled: i <= 0, 'aria-label': 'Previous shift', onclick: () => go('shift', shifts[i - 1].id) }, '‹'),
+          h('div.t', avatar(s.user, true),
+            h('div', h('h2', nameOf(s.user)),
+              h('div.m', glyph(s.slot), `${SLOT[s.slot].label} · ${SLOT[s.slot].hours} · ${dayText(s.day, { weekday: 'long', day: 'numeric', month: 'long' })}`,
+                s.double ? h('span.sh-chip.none', 'covered two slots') : null))),
+          status,
+          h('button.sh-arrow', { type: 'button', disabled: i >= shifts.length - 1, 'aria-label': 'Next shift', onclick: () => go('shift', shifts[i + 1].id) }, '›'))),
+      h('div.sh-two',
+        h('section.card',
+          h('div.sh-cardhead', h('div', h('h2', 'The drawer'),
+            h('p.sh-sub', 'From ASSD’s count at hand-over to its count at the end. Type a recount or the expense sheet’s total and the picture moves; Save keeps it.'))),
+          fall, vbox,
+          h('div.sh-inputs',
+            h('label.field', { for: 'sh-recount' }, 'Recount the drawer (optional)', recount),
+            h('label.field', { for: 'sh-sheet' }, 'Expense sheet total', sheet),
+            opening ? h('label.field', { for: 'sh-opening' }, 'Opening count', opening) : null),
+          h('div.sh-save', h('button.btn.primary', { type: 'button', onclick: save, disabled: s.open }, 'Save'), unsaved, said)),
+        h('section.card',
+          h('div.sh-cardhead', h('div', h('h2', 'How it was paid'),
+            h('p.sh-sub', 'Every payment in the shift, by the method ASSD recorded. Only cash goes in the drawer.'))),
+          modesBlock(s),
+          checksList)),
+      h('section.card',
+        h('div.sh-cardhead',
+          h('div', h('h2', 'Card and MoMo, on the clock'),
+            h('p.sh-sub', 'Each dot is a payment that arrived, at the time the terminal or MoMo took it. The shaded band is the shift’s hours; ninety minutes either side still counts. Tap a dot for the details.')),
+          h('div.sh-legend',
+            h('span', h('i', { style: 'background:var(--sh-card);border-radius:50%' }), 'Card'),
+            h('span', h('i', { style: 'background:var(--sh-safe);border-radius:50%' }), 'MoMo'),
+            h('span', h('i', { style: 'background:var(--surface);border:2px dashed var(--sh-bad);border-radius:50%' }), 'Declined'),
+            h('span', h('i', { style: 'background:var(--surface);box-shadow:0 0 0 2px var(--sh-bad);border-radius:50%' }), 'Needs an answer'))),
+        timeline(s)),
+      h('section.card',
+        h('div.sh-cardhead', h('div', h('h2', 'Where the cash went'),
+          h('p.sh-sub', 'Each Cash Movement out of the front drawer, labelled by the Money Count done just before it.'))),
+        movesBlock(s),
+        odooBlock(s)),
+      exceptionsOf(s).length ? h('section.card',
+        h('div.sh-cardhead', h('h2', 'What does not agree on this shift')),
+        h('div.sh-exgrid', exceptionsOf(s).map(exceptionCard))) : null);
+    redraw();
+
+    function redraw() {
+      const n = numbers(s);
+      const dirty = (draft.recount !== undefined && draft.recount !== (r.closingFrom === 'typed' ? r.closing : null))
+        || (draft.sheet !== undefined && draft.sheet !== (s.expense?.sheetTotal ?? null));
+      unsaved.textContent = dirty ? 'Not saved yet' : '';
+      const t = tone(s);
+      mount(status, h(`span.sh-status.${t}`, { good: '✓ All agrees', warn: '! Have a look', bad: '! Needs an answer', open: 'Journal ends here' }[t]));
+
+      const steps = [{ lab: 'Opening count', sm: r.openingFrom === 'typed' ? 'typed' : 'ASSD, at hand-over', from: 0, to: r.opening ?? 0, c: 'var(--muted)', amt: money(r.opening) }];
+      let at = (r.opening ?? 0) + s.cash;
+      steps.push({ lab: '+ Cash taken', sm: s.laundryCash ? `incl. ${money(s.laundryCash)} laundry` : '', from: r.opening ?? 0, to: at, c: 'var(--sh-cash)', amt: money(s.cash) });
+      if (n.expenses) { steps.push({ lab: '− Expenses', sm: n.sheetTyped ? 'the expense sheet' : 'receipts counted', from: at - n.expenses, to: at, c: 'var(--sh-expense)', amt: money(n.expenses) }); at -= n.expenses; }
+      if (n.toSafe) { steps.push({ lab: '− To the safe', sm: n.sheetTyped ? 'the rest of what moved' : 'notes counted', from: at - n.toSafe, to: at, c: 'var(--sh-safe)', amt: money(n.toSafe) }); at -= n.toSafe; }
+      if (n.unlabelled) { steps.push({ lab: '− Not labelled', sm: 'type the sheet total', from: at - n.unlabelled, to: at, c: 'var(--muted)', hatch: true, amt: money(n.unlabelled) }); at -= n.unlabelled; }
+      steps.push({ lab: '= Should hold', from: 0, to: r.expected ?? 0, c: 'var(--ink-2)', amt: money(r.expected), total: true });
+      steps.push({
+        lab: 'Closing count',
+        sm: n.recounted ? 'your recount' : n.closing == null ? 'not in the journal' : `ASSD, at the end${r.receiptsAtClose ? `, incl. ${money(r.receiptsAtClose)} receipts` : ''}`,
+        from: 0, to: n.closing ?? 0, total: true, amt: money(n.closing),
+        c: n.variance == null ? 'var(--muted)' : n.variance === 0 ? 'var(--sh-good)' : n.variance > 0 ? 'var(--sh-warn)' : 'var(--sh-bad)',
+      });
+      const top = Math.max(1, ...steps.map((x) => Math.max(x.from, x.to)));
+      mount(fall, steps.map((x) => h(`div.sh-frow${x.total ? '.total' : ''}`,
+        h('span.lab', x.lab, x.sm ? h('small', x.sm) : null),
+        h('span.sh-track', h(`b.sh-seg${x.hatch ? '.hatch' : ''}`, {
+          style: `left:${(Math.min(x.from, x.to) / top) * 100}%;width:${(Math.abs(x.to - x.from) / top) * 100}%;background:${x.c}`,
+        })),
+        h('span.amt.num', x.amt))));
+
+      const cls = n.variance == null ? 'none' : n.variance === 0 ? 'ok' : n.variance > 0 ? 'over' : 'short';
+      mount(vbox, h(`div.sh-vbox.${cls}`,
+        h('div.big.num', n.variance == null ? 'No closing count' : n.variance === 0 ? '✓ The drawer agrees' : `${n.variance > 0 ? 'Over' : 'Short'} ${money(Math.abs(n.variance))}`),
+        h('p', n.variance == null
+          ? (s.open ? 'The journal stops inside this shift. Load a journal that runs a day past it.' : 'ASSD has no closing count for this shift. Type a recount to check it.')
+          : n.variance === 0 ? 'What should be in the drawer is exactly what was counted.'
+            : `It should have held ${money(r.expected)}; ${n.recounted ? 'the recount' : 'ASSD counted'} ${money(n.closing)}.${!n.recounted && r.assdVariance === n.variance ? ' ASSD booked the same difference itself.' : ''}`),
+        r.handoverGap ? h('p', `This shift’s first count was ${money(Math.abs(r.handoverGap.amount))} ${r.handoverGap.amount < 0 ? 'less' : 'more'} than ${nameOf(r.handoverGap.from)}’s closing count.`) : null));
+
+      mount(checksList, checks(s, n).map(([cls_, mark, text]) => h('li', h(`span.sh-ic.${cls_}`, String(mark)), h('span', text))));
+    }
+  }
+
+  function modesBlock(s) {
+    const m = modesOf(s);
+    const items = MODES.filter(([k]) => m[k] > 0);
+    const total = items.reduce((t, [k]) => t + m[k], 0);
+    if (!total) return h('p.sh-sub', 'Nothing was taken on this shift.');
+    return [
+      h('div.sh-stack', items.map(([k, label, c]) => h('b', { style: `flex-grow:${m[k]};background:${c}`, title: `${label} ${money(m[k])}` }))),
+      h('div.sh-modes',
+        items.map(([k, label, c]) => h('div.sh-mode', h('i', { style: `background:${c}` }),
+          h('span', label, ' ', h('small', `${Math.round((m[k] / total) * 100)}%`)), h('b.num', money(m[k])))),
+        h('div.sh-mode', { style: 'border-top:1px solid var(--border);padding-top:.35rem' }, h('i'), h('b', 'Everything taken'), h('b.num', money(total)))),
     ];
-    return h('p.small.muted', `Loaded so far: ${parts.join(' · ')}. An owner loads the files.`);
   }
 
-  // ------------------------------------------------------------ uploads --
+  function checks(s, n) {
+    const out = [];
+    if (n.variance == null) out.push(['info', 'i', s.open ? 'No closing count yet: the journal ends inside this shift' : 'No closing count in ASSD']);
+    else if (n.variance === 0) out.push(['good', '✓', 'The drawer agrees with the closing count']);
+    else out.push([n.variance < 0 ? 'bad' : 'warn', '!', `Drawer ${n.variance > 0 ? 'over' : 'short'} by ${money(Math.abs(n.variance))}`]);
+    const lines = s.lines.filter((l) => l.amount > 0);
+    if (!lines.length) out.push(['info', '·', 'No card or MoMo this shift']);
+    else out.push([s.cardFound === lines.length ? 'good' : 'bad', s.cardFound === lines.length ? '✓' : '!', `${s.cardFound} of ${lines.length} card and MoMo payments found`]);
+    const exp = s.expense;
+    if (exp?.sheetTotal != null || n.expenses) {
+      const agree = exp?.sheetTotal != null && exp?.odooTotal != null && exp.sheetTotal === exp.odooTotal;
+      out.push([agree ? 'good' : exp?.odooTotal != null ? 'warn' : 'info', agree ? '✓' : 'i',
+        `Expenses ${money(exp?.sheetTotal ?? n.expenses)}${exp?.odooTotal != null ? ` · Odoo ${money(exp.odooTotal)}` : exp?.poNumbers ? ' · Odoo not read yet' : ' · no PO numbers yet'}`]);
+    }
+    if (s.laundry) out.push(['info', 'i', `Laundry ${money(s.laundry)}${s.laundryCash ? `, ${money(s.laundryCash)} of it in cash` : ''}`]);
+    const l = s.dayLaundry;
+    if (l && l.system != null && (l.assd || l.system)) {
+      out.push([l.assd === l.system ? 'good' : 'warn', l.assd === l.system ? '✓' : '!',
+        `Laundry for ${shortDay(s.day)}: ${money(l.assd)} in ASSD, ${money(l.system)} in the laundry system`]);
+    }
+    for (const m of (s.moves || []).filter((x) => x.kind === 'corrected')) {
+      out.push(['info', 'i', `${money(m.amount)} moved out by mistake and put back by ${nameOf(m.reversedByUser)}`]);
+    }
+    const open = exceptionsOf(s).filter((x) => !x.answer && x.severity !== 'info').length;
+    if (open) out.push(['bad', open, `${open} difference${open === 1 ? '' : 's'} waiting for an answer`]);
+    return out;
+  }
 
-  function uploads() {
+  function timeline(s) {
+    const start = SLOT[s.slot].start;
+    const base = Date.parse(`${s.day}T00:00:00Z`) + (start * 60 - 120) * 60000;
+    const span = 12 * 60 * 60000;
+    const pos = (at) => ((Date.parse(`${String(at).replace(' ', 'T')}Z`) - base) / span) * 100;
+    const dots = [];
+    for (const l of s.lines) for (const e of l.events) dots.push({ ...e, seq: l.seq, how: l.how, flagged: Boolean(l.exception) });
+    for (const x of exceptionsOf(s)) {
+      if (x.event?.at && !dots.some((d) => d.at === x.event.at && d.amount === x.event.amount)) {
+        dots.push({ ...x.event, seq: x.seq, flagged: true, declined: x.kind === 'failed' });
+      }
+    }
+    const placed = dots.filter((d) => d.at).map((d) => ({ ...d, p: pos(d.at) })).sort((a, b) => a.p - b.p);
+    // Dots closer than a dot's width go up or down a level, so none hides another.
+    const lastAt = [-10, -10, -10];
+    for (const d of placed) {
+      const level = [0, 1, 2].find((lv) => d.p - lastAt[lv] >= 3.2) ?? 0;
+      d.level = level;
+      lastAt[level] = d.p;
+    }
+    const inside = placed.filter((d) => d.p >= -2 && d.p <= 102);
+    const outside = placed.filter((d) => d.p < -2 || d.p > 102);
+    const unmatched = s.lines.filter((l) => l.amount > 0 && !l.events.length);
+    const tip = h('div.sh-tip', { hidden: true });
+    const track = h('div.sh-tl',
+      h('div.band'),
+      h('div.core', { style: `left:${(120 / 720) * 100}%;width:${(480 / 720) * 100}%` }),
+      Array.from({ length: 7 }, (_, k) => h('span.tick', { style: `left:${(k / 6) * 100}%` },
+        `${String((start - 2 + k * 2 + 24) % 24).padStart(2, '0')}:00`)),
+      inside.map((d) => {
+        const text = `${d.declined ? 'Declined' : d.kind === 'momo' ? 'MoMo' : 'Card'} ${money(d.amount)} at ${time(d.at)}`
+          + `${d.last4 ? ` · card …${d.last4}` : ''}${d.seq ? ` · ASSD ${d.seq}` : ''}`
+          + `${d.how && d.how !== 'exact' ? ` · ${{ late: 'just outside the hours', together: 'paid together', parts: 'paid in parts', regrouped: 'split differently', 'by-day': 'by day' }[d.how] || d.how}` : ''}`
+          + `${d.flagged ? ' · see below' : ''}`;
+        const left = Math.max(1, Math.min(99, d.p));
+        const dot = h(`button.sh-dot.${d.declined ? 'decl' : d.kind === 'momo' ? 'momo' : 'card'}${d.flagged && !d.declined ? '.flag' : ''}${d.level ? `.l${d.level}` : ''}`, {
+          type: 'button', style: `left:${left}%`, 'aria-label': text,
+        }, d.declined ? '×' : '');
+        const show = () => { tip.textContent = text; tip.style.left = `${left}%`; tip.style.top = `${[34, 6, 62][d.level] - 6}px`; tip.hidden = false; };
+        const hide = () => { tip.hidden = true; };
+        dot.addEventListener('mouseenter', show);
+        dot.addEventListener('focus', show);
+        dot.addEventListener('click', show);
+        dot.addEventListener('mouseleave', hide);
+        dot.addEventListener('blur', hide);
+        return dot;
+      }),
+      tip);
+    return [
+      h('div', { style: 'overflow-x:auto' }, h('div', { style: 'min-width:520px;padding:0 22px' }, track)),
+      h('div.sh-pills',
+        unmatched.map((l) => h('span.sh-pill.bad', `No payment found · ${money(l.amount)} · ASSD ${l.seq}`)),
+        outside.map((d) => h('span.sh-pill', `${d.declined ? 'Declined' : 'Paid'} ${money(d.amount)} on ${when(d.at)} · outside this shift`)),
+        !unmatched.length && !outside.length && placed.length ? h('span.sh-pill.good', '✓ Every card and MoMo payment is on the clock') : null,
+        !placed.length && !unmatched.length ? h('span.sh-pill', 'No card or MoMo on this shift') : null),
+    ];
+  }
+
+  function movesBlock(s) {
+    const moves = s.moves || [];
+    if (!moves.length) return h('p.sh-sub', 'Nothing was moved out of the drawer on this shift.');
+    const tag = {
+      expenses: ['Expenses', 'var(--sh-expense)'], safe: ['To the safe', 'var(--sh-safe)'], split: ['Expenses + safe', 'var(--series-7)'],
+      part: ['Part labelled', 'var(--muted)'], unlabelled: ['Not labelled', 'var(--muted)'], corrected: ['Put back', 'var(--sh-bad)'], returned: ['Returned', 'var(--sh-good)'],
+    };
+    const said = (m) => ({
+      expenses: 'The receipts on the count before it.',
+      safe: 'The notes on the count before it.',
+      split: `${money(m.expenses)} in receipts and ${money(m.safe)} in notes, as counted just before.`,
+      part: `${money(m.expenses)} in receipts as counted; the rest has no count before it.`,
+      unlabelled: 'No count before it said what it was. The expense sheet total settles it.',
+      corrected: `Keyed by mistake and put back by ${nameOf(m.reversedByUser)} (ASSD ${m.reversedBy}). It nets to nothing.`,
+      returned: 'Money put back into the drawer.',
+    })[m.kind] || '';
+    return h('div.sh-moves', moves.map((m) => h('div.sh-move',
+      h('span.tag', { style: `background:${tag[m.kind]?.[1] || 'var(--muted)'}` }, tag[m.kind]?.[0] || m.kind),
+      h('span', h('small', `${said(m)} · ${nameOf(m.user)}, ASSD ${m.seq}`)),
+      h('span.amt.num', m.kind === 'corrected' ? h('s', money(m.amount)) : money(m.amount)))));
+  }
+
+  function odooBlock(s) {
+    if (!s.drawerOut && !s.expense) return null;
+    const exp = s.expense || {};
+    const pos = h('input', { id: 'sh-pos', type: 'text', value: exp.poNumbers || '', placeholder: 'P00412, P00413' });
+    const said = h('span.small');
+    const orders = exp.odoo?.orders || [];
+    const unknown = exp.odoo?.unknown || [];
+    const sheet = exp.sheetTotal;
+    const odoo = exp.odooTotal;
+    const verdict = sheet == null || odoo == null ? null
+      : sheet === odoo ? `The expense sheet and Odoo agree at ${money(sheet)}.`
+        : `The expense sheet says ${money(sheet)} and Odoo says ${money(odoo)}: ${money(Math.abs(sheet - odoo))} ${sheet > odoo ? 'is not in Odoo' : 'more in Odoo than on the sheet'}.`;
+    return h('div.sh-odoo',
+      h('p.sh-sub', 'The Odoo purchase orders behind this shift’s expenses. Insight reads each order (vendor, total, state) without changing anything in Odoo.'),
+      h('div.sh-inputs',
+        h('label.field', { for: 'sh-pos' }, 'Odoo PO numbers', pos),
+        h('div', h('button.btn.primary', {
+          type: 'button',
+          onclick: async () => {
+            said.textContent = 'Saving and asking Odoo…';
+            const draftSheet = drafts[s.id]?.sheet;
+            try {
+              await api('/shifts/expense', {
+                method: 'POST',
+                body: { day: s.day, slot: s.slot, sheetTotal: cedis(draftSheet !== undefined ? draftSheet : sheet), poNumbers: pos.value, pull: true },
+              });
+              await load();
+            } catch (err) { said.textContent = err.message; }
+          },
+        }, 'Save and read from Odoo'), ' ', said)),
+      orders.length ? table([
+        { label: 'PO', get: (o) => o.name },
+        { label: 'Vendor (Odoo)', get: (o) => o.vendor },
+        { label: 'Total', num: true, get: (o) => money(o.total), foot: (list) => money(list.reduce((t, o) => t + o.total, 0)) },
+        { label: 'State', get: (o) => `${o.state}${o.billed ? ` · ${o.billed.replace(/_/g, ' ')}` : ''}` },
+        { label: 'Ordered', get: (o) => o.orderedOn || '' },
+      ], orders, { footer: orders }) : null,
+      unknown.length ? banner('warning', `Odoo does not know ${unknown.join(', ')}. Check the numbers.`) : null,
+      verdict ? h('p', verdict) : null,
+      exp.pulledAt ? h('p.small.muted', `Read from Odoo ${String(exp.pulledAt).slice(0, 16)}.`) : null);
+  }
+
+  // -------------------------------------------------------- exceptions --
+
+  function describe(x) {
+    const e = x.event || {};
+    const paid = `${e.kind === 'momo' ? 'MoMo' : `card${e.last4 ? ` …${e.last4}` : ''}`} ${money(e.amount)}`;
+    switch (x.kind) {
+      case 'failed': return `The terminal declined it at ${when(e.at)} (${e.status || 'not approved'}) and never approved it afterwards. ASSD has it as paid by card.`;
+      case 'not-found': return 'ASSD says card or MoMo. Nothing of this amount was approved, received or credited near the shift.';
+      case 'zero': return 'A card payment keyed with no amount.';
+      case 'double-charge': return `Card …${e.last4} was charged ${money(e.amount)} twice, ${x.minutesApart} minutes apart (${time(x.twin?.at)} and ${time(e.at)}). ASSD has it once.`;
+      case 'transposition': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: the same digits in another order.`;
+      case 'decimal': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: out by a factor of ten.`;
+      case 'keying': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: one digit different.`;
+      case 'duplicate': return `Keyed twice in this shift (also ASSD ${x.pair}) and paid once.`;
+      case 'not-recorded': return `${e.kind === 'momo' ? 'MoMo received' : 'Approved on the terminal'} at ${when(e.at, e.day)}${e.last4 ? `, card …${e.last4}` : ''}. ASSD has no payment of this amount.`;
+      case 'never-settled': return `Approved on the terminal ${when(e.at)}, card …${e.last4}, approval ${e.approval}. No bank credit six days on.`;
+      case 'reversal': return `The bank took ${money(Math.abs(x.amount))} back from card …${e.last4} (tapped ${shortDay(e.day)}).${x.pairedWith ? ' It answers a refund keyed in ASSD.' : ' No refund of that amount is keyed in ASSD in these days.'}`;
+      case 'refund': return `A card refund keyed in ASSD.${x.pairedWith ? ' The bank reversal for it is on the statement.' : ' No matching reversal on the bank statement yet.'}`;
+      case 'regrouped': return `The shift’s unmatched lines (${(x.lines || []).map((a) => money(a)).join(' + ')}) add up exactly to its unmatched payments (${(x.events || []).map((ev) => money(ev.amount)).join(' + ')}).`;
+      case 'other-shift': return `Paid at ${when(e.at)}${x.otherShift ? ` on ${nameOf(x.otherShift.user)}’s ${SLOT[x.otherShift.slot]?.label.toLowerCase() || ''} shift of ${shortDay(x.otherShift.day)}` : ''}, and keyed on this one.`;
+      case 'corrected': return `Keyed and reversed in the same shift (ASSD ${x.pair}). Nothing is owed.`;
+      case 'drawer-short':
+      case 'drawer-over': return `It should have held ${money(x.expected)}. ${x.closingFrom === 'typed' ? 'The recount' : 'ASSD’s closing count'} found ${money(x.closing)}.`;
+      case 'handover-gap': return `The first count of this shift found ${money(Math.abs(x.amount))} ${x.amount < 0 ? 'less' : 'more'} than ${nameOf(x.from)}’s closing count.`;
+      case 'movement-corrected': return `${nameOf(x.by)} moved ${money(x.amount)} out and ${nameOf(x.reversedBy)} put it back (ASSD ${x.reversedSeq}). It nets to nothing.`;
+      case 'bank-only': return `A card credit on the bank statement, card …${e.last4}, tapped ${shortDay(e.day)}, with no record on the terminal report.`;
+      default: return '';
+    }
+  }
+
+  function evidence(x) {
+    const box = (a, mid, b) => h('div.sh-evidence', h('div', h('small', a[0]), a[1]), h('span.vs', mid), h('div', h('small', b[0]), b[1]));
+    if (['keying', 'transposition', 'decimal'].includes(x.kind) && x.event) {
+      const a = (x.amount / 100).toFixed(2);
+      const b = (x.event.amount / 100).toFixed(2);
+      const marked = (str, other) => h('b', [...str].map((c, i) => (c !== other[i] ? h('mark', c) : c)));
+      return box(['ASSD', marked(a, b)], 'vs', [x.event.kind === 'momo' ? 'MoMo' : 'Terminal', marked(b, a)]);
+    }
+    if (x.kind === 'drawer-short' || x.kind === 'drawer-over') return box(['Should hold', h('b', whole(x.expected))], '→', ['Counted', h('b', whole(x.closing))]);
+    if (x.kind === 'failed') return box(['Terminal', h('b', { style: 'color:var(--sh-bad-ink)' }, 'Declined')], 'vs', ['ASSD', h('b', 'Paid')]);
+    if (x.kind === 'movement-corrected') return box(['Keyed', h('b', h('s', whole(x.amount)))], '→', ['Put back by', h('b', nameOf(x.reversedBy))]);
+    return null;
+  }
+
+  function exceptionCard(x) {
+    const sev = x.severity === 'critical' ? 'bad' : x.severity === 'warning' ? 'warn' : 'info';
+    const [title, mark] = KIND[x.kind] || [x.kind, '!'];
+    const note = h('input', { type: 'text', maxlength: '600', placeholder: 'What happened (optional)', value: x.answer?.note || '' });
+    const said = h('span.small');
+    const answer = async (value) => {
+      said.textContent = 'Saving…';
+      try {
+        await api('/shifts/answer', { method: 'POST', body: { key: x.key, answer: value, note: value ? note.value : '' } });
+        await load();
+      } catch (err) { said.textContent = err.message; }
+    };
+    return h(`article.sh-ex.${sev}${x.answer ? '.done' : ''}`,
+      h('div.hd', h('span.sq', mark), h('h3', title), h('span.amt.num', money(Math.abs(x.amount ?? 0)))),
+      h('div.sh-meta',
+        x.user ? [avatar(x.user), h('b', nameOf(x.user))] : null,
+        x.day ? h('span', dayText(x.day)) : null,
+        x.slot ? h('span', SLOT[x.slot].label.toLowerCase()) : null,
+        x.seqs ? h('span', `ASSD ${x.seqs.join(', ')}`) : x.seq ? h('span', `ASSD ${x.seq}`) : null),
+      evidence(x),
+      h('p', describe(x)),
+      x.slot && byId.has(`${x.day}|${x.slot}`) && section !== 'shift'
+        ? h('div', h('button.sh-link', { type: 'button', onclick: () => go('shift', `${x.day}|${x.slot}`) }, 'Open the shift')) : null,
+      x.severity === 'info' && !x.answer ? h('div.sh-done', h('span', { style: 'color:var(--ink-2)' }, 'Explained by the rules; no answer needed'))
+        : x.answer ? h('div.sh-done',
+          h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''} (${x.answer.by})`),
+          h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change'))
+          : h('div.sh-answers', note, ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said));
+  }
+
+  function exceptionsView(v) {
+    const all = data.exceptions;
+    const need = all.filter((x) => x.severity !== 'info');
+    const done = need.filter((x) => x.answer).length;
+    const frac = need.length ? done / need.length : 1;
+    const groups = data.groups.filter((g) => all.some((x) => x.group === g.id));
+    const shown = all
+      .filter((x) => filter === 'all' || x.group === filter)
+      .filter((x) => showAnswered || !x.answer || x.severity === 'info')
+      .sort((a, b) => (Boolean(a.answer) - Boolean(b.answer))
+        || ['critical', 'warning', 'info'].indexOf(a.severity) - ['critical', 'warning', 'info'].indexOf(b.severity)
+        || (a.day < b.day ? 1 : -1));
+    const ring = svg('svg.sh-ring', { viewBox: '0 0 64 64', 'aria-hidden': 'true' },
+      svg('circle', { cx: 32, cy: 32, r: 26, stroke: 'var(--surface-2)' }),
+      svg('circle', { cx: 32, cy: 32, r: 26, stroke: 'var(--sh-good)', 'stroke-linecap': 'round', 'stroke-dasharray': `${163.4 * frac} 163.4`, transform: 'rotate(-90 32 32)' }));
+    mount(v,
+      h('section.card',
+        h('div.sh-progress', ring,
+          h('div', { style: 'flex:1;min-width:220px' },
+            h('h2', { style: 'margin:0' }, `${done} of ${need.length} answered`),
+            h('p.sh-sub', 'Everything that does not agree, grouped by what went wrong. Grey ones the rules explained by themselves: look them over, no answer needed.')),
+          done ? h('label.check', h('input', { type: 'checkbox', checked: showAnswered, onchange: (e) => { showAnswered = e.target.checked; paint(); } }), ` Show the ${done} answered`) : null),
+        h('div.sh-filters',
+          h('button', { type: 'button', 'aria-pressed': String(filter === 'all'), onclick: () => { filter = 'all'; paint(); } }, 'All ', h('b', String(all.length))),
+          groups.map((g) => h('button', { type: 'button', 'aria-pressed': String(filter === g.id), onclick: () => { filter = g.id; paint(); } },
+            h('i', { style: `background:${SEVERITY_COLOUR[g.severity]}` }), g.title.split(/[:—]/)[0].trim(), ' ', h('b', String(all.filter((x) => x.group === g.id).length)))))),
+      shown.length ? h('div.sh-exgrid', shown.map(exceptionCard))
+        : h('section.card', h('p', '✓ Nothing waiting here. Every card and MoMo payment and every drawer count in these days agrees, or has an answer.')));
+  }
+
+  // ------------------------------------------------------------ people --
+
+  function peopleView(v) {
+    const rows = data.people.map((p) => ({ ...p, mine: shifts.filter((s) => s.user === p.user) })).filter((p) => p.mine.length);
+    const widest = Math.max(1, ...rows.map((p) => Math.abs(p.variance)));
+    mount(v, h('section.card',
+      h('div.sh-cardhead', h('div', h('h2', 'Who held the drawer'),
+        h('p.sh-sub', 'Each person’s shifts, the cash and cards they took, and how their drawer counts came out. Every square is a shift: tap one to open it.'))),
+      h('div.sh-people', rows.map((p) => {
+        const open = data.exceptions.filter((x) => x.user === p.user && x.severity !== 'info' && !x.answer).length;
+        return h('div.sh-person',
+          h('div.top', avatar(p.user, true),
+            h('div', h('b', nameOf(p.user)), h('small', `${p.shifts} shift${p.shifts === 1 ? '' : 's'}`)),
+            h('span', { style: 'margin-left:auto' }, chip(p.counted ? p.variance : null, false))),
+          h('div.sh-diverge', { title: `Net drawer variance ${signed(p.variance)}` },
+            h('b', { style: `${p.variance < 0 ? 'right:50%;background:var(--sh-bad)' : 'left:50%;background:var(--sh-warn)'};width:${(Math.abs(p.variance) / widest) * 50}%` })),
+          h('div.sh-pstats',
+            h('span', 'Cash', h('b.num', whole(p.cash))),
+            h('span', 'Card + MoMo', h('b.num', whole(p.card))),
+            h('span', 'To answer', h('b', { style: `color:${open ? 'var(--sh-bad-ink)' : 'var(--sh-good-ink)'}` }, String(open)))),
+          h('div.sh-strip', p.mine.map((s) => h('button', {
+            type: 'button', title: `${dayText(s.day)} · ${SLOT[s.slot].label}`, style: `background:${TONE[tone(s)]}`, onclick: () => go('shift', s.id),
+          }, dayText(s.day, { day: 'numeric' })))));
+      }))));
+  }
+
+  // ------------------------------------------------------------- files --
+
+  function filesView(v) {
     const c = data.coverage || {};
     const last = (kind) => data.uploads.find((u) => u.kind === kind);
-    const slot = (title, what, accept, kind, covered) => {
+    const FILES = [
+      { kind: 'journal', title: 'ASSD detail journal', ext: 'PDF', colour: 'var(--series-8)', accept: '.pdf,application/pdf', cover: c.journal,
+        what: '“Detail Journal of every Transaction”, printed to PDF. Run it one day past the last shift you want. Guest names and addresses are removed on this computer before anything is sent.' },
+      { kind: 'terminal', title: 'Card terminal report', ext: 'CSV', colour: 'var(--series-1)', accept: '.csv,text/csv', cover: c.terminal,
+        what: 'The CSV from the bank’s card portal: every tap, approved or declined, to the second.' },
+      { kind: 'bank', title: 'GTBank statement', ext: 'XLS', colour: 'var(--series-6)', accept: '.xls,.xlsx,.htm,.html', cover: c.bank,
+        what: 'The .xls from internet banking (the Finacle XLSX works too). Card settlements, MoMo and commission are read; salaries and suppliers stay on this computer.' },
+    ];
+
+    const drop = (f) => {
       const said = h('p.small');
-      const input = h('input', { type: 'file', accept });
-      input.addEventListener('change', async () => {
-        const file = input.files?.[0];
-        if (!file) return;
+      const input = h('input', { type: 'file', accept: f.accept });
+      const card = h('div.sh-drop', { style: `--fc:${f.colour}` },
+        h('span.fi', f.ext), h('h3', f.title), h('p', f.what),
+        h('p', { style: 'color:var(--muted)' }, f.cover ? `Loaded: ${shortDay(f.cover.from)} to ${shortDay(f.cover.to)}` : 'Nothing loaded yet.'),
+        last(f.kind) ? h('p', { style: 'color:var(--muted)' }, `Last: ${last(f.kind).name || 'a file'}, ${String(last(f.kind).at).slice(0, 16)} by ${last(f.kind).by}. ${last(f.kind).note || ''}`) : null,
+        data.canUpload ? h('label.go', input, 'Choose the file') : h('p', { style: 'color:var(--muted)' }, 'An owner loads this file.'),
+        said);
+      const run = async (file) => {
+        if (!file || !data.canUpload) return;
         input.disabled = true;
         said.className = 'small';
         said.textContent = 'Reading the file on this computer…';
         try {
           let result;
-          if (kind === 'journal') {
+          if (f.kind === 'journal') {
             const { lines, pages } = await readJournalPdf(file, (t) => { said.textContent = t; });
             said.textContent = `Read ${pages} pages. Sending the amounts to Insight…`;
             result = await api('/shifts/journal', { method: 'POST', body: { lines, name: file.name } });
-          } else if (kind === 'bank') {
+          } else if (f.kind === 'bank') {
             const { rows, leftOut } = await readStatement(file);
             said.textContent = `Sending ${num(rows.length - 1)} card and MoMo rows to Insight…`;
             result = await api('/shifts/bank', { method: 'POST', body: { rows, leftOut, name: file.name } });
@@ -145,457 +791,37 @@ export async function renderShifts(root, { range }) {
           said.textContent = err.message;
           input.disabled = false;
         }
-      });
-      const prev = last(kind);
-      return h('div.upload',
-        h('h3', title),
-        h('p.small.muted', what),
-        h('label.field', 'Choose the file', input),
-        h('p.small', covered),
-        prev ? h('p.small.muted', `Last loaded ${String(prev.at).slice(0, 16)} by ${prev.by}: ${prev.note || ''}`) : null,
-        said);
+      };
+      input.addEventListener('change', () => run(input.files?.[0]));
+      if (data.canUpload) {
+        card.addEventListener('dragover', (e) => { e.preventDefault(); card.classList.add('over'); });
+        card.addEventListener('dragleave', () => card.classList.remove('over'));
+        card.addEventListener('drop', (e) => { e.preventDefault(); card.classList.remove('over'); run(e.dataTransfer?.files?.[0]); });
+      }
+      return card;
     };
-    return h('details.card.uploads', { open: !c.journal },
-      h('summary', h('strong', 'Load files'), h('span.small.muted', ' · ',
-        [c.journal ? `journal to ${shortDay(c.journal.to)}` : 'no journal',
-          c.terminal ? `terminal to ${shortDay(c.terminal.to)}` : 'no terminal report',
-          c.bank ? `bank to ${shortDay(c.bank.to)}` : 'no bank statement'].join(' · '))),
-      h('p.small.muted',
-        'Files are opened on this computer. Only amounts, times and ASSD user names are sent: guests’ names and addresses are taken '
-        + 'out of the journal before it leaves the page, and the statement’s salaries, suppliers and transfers are never sent. '
-        + 'Loading the same file twice changes nothing; loading a newer one updates what it covers.'),
-      h('div.grid.three',
-        slot('ASSD detail journal', '“Detail Journal of every Transaction”, printed to PDF. Run it one day past the last shift you want.',
-          '.pdf,application/pdf', 'journal',
-          c.journal ? `Loaded: ${shortDay(c.journal.from)} – ${shortDay(c.journal.to)}` : 'Nothing loaded yet.'),
-        slot('Card terminal report', 'The CSV from the bank’s merchant portal: every tap, approved or declined, to the second.',
-          '.csv,text/csv', 'terminal',
-          c.terminal ? `Loaded: ${shortDay(c.terminal.from)} – ${shortDay(c.terminal.to)}` : 'Nothing loaded yet.'),
-        slot('GTBank statement', 'The statement from GTBank internet banking, as the .xls it downloads (the Finacle XLSX works too). Card settlements, MoMo and commission are read from it.',
-          '.xls,.xlsx,.htm,.html', 'bank',
-          c.bank ? `Loaded: ${shortDay(c.bank.from)} – ${shortDay(c.bank.to)}` : 'Nothing loaded yet.')));
+
+    // Coverage over the month the window ends in.
+    const end = range.to;
+    const y = Number(end.slice(0, 4));
+    const m = Number(end.slice(5, 7));
+    const length = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const monthDays = Array.from({ length }, (_, k) => `${end.slice(0, 7)}-${String(k + 1).padStart(2, '0')}`);
+    const inCover = (cover, d) => cover && d >= cover.from && d <= cover.to;
+    const cover = h('div.sh-cover', { style: `grid-template-columns: 8rem repeat(${length}, minmax(0, 1fr))` },
+      h('span'), monthDays.map((d) => h('span.h', String(Number(d.slice(8))))),
+      FILES.map((f) => [h('span', f.title.replace('ASSD detail ', 'ASSD ').replace('Card terminal report', 'Terminal')),
+        monthDays.map((d) => h('span.d', { title: shortDay(d), style: inCover(f.cover, d) ? `background:${f.colour}` : '' }))]));
+
+    mount(v,
+      h('p.sh-sub', 'Files are opened on this computer. Only amounts, times and ASSD user names are sent. Loading the same file twice changes nothing; a newer one updates the days it covers. You can also drop a file on its box.'),
+      h('div.sh-files', FILES.map(drop)),
+      h('section.card',
+        h('div.sh-cardhead', h('div', h('h2', `What ${dayText(end, { month: 'long', year: 'numeric' })} has so far`),
+          h('p.sh-sub', 'Which days each file covers. A shift is fully checked only where all three overlap.'))),
+        h('div', { style: 'overflow-x:auto' }, cover)));
   }
 
-  // ------------------------------------------------------------- tiles --
-
-  /** A figure with a line under it. No change arrow: there is nothing to compare a day's cash with. */
-  function tile({ label, value, unit, note }) {
-    const shown = value == null ? '—' : unit === 'money' ? money(value) : num(value);
-    return h('div.tile', h('div.label', label), h('div.value', shown), note ? h('div.note', note) : null);
-  }
-
-  function summaryTiles() {
-    const t = data.totals;
-    const recorded = t.card;
-    return h('div.grid.four', { style: { marginBottom: '1rem' } },
-      tile({ label: 'Cash received', value: t.cash, unit: 'money', note: `${num(t.shifts)} shifts · ${money(t.drawerOut)} left the drawer` }),
-      tile({ label: 'Card + MoMo in ASSD', value: recorded, unit: 'money', note: `${money(t.received)} arrived on the terminal and by MoMo` }),
-      tile({ label: 'Drawer variance', value: t.counted ? t.variance : null, unit: 'money',
-        note: t.counted ? `${num(t.counted)} of ${num(t.shifts)} shifts with an opening and closing count` : 'No counts in these days yet' }),
-      tile({ label: 'Exceptions waiting', value: t.open, note: t.open ? 'Card and MoMo differences without an answer' : 'Every difference answered or explained' }));
-  }
-
-  // -------------------------------------------------------------- days --
-
-  function daysView() {
-    const day = data.days.find((d) => d.day === chosenDay) || data.days[0];
-    return [
-      h('div.daystrip', data.days.map((d) => {
-        const mark = !d.shifts.length ? '·' : d.totals.critical ? '!' : d.totals.exceptions ? 'i' : '✓';
-        const tone = !d.shifts.length ? 'none' : d.totals.critical ? 'critical' : d.totals.exceptions ? 'warning' : 'good';
-        return h('button.daychip', {
-          class: `${tone}${d.day === day.day ? ' on' : ''}`,
-          onclick: () => { chosenDay = d.day; paint(); },
-          title: d.shifts.length ? `${d.totals.exceptions} exceptions` : 'No shifts loaded',
-        }, h('span.small', weekday(d.day)), h('strong', shortDay(d.day)), h('span.mark', mark));
-      })),
-      dayView(day),
-    ];
-  }
-
-  function dayView(d) {
-    if (!d.shifts.length) return h('div.card', h('h3', longDay(d.day)), h('p.muted', 'No shifts from the journal on this day.'));
-    const diff = d.totals.received - d.totals.cardRecorded;
-    return [
-      h('h2.dayhead', longDay(d.day)),
-      h('div.grid.three', d.shifts.map(shiftCard)),
-      h('div.card',
-        h('h3', 'The day against the money that arrived'),
-        table([
-          { label: '', get: (r) => r[0] },
-          { label: 'Amount', num: true, get: (r) => r[1] },
-          { label: '', get: (r) => h('span.small.muted', r[2]) },
-        ], [
-          ['Card + MoMo recorded in ASSD', money(d.totals.cardRecorded), `${d.shifts.length} shifts`],
-          ['Approved on the terminal, and MoMo received', money(d.totals.received), 'by the shift that was open when it was paid'],
-          ['Difference', signed(diff), diff === 0 ? 'every payment found' : 'see the exceptions below'],
-          ['Bank commission on the day’s cards', money(d.totals.commission), 'a bank charge, never a shift’s shortfall'],
-        ]),
-        laundryLine(d)),
-      d.shifts.map(matchCard),
-      d.shifts.map(expenseCard),
-      dayExceptions(d),
-    ];
-  }
-
-  function laundryLine(d) {
-    const l = d.laundry;
-    if (!l.assd && l.system == null) return null;
-    if (l.system == null) {
-      return h('p.small.muted', `Laundry in ASSD: ${money(l.assd)}. The laundry system has nothing for this day in Insight, so it could not be compared.`);
-    }
-    const gap = l.assd - l.system;
-    return h('p.small', gap === 0 ? '✓ ' : '! ',
-      `Laundry: ${money(l.assd)} in ASSD, ${money(l.system)} in the laundry system`,
-      gap === 0 ? ' — they agree.' : ` — ${money(Math.abs(gap))} ${gap > 0 ? 'more in ASSD' : 'more in the laundry system'}.`);
-  }
-
-  function shiftCard(s) {
-    const r = s.register || {};
-    const variance = r.variance;
-    const checks = [];
-    if (variance == null) checks.push(['info', 'i', s.open ? 'The journal ends before this shift’s closing count' : 'No closing count in ASSD for this shift']);
-    else if (variance === 0) checks.push(['good', '✓', `The drawer agrees with ${r.closingFrom === 'typed' ? 'the recount' : 'ASSD’s closing count'}`]);
-    else checks.push([variance < 0 ? 'critical' : 'warning', '!', `Drawer ${variance > 0 ? 'over' : 'short'} by ${money(Math.abs(variance))}`]);
-    if (r.handoverGap) {
-      checks.push(['warning', '!', `Opened ${money(Math.abs(r.handoverGap.amount))} ${r.handoverGap.amount < 0 ? 'below' : 'above'} ${nameOf(r.handoverGap.from)}’s closing count`]);
-    }
-    const lines = s.cardLines;
-    if (!lines) checks.push(['info', '·', 'No card or MoMo this shift']);
-    else if (s.cardFound === lines) checks.push(['good', '✓', `Card + MoMo ${money(s.card)} · ${lines} of ${lines} found`]);
-    else checks.push(['warning', '!', `Card + MoMo ${money(s.card)} · ${s.cardFound} of ${lines} found`]);
-    const exp = s.expense;
-    if (exp?.sheetTotal != null || r.expenses) {
-      const sheet = exp?.sheetTotal;
-      const odoo = exp?.odooTotal;
-      const agree = sheet != null && odoo != null && sheet === odoo;
-      checks.push([agree ? 'good' : (sheet != null && odoo != null ? 'warning' : 'info'), agree ? '✓' : 'i',
-        `Expenses ${money(sheet ?? r.expenses)}${odoo != null ? ` · Odoo ${money(odoo)}` : exp?.poNumbers ? ' · Odoo not read yet' : ' · no PO numbers yet'}`]);
-    }
-    if (s.laundry) checks.push(['info', 'i', `Laundry ${money(s.laundry)}${s.laundryCash ? `, ${money(s.laundryCash)} in cash` : ''}`]);
-    const corrected = (s.moves || []).filter((m) => m.kind === 'corrected');
-    for (const m of corrected) {
-      checks.push(['info', 'i', `A movement of ${money(m.amount)} was keyed and put back by ${nameOf(m.reversedByUser)}`]);
-    }
-    if (s.exceptions) checks.push(['warning', '!', `${s.exceptions} exception${s.exceptions === 1 ? '' : 's'} below`]);
-
-    const outNote = !s.drawerOut ? 'nothing moved out'
-      : [r.expenses ? `${money(r.expenses)} expenses${r.expensesFrom === 'sheet' ? ' (sheet)' : ''}` : null,
-        r.toSafe ? `${money(r.toSafe)} to the safe` : null,
-        r.unlabelled ? `${money(r.unlabelled)} not labelled` : null].filter(Boolean).join(' · ');
-    const counted = r.closingFrom === 'typed' ? `recounted by ${r.countedBy}`
-      : r.closingFrom === 'assd' ? `ASSD count${r.receiptsAtClose ? `, incl. ${money(r.receiptsAtClose)} receipts` : ''}` : '';
-
-    return h('div.card.shift',
-      h('div.shifthead',
-        h('div', h('strong', nameOf(s.user)), h('span.muted', ` ${SLOT_LABEL[s.slot]} · ${SLOT_HOURS[s.slot]}`)),
-        s.double ? h('span.pill', 'covered two slots') : null,
-        s.open ? h('span.pill.warning', 'journal ends here') : null),
-      h('dl.ledger',
-        row('Opening count', r.opening == null ? '—' : money(r.opening),
-          r.openingFrom === 'typed' ? 'typed' : r.openingFrom === 'assd' ? 'ASSD, at hand-over' : r.openingFrom === 'carried' ? 'the last count' : ''),
-        row('+ Cash taken', money(s.cash), s.laundryCash ? `includes ${money(s.laundryCash)} laundry` : ''),
-        row('− Moved out of the drawer', money(s.drawerOut), outNote),
-        row('= Should be in the drawer', r.expected == null ? '—' : money(r.expected)),
-        row('Closing count', r.closing == null ? '—' : money(r.closing), counted),
-        row('Variance', variance == null ? '—' : signed(variance), '', variance ? (variance > 0 ? 'over' : 'short') : '')),
-      modesList(s),
-      h('ul.checks', checks.map(([tone, mark, text]) => h(`li.${tone}`, h('span.mark', mark), text))),
-      movesList(s),
-      countForm(s));
-  }
-
-  /** How the shift was paid, in ASSD's own words. */
-  function modesList(s) {
-    const modes = Object.entries(s.modes || {}).filter(([, v]) => v);
-    if (!modes.length) return null;
-    const word = (label) => {
-      const t = label.toUpperCase();
-      if (/\bCASH\b/.test(t)) return 'Cash';
-      if (/CR\.|CREDIT CARD/.test(t)) return 'Card and MoMo';
-      if (/PRE-?BAN/.test(t)) return 'Prepaid by bank transfer';
-      if (/PREPAID CC/.test(t)) return 'Prepaid by card online';
-      return label;
-    };
-    return h('details.modes',
-      h('summary.small', `Taken by every method: ${money(modes.reduce((t, [, v]) => t + v, 0))}`),
-      h('dl.ledger.small', modes.map(([label, v]) => row(word(label), money(v), label))),
-      h('p.small.muted', 'Only cash goes into the drawer. Card and MoMo are checked against the terminal and the bank; prepayments were paid before the guest arrived.'));
-  }
-
-  /** Every Cash Movement out of the drawer, and what it was. */
-  function movesList(s) {
-    const moves = s.moves || [];
-    if (!moves.length) return null;
-    const what = (m) => ({
-      expenses: 'Expenses — receipts counted before it',
-      safe: 'To the safe — notes counted before it',
-      split: `${money(m.expenses)} expenses and ${money(m.safe)} to the safe, as counted before it`,
-      part: `${money(m.expenses)} expenses as counted; ${money(m.amount - m.expenses)} not labelled`,
-      unlabelled: 'Not labelled in ASSD: no count before it said what it was',
-      corrected: `Keyed in error and put back by ${nameOf(m.reversedByUser)} (ASSD ${m.reversedBy})`,
-      returned: 'Put back into the drawer',
-    })[m.kind] || m.kind;
-    return h('details.moves',
-      h('summary.small', `How the cash moved: ${moves.length} movement${moves.length === 1 ? '' : 's'}`),
-      h('ul.movelist', moves.map((m) => h('li',
-        h('span', m.kind === 'corrected' ? h('s', money(m.amount)) : h('strong', money(m.amount))),
-        h('span.small', ` ${what(m)} · ${nameOf(m.user)}, ASSD ${m.seq}`)))),
-      h('p.small.muted', 'Every movement goes from the front drawer to the back office. ASSD records only the amount, so what a movement was comes from the Money Count done just before it: its notes are cash for the safe, its “Total Expenses PAID” line is the receipts. Typing the expense sheet’s total settles anything not labelled.'));
-  }
-
-  function row(label, value, note = '', tone = '') {
-    return [h('dt', label, note ? h('span.small.muted', ` ${note}`) : null), h(`dd${tone ? `.${tone}` : ''}`, value)];
-  }
-
-  /**
-   * A recount, typed by a person. ASSD's own closing count is used unless
-   * one is typed: this is for a spot check, or for a count ASSD got wrong.
-   */
-  function countForm(s) {
-    if (s.open) return null;
-    const r = s.register || {};
-    const closing = h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal',
-      value: r.closingFrom === 'typed' ? cedis(r.closing) : '', placeholder: r.closing != null ? cedis(r.closing) : '0.00' });
-    const needOpening = r.openingFrom == null || r.openingFrom === 'typed';
-    const opening = h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal',
-      value: r.openingFrom === 'typed' ? cedis(r.opening) : '', placeholder: 'only if ASSD has no opening count' });
-    const note = h('input', { type: 'text', maxlength: '400', value: r.note || '', placeholder: 'optional' });
-    const said = h('span.small');
-    return h('details.countform',
-      h('summary.small', r.closingFrom === 'typed' ? 'Change the recount' : 'Recount the drawer (optional)'),
-      h('p.small.muted', 'ASSD’s own closing count is used unless a recount is typed here — for a spot check, or when ASSD’s count is wrong. Clear the box and save to go back to ASSD’s count.'),
-      h('label.field', 'Recounted closing (GH₵)', closing),
-      needOpening ? h('label.field', 'Opening (GH₵)', opening) : null,
-      h('label.field', 'Note', note),
-      h('button.btn.primary', {
-        onclick: async () => {
-          said.textContent = 'Saving…';
-          try {
-            await api('/shifts/count', { method: 'POST', body: { day: s.day, slot: s.slot, closing: closing.value, opening: needOpening ? opening.value : null, note: note.value } });
-            await load();
-          } catch (err) { said.textContent = err.message; }
-        },
-      }, 'Save the recount'), ' ', said);
-  }
-
-  function matchCard(s) {
-    if (!s.lines.length) return null;
-    const how = {
-      exact: 'Matched', late: 'Matched · just outside the hours', together: 'Paid together with another line',
-      parts: 'Paid in parts', 'by-day': 'Matched to the bank by day', regrouped: 'Same money, split differently', corrected: 'Corrected',
-    };
-    return h('details.card.matches',
-      h('summary', h('strong', `${nameOf(s.user)} · ${SLOT_LABEL[s.slot]}`), h('span.muted', ` · ${s.lines.length} card and MoMo lines in ASSD`)),
-      table([
-        { label: 'ASSD no.', get: (l) => h('span.small', String(l.seq)) },
-        { label: 'Keyed by', get: (l) => nameOf(l.user) },
-        { label: 'Amount', num: true, get: (l) => money(l.amount) },
-        { label: 'Paid', get: (l) => (l.events.length ? l.events.map((e) => h('div.small',
-          `${e.kind === 'momo' ? 'MoMo' : `Card${e.last4 ? ` …${e.last4}` : ''}`} ${money(e.amount)} · ${when(e.at, e.day)}`)) : h('span.muted', '—')) },
-        { label: 'Status', get: (l) => (l.exception && !l.events.length
-          ? h('span.pill.critical', '! See exceptions')
-          : l.exception ? h('span.pill.warning', `! ${l.how === 'regrouped' ? how.regrouped : 'See exceptions'}`)
-            : l.events.length ? h('span.pill.good', `✓ ${how[l.how] || 'Matched'}`) : h('span.pill', l.how ? how[l.how] : '—')) },
-      ], s.lines));
-  }
-
-  function expenseCard(s) {
-    if (!s.drawerOut && !s.expense) return null;
-    const exp = s.expense || {};
-    const total = h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal', value: cedis(exp.sheetTotal), placeholder: '0.00' });
-    const pos = h('input', { type: 'text', value: exp.poNumbers || '', placeholder: 'P00412, P00413' });
-    const said = h('span.small');
-    const save = async (pull) => {
-      said.textContent = pull ? 'Saving and asking Odoo…' : 'Saving…';
-      try {
-        await api('/shifts/expense', { method: 'POST', body: { day: s.day, slot: s.slot, sheetTotal: total.value, poNumbers: pos.value, pull } });
-        await load();
-      } catch (err) { said.textContent = err.message; }
-    };
-    const orders = exp.odoo?.orders || [];
-    const unknown = exp.odoo?.unknown || [];
-    const assd = s.register?.expenses ?? s.expensesCounted;
-    const sheet = exp.sheetTotal;
-    const odoo = exp.odooTotal;
-    const verdict = sheet == null ? null
-      : odoo == null ? 'The PO numbers have not been read from Odoo yet.'
-        : sheet === odoo ? `The expense sheet and Odoo agree at ${money(sheet)}.`
-          : `The expense sheet says ${money(sheet)} and Odoo says ${money(odoo)}: ${money(Math.abs(sheet - odoo))} ${sheet > odoo ? 'is not in Odoo' : 'more in Odoo than on the sheet'}.`;
-    return h('details.card.expenses', { open: Boolean(sheet != null && odoo != null && sheet !== odoo) },
-      h('summary', h('strong', `Expenses · ${nameOf(s.user)} · ${SLOT_LABEL[s.slot]}`),
-        h('span.muted', ` · ${money(s.drawerOut)} left the drawer in ASSD${sheet != null ? ` · sheet ${money(sheet)}` : ''}${odoo != null ? ` · Odoo ${money(odoo)}` : ''}`)),
-      h('p.small.muted', 'Type the expense sheet’s total for this shift and the Odoo PO numbers behind it. Insight reads each order from Odoo — vendor, total, state — without changing anything there.'),
-      h('div.grid.three',
-        h('label.field', 'Expense-sheet total (GH₵)', total),
-        h('label.field', 'Odoo PO numbers', pos),
-        h('div', { style: { alignSelf: 'end' } },
-          h('button.btn.primary', { onclick: () => save(true) }, 'Save and read from Odoo'), ' ',
-          h('button.btn', { onclick: () => save(false) }, 'Save'), ' ', said)),
-      orders.length ? table([
-        { label: 'PO', get: (o) => o.name },
-        { label: 'Vendor (Odoo)', get: (o) => o.vendor },
-        { label: 'Total', num: true, get: (o) => money(o.total), foot: (list) => money(list.reduce((t, o) => t + o.total, 0)) },
-        { label: 'State', get: (o) => `${o.state}${o.billed ? ` · ${o.billed.replace(/_/g, ' ')}` : ''}` },
-        { label: 'Ordered', get: (o) => o.orderedOn || '' },
-      ], orders, { footer: orders }) : null,
-      unknown.length ? banner('warning', `Odoo does not know ${unknown.join(', ')}. Check the numbers.`) : null,
-      verdict ? h('p', verdict) : null,
-      h('p.small.muted', `Left the drawer in ASSD: ${money(s.drawerOut)}. `
-        + (assd == null ? 'Until the sheet total is typed it is not split between expenses and the safe. '
-          : `Of that, ${money(assd)} is counted as expenses (${s.register?.expensesFrom === 'sheet' ? 'the sheet' : 'ASSD’s hand-over count'}) and the rest as cash to the safe. `)
-        + 'If an expense was paid from the drawer but never moved in ASSD, the shift will count short by exactly that amount.'),
-      exp.pulledAt ? h('p.small.muted', `Read from Odoo ${String(exp.pulledAt).slice(0, 16)}.`) : null);
-  }
-
-  function dayExceptions(d) {
-    const list = data.exceptions.filter((x) => x.day === d.day);
-    if (!list.length) return null;
-    return h('div.card',
-      h('h3', `Exceptions on ${shortDay(d.day)}`),
-      list.map(exceptionRow));
-  }
-
-  // -------------------------------------------------------- exceptions --
-
-  function exceptionsView() {
-    const list = data.exceptions.filter((x) => showAnswered || !x.answer);
-    const answered = data.exceptions.filter((x) => x.answer).length;
-    return [
-      h('div.card',
-        h('p.sub', 'Every card and MoMo payment that does not agree between ASSD, the card terminal and the bank, grouped by what '
-          + 'went wrong. The first three groups are money that may be missing; the last is what the rules explained on their '
-          + 'own, listed so the explanation can be checked rather than trusted.'),
-        answered ? h('label.check', h('input', { type: 'checkbox', checked: showAnswered, onchange: (e) => { showAnswered = e.target.checked; paint(); } }),
-          ` Show the ${answered} already answered`) : null),
-      data.groups.map((g) => {
-        const items = list.filter((x) => x.group === g.id);
-        if (!items.length) return null;
-        const total = items.reduce((t, x) => t + Math.abs(x.amount || 0), 0);
-        return h(`div.card.exgroup.${g.severity}`,
-          h('div.exhead', severityPill(g.severity), h('h3', g.title), h('span.muted', `${items.length} · ${money(total)}`)),
-          h('p.small.muted', g.help),
-          items.map(exceptionRow));
-      }),
-      list.length ? null : h('div.card', h('p', '✓ Nothing waiting. Every card and MoMo payment in these days agrees, or has an answer.')),
-    ];
-  }
-
-  function exceptionRow(x) {
-    const select = h('select', {},
-      h('option', { value: '' }, x.answer ? '— clear the answer —' : 'Answer…'),
-      ANSWERS.map((a) => h('option', { value: a, selected: x.answer?.answer === a }, a)));
-    const note = h('input', { type: 'text', maxlength: '600', value: x.answer?.note || '', placeholder: 'What happened (optional)' });
-    const said = h('span.small');
-    return h(`div.exrow.${x.severity}${x.answer ? '.answered' : ''}`,
-      h('div.exmain',
-        h('div', h('strong', money(x.amount)), ' ', h('span.muted', [
-          shortDay(x.day), x.slot ? SLOT_LABEL[x.slot].toLowerCase() : null, x.user ? nameOf(x.user) : null, x.seqs ? `ASSD ${x.seqs.join(', ')}` : x.seq ? `ASSD ${x.seq}` : null,
-        ].filter(Boolean).join(' · '))),
-        h('p', describe(x)),
-        x.answer ? h('p.small.good-text', `✓ ${x.answer.answer}${x.answer.note ? ` — ${x.answer.note}` : ''} (${x.answer.by}, ${String(x.answer.at).slice(0, 10)})`) : null),
-      h('div.exanswer', select, note,
-        h('button.btn', {
-          onclick: async () => {
-            said.textContent = 'Saving…';
-            try {
-              await api('/shifts/answer', { method: 'POST', body: { key: x.key, answer: select.value, note: note.value } });
-              await load();
-            } catch (err) { said.textContent = err.message; }
-          },
-        }, 'Save'), said));
-  }
-
-  function describe(x) {
-    const e = x.event;
-    const paid = e ? `${e.kind === 'momo' ? 'MoMo' : `card${e.last4 ? ` …${e.last4}` : ''}`} ${money(e.amount)}` : '';
-    switch (x.kind) {
-      case 'failed': return `Declined on the terminal at ${when(e.at)} (${e.status || 'not approved'}) and never approved afterwards, yet ASSD has it as paid by card.`;
-      case 'not-found': return 'ASSD has this as card or MoMo. No approved card payment, MoMo receipt or bank credit of this amount was found near the shift.';
-      case 'zero': return 'A card payment of nothing: a line keyed with no amount.';
-      case 'double-charge': return `The same card …${e.last4} was charged ${money(e.amount)} twice, ${x.minutesApart} minutes apart (${time(x.twin?.at)} and ${time(e.at)}). ASSD has it once.`;
-      case 'transposition': return `The terminal took ${paid} at ${time(e.at)}; ASSD has ${money(x.amount)} — the same digits in another order (${signed(x.difference)}).`;
-      case 'decimal': return `The terminal took ${paid} at ${time(e.at)}; ASSD has ${money(x.amount)} — out by a factor of ten.`;
-      case 'keying': return `The terminal took ${paid} at ${time(e.at)}; ASSD has ${money(x.amount)} — one digit different (${signed(x.difference)}).`;
-      case 'duplicate': return `Keyed twice in this shift (also ASSD ${x.pair}) and paid once.`;
-      case 'not-recorded': return `${e.kind === 'momo' ? 'MoMo received' : 'Card approved on the terminal'} at ${when(e.at, e.day)}${e.last4 ? `, card …${e.last4}` : ''} — not in ASSD.`;
-      case 'never-settled': return `Approved on the terminal ${when(e.at)}, card …${e.last4}, approval ${e.approval}. No bank credit for it six days on.`;
-      case 'reversal': return `The bank took ${money(Math.abs(x.amount))} back from card …${e.last4} (tapped ${shortDay(e.day)}).${x.pairedWith ? ' It answers a refund keyed in ASSD.' : ' No refund of that amount is keyed in ASSD in these days.'}`;
-      case 'refund': return `A card refund keyed in ASSD.${x.pairedWith ? ' The bank reversal for it is on the statement.' : ' No matching reversal on the bank statement yet.'}`;
-      case 'regrouped': return `The shift’s unmatched lines (${x.lines.map((a) => money(a)).join(' + ')}) add up to exactly its unmatched payments (${x.events.map((ev) => money(ev.amount)).join(' + ')}): the same money, split differently.`;
-      case 'other-shift': return `Paid ${e.kind === 'momo' ? 'by MoMo' : 'by card'} at ${when(e.at)}${x.otherShift ? `, on ${nameOf(x.otherShift.user)}’s ${SLOT_LABEL[x.otherShift.slot].toLowerCase()} shift of ${shortDay(x.otherShift.day)}` : ''}, and keyed on this one.`;
-      case 'corrected': return `Keyed and then reversed in the same shift (ASSD ${x.pair}).`;
-      case 'drawer-short':
-      case 'drawer-over': return `Should have held ${money(x.expected)}; ${x.closingFrom === 'typed' ? 'the recount' : 'ASSD’s closing count'} found ${money(x.closing)}.`;
-      case 'handover-gap': return `The first count of this shift found ${money(Math.abs(x.amount))} ${x.amount < 0 ? 'less' : 'more'} than ${nameOf(x.from)}’s closing count. Cash went missing, or was added, between the two counts.`;
-      case 'movement-corrected': return `${nameOf(x.by)} moved ${money(x.amount)} out of the drawer and ${nameOf(x.reversedBy)} put it back (ASSD ${x.reversedSeq}). The net is nothing; the slip is listed so it can be seen.`;
-      case 'bank-only': return `A card credit on the bank statement, card …${e.last4}, tapped ${shortDay(e.day)}, with no record on the terminal report.`;
-      default: return x.kind;
-    }
-  }
-
-  // ---------------------------------------------------------- register --
-
-  function registerView() {
-    const order = ['morning', 'afternoon', 'night'];
-    const shifts = data.days.flatMap((d) => d.shifts)
-      .sort((a, b) => (a.day === b.day ? order.indexOf(a.slot) - order.indexOf(b.slot) : a.day < b.day ? -1 : 1));
-    const running = new Map();
-    const rows = shifts.map((s) => {
-      const v = s.register?.variance;
-      if (v != null) running.set(s.user, (running.get(s.user) || 0) + v);
-      return { s, r: s.register || {}, mtd: running.get(s.user) ?? null };
-    });
-    return h('div.card',
-      h('h3', 'The drawer, from one count to the next'),
-      h('p.sub', 'All from ASSD: the Money Count at each hand-over, the cash taken, and every Cash Movement out of the drawer, '
-        + 'labelled as expenses or cash to the safe by the count done just before it. A difference lands on the person who was '
-        + 'holding the drawer and on nobody else, and is the same figure ASSD books as a deficit or surplus. '
-        + 'A closing marked * is a recount typed here.'),
-      table([
-        { label: 'Shift', get: ({ s }) => h('span', { style: { whiteSpace: 'nowrap' } }, `${weekday(s.day)} ${shortDay(s.day)} · ${{ morning: 'AM', afternoon: 'PM', night: 'Night' }[s.slot]}`) },
-        { label: 'Person', get: ({ s }) => nameOf(s.user) },
-        { label: 'Opening count', num: true, get: ({ r }) => (r.opening == null ? '—' : money(r.opening)) },
-        { label: '+ Cash taken', num: true, get: ({ s }) => money(s.cash) },
-        { label: '− Expenses', num: true, get: ({ r }) => (r.expenses ? money(r.expenses) : '') },
-        { label: '− To the safe', num: true, get: ({ r }) => (r.toSafe ? money(r.toSafe) : '') },
-        { label: '− Not labelled', num: true, get: ({ r }) => (r.unlabelled ? money(r.unlabelled) : '') },
-        { label: '= Should hold', num: true, get: ({ r }) => (r.expected == null ? '—' : money(r.expected)) },
-        { label: 'Closing count', num: true, get: ({ r }) => (r.closing == null ? '—' : `${money(r.closing)}${r.closingFrom === 'typed' ? ' *' : ''}`) },
-        { label: 'Variance', num: true, get: ({ r }) => signed(r.variance) },
-        { label: 'Person to date', num: true, get: ({ mtd }) => (mtd == null ? '' : signed(mtd)) },
-      ], rows));
-  }
-
-  // ------------------------------------------------------------ people --
-
-  function peopleView() {
-    const people = data.people;
-    const widest = Math.max(1, ...people.map((p) => Math.abs(p.variance)));
-    return [
-      h('div.card',
-        h('h3', 'Drawer variance by person'),
-        h('p.sub', 'Over and short against the closing counts, per person, over these days. Nothing is plugged: a shift '
-          + 'without a count is not guessed.'),
-        h('div.bars', people.map((p) => h('div.barrow',
-          h('span.who', nameOf(p.user)),
-          h('span.track', h('span.bar', {
-            class: p.variance < 0 ? 'short' : 'over',
-            style: { width: `${Math.round((Math.abs(p.variance) / widest) * 50)}%`, [p.variance < 0 ? 'right' : 'left']: '50%' },
-          })),
-          h('span.val', p.counted ? signed(p.variance) : 'not counted'))))),
-      h('div.card',
-        table([
-          { label: 'Person', get: (p) => nameOf(p.user) },
-          { label: 'Shifts', num: true, get: (p) => num(p.shifts) },
-          { label: 'Cash taken', num: true, get: (p) => money(p.cash) },
-          { label: 'Card + MoMo', num: true, get: (p) => money(p.card) },
-          { label: 'Counted', num: true, get: (p) => `${num(p.counted)} of ${num(p.shifts)}` },
-          { label: 'Over', num: true, get: (p) => money(p.over) },
-          { label: 'Short', num: true, get: (p) => money(p.short) },
-          { label: 'Net', num: true, get: (p) => signed(p.variance) },
-          { label: 'Exceptions', num: true, get: (p) => num(p.exceptions) },
-        ], people)),
-    ];
-  }
+  // Last, once every helper above exists: the first read and paint.
+  await load();
 }
