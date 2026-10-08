@@ -49,13 +49,23 @@ export async function renderAccounts(root) {
                 h('div.small.muted', account.email,
                   account.hasPassword ? '' : ' · no password set yet')),
               ...systems.map((system) => h('td', { style: { textAlign: 'center' } },
-                h('input', {
-                  type: 'checkbox',
-                  checked: account.isOwner || account.access.some((a) => a.systemId === system.id),
-                  disabled: account.isOwner,
-                  title: account.isOwner ? 'An owner reaches everything' : `${account.name} → ${system.label}`,
-                  onchange: (event) => toggle(account, system, event.target.checked),
-                }))),
+                // Insight has two ways in: everything, or Shifts as a
+                // supervisor, with the parts set under Shifts → Till settings.
+                system.id === 'insight' && !account.isOwner
+                  ? h('select', {
+                    title: `${account.name} → Insight`,
+                    onchange: (event) => setInsight(account, event.target.value),
+                  },
+                  h('option', { value: '', selected: !account.access.some((a) => a.systemId === 'insight') }, 'No'),
+                  h('option', { value: 'full', selected: account.access.some((a) => a.systemId === 'insight' && a.role !== 'supervisor') }, 'Everything'),
+                  h('option', { value: 'supervisor', selected: account.access.some((a) => a.systemId === 'insight' && a.role === 'supervisor') }, 'Supervisor'))
+                  : h('input', {
+                    type: 'checkbox',
+                    checked: account.isOwner || account.access.some((a) => a.systemId === system.id),
+                    disabled: account.isOwner,
+                    title: account.isOwner ? 'An owner reaches everything' : `${account.name} → ${system.label}`,
+                    onchange: (event) => toggle(account, system, event.target.checked),
+                  }))),
               h('td',
                 h('button.btn', { onclick: () => setPassword(account) }, 'Set password'),
                 ' ',
@@ -110,9 +120,20 @@ export async function renderAccounts(root) {
     }
   }
 
+  async function setInsight(account, how) {
+    const next = account.access.filter((a) => a.systemId !== 'insight');
+    if (how) next.push({ systemId: 'insight', role: how === 'supervisor' ? 'supervisor' : '' });
+    try {
+      paint(await api(`/accounts/${account.id}/access`, { method: 'POST', body: { access: next } }));
+    } catch (err) {
+      alert(err.message);
+      paint(await api('/accounts'));
+    }
+  }
+
   async function toggle(account, system, wanted) {
     const next = account.access.filter((a) => a.systemId !== system.id);
-    if (wanted) next.push({ systemId: system.id, role: '' });
+    if (wanted) next.push({ systemId: system.id, role: account.access.find((a) => a.systemId === system.id)?.role || '' });
     try {
       paint(await api(`/accounts/${account.id}/access`, { method: 'POST', body: { access: next } }));
     } catch (err) {

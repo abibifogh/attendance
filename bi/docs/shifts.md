@@ -32,6 +32,25 @@ newest shifts loaded. Every other view, and the totals, follow the period.
 - **People**: each person's shifts, cash and cards, and net drawer variance.
 - **Files**: the three uploads (choose a file or drop it on its box), and a
   strip showing which days of the month each file covers.
+- **Closing reports**, **Answers**, **Approvals** and **Till settings**: what
+  staff signed when they closed their shift in HIVE, beside ASSD; what they
+  answered for the shifts that did not agree; supervisors' corrections
+  waiting for an admin; and the settings. See `docs/till.md`.
+
+A supervisor sees only the views an admin gave them, and amounts only if they
+were given those (see `docs/till.md`).
+
+### Exceptions that are one story
+
+Two or more exceptions are often the same money seen twice: GH₵ 203 by MoMo
+that reached the bank on the 2nd and was keyed in ASSD on the 4th shows up
+once as money ASSD does not show and once as a payment that never arrived.
+Tick each of them (**Reconcile with others**) and press **Reconcile
+together**; the bar shows what the ticked ones net to, and a note is required
+when they do not net to nothing. Any number can be reconciled together, and
+each then counts as answered. Where an exception of the same amount pulling
+the other way sits within a week, it is offered under **Possibly the same
+money** with a one-tap reconcile. **Undo** opens them all again.
 
 ## What you load, and how often
 

@@ -109,6 +109,13 @@ export const PERMISSIONS = [
       + 'somebody is owed is settled at sign-off, not read off a screen midweek',
   },
   {
+    key: 'till',
+    label: 'My till',
+    detail: 'Close their own front-desk shift: the drawer, the safe envelopes, the PO for each '
+      + 'expense, the rentals and the front desk checks, signed with their own PIN. And their own '
+      + 'list of shifts that did not agree, to answer. Nothing about anybody else\u2019s',
+  },
+  {
     key: 'lunch',
     label: 'Lunch orders',
     detail: 'Set the week\u2019s meals, hold the link staff order on, and read the count the '

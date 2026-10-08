@@ -71,7 +71,7 @@ const holder = (held, { staffId = 1, startingOut = false } = {}) => (route) => {
   if (route.only && !startingOut) return false;
   if (!route.permission) return true;
   const needed = Array.isArray(route.permission) ? route.permission : [route.permission];
-  return needed.some((p) => allows(p, held) && (p !== 'att_me' || staffId != null));
+  return needed.some((p) => allows(p, held) && (!['att_me', 'till'].includes(p) || staffId != null));
 };
 
 const menuFor = (held, opts) => openGroups(ROUTE_LIST, GROUP_LIST, holder(held, opts));
@@ -84,10 +84,10 @@ const roleHolds = (role, staffId = null) => effectivePermissions({ role, staff_i
 // The table itself
 // ---------------------------------------------------------------------------
 
-test('the app reads out as fourteen groups and thirty-two screens', () => {
-  assert.equal(GROUP_LIST.length, 14);
+test('the app reads out as fifteen groups and thirty-four screens', () => {
+  assert.equal(GROUP_LIST.length, 15);
   const inMenu = ROUTE_LIST.filter((r) => !r.hidden);
-  assert.equal(inMenu.length, 32, 'nothing was dropped, only regrouped');
+  assert.equal(inMenu.length, 34, 'nothing was dropped, only regrouped');
   for (const route of inMenu) {
     assert.ok(route.group, `${route.path} is in the menu with no group`);
     assert.ok(GROUP_LIST.some((g) => g.key === route.group), `${route.path}: no such group`);
@@ -108,14 +108,16 @@ test('nothing hidden claims a group, and nothing sits in a group alone by accide
 // What each role opens
 // ---------------------------------------------------------------------------
 
-test('an administrator reads thirteen links, where they read twenty-three', () => {
+test('an administrator reads fourteen links, where they read twenty-three', () => {
+  // My till among them: an administrator reaches every screen, and one who
+  // works the desk closes a shift like anybody else.
   const menu = labels(roleHolds('admin', 1), { staffId: 1 });
   assert.deepEqual(menu, [
-    'My shifts', 'My pay', 'My documents', 'Attendance', 'Rota', 'People', 'Payroll',
+    'My shifts', 'My till', 'My pay', 'My documents', 'Attendance', 'Rota', 'People', 'Payroll',
     'Letters', 'Directory', 'Handbook', 'First weeks', 'Setup', 'Guide',
   ]);
-  assert.equal(menu.length, 13);
-  assert.equal(ROUTE_LIST.filter((r) => !r.hidden).length, 32, 'and it is the same screens');
+  assert.equal(menu.length, 14);
+  assert.equal(ROUTE_LIST.filter((r) => !r.hidden).length, 34, 'and it is the same screens');
 });
 
 test('a new hire has one more link than they will have next month', () => {
@@ -233,12 +235,12 @@ test('somebody who manages logins but does not set the property up lands on thei
 test('headings appear on a long menu and stay off a short one', () => {
   const long = menuRuns(menuFor(roleHolds('admin', 1), { staffId: 1 }));
   assert.deepEqual(long.map((r) => r.section), ['Mine', 'The day', 'The people', null]);
-  assert.deepEqual(long.map((r) => r.groups.length), [3, 2, 6, 2]);
+  assert.deepEqual(long.map((r) => r.groups.length), [4, 2, 6, 2]);
 
   // And the same administrator on their own first week, which adds one to the
   // section that is theirs rather than opening a new one.
   const starting = menuRuns(menuFor(roleHolds('admin', 1), { staffId: 1, startingOut: true }));
-  assert.deepEqual(starting.map((r) => r.groups.length), [4, 2, 6, 2]);
+  assert.deepEqual(starting.map((r) => r.groups.length), [5, 2, 6, 2]);
 
   // A supervisor's four stay one plain list. Cutting four into three headed
   // sections is worse than not cutting them at all.

@@ -6973,3 +6973,45 @@ tr:hover .rota-who-more,
 .faq-link-picks .pill { display: inline-flex; align-items: center; gap: .3rem; }
 .faq-link-off { border: 0; background: none; color: inherit; cursor: pointer; font-size: .8rem; padding: 0 .1rem; }
 .faq-asked-row .pill { justify-self: start; }
+
+/* ------------------------------------------------------------- My till --
+   Closing a front-desk shift, on the desk PC or a phone. One column of
+   cards at any width, so the same form reads the same on both; on a wide
+   screen two-up rows keep a figure beside its label. */
+.till { max-width: 760px; }
+.till .card { margin-bottom: .9rem; }
+.till-q { font-weight: 620; margin: 0 0 .45rem; }
+.till-yn { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.till-yn .btn { flex: 1 1 8rem; min-height: 2.6rem; }
+.till-more { margin-top: .6rem; padding-top: .6rem; border-top: 1px dashed var(--border); }
+.till-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; align-items: end; }
+.till-row .till-x { margin-bottom: .7rem; }
+.till input, .till select, .till textarea { width: 100%; font-size: 1rem; }
+.till input.till-big { font-size: 1.35rem; font-weight: 700; text-align: right; }
+.till-shift { max-width: 22rem; }
+.till-expense { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .7rem; margin-bottom: .6rem; }
+.till-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .2rem 0 .4rem; }
+.till-po { font-size: .86rem; border-radius: var(--radius-sm); padding: .5rem .6rem; margin-top: .4rem; }
+.till-po.ok { background: var(--good-soft); }
+.till-po.bad { background: var(--bad-soft); }
+.till-po.warn { background: var(--warn-soft); }
+.till-dl { display: grid; grid-template-columns: auto 1fr; gap: .25rem 1rem; margin: .6rem 0 0; font-size: .92rem; }
+.till-dl dt { color: var(--text-dim); }
+.till-dl dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.till-bad { color: var(--bad); }
+.till-or { text-align: center; font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); margin: .1rem 0 .4rem; }
+.till-check + .till-check, .till-rental + .till-rental { margin-top: .9rem; padding-top: .9rem; border-top: 1px solid var(--border); }
+.till-send { position: sticky; bottom: 0; background: var(--bg); padding: .7rem 0 calc(.7rem + env(safe-area-inset-bottom, 0px)); display: grid; gap: .5rem; }
+.till-need { margin: 0; font-size: .86rem; background: var(--warn-soft); border-radius: var(--radius-sm); padding: .45rem .6rem; }
+.till-sign { min-height: 2.8rem; font-size: 1rem; }
+.till-issue.till-short { border-left: 4px solid var(--bad); }
+.till-issue.till-over { border-left: 4px solid var(--warn); }
+.till-issue.till-info { border-left: 4px solid var(--accent); }
+.till-amount { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; margin-bottom: .2rem; }
+.till-amount strong { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+.till-kind { font-size: .8rem; color: var(--text-dim); }
+.till-said { background: var(--surface-2); border-radius: var(--radius-sm); padding: .55rem .65rem; font-size: .9rem; }
+.till-answer textarea { margin: .4rem 0; }
+.till-cleared { text-align: center; margin-top: 1rem; }
+@media (min-width: 900px) { .till-send { justify-items: end; } .till-sign { min-width: 16rem; } }
+.till-hint { font-size: .82rem; color: var(--text-dim); margin: .35rem 0 0; }

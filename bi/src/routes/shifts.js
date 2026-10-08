@@ -51,6 +51,8 @@ export async function uploadJournal(env, body, account) {
       const data = JSON.stringify({
         payments: merged.payments,
         laundry: merged.laundry,
+        items: merged.items || [],
+        stock: merged.stock || null,
         expensesCounted: merged.expensesCounted,
         counted: merged.counted,
         movement: merged.movement,
@@ -216,7 +218,9 @@ export async function pullOrders(env, body) {
 async function correctionsFor(env, lo, hi) {
   let rows = [];
   try {
-    rows = await all(env.DB, 'SELECT * FROM shift_movement WHERE (seq BETWEEN ?1 AND ?2) OR (pair BETWEEN ?1 AND ?2)', lo, hi);
+    // Only what counts: a supervisor's correction waits for an admin's yes.
+    rows = await all(env.DB, `SELECT * FROM shift_movement WHERE ((seq BETWEEN ?1 AND ?2) OR (pair BETWEEN ?1 AND ?2))
+      AND COALESCE(status, 'applied') = 'applied'`, lo, hi);
   } catch (err) {
     if (!/no such table/i.test(String(err?.message))) throw err;
   }
@@ -249,13 +253,20 @@ async function drawerMovement(env, seq) {
  * `reverses` (with `pair`, the movement it puts back, which may be on
  * another shift), or `clear` to undo whatever was said about this movement.
  */
-export async function saveMovement(env, body, account) {
+export async function saveMovement(env, body, account, { pending = false } = {}) {
   const seq = Number(body?.seq);
   if (!Number.isInteger(seq)) throw badRequest('Which movement? Its ASSD number is needed.');
   const kind = String(body?.kind || '');
   const note = str(body?.note, 'Note', { max: 400 });
 
+  // A supervisor proposes; an admin decides. What has already been decided is
+  // the admin's to change, and a supervisor may only take back their own.
+  const existing = await first(env.DB, "SELECT * FROM shift_movement WHERE (seq = ?1 OR (kind = 'reverses' AND pair = ?1)) AND COALESCE(status, 'applied') <> 'rejected'", seq);
+  if (pending && existing && (existing.status || 'applied') === 'applied') {
+    throw badRequest('That movement has already been corrected. Ask an admin to change it.');
+  }
   if (kind === 'clear') {
+    if (pending && existing && existing.by_name !== who(account)) throw badRequest('Only the person who proposed it, or an admin, can take it back.');
     await run(env.DB, "DELETE FROM shift_movement WHERE seq = ?1 OR (kind = 'reverses' AND pair = ?1)", seq);
     return { ok: true };
   }
@@ -289,13 +300,44 @@ export async function saveMovement(env, body, account) {
       pair = move.amount < 0 ? other.seq : seq;
     }
     const taken = await first(env.DB, `SELECT seq FROM shift_movement
-      WHERE kind IN ('duplicate', 'reverses') AND seq <> ?1 AND (seq IN (?2, ?3) OR pair IN (?2, ?3))`, rowSeq, rowSeq, pair);
+      WHERE kind IN ('duplicate', 'reverses') AND seq <> ?1 AND (seq IN (?2, ?3) OR pair IN (?2, ?3))
+        AND COALESCE(status, 'applied') <> 'rejected'`, rowSeq, rowSeq, pair);
     if (taken) throw badRequest(`One of those movements is already matched (ASSD ${taken.seq}). Undo that first.`);
   }
 
-  await run(env.DB, `INSERT INTO shift_movement (seq, kind, expenses, pair, note, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-    ON CONFLICT (seq) DO UPDATE SET kind = ?2, expenses = ?3, pair = ?4, note = ?5, by_name = ?6, at = ?7`,
-  rowSeq, kind, expenses, pair, note, who(account), now());
+  const status = pending ? 'pending' : 'applied';
+  await run(env.DB, `INSERT INTO shift_movement (seq, kind, expenses, pair, note, by_name, at, status, decided_by, decided_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL)
+    ON CONFLICT (seq) DO UPDATE SET kind = ?2, expenses = ?3, pair = ?4, note = ?5, by_name = ?6, at = ?7, status = ?8,
+      decided_by = NULL, decided_at = NULL`,
+  rowSeq, kind, expenses, pair, note, who(account), now(), status);
+  return { ok: true, pending, seq: rowSeq, kind };
+}
+
+/**
+ * Reconcile two or more exceptions together: one story that showed up as
+ * several differences. Each of them counts as answered while the group stands.
+ */
+export async function saveLink(env, body, account) {
+  const keys = [...new Set((Array.isArray(body?.keys) ? body.keys : []).map((k) => String(k ?? '').trim()).filter(Boolean))];
+  if (keys.length < 2) throw badRequest('Choose at least two exceptions to reconcile together.');
+  if (keys.length > 30) throw badRequest('Thirty at most in one reconciliation.');
+  if (keys.some((k) => k.length > 200)) throw badRequest('That is not an exception.');
+  const note = str(body?.note, 'Note', { max: 600 });
+  for (const row of await all(env.DB, 'SELECT id, keys FROM shift_link')) {
+    let taken = [];
+    try { taken = JSON.parse(row.keys); } catch { taken = []; }
+    if (keys.some((k) => taken.includes(k))) throw badRequest('One of those is already reconciled with others. Undo that first.');
+  }
+  await run(env.DB, 'INSERT INTO shift_link (keys, note, by_name, at) VALUES (?1, ?2, ?3, ?4)', JSON.stringify(keys), note, who(account), now());
+  return { ok: true };
+}
+
+/** Undo a reconciliation: each exception in it is open again. */
+export async function removeLink(env, body) {
+  const id = Number(body?.id);
+  if (!Number.isInteger(id)) throw badRequest('Which reconciliation?');
+  await run(env.DB, 'DELETE FROM shift_link WHERE id = ?1', id);
   return { ok: true };
 }
 
@@ -344,6 +386,12 @@ export async function shifts(env, query, account) {
 
   const corrections = await correctionsFor(env, lo, hi);
   const { shifts: raw } = segment(entries, corrections);
+  // Corrections a supervisor proposed and an admin has not yet decided.
+  let proposed = new Map();
+  try {
+    proposed = new Map((await all(env.DB, `SELECT * FROM shift_movement WHERE status = 'pending' AND ((seq BETWEEN ?1 AND ?2) OR (pair BETWEEN ?1 AND ?2))`, lo, hi))
+      .map((r) => [r.seq, { kind: r.kind, expenses: r.expenses, pair: r.pair, note: r.note, by: r.by_name, at: r.at }]));
+  } catch { proposed = new Map(); }
   const lo3 = addDays(from, -3);
   const hi3 = addDays(to, 3);
   const terminal = await all(env.DB, 'SELECT * FROM terminal_txn WHERE day BETWEEN ?1 AND ?2', lo3, hi3);
@@ -513,6 +561,22 @@ export async function shifts(env, query, account) {
 
   for (const x of exceptions) x.answer = answerOf.get(x.key) || null;
 
+  // Exceptions reconciled together: each one is answered by the group.
+  let links = [];
+  try { links = await all(env.DB, 'SELECT * FROM shift_link ORDER BY id'); } catch { links = []; }
+  const linkOf = new Map();
+  for (const l of links) {
+    let keys = [];
+    try { keys = JSON.parse(l.keys); } catch { keys = []; }
+    for (const k of keys) linkOf.set(k, { id: l.id, keys, note: l.note, by: l.by_name, at: l.at });
+  }
+  for (const x of exceptions) {
+    const link = linkOf.get(x.key);
+    if (!link) continue;
+    x.link = link;
+    x.answer = { answer: 'Reconciled together', note: link.note, by: link.by, at: link.at, link: link.id };
+  }
+
   const byDay = new Map(daysBetween(from, to).map((d) => [d, []]));
   for (const s of placed) {
     const expense = expenseOf.get(`${s.day}|${s.slotName}`);
@@ -525,7 +589,8 @@ export async function shifts(env, query, account) {
       startSeq: s.startSeq, endSeq: s.endSeq,
       cash: s.cash, card: s.card, prepaid: s.prepaid, other: s.other, laundry: s.laundry, laundryCash: s.laundryCash,
       drawerOut: s.drawerOut, expensesCounted: s.expensesCounted, booked: s.booked, corrected: s.corrected,
-      modes: s.modes, moves: s.moves, opening: s.opening, closing: s.closing,
+      modes: s.modes, moves: s.moves.map((m) => ({ ...m, pending: proposed.get(m.seq) || null })), opening: s.opening, closing: s.closing,
+      items: s.items, stockStart: s.stockStart, stockEnd: s.stockEnd,
       expensesMoved: s.expensesMoved, safeMoved: s.safeMoved, unlabelledMoved: s.unlabelledMoved,
       lines: s.lines,
       cardFound: found.length, cardLines: cardLines.length,
@@ -642,6 +707,8 @@ function entryOf(row) {
     register: row.register,
     payments: data.payments || [],
     laundry: data.laundry || [],
+    items: data.items || [],
+    stock: data.stock || null,
     expensesCounted: data.expensesCounted ?? null,
     counted: data.counted || 0,
     movement: data.movement || 0,
@@ -681,4 +748,43 @@ function coverageOf(uploads) {
     journal: journalTo ? { from: journalFrom, to: journalTo } : null,
     toJSON() { return { terminal: this.terminal, bank: this.bank, journal: this.journal }; },
   };
+}
+
+// ------------------------------------------------------------ supervisors --
+
+/** Keys that hold money in what the Shifts screen is sent. */
+const MONEY_KEYS = new Set([
+  'cash', 'card', 'prepaid', 'other', 'laundry', 'laundryCash', 'drawerOut', 'expensesCounted', 'expensesMoved',
+  'safeMoved', 'unlabelledMoved', 'amount', 'total', 'notes', 'receipts', 'opening', 'closing', 'expected', 'variance',
+  'countVariance', 'cashIn', 'out', 'expenses', 'toSafe', 'unlabelled', 'sheetGap', 'assdVariance', 'receiptsAtClose',
+  'cardRecorded', 'received', 'commission', 'cardFoundAmount', 'assd', 'system', 'systemCash', 'sheetTotal',
+  'odooTotal', 'safe', 'short', 'over', 'flaggedAmount',
+]);
+
+/** The same object with every amount taken out. Agrees, short and over survive as a sign. */
+export function withoutMoney(value) {
+  if (Array.isArray(value)) return value.map(withoutMoney);
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const [key, v] of Object.entries(value)) {
+    if (key === 'modes') { out.modes = Object.fromEntries(Object.keys(v || {}).map((k) => [k, null])); continue; }
+    if (key === 'variance' && typeof v === 'number') out.varianceSign = Math.sign(v);
+    out[key] = MONEY_KEYS.has(key) && typeof v === 'number' ? null : withoutMoney(v);
+  }
+  return out;
+}
+
+/**
+ * The Shifts screen cut down to what a supervisor was given: amounts only with
+ * money, the bank's side only with the bank, people's totals only with net.
+ */
+export function forSupervisor(payload, access) {
+  let out = payload;
+  if (!access.bank) {
+    out = { ...out, exceptions: (out.exceptions || []).filter((x) => ['drawer', 'explained'].includes(x.group)) };
+  }
+  if (!access.net) out = { ...out, people: [] };
+  if (!access.files) out = { ...out, canUpload: false };
+  if (!access.money) out = withoutMoney(out);
+  return { ...out, redacted: !access.money };
 }

@@ -424,6 +424,58 @@ export const KINDS = [
     ways: ['push'],
   },
 
+  // The till: closing a front-desk shift, and settling what did not agree.
+  // Who is told is chosen in Insight, person by person, with push and email
+  // each ticked or not there; these switches can still silence a kind.
+  {
+    key: 'till.closed',
+    group: 'money',
+    label: 'A shift has been closed',
+    who: 'Whoever Insight says to tell',
+    when: 'Somebody signs their closing report',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'till.answer',
+    group: 'money',
+    label: 'Somebody has answered for their till',
+    who: 'Whoever Insight says to tell',
+    when: 'A member of staff explains a difference, offers to pay it back, or adds a PO',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'till.approval',
+    group: 'money',
+    label: 'A supervisor\u2019s correction is waiting',
+    who: 'Whoever Insight says approves them',
+    when: 'A supervisor corrects a cash movement',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'till.settled',
+    group: 'money',
+    label: 'Something on your till list was settled or sent back',
+    who: 'Whoever it was about',
+    when: 'A supervisor or an admin decides',
+    ways: ['push'],
+  },
+  {
+    key: 'till.reopened',
+    group: 'money',
+    label: 'Your closing report was reopened',
+    who: 'Whoever signed it',
+    when: 'An admin reopens it so it can be sent again',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'till.recovered',
+    group: 'money',
+    label: 'A till shortage is coming off somebody\u2019s pay',
+    who: 'Whoever runs the payroll, and the person',
+    when: 'An admin recovers a shortage from pay',
+    ways: ['push', 'email'],
+  },
+
   // The property
   {
     key: 'birthday.today',

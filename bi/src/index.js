@@ -9,6 +9,8 @@ import * as admin from './routes/admin.js';
 import * as accounts from './routes/accounts.js';
 import * as reports from './routes/reports.js';
 import * as shiftRoutes from './routes/shifts.js';
+import * as till from './routes/till.js';
+import { verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
 import { loadFacts } from './insight/facts.js';
 import { groupConfig } from './lib/db.js';
@@ -42,7 +44,7 @@ const ROUTES = [
 
   // The numbers. A separate permission from being able to sign in, because
   // somebody who needs the till does not necessarily get the wage bill.
-  ['GET', '/api/bootstrap', 'insight', (env) => panels.bootstrap(env)],
+  ['GET', '/api/bootstrap', 'shifts', (env) => panels.bootstrap(env)],
   ['GET', '/api/brief', 'insight', (env, ctx) => panels.brief(env, ctx.query)],
   ['GET', '/api/pnl', 'insight', (env, ctx) => panels.pnl(env, ctx.query)],
   ['GET', '/api/financials', 'insight', (env, ctx) => panels.financials(env, ctx.query)],
@@ -56,18 +58,34 @@ const ROUTES = [
   ['POST', '/api/findings/:id', 'insight', (env, ctx) => admin.decideFinding(env, ctx.params.id, ctx.body)],
   ['GET', '/api/export', 'insight', exportCsv],
 
-  // Shift reconciliation. Reading it and typing into it — a count at
-  // hand-over, an expense total, an answer — is for anybody who reads the
-  // numbers, signed with their name. Loading the three files is an owner's.
-  ['GET', '/api/shifts', 'insight', (env, ctx) => shiftRoutes.shifts(env, ctx.query, ctx.account)],
-  ['POST', '/api/shifts/count', 'insight', (env, ctx) => shiftRoutes.saveCount(env, ctx.body, ctx.account)],
-  ['POST', '/api/shifts/expense', 'insight', (env, ctx) => shiftRoutes.saveExpense(env, ctx.body, ctx.account)],
-  ['POST', '/api/shifts/expense/pull', 'insight', (env, ctx) => shiftRoutes.pullOrders(env, ctx.body)],
-  ['POST', '/api/shifts/answer', 'insight', (env, ctx) => shiftRoutes.saveAnswer(env, ctx.body, ctx.account)],
-  ['POST', '/api/shifts/movement', 'insight', (env, ctx) => shiftRoutes.saveMovement(env, ctx.body, ctx.account)],
-  ['POST', '/api/shifts/journal', 'owner', (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account)],
-  ['POST', '/api/shifts/bank', 'owner', (env, ctx) => shiftRoutes.uploadBank(env, ctx.body, ctx.account)],
-  ['POST', '/api/shifts/terminal', 'owner', (env, ctx) => shiftRoutes.uploadTerminal(env, ctx.body, ctx.account)],
+  // Shift reconciliation. An admin does all of it; a supervisor gets the
+  // parts an admin chose (see routes/till.js), and nothing else in the app.
+  // `shifts` lets both in, and each handler checks what this one may do.
+  ['GET', '/api/shifts', 'shifts', shiftsRead],
+  ['POST', '/api/shifts/count', 'shifts', adminOnly((env, ctx) => shiftRoutes.saveCount(env, ctx.body, ctx.account))],
+  ['POST', '/api/shifts/expense', 'shifts', adminOnly((env, ctx) => shiftRoutes.saveExpense(env, ctx.body, ctx.account))],
+  ['POST', '/api/shifts/expense/pull', 'shifts', adminOnly((env, ctx) => shiftRoutes.pullOrders(env, ctx.body))],
+  ['POST', '/api/shifts/answer', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.saveAnswer(env, ctx.body, ctx.account))],
+  ['POST', '/api/shifts/movement', 'shifts', movement],
+  ['POST', '/api/shifts/link', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.saveLink(env, ctx.body, ctx.account))],
+  ['POST', '/api/shifts/unlink', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body))],
+  ['POST', '/api/shifts/journal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account))],
+  ['POST', '/api/shifts/bank', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadBank(env, ctx.body, ctx.account))],
+  ['POST', '/api/shifts/terminal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadTerminal(env, ctx.body, ctx.account))],
+
+  // Closing reports from HIVE, what staff answered, and the settings.
+  ['GET', '/api/till', 'shifts', (env, ctx) => till.overview(env, ctx.query, ctx.account)],
+  ['POST', '/api/till/resolve', 'shifts', (env, ctx) => till.resolve(env, ctx.body, ctx.account)],
+  ['POST', '/api/till/reopen', 'shifts', (env, ctx) => till.reopen(env, ctx.body, ctx.account)],
+  ['POST', '/api/till/approve', 'shifts', (env, ctx) => till.approve(env, ctx.body, ctx.account)],
+  ['POST', '/api/till/settings', 'shifts', (env, ctx) => till.saveSettings(env, ctx.body, ctx.account)],
+
+  // The till link: HIVE asking, server to server, signed with the secret the
+  // two already share for the sign-in hand-off. No session reaches these.
+  ['POST', '/api/link/till/setup', 'link', (env) => till.linkSetup(env)],
+  ['POST', '/api/link/till/po', 'link', (env, ctx) => till.linkPo(env, ctx.body)],
+  ['POST', '/api/link/till/issues', 'link', (env, ctx) => till.linkIssues(env, ctx.body)],
+  ['POST', '/api/link/till/recipients', 'link', (env, ctx) => till.linkRecipients(env, ctx.body)],
 
   // Loading and configuring. Owners only: these change what every other screen
   // in the group is built on.
@@ -123,16 +141,31 @@ export default {
       // a front door rather than a report: signing in, reading the numbers,
       // and changing what everybody else sees are three different things.
       let account = null;
+      let body = null;
       if (permission === 'session') account = await requireSession(request, env);
-      else if (permission === 'insight') account = await requireInsight(request, env);
-      else if (permission === 'owner') account = await requireOwner(request, env);
+      else if (permission === 'shifts') account = await requireInsight(request, env);
+      else if (permission === 'insight') {
+        account = await requireInsight(request, env);
+        // A supervisor holds the reports grant for the Shifts screen alone.
+        if (till.roleOf(account) === 'supervisor') throw new HttpError(403, 'Your account opens Shifts and nothing else here.');
+      } else if (permission === 'owner') account = await requireOwner(request, env);
+      else if (permission === 'link') {
+        const text = await request.text();
+        const ok = await verifyLink(env.SSO_SECRET_ATTENDANCE, {
+          at: request.headers.get('X-Till-At'), sig: request.headers.get('X-Till-Sig'), path: url.pathname, bodyText: text,
+        });
+        if (!ok) throw new HttpError(401, 'That request did not come from HIVE.');
+        try { body = JSON.parse(text || '{}'); } catch { throw badRequest('That was not JSON.'); }
+      }
 
       const query = Object.fromEntries(url.searchParams);
-      const body = request.method === 'POST' && request.headers.get('Content-Type')?.includes('application/json')
-        ? await readJson(request)
-        : {};
+      if (body === null) {
+        body = request.method === 'POST' && request.headers.get('Content-Type')?.includes('application/json')
+          ? await readJson(request)
+          : {};
+      }
 
-      const result = await handler(env, { request, query, body, params, url, account });
+      const result = await handler(env, { request, query, body, params, url, account, execution });
       return result instanceof Response ? result : json(result);
     } catch (err) {
       return errorResponse(err);
@@ -258,10 +291,52 @@ async function me(env, { request }) {
       email: account.email,
       isOwner: account.isOwner,
       bootstrap: account.bootstrap,
-      canSeeReports: account.isOwner || account.bootstrap
-        || account.access.some((a) => a.systemId === 'insight'),
+      canSeeReports: till.roleOf(account) === 'admin',
+      till: till.roleOf(account) ? { role: till.roleOf(account), access: await till.accessOf(env, account) } : null,
     },
   });
+}
+
+// ----------------------------------------------------------------- shifts --
+
+/** A handler only an admin may use. */
+function adminOnly(handler) {
+  return async (env, ctx) => {
+    await till.requireAdmin(ctx.account);
+    return handler(env, ctx);
+  };
+}
+
+/** A handler for whoever may do `level` with `area`: every admin, and the supervisors given it. */
+function area(name, level, handler) {
+  return async (env, ctx) => {
+    await till.requireArea(env, ctx.account, name, level);
+    return handler(env, ctx);
+  };
+}
+
+/** The Shifts screen's data, cut to what a supervisor was given. */
+async function shiftsRead(env, ctx) {
+  const role = till.roleOf(ctx.account);
+  const data = await shiftRoutes.shifts(env, ctx.query, ctx.account);
+  if (role === 'admin') return { ...data, canUpload: true };
+  const access = await till.accessOf(env, ctx.account);
+  if (!['day', 'week', 'month', 'money', 'bank', 'net', 'files', 'moves'].some((k) => access[k] > 0)) {
+    throw new HttpError(403, 'No part of Shifts has been shared with you yet.');
+  }
+  return shiftRoutes.forSupervisor(data, access);
+}
+
+/** A correction to a cash movement: an admin's applies, a supervisor's waits for an admin. */
+async function movement(env, ctx) {
+  if (till.roleOf(ctx.account) === 'admin') return shiftRoutes.saveMovement(env, ctx.body, ctx.account);
+  await till.requireArea(env, ctx.account, 'moves', 2);
+  const out = await shiftRoutes.saveMovement(env, ctx.body, ctx.account, { pending: true });
+  if (out.pending) {
+    const tell = till.tellApprovers(env, { seq: out.seq, kind: out.kind, by: ctx.account?.name || 'A supervisor' });
+    if (ctx.execution?.waitUntil) ctx.execution.waitUntil(tell); else await tell;
+  }
+  return out;
 }
 
 /** Change your own password. Anybody may do this; nobody may do it to somebody else. */
