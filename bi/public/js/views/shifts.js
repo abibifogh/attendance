@@ -52,6 +52,8 @@ const KIND = {
   'other-shift': ['Paid on one shift, keyed on another', '→'],
   corrected: ['A mistake and its correction', '✓'],
   'movement-corrected': ['A cash movement keyed wrong and put back', '✓'],
+  'movement-twice': ['Moved out of the drawer twice', '2'],
+  'movement-reversal': ['Put back on a different shift', '↺'],
   'bank-only': ['In the bank, not on the terminal', '?'],
 };
 const MODES = [
@@ -157,12 +159,16 @@ export async function renderShifts(root, { range }) {
     // A recount being typed wins; a cleared box falls back to ASSD's own count.
     const closing = d.recount !== undefined ? (d.recount ?? s.closing?.total ?? null) : r.closing;
     const sheet = d.sheet !== undefined ? d.sheet : (s.expense?.sheetTotal ?? null);
-    const expenses = sheet != null ? sheet : s.expensesMoved;
-    const toSafe = sheet != null ? Math.max(0, s.drawerOut - sheet) : s.safeMoved;
+    // The same rule as the server: labelled movements decide; the sheet only
+    // settles what nothing labelled, and a disagreement is shown, not hidden.
+    const fromSheet = sheet != null ? Math.min(s.unlabelledMoved, Math.max(0, sheet - s.expensesMoved)) : 0;
+    const expenses = s.expensesMoved + fromSheet;
+    const toSafe = s.safeMoved + (sheet != null ? s.unlabelledMoved - fromSheet : 0);
     const unlabelled = sheet != null ? 0 : s.unlabelledMoved;
+    const sheetGap = sheet != null && sheet !== expenses ? sheet - expenses : null;
     const variance = r.expected != null && closing != null ? closing - r.expected : null;
     const recounted = d.recount !== undefined ? d.recount != null : r.closingFrom === 'typed';
-    return { ...r, closing, expenses, toSafe, unlabelled, variance, recounted, sheetTyped: sheet != null };
+    return { ...r, closing, expenses, toSafe, unlabelled, variance, recounted, sheetTyped: sheet != null, sheet, sheetGap };
   }
 
   function tone(s) {
@@ -418,8 +424,8 @@ export async function renderShifts(root, { range }) {
       const steps = [{ lab: 'Opening count', sm: r.openingFrom === 'typed' ? 'typed' : 'ASSD, at hand-over', from: 0, to: r.opening ?? 0, c: 'var(--muted)', amt: money(r.opening) }];
       let at = (r.opening ?? 0) + s.cash;
       steps.push({ lab: '+ Cash taken', sm: s.laundryCash ? `incl. ${money(s.laundryCash)} laundry` : '', from: r.opening ?? 0, to: at, c: 'var(--sh-cash)', amt: money(s.cash) });
-      if (n.expenses) { steps.push({ lab: '− Expenses', sm: n.sheetTyped ? 'the expense sheet' : 'receipts counted', from: at - n.expenses, to: at, c: 'var(--sh-expense)', amt: money(n.expenses) }); at -= n.expenses; }
-      if (n.toSafe) { steps.push({ lab: '− To the safe', sm: n.sheetTyped ? 'the rest of what moved' : 'notes counted', from: at - n.toSafe, to: at, c: 'var(--sh-safe)', amt: money(n.toSafe) }); at -= n.toSafe; }
+      if (n.expenses) { steps.push({ lab: '− Expenses', sm: s.corrected ? 'counted and corrected' : n.sheetTyped && n.expenses !== s.expensesMoved ? 'counted, rest from the sheet' : 'receipts counted', from: at - n.expenses, to: at, c: 'var(--sh-expense)', amt: money(n.expenses) }); at -= n.expenses; }
+      if (n.toSafe) { steps.push({ lab: '− To the safe', sm: s.corrected ? 'counted and corrected' : 'notes counted', from: at - n.toSafe, to: at, c: 'var(--sh-safe)', amt: money(n.toSafe) }); at -= n.toSafe; }
       if (n.unlabelled) { steps.push({ lab: '− Not labelled', sm: 'type the sheet total', from: at - n.unlabelled, to: at, c: 'var(--muted)', hatch: true, amt: money(n.unlabelled) }); at -= n.unlabelled; }
       steps.push({ lab: '= Should hold', from: 0, to: r.expected ?? 0, c: 'var(--ink-2)', amt: money(r.expected), total: true });
       steps.push({
@@ -443,6 +449,7 @@ export async function renderShifts(root, { range }) {
           ? (s.open ? 'The journal stops inside this shift. Load a journal that runs a day past it.' : 'ASSD has no closing count for this shift. Type a recount to check it.')
           : n.variance === 0 ? 'What should be in the drawer is exactly what was counted.'
             : `It should have held ${money(r.expected)}; ${n.recounted ? 'the recount' : 'ASSD counted'} ${money(n.closing)}.${!n.recounted && r.assdVariance === n.variance ? ' ASSD booked the same difference itself.' : ''}`),
+        r.corrected && r.assdVariance !== n.variance ? h('p', `ASSD booked ${signed(r.assdVariance)} before the corrections to its cash movements.`) : null,
         r.handoverGap ? h('p', `This shift’s first count was ${money(Math.abs(r.handoverGap.amount))} ${r.handoverGap.amount < 0 ? 'less' : 'more'} than ${nameOf(r.handoverGap.from)}’s closing count.`) : null));
 
       mount(checksList, checks(s, n).map(([cls_, mark, text]) => h('li', h(`span.sh-ic.${cls_}`, String(mark)), h('span', text))));
@@ -477,6 +484,10 @@ export async function renderShifts(root, { range }) {
       out.push([agree ? 'good' : exp?.odooTotal != null ? 'warn' : 'info', agree ? '✓' : 'i',
         `Expenses ${money(exp?.sheetTotal ?? n.expenses)}${exp?.odooTotal != null ? ` · Odoo ${money(exp.odooTotal)}` : exp?.poNumbers ? ' · Odoo not read yet' : ' · no PO numbers yet'}`]);
     }
+    if (n.sheetGap) {
+      out.push(['warn', '!', `The expense sheet says ${money(n.sheet)}; the movements labelled ${money(n.expenses)} as expenses. Correct a movement below, or check the sheet.`]);
+    }
+    if (s.corrected) out.push(['info', 'i', 'A cash movement on this shift was corrected by hand']);
     if (s.laundry) out.push(['info', 'i', `Laundry ${money(s.laundry)}${s.laundryCash ? `, ${money(s.laundryCash)} of it in cash` : ''}`]);
     const l = s.dayLaundry;
     if (l && l.system != null && (l.assd || l.system)) {
@@ -554,21 +565,93 @@ export async function renderShifts(root, { range }) {
     if (!moves.length) return h('p.sh-sub', 'Nothing was moved out of the drawer on this shift.');
     const tag = {
       expenses: ['Expenses', 'var(--sh-expense)'], safe: ['To the safe', 'var(--sh-safe)'], split: ['Expenses + safe', 'var(--series-7)'],
-      part: ['Part labelled', 'var(--muted)'], unlabelled: ['Not labelled', 'var(--muted)'], corrected: ['Put back', 'var(--sh-bad)'], returned: ['Returned', 'var(--sh-good)'],
+      part: ['Part labelled', 'var(--muted)'], unlabelled: ['Not labelled', 'var(--muted)'], corrected: ['Put back', 'var(--sh-bad)'],
+      returned: ['Put back', 'var(--sh-good)'], excluded: ['Matched', 'var(--ink-2)'],
     };
-    const said = (m) => ({
-      expenses: 'The receipts on the count before it.',
-      safe: 'The notes on the count before it.',
-      split: `${money(m.expenses)} in receipts and ${money(m.safe)} in notes, as counted just before.`,
-      part: `${money(m.expenses)} in receipts as counted; the rest has no count before it.`,
-      unlabelled: 'No count before it said what it was. The expense sheet total settles it.',
-      corrected: `Keyed by mistake and put back by ${nameOf(m.reversedByUser)} (ASSD ${m.reversedBy}). It nets to nothing.`,
-      returned: 'Money put back into the drawer.',
-    })[m.kind] || '';
-    return h('div.sh-moves', moves.map((m) => h('div.sh-move',
-      h('span.tag', { style: `background:${tag[m.kind]?.[1] || 'var(--muted)'}` }, tag[m.kind]?.[0] || m.kind),
-      h('span', h('small', `${said(m)} · ${nameOf(m.user)}, ASSD ${m.seq}`)),
-      h('span.amt.num', m.kind === 'corrected' ? h('s', money(m.amount)) : money(m.amount)))));
+    const where = (p) => (p ? ` on ${nameOf(p.user)}’s ${SLOT[p.slot]?.label.toLowerCase() || ''} shift of ${shortDay(p.day)}` : ' outside these days');
+    const said = (m) => {
+      if (m.kind === 'excluded') {
+        return {
+          duplicate: `A duplicate of ASSD ${m.pair}: it never moved any cash, so it is left out of the drawer.`,
+          reverses: `Puts back ASSD ${m.pair}${where(m.pairShift)}. Neither moved cash, so both are left out.`,
+          'reversed-by': `Put back by ASSD ${m.pair}${where(m.pairShift)}. Neither moved cash, so both are left out.`,
+        }[m.reason] || 'Left out of the drawer.';
+      }
+      const base = {
+        expenses: m.manual ? 'Expenses, as corrected.' : 'The receipts on the count before it.',
+        safe: m.manual ? 'Cash to the safe, as corrected.' : 'The notes on the count before it.',
+        split: `${money(m.expenses)} expenses and ${money(m.safe)} to the safe${m.manual ? ', as corrected' : ', as counted just before'}.`,
+        part: `${money(m.expenses)} in receipts as counted; the rest has no count before it.`,
+        unlabelled: 'No count before it said what it was. Correct it here, or the expense sheet total settles it.',
+        corrected: `Keyed by mistake and put back by ${nameOf(m.reversedByUser)} (ASSD ${m.reversedBy}) on the same shift. It nets to nothing.`,
+        returned: 'Money put back into the drawer. If it undoes a movement on another shift, match them.',
+      }[m.kind] || '';
+      return base;
+    };
+    return h('div.sh-moves', moves.map((m) => {
+      const fix = h('div.sh-fix', { hidden: true });
+      const open = () => { fix.hidden = !fix.hidden; if (!fix.hidden && !fix.firstChild) mount(fix, fixer(s, m)); };
+      return h('div',
+        h('div.sh-move',
+          h('span.tag', { style: `background:${tag[m.kind]?.[1] || 'var(--muted)'}` }, tag[m.kind]?.[0] || m.kind),
+          h('span',
+            h('small', `${said(m)} · ${nameOf(m.user)}, ASSD ${m.seq}`),
+            m.manual ? h('small.sh-manual', ` Corrected by ${m.manual.by || 'somebody'}${m.manual.note ? `: ${m.manual.note}` : ''}${m.auto ? ` (ASSD's count said ${tag[m.auto]?.[0].toLowerCase() || m.auto})` : ''}.`) : null),
+          h('span.sh-moveend',
+            h('span.amt.num', ['corrected', 'excluded'].includes(m.kind) ? h('s', money(Math.abs(m.amount))) : m.amount < 0 ? `+${money(-m.amount)}` : money(m.amount)),
+            m.kind === 'corrected' ? null : h('button.sh-link', { type: 'button', onclick: open }, 'Correct'))),
+        fix);
+    }));
+  }
+
+  /**
+   * The ways a movement can be put right, for the one movement chosen.
+   *
+   * Out of the drawer: what it really was (expenses, safe, or a split), a
+   * duplicate of another on the same shift, or put back on another shift.
+   * Into the drawer: the movement on another shift it puts back. A movement
+   * already corrected can be put back to how ASSD had it.
+   */
+  function fixer(s, m) {
+    const note = h('input', { type: 'text', maxlength: '400', placeholder: 'Why (optional)', value: m.manual?.note || '' });
+    const said = h('span.small');
+    const send = async (body) => {
+      said.textContent = 'Saving…';
+      try {
+        await api('/shifts/movement', { method: 'POST', body: { seq: m.seq, note: note.value, ...body } });
+        await load(banner('good', 'Movement corrected. The drawer and its exceptions are worked out again.'));
+      } catch (err) { said.textContent = err.message; }
+    };
+    const choice = (label, body, primary = false) => h(`button.btn${primary ? '.primary' : ''}`, { type: 'button', onclick: () => send(body) }, label);
+    const pick = (label, options, kind) => {
+      if (!options.length) return null;
+      const select = h('select', options.map(([value, text]) => h('option', { value }, text)));
+      return h('div.sh-fixrow', h('span', label), select, h('button.btn', { type: 'button', onclick: () => send({ kind, pair: Number(select.value) }) }, 'Match'));
+    };
+    const elsewhere = (wanted) => shifts.filter((o) => o.id !== s.id).flatMap((o) => (o.moves || [])
+      .filter((x) => !['corrected', 'excluded'].includes(x.kind) && x.amount === wanted)
+      .map((x) => [x.seq, `ASSD ${x.seq} · ${money(Math.abs(x.amount))} · ${nameOf(o.user)}, ${SLOT[o.slot].label.toLowerCase()} ${shortDay(o.day)}`]));
+
+    if (m.manual || m.kind === 'excluded') {
+      return h('div.sh-fixbox', h('p.sh-sub', 'Put this movement back to how ASSD and its counts have it.'),
+        h('div.sh-fixrow', choice('Undo the correction', { kind: 'clear' }, true), said));
+    }
+    if (m.amount < 0) {
+      return h('div.sh-fixbox',
+        h('p.sh-sub', 'Money put back into the drawer that was never really there: it undoes a movement out on another shift. Match them and both are left out, which clears the surplus on one and the deficit on the other.'),
+        pick('It puts back', elsewhere(-m.amount), 'reverses') || h('p.sh-sub', `No movement of ${money(-m.amount)} out of the drawer on another shift in these days. Widen the days to find it.`),
+        h('div.sh-fixrow', note, said));
+    }
+    const split = h('input', { type: 'number', inputmode: 'decimal', step: '0.01', min: '0', placeholder: 'expenses part' });
+    const twins = (s.moves || []).filter((x) => x.seq !== m.seq && x.amount === m.amount && !['corrected', 'excluded'].includes(x.kind))
+      .map((x) => [x.seq, `ASSD ${x.seq} · ${money(x.amount)} · ${nameOf(x.user)}`]);
+    return h('div.sh-fixbox',
+      h('p.sh-sub', 'What did this movement really take out of the drawer?'),
+      h('div.sh-fixrow', choice('Expenses', { kind: 'expenses' }, m.kind !== 'expenses'), choice('Cash to the safe', { kind: 'safe' }, m.kind !== 'safe'),
+        h('span', 'or split:'), split, h('button.btn', { type: 'button', onclick: () => send({ kind: 'split', expenses: split.value }) }, 'Split')),
+      pick('A duplicate of', twins, 'duplicate'),
+      pick('Put back by', elsewhere(-m.amount), 'reverses'),
+      h('div.sh-fixrow', note, said));
   }
 
   function odooBlock(s) {
@@ -638,6 +721,8 @@ export async function renderShifts(root, { range }) {
       case 'drawer-over': return `It should have held ${money(x.expected)}. ${x.closingFrom === 'typed' ? 'The recount' : 'ASSD’s closing count'} found ${money(x.closing)}.`;
       case 'handover-gap': return `The first count of this shift found ${money(Math.abs(x.amount))} ${x.amount < 0 ? 'less' : 'more'} than ${nameOf(x.from)}’s closing count.`;
       case 'movement-corrected': return `${nameOf(x.by)} moved ${money(x.amount)} out and ${nameOf(x.reversedBy)} put it back (ASSD ${x.reversedSeq}). It nets to nothing.`;
+      case 'movement-twice': return `${money(x.amount)} was moved out of the drawer twice (ASSD ${x.pair} and ${x.seq}), and the drawer counted over. If the second never moved any cash, match it as a duplicate.`;
+      case 'movement-reversal': return `${money(x.amount)} was put back into the drawer (ASSD ${x.seq}). It matches ASSD ${x.pair}, moved out on ${nameOf(x.pairShift?.user)}’s ${SLOT[x.pairShift?.slot]?.label.toLowerCase() || ''} shift of ${shortDay(x.pairShift?.day)}. If one undoes the other, match them: both are left out.`;
       case 'bank-only': return `A card credit on the bank statement, card …${e.last4}, tapped ${shortDay(e.day)}, with no record on the terminal report.`;
       default: return '';
     }
@@ -680,6 +765,16 @@ export async function renderShifts(root, { range }) {
       h('p', describe(x)),
       x.slot && byId.has(`${x.day}|${x.slot}`) && section !== 'shift'
         ? h('div', h('button.sh-link', { type: 'button', onclick: () => go('shift', `${x.day}|${x.slot}`) }, 'Open the shift')) : null,
+      x.action && !x.answer ? h('div', h('button.btn.primary', {
+        type: 'button',
+        onclick: async () => {
+          said.textContent = 'Matching…';
+          try {
+            await api('/shifts/movement', { method: 'POST', body: { ...x.action, note: note.value } });
+            await load(banner('good', 'Matched. The drawers are worked out again.'));
+          } catch (err) { said.textContent = err.message; }
+        },
+      }, x.kind === 'movement-twice' ? 'Match as a duplicate' : 'Match them')) : null,
       x.severity === 'info' && !x.answer ? h('div.sh-done', h('span', { style: 'color:var(--ink-2)' }, 'Explained by the rules; no answer needed'))
         : x.answer ? h('div.sh-done',
           h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''} (${x.answer.by})`),

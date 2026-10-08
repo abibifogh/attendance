@@ -64,6 +64,7 @@ const ROUTES = [
   ['POST', '/api/shifts/expense', 'insight', (env, ctx) => shiftRoutes.saveExpense(env, ctx.body, ctx.account)],
   ['POST', '/api/shifts/expense/pull', 'insight', (env, ctx) => shiftRoutes.pullOrders(env, ctx.body)],
   ['POST', '/api/shifts/answer', 'insight', (env, ctx) => shiftRoutes.saveAnswer(env, ctx.body, ctx.account)],
+  ['POST', '/api/shifts/movement', 'insight', (env, ctx) => shiftRoutes.saveMovement(env, ctx.body, ctx.account)],
   ['POST', '/api/shifts/journal', 'owner', (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account)],
   ['POST', '/api/shifts/bank', 'owner', (env, ctx) => shiftRoutes.uploadBank(env, ctx.body, ctx.account)],
   ['POST', '/api/shifts/terminal', 'owner', (env, ctx) => shiftRoutes.uploadTerminal(env, ctx.body, ctx.account)],

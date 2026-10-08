@@ -83,14 +83,22 @@ function journal() {
     ...sale('BRAVO', 300522, '01.08.26', [card('01.08.26', '150,00')]),
     ...sale('BRAVO', 300523, '01.08.26', [card('01.08.26', '250,00')]),
     ...sale('BRAVO', 300524, '01.08.26', [card('01.08.26', '640,00')]),
-    // BRAVO's first count finds 8 less than ALPHA left; the drawer then holds.
+    // BRAVO's first count finds 8 less than ALPHA left. The same 20.00 is
+    // then moved out twice though it left once, so the drawer counts 20 over.
     ...block('Money Count', 'BRAVO', 300525, '01.08.26', '001', ['. .   00002   100 GHS   3   100,00   300,00 GHS', '. .   00020   10 GHS   1   10,00   10,00 GHS', '310,00 GHS']),
-    ...block('Money Count', 'BRAVO', 300526, '01.08.26', '001', ['. .   00002   100 GHS   3   100,00   300,00 GHS', '. .   00020   10 GHS   1   10,00   10,00 GHS', '310,00 GHS']),
+    ...block('Cash Movement', 'BRAVO', 300526, '01.08.26', '001', ['01.08.26   -20,00 GHS', '0,00 GHS']),
+    ...block('Cash Movement', 'BRAVO', 300527, '01.08.26', '015', ['01.08.26   20,00 GHS', '0,00 GHS']),
+    ...block('Cash Movement', 'BRAVO', 300528, '01.08.26', '001', ['01.08.26   -20,00 GHS', '0,00 GHS']),
+    ...block('Cash Movement', 'BRAVO', 300529, '01.08.26', '015', ['01.08.26   20,00 GHS', '0,00 GHS']),
+    ...block('Money Count', 'BRAVO', 300530, '01.08.26', '001', ['. .   00002   100 GHS   2   100,00   200,00 GHS', '. .   00020   10 GHS   9   10,00   90,00 GHS', '290,00 GHS']),
 
     // The night's marker carries the next morning's date, as ASSD does.
-    ...marker('CHARLIE', 300530, '02.08.26'),
-    ...sale('CHARLIE', 300531, '02.08.26', [card('02.08.26', '90,00')]),
-    ...sale('CHARLIE', 300532, '02.08.26', [card('02.08.26', '45,00')]),
+    ...marker('CHARLIE', 300535, '02.08.26'),
+    ...sale('CHARLIE', 300536, '02.08.26', [card('02.08.26', '90,00')]),
+    ...sale('CHARLIE', 300537, '02.08.26', [card('02.08.26', '45,00')]),
+    // CHARLIE puts 20.00 back into the drawer: the second of BRAVO's two.
+    ...block('Cash Movement', 'CHARLIE', 300538, '02.08.26', '001', ['02.08.26   20,00 GHS', '0,00 GHS']),
+    ...block('Cash Movement', 'CHARLIE', 300539, '02.08.26', '015', ['02.08.26   -20,00 GHS', '0,00 GHS']),
 
     ...marker('ALPHA', 300540, '02.08.26'),
     ...sale('ALPHA', 300541, '02.08.26', [card('02.08.26', '60,00')]),
@@ -329,10 +337,13 @@ test('the whole screen, from the three files', async () => {
   const kinds = out.exceptions.map((x) => `${x.kind}:${x.amount}`).sort();
   assert.deepEqual(kinds, [
     'double-charge:4500',
+    'drawer-over:2000',
     'drawer-short:-200',
     'failed:88300',
     'handover-gap:-800',
     'keying:27600',
+    'movement-reversal:2000',
+    'movement-twice:2000',
     'not-found:64000',
     'not-recorded:3500',
   ], 'the 1,999 taken after the journal ends is not called unrecorded');
@@ -362,7 +373,7 @@ test('the drawer, from ASSD’s own counts, and a recount when one is typed', as
   assert.equal(alpha.register.toSafe, 10000);
   assert.equal(alpha.register.unlabelled, 0);
   assert.deepEqual(bravo.register.handoverGap, { amount: -800, from: 'ALPHA' });
-  assert.equal(bravo.register.variance, 0);
+  assert.equal(bravo.register.variance, 2000, 'the same 20.00 moved out twice');
   assert.equal(out.people.find((p) => p.user === 'ALPHA').variance, -200);
 
   await routes.saveCount(env, { day: '2026-08-01', slot: 'morning', closing: '320' }, OWNER);
@@ -371,9 +382,65 @@ test('the drawer, from ASSD’s own counts, and a recount when one is typed', as
   [alpha] = out.days[0].shifts;
   assert.equal(alpha.register.closingFrom, 'typed');
   assert.equal(alpha.register.variance, 0);
-  assert.equal(alpha.register.expenses, 15000, 'the sheet, once typed');
-  assert.equal(alpha.register.toSafe, 0);
+  assert.equal(alpha.register.expenses, 5000, 'the counted receipts still decide what was expenses');
+  assert.equal(alpha.register.toSafe, 10000);
+  assert.equal(alpha.register.sheetGap, 10000, 'and the sheet saying more is shown, not written over');
   assert.ok(!out.exceptions.some((x) => x.kind === 'drawer-short'));
+});
+
+test('a person can correct what a movement was, match a duplicate, and pair a reversal across shifts', async () => {
+  const env = await loaded();
+  const read = async () => {
+    const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER);
+    const all = out.days.flatMap((d) => d.shifts);
+    return { out, alpha: all.find((x) => x.user === 'ALPHA' && x.day === '2026-08-01'), bravo: all.find((x) => x.user === 'BRAVO'), charlie: all.find((x) => x.user === 'CHARLIE') };
+  };
+
+  // Relabel: the counted split was really all cash to the safe, then a split by hand.
+  await routes.saveMovement(env, { seq: 300508, kind: 'safe', note: 'no receipts that day' }, OWNER);
+  let { alpha } = await read();
+  assert.deepEqual([alpha.register.expenses, alpha.register.toSafe], [0, 15000]);
+  assert.equal(alpha.moves[0].auto, 'split');
+  assert.equal(alpha.moves[0].manual.by, 'Test Owner');
+  await routes.saveMovement(env, { seq: 300508, kind: 'split', expenses: '30' }, OWNER);
+  ({ alpha } = await read());
+  assert.deepEqual([alpha.register.expenses, alpha.register.toSafe], [3000, 12000]);
+
+  // A duplicate within the shift: left out, and the surplus goes with it.
+  let { out, bravo } = await read();
+  assert.ok(out.exceptions.some((x) => x.kind === 'movement-twice' && x.action.pair === 300526));
+  await routes.saveMovement(env, { seq: 300528, kind: 'duplicate', pair: 300526 }, OWNER);
+  ({ out, bravo } = await read());
+  assert.equal(bravo.register.variance, 0);
+  assert.equal(bravo.register.assdVariance, 0, 'ASSD booked nothing for this invented shift');
+  assert.ok(!out.exceptions.some((x) => x.kind === 'movement-twice' || (x.kind === 'drawer-over' && x.user === 'BRAVO')));
+  await routes.saveMovement(env, { seq: 300528, kind: 'clear' }, OWNER);
+
+  // The other way: the duplicate was put back on the next shift.
+  ({ out } = await read());
+  const suggestion = out.exceptions.find((x) => x.kind === 'movement-reversal');
+  assert.equal(suggestion.seq, 300538);
+  assert.equal(suggestion.pairShift.user, 'BRAVO');
+  await routes.saveMovement(env, { seq: suggestion.action.pair, kind: 'reverses', pair: suggestion.action.seq }, OWNER);
+  let charlie;
+  ({ out, bravo, charlie } = await read());
+  assert.equal(bravo.register.variance, 0, 'the earlier shift no longer counts over');
+  assert.equal(charlie.drawerOut, 0, 'and the later one no longer takes back money that never came');
+  assert.equal(charlie.moves.find((m) => m.seq === 300538).pairShift.user, 'BRAVO');
+  assert.ok(!out.exceptions.some((x) => x.kind === 'movement-reversal'));
+
+  // What cannot be said.
+  await assert.rejects(routes.saveMovement(env, { seq: 300526, kind: 'duplicate', pair: 300508 }, OWNER), /same amount/);
+  await assert.rejects(routes.saveMovement(env, { seq: 300526, kind: 'reverses', pair: 300528 }, OWNER), /same amount the other way/);
+  await assert.rejects(routes.saveMovement(env, { seq: 300538, kind: 'expenses' }, OWNER), /put money back/);
+  await assert.rejects(routes.saveMovement(env, { seq: 300526, kind: 'duplicate', pair: 300528 }, OWNER), /already matched/);
+  await assert.rejects(routes.saveMovement(env, { seq: 300508, kind: 'split', expenses: '150' }, OWNER), /less than the whole/);
+  await assert.rejects(routes.saveMovement(env, { seq: 300502, kind: 'safe' }, OWNER), /not a Cash Movement/);
+
+  // Undo from either end of a pair.
+  await routes.saveMovement(env, { seq: 300528, kind: 'clear' }, OWNER);
+  ({ bravo } = await read());
+  assert.equal(bravo.register.variance, 2000);
 });
 
 test('what each cash movement was', () => {
