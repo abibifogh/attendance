@@ -57,23 +57,23 @@ time Odoo is asked:
 
 - Each new item goes to the supervisor with the fewest open, so the list shares
   itself out. A supervisor sees only their own; the tab shows how many.
-- On a cash PO waiting for its bill, a supervisor can only note where it has got
-  to; the bill closes it.
-- On the other two, a supervisor's answer waits for an admin: **Approve** closes
-  it, **Send back** returns it with the reason.
+- Nothing is typed on an item: each is put right in Odoo (the bill posted, the
+  PO corrected, the bill linked to its PO) and clears itself on the next check.
+  An answer given before this changed still waits for an admin: **Approve**
+  closes it, **Send back** returns it with the reason.
 - The list reads like an inbox: a short line per item on the left (oldest
   first, answers waiting for an admin at the top), everything about the one
   picked on the right, with **Previous** and **Next**. Filter by kind, search by
-  PO or supplier, and **Group by** supplier, supervisor, shift or how long it
-  has waited (over 3 weeks, 2 to 3, 1 to 2, under a week); each group folds to
+  PO or supplier, and **Group by** (a dropdown) supplier, supervisor (admins
+  only), shift or how long it has waited (over 3 weeks, 2 to 3, 1 to 2, under a week); each group folds to
   one line with its count, total and oldest, and can be ticked as a whole.
 - **Check Odoo now** at the top of the list asks Odoo again for everybody who
   has a list, supervisors included, so a bill posted a minute ago clears its
   item straight away. It does the same as the button on the Money page.
 - An admin can tick several items (or **Select all shown**) and give them to one
   supervisor at once.
-- An admin sees everything, can give an item to another supervisor, can answer
-  and close one directly, or close one with **Nothing needed** and a reason. An
+- An admin sees everything, can give an item to another supervisor, or close
+  one with **Nothing needed** and a reason. An
   item closed by a person does not come back; one that closed itself comes back
   if the problem does.
 

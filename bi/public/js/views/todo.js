@@ -55,12 +55,12 @@ function what(t) {
     const gap = d.paid - d.poTotal;
     return [
       h('p', `${money(d.paid)} left ${FROM[d.paidFrom] || d.paidFrom} on ${dayText(d.paidDay)}; the PO says ${money(d.poTotal)}: ${money(Math.abs(gap))} ${gap > 0 ? 'more' : 'less'} than the PO.`),
-      h('p.small.muted', 'Say why, or have the PO corrected in Odoo. It closes by itself if the two come to agree.'),
+      h('p.small.muted', 'Have the PO corrected in Odoo. This item closes by itself once the two agree.'),
     ];
   }
   return [
     h('p', `A bill from ${d.supplier || 'a supplier'}${d.ref ? ` (their number ${d.ref})` : ''}, dated ${dayText(d.day)}, for ${money(d.total)}, with no PO behind it.`),
-    h('p.small.muted', 'Say what it was for and who agreed it, or have it linked to its PO in Odoo.'),
+    h('p.small.muted', 'Have the bill linked to its PO in Odoo. This item closes by itself once it is.'),
   ];
 }
 
@@ -137,7 +137,7 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
       onclick: () => { view.current = t.id; draw(); },
       onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); view.current = t.id; draw(); } },
     },
-    tickBox([t.id], `Select ${t.ref}`),
+    admin ? tickBox([t.id], `Select ${t.ref}`) : null,
     h('span.td-main', h('b', t.kind === 'nopo' ? 'Bill' : t.ref), ` · ${supplierOf(t)}`),
     h('span.td-amt.num', money(t.kind === 'differs' ? Math.abs(t.amount) : t.amount)),
     h('span.td-sub', [
@@ -147,7 +147,7 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
     ].filter(Boolean).join(' · ')),
     h(`span.td-age.${ageTone(t.age)}`, `${t.age} d`));
 
-    const list = h('div.td-list');
+    const list = h(`div.td-list${admin ? '' : '.nobox'}`);
     if (!items.length) mount(list, h('p.muted.td-empty', view.closed ? 'Nothing closed here.' : 'Nothing to do.'));
     else if (view.group === 'none') mount(list, items.map(row));
     else {
@@ -162,7 +162,7 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
             onclick: () => { if (open) openGroups.delete(id); else openGroups.add(id); draw(); },
             onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (open) openGroups.delete(id); else openGroups.add(id); draw(); } },
           },
-          tickBox(g.items.map((t) => t.id), `Select all of ${g.label}`),
+          admin ? tickBox(g.items.map((t) => t.id), `Select all of ${g.label}`) : null,
           h('span.td-caret', open ? '▾' : '▸'),
           h('span.td-main', h('b', g.label), ` · ${g.items.length}`),
           h('span.td-amt.num', money(total)),
@@ -201,14 +201,6 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
       if (!current) return h('div.card.td-detail', h('p.muted', items.length ? 'Pick an item on the left.' : 'Nothing here.'));
       const t = current;
       const said = h('span.small');
-      const box = h('input', { type: 'text', maxlength: '600', placeholder: t.kind === 'unbilled' ? 'Where it has got to' : 'What happened', 'aria-label': t.kind === 'unbilled' ? 'Where it has got to' : 'What happened' });
-      const send = async () => {
-        said.textContent = 'Saving…';
-        try {
-          const out = await api(`/todo/${t.id}/answer`, { method: 'POST', body: { answer: box.value } });
-          await re(out.state === 'answered' ? 'Sent to an admin to approve.' : out.state === 'closed' ? 'Closed.' : 'Noted.');
-        } catch (err) { fail(said)(err); }
-      };
       const back = h('input', { type: 'text', maxlength: '400', placeholder: 'Why it goes back', 'aria-label': 'Why it goes back' });
       const reason = h('input', { type: 'text', maxlength: '400', placeholder: 'Why nothing is needed', 'aria-label': 'Why nothing is needed' });
       const at = items.findIndex((x) => x.id === t.id);
@@ -239,8 +231,7 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
           ] : null) : null,
         t.state === 'closed'
           ? h('div.sh-done', h('span', `✓ ${t.closedWhy || 'Closed'}${t.closedBy && t.closedBy !== 'Insight' ? ` (${t.closedBy})` : ''}`))
-          : t.state === 'open' ? h('div.td-answer', box, h('button.btn.primary', { type: 'button', onclick: send },
-            t.kind === 'unbilled' ? 'Save note' : admin ? 'Close with this answer' : 'Send answer')) : null,
+          : null,
         admin && t.state !== 'closed' ? h('div.td-admin',
           h('label.small', 'With ', h('select', {
             onchange: async (e) => { try { await api(`/todo/${t.id}/assign`, { method: 'POST', body: { accountId: Number(e.target.value) } }); await re('Given to somebody else.'); } catch (err) { fail(said)(err); } },
@@ -285,7 +276,7 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
           h('h2', admin ? 'Money to-do' : 'Your money to-do'),
           h('p.sub', admin
             ? 'Raised from the cash POs and Odoo’s bills, and shared out among the supervisors. Answers wait for you here.'
-            : 'Given to you from the cash POs and Odoo’s bills. Your answers go to an admin to approve.')),
+            : 'Given to you from the cash POs and Odoo’s bills. Each item clears by itself once Odoo is put right: press Check Odoo now to see it go.')),
         h('div.sh-todo-check', check, checkSaid),
         h('div.sh-todo-counts',
           h('span', h('b', String(d.counts.open)), ' open'),
@@ -293,7 +284,8 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
           admin && d.counts.unassigned ? h('span', h('b', String(d.counts.unassigned)), ' with nobody') : null)),
       h('div.td-bar',
         h('div.td-pills', KINDS.map(([k, label]) => pill(view.kind === k, `${label} · ${counts[k]}`, () => { view.kind = k; draw(); }))),
-        h('div.td-pills', h('span.small.muted', 'Group by'), GROUPS.map(([g, label]) => pill(view.group === g, label, () => { view.group = g; openGroups.clear(); draw(); }))),
+        h('label.small.td-groupby', 'Group by ', h('select', { onchange: (e) => { view.group = e.target.value; openGroups.clear(); draw(); } },
+          GROUPS.filter(([g]) => admin || g !== 'supervisor').map(([g, label]) => h('option', { value: g, selected: view.group === g }, label)))),
         h('div.td-find', find),
         admin ? h('select', { 'aria-label': 'Whose items', onchange: (e) => { view.who = e.target.value; draw(); } },
           h('option', { value: 'all', selected: view.who === 'all' }, 'Everybody'),

@@ -1047,3 +1047,10 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .td-step { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding-top: .4rem; }
 .td-days { margin-top: .8rem; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
 @media (max-width: 760px) { .td-left { max-width: none; } .td-detail { position: static; } .td-list { max-height: none; } }
+.td-row > :first-child, .td-ghead > :first-child { grid-row: span 2; }
+.td-list.nobox .td-row { grid-template-columns: minmax(0, 1fr) auto; }
+.td-list.nobox .td-row > :first-child { grid-row: auto; }
+.td-list.nobox .td-ghead { grid-template-columns: 14px minmax(0, 1fr) auto; }
+.td-list.nobox .td-ghead .td-age { grid-column: 3; }
+.td-groupby { display: inline-flex; align-items: center; gap: .4rem; }
+.td-groupby select { font: inherit; font-size: .85rem; padding: .3rem .5rem; border-radius: 8px; border: 1px solid var(--sh-line); background: var(--surface); color: var(--ink); }
