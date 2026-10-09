@@ -18,8 +18,11 @@ function what(t) {
   const d = t.detail || {};
   if (t.kind === 'unbilled') {
     return [
-      h('p', `${money(d.paid)} paid from ${FROM[d.paidFrom] || d.paidFrom} on ${dayText(d.paidDay)}${d.source ? ` (${d.source})` : ''}. Odoo has no bill for it yet.`),
-      h('p.small.muted', 'Get the bill entered in Odoo against this PO. This item closes by itself once Odoo has it.'),
+      h('p', `${money(d.paid)} paid from ${FROM[d.paidFrom] || d.paidFrom} on ${dayText(d.paidDay)}${d.source ? ` (${d.source})` : ''}. `
+        + (d.drafts?.length ? `Odoo has a draft bill (${d.drafts.join(', ')}) that is not posted yet.` : 'Odoo has no bill for it yet.')),
+      h('p.small.muted', d.drafts?.length
+        ? 'Get the bill checked and posted in Odoo. This item closes by itself once it is posted.'
+        : 'Get the bill entered and posted in Odoo against this PO. This item closes by itself once it is posted.'),
     ];
   }
   if (t.kind === 'differs') {

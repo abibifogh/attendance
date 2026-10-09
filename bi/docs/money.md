@@ -27,7 +27,8 @@ which no other system reports.
 ## Spending paid in cash
 
 Every PO paid in cash is already known: a closing report's expenses (HIVE), the
-drawer expenses on a shift, and the safe book. Each night, and on **Check Odoo
+drawer expenses on a shift (every PO number typed there, whether or not it was
+looked up in Odoo; `2433` is read as `P02433`), and the safe book. Each night, and on **Check Odoo
 now**, Insight asks Odoo about each one (read-only): is it billed, and what did
 it buy, by part of the business.
 
@@ -50,7 +51,7 @@ time Odoo is asked:
 
 | Item | Raised when | Clears itself when |
 | --- | --- | --- |
-| Paid in cash, no bill in Odoo | a cash PO still has no bill after 7 days (an admin can change this) | the bill is in Odoo |
+| Paid in cash, no posted bill in Odoo | a cash PO still has no posted bill after 7 days (an admin can change this); a draft bill is named on the item | the bill is posted in Odoo |
 | Paid is not what the PO says | what left the cash differs from the PO's total | the two agree |
 | A bill with no PO | a bill in Odoo from the last 45 days has no PO | the bill is linked to a PO |
 

@@ -168,7 +168,7 @@ test('cash POs: unbilled spending counted until the bill comes, how it was paid,
   const again = await cashpo.refreshCashPos(env, { fetchImpl, today });
   assert.equal(again.unbilled, 1);
   const closed = await todo.listTodos(env, OWNER, { closed: true });
-  assert.equal(closed.items.find((t) => t.key === 'unbilled:P00412').closedWhy, 'The bill is in Odoo.');
+  assert.equal(closed.items.find((t) => t.key === 'unbilled:P00412').closedWhy, 'The bill is posted in Odoo.');
   const left = await env.DB.prepare("SELECT line_id, amount FROM fact_cost WHERE source_id = 'odoo-cash'").all();
   assert.deepEqual(left.results.map((r) => [r.line_id, r.amount]), [['admin', 2500]], 'the billed PO is the bill’s now');
 
@@ -206,4 +206,39 @@ test('cash not billed adds to the books, and never to a line an operating system
   assert.deepEqual(kept, ['breakfast:odoo', 'breakfast:odoo-cash', 'maintenance:odoo-cash', 'restaurant:kitchen']);
   assert.equal(basis.byLine.get('maintenance'), 'books');
   assert.equal(basis.excluded, 40);
+});
+
+test('a PO typed on a shift and never looked up is still chased, and a draft bill does not close it', async () => {
+  const { env, raw } = await setUp();
+  const { state, fetchImpl } = odoo();
+  // Typed as a bare number, saved, and nobody pressed the button that asks Odoo.
+  raw.exec(`INSERT INTO shift_expense (day, slot, sheet_total, po_numbers, by_name, at)
+    VALUES ('2026-08-03', 'morning', 4500, '2433', 'Test Owner', '2026-08-03 14:00:00')`);
+  state.orders.push({ id: 3, name: 'P02433', partner_id: [3, 'A Water Seller'], amount_total: 45, state: 'purchase', date_order: '2026-08-03 08:00:00', invoice_ids: [901] });
+  state.bills.push({ id: 901, name: 'BILL/2026/0002', state: 'draft', invoice_date: '2026-08-05' });
+  state.lines.push({ order_id: [3, 'P02433'], price_total: 45, analytic_distribution: false });
+
+  await cashpo.refreshCashPos(env, { fetchImpl, today: '2026-08-20' });
+  const row = await env.DB.prepare("SELECT * FROM cash_po WHERE po = 'P02433'").first();
+  assert.ok(row, 'the typed number is read and named as Odoo names it');
+  assert.equal(row.paid, 4500, 'what left the drawer is the PO’s total');
+  assert.equal(row.paid_from, 'drawer');
+  assert.equal(row.billed, 1);
+  assert.equal(row.posted, 0);
+
+  // A draft bill already counts in the costs, so it is not counted again here…
+  const cost = await env.DB.prepare("SELECT SUM(amount) AS n FROM fact_cost WHERE source_id = 'odoo-cash' AND day = '2026-08-03'").first();
+  assert.equal(cost.n, null);
+  // …but the bill is not finished, so the item is raised and says so.
+  let item = (await todo.listTodos(env, OWNER)).items.find((t) => t.key === 'unbilled:P02433');
+  assert.ok(item, 'raised for the shift’s PO');
+  assert.deepEqual(item.detail.drafts, ['BILL/2026/0002']);
+  const view = await cashpo.cashView(env, { from: '2026-08-01', to: '2026-08-31' });
+  assert.ok(view.unbilled.find((u) => u.po === 'P02433' && u.draft));
+
+  // Posted: closed.
+  state.bills[0].state = 'posted';
+  await cashpo.refreshCashPos(env, { fetchImpl, today: '2026-08-20' });
+  item = (await todo.listTodos(env, OWNER, { closed: true })).items.find((t) => t.key === 'unbilled:P02433');
+  assert.equal(item.closedWhy, 'The bill is posted in Odoo.');
 });
