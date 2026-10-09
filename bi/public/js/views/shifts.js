@@ -54,6 +54,8 @@ const KIND = {
   'other-shift': ['Paid on one shift, keyed on another', '→'],
   corrected: ['A mistake and its correction', '✓'],
   'movement-corrected': ['A cash movement keyed wrong and put back', '✓'],
+  'movement-matched': ['Cash movement matched', '='],
+  'movement-labelled': ['Cash movement labelled by hand', '✓'],
   'movement-twice': ['Moved out of the drawer twice', '2'],
   'movement-reversal': ['Put back on a different shift', '↺'],
   'bank-only': ['In the bank, not on the terminal', '?'],
@@ -1376,6 +1378,12 @@ export async function renderShifts(root, { range }) {
       case 'drawer-short':
       case 'drawer-over': return `It should have held ${money(x.expected)}. ${x.closingFrom === 'typed' ? 'The recount' : 'ASSD’s closing count'} found ${money(x.closing)}.`;
       case 'handover-gap': return `The first count of this shift found ${money(Math.abs(x.amount))} ${x.amount < 0 ? 'less' : 'more'} than ${nameOf(x.from)}’s closing count.`;
+      case 'movement-matched': return `${x.reason === 'duplicate'
+        ? `ASSD ${x.seq} (${money(x.amount)}) was matched as a duplicate of ASSD ${x.pair} and is left out of the drawer.`
+        : `ASSD ${x.seq} and ASSD ${x.pair} were matched: one puts the other back, and both are left out of the drawer.`}`
+        + ` ${x.drawerNow == null ? '' : x.drawerNow === 0 ? 'The drawer for this shift now agrees.' : `The drawer for this shift is now ${x.drawerNow > 0 ? 'over' : 'short'} by ${money(Math.abs(x.drawerNow))}.`}`;
+      case 'movement-labelled': return `${money(x.amount)} moved out (ASSD ${x.seq}) was labelled by hand: ${x.label}.`
+        + ` ${x.drawerNow == null ? '' : x.drawerNow === 0 ? 'The drawer for this shift agrees.' : `The drawer for this shift is ${x.drawerNow > 0 ? 'over' : 'short'} by ${money(Math.abs(x.drawerNow))}.`}`;
       case 'movement-corrected': return `${nameOf(x.by)} moved ${money(x.amount)} out and ${nameOf(x.reversedBy)} put it back (ASSD ${x.reversedSeq}). It nets to nothing.`;
       case 'movement-twice': return `${money(x.amount)} was moved out of the drawer twice (ASSD ${x.pair} and ${x.seq}), and the drawer counted over. If the second never moved any cash, match it as a duplicate.`;
       case 'movement-reversal': return `${money(x.amount)} was put back into the drawer (ASSD ${x.seq}). It matches ASSD ${x.pair}, moved out on ${nameOf(x.pairShift?.user)}’s ${SLOT[x.pairShift?.slot]?.label.toLowerCase() || ''} shift of ${shortDay(x.pairShift?.day)}. If one undoes the other, match them: both are left out.`;
@@ -1546,8 +1554,20 @@ export async function renderShifts(root, { range }) {
         }, 'Undo') : null)
       : x.severity === 'info' && !x.answer ? h('div.sh-done', h('span', { style: 'color:var(--ink-2)' }, 'Explained by the rules; no answer needed'))
         : x.answer ? h('div.sh-done',
-          h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''} (${x.answer.by})`),
-          h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change'))
+          h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''}${x.answer.by ? ` (${x.answer.by}${x.answer.at ? `, ${String(x.answer.at).slice(0, 16)}` : ''})` : ''}`),
+          // A correction to a movement is undone, not re-answered: the
+          // differences it settled come back as they were.
+          x.undo ? (may('moves', 2) ? h('button.sh-link', {
+            type: 'button',
+            onclick: async () => {
+              said.textContent = 'Undoing…';
+              try {
+                await api('/shifts/movement', { method: 'POST', body: { seq: x.undo.seq, kind: 'clear' } });
+                await load(banner('good', 'Undone. The drawer is worked out again from ASSD as it was.'));
+              } catch (err) { said.textContent = err.message; }
+            },
+          }, 'Undo') : null)
+            : h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change'), said)
           : h('div.sh-answers', note, ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said));
   }
 

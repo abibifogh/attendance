@@ -539,3 +539,28 @@ test('Odoo purchase orders are read by name, and unknown names are said out loud
   assert.deepEqual(out.orders[0], { name: 'P00412', vendor: 'A Vendor', total: 52500, state: 'purchase', billed: 'invoiced', orderedOn: '2026-08-01' });
   assert.deepEqual(out.unknown, ['P00499']);
 });
+
+test('a duplicate matched away leaves an answered record that can be undone', async () => {
+  const env = await loaded();
+  const read = async () => (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER)).exceptions;
+  const twice = (await read()).find((x) => x.kind === 'movement-twice');
+  assert.ok(twice, 'the fixture has a movement keyed twice');
+
+  await routes.saveMovement(env, { ...twice.action, note: 'Only one envelope went' }, OWNER);
+  let all = await read();
+  assert.equal(all.some((x) => x.kind === 'movement-twice'), false, 'the suggestion is gone');
+  const record = all.find((x) => x.kind === 'movement-matched');
+  assert.ok(record, 'and a record stands in its place');
+  assert.deepEqual([record.key, record.seq, record.pair, record.amount, record.reason], [`matched:${twice.seq}`, twice.seq, twice.pair, twice.amount, 'duplicate']);
+  assert.equal(record.answer.answer, 'Matched as a duplicate');
+  assert.equal(record.answer.note, 'Only one envelope went');
+  assert.equal(record.answer.by, 'Test Owner');
+  assert.equal(typeof record.drawerNow, 'number', 'says where the drawer stands now');
+  assert.deepEqual(record.undo, { seq: twice.seq });
+
+  // Undo: the record goes and the suggestion is back.
+  await routes.saveMovement(env, { seq: twice.seq, kind: 'clear' }, OWNER);
+  all = await read();
+  assert.equal(all.some((x) => x.kind === 'movement-matched'), false);
+  assert.ok(all.some((x) => x.kind === 'movement-twice'));
+});

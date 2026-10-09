@@ -675,6 +675,32 @@ export async function shifts(env, query, account) {
     x.answer = { answer: 'Reconciled together', note: link.note, by: link.by, at: link.at, link: link.id };
   }
 
+  // What people settled by correcting a movement leaves a record, answered,
+  // so it can be found again under "Show answered" and undone. Without it a
+  // duplicate matched away took its exception, and the drawer difference it
+  // explained, off the screen with no trace.
+  const labelOf = (m) => ({ expenses: 'it was expenses', safe: 'it went to the safe', split: `${m.expenses != null ? `split, part expenses` : 'split'}` })[m.kind] || m.kind;
+  for (const sh of result.shifts.filter((x) => inRange(x.day))) {
+    const r = register.get(sh.index);
+    const drawerNow = r?.variance == null ? null : r.variance;
+    const base = { day: sh.day, slot: sh.slotName, user: sh.user, event: null, drawerNow };
+    for (const m of sh.moves || []) {
+      if (m.kind === 'excluded' && ['duplicate', 'reverses'].includes(m.reason)) {
+        exceptions.push({
+          ...base, key: `matched:${m.seq}`, kind: 'movement-matched', group: 'drawer', severity: 'warning',
+          seq: m.seq, pair: m.pair, amount: m.amount, reason: m.reason, undo: { seq: m.seq },
+          answer: { answer: m.reason === 'duplicate' ? 'Matched as a duplicate' : 'Matched: one puts the other back', note: m.manual?.note || null, by: m.manual?.by || null, at: m.manual?.at || null },
+        });
+      } else if (m.manual && ['expenses', 'safe', 'split'].includes(m.kind)) {
+        exceptions.push({
+          ...base, key: `labelled:${m.seq}`, kind: 'movement-labelled', group: ['unlabelled', 'part'].includes(m.auto) ? 'unlabelled' : 'drawer', severity: 'warning',
+          seq: m.seq, amount: m.amount, label: labelOf(m), was: m.auto || null, undo: { seq: m.seq },
+          answer: { answer: `Labelled by hand: ${labelOf(m)}`, note: m.manual?.note || null, by: m.manual?.by || null, at: m.manual?.at || null },
+        });
+      }
+    }
+  }
+
   const byDay = new Map(daysBetween(from, to).map((d) => [d, []]));
   for (const s of placed) {
     const expense = expenseOf.get(`${s.day}|${s.slotName}`);
