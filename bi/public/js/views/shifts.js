@@ -511,7 +511,7 @@ export async function renderShifts(root, { range }) {
    */
   async function safeView(v, notice = null) {
     mount(v, h('p.muted', 'Reading the safe book…'));
-    const d = await api('/safe/book');
+    const d = await api(`/safe/book?from=${period.from}&to=${period.to}`);
     const re = (msg) => safeView(v, msg ? banner('good', msg) : null);
     const fail = (said) => (err) => { said.textContent = err.message; said.className = 'small form-error'; };
     const todayIso = new Date().toISOString().slice(0, 10);
@@ -669,7 +669,7 @@ export async function renderShifts(root, { range }) {
           forms),
         h('div.sh-safeside',
           h('section.card',
-            h('div.sh-cardhead', h('h2', 'Confirmed in Odoo, not claimed'), h('p.sh-sub', 'POs since the last count that no closing report, drawer expense or the safe has claimed. Were they paid from the safe?')),
+            h('div.sh-cardhead', h('h2', 'Confirmed in Odoo, not claimed'), h('p.sh-sub', `POs ordered ${period.from === period.to ? `on ${dayText(period.from)}` : `from ${dayText(period.from)} to ${dayText(period.to)}`} that no closing report, drawer expense or the safe has claimed. Were they paid from the safe?`)),
             sugBox),
           h('section.card.sh-safecount',
             h('h2', d.started ? 'Count the safe' : 'Start the book'),

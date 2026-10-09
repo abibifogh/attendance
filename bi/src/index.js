@@ -115,7 +115,7 @@ const ROUTES = [
   // The safe: what each shift moved into it, and the closures. Admins only.
   ['GET', '/api/safe', 'shifts', (env, ctx) => safe.safeView(env, ctx.query, ctx.account)],
   // The safe book: in from the shifts, out as written, a count to close a page.
-  ['GET', '/api/safe/book', 'shifts', (env, ctx) => safebook.bookView(env, ctx.account, { counted: ctx.query.counted ? Math.round(Number(ctx.query.counted) * 100) : null })],
+  ['GET', '/api/safe/book', 'shifts', (env, ctx) => safebook.bookView(env, ctx.account, { counted: ctx.query.counted ? Math.round(Number(ctx.query.counted) * 100) : null, from: ctx.query.from, to: ctx.query.to })],
   ['POST', '/api/safe/entry', 'shifts', (env, ctx) => safebook.addEntry(env, ctx.body, ctx.account)],
   ['POST', '/api/safe/entry/:id/po', 'shifts', (env, ctx) => safebook.settleEntry(env, ctx.params.id, ctx.body, ctx.account)],
   ['POST', '/api/safe/entry/:id/remove', 'shifts', (env, ctx) => safebook.removeEntry(env, ctx.params.id, ctx.account)],

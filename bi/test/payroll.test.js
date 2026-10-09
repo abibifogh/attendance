@@ -276,10 +276,11 @@ test('a salaried month is its monthly pay over its days until the payslips repla
   await runEtl({ DB: db, ATT_DB: hive.db }, { from: '2026-05-01', to: '2026-06-10', trigger: 'test' });
   const line = (facts, id) => facts.labour.filter((r) => r.line_id === id).reduce((t, r) => t + r.labour_cost, 0);
 
-  // June has no finalised run: Ama's GH₵2,100 a month is GH₵70 a day for ten
-  // days, worked or not. Kwesi is paid by the day and worked none of them.
+  // June has no finalised run: Ama's GH₵2,100 a month is GH₵70 a day, and
+  // GH₵79.10 with the employer's 13% SSF, for ten days, worked or not. Kwesi
+  // is paid by the day and worked none of them.
   const june = await loadFacts(db, '2026-06-01', '2026-06-10');
-  assert.equal(Math.round(line(june, 'housekeeping')), 70_000);
+  assert.equal(Math.round(line(june, 'housekeeping')), 79_100);
   assert.equal(line(june, 'restaurant'), 0);
   assert.deepEqual(june.payslipMonths, []);
 

@@ -76,6 +76,8 @@ each person's pay in HIVE:
   to the last day they worked;
 - anybody paid by the day or by the hour costs their rate for the time they
   worked;
+- both carry the employer's 13% SSF on top, as the payslip will (GH₵2,100 a
+  month is GH₵79.10 a day in a 30-day month);
 - anybody with no pay recorded is costed at the default hourly cost in Setup,
   and the note under the Money table says how much of the bill that is.
 
@@ -89,7 +91,6 @@ exactly; a week inside it shows that week's share.
 
 The note under the Money table says which months are payslips and which are
 estimates. The nightly read looks two months back for pay runs, so a month
-finalised late is still picked up. The estimate is base pay only, so a month
-usually rises a little when its payslips arrive (allowances, bonus and the
-employer's SSF). People paid outside HIVE's payroll are not in a paid month's
-wages.
+finalised late is still picked up. The estimate has no allowances or bonus, so
+a month can still move a little when its payslips arrive. People paid outside
+HIVE's payroll are not in a paid month's wages.

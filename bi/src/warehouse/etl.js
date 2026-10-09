@@ -391,6 +391,14 @@ async function loadBundle(db, register, sourceId, bundle, config, from, to) {
  * top of a guessed wage bill is a lie told confidently.
  */
 /**
+ * The employer's SSF contribution in Ghana: 13% on top of pay. Added to every
+ * estimate made from somebody's own pay, so the estimate is what the payslip
+ * will cost the business rather than what it pays out, and a month moves
+ * little when its payslips replace it.
+ */
+export const EMPLOYER_SSF = 0.13;
+
+/**
  * Salaries, estimated by the day until the payslips come: a salaried person's
  * monthly pay divided by the days in that month, on every day from the day
  * their pay began, worked or not. Somebody who has left is costed up to the
@@ -428,7 +436,7 @@ async function addSalaries(db, rows, from, to) {
         byKey.set(key, row);
         rows.push(row);
       }
-      row.labour_cost = (row.labour_cost || 0) + person.pay_monthly / monthDays(day);
+      row.labour_cost = (row.labour_cost || 0) + (person.pay_monthly * (1 + EMPLOYER_SSF)) / monthDays(day);
     }
   }
 }
@@ -451,7 +459,11 @@ async function rollUpLabour(db, from, to, config) {
            SUM(d.expected_minutes) AS expected_minutes,
            -- A salaried person is costed by the day below, whether they worked
            -- or not; everybody else at their rate for the time they worked.
-           SUM(CASE WHEN p.pay_monthly IS NULL THEN d.worked_minutes * COALESCE(p.hour_cost, ?3) / 60.0 ELSE 0 END) AS labour_cost,
+           -- A person's own rate carries the employer's SSF on top, as their
+           -- payslip will; the property-wide default is a guess and is left bare.
+           SUM(CASE WHEN p.pay_monthly IS NULL
+                    THEN d.worked_minutes * (CASE WHEN p.hour_cost IS NULL THEN ?3 ELSE p.hour_cost * ?4 END) / 60.0
+                    ELSE 0 END) AS labour_cost,
            -- Which of the three the money came from. 'rate' only when every
            -- person in the group had one; one unrated person makes the whole
            -- figure part-guess, and saying "rate" of it would be a claim the
@@ -461,7 +473,7 @@ async function rollUpLabour(db, from, to, config) {
       FROM fact_person_day d
       JOIN dim_person p ON p.id = d.person_id
      WHERE d.day BETWEEN ?1 AND ?2
-     GROUP BY d.day, line, department`, from, to, config.defaultHourCost);
+     GROUP BY d.day, line, department`, from, to, config.defaultHourCost, 1 + EMPLOYER_SSF);
   await addSalaries(db, rows, from, to);
 
   const statements = rows.map((row) => db.prepare(`

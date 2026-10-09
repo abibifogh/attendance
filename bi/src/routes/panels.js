@@ -739,13 +739,14 @@ export function wageBasisNote(facts, config) {
       + 'spread over the month\u2019s days by the hours each department worked.';
     if (fromSlips >= total) return lead;
     return `${lead} The other days have no finalised payroll yet and are estimated: each salaried person\u2019s monthly pay `
-      + 'divided by the days in the month, and anybody paid by the day or hour at their own rate for the time worked'
-      + (guessed > 0 ? `, or ${fallback} an hour where nobody has a rate.` : '.');
+      + 'divided by the days in the month, and anybody paid by the day or hour at their own rate for the time worked, '
+      + 'each with the employer\u2019s 13% SSF on top'
+      + (guessed > 0 ? `; or ${fallback} an hour where nobody has a rate.` : '.');
   }
   if (guessed === 0) {
     return 'Wages are an estimate until the month\u2019s payroll is finalised in HIVE: each salaried person\u2019s monthly pay '
-      + 'divided by the days in the month, and anybody paid by the day or hour at their own rate for the time worked. '
-      + 'It is not the payroll figure: a payslip also carries allowances, bonus and the employer\u2019s SSF, '
+      + 'divided by the days in the month, and anybody paid by the day or hour at their own rate for the time worked, '
+      + 'each with the employer\u2019s 13% SSF on top. It is not the payroll figure: a payslip also carries allowances and bonus, '
       + 'and replaces this estimate once the pay run is finalised.';
   }
   if (guessed >= total) {

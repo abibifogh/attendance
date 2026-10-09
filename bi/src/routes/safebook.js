@@ -127,7 +127,7 @@ export function addingUpTo(list, target) {
   return [];
 }
 
-export async function bookView(env, account, { counted = null, fetchImpl } = {}) {
+export async function bookView(env, account, { counted = null, fetchImpl, from = null, to = null } = {}) {
   await requireAdmin(account);
   const page = await openPage(env, account);
   const closures = await all(env.DB, `
@@ -142,7 +142,9 @@ export async function bookView(env, account, { counted = null, fetchImpl } = {})
   if (!source) odooError = 'Odoo is not set up in Insight yet, so nothing can be offered.';
   else {
     try {
-      const since = page.start ? page.start.closed_on : addDays(today(), -30);
+      // The days on screen, when asked; otherwise since the last count.
+      const range = DAY.test(String(from)) && DAY.test(String(to)) ? { from: from <= to ? from : to, to: from <= to ? to : from } : null;
+      const since = range ? range.from : page.start ? page.start.closed_on : addDays(today(), -30);
       const [orders, claimed, dismissed] = await Promise.all([
         purchaseOrdersSince({ ...source, since, ...(fetchImpl ? { fetchImpl } : {}) }),
         claimedPos(env),
@@ -152,6 +154,7 @@ export async function bookView(env, account, { counted = null, fetchImpl } = {})
       const pending = page.outs.filter((e) => e.kind === 'pending');
       suggestions = orders
         .filter((o) => CONFIRMED.has(o.state) && !claimed.has(o.name.toUpperCase()) && !gone.has(o.name.toUpperCase()))
+        .filter((o) => !range || !o.orderedOn || o.orderedOn <= range.to)
         .sort((a, b) => String(a.orderedOn).localeCompare(String(b.orderedOn)))
         .map((o) => ({
           name: o.name, vendor: o.vendor, amount: o.total, orderedOn: o.orderedOn,
