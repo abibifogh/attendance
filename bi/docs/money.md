@@ -61,6 +61,12 @@ time Odoo is asked:
   to; the bill closes it.
 - On the other two, a supervisor's answer waits for an admin: **Approve** closes
   it, **Send back** returns it with the reason.
+- The list reads like an inbox: a short line per item on the left (oldest
+  first, answers waiting for an admin at the top), everything about the one
+  picked on the right, with **Previous** and **Next**. Filter by kind, search by
+  PO or supplier, and **Group by** supplier, supervisor, shift or how long it
+  has waited (over 3 weeks, 2 to 3, 1 to 2, under a week); each group folds to
+  one line with its count, total and oldest, and can be ticked as a whole.
 - **Check Odoo now** at the top of the list asks Odoo again for everybody who
   has a list, supervisors included, so a bill posted a minute ago clears its
   item straight away. It does the same as the button on the Money page.
