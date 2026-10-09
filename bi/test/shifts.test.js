@@ -344,6 +344,9 @@ test('the whole screen, from the three files', async () => {
     'keying:27600',
     'movement-reversal:2000',
     'movement-twice:2000',
+    // The two 20.00 movements nothing labelled, each flagged on its own.
+    'movement-unlabelled:2000',
+    'movement-unlabelled:2000',
     'not-found:64000',
     'not-recorded:3500',
   ], 'the 1,999 taken after the journal ends is not called unrecorded');

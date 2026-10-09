@@ -895,3 +895,14 @@ header.top .brand .mark-svg { width: 1.35rem; height: 1.35rem; }
 .join-card div.field .join-fixed { font-size: 1rem; }
 /* A note to a person, not a pasted figure: the ordinary typeface. */
 label.field textarea.inv-note { font-family: var(--sans); }
+
+.sh-labels { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem 0; }
+.sh-waiting { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .55rem .7rem; border-radius: 10px;
+  background: color-mix(in srgb, var(--warning) 14%, var(--surface)); }
+.tl-keys { margin: .2rem 0 .4rem 1.1rem; padding: 0; font-size: .86rem; }
+
+/* The safe. */
+.sh-safetable td, .sh-safetable th { vertical-align: middle; }
+.sh-safetable tr.closed td { color: var(--ink-2); }
+.sh-safeform { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .2rem .8rem; }
+.sh-safeclose { border: 2px solid var(--series-1); }

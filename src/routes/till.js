@@ -187,6 +187,17 @@ async function checkPo(ctx, typed) {
 /** Look a PO up while somebody types it. Read-only all the way to Odoo. */
 export async function lookUpPo(ctx) {
   const body = await readJson(ctx.request);
+  // Several at once: each looked up the same way, in the order typed.
+  if (Array.isArray(body.pos)) {
+    const typed = [...new Set(body.pos.map((p) => String(p ?? '').trim()).filter(Boolean))];
+    if (!typed.length) throw badRequest('Type at least one PO number.');
+    if (typed.length > 20) throw badRequest('Twenty POs at most at once.');
+    if (typed.some((p) => p.length > 30)) throw badRequest('That is not a PO number.');
+    const found = [];
+    // eslint-disable-next-line no-await-in-loop
+    for (const po of typed) found.push({ po, ...(await checkPo(ctx, po)) });
+    return json({ found });
+  }
   const typed = str(body.po, 'PO number', { required: true, max: 30 });
   return json(await checkPo(ctx, typed));
 }
@@ -270,20 +281,21 @@ export async function closeShift(ctx) {
     checks.push({ id: c.id, label: c.label, ok: v.ok, guest, why });
   }
 
-  const lines = (Array.isArray(body.expenses) ? body.expenses : []).filter((e) => String(e?.po ?? '').trim() || String(e?.paid ?? '').trim());
+  // Each expense is a PO number and nothing else. The amount is the PO's own
+  // total in Odoo: what somebody types about what they paid is not evidence,
+  // the confirmed order is. A PO Odoo cannot find counts for nothing.
+  const lines = (Array.isArray(body.expenses) ? body.expenses : []).filter((e) => String(e?.po ?? '').trim());
   if (lines.length > 20) throw badRequest('Twenty expenses at most on one report.');
   const expenses = [];
   for (const line of lines) {
-    const po = str(line.po, 'PO number', { max: 30 });
-    const paid = pesewas(line.paid, `What you paid${po ? ` on ${po}` : ''}`, { min: 1 });
-    if (!po) { expenses.push({ po: null, paid, state: 'no-po', counted: false }); continue; }
+    const po = str(line.po, 'PO number', { required: true, max: 30 });
     let found;
     try { found = await checkPo(ctx, po); } catch { found = { typed: po, name: null, state: 'unchecked', counted: false }; }
     if (found.counted && expenses.some((x) => x.counted && x.name === found.name)) {
       found = { ...found, state: 'claimed', counted: false, claimed: { day, slot, by: ctx.session.user.name } };
     }
     expenses.push({
-      po, paid, name: found.name, state: found.state, vendor: found.vendor ?? null, total: found.total ?? null,
+      po, paid: Number(found.total) || 0, name: found.name, state: found.state, vendor: found.vendor ?? null, total: found.total ?? null,
       counted: found.counted, claimed: found.claimed ?? null,
     });
   }
@@ -399,7 +411,8 @@ export async function answer(ctx) {
         || `is ${found.state} in Odoo, not confirmed`;
       throw badRequest(`${found.name || typed} ${why}.`);
     }
-    const paid = pesewas(body.paid, 'What you paid', { required: false, min: 1 }) ?? found.total;
+    // The PO's own total, never a typed amount.
+    const paid = found.total;
     const report = await ctx.db.prepare('SELECT id FROM till_report WHERE day = ?1 AND slot = ?2 AND user_id = ?3 AND reopened_at IS NULL')
       .bind(issue.day, issue.slot, userId).first();
     await ctx.db.prepare(

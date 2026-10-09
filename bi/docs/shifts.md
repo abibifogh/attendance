@@ -157,3 +157,19 @@ code and card, to check each one arrived.
 
 The last shift in a journal is shown as far as the journal goes. Money taken
 after the export ran is not reported as missing from ASSD.
+
+## Laundry, shift by shift
+
+Every shift's laundry in ASSD (article 540) is held against what the laundry
+system took in the same hours (06:00–14:00, 14:00–22:00, 22:00–06:00). The
+laundry system's payments and orders are read one by one on each nightly
+refresh (table `laundry_txn`; order number, time and money only). A shift is
+compared only once the laundry system has been read for the whole of it; a
+difference is listed under Exceptions as "The laundry did not agree".
+
+## Cash moved out with no label
+
+A Cash Movement out of the front drawer that no count labelled as expenses or
+the safe, on a shift with no expense sheet to settle it, is listed under
+Exceptions. "It went to the safe" or "It was expenses" on the exception labels
+it (a supervisor's label waits for an admin).

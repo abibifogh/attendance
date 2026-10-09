@@ -125,6 +125,26 @@ export async function pull({ config, token, from, to }) {
     });
   }
 
+  // Every payment and every order on its own, with its moment, so the Shifts
+  // screen can set them against the front desk's own laundry line, shift by
+  // shift. The order number, the time and the money; nothing about the guest.
+  const stamp = (iso) => {
+    const at = new Date(iso);
+    return Number.isNaN(at.getTime()) ? null : at.toISOString().slice(0, 19).replace('T', ' ');
+  };
+  for (const bucket of Object.values(report?.byShift || {})) {
+    for (const p of bucket?.payments || []) {
+      const at = stamp(p.at);
+      if (!at) continue;
+      bundle.laundryTxns.push({ kind: 'payment', ref: String(p.number ?? ''), at, amount: toMinor(p.amount), method: p.method === 'card' ? 'card' : 'cash' });
+    }
+  }
+  for (const o of Array.isArray(report?.orders) ? report.orders : []) {
+    const at = stamp(o.acceptedAt || o.createdAt);
+    if (!at || o.status === 'cancelled') continue;
+    bundle.laundryTxns.push({ kind: 'order', ref: String(o.number ?? o.id ?? ''), at, amount: toMinor(o.price), method: null });
+  }
+
   bundle.notes.push(`${days.length} days, ${Object.keys(report?.staff || {}).length} staff`);
   return bundle;
 }

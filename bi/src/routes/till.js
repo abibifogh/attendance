@@ -119,7 +119,7 @@ async function hive(env, sql, ...binds) {
   try { return await all(env.ATT_DB, sql, ...binds); } catch { return []; }
 }
 
-async function hiveReports(env, from, to) {
+export async function hiveReports(env, from, to) {
   return (await hive(env, `SELECT * FROM till_report WHERE day BETWEEN ?1 AND ?2 AND reopened_at IS NULL ORDER BY signed_at`, from, to))
     .map(readReport);
 }
@@ -342,6 +342,7 @@ export async function overview(env, query, account) {
   };
   if (role === 'admin') {
     out.approvals = await pendingMovements(env);
+    out.answerApprovals = await pendingAnswers(env);
     out.settings = await settingsView(env, users, shifts);
   }
   return out;
@@ -362,6 +363,20 @@ function netByPerson(issues, nameOf) {
     out.set(i.userId, p);
   }
   return [...out.values()].sort((a, b) => a.net - b.net);
+}
+
+/** A supervisor's answers and reconciliations, waiting for an admin. */
+async function pendingAnswers(env) {
+  const answers = await all(env.DB, "SELECT * FROM shift_answer WHERE status = 'pending' ORDER BY at").catch(() => []);
+  const links = await all(env.DB, "SELECT * FROM shift_link WHERE status = 'pending' ORDER BY at").catch(() => []);
+  return [
+    ...answers.map((a) => ({ type: 'answer', id: a.key, keys: [a.key], answer: a.answer, note: a.note, by: a.by_name, at: a.at })),
+    ...links.map((l) => {
+      let keys = [];
+      try { keys = JSON.parse(l.keys); } catch { keys = []; }
+      return { type: 'link', id: l.id, keys, answer: 'Reconciled together', note: l.note, by: l.by_name, at: l.at };
+    }),
+  ].sort((a, b) => String(a.at).localeCompare(String(b.at)));
 }
 
 async function pendingMovements(env) {
@@ -470,6 +485,19 @@ export async function reopen(env, body, account, { fetchImpl } = {}) {
 /** Approve or reject a supervisor's correction to a cash movement. */
 export async function approve(env, body, account) {
   await requireAdmin(account);
+  // An answer, or a set reconciled together: approving clears the exceptions;
+  // rejecting puts them back on the list, as if never answered.
+  if (body?.answer != null || body?.link != null) {
+    const isLink = body.link != null;
+    const table = isLink ? 'shift_link' : 'shift_answer';
+    const col = isLink ? 'id' : 'key';
+    const id = isLink ? Number(body.link) : String(body.answer);
+    const row = await first(env.DB, `SELECT * FROM ${table} WHERE ${col} = ?1 AND status = 'pending'`, id);
+    if (!row) throw badRequest('That is no longer waiting.');
+    if (body.ok) await run(env.DB, `UPDATE ${table} SET status = 'applied', decided_by = ?2, decided_at = ?3 WHERE ${col} = ?1`, id, who(account), now());
+    else await run(env.DB, `DELETE FROM ${table} WHERE ${col} = ?1`, id);
+    return { ok: true };
+  }
   const seq = Number(body?.seq);
   if (!Number.isInteger(seq)) throw badRequest('Which movement?');
   const row = await first(env.DB, "SELECT * FROM shift_movement WHERE seq = ?1 AND status = 'pending'", seq);
@@ -483,13 +511,14 @@ export async function approve(env, body, account) {
 }
 
 /** Tell the admins that a supervisor's correction is waiting. Never throws. */
-export async function tellApprovers(env, { seq, kind, by }, { fetchImpl } = {}) {
+export async function tellApprovers(env, { seq, kind, by, text = null }, { fetchImpl } = {}) {
   try {
     const { to } = await linkRecipients(env, { event: 'approval' });
     if (!to.length) return;
+    const said = text || `${by} says ASSD ${seq} ${kind === 'duplicate' ? 'is a duplicate' : kind === 'reverses' ? 'puts back another movement' : `was ${kind}`}.`;
     await hiveCall({
       binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/till/tell',
-      body: { recipients: to, kind: 'till.approval', title: `A correction is waiting for you`, body: `${by} says ASSD ${seq} ${kind === 'duplicate' ? 'is a duplicate' : kind === 'reverses' ? 'puts back another movement' : `was ${kind}`}. Approve it in Insight → Shifts.` },
+      body: { recipients: to, kind: 'till.approval', title: 'Waiting for your approval', body: `${said} Approve it in Insight → Shifts → Approvals.` },
     });
   } catch { /* the correction is saved either way */ }
 }

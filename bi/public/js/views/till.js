@@ -43,7 +43,7 @@ const yes = (ok, good, bad) => (ok == null ? pill('none', '—') : ok ? pill('ok
  *
  * `who` is `{ role, access }` from the sign-in; `period` the days on screen.
  */
-export function tillViews({ who, period, onChange = () => {} }) {
+export function tillViews({ who, period, onChange = () => {}, describeKey = (k) => k }) {
   const access = who?.access || {};
   const admin = who?.role === 'admin';
   let cache = null;
@@ -237,7 +237,21 @@ export function tillViews({ who, period, onChange = () => {} }) {
       expenses: 'was an expense', safe: 'went to the safe', split: `was split, ${money(a.expenses)} of it expenses`,
       duplicate: `is a duplicate of ASSD ${a.pair}`, reverses: `puts back ASSD ${a.pair}`,
     })[a.kind] || a.kind;
-    mount(v, h('div.card',
+    const answers = d.answerApprovals || [];
+    mount(v,
+      h('div.card',
+        h('div.sh-cardhead', h('h2', `Exceptions answered by a supervisor (${answers.length})`),
+          h('span.sh-sub', 'Nothing a supervisor answers or reconciles is cleared until you approve it. Reject puts it back on the list.')),
+        answers.length ? h('div.tl-cards', answers.map((a) => h('div.tl-issue.warn',
+          h('div.tl-issue-head', h('strong', a.by), h('span.tl-small', String(a.at).slice(0, 16))),
+          h('p.tl-text', a.type === 'link' ? `Reconciled ${a.keys.length} exceptions together:` : `Answered “${a.answer}” for:`),
+          h('ul.tl-keys', a.keys.map((k) => h('li', describeKey(k)))),
+          a.note ? h('div.tl-said', h('b', 'Note'), a.note) : null,
+          h('div.tl-actions',
+            h('button.btn.primary', { type: 'button', onclick: decideAnswer(a, true) }, 'Approve'),
+            h('button.btn', { type: 'button', onclick: decideAnswer(a, false) }, 'Reject')))))
+          : h('p.muted', 'Nothing waiting.')),
+      h('div.card',
       h('div.sh-cardhead', h('h2', `Supervisor corrections (${list.length})`), h('span.sh-sub', 'Nothing a supervisor corrects counts until you approve it.')),
       list.length ? h('div.tl-cards', list.map((a) => h('div.tl-issue.warn',
         h('div.tl-issue-head', h('strong', a.by), h('span.tl-amount', money(a.amount))),
@@ -248,6 +262,16 @@ export function tillViews({ who, period, onChange = () => {} }) {
           h('button.btn.primary', { type: 'button', onclick: decide(a, true) }, 'Approve'),
           h('button.btn', { type: 'button', onclick: decide(a, false) }, 'Reject')))))
         : h('p.muted', 'Nothing waiting.')));
+    function decideAnswer(a, ok) {
+      return async (e) => {
+        e.target.disabled = true;
+        try {
+          await api('/till/approve', { method: 'POST', body: { [a.type]: a.id, ok } });
+          onChange();
+          await reload(v, approvals);
+        } catch (err) { alert(err.message); e.target.disabled = false; }
+      };
+    }
     function decide(a, ok) {
       return async (e) => {
         e.target.disabled = true;

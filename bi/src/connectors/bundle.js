@@ -42,6 +42,9 @@ export function emptyBundle() {
     // The chart of accounts behind those bills, so spend can be grouped the
     // way the books group it rather than the way this warehouse guesses.
     accounts: [],
+    // The laundry's own payments and orders, one each, with the moment they
+    // happened, so the front desk's laundry can be checked shift by shift.
+    laundryTxns: [],
     // Anything the connector wants the run log to say.
     notes: [],
   };

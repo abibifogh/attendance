@@ -318,41 +318,54 @@ export async function saveMovement(env, body, account, { pending = false } = {})
  * Reconcile two or more exceptions together: one story that showed up as
  * several differences. Each of them counts as answered while the group stands.
  */
-export async function saveLink(env, body, account) {
+export async function saveLink(env, body, account, { pending = false } = {}) {
   const keys = [...new Set((Array.isArray(body?.keys) ? body.keys : []).map((k) => String(k ?? '').trim()).filter(Boolean))];
   if (keys.length < 2) throw badRequest('Choose at least two exceptions to reconcile together.');
   if (keys.length > 30) throw badRequest('Thirty at most in one reconciliation.');
   if (keys.some((k) => k.length > 200)) throw badRequest('That is not an exception.');
   const note = str(body?.note, 'Note', { max: 600 });
-  for (const row of await all(env.DB, 'SELECT id, keys FROM shift_link')) {
+  for (const row of await all(env.DB, "SELECT id, keys FROM shift_link WHERE COALESCE(status, 'applied') <> 'rejected'")) {
     let taken = [];
     try { taken = JSON.parse(row.keys); } catch { taken = []; }
     if (keys.some((k) => taken.includes(k))) throw badRequest('One of those is already reconciled with others. Undo that first.');
   }
-  await run(env.DB, 'INSERT INTO shift_link (keys, note, by_name, at) VALUES (?1, ?2, ?3, ?4)', JSON.stringify(keys), note, who(account), now());
-  return { ok: true };
+  // A supervisor's reconciliation waits for an admin before it clears anything.
+  await run(env.DB, 'INSERT INTO shift_link (keys, note, by_name, at, status) VALUES (?1, ?2, ?3, ?4, ?5)',
+    JSON.stringify(keys), note, who(account), now(), pending ? 'pending' : 'applied');
+  return { ok: true, pending };
 }
 
-/** Undo a reconciliation: each exception in it is open again. */
-export async function removeLink(env, body) {
+/** Undo a reconciliation: each exception in it is open again. A supervisor may only take back their own, still waiting. */
+export async function removeLink(env, body, account, { pending = false } = {}) {
   const id = Number(body?.id);
   if (!Number.isInteger(id)) throw badRequest('Which reconciliation?');
+  if (pending) {
+    const row = await first(env.DB, 'SELECT * FROM shift_link WHERE id = ?1', id);
+    if (!row || row.status !== 'pending' || row.by_name !== who(account)) throw badRequest('Only an admin can undo that.');
+  }
   await run(env.DB, 'DELETE FROM shift_link WHERE id = ?1', id);
   return { ok: true };
 }
 
-export async function saveAnswer(env, body, account) {
+export async function saveAnswer(env, body, account, { pending = false } = {}) {
   const key = str(body?.key, 'Exception', { required: true, max: 200 });
   const answer = str(body?.answer, 'Answer', { max: 60 });
   const note = str(body?.note, 'Note', { max: 600 });
+  const existing = await first(env.DB, 'SELECT * FROM shift_answer WHERE key = ?1', key);
+  // What an admin settled is the admin's to change; a supervisor may change
+  // or take back only their own answer, while it is still waiting.
+  if (pending && existing && ((existing.status || 'applied') === 'applied' || existing.by_name !== who(account))) {
+    throw badRequest('That has already been answered. Ask an admin to change it.');
+  }
   if (!answer) {
     await run(env.DB, 'DELETE FROM shift_answer WHERE key = ?1', key);
     return { ok: true };
   }
-  await run(env.DB, `INSERT INTO shift_answer (key, answer, note, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5)
-    ON CONFLICT (key) DO UPDATE SET answer = ?2, note = ?3, by_name = ?4, at = ?5`,
-  key, answer, note, who(account), now());
-  return { ok: true };
+  const status = pending ? 'pending' : 'applied';
+  await run(env.DB, `INSERT INTO shift_answer (key, answer, note, by_name, at, status, decided_by, decided_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL)
+    ON CONFLICT (key) DO UPDATE SET answer = ?2, note = ?3, by_name = ?4, at = ?5, status = ?6, decided_by = NULL, decided_at = NULL`,
+  key, answer, note, who(account), now(), status);
+  return { ok: true, pending };
 }
 
 // ------------------------------------------------------------------ read --
@@ -371,7 +384,7 @@ export async function shifts(env, query, account) {
   const lo3 = addDays(from, -3);
   const hi3 = addDays(to, 3);
   const optional = (promise) => promise.catch(() => []);
-  const [uploads, markers, lastMarker, terminal, bank, counts, expenses, answers, links, laundrySystem] = await Promise.all([
+  const [uploads, markers, lastMarker, terminal, bank, counts, expenses, answers, links, laundrySystem, laundryTxns, laundryThrough] = await Promise.all([
     all(env.DB, 'SELECT kind, name, from_day, to_day, rows, note, by_name, at FROM shift_upload ORDER BY id DESC LIMIT 40'),
     all(env.DB, `SELECT seq, day FROM assd_entry WHERE kind = ?1 AND day BETWEEN ?2 AND ?3 ORDER BY seq`, MARKER, addDays(from, -2), addDays(to, 2)),
     first(env.DB, 'SELECT MAX(seq) AS seq FROM assd_entry WHERE kind = ?1', MARKER),
@@ -383,6 +396,12 @@ export async function shifts(env, query, account) {
     optional(all(env.DB, 'SELECT * FROM shift_link ORDER BY id')),
     optional(all(env.DB, `SELECT day, SUM(net) AS net, SUM(cash) AS cash FROM fact_revenue
       WHERE line_id = 'laundry' AND day BETWEEN ?1 AND ?2 GROUP BY day`, from, to)),
+    optional(all(env.DB, 'SELECT kind, ref, at, amount, method FROM laundry_txn WHERE day BETWEEN ?1 AND ?2', lo3, hi3)),
+    // How far the laundry system has been read: a shift after that has
+    // nothing to be compared with yet, which is not the same as nothing sold.
+    first(env.DB, `SELECT MAX(r.to_day) AS day FROM etl_run r
+      JOIN etl_source_run x ON x.run_id = r.id JOIN sources s ON s.id = x.source_id
+      WHERE s.kind = 'snlaundry_http' AND x.status = 'ok'`).catch(() => null),
   ]);
   const coverage = coverageOf(uploads);
   const base = { range: { from, to }, canUpload, uploads: uploads.slice(0, 12).map(uploadView), coverage, groups: GROUPS };
@@ -447,8 +466,50 @@ export async function shifts(env, query, account) {
     if (refund) { refund.pairedWith = rev.key; rev.pairedWith = refund.key; rev.severity = 'info'; }
   }
 
+  // The laundry, shift by shift: what the laundry system took in each shift's
+  // hours against the laundry line ASSD has in that shift. ASSD records the
+  // laundry when the guest pays at the desk, so it is held against the
+  // laundry's payments; what the laundry accepted in the same hours is shown
+  // beside it.
+  const laundryIn = new Map();
+  const minuteAt = (at) => Math.floor(Date.parse(`${String(at).replace(' ', 'T')}Z`) / 60000);
+  for (const t of laundryTxns) {
+    const minute = minuteAt(t.at);
+    const home = result.shifts.find((x) => minute >= x.window.start && minute < x.window.end);
+    if (!home) continue;
+    const l = laundryIn.get(home.index) || { collected: 0, cash: 0, card: 0, charged: 0, payments: 0, orders: 0 };
+    if (t.kind === 'payment') {
+      l.collected += t.amount;
+      l[t.method === 'card' ? 'card' : 'cash'] += t.amount;
+      l.payments += 1;
+    } else {
+      l.charged += t.amount;
+      l.orders += 1;
+    }
+    laundryIn.set(home.index, l);
+  }
+  const laundryRead = laundryThrough?.day || null;
+  // A night shift runs into the next morning, so it is covered only once that
+  // morning has been read too.
+  const laundryCovers = (s) => Boolean(laundryRead) && !s.open
+    && (s.slotName === 'night' ? addDays(s.day, 1) <= laundryRead : s.day <= laundryRead);
+  const laundryOfShift = (s) => (laundryCovers(s)
+    ? { collected: 0, cash: 0, card: 0, charged: 0, payments: 0, orders: 0, ...laundryIn.get(s.index) }
+    : null);
+  for (const s of result.shifts.filter((x) => inRange(x.day))) {
+    const l = laundryOfShift(s);
+    if (!l || l.collected === s.laundry) continue;
+    exceptions.push({
+      day: s.day, slot: s.slotName, user: s.user, event: null,
+      key: `laundry:${s.day}:${s.slotName}`, kind: 'laundry-mismatch', group: 'laundry', severity: 'warning',
+      amount: s.laundry - l.collected, assd: s.laundry, system: l.collected, charged: l.charged, payments: l.payments,
+    });
+  }
+
   // What people typed.
-  const answerOf = new Map(answers.map((a) => [a.key, { answer: a.answer, note: a.note, by: a.by_name, at: a.at }]));
+  const answerOf = new Map(answers.map((a) => [a.key, {
+    answer: a.answer, note: a.note, by: a.by_name, at: a.at, status: a.status || 'applied', approvedBy: a.decided_by || null,
+  }]));
 
   const countOf = new Map(counts.map((c) => [`${c.day}|${c.slot}`, c]));
   const expenseOf = new Map(expenses.map((e) => [`${e.day}|${e.slot}`, e]));
@@ -517,6 +578,19 @@ export async function shifts(env, query, account) {
         amount: r.handoverGap.amount, from: r.handoverGap.from,
       });
     }
+    // Cash that left the drawer with nothing to say where it went: no count
+    // labelled it and no expense sheet settled it. Each one is listed, and
+    // labelling it (safe or expenses) takes it off.
+    if (r.unlabelled > 0) {
+      for (const m of s.moves.filter((x) => x.kind === 'unlabelled' || x.kind === 'part')) {
+        const amount = m.kind === 'part' ? m.amount - m.expenses : m.amount;
+        if (amount <= 0) continue;
+        exceptions.push({
+          ...base, key: `unlabelled:${m.seq}`, kind: 'movement-unlabelled', group: 'unlabelled', severity: 'warning',
+          seq: m.seq, amount, whole: m.amount, part: m.kind === 'part', labels: true, pending: proposed.get(m.seq) || null,
+        });
+      }
+    }
     for (const m of s.moves.filter((x) => x.kind === 'corrected')) {
       exceptions.push({
         ...base, key: `movement:${m.seq}`, kind: 'movement-corrected', group: 'explained', severity: 'info',
@@ -567,19 +641,28 @@ export async function shifts(env, query, account) {
     }
   }
 
-  for (const x of exceptions) x.answer = answerOf.get(x.key) || null;
+  for (const x of exceptions) {
+    const a = answerOf.get(x.key) || null;
+    // A supervisor's answer is shown, and counts for nothing until an admin approves it.
+    x.answer = a && a.status !== 'pending' ? a : null;
+    x.proposed = a && a.status === 'pending' ? a : null;
+  }
 
   // Exceptions reconciled together: each one is answered by the group.
   const linkOf = new Map();
   for (const l of links) {
     let keys = [];
     try { keys = JSON.parse(l.keys); } catch { keys = []; }
-    for (const k of keys) linkOf.set(k, { id: l.id, keys, note: l.note, by: l.by_name, at: l.at });
+    for (const k of keys) linkOf.set(k, { id: l.id, keys, note: l.note, by: l.by_name, at: l.at, status: l.status || 'applied' });
   }
   for (const x of exceptions) {
     const link = linkOf.get(x.key);
-    if (!link) continue;
+    if (!link || link.status === 'rejected') continue;
     x.link = link;
+    if (link.status === 'pending') {
+      x.proposed = { answer: 'Reconciled together', note: link.note, by: link.by, at: link.at, link: link.id, status: 'pending' };
+      continue;
+    }
     x.answer = { answer: 'Reconciled together', note: link.note, by: link.by, at: link.at, link: link.id };
   }
 
@@ -594,6 +677,7 @@ export async function shifts(env, query, account) {
       day: s.day, slot: s.slotName, user: s.user, users: s.users, double: s.double, open: s.open,
       startSeq: s.startSeq, endSeq: s.endSeq,
       cash: s.cash, card: s.card, prepaid: s.prepaid, other: s.other, laundry: s.laundry, laundryCash: s.laundryCash,
+      laundrySystem: laundryOfShift(s),
       drawerOut: s.drawerOut, expensesCounted: s.expensesCounted, booked: s.booked, corrected: s.corrected,
       modes: s.modes, moves: s.moves.map((m) => ({ ...m, pending: proposed.get(m.seq) || null })), opening: s.opening, closing: s.closing,
       items: s.items, stockStart: s.stockStart, stockEnd: s.stockEnd,
@@ -759,7 +843,7 @@ const MONEY_KEYS = new Set([
   'safeMoved', 'unlabelledMoved', 'amount', 'total', 'notes', 'receipts', 'opening', 'closing', 'expected', 'variance',
   'countVariance', 'cashIn', 'out', 'expenses', 'toSafe', 'unlabelled', 'sheetGap', 'assdVariance', 'receiptsAtClose',
   'cardRecorded', 'received', 'commission', 'cardFoundAmount', 'assd', 'system', 'systemCash', 'sheetTotal',
-  'odooTotal', 'safe', 'short', 'over', 'flaggedAmount',
+  'odooTotal', 'safe', 'short', 'over', 'flaggedAmount', 'collected', 'charged',
 ]);
 
 /** The same object with every amount taken out. Agrees, short and over survive as a sign. */
@@ -780,9 +864,11 @@ export function withoutMoney(value) {
  * money, the bank's side only with the bank, people's totals only with net.
  */
 export function forSupervisor(payload, access) {
-  let out = payload;
+  // The totals across the window are the owner's view of the business, not a
+  // supervisor's: never sent, whatever else they were given.
+  let out = { ...payload, totals: null };
   if (!access.bank) {
-    out = { ...out, exceptions: (out.exceptions || []).filter((x) => ['drawer', 'explained'].includes(x.group)) };
+    out = { ...out, exceptions: (out.exceptions || []).filter((x) => ['drawer', 'unlabelled', 'laundry', 'explained'].includes(x.group)) };
   }
   if (!access.net) out = { ...out, people: [] };
   if (!access.files) out = { ...out, canUpload: false };

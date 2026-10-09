@@ -7015,3 +7015,8 @@ tr:hover .rota-who-more,
 .till-cleared { text-align: center; margin-top: 1rem; }
 @media (min-width: 900px) { .till-send { justify-items: end; } .till-sign { min-width: 16rem; } }
 .till-hint { font-size: .82rem; color: var(--text-dim); margin: .35rem 0 0; }
+
+/* An expense's amount comes from its PO in Odoo; shown, never typed. */
+.till-locked { background: var(--surface-2, #f2f1ed); color: var(--ink-2, #52514e); cursor: default; }
+.till-many { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem; margin: .4rem 0 .8rem; padding: .6rem .7rem; border: 1px dashed var(--border, #d0d5dd); border-radius: 10px; }
+.till-many > :first-child { flex: 1 1 14rem; }

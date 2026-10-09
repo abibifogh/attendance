@@ -124,6 +124,7 @@ async function clearWindow(db, from, to) {
     await run(db, `DELETE FROM ${table} WHERE day BETWEEN ?1 AND ?2`, from, to);
   }
   await run(db, 'DELETE FROM fact_purchase_line WHERE day BETWEEN ?1 AND ?2', from, to);
+  await run(db, 'DELETE FROM laundry_txn WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => {});
   await run(db, 'UPDATE dim_day SET is_holiday = 0, holiday = NULL WHERE day BETWEEN ?1 AND ?2', from, to);
   return 0;
 }
@@ -341,6 +342,17 @@ async function loadBundle(db, register, sourceId, bundle, config, from, to) {
         day = ?1, line_id = ?4, shift = ?5, person_id = ?6, expected = ?7, counted = ?8, variance = ?9`)
       .bind(row.day, sourceId, row.externalId, row.line, row.shift || '', personId,
         minor(row.expected), minor(row.counted), minor(row.variance)));
+  }
+
+  // ------------------------------------------------- laundry, one by one --
+  for (const row of bundle.laundryTxns || []) {
+    const day = String(row.at || '').slice(0, 10);
+    if (!inWindow(day)) continue;
+    statements.push(db.prepare(`
+      INSERT INTO laundry_txn (source_id, kind, ref, at, day, amount, method)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+      ON CONFLICT (source_id, kind, ref, at) DO UPDATE SET amount = ?6, method = ?7, day = ?5`)
+      .bind(sourceId, row.kind, row.ref, row.at, day, Math.round(Number(row.amount) || 0), row.method || null));
   }
 
   // -------------------------------------------------------------- usage --

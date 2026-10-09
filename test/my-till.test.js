@@ -135,6 +135,12 @@ test('closing a shift: checked, signed, stored and told', async () => {
   const po = await (await lookUpPo(ctx(db, AMA, { env, body: { po: 'po412' }, path: '/api/me/till/po' }))).json();
   assert.deepEqual([po.name, po.counted, po.state], ['P00412', true, 'confirmed']);
 
+  // Several at once, as typed or pasted: each looked up, repeats dropped.
+  const many = await (await lookUpPo(ctx(db, AMA, { env, body: { pos: ['412', ' 415 ', '420', '999', '412'] }, path: '/api/me/till/po' }))).json();
+  assert.deepEqual(many.found.map((f) => [f.po, f.name, f.counted, f.total ?? null]),
+    [['412', 'P00412', true, 44000], ['415', 'P00415', true, 18000], ['420', 'P00420', false, 6500], ['999', null, false, null]]);
+  await assert.rejects(lookUpPo(ctx(db, AMA, { env, body: { pos: [] }, path: '/api/me/till/po' })), /at least one/);
+
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift, { pin: '000000' }) })), /PIN is not right/);
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift, { checks: [{ id: 1, ok: true }, { id: 2, ok: false }] }) })), /which guest has it, or explain/);
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift, { envelopes: [{ no: 'E417', amount: '1500' }] }) })), /digits only/);
@@ -142,7 +148,7 @@ test('closing a shift: checked, signed, stored and told', async () => {
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift, { rentals: {} }) })), /Padlocks at the start/);
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good({ day: '2020-01-01', slot: 'morning' }) })), /cannot be closed from here/);
 
-  const sent = await (await closeShift(ctx(db, AMA, { env, body: good(shift, { expenses: [{ po: '412', paid: '440' }, { po: '420', paid: '65' }] }) }))).json();
+  const sent = await (await closeShift(ctx(db, AMA, { env, body: good(shift, { expenses: [{ po: '412', paid: '1' }, { po: '420', paid: '65' }] }) }))).json();
   assert.equal(sent.ok, true);
   const row = raw.prepare('SELECT * FROM till_report').get();
   assert.deepEqual([row.cash, row.to_safe, row.user_id, row.device], [108350, 1, 7, 'pc']);

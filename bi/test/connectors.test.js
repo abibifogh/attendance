@@ -236,7 +236,15 @@ test('the laundry report is converted from cedis, and the parts add to the whole
         { date: '2026-05-04', orders: 3, revenue: 100, loads: 4, items: 40 },
         { date: '2026-05-05', orders: 5, revenue: 200, loads: 7, items: 80 },
       ],
-      byShift: { AM: { collected: 140 }, PM: { collected: 100 }, Night: { collected: 0 } },
+      byShift: {
+        AM: { collected: 140, payments: [{ number: 'L-7', amount: 40.5, method: 'cash', at: '2026-05-04T09:15:00.000Z', by: 'Adjoa' }] },
+        PM: { collected: 100, payments: [{ number: 'L-8', amount: 100, method: 'card', at: '2026-05-05T15:00:00.000Z' }] },
+        Night: { collected: 0 },
+      },
+      orders: [
+        { number: 'L-7', price: 40.5, acceptedAt: '2026-05-04T08:00:00.000Z', guestName: 'Never kept', status: 'completed' },
+        { number: 'L-9', price: 12, acceptedAt: '2026-05-05T10:00:00.000Z', status: 'cancelled' },
+      ],
       staff: { a: { name: 'Adjoa Nkrumah' } },
     },
   });
@@ -262,6 +270,13 @@ test('the laundry report is converted from cedis, and the parts add to the whole
   assert.equal(bundle.people[0].name, 'Adjoa Nkrumah');
   // The laundry counts no drawer, so its cash-control rows carry no variance.
   assert.ok(bundle.cashControl.every((c) => c.variance === 0));
+  // Each payment and order on its own, for the shift-by-shift laundry check.
+  // No guest details, and a cancelled order is left out.
+  assert.deepEqual(bundle.laundryTxns, [
+    { kind: 'payment', ref: 'L-7', at: '2026-05-04 09:15:00', amount: 4050, method: 'cash' },
+    { kind: 'payment', ref: 'L-8', at: '2026-05-05 15:00:00', amount: 10000, method: 'card' },
+    { kind: 'order', ref: 'L-7', at: '2026-05-04 08:00:00', amount: 4050, method: null },
+  ]);
   globalThis.fetch = realFetch;
 });
 
