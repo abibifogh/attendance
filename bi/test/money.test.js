@@ -242,3 +242,24 @@ test('a PO typed on a shift and never looked up is still chased, and a draft bil
   item = (await todo.listTodos(env, OWNER, { closed: true })).items.find((t) => t.key === 'unbilled:P02433');
   assert.equal(item.closedWhy, 'The bill is posted in Odoo.');
 });
+
+test('an admin gives several items at once; anybody with a list can ask Odoo again', async () => {
+  const { env } = await setUp();
+  const { fetchImpl } = odoo();
+  await cashpo.refreshCashPos(env, { fetchImpl, today: '2026-08-20' });
+  const all = (await todo.listTodos(env, OWNER)).items;
+  const ids = all.map((t) => t.id);
+  await assert.rejects(todo.assignMany(env, { ids, accountId: 22 }, SUP_A), /Only an admin/);
+  await assert.rejects(todo.assignMany(env, { ids: [], accountId: 22 }, OWNER), /Tick the items/);
+  const out = await todo.assignMany(env, { ids, accountId: 22 }, OWNER);
+  assert.equal(out.moved, ids.length);
+  assert.equal(out.to, 'Yaw Sup');
+  assert.equal((await todo.listTodos(env, SUP_B)).items.length, ids.length);
+  assert.equal((await todo.listTodos(env, SUP_A)).items.length, 0);
+
+  // A supervisor may press Check Odoo now on the to-do list, not on the Money page.
+  const fromTodo = await cashpo.refreshNow(env, SUP_B, { fromTodo: true, fetchImpl, today: '2026-08-20' });
+  assert.equal(fromTodo.ok, true);
+  await assert.rejects(cashpo.refreshNow(env, SUP_B, { fetchImpl }), /Only an admin/);
+  assert.ok((await todo.listTodos(env, SUP_B)).checkedAt);
+});

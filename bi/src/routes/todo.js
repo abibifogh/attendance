@@ -164,8 +164,10 @@ export async function listTodos(env, account, { closed = false } = {}) {
   const rows = await all(env.DB, `SELECT * FROM money_todo WHERE ${where.join(' AND ')}
     ORDER BY CASE state WHEN 'answered' THEN 0 WHEN 'open' THEN 1 ELSE 2 END, ${closed ? 'closed_at DESC' : 'day'}, id LIMIT 300`, ...binds);
   const settings = await getSettings(env.DB).catch(() => ({}));
+  const checked = await first(env.DB, 'SELECT MAX(checked_at) AS at FROM cash_po').catch(() => null);
   return {
     admin,
+    checkedAt: checked?.at || null,
     items: rows.map(view),
     counts: await todoCounts(env, account),
     supervisors: admin ? (await supervisors(env)).map((s) => ({ id: s.id, name: s.name || s.email, load: Number(s.load) || 0 })) : [],
@@ -230,6 +232,23 @@ export async function assignTodo(env, id, body, account) {
   if (!person) throw badRequest('Choose a supervisor.');
   await run(env.DB, 'UPDATE money_todo SET assignee_id = ?2, assignee_name = ?3 WHERE id = ?1', t.id, person.id, person.name || person.email);
   return { ok: true };
+}
+
+/** An admin gives several items to one supervisor at once. Closed items are left where they are. */
+export async function assignMany(env, body, account) {
+  if (roleOf(account) !== 'admin') throw forbidden('Only an admin can do that.');
+  const ids = [...new Set((Array.isArray(body?.ids) ? body.ids : []).map(Number).filter(Number.isInteger))].slice(0, 500);
+  if (!ids.length) throw badRequest('Tick the items to give.');
+  const person = (await supervisors(env)).find((s) => Number(s.id) === Number(body?.accountId));
+  if (!person) throw badRequest('Choose a supervisor.');
+  let moved = 0;
+  for (const id of ids) {
+    // eslint-disable-next-line no-await-in-loop
+    const out = await env.DB.prepare("UPDATE money_todo SET assignee_id = ?2, assignee_name = ?3 WHERE id = ?1 AND state != 'closed'")
+      .bind(id, person.id, person.name || person.email).run();
+    moved += Number(out?.meta?.changes) || 0;
+  }
+  return { ok: true, moved, to: person.name || person.email };
 }
 
 /** An admin closes an item that needs nothing done, saying why. It does not come back. */

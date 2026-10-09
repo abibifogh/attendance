@@ -61,6 +61,11 @@ time Odoo is asked:
   to; the bill closes it.
 - On the other two, a supervisor's answer waits for an admin: **Approve** closes
   it, **Send back** returns it with the reason.
+- **Check Odoo now** at the top of the list asks Odoo again for everybody who
+  has a list, supervisors included, so a bill posted a minute ago clears its
+  item straight away. It does the same as the button on the Money page.
+- An admin can tick several items (or **Select all shown**) and give them to one
+  supervisor at once.
 - An admin sees everything, can give an item to another supervisor, can answer
   and close one directly, or close one with **Nothing needed** and a reason. An
   item closed by a person does not come back; one that closed itself comes back
