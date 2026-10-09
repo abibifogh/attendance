@@ -370,6 +370,12 @@ export async function saveAnswer(env, body, account, { pending = false } = {}) {
   return { ok: true, pending };
 }
 
+/** What has been loaded, and nothing about what is in it: the Upload page. */
+export async function filesStatus(env) {
+  const uploads = await all(env.DB, 'SELECT kind, name, from_day, to_day, rows, note, by_name, at FROM shift_upload ORDER BY id DESC LIMIT 40');
+  return { uploads: uploads.slice(0, 12).map(uploadView), coverage: coverageOf(uploads), canUpload: true };
+}
+
 // ------------------------------------------------------------------ read --
 
 /**

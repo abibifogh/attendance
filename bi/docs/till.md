@@ -18,6 +18,9 @@ sort out**. Admins and supervisors work it all from Insight → **Shifts**.
    or there is no pay to recover a shortage from.
 3. **Make supervisors.** In Insight → Accounts, set a supervisor's Insight
    access to **Supervisor**. They then see the Shifts tab and nothing else.
+   Somebody who only loads the files (the ASSD journal, the bank statement
+   and the card terminal report) gets **Uploads only**: an Upload files page
+   and the hub, and none of the numbers.
 4. **Choose what supervisors see.** Insight → Shifts → Till settings →
    Supervisor access. Each part is Hidden, See, or See and act, the same for
    every supervisor or set per person. Day and Week are shown and Month is

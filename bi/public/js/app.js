@@ -17,6 +17,7 @@ import { renderReports } from './views/reports.js';
 import { renderShifts } from './views/shifts.js';
 import { renderLogin as renderLoginView, markGlyph } from './views/login.js';
 import { renderJoin } from './views/join.js';
+import { renderUpload } from './views/files.js';
 
 export const state = {
   boot: null,
@@ -44,6 +45,8 @@ const ROUTES = [
   { path: 'cash', label: 'Cash', render: renderCash },
   // The one screen a supervisor gets, with the parts an admin gave them.
   { path: 'shifts', label: 'Shifts', render: renderShifts, needs: 'shifts' },
+  // The one screen an uploader gets: the three shift files, nothing in them.
+  { path: 'upload', label: 'Upload files', render: renderUpload, needs: 'upload' },
   { path: 'buying', label: 'Buying', render: renderSuppliers },
   { path: 'books', label: 'Books', render: renderBooks },
   { path: 'service', label: 'Service', render: renderService },
@@ -60,8 +63,10 @@ function allowed(route) {
   const me = state.me?.account;
   if (!me) return false;
   if (route.needs === 'session') return true;
+  // Owners and admins load files under Shifts → Files; this page is for uploaders.
+  if (route.needs === 'upload') return me.till?.role === 'uploader';
   if (me.isOwner || me.bootstrap) return true;
-  if (route.needs === 'shifts') return Boolean(me.till?.role);
+  if (route.needs === 'shifts') return ['admin', 'supervisor'].includes(me.till?.role);
   if (route.needs === 'owner') return false;
   return me.canSeeReports === true;
 }
@@ -153,7 +158,8 @@ async function renderApp() {
     if (visible.some((r) => r.path === path)) return path;
     // The hub for anybody whose account is only a way into the other systems;
     // the brief for anybody who came here for the numbers.
-    return visible.some((r) => r.path === 'brief') ? 'brief' : visible.some((r) => r.path === 'shifts') ? 'shifts' : 'hub';
+    return visible.some((r) => r.path === 'brief') ? 'brief' : visible.some((r) => r.path === 'shifts') ? 'shifts'
+      : visible.some((r) => r.path === 'upload') ? 'upload' : 'hub';
   }
 
   async function go(path) {

@@ -42,16 +42,18 @@ export const AREAS = [
 const AREA_MAX = new Map(AREAS.map((a) => [a.key, a.max]));
 
 /**
- * Admin or supervisor. An owner is an admin; so is anybody given the reports
- * without the supervisor role. A supervisor holds the reports grant with the
- * role `supervisor`, and sees only the Shifts screen.
+ * Admin, supervisor or uploader. An owner is an admin; so is anybody given the
+ * reports without a role. A supervisor holds the reports grant with the role
+ * `supervisor`, and sees only the Shifts screen. An uploader holds it with
+ * `uploader`, and may load the three shift files and see nothing else.
  */
 export function roleOf(account) {
   if (!account) return null;
   if (account.isOwner || account.bootstrap) return 'admin';
   const grant = (account.access || []).find((a) => a.systemId === 'insight');
   if (!grant) return null;
-  return grant.role === 'supervisor' ? 'supervisor' : 'admin';
+  if (grant.role === 'supervisor' || grant.role === 'uploader') return grant.role;
+  return 'admin';
 }
 
 /** What this account may do with each area: 2 for an admin, as set for a supervisor. */
@@ -63,7 +65,8 @@ export async function accessOf(env, account) {
     return out;
   }
   if (role !== 'supervisor') {
-    for (const a of AREAS) out[a.key] = 0;
+    // An uploader loads files and nothing else; anybody else, nothing.
+    for (const a of AREAS) out[a.key] = role === 'uploader' && a.key === 'files' ? 2 : 0;
     return out;
   }
   let rows = [];

@@ -869,7 +869,7 @@ header.top .brand .mark-svg { width: 1.35rem; height: 1.35rem; }
 
 /* ------------------------------------------------------------ invitations -- */
 
-.inv-levels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin: .25rem 0 .9rem; }
+.inv-levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .5rem; margin: .25rem 0 .9rem; }
 .inv-levels button {
   text-align: left; border-radius: 10px; padding: .6rem .75rem; min-height: 2.75rem; cursor: pointer;
   border: 1px solid var(--border); background: var(--surface); color: var(--ink); font: inherit;
