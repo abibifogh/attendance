@@ -24,14 +24,22 @@ import { syncTodos, todoCounts } from './todo.js';
  */
 
 export const CASH_SOURCE = 'odoo-cash';
+
+/** A PO number as Odoo names it: `2433` and `p2433` are `P02433`. */
+export function poName(raw) {
+  const text = String(raw || '').trim().toUpperCase();
+  if (/^\d+$/.test(text)) return `P${text.padStart(5, '0')}`;
+  if (/^P\d+$/.test(text)) return `P${text.slice(1).padStart(5, '0')}`;
+  return text;
+}
 const now = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 const SLOT = { morning: 'morning', afternoon: 'afternoon', night: 'night' };
 
 /** Every PO paid in cash, by name. A closing report's own figure wins, then the safe, then a shift's expenses. */
 export async function gatherCashPos(env) {
   const out = new Map();
-  const up = (n) => String(n || '').trim().toUpperCase();
-  const put = (po, row) => { if (po && !out.has(up(po))) out.set(up(po), { po: String(po).trim(), ...row }); };
+  const up = (n) => poName(n);
+  const put = (po, row) => { if (po && !out.has(up(po))) out.set(up(po), { po: up(po), ...row }); };
   if (env.ATT_DB) {
     try {
       for (const r of await all(env.ATT_DB, 'SELECT po, day, slot, paid, total, vendor FROM till_po ORDER BY day, slot')) {
@@ -44,12 +52,21 @@ export async function gatherCashPos(env) {
       put(r.po, { paidFrom: 'safe', paidDay: r.day, paid: Number(r.amount) || 0, vendor: r.vendor || null, source: `the safe, ${r.day}` });
     }
   } catch { /* no safe book yet */ }
-  for (const r of await all(env.DB, 'SELECT day, slot, odoo FROM shift_expense WHERE odoo IS NOT NULL ORDER BY day, slot')) {
+  // The drawer's expenses on a shift: every PO number typed, whether or not
+  // anybody has pressed the button that looks them up in Odoo. What left the
+  // drawer is the PO's total, which Odoo is asked for when it is not known yet.
+  for (const r of await all(env.DB, `SELECT day, slot, po_numbers, odoo FROM shift_expense
+      WHERE po_numbers IS NOT NULL OR odoo IS NOT NULL ORDER BY day, slot`)) {
     let orders = [];
     try { orders = JSON.parse(r.odoo || '{}').orders || []; } catch { orders = []; }
-    for (const o of orders) {
-      // The drawer's expenses are typed as PO numbers; what left is the PO's total.
-      put(o.name, { paidFrom: 'drawer', paidDay: r.day, paid: Number(o.total) || 0, vendor: o.vendor || null, source: `drawer expenses, ${r.day} ${SLOT[r.slot] || r.slot}` });
+    const found = new Map(orders.map((o) => [up(o.name), o]));
+    const names = new Set([...String(r.po_numbers || '').split(/[\s,;]+/).filter(Boolean).map(up), ...found.keys()]);
+    for (const name of names) {
+      const o = found.get(name);
+      put(name, {
+        paidFrom: 'drawer', paidDay: r.day, paid: o ? Number(o.total) || 0 : null, vendor: o?.vendor || null,
+        source: `drawer expenses, ${r.day} ${SLOT[r.slot] || r.slot}`,
+      });
     }
   }
   return out;
@@ -74,13 +91,15 @@ export async function refreshCashPos(env, { fetchImpl, today } = {}) {
       vendor: o?.vendor || p.vendor,
       paidFrom: p.paidFrom,
       paidDay: p.paidDay,
-      paid: p.paid,
+      // Typed on a shift and never looked up: what left is the PO's total.
+      paid: p.paid ?? (o ? o.total : 0),
       source: p.source,
       poTotal: o ? o.total : null,
       poState: o ? o.state : null,
       orderedOn: o ? o.orderedOn : null,
       inOdoo: o ? 1 : 0,
       billed: o?.billed ? 1 : 0,
+      posted: o?.posted ? 1 : 0,
       bills: o ? o.bills : [],
       lines: o ? o.lines : [],
     };
@@ -88,10 +107,10 @@ export async function refreshCashPos(env, { fetchImpl, today } = {}) {
 
   await run(env.DB, 'DELETE FROM cash_po');
   await writeAll(env.DB, rows.map((r) => env.DB.prepare(`INSERT INTO cash_po
-    (po, vendor, paid_from, paid_day, paid, source, po_total, po_state, ordered_on, in_odoo, billed, bills, lines, checked_at)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`).bind(
+    (po, vendor, paid_from, paid_day, paid, source, po_total, po_state, ordered_on, in_odoo, billed, bills, lines, checked_at, posted)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`).bind(
     r.po, r.vendor, r.paidFrom, r.paidDay, r.paid, r.source, r.poTotal, r.poState, r.orderedOn,
-    r.inOdoo, r.billed, JSON.stringify(r.bills), JSON.stringify(r.lines), at,
+    r.inOdoo, r.billed, JSON.stringify(r.bills), JSON.stringify(r.lines), at, r.posted,
   )));
   const cost = await writeCashCost(env, rows);
   const todos = await syncTodos(env, { today });
@@ -162,7 +181,7 @@ export async function cashView(env, { from, to }) {
   ]);
   const pos = cash.map((r) => ({
     po: r.po, vendor: r.vendor, paidFrom: r.paid_from, paidDay: r.paid_day, paid: r.paid, source: r.source,
-    poTotal: r.po_total, poState: r.po_state, inOdoo: Boolean(r.in_odoo), billed: Boolean(r.billed),
+    poTotal: r.po_total, poState: r.po_state, inOdoo: Boolean(r.in_odoo), billed: Boolean(r.billed), posted: Boolean(r.posted),
     bills: parse(r.bills, []), lines: parse(r.lines, []),
   }));
 
@@ -212,7 +231,9 @@ export async function cashView(env, { from, to }) {
     split: { spend, bills: billTotal, unbilled: unbilledTotal, drawer, safe, other: Math.max(0, spend - drawer - safe) },
     suppliers: suppliers.slice(0, 40),
     lines: [...byLine.values()].map((l) => ({ ...l, total: l.billed + l.unbilled })).sort((a, b) => b.total - a.total),
-    unbilled: unbilled.map((p) => ({ po: p.po, vendor: p.vendor, paidFrom: p.paidFrom, paidDay: p.paidDay, paid: p.paid, source: p.source })),
+    // Still to chase: no bill, or a bill only in draft.
+    unbilled: pos.filter((p) => p.inOdoo && !p.posted)
+      .map((p) => ({ po: p.po, vendor: p.vendor, paidFrom: p.paidFrom, paidDay: p.paidDay, paid: p.paid, source: p.source, draft: p.billed })),
     differs: pos.filter((p) => p.inOdoo && p.poTotal != null && p.poTotal !== p.paid)
       .map((p) => ({ po: p.po, vendor: p.vendor, paidFrom: p.paidFrom, paidDay: p.paidDay, paid: p.paid, poTotal: p.poTotal, source: p.source })),
     notInOdoo: pos.filter((p) => !p.inOdoo).map((p) => ({ po: p.po, paidFrom: p.paidFrom, paidDay: p.paidDay, paid: p.paid, source: p.source })),

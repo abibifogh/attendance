@@ -28,7 +28,7 @@ const who = (account) => account?.name || account?.email || 'Owner';
 const parse = (text) => { try { return JSON.parse(text || '{}'); } catch { return {}; } };
 
 export const KIND_LABEL = {
-  unbilled: 'Paid in cash, no bill in Odoo',
+  unbilled: 'Paid in cash, no posted bill in Odoo',
   differs: 'Paid is not what the PO says',
   nopo: 'A bill with no PO',
 };
@@ -56,8 +56,12 @@ export async function syncTodos(env, { today = new Date().toISOString().slice(0,
   const wanted = new Map();
   const cutoff = addDays(today, -days);
   for (const p of pos) {
-    const detail = { po: p.po, vendor: p.vendor, paidFrom: p.paid_from, paidDay: p.paid_day, paid: p.paid, poTotal: p.po_total, source: p.source };
-    if (!p.billed && p.paid_day <= cutoff) {
+    let bills = [];
+    try { bills = JSON.parse(p.bills || '[]'); } catch { bills = []; }
+    const drafts = bills.filter((b) => b.state === 'draft').map((b) => b.name);
+    const detail = { po: p.po, vendor: p.vendor, paidFrom: p.paid_from, paidDay: p.paid_day, paid: p.paid, poTotal: p.po_total, source: p.source, drafts };
+    // A draft bill is not the end of it: the item stays until the bill is posted.
+    if (!p.posted && p.paid_day <= cutoff) {
       wanted.set(`unbilled:${p.po}`, { kind: 'unbilled', ref: p.po, day: p.paid_day, amount: p.paid, detail });
     }
     if (p.po_total != null && p.po_total !== p.paid) {
@@ -91,7 +95,7 @@ export async function syncTodos(env, { today = new Date().toISOString().slice(0,
     }
     if (t.state === 'closed') continue;
     let why = null;
-    if (t.kind === 'unbilled' && pastPo.get(t.ref)?.billed) why = 'The bill is in Odoo.';
+    if (t.kind === 'unbilled' && pastPo.get(t.ref)?.posted) why = 'The bill is posted in Odoo.';
     else if (t.kind === 'differs' && pastPo.has(t.ref)) why = 'The amounts now agree.';
     else if (t.kind === 'nopo' && billNow.get(t.ref)?.from_order) why = 'The bill now has a PO.';
     else if ((t.kind === 'unbilled' || t.kind === 'differs') && !pastPo.has(t.ref)) why = 'It is no longer paid from the drawer or the safe.';

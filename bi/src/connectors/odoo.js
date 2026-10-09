@@ -440,6 +440,8 @@ export async function cashPoDetails({ config: settings, token, names, fetchImpl 
       bills: own,
       // A cancelled bill is no bill.
       billed: own.some((b) => b.state !== 'cancel'),
+      // Entered is not finished: a draft bill is still somebody's to-do.
+      posted: own.some((b) => b.state === 'posted'),
       lines: [],
     };
   });
