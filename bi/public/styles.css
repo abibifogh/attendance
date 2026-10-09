@@ -906,3 +906,9 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .sh-safetable tr.closed td { color: var(--ink-2); }
 .sh-safeform { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .2rem .8rem; }
 .sh-safeclose { border: 2px solid var(--series-1); }
+.sh-unsure summary { cursor: pointer; padding: .2rem 0 .6rem; }
+.sh-unsure[open] summary { margin-bottom: .4rem; }
+.sh-staymoney { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; background: var(--surface-2); border-radius: 10px; padding: .6rem .7rem; text-align: center; }
+.sh-staymoney small { display: block; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.sh-staymoney b { font-variant-numeric: tabular-nums; font-size: 1.05rem; }
+.sh-staymoney .owes b { color: var(--critical); }

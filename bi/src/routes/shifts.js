@@ -52,6 +52,8 @@ export async function uploadJournal(env, body, account) {
         payments: merged.payments,
         laundry: merged.laundry,
         items: merged.items || [],
+        charges: merged.charges || [],
+        ref: merged.ref || null,
         stock: merged.stock || null,
         expensesCounted: merged.expensesCounted,
         counted: merged.counted,
@@ -843,7 +845,7 @@ const MONEY_KEYS = new Set([
   'safeMoved', 'unlabelledMoved', 'amount', 'total', 'notes', 'receipts', 'opening', 'closing', 'expected', 'variance',
   'countVariance', 'cashIn', 'out', 'expenses', 'toSafe', 'unlabelled', 'sheetGap', 'assdVariance', 'receiptsAtClose',
   'cardRecorded', 'received', 'commission', 'cardFoundAmount', 'assd', 'system', 'systemCash', 'sheetTotal',
-  'odooTotal', 'safe', 'short', 'over', 'flaggedAmount', 'collected', 'charged',
+  'odooTotal', 'safe', 'short', 'over', 'flaggedAmount', 'collected', 'charged', 'paid', 'balance',
 ]);
 
 /** The same object with every amount taken out. Agrees, short and over survive as a sign. */

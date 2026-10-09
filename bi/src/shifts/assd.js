@@ -107,6 +107,9 @@ export function mergeEntry(stored, fresh, window) {
     payments: [...stored.payments.filter((p) => !inside(p.date)), ...fresh.payments],
     laundry: [...(stored.laundry || []).filter((l) => !inside(l.date)), ...fresh.laundry],
     items: [...(stored.items || []).filter((i) => !inside(i.date)), ...(fresh.items || [])],
+    // An upload from before charges were kept has none: whatever this export
+    // prints is all that is known, until the earlier days are exported again.
+    charges: [...(stored.charges || []).filter((c) => c.date && !inside(c.date)), ...(fresh.charges || [])],
   };
 }
 
@@ -181,7 +184,13 @@ function readBlock(b) {
     user: b.user,
     date: b.date,
     register: String(b.ref || '').split('/')[0] || null,
+    // The reservation's own numbers, as ASSD prints them (`67216-39229`):
+    // what the desk types into ASSD to find the guest.
+    ref: String(b.ref || '').split('/')[1]?.replace(/-$/, '') || null,
     payments: [],
+    // Everything charged: each night, each extra, each deposit, with its date
+    // (null for a deposit given back, which ASSD prints undated).
+    charges: [],
     laundry: [],
     // Articles sold or given back, by number: what a rental's deposits and
     // refunds are read from. `qty` is negative for a refund.
@@ -227,6 +236,7 @@ function readBlock(b) {
       const amounts = article[5].match(MONEY) || [];
       const amount = amounts.length ? assdMoney(amounts[amounts.length - 1]) : 0;
       const dated = /\d/.test(article[1]);
+      entry.charges.push({ date: dated ? assdDate(article[1]) : null, code: article[2], name: article[3].trim(), amount });
       if (dated && (article[2] === LAUNDRY_ARTICLE || /laundry/i.test(article[3]))) {
         entry.laundry.push({ date: assdDate(article[1]), amount });
       }

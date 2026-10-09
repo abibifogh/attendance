@@ -37,7 +37,7 @@ export const AREAS = [
   { key: 'day', max: 1 }, { key: 'week', max: 1 }, { key: 'month', max: 1 },
   { key: 'reports', max: 1 }, { key: 'money', max: 1 }, { key: 'moves', max: 2 },
   { key: 'answers', max: 2 }, { key: 'money_out', max: 2 }, { key: 'reopen', max: 2 }, { key: 'net', max: 1 },
-  { key: 'bank', max: 2 }, { key: 'odoo', max: 1 }, { key: 'files', max: 2 },
+  { key: 'bank', max: 2 }, { key: 'odoo', max: 1 }, { key: 'files', max: 2 }, { key: 'unpaid', max: 2 },
 ];
 const AREA_MAX = new Map(AREAS.map((a) => [a.key, a.max]));
 
@@ -415,6 +415,7 @@ async function settingsView(env, users, shifts) {
     hiveUsers: users.map((u) => ({ id: Number(u.id), name: u.name, role: u.role, hasEmail: Boolean(u.email) })),
     people: assdUsers.map((u) => ({ assdUser: u, hiveUserId: mapped.find((m) => m.assd_user === u)?.hive_user_id ?? null })),
     threshold: Math.max(0, Number(s.till_threshold) || 0),
+    checkoutTime: s.checkout_time || '12:00',
   };
 }
 
@@ -604,6 +605,11 @@ export async function saveSettings(env, body, account) {
       ON CONFLICT (assd_user) DO UPDATE SET hive_user_id = ?2, by_name = ?3, at = ?4`, assd, id, who(account), at);
   }
 
+  if (body?.checkoutTime != null) {
+    const t = String(body.checkoutTime).trim();
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) throw badRequest('The check-out time is a time of day, like 12:00.');
+    await setSetting(env.DB, 'checkout_time', t);
+  }
   if (body?.threshold != null) {
     const n = Math.round(Number(body.threshold) * 100);
     if (!Number.isFinite(n) || n < 0) throw badRequest('The amount to ignore must be zero or more.');

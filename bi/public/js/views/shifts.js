@@ -69,7 +69,7 @@ const MODES = [
 ];
 const TONE = { good: 'var(--sh-good)', warn: 'var(--sh-warn)', bad: 'var(--sh-bad)', open: 'var(--sh-info)' };
 const SEVERITY_COLOUR = { critical: 'var(--sh-bad)', warning: 'var(--sh-warn)', info: 'var(--sh-info)' };
-const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['shift', 'Shift'], ['exceptions', 'Exceptions'], ['people', 'People'], ['safe', 'Safe'], ['files', 'Files'],
+const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['shift', 'Shift'], ['exceptions', 'Exceptions'], ['stays', 'Unpaid stays'], ['people', 'People'], ['safe', 'Safe'], ['files', 'Files'],
   ['closing', 'Closing reports'], ['answers', 'Answers'], ['approvals', 'Approvals'], ['settings', 'Till settings']];
 const TILL = new Set(['closing', 'answers', 'approvals', 'settings']);
 const PERIODS = ['day', 'week', 'month'];
@@ -152,7 +152,7 @@ export async function renderShifts(root, { range }) {
   const canFix = may('moves', 2) && may('money');
   const allowed = {
     day: may('day'), week: may('week'), month: may('month'), shift: may('money'), exceptions: may('bank'),
-    people: may('net'), safe: admin, files: may('files'), closing: may('reports'), answers: may('answers'), approvals: admin, settings: admin,
+    people: may('net'), stays: may('unpaid'), safe: admin, files: may('files'), closing: may('reports'), answers: may('answers'), approvals: admin, settings: admin,
   };
   const views = VIEWS.filter(([id]) => allowed[id]);
   const periods = PERIODS.filter((p) => allowed[p]);
@@ -174,6 +174,18 @@ export async function renderShifts(root, { range }) {
   const drafts = {};
 
   const till = tillViews({ who, period: () => period, describeKey });
+
+  // Stays not fully paid. They depend on the moment, not on the days on
+  // screen, so they are read once here and again whenever they are answered.
+  let stays = null;
+  // Only the ones that are certain count: a stay booked before the journal
+  // loaded begins may have been paid then, out of sight.
+  const staysOpen = () => (stays ? [...stays.leaving, ...stays.left].filter((x) => !x.answer && !x.unsure).length : 0);
+  function readStays() {
+    if (!allowed.stays) return Promise.resolve(null);
+    return api('/stays').then((d) => { stays = d; return d; });
+  }
+  readStays().then(() => { if (stays && staysOpen() && section !== 'stays') paint(); }).catch(() => {});
 
   // Each period's data, once read, kept for as long as the screen is open, so
   // going back to a day, week or month already seen is instant. Anything that
@@ -332,10 +344,15 @@ export async function renderShifts(root, { range }) {
       has && admin && data.totals ? kpis() : null,
       h('div.sh-tabs', { role: 'tablist' }, views.map(([id, label]) => h('button', {
         type: 'button', role: 'tab', 'aria-selected': String(section === id), onclick: () => go(id),
-      }, label, id === 'exceptions' && open ? h('span.sh-badge', String(open)) : null))),
+      }, label, id === 'exceptions' && open ? h('span.sh-badge', String(open)) : null,
+      id === 'stays' && staysOpen() ? h('span.sh-badge', String(staysOpen())) : null))),
       v);
     if (TILL.has(section)) {
       Promise.resolve(till[section]?.(v)).catch((err) => mount(v, banner('problem', err.message)));
+      return undefined;
+    }
+    if (section === 'stays') {
+      staysView(v).catch((err) => mount(v, banner('problem', err.message)));
       return undefined;
     }
     if (section === 'safe') {
@@ -384,6 +401,80 @@ export async function renderShifts(root, { range }) {
         t.counted ? `${t.counted} of ${t.shifts} shifts with an opening and closing count` : 'No counts in these days yet'),
       tile('exceptions', 'var(--sh-bad)', 'Waiting for an answer', String(open),
         open ? 'Differences somebody has to explain' : 'Everything answered or explained', null, open ? 'var(--sh-bad-ink)' : 'var(--sh-good-ink)'));
+  }
+
+  // ------------------------------------------------------- unpaid stays --
+
+  const STAY_ANSWERS = ['Paid, not in the journal yet', 'Guest is paying now', 'Company or agent pays', 'Guest owes, chasing', 'Written off', 'Not a problem'];
+
+  /**
+   * Guests leaving in the next 24 hours who still owe, and guests who left
+   * owing. Each one can be answered; a supervisor's answer waits for an admin.
+   */
+  async function staysView(v) {
+    mount(v, h('p.muted', 'Reading the reservations…'));
+    const d = await readStays();
+    const nights = (x) => `${x.nights} night${x.nights === 1 ? '' : 's'}, ${dayText(x.firstNight)} to ${dayText(x.checkout)}`;
+    const methods = (x) => Object.entries(x.byMethod || {}).filter(([, a]) => a).map(([m, a]) => `${({ cash: 'cash', card: 'card', prepaid: 'prepaid', other: 'other' })[m] || m} ${money(a)}`).join(' · ');
+    const row = (x, tone) => {
+      const note = h('input', { type: 'text', maxlength: '600', placeholder: 'What happened (optional)', value: x.answer?.note || '' });
+      const said = h('span.small');
+      const answer = async (value) => {
+        said.textContent = 'Saving…';
+        try {
+          const out = await api('/shifts/answer', { method: 'POST', body: { key: x.key, answer: value, note: value ? note.value : '' } });
+          await staysView(v);
+          paint();
+          if (out?.pending) mount(v.querySelector('.sh-staysaid') || v, banner('good', 'Sent to an admin to approve.'));
+        } catch (err) { said.textContent = err.message; }
+      };
+      return h(`article.sh-ex.${tone}${x.answer ? '.done' : ''}`,
+        h('div.hd', h('span.sq', '₵'), h('h3', `Reservation ${x.ref || x.seq}`), h('span.amt.num', data.redacted || d.redacted ? 'owes' : money(x.balance))),
+        h('div.sh-meta',
+          h('span', x.rooms.join(', ') || 'Room'),
+          h('span', nights(x)),
+          h('span', `check-out ${dayText(x.checkout)} ${x.checkoutAt.slice(11)}`),
+          x.bookedBy ? h('span', `booked by ${nameOf(x.bookedBy)}`) : null),
+        d.redacted ? null : h('div.sh-staymoney',
+          h('div', h('small', 'Charged'), h('b', whole(x.charged))),
+          h('div', h('small', 'Paid'), h('b', whole(x.paid))),
+          h('div.owes', h('small', 'Owes'), h('b', whole(x.balance)))),
+        methods(x) ? h('p.small', `Paid so far: ${methods(x)}`) : h('p.small', 'No payment in the journal loaded.'),
+        x.unsure ? h('p.small.muted', `Booked ${dayText(x.bookedOn)}, before the first day of journal loaded (${dayText(d.journal.from)}). A payment taken then would not show: check ASSD.`) : null,
+        x.proposed ? h('div.sh-waiting',
+          h('span', `⏳ Waiting for an admin: ${x.proposed.answer}${x.proposed.note ? `: ${x.proposed.note}` : ''} (${x.proposed.by})`),
+          admin ? [
+            h('button.btn.primary', { type: 'button', onclick: async () => { await api('/till/approve', { method: 'POST', body: { answer: x.key, ok: true } }); await staysView(v); paint(); } }, 'Approve'),
+            h('button.btn', { type: 'button', onclick: async () => { await api('/till/approve', { method: 'POST', body: { answer: x.key, ok: false } }); await staysView(v); paint(); } }, 'Reject'),
+          ] : null)
+          : x.answer ? h('div.sh-done',
+            h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''} (${x.answer.by})`),
+            may('unpaid', 2) ? h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change') : null)
+            : may('unpaid', 2) ? h('div.sh-answers', note, STAY_ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said) : null);
+    };
+    const open = (list) => list.filter((x) => !x.answer).length;
+    const sure = (list) => list.filter((x) => !x.unsure);
+    const unsure = [...d.leaving, ...d.left].filter((x) => x.unsure);
+    mount(v,
+      h('div.sh-staysaid'),
+      !d.journal ? banner('warning', 'No ASSD journal loaded yet. Load it under Files.') : null,
+      h('section.card',
+        h('div.sh-cardhead', h('h2', `Leaving in the next 24 hours, not fully paid (${open(sure(d.leaving))})`),
+          h('p.sh-sub', `Check-out is taken as ${d.checkoutTime} on the day after the last night. Collect before they go.`)),
+        sure(d.leaving).length ? h('div.sh-exgrid', sure(d.leaving).map((x) => row(x, 'warn')))
+          : h('p.muted', d.journal ? 'Nobody leaving in the next 24 hours owes anything, in the journal loaded.' : '')),
+      h('section.card',
+        h('div.sh-cardhead', h('h2', `Checked out, still owing (${open(sure(d.left))})`),
+          h('p.sh-sub', 'Guests whose last night has passed and whose payments do not cover what they were charged. The last 60 days.')),
+        sure(d.left).length ? h('div.sh-exgrid', sure(d.left).map((x) => row(x, 'bad')))
+          : h('p.muted', d.journal ? 'Nobody has left owing, in the journal loaded.' : '')),
+      unsure.length ? h('details.card.sh-unsure',
+        h('summary', h('b', `Check these in ASSD (${unsure.length})`),
+          h('span.sh-sub', ` Booked before ${dayText(d.journal.from)}, the first day of journal loaded. They may have paid then. Load earlier journals and they sort themselves out.`)),
+        h('div.sh-exgrid', unsure.map((x) => row(x, 'info')))) : null,
+      d.journal ? h('p.sh-sub', `Read from the ASSD journal loaded, ${dayText(d.journal.from)} to ${dayText(d.journal.to)}. `
+        + 'A stay is judged once its last night is inside that, so export the journal through tomorrow to see tomorrow’s check-outs. '
+        + 'Journals loaded before this check began need loading again for their charges.') : null);
   }
 
   // -------------------------------------------------------------- safe --
@@ -1181,6 +1272,10 @@ export async function renderShifts(root, { range }) {
 
   /** An exception by its key, in words, for the Approvals view. */
   function describeKey(key) {
+    if (String(key).startsWith('stay:')) {
+      const x = stays && [...stays.leaving, ...stays.left].find((o) => o.key === key);
+      return `Unpaid stay, reservation ${String(key).slice(5)}${x ? `, leaving ${dayText(x.checkout)}, owes ${money(x.balance)}` : ''}`;
+    }
     const x = data?.exceptions?.find((o) => o.key === key);
     if (x) {
       return `${(KIND[x.kind] || [x.kind])[0]}, ${x.day ? dayText(x.day) : ''}${x.slot ? ` ${SLOT[x.slot].label.toLowerCase()}` : ''}`

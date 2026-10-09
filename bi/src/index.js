@@ -12,6 +12,7 @@ import * as shiftRoutes from './routes/shifts.js';
 import * as till from './routes/till.js';
 import * as invitations from './routes/invitations.js';
 import * as safe from './routes/safe.js';
+import * as stays from './routes/stays.js';
 import { verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
 import { loadFacts } from './insight/facts.js';
@@ -73,13 +74,23 @@ const ROUTES = [
   ['POST', '/api/shifts/count', 'shifts', adminOnly((env, ctx) => shiftRoutes.saveCount(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/expense', 'shifts', adminOnly((env, ctx) => shiftRoutes.saveExpense(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/expense/pull', 'shifts', adminOnly((env, ctx) => shiftRoutes.pullOrders(env, ctx.body))],
-  ['POST', '/api/shifts/answer', 'shifts', area('bank', 2, (env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveAnswer(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} answered an exception: ${ctx.body?.answer || ''}.`))],
+  ['POST', '/api/shifts/answer', 'shifts', async (env, ctx) => {
+    // An unpaid stay is answered by whoever may act on Unpaid stays; anything else by whoever may act on the exceptions.
+    const stay = String(ctx.body?.key || '').startsWith('stay:');
+    await till.requireArea(env, ctx.account, stay ? 'unpaid' : 'bank', 2);
+    return waitsForAdmin(env, ctx, shiftRoutes.saveAnswer(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }),
+      `${ctx.account?.name || 'A supervisor'} answered ${stay ? 'an unpaid stay' : 'an exception'}: ${ctx.body?.answer || ''}.`);
+  }],
   ['POST', '/api/shifts/movement', 'shifts', movement],
   ['POST', '/api/shifts/link', 'shifts', area('bank', 2, (env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
   ['POST', '/api/shifts/unlink', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }))],
   ['POST', '/api/shifts/journal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/bank', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadBank(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/terminal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadTerminal(env, ctx.body, ctx.account))],
+
+  // Stays not fully paid: leaving in the next 24 hours, or already left.
+  // Answers to them go through /api/shifts/answer, like any exception.
+  ['GET', '/api/stays', 'shifts', area('unpaid', 1, (env, ctx) => stays.unpaidStays(env, ctx.account))],
 
   // The safe: what each shift moved into it, and the closures. Admins only.
   ['GET', '/api/safe', 'shifts', (env, ctx) => safe.safeView(env, ctx.query, ctx.account)],

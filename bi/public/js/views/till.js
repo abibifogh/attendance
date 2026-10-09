@@ -29,6 +29,7 @@ const AREA_TEXT = {
   bank: ['Bank statement and card matching', 'The Exceptions view: card and MoMo against the terminal and the bank.'],
   odoo: ['PO details from Odoo', 'Vendor and total behind each PO.'],
   files: ['Upload journal, statement and card report', 'The Files view. Act means load files.'],
+  unpaid: ['Unpaid stays', 'Guests leaving in the next 24 hours who still owe, and guests who left owing. Act means answer them (an admin approves).'],
 };
 const KIND_TONE = { drawer: 'bad', unexplained: 'bad', overclaimed: 'warn', rental: 'warn', noreport: 'info' };
 const OUTCOME = { accept: 'Accepted', recover: 'Recovered from pay', cash: 'Paid back in cash', writeoff: 'Written off', back: 'Sent back' };
@@ -292,7 +293,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     mount(v, h('p.muted', 'Reading the settings…'));
     const d = await data(true);
     const s = d.settings;
-    const tabs = [['access', 'Supervisor access'], ['checks', 'Front desk checks'], ['rentals', 'Rentals'], ['notify', 'Who is told'], ['people', 'People'], ['small', 'Small differences']];
+    const tabs = [['access', 'Supervisor access'], ['checks', 'Front desk checks'], ['rentals', 'Rentals'], ['notify', 'Who is told'], ['people', 'People'], ['small', 'Small differences and check-out']];
     const save = async (body) => {
       try {
         await api('/till/settings', { method: 'POST', body });
@@ -409,10 +410,16 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
 
   function smallView(s, save) {
     const amount = h('input', { type: 'number', min: '0', step: '0.01', value: (s.threshold / 100).toFixed(2), style: 'width:8rem' });
-    return h('div.card',
-      h('div.sh-cardhead', h('h2', 'Small differences'), h('span.sh-sub', 'A difference this small or smaller is left off everybody’s list. Zero puts every pesewa on it.')),
-      h('form.tl-inline', { onsubmit: (e) => { e.preventDefault(); save({ threshold: amount.value }); } },
-        h('label', 'Ignore up to GH₵ ', amount), h('button.btn.primary', { type: 'submit' }, 'Save')));
+    const checkout = h('input', { type: 'time', value: s.checkoutTime || '12:00', id: 'tl-checkout-time' });
+    return h('div',
+      h('div.card',
+        h('div.sh-cardhead', h('h2', 'Small differences'), h('span.sh-sub', 'A difference this small or smaller is left off everybody’s list, and off Unpaid stays. Zero puts every pesewa on it.')),
+        h('form.tl-inline', { onsubmit: (e) => { e.preventDefault(); save({ threshold: amount.value }); } },
+          h('label', 'Ignore up to GH₵ ', amount), h('button.btn.primary', { type: 'submit' }, 'Save'))),
+      h('div.card',
+        h('div.sh-cardhead', h('h2', 'Check-out time'), h('span.sh-sub', 'When a guest leaves on their last day. Unpaid stays uses it to tell who leaves in the next 24 hours and who has gone.')),
+        h('form.tl-inline', { onsubmit: (e) => { e.preventDefault(); save({ checkoutTime: checkout.value }); } },
+          h('label', 'Check-out at ', checkout), h('button.btn.primary', { type: 'submit' }, 'Save'))));
   }
 
   return {
