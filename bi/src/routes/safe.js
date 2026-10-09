@@ -29,7 +29,7 @@ function cedis(value, field) {
 }
 
 /** Every shift in the days asked for that moved cash to the safe, with where it stands. */
-async function shiftsToSafe(env, query, account) {
+export async function shiftsToSafe(env, query, account) {
   const data = await shiftsFor(env, query, account);
   const { from, to } = data.range;
   const [reports, closed] = await Promise.all([
@@ -145,6 +145,8 @@ export async function undoClosure(env, id, account) {
   const row = await first(env.DB, 'SELECT id FROM safe_closure WHERE id = ?1', Number(id));
   if (!row) throw notFound('No such closure');
   await run(env.DB, 'DELETE FROM safe_closure_shift WHERE closure_id = ?1', row.id);
+  // What the book paid out on that page is open again too.
+  await run(env.DB, 'UPDATE safe_entry SET closure_id = NULL WHERE closure_id = ?1', row.id).catch(() => {});
   await run(env.DB, 'DELETE FROM safe_closure WHERE id = ?1', row.id);
   return { ok: true };
 }

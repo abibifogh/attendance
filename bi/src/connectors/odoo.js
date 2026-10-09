@@ -389,3 +389,21 @@ export async function purchaseOrders({ config: settings, token, names, fetchImpl
   const found = new Set(orders.map((o) => o.name.toUpperCase()));
   return { orders, unknown: wanted.filter((n) => !found.has(n.toUpperCase())) };
 }
+
+/**
+ * Confirmed purchase orders dated on or after a day, for the safe book's
+ * "paid from the safe?" list. Read-only, the same one `search_read`.
+ */
+export async function purchaseOrdersSince({ config: settings, token, since, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const rows = await searchRead(config, 'purchase.order',
+    [['date_order', '>=', `${since} 00:00:00`], ['state', 'in', ['purchase', 'done']]],
+    ['name', 'partner_id', 'amount_total', 'state', 'date_order'], { fetchImpl });
+  return rows.map((r) => ({
+    name: String(r.name || ''),
+    vendor: refName(r.partner_id),
+    total: toMinor(r.amount_total),
+    state: String(r.state || ''),
+    orderedOn: r.date_order ? String(r.date_order).slice(0, 10) : null,
+  }));
+}

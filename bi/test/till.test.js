@@ -425,3 +425,94 @@ test('a supervisor never gets the totals', async () => {
   assert.ok(data.totals);
   assert.equal(routes.forSupervisor(data, { day: 1, week: 1, money: 1, bank: 1, net: 1 }).totals, null);
 });
+
+// ------------------------------------------------------------ the safe book --
+
+test('the safe book: in from the shifts, out as written, Odoo offered, a count to close the page', async () => {
+  const { env, hive } = await setUp();
+  const safebook = await import('../src/routes/safebook.js');
+  await env.DB.prepare("UPDATE sources SET config = '{\"base\":\"https://odoo.example.test\"}', enabled = 1 WHERE id = 'odoo'").run();
+  env.ODOO_KEY_ODOO = 'k';
+  // A small invented Odoo: three confirmed POs, one draft, and P00412, which a closing report already claimed.
+  const ODOO = [
+    { name: 'P00412', partner_id: [1, 'A Produce Seller'], amount_total: 30, state: 'purchase', date_order: '2026-08-01 09:00:00' },
+    { name: 'P00433', partner_id: [2, 'A Gas Seller'], amount_total: 20, state: 'purchase', date_order: '2026-08-02 09:00:00' },
+    { name: 'P00440', partner_id: [3, 'A Water Supplier'], amount_total: 15, state: 'purchase', date_order: '2026-08-02 10:00:00' },
+    { name: 'P00444', partner_id: [4, 'A Cleaning Supplier'], amount_total: 5, state: 'purchase', date_order: '2026-08-02 11:00:00' },
+    { name: 'P00450', partner_id: [5, 'A Hardware Shop'], amount_total: 9, state: 'draft', date_order: '2026-08-02 12:00:00' },
+  ];
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(init.body);
+    const domain = body.domain || [];
+    let rows = ODOO;
+    for (const [field, op, value] of domain) {
+      if (field === 'name' && op === 'in') rows = rows.filter((r) => value.includes(r.name));
+      if (field === 'date_order') rows = rows.filter((r) => r.date_order >= value);
+      if (field === 'state') rows = rows.filter((r) => value.includes(r.state));
+    }
+    return new Response(JSON.stringify(rows.slice(body.offset || 0, (body.offset || 0) + (body.limit || 100))), { headers: { 'Content-Type': 'application/json' } });
+  };
+  const owner = { ...OWNER, isOwner: true };
+  // Nothing has been counted, so the book has not begun.
+  let book = await safebook.bookView(env, owner, { fetchImpl });
+  assert.equal(book.started, false);
+  await assert.rejects(safebook.bookView(env, SUPERVISOR, { fetchImpl }), /Only an admin/);
+
+  // Start it: 500 counted on the 1st. ALPHA's 200 that day is taken as in it already.
+  const started = await safebook.countSafe(env, { counted: '500', closedOn: '2026-07-31', with: 'Sam Supervisor' }, owner);
+  assert.equal(started.started, true);
+  book = await safebook.bookView(env, owner, { fetchImpl });
+  assert.equal(book.started, true);
+  assert.deepEqual(book.lines.map((l) => [l.type, l.day, l.amount, l.balance]), [['in', '2026-08-01', 20000, 70000]], 'ALPHA’s envelope comes in by itself');
+  // P00412 is claimed by a closing report and the draft is not confirmed: neither is offered.
+  assert.deepEqual(book.suggestions.map((s) => s.name), ['P00433', 'P00440', 'P00444']);
+
+  // Out: a PO from the safe (its amount is the PO's), cash banked, and a payment waiting for its PO.
+  await assert.rejects(safebook.addEntry(env, { kind: 'po', po: 'P00412', day: '2026-08-02' }, owner, { fetchImpl }), /already accounted for in a closing report/);
+  await assert.rejects(safebook.addEntry(env, { kind: 'po', po: 'P00450', day: '2026-08-02' }, owner, { fetchImpl }), /not confirmed/);
+  const po = await safebook.addEntry(env, { kind: 'po', po: '433', day: '2026-08-02' }, owner, { fetchImpl });
+  assert.deepEqual([po.po, po.amount], ['P00433', 2000]);
+  await assert.rejects(safebook.addEntry(env, { kind: 'po', po: 'P00433', day: '2026-08-02' }, owner, { fetchImpl }), /already accounted for in the safe/);
+  await safebook.addEntry(env, { kind: 'banked', amount: '100', ref: 'GTBank slip 0048812', day: '2026-08-02' }, owner);
+  await assert.rejects(safebook.addEntry(env, { kind: 'banked', amount: '100', day: '2026-08-02' }, owner), /Where it went/);
+  await safebook.addEntry(env, { kind: 'pending', amount: '15', description: 'Water delivery', day: '2026-08-02' }, owner);
+  book = await safebook.bookView(env, owner, { fetchImpl });
+  assert.equal(book.balance, 50000 + 20000 - 2000 - 10000 - 1500);
+  assert.equal(book.pending, 1);
+  const water = book.suggestions.find((s) => s.name === 'P00440');
+  assert.ok(water.pending, 'the 15 waiting for a PO is offered P00440 of the same amount');
+
+  // Give the waiting payment its PO.
+  const settled = await safebook.settleEntry(env, water.pending, { po: 'P00440' }, owner, { fetchImpl });
+  assert.deepEqual([settled.po, settled.differs], ['P00440', false]);
+
+  // A drawer cannot claim a PO the safe paid: Insight tells HIVE so.
+  const link = await till.linkPo(env, { names: ['P00433'] }, { fetchImpl });
+  assert.deepEqual(link.found[0].safe, { day: '2026-08-02' });
+
+  // Count: 5 short of the book, and P00444 is exactly that.
+  book = await safebook.bookView(env, owner, { fetchImpl, counted: 56000 });
+  assert.equal(book.balance, 56500);
+  assert.deepEqual(book.explains, ['P00444']);
+  const count = await safebook.countSafe(env, { counted: '565', closedOn: '2026-08-02', with: 'Sam Supervisor' }, owner);
+  assert.deepEqual([count.book, count.difference], [56500, 0]);
+  book = await safebook.bookView(env, owner, { fetchImpl });
+  assert.deepEqual(book.lines, [], 'a new page');
+  assert.equal(book.start.counted, 56500);
+  assert.equal(book.closures[0].difference, 0);
+
+  // Undo the count: its envelope and payments are back on the open page.
+  await safe.undoClosure(env, count.id, owner);
+  book = await safebook.bookView(env, owner, { fetchImpl });
+  assert.equal(book.lines.length, 4);
+  void hive;
+});
+
+test('which waiting POs add up to a difference', async () => {
+  const { addingUpTo } = await import('../src/routes/safebook.js');
+  const list = [{ name: 'A', amount: 18000 }, { name: 'B', amount: 67500 }, { name: 'C', amount: 9500 }];
+  assert.deepEqual(addingUpTo(list, 85500).map((x) => x.name), ['A', 'B']);
+  assert.deepEqual(addingUpTo(list, 9500).map((x) => x.name), ['C']);
+  assert.deepEqual(addingUpTo(list, 1), []);
+  assert.deepEqual(addingUpTo(list, 0), []);
+});
