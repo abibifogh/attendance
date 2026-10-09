@@ -2,6 +2,8 @@ import { all, run, setSetting, groupConfig, first } from '../lib/db.js';
 import { listSources, checkSource, secretNameFor } from '../connectors/index.js';
 import { validateMapping, FACTS } from '../connectors/supabase.js';
 import { runEtl } from '../warehouse/etl.js';
+import { rebuildAssdRevenue } from './revenue.js';
+import { refreshCashPos, restoreCashCost } from './cashpo.js';
 import { analyse } from '../insight/engine.js';
 import { badRequest, str } from '../lib/http.js';
 import { isDay, todayIn, addDays } from '../lib/dates.js';
@@ -203,6 +205,20 @@ export async function refresh(env, body) {
   const from = isDay(body?.from) ? body.from : null;
 
   const etl = await runEtl(env, { from, to, trigger: body?.trigger || 'manual' });
+  // The load clears every source's rows in its window. Two are made here from
+  // what Insight already holds, so they are written back after it: the rooms'
+  // revenue from the ASSD journal, and cash spent against POs not billed yet.
+  const extra = {};
+  try {
+    extra.assd = await rebuildAssdRevenue(env, { from: from || addDays(to, -60), to: today });
+  } catch (err) { extra.assd = { error: String(err?.message || err) }; }
+  try {
+    extra.cash = await refreshCashPos(env, { today });
+    if (!extra.cash.ok) await restoreCashCost(env);
+  } catch (err) {
+    extra.cash = { error: String(err?.message || err) };
+    await restoreCashCost(env).catch(() => {});
+  }
   // Findings are computed over a longer window than the load, because a trend
   // needs a run-up. Loading ten days and then judging a trend on ten days
   // would call every ordinary week a crisis.
@@ -211,6 +227,7 @@ export async function refresh(env, body) {
 
   return {
     etl,
+    ...extra,
     analysed: { from: analysisFrom, to, findings: insight.findings.length, errors: insight.errors },
   };
 }

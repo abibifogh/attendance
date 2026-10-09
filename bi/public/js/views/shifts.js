@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { table, banner } from './components.js';
 import { filesPanel } from './files.js';
 import { tillViews } from './till.js';
+import { todoPanel } from './todo.js';
 import { state } from '../app.js';
 
 /**
@@ -71,7 +72,7 @@ const MODES = [
 ];
 const TONE = { good: 'var(--sh-good)', warn: 'var(--sh-warn)', bad: 'var(--sh-bad)', open: 'var(--sh-info)' };
 const SEVERITY_COLOUR = { critical: 'var(--sh-bad)', warning: 'var(--sh-warn)', info: 'var(--sh-info)' };
-const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['shift', 'Shift'], ['exceptions', 'Exceptions'], ['stays', 'Unpaid stays'], ['people', 'People'], ['safe', 'Safe'], ['files', 'Files'],
+const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['shift', 'Shift'], ['exceptions', 'Exceptions'], ['stays', 'Unpaid stays'], ['todo', 'To-do'], ['people', 'People'], ['safe', 'Safe'], ['files', 'Files'],
   ['closing', 'Closing reports'], ['answers', 'Answers'], ['approvals', 'Approvals'], ['settings', 'Till settings']];
 const TILL = new Set(['closing', 'answers', 'approvals', 'settings']);
 const PERIODS = ['day', 'week', 'month'];
@@ -154,7 +155,7 @@ export async function renderShifts(root, { range }) {
   const canFix = may('moves', 2) && may('money');
   const allowed = {
     day: may('day'), week: may('week'), month: may('month'), shift: may('money'), exceptions: may('bank'),
-    people: may('net'), stays: may('unpaid'), safe: admin, files: may('files'), closing: may('reports'), answers: may('answers'), approvals: admin, settings: admin,
+    people: may('net'), stays: may('unpaid'), todo: admin || who.role === 'supervisor', safe: admin, files: may('files'), closing: may('reports'), answers: may('answers'), approvals: admin, settings: admin,
   };
   const views = VIEWS.filter(([id]) => allowed[id]);
   const periods = PERIODS.filter((p) => allowed[p]);
@@ -188,6 +189,14 @@ export async function renderShifts(root, { range }) {
     return api('/stays').then((d) => { stays = d; return d; });
   }
   readStays().then(() => { if (stays && staysOpen() && section !== 'stays') paint(); }).catch(() => {});
+
+  // The money to-do list: a supervisor's own open items, or what waits for an admin.
+  let todoBadge = 0;
+  function readTodo() {
+    if (!allowed.todo) return Promise.resolve(0);
+    return api('/todo').then((d) => { todoBadge = admin ? d.counts.answered : d.counts.open; return todoBadge; });
+  }
+  readTodo().then((n) => { if (n && section !== 'todo') paint(); }).catch(() => {});
 
   // Each period's data, once read, kept for as long as the screen is open, so
   // going back to a day, week or month already seen is instant. Anything that
@@ -345,9 +354,10 @@ export async function renderShifts(root, { range }) {
       // Never for a supervisor: the totals are the owner's view of the business.
       has && admin && data.totals ? kpis() : null,
       h('div.sh-tabs', { role: 'tablist' }, views.map(([id, label]) => h('button', {
-        type: 'button', role: 'tab', 'aria-selected': String(section === id), onclick: () => go(id),
+        type: 'button', role: 'tab', 'aria-selected': String(section === id), dataset: { tab: id }, onclick: () => go(id),
       }, label, id === 'exceptions' && open ? h('span.sh-badge', String(open)) : null,
-      id === 'stays' && staysOpen() ? h('span.sh-badge', String(staysOpen())) : null))),
+      id === 'stays' && staysOpen() ? h('span.sh-badge', String(staysOpen())) : null,
+      id === 'todo' && todoBadge ? h('span.sh-badge', String(todoBadge)) : null))),
       v);
     if (TILL.has(section)) {
       Promise.resolve(till[section]?.(v)).catch((err) => mount(v, banner('problem', err.message)));
@@ -355,6 +365,18 @@ export async function renderShifts(root, { range }) {
     }
     if (section === 'stays') {
       staysView(v).catch((err) => mount(v, banner('problem', err.message)));
+      return undefined;
+    }
+    if (section === 'todo') {
+      // An answer changes the count on the tab, and nothing else around it.
+      const badge = () => readTodo().then((n) => {
+        const tab = view.querySelector('.sh-tabs [data-tab="todo"]');
+        if (!tab) return;
+        tab.querySelector('.sh-badge')?.remove();
+        if (n) tab.append(h('span.sh-badge', String(n)));
+      }).catch(() => {});
+      todoPanel(v, { admin, onChange: badge })
+        .catch((err) => mount(v, banner('problem', err.message)));
       return undefined;
     }
     if (section === 'safe') {

@@ -167,12 +167,17 @@ export async function pnl(env, query) {
     total: totals(facts),
     daily,
     caveats: [
-      'Room revenue is not in any of the four systems, so the group total is understated by the whole of the rooms business.',
+      (rows.find((r) => r.line === 'rooms')?.net || 0) > 0
+        ? 'Room revenue is read from the ASSD journal: what each reservation was charged, night by night, on the day of the night. It is only as complete as the journal loaded under Shifts → Files.'
+        : 'Room revenue comes from the ASSD journal, and none is loaded for these days. Load it under Shifts → Files.',
+      facts.costBasis?.sources?.includes('odoo-cash')
+        ? 'Purchases include POs paid in cash from the drawer or the safe that Odoo has no bill for yet, on the day the cash left. When the bill is posted, the bill counts instead.'
+        : null,
       wageBasisNote(facts, config),
       'Contribution is revenue less purchases and wages. Rent, power, water and depreciation are in none of these systems.',
       'Breakfast will always look like a loss here: the food is bought for every guest in the house, and only the outside guests pay a fee that any system records. It is a cost of the rooms, and the rooms are the line nothing reports.',
       'Housekeeping, maintenance and admin have no takings of their own by design. They are costs the earning lines carry, not businesses that failed.',
-    ],
+    ].filter(Boolean),
   };
 }
 

@@ -14,11 +14,17 @@ import * as invitations from './routes/invitations.js';
 import * as safe from './routes/safe.js';
 import * as safebook from './routes/safebook.js';
 import * as stays from './routes/stays.js';
+import * as revenue from './routes/revenue.js';
+import * as cashpo from './routes/cashpo.js';
+import * as todo from './routes/todo.js';
 import { verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
 import { loadFacts } from './insight/facts.js';
 import { groupConfig } from './lib/db.js';
 import { resolveRange } from './lib/dates.js';
+
+/** The days asked for, thirty to yesterday unless said. Accra keeps UTC. */
+const rangeOf = (query) => { const { from, to } = resolveRange(query, 'UTC', { days: 30 }); return { from, to }; };
 
 /**
  * The route table.
@@ -57,6 +63,18 @@ const ROUTES = [
   ['GET', '/api/bootstrap', 'shifts', (env) => panels.bootstrap(env)],
   ['GET', '/api/brief', 'insight', (env, ctx) => panels.brief(env, ctx.query)],
   ['GET', '/api/pnl', 'insight', (env, ctx) => panels.pnl(env, ctx.query)],
+  // Money, from the shifts: the rooms' revenue out of the ASSD journal, and spending paid in cash.
+  ['GET', '/api/money/cash', 'insight', (env, ctx) => cashpo.cashView(env, rangeOf(ctx.query))],
+  ['POST', '/api/money/cash/refresh', 'insight', (env, ctx) => cashpo.refreshNow(env, ctx.account)],
+  ['GET', '/api/money/articles', 'insight', (env, ctx) => revenue.articlesView(env, rangeOf(ctx.query))],
+  ['POST', '/api/money/articles', 'insight', (env, ctx) => revenue.saveArticle(env, ctx.body, ctx.account)],
+  // The money to-do list: a supervisor's own, everything for an admin.
+  ['GET', '/api/todo', 'shifts', (env, ctx) => todo.listTodos(env, ctx.account, { closed: ctx.query.closed === '1' })],
+  ['POST', '/api/todo/settings', 'shifts', (env, ctx) => todo.saveTodoSettings(env, ctx.body, ctx.account)],
+  ['POST', '/api/todo/:id/answer', 'shifts', (env, ctx) => todo.answerTodo(env, ctx.params.id, ctx.body, ctx.account)],
+  ['POST', '/api/todo/:id/decide', 'shifts', (env, ctx) => todo.decideTodo(env, ctx.params.id, ctx.body, ctx.account)],
+  ['POST', '/api/todo/:id/assign', 'shifts', (env, ctx) => todo.assignTodo(env, ctx.params.id, ctx.body, ctx.account)],
+  ['POST', '/api/todo/:id/dismiss', 'shifts', (env, ctx) => todo.dismissTodo(env, ctx.params.id, ctx.body, ctx.account)],
   ['GET', '/api/financials', 'insight', (env, ctx) => panels.financials(env, ctx.query)],
   ['GET', '/api/labour', 'insight', (env, ctx) => panels.labour(env, ctx.query)],
   ['GET', '/api/demand', 'insight', (env, ctx) => panels.demand(env, ctx.query)],

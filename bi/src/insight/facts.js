@@ -187,15 +187,28 @@ export function totals(facts) {
  * `uncovered` names the lines still being read from an operating system, which
  * is the one thing this choice can hide. The line map in Setup is what moves
  * them across, and the screens say so.
+ *
+ * `addOnIds` are the books' own records of cash spent and not billed yet (a
+ * PO paid from the drawer or the safe). They add to the books, never decide a
+ * line's basis, and are dropped on a line read from an operating system,
+ * which will have written the same purchase down when it arrived.
  */
-export function chooseCostBasis(cost, bookSourceIds) {
+export function chooseCostBasis(cost, bookSourceIds, addOnIds = new Set(['odoo-cash'])) {
   const linesInBooks = new Set(
     cost.filter((r) => bookSourceIds.has(r.source_id)).map((r) => r.line_id),
+  );
+  const linesInOperations = new Set(
+    cost.filter((r) => !bookSourceIds.has(r.source_id) && !addOnIds.has(r.source_id)).map((r) => r.line_id),
   );
 
   const rows = [];
   const dropped = [];
   for (const row of cost) {
+    if (addOnIds.has(row.source_id)) {
+      if (!linesInBooks.has(row.line_id) && linesInOperations.has(row.line_id)) dropped.push(row);
+      else rows.push(row);
+      continue;
+    }
     // A line the books speak for is a line only the books speak for.
     if (linesInBooks.has(row.line_id) && !bookSourceIds.has(row.source_id)) {
       dropped.push(row);
@@ -204,14 +217,15 @@ export function chooseCostBasis(cost, bookSourceIds) {
     rows.push(row);
   }
 
+  const bookish = (row) => bookSourceIds.has(row.source_id) || addOnIds.has(row.source_id);
   const byLine = new Map();
   for (const row of rows) {
-    const from = bookSourceIds.has(row.source_id) ? 'books' : 'operations';
+    const from = bookish(row) ? 'books' : 'operations';
     byLine.set(row.line_id, from);
   }
   const uncovered = new Map();
   for (const row of rows) {
-    if (bookSourceIds.has(row.source_id)) continue;
+    if (bookish(row)) continue;
     uncovered.set(row.line_id, (uncovered.get(row.line_id) || 0) + row.amount);
   }
 

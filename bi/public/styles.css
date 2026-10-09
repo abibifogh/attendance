@@ -957,3 +957,40 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .sh-safeverdict .ok, .sh-safeverdict .warn { border-radius: 10px; padding: .6rem .7rem; display: grid; gap: .15rem; }
 .sh-safeverdict .ok { background: color-mix(in srgb, var(--good) 12%, transparent); color: var(--good-text); }
 .sh-safeverdict .warn { background: color-mix(in srgb, var(--warning) 16%, transparent); }
+
+/* ---- Money: how the spending was paid, what to chase, revenue from ASSD ---- */
+.mc { display: grid; gap: 1rem; }
+.mc-card h3.mc-sub { margin: 1.1rem 0 .4rem; font-size: .95rem; }
+.mc-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: .6rem 1rem; }
+.mc-head h2 { margin-bottom: .2rem; }
+.mc-check { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; }
+.mc-paid { margin: .8rem 0 .5rem; }
+.mc-bar { display: flex; gap: 2px; height: 14px; border-radius: 4px; overflow: hidden; background: var(--surface-2); }
+.mc-bar b { height: 100%; min-width: 2px; }
+.mc-legend { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; margin-top: .55rem; font-size: .85rem; color: var(--ink-2); }
+.mc-legend span { display: inline-flex; align-items: center; gap: .4rem; }
+.mc-legend i { width: 10px; height: 10px; border-radius: 3px; }
+.mc-legend b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.mc-legend small { color: var(--muted); }
+.mc-warn { color: var(--sh-warn-ink); font-weight: 600; }
+.mc-chase { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .8rem; margin-top: .8rem; }
+.mc-chase section { background: var(--surface-2); border-radius: 10px; padding: .7rem .85rem; }
+.mc-chase h3 { display: flex; justify-content: space-between; gap: .5rem; margin: 0 0 .4rem; font-size: .88rem; }
+.mc-list { margin: 0; padding-left: 1rem; font-size: .82rem; color: var(--ink-2); display: grid; gap: .2rem; }
+.mc-nights { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .5rem; background: var(--surface-2); border-radius: 10px; padding: .7rem .9rem; margin: .7rem 0; }
+.mc-nights small { display: block; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.mc-nights b { font-size: 1.15rem; }
+.mc-card select { max-width: 100%; }
+
+/* ---- Shifts → To-do ---- */
+.sh-todo-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .6rem 1rem; }
+.sh-todo-counts { display: flex; flex-wrap: wrap; gap: .3rem 1rem; align-items: center; color: var(--ink-2); }
+.sh-todo-counts b { color: var(--ink); font-size: 1.1rem; }
+.sh-todo-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin: .8rem 0; }
+.sh-todo-days { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+.sh-todo-list { display: grid; gap: .7rem; }
+.sh-todo p { margin: .35rem 0; }
+.sh-todo-admin { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem; margin-top: .6rem; padding-top: .55rem; border-top: 1px solid var(--border); }
+.sh-todo-dismiss { display: inline-flex; flex-wrap: wrap; gap: .35rem; }
+.sh-todo-dismiss input, .sh-todo-back { width: 12rem; max-width: 100%; }
+.sh-ex.ok { --tone: var(--sh-good); }

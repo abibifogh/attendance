@@ -162,7 +162,9 @@ control sheet done from the source records: each shift's cash, how it was
 moved out and its hand-over counts, every card and MoMo payment against the terminal and the bank,
 and the exceptions grouped by what went wrong; see `docs/shifts.md`. Staff
 close their shift in HIVE under **My till**, and admins and supervisors settle
-what does not agree here; see `docs/till.md`.
+what does not agree here; see `docs/till.md`. **Money** reads the rooms'
+revenue from the ASSD journal and the cash spent against POs not yet billed in
+Odoo, and Shifts → **To-do** shares out what to chase; see `docs/money.md`.
 
 ### Getting the data out
 
@@ -526,6 +528,7 @@ public/              the dashboard and the hub: no framework, no build step
 docs/sso.md          the hand-off protocol, and a handler per platform
 docs/invitations.md  inviting people, resending, and what each dead link says
 docs/shifts.md       how shift reconciliation reads its files and what each exception means
+docs/money.md        rooms' revenue from ASSD, cash spent against POs, and the money to-do list
 ```
 
 ### Where the logic lives
