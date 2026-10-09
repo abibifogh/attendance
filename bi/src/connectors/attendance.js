@@ -2,6 +2,9 @@ import { all } from '../lib/db.js';
 import { emptyBundle } from './bundle.js';
 import { minor, toMinor } from '../lib/money.js';
 
+/** `2026-03`, moved by whole months. */
+const shiftMonth = (m, n) => { const d = new Date(`${m}-15T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 7); };
+
 /**
  * The attendance system, read straight from its database.
  *
@@ -103,6 +106,18 @@ export function hourlyCost(rate, { daysPerWeek = 5, hoursPerDay = 8 } = {}) {
 }
 
 /**
+ * A monthly salary in pesewas, or null for anybody paid by the day or the
+ * hour, or with no amount recorded. A missing basis is read as monthly, as
+ * `hourlyCost` reads it.
+ */
+export function monthlyPay(rate) {
+  if (!rate || rate.amount === null || rate.amount === undefined || rate.amount === '') return null;
+  if (rate.basis === 'hourly' || rate.basis === 'daily') return null;
+  const cedis = Number(rate.amount);
+  return Number.isFinite(cedis) ? toMinor(cedis) : null;
+}
+
+/**
  * The rate in force on a day: the latest one starting on or before it.
  *
  * Nothing at all before somebody's first rate, which is honest — the system
@@ -167,6 +182,8 @@ export async function pull({ db, from, to }) {
       jobTitle: row.job_title || null,
       line,
       hourCost: hourlyCost(rate, { daysPerWeek }),
+      // A salary, as it is: estimated per day as the month's pay over its days.
+      pay: { monthly: monthlyPay(rate), from: rate?.from_day || null },
       active: row.active === 1,
     });
   }
@@ -225,14 +242,16 @@ export async function pull({ db, from, to }) {
   //
   // Every month the window touches, not only whole ones — a window covering
   // the 3rd to the 9th of March is still a window in which March's payroll is
-  // the relevant payroll.
+  // the relevant payroll. And the two months before it: a pay run is often
+  // finalised weeks after its month ends, after the nightly window has moved
+  // on, and it would otherwise never be read.
   const [slips, slipNote] = await optional(db, `
     SELECT r.month, s.staff_id, s.gross, s.bonus_gross, s.ssf_employee,
            s.ssf_employer, s.paye, s.loans, s.net, s.cost
       FROM pay_slip s
       JOIN pay_run r ON r.id = s.run_id
      WHERE r.status = 'final'
-       AND r.month BETWEEN ?1 AND ?2`, [from.slice(0, 7), to.slice(0, 7)], 'pay_slip');
+       AND r.month BETWEEN ?1 AND ?2`, [shiftMonth(from.slice(0, 7), -2), to.slice(0, 7)], 'pay_slip');
 
   for (const row of slips) {
     const who = byId.get(row.staff_id) || { line: 'admin', department: '' };

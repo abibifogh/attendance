@@ -259,3 +259,33 @@ test('what somebody was down to work is carried, not invented', async () => {
   assert.equal(chef.expectedMinutes, 720);
   assert.notEqual(ama.expectedMinutes, 480);
 });
+
+// ------------------------------------------- estimated, then the payslips --
+
+test('a salaried month is its monthly pay over its days until the payslips replace it', async () => {
+  const { runEtl } = await import('../src/warehouse/etl.js');
+  const { loadFacts, totals } = await import('../src/insight/facts.js');
+  const hive = hiveDb();
+  // Ama works one morning in June; Kwesi, paid by the day, none.
+  hive.raw.exec(`INSERT INTO att_days (staff_id, day, scheduled, expected_minutes, first_in, last_out,
+      worked_minutes, late_minutes, overtime_minutes, status, reason_code)
+    VALUES (1, '2026-06-02', 1, 360, '07:00', '13:00', 360, 0, 0, 'present', 'present')`);
+  const { raw, db } = freshDb('migrations');
+  raw.exec(`UPDATE settings SET value = '0' WHERE key = 'demo_mode';
+    UPDATE sources SET enabled = CASE WHEN id = 'attendance' THEN 1 ELSE 0 END;`);
+  await runEtl({ DB: db, ATT_DB: hive.db }, { from: '2026-05-01', to: '2026-06-10', trigger: 'test' });
+  const line = (facts, id) => facts.labour.filter((r) => r.line_id === id).reduce((t, r) => t + r.labour_cost, 0);
+
+  // June has no finalised run: Ama's GH₵2,100 a month is GH₵70 a day for ten
+  // days, worked or not. Kwesi is paid by the day and worked none of them.
+  const june = await loadFacts(db, '2026-06-01', '2026-06-10');
+  assert.equal(Math.round(line(june, 'housekeeping')), 70_000);
+  assert.equal(line(june, 'restaurant'), 0);
+  assert.deepEqual(june.payslipMonths, []);
+
+  // May's run is final: the payslips, to the pesewa, not the estimate.
+  const may = await loadFacts(db, '2026-05-01', '2026-05-31');
+  assert.deepEqual(may.payslipMonths, ['2026-05']);
+  assert.equal(line(may, 'housekeeping'), 272_375);
+  assert.equal(totals(may).labourCost, 272_375 + 587_600);
+});

@@ -120,7 +120,7 @@ export class Register {
    * installed) but may never overwrite attendance's version of somebody, which
    * is why the update below only ever fills blanks.
    */
-  async person(sourceId, { externalId, name, employeeNo, department, jobTitle, line, hourCost, active }) {
+  async person(sourceId, { externalId, name, employeeNo, department, jobTitle, line, hourCost, active, pay }) {
     const linkKey = `${sourceId}|${externalId}`;
     if (this.personLinks.has(linkKey)) return this.personLinks.get(linkKey);
 
@@ -181,6 +181,15 @@ export class Register {
         line_id: person.line_id || line || null,
         hour_cost: hourCost ?? person.hour_cost,
       });
+    }
+
+    // Monthly pay comes from attendance alone, which also knows who has left.
+    // Set outright, null included: somebody moved from a salary to an hourly
+    // rate must stop being costed as salaried.
+    if (pay && person?.id) {
+      await run(this.db, 'UPDATE dim_person SET pay_monthly = ?2, pay_from = ?3, active = ?4 WHERE id = ?1',
+        person.id, pay.monthly ?? null, pay.from ?? null, active === false ? 0 : 1);
+      Object.assign(person, { pay_monthly: pay.monthly ?? null, pay_from: pay.from ?? null, active: active === false ? 0 : 1 });
     }
 
     this.personLinks.set(linkKey, person.id);
