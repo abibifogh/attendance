@@ -466,6 +466,13 @@ test('the safe book: in from the shifts, out as written, Odoo offered, a count t
   assert.deepEqual(book.lines.map((l) => [l.type, l.day, l.amount, l.balance]), [['in', '2026-08-01', 20000, 70000]], 'ALPHA’s envelope comes in by itself');
   // P00412 is claimed by a closing report and the draft is not confirmed: neither is offered.
   assert.deepEqual(book.suggestions.map((s) => s.name), ['P00433', 'P00440', 'P00444']);
+  // Only the POs ordered in the days on screen.
+  const inJuly = await safebook.bookView(env, owner, { fetchImpl, from: '2026-07-01', to: '2026-07-31' });
+  assert.deepEqual(inJuly.suggestions, []);
+  const onTheSecond = await safebook.bookView(env, owner, { fetchImpl, from: '2026-08-02', to: '2026-08-02' });
+  assert.deepEqual(onTheSecond.suggestions.map((s) => s.name), ['P00433', 'P00440', 'P00444']);
+  const onTheFirst = await safebook.bookView(env, owner, { fetchImpl, from: '2026-08-01', to: '2026-08-01' });
+  assert.deepEqual(onTheFirst.suggestions, [], 'P00412 is the only PO that day, and a closing report has it');
 
   // Out: a PO from the safe (its amount is the PO's), cash banked, and a payment waiting for its PO.
   await assert.rejects(safebook.addEntry(env, { kind: 'po', po: 'P00412', day: '2026-08-02' }, owner, { fetchImpl }), /already accounted for in a closing report/);

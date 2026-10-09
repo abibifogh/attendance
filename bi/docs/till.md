@@ -106,8 +106,9 @@ the safe to the next, and its balance is what the safe should hold.
     safe stays as written; if the PO's total differs, the row says so.
   - **+ Banked or handed over**: the amount and where it went (a bank slip,
     who received it).
-- **Confirmed in Odoo, not claimed** lists the POs since the last count that
-  nothing has claimed. For each: **Paid from the safe**, **Not from the safe**
+- **Confirmed in Odoo, not claimed** lists the POs ordered in the days chosen
+  at the top of Shifts (the day, week or month on screen) that nothing has
+  claimed. For each: **Paid from the safe**, **Not from the safe**
   (it is not offered again), or, when a waiting payment has the same amount,
   **It is the waiting payment**.
 - **Count the safe**: type what you counted. The book's verdict shows as you
