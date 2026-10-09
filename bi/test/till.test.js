@@ -7,6 +7,7 @@ import * as till from '../src/routes/till.js';
 import { issuesFor, withStatus, compare, readReport } from '../src/shifts/till.js';
 import { signLink, verifyLink, callLink } from '../src/lib/link.js';
 import { parseJournal } from '../src/shifts/assd.js';
+import * as safe from '../src/routes/safe.js';
 
 /**
  * Closing a shift in HIVE, as Insight sees it.
@@ -66,11 +67,11 @@ function report(raw, { day = '2026-08-01', slot, userId, name, cash: drawer, env
     .run(day, slot, userId, name, drawer, envelopes.length ? 1 : 0, JSON.stringify(envelopes), JSON.stringify(expenses), JSON.stringify(rentals), JSON.stringify(checks));
 }
 
-async function setUp() {
+async function setUp(lines = journal()) {
   const { db } = freshDb();
   const hive = hiveDb();
   const env = { DB: db, ATT_DB: hive.db, SSO_SECRET_ATTENDANCE: SECRET };
-  await routes.uploadJournal(env, { lines: journal(), name: 'journal.pdf' }, OWNER);
+  await routes.uploadJournal(env, { lines, name: 'journal.pdf' }, OWNER);
   // ALPHA was Ama. She wrote 250 in the envelope where ASSD moved 200, and
   // counted 4 padlocks at the end where ASSD's one deposit leaves 5.
   report(hive.raw, {
@@ -292,4 +293,128 @@ test('the till settings: checks, rentals, who is told', async () => {
   await till.saveSettings(env, { notify: { hiveUserId: 7, name: 'Ama Test', amounts: false } }, OWNER);
   assert.deepEqual((await till.linkRecipients(env, { event: 'closed' })).to, [{ userId: 7, name: 'Ama Test', push: true, email: true, amounts: false }]);
   assert.deepEqual((await till.linkRecipients(env, { event: 'approval' })).to, [], 'approvals are opt in');
+});
+
+// ---------------------------------------------------------------- the safe --
+
+test('the safe: each shift’s envelopes beside ASSD, closed with a supervisor, and undone', async () => {
+  const { env } = await setUp();
+  const range = { from: '2026-08-01', to: '2026-08-01' };
+  await assert.rejects(safe.safeView(env, range, SUPERVISOR), /Only an admin/);
+
+  let view = await safe.safeView(env, range, OWNER);
+  assert.deepEqual(view.rows.map((r) => [r.slot, r.user, r.assd, r.envelopes, r.agrees, r.closure]),
+    [['morning', 'ALPHA', 20000, 25000, false, null]], 'only the shift that moved cash to the safe');
+  assert.deepEqual(view.rows[0].list, [{ no: '417', amount: 25000 }]);
+  assert.deepEqual(view.open, { shifts: 1, assd: 20000, envelopes: 25000 });
+
+  await assert.rejects(safe.closeSafe(env, { shifts: [], closedOn: '2026-08-05' }, OWNER), /Tick the shifts/);
+  await assert.rejects(safe.closeSafe(env, { shifts: [{ day: '2026-08-01', slot: 'afternoon' }], closedOn: '2026-08-05' }, OWNER), /moved nothing to the safe/);
+  const out = await safe.closeSafe(env, {
+    shifts: [{ day: '2026-08-01', slot: 'morning' }], closedOn: '2026-08-05', with: 'Sam Supervisor', taken: '150.00', note: 'Banked',
+    // Amounts sent by the page are ignored: the server works them out.
+    assd: 1,
+  }, OWNER);
+  assert.deepEqual([out.assd, out.envelopes, out.taken], [20000, 25000, 15000]);
+  await assert.rejects(safe.closeSafe(env, { shifts: [{ day: '2026-08-01', slot: 'morning' }], closedOn: '2026-08-06' }, OWNER), /already in closure/);
+
+  view = await safe.safeView(env, range, OWNER);
+  assert.equal(view.rows[0].closure, out.id);
+  assert.deepEqual(view.open, { shifts: 0, assd: 0, envelopes: 0 });
+  assert.deepEqual(view.closures.map((c) => [c.closedOn, c.with, c.shifts, c.assd, c.taken, c.left]),
+    [['2026-08-05', 'Sam Supervisor', 1, 20000, 15000, 5000]]);
+
+  await safe.saveTaken(env, out.id, { taken: '200' }, OWNER);
+  assert.equal((await safe.safeView(env, range, OWNER)).closures[0].left, 0);
+  await safe.undoClosure(env, out.id, OWNER);
+  view = await safe.safeView(env, range, OWNER);
+  assert.deepEqual([view.rows[0].closure, view.closures.length], [null, 0]);
+});
+
+// ---------------------------------------------------------- unlabelled cash --
+
+test('cash moved out with no label is an exception, and labelling it clears it', async () => {
+  // ALPHA moves 150 where the count before it holds 200 in notes: no label.
+  const lines = journal().map((l) => l.replace('01.08.26   -200,00 GHS', '01.08.26   -150,00 GHS').replace('01.08.26   200,00 GHS', '01.08.26   150,00 GHS'));
+  const { env } = await setUp(lines);
+  const read = async () => (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).exceptions;
+  const x = (await read()).find((e) => e.kind === 'movement-unlabelled');
+  assert.ok(x, 'flagged');
+  assert.deepEqual([x.key, x.group, x.seq, x.amount, x.user, x.labels], ['unlabelled:400106', 'unlabelled', 400106, 15000, 'ALPHA', true]);
+
+  await routes.saveMovement(env, { seq: 400106, kind: 'safe' }, OWNER);
+  assert.equal((await read()).some((e) => e.kind === 'movement-unlabelled'), false, 'labelled, so gone');
+});
+
+// ------------------------------------------------------------------ laundry --
+
+test('the laundry is compared shift by shift, once the laundry system has been read', async () => {
+  // ALPHA takes 30 for laundry at the desk (in place of the padlock deposit);
+  // the laundry system took 20 in the morning.
+  const lines = journal().map((l) => l.replace('01.08.26   405   Padlock Deposit   1   30,00   30,00 GHS   0', '01.08.26   540   Laundry   1   30,00   30,00 GHS   0'));
+  const { env } = await setUp(lines);
+  await env.DB.prepare("INSERT INTO laundry_txn (source_id, kind, ref, at, day, amount, method) VALUES ('laundry', 'payment', 'L-1', '2026-08-01 09:30:00', '2026-08-01', 2000, 'cash')").run();
+  await env.DB.prepare("INSERT INTO laundry_txn (source_id, kind, ref, at, day, amount, method) VALUES ('laundry', 'order', 'L-1', '2026-08-01 09:00:00', '2026-08-01', 3000, NULL)").run();
+  const read = () => routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+
+  // Not read yet: nothing to compare with, so nothing is flagged.
+  let data = await read();
+  assert.equal(data.exceptions.some((e) => e.kind === 'laundry-mismatch'), false);
+  assert.equal(data.days[0].shifts.find((s) => s.user === 'ALPHA').laundrySystem, null);
+
+  await env.DB.prepare("INSERT INTO etl_run (id, from_day, to_day, status) VALUES (1, '2026-07-25', '2026-08-02', 'ok')").run();
+  await env.DB.prepare("INSERT INTO etl_source_run (run_id, source_id, status) VALUES (1, 'laundry', 'ok')").run();
+  data = await read();
+  const alpha = data.days[0].shifts.find((s) => s.user === 'ALPHA');
+  assert.equal(alpha.laundry, 3000);
+  assert.deepEqual(alpha.laundrySystem, { collected: 2000, cash: 2000, card: 0, charged: 3000, payments: 1, orders: 1 });
+  const x = data.exceptions.filter((e) => e.kind === 'laundry-mismatch');
+  assert.deepEqual(x.map((e) => [e.key, e.amount, e.assd, e.system]), [['laundry:2026-08-01:morning', 1000, 3000, 2000]]);
+  assert.equal(data.days[0].shifts.find((s) => s.user === 'BRAVO').laundrySystem.collected, 0, 'BRAVO: none either side, so no exception');
+});
+
+// ------------------------------------------------- a supervisor’s answers --
+
+test('a supervisor’s answers and reconciliations wait for an admin before they clear', async () => {
+  // ALPHA's 150 with no label, and the drawer over, so there is something to answer.
+  const { env } = await setUp(journal().map((l) => l.replace('01.08.26   -200,00 GHS', '01.08.26   -150,00 GHS').replace('01.08.26   200,00 GHS', '01.08.26   150,00 GHS')));
+  const range = { from: '2026-08-01', to: '2026-08-01' };
+  const first = (await routes.shifts(env, range, OWNER)).exceptions.find((e) => e.severity !== 'info');
+  assert.ok(first, 'there is something to answer');
+
+  const out = await routes.saveAnswer(env, { key: first.key, answer: 'Explained', note: 'Counted again' }, SUPERVISOR, { pending: true });
+  assert.equal(out.pending, true);
+  let x = (await routes.shifts(env, range, OWNER)).exceptions.find((e) => e.key === first.key);
+  assert.equal(x.answer, null, 'not cleared yet');
+  assert.deepEqual([x.proposed.answer, x.proposed.by], ['Explained', 'Sam Supervisor']);
+
+  const waiting = (await till.overview(env, range, OWNER)).answerApprovals;
+  assert.deepEqual(waiting.map((a) => [a.type, a.id, a.answer]), [['answer', first.key, 'Explained']]);
+  await assert.rejects(till.approve(env, { answer: first.key, ok: true }, SUPERVISOR), /Only an admin/);
+  await till.approve(env, { answer: first.key, ok: true }, OWNER);
+  x = (await routes.shifts(env, range, OWNER)).exceptions.find((e) => e.key === first.key);
+  assert.equal(x.answer.answer, 'Explained');
+  assert.equal(x.answer.approvedBy, 'Test Owner');
+  await assert.rejects(routes.saveAnswer(env, { key: first.key, answer: 'Not a problem' }, SUPERVISOR, { pending: true }), /already been answered/);
+
+  // A reconciliation, rejected: it is gone and the exceptions are open again.
+  await routes.saveLink(env, { keys: ['a:1', 'b:2'], note: 'Same money' }, SUPERVISOR, { pending: true });
+  const link = (await till.overview(env, range, OWNER)).answerApprovals.find((a) => a.type === 'link');
+  assert.deepEqual(link.keys, ['a:1', 'b:2']);
+  await till.approve(env, { link: link.id, ok: false }, OWNER);
+  assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM shift_link').first()).n, 0);
+
+  // An admin's own answer applies at once.
+  const second = (await routes.shifts(env, range, OWNER)).exceptions.find((e) => e.severity !== 'info' && e.key !== first.key);
+  if (second) {
+    await routes.saveAnswer(env, { key: second.key, answer: 'Not a problem' }, OWNER);
+    assert.equal((await routes.shifts(env, range, OWNER)).exceptions.find((e) => e.key === second.key).answer.answer, 'Not a problem');
+  }
+});
+
+test('a supervisor never gets the totals', async () => {
+  const { env } = await setUp();
+  const data = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+  assert.ok(data.totals);
+  assert.equal(routes.forSupervisor(data, { day: 1, week: 1, money: 1, bank: 1, net: 1 }).totals, null);
 });

@@ -11,6 +11,8 @@ import * as reports from './routes/reports.js';
 import * as shiftRoutes from './routes/shifts.js';
 import * as till from './routes/till.js';
 import * as invitations from './routes/invitations.js';
+import * as safe from './routes/safe.js';
+import * as stays from './routes/stays.js';
 import { verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
 import { loadFacts } from './insight/facts.js';
@@ -72,13 +74,29 @@ const ROUTES = [
   ['POST', '/api/shifts/count', 'shifts', adminOnly((env, ctx) => shiftRoutes.saveCount(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/expense', 'shifts', adminOnly((env, ctx) => shiftRoutes.saveExpense(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/expense/pull', 'shifts', adminOnly((env, ctx) => shiftRoutes.pullOrders(env, ctx.body))],
-  ['POST', '/api/shifts/answer', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.saveAnswer(env, ctx.body, ctx.account))],
+  ['POST', '/api/shifts/answer', 'shifts', async (env, ctx) => {
+    // An unpaid stay is answered by whoever may act on Unpaid stays; anything else by whoever may act on the exceptions.
+    const stay = String(ctx.body?.key || '').startsWith('stay:');
+    await till.requireArea(env, ctx.account, stay ? 'unpaid' : 'bank', 2);
+    return waitsForAdmin(env, ctx, shiftRoutes.saveAnswer(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }),
+      `${ctx.account?.name || 'A supervisor'} answered ${stay ? 'an unpaid stay' : 'an exception'}: ${ctx.body?.answer || ''}.`);
+  }],
   ['POST', '/api/shifts/movement', 'shifts', movement],
-  ['POST', '/api/shifts/link', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.saveLink(env, ctx.body, ctx.account))],
-  ['POST', '/api/shifts/unlink', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body))],
+  ['POST', '/api/shifts/link', 'shifts', area('bank', 2, (env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
+  ['POST', '/api/shifts/unlink', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }))],
   ['POST', '/api/shifts/journal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/bank', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadBank(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/terminal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadTerminal(env, ctx.body, ctx.account))],
+
+  // Stays not fully paid: leaving in the next 24 hours, or already left.
+  // Answers to them go through /api/shifts/answer, like any exception.
+  ['GET', '/api/stays', 'shifts', area('unpaid', 1, (env, ctx) => stays.unpaidStays(env, ctx.account))],
+
+  // The safe: what each shift moved into it, and the closures. Admins only.
+  ['GET', '/api/safe', 'shifts', (env, ctx) => safe.safeView(env, ctx.query, ctx.account)],
+  ['POST', '/api/safe/close', 'shifts', (env, ctx) => safe.closeSafe(env, ctx.body, ctx.account)],
+  ['POST', '/api/safe/:id/taken', 'shifts', (env, ctx) => safe.saveTaken(env, ctx.params.id, ctx.body, ctx.account)],
+  ['POST', '/api/safe/:id/undo', 'shifts', (env, ctx) => safe.undoClosure(env, ctx.params.id, ctx.account)],
 
   // Closing reports from HIVE, what staff answered, and the settings.
   ['GET', '/api/till', 'shifts', (env, ctx) => till.overview(env, ctx.query, ctx.account)],
@@ -336,6 +354,18 @@ async function shiftsRead(env, ctx) {
     throw new HttpError(403, 'No part of Shifts has been shared with you yet.');
   }
   return shiftRoutes.forSupervisor(data, access);
+}
+
+const isSupervisor = (ctx) => till.roleOf(ctx.account) !== 'admin';
+
+/** A supervisor's answer waits for an admin; tell the admins, without holding up the reply. */
+async function waitsForAdmin(env, ctx, saving, text) {
+  const out = await saving;
+  if (out?.pending) {
+    const tell = till.tellApprovers(env, { text });
+    if (ctx.execution?.waitUntil) ctx.execution.waitUntil(tell); else await tell;
+  }
+  return out;
 }
 
 /** A correction to a cash movement: an admin's applies, a supervisor's waits for an admin. */

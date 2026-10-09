@@ -57,6 +57,8 @@ const KIND = {
   'movement-twice': ['Moved out of the drawer twice', '2'],
   'movement-reversal': ['Put back on a different shift', '↺'],
   'bank-only': ['In the bank, not on the terminal', '?'],
+  'laundry-mismatch': ['The laundry did not agree', 'L'],
+  'movement-unlabelled': ['Cash moved out with no label', '?'],
 };
 const MODES = [
   ['cash', 'Cash', 'var(--sh-cash)'],
@@ -67,7 +69,7 @@ const MODES = [
 ];
 const TONE = { good: 'var(--sh-good)', warn: 'var(--sh-warn)', bad: 'var(--sh-bad)', open: 'var(--sh-info)' };
 const SEVERITY_COLOUR = { critical: 'var(--sh-bad)', warning: 'var(--sh-warn)', info: 'var(--sh-info)' };
-const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['shift', 'Shift'], ['exceptions', 'Exceptions'], ['people', 'People'], ['files', 'Files'],
+const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['shift', 'Shift'], ['exceptions', 'Exceptions'], ['stays', 'Unpaid stays'], ['people', 'People'], ['safe', 'Safe'], ['files', 'Files'],
   ['closing', 'Closing reports'], ['answers', 'Answers'], ['approvals', 'Approvals'], ['settings', 'Till settings']];
 const TILL = new Set(['closing', 'answers', 'approvals', 'settings']);
 const PERIODS = ['day', 'week', 'month'];
@@ -150,7 +152,7 @@ export async function renderShifts(root, { range }) {
   const canFix = may('moves', 2) && may('money');
   const allowed = {
     day: may('day'), week: may('week'), month: may('month'), shift: may('money'), exceptions: may('bank'),
-    people: may('net'), files: may('files'), closing: may('reports'), answers: may('answers'), approvals: admin, settings: admin,
+    people: may('net'), stays: may('unpaid'), safe: admin, files: may('files'), closing: may('reports'), answers: may('answers'), approvals: admin, settings: admin,
   };
   const views = VIEWS.filter(([id]) => allowed[id]);
   const periods = PERIODS.filter((p) => allowed[p]);
@@ -171,7 +173,19 @@ export async function renderShifts(root, { range }) {
   // What is being typed and not yet saved, per shift: a recount, a sheet total.
   const drafts = {};
 
-  const till = tillViews({ who, period: () => period });
+  const till = tillViews({ who, period: () => period, describeKey });
+
+  // Stays not fully paid. They depend on the moment, not on the days on
+  // screen, so they are read once here and again whenever they are answered.
+  let stays = null;
+  // Only the ones that are certain count: a stay booked before the journal
+  // loaded begins may have been paid then, out of sight.
+  const staysOpen = () => (stays ? [...stays.leaving, ...stays.left].filter((x) => !x.answer && !x.unsure).length : 0);
+  function readStays() {
+    if (!allowed.stays) return Promise.resolve(null);
+    return api('/stays').then((d) => { stays = d; return d; });
+  }
+  readStays().then(() => { if (stays && staysOpen() && section !== 'stays') paint(); }).catch(() => {});
 
   // Each period's data, once read, kept for as long as the screen is open, so
   // going back to a day, week or month already seen is instant. Anything that
@@ -326,13 +340,23 @@ export async function renderShifts(root, { range }) {
       data.journalEndsInside ? banner('warning',
         `The journal loaded so far stops inside the ${SLOT[data.journalEndsInside.slot].label.toLowerCase()} shift of `
         + `${shortDay(data.journalEndsInside.day)}, so that shift is shown as far as it goes. Export ASSD one day past the last shift you want to read.`) : null,
-      has && !data.redacted ? kpis() : null,
+      // Never for a supervisor: the totals are the owner's view of the business.
+      has && admin && data.totals ? kpis() : null,
       h('div.sh-tabs', { role: 'tablist' }, views.map(([id, label]) => h('button', {
         type: 'button', role: 'tab', 'aria-selected': String(section === id), onclick: () => go(id),
-      }, label, id === 'exceptions' && open ? h('span.sh-badge', String(open)) : null))),
+      }, label, id === 'exceptions' && open ? h('span.sh-badge', String(open)) : null,
+      id === 'stays' && staysOpen() ? h('span.sh-badge', String(staysOpen())) : null))),
       v);
     if (TILL.has(section)) {
       Promise.resolve(till[section]?.(v)).catch((err) => mount(v, banner('problem', err.message)));
+      return undefined;
+    }
+    if (section === 'stays') {
+      staysView(v).catch((err) => mount(v, banner('problem', err.message)));
+      return undefined;
+    }
+    if (section === 'safe') {
+      safeView(v).catch((err) => mount(v, banner('problem', err.message)));
       return undefined;
     }
     if (!has && section !== 'files') return mount(v, nothingYet());
@@ -377,6 +401,190 @@ export async function renderShifts(root, { range }) {
         t.counted ? `${t.counted} of ${t.shifts} shifts with an opening and closing count` : 'No counts in these days yet'),
       tile('exceptions', 'var(--sh-bad)', 'Waiting for an answer', String(open),
         open ? 'Differences somebody has to explain' : 'Everything answered or explained', null, open ? 'var(--sh-bad-ink)' : 'var(--sh-good-ink)'));
+  }
+
+  // ------------------------------------------------------- unpaid stays --
+
+  const STAY_ANSWERS = ['Paid, not in the journal yet', 'Guest is paying now', 'Company or agent pays', 'Guest owes, chasing', 'Written off', 'Not a problem'];
+
+  /**
+   * Guests leaving in the next 24 hours who still owe, and guests who left
+   * owing. Each one can be answered; a supervisor's answer waits for an admin.
+   */
+  async function staysView(v) {
+    mount(v, h('p.muted', 'Reading the reservations…'));
+    const d = await readStays();
+    const nights = (x) => `${x.nights} night${x.nights === 1 ? '' : 's'}, ${dayText(x.firstNight)} to ${dayText(x.checkout)}`;
+    const methods = (x) => Object.entries(x.byMethod || {}).filter(([, a]) => a).map(([m, a]) => `${({ cash: 'cash', card: 'card', prepaid: 'prepaid', other: 'other' })[m] || m} ${money(a)}`).join(' · ');
+    const row = (x, tone) => {
+      const note = h('input', { type: 'text', maxlength: '600', placeholder: 'What happened (optional)', value: x.answer?.note || '' });
+      const said = h('span.small');
+      const answer = async (value) => {
+        said.textContent = 'Saving…';
+        try {
+          const out = await api('/shifts/answer', { method: 'POST', body: { key: x.key, answer: value, note: value ? note.value : '' } });
+          await staysView(v);
+          paint();
+          if (out?.pending) mount(v.querySelector('.sh-staysaid') || v, banner('good', 'Sent to an admin to approve.'));
+        } catch (err) { said.textContent = err.message; }
+      };
+      return h(`article.sh-ex.${tone}${x.answer ? '.done' : ''}`,
+        h('div.hd', h('span.sq', '₵'), h('h3', `Reservation ${x.ref || x.seq}`), h('span.amt.num', data.redacted || d.redacted ? 'owes' : money(x.balance))),
+        h('div.sh-meta',
+          h('span', x.rooms.join(', ') || 'Room'),
+          h('span', nights(x)),
+          h('span', `check-out ${dayText(x.checkout)} ${x.checkoutAt.slice(11)}`),
+          x.bookedBy ? h('span', `booked by ${nameOf(x.bookedBy)}`) : null),
+        d.redacted ? null : h('div.sh-staymoney',
+          h('div', h('small', 'Charged'), h('b', whole(x.charged))),
+          h('div', h('small', 'Paid'), h('b', whole(x.paid))),
+          h('div.owes', h('small', 'Owes'), h('b', whole(x.balance)))),
+        methods(x) ? h('p.small', `Paid so far: ${methods(x)}`) : h('p.small', 'No payment in the journal loaded.'),
+        x.unsure ? h('p.small.muted', `Booked ${dayText(x.bookedOn)}, before the first day of journal loaded (${dayText(d.journal.from)}). A payment taken then would not show: check ASSD.`) : null,
+        x.proposed ? h('div.sh-waiting',
+          h('span', `⏳ Waiting for an admin: ${x.proposed.answer}${x.proposed.note ? `: ${x.proposed.note}` : ''} (${x.proposed.by})`),
+          admin ? [
+            h('button.btn.primary', { type: 'button', onclick: async () => { await api('/till/approve', { method: 'POST', body: { answer: x.key, ok: true } }); await staysView(v); paint(); } }, 'Approve'),
+            h('button.btn', { type: 'button', onclick: async () => { await api('/till/approve', { method: 'POST', body: { answer: x.key, ok: false } }); await staysView(v); paint(); } }, 'Reject'),
+          ] : null)
+          : x.answer ? h('div.sh-done',
+            h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''} (${x.answer.by})`),
+            may('unpaid', 2) ? h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change') : null)
+            : may('unpaid', 2) ? h('div.sh-answers', note, STAY_ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said) : null);
+    };
+    const open = (list) => list.filter((x) => !x.answer).length;
+    const sure = (list) => list.filter((x) => !x.unsure);
+    const unsure = [...d.leaving, ...d.left].filter((x) => x.unsure);
+    mount(v,
+      h('div.sh-staysaid'),
+      !d.journal ? banner('warning', 'No ASSD journal loaded yet. Load it under Files.') : null,
+      h('section.card',
+        h('div.sh-cardhead', h('h2', `Leaving in the next 24 hours, not fully paid (${open(sure(d.leaving))})`),
+          h('p.sh-sub', `Check-out is taken as ${d.checkoutTime} on the day after the last night. Collect before they go.`)),
+        sure(d.leaving).length ? h('div.sh-exgrid', sure(d.leaving).map((x) => row(x, 'warn')))
+          : h('p.muted', d.journal ? 'Nobody leaving in the next 24 hours owes anything, in the journal loaded.' : '')),
+      h('section.card',
+        h('div.sh-cardhead', h('h2', `Checked out, still owing (${open(sure(d.left))})`),
+          h('p.sh-sub', 'Guests whose last night has passed and whose payments do not cover what they were charged. The last 60 days.')),
+        sure(d.left).length ? h('div.sh-exgrid', sure(d.left).map((x) => row(x, 'bad')))
+          : h('p.muted', d.journal ? 'Nobody has left owing, in the journal loaded.' : '')),
+      unsure.length ? h('details.card.sh-unsure',
+        h('summary', h('b', `Check these in ASSD (${unsure.length})`),
+          h('span.sh-sub', ` Booked before ${dayText(d.journal.from)}, the first day of journal loaded. They may have paid then. Load earlier journals and they sort themselves out.`)),
+        h('div.sh-exgrid', unsure.map((x) => row(x, 'info')))) : null,
+      d.journal ? h('p.sh-sub', `Read from the ASSD journal loaded, ${dayText(d.journal.from)} to ${dayText(d.journal.to)}. `
+        + 'A stay is judged once its last night is inside that, so export the journal through tomorrow to see tomorrow’s check-outs. '
+        + 'Journals loaded before this check began need loading again for their charges.') : null);
+  }
+
+  // -------------------------------------------------------------- safe --
+
+  /**
+   * The safe: every shift in these days that moved cash into it, what ASSD
+   * says and what the envelopes say, and the closures. Tick the shifts a
+   * closure dealt with, say who closed it with you and how much came out.
+   */
+  async function safeView(v) {
+    mount(v, h('p.muted', 'Reading the safe…'));
+    const d = await api(`/safe?from=${period.from}&to=${period.to}`);
+    const ticked = new Set();
+    const keyOf = (r) => `${r.day}|${r.slot}`;
+    const closedOn = h('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
+    const withName = h('input', { type: 'text', maxlength: '120', placeholder: 'The supervisor' });
+    const taken = h('input', { type: 'text', inputmode: 'decimal', placeholder: '0.00' });
+    const note = h('input', { type: 'text', maxlength: '600', placeholder: 'Optional' });
+    const said = h('span.small');
+    const bar = h('div');
+
+    const showBar = () => {
+      const rows = d.rows.filter((r) => ticked.has(keyOf(r)));
+      if (!rows.length) { mount(bar); return; }
+      const assd = rows.reduce((t, r) => t + r.assd, 0);
+      const env = rows.reduce((t, r) => t + (r.envelopes || 0), 0);
+      mount(bar, h('section.card.sh-safeclose',
+        h('h2', `Close the safe for ${rows.length} shift${rows.length === 1 ? '' : 's'}`),
+        h('p.sh-sub', `ASSD moved ${money(assd)} to the safe on these shifts; the envelopes say ${money(env)}.`),
+        h('div.sh-safeform',
+          h('label.field', 'Closed on', closedOn),
+          h('label.field', 'Closed with', withName),
+          h('label.field', 'Cash taken out of the safe after (GH₵)', taken),
+          h('label.field', 'Note', note)),
+        h('div', { style: 'display:flex;gap:.5rem;align-items:center;flex-wrap:wrap' },
+          h('button.btn.primary', {
+            type: 'button',
+            onclick: async (e) => {
+              e.target.disabled = true;
+              said.textContent = 'Saving…';
+              try {
+                await api('/safe/close', { method: 'POST', body: { shifts: rows.map((r) => ({ day: r.day, slot: r.slot })), closedOn: closedOn.value, with: withName.value, taken: taken.value, note: note.value } });
+                await safeView(v);
+              } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+            },
+          }, 'Close the safe for these'),
+          h('button.btn', { type: 'button', onclick: () => { ticked.clear(); for (const b of v.querySelectorAll('.sh-safetick')) b.checked = false; showBar(); } }, 'Clear the ticks'),
+          said)));
+    };
+
+    const open = d.rows.filter((r) => !r.closure);
+    mount(v,
+      h('section.card',
+        h('div.sh-cardhead', h('h2', 'In the safe, not yet closed'),
+          h('p.sh-sub', `${dayText(d.range.from)} to ${dayText(d.range.to)}. Choose Month above to see more days.`)),
+        h('div.sh-daysum',
+          h('div', h('small', 'Shifts'), h('b.num', String(d.open.shifts))),
+          h('div', h('small', 'ASSD moved to the safe'), h('b.num', money(d.open.assd))),
+          h('div', h('small', 'The envelopes say'), h('b.num', money(d.open.envelopes)))),
+        d.rows.length ? h('div.table-wrap', h('table.sh-safetable',
+          h('thead', h('tr', h('th', open.length ? h('input', {
+            type: 'checkbox', title: 'Tick every open shift',
+            onchange: (e) => {
+              for (const r of open) { if (e.target.checked) ticked.add(keyOf(r)); else ticked.delete(keyOf(r)); }
+              for (const b of v.querySelectorAll('.sh-safetick')) b.checked = e.target.checked;
+              showBar();
+            },
+          }) : null), h('th', 'Shift'), h('th', 'Person'), h('th', 'Envelopes'), h('th.num', 'Envelopes total'), h('th.num', 'ASSD to safe'), h('th', ''), h('th', 'Closed'))),
+          h('tbody', d.rows.map((r) => h('tr', { class: r.closure ? 'closed' : '' },
+            h('td', r.closure ? null : h('input.sh-safetick', {
+              type: 'checkbox', checked: ticked.has(keyOf(r)),
+              onchange: (e) => { if (e.target.checked) ticked.add(keyOf(r)); else ticked.delete(keyOf(r)); showBar(); },
+            })),
+            h('td', `${dayText(r.day)} · ${SLOT[r.slot].label}`),
+            h('td', nameOf(r.user)),
+            h('td.small', r.list.length ? r.list.map((e) => `No. ${e.no} · ${money(e.amount)}`).join(', ') : (r.envelopes == null ? 'No closing report' : 'None')),
+            h('td.num', r.envelopes == null ? '—' : money(r.envelopes)),
+            h('td.num', money(r.assd)),
+            h('td', r.agrees == null ? null : r.agrees ? h('span.sh-chip.ok', '✓ agree') : h('span.sh-chip.short', `${signed((r.envelopes || 0) - r.assd)}`)),
+            h('td', r.closure ? h('span.sh-chip.none', `#${r.closure}`) : h('span.small.muted', 'open'))))))) : h('p.muted', 'No cash went to the safe in these days.')),
+      bar,
+      h('section.card',
+        h('div.sh-cardhead', h('h2', 'Closures'), h('p.sh-sub', 'Each time you close the safe with a supervisor. Left = what ASSD put in on those shifts, less the cash taken out after.')),
+        d.closures.length ? h('div.table-wrap', h('table',
+          h('thead', h('tr', h('th', '#'), h('th', 'Closed on'), h('th', 'With'), h('th', 'Shifts'), h('th.num', 'ASSD'), h('th.num', 'Envelopes'), h('th.num', 'Taken out after'), h('th.num', 'Left'), h('th', ''))),
+          h('tbody', d.closures.map((c) => h('tr',
+            h('td', `#${c.id}`),
+            h('td', dayText(c.closedOn)),
+            h('td', c.with || '—'),
+            h('td', `${c.shifts}${c.firstDay ? ` · ${shortDay(c.firstDay)} to ${shortDay(c.lastDay)}` : ''}`),
+            h('td.num', money(c.assd)),
+            h('td.num', money(c.envelopes)),
+            h('td.num', c.taken == null ? '—' : money(c.taken)),
+            h('td.num', c.left == null ? '—' : money(c.left)),
+            h('td', h('div', { style: 'display:flex;gap:.3rem;flex-wrap:wrap' },
+              h('button.btn', {
+                type: 'button',
+                onclick: async () => {
+                  const value = prompt('Cash taken out of the safe after this closure (GH₵)', c.taken == null ? '' : (c.taken / 100).toFixed(2));
+                  if (value == null) return;
+                  try { await api(`/safe/${c.id}/taken`, { method: 'POST', body: { taken: value } }); await safeView(v); } catch (err) { alert(err.message); }
+                },
+              }, c.taken == null ? 'Record cash taken' : 'Change'),
+              h('button.btn', {
+                type: 'button',
+                onclick: async () => {
+                  if (!confirm(`Undo closure #${c.id}? Its ${c.shifts} shifts become open again.`)) return;
+                  try { await api(`/safe/${c.id}/undo`, { method: 'POST', body: {} }); await safeView(v); } catch (err) { alert(err.message); }
+                },
+              }, 'Undo')))))))) : h('p.muted', 'No closures yet. Tick the shifts above to record one.')));
   }
 
   // -------------------------------------------------------------- week --
@@ -777,11 +985,17 @@ export async function renderShifts(root, { range }) {
       out.push(['warn', '!', `The expense sheet says ${money(n.sheet)}; the movements labelled ${money(n.expenses)} as expenses. Correct a movement below, or check the sheet.`]);
     }
     if (s.corrected) out.push(['info', 'i', 'A cash movement on this shift was corrected by hand']);
-    if (s.laundry) out.push(['info', 'i', `Laundry ${money(s.laundry)}${s.laundryCash ? `, ${money(s.laundryCash)} of it in cash` : ''}`]);
-    const l = s.dayLaundry;
-    if (l && l.system != null && (l.assd || l.system)) {
-      out.push([l.assd === l.system ? 'good' : 'warn', l.assd === l.system ? '✓' : '!',
-        `Laundry for ${shortDay(s.day)}: ${money(l.assd)} in ASSD, ${money(l.system)} in the laundry system`]);
+    // The laundry, against the laundry system in this shift's hours.
+    const ls = s.laundrySystem;
+    if (ls) {
+      if (s.laundry || ls.collected || ls.charged) {
+        const agree = s.laundry === ls.collected;
+        out.push([agree ? 'good' : 'warn', agree ? '✓' : '!',
+          `Laundry: ${money(s.laundry)} in ASSD, ${money(ls.collected)} taken in the laundry system`
+          + `${ls.charged ? ` (${money(ls.charged)} of new orders)` : ''}${agree ? '' : '. See the exceptions.'}`]);
+      }
+    } else if (s.laundry) {
+      out.push(['info', 'i', `Laundry ${money(s.laundry)}${s.laundryCash ? `, ${money(s.laundryCash)} of it in cash` : ''}. The laundry system has not been read for this shift yet.`]);
     }
     for (const m of (s.moves || []).filter((x) => x.kind === 'corrected')) {
       out.push(['info', 'i', `${money(m.amount)} moved out by mistake and put back by ${nameOf(m.reversedByUser)}`]);
@@ -1015,6 +1229,11 @@ export async function renderShifts(root, { range }) {
       case 'movement-corrected': return `${nameOf(x.by)} moved ${money(x.amount)} out and ${nameOf(x.reversedBy)} put it back (ASSD ${x.reversedSeq}). It nets to nothing.`;
       case 'movement-twice': return `${money(x.amount)} was moved out of the drawer twice (ASSD ${x.pair} and ${x.seq}), and the drawer counted over. If the second never moved any cash, match it as a duplicate.`;
       case 'movement-reversal': return `${money(x.amount)} was put back into the drawer (ASSD ${x.seq}). It matches ASSD ${x.pair}, moved out on ${nameOf(x.pairShift?.user)}’s ${SLOT[x.pairShift?.slot]?.label.toLowerCase() || ''} shift of ${shortDay(x.pairShift?.day)}. If one undoes the other, match them: both are left out.`;
+      case 'movement-unlabelled': return `${money(x.amount)} ${x.part ? `of the ${money(x.whole)} moved out` : 'moved out of the drawer'} (ASSD ${x.seq}) and no count says whether it went to the safe or on expenses.`
+        + `${x.pending ? ` ${x.pending.by} has proposed: ${x.pending.kind}. Waiting for an admin.` : ' Say which.'}`;
+      case 'laundry-mismatch': return `ASSD has ${money(x.assd)} of laundry on this shift; the laundry system took ${money(x.system)} in the same hours`
+        + `${x.payments ? ` (${x.payments} payment${x.payments === 1 ? '' : 's'})` : ''}${x.charged ? `, and accepted ${money(x.charged)} of new orders` : ''}.`
+        + ` ${x.amount > 0 ? 'Laundry was charged at the desk that the laundry system has not taken.' : 'The laundry took money that ASSD does not show.'}`;
       case 'bank-only': return `A card credit on the bank statement, card …${e.last4}, tapped ${shortDay(e.day)}, with no record on the terminal report.`;
       default: return '';
     }
@@ -1029,6 +1248,7 @@ export async function renderShifts(root, { range }) {
       return box(['ASSD', marked(a, b)], 'vs', [x.event.kind === 'momo' ? 'MoMo' : 'Terminal', marked(b, a)]);
     }
     if (x.kind === 'drawer-short' || x.kind === 'drawer-over') return box(['Should hold', h('b', whole(x.expected))], '→', ['Counted', h('b', whole(x.closing))]);
+    if (x.kind === 'laundry-mismatch') return box(['ASSD', h('b', whole(x.assd))], 'vs', ['Laundry system', h('b', whole(x.system))]);
     if (x.kind === 'failed') return box(['Terminal', h('b', { style: 'color:var(--sh-bad-ink)' }, 'Declined')], 'vs', ['ASSD', h('b', 'Paid')]);
     if (x.kind === 'movement-corrected') return box(['Keyed', h('b', h('s', whole(x.amount)))], '→', ['Put back by', h('b', nameOf(x.reversedBy))]);
     return null;
@@ -1050,18 +1270,35 @@ export async function renderShifts(root, { range }) {
   }
   const flowText = (f) => (f == null ? '' : f > 0 ? `+${money(f)}` : `−${money(-f)}`);
 
+  /** An exception by its key, in words, for the Approvals view. */
+  function describeKey(key) {
+    if (String(key).startsWith('stay:')) {
+      const x = stays && [...stays.leaving, ...stays.left].find((o) => o.key === key);
+      return `Unpaid stay, reservation ${String(key).slice(5)}${x ? `, leaving ${dayText(x.checkout)}, owes ${money(x.balance)}` : ''}`;
+    }
+    const x = data?.exceptions?.find((o) => o.key === key);
+    if (x) {
+      return `${(KIND[x.kind] || [x.kind])[0]}, ${x.day ? dayText(x.day) : ''}${x.slot ? ` ${SLOT[x.slot].label.toLowerCase()}` : ''}`
+        + `${x.user ? `, ${nameOf(x.user)}` : ''}${x.amount != null ? `, ${money(Math.abs(x.amount))}` : ''}`;
+    }
+    const [kind, day, slot] = String(key).split(':');
+    return /^\d{4}-\d{2}-\d{2}$/.test(day || '') ? `${kind}, ${dayText(day)}${slot && SLOT[slot] ? ` ${SLOT[slot].label.toLowerCase()}` : ''} (outside the days on screen)` : `${key} (outside the days on screen)`;
+  }
+
   /** Unanswered exceptions elsewhere of the same amount, pulling the other way. */
   function relatedTo(x) {
     const f = flowOf(x);
     if (f == null || !f || x.answer) return [];
     const near = (d) => !x.day || !d || Math.abs((Date.parse(d) - Date.parse(x.day)) / 86400000) <= 7;
-    return data.exceptions.filter((o) => o !== x && !o.answer && o.severity !== 'info' && flowOf(o) === -f && near(o.day)).slice(0, 3);
+    return data.exceptions.filter((o) => o !== x && !o.answer && !o.proposed && o.severity !== 'info' && flowOf(o) === -f && near(o.day)).slice(0, 3);
   }
 
   async function reconcile(keys, note) {
-    await api('/shifts/link', { method: 'POST', body: { keys, note } });
+    const out = await api('/shifts/link', { method: 'POST', body: { keys, note } });
     picked.clear();
-    await load(banner('good', `${keys.length} exceptions reconciled together. They count as answered.`));
+    await load(banner('good', out.pending
+      ? `${keys.length} exceptions reconciled together and sent to an admin. They clear once approved.`
+      : `${keys.length} exceptions reconciled together. They count as answered.`));
   }
 
   function exceptionCard(x) {
@@ -1076,7 +1313,14 @@ export async function renderShifts(root, { range }) {
         await load();
       } catch (err) { said.textContent = err.message; }
     };
-    const canLink = may('bank', 2) && !x.answer && x.severity !== 'info';
+    const canLink = may('bank', 2) && !x.answer && !x.proposed && x.severity !== 'info';
+    const decide = async (ok) => {
+      said.textContent = 'Saving…';
+      try {
+        await api('/till/approve', { method: 'POST', body: x.proposed.link ? { link: x.proposed.link, ok } : { answer: x.key, ok } });
+        await load(banner('good', ok ? 'Approved. It is cleared.' : 'Rejected. It is back on the list.'));
+      } catch (err) { said.textContent = err.message; }
+    };
     const related = canLink ? relatedTo(x) : [];
     const others = x.link ? x.link.keys.filter((k) => k !== x.key) : [];
     const label = (o) => `${(KIND[o.kind] || [o.kind])[0]}, ${o.day ? dayText(o.day) : ''}${o.slot ? ` ${SLOT[o.slot].label.toLowerCase()}` : ''}`;
@@ -1104,6 +1348,17 @@ export async function renderShifts(root, { range }) {
           } catch (err) { said.textContent = err.message; }
         },
       }, x.kind === 'movement-twice' ? 'Match as a duplicate' : 'Match them')) : null,
+      x.labels && !x.answer && !x.proposed && !x.pending && may('moves', 2) ? h('div.sh-labels',
+        [['safe', 'It went to the safe'], ['expenses', 'It was expenses']].map(([kind, words]) => h('button.btn', {
+          type: 'button',
+          onclick: async () => {
+            said.textContent = 'Saving…';
+            try {
+              const out = await api('/shifts/movement', { method: 'POST', body: { seq: x.seq, kind, note: note.value } });
+              await load(banner('good', out.pending ? 'Sent to an admin to approve.' : 'Labelled. The drawer is worked out again.'));
+            } catch (err) { said.textContent = err.message; }
+          },
+        }, words))) : null,
       related.length ? h('div.sh-related',
         h('span', 'Possibly the same money: '),
         related.map((o) => h('button.sh-link', {
@@ -1113,7 +1368,23 @@ export async function renderShifts(root, { range }) {
             try { await reconcile([x.key, o.key], `Same ${money(Math.abs(o.amount))}: ${label(x)} and ${label(o)}`); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
           },
         }, `${label(o)} (${flowText(flowOf(o))}) · reconcile with it`))) : null,
-      x.link ? h('div.sh-done',
+      // A supervisor's answer or reconciliation: shown, and waiting for an admin.
+      x.proposed ? h('div.sh-waiting',
+        h('span', `⏳ Waiting for an admin: ${x.proposed.answer}${x.proposed.note ? `: ${x.proposed.note}` : ''} (${x.proposed.by})`),
+        admin ? [
+          h('button.btn.primary', { type: 'button', onclick: () => decide(true) }, 'Approve'),
+          h('button.btn', { type: 'button', onclick: () => decide(false) }, 'Reject'),
+        ] : x.proposed.by === state.me?.account?.name ? h('button.sh-link', {
+          type: 'button',
+          onclick: async () => {
+            try {
+              if (x.proposed.link) await api('/shifts/unlink', { method: 'POST', body: { id: x.proposed.link } });
+              else await api('/shifts/answer', { method: 'POST', body: { key: x.key, answer: '' } });
+              await load(banner('good', 'Taken back.'));
+            } catch (err) { said.textContent = err.message; }
+          },
+        }, 'Take it back') : null, said)
+      : x.link ? h('div.sh-done',
         h('span', `✓ Reconciled together with ${others.length} other${others.length === 1 ? '' : 's'}: `,
           others.map((k) => data.exceptions.find((o) => o.key === k)).map((o, i) => (o ? label(o) : 'one outside these days')).join('; '),
           x.link.note ? ` · ${x.link.note}` : '', ` (${x.link.by})`),

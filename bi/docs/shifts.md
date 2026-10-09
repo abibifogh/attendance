@@ -157,3 +157,44 @@ code and card, to check each one arrived.
 
 The last shift in a journal is shown as far as the journal goes. Money taken
 after the export ran is not reported as missing from ASSD.
+
+## Laundry, shift by shift
+
+Every shift's laundry in ASSD (article 540) is held against what the laundry
+system took in the same hours (06:00–14:00, 14:00–22:00, 22:00–06:00). The
+laundry system's payments and orders are read one by one on each nightly
+refresh (table `laundry_txn`; order number, time and money only). A shift is
+compared only once the laundry system has been read for the whole of it; a
+difference is listed under Exceptions as "The laundry did not agree".
+
+## Cash moved out with no label
+
+A Cash Movement out of the front drawer that no count labelled as expenses or
+the safe, on a shift with no expense sheet to settle it, is listed under
+Exceptions. "It went to the safe" or "It was expenses" on the exception labels
+it (a supervisor's label waits for an admin).
+
+## Unpaid stays
+
+Shifts → **Unpaid stays** lists guests leaving in the next 24 hours who still
+owe, and guests who have checked out owing (the last 60 days).
+
+Each ASSD reservation is one transaction in the journal, with every night and
+extra charged to it and every payment taken on it, each dated. Charged less
+paid is what the guest owes. The nights are the room and bed articles
+(numbers 100 to 289); check-out is the day after the last night, at the time
+set under Till settings → Small differences and check-out (12:00 to start
+with). Balances no bigger than the small-differences amount are left off.
+
+Two limits come from the journal printing only the days it was exported for:
+
+- A stay is judged only once its last night is before the last day loaded,
+  so export the journal through tomorrow to see tomorrow's check-outs.
+- A stay booked before the first day loaded may have been paid then. Those
+  are listed apart, under "Check these in ASSD", and are not counted in the
+  tab's badge. Loading the earlier journals settles them.
+
+Journals loaded before this check existed carry no charges: load them again.
+Answers go through the same approval as exceptions: a supervisor's answer
+waits for an admin. Supervisors see the list and may answer by default
+(Till settings → Supervisor access → Unpaid stays).

@@ -36,7 +36,7 @@ sort out**. Admins and supervisors work it all from Insight → **Shifts**.
 | Was your opening float correct? (and by how much, and why, if not) | Only they know what they were handed. |
 | Cash in the drawer now, one total | Checked against ASSD's own closing count. |
 | Did you move cash to the safe? If yes: each envelope's number (digits only) and amount | Compared with what ASSD labelled safe. Both are required once they say Yes. |
-| Each expense: the PO number and what they paid | Looked up in Odoo (read-only). Counts only if the PO is confirmed, has not been claimed on another shift, and up to its total. |
+| Each expense: the PO number | Looked up in Odoo (read-only). The amount is the PO's own total from Odoo and cannot be typed over. Several PO numbers can be pasted at once ("P00412, 415, 420"). Counts only if the PO is confirmed and has not been claimed on another shift. |
 | Padlocks at the start and the end | Fewer means a padlock was rented, so ASSD should have a deposit (article 405); more means one came back, so ASSD should have a refund. |
 | Is the scale / hair dryer at the front desk? | A physical check. A No needs the guest who has it or an explanation before they can sign. Admins add more items under Till settings → Front desk checks. |
 | Anything the supervisor should know (optional) | |
@@ -74,11 +74,28 @@ makes a one-month advance in HIVE, so it comes off the next payslip the way
 any advance does; it is offered only once the person has said they will pay
 it back. Settled items leave the person's list, and they are told.
 
-## Supervisors' corrections
+## Supervisors' corrections and answers
 
 A supervisor given **Correct cash movements → See and act** can correct a
 movement, but it counts only once an admin approves it under Shifts →
-Approvals. Admins chosen under Who is told hear about it.
+Approvals. The same goes for a supervisor's answer to an exception and for
+exceptions a supervisor reconciles together: they show as "Waiting for an
+admin" and stay on the list until an admin approves them (Shifts → Approvals,
+or Approve on the exception itself). Reject puts them back. An admin's own
+answers clear at once. Admins chosen under Who is told hear about each one.
+
+Supervisors never see the totals at the top of Shifts.
+
+## The safe
+
+Shifts → **Safe** (admins only) lists every shift in the days chosen that moved
+cash to the safe: what ASSD says went in, beside the envelopes in that person's
+HIVE closing report. When you close the safe with a supervisor, tick the shifts
+you dealt with, fill in the day, who you closed it with and the cash taken out
+of the safe after the closure, and press **Close the safe for these**. Closed
+shifts are marked with the closure's number; **Closures** lists each one with
+what ASSD put in, what the envelopes said, what was taken out and what is left.
+A closure can be undone, and the cash taken out recorded or changed later.
 
 ## How the two apps talk
 

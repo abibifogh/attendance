@@ -54,7 +54,7 @@ export async function renderAttMyTill() {
   const blank = () => ({
     floatOk: null, floatDiff: '', floatNote: '', cash: '',
     toSafe: null, envelopes: [{ no: '', amount: '' }],
-    expenses: [{ po: '', paid: '', look: null }],
+    expenses: [{ po: '', look: null }],
     rentals: Object.fromEntries(data.setup.rentals.map((r) => [r.id, {
       start: data.handedOver?.rentals?.[r.id]?.end != null ? String(data.handedOver.rentals[r.id].end) : '', end: '',
     }])),
@@ -106,8 +106,8 @@ export async function renderAttMyTill() {
 
   function form() {
     const missing = stillNeeded();
-    const counted = f.expenses.filter((e) => e.look?.counted).reduce((t, e) => t + Math.min(toMinor(e.paid) || 0, e.look.total || 0), 0);
-    const uncounted = f.expenses.filter((e) => (e.po || e.paid) && !e.look?.counted).reduce((t, e) => t + (toMinor(e.paid) || 0), 0);
+    const counted = f.expenses.filter((e) => e.look?.counted).reduce((t, e) => t + (e.look.total || 0), 0);
+    const uncounted = f.expenses.filter((e) => e.look && !e.look.counted).reduce((t, e) => t + (e.look.total || 0), 0);
     const safeTotal = f.envelopes.reduce((t, e) => t + (toMinor(e.amount) || 0), 0);
     const set = (patch) => { Object.assign(f, patch); save(); paint(); };
     const input = (value, onInput, attrs = {}) => h('input', {
@@ -139,9 +139,10 @@ export async function renderAttMyTill() {
           h('p.till-hint', `To the safe: ${cedis(safeTotal)}. Numbers only, as written on the envelope. Each one is checked against ASSD's cash movements.`)) : null),
 
       card('Expenses paid from the drawer', { note: 'each needs a PO' },
-        h('p.till-hint', 'Type the PO number and tap Find in Odoo. An expense counts only when Odoo has a confirmed PO for it, up to the PO’s total.'),
+        h('p.till-hint', 'Type the PO number and tap Find in Odoo. An expense counts only when Odoo has a confirmed PO for it, and its amount is the PO’s total.'),
+        severalAtOnce(),
         f.expenses.map((e, i) => expenseRow(e, i)),
-        h('button.btn-sm', { type: 'button', onclick: () => { f.expenses.push({ po: '', paid: '', look: null }); set({}); } }, '+ Another expense'),
+        h('button.btn-sm', { type: 'button', onclick: () => { f.expenses.push({ po: '', look: null }); set({}); } }, '+ Another expense'),
         h('dl.till-dl',
           h('dt', 'Counted'), h('dd', cedis(counted)),
           h('dt', 'Not counted yet'), h('dd', { class: uncounted ? 'till-bad' : '' }, cedis(uncounted)))),
@@ -179,14 +180,47 @@ export async function renderAttMyTill() {
         h('button.btn.btn-primary.till-sign', { type: 'button', disabled: missing.length > 0, onclick: sign }, 'Sign and send')));
   }
 
+  /** Several PO numbers typed or pasted at once: each gets a row and is looked up. */
+  function severalAtOnce() {
+    const box = h('input', {
+      id: 'till-po-many', placeholder: 'e.g. P00412, P00415, 420', autocapitalize: 'characters',
+      'aria-label': 'Several PO numbers at once',
+    });
+    const add = async (ev) => {
+      const typed = [...new Set(box.value.split(/[\s,;]+/).map((p) => p.trim()).filter(Boolean))];
+      if (!typed.length) { toast('Type the PO numbers first, separated by commas or spaces.', 'bad'); return; }
+      const have = new Set(f.expenses.map((e) => String(e.po).trim().toUpperCase()).filter(Boolean));
+      const fresh = typed.filter((p) => !have.has(p.toUpperCase()));
+      if (!fresh.length) { toast('Those are already on the list.'); return; }
+      ev.target.disabled = true;
+      try {
+        const { found } = await api.tillPo({ pos: fresh });
+        // Fill the empty rows first, then add more.
+        for (const one of found) {
+          const empty = f.expenses.find((e) => !String(e.po).trim());
+          const look = { ...one };
+          delete look.po;
+          if (empty) { empty.po = one.po; empty.look = look; } else f.expenses.push({ po: one.po, look });
+        }
+        box.value = '';
+        toast(`${found.length} PO${found.length === 1 ? '' : 's'} added. ${found.filter((x) => x.counted).length} confirmed in Odoo.`);
+      } catch (err) { toast(err.message, 'bad'); }
+      ev.target.disabled = false;
+      save();
+      paint();
+    };
+    return h('div.till-many',
+      field('Several POs at once', box),
+      h('button.btn-sm', { type: 'button', onclick: add }, 'Add and find all'));
+  }
+
   function expenseRow(e, i) {
     let result = null;
     const L = e.look;
     if (L) {
       if (L.counted) {
-        const paid = toMinor(e.paid) || 0;
-        result = h('div.till-po.ok', h('strong', `${L.name} · ${L.vendor || ''}`), ` · ${cedis(L.total)} · confirmed`,
-          paid > L.total ? h('div', `More than the PO: only ${cedis(L.total)} counts.`) : h('div', `Counted: ${cedis(Math.min(paid || L.total, L.total))}`));
+        result = h('div.till-po.ok', h('strong', `${L.name} · ${L.vendor || ''}`), ' · confirmed',
+          h('div', `Counted: ${cedis(L.total)}`));
       } else if (L.state === 'claimed') {
         result = h('div.till-po.bad', h('strong', 'Already claimed'), ` on ${SLOT[L.claimed?.slot] || ''} ${L.claimed?.day ? dayText(L.claimed.day) : ''}${L.claimed?.by ? ` by ${L.claimed.by}` : ''}. A PO is paid from the drawer once. Not counted.`);
       } else if (L.state === 'missing') {
@@ -201,9 +235,10 @@ export async function renderAttMyTill() {
           value: e.po, placeholder: 'P00412', id: `till-po-${i}`, autocapitalize: 'characters',
           oninput: (ev) => { e.po = ev.target.value; e.look = null; save(); refreshNeed(); },
         })),
-        field('You paid (GH₵)', h('input', {
-          value: e.paid, inputmode: 'decimal', placeholder: '0.00', id: `till-paid-${i}`,
-          oninput: (ev) => { e.paid = ev.target.value; save(); },
+        // The amount is the PO's, from Odoo, and cannot be typed over.
+        field('Amount (from Odoo)', h('input', {
+          value: L?.total != null ? (L.total / 100).toFixed(2) : '', placeholder: 'Find the PO first', id: `till-paid-${i}`,
+          readonly: true, tabindex: -1, class: 'till-locked', 'aria-readonly': 'true',
         }))),
       h('div.till-actions',
         h('button.btn-sm', {
@@ -213,7 +248,6 @@ export async function renderAttMyTill() {
             ev.target.disabled = true;
             try {
               e.look = await api.tillPo({ po: e.po.trim() });
-              if (e.look.counted && !String(e.paid).trim()) e.paid = (e.look.total / 100).toFixed(2);
             } catch (err) { toast(err.message, 'bad'); }
             save();
             paint();
@@ -230,7 +264,7 @@ export async function renderAttMyTill() {
     if (toMinor(f.cash) == null) out.push('the cash in the drawer');
     if (f.toSafe === null) out.push('whether cash went to the safe');
     else if (f.toSafe && f.envelopes.some((e) => !/^\d+$/.test(e.no) || !(toMinor(e.amount) > 0))) out.push('each envelope number and amount');
-    if (f.expenses.some((e) => String(e.paid).trim() && !String(e.po).trim())) out.push('a PO number for each expense');
+    if (f.expenses.some((e) => String(e.po).trim() && !e.look)) out.push('"Find in Odoo" on each PO');
     for (const r of data.setup.rentals) {
       const v = f.rentals[r.id] || {};
       if (!/^\d+$/.test(String(v.start ?? '').trim()) || !/^\d+$/.test(String(v.end ?? '').trim())) out.push(`the ${r.label.toLowerCase()} count`);
@@ -265,7 +299,7 @@ export async function renderAttMyTill() {
       cash: f.cash,
       toSafe: f.toSafe,
       envelopes: f.toSafe ? f.envelopes : [],
-      expenses: f.expenses.map((e) => ({ po: e.po, paid: e.paid })),
+      expenses: f.expenses.filter((e) => String(e.po).trim()).map((e) => ({ po: e.po })),
       rentals: f.rentals,
       checks: data.setup.checks.map((c) => ({ id: c.id, ...f.checks[c.id] })),
       note: f.note,
@@ -336,7 +370,7 @@ export async function renderAttMyTillIssues() {
           const po = ev.target.elements.po.value.trim();
           if (!po) return;
           try {
-            await api.tillAnswer({ key: issue.key, how: 'po', po, paid: ev.target.elements.paid.value });
+            await api.tillAnswer({ key: issue.key, how: 'po', po });
             toast('PO found. That is covered now.');
             data = await api.tillIssues();
             open.delete(issue.key);
@@ -344,8 +378,8 @@ export async function renderAttMyTillIssues() {
           } catch (err) { toast(err.message, 'bad'); }
         },
       },
-      h('div.till-row', field('PO number', h('input', { name: 'po', placeholder: 'P00412', required: true })),
-        field('You paid (GH₵, optional)', h('input', { name: 'paid', inputmode: 'decimal' }))),
+      h('div.till-row', field('PO number', h('input', { name: 'po', placeholder: 'P00412', required: true }))),
+      h('div.till-hint', 'The amount is taken from the PO in Odoo.'),
       h('div.till-actions', h('button.btn.btn-primary', { type: 'submit' }, 'Find in Odoo and add'),
         h('button.btn-sm', { type: 'button', onclick: () => { open.delete(issue.key); paint(); } }, 'Cancel')));
     } else if (state?.mode === 'explain') {
