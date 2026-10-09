@@ -230,12 +230,19 @@ export async function linkPo(env, body, { fetchImpl } = {}) {
   const secret = secretNameFor(source);
   const names = [...new Set(typed.flatMap(poVariants))];
   const result = await purchaseOrders({ config: source.config, token: secret ? env[secret] : null, names, ...(fetchImpl ? { fetchImpl } : {}) });
+  // A PO already paid from the safe cannot be paid from a drawer too.
+  const fromSafe = new Map((await all(env.DB, 'SELECT po, day FROM safe_entry WHERE po IS NOT NULL').catch(() => []))
+    .map((r) => [String(r.po).toUpperCase(), r.day]));
   return {
     found: typed.map((t) => {
       const variants = new Set(poVariants(t));
       const order = result.orders.find((o) => variants.has(String(o.name).toUpperCase()));
+      const safeDay = order ? fromSafe.get(String(order.name).toUpperCase()) : null;
       return order
-        ? { typed: t, name: order.name, vendor: order.vendor, total: order.total, state: order.state, confirmed: CONFIRMED.has(order.state), orderedOn: order.orderedOn }
+        ? {
+          typed: t, name: order.name, vendor: order.vendor, total: order.total, state: order.state, confirmed: CONFIRMED.has(order.state), orderedOn: order.orderedOn,
+          ...(safeDay ? { safe: { day: safeDay } } : {}),
+        }
         : { typed: t, name: null };
     }),
   };

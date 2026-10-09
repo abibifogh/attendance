@@ -12,6 +12,7 @@ import * as shiftRoutes from './routes/shifts.js';
 import * as till from './routes/till.js';
 import * as invitations from './routes/invitations.js';
 import * as safe from './routes/safe.js';
+import * as safebook from './routes/safebook.js';
 import * as stays from './routes/stays.js';
 import { verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
@@ -95,6 +96,13 @@ const ROUTES = [
 
   // The safe: what each shift moved into it, and the closures. Admins only.
   ['GET', '/api/safe', 'shifts', (env, ctx) => safe.safeView(env, ctx.query, ctx.account)],
+  // The safe book: in from the shifts, out as written, a count to close a page.
+  ['GET', '/api/safe/book', 'shifts', (env, ctx) => safebook.bookView(env, ctx.account, { counted: ctx.query.counted ? Math.round(Number(ctx.query.counted) * 100) : null })],
+  ['POST', '/api/safe/entry', 'shifts', (env, ctx) => safebook.addEntry(env, ctx.body, ctx.account)],
+  ['POST', '/api/safe/entry/:id/po', 'shifts', (env, ctx) => safebook.settleEntry(env, ctx.params.id, ctx.body, ctx.account)],
+  ['POST', '/api/safe/entry/:id/remove', 'shifts', (env, ctx) => safebook.removeEntry(env, ctx.params.id, ctx.account)],
+  ['POST', '/api/safe/dismiss', 'shifts', (env, ctx) => safebook.dismissPo(env, ctx.body, ctx.account)],
+  ['POST', '/api/safe/count', 'shifts', (env, ctx) => safebook.countSafe(env, ctx.body, ctx.account)],
   ['POST', '/api/safe/close', 'shifts', (env, ctx) => safe.closeSafe(env, ctx.body, ctx.account)],
   ['POST', '/api/safe/:id/taken', 'shifts', (env, ctx) => safe.saveTaken(env, ctx.params.id, ctx.body, ctx.account)],
   ['POST', '/api/safe/:id/undo', 'shifts', (env, ctx) => safe.undoClosure(env, ctx.params.id, ctx.account)],

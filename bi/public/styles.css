@@ -935,3 +935,25 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .sh-lm.bad { background: color-mix(in srgb, var(--critical) 16%, transparent); color: var(--critical); }
 .sh-lm.none { color: var(--muted); }
 @media (max-width: 520px) { .sh-detail { margin-left: 0; } }
+
+/* The safe book. */
+.sh-safebook { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; }
+.sh-safemain { flex: 999 1 560px; min-width: 0; display: grid; gap: .8rem; }
+.sh-safeside { flex: 1 1 330px; min-width: 0; display: grid; gap: 1rem; }
+.sh-safebal { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .8rem; background: var(--surface-2); border-radius: 10px; padding: .7rem .9rem; }
+.sh-safebal b { font-size: 1.5rem; }
+.sh-safemain tr.start td { background: var(--surface-2); }
+.sh-safemain tr.pending td { background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.sh-safemain td.in { color: var(--good-text); }
+.sh-safemain td.out { color: var(--critical); }
+.sh-safeinline { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-top: .3rem; }
+.sh-safeform-card { border: 1px dashed var(--border); border-radius: 10px; padding: .7rem .8rem; display: grid; gap: .4rem; }
+.sh-safesug { border: 1px solid var(--border); border-radius: 10px; padding: .6rem .7rem; display: grid; gap: .3rem; margin-bottom: .5rem; }
+.sh-safesug.hint { border: 2px solid var(--warning); background: color-mix(in srgb, var(--warning) 10%, var(--surface)); }
+.sh-safesug .top { display: flex; justify-content: space-between; gap: .6rem; }
+.sh-safesug .top small, .sh-safesug .why { display: block; font-size: .78rem; color: var(--ink-2); }
+.sh-safecount { border: 2px solid var(--series-1); display: grid; gap: .5rem; }
+.sh-safecount h2 { margin: 0; }
+.sh-safeverdict .ok, .sh-safeverdict .warn { border-radius: 10px; padding: .6rem .7rem; display: grid; gap: .15rem; }
+.sh-safeverdict .ok { background: color-mix(in srgb, var(--good) 12%, transparent); color: var(--good-text); }
+.sh-safeverdict .warn { background: color-mix(in srgb, var(--warning) 16%, transparent); }

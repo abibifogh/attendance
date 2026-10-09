@@ -173,6 +173,8 @@ async function checkPo(ctx, typed) {
   const answer = await insight(ctx.env, '/api/link/till/po', { names: [typed] });
   const found = answer?.found?.[0] || { typed, name: null };
   if (!found.name) return { ...found, state: 'missing', counted: false };
+  // Paid from the safe already: Insight says so, and it is not the drawer's.
+  if (found.safe) return { ...found, state: 'claimed', counted: false, claimed: { day: found.safe.day, slot: null, by: 'the safe' } };
   const claimed = await ctx.db.prepare('SELECT t.*, r.name AS who FROM till_po t LEFT JOIN till_report r ON r.id = t.report_id WHERE t.po = ?1')
     .bind(String(found.name).toUpperCase()).first();
   if (claimed) {

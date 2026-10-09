@@ -91,14 +91,36 @@ Supervisors never see the totals at the top of Shifts.
 
 ## The safe
 
-Shifts → **Safe** (admins only) lists every shift in the days chosen that moved
-cash to the safe: what ASSD says went in, beside the envelopes in that person's
-HIVE closing report. When you close the safe with a supervisor, tick the shifts
-you dealt with, fill in the day, who you closed it with and the cash taken out
-of the safe after the closure, and press **Close the safe for these**. Closed
-shifts are marked with the closure's number; **Closures** lists each one with
-what ASSD put in, what the envelopes said, what was taken out and what is left.
-A closure can be undone, and the cash taken out recorded or changed later.
+Shifts → **Safe** (admins only) is the safe book. A page runs from one count of
+the safe to the next, and its balance is what the safe should hold.
+
+- **In** is read from the shifts: what ASSD says each shift moved to the safe,
+  with the envelopes from that person's HIVE closing report beside it. Nobody
+  types it.
+- **Out** is written here, three ways:
+  - **+ A PO paid from the safe**: type the PO number. It must be confirmed in
+    Odoo and not already claimed by a closing report, a drawer expense or the
+    safe. The amount is the PO's total.
+  - **+ Paid, PO to follow**: the amount and what it paid for. It stays marked
+    *waiting for a PO* until **Add its PO** is used on its row. What left the
+    safe stays as written; if the PO's total differs, the row says so.
+  - **+ Banked or handed over**: the amount and where it went (a bank slip,
+    who received it).
+- **Confirmed in Odoo, not claimed** lists the POs since the last count that
+  nothing has claimed. For each: **Paid from the safe**, **Not from the safe**
+  (it is not offered again), or, when a waiting payment has the same amount,
+  **It is the waiting payment**.
+- **Count the safe**: type what you counted. The book's verdict shows as you
+  type, and when the safe holds less than the book, the waiting POs that add up
+  to the difference exactly are highlighted. **Count and close this page**
+  records the count, what the book said and the difference, and starts the
+  next page from what was counted. The very first count only starts the book.
+
+A HIVE closing report cannot use a PO the safe has paid: HIVE says it was paid
+from the safe, not from the drawer. Entries can be removed while their page is
+open; a count can be undone from **Counts**, which puts its shifts and entries
+back on the open page. An entry or a count cannot be dated before the last
+count.
 
 ## How the two apps talk
 

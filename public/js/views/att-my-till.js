@@ -222,7 +222,9 @@ export async function renderAttMyTill() {
         result = h('div.till-po.ok', h('strong', `${L.name} · ${L.vendor || ''}`), ' · confirmed',
           h('div', `Counted: ${cedis(L.total)}`));
       } else if (L.state === 'claimed') {
-        result = h('div.till-po.bad', h('strong', 'Already claimed'), ` on ${SLOT[L.claimed?.slot] || ''} ${L.claimed?.day ? dayText(L.claimed.day) : ''}${L.claimed?.by ? ` by ${L.claimed.by}` : ''}. A PO is paid from the drawer once. Not counted.`);
+        result = L.claimed?.by === 'the safe'
+          ? h('div.till-po.bad', h('strong', 'Paid from the safe'), ` on ${L.claimed.day ? dayText(L.claimed.day) : 'another day'}. It was not paid from the drawer. Not counted.`)
+          : h('div.till-po.bad', h('strong', 'Already claimed'), ` on ${SLOT[L.claimed?.slot] || ''} ${L.claimed?.day ? dayText(L.claimed.day) : ''}${L.claimed?.by ? ` by ${L.claimed.by}` : ''}. A PO is paid from the drawer once. Not counted.`);
       } else if (L.state === 'missing') {
         result = h('div.till-po.bad', h('strong', e.po), ' is not in Odoo. Check the number. Not counted.');
       } else {
