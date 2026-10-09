@@ -730,16 +730,29 @@ export function wageBasisNote(facts, config) {
   const fallback = `${config.currencySymbol}${(config.defaultHourCost / 100).toFixed(2)}`;
 
   if (total === 0) return 'No wage cost is recorded for this period.';
+  const fromSlips = rows.filter((row) => row.cost_basis === 'payslip').reduce((sum, row) => sum + (row.labour_cost || 0), 0);
+  if (fromSlips > 0) {
+    const months = (facts.payslipMonths || []).map((m) => new Date(`${m}-15T12:00:00Z`)
+      .toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }));
+    const named = months.length > 1 ? `${months.slice(0, -1).join(', ')} and ${months[months.length - 1]}` : months[0];
+    const lead = `Wages for ${named} are the payslips from HIVE\u2019s finalised payroll: gross pay, allowances and bonus, plus the employer\u2019s SSF, `
+      + 'spread over the month\u2019s days by the hours each department worked.';
+    if (fromSlips >= total) return lead;
+    return `${lead} The other days have no finalised payroll yet and are estimated: each salaried person\u2019s monthly pay `
+      + 'divided by the days in the month, and anybody paid by the day or hour at their own rate for the time worked'
+      + (guessed > 0 ? `, or ${fallback} an hour where nobody has a rate.` : '.');
+  }
   if (guessed === 0) {
-    return 'Wages are hours worked priced at each person\u2019s own rate from HIVE, '
-      + 'which is a measurement rather than an estimate. It is not the payroll figure: '
-      + 'a payslip also carries allowances, bonus and the employer\u2019s pension, and is monthly.';
+    return 'Wages are an estimate until the month\u2019s payroll is finalised in HIVE: each salaried person\u2019s monthly pay '
+      + 'divided by the days in the month, and anybody paid by the day or hour at their own rate for the time worked. '
+      + 'It is not the payroll figure: a payslip also carries allowances, bonus and the employer\u2019s SSF, '
+      + 'and replaces this estimate once the pay run is finalised.';
   }
   if (guessed >= total) {
     return `Wages are hours worked priced at ${fallback} an hour for everybody, because nobody `
       + 'has a rate recorded in HIVE. Set the rates there and this figure stops being a guess.';
   }
   const share = Math.round((guessed / total) * 100);
-  return `Wages are hours worked at each person\u2019s own rate from HIVE, except for ${share}% of `
-    + `the bill where nobody has a rate recorded and ${fallback} an hour is assumed.`;
+  return `Wages are estimated from each person\u2019s own pay in HIVE (monthly pay over the month\u2019s days, or their rate for the time worked), `
+    + `except for ${share}% of the bill where nobody has a rate recorded and ${fallback} an hour is assumed.`;
 }

@@ -1,4 +1,5 @@
 import { all } from '../lib/db.js';
+import { addDays, daysBetween } from '../lib/dates.js';
 
 /**
  * The warehouse, read once, in the shape every rule and every screen wants.
@@ -49,6 +50,8 @@ export async function loadFacts(db, from, to) {
   ]);
 
   const basis = chooseCostBasis(cost, new Set(bookSources.map((r) => r.id)));
+  // A month HIVE has run payroll for is costed at its payslips, not at hours times rates.
+  const payslips = await applyPayslips(db, labour, from, to);
 
   const dayList = days.map((d) => d.day);
   const byDay = new Map(days.map((d) => [d.day, d]));
@@ -116,6 +119,7 @@ export async function loadFacts(db, from, to) {
     labour, service, cash, personDays, purchases, usage,
     cost: basis.rows,
     costBasis: basis,
+    payslipMonths: payslips.months,
     /** Every row for one line, in date order. */
     forLine(line) {
       return this.lineRows.filter((r) => r.line === line);
@@ -244,4 +248,89 @@ export function chooseCostBasis(cost, bookSourceIds, addOnIds = new Set(['odoo-c
       .sort((a, b) => b.amount - a.amount),
     byLine,
   };
+}
+
+const lastOfMonth = (m) => addDays(`${addDays(`${m}-28`, 4).slice(0, 7)}-01`, -1);
+
+/**
+ * Wages from the payslips, where there are any.
+ *
+ * Hours worked at each person's rate is a measurement of time, not of what
+ * anybody was paid: a payslip carries allowances, bonus and the employer's
+ * SSF, and only a payslip reconciles with the bank. So for every month HIVE
+ * has a finalised pay run for, the payslips' cost (gross pay plus the
+ * employer's SSF) replaces it.
+ *
+ * A payslip is monthly and these screens are daily, so each department's
+ * payslips are spread over the month's days by the hours that department
+ * worked each day (the line's hours, when the department has none recorded;
+ * evenly, when the line has none at all). Only the days asked for are kept,
+ * so a week inside a paid month shows that week's share.
+ *
+ * The rows of `labour` in those months are rewritten in place, with
+ * `cost_basis` 'payslip'; a day the payslips reach and attendance does not
+ * gains a row of its own. Months without a finalised run keep hours × rate.
+ */
+export async function applyPayslips(db, labour, from, to) {
+  const firstMonth = from.slice(0, 7);
+  const lastMonth = to.slice(0, 7);
+  let pay = [];
+  try {
+    pay = await all(db, `SELECT month, line_id, department, SUM(cost) AS cost FROM fact_payroll
+      WHERE month BETWEEN ?1 AND ?2 GROUP BY month, line_id, department`, firstMonth, lastMonth);
+  } catch { return { months: [] }; }
+  pay = pay.filter((p) => (p.cost || 0) > 0);
+  if (!pay.length) return { months: [] };
+  const months = [...new Set(pay.map((p) => p.month))].sort();
+  const paid = new Set(months);
+
+  // The whole of each paid month's attendance, not only the days asked for.
+  const worked = await all(db, `SELECT day, line_id, department, worked_minutes FROM fact_labour WHERE day BETWEEN ?1 AND ?2`,
+    `${months[0]}-01`, lastOfMonth(months[months.length - 1]));
+
+  const alloc = new Map();
+  const put = (day, line, dept, amount) => {
+    if (day < from || day > to || !amount) return;
+    const k = `${day}|${line}|${dept}`;
+    alloc.set(k, (alloc.get(k) || 0) + amount);
+  };
+  for (const p of pay) {
+    const inMonth = worked.filter((w) => w.day.startsWith(p.month) && w.line_id === p.line_id && (w.worked_minutes || 0) > 0);
+    let spread = inMonth.filter((w) => w.department === p.department);
+    if (!spread.length) spread = inMonth;
+    const shares = [];
+    if (spread.length) {
+      const byDay = new Map();
+      for (const w of spread) byDay.set(w.day, (byDay.get(w.day) || 0) + w.worked_minutes);
+      const total = [...byDay.values()].reduce((t, m) => t + m, 0);
+      for (const [day, m] of byDay) shares.push([day, (p.cost * m) / total]);
+    } else {
+      const days = daysBetween(`${p.month}-01`, lastOfMonth(p.month));
+      for (const day of days) shares.push([day, p.cost / days.length]);
+    }
+    // Whole pesewas that still add up to the payslips.
+    let given = 0;
+    shares.sort((a, b) => a[0].localeCompare(b[0])).forEach(([day, amount], i) => {
+      const value = i === shares.length - 1 ? p.cost - given : Math.round(amount);
+      given += value;
+      put(day, p.line_id, p.department, value);
+    });
+  }
+
+  for (const row of labour) {
+    if (!paid.has(row.day.slice(0, 7))) continue;
+    const k = `${row.day}|${row.line_id}|${row.department}`;
+    row.labour_cost = alloc.get(k) || 0;
+    row.cost_basis = 'payslip';
+    alloc.delete(k);
+  }
+  for (const [k, amount] of alloc) {
+    const [day, line, department] = k.split('|');
+    labour.push({
+      day, line_id: line, department, scheduled_count: 0, present_count: 0, absent_count: 0, leave_count: 0,
+      late_count: 0, expected_minutes: 0, worked_minutes: 0, late_minutes: 0, overtime_minutes: 0,
+      labour_cost: amount, cost_basis: 'payslip',
+    });
+  }
+  return { months };
 }

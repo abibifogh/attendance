@@ -164,7 +164,11 @@ test('the group totals add up from the rows underneath them', async () => {
   const t = totals(facts);
 
   const net = raw.prepare('SELECT SUM(net) AS n FROM fact_revenue').get().n;
-  const labour = raw.prepare('SELECT SUM(labour_cost) AS n FROM fact_labour').get().n;
+  // May has a finalised pay run and is costed at its payslips; the half of
+  // June shown has none yet and is hours at each person's rate.
+  assert.deepEqual(facts.payslipMonths, ['2026-05']);
+  const labour = raw.prepare("SELECT SUM(cost) AS n FROM fact_payroll WHERE month = '2026-05'").get().n
+    + raw.prepare("SELECT SUM(labour_cost) AS n FROM fact_labour WHERE day >= '2026-06-01'").get().n;
 
   assert.equal(t.net, net);
   assert.equal(t.labourCost, labour);
@@ -315,9 +319,16 @@ test('the page says whether the wage bill was measured or assumed', async () => 
   const config = { currencySymbol: 'GH₵', defaultHourCost: 1200 };
   const facts = await load(db, WINDOW.from, WINDOW.to);
 
-  // Everybody in the demonstration has a rate, so this must not describe
-  // itself as an estimate.
-  const measured = wageBasisNote(facts, config);
+  // May is paid and finalised: its payslips are the figure, and the note says
+  // so, and says what the rest is.
+  const paid = wageBasisNote(facts, config);
+  assert.match(paid, /Wages for May 2026 are the payslips/);
+  assert.match(paid, /monthly pay divided by the days in the month/);
+
+  // Everybody in the demonstration has a rate, so without payslips this must
+  // not describe itself as an estimate.
+  const rated = { labour: facts.labour.filter((r) => r.cost_basis !== 'payslip') };
+  const measured = wageBasisNote(rated, config);
   assert.match(measured, /own rate/);
   assert.doesNotMatch(measured, /assumed|guess/);
   // And it must not overclaim: a rate priced against hours is still not what a
@@ -327,16 +338,36 @@ test('the page says whether the wage bill was measured or assumed', async () => 
   // With nobody's rate known, it says so plainly rather than quietly reporting
   // a flat figure as though it were measured.
   const guessed = wageBasisNote(
-    { labour: facts.labour.map((r) => ({ ...r, cost_basis: 'default' })) }, config);
+    { labour: rated.labour.map((r) => ({ ...r, cost_basis: 'default' })) }, config);
   assert.match(guessed, /nobody has a rate recorded/);
   assert.match(guessed, /guess/);
 
   // And a mixture reports how much of the bill is which, rather than picking
   // whichever description flatters.
-  const half = facts.labour.map((r, i) => ({ ...r, cost_basis: i % 2 ? 'default' : 'rate' }));
+  const half = rated.labour.map((r, i) => ({ ...r, cost_basis: i % 2 ? 'default' : 'rate' }));
   assert.match(wageBasisNote({ labour: half }, config), /\d+% of the bill/);
 
   assert.match(wageBasisNote({ labour: [] }, config), /No wage cost is recorded/);
+});
+
+test('a paid month is costed at its payslips, spread over its days by the hours worked', async () => {
+  const { raw, db } = await loaded();
+  const may = await loadFacts(db, '2026-05-01', '2026-05-31');
+  const slips = raw.prepare("SELECT SUM(cost) AS n FROM fact_payroll WHERE month = '2026-05'").get().n;
+  assert.ok(slips > 0);
+  assert.equal(totals(may).labourCost, slips, 'the whole month adds up to the payslips, to the pesewa');
+  assert.ok(may.labour.every((r) => r.cost_basis === 'payslip'));
+
+  // A week inside the month gets that week's share, by the hours worked in it.
+  const week = await loadFacts(db, '2026-05-04', '2026-05-10');
+  const minutes = (from, to) => raw.prepare('SELECT SUM(worked_minutes) AS n FROM fact_labour WHERE day BETWEEN ? AND ?').get(from, to).n;
+  const expected = slips * (minutes('2026-05-04', '2026-05-10') / minutes('2026-05-01', '2026-05-31'));
+  assert.ok(Math.abs(totals(week).labourCost - expected) / expected < 0.02, `${totals(week).labourCost} against ${Math.round(expected)}`);
+
+  // A month with no finalised run keeps hours at each person's rate.
+  const june = await loadFacts(db, '2026-06-01', '2026-06-15');
+  assert.deepEqual(june.payslipMonths, []);
+  assert.equal(totals(june).labourCost, raw.prepare("SELECT SUM(labour_cost) AS n FROM fact_labour WHERE day >= '2026-06-01'").get().n);
 });
 
 // --------------------------------------------------- choosing a cost basis --

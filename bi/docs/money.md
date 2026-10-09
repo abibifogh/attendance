@@ -64,3 +64,32 @@ time Odoo is asked:
   and close one directly, or close one with **Nothing needed** and a reason. An
   item closed by a person does not come back; one that closed itself comes back
   if the problem does.
+
+## Wages: estimated during the month, the payslips at the end
+
+**During the month**, before its pay run is finalised, wages are estimated from
+each person's pay in HIVE:
+
+- a salaried person costs their monthly pay divided by the number of days in
+  that month, on every day of it, worked or not (GH₵2,100 in a 30-day month is
+  GH₵70 a day), from the day that pay began; somebody who has left is costed up
+  to the last day they worked;
+- anybody paid by the day or by the hour costs their rate for the time they
+  worked;
+- anybody with no pay recorded is costed at the default hourly cost in Setup,
+  and the note under the Money table says how much of the bill that is.
+
+**At the end of the month**, once HIVE's pay run for it is **finalised**, the
+estimate is replaced by the actual payslips: gross pay (with allowances and
+bonus) plus the employer's SSF. A payslip is monthly and the page is daily, so
+each department's payslips are spread over the month's days by the hours that
+department worked each day (by the line's hours if the department has none
+recorded, evenly if the line has none). The whole month adds up to the payslips
+exactly; a week inside it shows that week's share.
+
+The note under the Money table says which months are payslips and which are
+estimates. The nightly read looks two months back for pay runs, so a month
+finalised late is still picked up. The estimate is base pay only, so a month
+usually rises a little when its payslips arrive (allowances, bonus and the
+employer's SSF). People paid outside HIVE's payroll are not in a paid month's
+wages.
