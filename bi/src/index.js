@@ -70,6 +70,8 @@ const ROUTES = [
   ['POST', '/api/money/articles', 'insight', (env, ctx) => revenue.saveArticle(env, ctx.body, ctx.account)],
   // The money to-do list: a supervisor's own, everything for an admin.
   ['GET', '/api/todo', 'shifts', (env, ctx) => todo.listTodos(env, ctx.account, { closed: ctx.query.closed === '1' })],
+  ['POST', '/api/todo/check', 'shifts', (env, ctx) => cashpo.refreshNow(env, ctx.account, { fromTodo: true })],
+  ['POST', '/api/todo/assign', 'shifts', (env, ctx) => todo.assignMany(env, ctx.body, ctx.account)],
   ['POST', '/api/todo/settings', 'shifts', (env, ctx) => todo.saveTodoSettings(env, ctx.body, ctx.account)],
   ['POST', '/api/todo/:id/answer', 'shifts', (env, ctx) => todo.answerTodo(env, ctx.params.id, ctx.body, ctx.account)],
   ['POST', '/api/todo/:id/decide', 'shifts', (env, ctx) => todo.decideTodo(env, ctx.params.id, ctx.body, ctx.account)],

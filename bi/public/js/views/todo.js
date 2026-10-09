@@ -41,6 +41,8 @@ function what(t) {
 export async function todoPanel(v, { admin, onChange = () => {} }) {
   let showClosed = false;
   let who = 'all';
+  // Items an admin has ticked to give to somebody at once. Kept across repaints.
+  const picked = new Set();
 
   async function paint(notice = null) {
     mount(v, h('p.muted', 'Reading the to-do list…'));
@@ -76,9 +78,17 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
         }, 'Nothing needed'))) : null;
 
       const tone = t.state === 'closed' ? 'ok' : t.state === 'answered' ? 'warn' : t.kind === 'unbilled' ? 'info' : 'bad';
-      return h(`article.sh-ex.sh-todo.${tone}${t.state === 'closed' ? '.done' : ''}`,
+      const tick = admin && t.state !== 'closed' ? h('input.sh-todo-tick', {
+        type: 'checkbox', checked: picked.has(t.id), 'aria-label': `Select ${t.ref}`,
+        onchange: (e) => {
+          if (e.target.checked) picked.add(t.id); else picked.delete(t.id);
+          e.target.closest('article')?.classList.toggle('picked', e.target.checked);
+          bulk.update();
+        },
+      }) : null;
+      return h(`article.sh-ex.sh-todo.${tone}${t.state === 'closed' ? '.done' : ''}${picked.has(t.id) ? '.picked' : ''}`,
         h('div.hd',
-          h('span.sq', t.kind === 'nopo' ? '?' : '₵'),
+          tick ? h('label.sh-todo-sq', tick, h('span.sq', t.kind === 'nopo' ? '?' : '₵')) : h('span.sq', t.kind === 'nopo' ? '?' : '₵'),
           h('h3', t.kindLabel, ' · ', h('b', t.kind === 'nopo' ? (t.detail?.supplier || 'Bill') : t.ref), t.kind !== 'nopo' && t.detail?.vendor ? h('span.muted', ` ${t.detail.vendor}`) : null),
           h('span.amt.num', money(t.kind === 'differs' ? Math.abs(t.amount) : t.amount))),
         h('div.sh-meta',
@@ -107,6 +117,61 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
         adminRow, said);
     };
 
+    // Ticked items not on screen any more (closed, or filtered away) are let go.
+    const shown = new Set(items.filter((t) => t.state !== 'closed').map((t) => t.id));
+    for (const id of [...picked]) if (!shown.has(id)) picked.delete(id);
+    const bulk = (() => {
+      const count = h('b');
+      const to = h('select', { 'aria-label': 'Give to' }, h('option', { value: '' }, 'Choose a supervisor'),
+        d.supervisors.map((s) => h('option', { value: String(s.id) }, s.name)));
+      const said = h('span.small');
+      const all = h('input', {
+        type: 'checkbox', 'aria-label': 'Select every item shown',
+        onchange: (e) => { for (const id of shown) { if (e.target.checked) picked.add(id); else picked.delete(id); } paintList(); },
+      });
+      const give = h('button.btn.primary', {
+        type: 'button',
+        onclick: async () => {
+          if (!to.value) { said.textContent = 'Choose who to give them to.'; return; }
+          said.textContent = 'Giving…';
+          try {
+            const out = await api('/todo/assign', { method: 'POST', body: { ids: [...picked], accountId: Number(to.value) } });
+            picked.clear();
+            await re(`${out.moved} item${out.moved === 1 ? '' : 's'} given to ${out.to}.`);
+          } catch (err) { fail(said)(err); }
+        },
+      }, 'Give to them');
+      const bar = h('div.sh-todo-bulk', h('label.small', all, ' Select all shown'), h('span.small', count, ' selected'), to, give, said);
+      return {
+        bar,
+        update() {
+          count.textContent = String(picked.size);
+          all.checked = shown.size > 0 && [...shown].every((id) => picked.has(id));
+          bar.classList.toggle('on', picked.size > 0);
+          give.disabled = picked.size === 0;
+        },
+      };
+    })();
+    const list = h('div.sh-todo-list');
+    const paintList = () => {
+      mount(list, items.length ? items.map(card) : h('div.card', h('p.muted', showClosed ? 'Nothing closed yet.' : 'Nothing to do.')));
+      bulk.update();
+    };
+
+    // Ask Odoo again, for anybody with a list: a bill posted a minute ago clears its item now.
+    const checkSaid = h('small.muted', d.checkedAt ? `Last checked ${d.checkedAt.slice(8, 10)}/${d.checkedAt.slice(5, 7)} ${d.checkedAt.slice(11, 16)}` : 'Not checked with Odoo yet');
+    const check = h('button.btn', {
+      type: 'button',
+      onclick: async () => {
+        check.disabled = true; checkSaid.textContent = 'Asking Odoo…'; checkSaid.className = 'small';
+        try {
+          const r = await api('/todo/check', { method: 'POST' });
+          const t = r.todos || {};
+          await re(`Checked ${r.pos} cash PO${r.pos === 1 ? '' : 's'} with Odoo. ${t.closed || 0} item${t.closed === 1 ? '' : 's'} cleared, ${t.raised || 0} new.`);
+        } catch (err) { fail(checkSaid)(err); check.disabled = false; }
+      },
+    }, 'Check Odoo now');
+
     const counts = d.counts;
     const days = h('input', { type: 'number', min: '0', max: '90', value: String(d.unbilledDays), style: 'width:5rem' });
     const setSaid = h('span.small');
@@ -118,6 +183,7 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
           h('p.sub', admin
             ? 'Raised from the cash POs and Odoo’s bills each night, and shared out among the supervisors. Answers wait for you here.'
             : 'Given to you from the cash POs and Odoo’s bills. Your answers go to an admin to approve.')),
+        h('div.sh-todo-check', check, checkSaid),
         h('div.sh-todo-counts',
           h('span', h('b', String(counts.open)), ' open'),
           h('span', h('b', String(counts.answered)), ' waiting for an admin'),
@@ -135,8 +201,9 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
             onclick: async () => { try { await api('/todo/settings', { method: 'POST', body: { unbilledDays: days.value } }); await re('Saved.'); } catch (err) { fail(setSaid)(err); } },
           }, 'Save'), setSaid) : null),
       admin && !d.supervisors.length ? banner('warning', 'There are no supervisors in Insight, so nothing can be given out. Items stay here for you.') : null,
-      items.length ? h('div.sh-todo-list', items.map(card))
-        : h('div.card', h('p.muted', showClosed ? 'Nothing closed yet.' : 'Nothing to do.')));
+      admin && !showClosed && shown.size && d.supervisors.length ? bulk.bar : null,
+      list);
+    paintList();
   }
   await paint();
 }

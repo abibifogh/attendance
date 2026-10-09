@@ -994,3 +994,9 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .sh-todo-dismiss { display: inline-flex; flex-wrap: wrap; gap: .35rem; }
 .sh-todo-dismiss input, .sh-todo-back { width: 12rem; max-width: 100%; }
 .sh-ex.ok { --tone: var(--sh-good); }
+.sh-todo-check { display: flex; flex-direction: column; align-items: flex-end; gap: .2rem; }
+.sh-todo-bulk { position: sticky; top: .5rem; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; margin: 0 0 .7rem; padding: .55rem .8rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.sh-todo-bulk.on { border-color: var(--ink); box-shadow: 0 2px 10px rgba(0, 0, 0, .08); }
+.sh-todo-sq { position: relative; display: grid; grid-row: span 2; cursor: pointer; }
+.sh-todo-sq .sh-todo-tick { position: absolute; top: -6px; left: -6px; width: 18px; height: 18px; margin: 0; }
+.sh-ex.picked { outline: 2px solid var(--ink); outline-offset: -1px; }

@@ -3,7 +3,7 @@ import { HttpError } from '../lib/http.js';
 import { dow, dowLabel, isoWeek, month } from '../lib/dates.js';
 import { cashPoDetails } from '../connectors/odoo.js';
 import { odooSource } from './safebook.js';
-import { requireAdmin } from './till.js';
+import { requireAdmin, roleOf } from './till.js';
 import { syncTodos, todoCounts } from './todo.js';
 
 /**
@@ -244,9 +244,13 @@ export async function cashView(env, { from, to }) {
   };
 }
 
-/** "Check Odoo now", from the Money page. */
+/**
+ * "Check Odoo now", from the Money page (admins) or the to-do list (admins
+ * and supervisors: a supervisor chasing a bill wants to see it clear).
+ */
 export async function refreshNow(env, account, opts = {}) {
-  await requireAdmin(account);
+  const role = roleOf(account);
+  if (role !== 'admin' && !(opts.fromTodo && role === 'supervisor')) await requireAdmin(account);
   const result = await refreshCashPos(env, opts);
   if (!result.ok) throw new HttpError(409, result.error);
   return result;
