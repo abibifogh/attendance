@@ -2339,6 +2339,18 @@ th.rota-today {
 .invite-back { margin-bottom: .7rem; }
 
 .invite .card { margin-bottom: .8rem; }
+.invite .form-problem {
+  margin: 0 0 .7rem;
+  padding: .6rem .75rem;
+  border-radius: var(--radius-sm);
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: .9rem;
+  line-height: 1.4;
+}
+.invite .form-problem[hidden] { display: none; }
+.invite .is-missing { outline: 2px solid var(--bad); outline-offset: 4px; border-radius: var(--radius-sm); }
+.invite section.card.is-missing { outline-offset: 0; }
 .invite h2 { font-size: 1.15rem; margin: 0 0 .4rem; }
 .invite h3 { font-size: .98rem; margin: 0 0 .5rem; }
 /* Sixteen pixels or more, or iOS zooms the whole page the moment somebody

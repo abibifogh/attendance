@@ -326,10 +326,13 @@ function showDetails() {
   const sections = packet.sections.map((section) => h('section.card',
     h('h3', section.label),
     section.note ? h('p.muted', section.note) : null,
-    section.fields.map((f) => h('label.field',
+    section.fields.map((f) => h('label.field', { dataset: { key: f.key } },
       h('span', f.label,
         f.ask === 'require' ? h('span.req', { title: 'The office needs this' }, ' *') : null),
-      control(f, '', { oninput: (e) => { values[f.key] = e.target.value; },
+      control(f, '', { oninput: (e) => {
+        values[f.key] = e.target.value;
+        e.target.closest('.is-missing')?.classList.remove('is-missing');
+      },
         onchange: (e) => { values[f.key] = e.target.value; } }),
       f.hint ? h('small.muted', f.hint) : null,
     )),
@@ -338,7 +341,7 @@ function showDetails() {
   const lists = packet.lists.map((list) => {
     const editor = listEditor(list, [], { labels: LABELS[list.key] ?? {} });
     editors[list.key] = editor;
-    return h('section.card',
+    return h('section.card', { dataset: { list: list.key } },
       h('h3', list.label,
         list.ask === 'require' ? h('span.req', { title: 'The office needs this' }, ' *') : null),
       list.key === 'contacts'
@@ -349,7 +352,30 @@ function showDetails() {
     );
   });
 
+  // Why it did not go, said beside the button rather than only in a message
+  // that fades. A pop-up at the foot of a phone sits behind the keyboard, and
+  // somebody who misses it sees a button that did nothing.
+  const problem = h('p.form-problem', { role: 'alert', hidden: true });
+
+  const unmark = () => {
+    for (const el of root.querySelectorAll('.is-missing')) el.classList.remove('is-missing');
+    problem.hidden = true;
+    problem.textContent = '';
+  };
+
+  const markMissing = (missing) => {
+    const found = missing
+      .map((gap) => root.querySelector(`[data-key="${gap.key}"], [data-list="${gap.key}"]`))
+      .filter(Boolean);
+    for (const el of found) el.classList.add('is-missing');
+    if (found[0]) {
+      found[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      found[0].querySelector('input, select, textarea')?.focus({ preventScroll: true });
+    }
+  };
+
   const send = async (button) => {
+    unmark();
     button.disabled = true;
     button.textContent = 'Sending…';
     try {
@@ -359,9 +385,21 @@ function showDetails() {
       };
       await call(`/api/i/${encodeURIComponent(token)}/details`, payload);
       packet.detailsSent = true;
+      const photosLeft = (packet.files ?? [])
+        .filter((f) => f.ask === 'require' && !f.attached.length).length;
       thanks('Sent. The office will check it over.',
-        'Nothing is changed on your record until somebody there looks at it.');
+        'Nothing is changed on your record until somebody there looks at it.'
+        + (photosLeft
+          ? ' Next, go back to the list and photograph your documents: '
+            + `${photosLeft === 1 ? 'one is' : `${photosLeft} are`} still needed.`
+          : ''));
     } catch (err) {
+      problem.textContent = err.detail?.missing?.length
+        ? `${err.message} The questions that need an answer are marked in red.`
+        : err.message;
+      problem.hidden = false;
+      if (err.detail?.missing?.length) markMissing(err.detail.missing);
+      else problem.scrollIntoView({ behavior: 'smooth', block: 'center' });
       toast(err.message, 'bad');
       button.disabled = false;
       button.textContent = 'Send it in';
@@ -378,7 +416,8 @@ function showDetails() {
     ...sections,
     ...lists,
     h('div.card',
-      h('button.btn.btn-primary.btn-wide', { onclick: (e) => send(e.target) }, 'Send it in'),
+      problem,
+      h('button.btn.btn-primary.btn-wide', { onclick: (e) => send(e.currentTarget) }, 'Send it in'),
       h('p.fineprint', 'Your details are used to run payroll, SSNIT and your personnel file, '
         + 'and are not shared outside the property.'),
     ),
@@ -554,6 +593,11 @@ async function call(path, body, method = 'POST') {
   if (!response) throw new Error('No connection. Check your data and try again.');
 
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Something went wrong. Try again.');
+  if (!response.ok) {
+    const err = new Error(data.error || 'Something went wrong. Try again.');
+    // What was missing, by key, so the form can point at it.
+    err.detail = data.detail ?? null;
+    throw err;
+  }
   return data;
 }

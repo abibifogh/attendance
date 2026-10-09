@@ -336,14 +336,33 @@ test('a form will not send without what the property insisted on', async () => {
 
   await assert.rejects(
     () => inviteDetails(phone(db, { profile: { town: 'Kokrobite' } }), token),
-    /Still needed: mobile, ghana card or passport/i,
+    (err) => {
+      assert.match(err.message, /Still needed: mobile\./i);
+      assert.doesNotMatch(err.message, /ghana card/i,
+        'a photograph is its own task, and is not on the details screen to be fixed');
+      return true;
+    },
   );
 
-  await inviteFile(phone(db, { kind: 'ghana_card', filename: 'c.png', mime: 'image/png', content: PNG }), token);
+  // No photograph yet, and the details still go: that was the form staff were
+  // pressing Send on with nothing happening.
   const done = await read(await inviteDetails(
     phone(db, { profile: { town: 'Kokrobite', personal_phone: '0241234567' } }), token,
   ));
   assert.equal(done.ok, true);
+});
+
+test('a required photograph holds the link open until it arrives', async () => {
+  const { raw, db } = await setup();
+  await saveForm(ctx(db, { body: { plan: { documents: { ghana_card: 'require' } } } }));
+  const { token } = await link(db);
+  const finished = () => raw.prepare('SELECT finished_at FROM hr_invite').get().finished_at;
+
+  await inviteDetails(phone(db, { profile: { town: 'Kokrobite' } }), token);
+  assert.equal(finished(), null, 'the details are in, the card is not');
+
+  await inviteFile(phone(db, { kind: 'ghana_card', filename: 'c.png', mime: 'image/png', content: PNG }), token);
+  assert.ok(finished(), 'and the card is what finishes it');
 });
 
 test('what the office already holds counts as answered', async () => {

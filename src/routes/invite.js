@@ -318,6 +318,9 @@ export async function inviteFile(ctx, token) {
   });
 
   await logEvent(ctx, invite, 'file_sent', { detail: `${wanted.label} — ${bytes.length} bytes` });
+  // The last required photograph can be what finishes a link, now that the
+  // details no longer wait for it.
+  await maybeFinish(ctx, invite);
 
   return json({ ok: true, id });
 }
@@ -364,20 +367,20 @@ export async function inviteDetails(ctx, token) {
     || Object.values(payload.lists).some((rows) => rows.length);
   if (!anything) throw badRequest('Nothing was filled in, so nothing was sent.');
 
-  // What the property insisted on and did not get. Checked here as well as on
-  // the form, because the form is a courtesy and this is the gate — and checked
-  // against the record too, so somebody on their second link is not made to
-  // retype an address the office already has.
-  const person = await ctx.db.prepare('SELECT id, name, department, job_title FROM att_staff WHERE id = ?')
-    .bind(invite.staff_id).first();
-  const form = formPlan(plan, {
-    documents: requiredDocumentsFor(person, await profileOf(ctx.db, invite.staff_id)),
-  });
-  const attached = await attachmentsOn(ctx.db, invite.id);
+  // What the property insisted on and did not get, among the typed answers.
+  // Checked here as well as on the form, because the form is a courtesy and
+  // this is the gate, and checked against the record too, so somebody on their
+  // second link is not made to retype an address the office already has.
+  //
+  // Photographs are not part of it. They are their own task on the link, and
+  // refusing an address because a Ghana Card has not been photographed yet
+  // left people pressing Send on a form that could not go, with the reason
+  // naming something that was not on the screen. A required photograph still
+  // holds the link open until it arrives; see maybeFinish.
   const gaps = unanswered(plan, {
     profile: payload.profile,
     lists: payload.lists,
-    files: form.files.map((f) => ({ ...f, attached: attached.filter((d) => d.kind === f.code) })),
+    files: [],
   }, await onFileFor(ctx.db, invite.staff_id));
 
   if (gaps.length) {
@@ -505,6 +508,20 @@ async function contractIn(ctx, invite, contractId) {
 }
 
 /** A packet with nothing outstanding is closed, which is what the office sees. */
+/** Photographs the property insisted on that have neither arrived nor are on file. */
+async function photosStillNeeded(ctx, invite) {
+  const person = await ctx.db.prepare('SELECT id, name, department, job_title FROM att_staff WHERE id = ?')
+    .bind(invite.staff_id).first();
+  const plan = await currentPlan(ctx.db);
+  const form = formPlan(plan, {
+    documents: requiredDocumentsFor(person, await profileOf(ctx.db, invite.staff_id)),
+  });
+  const attached = await attachmentsOn(ctx.db, invite.id);
+  return unanswered(plan, {
+    files: form.files.map((f) => ({ ...f, attached: attached.filter((d) => d.kind === f.code) })),
+  }, await onFileFor(ctx.db, invite.staff_id)).filter((g) => g.kind === 'file');
+}
+
 async function maybeFinish(ctx, invite) {
   const outstanding = await ctx.db.prepare(
     `SELECT
@@ -517,6 +534,7 @@ async function maybeFinish(ctx, invite) {
   ).bind(invite.id, invite.wants_details ? 1 : 0).first();
 
   if (Number(outstanding?.contracts ?? 0) || Number(outstanding?.details ?? 0)) return;
+  if (invite.wants_details && (await photosStillNeeded(ctx, invite)).length) return;
 
   await ctx.db.prepare("UPDATE hr_invite SET finished_at = datetime('now') WHERE id = ? AND finished_at IS NULL")
     .bind(invite.id).run();
