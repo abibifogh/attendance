@@ -2,6 +2,7 @@ import { add, h, money, moneyShort, num, percent, dayRange, lineColour } from '.
 import { api } from '../api.js';
 import { lineChart, barChart, smallMultiples } from '../charts.js';
 import { table, caveats, banner } from './components.js';
+import { moneyFromShifts } from './moneycash.js';
 
 /**
  * Where the money goes, by part of the business.
@@ -41,6 +42,9 @@ export async function renderPnl(root, { range }) {
         { label: 'Revenue per hour', num: true, get: (r) => money(r.revenuePerHour) },
       ], revenueLines, { footer: data.total }),
       caveats(data.caveats)),
+
+    // How the spending was paid, what to chase, and the rooms' revenue from ASSD.
+    moneyFromShifts(data.range),
 
     h('div.card',
       h('h2', 'Day by day'),

@@ -1,4 +1,5 @@
 import { all, first, run, writeAll } from '../lib/db.js';
+import { rebuildAssdRevenue } from './revenue.js';
 import { badRequest, HttpError, str } from '../lib/http.js';
 import { addDays, isDay, resolveRange, daysBetween } from '../lib/dates.js';
 import { toMinor } from '../lib/money.js';
@@ -62,6 +63,10 @@ export async function uploadJournal(env, body, account) {
       });
       return [e.seq, e.kind, e.user, e.date, e.register, data, at];
     }));
+
+  // The rooms' revenue on the Money page is read from the journal; write the days this file covers again.
+  const dated = entries.map((e) => e.date).filter(Boolean).sort();
+  await rebuildAssdRevenue(env, { from: window?.from ?? dated[0], to: window?.to ?? dated[dated.length - 1] }).catch(() => {});
 
   const note = `${entries.length} transactions, ${markers.length} hand-overs`
     + (window ? '' : '. No benefit-date header was found, so this file replaced what was there for these transactions.');

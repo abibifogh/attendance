@@ -45,7 +45,7 @@ function dayOf(value, field = 'The day') {
 }
 
 /** Odoo, as Insight is set up to read it. */
-async function odoo(env) {
+export async function odooSource(env) {
   const sources = (await listSources(env.DB)).filter((s) => s.kind === 'odoo_json2' && s.config?.base);
   const source = sources.find((s) => s.enabled) || sources[0];
   if (!source) return null;
@@ -138,7 +138,7 @@ export async function bookView(env, account, { counted = null, fetchImpl } = {})
   // What Odoo has that nobody has claimed, since the page began.
   let suggestions = [];
   let odooError = null;
-  const source = await odoo(env);
+  const source = await odooSource(env);
   if (!source) odooError = 'Odoo is not set up in Insight yet, so nothing can be offered.';
   else {
     try {
@@ -185,7 +185,7 @@ export async function bookView(env, account, { counted = null, fetchImpl } = {})
 
 /** Look a PO up for the safe: confirmed in Odoo, and not claimed anywhere else. */
 async function safePo(env, typed, { fetchImpl } = {}) {
-  const source = await odoo(env);
+  const source = await odooSource(env);
   if (!source) throw new HttpError(409, 'Odoo is not set up in Insight yet.');
   const raw = String(typed || '').trim().toUpperCase();
   if (!raw) throw badRequest('Type the PO number.');

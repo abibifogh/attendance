@@ -407,3 +407,56 @@ export async function purchaseOrdersSince({ config: settings, token, since, fetc
     orderedOn: r.date_order ? String(r.date_order).slice(0, 10) : null,
   }));
 }
+
+/**
+ * Purchase orders paid in cash, with whether each has been billed and what it
+ * bought by part of the business. Three read-only `search_read`s: the orders,
+ * their bills, and the order lines of those not billed yet (whose cost has to
+ * be placed somewhere until a bill places it).
+ */
+export async function cashPoDetails({ config: settings, token, names, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const wanted = [...new Set((names || []).map((n) => String(n).trim()).filter(Boolean))];
+  const orders = [];
+  for (let i = 0; i < wanted.length; i += 80) {
+    // eslint-disable-next-line no-await-in-loop
+    orders.push(...await searchRead(config, 'purchase.order', [['name', 'in', wanted.slice(i, i + 80)]],
+      ['id', 'name', 'partner_id', 'amount_total', 'state', 'date_order', 'invoice_ids'], { fetchImpl }));
+  }
+  const billIds = [...new Set(orders.flatMap((o) => (Array.isArray(o.invoice_ids) ? o.invoice_ids : [])))];
+  const bills = billIds.length ? await searchRead(config, 'account.move', [['id', 'in', billIds]],
+    ['id', 'name', 'state', 'invoice_date'], { fetchImpl }) : [];
+  const billById = new Map(bills.map((b) => [b.id, b]));
+  const out = orders.map((o) => {
+    const own = (Array.isArray(o.invoice_ids) ? o.invoice_ids : []).map((id) => billById.get(id)).filter(Boolean)
+      .map((b) => ({ name: String(b.name || ''), state: String(b.state || ''), day: b.invoice_date || null }));
+    return {
+      id: o.id,
+      name: String(o.name || ''),
+      vendor: refName(o.partner_id),
+      total: toMinor(o.amount_total),
+      state: String(o.state || ''),
+      orderedOn: o.date_order ? String(o.date_order).slice(0, 10) : null,
+      bills: own,
+      // A cancelled bill is no bill.
+      billed: own.some((b) => b.state !== 'cancel'),
+      lines: [],
+    };
+  });
+  const open = out.filter((o) => !o.billed);
+  if (open.length) {
+    const byId = new Map(open.map((o) => [o.id, o]));
+    const rows = await searchRead(config, 'purchase.order.line', [['order_id', 'in', [...byId.keys()]]],
+      ['order_id', 'price_total', 'analytic_distribution'], { fetchImpl });
+    for (const r of rows) {
+      const order = byId.get(refId(r.order_id));
+      if (!order) continue;
+      const line = lineFor(config, { analytic: analyticName(r.analytic_distribution) });
+      const amount = toMinor(r.price_total);
+      const have = order.lines.find((l) => l.line === line);
+      if (have) have.amount += amount; else order.lines.push({ line, amount });
+    }
+  }
+  const found = new Set(out.map((o) => o.name.toUpperCase()));
+  return { orders: out, unknown: wanted.filter((n) => !found.has(n.toUpperCase())) };
+}
