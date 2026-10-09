@@ -84,6 +84,7 @@ const ROUTES = [
   ['POST', '/api/shifts/movement', 'shifts', movement],
   ['POST', '/api/shifts/link', 'shifts', area('bank', 2, (env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
   ['POST', '/api/shifts/unlink', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }))],
+  ['GET', '/api/shifts/files', 'shifts', area('files', 1, (env) => shiftRoutes.filesStatus(env))],
   ['POST', '/api/shifts/journal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/bank', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadBank(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/terminal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadTerminal(env, ctx.body, ctx.account))],
@@ -145,6 +146,11 @@ const ROUTES = [
 ];
 ;
 
+/** Everything an uploader may call, beyond signing in and the hub. */
+const UPLOADER_MAY = new Set([
+  'GET /api/shifts/files', 'POST /api/shifts/journal', 'POST /api/shifts/bank', 'POST /api/shifts/terminal',
+]);
+
 export default {
   async fetch(request, env, execution) {
     const url = new URL(request.url);
@@ -172,11 +178,18 @@ export default {
       let account = null;
       let body = null;
       if (permission === 'session') account = await requireSession(request, env);
-      else if (permission === 'shifts') account = await requireInsight(request, env);
-      else if (permission === 'insight') {
+      else if (permission === 'shifts') {
         account = await requireInsight(request, env);
-        // A supervisor holds the reports grant for the Shifts screen alone.
-        if (till.roleOf(account) === 'supervisor') throw new HttpError(403, 'Your account opens Shifts and nothing else here.');
+        // An uploader reaches the upload endpoints and nothing else.
+        if (till.roleOf(account) === 'uploader' && !UPLOADER_MAY.has(`${request.method} ${url.pathname}`)) {
+          throw new HttpError(403, 'Your account uploads files and nothing else here.');
+        }
+      } else if (permission === 'insight') {
+        account = await requireInsight(request, env);
+        // A supervisor holds the reports grant for the Shifts screen alone, and an uploader for the files.
+        const role = till.roleOf(account);
+        if (role === 'supervisor') throw new HttpError(403, 'Your account opens Shifts and nothing else here.');
+        if (role === 'uploader') throw new HttpError(403, 'Your account uploads files and nothing else here.');
       } else if (permission === 'owner') account = await requireOwner(request, env);
       else if (permission === 'link') {
         const text = await request.text();

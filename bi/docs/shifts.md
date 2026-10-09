@@ -198,3 +198,19 @@ Journals loaded before this check existed carry no charges: load them again.
 Answers go through the same approval as exceptions: a supervisor's answer
 waits for an admin. Supervisors see the list and may answer by default
 (Till settings → Supervisor access → Unpaid stays).
+
+## What each note on a shift was made of
+
+On a shift's page, each note under "How it was paid" opens to the lines
+behind it, each marked ✓ (agrees), ✗ (does not) or · (nothing to match):
+
+- **The drawer**: the opening count, every cash payment, every cash movement
+  and how it was labelled, what the drawer should hold, and the closing count.
+- **Card and MoMo**: each card line in ASSD and the terminal or MoMo payment it
+  was matched to (time, card, approval code, amount), lines with nothing found,
+  and payments that arrived but are not in ASSD.
+- **Expenses**: each expense movement (and what the expense sheet settled)
+  against the Odoo PO of the same amount, or several POs that add up to it;
+  POs not confirmed in Odoo, and numbers Odoo does not know.
+- **Laundry**: each laundry line in ASSD against the laundry system's payment
+  of the same amount in the shift's hours.

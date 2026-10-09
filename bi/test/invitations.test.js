@@ -253,3 +253,13 @@ test('the email says who, what, until when, and escapes what people typed', () =
   assert.match(mail.html, /icon-180\.png/);
   assert.match(mail.text, /Set up your account: https:\/\/insight\.example\.test\/#join=abc/);
 });
+
+test('somebody can be invited to upload files and nothing else', async () => {
+  const { db, mail, call } = await setup();
+  const out = await call('/api/invitations', { name: 'Fiifi Files', email: 'fiifi@example.test', level: 'uploader', systems: [] });
+  assert.equal(out.status, 200, JSON.stringify(out.data));
+  const grants = await all(db, "SELECT system_id, role FROM account_access WHERE account_id = (SELECT id FROM accounts WHERE email = 'fiifi@example.test')");
+  assert.deepEqual(grants.map((g) => [g.system_id, g.role]), [['insight', 'uploader']]);
+  assert.match(mail[0].html, /Uploads only/);
+  assert.equal(out.data.invitations[0].level, 'Uploads only');
+});

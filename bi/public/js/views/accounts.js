@@ -77,8 +77,9 @@ export async function renderAccounts(root) {
                     onchange: (event) => setInsight(account, event.target.value),
                   },
                   h('option', { value: '', selected: !account.access.some((a) => a.systemId === 'insight') }, 'No'),
-                  h('option', { value: 'full', selected: account.access.some((a) => a.systemId === 'insight' && a.role !== 'supervisor') }, 'Everything'),
-                  h('option', { value: 'supervisor', selected: account.access.some((a) => a.systemId === 'insight' && a.role === 'supervisor') }, 'Supervisor'))
+                  h('option', { value: 'full', selected: account.access.some((a) => a.systemId === 'insight' && !['supervisor', 'uploader'].includes(a.role)) }, 'Everything'),
+                  h('option', { value: 'supervisor', selected: account.access.some((a) => a.systemId === 'insight' && a.role === 'supervisor') }, 'Supervisor'),
+                  h('option', { value: 'uploader', selected: account.access.some((a) => a.systemId === 'insight' && a.role === 'uploader') }, 'Uploads only'))
                   : h('input', {
                     type: 'checkbox',
                     checked: account.isOwner || account.access.some((a) => a.systemId === system.id),
@@ -156,6 +157,7 @@ export async function renderAccounts(root) {
       ['owner', 'Owner', 'Everything, every system, and manages accounts'],
       ['admin', 'Admin', 'Every report and all of Shifts'],
       ['supervisor', 'Supervisor', 'Shifts only, as set in Till settings'],
+      ['uploader', 'Uploads only', 'Loads the ASSD journal, bank statement and card report. Sees nothing else'],
       ['none', 'No reports', 'The hub only: a way into other systems'],
     ];
     const others = systems.filter((sys) => sys.id !== 'insight');
@@ -288,6 +290,7 @@ export async function renderAccounts(root) {
   async function inviteAgain(account) {
     const level = account.isOwner ? 'owner'
       : account.access.some((a) => a.systemId === 'insight' && a.role === 'supervisor') ? 'supervisor'
+        : account.access.some((a) => a.systemId === 'insight' && a.role === 'uploader') ? 'uploader'
         : account.access.some((a) => a.systemId === 'insight') ? 'admin' : 'none';
     try {
       const out = await api('/invitations', {
@@ -304,7 +307,7 @@ export async function renderAccounts(root) {
 
   async function setInsight(account, how) {
     const next = account.access.filter((a) => a.systemId !== 'insight');
-    if (how) next.push({ systemId: 'insight', role: how === 'supervisor' ? 'supervisor' : '' });
+    if (how) next.push({ systemId: 'insight', role: ['supervisor', 'uploader'].includes(how) ? how : '' });
     try {
       paint(await api(`/accounts/${account.id}/access`, { method: 'POST', body: { access: next } }));
     } catch (err) {
@@ -350,12 +353,13 @@ export async function renderAccounts(root) {
     // supervisor sees Shifts only, with the parts set under Till settings.
     const insightGrant = account?.access?.find((a) => a.systemId === 'insight');
     const current = account?.isOwner ? 'owner'
-      : insightGrant ? (insightGrant.role === 'supervisor' ? 'supervisor' : 'admin')
+      : insightGrant ? (['supervisor', 'uploader'].includes(insightGrant.role) ? insightGrant.role : 'admin')
         : account ? 'none' : (noOwnerYet ? 'owner' : 'supervisor');
     const LEVELS = [
       ['owner', 'Owner', 'Everything, every system, and can manage these accounts.'],
       ['admin', 'Admin', 'Every report and all of Shifts, including the till settings. Cannot manage accounts or Setup.'],
       ['supervisor', 'Supervisor', 'Shifts only, with the parts an admin chooses under Shifts → Till settings → Supervisor access.'],
+      ['uploader', 'Uploads only', 'Loads the ASSD journal, the bank statement and the card terminal report. Sees none of the numbers, and nothing else in Insight.'],
       ['none', 'No reports', 'Only the hub: a way into the other systems ticked below.'],
     ];
     const level = h('select', { required: true }, LEVELS.map(([value, label]) => h('option', { value, selected: value === current }, label)));
@@ -397,6 +401,7 @@ export async function renderAccounts(root) {
                 .map((sys) => ({ systemId: sys.id, role: saved.access.find((a) => a.systemId === sys.id)?.role || '' }));
               if (level.value === 'admin') access.push({ systemId: 'insight', role: '' });
               if (level.value === 'supervisor') access.push({ systemId: 'insight', role: 'supervisor' });
+              if (level.value === 'uploader') access.push({ systemId: 'insight', role: 'uploader' });
               fresh = await api(`/accounts/${saved.id}/access`, { method: 'POST', body: { access } });
             }
             dialog.close();
