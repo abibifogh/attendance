@@ -485,7 +485,8 @@ export async function shifts(env, query, account) {
     const minute = minuteAt(t.at);
     const home = result.shifts.find((x) => minute >= x.window.start && minute < x.window.end);
     if (!home) continue;
-    const l = laundryIn.get(home.index) || { collected: 0, cash: 0, card: 0, charged: 0, payments: 0, orders: 0 };
+    const l = laundryIn.get(home.index) || { collected: 0, cash: 0, card: 0, charged: 0, payments: 0, orders: 0, list: [] };
+    l.list.push({ kind: t.kind, ref: t.ref, at: t.at, amount: t.amount, method: t.method || null });
     if (t.kind === 'payment') {
       l.collected += t.amount;
       l[t.method === 'card' ? 'card' : 'cash'] += t.amount;
@@ -502,7 +503,7 @@ export async function shifts(env, query, account) {
   const laundryCovers = (s) => Boolean(laundryRead) && !s.open
     && (s.slotName === 'night' ? addDays(s.day, 1) <= laundryRead : s.day <= laundryRead);
   const laundryOfShift = (s) => (laundryCovers(s)
-    ? { collected: 0, cash: 0, card: 0, charged: 0, payments: 0, orders: 0, ...laundryIn.get(s.index) }
+    ? { collected: 0, cash: 0, card: 0, charged: 0, payments: 0, orders: 0, list: [], ...laundryIn.get(s.index) }
     : null);
   for (const s of result.shifts.filter((x) => inRange(x.day))) {
     const l = laundryOfShift(s);
@@ -686,6 +687,7 @@ export async function shifts(env, query, account) {
       startSeq: s.startSeq, endSeq: s.endSeq,
       cash: s.cash, card: s.card, prepaid: s.prepaid, other: s.other, laundry: s.laundry, laundryCash: s.laundryCash,
       laundrySystem: laundryOfShift(s),
+      cashLines: s.cashLines || [], laundryLines: s.laundryLines || [],
       drawerOut: s.drawerOut, expensesCounted: s.expensesCounted, booked: s.booked, corrected: s.corrected,
       modes: s.modes, moves: s.moves.map((m) => ({ ...m, pending: proposed.get(m.seq) || null })), opening: s.opening, closing: s.closing,
       items: s.items, stockStart: s.stockStart, stockEnd: s.stockEnd,

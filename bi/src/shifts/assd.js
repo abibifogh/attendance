@@ -314,6 +314,10 @@ export function summarise(shift, corrections = new Map()) {
     expensesCounted: 0,
     booked: [],
     cards: [],
+    // Every cash payment and every laundry line, one by one, so a screen can
+    // show what a total was made of.
+    cashLines: [],
+    laundryLines: [],
     users: {},
     backOffice: [],
     opening: null,
@@ -342,8 +346,12 @@ export function summarise(shift, corrections = new Map()) {
       if (p.method === 'cash') paidCash += p.amount;
       else paidOther += p.amount;
       if (p.method === 'card') s.cards.push({ seq: e.seq, date: p.date, amount: p.amount, user: e.user });
+      if (p.method === 'cash') s.cashLines.push({ seq: e.seq, kind: e.kind, user: e.user, label: p.label, amount: p.amount });
     }
     const laundry = e.laundry.reduce((sum, l) => sum + l.amount, 0);
+    for (const l of e.laundry) {
+      s.laundryLines.push({ seq: e.seq, user: e.user, date: l.date, amount: l.amount, paid: paidCash && !paidOther ? 'cash' : paidOther && !paidCash ? 'card or MoMo' : paidCash ? 'mixed' : 'not paid on this entry' });
+    }
     s.laundry += laundry;
     // Laundry paid in cash: a laundry sale settled wholly in cash. A mixed
     // settlement is counted as card, because the cash it drew is unknowable.

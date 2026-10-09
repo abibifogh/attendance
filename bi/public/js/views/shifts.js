@@ -949,7 +949,11 @@ export async function renderShifts(root, { range }) {
         r.corrected && r.assdVariance !== n.variance ? h('p', `ASSD booked ${signed(r.assdVariance)} before the corrections to its cash movements.`) : null,
         r.handoverGap ? h('p', `This shift’s first count was ${money(Math.abs(r.handoverGap.amount))} ${r.handoverGap.amount < 0 ? 'less' : 'more'} than ${nameOf(r.handoverGap.from)}’s closing count.`) : null));
 
-      mount(checksList, checks(s, n).map(([cls_, mark, text]) => h('li', h(`span.sh-ic.${cls_}`, String(mark)), h('span', text))));
+      mount(checksList, checks(s, n).map(([cls_, mark, text, detail]) => (detail
+        ? h('li.sh-hasdetail', h('details',
+          h('summary', h(`span.sh-ic.${cls_}`, String(mark)), h('span', text), h('span.sh-more', 'Details')),
+          detail))
+        : h('li', h(`span.sh-ic.${cls_}`, String(mark)), h('span', text)))));
     }
   }
 
@@ -970,16 +974,17 @@ export async function renderShifts(root, { range }) {
   function checks(s, n) {
     const out = [];
     if (n.variance == null) out.push(['info', 'i', s.open ? 'No closing count yet: the journal ends inside this shift' : 'No closing count in ASSD']);
-    else if (n.variance === 0) out.push(['good', '✓', 'The drawer agrees with the closing count']);
-    else out.push([n.variance < 0 ? 'bad' : 'warn', '!', `Drawer ${n.variance > 0 ? 'over' : 'short'} by ${money(Math.abs(n.variance))}`]);
+    else if (n.variance === 0) out.push(['good', '✓', 'The drawer agrees with the closing count', drawerDetail(s, n)]);
+    else out.push([n.variance < 0 ? 'bad' : 'warn', '!', `Drawer ${n.variance > 0 ? 'over' : 'short'} by ${money(Math.abs(n.variance))}`, drawerDetail(s, n)]);
     const lines = s.lines.filter((l) => l.amount > 0);
     if (!lines.length) out.push(['info', '·', 'No card or MoMo this shift']);
-    else out.push([s.cardFound === lines.length ? 'good' : 'bad', s.cardFound === lines.length ? '✓' : '!', `${s.cardFound} of ${lines.length} card and MoMo payments found`]);
+    else out.push([s.cardFound === lines.length ? 'good' : 'bad', s.cardFound === lines.length ? '✓' : '!', `${s.cardFound} of ${lines.length} card and MoMo payments found`, cardDetail(s)]);
     const exp = s.expense;
     if (exp?.sheetTotal != null || n.expenses) {
       const agree = exp?.sheetTotal != null && exp?.odooTotal != null && exp.sheetTotal === exp.odooTotal;
       out.push([agree ? 'good' : exp?.odooTotal != null ? 'warn' : 'info', agree ? '✓' : 'i',
-        `Expenses ${money(exp?.sheetTotal ?? n.expenses)}${exp?.odooTotal != null ? ` · Odoo ${money(exp.odooTotal)}` : exp?.poNumbers ? ' · Odoo not read yet' : ' · no PO numbers yet'}`]);
+        `Expenses ${money(exp?.sheetTotal ?? n.expenses)}${exp?.odooTotal != null ? ` · Odoo ${money(exp.odooTotal)}` : exp?.poNumbers ? ' · Odoo not read yet' : ' · no PO numbers yet'}`,
+        expenseDetail(s, n)]);
     }
     if (n.sheetGap) {
       out.push(['warn', '!', `The expense sheet says ${money(n.sheet)}; the movements labelled ${money(n.expenses)} as expenses. Correct a movement below, or check the sheet.`]);
@@ -992,10 +997,10 @@ export async function renderShifts(root, { range }) {
         const agree = s.laundry === ls.collected;
         out.push([agree ? 'good' : 'warn', agree ? '✓' : '!',
           `Laundry: ${money(s.laundry)} in ASSD, ${money(ls.collected)} taken in the laundry system`
-          + `${ls.charged ? ` (${money(ls.charged)} of new orders)` : ''}${agree ? '' : '. See the exceptions.'}`]);
+          + `${ls.charged ? ` (${money(ls.charged)} of new orders)` : ''}${agree ? '' : '. See the exceptions.'}`, laundryDetail(s)]);
       }
     } else if (s.laundry) {
-      out.push(['info', 'i', `Laundry ${money(s.laundry)}${s.laundryCash ? `, ${money(s.laundryCash)} of it in cash` : ''}. The laundry system has not been read for this shift yet.`]);
+      out.push(['info', 'i', `Laundry ${money(s.laundry)}${s.laundryCash ? `, ${money(s.laundryCash)} of it in cash` : ''}. The laundry system has not been read for this shift yet.`, laundryDetail(s)]);
     }
     for (const m of (s.moves || []).filter((x) => x.kind === 'corrected')) {
       out.push(['info', 'i', `${money(m.amount)} moved out by mistake and put back by ${nameOf(m.reversedByUser)}`]);
@@ -1003,6 +1008,151 @@ export async function renderShifts(root, { range }) {
     const open = exceptionsOf(s).filter((x) => !x.answer && x.severity !== 'info').length;
     if (open) out.push(['bad', open, `${open} difference${open === 1 ? '' : 's'} waiting for an answer`]);
     return out;
+  }
+
+  // ------------------------------------------- what each note was made of --
+
+  /** A ✓ / ✗ / · mark for a line that agrees, does not, or has nothing to agree with. */
+  const mark = (state) => h(`span.sh-lm.${state}`, { title: { ok: 'Agrees', bad: 'Does not agree', none: 'Nothing to match' }[state] },
+    { ok: '✓', bad: '✗', none: '·' }[state]);
+  const clock = (at) => (at ? String(at).slice(11, 16) : '');
+
+  /** A table of lines: [mark, cells…]. */
+  function lineTable(head, rows, foot = null) {
+    return h('div.sh-dtable', h('table',
+      h('thead', h('tr', h('th', ''), head.map((c) => h(c.num ? 'th.num' : 'th', c.label ?? c)))),
+      h('tbody', rows.map((r) => h(`tr.${r.state}`, h('td', mark(r.state)), r.cells.map((c, i) => h(head[i]?.num ? 'td.num' : 'td', c))))),
+      foot ? h('tfoot', h('tr', h('td', ''), foot.map((c, i) => h(head[i]?.num ? 'td.num' : 'td', c)))) : null));
+  }
+
+  /**
+   * Pair two lists of amounts: equal amount to equal amount first, then one
+   * line on the left against several on the right that add up to it (three
+   * POs paid in one movement). What is left over on either side is what does
+   * not agree.
+   */
+  function pairUp(left, right) {
+    const used = new Set();
+    const pairs = left.map((l) => {
+      const i = right.findIndex((r, k) => !used.has(k) && r.amount === l.amount);
+      if (i >= 0) used.add(i);
+      return { l, r: i >= 0 ? [right[i]] : [] };
+    });
+    for (const p of pairs.filter((x) => !x.r.length)) {
+      const free = right.map((r, k) => ({ r, k })).filter((x) => !used.has(x.k)).slice(0, 12);
+      for (let mask = 1; mask < (1 << free.length); mask += 1) {
+        const pick = free.filter((_, b) => mask & (1 << b));
+        if (pick.length > 1 && pick.reduce((t, x) => t + x.r.amount, 0) === p.l.amount) {
+          for (const x of pick) used.add(x.k);
+          p.r = pick.map((x) => x.r);
+          break;
+        }
+      }
+    }
+    return { pairs, spare: right.filter((_, k) => !used.has(k)) };
+  }
+
+  function drawerDetail(s, n) {
+    const r = s.register || {};
+    const moveText = (m) => ({
+      expenses: 'expenses', safe: 'to the safe', split: `${money(m.expenses)} expenses, ${money(m.safe)} to the safe`,
+      part: `${money(m.expenses)} expenses, rest not labelled`, unlabelled: 'not labelled', corrected: 'keyed by mistake, put back',
+      returned: 'put back into the drawer', excluded: 'left out (matched)',
+    })[m.kind] || m.kind;
+    const rows = [
+      { state: r.opening == null ? 'bad' : 'ok', cells: ['Opening count', r.openingFrom === 'typed' ? 'typed here' : r.openingFrom === 'carried' ? 'last shift’s closing' : `ASSD ${s.opening?.seq ?? ''}${s.opening?.receipts ? `, incl. ${money(s.opening.receipts)} receipts` : ''}`, money(r.opening)] },
+      ...(s.cashLines || []).map((c) => ({ state: 'ok', cells: [`+ ${c.kind}`, `ASSD ${c.seq} · ${nameOf(c.user)} · ${c.label}`, money(c.amount)] })),
+      ...(s.moves || []).filter((m) => m.kind !== 'corrected' && m.kind !== 'excluded').map((m) => ({
+        state: ['unlabelled', 'part'].includes(m.kind) ? 'bad' : 'ok',
+        cells: ['− Cash movement', `ASSD ${m.seq} · ${moveText(m)}${m.manual ? ' (corrected by hand)' : ''}`, money(-m.amount)],
+      })),
+      ...(s.moves || []).filter((m) => m.kind === 'corrected' || m.kind === 'excluded').map((m) => ({
+        state: 'none', cells: ['Not counted', `ASSD ${m.seq} · ${moveText(m)}`, money(-m.amount)],
+      })),
+      { state: 'none', cells: [h('b', '= Should hold'), '', h('b', money(r.expected))] },
+      { state: n.variance == null ? 'bad' : n.variance === 0 ? 'ok' : 'bad', cells: [h('b', 'Closing count'), n.recounted ? 'your recount' : `ASSD ${s.closing?.seq ?? ''}${r.receiptsAtClose ? `, incl. ${money(r.receiptsAtClose)} receipts` : ''}`, h('b', money(n.closing))] },
+    ];
+    return h('div.sh-detail',
+      lineTable([{ label: 'Line' }, { label: 'From' }, { label: 'Amount', num: true }], rows),
+      h('p.small', n.variance == null ? 'No closing count to hold it against.' : n.variance === 0 ? '✓ The count matches what should be there.'
+        : `✗ ${n.variance > 0 ? 'Over' : 'Short'} by ${money(Math.abs(n.variance))}. ${(s.moves || []).some((m) => ['unlabelled', 'part'].includes(m.kind)) ? 'The lines marked ✗ are movements nobody labelled.' : ''}`));
+  }
+
+  function cardDetail(s) {
+    const howText = { exact: 'same amount, in the shift', late: 'same amount, just outside the shift', together: 'one payment for several ASSD lines', parts: 'paid in parts', corrected: 'keyed and reversed', regrouped: 'same money, split differently' };
+    const event = (e) => `${e.kind === 'momo' ? 'MoMo' : `Card${e.last4 ? ` …${e.last4}` : ''}`} · ${e.at ? clock(e.at) : shortDay(e.day)}${e.approval ? ` · appr. ${e.approval}` : ''} · ${e.source === 'bank' ? 'bank' : 'terminal'}`;
+    const rows = s.lines.filter((l) => l.amount > 0).map((l) => {
+      const found = l.events || [];
+      const got = found.reduce((t, e) => t + e.amount, 0);
+      const x = exceptionsOf(s).find((o) => o.seq === l.seq && o.amount === l.amount && o.event);
+      const state = found.length ? (got === l.amount || l.how === 'together' || l.how === 'regrouped' ? 'ok' : 'bad') : 'bad';
+      return {
+        state,
+        cells: [
+          `ASSD ${l.seq}`,
+          money(l.amount),
+          found.length ? h('span', found.map((e) => h('div', `${event(e)} · ${money(e.amount)}`)), h('small', howText[l.how] || l.how || ''))
+            : x ? h('span', h('div', `Nearest: ${event(x.event)} · ${money(x.event.amount)}`), h('small', (KIND[x.kind] || [x.kind])[0]))
+              : h('span.muted', 'Nothing found near the shift'),
+        ],
+      };
+    });
+    const extra = exceptionsOf(s).filter((x) => ['not-recorded', 'bank-only', 'double-charge'].includes(x.kind) && x.event);
+    for (const x of extra) rows.push({ state: 'bad', cells: ['Not in ASSD', '—', h('span', h('div', `${event(x.event)} · ${money(x.event.amount)}`), h('small', (KIND[x.kind] || [x.kind])[0]))] });
+    return h('div.sh-detail', lineTable([{ label: 'ASSD line' }, { label: 'ASSD', num: true }, { label: 'Matched to' }], rows));
+  }
+
+  function expenseDetail(s, n) {
+    const exp = s.expense || {};
+    const moves = (s.moves || []).filter((m) => ['expenses', 'split', 'part'].includes(m.kind))
+      .map((m) => ({ label: `ASSD ${m.seq}${m.kind !== 'expenses' ? ' (part of a movement)' : ''}`, amount: m.kind === 'expenses' ? m.amount : m.expenses }));
+    // What the typed expense sheet settled on top of what the counts labelled.
+    const fromSheet = (n.expenses || 0) - moves.reduce((t, m) => t + m.amount, 0);
+    if (fromSheet > 0) moves.push({ label: 'From the expense sheet (unlabelled cash)', amount: fromSheet });
+    const confirmed = (o) => o.state === 'purchase' || o.state === 'done';
+    const po = (o) => `${o.name} · ${o.vendor || ''} · ${confirmed(o) ? 'confirmed' : o.state}`;
+    const orders = (exp.odoo?.orders || []).map((o) => ({ ...o, amount: o.total }));
+    const { pairs, spare } = pairUp(moves, orders);
+    const rows = [
+      ...pairs.map(({ l, r }) => ({
+        state: r.length ? (r.every(confirmed) ? 'ok' : 'bad') : (orders.length ? 'bad' : 'none'),
+        cells: [l.label, money(l.amount),
+          r.length ? h('span', r.map((o) => h('div', po(o))), r.length > 1 ? h('small', 'several POs, one payment') : null, r.some((o) => !confirmed(o)) ? h('small', 'not confirmed in Odoo, so not counted') : null)
+            : (orders.length ? 'No PO of this amount' : 'No PO numbers yet'),
+          r.length ? money(r.reduce((t, o) => t + o.total, 0)) : '—'],
+      })),
+      ...spare.map((o) => ({ state: 'bad', cells: ['No payment of this amount', '—', h('span', po(o), !confirmed(o) ? h('small', 'not confirmed in Odoo') : null), money(o.total)] })),
+    ];
+    const unknown = exp.odoo?.unknown || [];
+    return h('div.sh-detail',
+      lineTable([{ label: 'Paid out' }, { label: 'Amount', num: true }, { label: 'Odoo PO' }, { label: 'PO total', num: true }], rows,
+        ['Total', money(n.expenses), exp.sheetTotal != null ? `Expense sheet ${money(exp.sheetTotal)}` : '', exp.odooTotal != null ? money(exp.odooTotal) : '—']),
+      unknown.length ? h('p.small', `✗ Not in Odoo: ${unknown.join(', ')}`) : null);
+  }
+
+  function laundryDetail(s) {
+    const ls = s.laundrySystem;
+    const assd = (s.laundryLines || []).map((l) => ({ ...l }));
+    const pays = (ls?.list || []).filter((t) => t.kind === 'payment').sort((a, b) => (a.at < b.at ? -1 : 1));
+    if (!ls) {
+      return h('div.sh-detail', lineTable([{ label: 'ASSD line' }, { label: 'Paid' }, { label: 'Amount', num: true }],
+        assd.map((l) => ({ state: 'none', cells: [`ASSD ${l.seq} · ${nameOf(l.user)}`, l.paid, money(l.amount)] }))),
+      h('p.small.muted', 'Nothing to hold these against until the laundry system has been read for the whole shift.'));
+    }
+    const { pairs, spare } = pairUp(assd, pays);
+    const rows = [
+      ...pairs.map(({ l, r }) => ({
+        state: r.length ? 'ok' : 'bad',
+        cells: [`ASSD ${l.seq} · ${l.paid}`, money(l.amount),
+          r.length ? h('span', r.map((t) => h('div', `Order ${t.ref} · ${clock(t.at)} · ${t.method || ''} · ${money(t.amount)}`))) : 'No laundry payment of this amount',
+          r.length ? money(r.reduce((t, x) => t + x.amount, 0)) : '—'],
+      })),
+      ...spare.map((r) => ({ state: 'bad', cells: ['Not in ASSD', '—', `Order ${r.ref} · ${clock(r.at)} · ${r.method || ''}`, money(r.amount)] })),
+    ];
+    return h('div.sh-detail',
+      lineTable([{ label: 'ASSD' }, { label: 'Amount', num: true }, { label: 'Laundry system payment' }, { label: 'Amount', num: true }], rows,
+        ['Total', money(s.laundry), `${ls.payments} payment${ls.payments === 1 ? '' : 's'}`, money(ls.collected)]),
+      ls.orders ? h('p.small.muted', `The laundry system also accepted ${ls.orders} order${ls.orders === 1 ? '' : 's'} worth ${money(ls.charged)} in these hours.`) : null);
   }
 
   function timeline(s) {

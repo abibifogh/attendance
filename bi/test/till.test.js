@@ -367,7 +367,14 @@ test('the laundry is compared shift by shift, once the laundry system has been r
   data = await read();
   const alpha = data.days[0].shifts.find((s) => s.user === 'ALPHA');
   assert.equal(alpha.laundry, 3000);
-  assert.deepEqual(alpha.laundrySystem, { collected: 2000, cash: 2000, card: 0, charged: 3000, payments: 1, orders: 1 });
+  const { list, ...sums } = alpha.laundrySystem;
+  assert.deepEqual(sums, { collected: 2000, cash: 2000, card: 0, charged: 3000, payments: 1, orders: 1 });
+  // Line by line, for the drop-down under the note: the laundry system's own
+  // payment and order, and ASSD's laundry line with how it was paid.
+  assert.deepEqual(list.map((t) => [t.kind, t.ref, t.at, t.amount, t.method]).sort(),
+    [['order', 'L-1', '2026-08-01 09:00:00', 3000, null], ['payment', 'L-1', '2026-08-01 09:30:00', 2000, 'cash']]);
+  assert.deepEqual(alpha.laundryLines.map((l) => [l.seq, l.amount, l.paid]), [[400104, 3000, 'cash']]);
+  assert.ok(alpha.cashLines.some((c) => c.seq === 400103 && c.amount === 30000), 'each cash payment is listed');
   const x = data.exceptions.filter((e) => e.kind === 'laundry-mismatch');
   assert.deepEqual(x.map((e) => [e.key, e.amount, e.assd, e.system]), [['laundry:2026-08-01:morning', 1000, 3000, 2000]]);
   assert.equal(data.days[0].shifts.find((s) => s.user === 'BRAVO').laundrySystem.collected, 0, 'BRAVO: none either side, so no exception');
