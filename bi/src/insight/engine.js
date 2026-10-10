@@ -7,7 +7,7 @@ import { revenuePerLabourHour, labourShareOfRevenue, overtimeWithoutTrade, staff
 import { guestCapture, foodCostPerGuest, usageOutliers } from './rules/demand.js';
 import { tillVariance, uncollectedRevenue } from './rules/cash.js';
 import { priceDivergence, supplierConcentration } from './rules/supply.js';
-import { absenceToMissedWork, unbilledOccupancy, maintenanceLoad, coverageGaps } from './rules/service.js';
+import { coverageGaps } from './rules/coverage.js';
 
 /**
  * The rules, in the order a person would want to hear them.
@@ -28,10 +28,7 @@ export const RULES = [
   overtimeWithoutTrade,
   usageOutliers,
   staffingAgainstDemand,
-  absenceToMissedWork,
   supplierConcentration,
-  unbilledOccupancy,
-  maintenanceLoad,
   coverageGaps,
 ];
 

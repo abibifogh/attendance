@@ -290,6 +290,8 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
     }, 'Check laundry now');
     const days = h('input', { type: 'number', min: '0', max: '90', value: String(d.unbilledDays), style: 'width:4.5rem', 'aria-label': 'Days a PO may go without a posted bill' });
     const back = h('input', { type: 'number', min: '7', max: '730', value: String(d.lookbackDays ?? 90), style: 'width:5rem', 'aria-label': 'How many days back to look for POs' });
+    const laundryBack = h('input', { type: 'number', min: '1', max: '60', value: String(d.laundryDays ?? 3), style: 'width:4.5rem', 'aria-label': 'How many days Check laundry now reads' });
+    laundry.title = `Reads the laundry system for the last ${d.laundryDays ?? 3} day${d.laundryDays === 1 ? '' : 's'}, up to today`;
     const setSaid = h('span.small');
     const find = h('input', {
       type: 'search', placeholder: 'Find a PO or supplier', 'aria-label': 'Find a PO or supplier', value: view.find,
@@ -326,13 +328,14 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
         h('div.card.td-left', bulk, list),
         detail),
       admin ? h('p.small.muted.td-days',
-        'Raise a PO with no posted bill after ', days, ' days (from the day the cash left, or the day it was ordered), looking back over POs of the last ', back, ' days ',
+        'Raise a PO with no posted bill after ', days, ' days (from the day the cash left, or the day it was ordered), looking back over POs of the last ', back, ' days. ',
+        'Check laundry now reads the last ', laundryBack, ' days, up to today. ',
         h('button.btn', {
           type: 'button',
           onclick: async (e) => {
             e.target.disabled = true; setSaid.textContent = 'Saving…'; setSaid.className = 'small';
             try {
-              const out = await api('/todo/settings', { method: 'POST', body: { unbilledDays: days.value, lookbackDays: back.value } });
+              const out = await api('/todo/settings', { method: 'POST', body: { unbilledDays: days.value, lookbackDays: back.value, laundryDays: laundryBack.value } });
               await re(out.checked ? (out.checked.ok ? 'Saved, and Odoo asked again for the new look-back.' : `Saved. Odoo could not be asked: ${out.checked.error}`) : 'Saved.');
             } catch (err) { fail(setSaid)(err); e.target.disabled = false; }
           },

@@ -8,7 +8,6 @@ import { renderDemand } from './views/demand.js';
 import { renderCash } from './views/cash.js';
 import { renderSuppliers } from './views/suppliers.js';
 import { renderBooks } from './views/books.js';
-import { renderService } from './views/service.js';
 import { renderFindings } from './views/findings.js';
 import { renderSetup } from './views/setup.js';
 import { renderHub } from './views/hub.js';
@@ -49,7 +48,6 @@ const ROUTES = [
   { path: 'upload', label: 'Upload files', render: renderUpload, needs: 'upload' },
   { path: 'buying', label: 'Buying', render: renderSuppliers },
   { path: 'books', label: 'Books', render: renderBooks },
-  { path: 'service', label: 'Service', render: renderService },
   { path: 'findings', label: 'Findings', render: renderFindings, needs: 'insight' },
   { path: 'accounts', label: 'Accounts', render: renderAccounts, needs: 'owner' },
   { path: 'reports', label: 'Reports', render: renderReports, needs: 'owner' },
@@ -63,7 +61,7 @@ const ROUTES = [
 const NAV_GROUPS = [
   ['Today', ['hub', 'brief', 'findings']],
   ['Money', ['money', 'yardstick', 'cash', 'books', 'buying']],
-  ['Operations', ['shifts', 'upload', 'labour', 'guests', 'service']],
+  ['Operations', ['shifts', 'upload', 'labour', 'guests']],
   ['Admin', ['accounts', 'reports', 'setup']],
 ];
 

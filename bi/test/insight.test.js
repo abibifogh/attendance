@@ -61,7 +61,6 @@ test('the cross-system rules each find the thing they were written for', async (
     'price-divergence',           // breakfast purchases vs POS purchases
     'uncollected-revenue',        // laundry charged vs collected
     'labour-share',               // attendance hours vs POS and laundry takings
-    'absence-to-missed-work',     // attendance absence vs housekeeping rounds
     'coverage-gaps',              // what none of the four systems records
   ]) {
     assert.ok(fired.has(ruleId), `${ruleId} found nothing in a warehouse built to trip it`);
@@ -77,15 +76,6 @@ test('the supplier overcharge is found, and names both sides', async () => {
   assert.ok(finding.evidence.gapPct >= 12);
   assert.ok(finding.sources.includes('breakfast') && finding.sources.includes('pos'),
     'a finding that crossed two systems must say so');
-});
-
-test('missed housekeeping checks are tied to who was absent', async () => {
-  const { findings } = await analysed();
-  const finding = findings.find((f) => f.ruleId === 'absence-to-missed-work');
-  assert.ok(finding);
-  assert.ok(finding.evidence.fullTeamCompletionPct > finding.evidence.shortTeamCompletionPct);
-  assert.ok(finding.evidence.fullDays >= 5 && finding.evidence.shortDays >= 5,
-    'the comparison must rest on enough days of each kind');
 });
 
 test('the missing rooms system is stated rather than quietly omitted', async () => {
@@ -188,5 +178,12 @@ test('every rule declares an id and a title, and the ids are unique', () => {
   for (const rule of RULES) {
     assert.ok(rule.id && rule.title, 'a rule needs a name a person can search for');
     assert.equal(typeof rule.run, 'function');
+  }
+});
+
+test('the Service findings are gone with the Service screen', async () => {
+  const { findings } = await analysed();
+  for (const id of ['absence-to-missed-work', 'unbilled-occupancy', 'maintenance-load']) {
+    assert.ok(!findings.some((f) => f.ruleId === id), `${id} still runs`);
   }
 });

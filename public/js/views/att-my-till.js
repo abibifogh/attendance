@@ -203,7 +203,9 @@ export async function renderAttMyTill() {
           if (empty) { empty.po = one.po; empty.look = look; } else f.expenses.push({ po: one.po, look });
         }
         box.value = '';
-        toast(`${found.length} PO${found.length === 1 ? '' : 's'} added. ${found.filter((x) => x.counted).length} confirmed in Odoo.`);
+        const notYet = found.filter((x) => unapproved(x)).length;
+        toast(`${found.length} PO${found.length === 1 ? '' : 's'} added. ${found.filter((x) => x.counted).length} confirmed in Odoo.`
+          + (notYet ? ` ${notYet} not approved yet: get ${notYet === 1 ? 'it' : 'them'} approved first.` : ''), notYet ? 'bad' : undefined);
       } catch (err) { toast(err.message, 'bad'); }
       ev.target.disabled = false;
       save();
@@ -212,6 +214,12 @@ export async function renderAttMyTill() {
     return h('div.till-many',
       field('Several POs at once', box),
       h('button.btn-sm', { type: 'button', onclick: add }, 'Add and find all'));
+  }
+
+  /** Why a PO found in Odoo cannot be used yet, or null when it can. */
+  function unapproved(L) {
+    if (!L?.name || L.counted || ['claimed', 'missing', 'unchecked', 'confirmed'].includes(L.state)) return null;
+    return ({ draft: 'still a request for quotation', sent: 'still a request for quotation', 'to approve': 'waiting for approval', cancel: 'cancelled' })[L.state] || 'not approved';
   }
 
   function expenseRow(e, i) {
@@ -227,6 +235,10 @@ export async function renderAttMyTill() {
           : h('div.till-po.bad', h('strong', 'Already claimed'), ` on ${SLOT[L.claimed?.slot] || ''} ${L.claimed?.day ? dayText(L.claimed.day) : ''}${L.claimed?.by ? ` by ${L.claimed.by}` : ''}. A PO is paid from the drawer once. Not counted.`);
       } else if (L.state === 'missing') {
         result = h('div.till-po.bad', h('strong', e.po), ' is not in Odoo. Check the number. Not counted.');
+      } else if (unapproved(L)) {
+        result = h('div.till-po.bad',
+          h('strong', `${L.name} · ${L.vendor || ''}`), ` is not approved in Odoo (${unapproved(L)}).`,
+          h('div', h('strong', 'Get it approved first'), ', then press Find in Odoo again. You cannot close your shift with it until then. If it should not be here, remove it.'));
       } else {
         result = h('div.till-po.warn', h('strong', `${L.name} · ${L.vendor || ''}`), ` is ${L.state} in Odoo, not confirmed. It counts once it is confirmed.`);
       }
@@ -255,7 +267,11 @@ export async function renderAttMyTill() {
             paint();
           },
         }, 'Find in Odoo'),
-        f.expenses.length > 1 ? h('button.btn-sm', { type: 'button', onclick: () => { f.expenses.splice(i, 1); save(); paint(); } }, 'Remove') : null),
+        // The last row is emptied rather than taken away, so there is always one to type in.
+        f.expenses.length > 1 || String(e.po).trim() ? h('button.btn-sm', {
+          type: 'button',
+          onclick: () => { if (f.expenses.length > 1) f.expenses.splice(i, 1); else { e.po = ''; e.look = null; } save(); paint(); },
+        }, 'Remove') : null),
       result);
   }
 
@@ -267,6 +283,8 @@ export async function renderAttMyTill() {
     if (f.toSafe === null) out.push('whether cash went to the safe');
     else if (f.toSafe && f.envelopes.some((e) => !/^\d+$/.test(e.no) || !(toMinor(e.amount) > 0))) out.push('each envelope number and amount');
     if (f.expenses.some((e) => String(e.po).trim() && !e.look)) out.push('"Find in Odoo" on each PO');
+    const waiting = f.expenses.filter((e) => String(e.po).trim() && unapproved(e.look)).map((e) => e.look.name);
+    if (waiting.length) out.push(`${waiting.join(', ')} approved in Odoo first`);
     for (const r of data.setup.rentals) {
       const v = f.rentals[r.id] || {};
       if (!/^\d+$/.test(String(v.start ?? '').trim()) || !/^\d+$/.test(String(v.end ?? '').trim())) out.push(`the ${r.label.toLowerCase()} count`);

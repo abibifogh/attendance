@@ -71,11 +71,11 @@ const ROUTES = [
   ['POST', '/api/money/articles', 'insight', (env, ctx) => revenue.saveArticle(env, ctx.body, ctx.account)],
   // The money to-do list: a supervisor's own, everything for an admin.
   ['GET', '/api/todo', 'shifts', (env, ctx) => todo.listTodos(env, ctx.account, { closed: ctx.query.closed === '1' })],
-  // Read the laundry system now, up to today, for everybody with a to-do list.
+  // Read the laundry system now, the admin's number of days up to today, for everybody with a to-do list.
   ['POST', '/api/todo/laundry', 'shifts', async (env, ctx) => {
     const role = till.roleOf(ctx.account);
     if (role !== 'admin' && role !== 'supervisor') throw new HttpError(403, 'Only admins and supervisors can do that.');
-    const out = await reloadLaundry(env);
+    const out = await reloadLaundry(env, { days: await todo.laundryDaysOf(env) });
     if (!out.ok) throw new HttpError(409, out.error);
     return out;
   }],
@@ -98,7 +98,6 @@ const ROUTES = [
   ['GET', '/api/cash', 'insight', (env, ctx) => panels.cash(env, ctx.query)],
   ['GET', '/api/suppliers', 'insight', (env, ctx) => panels.suppliers(env, ctx.query)],
   ['GET', '/api/books', 'insight', (env, ctx) => panels.books(env, ctx.query)],
-  ['GET', '/api/service', 'insight', (env, ctx) => panels.service(env, ctx.query)],
   ['GET', '/api/findings', 'insight', (env, ctx) => panels.findings(env, ctx.query)],
   ['POST', '/api/findings/:id', 'insight', (env, ctx) => admin.decideFinding(env, ctx.params.id, ctx.body)],
   ['GET', '/api/export', 'insight', exportCsv],

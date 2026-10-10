@@ -35,6 +35,17 @@ export function lookbackDays(settings = {}) {
   return settings.todo_lookback_days !== undefined && settings.todo_lookback_days !== '' && Number.isFinite(set)
     ? Math.min(LOOKBACK_MAX, Math.max(LOOKBACK_MIN, Math.round(set))) : PO_LOOKBACK_DAYS;
 }
+/** How many days Check laundry now reads, up to today, unless an admin sets otherwise. */
+export const LAUNDRY_DAYS = 3;
+const LAUNDRY_MAX = 60;
+export function laundryDays(settings = {}) {
+  const set = Number(settings.laundry_check_days);
+  return settings.laundry_check_days !== undefined && settings.laundry_check_days !== '' && Number.isFinite(set)
+    ? Math.min(LAUNDRY_MAX, Math.max(1, Math.round(set))) : LAUNDRY_DAYS;
+}
+export async function laundryDaysOf(env) {
+  return laundryDays(await getSettings(env.DB).catch(() => ({})));
+}
 const now = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 const who = (account) => account?.name || account?.email || 'Owner';
 const parse = (text) => { try { return JSON.parse(text || '{}'); } catch { return {}; } };
@@ -193,6 +204,7 @@ export async function listTodos(env, account, { closed = false } = {}) {
     supervisors: admin ? (await supervisors(env)).map((s) => ({ id: s.id, name: s.name || s.email, load: Number(s.load) || 0 })) : [],
     unbilledDays: settings.todo_unbilled_days !== undefined && settings.todo_unbilled_days !== '' ? Number(settings.todo_unbilled_days) : DEFAULT_DAYS,
     lookbackDays: lookbackDays(settings),
+    laundryDays: laundryDays(settings),
   };
 }
 
@@ -284,7 +296,8 @@ export async function dismissTodo(env, id, body, account) {
 
 /**
  * An admin sets how many days a PO may go without a posted bill before it is
- * raised, and how far back POs are looked for. Either may be left out. A
+ * raised, how far back POs are looked for, and how many days Check laundry
+ * now reads. Any may be left out. A
  * changed look-back needs Odoo asked again (`lookbackChanged`), which the
  * route does.
  */
@@ -294,6 +307,11 @@ export async function saveTodoSettings(env, body, account, { today } = {}) {
     const days = Math.round(Number(body.unbilledDays));
     if (!Number.isFinite(days) || days < 0 || days > 90) throw badRequest('Give a number of days from 0 to 90.');
     await setSetting(env.DB, 'todo_unbilled_days', String(days));
+  }
+  if (body?.laundryDays !== undefined) {
+    const n = Math.round(Number(body.laundryDays));
+    if (!Number.isFinite(n) || n < 1 || n > LAUNDRY_MAX) throw badRequest(`Read the laundry for 1 to ${LAUNDRY_MAX} days.`);
+    await setSetting(env.DB, 'laundry_check_days', String(n));
   }
   let lookbackChanged = false;
   if (body?.lookbackDays !== undefined) {

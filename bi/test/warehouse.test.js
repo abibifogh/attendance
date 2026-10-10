@@ -440,3 +440,24 @@ test('reading the laundry alone replaces only its own rows, up to today', async 
   const runRow = raw.prepare("SELECT trigger, to_day, status FROM etl_run ORDER BY id DESC LIMIT 1").get();
   assert.deepEqual([runRow.trigger, runRow.to_day, runRow.status], ['laundry', '2026-06-15', 'ok']);
 });
+
+test('reading the laundry with no key says what to set, in words', async () => {
+  const { reloadLaundry } = await import('../src/warehouse/etl.js');
+  const { raw, env } = await loaded();
+  raw.exec("UPDATE settings SET value = '0' WHERE key = 'demo_mode'");
+  raw.exec(`UPDATE sources SET enabled = 1, config = '{"base":"https://laundry.example"}' WHERE kind = 'snlaundry_http'`);
+  const runs = raw.prepare('SELECT COUNT(*) AS n FROM etl_run').get().n;
+  const out = await reloadLaundry({ ...env, LAUNDRY_TOKEN: undefined }, { from: '2026-06-13', to: '2026-06-15' });
+  assert.equal(out.ok, false);
+  assert.match(out.error, /no key for the laundry system/);
+  assert.match(out.error, /INSIGHT_LAUNDRY_TOKEN/);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM etl_run').get().n, runs, 'nothing was run');
+});
+
+test('reading the laundry for a number of days reads that many, up to the day asked', async () => {
+  const { reloadLaundry } = await import('../src/warehouse/etl.js');
+  const { env } = await loaded();
+  const out = await reloadLaundry(env, { to: '2026-06-15', days: 7 });
+  assert.equal(out.ok, true);
+  assert.deepEqual([out.from, out.to], ['2026-06-09', '2026-06-15']);
+});

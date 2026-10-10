@@ -1,6 +1,6 @@
 import { all, first, run, writeAll, groupConfig } from '../lib/db.js';
 import { daysBetween, dow, dowLabel, isoWeek, month, todayIn, addDays } from '../lib/dates.js';
-import { listSources, pullSource } from '../connectors/index.js';
+import { listSources, pullSource, readiness, secretNameFor } from '../connectors/index.js';
 import { lineForDepartment } from '../connectors/attendance.js';
 import { Register } from './identity.js';
 import { minor } from '../lib/money.js';
@@ -511,15 +511,22 @@ async function rollUpLabour(db, from, to, config) {
  * reading again. Recorded as a run of its own, which is how the shift screen
  * knows how far the laundry has been read.
  */
-export async function reloadLaundry(env, { from, to } = {}) {
+export async function reloadLaundry(env, { from, to, days = 3 } = {}) {
   const db = env.DB;
   const config = await groupConfig(db);
   const today = todayIn(config.timezone);
   const toDay = to || today;
-  const fromDay = from || addDays(toDay, -2);
+  const fromDay = from || addDays(toDay, -(Math.max(1, Number(days) || 3) - 1));
   const source = (await listSources(db)).find((s) => s.kind === 'snlaundry_http' && s.enabled)
     || (await listSources(db)).find((s) => s.kind === 'snlaundry_http');
   if (!source) return { ok: false, error: 'The laundry system is not set up in Insight.' };
+  // Without its key the laundry is never read, at night either: say what to set, not the variable's name.
+  if (!config.demoMode && !readiness(source, env).ready) {
+    const why = !source.config?.base ? 'Insight has no address for the laundry system. Put it in under Setup → The four systems.'
+      : !source.enabled ? 'The laundry system is switched off under Setup → The four systems.'
+        : `Insight has no key for the laundry system, so it cannot read it, now or at night. Add the repository secret INSIGHT_${secretNameFor(source)} and run "Set Insight's secrets".`;
+    return { ok: false, error: why };
+  }
 
   const started = await db.prepare('INSERT INTO etl_run (from_day, to_day, trigger) VALUES (?1, ?2, ?3) RETURNING id')
     .bind(fromDay, toDay, 'laundry').first();
