@@ -114,16 +114,53 @@ header.top {
 header.top .brand { font-weight: 650; letter-spacing: -0.01em; }
 header.top .spacer { flex: 1; }
 
-nav.tabs { display: flex; gap: .15rem; overflow-x: auto; padding: 0 .6rem;
-  background: var(--surface); border-bottom: 1px solid var(--border);
-  position: sticky; top: 3.1rem; z-index: 19; }
-nav.tabs button {
-  border: 0; background: none; font: inherit; color: var(--ink-2);
-  padding: .55rem .7rem; cursor: pointer; white-space: nowrap;
-  border-bottom: 2px solid transparent;
+/* The screens: four group menus beside the name, or plain links for few. */
+nav.navgroups { display: flex; align-items: center; gap: .15rem; flex-wrap: wrap; }
+nav.navgroups .navlink, details.navmenu > summary {
+  border: 0; background: none; font: inherit; color: var(--ink-2); font-size: .95rem;
+  padding: .45rem .75rem; border-radius: 8px; cursor: pointer; white-space: nowrap; list-style: none;
 }
-nav.tabs button:hover { color: var(--ink); }
-nav.tabs button[aria-current='page'] { color: var(--ink); border-bottom-color: var(--series-1); font-weight: 600; }
+details.navmenu > summary::-webkit-details-marker { display: none; }
+nav.navgroups details.navmenu > summary::after { content: ' ▾'; color: var(--muted); font-size: .8em; }
+nav.navgroups .navlink:hover, details.navmenu > summary:hover { color: var(--ink); background: var(--surface-2); }
+nav.navgroups .navlink[aria-current='page'], details.navmenu.on > summary, details.navmenu[open] > summary {
+  color: var(--ink); background: var(--surface-2); font-weight: 600;
+}
+details.navmenu { position: relative; }
+.navpanel {
+  position: absolute; left: 0; top: calc(100% + .35rem); z-index: 40; min-width: 12rem;
+  display: grid; gap: 2px; padding: .35rem; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); box-shadow: 0 8px 28px rgba(0, 0, 0, .16);
+}
+.navpanel button {
+  text-align: left; border: 0; background: none; font: inherit; color: var(--ink-2);
+  padding: .5rem .7rem; border-radius: 8px; cursor: pointer;
+}
+.navpanel button:hover, .navpanel button:focus-visible { background: var(--surface-2); color: var(--ink); outline: none; }
+.navpanel button[aria-current='page'] { color: var(--ink); font-weight: 600; background: var(--surface-2); }
+.navwhere { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+.navwhere b { color: var(--ink); font-weight: 600; }
+/* the account: a name with a letter, holding the theme and Sign out */
+details.navmenu.account > summary {
+  display: inline-flex; align-items: center; gap: .45rem; padding: .25rem .65rem .25rem .25rem;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+}
+details.navmenu.account > summary::after { content: ' ▾'; color: var(--muted); font-size: .8em; }
+.navav { width: 1.75rem; height: 1.75rem; border-radius: 50%; display: inline-grid; place-items: center; background: var(--series-1); color: #fff; font-weight: 700; font-size: .8rem; }
+details.navmenu.account .navpanel { left: auto; right: 0; }
+/* Narrower: the menus take their own row under the name, the window and the account. */
+@media (max-width: 1100px) {
+  .navwhere { display: none; }
+}
+@media (max-width: 860px) {
+  nav.navgroups { order: 5; width: 100%; margin: -.3rem -.4rem 0; }
+  .navname { display: none; }
+  details.navmenu.account > summary { padding-right: .5rem; }
+}
+@media (max-width: 480px) {
+  nav.navgroups { flex-wrap: nowrap; gap: 0; }
+  nav.navgroups .navlink, nav.navgroups details.navmenu > summary { padding: .45rem .5rem; font-size: .9rem; }
+}
 
 main { padding: 1.1rem; max-width: 1180px; margin: 0 auto; }
 
@@ -411,7 +448,7 @@ button.btn.wide { width: 100%; padding: .55rem; font-size: .95rem; margin-top: .
      Rather than guess at a taller offset, neither sticks: on a phone the
      screens are read by scrolling, and a bar that covers the first card is
      worse than one that scrolls away. */
-  header.top, nav.tabs { position: static; }
+  header.top { position: static; }
 }
 
 /* ------------------------------------------------------------- the window --
