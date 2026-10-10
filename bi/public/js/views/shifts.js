@@ -1223,7 +1223,7 @@ export async function renderShifts(root, { range }) {
     const fromSheet = (n.expenses || 0) - moves.reduce((t, m) => t + m.amount, 0);
     if (fromSheet > 0) moves.push({ label: 'From the expense sheet (unlabelled cash)', amount: fromSheet });
     const confirmed = (o) => o.state === 'purchase' || o.state === 'done';
-    const po = (o) => `${o.name} · ${o.vendor || ''} · ${confirmed(o) ? 'confirmed' : o.state}`;
+    const po = (o) => `${o.name} · ${o.vendor || ''} · ${confirmed(o) ? 'confirmed' : o.state}${o.fromReport ? ' · on the closing report' : ''}`;
     const orders = (exp.odoo?.orders || []).map((o) => ({ ...o, amount: o.total }));
     const { pairs, spare } = pairUp(moves, orders);
     const rows = [
