@@ -540,3 +540,21 @@ test('a report filed on the shift beside the one ASSD has its writer on is point
   await assert.rejects(till.moveReport(env, { reportId: afternoon.nearby.id, day: '2026-08-01', slot: 'afternoon' }, SUPERVISOR), /not been shared|look at this/);
   await assert.rejects(till.moveReport(env, { reportId: afternoon.nearby.id, day: '2026-08-01', slot: 'evening' }, OWNER), /Which shift/);
 });
+
+test('a shift card shows the POs from its closing report, not "no PO numbers yet"', async () => {
+  const { env } = await setUp();
+  const view = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+  const afternoon = view.days.flatMap((d) => d.shifts).find((s) => s.slot === 'afternoon');
+  assert.ok(afternoon.expense, 'the closing report gives it an expense block');
+  assert.deepEqual(afternoon.expense.odoo.orders.map((o) => [o.name, o.total, o.fromReport]), [['P00412', 3000, true]]);
+  assert.equal(afternoon.expense.odooTotal, 3000);
+  assert.deepEqual(afternoon.expense.fromReport, ['P00412']);
+  assert.equal(afternoon.expense.poNumbers, null, 'nothing is written into what is typed here');
+  // A PO typed here as well is not shown twice.
+  await routes.saveExpense(env, { day: '2026-08-01', slot: 'afternoon', sheetTotal: '50', poNumbers: 'P00412' }, OWNER);
+  await env.DB.prepare("UPDATE shift_expense SET odoo = ?1 WHERE day = '2026-08-01' AND slot = 'afternoon'")
+    .bind(JSON.stringify({ orders: [{ name: 'P00412', vendor: 'A Supplier', total: 3000, state: 'purchase' }], unknown: [] })).run();
+  const again = (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).days.flatMap((d) => d.shifts).find((s) => s.slot === 'afternoon');
+  assert.deepEqual(again.expense.odoo.orders.map((o) => o.name), ['P00412']);
+  assert.deepEqual(again.expense.fromReport, []);
+});

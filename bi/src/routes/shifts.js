@@ -527,6 +527,18 @@ export async function shifts(env, query, account) {
 
   const countOf = new Map(counts.map((c) => [`${c.day}|${c.slot}`, c]));
   const expenseOf = new Map(expenses.map((e) => [`${e.day}|${e.slot}`, e]));
+  // The POs on each shift's closing report in HIVE, already checked against
+  // Odoo when it was signed. Shown with any typed here, so a shift whose
+  // person gave their POs does not read as having none.
+  const reportPos = new Map();
+  if (env.ATT_DB) {
+    const rows = await all(env.ATT_DB, 'SELECT po, day, slot, total, vendor, state FROM till_po WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => []);
+    for (const r of rows) {
+      const key = `${r.day}|${r.slot}`;
+      if (!reportPos.has(key)) reportPos.set(key, []);
+      reportPos.get(key).push({ name: r.po, vendor: r.vendor || '', total: Number(r.total) || 0, state: r.state || 'purchase', fromReport: true });
+    }
+  }
 
   // The register, in slot order. ASSD counts the drawer at every hand-over:
   // a shift's first Money Count is its opening and its last is its closing.
@@ -711,6 +723,9 @@ export async function shifts(env, query, account) {
     const expense = expenseOf.get(`${s.day}|${s.slotName}`);
     let odoo = null;
     try { odoo = expense?.odoo ? JSON.parse(expense.odoo) : null; } catch { odoo = null; }
+    const fromReport = (reportPos.get(`${s.day}|${s.slotName}`) || [])
+      .filter((o) => !(odoo?.orders || []).some((x) => String(x.name).toUpperCase() === String(o.name).toUpperCase()));
+    if (fromReport.length) odoo = { ...(odoo || {}), orders: [...(odoo?.orders || []), ...fromReport] };
     const cardLines = s.lines.filter((l) => l.amount > 0);
     const found = cardLines.filter((l) => l.events.length);
     byDay.get(s.day)?.push({
@@ -727,9 +742,11 @@ export async function shifts(env, query, account) {
       cardFound: found.length, cardLines: cardLines.length,
       cardFoundAmount: found.reduce((t, l) => t + l.amount, 0),
       register: register.get(s.index),
-      expense: expense ? {
-        sheetTotal: expense.sheet_total, poNumbers: expense.po_numbers, odoo, pulledAt: expense.pulled_at,
+      expense: expense || fromReport.length ? {
+        sheetTotal: expense?.sheet_total ?? null, poNumbers: expense?.po_numbers ?? null, odoo, pulledAt: expense?.pulled_at ?? null,
         odooTotal: odoo?.orders?.reduce((t, o) => t + o.total, 0) ?? null,
+        // Which of the POs came with the closing report rather than typed here.
+        fromReport: fromReport.map((o) => o.name),
       } : null,
       exceptions: exceptions.filter((x) => x.day === s.day && x.slot === s.slotName).length,
     });
