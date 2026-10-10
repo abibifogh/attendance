@@ -789,7 +789,7 @@ async function tell(ctx, person, { kind, title, body, mail }) {
     actor: 'HIVE',
     userId: person.user_id,
     push: true,
-    email: false,
+    email: true,
     mail: typeof mail === 'function' ? safeMail(mail) : mail,
   }, ctx);
 }

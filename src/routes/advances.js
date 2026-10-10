@@ -1526,7 +1526,7 @@ export async function askAboutTheMonth(db, { timezone = 'UTC', now = null, ctx =
     actor: 'HIVE',
     audience: 'hr_pay',
     push: true,
-    email: false,
+    email: true,
     mail: safeMail(() => ({
       tone: 'warn', status: 'To do', eyebrow: 'Salary advances',
       headline: `Confirm ${sayMonth(month)}'s advance deductions`,
@@ -1612,7 +1612,7 @@ async function tell(ctx, person, { kind, title, body, mail }) {
     actor: 'HIVE',
     userId: person.user_id,
     push: true,
-    email: false,
+    email: true,
     mail: typeof mail === 'function' ? safeMail(mail) : mail,
   }, ctx);
 }

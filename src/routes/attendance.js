@@ -3584,7 +3584,7 @@ export async function decideAvailability(ctx) {
     // A buzz rather than an inbox. They are in the app — that is where they
     // sent the request from — and a property answering twenty of these a week
     // by email is twenty emails nobody reads.
-    email: false,
+    email: true,
     push: true,
     mail: mailOrNothing(() => {
       const timesOf = new Map(found.map((row) => [row.day, row]));

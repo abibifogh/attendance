@@ -724,7 +724,7 @@ export async function linkMove(ctx) {
   await createNotice(ctx.db, {
     kind: 'till.reopened', level: 'info', title: `Your closing report was moved to ${labelOf({ day, slot })}`,
     body: `${by} moved it from ${labelOf(report)}, the shift ASSD has you on. Nothing else in it changed.`,
-    link: '#/att-my-till', userId: report.user_id, push: false, email: false, text: false,
+    link: '#/att-my-till', userId: report.user_id, push: false, email: true, text: false,
     mail: safeMail(() => {
       const shift = (s) => [SLOT_LABEL[s.slot] ? `${SLOT_LABEL[s.slot]} shift` : null, sayShortDate(s.day)].filter(Boolean).join(', ');
       return {

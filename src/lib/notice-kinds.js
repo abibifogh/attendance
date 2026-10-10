@@ -66,7 +66,7 @@ export const KINDS = [
     label: 'A shift is going',
     who: 'The people who could cover it, or the ones it was put to by name',
     when: 'Somebody gives up a shift',
-    ways: ['push'],
+    ways: ['push', 'email'],
     note: 'Only the people who could actually take it. A shift offered to everybody is how '
       + 'a phone gets muted, and the muted phone then misses the rota going out.',
   },
@@ -76,7 +76,7 @@ export const KINDS = [
     label: 'Somebody has taken your shift',
     who: 'Whoever gave it up',
     when: 'A colleague takes a shift off the board',
-    ways: ['push'],
+    ways: ['push', 'email'],
   },
   {
     key: 'swap.waiting',
@@ -101,7 +101,7 @@ export const KINDS = [
     label: 'The HR FAQ has been updated',
     who: 'Everybody, when HR chooses to say so',
     when: 'HR presses "Tell staff" after changing answers',
-    ways: ['push'],
+    ways: ['push', 'email'],
   },
   {
     key: 'hr_faq.asked',
@@ -137,7 +137,7 @@ export const KINDS = [
     label: 'Your shift has started and nothing was recorded',
     who: 'The person whose shift it is',
     when: 'Every half hour after a shift starts, until they clock in',
-    ways: ['push'],
+    ways: ['push', 'email'],
   },
   {
     key: 'attendance.clock_out_due',
@@ -145,7 +145,7 @@ export const KINDS = [
     label: 'Your shift is ending',
     who: 'The person whose shift it is',
     when: 'A shift they clocked into is about to end',
-    ways: ['push'],
+    ways: ['push', 'email'],
   },
   {
     key: 'attendance.running_late',
@@ -312,7 +312,7 @@ export const KINDS = [
     label: 'What comes off your pay for an advance has changed',
     who: 'The person it is for',
     when: 'Payroll changes the terms or corrects a payment',
-    ways: ['push'],
+    ways: ['push', 'email'],
   },
   {
     key: 'advance.settled',
@@ -394,7 +394,7 @@ export const KINDS = [
     label: 'An interview has moved',
     who: 'Whoever is interviewing',
     when: 'A slot is moved to another time',
-    ways: ['push'],
+    ways: ['push', 'email'],
   },
   {
     key: 'recruitment.changed',
@@ -402,7 +402,7 @@ export const KINDS = [
     label: 'An interview has changed',
     who: 'Whoever is interviewing',
     when: 'A slot\u2019s place or length is changed',
-    ways: ['push'],
+    ways: ['push', 'email'],
   },
   {
     key: 'recruitment.cancelled',
@@ -453,7 +453,7 @@ export const KINDS = [
     label: 'Your lunch change was answered',
     who: 'Whoever asked',
     when: 'The kitchen says yes or no',
-    ways: ['push'],
+    ways: ['push', 'email'],
   },
 
   // The till: closing a front-desk shift, and settling what did not agree.
@@ -465,6 +465,14 @@ export const KINDS = [
     label: 'A shift has been closed',
     who: 'Whoever Insight says to tell',
     when: 'Somebody signs their closing report',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'till.close_due',
+    group: 'money',
+    label: 'Time to close your till',
+    who: 'Whoever is on a reception shift',
+    when: '20 minutes before a reception shift ends, and again 20 minutes after if the closing report is not in',
     ways: ['push', 'email'],
   },
   {
@@ -489,7 +497,7 @@ export const KINDS = [
     label: 'Something on your till list was settled or sent back',
     who: 'Whoever it was about',
     when: 'A supervisor or an admin decides',
-    ways: ['push'],
+    ways: ['push', 'email'],
   },
   {
     key: 'till.reopened',

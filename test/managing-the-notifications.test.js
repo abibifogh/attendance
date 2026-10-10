@@ -133,7 +133,8 @@ test('anything nobody has touched follows the app’s own default', () => {
   assert.equal(goesOut({ 'rota.published.mine': { push: 0 } }, 'rota.published.mine', 'email'), true);
 
   // A kind that has never gone out that way stays off until somebody says so.
-  assert.equal(goesOut({}, 'attendance.not_clocked_in', 'email'), false);
+  // Every kind emails by default now; texts cost money and stay off.
+  assert.equal(goesOut({}, 'attendance.not_clocked_in', 'email'), true);
   assert.equal(goesOut({}, 'attendance.not_clocked_in', 'text'), false);
 });
 
@@ -181,7 +182,8 @@ test('only a disagreement with the default is stored', () => {
   });
   assert.deepEqual(tidy, {
     'rota.published.mine': { email: 0 },
-    'attendance.not_clocked_in': { email: 1, text: 1 },
+    // Email is already its default, so only the text is a disagreement.
+    'attendance.not_clocked_in': { text: 1 },
   });
 });
 

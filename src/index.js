@@ -20,6 +20,7 @@ import * as handbook from './routes/handbook.js';
 import * as hrFaq from './routes/hr-faq.js';
 import * as authLock from './routes/auth-lock.js';
 import { watchShifts } from './lib/shift-watch.js';
+import { watchTills } from './lib/till-watch.js';
 import { watchTerminals } from './lib/terminal-watch.js';
 import { nightlyCopy } from './lib/backup.js';
 import * as birthday from './routes/birthdays.js';
@@ -936,6 +937,19 @@ export default {
       });
       if (watched.nudged) console.log(`Attendance: ${watched.nudged} told their shift has started`);
       if (watched.reminded) console.log(`Attendance: ${watched.reminded} reminded to clock out`);
+
+      // And the closing report at the front desk: twenty minutes before a
+      // reception shift ends, and again twenty minutes after if it is not in.
+      const tills = await watchTills(env.DB, {
+        timezone,
+        ctx: { env, executionContext },
+      }).catch((err) => {
+        console.error('Till watch failed', err);
+        return { before: 0, after: 0 };
+      });
+      if (tills.before || tills.after) {
+        console.log(`Till: ${tills.before} reminded before the end, ${tills.after} after`);
+      }
 
       // And whether the terminal is still being heard, which is the one fact
       // every other line on the attendance screens quietly depends on.

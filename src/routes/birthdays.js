@@ -160,7 +160,7 @@ export async function sendBirthdayCard(ctx) {
       actor: property || 'HIVE',
       userId: person.user_id,
       push: set.push,
-      email: false,
+      email: true,
       mail: {
         status: 'Happy birthday',
         tone: 'good',
@@ -193,7 +193,7 @@ export async function sendBirthdayCard(ctx) {
       // means everybody.
       audience: null,
       push: true,
-      email: false,
+      email: true,
       mail: {
         status: 'Birthday',
         tone: 'good',
@@ -266,7 +266,7 @@ export async function wishThem(db, { timezone = 'UTC', ctx = null } = {}) {
         actor: set.property || 'HIVE',
         userId: person.user_id,
         push: set.push,
-        email: false,
+        email: true,
         mail: {
           status: 'Happy birthday',
           tone: 'good',
@@ -298,7 +298,7 @@ export async function wishThem(db, { timezone = 'UTC', ctx = null } = {}) {
       actor: 'HIVE',
       audience: 'att_view',
       push: set.push,
-      email: false,
+      email: true,
       mail: {
         status: 'Birthday',
         tone: 'good',

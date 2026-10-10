@@ -301,7 +301,7 @@ export async function choose(ctx, token) {
     actor: candidate.name,
     audience: 'rec_view',
     push: true,
-    email: false,
+    email: true,
     mail: {
       status: claimed.released ? 'New time' : 'Booked',
       tone: 'info',
@@ -369,7 +369,7 @@ export async function release(ctx, token) {
     actor: candidate.name,
     audience: 'rec_view',
     push: true,
-    email: false,
+    email: true,
     mail: {
       status: 'Time free',
       tone: 'warn',

@@ -2,6 +2,10 @@ import { createNotice } from './notices.js';
 import { computeRange, loadDataset, scheduleFor, toMinutes } from './attendance.js';
 import { addDays, nowIn } from '../util/dates.js';
 import { sayDate, sayHours, sayTime } from './email-design.js';
+import { firstUsableEmail, isEmail } from './notify.js';
+
+/** The address on their staff record, where their login has none. */
+const recordEmail = (row) => (isEmail(String(row.login_email ?? '').trim()) ? null : firstUsableEmail(row.personal_email));
 
 /**
  * The two alerts that save a shift rather than reporting on one.
@@ -68,17 +72,23 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
   const minutesNow = toMinutes(clock) ?? 0;
   const yesterday = addDays(today, -1);
 
-  // Only people with a login of their own: a push has nowhere to go otherwise,
-  // and this is a message to the person rather than a report about them.
+  // Only people with a login of their own, since this is a message to the
+  // person rather than a report about them, and only those it can reach: a
+  // phone that takes alerts, or an email address on the login or the staff
+  // record. These email as well as buzz, so somebody with no alerts set up is
+  // still told.
   const linked = await db.prepare(
-    `SELECT u.id AS user_id, u.staff_id
+    `SELECT u.id AS user_id, u.staff_id, u.email AS login_email, hp.personal_email
        FROM users u
+       LEFT JOIN hr_profile hp ON hp.staff_id = u.staff_id
       WHERE u.active = 1 AND u.staff_id IS NOT NULL
-        AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)`,
+        AND (EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)
+             OR COALESCE(TRIM(u.email), '') <> ''
+             OR COALESCE(TRIM(hp.personal_email), '') <> '')`,
   ).all().catch(() => ({ results: [] }));
 
   const people = linked.results ?? [];
-  if (!people.length) return { checked: 0, nudged: 0, reminded: 0, reason: 'nobody subscribed' };
+  if (!people.length) return { checked: 0, nudged: 0, reminded: 0, reason: 'nobody to reach' };
 
   // Yesterday as well as today, for the shift that started at ten last night.
   // Its roster row is on the day it began, so at ten past midnight the only
@@ -154,8 +164,9 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
         day: found.day,
         actor: 'HIVE',
         userId: row.user_id,
+        emailTo: recordEmail(row),
         push: true,
-        email: false,
+        email: true,
         mail: {
           status: 'Reminder',
           tone: 'info',
@@ -205,9 +216,10 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
       actor: 'HIVE',
       // To them and nobody else. Their supervisor already has the morning list.
       userId: row.user_id,
+      emailTo: recordEmail(row),
       // A bell they will not see for hours is not the point of this one.
       push: true,
-      email: false,
+      email: true,
       mail: {
         status: 'Reminder',
         tone: 'warn',

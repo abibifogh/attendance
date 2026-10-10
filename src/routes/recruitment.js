@@ -1542,7 +1542,7 @@ async function tellPanel(ctx, slot, {
       actor: 'HIVE',
       userId: user.id,
       push: true,
-      email: false,
+      email: true,
       mail,
     }, ctx).catch(() => {});
     told += 1;
@@ -2553,7 +2553,7 @@ export async function hire(ctx, id) {
     actor: actorOf(ctx),
     audience: 'hr_manage',
     push: false,
-    email: false,
+    email: true,
     mail: {
       status: 'New starter',
       tone: 'good',

@@ -897,7 +897,7 @@ export async function decideLunchChange(ctx, id) {
     // eating on Thursday.
     audience: null,
     userId: theirLogin?.id ?? null,
-    email: false,
+    email: true,
     mail: decision === 'approved'
       ? {
         status: 'Agreed',
