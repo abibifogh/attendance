@@ -1,10 +1,10 @@
 import { all, first, run, writeAll } from '../lib/db.js';
 import { HttpError } from '../lib/http.js';
-import { dow, dowLabel, isoWeek, month } from '../lib/dates.js';
-import { cashPoDetails } from '../connectors/odoo.js';
+import { addDays, dow, dowLabel, isoWeek, month } from '../lib/dates.js';
+import { cashPoDetails, confirmedPoBills } from '../connectors/odoo.js';
 import { odooSource } from './safebook.js';
 import { requireAdmin, roleOf } from './till.js';
-import { syncTodos, todoCounts } from './todo.js';
+import { syncTodos, todoCounts, PO_LOOKBACK_DAYS } from './todo.js';
 
 /**
  * Spending paid in cash, against a PO.
@@ -113,6 +113,18 @@ export async function refreshCashPos(env, { fetchImpl, today } = {}) {
     r.inOdoo, r.billed, JSON.stringify(r.bills), JSON.stringify(r.lines), at, r.posted,
   )));
   const cost = await writeCashCost(env, rows);
+
+  // Every PO confirmed in Odoo lately, however it was paid: one with no posted
+  // bill is a to-do item too.
+  const since = addDays(today || new Date().toISOString().slice(0, 10), -PO_LOOKBACK_DAYS);
+  const recent = await confirmedPoBills({ ...source, since, ...(fetchImpl ? { fetchImpl } : {}) });
+  await run(env.DB, 'DELETE FROM odoo_po');
+  await writeAll(env.DB, recent.filter((o) => o.name).map((o) => env.DB.prepare(`INSERT INTO odoo_po
+    (po, vendor, total, state, ordered_on, billed, posted, drafts, checked_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+    ON CONFLICT (po) DO NOTHING`).bind(
+    o.name, o.vendor, o.total, o.state, o.orderedOn, o.billed ? 1 : 0, o.posted ? 1 : 0, JSON.stringify(o.drafts), at,
+  )));
+
   const todos = await syncTodos(env, { today });
   return { ok: true, pos: rows.length, billed: rows.filter((r) => r.billed).length, unbilled: cost.pos, unbilledAmount: cost.amount, unknown, todos };
 }
@@ -237,9 +249,12 @@ export async function cashView(env, { from, to }) {
     differs: pos.filter((p) => p.inOdoo && p.poTotal != null && p.poTotal !== p.paid)
       .map((p) => ({ po: p.po, vendor: p.vendor, paidFrom: p.paidFrom, paidDay: p.paidDay, paid: p.paid, poTotal: p.poTotal, source: p.source })),
     notInOdoo: pos.filter((p) => !p.inOdoo).map((p) => ({ po: p.po, paidFrom: p.paidFrom, paidDay: p.paidDay, paid: p.paid, source: p.source })),
-    noPo: bills.filter((b) => !b.from_order && (b.total || 0) > 0)
-      .map((b) => ({ id: b.external_id, day: b.day, supplier: b.supplier, ref: b.vendor_ref, total: b.total }))
-      .sort((a, b) => b.total - a.total),
+    // POs ordered in these days, not paid in cash, with no posted bill in Odoo.
+    noBill: await all(env.DB, `SELECT po, vendor, total, ordered_on, billed FROM odoo_po
+        WHERE posted = 0 AND total > 0 AND ordered_on BETWEEN ?1 AND ?2 AND po NOT IN (SELECT po FROM cash_po)
+        ORDER BY ordered_on`, from, to)
+      .then((rows) => rows.map((r) => ({ po: r.po, vendor: r.vendor, total: r.total, orderedOn: r.ordered_on, draft: Boolean(r.billed) })))
+      .catch(() => []),
     todo: await todoCounts(env),
   };
 }

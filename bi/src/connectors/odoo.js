@@ -474,3 +474,34 @@ export async function cashPoDetails({ config: settings, token, names, fetchImpl 
   const found = new Set(out.map((o) => o.name.toUpperCase()));
   return { orders: out, unknown: wanted.filter((n) => !found.has(n.toUpperCase())) };
 }
+
+/**
+ * Every purchase order confirmed in Odoo since a day, with its bills: is one
+ * entered, is one posted, which are drafts. Two read-only `search_read`s.
+ */
+export async function confirmedPoBills({ config: settings, token, since, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const orders = await searchRead(config, 'purchase.order',
+    [['date_order', '>=', `${since} 00:00:00`], ['state', 'in', ['purchase', 'done']]],
+    ['id', 'name', 'partner_id', 'amount_total', 'state', 'date_order', 'invoice_ids'], { fetchImpl });
+  const billIds = [...new Set(orders.flatMap((o) => (Array.isArray(o.invoice_ids) ? o.invoice_ids : [])))];
+  const bills = [];
+  for (let i = 0; i < billIds.length; i += 200) {
+    // eslint-disable-next-line no-await-in-loop
+    bills.push(...await searchRead(config, 'account.move', [['id', 'in', billIds.slice(i, i + 200)]], ['id', 'name', 'state'], { fetchImpl }));
+  }
+  const billById = new Map(bills.map((b) => [b.id, b]));
+  return orders.map((o) => {
+    const own = (Array.isArray(o.invoice_ids) ? o.invoice_ids : []).map((id) => billById.get(id)).filter(Boolean);
+    return {
+      name: String(o.name || ''),
+      vendor: refName(o.partner_id),
+      total: toMinor(o.amount_total),
+      state: String(o.state || ''),
+      orderedOn: o.date_order ? String(o.date_order).slice(0, 10) : null,
+      billed: own.some((b) => b.state !== 'cancel'),
+      posted: own.some((b) => b.state === 'posted'),
+      drafts: own.filter((b) => b.state === 'draft').map((b) => String(b.name || '')),
+    };
+  });
+}

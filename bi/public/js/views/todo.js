@@ -6,7 +6,7 @@ import { banner } from './components.js';
  * The money to-do list, under Shifts.
  *
  * Cash POs Odoo has no bill for, payments that are not what their PO says,
- * and bills with no PO. Each is given to a supervisor; a supervisor sees their
+ * and POs Odoo has no posted bill for however they were paid. Each is given to a supervisor; a supervisor sees their
  * own, an admin sees everybody's and decides the answers.
  *
  * Laid out like an inbox: a short list to scan on the left, everything about
@@ -18,12 +18,12 @@ import { banner } from './components.js';
 const dayText = (day) => (day ? new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : '');
 const FROM = { drawer: 'the drawer', safe: 'the safe' };
 const fail = (said) => (err) => { said.textContent = err.message; said.className = 'small form-error'; };
-const KINDS = [['all', 'All'], ['unbilled', 'No posted bill'], ['differs', 'Paid ≠ PO'], ['nopo', 'Bill with no PO']];
+const KINDS = [['all', 'All'], ['unbilled', 'No posted bill'], ['differs', 'Paid ≠ PO']];
 const GROUPS = [['none', 'None'], ['supplier', 'Supplier'], ['supervisor', 'Supervisor'], ['shift', 'Shift'], ['age', 'Waiting']];
 const SLOT_NAME = { morning: 'morning', afternoon: 'afternoon', night: 'night' };
 
 /** The day the item counts from: the cash leaving, or the bill's date. */
-const dayOf = (t) => t.detail?.paidDay || t.detail?.day || t.day || String(t.openedAt || '').slice(0, 10);
+const dayOf = (t) => t.detail?.paidDay || t.detail?.orderedOn || t.detail?.day || t.day || String(t.openedAt || '').slice(0, 10);
 const ageOf = (t, today) => {
   const day = dayOf(t);
   if (!day) return 0;
@@ -37,11 +37,20 @@ function shiftOf(t) {
   const m = /(\d{4}-\d{2}-\d{2}) (morning|afternoon|night)/.exec(t.detail?.source || '');
   if (m) return { key: `${m[1]}|${m[2]}`, label: `${dayText(m[1])}, ${SLOT_NAME[m[2]]}` };
   if (t.detail?.paidFrom === 'safe') return { key: `safe|${t.detail.paidDay}`, label: `The safe, ${dayText(t.detail.paidDay)}` };
-  return { key: 'bill', label: 'Bills in Odoo (no shift)' };
+  return { key: 'nocash', label: 'Not paid from the drawer or the safe' };
 }
 
 function what(t) {
   const d = t.detail || {};
+  if (t.kind === 'unbilled' && !d.paidFrom) {
+    return [
+      h('p', `${d.po} from ${d.vendor || 'a supplier'}, ordered ${dayText(d.orderedOn)} for ${money(d.poTotal)}, is confirmed in Odoo `
+        + (d.drafts?.length ? `with a draft bill (${d.drafts.join(', ')}) that is not posted yet.` : 'with no bill.')),
+      h('p.small.muted', d.drafts?.length
+        ? 'Get the bill checked and posted in Odoo. This item closes by itself once it is posted.'
+        : 'Get the supplier’s bill entered against this PO in Odoo (Create Bill on the PO) and posted. This item closes by itself once it is.'),
+    ];
+  }
   if (t.kind === 'unbilled') {
     return [
       h('p', `${money(d.paid)} paid from ${FROM[d.paidFrom] || d.paidFrom} on ${dayText(d.paidDay)}${d.source ? ` (${d.source})` : ''}. `
@@ -142,7 +151,7 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
     h('span.td-amt.num', money(t.kind === 'differs' ? Math.abs(t.amount) : t.amount)),
     h('span.td-sub', [
       t.state === 'answered' ? '⏳ waiting for an admin' : { unbilled: t.detail?.drafts?.length ? 'draft bill' : 'no bill', differs: 'paid ≠ PO', nopo: 'no PO' }[t.kind],
-      t.detail?.paidFrom ? (t.detail.paidFrom === 'safe' ? 'safe' : 'drawer') : null,
+      t.detail?.paidFrom ? (t.detail.paidFrom === 'safe' ? 'safe' : 'drawer') : (t.kind === 'unbilled' ? 'ordered' : null),
       admin ? (t.assignee?.name || 'nobody') : null,
     ].filter(Boolean).join(' · ')),
     h(`span.td-age.${ageTone(t.age)}`, `${t.age} d`));
@@ -216,7 +225,9 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
         h('div.td-facts',
           t.kind === 'nopo'
             ? [fact('Bill dated', dayText(d2.day)), fact('Their number', d2.ref || '–')]
-            : [fact('Paid from', FROM[d2.paidFrom] || d2.paidFrom || '–'), fact('On', dayText(d2.paidDay))],
+            : d2.paidFrom
+              ? [fact('Paid from', FROM[d2.paidFrom] || d2.paidFrom), fact('On', dayText(d2.paidDay))]
+              : [fact('Ordered', dayText(d2.orderedOn)), fact('Paid', 'not from the drawer or safe')],
           fact('Waiting', `${t.age} days`, `.td-age.${ageTone(t.age)}`),
           fact('With', t.assignee?.name || 'Nobody yet')),
         what(t),

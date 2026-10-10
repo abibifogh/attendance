@@ -46,8 +46,11 @@ function odoo() {
     orders: [
       { id: 1, name: 'P00412', partner_id: [1, 'A Produce Seller'], amount_total: 30, state: 'purchase', date_order: '2026-08-01 09:00:00', invoice_ids: [] },
       { id: 2, name: 'P00433', partner_id: [2, 'A Gas Seller'], amount_total: 20, state: 'purchase', date_order: '2026-08-02 09:00:00', invoice_ids: [] },
+      // Not paid in cash: one never billed, one billed and posted.
+      { id: 4, name: 'P02408', partner_id: [4, 'A Meat Supplier'], amount_total: 75, state: 'purchase', date_order: '2026-08-05 09:00:00', invoice_ids: [] },
+      { id: 5, name: 'P02409', partner_id: [4, 'A Meat Supplier'], amount_total: 60, state: 'done', date_order: '2026-08-05 10:00:00', invoice_ids: [950] },
     ],
-    bills: [],
+    bills: [{ id: 950, name: 'BILL/2026/0950', state: 'posted', invoice_date: '2026-08-06' }],
     lines: [
       { order_id: [1, 'P00412'], price_total: 30, analytic_distribution: { 3: 100 } },
       { order_id: [2, 'P00433'], price_total: 20, analytic_distribution: false },
@@ -134,12 +137,17 @@ test('cash POs: unbilled spending counted until the bill comes, how it was paid,
   const view = await cashpo.cashView(env, { from: '2026-08-01', to: '2026-08-31' });
   assert.deepEqual(view.split, { spend: 10500, bills: 5000, unbilled: 5500, drawer: 3000, safe: 2500, other: 5000 });
   assert.deepEqual(view.differs.map((d) => [d.po, d.paid, d.poTotal]), [['P00433', 2500, 2000]]);
-  assert.deepEqual(view.noPo.map((b) => b.supplier), ['A Plumber']);
+  assert.deepEqual(view.noBill.map((b) => [b.po, b.total]), [['P02408', 7500]], 'a PO not paid in cash with no bill; the billed one is not listed');
   assert.equal(view.suppliers.find((s) => s.supplier === 'A Plumber').other, 5000);
 
-  // The to-do: two unbilled, one that differs, one bill with no PO, shared two and two.
+  // The to-do: three POs with no bill (two paid in cash, one not), one that
+  // differs, shared two and two. A bill with no PO is no longer raised.
   let all = await todo.listTodos(env, OWNER);
-  assert.deepEqual(all.items.map((t) => t.key).sort(), ['differs:P00433', 'nopo:77', 'unbilled:P00412', 'unbilled:P00433']);
+  assert.deepEqual(all.items.map((t) => t.key).sort(), ['differs:P00433', 'unbilled:P00412', 'unbilled:P00433', 'unbilled:P02408']);
+  const ordered = all.items.find((t) => t.key === 'unbilled:P02408');
+  assert.equal(ordered.day, '2026-08-05', 'counted from the day it was ordered');
+  assert.equal(ordered.amount, 7500);
+  assert.equal(ordered.detail.paidFrom, null);
   const load = {};
   for (const t of all.items) load[t.assignee.name] = (load[t.assignee.name] || 0) + 1;
   assert.deepEqual(load, { 'Abena Sup': 2, 'Yaw Sup': 2 });
@@ -174,11 +182,18 @@ test('cash POs: unbilled spending counted until the bill comes, how it was paid,
 
   // An admin can give an item to somebody else, and close one that needs nothing.
   all = await todo.listTodos(env, OWNER);
-  const nopo = all.items.find((t) => t.kind === 'nopo');
-  await todo.assignTodo(env, nopo.id, { accountId: 21 }, OWNER);
-  await todo.dismissTodo(env, nopo.id, { note: 'Monthly service contract' }, OWNER);
+  await todo.assignTodo(env, ordered.id, { accountId: 21 }, OWNER);
+  await todo.dismissTodo(env, ordered.id, { note: 'Supplier never invoices; paid by transfer' }, OWNER);
   await cashpo.refreshCashPos(env, { fetchImpl, today });
-  assert.equal((await todo.listTodos(env, OWNER)).items.find((t) => t.kind === 'nopo'), undefined, 'a dismissed item does not come back');
+  assert.equal((await todo.listTodos(env, OWNER)).items.find((t) => t.key === 'unbilled:P02408'), undefined, 'a dismissed item does not come back');
+
+  // A PO not paid in cash clears itself when its bill is posted, like any other.
+  state.orders[2].invoice_ids = [951];
+  state.bills.push({ id: 951, name: 'BILL/2026/0951', state: 'posted', invoice_date: '2026-08-21' });
+  const view2 = await cashpo.cashView(env, { from: '2026-08-01', to: '2026-08-31' });
+  assert.equal(view2.noBill.length, 1, 'until Odoo is asked again');
+  await cashpo.refreshCashPos(env, { fetchImpl, today });
+  assert.equal((await cashpo.cashView(env, { from: '2026-08-01', to: '2026-08-31' })).noBill.length, 0);
 });
 
 test('a cash PO not billed waits the days set before it is raised', async () => {
@@ -237,7 +252,7 @@ test('a PO typed on a shift and never looked up is still chased, and a draft bil
   assert.ok(view.unbilled.find((u) => u.po === 'P02433' && u.draft));
 
   // Posted: closed.
-  state.bills[0].state = 'posted';
+  state.bills.find((b) => b.id === 901).state = 'posted';
   await cashpo.refreshCashPos(env, { fetchImpl, today: '2026-08-20' });
   item = (await todo.listTodos(env, OWNER, { closed: true })).items.find((t) => t.key === 'unbilled:P02433');
   assert.equal(item.closedWhy, 'The bill is posted in Odoo.');

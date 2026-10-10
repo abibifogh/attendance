@@ -101,8 +101,8 @@ function chaseCard(d) {
         h('h3', 'Paid is not what the PO says', h('b.num', String(d.differs.length))),
         list(d.differs, (r) => [h('b', r.po), ` paid ${money(r.paid)}, PO ${money(r.poTotal)} · ${FROM[r.paidFrom] || r.paidFrom}, ${dayText(r.paidDay)}`])),
       h('section',
-        h('h3', 'Bills with no PO', h('b.num', money(d.noPo.reduce((a, r) => a + r.total, 0)))),
-        list(d.noPo, (r) => [h('b', r.supplier || 'A supplier'), ` ${money(r.total)} · ${dayText(r.day)}`]))),
+        h('h3', 'Other POs with no posted bill', h('b.num', money(d.noBill.reduce((a, r) => a + r.total, 0)))),
+        list(d.noBill, (r) => [h('b', r.po), ` ${r.vendor || ''} · ${money(r.total)} · ordered ${dayText(r.orderedOn)}${r.draft ? ' · draft bill' : ''}`]))),
     d.notInOdoo.length ? banner('warning', `${d.notInOdoo.length} PO${d.notInOdoo.length === 1 ? '' : 's'} paid in cash ${d.notInOdoo.length === 1 ? 'is' : 'are'} not in Odoo at all: `,
       d.notInOdoo.map((r) => `${r.po} (${FROM[r.paidFrom] || r.paidFrom}, ${dayText(r.paidDay)})`).join(', '), '. A typing mistake, or a PO deleted in Odoo.') : null);
 }
