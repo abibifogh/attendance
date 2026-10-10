@@ -169,6 +169,16 @@ export async function myTill(ctx) {
 
 // ----------------------------------------------------------------- the POs --
 
+/**
+ * A PO Odoo has but nobody has approved: a request for quotation, one waiting
+ * for approval, or a cancelled one. It cannot be used to close a shift.
+ */
+const NOT_APPROVED = { draft: 'still a request for quotation', sent: 'still a request for quotation', 'to approve': 'waiting for approval', cancel: 'cancelled' };
+export function notApproved(found) {
+  if (!found?.name || found.counted || ['claimed', 'missing', 'unchecked', 'confirmed'].includes(found.state)) return null;
+  return NOT_APPROVED[found.state] || 'not approved';
+}
+
 /** Whether a PO is in Odoo, confirmed, and not already claimed here. */
 async function checkPo(ctx, typed) {
   const answer = await insight(ctx.env, '/api/link/till/po', { names: [typed] });
@@ -301,6 +311,14 @@ export async function closeShift(ctx) {
       po, paid: Number(found.total) || 0, name: found.name, state: found.state, vendor: found.vendor ?? null, total: found.total ?? null,
       counted: found.counted, claimed: found.claimed ?? null,
     });
+  }
+
+  // An unapproved PO is not spending anybody agreed to: get it approved first.
+  const unapproved = expenses.filter((x) => notApproved(x));
+  if (unapproved.length) {
+    const list = unapproved.map((x) => `${x.name} (${notApproved(x)})`).join(', ');
+    throw badRequest(`${unapproved.length === 1 ? 'This PO is' : 'These POs are'} not approved in Odoo: ${list}. `
+      + 'Get it approved first, then close your shift. Or remove it from the report.');
   }
 
   await reauthenticate(ctx, body);

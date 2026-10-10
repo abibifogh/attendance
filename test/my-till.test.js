@@ -148,19 +148,24 @@ test('closing a shift: checked, signed, stored and told', async () => {
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift, { rentals: {} }) })), /Padlocks at the start/);
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good({ day: '2020-01-01', slot: 'morning' }) })), /cannot be closed from here/);
 
-  const sent = await (await closeShift(ctx(db, AMA, { env, body: good(shift, { expenses: [{ po: '412', paid: '1' }, { po: '420', paid: '65' }] }) }))).json();
+  // A PO nobody has approved cannot close a shift: get it approved first.
+  await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift, { expenses: [{ po: '412', paid: '1' }, { po: '420', paid: '65' }] }) })),
+    /This PO is not approved in Odoo: P00420 \(still a request for quotation\)\. Get it approved first/);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM till_report').get().n, 0, 'nothing was stored');
+
+  const sent = await (await closeShift(ctx(db, AMA, { env, body: good(shift, { expenses: [{ po: '412', paid: '1' }] }) }))).json();
   assert.equal(sent.ok, true);
   const row = raw.prepare('SELECT * FROM till_report').get();
   assert.deepEqual([row.cash, row.to_safe, row.user_id, row.device], [108350, 1, 7, 'pc']);
   assert.deepEqual(JSON.parse(row.envelopes), [{ no: '417', amount: 150000 }]);
   const lines = JSON.parse(row.expenses);
-  assert.deepEqual(lines.map((e) => [e.name, e.counted, e.state]), [['P00412', true, 'confirmed'], ['P00420', false, 'draft']]);
+  assert.deepEqual(lines.map((e) => [e.name, e.counted, e.state]), [['P00412', true, 'confirmed']]);
   assert.deepEqual(raw.prepare('SELECT po, paid, total FROM till_po').all().map((r) => ({ ...r })), [{ po: 'P00412', paid: 44000, total: 44000 }]);
 
   // The boss was told, with the amounts, because Insight said so.
   const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'till.closed'").get();
   assert.equal(notice.user_id, 3);
-  assert.match(notice.body, /Drawer GH₵ 1,083.50 · safe GH₵ 1,500.00 in envelope 417 · GH₵ 65.00 of expenses with no confirmed PO · hair dryer not at the desk \(Room 12\) · padlocks 6 → 5\./);
+  assert.match(notice.body, /Drawer GH₵ 1,083.50 · safe GH₵ 1,500.00 in envelope 417 · hair dryer not at the desk \(Room 12\) · padlocks 6 → 5\./);
 
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift) })), /already closed that shift/);
 
