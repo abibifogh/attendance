@@ -56,6 +56,17 @@ const ROUTES = [
   { path: 'setup', label: 'Setup', render: renderSetup, needs: 'owner' },
 ];
 
+/**
+ * The screens in four groups, each a menu in the header. Fifteen links in a
+ * row was a second bar of its own; four words fit beside the name.
+ */
+const NAV_GROUPS = [
+  ['Today', ['hub', 'brief', 'findings']],
+  ['Money', ['money', 'yardstick', 'cash', 'books', 'buying']],
+  ['Operations', ['shifts', 'upload', 'labour', 'guests', 'service']],
+  ['Admin', ['accounts', 'reports', 'setup']],
+];
+
 /** Everything on the reports side needs the reports grant. */
 for (const route of ROUTES) if (!route.needs) route.needs = 'insight';
 
@@ -131,22 +142,69 @@ async function renderApp() {
   // used to sit beside the name would now be the same sentence twice.
   const picker = rangePicker();
 
-  const tabs = h('nav.tabs', visible.map((route) => h('button', {
-    onclick: () => go(route.path),
-    dataset: { path: route.path },
-  }, route.label)));
+  // Somebody with a handful of screens (a supervisor, an uploader) gets them
+  // as plain links; menus are for sorting many, not for hiding two.
+  const links = new Map();
+  const groupOf = new Map();
+  const menus = [];
+  const link = (route, spec) => {
+    const b = h(spec, { type: 'button', onclick: () => { closeMenus(); go(route.path); }, dataset: { path: route.path } }, route.label);
+    links.set(route.path, b);
+    return b;
+  };
+  const grouped = NAV_GROUPS.map(([name, paths]) => [name, visible.filter((r) => paths.includes(r.path))]).filter(([, rs]) => rs.length);
+  const loose = visible.filter((r) => !NAV_GROUPS.some(([, paths]) => paths.includes(r.path)));
+  const flat = visible.length <= 5;
+  const nav = h('nav.navgroups', { 'aria-label': 'Screens' },
+    flat ? visible.map((r) => link(r, 'button.navlink'))
+      : [...grouped.map(([name, rs]) => {
+        if (rs.length === 1) return link(rs[0], 'button.navlink');
+        const menu = h('details.navmenu', h('summary', name), h('div.navpanel', rs.map((r) => link(r, 'button'))));
+        for (const r of rs) groupOf.set(r.path, [name, menu]);
+        menus.push(menu);
+        return menu;
+      }), ...loose.map((r) => link(r, 'button.navlink'))]);
+  // Where you are, said once beside the window: "Operations › Shifts".
+  const where = h('span.navwhere');
+
+  const account = h('details.navmenu.account',
+    h('summary', h('span.navav', (state.me.account?.name || '?').trim().charAt(0).toUpperCase()), h('span.navname', state.me.account?.name || 'Account')),
+    h('div.navpanel',
+      h('button', { type: 'button', onclick: () => { toggleTheme(); closeMenus(); } }, '◐ Light or dark'),
+      h('button', {
+        type: 'button', onclick: async () => { await api('/auth/logout', { method: 'POST' }); renderLogin(); },
+      }, 'Sign out')));
+  menus.push(account);
+
+  // One menu open at a time, closed by a click elsewhere or Escape.
+  for (const menu of menus) {
+    menu.addEventListener('toggle', () => {
+      if (!menu.open) return;
+      for (const other of menus) if (other !== menu) other.open = false;
+      menu.querySelector('.navpanel button')?.focus();
+    });
+  }
+  function closeMenus() { for (const menu of menus) menu.open = false; }
+  document.addEventListener('click', (event) => { if (!menus.some((m) => m.contains(event.target))) closeMenus(); });
+  document.addEventListener('keydown', (event) => {
+    const open = menus.find((m) => m.open);
+    if (!open) return;
+    if (event.key === 'Escape') { open.open = false; open.querySelector('summary').focus(); return; }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    const items = [...open.querySelectorAll('.navpanel button')];
+    const at = items.indexOf(document.activeElement);
+    items[(at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+    event.preventDefault();
+  });
 
   mount(root,
     h('header.top',
       h('span.brand', markGlyph(), boot.group.name, ' · Insight'),
+      nav,
       h('span.spacer'),
-      h('span.small.muted', state.me.account?.name || ''),
+      where,
       picker,
-      h('button.btn', { onclick: toggleTheme, title: 'Light or dark' }, '◐'),
-      h('button.btn', {
-        onclick: async () => { await api('/auth/logout', { method: 'POST' }); renderLogin(); },
-      }, 'Sign out')),
-    tabs,
+      account),
     h('main', view));
 
   state.reload = () => go(current());
@@ -170,10 +228,14 @@ async function renderApp() {
       ? `#/${route.path}?from=${state.range.from}&to=${state.range.to}`
       : `#/${route.path}`;
     if (location.hash !== want) location.hash = want;
-    for (const button of tabs.children) {
-      if (button.dataset.path === route.path) button.setAttribute('aria-current', 'page');
+    for (const [path, button] of links) {
+      if (path === route.path) button.setAttribute('aria-current', 'page');
       else button.removeAttribute('aria-current');
     }
+    for (const menu of menus) menu.classList.toggle('on', groupOf.get(route.path)?.[1] === menu);
+    const [group] = groupOf.get(route.path) || [];
+    where.textContent = group ? `${group} › ` : '';
+    if (group) where.append(h('b', route.label));
     // The window means nothing on the hub or the accounts screen, so neither
     // the label nor the picker appears there.
     const windowed = route.needs === 'insight' || route.needs === 'shifts';
