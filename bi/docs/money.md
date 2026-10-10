@@ -51,8 +51,15 @@ time Odoo is asked:
 
 | Item | Raised when | Clears itself when |
 | --- | --- | --- |
-| PO with no posted bill in Odoo | a PO confirmed in Odoo still has no posted bill 7 days (an admin can change this) after the cash left the drawer or the safe, or, for any other PO confirmed in the last 90 days, after it was ordered; a draft bill is named on the item | the bill is posted in Odoo |
+| PO with no posted bill in Odoo | a PO confirmed in Odoo still has no posted bill 7 days after the cash left the drawer or the safe, or, for any other PO ordered in the last 90 days, after it was ordered; a draft bill is named on the item | the bill is posted in Odoo |
 | Paid is not what the PO says | what left the cash differs from the PO's total | the two agree |
+
+Both numbers are an admin's, at the foot of the To-do list: **Raise a PO with
+no posted bill after [7] days … looking back over POs of the last [90] days**
+(7 to 730). A changed look-back asks Odoo again when saved; a shorter one closes
+the items for POs ordered before it ("Ordered before the N-day look-back"), and
+a longer one brings them back. POs paid in cash are chased whatever the
+look-back.
 
 Bills with no PO are no longer raised; the items they had raised were closed.
 The Money page's **To chase** card lists the POs not paid in cash with no

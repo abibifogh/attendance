@@ -272,7 +272,8 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
         } catch (err) { fail(checkSaid)(err); check.disabled = false; }
       },
     }, 'Check Odoo now');
-    const days = h('input', { type: 'number', min: '0', max: '90', value: String(d.unbilledDays), style: 'width:4.5rem', 'aria-label': 'Days before a cash PO with no bill is raised' });
+    const days = h('input', { type: 'number', min: '0', max: '90', value: String(d.unbilledDays), style: 'width:4.5rem', 'aria-label': 'Days a PO may go without a posted bill' });
+    const back = h('input', { type: 'number', min: '7', max: '730', value: String(d.lookbackDays ?? 90), style: 'width:5rem', 'aria-label': 'How many days back to look for POs' });
     const setSaid = h('span.small');
     const find = h('input', {
       type: 'search', placeholder: 'Find a PO or supplier', 'aria-label': 'Find a PO or supplier', value: view.find,
@@ -308,10 +309,17 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
       h('div.td-split',
         h('div.card.td-left', bulk, list),
         detail),
-      admin ? h('p.small.muted.td-days', 'Raise a cash PO with no posted bill after ', days, ' days ',
+      admin ? h('p.small.muted.td-days',
+        'Raise a PO with no posted bill after ', days, ' days (from the day the cash left, or the day it was ordered), looking back over POs of the last ', back, ' days ',
         h('button.btn', {
           type: 'button',
-          onclick: async () => { try { await api('/todo/settings', { method: 'POST', body: { unbilledDays: days.value } }); await re('Saved.'); } catch (err) { fail(setSaid)(err); } },
+          onclick: async (e) => {
+            e.target.disabled = true; setSaid.textContent = 'Saving…'; setSaid.className = 'small';
+            try {
+              const out = await api('/todo/settings', { method: 'POST', body: { unbilledDays: days.value, lookbackDays: back.value } });
+              await re(out.checked ? (out.checked.ok ? 'Saved, and Odoo asked again for the new look-back.' : `Saved. Odoo could not be asked: ${out.checked.error}`) : 'Saved.');
+            } catch (err) { fail(setSaid)(err); e.target.disabled = false; }
+          },
         }, 'Save'), setSaid) : null);
     list.scrollTop = scrolled;
   }
