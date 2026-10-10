@@ -20,6 +20,7 @@ import * as todo from './routes/todo.js';
 import { verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
 import { loadFacts } from './insight/facts.js';
+import { reloadLaundry } from './warehouse/etl.js';
 import { groupConfig } from './lib/db.js';
 import { resolveRange } from './lib/dates.js';
 
@@ -70,6 +71,14 @@ const ROUTES = [
   ['POST', '/api/money/articles', 'insight', (env, ctx) => revenue.saveArticle(env, ctx.body, ctx.account)],
   // The money to-do list: a supervisor's own, everything for an admin.
   ['GET', '/api/todo', 'shifts', (env, ctx) => todo.listTodos(env, ctx.account, { closed: ctx.query.closed === '1' })],
+  // Read the laundry system now, up to today, for everybody with a to-do list.
+  ['POST', '/api/todo/laundry', 'shifts', async (env, ctx) => {
+    const role = till.roleOf(ctx.account);
+    if (role !== 'admin' && role !== 'supervisor') throw new HttpError(403, 'Only admins and supervisors can do that.');
+    const out = await reloadLaundry(env);
+    if (!out.ok) throw new HttpError(409, out.error);
+    return out;
+  }],
   ['POST', '/api/todo/check', 'shifts', (env, ctx) => cashpo.refreshNow(env, ctx.account, { fromTodo: true })],
   ['POST', '/api/todo/assign', 'shifts', (env, ctx) => todo.assignMany(env, ctx.body, ctx.account)],
   // A longer or shorter look-back is a different set of POs: Odoo is asked again.

@@ -1056,3 +1056,4 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .td-groupby select { font: inherit; font-size: .85rem; padding: .3rem .5rem; border-radius: 8px; border: 1px solid var(--sh-line); background: var(--surface); color: var(--ink); }
 .sh .tl-near { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; margin-top: .4rem; font-size: .82rem; color: var(--ink-2); }
 .sh .tl-warn { color: var(--sh-warn-ink); }
+.sh-todo-buttons { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; }

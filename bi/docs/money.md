@@ -77,6 +77,10 @@ posted bill beside the cash ones.
   PO or supplier, and **Group by** (a dropdown) supplier, supervisor (admins
   only), shift or how long it has waited (over 3 weeks, 2 to 3, 1 to 2, under a week); each group folds to
   one line with its count, total and oldest, and can be ticked as a whole.
+- **Check laundry now**, beside it, reads the laundry system alone for the last
+  three days up to today, so a finished shift's laundry is compared without
+  waiting for the nightly run (which stops at yesterday). Only the laundry
+  system's own figures are replaced.
 - **Check Odoo now** at the top of the list asks Odoo again for everybody who
   has a list, supervisors included, so a bill posted a minute ago clears its
   item straight away. It does the same as the button on the Money page.
