@@ -725,6 +725,46 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh-filters button i { width: 9px; height: 9px; border-radius: 50%; }
 .sh-filters button[aria-pressed='true'] { background: var(--ink); color: var(--plane); border-color: var(--ink); }
 .sh-exgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .8rem; }
+/* the Exceptions inbox: pairs first, then a list and the one open */
+.sh-exhead .sh-progress { gap: .8rem 1.2rem; }
+.sh-exkind { min-width: 0; max-width: 100%; flex: 0 1 auto; }
+.sh-exkind select { width: 100%; font: inherit; font-size: .88rem; padding: .4rem .6rem; border-radius: 8px; border: 1px solid var(--sh-line); background: var(--surface); color: var(--ink); max-width: 100%; }
+.sh .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.sh-pairs { border-color: color-mix(in srgb, var(--series-1) 40%, var(--border)); }
+.sh-pairs .sh-cardhead { margin-bottom: .4rem; }
+.sh-pair { display: grid; grid-template-columns: minmax(0, 1fr) 2rem minmax(0, 1fr) auto; align-items: center; gap: .6rem; padding: .65rem 0; border-top: 1px solid var(--border); font-size: .9rem; }
+.sh-pair span { color: var(--ink-2); }
+.sh-pairarrow { text-align: center; color: var(--series-1) !important; font-size: 1.1rem; }
+.sh-inbox { display: grid; grid-template-columns: minmax(0, 23rem) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.sh-exlist {
+  display: grid; gap: 2px; padding: .35rem; max-height: 70vh; overflow-y: auto; position: sticky; top: 4.5rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.sh-exrow {
+  display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: .65rem; align-items: center; text-align: left;
+  font: inherit; color: var(--ink); border: 0; background: none; border-radius: 9px; padding: .55rem .65rem; cursor: pointer;
+}
+.sh-exrow:hover { background: var(--surface-2); }
+.sh-exrow[aria-current='true'] { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--series-1); }
+.sh-exrow i { width: 8px; height: 8px; border-radius: 50%; }
+.sh-exrow .t { display: grid; min-width: 0; }
+.sh-exrow .t b { font-size: .88rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-exrow .t small { color: var(--muted); font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-exrow > b { font-size: .86rem; }
+.sh-exrow.done, .sh-exrow.info { opacity: .6; }
+.sh-exdetail { display: grid; gap: .6rem; min-width: 0; }
+.sh-exnav { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; }
+.sh-exnav .small { margin-right: auto; color: var(--ink-2); }
+.sh-exdetail > .small { margin: 0; }
+@media (max-width: 760px) {
+  .sh-inbox { grid-template-columns: minmax(0, 1fr); }
+  .sh-exlist { position: static; max-height: 18rem; }
+  .sh-pair { grid-template-columns: minmax(0, 1fr) auto; }
+  .sh-pairarrow { display: none; }
+  .sh-pair > div:nth-of-type(2) { grid-column: 1; }
+  .sh-pair .btn { grid-column: 2; grid-row: 1 / span 2; }
+  .sh-exdetail > .small { display: none; }
+}
 .sh-ex { --tone: var(--sh-bad); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .9rem; display: grid; gap: .6rem; align-content: start; }
 .sh-ex.warn { --tone: var(--sh-warn); } .sh-ex.info { --tone: var(--sh-info); }
 .sh-ex .hd { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: .1rem .7rem; align-items: center; }

@@ -453,3 +453,11 @@ test('reading the laundry with no key says what to set, in words', async () => {
   assert.match(out.error, /INSIGHT_LAUNDRY_TOKEN/);
   assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM etl_run').get().n, runs, 'nothing was run');
 });
+
+test('reading the laundry for a number of days reads that many, up to the day asked', async () => {
+  const { reloadLaundry } = await import('../src/warehouse/etl.js');
+  const { env } = await loaded();
+  const out = await reloadLaundry(env, { to: '2026-06-15', days: 7 });
+  assert.equal(out.ok, true);
+  assert.deepEqual([out.from, out.to], ['2026-06-09', '2026-06-15']);
+});

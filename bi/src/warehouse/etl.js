@@ -511,12 +511,12 @@ async function rollUpLabour(db, from, to, config) {
  * reading again. Recorded as a run of its own, which is how the shift screen
  * knows how far the laundry has been read.
  */
-export async function reloadLaundry(env, { from, to } = {}) {
+export async function reloadLaundry(env, { from, to, days = 3 } = {}) {
   const db = env.DB;
   const config = await groupConfig(db);
   const today = todayIn(config.timezone);
   const toDay = to || today;
-  const fromDay = from || addDays(toDay, -2);
+  const fromDay = from || addDays(toDay, -(Math.max(1, Number(days) || 3) - 1));
   const source = (await listSources(db)).find((s) => s.kind === 'snlaundry_http' && s.enabled)
     || (await listSources(db)).find((s) => s.kind === 'snlaundry_http');
   if (!source) return { ok: false, error: 'The laundry system is not set up in Insight.' };

@@ -308,3 +308,14 @@ test('the look-back an admin sets decides which POs are chased, and Odoo is aske
   // The same again changes nothing, so Odoo need not be asked.
   assert.equal((await todo.saveTodoSettings(env, { lookbackDays: 60, unbilledDays: 7 }, OWNER, { today })).lookbackChanged, false);
 });
+
+test('an admin sets how many days Check laundry now reads', async () => {
+  const { env } = await setUp();
+  assert.equal((await todo.listTodos(env, OWNER)).laundryDays, 3, 'three days unless set');
+  await assert.rejects(todo.saveTodoSettings(env, { laundryDays: 0 }, OWNER), /1 to 60/);
+  await assert.rejects(todo.saveTodoSettings(env, { laundryDays: 61 }, OWNER), /1 to 60/);
+  await assert.rejects(todo.saveTodoSettings(env, { laundryDays: 10 }, SUP_A), /Only an admin/);
+  await todo.saveTodoSettings(env, { laundryDays: 14 }, OWNER);
+  assert.equal((await todo.listTodos(env, SUP_A)).laundryDays, 14);
+  assert.equal(await todo.laundryDaysOf(env), 14);
+});

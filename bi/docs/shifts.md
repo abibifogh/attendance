@@ -38,8 +38,14 @@ which; open it for what to do.
   was paid. Every card and MoMo payment placed on the clock. Where the cash
   went, with the Odoo purchase orders. Typing a recount or the expense
   sheet's total moves the picture at once; Save keeps it.
-- **Exceptions**: everything that does not agree, grouped and filterable.
-  One tap answers it, with an optional note.
+- **Exceptions**: everything that does not agree, as an inbox. At the top,
+  **Probably the same money** lists the pairs that are one payment seen twice
+  (see below), each with **Reconcile**, and **Reconcile all** when there are
+  several. Below, a short line per exception on the left (most serious and
+  newest first, "match found" where it has a likely pair) and the one picked,
+  in full, on the right, with **Previous** and **Next**. A dropdown shows one
+  kind at a time. One tap answers it, with an optional note, and the next one
+  opens; on a keyboard, 1 to 8 give the answers in order and J and K move.
 - **People**: each person's shifts, cash and cards, and net drawer variance.
 - **Files**: the three uploads (choose a file or drop it on its box), and a
   strip showing which days of the month each file covers.

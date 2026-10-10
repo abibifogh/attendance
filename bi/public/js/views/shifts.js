@@ -179,12 +179,31 @@ export async function renderShifts(root, { range }) {
   let currentId = store.get('shift', null);
   let filter = 'all';
   let showAnswered = false;
+  // The exception open on the right of the Exceptions inbox, and where it sat
+  // in the list, so answering one opens the one after it.
+  let exOpen = null;
+  let exAt = 0;
   // Exceptions ticked to reconcile together.
   const picked = new Set();
   // What is being typed and not yet saved, per shift: a recount, a sheet total.
   const drafts = {};
 
   const till = tillViews({ who, period: () => period, describeKey });
+
+  // The Exceptions inbox by keyboard: 1 to 8 answer the one open, J and K move.
+  document.addEventListener('keydown', (e) => {
+    if (section !== 'exceptions' || !view.isConnected || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+    const box = view.querySelector('.sh-exdetail');
+    if (!box) return;
+    if (/^[1-8]$/.test(e.key)) {
+      const b = box.querySelectorAll('.sh-answers button')[Number(e.key) - 1];
+      if (b) { e.preventDefault(); b.click(); }
+    } else if (e.key === 'j' || e.key === 'k') {
+      const b = box.querySelectorAll('.sh-exnav .btn')[e.key === 'j' ? 1 : 0];
+      if (b && !b.disabled) { e.preventDefault(); b.click(); }
+    }
+  });
 
   // Stays not fully paid. They depend on the moment, not on the days on
   // screen, so they are read once here and again whenever they are answered.
@@ -1708,33 +1727,124 @@ export async function renderShifts(root, { range }) {
           : h('div.sh-answers', note, ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said));
   }
 
+  /**
+   * Pairs that are probably the same money: one ASSD shows and never arrived,
+   * one arrived that ASSD does not show, same amount, within a week. Each
+   * exception is in one pair at most.
+   */
+  function likelyPairs() {
+    if (!may('bank', 2)) return [];
+    const used = new Set();
+    const out = [];
+    for (const x of data.exceptions) {
+      if (x.answer || x.proposed || x.severity === 'info' || used.has(x.key)) continue;
+      const o = relatedTo(x).find((r) => !used.has(r.key));
+      if (!o) continue;
+      used.add(x.key); used.add(o.key);
+      // The money that never arrived on the left, what arrived on the right.
+      out.push(flowOf(x) < 0 ? [x, o] : [o, x]);
+    }
+    return out;
+  }
+  const exLabel = (o) => `${o.user ? `${nameOf(o.user)}, ` : ''}${o.day ? dayText(o.day) : ''}${o.slot ? ` ${SLOT[o.slot].label.toLowerCase()}` : ''}`;
+
+  /**
+   * Exceptions as an inbox: the pairs that are probably the same money first,
+   * one click each; then a short line per exception on the left and the one
+   * picked, in full, on the right.
+   */
   function exceptionsView(v) {
     const all = data.exceptions;
     const need = all.filter((x) => x.severity !== 'info');
     const done = need.filter((x) => x.answer).length;
     const frac = need.length ? done / need.length : 1;
     const groups = data.groups.filter((g) => all.some((x) => x.group === g.id));
+    if (filter !== 'all' && !groups.some((g) => g.id === filter)) filter = 'all';
     const shown = all
       .filter((x) => filter === 'all' || x.group === filter)
       .filter((x) => showAnswered || !x.answer || x.severity === 'info')
       .sort((a, b) => (Boolean(a.answer) - Boolean(b.answer))
         || ['critical', 'warning', 'info'].indexOf(a.severity) - ['critical', 'warning', 'info'].indexOf(b.severity)
         || (a.day < b.day ? 1 : -1));
+    // Keep the open one; if it has gone (answered), open the one now in its place.
+    let at = shown.findIndex((x) => x.key === exOpen);
+    if (at < 0) at = Math.min(exAt, shown.length - 1);
+    const current = shown[at] || null;
+    exOpen = current?.key || null;
+    exAt = Math.max(0, at);
     const ring = svg('svg.sh-ring', { viewBox: '0 0 64 64', 'aria-hidden': 'true' },
       svg('circle', { cx: 32, cy: 32, r: 26, stroke: 'var(--surface-2)' }),
       svg('circle', { cx: 32, cy: 32, r: 26, stroke: 'var(--sh-good)', 'stroke-linecap': 'round', 'stroke-dasharray': `${163.4 * frac} 163.4`, transform: 'rotate(-90 32 32)' }));
+    const pairs = likelyPairs();
+    const open = (i) => {
+      exAt = i; exOpen = shown[i]?.key || null;
+      const list = v.querySelector('.sh-exlist');
+      const keep = list ? list.scrollTop : 0;
+      exceptionsView(v);
+      const again = v.querySelector('.sh-exlist');
+      if (again) again.scrollTop = keep;
+      again?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'nearest' });
+      if (window.matchMedia('(max-width: 760px)').matches) v.querySelector('.sh-exdetail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    const said = h('span.small');
+
     mount(v,
-      h('section.card',
+      h('section.card.sh-exhead',
         h('div.sh-progress', ring,
-          h('div', { style: 'flex:1;min-width:220px' },
-            h('h2', { style: 'margin:0' }, `${done} of ${need.length} answered`),
-            h('p.sh-sub', 'Everything that does not agree, grouped by what went wrong. Grey ones the rules explained by themselves: look them over, no answer needed.')),
-          done ? h('label.check', h('input', { type: 'checkbox', checked: showAnswered, onchange: (e) => { showAnswered = e.target.checked; paint(); } }), ` Show the ${done} answered`) : null),
-        h('div.sh-filters',
-          h('button', { type: 'button', 'aria-pressed': String(filter === 'all'), onclick: () => { filter = 'all'; paint(); } }, 'All ', h('b', String(all.length))),
-          groups.map((g) => h('button', { type: 'button', 'aria-pressed': String(filter === g.id), onclick: () => { filter = g.id; paint(); } },
-            h('i', { style: `background:${SEVERITY_COLOUR[g.severity]}` }), g.title.split(/[:—]/)[0].trim(), ' ', h('b', String(all.filter((x) => x.group === g.id).length)))))),
-      shown.length ? h('div.sh-exgrid', shown.map(exceptionCard))
+          h('h2', { style: 'margin:0;flex:1' }, `${done} of ${need.length} answered`),
+          h('label.sh-exkind', h('span.sr', 'Show'),
+            h('select', { onchange: (e) => { filter = e.target.value; exAt = 0; exOpen = null; paint(); } },
+              h('option', { value: 'all', selected: filter === 'all' }, `All kinds (${all.length})`),
+              groups.map((g) => h('option', { value: g.id, selected: filter === g.id },
+                `${g.title.split(/[:—]/)[0].trim()} (${all.filter((x) => x.group === g.id).length})`)))),
+          done ? h('label.check', h('input', { type: 'checkbox', checked: showAnswered, onchange: (e) => { showAnswered = e.target.checked; paint(); } }), ` Show the ${done} answered`) : null)),
+      pairs.length ? h('section.card.sh-pairs',
+        h('div.sh-cardhead',
+          h('div', h('h2', `Probably the same money · ${pairs.length}`),
+            h('p.sh-sub', 'The same amount one way and the other, within a week. Reconciling answers both.')),
+          pairs.length > 1 ? h('button.btn', {
+            type: 'button',
+            onclick: async (e) => {
+              e.target.disabled = true;
+              said.textContent = 'Reconciling…';
+              try {
+                for (const [a, b] of pairs) {
+                  await api('/shifts/link', { method: 'POST', body: { keys: [a.key, b.key], note: `Same ${money(Math.abs(a.amount))}: ${exLabel(a)} and ${exLabel(b)}` } });
+                }
+                await load(banner('good', `${pairs.length} pairs reconciled.`));
+              } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+            },
+          }, `Reconcile all ${pairs.length}`) : null),
+        pairs.map(([a, b]) => h('div.sh-pair',
+          h('div', h('b.num', money(Math.abs(a.amount))), h('span', ` · ${(KIND[a.kind] || [a.kind])[0]} · ${exLabel(a)}`)),
+          h('span.sh-pairarrow', { 'aria-hidden': 'true' }, '↔'),
+          h('div', h('b.num', money(Math.abs(b.amount))), h('span', ` · ${(KIND[b.kind] || [b.kind])[0]} · ${exLabel(b)}`)),
+          h('button.btn.primary', {
+            type: 'button',
+            onclick: async (e) => {
+              e.target.disabled = true;
+              try { await reconcile([a.key, b.key], `Same ${money(Math.abs(a.amount))}: ${exLabel(a)} and ${exLabel(b)}`); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+            },
+          }, 'Reconcile'))),
+        said) : null,
+      shown.length ? h('div.sh-inbox',
+        h('div.sh-exlist', { role: 'listbox', 'aria-label': 'Exceptions' },
+          shown.map((x, i) => h('button.sh-exrow', {
+            type: 'button', role: 'option', 'aria-current': String(i === at), 'aria-selected': String(i === at),
+            class: x.answer ? 'done' : x.severity === 'info' ? 'info' : '',
+            onclick: () => open(i),
+          },
+          h('i', { style: `background:${SEVERITY_COLOUR[x.severity]}` }),
+          h('span.t', h('b', (KIND[x.kind] || [x.kind])[0]),
+            h('small', [exLabel(x), x.answer ? ' · answered' : x.proposed ? ' · waiting for an admin' : '', may('bank', 2) && !x.answer && relatedTo(x).length ? ' · match found' : ''].join(''))),
+          h('b.num', x.amount == null ? '' : money(Math.abs(x.amount)))))),
+        h('div.sh-exdetail',
+          h('div.sh-exnav',
+            h('span.small', `${at + 1} of ${shown.length}`),
+            h('button.btn', { type: 'button', disabled: at <= 0, onclick: () => open(at - 1) }, '‹ Previous'),
+            h('button.btn', { type: 'button', disabled: at >= shown.length - 1, onclick: () => open(at + 1) }, 'Next ›')),
+          current ? exceptionCard(current) : null,
+          h('p.small.muted', 'Keys 1 to 8 give the answers in order; J and K move down and up.')))
         : h('section.card', h('p', '✓ Nothing waiting here. Every card and MoMo payment and every drawer count in these days agrees, or has an answer.')),
       pickedBar());
   }
