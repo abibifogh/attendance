@@ -421,3 +421,22 @@ test('two accounting sources are both books, and do not displace each other', ()
   assert.equal(basis.rows.reduce((a, r) => a + r.amount, 0), 500);
   assert.equal(basis.excluded, 900);
 });
+
+test('reading the laundry alone replaces only its own rows, up to today', async () => {
+  const { reloadLaundry } = await import('../src/warehouse/etl.js');
+  const { raw, env } = await loaded();
+  const laundry = raw.prepare("SELECT id FROM sources WHERE kind = 'snlaundry_http'").get().id;
+  const others = () => raw.prepare('SELECT COUNT(*) AS n, SUM(net) AS net FROM fact_revenue WHERE source_id != ? AND day BETWEEN ? AND ?')
+    .get(laundry, '2026-06-13', '2026-06-15');
+  const before = others();
+  const out = await reloadLaundry(env, { from: '2026-06-13', to: '2026-06-15' });
+  assert.equal(out.ok, true);
+  assert.deepEqual(others(), before, 'no other system’s takings are touched');
+  const mine = raw.prepare('SELECT COUNT(*) AS n FROM fact_revenue WHERE source_id = ? AND day BETWEEN ? AND ?').get(laundry, '2026-06-13', '2026-06-15').n;
+  assert.ok(mine > 0, 'the laundry’s own takings are written back');
+  const twice = await reloadLaundry(env, { from: '2026-06-13', to: '2026-06-15' });
+  assert.equal(twice.ok, true);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM fact_revenue WHERE source_id = ? AND day BETWEEN ? AND ?').get(laundry, '2026-06-13', '2026-06-15').n, mine, 'read twice, written once');
+  const runRow = raw.prepare("SELECT trigger, to_day, status FROM etl_run ORDER BY id DESC LIMIT 1").get();
+  assert.deepEqual([runRow.trigger, runRow.to_day, runRow.status], ['laundry', '2026-06-15', 'ok']);
+});
