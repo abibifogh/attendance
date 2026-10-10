@@ -523,3 +523,20 @@ test('which waiting POs add up to a difference', async () => {
   assert.deepEqual(addingUpTo(list, 1), []);
   assert.deepEqual(addingUpTo(list, 0), []);
 });
+
+test('a report filed on the shift beside the one ASSD has its writer on is pointed out', async () => {
+  const { env, hive } = await setUp();
+  // Kofi closed late and the clock offered the night; ASSD has him (BRAVO) on
+  // the afternoon, and CHARLIE on the night.
+  hive.raw.exec("UPDATE till_report SET slot = 'night' WHERE user_id = 8");
+  await env.DB.prepare("INSERT INTO till_people (assd_user, hive_user_id) VALUES ('BRAVO', 8)").run();
+  const view = await till.overview(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER);
+  const afternoon = view.reports.find((r) => r.day === '2026-08-01' && r.slot === 'afternoon');
+  const night = view.reports.find((r) => r.day === '2026-08-01' && r.slot === 'night');
+  assert.equal(afternoon.report, null);
+  assert.deepEqual([afternoon.nearby?.slot, afternoon.nearby?.name], ['night', 'Kofi Test']);
+  assert.deepEqual(night.belongs, { day: '2026-08-01', slot: 'afternoon', assdUser: 'BRAVO' });
+  // Only an admin, or a supervisor allowed to reopen, may move it.
+  await assert.rejects(till.moveReport(env, { reportId: afternoon.nearby.id, day: '2026-08-01', slot: 'afternoon' }, SUPERVISOR), /not been shared|look at this/);
+  await assert.rejects(till.moveReport(env, { reportId: afternoon.nearby.id, day: '2026-08-01', slot: 'evening' }, OWNER), /Which shift/);
+});

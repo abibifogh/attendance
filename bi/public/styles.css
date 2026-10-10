@@ -1054,3 +1054,5 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .td-list.nobox .td-ghead .td-age { grid-column: 3; }
 .td-groupby { display: inline-flex; align-items: center; gap: .4rem; }
 .td-groupby select { font: inherit; font-size: .85rem; padding: .3rem .5rem; border-radius: 8px; border: 1px solid var(--sh-line); background: var(--surface); color: var(--ink); }
+.sh .tl-near { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; margin-top: .4rem; font-size: .82rem; color: var(--ink-2); }
+.sh .tl-warn { color: var(--sh-warn-ink); }

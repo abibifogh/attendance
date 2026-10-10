@@ -28,6 +28,7 @@ async function hiveCall(args) {
   }
 }
 const today = () => new Date().toISOString().slice(0, 10);
+const SLOT_ORDER = ['morning', 'afternoon', 'night'];
 const who = (account) => account?.name || account?.email || 'Owner';
 
 // ------------------------------------------------------------------ access --
@@ -336,6 +337,39 @@ export async function overview(env, query, account) {
   }
   reportRows.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : ['morning', 'afternoon', 'night'].indexOf(a.slot) - ['morning', 'afternoon', 'night'].indexOf(b.slot)));
 
+  // A shift ASSD has somebody on with no report, beside a report of theirs on
+  // the next or previous shift (one ASSD has somebody else on, or nobody):
+  // most likely one report on the wrong row, closed after eleven so the clock
+  // offered the night. Said on both rows, and an admin can move it.
+  const mapped = await people(env).catch(() => new Map());
+  const sameName = (assd, name) => {
+    const a = String(assd || '').trim().toLowerCase();
+    const n = String(name || '').trim().toLowerCase();
+    return Boolean(a && n && (n === a || n.split(/\s+/).includes(a) || n.startsWith(`${a} `)));
+  };
+  const neighbours = ({ day, slot }) => {
+    const i = SLOT_ORDER.indexOf(slot);
+    const before = i > 0 ? { day, slot: SLOT_ORDER[i - 1] } : { day: addDays(day, -1), slot: 'night' };
+    const after = i < 2 ? { day, slot: SLOT_ORDER[i + 1] } : { day: addDays(day, 1), slot: 'morning' };
+    return [before, after];
+  };
+  for (const row of reportRows) {
+    if (row.report || !row.inJournal) continue;
+    const owner = mapped.get(row.assdUser);
+    for (const n of neighbours(row)) {
+      // The same person on both shifts in ASSD is a double shift, not a slip.
+      const there = byShift.get(`${n.day}|${n.slot}`);
+      if (there && there.user === row.assdUser) continue;
+      const theirs = reports.find((r) => r.day === n.day && r.slot === n.slot
+        && (owner != null ? Number(r.userId) === Number(owner) : sameName(row.assdUser, r.name)));
+      if (!theirs) continue;
+      row.nearby = { id: theirs.id, day: n.day, slot: n.slot, name: theirs.name, signedAt: theirs.signedAt };
+      const other = reportRows.find((x) => x.day === n.day && x.slot === n.slot);
+      if (other) other.belongs = { day: row.day, slot: row.slot, assdUser: row.assdUser };
+      break;
+    }
+  }
+
   const list = issues.map((i) => ({
     ...i, name: nameOf.get(Number(i.userId)) || null, amount: money ? i.amount : Math.sign(i.amount),
   }));
@@ -490,6 +524,20 @@ export async function reopen(env, body, account, { fetchImpl } = {}) {
   return hiveCall({
     binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/till/reopen',
     body: { reportId: id, reason, by: who(account) },
+  });
+}
+
+/** Move a report onto the shift it belongs to, through HIVE. */
+export async function moveReport(env, body, account, { fetchImpl } = {}) {
+  await requireArea(env, account, 'reopen', 2);
+  const id = Number(body?.reportId);
+  if (!Number.isInteger(id)) throw badRequest('Which report?');
+  const day = String(body?.day || '');
+  const slot = String(body?.slot || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !SLOT_ORDER.includes(slot)) throw badRequest('Which shift?');
+  return hiveCall({
+    binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/till/move',
+    body: { reportId: id, day, slot, by: who(account) },
   });
 }
 

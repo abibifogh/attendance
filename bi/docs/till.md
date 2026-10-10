@@ -89,6 +89,22 @@ answers clear at once. Admins chosen under Who is told hear about each one.
 
 Supervisors never see the totals at the top of Shifts.
 
+## A report on the wrong shift
+
+A report is matched to its shift by day and shift. Somebody who closes after
+eleven at night is offered the night by the clock, so an afternoon closed late
+can land on the night row. Where ASSD has somebody on a shift with no report
+and that person's report is on the shift just before or after (one ASSD has
+somebody else on, or nobody), Closing reports says so on both rows, and an
+admin (or a supervisor allowed to reopen) can press **Move it to this shift**:
+the report and its POs move, and the person is told. A report cannot be moved
+onto a shift its writer already has a report for.
+
+The list is read again whenever the tab is opened (it is kept for half a
+minute at most), so a report sent from HIVE while Insight is open shows without
+a reload. "still open" on a row means the journal loaded stops inside that
+shift and no report is filed for it.
+
 ## The safe
 
 Shifts → **Safe** (admins only) is the safe book. A page runs from one count of

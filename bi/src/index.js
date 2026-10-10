@@ -137,6 +137,7 @@ const ROUTES = [
   ['GET', '/api/till', 'shifts', (env, ctx) => till.overview(env, ctx.query, ctx.account)],
   ['POST', '/api/till/resolve', 'shifts', (env, ctx) => till.resolve(env, ctx.body, ctx.account)],
   ['POST', '/api/till/reopen', 'shifts', (env, ctx) => till.reopen(env, ctx.body, ctx.account)],
+  ['POST', '/api/till/move', 'shifts', (env, ctx) => till.moveReport(env, ctx.body, ctx.account)],
   ['POST', '/api/till/approve', 'shifts', (env, ctx) => till.approve(env, ctx.body, ctx.account)],
   ['POST', '/api/till/settings', 'shifts', (env, ctx) => till.saveSettings(env, ctx.body, ctx.account)],
 
