@@ -1,6 +1,7 @@
 import { createNotice } from './notices.js';
 import { computeRange, loadDataset, scheduleFor, toMinutes } from './attendance.js';
 import { addDays, nowIn } from '../util/dates.js';
+import { sayDate, sayHours, sayTime } from './email-design.js';
 
 /**
  * The two alerts that save a shift rather than reporting on one.
@@ -155,6 +156,23 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
         userId: row.user_id,
         push: true,
         email: false,
+        mail: {
+          status: 'Reminder',
+          tone: 'info',
+          eyebrow: 'Clocking',
+          subject: `Your ${found.shift.name} shift ends at ${sayTime(found.shift.ends_at)}`,
+          preheader: 'Clock out at the terminal before you leave.',
+          headline: `Your shift ends at ${sayTime(found.shift.ends_at)}`,
+          sub: `${found.shift.name} shift · ${sayDate(found.day)}`,
+          facts: [
+            ['Clocked in', record?.first_in ? sayTime(record.first_in) : null],
+            ['Shift ends', sayTime(found.shift.ends_at)],
+          ],
+          note: 'Clock out at the terminal before you leave. A day with only one tap is held back '
+            + 'rather than counted, and somebody has to work out afterwards what time you went home.',
+          button: 'Open My day',
+          why: 'You get this because you are on the rota today.',
+        },
       }, ctx);
 
       reminded += 1;
@@ -190,6 +208,27 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
       // A bell they will not see for hours is not the point of this one.
       push: true,
       email: false,
+      mail: {
+        status: 'Reminder',
+        tone: 'warn',
+        eyebrow: 'Clocking',
+        subject: slot === 0
+          ? `Your ${found.shift.name} shift started at ${sayTime(found.shift.starts_at)}`
+          : `Still nothing recorded, ${describe(late)} into your ${found.shift.name} shift`,
+        preheader: 'Nothing has been recorded for you yet.',
+        headline: slot === 0
+          ? `Your ${found.shift.name} shift started at ${sayTime(found.shift.starts_at)}`
+          : `Still nothing recorded, ${describe(late)} into your ${found.shift.name} shift`,
+        sub: `${sayDate(found.day)} · nothing recorded yet`,
+        facts: [
+          ['Shift', `${found.shift.name}, ${sayHours(found.shift.starts_at, found.shift.ends_at)}`],
+          ['Now', `${describe(late)} in`, { tone: 'warn' }],
+        ],
+        note: 'If you are on your way, tell your manager so somebody can cover you in the meantime. '
+          + 'If you are here, clock in at the terminal now. Once you clock in this stops.',
+        button: 'Open My day',
+        why: 'You get this because you are on the rota today.',
+      },
     }, ctx);
 
     nudged += 1;

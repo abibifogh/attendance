@@ -7,6 +7,9 @@ import {
 } from '../lib/attendance.js';
 import { createNotice } from '../lib/notices.js';
 import {
+  firstName, sayHours, sayRange, sayShortDate, sayTime,
+} from '../lib/email-design.js';
+import {
   awayCap, dayFullMessage, daysBetween, daysTakenInDepartment, departmentTakenMessage,
   firstDayFull, firstDayTaken, whoIsAway,
 } from '../lib/away.js';
@@ -626,9 +629,43 @@ export async function askForLeave(ctx) {
     link: '#/att-leave',
     actor: staff.name,
     audience: 'att_manage',
+    mail: leaveAskedMail({
+      staff, reason, from, to, days, estimated: count.estimated, note: body.note,
+    }),
   }, ctx);
 
   return json({ ok: true, id: row?.id ?? null, days, estimated: count.estimated, status: 'pending' });
+}
+
+/** The email to whoever approves leave. */
+function leaveAskedMail({ staff, reason, from, to, days, estimated, note }) {
+  const kind = reason?.label || 'Leave';
+  const plural = days === 1 ? '' : 's';
+  const said = note ? String(note).slice(0, 500) : null;
+  return {
+    status: 'Needs your answer',
+    tone: 'warn',
+    eyebrow: 'Leave',
+    subject: days
+      ? `${staff.name} has asked for ${days} day${plural} of ${kind.toLowerCase()}`
+      : `${staff.name} has asked for ${kind.toLowerCase()}`,
+    preheader: `${sayRange(from, to)}.${said ? ` ${said}` : ''}`,
+    headline: `${staff.name} has asked for leave`,
+    sub: staff.department || null,
+    facts: [
+      ['Type', kind],
+      ['Dates', sayRange(from, to)],
+      ['Days', days
+        ? `${days}${estimated ? ', estimated' : ''}`
+        : 'None, they are all rest days or holidays', { strong: true }],
+    ],
+    quote: said ? { by: `${firstName(staff.name)} says`, text: said } : null,
+    note: estimated && days
+      ? 'The rota does not reach that far yet, so the day count is an estimate.'
+      : null,
+    button: 'Answer the request',
+    why: 'You get this because you approve leave.',
+  };
 }
 
 /** Take back a request nobody has decided yet. */
@@ -1086,9 +1123,37 @@ export async function setMyAvailability(ctx) {
     // email about every day anybody asked about, none of which was theirs
     // to reply to, which is how somebody learns to filter the sender.
     emailAudience: 'att_manage',
+    mail: availabilityMail({ staff, days, status, note, fromTime, toTime }),
   }, ctx);
 
   return json({ ok: true, asked: days.length, status, decision: 'waiting' });
+}
+
+/** The email to whoever answers a day somebody cannot, or wants to, work. */
+function availabilityMail({ staff, days, status, note, fromTime, toTime }) {
+  const sorted = [...days].sort();
+  const n = sorted.length;
+  const count = `${n} day${n === 1 ? '' : 's'}`;
+  const wants = status === 'preferred';
+  const hours = fromTime && toTime ? sayHours(fromTime, toTime) : 'Whole day';
+  const listed = sorted.slice(0, 3).map(sayShortDate).join(', ') + (n > 3 ? ` and ${n - 3} more` : '');
+  const headline = wants ? `${staff.name} would like to work ${count}` : `${staff.name} cannot work ${count}`;
+  return {
+    status: 'Needs your answer',
+    tone: 'warn',
+    eyebrow: 'Availability',
+    subject: headline,
+    preheader: `${listed}.${note ? ` ${note}` : ''}`,
+    headline,
+    sub: staff.department || null,
+    schedule: {
+      rows: sorted.map((day) => [sayShortDate(day), hours, wants ? 'Would like to work' : 'Cannot work']),
+    },
+    quote: note ? { by: `${firstName(staff.name)} says`, text: note } : null,
+    note: n > 1 ? 'You can agree some days and decline others.' : null,
+    button: 'Answer the request',
+    why: 'You get this because you answer requests about who can work which days.',
+  };
 }
 
 /**
@@ -1221,6 +1286,7 @@ export async function tellThemImLate(ctx) {
     // The whole point of the button. A message that waits for somebody to
     // open the app arrives after they have already noticed the empty station.
     push: true,
+    mail: runningLateMail({ staff, minutes, note, shift }),
   }, ctx);
 
   await ctx.db.prepare(
@@ -1231,6 +1297,35 @@ export async function tellThemImLate(ctx) {
   ).run().catch(() => {});
 
   return json({ ok: true, minutes, day: today });
+}
+
+/** The email to whoever watches today: who, how late, and why. */
+function runningLateMail({ staff, minutes, note, shift }) {
+  // When they should walk in: the shift start plus how late they said.
+  const start = shift?.starts_at ? toMinutes(shift.starts_at) : null;
+  let expected = null;
+  if (Number.isFinite(start)) {
+    const at = (start + minutes) % (24 * 60);
+    expected = `About ${sayTime(`${String(Math.floor(at / 60)).padStart(2, '0')}:${String(at % 60).padStart(2, '0')}`)}`;
+  }
+  return {
+    status: 'Running late',
+    tone: 'warn',
+    eyebrow: 'Today',
+    subject: `${staff.name} is running about ${minutes} minutes late`,
+    preheader: (shift ? `Down for ${shift.name} at ${sayTime(shift.starts_at)}. ` : 'Not on the rota today. ')
+      + (note || 'No reason given.'),
+    headline: `${staff.name} is running about ${minutes} minutes late`,
+    facts: [
+      ['Department', staff.department || null],
+      ['Shift', shift ? `${shift.name}, starts ${sayTime(shift.starts_at)}` : 'Not on the rota today'],
+      ['Expected', expected, { tone: 'warn' }],
+    ],
+    quote: note ? { by: `${firstName(staff.name)} says`, text: note } : null,
+    note: note ? null : 'No reason given.',
+    button: 'See today',
+    why: 'You get this because you look after today’s attendance.',
+  };
 }
 
 /**

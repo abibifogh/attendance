@@ -360,10 +360,41 @@ export async function publishChapter(ctx, id) {
       body: chapter.summary || 'It is in the handbook, under Handbook.',
       link: '#/handbook',
       audience: 'att_me',
+      mail: handbookMail(chapter, { version, fresh, again }),
     }, ctx);
   }
 
   return json({ ok: true, version, asked: fresh });
+}
+
+/** The email for a published chapter: what it is and what it asks. */
+function handbookMail(chapter, { version, fresh, again }) {
+  const sign = asksOf(chapter) === 'sign';
+  const title = chapter?.title ?? 'A handbook chapter';
+  const repeat = version > 1 && !fresh;
+  return {
+    status: sign ? 'Please sign' : 'Please read',
+    tone: 'info',
+    eyebrow: 'Handbook',
+    subject: sign ? `Please read and sign: ${title}` : `Please read and tick: ${title}`,
+    preheader: repeat
+      ? `${title} has been published again.`
+      : `A handbook chapter needs your ${sign ? 'signature' : 'tick'}.`,
+    headline: repeat
+      ? `${title} has been published again`
+      : `${title} needs your ${sign ? 'signature' : 'tick'}`,
+    intro: chapter?.summary || null,
+    facts: [
+      ['Chapter', title],
+      ['What it asks', sign ? 'Read it and sign' : 'Read it and tick it'],
+      ['Version', version <= 1 ? 'New chapter'
+        : again && !wouldBeANewVersion(chapter) ? `Version ${version}, asked again`
+          : repeat ? `Version ${version}, published again`
+            : `Version ${version}, the words have changed`],
+    ],
+    button: 'Read the chapter',
+    why: 'You get this because a handbook chapter was published that asks something of staff.',
+  };
 }
 
 /** Take it back off the screen, without deleting anything anybody signed. */

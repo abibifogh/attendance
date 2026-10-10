@@ -249,6 +249,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'attendance.leave_days',
+    group: 'leave',
+    label: 'Your leave now costs a different number of days',
+    who: 'Whoever asked',
+    when: 'The days charged for approved leave are changed',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'attendance.availability_asked',
     group: 'leave',
     label: 'Somebody cannot work a day',
@@ -299,6 +307,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'advance.changed',
+    group: 'money',
+    label: 'What comes off your pay for an advance has changed',
+    who: 'The person it is for',
+    when: 'Payroll changes the terms or corrects a payment',
+    ways: ['push'],
+  },
+  {
     key: 'advance.settled',
     group: 'money',
     label: 'Your advance is paid off',
@@ -343,7 +359,7 @@ export const KINDS = [
     group: 'money',
     label: 'Something has come off your bonus',
     who: 'The person it comes off',
-    when: 'A month is closed with a deduction on it',
+    when: 'Payroll takes money off somebody\u2019s bonus, on screen or from the sheet',
     ways: ['push', 'email'],
   },
 
@@ -371,6 +387,22 @@ export const KINDS = [
     who: 'Whoever is interviewing',
     when: 'A candidate takes a slot',
     ways: ['push', 'email'],
+  },
+  {
+    key: 'recruitment.moved',
+    group: 'people',
+    label: 'An interview has moved',
+    who: 'Whoever is interviewing',
+    when: 'A slot is moved to another time',
+    ways: ['push'],
+  },
+  {
+    key: 'recruitment.changed',
+    group: 'people',
+    label: 'An interview has changed',
+    who: 'Whoever is interviewing',
+    when: 'A slot\u2019s place or length is changed',
+    ways: ['push'],
   },
   {
     key: 'recruitment.cancelled',

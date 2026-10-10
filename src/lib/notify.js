@@ -5,6 +5,7 @@ import { ALERT_TITLE, getVapidKeys, sendPush } from './push.js';
 import { isMissingTable } from './http.js';
 import { labelFor } from './attendance.js';
 import { allows, effectivePermissions } from './permissions.js';
+import { renderMail, sayDate } from './email-design.js';
 
 /**
  * What actually gets sent, and to whom.
@@ -211,16 +212,25 @@ const MOST_IN_A_BATCH = 100;
  * as a mistake to a person, and it costs the same.
  */
 export async function sendEmail({
-  apiKey, from, to, subject, html, text, replyTo = null, headers = null,
+  apiKey, from, to, subject, html, text, replyTo = null, headers = null, cc = null,
 }) {
   const each = (Array.isArray(to) ? to : [to])
     .map((one) => String(one ?? '').trim())
     .filter(Boolean);
   if (!each.length) throw new Error('No address to send to.');
 
-  const message = (one) => ({
+  // THE PROPERTY'S STANDING COPY. Somebody the property has asked to see
+  // everything HIVE sends is copied on the first message only, so a notice
+  // that goes to thirty people is one copy in their inbox rather than thirty.
+  // Never somebody already on the list: they have their own.
+  const copy = [...new Set((Array.isArray(cc) ? cc : [cc])
+    .map((one) => String(one ?? '').trim())
+    .filter((one) => one && !each.some((t) => t.toLowerCase() === one.toLowerCase())))];
+
+  const message = (one, i) => ({
     from,
     to: [one],
+    ...(i === 0 && copy.length ? { cc: copy } : {}),
     subject,
     html,
     // Both parts, always. See asPlainText above.
@@ -245,7 +255,7 @@ export async function sendEmail({
     return response.json().catch(() => ({}));
   };
 
-  if (each.length === 1) return post('emails', message(each[0]));
+  if (each.length === 1) return post('emails', message(each[0], 0));
 
   // A hundred at a time, which is what the provider takes. Twenty-four people
   // is one call rather than twenty-four, so a rota going out is still one
@@ -256,10 +266,22 @@ export async function sendEmail({
     // enough to need a second batch is large enough to be told off for firing
     // them all at once.
     // eslint-disable-next-line no-await-in-loop
-    const out = await post('emails/batch', each.slice(i, i + MOST_IN_A_BATCH).map(message));
+    const out = await post('emails/batch', each.slice(i, i + MOST_IN_A_BATCH).map((one, j) => message(one, i + j)));
     sent.push(...(Array.isArray(out?.data) ? out.data : [out]));
   }
   return { data: sent };
+}
+
+/**
+ * Who the property has asked to be copied on everything HIVE emails.
+ *
+ * A setting rather than a login, because the person reading every notice is
+ * often an owner with no shift and no account. Read from `email_cc`, a list.
+ * Not used on the two emails that carry a credential, the account invitation
+ * and a signing code: a copy of either is a key to somebody else's account.
+ */
+export function ccFor(settings) {
+  return parseRecipients(settings?.email_cc).filter((a) => isEmail(a));
 }
 
 /**
@@ -287,23 +309,16 @@ const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (c) => ESCAPE[c]);
  * anything: the names are in the mail, not behind a link. Somebody reading it
  * on the way to work should already know who they are looking for.
  */
-export function renderDigest({ day, propertyName, siteUrl, open, absent, escalated, rows }) {
-  const link = siteUrl ? `${siteUrl.replace(/\/$/, '')}/#/att-today?day=${day}` : null;
-
-  const list = (title, items) => (items.length
-    ? `<h3 style="font:600 14px/1.4 system-ui,sans-serif;color:#101418;margin:18px 0 6px">${esc(title)}</h3>
-       <ul style="font:14px/1.6 system-ui,sans-serif;color:#4a535e;margin:0;padding-left:18px">
-         ${items.map((i) => `<li>${esc(i)}</li>`).join('')}
-       </ul>`
-    : '');
-
+export function renderDigest({
+  day, propertyName, siteUrl, open, absent, escalated, rows, companyName = null,
+}) {
   // Named through the app's own labeller. This used to read `r.label`, a
   // column neither the cron nor the test button ever selected — so every line
   // of every digest ever sent said "Kofi Mensah — undefined". Reason codes are
   // not loaded here, so a coded absence reads as "Absent" rather than as the
   // particular reason; the names and the count are what this email is for.
   const needing = rows.filter((r) => r.resolution === 'open')
-    .map((r) => `${r.name} — ${r.label ?? labelFor(r, null)}`);
+    .map((r) => [r.name, r.label ?? labelFor(r, null)]);
   const away = rows.filter((r) => r.status === 'absent').map((r) => r.name);
 
   // The rules' own verdict, not the raw minutes. Grace exists precisely so
@@ -319,45 +334,56 @@ export function renderDigest({ day, propertyName, siteUrl, open, absent, escalat
   const latecomers = rows
     .filter((r) => r.status === 'late' || r.status === 'late_early')
     .map((r) => ({ name: r.name, minutes: Math.max(0, Math.round(Number(r.late_minutes) || 0)) }))
-    .sort((a, b) => b.minutes - a.minutes)
-    .map((r) => `${r.name} — ${lateness(r.minutes)}`);
+    .sort((a, b) => b.minutes - a.minutes);
 
   const summary = `${open ? `${open} day${open === 1 ? '' : 's'} waiting on a decision`
     : 'Nothing waiting on a decision'}${absent ? `, ${absent} absent` : ''}`
     + `${latecomers.length ? `, ${latecomers.length} late` : ''}.`;
 
-  return {
-    subject: open
-      ? `${propertyName}: ${open} attendance day${open === 1 ? '' : 's'} to confirm`
-      : `${propertyName}: ${absent} absent on ${day}`,
-    html: emailDocument({
-      title: `Attendance — ${day}`,
-      preheader: summary,
-      body: `
-      <div style="max-width:560px;margin:0 auto;padding:24px;font-family:system-ui,sans-serif">
-        <p style="font:12px/1.4 system-ui,sans-serif;color:#6f7884;margin:0 0 4px">${esc(propertyName)}</p>
-        <h1 style="font:700 22px/1.3 system-ui,sans-serif;color:#101418;margin:0 0 4px">Attendance — ${esc(day)}</h1>
-        <p style="font:14px/1.6 system-ui,sans-serif;color:#4a535e;margin:0">${esc(summary)}</p>
-        ${list('Waiting on you', needing)}
-        ${list('Absent', away)}
-        ${list('Late', latecomers)}
-        ${escalated.length
-    ? `<p style="font:600 14px/1.6 system-ui,sans-serif;color:#b02436;margin:18px 0 0">
-             On a run of absences: ${esc(escalated.join(', '))}.
-           </p>`
-    : ''}
-        ${link
-    ? `<p style="margin:22px 0 0">
-             <a href="${esc(link)}" style="font:600 14px/1 system-ui,sans-serif;color:#fff;background:#1f5fd0;padding:11px 16px;border-radius:6px;text-decoration:none">Open the list</a>
-           </p>`
-    : ''}
-        <p style="font:12px/1.5 system-ui,sans-serif;color:#6f7884;margin:22px 0 0;padding-top:12px;border-top:1px solid #d4dae1">
-          A day with only one of the two taps is held rather than counted absent, so somebody has to say
-          what happened. Until they do, no hours are counted for it.
-        </p>
-      </div>`,
-    }),
-  };
+  const when = sayDate(day);
+  const subject = open
+    ? `Attendance for ${when}: ${open} day${open === 1 ? '' : 's'} to confirm`
+    : `Attendance for ${when}: ${absent} absent`;
+
+  // One table, three sections. Somebody reading it on the way to work should
+  // already know who they are looking for without opening anything.
+  const tableRows = [];
+  for (const [name, what] of needing) tableRows.push([name, { text: what, tone: 'warn' }]);
+  for (const name of away) tableRows.push([name, { text: 'Absent', tone: 'bad' }]);
+  for (const r of latecomers) tableRows.push([r.name, lateness(r.minutes)]);
+
+  return renderMail({
+    notice: {
+      title: subject,
+      level: open ? 'warn' : 'info',
+      link: `#/att-today?day=${day}`,
+      mail: {
+        subject,
+        preheader: summary,
+        tone: open ? 'warn' : (absent ? 'bad' : 'good'),
+        status: 'Daily summary',
+        eyebrow: 'Attendance',
+        headline: `${when} at a glance`,
+        sub: summary,
+        facts: [
+          ['Waiting on you', String(open || 0), open ? { tone: 'warn', strong: true } : {}],
+          ['Absent', String(absent || 0), absent ? { tone: 'bad' } : {}],
+          ['Late', String(latecomers.length)],
+        ],
+        table: tableRows.length ? { head: ['Who', 'What'], rows: tableRows } : null,
+        callout: escalated.length
+          ? { tone: 'bad', text: `On a run of absences: ${escalated.join(', ')}.` }
+          : null,
+        note: 'A day with only one of the two taps is held rather than counted absent, so '
+          + 'somebody has to say what happened. Until they do, no hours are counted for it.',
+        button: 'Open today’s list',
+        why: 'You get this because your address is on the daily attendance email.',
+      },
+    },
+    propertyName,
+    companyName,
+    siteUrl,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -499,6 +525,7 @@ export async function emailExceptions(db, env, { day, open, absent, escalated = 
     const { subject, html } = renderDigest({
       day,
       propertyName: settings.property_name || 'HIVE',
+      companyName: settings.company_legal_name || null,
       siteUrl: originOf(settings.site_url),
       open,
       absent,
@@ -507,6 +534,7 @@ export async function emailExceptions(db, env, { day, open, absent, escalated = 
     });
 
     await sendEmail({
+      cc: ccFor(settings),
       apiKey,
       from: senderWithName(settings.email_from, senderNameOf(settings)),
       to,
@@ -653,46 +681,9 @@ function shortEnough(notice, site) {
   return `${head}${body && body.length + 1 <= room ? ` ${body}` : ''}${tail}`;
 }
 
-/** The body. Plain HTML with inline styles: mail clients strip stylesheets. */
-export function renderNotice({ notice, propertyName, siteUrl }) {
-  const colour = NOTICE_COLOUR[notice.level] ?? NOTICE_COLOUR.info;
-  const link = notice.link && siteUrl
-    ? `${siteUrl.replace(/\/$/, '')}/${String(notice.link).replace(/^\/*/, '')}`
-    : null;
-
-  return {
-    subject: notice.title,
-    html: emailDocument({
-      title: notice.title,
-      preheader: notice.body || notice.title,
-      body: `
-      <div style="background:#f4f6f8;padding:24px">
-        <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:22px 24px">
-          <div style="font:600 12px/1.4 system-ui,sans-serif;color:#6f7884;letter-spacing:.06em;text-transform:uppercase">
-            ${esc(propertyName)}
-          </div>
-          <h1 style="font:650 19px/1.35 system-ui,sans-serif;color:#101418;margin:8px 0 0;
-                     border-left:3px solid ${colour};padding-left:10px">${esc(notice.title)}</h1>
-          ${notice.body
-    ? `<p style="font:15px/1.6 system-ui,sans-serif;color:#4a535e;margin:14px 0 0">${esc(notice.body)}</p>`
-    : ''}
-          ${notice.actor
-    ? `<p style="font:13px/1.5 system-ui,sans-serif;color:#6f7884;margin:12px 0 0">From ${esc(notice.actor)}</p>`
-    : ''}
-          ${link
-    ? `<p style="margin:20px 0 0"><a href="${esc(link)}"
-         style="font:600 14px/1 system-ui,sans-serif;color:#fff;background:#1f5fd0;
-                text-decoration:none;padding:11px 18px;border-radius:8px;display:inline-block">Open it</a></p>`
-    : ''}
-          <p style="font:12px/1.5 system-ui,sans-serif;color:#8b939d;margin:22px 0 0;
-                    border-top:1px solid #e6e9ed;padding-top:12px">
-            You are receiving this because it is addressed to you in ${esc(propertyName)}.
-            Turn these off under Users &amp; data &rarr; Notifications.
-          </p>
-        </div>
-      </div>`,
-    }),
-  };
+/** A notice as an email, in the one design every HIVE email shares. */
+export function renderNotice({ notice, propertyName, siteUrl, companyName = null }) {
+  return renderMail({ notice, propertyName, companyName, siteUrl });
 }
 
 /**
@@ -713,49 +704,34 @@ export function renderJoinInvite({ propertyName, name, url, days, ways, siteUrl 
       + 'Whichever suits you, and you can change it later.'
     : 'You will set an email address and a password.';
   const lasts = `The link works once and lasts ${days} day${days === 1 ? '' : 's'}.`;
+  const subject = `Your ${propertyName} staff account`;
+  const where = siteUrl ? ` HIVE lives at ${String(siteUrl).replace(/^https?:\/\//, '')}.` : '';
 
-  return {
-    subject: `Your ${propertyName} staff account`,
-    html: emailDocument({
-      title: `Your ${propertyName} staff account`,
-      preheader: `Set up how you sign in. ${lasts}`,
-      body: `
-      <div style="background:#f4f6f8;padding:24px">
-        <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:22px 24px">
-          <div style="font:600 12px/1.4 system-ui,sans-serif;color:#6f7884;letter-spacing:.06em;text-transform:uppercase">
-            ${esc(propertyName)}
-          </div>
-          <h1 style="font:650 19px/1.35 system-ui,sans-serif;color:#101418;margin:8px 0 0">
-            Your staff account
-          </h1>
-          <p style="font:15px/1.6 system-ui,sans-serif;color:#4a535e;margin:14px 0 0">
-            Hello ${esc(first)}, an account has been made for you on HIVE, which is where
-            ${esc(propertyName)} keeps the rota, attendance and payslips.
-          </p>
-          <p style="font:15px/1.6 system-ui,sans-serif;color:#4a535e;margin:10px 0 0">
-            ${esc(choice)}
-          </p>
-          <p style="margin:20px 0 0"><a href="${esc(url)}"
-             style="font:600 14px/1 system-ui,sans-serif;color:#fff;background:#1f5fd0;
-                    text-decoration:none;padding:11px 18px;border-radius:8px;display:inline-block">Set up my account</a></p>
-          <p style="font:12px/1.5 system-ui,sans-serif;color:#8b939d;margin:12px 0 0;word-break:break-all">
-            Or paste this into a browser: ${esc(url)}
-          </p>
-          <p style="font:13px/1.6 system-ui,sans-serif;color:#4a535e;margin:16px 0 0">
-            ${esc(lasts)} Once you are in, HIVE will show you how to put it on your phone's
-            home screen so your shifts are a tap away.
-          </p>
-          <p style="font:12px/1.5 system-ui,sans-serif;color:#8b939d;margin:22px 0 0;
-                    border-top:1px solid #e6e9ed;padding-top:12px">
-            If you were not expecting this, ignore it and tell ${esc(propertyName)}. Nobody can
-            open the account with this link once it has been used.${siteUrl
-    ? ` HIVE lives at ${esc(String(siteUrl).replace(/^https?:\/\//, ''))}.`
-    : ''}
-          </p>
-        </div>
-      </div>`,
-    }),
-  };
+  return renderMail({
+    notice: {
+      title: subject,
+      link: url,
+      mail: {
+        subject,
+        preheader: `Set up how you sign in. ${lasts}`,
+        tone: 'info',
+        status: 'Welcome',
+        eyebrow: 'Your account',
+        headline: `Hello ${first}, your HIVE account is ready`,
+        intro: `Hello ${first}, an account has been made for you on HIVE, which is where `
+          + `${propertyName} keeps the rota, attendance and payslips.\n\n${choice}`,
+        button: 'Set up my account',
+        note: `${lasts} Once you are in, HIVE will show you how to put it on your phone’s home `
+          + `screen so your shifts are a tap away.\n\nIf the button does not work, paste this into a `
+          + `browser: ${url}`,
+        settingsLink: false,
+        why: `If you were not expecting this, ignore it and tell ${propertyName}. Nobody can open `
+          + `the account with this link once it has been used.${where}`,
+      },
+    },
+    propertyName,
+    siteUrl,
+  });
 }
 
 /**
@@ -932,6 +908,7 @@ export async function emailNotice(db, env, notice) {
     const { subject, html } = renderNotice({
       notice,
       propertyName: settings.property_name || 'HIVE',
+      companyName: settings.company_legal_name || null,
       siteUrl: originOf(settings.site_url),
     });
 
@@ -940,6 +917,7 @@ export async function emailNotice(db, env, notice) {
       apiKey,
       from: senderWithName(from, senderNameOf(settings)),
       to,
+      cc: ccFor(settings),
       subject,
       html,
       replyTo: (settings.email_reply_to || '').trim() || null,
@@ -979,7 +957,9 @@ export async function emailNotice(db, env, notice) {
  * Held to the same switches as any other mail: the property's master switch,
  * and the email channel for this kind. Never throws.
  */
-export async function emailPersonally(db, env, { kind, title, body, link, day, to, wanted }) {
+export async function emailPersonally(db, env, {
+  kind, title, body, link, day, to, wanted, mail = null, level = 'info',
+}) {
   const clean = [...new Set((Array.isArray(to) ? to : [to]).filter((a) => isEmail(a)))];
   if (!clean.length) return { sent: 0, tried: 0, reason: 'no address' };
 
@@ -996,8 +976,9 @@ export async function emailPersonally(db, env, { kind, title, body, link, day, t
     if (!apiKey || !from) return { sent: 0, tried: 0, reason: 'not configured' };
 
     const { subject, html } = renderNotice({
-      notice: { kind, title, body, link, day },
+      notice: { kind, level, title, body, link, day, mail },
       propertyName: settings.property_name || 'HIVE',
+      companyName: settings.company_legal_name || null,
       siteUrl: originOf(settings.site_url),
     });
 
@@ -1005,6 +986,7 @@ export async function emailPersonally(db, env, { kind, title, body, link, day, t
       apiKey,
       from: senderWithName(from, senderNameOf(settings)),
       to: clean,
+      cc: ccFor(settings),
       subject,
       html,
       replyTo: (settings.email_reply_to || '').trim() || null,

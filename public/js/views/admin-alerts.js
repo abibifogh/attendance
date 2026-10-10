@@ -26,6 +26,9 @@ export function alertsSetup(data, reload) {
   const from = h('input', { type: 'text', maxlength: 200, value: data.from, placeholder: 'HIVE <hive@niceoperation.com>' });
   const replyTo = h('input', { type: 'text', maxlength: 200, value: data.replyTo ?? '', placeholder: 'someone@niceoperation.com' });
   const siteUrl = h('input', { type: 'url', maxlength: 300, value: data.siteUrl, placeholder: 'https://staff.niceoperation.com' });
+  const cc = h('textarea', {
+    rows: 2, placeholder: 'one address per line', value: (data.cc ?? []).join('\n'),
+  });
   const emailEnabled = h('input', { type: 'checkbox', checked: data.emailEnabled });
   const pushEnabled = h('input', { type: 'checkbox', checked: data.pushEnabled });
   const inAppEnabled = h('input', { type: 'checkbox', checked: data.inAppEnabled });
@@ -65,6 +68,7 @@ export function alertsSetup(data, reload) {
         from: from.value.trim(),
         senderName: senderName.value.trim(),
         replyTo: replyTo.value.trim(),
+        cc: cc.value.split('\n').map((v) => v.trim()).filter(Boolean),
         siteUrl: siteUrl.value.trim(),
         smsEnabled: smsEnabled.checked,
         smsProvider: smsProvider.value,
@@ -144,6 +148,10 @@ export function alertsSetup(data, reload) {
             + 'written into this box wins over the one above')),
         h('label.field', h('span', 'Reply to'), replyTo,
           h('small.muted', 'Where a reply lands. Leave empty and replies go to the From address')),
+        h('label.field', h('span', 'Copy every email to'), cc,
+          h('small.muted', 'Gets one copy of every notification email HIVE sends, however many '
+            + 'people it went to. Never copied: account invitations and signing codes, because '
+            + 'they carry a private link or code')),
         h('label.field', h('span', 'This site\'s address'), siteUrl,
           h('small.muted', 'Used for the link in the email and the alert')),
         !data.providerConfigured

@@ -4,6 +4,7 @@ import {
   badRequest, forbidden, int, json, notFound, readJson, str,
 } from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
+import { firstName, sayHours, sayShortDate } from '../lib/email-design.js';
 import { parseDays } from '../lib/signoff.js';
 import {
   findingsForSwap, goesStraightThrough, offerable, swapRules, tooLate, whoCanCover, whyNot,
@@ -393,14 +394,43 @@ export async function offerSwap(ctx) {
     : whoCanCover(ds, { day: row.day, shift, exceptStaffId: staff.id, rules, away })
       .map((p) => p.id);
 
+  const reason = body.reason ? str(body.reason, 'Reason', { max: 300 }) : null;
+  const backShift = back?.shift_id ? ds.shiftById?.get(back.shift_id) : null;
   await tellStaff(ctx, coverers, {
     kind: 'swap.offered',
     title: kind === 'trade'
       ? `${staff.name} wants to swap a shift with you`
       : `${staff.name} is giving up ${shift.name}`,
     body: `${when(row.day)}, ${shift.starts_at}–${shift.ends_at}.`
-      + (body.reason ? ` ${str(body.reason, 'Reason', { max: 300 })}` : ''),
+      + (reason ? ` ${reason}` : ''),
     link: '#/swaps',
+    mail: {
+      status: kind === 'trade' ? 'Swap offered' : 'Shift going',
+      tone: 'info',
+      eyebrow: 'Swaps',
+      subject: kind === 'trade'
+        ? `${staff.name} wants to swap ${shift.name} on ${sayShortDate(row.day)} with you`
+        : `${staff.name} is giving up ${shift.name} on ${sayShortDate(row.day)}`,
+      preheader: `${shiftWhen(shift, row.day)}. `
+        + (kind === 'trade' ? 'They would take one of yours in return.' : 'You could cover it.'),
+      headline: kind === 'trade'
+        ? `${staff.name} wants to swap a shift with you`
+        : `${staff.name} is giving up a shift you could cover`,
+      facts: [
+        ...shiftRows(shift, row.day),
+        kind === 'trade'
+          ? backRow(backShift, back?.day)
+          : ['In return', 'Nothing, it is a give-away'],
+      ],
+      quote: reason ? { by: `${firstName(staff.name)} says`, text: reason } : null,
+      button: kind === 'trade' ? 'See the swap' : 'Take this shift',
+      note: rules.approval === 'clean'
+        ? 'If nothing on the rota stands in the way it goes straight through. Otherwise a manager approves it first.'
+        : 'A manager still has to approve it before it changes on the rota.',
+      why: aimedAt.length
+        ? `You get this because ${firstName(staff.name)} asked you.`
+        : 'You get this because you could cover this shift.',
+    },
   });
 
   return json({
@@ -467,13 +497,39 @@ export async function takeSwap(ctx, id) {
     return json({ ok: true, approved: true, findings });
   }
 
+  const backShift = swap.back_shift_id ? ds.shiftById?.get(swap.back_shift_id) : null;
+  const flagged = findings.map((f) => f?.text).filter(Boolean);
+  const offererName = offerer?.name ?? 'somebody';
   await tellPlanners(ctx, {
     kind: 'swap.waiting',
     title: `${staff.name} wants to take ${shift.name}`,
-    body: `${when(swap.day)}, from ${offerer?.name ?? 'somebody'}.`
+    body: `${when(swap.day)}, from ${offererName}.`
       + (findings.length ? ` ${findings.length} thing${findings.length === 1 ? '' : 's'} to look at.` : ''),
     link: '#/att-swaps',
     level: findings.some((f) => f.level === 'high') ? 'warn' : 'info',
+    mail: {
+      status: 'Needs your answer',
+      tone: 'warn',
+      eyebrow: 'Swaps',
+      subject: `Approve a swap: ${firstName(staff.name)} takes `
+        + `${offerer ? `${firstName(offerer.name)}’s` : 'a'} ${shift.name} on ${sayShortDate(swap.day)}`,
+      preheader: flagged.length
+        ? `${flagged.length} thing${flagged.length === 1 ? '' : 's'} to look at before you approve it.`
+        : 'Nothing on the rota stands in the way.',
+      headline: `${staff.name} wants to take ${offerer ? `${offerer.name}’s` : 'a'} shift`,
+      facts: [
+        ...shiftRows(shift, swap.day),
+        ['Giving it up', offerer?.name ?? null],
+        ['Taking it', staff.name],
+        backShift ? backRow(backShift, swap.back_day) : null,
+      ],
+      callout: flagged.length === 1 ? { tone: 'warn', text: flagged[0] } : null,
+      note: flagged.length > 1
+        ? `Things to look at before you approve it:\n${flagged.map((t) => `• ${t}`).join('\n')}`
+        : null,
+      button: 'Answer the swap',
+      why: 'You get this because you plan the rota.',
+    },
   });
 
   if (swap.from_staff) {
@@ -482,6 +538,22 @@ export async function takeSwap(ctx, id) {
       title: `${staff.name} has taken your ${shift.name}`,
       body: `${when(swap.day)}. It is with a manager now.`,
       link: '#/swaps',
+      mail: {
+        status: 'Waiting on a manager',
+        tone: 'info',
+        eyebrow: 'Swaps',
+        subject: `${staff.name} has taken your ${shift.name} on ${sayShortDate(swap.day)}`,
+        preheader: `${shiftWhen(shift, swap.day)}. It is with a manager now.`,
+        headline: `${staff.name} has taken your shift`,
+        facts: [
+          ...shiftRows(shift, swap.day),
+          backShift ? backRow(backShift, swap.back_day) : null,
+          ['Next', 'A manager approves it'],
+        ],
+        note: 'Keep working to the rota until you see it has gone through.',
+        button: 'See my swaps',
+        why: 'You get this because you offered this shift.',
+      },
     });
   }
 
@@ -534,11 +606,37 @@ export async function dropSwap(ctx, id) {
   await audit(ctx, 'attendance.swap_dropped', swap.id, { by: staff.id, status });
 
   if (!mine && swap.from_staff) {
+    // Back on the board for somebody else, or nobody else was ever asked.
+    const left = readAimed(swap).filter((n) => n !== Number(staff.id));
+    const stillUp = theirs || !(swap.aimed_only === 1 && left.length === 0);
+    // Only for the email's words; a failed read leaves the shift out of it.
+    let shift = null;
+    try {
+      shift = swap.shift_id
+        ? await ctx.db.prepare('SELECT * FROM att_shifts WHERE id = ?').bind(swap.shift_id).first()
+        : null;
+    } catch { shift = null; }
     await tellStaff(ctx, [swap.from_staff], {
       kind: 'swap.decided',
       title: `${staff.name} cannot take your shift`,
       body: `${when(swap.day)}.`,
       link: '#/swaps',
+      mail: {
+        status: stillUp ? 'Back on the board' : 'Declined',
+        tone: stillUp ? 'warn' : 'bad',
+        eyebrow: 'Swaps',
+        subject: `${staff.name} cannot take your shift on ${sayShortDate(swap.day)}`,
+        preheader: stillUp
+          ? 'It is back on the board for somebody else.'
+          : 'The shift is still yours.',
+        headline: `${staff.name} cannot take your shift`,
+        facts: shiftRows(shift, swap.day),
+        note: stillUp
+          ? 'It is back on the board for somebody else to take. Until it changes hands, it is still yours.'
+          : 'Nobody else was asked, so the shift is still yours. You can offer it again from Swaps.',
+        button: 'See my swaps',
+        why: 'You get this because you offered this shift.',
+      },
     });
   }
 
@@ -633,10 +731,32 @@ export async function decideSwap(ctx, id) {
     ).bind(swap.id, actorOf(ctx), str(body.note, 'Note', { max: 300 })).run();
 
     await audit(ctx, 'attendance.swap_declined', swap.id, { day: swap.day });
+    const note = body.note ? str(body.note, 'Note', { max: 300 }) : null;
+    const giver = ds.staffById?.get(Number(swap.from_staff));
+    const taker = ds.staffById?.get(Number(swap.taken_by));
+    const decider = ctx.session?.user?.name ?? null;
     await tellBoth(ctx, ds, swap, {
       title: `Your swap was turned down`,
       body: `${when(swap.day)}, ${shift?.name ?? 'the shift'}.`
-        + (body.note ? ` ${str(body.note, 'Note', { max: 300 })}` : ''),
+        + (note ? ` ${note}` : ''),
+      mail: {
+        status: 'Not approved',
+        tone: 'bad',
+        eyebrow: 'Swaps',
+        subject: `Your swap was turned down: ${sayShortDate(swap.day)}`,
+        preheader: note || `${giver?.name ?? 'The person who offered it'} keeps the shift.`,
+        headline: 'Your swap was turned down',
+        facts: [
+          ...shiftRows(shift, swap.day),
+          ['Giving it up', giver?.name ?? null],
+          ['Taking it', taker?.name ?? null],
+          ['Turned down by', decider],
+        ],
+        quote: note ? { by: decider ? `${firstName(decider)} says` : 'The reason', text: note } : null,
+        note: `Nothing changes on the rota. The shift stays with ${giver?.name ?? 'the person who offered it'}.`,
+        button: 'See my swaps',
+        why: 'You get this because you were part of this swap.',
+      },
     });
     return json({ ok: true, status: 'declined' });
   }
@@ -728,10 +848,32 @@ async function settle(ctx, { swap, ds, by }) {
     to: swap.taken_by,
   });
 
+  // Straight through is said as such; otherwise the manager by name.
+  const automatic = by === 'Nothing was flagged';
+  const backShift = swap.back_shift_id ? ds.shiftById?.get(Number(swap.back_shift_id)) : null;
   await tellBoth(ctx, ds, swap, {
     title: 'Your swap has gone through',
     body: `${when(swap.day)}, ${shift?.name ?? 'the shift'}. `
       + `${taker?.name ?? 'Somebody'} is on it now.`,
+    mail: {
+      status: 'Approved',
+      tone: 'good',
+      eyebrow: 'Swaps',
+      subject: `Your swap has gone through: ${sayShortDate(swap.day)}`,
+      preheader: `${taker?.name ?? 'Somebody'} is on ${shift?.name ? `the ${shift.name} shift` : 'the shift'} now.`,
+      headline: 'Your swap has gone through',
+      facts: [
+        ...shiftRows(shift, swap.day),
+        ['On it now', taker?.name ?? null, { strong: true }],
+        backShift
+          ? ['And in return', `${giver?.name ?? 'Somebody'} on ${backShift.name}, `
+            + `${shiftWhen(backShift, swap.back_day)}`]
+          : null,
+        ['Approved by', automatic ? 'Nobody needed to, nothing was flagged' : (ctx.session?.user?.name ?? null)],
+      ],
+      button: 'See my rota',
+      why: 'You get this because you were part of this swap.',
+    },
   });
 }
 
@@ -776,11 +918,31 @@ async function tellPlanners(ctx, notice) {
   await createNotice(ctx.db, { audience: 'att_rota', ...notice }, ctx);
 }
 
-async function tellBoth(ctx, ds, swap, { title, body }) {
+async function tellBoth(ctx, ds, swap, { title, body, mail }) {
   void ds;
   await tellStaff(ctx, [swap.from_staff, swap.taken_by], {
-    kind: 'swap.decided', title, body, link: '#/swaps',
+    kind: 'swap.decided', title, body, link: '#/swaps', mail,
   });
+}
+
+/** "Sat 17 Oct, 2 pm to 10 pm", for an email. */
+function shiftWhen(shift, day) {
+  return [day ? sayShortDate(day) : null, sayHours(shift?.starts_at, shift?.ends_at)]
+    .filter(Boolean).join(', ');
+}
+
+/** The shift as the first rows of an email: what it is, and when. */
+function shiftRows(shift, day) {
+  return [
+    ['Shift', [shift?.name, shift?.department].filter(Boolean).join(', ') || null],
+    ['When', shiftWhen(shift, day) || null],
+  ];
+}
+
+/** What comes back the other way on a trade. */
+function backRow(backShift, backDay) {
+  if (!backShift) return null;
+  return ['In return', `${backShift.name}, ${shiftWhen(backShift, backDay)}`];
 }
 
 /** Who a shift could go to, for the offer dialog on somebody else's screen. */

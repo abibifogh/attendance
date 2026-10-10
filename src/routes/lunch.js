@@ -4,6 +4,7 @@ import { emailPersonally, firstUsableEmail } from '../lib/notify.js';
 import { getPepper, hashPin } from '../lib/auth.js';
 import { loadDataset, scheduleFor } from '../lib/attendance.js';
 import { siteOrigin } from '../lib/site.js';
+import { firstName, sayDate, sayShortDate } from '../lib/email-design.js';
 import { addDays, dow, nowIn, startOfWeek, todayIn } from '../util/dates.js';
 import {
   DAY_NAMES, NOTICE_HOURS, daysFor, first, menuWeek, readTime, saidNo, scheduleFrom, showTime,
@@ -784,6 +785,10 @@ export async function askLunchChange(ctx) {
     'INSERT INTO lunch_change (staff_id, day, want, note) VALUES (?1, ?2, ?3, ?4)',
   ).bind(staff.id, day, want ? 1 : 0, note).run();
 
+  // The dish that day, for the email. A menu that cannot be read is left out.
+  const dish = (await menuMap(ctx.db).catch(() => null))?.get(dayOfWeek(day))?.meal ?? null;
+  const asking = `${staff.name} wants ${want ? 'lunch on' : 'to come off lunch on'} ${dayName(day)}`;
+
   await createNotice(ctx.db, {
     kind: 'lunch.change_asked',
     level: 'info',
@@ -793,6 +798,22 @@ export async function askLunchChange(ctx) {
     link: '#/att-lunch',
     actor: `${staff.name} (staff)`,
     audience: 'lunch',
+    mail: {
+      status: 'Needs your answer',
+      tone: 'warn',
+      eyebrow: 'Lunch',
+      headline: asking,
+      facts: [
+        ['Day', sayDate(day)],
+        ['Dish', dish],
+        ['Asking to be', want ? 'Put down for lunch' : 'Taken off', { strong: true }],
+      ],
+      quote: note ? { by: `${firstName(staff.name)} says`, text: note } : null,
+      button: `Answer ${firstName(staff.name)}`,
+      why: 'You get this because you run the lunch list.',
+      subject: asking,
+      preheader: `The list was shut when ${firstName(staff.name)} asked, so it is waiting for you.`,
+    },
   }, ctx);
 
   return json({ ok: true, changed: false, asked: true, day, want });
@@ -877,6 +898,39 @@ export async function decideLunchChange(ctx, id) {
     audience: null,
     userId: theirLogin?.id ?? null,
     email: false,
+    mail: decision === 'approved'
+      ? {
+        status: 'Agreed',
+        tone: 'good',
+        eyebrow: 'Lunch',
+        headline: `Your lunch for ${dayName(row.day)} was changed`,
+        facts: [
+          ['Day', sayDate(row.day)],
+          ['You are now', row.want ? 'Eating' : 'Not eating', { strong: true }],
+        ],
+        quote: note ? { by: 'A note from the kitchen', text: note } : null,
+        button: 'See my lunch',
+        why: 'You get this because you asked to change your lunch.',
+        subject: `Your lunch for ${dayName(row.day)} was changed`,
+        preheader: `You are now down as ${row.want ? 'eating' : 'not eating'} on ${dayName(row.day)}.`,
+      }
+      : {
+        status: 'Not agreed',
+        tone: 'bad',
+        eyebrow: 'Lunch',
+        headline: `Your lunch change for ${dayName(row.day)} was not agreed`,
+        facts: [
+          ['Day', sayDate(row.day)],
+          ['You asked to be', row.want ? 'Put down for lunch' : 'Taken off'],
+          ['You are still', row.want ? 'Not eating' : 'Eating', { strong: true }],
+        ],
+        quote: note ? { by: 'The reason', text: note } : null,
+        note: `${note ? '' : 'No reason was given. '}Speak to whoever runs the kitchen if it matters.`,
+        button: 'See my lunch',
+        why: 'You get this because you asked to change your lunch.',
+        subject: `Your lunch change for ${dayName(row.day)} was not agreed`,
+        preheader: note || 'No reason was given.',
+      },
   }, ctx);
 
   return json({ ok: true, decision, day: row.day });
@@ -924,6 +978,47 @@ export function lunchLines({ days, menu, taking }) {
     'If any of that is wrong, open My lunch in the app. While the list is open you can change '
       + 'it yourself; once it has shut you can ask the kitchen.',
   ].filter(Boolean);
+}
+
+/**
+ * The same week as an email: a row per day with the meal, and the days they
+ * are not eating marked Off. The plain lines above stay as the text version.
+ */
+function lunchMail(args) {
+  try {
+    return lunchMailOf(args);
+  } catch {
+    return null;
+  }
+}
+
+function lunchMailOf({ held, menu, monday }) {
+  const days = [...(held?.days ?? [])].sort();
+  const eating = days.filter((day) => held.taking.get(day) === true);
+  const not = days.filter((day) => held.taking.get(day) === false);
+  const count = `${eating.length} lunch${eating.length === 1 ? '' : 'es'}`;
+  const week = `Week of ${sayTheDate(monday)}`;
+  return {
+    status: 'Lunch',
+    tone: 'info',
+    eyebrow: week,
+    headline: eating.length
+      ? `You are down for ${count} this week`
+      : 'You are not down for lunch on any day this week',
+    schedule: {
+      rows: days.map((day) => (held.taking.get(day) === true
+        ? [sayShortDate(day).replace(/ \w+$/, ''), '', menu?.get(dayOfWeek(day))?.meal || 'Lunch']
+        : [sayShortDate(day).replace(/ \w+$/, ''), '', 'Not eating', { tone: 'neutral', text: 'Off' }])),
+    },
+    note: 'If any of that is wrong, open My lunch in HIVE. While the list is open you can change '
+      + 'it yourself; once it has shut you can ask the kitchen.',
+    button: 'See my lunch',
+    why: 'You get this because you are on the staff lunch list.',
+    // No subject of its own: the title already says it, "Lunch at <property>,
+    // week of 24 August", and that is the line people search their inbox for.
+    preheader: `${eating.length ? count : 'No lunches'}.`
+      + `${not.length ? ` Not eating on ${not.map((day) => dayName(day)).join(', ')}.` : ''}`,
+  };
 }
 
 /**
@@ -989,6 +1084,7 @@ export async function tellThemWhatTheyOrdered(db, env, { monday, ctx = null }) {
       link: '#/att-my-lunch',
       day: monday,
       to: held.email,
+      mail: lunchMail({ held, menu, monday }),
     });
     if (posted.sent > 0) sent += 1;
   }

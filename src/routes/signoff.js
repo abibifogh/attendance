@@ -13,6 +13,7 @@ import {
   MOST_DAYS, askToMoveLeave, leaveDaysDecision, maySetLeaveDays, sayDays,
 } from '../lib/leave-days.js';
 import { addDays, diffDays, isDay, monthBounds, todayIn } from '../util/dates.js';
+import { firstName, sayRange } from '../lib/email-design.js';
 
 /**
  * What is still waiting to be signed off, and what to do about the awkward
@@ -25,6 +26,17 @@ import { addDays, diffDays, isDay, monthBounds, todayIn } from '../util/dates.js
  */
 
 const actorOf = (ctx) => `${ctx.session.user.name} (${ctx.session.user.role})`;
+
+/** "Akosua Darko" out of "Akosua Darko (manager)", for a sentence in an email. */
+const nameOf = (actor) => String(actor ?? '').replace(/\s*\([^)]*\)\s*$/, '').trim() || null;
+
+/** "No change" rather than "no change", at the start of a table cell. */
+const capital = (text) => (text ? `${text[0].toUpperCase()}${text.slice(1)}` : text);
+
+/** A mail layout, or none at all: an email must never stop the notice behind it. */
+const mailOrNothing = (build) => {
+  try { return build(); } catch { return null; }
+};
 
 async function audit(ctx, action, entity, detail) {
   await ctx.db.prepare(
@@ -633,6 +645,31 @@ export async function raiseQuery(ctx) {
     actor: actorOf(ctx),
     audience: 'att_manage',
     userId: addressed?.id ?? null,
+    mail: mailOrNothing(() => {
+      const asker = nameOf(actorOf(ctx));
+      return {
+        status: 'Needs your answer',
+        tone: 'warn',
+        eyebrow: 'Sign-off',
+        headline: addressed
+          ? `${asker ?? 'Somebody'} has asked you to look at ${staff.name}\u2019s days`
+          : `${staff.name}\u2019s days need somebody to look`,
+        facts: [
+          ['Period', sayRange(from, to)],
+          ['Days asked about', String(days.length)],
+          ['Raised by', asker],
+        ],
+        quote: reason ? { by: 'The question', text: reason } : null,
+        button: 'Answer the query',
+        why: addressed
+          ? 'You get this because the query was addressed to you.'
+          : 'You get this because you can answer questions about attendance.',
+        subject: addressed
+          ? `${staff.name}: ${asker ?? 'somebody'} has asked you to look`
+          : `${staff.name}: a period needs your eye`,
+        preheader: `${sayRange(from, to)}. ${reason ?? ''}`.trim(),
+      };
+    }),
   }, ctx);
 
   await audit(ctx, 'attendance.query_raise', created.id, { staffId, from, to, days: days.length });
@@ -847,7 +884,7 @@ export async function listQueries(ctx) {
  * recorded one, and only falling back to the permission for questions raised
  * before that was kept.
  */
-async function tellTheAsker(ctx, query, { level, title, body }) {
+async function tellTheAsker(ctx, query, { level, title, body, mail = null }) {
   await createNotice(ctx.db, {
     kind: 'attendance.query_answered',
     level,
@@ -857,7 +894,36 @@ async function tellTheAsker(ctx, query, { level, title, body }) {
     actor: actorOf(ctx),
     audience: 'att_signoff',
     userId: query.raised_by_id ?? null,
+    mail,
   }, ctx);
+}
+
+/**
+ * The four answers to a question, as an email: a reply, answered, signed off
+ * and closed, each under its own label, with whatever was said quoted.
+ */
+function answerMail(ctx, query, { status, tone, headline, text, facts = [], note = null, subject, preheader }) {
+  return mailOrNothing(() => {
+    const who = nameOf(actorOf(ctx));
+    return {
+      status,
+      tone,
+      eyebrow: 'Sign-off',
+      headline,
+      facts: [
+        ['Period', sayRange(query.from_day, query.to_day)],
+        ...facts,
+      ],
+      quote: text ? { by: `${firstName(who)} says`, text } : null,
+      note,
+      button: 'See the query',
+      why: query.raised_by_id != null
+        ? 'You get this because you raised this query.'
+        : 'You get this because you sign off attendance.',
+      subject,
+      preheader,
+    };
+  });
 }
 
 export async function answerQuery(ctx, id) {
@@ -888,6 +954,16 @@ export async function answerQuery(ctx, id) {
       level: 'info',
       title: `${query.name}: a reply to your question`,
       body: text.slice(0, 400),
+      mail: answerMail(ctx, query, {
+        status: 'Reply',
+        tone: 'info',
+        headline: `${nameOf(actorOf(ctx)) ?? 'Somebody'} replied to your question about ${query.name}`,
+        text,
+        facts: [['Replied by', nameOf(actorOf(ctx))]],
+        note: 'The question is still open.',
+        subject: `${query.name}: a reply to your question`,
+        preheader: text,
+      }),
     });
     return json({ ok: true, status: query.status });
   }
@@ -901,6 +977,16 @@ export async function answerQuery(ctx, id) {
       level: 'info',
       title: `${query.name}: your question has been answered`,
       body: text.slice(0, 400),
+      mail: answerMail(ctx, query, {
+        status: 'Answered',
+        tone: 'good',
+        headline: `Your question about ${query.name} has been answered`,
+        text,
+        facts: [['Answered by', nameOf(actorOf(ctx))]],
+        note: 'The days are back with you to sign off.',
+        subject: `${query.name}: your question has been answered`,
+        preheader: text,
+      }),
     });
 
     await audit(ctx, 'attendance.query_direction', queryId, null);
@@ -945,6 +1031,18 @@ export async function answerQuery(ctx, id) {
       level: 'good',
       title: `${query.name}: signed off for you`,
       body: `${query.from_day} to ${query.to_day} — ${outcome.daysApplied} day(s) applied.`,
+      mail: answerMail(ctx, query, {
+        status: 'Signed off',
+        tone: 'good',
+        headline: `${nameOf(actorOf(ctx)) ?? 'Somebody'} signed off ${query.name}\u2019s days for you`,
+        text,
+        facts: [
+          ['Leave balance', outcome?.daysApplied != null ? capital(sayDays(outcome.daysApplied)) : null, { strong: true }],
+          ['Signed off by', nameOf(actorOf(ctx))],
+        ],
+        subject: `${query.name}: signed off for you`,
+        preheader: `${sayRange(query.from_day, query.to_day)} is signed off.`,
+      }),
     });
 
     await audit(ctx, 'attendance.query_signed', queryId, outcome);
@@ -960,6 +1058,16 @@ export async function answerQuery(ctx, id) {
     level: 'info',
     title: `${query.name}: your question has been closed`,
     body: text ? text.slice(0, 400) : 'Closed with no change. The days are yours to sign off.',
+    mail: answerMail(ctx, query, {
+      status: 'Closed',
+      tone: 'neutral',
+      headline: `Your question about ${query.name} has been closed`,
+      text,
+      facts: [['Closed by', nameOf(actorOf(ctx))]],
+      note: 'Closed with no change. The days are yours to sign off.',
+      subject: `${query.name}: your question has been closed`,
+      preheader: text || 'Closed with no change. The days are yours to sign off.',
+    }),
   });
 
   await audit(ctx, 'attendance.query_close', queryId, null);
@@ -1202,6 +1310,23 @@ export async function changeDaysApplied(ctx, idParam) {
     link: `#/att-staff?id=${row.staff_id}`,
     actor: actorOf(ctx),
     audience: 'att_reports',
+    mail: mailOrNothing(() => ({
+      status: 'Changed',
+      tone: 'warn',
+      eyebrow: 'Sign-off',
+      headline: `A signed period for ${row.name} has changed`,
+      facts: [
+        ['Period', sayRange(row.from_day, row.to_day)],
+        ['Was', capital(sayDays(was))],
+        ['Now', capital(sayDays(days)), { tone: 'warn', strong: true }],
+        ['Changed by', nameOf(actorOf(ctx))],
+      ],
+      quote: note ? { by: 'The reason', text: note } : null,
+      button: `See ${firstName(row.name)}\u2019s record`,
+      why: 'You get this because you read the attendance reports.',
+      subject: `${row.name}: a signed period now moves ${sayDays(days)}`,
+      preheader: `${sayRange(row.from_day, row.to_day)}, changed by ${nameOf(actorOf(ctx)) ?? 'somebody'}.`,
+    })),
   }, ctx);
 
   return json({ ok: true, changed: true, was, daysApplied: days });
@@ -1329,6 +1454,31 @@ export async function decideLeaveChange(ctx, idParam) {
     // The person who asked, by name. A notice four people receive is a notice
     // none of them owns.
     userId: row.actor_id ?? null,
+    mail: mailOrNothing(() => {
+      const who = nameOf(actorOf(ctx));
+      return {
+        status: approve ? 'Approved' : 'Not approved',
+        tone: approve ? 'good' : 'bad',
+        eyebrow: 'Leave balance',
+        headline: approve
+          ? `${row.staff_name}\u2019s leave balance change was approved`
+          : `${row.staff_name}\u2019s leave balance change was sent back`,
+        facts: [
+          ['Period', sayRange(row.from_day, row.to_day)],
+          [approve ? 'Balance moves' : 'Asked for', capital(sayDays(row.days)), { strong: true }],
+          !approve ? ['Balance stays at', capital(sayDays(row.was))] : null,
+          [approve ? 'Approved by' : 'Sent back by', who],
+        ].filter(Boolean),
+        quote: note ? { by: `${firstName(who)} says`, text: note } : null,
+        note: approve ? null : 'Nothing has moved.',
+        button: `See ${firstName(row.staff_name)}\u2019s record`,
+        why: row.actor_id != null
+          ? 'You get this because you asked for this change.'
+          : 'You get this because you look after leave balances.',
+        subject: `${row.staff_name}: ${sayDays(row.days)} ${approve ? 'approved' : 'sent back'}`,
+        preheader: approve ? `The balance now moves ${sayDays(row.days)}.` : (note || 'Nothing has moved.'),
+      };
+    }),
   }, ctx);
 
   return json({ ok: true, approved: approve, daysApplied: approve ? row.days : standing });

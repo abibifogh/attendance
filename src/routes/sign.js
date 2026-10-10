@@ -4,6 +4,7 @@ import { sendEmail, senderNameOf, senderWithName } from '../lib/notify.js';
 import { asBytes, sha256Hex } from '../lib/files.js';
 import { whoCanSign } from '../lib/correspondence.js';
 import { normaliseLayout } from '../lib/paper.js';
+import { renderMail } from '../lib/email-design.js';
 import { appendEvent, hashAccessCode, hashSignToken } from './correspondence.js';
 
 /**
@@ -316,19 +317,37 @@ export async function signRequestCode(ctx, token) {
   ).bind(recipient.id, await hashPin(`corr-otp:${code}`, pepper)).run();
 
   const name = await property(ctx.db);
+  const subject = `${code} is your code to sign ${letter.reference}`;
+  // In the same design as everything else the property sends, and never
+  // copied to anybody: a copy of a signing code is somebody else's signature.
+  const { html } = renderMail({
+    notice: {
+      title: subject,
+      mail: {
+        subject,
+        preheader: 'It lasts fifteen minutes and can be used once.',
+        tone: 'info',
+        status: 'Your code',
+        eyebrow: 'Signing',
+        headline: `Your code to sign “${letter.subject}”`,
+        code: `${code.slice(0, 3)} ${code.slice(3)}`,
+        facts: [['Letter', letter.subject], ['Reference', letter.reference], ['Lasts', '15 minutes, used once']],
+        note: `Nobody from ${name} will ever ask you for this code. If you were not expecting `
+          + 'this, ignore it. Nobody can sign anything with this code alone.',
+        settingsLink: false,
+        why: `You get this because you asked to sign a letter from ${name}.`,
+      },
+    },
+    propertyName: name,
+  });
   await sendEmail({
     apiKey,
     // Named like every other message the property sends. A six-digit code from
     // a bare address is the shape of every phishing mail anybody has ever had.
     from: senderWithName(from, senderNameOf({ email_sender_name: senderName })),
     to: recipient.email,
-    subject: `${code} is your code to sign ${letter.reference}`,
-    html: `<p>Your one-time code to sign <strong>${escapeHtml(letter.subject)}</strong>`
-      + ` (${escapeHtml(letter.reference)}) is:</p>`
-      + `<p style="font-size:28px;letter-spacing:.3em;font-weight:700">${code}</p>`
-      + '<p>It lasts fifteen minutes and can be used once.</p>'
-      + `<p style="color:#666;font-size:13px">If you were not expecting this, ignore it and tell `
-      + `${escapeHtml(name)}. Nobody can sign anything with this code alone.</p>`,
+    subject,
+    html,
   });
 
   await appendEvent(ctx.db, letter.id, {
@@ -338,9 +357,6 @@ export async function signRequestCode(ctx, token) {
 
   return json({ ok: true, sentTo: maskEmail(recipient.email) });
 }
-
-const escapeHtml = (s) => String(s ?? '').replace(/[&<>"]/g, (c) =>
-  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 async function checkOtp(ctx, recipient, given) {
   if (!recipient.otp_hash) throw badRequest('Ask for a code first.');

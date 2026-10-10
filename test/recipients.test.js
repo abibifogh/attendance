@@ -109,20 +109,22 @@ test('the digest names who was late and by how much, worst first', () => {
     ],
   });
 
-  assert.match(html, /Ama — 1 hr 23 min late/);
-  assert.match(html, /Yaa — 47 min late/);
-  assert.match(html, /Kofi — 12 min late/);
+  // Each latecomer on a row of their own, name then how late.
+  const row = (name, late) => new RegExp(`>${name}</td>[\\s\\S]*?>${late}</td>`);
+  assert.match(html, row('Ama', '1 hr 23 min late'));
+  assert.match(html, row('Yaa', '47 min late'));
+  assert.match(html, row('Kofi', '12 min late'));
 
   // Worst first: the person to speak to is the one at the top.
-  assert.ok(html.indexOf('Ama —') < html.indexOf('Yaa —'));
-  assert.ok(html.indexOf('Yaa —') < html.indexOf('Kofi —'));
+  assert.ok(html.indexOf('>Ama<') < html.indexOf('>Yaa<'));
+  assert.ok(html.indexOf('>Yaa<') < html.indexOf('>Kofi<'));
 
   // Somebody on time is not in the list.
-  assert.ok(!/Kwame — /.test(html), 'the punctual are not news');
+  assert.ok(!html.includes('>Kwame<'), 'the punctual are not news');
 
   // And the count is on the summary line.
   assert.match(html, /1 day waiting on a decision, 1 absent, 3 late\./);
-  assert.match(subject, /Somewhere Nice: 1 attendance day to confirm/);
+  assert.match(subject, /Attendance for Tuesday 18 August: 1 day to confirm/);
 });
 
 test('a minute inside grace is not lateness', () => {
@@ -140,7 +142,8 @@ test('a minute inside grace is not lateness', () => {
       { name: 'Kofi', status: 'present', resolution: 'open', late_minutes: 4 },
     ],
   });
-  assert.ok(!/Late/.test(html.replace(/<title>[\s\S]*?<\/title>/, '')), 'no Late heading at all');
+  assert.ok(!/min late/.test(html), 'nobody listed as late');
+  assert.match(html, />Late<\/td>[\s\S]*?>0<\/td>/, 'and the late count says nought');
 });
 
 test('a morning with nobody late has no Late section', () => {

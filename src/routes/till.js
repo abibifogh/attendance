@@ -7,6 +7,7 @@ import { callLink, verifyLink } from '../lib/till-link.js';
 import { addDays, nowIn, todayIn } from '../util/dates.js';
 import { firstMonthFor } from '../lib/advances.js';
 import { firstUsableEmail, isEmail, sendEmail, senderWithName } from '../lib/notify.js';
+import { firstName, sayDate, sayHours, sayMonth, sayShortDate } from '../lib/email-design.js';
 
 /**
  * My till: closing a front-desk shift, and answering for it.
@@ -333,10 +334,13 @@ export async function closeShift(ctx) {
     .bind(actorOf(ctx), 'till.closed', String(reportId), JSON.stringify({ day, slot })).run().catch(() => {});
 
   const report = { day, slot, cash, envelopes, expenses, rentals, checks, floatOk: body.floatOk, floatDiff, toSafe: body.toSafe };
+  const look = { name: ctx.session.user.name, device, rentalLabels: setup.rentals };
   await tell(ctx, 'closed', {
     title: `${labelOf({ day, slot })} closed · ${ctx.session.user.name}`,
     withAmounts: closedSummary(report, true),
     withoutAmounts: closedSummary(report, false),
+    mailWith: safeMail(() => closedMail(report, true, look)),
+    mailWithout: safeMail(() => closedMail(report, false, look)),
   });
 
   return json({ ok: true, id: reportId, report });
@@ -362,11 +366,96 @@ export function closedSummary(r, amounts) {
   return `${parts.join(' · ')}.`;
 }
 
+/** A mail layout, or none: an email must never stop the thing it is about. */
+function safeMail(build) {
+  try { return build() || undefined; } catch { return undefined; }
+}
+
+const slotWord = (slot) => (SLOT_LABEL[slot] ? SLOT_LABEL[slot].toLowerCase() : null);
+const DEVICE_WORDS = { phone: 'From a phone', pc: 'From the desk computer' };
+
+/** "2 pm to 10 pm" for a shift slot, as Insight places them. */
+function slotHours(slot) {
+  const i = SLOTS.indexOf(slot);
+  if (i < 0) return null;
+  const clock = (minutes) => `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  return sayHours(clock(SLOT_START[slot]), clock(SLOT_START[SLOTS[(i + 1) % SLOTS.length]]));
+}
+
+/**
+ * The email for a closed shift. Without amounts it says what was done and
+ * what is off, never how much: the same line closedSummary() draws.
+ */
+export function closedMail(r, amounts, { name, device, rentalLabels } = {}) {
+  const who = name || 'Somebody';
+  const slot = slotWord(r.slot);
+  const envelopes = Array.isArray(r.envelopes) ? r.envelopes : [];
+  const expenses = Array.isArray(r.expenses) ? r.expenses : [];
+  const checks = Array.isArray(r.checks) ? r.checks : [];
+  const uncounted = expenses.filter((e) => !e.counted);
+  const counted = expenses.filter((e) => e.counted);
+  const away = checks.filter((c) => !c.ok);
+  const floatOff = !r.floatOk;
+  const off = floatOff || uncounted.length > 0 || away.length > 0;
+
+  const facts = [];
+  facts.push(['Cash in the drawer', amounts ? cedis(r.cash ?? 0) : 'Counted', amounts ? { big: true, strong: true } : {}]);
+  const safeTotal = envelopes.reduce((t, e) => t + (Number(e.amount) || 0), 0);
+  facts.push(['To the safe', r.toSafe ? (amounts ? cedis(safeTotal) : 'Yes') : 'Nothing']);
+  if (r.toSafe && envelopes.length) facts.push(['Envelopes', envelopes.map((e) => e.no).join(', ')]);
+  const count = (n) => (n === 1 ? 'One' : String(n));
+  if (uncounted.length) {
+    const sum = uncounted.reduce((t, e) => t + (Number(e.paid) || 0), 0);
+    facts.push(['Expenses with no confirmed PO', amounts && sum ? cedis(sum) : count(uncounted.length), { tone: 'warn' }]);
+  }
+  if (counted.length) {
+    const sum = counted.reduce((t, e) => t + (Number(e.paid) || 0), 0);
+    facts.push([uncounted.length ? 'Expenses with a confirmed PO' : 'Expenses', amounts && sum ? cedis(sum) : count(counted.length)]);
+  } else if (!uncounted.length) facts.push(['Expenses', 'None']);
+  let floatWords = null;
+  if (floatOff) {
+    const diff = Number(r.floatDiff) || 0;
+    floatWords = amounts && diff ? `${cedis(diff)} ${diff < 0 ? 'short' : 'over'}` : (diff < 0 ? 'Short' : diff > 0 ? 'Over' : 'Not right');
+    facts.push(['Float', floatWords, { tone: 'bad', strong: true }]);
+  } else facts.push(['Float', 'Correct', { tone: 'good' }]);
+  const labels = Object.fromEntries((Array.isArray(rentalLabels) ? rentalLabels : []).map((x) => [x.id, x.label]));
+  for (const [id, v] of Object.entries(r.rentals || {})) {
+    const label = labels[id] || `${id.charAt(0).toUpperCase()}${id.slice(1)}s`;
+    facts.push([`${label} rented`, `${v?.start ?? '?'} → ${v?.end ?? '?'}`]);
+  }
+
+  const callout = away.length ? {
+    tone: 'warn',
+    text: away.map((c) => [
+      `${c.label || 'Something'} not at the desk.`,
+      c.guest ? `${c.guest} has it.` : null,
+      c.why || null,
+    ].filter(Boolean).join(' ')).join('\n'),
+  } : null;
+
+  const problem = floatOff ? `float ${floatWords.replace(/^[A-Z][a-z]/, (w) => w.toLowerCase())}`
+    : uncounted.length ? 'an expense with no confirmed PO'
+      : away.length ? `${(away[0].label || 'something').toLowerCase()} not at the desk` : null;
+
+  return {
+    tone: off ? 'warn' : 'good',
+    status: off ? 'Closed · check' : 'Closed',
+    eyebrow: 'Till',
+    headline: slot ? `${who} closed the ${slot} shift` : `${who} closed a shift`,
+    sub: [sayDate(r.day), slotHours(r.slot), DEVICE_WORDS[device]].filter(Boolean).join(' · '),
+    facts,
+    callout: callout || undefined,
+    subject: `${slot ? `${SLOT_LABEL[r.slot]} shift` : 'A shift'} closed by ${firstName(who)} · ${problem || sayShortDate(r.day)}`,
+    preheader: safeMail(() => closedSummary(r, amounts)),
+    why: 'You get this because you follow till closings in Insight.',
+  };
+}
+
 /**
  * Tell whoever Insight says to tell about `event`. Never fails the action that
  * caused it: a closed shift is closed whether or not a phone buzzed.
  */
-async function tell(ctx, event, { title, withAmounts, withoutAmounts }) {
+async function tell(ctx, event, { title, withAmounts, withoutAmounts, mailWith, mailWithout }) {
   const plan = await insightOrNull(ctx.env, '/api/link/till/recipients', { event });
   if (!plan) {
     // Insight did not answer, so nobody can be named. Said where the email log
@@ -391,7 +480,7 @@ async function tell(ctx, event, { title, withAmounts, withoutAmounts }) {
     await createNotice(ctx.db, {
       kind: `till.${event}`, level: 'info', title, body: r.amounts ? withAmounts : withoutAmounts,
       actor: ctx.session?.user?.name ?? null, userId: r.userId, push: r.push, email: r.email, text: false,
-      emailTo,
+      emailTo, mail: r.amounts ? mailWith : mailWithout,
     }, ctx);
   }
 }
@@ -449,10 +538,32 @@ export async function answer(ctx) {
   await ctx.db.prepare('INSERT INTO till_answer (key, user_id, how, text, at) VALUES (?1, ?2, ?3, ?4, ?5)')
     .bind(key, userId, how, text, nowUtc()).run();
   const what = `${SLOT_LABEL[issue.slot]} · ${issue.day}`;
+  const answerMail = (amounts) => {
+    const who = ctx.session.user.name;
+    const slot = slotWord(issue.slot);
+    const shift = slot ? `the ${slot} shift` : 'a shift';
+    return {
+      tone: 'info', status: 'Answered', eyebrow: 'Till',
+      headline: `${who} answered for ${shift} till`,
+      sub: issue.day ? sayDate(issue.day) : undefined,
+      facts: [
+        ['Shift', [SLOT_LABEL[issue.slot], issue.day ? sayShortDate(issue.day) : null].filter(Boolean).join(', ')],
+        ['Issue', issue.label],
+        amounts && issue.amount ? ['Amount', cedis(issue.amount), { tone: 'bad' }] : null,
+        how === 'repay' ? ['Will pay it back', 'Yes'] : null,
+      ].filter(Boolean),
+      quote: { by: `${firstName(who)} says`, text },
+      subject: `${firstName(who)} answered for ${shift}${issue.day ? ` on ${sayShortDate(issue.day)}` : ''}`,
+      preheader: `${issue.label || 'A till issue'}${amounts && issue.amount ? ` ${cedis(issue.amount)}` : ''}.${how === 'repay' ? ' Will pay it back.' : ''}`,
+      why: 'You get this because you follow till issues in Insight.',
+    };
+  };
   await tell(ctx, 'answer', {
     title: `${ctx.session.user.name} answered for ${what}`,
     withAmounts: `${issue.label}${issue.amount ? ` (${cedis(issue.amount)})` : ''}. ${how === 'repay' ? 'Will pay it back: ' : ''}${text}`,
     withoutAmounts: `${issue.label}. ${how === 'repay' ? 'Will pay it back: ' : ''}${text}`,
+    mailWith: safeMail(() => answerMail(true)),
+    mailWithout: safeMail(() => answerMail(false)),
   });
   return json({ ok: true });
 }
@@ -503,10 +614,39 @@ export async function linkRecover(ctx) {
     kind: 'till.recovered', level: 'warn', title: `${cedis(amount)} till shortage to come off ${user.name}'s pay`,
     body: `${reason}. Recorded as an advance coming off ${startMonth}, decided by ${by}.`,
     link: '#/att-advances', audience: 'hr_pay', text: false,
+    mail: safeMail(() => ({
+      tone: 'warn', status: 'Off their pay', eyebrow: 'Till',
+      headline: `${cedis(amount)} till shortage will come off ${user.name}'s pay`,
+      facts: [
+        ['Amount', cedis(amount), { big: true, strong: true }],
+        ['Comes off', startMonth ? `${sayMonth(startMonth)} pay` : 'The next pay'],
+        ['Reason', reason],
+        ['Decided by', by],
+      ],
+      note: 'It is recorded as an advance, so it comes off the payslip the way any advance does.',
+      button: 'See the advances',
+      subject: `${cedis(amount)} till shortage to come off ${user.name}'s pay`,
+      preheader: `${reason}. Decided by ${by}.`,
+      why: 'You get this because you handle pay.',
+    })),
   }, ctx);
   await createNotice(ctx.db, {
     kind: 'till.recovered', level: 'info', title: `${cedis(amount)} will come off your next pay`,
     body: `${reason}. You can see it under My pay → My advance.`, userId, text: false,
+    mail: safeMail(() => ({
+      tone: 'warn', status: 'Off your pay', eyebrow: 'Till',
+      headline: `${cedis(amount)} will come off your next pay`,
+      facts: [
+        ['Amount', cedis(amount), { strong: true }],
+        ['Comes off', startMonth ? `${sayMonth(startMonth)} pay` : 'Your next pay'],
+        ['Reason', reason],
+        ['Decided by', by],
+      ],
+      note: 'You can see it under My pay, then My advance.',
+      subject: `${cedis(amount)} will come off your next pay`,
+      preheader: `${reason}.`,
+      why: 'You get this because it affects your pay.',
+    })),
   }, ctx);
   return json({ ok: true, advanceId: row?.id ?? null });
 }
@@ -525,6 +665,17 @@ export async function linkReopen(ctx) {
   await createNotice(ctx.db, {
     kind: 'till.reopened', level: 'warn', title: `Your closing report for ${labelOf(report)} was reopened`,
     body: `${by}: ${reason}. Close it again under My till.`, link: '#/att-my-till', userId: report.user_id, text: false,
+    mail: safeMail(() => ({
+      tone: 'warn', status: 'Action needed', eyebrow: 'Till',
+      headline: 'Your closing report was reopened',
+      sub: [SLOT_LABEL[report.slot] ? `${SLOT_LABEL[report.slot]} shift` : null, sayDate(report.day)].filter(Boolean).join(' · '),
+      quote: { by: `${by} says`, text: reason },
+      note: 'Correct it and close it again under My till.',
+      button: 'Close it again',
+      subject: `Your ${slotWord(report.slot) ? `${slotWord(report.slot)} shift ` : ''}report for ${sayShortDate(report.day)} was reopened`,
+      preheader: `${by}: ${reason}`,
+      why: 'You get this because this is your closing report.',
+    })),
   }, ctx);
   return json({ ok: true });
 }
@@ -556,8 +707,42 @@ export async function linkMove(ctx) {
     kind: 'till.reopened', level: 'info', title: `Your closing report was moved to ${labelOf({ day, slot })}`,
     body: `${by} moved it from ${labelOf(report)}, the shift ASSD has you on. Nothing else in it changed.`,
     link: '#/att-my-till', userId: report.user_id, push: false, email: false, text: false,
+    mail: safeMail(() => {
+      const shift = (s) => [SLOT_LABEL[s.slot] ? `${SLOT_LABEL[s.slot]} shift` : null, sayShortDate(s.day)].filter(Boolean).join(', ');
+      return {
+        tone: 'info', status: 'Moved', eyebrow: 'Till',
+        headline: 'Your closing report was moved to another shift',
+        sub: [SLOT_LABEL[slot] ? `${SLOT_LABEL[slot]} shift` : null, sayDate(day)].filter(Boolean).join(' · '),
+        facts: [['Was on', shift(report)], ['Now on', shift({ day, slot })], ['Moved by', by]],
+        note: 'It now sits on the shift ASSD has you on. Nothing else in it changed.',
+        button: 'See My till',
+        subject: `Your closing report was moved to ${slotWord(slot) ? `the ${slotWord(slot)} shift` : 'another shift'} on ${sayShortDate(day)}`,
+        preheader: `${by} moved it from the ${shift(report)}. Nothing else changed.`,
+        why: 'You get this because this is your closing report.',
+      };
+    }),
   }, ctx);
   return json({ ok: true, moved: true, from: { day: report.day, slot: report.slot }, to: { day, slot } });
+}
+
+/** Insight's own words, in the design, with the label that fits. */
+function tellMail(kind, title, text) {
+  if (kind === 'till.approval') {
+    return {
+      tone: 'warn', status: 'Needs your answer', eyebrow: 'Till',
+      headline: title, intro: text || undefined,
+      subject: title, preheader: text || undefined,
+      why: 'You get this because you approve till corrections.',
+    };
+  }
+  const sentBack = /sent back|returned|not accepted|rejected|refused/i.test(`${title} ${text || ''}`);
+  return {
+    tone: sentBack ? 'warn' : 'good', status: sentBack ? 'Sent back' : 'Settled', eyebrow: 'Till',
+    headline: title, intro: text || undefined,
+    button: 'See my till list',
+    subject: title, preheader: text || undefined,
+    why: 'You get this because it is about your till.',
+  };
 }
 
 /** Tell people something Insight decided. */
@@ -575,6 +760,7 @@ export async function linkTell(ctx) {
     await createNotice(ctx.db, {
       kind, level: 'info', title, body: text, link: kind === 'till.settled' ? '#/att-my-till-issues' : null,
       userId: Number(p.userId), push: p.push !== false, email: Boolean(p.email), text: false,
+      mail: safeMail(() => tellMail(kind, title, text)),
     }, ctx);
   }
   return json({ ok: true });

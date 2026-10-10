@@ -11,6 +11,7 @@ import {
 } from '../lib/advances.js';
 import { isAdmin } from '../lib/payroll-access.js';
 import { addMonths, isDay, isMonth, monthOf, todayIn } from '../util/dates.js';
+import { firstName, sayDate, sayMonth } from '../lib/email-design.js';
 
 /**
  * Salary advances: who owes what, and what came off this month.
@@ -297,6 +298,23 @@ export async function addAdvance(ctx) {
     title: `A salary advance of ${money(amount, currency)} has been recorded for you`,
     body: `${money(monthly, currency)} a month for ${months} month${months === 1 ? '' : 's'}, `
       + `starting ${startMonth}. If this is not what you agreed, say so before payday.`,
+    mail: () => ({
+      tone: 'info', status: 'Recorded', eyebrow: 'Salary advance',
+      headline: 'A salary advance has been recorded for you',
+      facts: [
+        ['Amount', money(amount, currency), { big: true, strong: true }],
+        ['Given on', sayDate(takenOn)],
+        ['Each month', money(monthly, currency)],
+        ['For', `${months} month${months === 1 ? '' : 's'}`],
+        ['Starting', `${sayMonth(startMonth)} pay`],
+      ],
+      quote: reason ? { by: 'What it is for', text: reason } : undefined,
+      callout: { tone: 'warn', text: 'If this is not what you agreed, say so before payday.' },
+      button: 'See My advance',
+      subject: `A ${money(amount, currency)} advance has been recorded for you`,
+      preheader: `${money(monthly, currency)} a month for ${months} month${months === 1 ? '' : 's'}, starting ${sayMonth(startMonth)}.`,
+      why: 'You get this because it affects your pay.',
+    }),
   });
 
   return json({ ok: true, id: row?.id ?? null, monthly, startMonth });
@@ -369,6 +387,20 @@ export async function decideAdvance(ctx, idParam) {
       kind: 'advance.declined',
       title: 'Your request for a salary advance was turned down',
       body: note || 'Speak to whoever handles the wages if you want to know more.',
+      mail: () => ({
+        tone: 'bad', status: 'Not approved', eyebrow: 'Salary advance',
+        headline: 'Your salary advance was not approved',
+        facts: [
+          ['Asked for', money(advance.amount, advance.currency || currency)],
+          ['For', purposeOf(advance.purpose)?.label],
+        ],
+        quote: note ? { by: 'The reason', text: note } : undefined,
+        note: note ? undefined : 'Speak to whoever handles the wages if you want to know more.',
+        button: 'See My advance',
+        subject: 'Your salary advance request was not approved',
+        preheader: note || 'Speak to whoever handles the wages if you want to know more.',
+        why: 'You get this because you asked for this advance.',
+      }),
     });
     return json({ ok: true, status: 'declined' });
   }
@@ -407,6 +439,30 @@ export async function decideAdvance(ctx, idParam) {
     body: `${money(monthly, currency)} a month for ${months} month${months === 1 ? '' : 's'}, `
       + `from ${startMonth}.${changed ? ' The terms are not quite what you asked for.' : ''}`
       + (note ? ` ${note}` : ''),
+    mail: () => {
+      const askedFor = [];
+      if (amount !== round2(advance.amount)) askedFor.push(money(advance.amount, currency));
+      if (months !== advance.months) askedFor.push(`${advance.months} month${advance.months === 1 ? '' : 's'}`);
+      return {
+        tone: 'good', status: 'Approved', eyebrow: 'Salary advance',
+        headline: 'Your salary advance is approved',
+        facts: [
+          ['Amount', money(amount, currency), { big: true, strong: true }],
+          ['Each month', money(monthly, currency)],
+          ['For', `${months} month${months === 1 ? '' : 's'}`],
+          ['Starting', `${sayMonth(startMonth)} pay`],
+        ],
+        callout: changed ? {
+          tone: 'info',
+          text: `The terms are not quite what you asked for${askedFor.length ? ` (you asked for ${askedFor.join(' over ')})` : ''}.`,
+        } : undefined,
+        quote: note ? { by: 'A note with it', text: note } : undefined,
+        button: 'See My advance',
+        subject: `Your ${money(amount, currency)} advance is approved`,
+        preheader: `${money(monthly, currency)} a month for ${months} month${months === 1 ? '' : 's'}, from ${sayMonth(startMonth)}.`,
+        why: 'You get this because you asked for this advance.',
+      };
+    },
   });
 
   return json({ ok: true, status: 'approved', monthly });
@@ -455,6 +511,21 @@ export async function adjustAdvance(ctx, idParam) {
       kind: 'advance.changed',
       title: 'What comes off your pay for your advance has changed',
       body: `${money(monthly, advance.currency)} a month from now on.${note ? ` ${note}` : ''}`,
+      mail: () => ({
+        tone: 'info', status: 'Changed', eyebrow: 'Salary advance',
+        headline: 'What comes off your pay for your advance has changed',
+        facts: [
+          ['Each month now', money(monthly, advance.currency), { big: true, strong: true }],
+          ['Was', money(advance.monthly, advance.currency)],
+          ['For', `${months} month${months === 1 ? '' : 's'}`],
+          ['Starting', startMonth ? `${sayMonth(startMonth)} pay` : null],
+        ],
+        quote: note ? { by: 'Why', text: note } : undefined,
+        button: 'See My advance',
+        subject: `Your advance now comes off at ${money(monthly, advance.currency)} a month`,
+        preheader: `It was ${money(advance.monthly, advance.currency)} a month.`,
+        why: 'You get this because it affects your pay.',
+      }),
     });
   }
 
@@ -593,6 +664,22 @@ export async function editAdvance(ctx, idParam) {
       title: 'Your salary advance record has been corrected',
       body: `${money(amount, advance.currency)} in all, `
         + `${money(monthly, advance.currency)} a month.${note ? ` ${note}` : ''}`,
+      mail: () => ({
+        tone: 'info', status: 'Corrected', eyebrow: 'Salary advance',
+        headline: 'Your salary advance record has been corrected',
+        facts: [
+          ['Amount', money(amount, advance.currency), { big: true, strong: true }],
+          changed.includes('amount') ? ['Was', money(advance.amount, advance.currency)] : null,
+          ['Each month', money(monthly, advance.currency)],
+          changed.includes('monthly') ? ['Was each month', money(advance.monthly, advance.currency)] : null,
+          ['Left to pay', money(Math.max(0, round2(amount - repaid)), advance.currency)],
+        ].filter(Boolean),
+        quote: note ? { by: 'Why', text: note } : undefined,
+        button: 'See My advance',
+        subject: 'Your salary advance record has been corrected',
+        preheader: `${money(amount, advance.currency)} in all, ${money(monthly, advance.currency)} a month.`,
+        why: 'You get this because it affects your pay.',
+      }),
     });
   }
 
@@ -826,6 +913,21 @@ export async function bringHistoryAcross(ctx, idParam) {
       body: 'The months before this one have been retyped from what was actually handed over '
         + `and what actually came off. ${note} Check your account and say so if a month is `
         + 'wrong.',
+      mail: () => ({
+        tone: 'info', status: 'Brought up to date', eyebrow: 'Salary advance',
+        headline: 'Your advance record now matches the office ledger',
+        intro: 'The months before this one have been retyped from what was actually handed over and what actually came off.',
+        facts: [
+          made.length ? ['Advances added', String(made.length)] : null,
+          corrected ? ['Months corrected', String(corrected)] : null,
+        ].filter(Boolean),
+        quote: note ? { by: 'A note from the office', text: note } : undefined,
+        callout: { tone: 'warn', text: 'Check your account and say so if a month is wrong.' },
+        button: 'See My advance',
+        subject: 'Your advance record has been brought into line with the office ledger',
+        preheader: 'Check your account and say so if a month is wrong.',
+        why: 'You get this because it affects your pay.',
+      }),
     });
   }
 
@@ -953,6 +1055,20 @@ export async function editEntry(ctx, idParam, entryParam) {
       body: `${month}: ${money(amount, advance.currency)} rather than `
         + `${money(round2(entry.amount), advance.currency)}. `
         + `${money(Math.max(0, left), advance.currency)} is left.`,
+      mail: () => ({
+        tone: 'info', status: 'Corrected', eyebrow: 'Salary advance',
+        headline: 'A payment against your salary advance has been put right',
+        facts: [
+          ['Month', sayMonth(month)],
+          ['Now', money(amount, advance.currency), { strong: true }],
+          ['Was', money(round2(entry.amount), advance.currency)],
+          ['Left to pay', money(Math.max(0, left), advance.currency), { big: true, strong: true }],
+        ],
+        button: 'See My advance',
+        subject: `Your ${sayMonth(month)} advance payment has been put right`,
+        preheader: `${money(amount, advance.currency)} rather than ${money(round2(entry.amount), advance.currency)}. ${money(Math.max(0, left), advance.currency)} is left.`,
+        why: 'You get this because it affects your pay.',
+      }),
     });
   }
 
@@ -1035,6 +1151,21 @@ export async function removeAdvance(ctx, idParam) {
       body: `${money(round2(advance.amount), advance.currency)} from `
         + `${advance.taken_on || 'earlier'}, with ${money(owed, advance.currency)} outstanding. `
         + `Nothing more comes off your pay for it.${note ? ` ${note}` : ''}`,
+      mail: () => ({
+        tone: 'good', status: 'Taken off', eyebrow: 'Salary advance',
+        headline: 'A salary advance has been taken off your record',
+        facts: [
+          ['Advance', money(round2(advance.amount), advance.currency), { strong: true }],
+          ['Given on', advance.taken_on ? sayDate(advance.taken_on) : null],
+          ['Was still owed', money(owed, advance.currency)],
+        ],
+        quote: note ? { by: 'Why', text: note } : undefined,
+        note: 'Nothing more comes off your pay for it.',
+        button: 'See My advance',
+        subject: 'A salary advance has been taken off your record',
+        preheader: 'Nothing more comes off your pay for it.',
+        why: 'You get this because it affects your pay.',
+      }),
     });
   }
 
@@ -1281,6 +1412,24 @@ export async function askForAdvance(ctx) {
     link: '#/att-advances',
     actor: staff.name,
     audience: 'hr_pay',
+    mail: safeMail(() => ({
+      tone: 'warn', status: 'Needs your answer', eyebrow: 'Salary advance',
+      headline: `${staff.name} has asked for a salary advance`,
+      facts: [
+        ['Amount', money(amount, currency), { big: true, strong: true }],
+        ['For', purposeOf(purpose)?.label],
+        ['Over', `${months} month${months === 1 ? '' : 's'}`],
+        ['Each month', money(instalmentFor(amount, months), currency)],
+        ['Advance already open', hasOpen ? 'Yes' : 'No', hasOpen ? { tone: 'warn' } : {}],
+      ],
+      quote: reason ? { by: `${firstName(staff.name)} says`, text: reason } : undefined,
+      note: documentId ? 'The paper they signed is attached in HIVE.' : undefined,
+      button: 'Answer the request',
+      subject: `${staff.name} asks for a ${money(amount, currency)} advance`,
+      preheader: `${purposeOf(purpose)?.label ?? 'An advance'}, over ${months} month${months === 1 ? '' : 's'}: `
+        + `${money(instalmentFor(amount, months), currency)} a month.`,
+      why: 'You get this because you handle pay.',
+    })),
   }, ctx);
 
   return json({ ok: true, id: row?.id ?? null, status: 'requested', months, purpose });
@@ -1334,7 +1483,7 @@ export async function askAboutTheMonth(db, { timezone = 'UTC', now = null, ctx =
     // taken_on and asked_at come too, because the month repayment starts falls
     // back to them where nobody set one, and a query that leaves them out
     // makes this nudge disagree with the payroll.
-    `SELECT a.id, a.monthly, a.amount, a.start_month, a.taken_on, a.asked_at
+    `SELECT a.id, a.staff_id, a.monthly, a.amount, a.start_month, a.taken_on, a.asked_at
        FROM hr_advance a WHERE a.status = 'approved'`,
   ).all().catch(() => ({ results: [] }));
 
@@ -1353,6 +1502,18 @@ export async function askAboutTheMonth(db, { timezone = 'UTC', now = null, ctx =
   const currency = (await db.prepare("SELECT value FROM settings WHERE key = 'currency'")
     .first().catch(() => null))?.value || 'GHS';
 
+  // Who owes what, for the email: one line a person, whatever they have running.
+  const names = new Map(((await db.prepare('SELECT id, name FROM att_staff').all()
+    .catch(() => ({ results: [] }))).results ?? []).map((s) => [s.id, s.name]));
+  const byPerson = new Map();
+  for (const a of open) {
+    const who = names.get(a.staff_id) ?? 'Somebody';
+    const key = a.staff_id ?? `advance-${a.id}`;
+    const was = byPerson.get(key) ?? { who, owed: 0 };
+    was.owed = round2(was.owed + round2(a.monthly));
+    byPerson.set(key, was);
+  }
+
   await createNotice(db, {
     kind: 'advance.month_end',
     level: 'info',
@@ -1366,6 +1527,24 @@ export async function askAboutTheMonth(db, { timezone = 'UTC', now = null, ctx =
     audience: 'hr_pay',
     push: true,
     email: false,
+    mail: safeMail(() => ({
+      tone: 'warn', status: 'To do', eyebrow: 'Salary advances',
+      headline: `Confirm ${sayMonth(month)}'s advance deductions`,
+      table: {
+        head: ['Who', 'This month'],
+        right: true,
+        rows: [
+          ...[...byPerson.values()].sort((a, b) => String(a.who).localeCompare(String(b.who)))
+            .map((p) => [p.who, money(p.owed, currency)]),
+          [{ text: 'Total', strong: true }, { text: money(owed, currency), strong: true }],
+        ],
+      },
+      note: 'Say what was actually deducted, and add anything new that was given out.',
+      button: `Close off ${sayMonth(month)}`,
+      subject: `Close off ${sayMonth(month)}: ${open.length} advance${open.length === 1 ? '' : 's'} to confirm`,
+      preheader: `${money(owed, currency)} is due to come off this month.`,
+      why: 'You get this because you handle pay.',
+    })),
   }, ctx);
 
   return { asked: open.length, month };
@@ -1405,11 +1584,24 @@ async function write(ctx, advance, { month, kind, amount, note }) {
     kind: 'advance.settled',
     title: 'Your salary advance is paid off',
     body: 'Nothing more will come off your pay for it.',
+    mail: () => ({
+      tone: 'good', status: 'Paid off', eyebrow: 'Salary advance',
+      headline: 'Your salary advance is paid off',
+      facts: [
+        ['Advance', `${money(advance.amount, advance.currency)}${advance.taken_on ? ` from ${sayMonth(String(advance.taken_on).slice(0, 7))}` : ''}`],
+        ['Last payment', month ? `${sayMonth(month)} pay` : null],
+      ],
+      note: 'Nothing more will come off your pay for it.',
+      button: 'See My advance',
+      subject: 'Your salary advance is paid off',
+      preheader: 'Nothing more will come off your pay for it.',
+      why: 'You get this because it affects your pay.',
+    }),
   });
 }
 
 /** Tell the person, if there is an account to tell. */
-async function tell(ctx, person, { kind, title, body }) {
+async function tell(ctx, person, { kind, title, body, mail }) {
   if (!person?.user_id) return;
   await createNotice(ctx.db, {
     kind,
@@ -1421,7 +1613,13 @@ async function tell(ctx, person, { kind, title, body }) {
     userId: person.user_id,
     push: true,
     email: false,
+    mail: typeof mail === 'function' ? safeMail(mail) : mail,
   }, ctx);
+}
+
+/** A mail layout, or none: an email must never stop the thing it is about. */
+function safeMail(build) {
+  try { return build() || undefined; } catch { return undefined; }
 }
 
 /**

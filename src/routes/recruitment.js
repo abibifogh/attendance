@@ -14,6 +14,7 @@ import {
   MARKS, PACKS, mayCorrect, packForDepartment, sheetRating, whatChanged,
 } from '../lib/interview-packs.js';
 import { extractPdfText } from '../lib/pdf-text.js';
+import { firstName, sayDate, sayShortDate, sayTime } from '../lib/email-design.js';
 import {
   CLOSED_STAGES, EMPLOYMENT, FILE_KINDS, LIVE_STAGES, SOURCES, STAGES, cutIntoSlots,
   endsAt, fromMinutes, howItIsGoing, isFileKind, isStage, offerable, readCandidateList,
@@ -1518,7 +1519,9 @@ async function panelOf(db, slotId) {
  * Never throws. A notice is a courtesy; failing to send one must not fail the
  * booking that earned it.
  */
-async function tellPanel(ctx, slot, { kind, title, body, level = 'info' }, staffIds = null) {
+async function tellPanel(ctx, slot, {
+  kind, title, body, level = 'info', mail = null,
+}, staffIds = null) {
   const panel = staffIds ?? await panelOf(ctx.db, slot.id);
   if (!panel.length) return 0;
 
@@ -1540,6 +1543,7 @@ async function tellPanel(ctx, slot, { kind, title, body, level = 'info' }, staff
       userId: user.id,
       push: true,
       email: false,
+      mail,
     }, ctx).catch(() => {});
     told += 1;
   }
@@ -1549,6 +1553,28 @@ async function tellPanel(ctx, slot, { kind, title, body, level = 'info' }, staff
 /** The same, said the way a person reads a diary entry. */
 const sayWhen = (slot) => `${slot.day} at ${slot.starts_at}`
   + `${slot.place ? `, ${slot.place}` : ''}`;
+
+// For the email: "Tue 13 Oct, 10:00 am", "30 minutes", and where the button goes.
+const mailWhen = (slot) => [sayShortDate(slot?.day), sayTime(slot?.starts_at)].filter(Boolean).join(', ');
+const mailAt = (slot) => [sayShortDate(slot?.day), sayTime(slot?.starts_at)].filter(Boolean).join(' at ');
+const mailLength = (slot) => (Number(slot?.minutes) > 0 ? `${Number(slot.minutes)} minutes` : null);
+const mailFileButton = (slot, name) => (slot?.candidate_id
+  ? (name ? `See ${firstName(name)}\u2019s file` : 'See their file')
+  : 'See the diary');
+const PANEL_WHY = 'You get this because you are on the interview panel.';
+const WAS_ON_WHY = 'You get this because you were on this interview.';
+const OFFICE_WHY = 'You get this because you can see recruitment in HIVE.';
+
+/** The vacancy's title, for an email. Never throws; a missing one is left out. */
+export async function roleTitleOf(db, roleId) {
+  if (roleId == null) return null;
+  try {
+    const role = await db.prepare('SELECT title FROM rec_role WHERE id = ?').bind(roleId).first();
+    return role?.title ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Publish a morning of interviews.
@@ -1710,6 +1736,7 @@ export async function updateSlot(ctx, id) {
     const person = await ctx.db.prepare('SELECT name FROM rec_candidate WHERE id = ?')
       .bind(slot.candidate_id).first().catch(() => null);
     const name = person?.name ?? 'A candidate';
+    const named = person?.name ?? null;
 
     // Being quietly taken off a panel is how somebody fails to turn up to an
     // interview that was theirs, so whoever has come off is told too.
@@ -1718,6 +1745,21 @@ export async function updateSlot(ctx, id) {
         kind: 'recruitment.off_panel',
         title: `You are no longer interviewing ${name}`,
         body: `${sayWhen(slot)} has been given to ${who.name || 'somebody else'}.`,
+        mail: {
+          status: 'Changed',
+          tone: 'neutral',
+          eyebrow: 'Hiring',
+          headline: `You are no longer interviewing ${named ?? 'this candidate'}`,
+          facts: [
+            ['When', mailWhen(slot)],
+            ['Where', slot.place],
+            ['Now with', who.name || 'Somebody else'],
+          ],
+          button: mailFileButton(slot, named),
+          why: WAS_ON_WHY,
+          subject: `You are no longer interviewing ${named ?? 'this candidate'}`,
+          preheader: `${mailAt(slot)} has gone to ${who.name || 'somebody else'}.`,
+        },
       }, dropped);
     }
     await tellPanel(ctx, after, {
@@ -1729,12 +1771,61 @@ export async function updateSlot(ctx, id) {
       body: moved
         ? `Now ${sayWhen(after)}. It was ${sayWhen(slot)}.`
         : sayWhen(after),
+      mail: {
+        status: moved ? 'Moved' : 'Changed',
+        tone: moved ? 'warn' : 'info',
+        eyebrow: 'Hiring',
+        headline: named
+          ? `${named}\u2019s interview has ${moved ? 'moved' : 'changed'}`
+          : `An interview has ${moved ? 'moved' : 'changed'}`,
+        sub: moved ? `Now ${sayDate(after?.day)} at ${sayTime(after?.starts_at)}` : null,
+        facts: moved
+          ? [
+            ['Now', mailWhen(after), { strong: true }],
+            ['Was', mailWhen(slot)],
+            ['Length', mailLength(after)],
+            ['Where', after?.place],
+            ['Interviewing', who.name],
+          ]
+          : [
+            ['When', mailWhen(after)],
+            ['Length', mailLength(after)],
+            ['Where', after?.place],
+            ['Interviewing', who.name],
+          ],
+        button: mailFileButton(after, named),
+        why: PANEL_WHY,
+        subject: moved
+          ? `${named ? `${named}\u2019s` : 'An'} interview has moved to ${mailAt(after)}`
+          : `${named ? `${named}\u2019s` : 'An'} interview has changed`,
+        preheader: moved
+          ? `It was ${mailAt(slot)}.`
+          : [mailAt(after), after?.place].filter(Boolean).join(', '),
+      },
     }, who.staffIds);
   } else if (added.length) {
     await tellPanel(ctx, after, {
       kind: 'recruitment.on_panel',
       title: 'You are down to interview',
       body: `${sayWhen(after)}. Nobody has taken it yet.`,
+      mail: {
+        status: 'Interviews',
+        tone: 'info',
+        eyebrow: 'Hiring',
+        headline: `You are down to interview on ${sayDate(after?.day)}`,
+        schedule: {
+          rows: [[
+            sayTime(after?.starts_at),
+            [Number(after?.minutes) > 0 ? `${Number(after.minutes)} min` : null, after?.place]
+              .filter(Boolean).join(', '),
+            'Not taken yet',
+          ]],
+        },
+        button: 'See the diary',
+        why: PANEL_WHY,
+        subject: `You are down to interview on ${mailAt(after)}`,
+        preheader: 'Nobody has taken the time yet.',
+      },
     }, added);
   }
 
@@ -1833,6 +1924,29 @@ export async function updateDay(ctx) {
       title: `You are interviewing on ${day}`,
       body: `${touching.length} time${touching.length === 1 ? '' : 's'}`
         + `${booked ? `, ${booked} already taken` : ', none taken yet'}.`,
+      mail: {
+        status: 'Interviews',
+        tone: 'info',
+        eyebrow: 'Hiring',
+        headline: `You are interviewing on ${sayDate(day)}`,
+        schedule: {
+          rows: touching.map((slot) => {
+            const where = place ? place.place : slot.place;
+            const length = Number(slot.minutes) > 0 ? `${Number(slot.minutes)} min` : null;
+            return [
+              sayTime(slot.starts_at),
+              [length, where].filter(Boolean).join(', '),
+              slot.candidate_id != null ? 'A candidate' : 'Not taken yet',
+              slot.candidate_id != null ? { tone: 'good', text: 'Booked' } : null,
+            ];
+          }),
+        },
+        button: 'See the diary',
+        why: PANEL_WHY,
+        subject: `You are interviewing on ${sayShortDate(day)}`,
+        preheader: `${touching.length} time${touching.length === 1 ? '' : 's'}, `
+          + `${booked ? `${booked} already taken` : 'none taken yet'}.`,
+      },
     }, who.staffIds);
   }
 
@@ -1877,6 +1991,23 @@ export async function removeSlot(ctx, id) {
       title: `${person?.name ?? 'An'} interview is off`,
       body: `${sayWhen(slot)} has been taken out of the diary. `
         + 'They have not been told, so somebody has to ring them.',
+      mail: {
+        status: 'Cancelled',
+        tone: 'bad',
+        eyebrow: 'Hiring',
+        headline: person?.name ? `${person.name}\u2019s interview is off` : 'An interview is off',
+        facts: [['Was', [mailWhen(slot), slot.place].filter(Boolean).join(', ')]],
+        callout: {
+          tone: 'warn',
+          text: `${person?.name ? firstName(person.name) : 'The candidate'} has not been told. `
+            + 'Somebody has to ring them.',
+        },
+        button: mailFileButton(slot, person?.name),
+        why: WAS_ON_WHY,
+        subject: person?.name ? `${person.name}\u2019s interview is off` : 'An interview is off',
+        preheader: `${mailAt(slot)}. Somebody has to ring `
+          + `${person?.name ? firstName(person.name) : 'them'}.`,
+      },
     });
   }
   await audit(ctx, 'recruitment.slot_remove', slot.id, { day: slot.day, at: slot.starts_at });
@@ -1910,10 +2041,28 @@ export async function bookSlot(ctx, id) {
     actor: actorOf(ctx),
   });
 
+  const roleTitle = await roleTitleOf(ctx.db, slot.role_id ?? row.role_id);
   const told = await tellPanel(ctx, { ...slot, candidate_id: row.id }, {
     kind: 'recruitment.booked',
     title: `You are interviewing ${row.name}`,
     body: `${sayWhen(slot)}. Booked by the office.`,
+    mail: {
+      status: 'Booked',
+      tone: 'info',
+      eyebrow: 'Hiring',
+      headline: `You are interviewing ${row.name}`,
+      facts: [
+        ['Role', roleTitle],
+        ['When', mailWhen(slot)],
+        ['Length', mailLength(slot)],
+        ['Where', slot.place],
+        ['Booked by', ctx.session?.user?.name ? `${ctx.session.user.name}, for the office` : 'The office'],
+      ],
+      button: mailFileButton({ candidate_id: row.id }, row.name),
+      why: PANEL_WHY,
+      subject: `You are interviewing ${row.name}, ${mailAt(slot)}`,
+      preheader: `${roleTitle ? `${roleTitle}. ` : ''}Booked by the office.`,
+    },
   });
 
   // Whether the panel actually heard, so the screen can say "tell them
@@ -1990,12 +2139,35 @@ export async function tellPanelAboutBooking(ctx, slotId, { changed = false } = {
   ).bind(slotId).first().catch(() => null);
   if (!slot) return false;
 
+  const who = slot.candidate_name ?? null;
+  const roleTitle = await roleTitleOf(ctx.db, slot.role_id);
+  const headline = changed
+    ? `${who ?? 'A candidate'} has moved their interview`
+    : `You are interviewing ${who ?? 'a candidate'}`;
   return tellPanel(ctx, slot, {
     kind: 'recruitment.booked',
     title: changed
       ? `${slot.candidate_name ?? 'A candidate'} has moved their interview`
       : `You are interviewing ${slot.candidate_name ?? 'a candidate'}`,
     body: `${sayWhen(slot)}. They chose it themselves.`,
+    mail: {
+      status: changed ? 'New time' : 'Booked',
+      tone: 'info',
+      eyebrow: 'Hiring',
+      headline,
+      facts: [
+        ['Role', roleTitle],
+        ['When', mailWhen(slot), changed ? { strong: true } : undefined],
+        ['Length', mailLength(slot)],
+        ['Where', slot.place],
+        ['Booked by', who ? `${firstName(who)}, from the link` : 'The candidate, from the link'],
+      ],
+      button: mailFileButton(slot, who),
+      why: PANEL_WHY,
+      subject: `${headline}, ${mailAt(slot)}`,
+      preheader: `${roleTitle ? `${roleTitle}. ` : ''}`
+        + `${who ? firstName(who) : 'They'} chose the time from the link.`,
+    },
   });
 }
 
@@ -2006,6 +2178,21 @@ export async function tellPanelAboutRelease(ctx, slot, candidateName) {
     level: 'warn',
     title: `${candidateName} has given back their interview time`,
     body: `${sayWhen(slot)} is free again. They have not picked another one yet.`,
+    mail: {
+      status: 'Time free',
+      tone: 'warn',
+      eyebrow: 'Hiring',
+      headline: `${candidateName || 'A candidate'} has given back their interview time`,
+      facts: [
+        ['Free again', mailWhen(slot)],
+        ['Where', slot?.place],
+        ['New time', 'Not picked yet'],
+      ],
+      button: 'See the diary',
+      why: WAS_ON_WHY,
+      subject: `${candidateName || 'A candidate'} has given back their interview time`,
+      preheader: `${mailAt(slot)} is free again.`,
+    },
   });
 }
 
@@ -2271,6 +2458,12 @@ export async function hire(ctx, id) {
     ? await ctx.db.prepare('SELECT * FROM rec_role WHERE id = ?').bind(row.role_id).first()
     : null;
 
+  // What the email to the records team says they are, read the same way the
+  // insert below reads it but without refusing anything a second time.
+  const said = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+  const jobTitle = said(body.jobTitle) ?? role?.title ?? null;
+  const department = said(body.department) ?? role?.department ?? null;
+
   let staff;
   try {
     staff = await ctx.db.prepare(
@@ -2361,6 +2554,33 @@ export async function hire(ctx, id) {
     audience: 'hr_manage',
     push: false,
     email: false,
+    mail: {
+      status: 'New starter',
+      tone: 'good',
+      eyebrow: 'Hiring',
+      headline: `${name} has been taken on`,
+      facts: [
+        ['Role', jobTitle],
+        ['Department', department],
+        ['Staff number', employeeNo],
+        ['Starts', sayDate(hiredOn), { strong: true }],
+      ],
+      schedule: {
+        title: 'Next steps',
+        rows: [
+          ['1', '', 'Send a link for their details'],
+          ['2', '', 'Send the contract to sign'],
+          ['3', '', 'Enrol them on the terminal'],
+        ],
+      },
+      note: moved
+        ? `${moved} file${moved === 1 ? '' : 's'} from their application ${moved === 1 ? 'is' : 'are'} now on their record.`
+        : null,
+      button: `Open ${firstName(name)}\u2019s record`,
+      why: 'You get this because you manage staff records.',
+      subject: `${name} has been taken on: starts ${sayShortDate(hiredOn)}`,
+      preheader: `${jobTitle ? `${jobTitle}, ` : ''}staff number ${employeeNo}.`,
+    },
   }, ctx).catch(() => {});
 
   await trail(ctx.db, {

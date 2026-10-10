@@ -1,5 +1,6 @@
 import { allows } from './permissions.js';
 import { createNotice } from './notices.js';
+import { sayRange } from './email-design.js';
 
 /**
  * Who may actually move somebody's leave days.
@@ -103,7 +104,48 @@ export async function askToMoveLeave(ctx, { staff, from, to, reviewId = null, pr
     link: '#/signoff?tab=leave',
     actor,
     audience: DECIDES,
+    mail: askedMail({ actor, staff, from, to, propose, reason }),
   }, ctx);
 
   return asked?.id ?? null;
+}
+
+/** "No change" rather than "no change", at the start of a table cell. */
+const capital = (text) => (text ? `${text[0].toUpperCase()}${text.slice(1)}` : text);
+
+/** "take 2 days off Abena Sarpong's leave", "give 1 day back to ...". */
+function moveWords(days, name) {
+  const n = Math.round(Number(days) || 0);
+  const count = `${Math.abs(n)} ${Math.abs(n) === 1 ? 'day' : 'days'}`;
+  if (n < 0) return `take ${count} off ${name}\u2019s leave`;
+  if (n > 0) return `give ${count} back to ${name}\u2019s leave`;
+  return `leave ${name}\u2019s leave balance with no change`;
+}
+
+/** The request above, as an email to whoever can approve it. Never throws. */
+function askedMail({ actor, staff, from, to, propose, reason }) {
+  try {
+    const who = String(actor ?? '').replace(/\s*\([^)]*\)\s*$/, '').trim() || 'Somebody';
+    const range = sayRange(from, to);
+    return {
+      status: 'Needs your answer',
+      tone: 'warn',
+      eyebrow: 'Leave balance',
+      headline: `${who} asks to ${moveWords(propose.days, staff.name)}`,
+      facts: [
+        ['Period signed', range],
+        ['Stands at now', capital(sayDays(propose.was))],
+        ['Asked for', capital(sayDays(propose.days)), { tone: 'warn', strong: true }],
+        ['Asked by', who],
+      ],
+      quote: reason ? { by: 'The reason', text: reason } : null,
+      note: 'The balance stays where it is until you decide.',
+      button: 'Answer the request',
+      why: 'You get this because you approve leave balances.',
+      subject: `Approve: ${staff.name}\u2019s leave, ${sayDays(propose.days)}`,
+      preheader: `Signed by ${who} for ${range}.`,
+    };
+  } catch {
+    return null;
+  }
 }

@@ -2,6 +2,7 @@ import { badRequest, int, json, notFound, readJson, str } from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
 import { WORDING, ageOn, birthdaysOn, greeting, monthDay, prompt, upcoming } from '../lib/birthdays.js';
 import { todayIn } from '../util/dates.js';
+import { firstName } from '../lib/email-design.js';
 
 /**
  * Whose birthday it is, who has been told, and the card.
@@ -160,11 +161,26 @@ export async function sendBirthdayCard(ctx) {
       userId: person.user_id,
       push: set.push,
       email: false,
+      mail: {
+        status: 'Happy birthday',
+        tone: 'good',
+        eyebrow: 'From all of us',
+        headline: wish.title,
+        intro: wish.line,
+        quote: message
+          ? { by: `${firstName(ctx.session?.user?.name) || 'Somebody'} added`, text: message }
+          : null,
+        button: 'Open HIVE',
+        why: 'You get this because it is your birthday.',
+        subject: wish.title,
+        preheader: property ? `From all of us at ${property}.` : 'From all of us.',
+      },
     }, ctx);
   }
 
   // And round the rest of the place, which is what a card is for.
   if (tellEverybody) {
+    const who = person.preferred_name || person.name.split(' ')[0];
     await createNotice(ctx.db, {
       kind: 'birthday.today',
       level: 'info',
@@ -178,6 +194,20 @@ export async function sendBirthdayCard(ctx) {
       audience: null,
       push: true,
       email: false,
+      mail: {
+        status: 'Birthday',
+        tone: 'good',
+        eyebrow: 'Today',
+        headline: `It is ${who}\u2019s birthday today`,
+        intro: `Say happy birthday if you see ${who} today.`,
+        quote: message
+          ? { by: `${firstName(ctx.session?.user?.name) || 'Somebody'} wrote`, text: message }
+          : null,
+        button: 'Open the Today screen',
+        why: 'You get this because birthdays are shared with all staff.',
+        subject: `It is ${who}\u2019s birthday today`,
+        preheader: `Say happy birthday if you see ${who}.`,
+      },
     }, ctx);
   }
 
@@ -237,6 +267,17 @@ export async function wishThem(db, { timezone = 'UTC', ctx = null } = {}) {
         userId: person.user_id,
         push: set.push,
         email: false,
+        mail: {
+          status: 'Happy birthday',
+          tone: 'good',
+          eyebrow: 'From all of us',
+          headline: wish.title,
+          intro: wish.line,
+          button: 'Open HIVE',
+          why: 'You get this because it is your birthday.',
+          subject: wish.title,
+          preheader: set.property ? `From all of us at ${set.property}.` : 'From all of us.',
+        },
       }, ctx);
     }
     wished += 1;
@@ -258,6 +299,17 @@ export async function wishThem(db, { timezone = 'UTC', ctx = null } = {}) {
       audience: 'att_view',
       push: set.push,
       email: false,
+      mail: {
+        status: 'Birthday',
+        tone: 'good',
+        eyebrow: 'For managers',
+        headline: said.title,
+        intro: said.body,
+        button: 'Send a card',
+        why: 'You get this because you look after today\u2019s team.',
+        subject: said.title,
+        preheader: 'There is a card ready to send on the Today screen.',
+      },
     }, ctx);
   }
 

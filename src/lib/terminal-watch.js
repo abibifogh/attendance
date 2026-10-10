@@ -1,6 +1,7 @@
 import { createNotice } from './notices.js';
 import { absMinutes, fromAbs, loadDataset, scheduleFor, shiftWindow } from './attendance.js';
 import { addDays, nowIn } from '../util/dates.js';
+import { sayShortDate, sayTime } from './email-design.js';
 
 /**
  * Whether the terminal is still talking to us.
@@ -143,6 +144,7 @@ export async function watchTerminals(db, { timezone = 'UTC', ctx = null } = {}) 
         audience: 'att_manage',
         email: true,
         push: false,
+        mail: backMail(device, { fromAt: open.from_at, endedAt, today }),
       }, ctx);
       continue;
     }
@@ -170,6 +172,7 @@ export async function watchTerminals(db, { timezone = 'UTC', ctx = null } = {}) 
         audience: 'att_manage',
         email: true,
         push: true,
+        mail: quietMail(device, { fromAt: open.from_at, silent, due, today, still: true }),
       }, ctx);
       continue;
     }
@@ -196,10 +199,81 @@ export async function watchTerminals(db, { timezone = 'UTC', ctx = null } = {}) 
       audience: 'att_manage',
       email: true,
       push: true,
+      mail: quietMail(device, { fromAt, silent, due, today, still: false }),
     }, ctx);
   }
 
   return { checked, quiet, back };
+}
+
+/** "5:40 am", or "Fri 9 Oct, 5:40 am" when it was not today. */
+function sayStamp(localStamp, today) {
+  const stamp = String(localStamp ?? '');
+  const day = stamp.slice(0, 10);
+  const time = sayTime(stamp.slice(11, 16));
+  if (!time) return null;
+  return day && day !== today ? `${sayShortDate(day)}, ${time}` : time;
+}
+
+/** The urgent email: how long it has been silent, who is due, what to do. */
+function quietMail(device, { fromAt, silent, due, today, still }) {
+  const name = device?.name || 'A terminal';
+  const since = sayStamp(fromAt, today);
+  const headline = still ? `${name} is still quiet` : `${name} has gone quiet`;
+  return {
+    status: 'Urgent',
+    tone: 'bad',
+    eyebrow: 'Terminals',
+    subject: headline,
+    preheader: `Nothing since ${since ?? 'it was last heard'}, ${describe(silent)} ago. `
+      + `${due} ${due === 1 ? 'person' : 'people'} due in.`,
+    headline,
+    facts: [
+      ['Last heard', since ? `${since}, ${describe(silent)} ago` : `${describe(silent)} ago`, { tone: 'bad' }],
+      ['Due in since', `${due} ${due === 1 ? 'person' : 'people'}`],
+      ['Terminal', name],
+    ],
+    callout: {
+      tone: 'bad',
+      text: 'Until it is back, write down who arrives and when. Check the terminal has power '
+        + 'and network, and that the machine that polls it is running.',
+    },
+    note: 'Their days are held for a decision rather than marked absent, so nothing is wrongly written down.',
+    button: 'See today',
+    why: 'You get this because you manage attendance.',
+  };
+}
+
+/** The all-clear: how long it was down, and what is left to settle. */
+function backMail(device, { fromAt, endedAt, today }) {
+  const name = device?.name || 'A terminal';
+  const from = sayStamp(fromAt, today);
+  const until = sayStamp(endedAt, today);
+  const start = fromAt ? Date.parse(`${String(fromAt).replace(' ', 'T')}:00Z`) : NaN;
+  const end = endedAt ? Date.parse(`${String(endedAt).replace(' ', 'T')}:00Z`) : NaN;
+  const down = Number.isFinite(start) && Number.isFinite(end) && end >= start
+    ? describe(Math.round((end - start) / 60000))
+    : null;
+  return {
+    status: 'Back',
+    tone: 'good',
+    eyebrow: 'Terminals',
+    subject: `${name} is back`,
+    preheader: from && until
+      ? `Quiet from ${from} to ${until}. Settle the gap from Today.`
+      : 'Settle the gap from Today.',
+    headline: `${name} is back`,
+    facts: [
+      ['Quiet from', from],
+      ['Back at', until],
+      ['Down for', down],
+    ],
+    note: 'The shifts that began while it was quiet are still on the to-confirm list, because any '
+      + 'punch it lost is not coming back. Anybody who arrived while it was down needs their time '
+      + 'put in by hand.',
+    button: 'Settle the gap',
+    why: 'You get this because you manage attendance.',
+  };
 }
 
 function dueLine(due) {

@@ -35,6 +35,9 @@ import {
   monthOf, rangeDays, startOfWeek, todayIn,
 } from '../util/dates.js';
 import { SUNDAY_DOW, limitsFrom, sundaysWorkedCap } from '../lib/workload.js';
+import {
+  firstName, sayDate, sayHours, sayRange, sayShortDate, sayTime,
+} from '../lib/email-design.js';
 
 /**
  * Attendance: the API over what the terminal saw.
@@ -59,6 +62,17 @@ async function audit(ctx, action, entity, detail) {
 
 /** Who did it, in the form every trail in the app records. */
 const actorOf = (ctx) => `${ctx.session.user.name} (${ctx.session.user.role})`;
+
+/** "Akosua Darko" out of "Akosua Darko (manager)", for a sentence in an email. */
+const nameOf = (actor) => String(actor ?? '').replace(/\s*\([^)]*\)\s*$/, '').trim() || null;
+
+/** A mail layout, or none at all: an email must never stop the notice behind it. */
+const mailOrNothing = (build) => {
+  try { return build(); } catch { return null; }
+};
+
+/** "1 day", "4.5 days". */
+const sayDayCount = (n) => `${Number(n) || 0} day${Number(n) === 1 ? '' : 's'}`;
 
 function readDay(value, fallback) {
   if (value == null || value === '') return fallback;
@@ -1510,6 +1524,9 @@ async function rule(ctx, id, decision, note) {
     actor: actorOf(ctx),
     audience: 'att_times',
     email: decision !== 'approve',
+    mail: mailOrNothing(() => timesRuledMail({
+      request, staff, decision, note, decider: nameOf(actorOf(ctx)),
+    })),
   }, ctx);
 
   return { request, staff, day: request.day };
@@ -1637,9 +1654,103 @@ async function recordTimeEdit(ctx, {
     audience: 'att_setup',
     email: !waiting,
     push: waiting,
+    mail: mailOrNothing(() => {
+      const who = nameOf(actorOf(ctx));
+      const table = timesTable({ observedIn, observedOut, wasIn, wasOut, nowIn, nowOut });
+      const reasonText = reason && reason !== 'No reason given' ? reason : null;
+      return {
+        status: waiting ? 'Needs your answer' : 'Changed',
+        tone: waiting ? 'warn' : (contradicts ? 'warn' : 'info'),
+        eyebrow: 'Clock times',
+        headline: waiting
+          ? `${who ?? 'Somebody'} asks to change ${staff.name}’s clock times`
+          : `${staff.name}’s clock times were changed`,
+        sub: `${sayDate(day)}${who ? `, ${waiting ? 'asked by' : 'changed by'} ${who}` : ''}`,
+        table,
+        quote: reasonText ? { by: 'The reason', text: reasonText } : null,
+        note: waiting ? 'Nothing has changed on the day until you approve it.' : null,
+        button: waiting ? 'Answer the request' : 'See the day',
+        why: waiting
+          ? 'You get this because you approve changes to clock times.'
+          : 'You get this because you look after attendance setup.',
+        subject: waiting
+          ? `Approve: ${staff.name}’s clock times on ${sayShortDate(day)}`
+          : `${staff.name}: clock times changed on ${sayShortDate(day)}`,
+        preheader: [timesSummary(table), who ? `${waiting ? 'Asked' : 'Changed'} by ${who}.` : null]
+          .filter(Boolean).join(' '),
+      };
+    }),
   }, ctx);
 
   return written?.id ?? null;
+}
+
+/**
+ * The before-and-after of a clock correction, for an email: what the terminal
+ * saw, what stood before, and what stands now, one row for In and one for Out
+ * wherever there is anything to show. Same reading of the figures as
+ * `describeChange`: no new time and something before it means back to what the
+ * terminal saw.
+ */
+function timesTable({ observedIn, observedOut, wasIn, wasOut, nowIn, nowOut }) {
+  const say = (t) => (t ? sayTime(t) : 'Nothing');
+  const row = (side, observed, was, now) => {
+    if (!observed && !was && !now) return null;
+    const before = was ?? observed ?? null;
+    const after = now ?? observed ?? null;
+    const moved = (before ?? '') !== (after ?? '');
+    return [side, say(observed), say(before), moved ? { text: say(after), tone: 'warn', strong: true } : say(after)];
+  };
+  const rows = [
+    row('In', observedIn, wasIn, nowIn),
+    row('Out', observedOut, wasOut, nowOut),
+  ].filter(Boolean);
+  return rows.length ? { head: ['', 'Terminal', 'Was', 'Now'], rows } : null;
+}
+
+/** "In 7:02 am to 6:58 am." out of the table above, for the inbox line. */
+function timesSummary(table) {
+  const moved = (table?.rows ?? []).filter((r) => r[3] && typeof r[3] === 'object');
+  if (!moved.length) return null;
+  return `${moved.map((r) => `${r[0]} ${r[2]} to ${r[3].text}`).join(', ')}.`;
+}
+
+/** The answer to a clock correction somebody asked for, as an email. */
+function timesRuledMail({ request, staff, decision, note, decider }) {
+  const approved = decision === 'approve';
+  const asker = nameOf(request?.actor);
+  const table = timesTable({
+    observedIn: request?.observed_in ?? null,
+    observedOut: request?.observed_out ?? null,
+    wasIn: request?.was_in ?? null,
+    wasOut: request?.was_out ?? null,
+    nowIn: request?.now_in ?? null,
+    nowOut: request?.now_out ?? null,
+  });
+  const reason = request?.reason && request.reason !== 'No reason given' ? request.reason : null;
+  const quote = note
+    ? { by: approved ? `A note from ${firstName(decider)}` : `${firstName(decider)} says`, text: note }
+    : (reason ? { by: 'The reason', text: reason } : null);
+  return {
+    status: approved ? 'Approved' : 'Not approved',
+    tone: approved ? 'good' : 'bad',
+    eyebrow: 'Clock times',
+    headline: approved
+      ? `${decider ?? 'A manager'} approved the change to ${staff.name}’s clock times`
+      : `${decider ?? 'A manager'} sent back the change to ${staff.name}’s clock times`,
+    sub: `${sayDate(request?.day)}${asker ? `, asked by ${asker}` : ''}`,
+    table,
+    quote,
+    note: approved ? 'The day has been settled.' : 'Nothing has changed on the day.',
+    button: 'See the day',
+    why: 'You get this because you can correct clock times.',
+    subject: approved
+      ? `Approved: ${staff.name}’s clock times on ${sayShortDate(request?.day)}`
+      : `Sent back: ${staff.name}’s clock times on ${sayShortDate(request?.day)}`,
+    preheader: approved
+      ? (timesSummary(table) ?? 'The day has been settled.')
+      : (note ? `${firstName(decider)} says: ${note}` : 'Nothing has changed on the day.'),
+  };
 }
 
 /** One line of the trail, in the words somebody reading the bell would use. */
@@ -2552,6 +2663,73 @@ function linesFor({ what, from, to, first, held, message }) {
 }
 
 /**
+ * One person's rota, as an email: each day of the window they have something
+ * on, a shift with its hours or a day off, in order.
+ *
+ * Built from the rows this publish carries for them, which are the days it
+ * says something about. A day with no row is a day this publish did not touch,
+ * so it is left out rather than guessed at: calling it a day off would be wrong
+ * for anybody who already has a published shift on it.
+ *
+ * WHAT CHANGED is read the way `linesFor` reads it: a row that had been
+ * published before is a change to what they were told. A resend reads only
+ * published rows, every one of which has been out before, so it marks nothing.
+ */
+function rotaMineMail({ held, from, to, count, actor, message, resend }) {
+  const publisher = nameOf(actor);
+  const rows = [...(held?.shifts ?? []), ...(held?.offRows ?? [])]
+    .filter((r) => r?.day && r.day >= from && r.day <= to)
+    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1
+      : String(a.starts_at ?? '').localeCompare(String(b.starts_at ?? ''))));
+  const changed = (r) => !resend && Number(r.ever_published) > 0;
+
+  const schedule = rows.map((r) => [
+    sayShortDate(r.day),
+    r.shift_id ? sayHours(r.starts_at, r.ends_at) : '',
+    r.shift_id ? (r.shift_name ?? 'A shift') : 'Day off',
+    changed(r) ? { tone: 'warn', text: 'Changed' } : null,
+  ]);
+
+  const shifts = held?.shifts?.length ?? 0;
+  const off = held?.off ?? 0;
+  const again = resend ? 0 : (held?.again ?? 0);
+  const tally = [
+    shifts ? `${shifts} shift${shifts === 1 ? '' : 's'}` : null,
+    off ? `${off} day${off === 1 ? '' : 's'} off` : null,
+  ].filter(Boolean).join(' and ');
+  const changedDays = [...new Set(rows.filter(changed).map((r) => sayShortDate(r.day)))];
+  const said = String(message ?? '').trim();
+
+  return {
+    status: again ? 'Rota changed' : 'Rota',
+    tone: again ? 'warn' : 'info',
+    eyebrow: publisher ? `Published by ${publisher}` : 'Rota',
+    headline: count ? 'Your shifts are out' : 'Your rota is out',
+    sub: sayRange(from, to),
+    schedule: schedule.length ? { rows: schedule } : null,
+    callout: again
+      ? {
+        tone: 'warn',
+        text: `${again === 1 ? 'One day is' : `${again} days are`} a change to what you were told `
+          + 'before, so it is worth another look.',
+      }
+      : null,
+    quote: said ? { by: publisher ? `A note from ${firstName(publisher)}` : 'A note from the planner', text: said } : null,
+    button: 'See my rota',
+    why: resend
+      ? 'You get this because the planner sent your rota to you again.'
+      : 'You get this because the rota was published with changes for you.',
+    subject: count ? `Your shifts for ${sayRange(from, to)}` : `Your rota for ${sayRange(from, to)}`,
+    preheader: [
+      tally ? `${tally[0].toUpperCase()}${tally.slice(1)}.` : null,
+      changedDays.length
+        ? `${changedDays.length === 1 ? `${changedDays[0]} has` : `${changedDays.join(', ')} have`} changed.`
+        : null,
+    ].filter(Boolean).join(' ') || null,
+  };
+}
+
+/**
  * Tell each person what their own week says, one message at a time.
  *
  * A rota going out used to be one announcement to everybody: "the rota for
@@ -2595,11 +2773,16 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null
       // that will not look there is mail that does not arrive.
       email: firstUsableEmail(row.login_email, row.personal_email),
       shifts: [],
+      // The rostered days off themselves, for the week an email lays out.
+      offRows: [],
       off: 0,
       again: 0,
     };
     if (row.shift_id) held.shifts.push(row);
-    else held.off += 1;
+    else {
+      held.off += 1;
+      held.offRows.push(row);
+    }
     if (Number(row.ever_published)) held.again += 1;
     byStaff.set(row.staff_id, held);
   }
@@ -2634,6 +2817,11 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null
     const what = count
       ? `${count} shift${count === 1 ? '' : 's'}`
       : `${held.off} day${held.off === 1 ? '' : 's'} off`;
+
+    // The week laid out for the email. The bell and the phone keep the lines.
+    const mail = mailOrNothing(() => rotaMineMail({
+      held, from, to, count, actor, message, resend: Boolean(only),
+    }));
 
     // A phone that can show an alert has already had one by the time this
     // finishes. Everybody else is only reachable another way.
@@ -2672,6 +2860,7 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null
           link: '#/att-me',
           day: first?.day ?? from,
           to: held.email,
+          mail,
         });
         line.emailed = posted.sent > 0 ? 1 : 0;
         if (posted.sent > 0) told += 1;
@@ -2708,6 +2897,7 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null
       // Waited on rather than fired and forgotten, because this is the one
       // notice somebody is later asked to account for person by person.
       report: true,
+      mail,
     }, ctx);
     line.noticeId = went?.id ?? null;
     line.buzzed = went?.buzzed ?? 0;
@@ -2733,6 +2923,7 @@ async function tellEachOfThem(ctx, { rows, from, to, actor, message, only = null
         link: '#/att-me',
         day: first?.day ?? from,
         to: held.email,
+        mail,
       });
       if (posted.sent > 0) line.emailed = 1;
     }
@@ -2913,6 +3104,31 @@ export async function publishRoster(ctx) {
       actor,
       audience: null,
       push: false,
+      mail: mailOrNothing(() => {
+        const publisher = nameOf(actor);
+        const said = String(message ?? '').trim();
+        const weeks = Math.ceil((diffDays(from, to) + 1) / 7);
+        return {
+          status: 'Rota',
+          tone: 'info',
+          eyebrow: 'For everybody',
+          headline: `The rota for ${sayRange(from, to)} is out`,
+          sub: publisher ? `Published by ${publisher}` : null,
+          facts: [
+            ['New shifts', fresh ? String(fresh) : null],
+            ['Changed shifts', again ? String(again) : null, { tone: 'warn' }],
+            ['Weeks covered', String(weeks)],
+          ],
+          quote: said
+            ? { by: publisher ? `A note from ${firstName(publisher)}` : 'A note from the planner', text: said }
+            : null,
+          button: 'See the full rota',
+          why: 'You get this because the planner chose to tell everybody.',
+          subject: `The rota for ${sayRange(from, to)} is out`,
+          preheader: `${what ? `${what[0].toUpperCase()}${what.slice(1)}` : 'Published'}`
+            + `${publisher ? `, published by ${publisher}` : ''}.`,
+        };
+      }),
     }, ctx);
   }
 
@@ -3370,6 +3586,41 @@ export async function decideAvailability(ctx) {
     // by email is twenty emails nobody reads.
     email: false,
     push: true,
+    mail: mailOrNothing(() => {
+      const timesOf = new Map(found.map((row) => [row.day, row]));
+      const working = found[0]?.status === 'preferred';
+      const hoursOf = (day) => {
+        const row = timesOf.get(day);
+        return row?.from_time ? sayHours(row.from_time, row.to_time) : 'Whole day';
+      };
+      const rows = [
+        ...agreed.map((day) => [day, hoursOf(day),
+          working ? 'Asked to work, the rota is built around it' : 'Off, the rota is built around it',
+          { tone: 'good', text: 'Agreed' }]),
+        ...refused.map((day) => [day, hoursOf(day), 'An ordinary working day again',
+          { tone: 'bad', text: 'Not agreed' }]),
+      ].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+        .map(([day, ...rest]) => [sayShortDate(day), ...rest]);
+      const days = (n) => (n === 1 ? 'One day' : `${n} days`);
+      const decider = nameOf(actor);
+      return {
+        status: decision === 'approved' ? 'Agreed' : decision === 'declined' ? 'Not agreed' : 'Partly agreed',
+        tone: decision === 'approved' ? 'good' : decision === 'declined' ? 'bad' : 'warn',
+        eyebrow: 'Availability',
+        headline: decision === 'approved'
+          ? (agreed.length === 1 ? 'Your day was agreed' : `All ${agreed.length} days were agreed`)
+          : decision === 'declined'
+            ? (refused.length === 1 ? 'Your day was not agreed' : `${refused.length} days were not agreed`)
+            : `${days(agreed.length)} agreed, ${refused.length === 1 ? 'one' : refused.length} not`,
+        schedule: rows.length ? { rows } : null,
+        quote: note ? { by: `${firstName(decider)} says`, text: note } : null,
+        note: refused.length && !note ? 'Speak to your manager for the reason.' : null,
+        button: 'See my rota',
+        why: 'You get this because you asked about these days.',
+        subject: title,
+        preheader: note || (agreed.length ? 'The rota will be built around what was agreed.' : null),
+      };
+    }),
   }, ctx);
 
   const out = { ok: true, decision, days: agreed.length + refused.length };
@@ -4315,7 +4566,9 @@ export async function decideLeave(ctx, id) {
   // name of; whether it comes off the entitlement, and whether it is paid at
   // all, is the property's decision and not theirs.
   const reasonCode = str(body.reason, 'Type of leave', { max: 40 }) || request.reason_code;
-  if (reasonCode !== request.reason_code) await assertLeaveKind(ctx.db, reasonCode);
+  const recordedAs = reasonCode !== request.reason_code
+    ? await assertLeaveKind(ctx.db, reasonCode)
+    : null;
 
   // How much of the span is actually charged against their leave. The rest of
   // the rostered days in it are treated as ordinary rest days: the rota rows
@@ -4392,6 +4645,36 @@ export async function decideLeave(ctx, id) {
     actor: `${ctx.session.user.name} (${ctx.session.user.role})`,
     audience: 'att_rota',
     userId: request.requested_by_id ?? null,
+    mail: mailOrNothing(() => {
+      const approved = decision === 'approved';
+      const decider = ctx.session.user.name ?? null;
+      const said = str(body.note, 'Note', { max: 500 });
+      const range = sayRange(request.from_day, request.to_day);
+      const restDays = approved && charged < Number(request.days);
+      return {
+        status: approved ? 'Approved' : 'Not approved',
+        tone: approved ? 'good' : 'bad',
+        eyebrow: 'Leave',
+        headline: approved ? 'The leave you asked for is approved' : 'The leave you asked for was not approved',
+        sub: range,
+        facts: [
+          ['Recorded as', recordedAs?.label ?? null],
+          approved ? ['Days charged', sayDayCount(charged), { strong: true, big: true }] : null,
+          [approved ? 'Approved by' : 'Decided by', decider],
+        ].filter(Boolean),
+        quote: said ? { by: `${firstName(decider)} says`, text: said } : null,
+        note: restDays ? 'The rest of the span counts as ordinary rest days.'
+          : (!approved && !said ? 'See whoever decided it for the reason.' : null),
+        button: 'See my leave',
+        why: request.requested_by_id != null
+          ? 'You get this because you asked for this leave.'
+          : 'You get this because you look after the rota.',
+        subject: approved ? `Leave approved: ${range}` : `Leave not approved: ${range}`,
+        preheader: approved
+          ? `${sayDayCount(charged)} charged against the entitlement.`
+          : (said || 'See whoever decided it for the reason.'),
+      };
+    }),
   }, ctx);
 
   return json({ ok: true, status: decision, charged: decision === 'approved' ? charged : null });
@@ -4485,6 +4768,23 @@ export async function setLeaveDays(ctx, id) {
     link: '#/att-me',
     actor: `${ctx.session.user.name} (${ctx.session.user.role})`,
     userId: person?.user_id ?? request.requested_by_id ?? null,
+    mail: mailOrNothing(() => ({
+      status: 'Changed',
+      tone: 'info',
+      eyebrow: 'Leave',
+      headline: `Your leave now costs ${sayDayCount(days)}`,
+      sub: sayRange(request.from_day, request.to_day),
+      facts: [
+        ['Was', sayDayCount(request.days)],
+        ['Now', sayDayCount(days), { strong: true, big: true }],
+        ['Changed by', ctx.session.user.name ?? null],
+      ],
+      quote: note ? { by: 'The reason', text: note } : null,
+      button: 'See my leave',
+      why: 'You get this because this is your leave.',
+      subject: `Your leave from ${sayRange(request.from_day, request.to_day)} now costs ${sayDayCount(days)}`,
+      preheader: `It was ${sayDayCount(request.days)}.${note ? ` ${note}` : ''}`,
+    })),
   }, ctx);
 
   return json({ ok: true, days, was: Number(request.days) });
@@ -4548,6 +4848,30 @@ export async function setLeaveType(ctx, id) {
     actor,
     audience: 'att_rota',
     userId: request.requested_by_id ?? null,
+    mail: mailOrNothing(() => {
+      const wasLabel = was?.label ?? request.reason_code;
+      return {
+        status: 'Changed',
+        tone: 'info',
+        eyebrow: 'Leave',
+        headline: `Your leave is now recorded as ${String(reason.label).toLowerCase()}`,
+        sub: sayRange(request.from_day, request.to_day),
+        facts: [
+          ['Was', wasLabel],
+          ['Now', reason.label, { strong: true }],
+          ['Paid', reason.paid ? 'Yes' : 'No'],
+          ['Off your annual leave', reason.deducts_leave ? 'Yes' : 'No'],
+          ['Changed by', nameOf(actor)],
+        ],
+        button: 'See my leave',
+        why: request.requested_by_id != null
+          ? 'You get this because you asked for this leave.'
+          : 'You get this because you look after the rota.',
+        subject: `Your leave is now recorded as ${String(reason.label).toLowerCase()}`,
+        preheader: `${sayRange(request.from_day, request.to_day)}, changed from `
+          + `${String(wasLabel ?? '').toLowerCase()}.`,
+      };
+    }),
   }, ctx);
 
   return json({ ok: true, reason: reasonCode, label: reason.label });
@@ -4687,6 +5011,26 @@ export async function dailyTick(db, env, today) {
     // this information, by mail and to the phone: the mail would be two
     // emails about the same morning in the same inbox, and the push would be
     // the same buzz twice, which is how people learn to ignore both.
+    // The email's layout rides on the notice itself, so the call below still
+    // reads as the bell-only call it is.
+    notice.mail = mailOrNothing(() => ({
+      status: escalated.length ? 'Urgent' : open ? 'Needs a look' : 'Update',
+      tone: escalated.length ? 'bad' : open ? 'warn' : 'info',
+      eyebrow: 'Attendance',
+      headline: `${sayDate(yesterday)} needs a look`,
+      facts: [
+        ['Days to confirm', open ? String(open) : null, { tone: 'warn', strong: true }],
+        ['Absent', absent ? String(absent) : null, { tone: 'bad' }],
+      ],
+      callout: escalated.length
+        ? { tone: 'bad', text: `On a run of absences: ${escalated.join(', ')}.` }
+        : null,
+      button: 'Open the day',
+      why: 'You get this because you manage attendance.',
+      subject: `Attendance for ${sayShortDate(yesterday)}: `
+        + `${[open ? `${open} day${open === 1 ? '' : 's'} to confirm` : null, absent ? `${absent} absent` : null]
+          .filter(Boolean).join(', ')}`,
+    }));
     await createNotice(db, { ...notice, push: false });
     await Promise.allSettled([
       pingExceptions(db, payload),

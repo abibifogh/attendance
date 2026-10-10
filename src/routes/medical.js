@@ -6,6 +6,7 @@ import {
 } from '../lib/medical.js';
 import { MONTHS, matchStaff, readMedicalSheet } from '../lib/medical-sheet.js';
 import { isDay, todayIn } from '../util/dates.js';
+import { firstName, sayShortDate } from '../lib/email-design.js';
 
 /**
  * Medical allowance claims.
@@ -449,6 +450,17 @@ export async function decideClaim(ctx, idParam) {
       kind: 'medical.rejected',
       title: 'Your medical claim was not approved',
       body: note || 'Speak to whoever handles the wages if you want to know why.',
+      mail: () => ({
+        tone: 'bad', status: 'Not approved', eyebrow: 'Medical',
+        headline: 'Your medical claim was not approved',
+        facts: [['Claimed', money(claim.amount, currency)], ['For', claim.what || null]],
+        quote: note ? { by: 'The reason', text: note } : undefined,
+        note: note ? undefined : 'Speak to whoever handles the wages if you want to know why.',
+        button: 'See My medical',
+        subject: 'Your medical claim was not approved',
+        preheader: note || 'Speak to whoever handles the wages if you want to know why.',
+        why: 'You get this because you made this claim.',
+      }),
     });
     return json({ ok: true, status: 'rejected' });
   }
@@ -494,6 +506,21 @@ export async function decideClaim(ctx, idParam) {
     body: (cut ? `You asked for ${money(claim.amount, currency)}. ` : '')
       + (left == null ? '' : `${money(left, currency)} is left in your allowance this year.`)
       + (note ? ` ${note}` : ''),
+    mail: () => ({
+      tone: 'good', status: 'Approved', eyebrow: 'Medical',
+      headline: 'Your medical claim is approved',
+      facts: [
+        ['Approved', money(amount, currency), { big: true, strong: true }],
+        cut ? ['You asked for', money(claim.amount, currency)] : null,
+        left == null ? null : ['Left this year', money(left, currency)],
+      ].filter(Boolean),
+      quote: note ? { by: 'A note with it', text: note } : undefined,
+      button: 'See My medical',
+      subject: `Your medical claim of ${money(amount, currency)} is approved`,
+      preheader: left == null ? (cut ? `You asked for ${money(claim.amount, currency)}.` : undefined)
+        : `${money(left, currency)} is left in your allowance this year.`,
+      why: 'You get this because you made this claim.',
+    }),
   });
 
   return json({ ok: true, status: 'approved', approved: amount, left });
@@ -688,6 +715,12 @@ export async function claim(ctx) {
 
   await audit(ctx, 'medical.claim', created.id, { year, total, bills: cleaned.length });
 
+  // What is left of their allowance, for the email to whoever decides.
+  const theirs = await ctx.db.prepare(
+    'SELECT * FROM hr_medical_claim WHERE staff_id = ? AND year = ?',
+  ).bind(staffId, year).all().catch(() => null);
+  const standing = theirs ? standingOf(allowance, theirs.results ?? []) : null;
+
   await createNotice(ctx.db, {
     kind: 'medical.claimed',
     level: 'info',
@@ -698,6 +731,29 @@ export async function claim(ctx) {
     link: '#/att-medical',
     actor: staff.name,
     audience: 'hr_pay',
+    mail: safeMail(() => ({
+      tone: 'warn', status: 'Needs your answer', eyebrow: 'Medical',
+      headline: `${staff.name} has claimed medical bills`,
+      table: {
+        head: ['Bill', 'Date', 'Amount'],
+        right: true,
+        rows: [
+          ...cleaned.map((line, i) => [line.what || `Bill ${i + 1}`, sayShortDate(line.spentOn), money(line.amount, currency)]),
+          [{ text: 'Total', strong: true }, '', { text: money(total, currency), strong: true }],
+        ],
+      },
+      facts: standing ? [
+        ['Left in their allowance this year', money(standing.left, currency)],
+        ['Left if everything waiting is approved', money(standing.ifAllApproved, currency),
+          standing.ifAllApproved < 0 ? { tone: 'bad' } : {}],
+      ] : undefined,
+      quote: body.what ? { by: `${firstName(staff.name)} says`, text: String(body.what).slice(0, 300) } : undefined,
+      button: 'Answer the claim',
+      subject: `${staff.name} has claimed ${money(total, currency)} in medical bills`,
+      preheader: `${cleaned.length} bill${cleaned.length === 1 ? '' : 's'}.`
+        + (standing ? ` ${money(standing.ifAllApproved, currency)} left in the allowance this year if approved.` : ''),
+      why: 'You get this because you handle pay.',
+    })),
   }, ctx);
 
   return json({ ok: true, id: created.id, amount: total, status: 'requested' });
@@ -722,7 +778,7 @@ export async function withdrawClaim(ctx, idParam) {
 // --------------------------------------------------------------------------
 
 /** Tell the person, where there is an account to tell. */
-async function tell(ctx, person, { kind, title, body }) {
+async function tell(ctx, person, { kind, title, body, mail }) {
   if (!person?.user_id) return;
   await createNotice(ctx.db, {
     kind,
@@ -734,7 +790,13 @@ async function tell(ctx, person, { kind, title, body }) {
     userId: person.user_id,
     push: true,
     email: false,
+    mail: typeof mail === 'function' ? safeMail(mail) : mail,
   }, ctx);
+}
+
+/** A mail layout, or none: an email must never stop the thing it is about. */
+function safeMail(build) {
+  try { return build() || undefined; } catch { return undefined; }
 }
 
 /** Bytes out of what the browser sent, data-URI prefix and all. */

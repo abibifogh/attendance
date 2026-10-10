@@ -187,6 +187,12 @@ export async function renderAttPayroll(params) {
           h('button.btn-sm', { onclick: () => openReturns(month) },
             'Journal, PAYE and SSNIT'),
           closed ? null : importButton(month, reload),
+          // Where somebody looks first. The card further down still lists what
+          // has been taken off this month, with the button to put one back.
+          closed ? null : h('button.btn-sm', {
+            onclick: () => addPenalty(data, month, reload),
+            title: 'Take money off somebody\u2019s bonus for this month. They are told straight away',
+          }, 'Take money off a bonus'),
           closed
             ? null
             : h('button.btn.btn-primary', {
@@ -1766,6 +1772,12 @@ async function addSeverance(data, month, reload) {
   await reload();
 }
 
+function monthWords(month) {
+  return /^\d{4}-\d{2}$/.test(String(month))
+    ? new Date(`${month}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    : 'this month';
+}
+
 async function addPenalty(data, month, reload) {
   const done = await formDialog({
     title: 'Take money off a bonus',
@@ -1780,7 +1792,10 @@ async function addPenalty(data, month, reload) {
       }), 'A net figure — what they lose in hand'),
       field('What happened', h('input', {
         type: 'text', name: 'reason', maxlength: 300, required: true,
-      }), 'This goes on their payslip and into the message they get')),
+      }), 'This goes on their payslip and into the message they get'),
+      h('p.muted', { style: { fontSize: '.82rem', margin: '.4rem 0 0' } },
+        `For ${monthWords(month)}. They get a message on their phone and by email the moment `
+        + 'you press Take it off, saying how much and why.')),
     onSubmit: (form) => api.payrollPenalty({
       month,
       staffId: form.get('staffId'),
@@ -1789,7 +1804,7 @@ async function addPenalty(data, month, reload) {
     }),
   });
   if (!done) return;
-  toast('Taken off. They have been told.', 'good');
+  toast('Taken off. They have been told by alert and email.', 'good');
   await reload();
 }
 

@@ -2,6 +2,8 @@ import {
   badRequest, bool, csvResponse, int, json, notFound, num, readJson, str,
 } from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
+import { firstUsableEmail, isEmail } from '../lib/notify.js';
+import { sayMonth } from '../lib/email-design.js';
 import { paidInMonth } from '../lib/leaving.js';
 import { balanceOf, dueThisMonth, startsOn, whyNotDue } from '../lib/advances.js';
 import {
@@ -2175,6 +2177,46 @@ export async function removeSeverance(ctx, idParam) {
 }
 
 /**
+ * The address on their personnel record, where their login has none. A login
+ * needs a PIN and nothing else, so most carry no address, and somebody told
+ * of a deduction would otherwise get the bell and never the email.
+ */
+async function recordEmailFor(db, userId) {
+  const known = await db.prepare(
+    `SELECT u.email AS login_email, hp.personal_email
+       FROM users u LEFT JOIN hr_profile hp ON hp.staff_id = u.staff_id
+      WHERE u.id = ?`,
+  ).bind(Number(userId)).first().catch(() => null);
+  return known && !isEmail(String(known.login_email || '').trim()) ? firstUsableEmail(known.personal_email) : null;
+}
+
+/** The email for money off somebody's bonus. */
+function penaltyMail(ctx, { amount, currency, month, reason }) {
+  try {
+    const when = isMonth(month) ? sayMonth(month) : null;
+    return {
+      tone: 'warn', status: 'Off your bonus', eyebrow: 'Payroll',
+      headline: `${money(amount, currency)} has come off your bonus`,
+      facts: [
+        ['Amount', money(amount, currency), { big: true, strong: true }],
+        ['Month', when],
+        ['Set by', ctx.session?.user?.name ?? null],
+      ],
+      quote: reason ? { by: 'The reason', text: reason } : undefined,
+      note: reason
+        ? 'If you think this is wrong, ask the office.'
+        : 'It was set on this month\u2019s payroll sheet. Ask the office if it is not what you expected.',
+      button: 'See My report',
+      subject: `${money(amount, currency)} has come off your ${when ? `${when} ` : ''}bonus`,
+      preheader: reason || 'Set on this month\u2019s payroll sheet.',
+      why: 'You get this because it affects your pay.',
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Tell somebody money has come off their bonus, now rather than on payday.
  * The same message whether it was entered on the screen or came in on a sheet.
  */
@@ -2193,7 +2235,9 @@ async function tellOfDeduction(ctx, staffId, amount, month, reason = null) {
     actor: actorOf(ctx),
     userId: person.user_id,
     push: true,
-    email: false,
+    email: true,
+    emailTo: await recordEmailFor(ctx.db, person.user_id),
+    mail: penaltyMail(ctx, { amount, currency, month, reason }),
   }, ctx);
 }
 
@@ -2231,7 +2275,9 @@ export async function addPenalty(ctx) {
       actor: actorOf(ctx),
       userId: person.user_id,
       push: true,
-      email: false,
+      email: true,
+      emailTo: await recordEmailFor(ctx.db, person.user_id),
+      mail: penaltyMail(ctx, { amount, currency, month, reason }),
     }, ctx);
   }
 

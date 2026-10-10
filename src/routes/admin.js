@@ -570,6 +570,9 @@ export async function getNotifications(ctx) {
     // Where a reply goes. Staff do reply to these, and a reply that vanishes
     // into an unread mailbox teaches them the mail is not worth reading.
     replyTo: settings.email_reply_to || '',
+    // Copied on every email HIVE sends, once per message rather than once per
+    // person, except the invitation and signing codes.
+    cc: parseRecipients(settings.email_cc),
     // Shown as the origin it will actually be used as, not as whatever is
     // stored. A path left in this box is neutralised everywhere it is read,
     // but a box that keeps displaying it invites somebody to conclude the
@@ -694,6 +697,13 @@ export async function updateNotifications(ctx) {
     throw badRequest('The "reply to" address does not look like an email address');
   }
 
+  const cc = said('cc')
+    ? (Array.isArray(body.cc) ? body.cc : parseRecipients(body.cc)).map((r) => String(r).trim()).filter(Boolean)
+    : parseRecipients(stored.email_cc);
+  const badCc = cc.filter((r) => !isEmail(r));
+  if (badCc.length) throw badRequest(`Not a valid email address to copy: ${badCc[0]}`);
+  if (cc.length > 5) throw badRequest('Five addresses to copy at most.');
+
   const siteUrl = said('siteUrl')
     ? (str(body.siteUrl, 'Site address', { max: 300, fallback: '' }) || '')
     : (stored.site_url || '');
@@ -740,6 +750,7 @@ export async function updateNotifications(ctx) {
     setting(ctx.db, 'email_from', from),
     setting(ctx.db, 'email_sender_name', senderName),
     setting(ctx.db, 'email_reply_to', replyTo),
+    setting(ctx.db, 'email_cc', JSON.stringify(cc)),
     // Stored as an origin, not as whatever was in the address bar when
     // somebody filled the box in. A path left on the end here reappears in the
     // middle of every link the property sends out, and the person holding the

@@ -7,8 +7,10 @@ import { fromBase64 } from '../lib/files.js';
 import { endsAt, offerable } from '../lib/recruitment.js';
 import { mapLink } from '../lib/places.js';
 import {
-  claimSlot, hashRecPin, hashRecToken, tellPanelAboutBooking, tellPanelAboutRelease, trail,
+  claimSlot, hashRecPin, hashRecToken, roleTitleOf, tellPanelAboutBooking, tellPanelAboutRelease,
+  trail,
 } from './recruitment.js';
+import { firstName, sayShortDate, sayTime } from '../lib/email-design.js';
 import { todayIn } from '../util/dates.js';
 
 /**
@@ -286,6 +288,8 @@ export async function choose(ctx, token) {
 
   // And the office in general, which is who was told before there was a panel
   // to tell.
+  const roleTitle = await roleTitleOf(ctx.db, slot.role_id ?? candidate.role_id);
+  const when = [sayShortDate(slot.day), sayTime(slot.starts_at)].filter(Boolean).join(', ');
   await createNotice(ctx.db, {
     kind: 'recruitment.booked',
     level: 'info',
@@ -298,6 +302,25 @@ export async function choose(ctx, token) {
     audience: 'rec_view',
     push: true,
     email: false,
+    mail: {
+      status: claimed.released ? 'New time' : 'Booked',
+      tone: 'info',
+      eyebrow: 'Hiring',
+      headline: `${candidate.name} has taken an interview time`,
+      facts: [
+        ['Role', roleTitle],
+        ['When', when, { strong: true }],
+        ['Length', Number(slot.minutes) > 0 ? `${Number(slot.minutes)} minutes` : null],
+        ['Where', slot.place],
+        ['Booked by', `${firstName(candidate.name)}, from the link`],
+      ],
+      note: claimed.released ? 'They changed from an earlier time, which is free again.' : null,
+      button: `See ${firstName(candidate.name)}\u2019s file`,
+      why: 'You get this because you can see recruitment in HIVE.',
+      subject: `${candidate.name} has taken an interview time: ${when}`,
+      preheader: `${roleTitle ? `${roleTitle}. ` : ''}`
+        + `${firstName(candidate.name)} chose the time from the link.`,
+    },
   }, ctx).catch(() => {});
 
   return json({
@@ -347,6 +370,21 @@ export async function release(ctx, token) {
     audience: 'rec_view',
     push: true,
     email: false,
+    mail: {
+      status: 'Time free',
+      tone: 'warn',
+      eyebrow: 'Hiring',
+      headline: `${candidate.name} has given back their interview time`,
+      facts: [
+        ['Free again', [sayShortDate(held.day), sayTime(held.starts_at)].filter(Boolean).join(', ')],
+        ['Where', held.place],
+        ['New time', 'Not picked yet'],
+      ],
+      button: `See ${firstName(candidate.name)}\u2019s file`,
+      why: 'You get this because you can see recruitment in HIVE.',
+      subject: `${candidate.name} has given back their interview time`,
+      preheader: `${[sayShortDate(held.day), sayTime(held.starts_at)].filter(Boolean).join(' at ')} is free again.`,
+    },
   }, ctx).catch(() => {});
 
   return json({ ok: true, chosen: null, slots: await freeFor(ctx.db, candidate) });

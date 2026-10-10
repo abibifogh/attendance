@@ -32,7 +32,7 @@ const LEVELS = new Set(['info', 'warn', 'high']);
 export async function createNotice(db, {
   kind, level = 'info', title, body, link, day, slot, actor, audience = null, userId = null,
   emailAudience = undefined, emailTo = null, email = true, push = true, text = null,
-  report = false,
+  report = false, mail = null,
 }, ctx = null) {
   if (!kind || !title) return report ? { id: null, buzzed: 0, emailed: 0 } : null;
 
@@ -62,6 +62,10 @@ export async function createNotice(db, {
     if (ctx?.env) {
       jobs.push(emailNotice(db, ctx.env, {
         kind, level, title, body, link, day, actor, audience, userId, also,
+        // How the email lays this notice out: a status, a headline, the facts
+        // in a table, a button. See src/lib/email-design.js. Only the email
+        // reads it; the bell and the phone keep the title and body.
+        mail,
         // An address the raising code already knows, for the people the logins
         // cannot reach. Most of this property has no login, and a login that
         // exists often carries no address, because signing in needs a PIN and

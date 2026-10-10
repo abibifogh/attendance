@@ -1,5 +1,6 @@
 import { badRequest, int, json, notFound, readJson, str } from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
+import { firstName } from '../lib/email-design.js';
 import { DEFAULT_FAQ, LINK_PATHS, LINKS, TOPICS, TOPIC_KEYS } from '../lib/hr-faq-content.js';
 
 /**
@@ -249,6 +250,18 @@ export async function tellStaff(ctx) {
     // whoever manages them reads it too.
     audience: null,
     report: true,
+    mail: {
+      status: 'Updated',
+      tone: 'info',
+      eyebrow: 'HR FAQ',
+      subject: 'The HR FAQ has been updated',
+      preheader: about || 'Open it to see what changed.',
+      headline: about ? 'There is something new in the HR FAQ' : 'The HR FAQ has been updated',
+      quote: about ? { by: 'From HR', text: about } : null,
+      intro: about ? null : 'Open it to see what changed.',
+      button: 'Read the HR FAQ',
+      why: 'You get this because HR told all staff about this change.',
+    },
   }, ctx);
   await audit(ctx, 'hr_faq.told', null, { about });
   return json({ ok: true, told: notice?.buzzed ?? 0 });
@@ -283,6 +296,18 @@ export async function ask(ctx) {
     link: '#/hr-faq',
     actor: staff.name,
     audience: 'hr_manage',
+    mail: {
+      status: 'Needs your answer',
+      tone: 'warn',
+      eyebrow: 'HR FAQ',
+      subject: `${staff.name} has a question for HR`,
+      preheader: question.slice(0, 200),
+      headline: `${staff.name} has a question for HR`,
+      sub: staff.department || null,
+      quote: { by: `${firstName(staff.name)} asks`, text: question },
+      button: `Answer ${firstName(staff.name)}`,
+      why: 'You get this because you answer HR questions.',
+    },
   }, ctx);
   await audit(ctx, 'hr_faq.asked', made?.id, { staffId: staff.id });
   return json({ ok: true, id: made?.id ?? null });
@@ -323,6 +348,7 @@ export async function answerQuestion(ctx, id) {
   const person = await ctx.db.prepare(
     'SELECT id FROM users WHERE staff_id = ? AND active = 1',
   ).bind(row.staff_id).first().catch(() => null);
+  const asker = row.staff_name || 'Somebody';
   await createNotice(ctx.db, {
     kind: 'hr_faq.answered',
     level: 'info',
@@ -332,6 +358,23 @@ export async function answerQuestion(ctx, id) {
     actor: actorOf(ctx),
     userId: person?.id ?? null,
     audience: person ? null : 'hr_manage',
+    // With no login to send it to, it goes to HR, who read it as about somebody.
+    mail: {
+      status: 'Answered',
+      tone: 'good',
+      eyebrow: 'HR FAQ',
+      subject: person ? 'HR has answered your question' : `HR has answered ${asker}’s question`,
+      preheader: answer.slice(0, 200),
+      headline: person ? 'HR has answered your question' : `HR has answered ${asker}’s question`,
+      quote: row.question
+        ? { by: person ? 'You asked' : `${firstName(asker)} asked`, text: row.question }
+        : null,
+      note: `HR says: ${answer}`,
+      button: person ? 'See it in HIVE' : 'See the questions',
+      why: person
+        ? 'You get this because you asked HR a question.'
+        : `You get this because ${asker} has no login to tell, and you answer HR questions.`,
+    },
   }, ctx);
   await audit(ctx, 'hr_faq.answered', row.id, { staffId: row.staff_id, faqId });
   return json({ ok: true, faqId });
