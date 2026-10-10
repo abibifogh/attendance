@@ -74,6 +74,14 @@ const TONE = { good: 'var(--sh-good)', warn: 'var(--sh-warn)', bad: 'var(--sh-ba
 const SEVERITY_COLOUR = { critical: 'var(--sh-bad)', warning: 'var(--sh-warn)', info: 'var(--sh-info)' };
 const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['shift', 'Shift'], ['exceptions', 'Exceptions'], ['stays', 'Unpaid stays'], ['todo', 'To-do'], ['people', 'People'], ['safe', 'Safe'], ['files', 'Files'],
   ['closing', 'Closing reports'], ['answers', 'Answers'], ['approvals', 'Approvals'], ['settings', 'Till settings']];
+// The tabs in four groups: a switch picks the group, pills its tabs.
+const GROUPS = [
+  ['overview', 'Overview', ['day', 'week', 'month', 'shift']],
+  ['act', 'To act on', ['exceptions', 'stays', 'todo', 'answers', 'approvals']],
+  ['cash', 'Cash', ['closing', 'safe']],
+  ['setup', 'Set up', ['people', 'files', 'settings']],
+];
+const groupOf = (id) => GROUPS.find(([, , ids]) => ids.includes(id))?.[0] || 'overview';
 const TILL = new Set(['closing', 'answers', 'approvals', 'settings']);
 const PERIODS = ['day', 'week', 'month'];
 
@@ -338,26 +346,42 @@ export async function renderShifts(root, { range }) {
 
   // ------------------------------------------------------------- frame --
 
+  /** The number on a tab: what waits in it. */
+  const badgeOf = (id) => (id === 'exceptions' ? waiting().length : id === 'stays' ? staysOpen() : id === 'todo' ? todoBadge : 0);
+
   function paint(notice = null) {
-    const open = waiting().length;
     const has = shifts.length > 0;
     const v = h('div.sh-view');
+    const people = new Set(shifts.map((s) => s.user)).size;
+    const group = groupOf(section);
+    // Coming back to a group opens the tab last used in it.
+    store.set(`in-${group}`, section);
+    const groups = GROUPS.map(([id, label, ids]) => [id, label, views.filter(([v_]) => ids.includes(v_))]).filter(([, , vs]) => vs.length);
+    const [, , tabs] = groups.find(([id]) => id === group) || groups[0] || [null, null, []];
     mount(view,
       notice,
       h('div.sh-head',
         h('h1', 'Shifts'),
-        h('span', has ? `${shifts.length} shift${shifts.length === 1 ? '' : 's'} · ${new Set(shifts.map((s) => s.user)).size} ${new Set(shifts.map((s) => s.user)).size === 1 ? 'person' : 'people'}` : 'No shifts loaded for these days')),
-      periodBar(),
-      data.journalEndsInside ? banner('warning',
-        `The journal loaded so far stops inside the ${SLOT[data.journalEndsInside.slot].label.toLowerCase()} shift of `
-        + `${shortDay(data.journalEndsInside.day)}, so that shift is shown as far as it goes. Export ASSD one day past the last shift you want to read.`) : null,
+        groups.length > 1 ? h('div.sh-groups', { role: 'tablist', 'aria-label': 'Parts of Shifts' }, groups.map(([id, label, vs]) => {
+          const n = vs.reduce((t, [v_]) => t + badgeOf(v_), 0);
+          return h('button', {
+            type: 'button', role: 'tab', 'aria-selected': String(id === group), dataset: { group: id },
+            onclick: () => { if (id !== group) go(store.get(`in-${id}`, '') && vs.some(([v_]) => v_ === store.get(`in-${id}`, '')) ? store.get(`in-${id}`, '') : vs[0][0]); },
+          }, label, n ? h('span.sh-badge', String(n)) : null);
+        })) : null,
+        h('span.sh-count', has ? `${shifts.length} shift${shifts.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'}` : 'No shifts loaded for these days')),
+      h('div.sh-nav',
+        h('div.sh-tabs', { role: 'tablist' }, tabs.map(([id, label]) => h('button', {
+          type: 'button', role: 'tab', 'aria-selected': String(section === id), dataset: { tab: id }, onclick: () => go(id),
+        }, label, badgeOf(id) ? h('span.sh-badge', String(badgeOf(id))) : null))),
+        h('span.sh-rule', { 'aria-hidden': 'true' }),
+        periodBar(),
+        data.journalEndsInside ? h('details.sh-jnote',
+          h('summary', `Journal ends inside ${shortDay(data.journalEndsInside.day)} ${SLOT[data.journalEndsInside.slot].label.toLowerCase()}`),
+          h('p', `The journal loaded so far stops inside the ${SLOT[data.journalEndsInside.slot].label.toLowerCase()} shift of `
+            + `${shortDay(data.journalEndsInside.day)}, so that shift is shown as far as it goes. Export ASSD one day past the last shift you want to read.`)) : null),
       // Never for a supervisor: the totals are the owner's view of the business.
       has && admin && data.totals ? kpis() : null,
-      h('div.sh-tabs', { role: 'tablist' }, views.map(([id, label]) => h('button', {
-        type: 'button', role: 'tab', 'aria-selected': String(section === id), dataset: { tab: id }, onclick: () => go(id),
-      }, label, id === 'exceptions' && open ? h('span.sh-badge', String(open)) : null,
-      id === 'stays' && staysOpen() ? h('span.sh-badge', String(staysOpen())) : null,
-      id === 'todo' && todoBadge ? h('span.sh-badge', String(todoBadge)) : null))),
       v);
     if (TILL.has(section)) {
       Promise.resolve(till[section]?.(v)).catch((err) => mount(v, banner('problem', err.message)));
@@ -369,11 +393,15 @@ export async function renderShifts(root, { range }) {
     }
     if (section === 'todo') {
       // An answer changes the count on the tab, and nothing else around it.
-      const badge = () => readTodo().then((n) => {
+      const badge = () => readTodo().then(() => {
         const tab = view.querySelector('.sh-tabs [data-tab="todo"]');
-        if (!tab) return;
-        tab.querySelector('.sh-badge')?.remove();
-        if (n) tab.append(h('span.sh-badge', String(n)));
+        const grp = view.querySelector('.sh-groups [data-group="act"]');
+        const n = GROUPS.find(([id]) => id === 'act')[2].filter((id) => allowed[id]).reduce((t, id) => t + badgeOf(id), 0);
+        for (const [el, count] of [[tab, todoBadge], [grp, n]]) {
+          if (!el) continue;
+          el.querySelector('.sh-badge')?.remove();
+          if (count) el.append(h('span.sh-badge', String(count)));
+        }
       }).catch(() => {});
       todoPanel(v, { admin, onChange: badge })
         .catch((err) => mount(v, banner('problem', err.message)));

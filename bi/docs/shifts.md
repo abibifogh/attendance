@@ -5,10 +5,21 @@ from them. It lives on the **Shifts** tab.
 
 ## The screen
 
-Seven views, chosen with the buttons under the four totals at the top. The
-first three choose the period; the arrows beside its name step a day, a
+The views come in four groups, picked with the switch beside the title:
+
+- **Overview**: Day, Week, Month, Shift;
+- **To act on**: Exceptions, Unpaid stays, To-do, Answers, Approvals (the
+  switch shows how many wait across them);
+- **Cash**: Closing reports, Safe;
+- **Set up**: People, Files, Till settings.
+
+The group's views are on the line below, with the period beside them. Day,
+Week and Month choose the period; the arrows beside its name step a day, a
 week (Monday to Sunday) or a month at a time, and **Latest** jumps to the
-newest shifts loaded. Every other view, and the totals, follow the period.
+newest shifts loaded. Every other view, and the four totals under that line,
+follow the period. Going back to a group opens the view last used in it. When
+the journal stops inside a shift, a small note at the end of the line says
+which; open it for what to do.
 
 - **Day**: the day's three shifts as large cards, each with the drawer in
   four lines, how it came out, how guests paid and what is open; the day's
