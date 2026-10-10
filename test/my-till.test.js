@@ -39,7 +39,7 @@ const ODOO = {
 };
 
 /** Insight, as far as HIVE can tell. */
-function insight({ issues = [] } = {}) {
+function insight({ issues = [], recipients = [{ userId: 3, name: 'Boss', push: true, email: false, amounts: true }] } = {}) {
   const asked = [];
   return {
     asked,
@@ -59,7 +59,7 @@ function insight({ issues = [] } = {}) {
           return ODOO[`P${digits}`] ? { typed: t, ...ODOO[`P${digits}`] } : { typed: t, name: null };
         }) });
       }
-      if (url.pathname.endsWith('/recipients')) return Response.json({ to: [{ userId: 3, name: 'Boss', push: true, email: false, amounts: true }] });
+      if (url.pathname.endsWith('/recipients')) return Response.json({ to: recipients });
       if (url.pathname.endsWith('/issues')) return Response.json({ issues, cleared: 0 });
       return Response.json({ error: 'unknown' }, { status: 404 });
     },
@@ -261,6 +261,35 @@ test('Insight can send one email through HIVE, only when it signs the request', 
     assert.equal(raw.prepare("SELECT status FROM email_log WHERE kind = 'insight_invite'").get().status, 'sent');
 
     await assert.rejects(call(await signLink(SECRET, path, body), { RESEND_API_KEY: '' }), /no email provider key/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('the closed-shift email reaches an address on the staff record, and says why when it cannot', async () => {
+  const { db, raw } = await setup();
+  // Ama has a login with no address on it, and her address on her staff record. The boss has neither.
+  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'ama@example.test')").run();
+  raw.exec("INSERT INTO settings (key, value) VALUES ('email_from', 'hive@example.test') ON CONFLICT (key) DO UPDATE SET value = excluded.value");
+  const binding = insight({ recipients: [
+    { userId: 7, name: 'Ama Test', push: false, email: true, amounts: false },
+    { userId: 3, name: 'Boss', push: false, email: true, amounts: true },
+  ] });
+  const env = { INSIGHT: binding, RESEND_API_KEY: 'k' };
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { sent.push([String(url), JSON.parse(init.body)]); return Response.json({ id: 'x' }); };
+  try {
+    const screen = await (await myTill(ctx(db, KOFI, { env }))).json();
+    const out = await (await closeShift(ctx(db, KOFI, { env, body: good(screen.choices[0], { pin: '135791', expenses: [] }) }))).json();
+    assert.equal(out.ok, true);
+    const mails = sent.filter(([u]) => u.includes('resend'));
+    assert.equal(mails.length, 1, 'one email, to the address on Ama’s record');
+    assert.deepEqual(mails[0][1].to, ['ama@example.test']);
+    const log = raw.prepare("SELECT status, detail FROM email_log ORDER BY id").all().map((r) => [r.status, r.detail]);
+    assert.ok(log.some(([status, detail]) => status === 'sent' && detail === 'till.closed'));
+    assert.ok(log.some(([status, detail]) => status === 'skipped' && /user 3 has no email on their login or their staff record/.test(detail)),
+      'the boss’s missing address is said in the email log');
   } finally {
     globalThis.fetch = realFetch;
   }
