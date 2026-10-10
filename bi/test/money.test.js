@@ -65,6 +65,7 @@ function odoo() {
       if (field === 'order_id') rows = rows.filter((r) => value.includes(r.order_id[0]));
       else rows = rows.filter((r) => value.includes(r[field]));
     }
+    for (const [field, op, value] of body.domain || []) if (field === 'date_order' && op === '>=') rows = rows.filter((r) => r.date_order >= value);
     return new Response(JSON.stringify(rows.slice(body.offset || 0, (body.offset || 0) + (body.limit || 100))), { headers: { 'Content-Type': 'application/json' } });
   };
   return { state, fetchImpl };
@@ -277,4 +278,33 @@ test('an admin gives several items at once; anybody with a list can ask Odoo aga
   assert.equal(fromTodo.ok, true);
   await assert.rejects(cashpo.refreshNow(env, SUP_B, { fetchImpl }), /Only an admin/);
   assert.ok((await todo.listTodos(env, SUP_B)).checkedAt);
+});
+
+test('the look-back an admin sets decides which POs are chased, and Odoo is asked again', async () => {
+  const { env } = await setUp();
+  const { fetchImpl } = odoo();
+  const today = '2026-08-20';
+  await cashpo.refreshCashPos(env, { fetchImpl, today });
+  let keys = (await todo.listTodos(env, OWNER)).items.map((t) => t.key);
+  assert.ok(keys.includes('unbilled:P02408'), 'ordered on the 5th, inside the 90 days');
+  assert.equal((await todo.listTodos(env, OWNER)).lookbackDays, 90);
+
+  await assert.rejects(todo.saveTodoSettings(env, { lookbackDays: 3 }, OWNER, { today }), /from 7 to 730/);
+  await assert.rejects(todo.saveTodoSettings(env, { lookbackDays: 30 }, SUP_A, { today }), /Only an admin/);
+  // Ten days back from the 20th is the 10th: the PO ordered on the 5th is out.
+  const saved = await todo.saveTodoSettings(env, { lookbackDays: 10 }, OWNER, { today });
+  assert.equal(saved.lookbackChanged, true);
+  await cashpo.refreshCashPos(env, { fetchImpl, today });
+  keys = (await todo.listTodos(env, OWNER)).items.map((t) => t.key);
+  assert.ok(!keys.includes('unbilled:P02408'));
+  const closed = (await todo.listTodos(env, OWNER, { closed: true })).items.find((t) => t.key === 'unbilled:P02408');
+  assert.equal(closed.closedWhy, 'Ordered before the 10-day look-back.');
+  assert.ok(keys.includes('unbilled:P00412'), 'a PO paid in cash is chased whatever the look-back');
+
+  // Longer again: it comes back.
+  assert.equal((await todo.saveTodoSettings(env, { lookbackDays: 60 }, OWNER, { today })).lookbackChanged, true);
+  await cashpo.refreshCashPos(env, { fetchImpl, today });
+  assert.ok((await todo.listTodos(env, OWNER)).items.some((t) => t.key === 'unbilled:P02408'));
+  // The same again changes nothing, so Odoo need not be asked.
+  assert.equal((await todo.saveTodoSettings(env, { lookbackDays: 60, unbilledDays: 7 }, OWNER, { today })).lookbackChanged, false);
 });

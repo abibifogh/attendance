@@ -72,7 +72,13 @@ const ROUTES = [
   ['GET', '/api/todo', 'shifts', (env, ctx) => todo.listTodos(env, ctx.account, { closed: ctx.query.closed === '1' })],
   ['POST', '/api/todo/check', 'shifts', (env, ctx) => cashpo.refreshNow(env, ctx.account, { fromTodo: true })],
   ['POST', '/api/todo/assign', 'shifts', (env, ctx) => todo.assignMany(env, ctx.body, ctx.account)],
-  ['POST', '/api/todo/settings', 'shifts', (env, ctx) => todo.saveTodoSettings(env, ctx.body, ctx.account)],
+  // A longer or shorter look-back is a different set of POs: Odoo is asked again.
+  ['POST', '/api/todo/settings', 'shifts', async (env, ctx) => {
+    const saved = await todo.saveTodoSettings(env, ctx.body, ctx.account);
+    if (!saved.lookbackChanged) return saved;
+    const checked = await cashpo.refreshCashPos(env).catch((err) => ({ ok: false, error: String(err?.message || err) }));
+    return { ...saved, checked };
+  }],
   ['POST', '/api/todo/:id/answer', 'shifts', (env, ctx) => todo.answerTodo(env, ctx.params.id, ctx.body, ctx.account)],
   ['POST', '/api/todo/:id/decide', 'shifts', (env, ctx) => todo.decideTodo(env, ctx.params.id, ctx.body, ctx.account)],
   ['POST', '/api/todo/:id/assign', 'shifts', (env, ctx) => todo.assignTodo(env, ctx.params.id, ctx.body, ctx.account)],

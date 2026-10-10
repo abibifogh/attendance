@@ -24,8 +24,17 @@ import { roleOf } from './till.js';
  */
 
 const DEFAULT_DAYS = 7;
-/** How far back a confirmed PO with no bill is looked for. */
+/** How far back a confirmed PO with no bill is looked for, unless an admin sets otherwise. */
 export const PO_LOOKBACK_DAYS = 90;
+const LOOKBACK_MIN = 7;
+const LOOKBACK_MAX = 730;
+
+/** The look-back in force: an admin's setting, or 90 days. */
+export function lookbackDays(settings = {}) {
+  const set = Number(settings.todo_lookback_days);
+  return settings.todo_lookback_days !== undefined && settings.todo_lookback_days !== '' && Number.isFinite(set)
+    ? Math.min(LOOKBACK_MAX, Math.max(LOOKBACK_MIN, Math.round(set))) : PO_LOOKBACK_DAYS;
+}
 const now = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 const who = (account) => account?.name || account?.email || 'Owner';
 const parse = (text) => { try { return JSON.parse(text || '{}'); } catch { return {}; } };
@@ -87,7 +96,7 @@ export async function syncTodos(env, { today = new Date().toISOString().slice(0,
   // What has put itself right.
   const pastPo = new Map(pos.map((p) => [p.po, p]));
   const openPo = new Map(recent.map((o) => [o.po, o]));
-  const windowStart = addDays(today, -PO_LOOKBACK_DAYS);
+  const windowStart = addDays(today, -lookbackDays(settings));
   const existing = await all(env.DB, 'SELECT * FROM money_todo');
   let closed = 0;
   let reopened = 0;
@@ -103,7 +112,9 @@ export async function syncTodos(env, { today = new Date().toISOString().slice(0,
     if (t.state === 'closed') continue;
     let why = null;
     if (t.kind === 'unbilled' && (pastPo.get(t.ref)?.posted || openPo.get(t.ref)?.posted)) why = 'The bill is posted in Odoo.';
-    else if (t.kind === 'unbilled' && !pastPo.has(t.ref) && !openPo.has(t.ref) && (t.day || '') >= windowStart) why = 'The PO is no longer confirmed in Odoo.';
+    else if (t.kind === 'unbilled' && !pastPo.has(t.ref) && !openPo.has(t.ref)) {
+      why = (t.day || '') >= windowStart ? 'The PO is no longer confirmed in Odoo.' : `Ordered before the ${lookbackDays(settings)}-day look-back.`;
+    }
     else if (t.kind === 'differs' && pastPo.has(t.ref)) why = 'The amounts now agree.';
     else if (t.kind === 'differs' && !pastPo.has(t.ref)) why = 'It is no longer paid from the drawer or the safe.';
     // Bills without a PO are no longer raised: a PO without a bill is.
@@ -181,6 +192,7 @@ export async function listTodos(env, account, { closed = false } = {}) {
     counts: await todoCounts(env, account),
     supervisors: admin ? (await supervisors(env)).map((s) => ({ id: s.id, name: s.name || s.email, load: Number(s.load) || 0 })) : [],
     unbilledDays: settings.todo_unbilled_days !== undefined && settings.todo_unbilled_days !== '' ? Number(settings.todo_unbilled_days) : DEFAULT_DAYS,
+    lookbackDays: lookbackDays(settings),
   };
 }
 
@@ -270,11 +282,26 @@ export async function dismissTodo(env, id, body, account) {
   return { ok: true };
 }
 
-/** An admin sets how many days a cash PO may wait for its bill before it is raised. */
+/**
+ * An admin sets how many days a PO may go without a posted bill before it is
+ * raised, and how far back POs are looked for. Either may be left out. A
+ * changed look-back needs Odoo asked again (`lookbackChanged`), which the
+ * route does.
+ */
 export async function saveTodoSettings(env, body, account, { today } = {}) {
   if (roleOf(account) !== 'admin') throw forbidden('Only an admin can do that.');
-  const days = Math.round(Number(body?.unbilledDays));
-  if (!Number.isFinite(days) || days < 0 || days > 90) throw badRequest('Give a number of days from 0 to 90.');
-  await setSetting(env.DB, 'todo_unbilled_days', String(days));
-  return { ok: true, ...(await syncTodos(env, today ? { today } : {})) };
+  if (body?.unbilledDays !== undefined) {
+    const days = Math.round(Number(body.unbilledDays));
+    if (!Number.isFinite(days) || days < 0 || days > 90) throw badRequest('Give a number of days from 0 to 90.');
+    await setSetting(env.DB, 'todo_unbilled_days', String(days));
+  }
+  let lookbackChanged = false;
+  if (body?.lookbackDays !== undefined) {
+    const back = Math.round(Number(body.lookbackDays));
+    if (!Number.isFinite(back) || back < LOOKBACK_MIN || back > LOOKBACK_MAX) throw badRequest(`Look back from ${LOOKBACK_MIN} to ${LOOKBACK_MAX} days.`);
+    const before = lookbackDays(await getSettings(env.DB).catch(() => ({})));
+    await setSetting(env.DB, 'todo_lookback_days', String(back));
+    lookbackChanged = back !== before;
+  }
+  return { ok: true, lookbackChanged, ...(await syncTodos(env, today ? { today } : {})) };
 }

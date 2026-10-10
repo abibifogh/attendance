@@ -6,7 +6,7 @@ import { createNotice } from '../lib/notices.js';
 import { callLink, verifyLink } from '../lib/till-link.js';
 import { addDays, nowIn, todayIn } from '../util/dates.js';
 import { firstMonthFor } from '../lib/advances.js';
-import { isEmail, sendEmail, senderWithName } from '../lib/notify.js';
+import { firstUsableEmail, isEmail, sendEmail, senderWithName } from '../lib/notify.js';
 
 /**
  * My till: closing a front-desk shift, and answering for it.
@@ -368,11 +368,30 @@ export function closedSummary(r, amounts) {
  */
 async function tell(ctx, event, { title, withAmounts, withoutAmounts }) {
   const plan = await insightOrNull(ctx.env, '/api/link/till/recipients', { event });
-  for (const r of plan?.to || []) {
+  if (!plan) {
+    // Insight did not answer, so nobody can be named. Said where the email log
+    // is read, rather than nothing happening without a trace.
+    await ctx.db.prepare('INSERT INTO email_log (kind, day, recipients, status, detail) VALUES (?, ?, ?, ?, ?)')
+      .bind('notice', null, null, 'skipped', `till.${event}: Insight did not say who to tell`).run().catch(() => {});
+    return;
+  }
+  for (const r of plan.to || []) {
+    // THE ADDRESS ON THEIR RECORD as well as the one on their login. A login
+    // needs a PIN and nothing else, so most carry no address, and a person
+    // chosen in Insight to hear about closed shifts would otherwise get the
+    // bell and never the email.
+    // eslint-disable-next-line no-await-in-loop
+    const known = r.email ? await ctx.db.prepare(
+      `SELECT u.email AS login_email, hp.personal_email
+         FROM users u LEFT JOIN hr_profile hp ON hp.staff_id = u.staff_id
+        WHERE u.id = ?`,
+    ).bind(Number(r.userId)).first().catch(() => null) : null;
+    const emailTo = known && !isEmail(String(known.login_email || '').trim()) ? firstUsableEmail(known.personal_email) : null;
     // eslint-disable-next-line no-await-in-loop
     await createNotice(ctx.db, {
       kind: `till.${event}`, level: 'info', title, body: r.amounts ? withAmounts : withoutAmounts,
       actor: ctx.session?.user?.name ?? null, userId: r.userId, push: r.push, email: r.email, text: false,
+      emailTo,
     }, ctx);
   }
 }

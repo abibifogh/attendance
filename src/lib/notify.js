@@ -883,17 +883,27 @@ export async function pushNotice(db, notice) {
  * provider having a bad afternoon must not fail the round that earned it.
  */
 export async function emailNotice(db, env, notice) {
+  // The till's notices are asked for person by person in Insight, so one that
+  // does not go out is somebody waiting for an email: say why, in the email
+  // log on the Notifications screen. Everything else stays quiet, as before.
+  const skip = async (reason) => {
+    if (String(notice.kind || '').startsWith('till.') && notice.wanted !== false) {
+      await db.prepare('INSERT INTO email_log (kind, day, recipients, status, detail) VALUES (?, ?, ?, ?, ?)')
+        .bind('notice', null, null, 'skipped', `${notice.kind}: ${reason}`.slice(0, 500)).run().catch(() => {});
+    }
+    return { sent: 0, tried: 0, reason };
+  };
   try {
     const rows = await db.prepare('SELECT key, value FROM settings').all();
     const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
 
-    if (settings.notice_email === '0') return { sent: 0, tried: 0, reason: 'switched off' };
+    if (settings.notice_email === '0') return skip('email for notices is switched off');
     if (!goesOut(readChannels(settings[CHANNELS_KEY]), notice.kind, 'email', notice.wanted)) {
-      return { sent: 0, tried: 0, reason: 'switched off for this kind' };
+      return skip('switched off for this kind');
     }
     const apiKey = env?.RESEND_API_KEY;
     const from = (settings.email_from || '').trim();
-    if (!apiKey || !from) return { sent: 0, tried: 0, reason: 'not configured' };
+    if (!apiKey || !from) return skip(!apiKey ? 'no email provider key' : 'no "from" address set');
 
     // A notice may be shown more widely than it is mailed. Where it says so,
     // the narrower audience is the one that gets an inbox.
@@ -913,7 +923,11 @@ export async function emailNotice(db, env, notice) {
       .filter((a) => isEmail(a)))];
 
     const addresses = [...new Set([...people.map((p) => p.email), ...named])];
-    if (!addresses.length) return { sent: 0, tried: 0, reason: 'nobody to send to' };
+    if (!addresses.length) {
+      return skip(notice.userId != null
+        ? `user ${notice.userId} has no email on their login or their staff record`
+        : 'nobody to send to');
+    }
 
     const { subject, html } = renderNotice({
       notice,

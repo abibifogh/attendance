@@ -1,10 +1,10 @@
-import { all, first, run, writeAll } from '../lib/db.js';
+import { all, first, getSettings, run, writeAll } from '../lib/db.js';
 import { HttpError } from '../lib/http.js';
 import { addDays, dow, dowLabel, isoWeek, month } from '../lib/dates.js';
 import { cashPoDetails, confirmedPoBills } from '../connectors/odoo.js';
 import { odooSource } from './safebook.js';
 import { requireAdmin, roleOf } from './till.js';
-import { syncTodos, todoCounts, PO_LOOKBACK_DAYS } from './todo.js';
+import { syncTodos, todoCounts, lookbackDays } from './todo.js';
 
 /**
  * Spending paid in cash, against a PO.
@@ -116,7 +116,8 @@ export async function refreshCashPos(env, { fetchImpl, today } = {}) {
 
   // Every PO confirmed in Odoo lately, however it was paid: one with no posted
   // bill is a to-do item too.
-  const since = addDays(today || new Date().toISOString().slice(0, 10), -PO_LOOKBACK_DAYS);
+  const back = lookbackDays(await getSettings(env.DB).catch(() => ({})));
+  const since = addDays(today || new Date().toISOString().slice(0, 10), -back);
   const recent = await confirmedPoBills({ ...source, since, ...(fetchImpl ? { fetchImpl } : {}) });
   await run(env.DB, 'DELETE FROM odoo_po');
   await writeAll(env.DB, recent.filter((o) => o.name).map((o) => env.DB.prepare(`INSERT INTO odoo_po
