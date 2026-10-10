@@ -98,7 +98,6 @@ const ROUTES = [
   ['GET', '/api/cash', 'insight', (env, ctx) => panels.cash(env, ctx.query)],
   ['GET', '/api/suppliers', 'insight', (env, ctx) => panels.suppliers(env, ctx.query)],
   ['GET', '/api/books', 'insight', (env, ctx) => panels.books(env, ctx.query)],
-  ['GET', '/api/service', 'insight', (env, ctx) => panels.service(env, ctx.query)],
   ['GET', '/api/findings', 'insight', (env, ctx) => panels.findings(env, ctx.query)],
   ['POST', '/api/findings/:id', 'insight', (env, ctx) => admin.decideFinding(env, ctx.params.id, ctx.body)],
   ['GET', '/api/export', 'insight', exportCsv],

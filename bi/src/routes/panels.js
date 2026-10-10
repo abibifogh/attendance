@@ -623,51 +623,6 @@ export async function financials(env, query) {
   };
 }
 
-export async function service(env, query) {
-  const { db, config, from, to } = await context(env, query, 30);
-  const facts = await loadFacts(db, from, to);
-
-  const daily = facts.dayList.map((day) => {
-    const hk = facts.service.find((s) => s.day === day && s.line_id === 'housekeeping');
-    const mx = facts.service.filter((s) => s.day === day && s.line_id === 'maintenance');
-    const hkLabour = facts.labour.filter((l) => l.day === day && l.line_id === 'housekeeping');
-    return {
-      day, dow: facts.byDay.get(day)?.dow_label,
-      checksDue: hk?.checks_due || 0,
-      checksDone: hk?.checks_done || 0,
-      completionPct: hk?.checks_due ? Math.round((hk.checks_done / hk.checks_due) * 100) : null,
-      mismatches: hk?.faults_found || 0,
-      onDuty: sum(hkLabour.map((l) => l.present_count)),
-      absent: sum(hkLabour.map((l) => l.absent_count)),
-      maintenanceJobs: sum(mx.map((m) => m.issues_opened)),
-      guests: facts.guestsOn(day),
-    };
-  });
-
-  const withChecks = daily.filter((d) => d.checksDue > 0);
-  const shortDays = withChecks.filter((d) => d.absent > 0);
-  const fullDays = withChecks.filter((d) => d.absent === 0);
-
-  return {
-    range: { from, to },
-    demoMode: config.demoMode,
-    daily,
-    summary: {
-      checksDue: sum(withChecks.map((d) => d.checksDue)),
-      checksDone: sum(withChecks.map((d) => d.checksDone)),
-      completionPct: pct(sum(withChecks.map((d) => d.checksDone)), sum(withChecks.map((d) => d.checksDue))),
-      mismatches: sum(withChecks.map((d) => d.mismatches)),
-      maintenanceJobs: sum(daily.map((d) => d.maintenanceJobs)),
-      // The comparison that needs two systems at once.
-      completionFullTeamPct: fullDays.length ? Math.round((median(fullDays.map((d) => d.completionPct)) || 0)) : null,
-      completionShortTeamPct: shortDays.length ? Math.round((median(shortDays.map((d) => d.completionPct)) || 0)) : null,
-      fullTeamDays: fullDays.length,
-      shortTeamDays: shortDays.length,
-    },
-    note: 'Checks come from the housekeeping module; who was on duty comes from HIVE at the door. Neither application can see the other.',
-  };
-}
-
 export async function findings(env, query) {
   const db = env.DB;
   const state = String(query?.state || 'live');

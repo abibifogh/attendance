@@ -52,7 +52,7 @@ async function app({ loaded = true } = {}) {
 test('every panel answers, over a window with data', async () => {
   const { call } = await app();
   for (const path of ['/api/bootstrap', '/api/brief', '/api/pnl', '/api/labour', '/api/demand',
-    '/api/cash', '/api/suppliers', '/api/service', '/api/findings', '/api/sources', '/api/runs']) {
+    '/api/cash', '/api/suppliers', '/api/findings', '/api/sources', '/api/runs']) {
     const response = await call(`${path}${path.includes('?') ? '&' : '?'}from=${WINDOW.from}&to=${WINDOW.to}`);
     assert.equal(response.status, 200, `${path} answered ${response.status}`);
     const body = await response.json();
@@ -65,7 +65,7 @@ test('every panel answers over a window with nothing in it', async () => {
   // The commonest real failure: somebody picks a date range before the group
   // had any data. Not one of these screens may throw.
   for (const path of ['/api/brief', '/api/pnl', '/api/labour', '/api/demand',
-    '/api/cash', '/api/suppliers', '/api/service']) {
+    '/api/cash', '/api/suppliers']) {
     const response = await call(`${path}?from=2019-01-01&to=2019-01-31`);
     assert.equal(response.status, 200, `${path} fell over on an empty window`);
   }
