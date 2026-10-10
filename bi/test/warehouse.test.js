@@ -461,3 +461,14 @@ test('reading the laundry for a number of days reads that many, up to the day as
   assert.equal(out.ok, true);
   assert.deepEqual([out.from, out.to], ['2026-06-09', '2026-06-15']);
 });
+
+test('a laundry-only read does not make the other sources look unread', async () => {
+  const { reloadLaundry } = await import('../src/warehouse/etl.js');
+  const { sourceHealth } = await import('../src/insight/engine.js');
+  const { env } = await loaded();
+  const before = (await sourceHealth(env.DB)).filter((s) => s.status !== 'never run').map((s) => [s.id, s.status]);
+  await reloadLaundry(env, { from: '2026-06-13', to: '2026-06-15' });
+  const after = (await sourceHealth(env.DB)).filter((s) => s.status !== 'never run').map((s) => [s.id, s.status]);
+  assert.ok(before.length > 1, 'the full load read several sources');
+  assert.deepEqual(after, before, 'each source keeps its own latest read');
+});

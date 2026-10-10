@@ -30,7 +30,8 @@ async function context(env, query, defaultDays = 30) {
 export async function bootstrap(env) {
   const db = env.DB;
   const config = await groupConfig(db);
-  const lastRun = await first(db, 'SELECT * FROM etl_run ORDER BY id DESC LIMIT 1');
+  // The last full load: a laundry-only read is not "the warehouse was loaded".
+  const lastRun = await first(db, "SELECT * FROM etl_run WHERE trigger IS NOT 'laundry' ORDER BY id DESC LIMIT 1");
   const sources = await sourceHealth(db);
   const span = await first(db, 'SELECT MIN(day) AS first_day, MAX(day) AS last_day FROM dim_day');
   const lines = await all(db, 'SELECT * FROM dim_line ORDER BY sort_order');
@@ -447,7 +448,7 @@ export async function books(env, query) {
   // actions, and until this was passed through the screen guessed — it told
   // somebody to go and check for draft bills when the real answer was that the
   // days he was looking at had never been fetched.
-  const lastRun = await first(db, 'SELECT from_day, to_day, finished_at FROM etl_run ORDER BY id DESC LIMIT 1');
+  const lastRun = await first(db, "SELECT from_day, to_day, finished_at FROM etl_run WHERE trigger IS NOT 'laundry' ORDER BY id DESC LIMIT 1");
   const loaded = lastRun ? { from: lastRun.from_day, to: lastRun.to_day, at: lastRun.finished_at } : null;
   const coversWindow = Boolean(loaded && loaded.from <= from && loaded.to >= to);
 
