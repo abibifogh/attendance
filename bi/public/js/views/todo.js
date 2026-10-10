@@ -272,6 +272,22 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
         } catch (err) { fail(checkSaid)(err); check.disabled = false; }
       },
     }, 'Check Odoo now');
+    // The laundry system, read now up to today, so a finished shift's laundry
+    // is compared without waiting for the night.
+    const laundrySaid = h('small.muted', '');
+    const laundry = h('button.btn', {
+      type: 'button',
+      onclick: async () => {
+        laundry.disabled = true; laundrySaid.textContent = 'Reading the laundry system…'; laundrySaid.className = 'small';
+        try {
+          const r = await api('/todo/laundry', { method: 'POST' });
+          laundrySaid.textContent = `Read ${dayText(r.from)} to ${dayText(r.to)}: ${r.orders} order${r.orders === 1 ? '' : 's'}, ${r.payments} payment${r.payments === 1 ? '' : 's'}.`;
+          laundrySaid.className = 'small muted';
+          onChange();
+        } catch (err) { fail(laundrySaid)(err); }
+        laundry.disabled = false;
+      },
+    }, 'Check laundry now');
     const days = h('input', { type: 'number', min: '0', max: '90', value: String(d.unbilledDays), style: 'width:4.5rem', 'aria-label': 'Days a PO may go without a posted bill' });
     const back = h('input', { type: 'number', min: '7', max: '730', value: String(d.lookbackDays ?? 90), style: 'width:5rem', 'aria-label': 'How many days back to look for POs' });
     const setSaid = h('span.small');
@@ -289,7 +305,7 @@ export async function todoPanel(v, { admin, onChange = () => {} }) {
           h('p.sub', admin
             ? 'Raised from the cash POs and Odoo’s bills, and shared out among the supervisors. Answers wait for you here.'
             : 'Given to you from the cash POs and Odoo’s bills. Each item clears by itself once Odoo is put right: press Check Odoo now to see it go.')),
-        h('div.sh-todo-check', check, checkSaid),
+        h('div.sh-todo-check', h('div.sh-todo-buttons', check, laundry), checkSaid, laundrySaid),
         h('div.sh-todo-counts',
           h('span', h('b', String(d.counts.open)), ' open'),
           h('span', h('b', String(d.counts.answered)), ' waiting for an admin'),

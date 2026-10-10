@@ -499,3 +499,63 @@ async function rollUpLabour(db, from, to, config) {
 
   return writeAll(db, statements);
 }
+
+/**
+ * Read the laundry system alone, now, for a few days up to today.
+ *
+ * For "Check laundry now": a shift's laundry is only compared once the
+ * system has been read past it, and the nightly run stops at yesterday.
+ * Nothing else is touched: only the laundry source's own rows in the window
+ * are replaced (its takings, its cash, its orders and payments, the laundry
+ * counts of the day), so no other system's figures are cleared or need
+ * reading again. Recorded as a run of its own, which is how the shift screen
+ * knows how far the laundry has been read.
+ */
+export async function reloadLaundry(env, { from, to } = {}) {
+  const db = env.DB;
+  const config = await groupConfig(db);
+  const today = todayIn(config.timezone);
+  const toDay = to || today;
+  const fromDay = from || addDays(toDay, -2);
+  const source = (await listSources(db)).find((s) => s.kind === 'snlaundry_http' && s.enabled)
+    || (await listSources(db)).find((s) => s.kind === 'snlaundry_http');
+  if (!source) return { ok: false, error: 'The laundry system is not set up in Insight.' };
+
+  const started = await db.prepare('INSERT INTO etl_run (from_day, to_day, trigger) VALUES (?1, ?2, ?3) RETURNING id')
+    .bind(fromDay, toDay, 'laundry').first();
+  const runId = started?.id ?? (await first(db, 'SELECT MAX(id) AS id FROM etl_run'))?.id;
+  const result = await pullSource(source, { env, from: fromDay, to: toDay, demo: config.demoMode });
+  const results = [{ sourceId: source.id, status: result.status, detail: result.detail }];
+  await run(db, `UPDATE sources
+       SET last_ok_at    = CASE WHEN ?2 IN ('ok','demo') THEN datetime('now') ELSE last_ok_at END,
+           last_error    = CASE WHEN ?2 = 'error' THEN ?3 ELSE NULL END,
+           last_error_at = CASE WHEN ?2 = 'error' THEN datetime('now') ELSE last_error_at END
+     WHERE id = ?1`, source.id, result.status, result.detail || null);
+  if (result.status !== 'ok' && result.status !== 'demo') {
+    await finish(db, runId, 'error', 0, results, result.detail);
+    return { ok: false, error: result.detail || 'The laundry system did not answer.', from: fromDay, to: toDay };
+  }
+  try {
+    const register = new Register(db);
+    await register.load();
+    let rows = await loadCalendar(db, fromDay, toDay);
+    for (const table of ['fact_revenue', 'fact_cost', 'fact_cash_control', 'fact_purchase_line']) {
+      await run(db, `DELETE FROM ${table} WHERE source_id = ?1 AND day BETWEEN ?2 AND ?3`, source.id, fromDay, toDay).catch(() => {});
+    }
+    await run(db, 'DELETE FROM laundry_txn WHERE source_id = ?1 AND day BETWEEN ?2 AND ?3', source.id, fromDay, toDay).catch(() => {});
+    // The day's laundry counts are this source's alone; the rest of the row is left.
+    await run(db, 'UPDATE fact_demand SET laundry_orders = 0, laundry_loads = 0 WHERE day BETWEEN ?1 AND ?2', fromDay, toDay);
+    rows += await loadBundle(db, register, source.id, result.bundle, config, fromDay, toDay);
+    rows += await register.flush();
+    await finish(db, runId, 'ok', rows, results);
+    const txns = result.bundle?.laundryTxns || [];
+    return {
+      ok: true, from: fromDay, to: toDay,
+      orders: txns.filter((t) => t.kind === 'order').length,
+      payments: txns.filter((t) => t.kind === 'payment').length,
+    };
+  } catch (err) {
+    await finish(db, runId, 'error', 0, results, String(err?.message ?? err));
+    throw err;
+  }
+}
