@@ -6,13 +6,16 @@ import { roleOf } from './till.js';
 /**
  * The money to-do list.
  *
- * Three checks make it, each re-run whenever Odoo is asked about the cash POs:
+ * Two checks make it, each re-run whenever Odoo is asked:
  *
- * - `unbilled`: a PO paid in cash, still with no bill in Odoo some days later
- *   (7 unless set). It clears itself when the bill arrives; the person it is
- *   given to can only say where it has got to;
- * - `differs`: what left the cash is not what the PO says;
- * - `nopo`: a bill in Odoo with no PO behind it.
+ * - `unbilled`: a PO confirmed in Odoo (in the last 90 days, or paid in cash
+ *   from the drawer or the safe at any time) still with no posted bill some
+ *   days later (7 unless set): from the day the cash left, or the day it was
+ *   ordered. It clears itself when the bill is posted;
+ * - `differs`: what left the cash is not what the PO says.
+ *
+ * A third, `nopo` (a bill with no PO), is no longer raised; its old items
+ * were closed when it stopped.
  *
  * Each new item is given to the supervisor with the fewest open, so the list
  * shares itself out. A supervisor sees their own; an admin sees everything,
@@ -21,14 +24,14 @@ import { roleOf } from './till.js';
  */
 
 const DEFAULT_DAYS = 7;
-/** How far back a bill without a PO is raised. Older bills are history, not a to-do. */
-const NOPO_DAYS = 45;
+/** How far back a confirmed PO with no bill is looked for. */
+export const PO_LOOKBACK_DAYS = 90;
 const now = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 const who = (account) => account?.name || account?.email || 'Owner';
 const parse = (text) => { try { return JSON.parse(text || '{}'); } catch { return {}; } };
 
 export const KIND_LABEL = {
-  unbilled: 'Paid in cash, no posted bill in Odoo',
+  unbilled: 'PO with no posted bill in Odoo',
   differs: 'Paid is not what the PO says',
   nopo: 'A bill with no PO',
 };
@@ -51,8 +54,6 @@ export async function syncTodos(env, { today = new Date().toISOString().slice(0,
     ? Math.max(0, Number(settings.todo_unbilled_days)) : DEFAULT_DAYS;
 
   const pos = await all(env.DB, 'SELECT * FROM cash_po WHERE in_odoo = 1');
-  const bills = await all(env.DB, `SELECT b.external_id, b.day, b.total, b.from_order, b.vendor_ref, s.name AS supplier
-      FROM fact_bill b LEFT JOIN dim_supplier s ON s.id = b.supplier_id WHERE b.state != 'cancel'`);
   const wanted = new Map();
   const cutoff = addDays(today, -days);
   for (const p of pos) {
@@ -68,19 +69,25 @@ export async function syncTodos(env, { today = new Date().toISOString().slice(0,
       wanted.set(`differs:${p.po}`, { kind: 'differs', ref: p.po, day: p.paid_day, amount: p.paid - p.po_total, detail });
     }
   }
-  const billFrom = addDays(today, -NOPO_DAYS);
-  for (const b of bills) {
-    if (b.from_order || !(b.total > 0) || b.day < billFrom) continue;
-    wanted.set(`nopo:${b.external_id}`, {
-      kind: 'nopo', ref: String(b.external_id), day: b.day, amount: b.total,
-      detail: { supplier: b.supplier, ref: b.vendor_ref, total: b.total, day: b.day },
+  // Every other PO confirmed in Odoo lately, however it was paid: no posted
+  // bill some days after it was ordered is an item too.
+  let recent = [];
+  try { recent = await all(env.DB, 'SELECT * FROM odoo_po'); } catch { recent = []; }
+  const cashNames = new Set(pos.map((p) => p.po));
+  for (const o of recent) {
+    if (cashNames.has(o.po) || o.posted || !(o.total > 0) || !o.ordered_on || o.ordered_on > cutoff) continue;
+    let drafts = [];
+    try { drafts = JSON.parse(o.drafts || '[]'); } catch { drafts = []; }
+    wanted.set(`unbilled:${o.po}`, {
+      kind: 'unbilled', ref: o.po, day: o.ordered_on, amount: o.total,
+      detail: { po: o.po, vendor: o.vendor, poTotal: o.total, orderedOn: o.ordered_on, paidFrom: null, drafts },
     });
   }
 
-  // What has put itself right. A bill without a PO only clears when the bill
-  // is still there and now has one; a bill that has merely aged out stays.
+  // What has put itself right.
   const pastPo = new Map(pos.map((p) => [p.po, p]));
-  const billNow = new Map(bills.map((b) => [String(b.external_id), b]));
+  const openPo = new Map(recent.map((o) => [o.po, o]));
+  const windowStart = addDays(today, -PO_LOOKBACK_DAYS);
   const existing = await all(env.DB, 'SELECT * FROM money_todo');
   let closed = 0;
   let reopened = 0;
@@ -95,10 +102,12 @@ export async function syncTodos(env, { today = new Date().toISOString().slice(0,
     }
     if (t.state === 'closed') continue;
     let why = null;
-    if (t.kind === 'unbilled' && pastPo.get(t.ref)?.posted) why = 'The bill is posted in Odoo.';
+    if (t.kind === 'unbilled' && (pastPo.get(t.ref)?.posted || openPo.get(t.ref)?.posted)) why = 'The bill is posted in Odoo.';
+    else if (t.kind === 'unbilled' && !pastPo.has(t.ref) && !openPo.has(t.ref) && (t.day || '') >= windowStart) why = 'The PO is no longer confirmed in Odoo.';
     else if (t.kind === 'differs' && pastPo.has(t.ref)) why = 'The amounts now agree.';
-    else if (t.kind === 'nopo' && billNow.get(t.ref)?.from_order) why = 'The bill now has a PO.';
-    else if ((t.kind === 'unbilled' || t.kind === 'differs') && !pastPo.has(t.ref)) why = 'It is no longer paid from the drawer or the safe.';
+    else if (t.kind === 'differs' && !pastPo.has(t.ref)) why = 'It is no longer paid from the drawer or the safe.';
+    // Bills without a PO are no longer raised: a PO without a bill is.
+    else if (t.kind === 'nopo') why = 'Bills without a PO are no longer chased; POs without a bill are.';
     if (!why) continue;
     await run(env.DB, "UPDATE money_todo SET state = 'closed', closed_by = 'Insight', closed_at = ?2, closed_why = ?3 WHERE id = ?1", t.id, now(), why);
     closed += 1;

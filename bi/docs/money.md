@@ -46,14 +46,17 @@ it buy, by part of the business.
 
 ## The to-do list
 
-Shifts → **To-do**, for admins and supervisors. Three checks raise items each
+Shifts → **To-do**, for admins and supervisors. Two checks raise items each
 time Odoo is asked:
 
 | Item | Raised when | Clears itself when |
 | --- | --- | --- |
-| Paid in cash, no posted bill in Odoo | a cash PO still has no posted bill after 7 days (an admin can change this); a draft bill is named on the item | the bill is posted in Odoo |
+| PO with no posted bill in Odoo | a PO confirmed in Odoo still has no posted bill 7 days (an admin can change this) after the cash left the drawer or the safe, or, for any other PO confirmed in the last 90 days, after it was ordered; a draft bill is named on the item | the bill is posted in Odoo |
 | Paid is not what the PO says | what left the cash differs from the PO's total | the two agree |
-| A bill with no PO | a bill in Odoo from the last 45 days has no PO | the bill is linked to a PO |
+
+Bills with no PO are no longer raised; the items they had raised were closed.
+The Money page's **To chase** card lists the POs not paid in cash with no
+posted bill beside the cash ones.
 
 - Each new item goes to the supervisor with the fewest open, so the list shares
   itself out. A supervisor sees only their own; the tab shows how many.
