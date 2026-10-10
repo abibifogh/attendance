@@ -203,6 +203,7 @@ export const ROUTES = [
   // request is signed with the secret the two share for the sign-in hand-off.
   ['POST', '/api/link/till/recover', 'public', till.linkRecover],
   ['POST', '/api/link/till/reopen', 'public', till.linkReopen],
+  ['POST', '/api/link/till/move', 'public', till.linkMove],
   ['POST', '/api/link/till/tell', 'public', till.linkTell],
   ['POST', '/api/link/mail', 'public', till.linkMail],
   ['GET', '/api/me/report', 'att_me', mine.myReport],

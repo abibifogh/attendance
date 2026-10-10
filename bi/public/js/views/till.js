@@ -49,11 +49,13 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
   const admin = who?.role === 'admin';
   let cache = null;
 
+  // Kept for half a minute only: a report sent from HIVE while this screen is
+  // open must show the next time the tab is opened, not after a reload.
   async function data(force = false) {
     const key = `${period().from}|${period().to}`;
-    if (!force && cache?.key === key) return cache.value;
+    if (!force && cache?.key === key && Date.now() - cache.at < 30_000) return cache.value;
     const value = await api(`/till?from=${period().from}&to=${period().to}`);
-    cache = { key, value };
+    cache = { key, value, at: Date.now() };
     return value;
   }
 
@@ -109,9 +111,16 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
       h('strong', `${SLOT[r.slot]} · ${dayText(r.day)}`),
       h('div.tl-small', rep ? `${rep.name} · ${String(rep.signedAt).slice(11, 16)}${rep.device ? ` · ${rep.device === 'pc' ? 'desk PC' : 'phone'}` : ''}` : (r.assdUser ? `ASSD: ${r.assdUser}` : '')),
       !r.inJournal ? h('div.tl-small', 'Not in the journal yet') : null,
+      r.belongs ? h('div.tl-small.tl-warn', `ASSD has ${r.belongs.assdUser} on ${SLOT[r.belongs.slot]} · ${dayText(r.belongs.day)} with no report`) : null,
       rep && !rep.floatOk ? h('div', pill('over', `float out ${money_ ? signed(rep.floatDiff) : ''}`)) : null);
     if (!rep) {
-      return h('tr.tl-missing', shift, h('td', { colspan: 7 }, r.open ? pill('none', 'still open') : pill('short', 'No closing report')));
+      // Their report is on the shift beside this one, where ASSD has nobody.
+      const near = r.nearby ? h('div.tl-near',
+        h('span', `${r.nearby.name}’s report is filed under ${SLOT[r.nearby.slot]} · ${dayText(r.nearby.day)}`
+          + `${r.nearby.signedAt ? ` (signed ${String(r.nearby.signedAt).slice(11, 16)})` : ''}. Wrong shift picked?`),
+        access.reopen > 1 ? h('button.btn', { type: 'button', onclick: (e) => move(e, r) }, 'Move it to this shift') : null) : null;
+      return h('tr.tl-missing', shift, h('td', { colspan: 7 },
+        r.open ? pill('none', 'still open') : pill('short', 'No closing report'), near));
     }
     const env = rep.toSafe ? rep.envelopes.map((e) => `${e.no}${money_ ? ` ${money(e.amount)}` : ''}`).join(', ') : 'nothing';
     const drawer = h('td.num', amt(rep.cash),
@@ -138,6 +147,20 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     rep.note ? h('div.tl-small', `“${rep.note}”`) : null);
     const act = h('td', access.reopen > 1 ? h('button.btn', { type: 'button', onclick: (e) => reopen(e, rep) }, 'Reopen') : null);
     return h('tr', shift, drawer, safe, out, exp, rentals, checks, act);
+  }
+
+  async function move(event, r) {
+    const cell = event.target.closest('td');
+    const said = h('span.tl-small');
+    event.target.disabled = true;
+    said.textContent = 'Moving…';
+    cell.append(said);
+    try {
+      await api('/till/move', { method: 'POST', body: { reportId: r.nearby.id, day: r.day, slot: r.slot } });
+      cache = null;
+      mount(cell, pill('ok', `Moved to ${SLOT[r.slot]} · ${dayText(r.day)}. ${r.nearby.name} has been told.`));
+      onChange();
+    } catch (err) { said.textContent = err.message; event.target.disabled = false; }
   }
 
   async function reopen(event, rep) {

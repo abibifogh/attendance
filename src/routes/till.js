@@ -529,6 +529,37 @@ export async function linkReopen(ctx) {
   return json({ ok: true });
 }
 
+/**
+ * Move a closing report to the shift it belongs to, for Insight.
+ *
+ * A report filed on the shift beside the one ASSD has its writer on (closed
+ * after eleven, so the clock offered the night) is the same report on the
+ * wrong row. Its POs move with it. Refused if its writer already has a report
+ * on that shift.
+ */
+export async function linkMove(ctx) {
+  const body = await fromInsight(ctx);
+  const id = Number(body.reportId);
+  const report = await ctx.db.prepare('SELECT * FROM till_report WHERE id = ?1 AND reopened_at IS NULL').bind(id).first();
+  if (!report) throw notFound('That report is not open to move.');
+  const day = String(body.day || '');
+  const slot = String(body.slot || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !SLOTS.includes(slot)) throw badRequest('Which shift?');
+  if (day === report.day && slot === report.slot) return json({ ok: true, moved: false });
+  const taken = await ctx.db.prepare('SELECT id FROM till_report WHERE day = ?1 AND slot = ?2 AND user_id = ?3 AND reopened_at IS NULL')
+    .bind(day, slot, report.user_id).first();
+  if (taken) throw badRequest(`${report.name} already has a report for ${labelOf({ day, slot })}.`);
+  const by = str(body.by, 'By', { max: 120 }) || 'Insight';
+  await ctx.db.prepare('UPDATE till_report SET day = ?2, slot = ?3 WHERE id = ?1').bind(id, day, slot).run();
+  await ctx.db.prepare('UPDATE till_po SET day = ?2, slot = ?3 WHERE report_id = ?1').bind(id, day, slot).run();
+  await createNotice(ctx.db, {
+    kind: 'till.reopened', level: 'info', title: `Your closing report was moved to ${labelOf({ day, slot })}`,
+    body: `${by} moved it from ${labelOf(report)}, the shift ASSD has you on. Nothing else in it changed.`,
+    link: '#/att-my-till', userId: report.user_id, push: false, email: false, text: false,
+  }, ctx);
+  return json({ ok: true, moved: true, from: { day: report.day, slot: report.slot }, to: { day, slot } });
+}
+
 /** Tell people something Insight decided. */
 export async function linkTell(ctx) {
   const body = await fromInsight(ctx);

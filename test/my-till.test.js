@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  answer, closeShift, closedSummary, linkMail, linkRecover, linkReopen, lookUpPo, myTill, shiftAt,
+  answer, closeShift, closedSummary, linkMail, linkMove, linkRecover, linkReopen, lookUpPo, myTill, shiftAt,
 } from '../src/routes/till.js';
 import { signLink, verifyLink } from '../src/lib/till-link.js';
 import { getPepper, hashPin } from '../src/lib/auth.js';
@@ -293,4 +293,31 @@ test('the closed-shift email reaches an address on the staff record, and says wh
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+test('Insight can move a report to the shift it belongs to, with its POs, only when it signs', async () => {
+  const { db, raw } = await setup();
+  const env = { INSIGHT: insight() };
+  const screen = await (await myTill(ctx(db, AMA, { env }))).json();
+  // Closed on the wrong row: the shift after the one she worked.
+  const wrong = screen.choices[0];
+  await closeShift(ctx(db, AMA, { env, body: good(wrong) }));
+  const id = raw.prepare('SELECT id FROM till_report').get().id;
+  const right = screen.choices[1];
+  const path = '/api/link/till/move';
+  const call = async (body, headers) => linkMove({ db, env: { INSIGHT_SSO_SECRET: SECRET }, url: new URL(`https://x${path}`), executionContext: null,
+    request: new Request(`https://x${path}`, { method: 'POST', headers: headers || await signLink(SECRET, path, body), body }) });
+
+  const body = JSON.stringify({ reportId: id, day: right.day, slot: right.slot, by: 'Test Owner' });
+  await assert.rejects(call(body, { 'Content-Type': 'application/json' }), /401|signed|did not come/i);
+  const out = await (await call(body)).json();
+  assert.equal(out.moved, true);
+  assert.deepEqual({ ...raw.prepare('SELECT day, slot FROM till_report WHERE id = ?').get(id) }, { day: right.day, slot: right.slot });
+  assert.deepEqual(raw.prepare('SELECT day, slot FROM till_po').all().map((r) => [r.day, r.slot]), [[right.day, right.slot]], 'its POs move with it');
+  assert.ok(raw.prepare("SELECT title FROM app_notices WHERE user_id = 7 AND title LIKE 'Your closing report was moved%'").get(), 'she is told');
+
+  // She now has a report on that shift: another of hers cannot be moved onto it.
+  await closeShift(ctx(db, AMA, { env, body: good(wrong, { expenses: [] }) }));
+  const second = raw.prepare('SELECT id FROM till_report WHERE day = ? AND slot = ?').get(wrong.day, wrong.slot).id;
+  await assert.rejects(call(JSON.stringify({ reportId: second, day: right.day, slot: right.slot })), /already has a report/);
 });
