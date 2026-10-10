@@ -166,8 +166,20 @@ test('only product lines are read, never tax or the payable', async () => {
 
   const ask = fetchImpl.seen.find((s) => s.key === 'account.move.line/search_read');
   const domain = JSON.stringify(ask.body.domain);
-  assert.match(domain, /"display_type","=",false/, 'section and note lines are not purchases');
-  assert.match(domain, /"product_id","!=",false/, 'the tax and payable lines carry no product');
+  // A current Odoo types a bill's ordinary lines 'product'; asking for an
+  // empty type alone returned nothing and every bill looked PO-less.
+  assert.match(domain, /"display_type","=","product"/, 'a current Odoo’s product lines are asked for');
+  assert.match(domain, /"display_type","=",false\],\["product_id","!=",false/, 'an older Odoo’s are told from tax lines by their product');
+});
+
+test('a bill made from a PO is from an order by its origin, even with no line linked', async () => {
+  const fetchImpl = fakeOdoo({
+    'account.move/search_read': [move({ id: 1, invoice_origin: 'P02162' }), move({ id: 2, ref: 'INV-2' })],
+    'account.move.line/search_read': [],
+  });
+  const bundle = await pull(asRegistry({ ...window, fetchImpl }));
+  assert.equal(bundle.bills.find((b) => b.externalId === '1').fromOrder, true);
+  assert.equal(bundle.bills.find((b) => b.externalId === '2').fromOrder, false);
 });
 
 test('a line records which account it hit, and whether an order was behind it', async () => {
