@@ -222,7 +222,7 @@ export async function pull({ config: settings, token, from, to, fetchImpl = fetc
   ], [
     'id', 'name', 'ref', 'invoice_date', 'invoice_date_due', 'partner_id',
     'move_type', 'state', 'payment_state', 'amount_untaxed', 'amount_tax',
-    'amount_total', 'amount_residual', 'currency_id', 'journal_id',
+    'amount_total', 'amount_residual', 'currency_id', 'journal_id', 'invoice_origin',
   ], opts);
 
   // A refund is a negative purchase. Odoo stores its amounts positive and
@@ -261,11 +261,19 @@ export async function pull({ config: settings, token, from, to, fetchImpl = fetc
   // The lines. Product lines only: a bill also carries tax lines and the
   // balancing payable line, and counting those as purchases would double every
   // total and invent a supplier called "Accounts Payable".
+  //
+  // Odoo 16 and later mark a bill's ordinary lines `display_type = 'product'`
+  // (tax, payable, section and note lines have types of their own), and the
+  // JSON-2 API this reads is only on those versions. Before 16 the type was
+  // empty for every line, product or tax, and only `product_id` told them
+  // apart. Asking for `false` alone, as this once did, returns nothing at all
+  // from a current Odoo: no costs from the books, and every bill read as
+  // having no PO.
   const moveIds = moves.map((m) => m.id);
   const lines = moveIds.length ? await searchRead(config, 'account.move.line', [
     ['move_id', 'in', moveIds],
-    ['display_type', '=', false],
-    ['product_id', '!=', false],
+    '|', ['display_type', '=', 'product'],
+    '&', ['display_type', '=', false], ['product_id', '!=', false],
   ], [
     'id', 'move_id', 'product_id', 'name', 'quantity', 'price_unit',
     'price_subtotal', 'price_total', 'account_id', 'product_uom_id',
@@ -306,8 +314,12 @@ export async function pull({ config: settings, token, from, to, fetchImpl = fetc
     });
   }
 
+  // A bill made from a PO carries the PO's name as its origin as well as on
+  // its lines; either is enough.
+  const origin = new Map(moves.map((m) => [m.id, String(m.invoice_origin || '').trim()]));
   for (const bill of bundle.bills) {
-    bill.fromOrder = withOrder.has(Number(bill.externalId));
+    const id = Number(bill.externalId);
+    bill.fromOrder = withOrder.has(id) || /^P\d+/i.test(origin.get(id) || '');
   }
 
   for (const [code, name] of accounts) {
