@@ -2524,15 +2524,22 @@ export const GUIDE = [
         'Type the cash in the drawer now, as one total.',
         'Say whether you moved cash to the safe. If you did, the number on each envelope and the '
           + 'amount in it.',
+        'Sort out anything under From the last shift: an advance still waiting for approval or '
+          + 'for the expense form, money from a refund to put in the drawer (Done), or more paid '
+          + 'on a PO (Done, or Not on my shift).',
         'For the expenses paid from the drawer, type each PO number (several at once, with commas) '
-          + 'and tap Add. Each is checked in Odoo there and then and listed with its amount.',
+          + 'and tap Add. Each is checked in Odoo there and then and listed with its amount. An '
+          + 'approved PO has to be on the expense form first; one still waiting for approval goes '
+          + 'in as an advance.',
         'Count the padlocks at the start and at the end.',
         'Look for the scale and the hair dryer. If one is not at the desk, which guest has it, '
           + 'or where it is.',
         'Sign and send, with your own PIN.',
       ] },
-      { note: 'An expense counts only when Odoo has a confirmed PO for it, up to the PO\u2019s '
-        + 'total, and a PO counts once: one already claimed on another shift is refused. Cash '
+      { note: 'An expense counts when Odoo has an approved PO for it that is on the expense form, '
+        + 'or as an advance while the PO waits for approval. An advance has to be approved and '
+        + 'reported before the next shift can close. A PO counts once: one already claimed on '
+        + 'another shift is refused. Cash '
         + 'that left the drawer with no envelope and no confirmed PO is treated as short until '
         + 'a PO is found.' },
 
