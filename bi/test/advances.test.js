@@ -239,3 +239,20 @@ test('PO numbers read however they were typed on the form, and TnT the way the f
   const again = await advances.reportedFor(env, ['P04125', 'P04126']);
   assert.deepEqual([again.get('P04125').total, again.has('P04126')], [31000, false]);
 });
+
+test('a big batch from the form is saved in a handful of database calls', async () => {
+  const { env } = await setUp();
+  let calls = 0;
+  const counted = { ...env.DB, prepare: (sql) => env.DB.prepare(sql), batch: async (list) => { calls += 1; return env.DB.batch(list); } };
+  const realPrepare = env.DB.prepare.bind(env.DB);
+  let prepared = 0;
+  counted.prepare = (sql) => { prepared += 1; return realPrepare(sql); };
+  const responses = Array.from({ length: 500 }, (_, i) => ({ responseId: `r${i}`, po: i % 50 ? String(1000 + i) : `${1000 + i} & ${2000 + i}`, amount: '10', tnt: '1' }));
+  const out = await advances.ingestForm({ ...env, DB: counted }, { responses });
+  assert.deepEqual([out.saved, calls], [500, 1]);
+  assert.ok(prepared < 50, `${prepared} statements`);
+  assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM expense_report').first()).n, 510);
+  // Sent again: still one copy each.
+  await advances.ingestForm({ ...env, DB: counted }, { responses });
+  assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM expense_report').first()).n, 510);
+});

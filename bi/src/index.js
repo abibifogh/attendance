@@ -163,7 +163,12 @@ const ROUTES = [
   // The expense form: a script on the Google Form posts each response the
   // moment it is submitted, signed with the form's own secret.
   ['POST', '/api/link/expense-form', 'form', async (env, ctx) => {
-    const saved = await advances.ingestForm(env, ctx.body);
+    // Only the form's own script gets here, so it is told what went wrong.
+    let saved;
+    try { saved = await advances.ingestForm(env, ctx.body); } catch (err) {
+      if (err instanceof HttpError) throw err;
+      throw new HttpError(500, `Insight could not save the responses: ${String(err?.message || err).slice(0, 300)}`);
+    }
     const tell = advances.tellDifferences(env);
     if (ctx.execution?.waitUntil) ctx.execution.waitUntil(tell); else await tell;
     return saved;
