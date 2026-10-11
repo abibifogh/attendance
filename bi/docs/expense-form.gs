@@ -1,27 +1,38 @@
 /**
  * The expense form → Insight.
  *
- * Paste this whole file into the expense form's own script editor (open the
- * Google Form → ⋮ → Apps Script), then follow bi/docs/advances.md.
+ * Paste this whole file into a new Apps Script project (script.google.com →
+ * New project), set the script properties, then follow bi/docs/advances.md.
+ * It also works pasted into the form's own script editor (⋮ → Apps Script).
  *
  * Each response is sent to Insight the moment it is submitted: the PO number,
- * the amount, the TnT, who sent it and when. Nothing else. Each is signed with
+ * the amount, the TnT and whether the invoice included it, who sent it and
+ * when. Nothing else: not the receipt, not the notes. Each is signed with
  * the form's secret, so Insight takes it from this script and nobody else.
+ *
+ * Script properties (Project Settings → Script properties):
+ *   INSIGHT_URL   Insight's address, e.g. https://insight.example.com
+ *   FORM_SECRET   the same text as the GitHub secret INSIGHT_EXPENSE_FORM_SECRET
+ *   FORM_ID       the form's id, from its address: docs.google.com/forms/d/<FORM_ID>/edit
+ *                 (not needed when pasted into the form's own script editor)
  */
 
-/** The three questions, exactly as their titles read on the form (case does not matter). */
+/** The questions, exactly as their titles read on the form (case and spaces at the ends do not matter). */
 const QUESTIONS = {
-  po: 'PO number',
-  amount: 'Amount',
-  tnt: 'TnT',
-  // Optional: a question asking for the person's name. Leave '' to use the
-  // email address the form collects, if it collects one.
-  by: '',
+  po: 'Enter the Purchase Order number',
+  amount: 'Enter the GHS Value',
+  tnt: 'How much was transportation?',
+  // "Yes, included in the invoice" means the amount has the transport in it already.
+  transport: 'Was there transportation?',
+  by: 'Select Your Name',
 };
+
+/** sendAllPast sends the responses from this day on, and none before it. */
+const SEND_FROM = '2026-10-01';
 
 /** Run once: sends every new response from now on. */
 function setUp() {
-  const form = FormApp.getActiveForm();
+  const form = form_();
   for (const t of ScriptApp.getProjectTriggers()) {
     if (t.getHandlerFunction() === 'onSubmit') ScriptApp.deleteTrigger(t);
   }
@@ -29,11 +40,21 @@ function setUp() {
   check_();
 }
 
-/** Run once after setUp: sends every response already on the form. Safe to run again. */
+/** Run once after setUp: sends the responses from SEND_FROM on. Safe to run again. */
 function sendAllPast() {
-  const all = FormApp.getActiveForm().getResponses().map(toRecord_);
+  const since = new Date(`${SEND_FROM}T00:00:00Z`);
+  const all = form_().getResponses(since).map(toRecord_);
   for (let i = 0; i < all.length; i += 200) send_(all.slice(i, i + 200));
   Logger.log(`Sent ${all.length} responses.`);
+}
+
+/** The expense form: by its id, or the form this script is part of. */
+function form_() {
+  const id = PropertiesService.getScriptProperties().getProperty('FORM_ID');
+  if (id) return FormApp.openById(id.trim());
+  const form = FormApp.getActiveForm();
+  if (!form) throw new Error('Set FORM_ID under Project Settings → Script properties: the long code in the form\'s address.');
+  return form;
 }
 
 function onSubmit(e) {
@@ -53,7 +74,8 @@ function toRecord_(response) {
     po: pick(QUESTIONS.po),
     amount: pick(QUESTIONS.amount),
     tnt: pick(QUESTIONS.tnt),
-    by: pick(QUESTIONS.by) || response.getRespondentEmail() || '',
+    tntIncluded: /included/i.test(pick(QUESTIONS.transport)),
+    by: pick(QUESTIONS.by),
     submittedAt: Utilities.formatDate(response.getTimestamp(), 'UTC', 'yyyy-MM-dd HH:mm'),
   };
 }
@@ -63,8 +85,8 @@ function check_() {
   if (!props.getProperty('INSIGHT_URL') || !props.getProperty('FORM_SECRET')) {
     throw new Error('Set INSIGHT_URL and FORM_SECRET under Project Settings → Script properties first.');
   }
-  const titles = FormApp.getActiveForm().getItems().map((i) => i.getTitle().trim().toLowerCase());
-  for (const key of ['po', 'amount', 'tnt']) {
+  const titles = form_().getItems().map((i) => i.getTitle().trim().toLowerCase());
+  for (const key of ['po', 'amount', 'tnt', 'transport', 'by']) {
     if (!titles.includes(QUESTIONS[key].trim().toLowerCase())) {
       throw new Error(`The form has no question called "${QUESTIONS[key]}". Change QUESTIONS at the top to match.`);
     }

@@ -54,16 +54,34 @@ form and the drawers each say.
    New repository secret**. Name `INSIGHT_EXPENSE_FORM_SECRET`, value the
    secret.
 3. **Actions → "Set Insight's secrets" → Run workflow.**
-4. Open the expense form in Google Forms → **⋮ → Apps Script**. Delete what is
-   there and paste in [`expense-form.gs`](expense-form.gs). If the questions
-   are not called *PO number*, *Amount* and *TnT*, change the titles at the
-   top to match.
-5. In the script editor: **Project Settings (⚙) → Script properties → Add**:
+4. Go to [script.google.com](https://script.google.com) → **New project**.
+   Delete what is there and paste in [`expense-form.gs`](expense-form.gs).
+   Name the project (top left), for example *Expense form to Insight*, and
+   save. It reads these questions: *Enter the Purchase Order number*, *Enter
+   the GHS Value*, *Was there transportation?*, *How much was
+   transportation?* and *Select Your Name*. If one is renamed on the form,
+   change its title at the top of the script to match.
+5. **Project Settings (⚙) → Script properties → Add script property**, three
+   times:
    - `INSIGHT_URL`: Insight's address, for example `https://insight.example.com`
    - `FORM_SECRET`: the same secret as in step 2
+   - `FORM_ID`: the long code in the form's address when you edit it,
+     between `/d/` and `/edit`
 6. Back in the editor, choose **setUp** and press **Run**. Google asks for
-   permission the first time; allow it.
+   permission the first time; allow it (on "Google hasn't verified this app":
+   Advanced → Go to … → Allow).
 7. Choose **sendAllPast** and press **Run**, to send the responses already on
-   the form.
+   the form from 1 October 2026 on (`SEND_FROM` at the top of the script).
+
+PO numbers are read however they were typed: 4123, P04123, p04123, PO4123,
+POO123, or two on one response ("4123 & 4124", both marked reported). *N/A*,
+a name or a phone number names no PO. TnT is added to the amount, unless the
+answer to *Was there transportation?* says it was included in the invoice.
 
 From then on each response reaches Insight the moment it is submitted.
+
+A separate project rather than the form's own script editor: a form whose
+script was once tied to a Google Cloud project that has since been deleted
+cannot be given permissions ("Error 401: deleted_client"). A new project is
+not tied to anything. The script also works from the form's own editor,
+where FORM_ID is not needed.

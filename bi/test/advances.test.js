@@ -208,3 +208,34 @@ test('the form endpoint takes only what its script signed, and nothing until the
   delete off.EXPENSE_FORM_SECRET;
   assert.equal((await post(body, { on: off })).status, 503);
 });
+
+test('PO numbers read however they were typed on the form, and TnT the way the form says', async () => {
+  assert.deepEqual(advances.formPos('4123'), ['P04123']);
+  assert.deepEqual(advances.formPos('4123.0'), ['P04123']);
+  assert.deepEqual(advances.formPos('p04123'), ['P04123']);
+  assert.deepEqual(advances.formPos('PO4123'), ['P04123']);
+  assert.deepEqual(advances.formPos('POO123'), ['P00123']);
+  assert.deepEqual(advances.formPos('P004123'), ['P04123']);
+  assert.deepEqual(advances.formPos('P04123`'), ['P04123']);
+  assert.deepEqual(advances.formPos('4123 & 4124'), ['P04123', 'P04124']);
+  for (const none of ['N/A', 'NA', 'Some Name', 'Bolt (Some Name)', 'mtn', '24123456', '', null]) assert.deepEqual(advances.formPos(none), [], String(none));
+  assert.equal(advances.toMinor('row 12'), null, 'words are not an amount');
+  assert.equal(advances.toMinor('GHS 1,200.50'), 120050);
+
+  const { env } = await setUp();
+  await advances.ingestForm(env, { responses: [
+    { responseId: 'a', po: '4123', amount: '100', tnt: '20', tntIncluded: false },
+    { responseId: 'b', po: '4124', amount: '100', tnt: '20', tntIncluded: true },
+    { responseId: 'c', po: '4125 & 4126', amount: '300', tnt: '10' },
+    { responseId: 'd', po: 'N/A', amount: '50' },
+  ] });
+  const got = await advances.reportedFor(env, ['P04123', 'P04124', 'P04125', 'P04126']);
+  assert.equal(got.get('P04123').total, 12000, 'TnT on top');
+  assert.equal(got.get('P04124').total, 10000, 'TnT already in the invoice');
+  assert.equal(got.get('P04125').together, true);
+  assert.equal(got.get('P04126').together, true);
+  // Sent again with one PO fewer: the other is no longer reported by it.
+  await advances.ingestForm(env, { responseId: 'c', po: '4125', amount: '300', tnt: '10' });
+  const again = await advances.reportedFor(env, ['P04125', 'P04126']);
+  assert.deepEqual([again.get('P04125').total, again.has('P04126')], [31000, false]);
+});
