@@ -260,7 +260,10 @@ async function drawerMovement(env, seq) {
  * `reverses` (with `pair`, the movement it puts back, which may be on
  * another shift), or `clear` to undo whatever was said about this movement.
  */
-export async function saveMovement(env, body, account, { pending = false } = {}) {
+/** Who decided a supervisor's correction that was small enough to count straight away. */
+export const SMALL_BY = 'Counted straight away (small)';
+
+export async function saveMovement(env, body, account, { pending = false, smallUpTo = null } = {}) {
   const seq = Number(body?.seq);
   if (!Number.isInteger(seq)) throw badRequest('Which movement? Its ASSD number is needed.');
   const kind = String(body?.kind || '');
@@ -312,13 +315,17 @@ export async function saveMovement(env, body, account, { pending = false } = {})
     if (taken) throw badRequest(`One of those movements is already matched (ASSD ${taken.seq}). Undo that first.`);
   }
 
-  const status = pending ? 'pending' : 'applied';
+  // A supervisor's correction of a small movement counts straight away: at or
+  // under the small-differences limit, it is not worth an admin's decision.
+  // It is marked, so the daily summary can list it.
+  const small = pending && smallUpTo > 0 && Math.abs(move.amount) <= smallUpTo;
+  const status = pending && !small ? 'pending' : 'applied';
   await run(env.DB, `INSERT INTO shift_movement (seq, kind, expenses, pair, note, by_name, at, status, decided_by, decided_at)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
     ON CONFLICT (seq) DO UPDATE SET kind = ?2, expenses = ?3, pair = ?4, note = ?5, by_name = ?6, at = ?7, status = ?8,
-      decided_by = NULL, decided_at = NULL`,
-  rowSeq, kind, expenses, pair, note, who(account), now(), status);
-  return { ok: true, pending, seq: rowSeq, kind };
+      decided_by = ?9, decided_at = ?10`,
+  rowSeq, kind, expenses, pair, note, who(account), now(), status, small ? SMALL_BY : null, small ? now() : null);
+  return { ok: true, pending: status === 'pending', small, seq: rowSeq, kind };
 }
 
 /**
@@ -531,17 +538,31 @@ export async function shifts(env, query, account) {
   // Odoo when it was signed. Shown with any typed here, so a shift whose
   // person gave their POs does not read as having none.
   const reportPos = new Map();
+  // What each shift's closing report says left the drawer for expenses. It
+  // settles cash movements nothing labelled, the way a typed expense sheet
+  // used to, so nobody has to type the total in here.
+  const reportPaid = new Map();
   if (env.ATT_DB) {
     const rows = await all(env.ATT_DB, 'SELECT * FROM till_po WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => []);
+    // Which of them are on the expense form.
+    const reported = new Set();
+    const names = [...new Set(rows.map((r) => String(r.po).toUpperCase()))];
+    for (let i = 0; i < names.length; i += 90) {
+      const chunk = names.slice(i, i + 90);
+      // eslint-disable-next-line no-await-in-loop
+      for (const r of await all(env.DB, `SELECT DISTINCT po FROM expense_report WHERE po IN (${chunk.map((_, j) => `?${j + 1}`).join(', ')})`, ...chunk).catch(() => [])) reported.add(r.po);
+    }
     for (const r of rows) {
       const key = `${r.day}|${r.slot}`;
       if (!reportPos.has(key)) reportPos.set(key, []);
+      reportPaid.set(key, (reportPaid.get(key) || 0) + (Number(r.paid) || 0));
       // A top-up or change back on a later shift is the difference that moved
       // through that drawer, not the PO's whole total again.
       const kind = r.kind || 'claim';
       reportPos.get(key).push({
         name: r.po, vendor: r.vendor || '', total: kind === 'claim' ? Number(r.total) || 0 : Number(r.paid) || 0,
         state: r.state || 'purchase', fromReport: true, ...(kind !== 'claim' ? { kind } : {}),
+        reported: reported.has(String(r.po).toUpperCase()), advance: Number(r.advance) === 1,
       });
     }
   }
@@ -567,7 +588,7 @@ export async function shifts(env, query, account) {
     // what nothing labelled: the part of it not yet accounted for is
     // expenses, the rest went to the safe. Where the sheet and the labelled
     // movements disagree, the gap is shown rather than written over.
-    const sheet = expense?.sheet_total ?? null;
+    const sheet = expense?.sheet_total ?? reportPaid.get(`${s.day}|${s.slotName}`) ?? null;
     const fromSheet = sheet != null ? Math.min(s.unlabelledMoved, Math.max(0, sheet - s.expensesMoved)) : 0;
     const expenses = s.expensesMoved + fromSheet;
     const toSafe = s.safeMoved + (sheet != null ? s.unlabelledMoved - fromSheet : 0);
@@ -749,7 +770,9 @@ export async function shifts(env, query, account) {
       cardFoundAmount: found.reduce((t, l) => t + l.amount, 0),
       register: register.get(s.index),
       expense: expense || fromReport.length ? {
-        sheetTotal: expense?.sheet_total ?? null, poNumbers: expense?.po_numbers ?? null, odoo, pulledAt: expense?.pulled_at ?? null,
+        sheetTotal: expense?.sheet_total ?? reportPaid.get(`${s.day}|${s.slotName}`) ?? null,
+        sheetFrom: expense?.sheet_total != null ? 'typed' : reportPaid.has(`${s.day}|${s.slotName}`) ? 'report' : null,
+        poNumbers: expense?.po_numbers ?? null, odoo, pulledAt: expense?.pulled_at ?? null,
         odooTotal: odoo?.orders?.reduce((t, o) => t + o.total, 0) ?? null,
         // Which of the POs came with the closing report rather than typed here.
         fromReport: fromReport.map((o) => o.name),
@@ -831,6 +854,7 @@ export async function shifts(env, query, account) {
   return {
     ...base,
     days,
+    formLive: Boolean(env.EXPENSE_FORM_SECRET),
     exceptions: exceptions.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0)),
     people: [...people.values()].sort((a, b) => a.variance - b.variance),
     totals,

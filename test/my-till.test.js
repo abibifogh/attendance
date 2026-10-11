@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  answer, closeShift, closedSummary, linkExpect, linkMail, linkMove, linkRecover, linkReopen, lookUpPo, myTill, poChanges, shiftAt,
+  answer, closeShift, closedSummary, linkExpect, linkSummary, linkMail, linkMove, linkRecover, linkReopen, lookUpPo, myTill, poChanges, shiftAt,
 } from '../src/routes/till.js';
 import { signLink, verifyLink } from '../src/lib/till-link.js';
 import { getPepper, hashPin } from '../src/lib/auth.js';
@@ -165,10 +165,9 @@ test('closing a shift: checked, signed, stored and told', async () => {
   assert.deepEqual(lines.map((e) => [e.name, e.counted, e.state]), [['P00412', true, 'confirmed']]);
   assert.deepEqual(raw.prepare('SELECT po, paid, total FROM till_po').all().map((r) => ({ ...r })), [{ po: 'P00412', paid: 44000, total: 44000 }]);
 
-  // The boss was told, with the amounts, because Insight said so.
-  const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'till.closed'").get();
-  assert.equal(notice.user_id, 3);
-  assert.match(notice.body, /Drawer GH₵ 1,083.50 · safe GH₵ 1,500.00 in envelope 417 · hair dryer not at the desk \(Room 12\) · padlocks 6 → 5\./);
+  // Nobody is told each time a shift closes: the daily summary covers it.
+  assert.equal(raw.prepare("SELECT COUNT(*) AS n FROM app_notices WHERE kind LIKE 'till.%'").get().n, 0);
+  assert.match(closedSummary(sent.report, true), /Drawer GH₵ 1,083.50 · safe GH₵ 1,500.00 in envelope 417 · hair dryer not at the desk \(Room 12\) · padlocks 6 → 5\./);
 
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift) })), /already closed that shift/);
 
@@ -192,7 +191,7 @@ test('a PO answers cash that left the drawer, once', async () => {
   const key = 'unexplained:2026-10-07:afternoon';
   const env = { INSIGHT: insight({ issues: [{ key, kind: 'unexplained', label: 'Cash left the drawer with no envelope or PO', day: '2026-10-07', slot: 'afternoon', amount: -18000 }] }) };
   await assert.rejects(answer(ctx(db, AMA, { env, body: { key: 'drawer:x', how: 'explain', text: 'hm' }, path: '/api/me/till/answer' })), /not on your list/);
-  await assert.rejects(answer(ctx(db, AMA, { env, body: { key, how: 'po', po: '420' }, path: '/api/me/till/answer' })), /draft in Odoo|not confirmed/);
+  await assert.rejects(answer(ctx(db, AMA, { env, body: { key, how: 'po', po: '420' }, path: '/api/me/till/answer' })), /draft in Odoo|not approved/);
   await answer(ctx(db, AMA, { env, body: { key, how: 'po', po: '415' }, path: '/api/me/till/answer' }));
   assert.deepEqual({ ...raw.prepare('SELECT po, via, day, slot, paid FROM till_po').get() }, { po: 'P00415', via: 'answer', day: '2026-10-07', slot: 'afternoon', paid: 18000 });
   await assert.rejects(answer(ctx(db, AMA, { env, body: { key, how: 'po', po: '415' }, path: '/api/me/till/answer' })), /already been claimed/);
@@ -274,28 +273,37 @@ test('Insight can send one email through HIVE, only when it signs the request', 
   }
 });
 
-test('the closed-shift email reaches an address on the staff record, and says why when it cannot', async () => {
+test('the daily summary reaches an address on the staff record, with or without amounts, and says why when it cannot', async () => {
   const { db, raw } = await setup();
   // Ama has a login with no address on it, and her address on her staff record. The boss has neither.
   raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'ama@example.test')").run();
   raw.exec("INSERT INTO settings (key, value) VALUES ('email_from', 'hive@example.test') ON CONFLICT (key) DO UPDATE SET value = excluded.value");
-  const binding = insight({ recipients: [
-    { userId: 7, name: 'Ama Test', push: false, email: true, amounts: false },
-    { userId: 3, name: 'Boss', push: false, email: true, amounts: true },
-  ] });
-  const env = { INSIGHT: binding, RESEND_API_KEY: 'k' };
+  const path = '/api/link/till/summary';
+  const body = JSON.stringify({
+    title: 'Saturday 10 October: 3 shifts closed', sub: '2 agree · afternoon short', subWith: '2 agree · afternoon short gh₵20.00',
+    lines: [{ label: 'Morning · Ama Test', tone: 'good', with: 'Agrees', without: 'Agrees' }, { label: 'Afternoon · Kofi Test', tone: 'bad', with: 'Short GH₵20.00', without: 'Short' }],
+    needs: [['Corrections to approve', '1']],
+    recipients: [{ userId: 7, name: 'Ama Test', push: false, email: true, amounts: false }, { userId: 3, name: 'Boss', push: true, email: true, amounts: true }],
+  });
   const sent = [];
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => { sent.push([String(url), JSON.parse(init.body)]); return Response.json({ id: 'x' }); };
   try {
-    const screen = await (await myTill(ctx(db, KOFI, { env }))).json();
-    const out = await (await closeShift(ctx(db, KOFI, { env, body: good(screen.choices[0], { pin: '135791', expenses: [] }) }))).json();
-    assert.equal(out.ok, true);
+    const call = async (secret = SECRET) => linkSummary({ db, env: { INSIGHT_SSO_SECRET: SECRET, RESEND_API_KEY: 'k', INSIGHT_SSO_URL: 'https://insight.example.test/api/sso/redeem' },
+      url: new URL(`https://x${path}`), executionContext: null,
+      request: new Request(`https://x${path}`, { method: 'POST', headers: await signLink(secret, path, body), body }) });
+    await assert.rejects(call('wrong'), /did not come from Insight/);
+    const out = await (await call()).json();
+    assert.equal(out.sent, 2);
+    const notices = raw.prepare("SELECT user_id, body, link FROM app_notices WHERE kind = 'till.summary' ORDER BY user_id").all();
+    assert.deepEqual(notices.map((n) => [n.user_id, n.body]), [[3, '2 agree · afternoon short gh₵20.00'], [7, '2 agree · afternoon short']], 'amounts only for whoever sees them');
+    assert.equal(notices[0].link, 'https://insight.example.test/#/shifts');
     const mails = sent.filter(([u]) => u.includes('resend'));
     assert.equal(mails.length, 1, 'one email, to the address on Ama’s record');
     assert.deepEqual(mails[0][1].to, ['ama@example.test']);
+    assert.doesNotMatch(mails[0][1].html, /GH₵20\.00/, 'no amounts for Ama');
     const log = raw.prepare("SELECT status, detail FROM email_log ORDER BY id").all().map((r) => [r.status, r.detail]);
-    assert.ok(log.some(([status, detail]) => status === 'sent' && detail === 'till.closed'));
+    assert.ok(log.some(([status, detail]) => status === 'sent' && detail === 'till.summary'));
     assert.ok(log.some(([status, detail]) => status === 'skipped' && /user 3 has no email on their login or their staff record/.test(detail)),
       'the boss’s missing address is said in the email log');
   } finally {

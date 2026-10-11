@@ -58,9 +58,10 @@ service = "niceoperation-attendance"
 #   SSO_SECRET_LAUNDRY
 
 # A little after midnight in Accra: yesterday is finished, and the brief is
-# waiting before anybody opens it.
+# waiting before anybody opens it. At 06:45, the daily till summary, once the
+# night shift has handed over.
 [triggers]
-crons = ["45 0 * * *"]
+crons = ["45 0 * * *", "45 6 * * *"]
 
 # Its own address on the property's domain, the same way the attendance app has
 # one. Cloudflare creates and manages the DNS record itself when this deploys,

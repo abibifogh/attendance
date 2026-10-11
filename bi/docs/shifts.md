@@ -5,57 +5,49 @@ from them. It lives on the **Shifts** tab.
 
 ## The screen
 
-The views come in four groups, picked with the switch beside the title:
+Six tabs in a row: **Shifts, Inbox, People, Safe, Files, Settings**. The
+Inbox tab shows how many things wait in it. The period sits beside the tabs:
+the arrows step a day, a week (Monday to Sunday) or a month at a time, and
+**Latest** jumps to the newest shifts loaded. When the journal stops inside a
+shift, a small note at the end of the line says which; open it for what to do.
 
-- **Overview**: Day, Week, Month, Shift;
-- **To act on**: Exceptions, Unpaid stays, To-do, Answers, Approvals (the
-  switch shows how many wait across them);
-- **Cash**: Closing reports, Safe;
-- **Set up**: People, Files, Till settings.
+- **Shifts**: Day, Week or Month, chosen with the switch beside the tabs.
+  - **Day**: the day's three shifts as large cards, each with the drawer in
+    four lines, how it came out, how guests paid and what is open; the day's
+    cash, card and MoMo against what arrived, commission and laundry.
+  - **Week**: every shift in the week as a tile. Green agrees, amber needs a
+    look, red needs an answer. Below it, card and MoMo recorded in ASSD
+    against what arrived, day by day.
+  - **Month**: a calendar, each day's three shifts as coloured bars; the month
+    week by week below it.
+  - **Tap a shift** for its story, with **‹ Back** to the period and arrows to
+    the shift before and after: the **closing report** from HIVE beside ASSD
+    (drawer, safe, what left the drawer, rentals, float, front desk checks,
+    and Reopen); the drawer as bars from the opening count to the closing
+    count; how the shift was paid; card and MoMo on the clock; where the cash
+    went, with the POs from the closing report and whether each is approved in
+    Odoo and on the expense form. Nothing about expenses is typed here: they
+    come from HIVE. A recount can still be typed and saved. Without the
+    amounts, a supervisor sees the closing report and what does not agree.
+- **Inbox**: everything somebody has to act on, as one list: what does not
+  agree (drawer, card and bank), staff answers from HIVE, POs with no posted
+  bill or paid differently, advances, unpaid stays, and what waits for an
+  admin. Chips across the top show one kind at a time with its count. The one
+  picked opens on the right with what can be done; **Previous** and **Next**
+  move, and on a keyboard J and K move and 1 to 8 give an exception's answers.
+  **Probably the same money** sits above the list (see below). **Show done**
+  brings back what was answered or closed. **Refresh now** asks Odoo about the
+  cash POs and reads the laundry system there and then. An admin can tick PO
+  items and give them to a supervisor together.
+- **People**: each person's shifts, cash and cards, and net drawer variance;
+  then what is still with staff under To sort out in HIVE, each person's month,
+  and what was settled lately.
+- **Safe**: the safe book. **Files**: the three uploads.
+- **Settings** (admins): who sees what, who is told, the front desk (checks,
+  rentals, whose ASSD login is whose), and the limits. See `docs/till.md`.
 
-The group's views are on the line below, with the period beside them. Day,
-Week and Month choose the period; the arrows beside its name step a day, a
-week (Monday to Sunday) or a month at a time, and **Latest** jumps to the
-newest shifts loaded. Every other view, and the four totals under that line,
-follow the period. Going back to a group opens the view last used in it. When
-the journal stops inside a shift, a small note at the end of the line says
-which; open it for what to do.
-
-- **Day**: the day's three shifts as large cards, each with the drawer in
-  four lines, how it came out, how guests paid and what is open; the day's
-  cash, card and MoMo against what arrived, commission and laundry; and the
-  day's exceptions, ready to answer.
-- **Week**: every shift in the week as a tile. Green agrees, amber needs a
-  look, red needs an answer. Each tile shows who held the drawer, the cash
-  taken, how the drawer came out, and a bar of how guests paid. Below it,
-  card and MoMo recorded in ASSD against what arrived, day by day.
-- **Month**: a calendar. Each day shows its morning, afternoon and night as
-  coloured bars with the initial of whoever held the drawer; tap a bar for
-  the shift or the day for all three. Below it, the month week by week and
-  card and MoMo against what arrived.
-- **Shift**: one shift's story. The drawer as bars from the opening count,
-  plus cash, less expenses and the safe, to the closing count. How the shift
-  was paid. Every card and MoMo payment placed on the clock. Where the cash
-  went, with the Odoo purchase orders. Typing a recount or the expense
-  sheet's total moves the picture at once; Save keeps it.
-- **Exceptions**: everything that does not agree, as an inbox. At the top,
-  **Probably the same money** lists the pairs that are one payment seen twice
-  (see below), each with **Reconcile**, and **Reconcile all** when there are
-  several. Below, a short line per exception on the left (most serious and
-  newest first, "match found" where it has a likely pair) and the one picked,
-  in full, on the right, with **Previous** and **Next**. A dropdown shows one
-  kind at a time. One tap answers it, with an optional note, and the next one
-  opens; on a keyboard, 1 to 8 give the answers in order and J and K move.
-- **People**: each person's shifts, cash and cards, and net drawer variance.
-- **Files**: the three uploads (choose a file or drop it on its box), and a
-  strip showing which days of the month each file covers.
-- **Closing reports**, **Answers**, **Approvals** and **Till settings**: what
-  staff signed when they closed their shift in HIVE, beside ASSD; what they
-  answered for the shifts that did not agree; supervisors' corrections
-  waiting for an admin; and the settings. See `docs/till.md`.
-
-A supervisor sees only the views an admin gave them, and amounts only if they
-were given those (see `docs/till.md`).
+A supervisor sees only the tabs and kinds an admin gave them, and amounts only
+if they were given those (see `docs/till.md`).
 
 ### Exceptions that are one story
 
@@ -120,10 +112,12 @@ Everything typed is signed with the name of whoever typed it.
   an equal one the other way on the same shift is a correction, such as 17,630
   keyed for 1,763. A movement with no count before it is shown as not
   labelled.
-- **The expense sheet's total** settles only what nothing labelled: the part
-  of it not already counted as expenses is expenses, the rest went to the
-  safe. If the sheet and the labelled movements disagree, the gap is shown on
-  the shift rather than written over.
+- **The closing report's expenses** settle only what nothing labelled: what
+  the POs on the shift's closing report in HIVE paid, less what is already
+  counted as expenses, is expenses, and the rest went to the safe. If they
+  and the labelled movements disagree, the gap is shown on the shift rather
+  than written over. (An expense sheet total typed here before this came in
+  is still used for its shift.)
 - **Correcting a movement.** Under "Where the cash went", Correct on any
   movement says what it really was:
   - expenses, cash to the safe, or a split of the two;
@@ -182,25 +176,25 @@ system took in the same hours (06:00–14:00, 14:00–22:00, 22:00–06:00). The
 laundry system's payments and orders are read one by one on each nightly
 refresh (table `laundry_txn`; order number, time and money only). A shift is
 compared only once the laundry system has been read for the whole of it; a
-difference is listed under Exceptions as "The laundry did not agree".
+difference is listed in the Inbox as "The laundry did not agree".
 
 ## Cash moved out with no label
 
 A Cash Movement out of the front drawer that no count labelled as expenses or
-the safe, on a shift with no expense sheet to settle it, is listed under
-Exceptions. "It went to the safe" or "It was expenses" on the exception labels
+the safe, on a shift with no closing report or expense sheet to settle it, is
+listed in the Inbox. "It went to the safe" or "It was expenses" on the exception labels
 it (a supervisor's label waits for an admin).
 
 ## Unpaid stays
 
-Shifts → **Unpaid stays** lists guests leaving in the next 24 hours who still
+Shifts → Inbox → **Unpaid stays** lists guests leaving in the next 24 hours who still
 owe, and guests who have checked out owing (the last 60 days).
 
 Each ASSD reservation is one transaction in the journal, with every night and
 extra charged to it and every payment taken on it, each dated. Charged less
 paid is what the guest owes. The nights are the room and bed articles
 (numbers 100 to 289); check-out is the day after the last night, at the time
-set under Till settings → Small differences and check-out (12:00 to start
+set under Settings → Limits (12:00 to start
 with). Balances no bigger than the small-differences amount are left off.
 
 Two limits come from the journal printing only the days it was exported for:
@@ -214,7 +208,7 @@ Two limits come from the journal printing only the days it was exported for:
 Journals loaded before this check existed carry no charges: load them again.
 Answers go through the same approval as exceptions: a supervisor's answer
 waits for an admin. Supervisors see the list and may answer by default
-(Till settings → Supervisor access → Unpaid stays).
+(Settings → Who sees what → Unpaid stays).
 
 ## What each note on a shift was made of
 
@@ -226,8 +220,8 @@ behind it, each marked ✓ (agrees), ✗ (does not) or · (nothing to match):
 - **Card and MoMo**: each card line in ASSD and the terminal or MoMo payment it
   was matched to (time, card, approval code, amount), lines with nothing found,
   and payments that arrived but are not in ASSD.
-- **Expenses**: each expense movement (and what the expense sheet settled)
+- **Expenses**: each expense movement (and what the closing report settled)
   against the Odoo PO of the same amount, or several POs that add up to it;
-  POs not confirmed in Odoo, and numbers Odoo does not know.
+  POs not approved in Odoo, and numbers Odoo does not know.
 - **Laundry**: each laundry line in ASSD against the laundry system's payment
   of the same amount in the shift's hours.

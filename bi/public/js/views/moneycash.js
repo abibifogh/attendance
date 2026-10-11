@@ -15,9 +15,9 @@ const PAID = [
   ['other', 'By bank or on credit', 'var(--series-2)'],
 ];
 
-/** Shifts → To-do, from anywhere. */
+/** Shifts → Inbox, from anywhere. */
 function openTodo() {
-  try { sessionStorage.setItem('insight-shifts-section', 'todo'); } catch { /* private mode */ }
+  try { sessionStorage.setItem('insight-shifts-section', 'inbox'); } catch { /* private mode */ }
   window.location.hash = '#/shifts';
 }
 
@@ -89,9 +89,9 @@ function chaseCard(d) {
   return h('div.card.mc-card',
     h('div.mc-head',
       h('div', h('h2', 'To chase'),
-        h('p.sub', 'From these days. Each is on the to-do list under Shifts, given to a supervisor; their answers come to you.')),
+        h('p.sub', 'From these days. Each is in the Inbox under Shifts, given to a supervisor; their answers come to you.')),
       h('div.mc-check',
-        h('button.btn.primary', { type: 'button', onclick: openTodo }, 'Open the to-do list'),
+        h('button.btn.primary', { type: 'button', onclick: openTodo }, 'Open the Inbox'),
         h('small.muted', `${t.open} open · ${t.answered} waiting for you${t.unassigned ? ` · ${t.unassigned} with nobody` : ''}`))),
     h('div.mc-chase',
       h('section',

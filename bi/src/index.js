@@ -18,6 +18,7 @@ import * as revenue from './routes/revenue.js';
 import * as cashpo from './routes/cashpo.js';
 import * as todo from './routes/todo.js';
 import * as advances from './routes/advances.js';
+import { sendDailySummary } from './routes/summary.js';
 import { verifyForm, verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
 import { loadFacts } from './insight/facts.js';
@@ -89,7 +90,7 @@ const ROUTES = [
     const checked = await cashpo.refreshCashPos(env).catch((err) => ({ ok: false, error: String(err?.message || err) }));
     return { ...saved, checked };
   }],
-  // Advances under To-do: an admin, or whoever an admin gave "Advances".
+  // Advances in the Inbox: an admin, or whoever an admin gave "Advances".
   ['GET', '/api/advances', 'shifts', (env, ctx) => advances.advancesView(env, ctx.account)],
   ['POST', '/api/advances/decide', 'shifts', (env, ctx) => advances.decide(env, ctx.body, ctx.account)],
   ['POST', '/api/advances/clear', 'shifts', (env, ctx) => advances.clearElsewhere(env, ctx.body, ctx.account)],
@@ -208,6 +209,9 @@ const ROUTES = [
 ];
 ;
 
+/** The morning schedule in wrangler.toml: the daily till summary, at 06:45 in Accra (UTC). */
+const SUMMARY_CRON = '45 6 * * *';
+
 /** Everything an uploader may call, beyond signing in and the hub. */
 const UPLOADER_MAY = new Set([
   'GET /api/shifts/files', 'POST /api/shifts/journal', 'POST /api/shifts/bank', 'POST /api/shifts/terminal',
@@ -292,6 +296,12 @@ export default {
    * because every one of the four sources accepts a late correction.
    */
   async scheduled(event, env, execution) {
+    // Two schedules: the nightly load, and the morning summary once the
+    // night shift has handed over.
+    if (event?.cron === SUMMARY_CRON) {
+      execution.waitUntil(sendDailySummary(env).then((out) => { if (out.error) console.error('Daily summary', out.error); }));
+      return;
+    }
     execution.waitUntil(admin.refresh(env, { trigger: 'schedule' }).catch((err) => {
       console.error('Scheduled refresh failed', err);
     }));
@@ -455,7 +465,7 @@ async function waitsForAdmin(env, ctx, saving, text) {
 async function movement(env, ctx) {
   if (till.roleOf(ctx.account) === 'admin') return shiftRoutes.saveMovement(env, ctx.body, ctx.account);
   await till.requireArea(env, ctx.account, 'moves', 2);
-  const out = await shiftRoutes.saveMovement(env, ctx.body, ctx.account, { pending: true });
+  const out = await shiftRoutes.saveMovement(env, ctx.body, ctx.account, { pending: true, smallUpTo: await till.threshold(env) });
   if (out.pending) {
     const tell = till.tellApprovers(env, { seq: out.seq, kind: out.kind, by: ctx.account?.name || 'A supervisor' });
     if (ctx.execution?.waitUntil) ctx.execution.waitUntil(tell); else await tell;

@@ -7,10 +7,11 @@ import { banner } from './components.js';
  * HIVE, set beside ASSD; what they answered for the shifts that did not agree;
  * the corrections supervisors are waiting on; and the settings for all of it.
  *
- * Four views inside the Shifts screen. What a supervisor gets of them is what
- * an admin chose under Till settings → Supervisor access, and the server cuts
- * the data to match before it is sent: a hidden amount never reaches this
- * page, it is not merely left undrawn.
+ * Pieces of the Shifts screen: a shift's closing report in its detail, one
+ * answer or correction at a time in the Inbox, each person's list on People,
+ * and Settings. What a supervisor gets is what an admin chose under Settings →
+ * Who sees what, and the server cuts the data to match before it is sent: a
+ * hidden amount never reaches this page, it is not merely left undrawn.
  */
 
 const SLOT = { morning: 'Morning', afternoon: 'Afternoon', night: 'Night' };
@@ -29,11 +30,11 @@ const AREA_TEXT = {
   bank: ['Bank statement and card matching', 'The Exceptions view: card and MoMo against the terminal and the bank.'],
   odoo: ['PO details from Odoo', 'Vendor and total behind each PO.'],
   files: ['Upload journal, statement and card report', 'The Files view. Act means load files.'],
-  advances: ['Advances', 'Under To-do: cash given out before a purchase, and POs whose final price differs. Act means give more time or close one with a reason.'],
+  advances: ['Advances', 'In the Inbox: cash given out before a purchase, and POs whose final price differs. Act means give more time or close one with a reason.'],
   unpaid: ['Unpaid stays', 'Guests leaving in the next 24 hours who still owe, and guests who left owing. Act means answer them (an admin approves).'],
 };
-const KIND_TONE = { drawer: 'bad', unexplained: 'bad', overclaimed: 'warn', rental: 'warn', noreport: 'info' };
-const OUTCOME = { accept: 'Accepted', recover: 'Recovered from pay', cash: 'Paid back in cash', writeoff: 'Written off', back: 'Sent back' };
+export const KIND_TONE = { drawer: 'bad', unexplained: 'bad', overclaimed: 'warn', rental: 'warn', noreport: 'info' };
+export const OUTCOME = { accept: 'Accepted', recover: 'Recovered from pay', cash: 'Paid back in cash', writeoff: 'Written off', back: 'Sent back' };
 
 const dayText = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 const signed = (minor) => (minor == null ? '—' : minor === 0 ? money(0) : `${minor > 0 ? '+' : '−'}${money(Math.abs(minor))}`);
@@ -41,7 +42,7 @@ const pill = (tone, text) => h(`span.sh-chip.${tone}`, text);
 const yes = (ok, good, bad) => (ok == null ? pill('none', '—') : ok ? pill('ok', `✓ ${good}`) : pill('short', `✗ ${bad}`));
 
 /**
- * The till views for one period.
+ * The till pieces for one period.
  *
  * `who` is `{ role, access }` from the sign-in; `period` the days on screen.
  */
@@ -51,174 +52,104 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
   let cache = null;
 
   // Kept for half a minute only: a report sent from HIVE while this screen is
-  // open must show the next time the tab is opened, not after a reload.
-  async function data(force = false) {
+  // open must show the next time it is opened, not after a reload.
+  async function read(force = false) {
     const key = `${period().from}|${period().to}`;
     if (!force && cache?.key === key && Date.now() - cache.at < 30_000) return cache.value;
     const value = await api(`/till?from=${period().from}&to=${period().to}`);
     cache = { key, value, at: Date.now() };
     return value;
   }
-
-  async function reload(v, draw) {
-    cache = null;
-    await draw(v);
-    onChange();
-  }
+  const forget = () => { cache = null; };
 
   const notLinked = (d) => (d.linked ? null : banner('warning',
     h('strong', 'HIVE and Insight are not linked yet. '),
     'Staff can close shifts in HIVE, but HIVE cannot check POs or show them their list until they are. '
     + 'In GitHub, run Actions → "Set Insight’s secrets" with Insight’s address in the box, then reload.'));
 
-  // ---------------------------------------------------- closing reports --
+  // ---------------------------------------------- one shift's closing report --
 
-  async function closing(v) {
-    mount(v, h('p.muted', 'Reading the closing reports…'));
-    const d = await data();
-    const money_ = access.money > 0;
-    const rows = d.reports;
-    const sent = rows.filter((r) => r.report).length;
-    const safeOff = rows.filter((r) => r.compare?.safeAgrees === false).length;
-    const away = rows.flatMap((r) => (r.report?.checks || []).filter((c) => !c.ok).map((c) => ({ ...c, day: r.day, slot: r.slot })));
-    const noPo = rows.filter((r) => (r.report?.expenses || []).some((e) => !e.counted)).length;
-
-    mount(v,
-      notLinked(d),
-      h('div.sh-kpis',
-        kpi('Closing reports', `${sent} of ${rows.length}`, rows.length - sent ? `${rows.length - sent} shift${rows.length - sent === 1 ? '' : 's'} with no report` : 'Every shift closed'),
-        kpi('Safe against ASSD', safeOff ? `${safeOff} differ` : 'All agree', 'Envelope totals beside what ASSD labelled safe', safeOff ? 'var(--sh-bad-ink)' : null),
-        kpi('Not at the desk', String(away.length), away.length ? away.slice(0, 2).map((c) => `${c.label}${c.guest ? `: ${c.guest}` : ''}`).join(' · ') : 'Every check said yes'),
-        kpi('Expenses with no PO', String(noPo), noPo ? 'Reports with an expense not counted' : 'Every expense had a confirmed PO')),
-      h('div.card',
-        h('div.sh-cardhead', h('h2', 'Closing reports'), h('span.sh-sub', 'What staff signed in HIVE, beside what ASSD recorded.')),
-        rows.length ? h('div.table-wrap', h('table.tl-table',
-          h('thead', h('tr', ['Shift', 'Drawer', 'Safe', 'Out of the drawer', 'Expenses', 'Rentals', 'Checks', ''].map((t) => h('th', t)))),
-          h('tbody', rows.map((r) => reportRow(r, money_)))))
-          : h('p.muted', 'No shifts in these days.'),
-        h('p.sh-sub', 'Drawer: what they counted, beside ASSD’s own closing count. Safe: their envelopes, beside what ASSD labelled safe. '
-          + 'Out of the drawer: everything ASSD moved out has to be in an envelope or covered by a confirmed PO.')));
-  }
-
-  function kpi(label, value, note, colour = null) {
-    return h('div.sh-kpi.tl-kpi', h('span.l', label), h('span.v.num', { style: colour ? `color:${colour}` : '' }, value), h('span.n', note));
-  }
-
-  function reportRow(r, money_) {
+  /** The closing report for one shift, HIVE beside ASSD, as a card for the shift's detail. */
+  async function shiftReport(day, slot, after = () => {}) {
+    if (!access.reports) return null;
+    const d = await read();
+    const r = (d.reports || []).find((x) => x.day === day && x.slot === slot);
+    if (!r) return null;
     const rep = r.report;
     const c = r.compare || {};
+    const money_ = access.money > 0;
     const amt = (x) => (money_ ? money(x) : '');
-    const shift = h('td',
-      h('strong', `${SLOT[r.slot]} · ${dayText(r.day)}`),
-      h('div.tl-small', rep ? `${rep.name} · ${String(rep.signedAt).slice(11, 16)}${rep.device ? ` · ${rep.device === 'pc' ? 'desk PC' : 'phone'}` : ''}` : (r.assdUser ? `ASSD: ${r.assdUser}` : '')),
-      !r.inJournal ? h('div.tl-small', 'Not in the journal yet') : null,
-      r.belongs ? h('div.tl-small.tl-warn', `ASSD has ${r.belongs.assdUser} on ${SLOT[r.belongs.slot]} · ${dayText(r.belongs.day)} with no report`) : null,
-      rep && !rep.floatOk ? h('div', pill('over', `float out ${money_ ? signed(rep.floatDiff) : ''}`)) : null);
+    const act = h('div.tl-act');
+    const head = h('div.sh-cardhead',
+      h('div', h('h2', 'Closing report'),
+        h('p.sh-sub', rep ? `Signed in HIVE by ${rep.name} at ${String(rep.signedAt).slice(11, 16)}${rep.device ? ` from ${rep.device === 'pc' ? 'the desk computer' : 'a phone'}` : ''}.` : 'What staff signed in HIVE, beside what ASSD recorded.')));
     if (!rep) {
-      // Their report is on the shift beside this one, where ASSD has nobody.
-      const near = r.nearby ? h('div.tl-near',
-        h('span', `${r.nearby.name}’s report is filed under ${SLOT[r.nearby.slot]} · ${dayText(r.nearby.day)}`
-          + `${r.nearby.signedAt ? ` (signed ${String(r.nearby.signedAt).slice(11, 16)})` : ''}. Wrong shift picked?`),
-        access.reopen > 1 ? h('button.btn', { type: 'button', onclick: (e) => move(e, r) }, 'Move it to this shift') : null) : null;
-      return h('tr.tl-missing', shift, h('td', { colspan: 7 },
-        r.open ? pill('none', 'still open') : pill('short', 'No closing report'), near));
+      return h('section.card', head,
+        r.open ? pill('none', 'Still open') : pill('short', 'No closing report'),
+        r.nearby ? h('p', `${r.nearby.name}’s report is filed under ${SLOT[r.nearby.slot]} · ${dayText(r.nearby.day)}. Wrong shift picked?`) : null,
+        r.nearby && access.reopen > 1 ? h('div', act, h('button.btn', { type: 'button', onclick: (e) => move(e, r, after) }, 'Move it to this shift')) : null);
     }
-    const env = rep.toSafe ? rep.envelopes.map((e) => `${e.no}${money_ ? ` ${money(e.amount)}` : ''}`).join(', ') : 'nothing';
-    const drawer = h('td.num', amt(rep.cash),
-      r.inJournal ? h('div', c.countAgrees == null ? pill('none', 'no ASSD count') : yes(c.countAgrees, 'ASSD count', `ASSD ${money_ ? money(c.assdClosing) : 'differs'}`)) : null);
-    const safe = h('td', h('div', env),
-      r.inJournal && rep.toSafe ? h('div', yes(c.safeAgrees, 'ASSD safe', `ASSD ${money_ ? money(c.safeLabelled) : 'differs'}`)) : null,
-      r.inJournal && !rep.toSafe && c.safeLabelled ? h('div', pill('short', `✗ ASSD moved ${money_ ? money(c.safeLabelled) : 'cash'}`)) : null);
+    const env = rep.toSafe ? rep.envelopes.map((e) => `${e.no}${money_ ? ` · ${money(e.amount)}` : ''}`).join(', ') : 'Nothing';
     const sign = money_ ? Math.sign(c.unexplained ?? 0) : c.unexplainedSign;
-    const out = h('td.num', r.inJournal ? amt(c.out) : '',
-      r.inJournal ? h('div', sign == null ? null : sign === 0 ? pill('ok', '✓ accounted for')
-        : sign > 0 ? pill('short', `${money_ ? money(c.unexplained) : 'some'} not accounted for`)
-          : pill('over', `${money_ ? money(-c.unexplained) : 'more'} claimed than moved`)) : null);
-    const exp = h('td', rep.expenses.length ? rep.expenses.map((e) => h('div',
-      e.counted ? pill('ok', '✓') : pill('short', '✗'), ' ', e.name || e.po || 'no PO', money_ && e.paid != null ? ` ${money(e.paid)}` : '',
-      e.vendor ? h('span.tl-small', ` · ${e.vendor}`) : null,
-      !e.counted ? h('span.tl-small', ` · ${{ claimed: 'claimed already', missing: 'not in Odoo', 'no-po': 'no PO', unchecked: 'not checked' }[e.state] || e.state}`) : null))
-      : h('span.muted', 'none'));
-    const rentals = h('td', (c.rentals || []).filter((x) => x.start != null).map((x) => h('div',
-      `${x.label}: ${x.start} → ${x.end}`,
-      x.gap == null ? null : x.gap === 0 ? pill('ok', '✓') : pill('short', `${x.gap > 0 ? '+' : ''}${x.gap}`),
-      h('div.tl-small', [x.rented ? `${x.rented} rented` : null, x.returned ? `${x.returned} returned` : null, x.assdStock != null ? `ASSD counted ${x.assdStock}` : null].filter(Boolean).join(' · ') || 'none rented in ASSD'))));
-    const checks = h('td', (rep.checks || []).map((k) => h('div', k.ok ? pill('ok', `✓ ${k.label}`) : pill('short', `✗ ${k.label}`),
-      !k.ok ? h('div.tl-small', k.guest ? `With ${k.guest}` : k.why) : null)),
-    rep.note ? h('div.tl-small', `“${rep.note}”`) : null);
-    const act = h('td', access.reopen > 1 ? h('button.btn', { type: 'button', onclick: (e) => reopen(e, rep) }, 'Reopen') : null);
-    return h('tr', shift, drawer, safe, out, exp, rentals, checks, act);
+    const rows = [
+      ['Drawer at close', amt(rep.cash) || '✓ counted', r.inJournal ? (c.countAgrees == null ? pill('none', 'no ASSD count') : yes(c.countAgrees, 'agrees', `ASSD ${money_ ? money(c.assdClosing) : 'differs'}`)) : pill('none', 'not in the journal yet')],
+      ['To the safe', env, r.inJournal ? (rep.toSafe ? yes(c.safeAgrees, 'agrees', `ASSD ${money_ ? money(c.safeLabelled) : 'differs'}`)
+        : c.safeLabelled ? pill('short', `✗ ASSD moved ${money_ ? money(c.safeLabelled) : 'cash'}`) : pill('ok', '✓ none')) : ''],
+      ['Out of the drawer', rep.expenses.length ? h('div', rep.expenses.map((e) => h('div',
+        e.counted ? pill('ok', '✓ Counted') : pill('short', UNCOUNTED[e.state] || 'Not counted'), ' ', e.name || e.po || 'no PO',
+        e.kind === 'topup' ? ' (deficit)' : e.kind === 'change' ? ' (refund)' : e.advance ? ' (advance)' : '',
+        money_ && e.paid != null ? ` ${money(e.paid)}` : ''))) : 'No expenses',
+      r.inJournal ? (sign == null ? '' : sign === 0 ? pill('ok', '✓ accounted for') : sign > 0 ? pill('short', `${money_ ? money(c.unexplained) : 'some'} not accounted for`)
+        : pill('over', `${money_ ? money(-c.unexplained) : 'more'} claimed than moved`)) : ''],
+      ...(c.rentals || []).filter((x) => x.start != null).map((x) => [x.label, `${x.start} → ${x.end}`,
+        x.gap == null ? '' : x.gap === 0 ? pill('ok', '✓') : pill('short', `${x.gap > 0 ? '+' : ''}${x.gap}`)]),
+      ['Opening float', rep.floatOk ? 'Correct' : `Out by ${money_ ? signed(rep.floatDiff) : ''}`, rep.floatOk ? pill('ok', '✓') : pill('over', 'look')],
+      ...(rep.checks || []).map((k) => [k.label, k.ok ? 'At the desk' : (k.guest ? `With ${k.guest}` : k.why || 'Not at the desk'), k.ok ? pill('ok', '✓') : pill('short', '✗')]),
+    ];
+    return h('section.card', head,
+      h('div.table-wrap', h('table.tl-vs',
+        h('thead', h('tr', h('th', ''), h('th', 'HIVE report'), h('th', 'ASSD'))),
+        h('tbody', rows.map(([label, hive, assd]) => h('tr', h('td', label), h('td', hive), h('td', assd)))))),
+      rep.note ? h('p.tl-small', `“${rep.note}”`) : null,
+      access.reopen > 1 ? h('div', act, h('button.btn', { type: 'button', onclick: (e) => reopen(e, rep, after) }, 'Reopen report')) : null);
   }
 
-  async function move(event, r) {
-    const cell = event.target.closest('td');
+  async function move(event, r, after) {
+    const cell = event.target.parentElement;
     const said = h('span.tl-small');
     event.target.disabled = true;
     said.textContent = 'Moving…';
     cell.append(said);
     try {
       await api('/till/move', { method: 'POST', body: { reportId: r.nearby.id, day: r.day, slot: r.slot } });
-      cache = null;
+      forget();
       mount(cell, pill('ok', `Moved to ${SLOT[r.slot]} · ${dayText(r.day)}. ${r.nearby.name} has been told.`));
       onChange();
+      after();
     } catch (err) { said.textContent = err.message; event.target.disabled = false; }
   }
 
-  async function reopen(event, rep) {
-    const cell = event.target.closest('td');
+  async function reopen(event, rep, after) {
+    const cell = event.target.parentElement;
     const reason = h('input', { type: 'text', placeholder: 'Why it is being reopened', required: true });
+    const said = h('span.tl-small');
     mount(cell, h('form.tl-inline', {
       onsubmit: async (e) => {
         e.preventDefault();
         try {
           await api('/till/reopen', { method: 'POST', body: { reportId: rep.id, reason: reason.value } });
-          cache = null;
+          forget();
           mount(cell, pill('ok', `Reopened. ${rep.name} has been told.`));
-        } catch (err) { alert(err.message); }
+          after();
+        } catch (err) { said.textContent = err.message; }
       },
-    }, reason, h('button.btn.primary', { type: 'submit' }, 'Reopen')));
+    }, reason, h('button.btn.primary', { type: 'submit' }, 'Reopen'), said));
     reason.focus();
   }
 
-  // ------------------------------------------------------------- answers --
+  // ----------------------------------------------------- staff answers --
 
-  async function answers(v) {
-    mount(v, h('p.muted', 'Reading what staff answered…'));
-    const d = await data();
-    const list = d.issues || [];
-    const waiting = list.filter((i) => i.status === 'answered');
-    const withStaff = list.filter((i) => i.status === 'open');
-    const settled = list.filter((i) => i.status === 'settled').slice(-20).reverse();
-    const draw = (x) => reload(x, answers);
-    mount(v,
-      notLinked(d),
-      h('div.card',
-        h('div.sh-cardhead', h('h2', `Waiting for a decision (${waiting.length})`), h('span.sh-sub', 'Settling one takes it off that person’s list in HIVE, and they are told.')),
-        waiting.length ? h('div.tl-cards', waiting.map((i) => issueCard(i, v, draw))) : h('p.muted', 'Nothing waiting. What staff answer under To sort out in HIVE arrives here.')),
-      h('div.card',
-        h('div.sh-cardhead', h('h2', `Still with staff (${withStaff.length})`), h('span.sh-sub', 'On their list in HIVE, not answered yet.')),
-        withStaff.length ? h('div.tl-cards', withStaff.map((i) => issueCard(i, v, draw))) : h('p.muted', 'Nobody has anything outstanding.')),
-      d.net ? netCard(d.net) : null,
-      settled.length ? h('div.card',
-        h('div.sh-cardhead', h('h2', 'Settled lately')),
-        h('div.table-wrap', h('table',
-          h('thead', h('tr', ['Shift', 'Who', 'What', 'Decision', 'By'].map((t) => h('th', t)))),
-          h('tbody', settled.map((i) => h('tr',
-            h('td', `${SLOT[i.slot]} · ${dayText(i.day)}`), h('td', i.name || '—'), h('td', d.kinds[i.kind] || i.kind),
-            h('td', OUTCOME[i.decision?.outcome] || '—', i.decision?.amount && access.money ? ` ${money(i.decision.amount)}` : ''),
-            h('td', i.decision?.by || '—'))))))) : null);
-  }
-
-  function netCard(net) {
-    return h('div.card',
-      h('div.sh-cardhead', h('h2', 'This month, per person'), h('span.sh-sub', 'Every difference put on their list, settled or not.')),
-      h('div.table-wrap', h('table',
-        h('thead', h('tr', ['Who', 'Short', 'Over', 'Net', 'Times'].map((t) => h('th', t)))),
-        h('tbody', net.map((p) => h('tr', h('td', p.name || `HIVE ${p.userId}`), h('td.num', money(p.short)), h('td.num', money(p.over)),
-          h('td.num', signed(p.net)), h('td.num', String(p.count))))))));
-  }
-
-  function issueCard(i, v, draw) {
+  function issueCard(i, after) {
     const actAnswers = access.answers > 1;
     const actMoney = access.money_out > 1;
     const amount = i.kind === 'rental' ? `${Math.abs(i.qty)} ${i.rental}${Math.abs(i.qty) === 1 ? '' : 's'} ${i.qty < 0 ? 'missing' : 'extra'}`
@@ -229,7 +160,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
       e.target.disabled = true;
       try {
         await api('/till/resolve', { method: 'POST', body: { key: i.key, userId: i.userId, outcome, note: note.value } });
-        await draw(v);
+        await after();
       } catch (err) { alert(err.message); e.target.disabled = false; }
     };
     // A shortage of money or of a rental's deposit: either can be paid back.
@@ -240,7 +171,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
       h('p.tl-text', i.text),
       i.answer ? h('div.tl-said', h('b', i.answer.how === 'repay' ? 'Will pay it back' : i.answer.how === 'po' ? 'Added a PO' : 'Their explanation'), i.answer.text) : null,
       i.decision?.outcome === 'back' ? h('div.tl-small', `Sent back by ${i.decision.by}: ${i.decision.note || ''}`) : null,
-      i.userId == null ? h('p.tl-small', 'Nobody to ask: map this ASSD login to a HIVE person under Till settings → People.') : null,
+      i.userId == null ? h('p.tl-small', 'Nobody to ask: map this ASSD login to a HIVE person under Settings → Front desk.') : null,
       i.userId != null && (actAnswers || actMoney) ? h('div',
         note,
         h('div.tl-actions',
@@ -252,114 +183,180 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
         actMoney && short && i.answer?.how !== 'repay' ? h('p.tl-small', 'Recover from pay appears once they have agreed to pay it back.') : null) : null);
   }
 
-  // ----------------------------------------------------------- approvals --
 
-  async function approvals(v) {
-    mount(v, h('p.muted', 'Reading the corrections…'));
-    const d = await data(true);
-    const list = d.approvals || [];
-    const what = (a) => ({
+  // ------------------------------------------------------- approvals --
+
+  /** A supervisor's answer or reconciliation, for an admin to approve. */
+  function answerApprovalCard(a, after) {
+    const go = (ok) => async (e) => {
+      e.target.disabled = true;
+      try { await api('/till/approve', { method: 'POST', body: { [a.type]: a.id, ok } }); onChange(); await after(); } catch (err) { alert(err.message); e.target.disabled = false; }
+    };
+    return h('div.tl-issue.warn',
+      h('div.tl-issue-head', h('strong', a.by), h('span.tl-small', String(a.at).slice(0, 16))),
+      h('p.tl-text', a.type === 'link' ? `Reconciled ${a.keys.length} exceptions together:` : `Answered “${a.answer}” for:`),
+      h('ul.tl-keys', a.keys.map((k) => h('li', describeKey(k)))),
+      a.note ? h('div.tl-said', h('b', 'Note'), a.note) : null,
+      h('div.tl-actions',
+        h('button.btn.primary', { type: 'button', onclick: go(true) }, 'Approve'),
+        h('button.btn', { type: 'button', onclick: go(false) }, 'Reject')));
+  }
+
+  /** A supervisor's correction to a cash movement, for an admin to approve. */
+  function correctionCard(a, after) {
+    const what = ({
       expenses: 'was an expense', safe: 'went to the safe', split: `was split, ${money(a.expenses)} of it expenses`,
       duplicate: `is a duplicate of ASSD ${a.pair}`, reverses: `puts back ASSD ${a.pair}`,
     })[a.kind] || a.kind;
-    const answers = d.answerApprovals || [];
-    mount(v,
-      h('div.card',
-        h('div.sh-cardhead', h('h2', `Exceptions answered by a supervisor (${answers.length})`),
-          h('span.sh-sub', 'Nothing a supervisor answers or reconciles is cleared until you approve it. Reject puts it back on the list.')),
-        answers.length ? h('div.tl-cards', answers.map((a) => h('div.tl-issue.warn',
-          h('div.tl-issue-head', h('strong', a.by), h('span.tl-small', String(a.at).slice(0, 16))),
-          h('p.tl-text', a.type === 'link' ? `Reconciled ${a.keys.length} exceptions together:` : `Answered “${a.answer}” for:`),
-          h('ul.tl-keys', a.keys.map((k) => h('li', describeKey(k)))),
-          a.note ? h('div.tl-said', h('b', 'Note'), a.note) : null,
-          h('div.tl-actions',
-            h('button.btn.primary', { type: 'button', onclick: decideAnswer(a, true) }, 'Approve'),
-            h('button.btn', { type: 'button', onclick: decideAnswer(a, false) }, 'Reject')))))
-          : h('p.muted', 'Nothing waiting.')),
-      h('div.card',
-      h('div.sh-cardhead', h('h2', `Supervisor corrections (${list.length})`), h('span.sh-sub', 'Nothing a supervisor corrects counts until you approve it.')),
-      list.length ? h('div.tl-cards', list.map((a) => h('div.tl-issue.warn',
-        h('div.tl-issue-head', h('strong', a.by), h('span.tl-amount', money(a.amount))),
-        h('div.tl-small', `ASSD ${a.seq} · ${a.day ? dayText(a.day) : ''} · ${a.user || ''} · ${String(a.at).slice(0, 16)}`),
-        h('p.tl-text', `Says this movement ${what(a)}.`),
-        a.note ? h('div.tl-said', h('b', 'Why'), a.note) : null,
-        h('div.tl-actions',
-          h('button.btn.primary', { type: 'button', onclick: decide(a, true) }, 'Approve'),
-          h('button.btn', { type: 'button', onclick: decide(a, false) }, 'Reject')))))
-        : h('p.muted', 'Nothing waiting.')));
-    function decideAnswer(a, ok) {
-      return async (e) => {
-        e.target.disabled = true;
-        try {
-          await api('/till/approve', { method: 'POST', body: { [a.type]: a.id, ok } });
-          onChange();
-          await reload(v, approvals);
-        } catch (err) { alert(err.message); e.target.disabled = false; }
-      };
-    }
-    function decide(a, ok) {
-      return async (e) => {
-        e.target.disabled = true;
-        try {
-          await api('/till/approve', { method: 'POST', body: { seq: a.seq, ok } });
-          await reload(v, approvals);
-        } catch (err) { alert(err.message); e.target.disabled = false; }
-      };
-    }
+    const go = (ok) => async (e) => {
+      e.target.disabled = true;
+      try { await api('/till/approve', { method: 'POST', body: { seq: a.seq, ok } }); onChange(); await after(); } catch (err) { alert(err.message); e.target.disabled = false; }
+    };
+    return h('div.tl-issue.warn',
+      h('div.tl-issue-head', h('strong', a.by), h('span.tl-amount', money(a.amount))),
+      h('div.tl-small', `ASSD ${a.seq} · ${a.day ? dayText(a.day) : ''} · ${a.user || ''} · ${String(a.at).slice(0, 16)}`),
+      h('p.tl-text', `Says this movement ${what}.`),
+      a.note ? h('div.tl-said', h('b', 'Why'), a.note) : null,
+      h('div.tl-actions',
+        h('button.btn.primary', { type: 'button', onclick: go(true) }, 'Approve'),
+        h('button.btn', { type: 'button', onclick: go(false) }, 'Reject')));
   }
+
+  // ---------------------------------------------------------- people --
+
+  /** Under People: what is still with staff, each person's month, and what was settled lately. */
+  function peopleExtras(d) {
+    const list = d.issues || [];
+    const withStaff = list.filter((i) => i.status === 'open');
+    const settled = list.filter((i) => i.status === 'settled').slice(-20).reverse();
+    return [
+      withStaff.length ? h('div.card',
+        h('div.sh-cardhead', h('h2', `Still with staff (${withStaff.length})`), h('span.sh-sub', 'On their list in HIVE under To sort out, not answered yet.')),
+        h('div.table-wrap', h('table',
+          h('thead', h('tr', ['Shift', 'Who', 'What', ''].map((t) => h('th', t)))),
+          h('tbody', withStaff.map((i) => h('tr',
+            h('td', `${SLOT[i.slot]} · ${dayText(i.day)}`), h('td', i.name || '—'), h('td', d.kinds?.[i.kind] || i.kind),
+            h('td.num', access.money && i.amount ? signed(i.amount) : '')))))))
+        : null,
+      d.net ? netCard(d.net) : null,
+      settled.length ? h('div.card',
+        h('div.sh-cardhead', h('h2', 'Settled lately')),
+        h('div.table-wrap', h('table',
+          h('thead', h('tr', ['Shift', 'Who', 'What', 'Decision', 'By'].map((t) => h('th', t)))),
+          h('tbody', settled.map((i) => h('tr',
+            h('td', `${SLOT[i.slot]} · ${dayText(i.day)}`), h('td', i.name || '—'), h('td', d.kinds?.[i.kind] || i.kind),
+            h('td', OUTCOME[i.decision?.outcome] || '—', i.decision?.amount && access.money ? ` ${money(i.decision.amount)}` : ''),
+            h('td', i.decision?.by || '—'))))))) : null,
+    ];
+  }
+
+  function netCard(net) {
+    return h('div.card',
+      h('div.sh-cardhead', h('h2', 'This month, per person'), h('span.sh-sub', 'Every difference put on their list, settled or not.')),
+      h('div.table-wrap', h('table',
+        h('thead', h('tr', ['Who', 'Short', 'Over', 'Net', 'Times'].map((t) => h('th', t)))),
+        h('tbody', net.map((p) => h('tr', h('td', p.name || `HIVE ${p.userId}`), h('td.num', money(p.short)), h('td.num', money(p.over)),
+          h('td.num', signed(p.net)), h('td.num', String(p.count))))))));
+  }
+
 
   // ------------------------------------------------------------ settings --
 
-  let settingsTab = 'access';
-  let accessFor = 0;
+  let settingsTab = 'who';
+  let customFor = null;
 
+  /** Settings, in four parts: who sees what, who is told, the front desk, and the limits. */
   async function settings(v) {
     mount(v, h('p.muted', 'Reading the settings…'));
-    const d = await data(true);
+    const d = await read(true);
     const s = d.settings;
-    const tabs = [['access', 'Supervisor access'], ['checks', 'Front desk checks'], ['rentals', 'Rentals'], ['notify', 'Who is told'], ['people', 'People'], ['small', 'Small differences and check-out']];
+    const tabs = [['who', 'Who sees what'], ['told', 'Who is told'], ['desk', 'Front desk'], ['limits', 'Limits']];
     const save = async (body) => {
       try {
         await api('/till/settings', { method: 'POST', body });
-        await reload(v, settings);
+        forget();
+        await settings(v);
       } catch (err) { alert(err.message); }
     };
-    const body = { access: accessView, checks: checksView, rentals: rentalsView, notify: notifyView, people: peopleView, small: smallView }[settingsTab](s, save);
+    const body = settingsTab === 'who' ? whoView(s, save)
+      : settingsTab === 'told' ? notifyView(s, save)
+        : settingsTab === 'desk' ? h('div.tl-stack', checksView(s, save), rentalsView(s, save), loginsView(s, save))
+          : await limitsView(s, save, v);
     mount(v,
       notLinked(d),
       h('div.tl-subtabs', tabs.map(([k, l]) => h('button', { type: 'button', 'aria-selected': String(settingsTab === k), onclick: () => { settingsTab = k; settings(v); } }, l))),
       body);
   }
 
-  function accessView(s, save) {
-    const level = (area) => {
-      const own = s.access.filter((r) => Number(r.account_id) === Number(accessFor));
-      const use = accessFor && own.length ? own : s.access.filter((r) => Number(r.account_id) === 0);
-      return Number(use.find((r) => r.area === area)?.level ?? 0);
+  /** Each supervisor: one preset, or Custom to set each part by hand. */
+  function whoView(s, save) {
+    const levelsFor = (id) => {
+      const own = s.access.filter((r) => Number(r.account_id) === Number(id));
+      const use = id && own.length ? own : s.access.filter((r) => Number(r.account_id) === 0);
+      return Object.fromEntries(s.areas.map((a) => [a.key, Number(use.find((r) => r.area === a.key)?.level ?? 0)]));
     };
-    const hasOwn = (id) => s.access.some((r) => Number(r.account_id) === Number(id));
-    let group = '';
-    const groups = { day: 'Views', reports: 'Shifts', answers: 'Staff answers', bank: 'Money sources' };
+    const presetOf = (levels) => (s.presets || []).find((p) => s.areas.every((a) => (levels[a.key] || 0) === Math.min(a.max, p.levels[a.key] || 0)))?.key || 'custom';
+    const people = [{ id: 0, name: 'New supervisors start as' }, ...s.supervisors];
+    const pick = (p) => {
+      const levels = levelsFor(p.id);
+      const now = presetOf(levels);
+      return h('select', {
+        'aria-label': `What ${p.name} sees`,
+        onchange: (e) => {
+          if (e.target.value === 'custom') { customFor = p.id; settings(document.querySelector('.sh-view')); return; }
+          customFor = null;
+          save({ access: { accountId: p.id, preset: e.target.value } });
+        },
+      }, (s.presets || []).map((x) => h('option', { value: x.key, selected: now === x.key }, x.label)),
+      h('option', { value: 'custom', selected: now === 'custom' }, 'Custom'));
+    };
+    const grid = (p) => {
+      const levels = levelsFor(p.id);
+      return h('div.tl-access', s.areas.map((a) => h('div.tl-arow',
+        h('div', h('strong', AREA_TEXT[a.key]?.[0] || a.key), h('div.tl-small', AREA_TEXT[a.key]?.[1] || '')),
+        h('div.tl-tri', LEVELS.filter(([n]) => n <= a.max).map(([n, label]) => h('button', {
+          type: 'button', 'aria-pressed': String(levels[a.key] === n), onclick: () => { customFor = p.id; save({ access: { accountId: p.id, area: a.key, level: n } }); },
+        }, label))))));
+    };
     return h('div.card',
-      h('div.sh-cardhead', h('h2', 'What supervisors see'), h('span.sh-sub', 'A supervisor is an account given Insight with the Supervisor role under Accounts. They see the Shifts tab and nothing else.')),
+      h('div.sh-cardhead', h('h2', 'Who sees what'), h('span.sh-sub', 'A supervisor is an account given Insight with the Supervisor role under Accounts. Pick what each one gets; Custom sets each part by hand.')),
       s.supervisors.length ? null : banner('info', 'Nobody is a supervisor yet. Under Accounts, set somebody’s Insight access to Supervisor.'),
-      h('div.tl-who',
-        h('button', { type: 'button', 'aria-selected': String(!accessFor), onclick: () => { accessFor = 0; rerender(); } }, 'Every supervisor'),
-        s.supervisors.map((p) => h('button', { type: 'button', 'aria-selected': String(accessFor === p.id), onclick: () => { accessFor = p.id; rerender(); } },
-          p.name, hasOwn(p.id) ? ' ·' : ''))),
-      accessFor ? h('p.sh-sub', hasOwn(accessFor)
-        ? h('span', 'This person has their own settings. ', h('button.btn', { type: 'button', onclick: () => save({ access: { accountId: accessFor, reset: true } }) }, 'Use everybody’s instead'))
-        : 'Showing everybody’s settings. Change one and this person gets their own copy.') : null,
-      h('div.tl-access', s.areas.map((a) => {
-        const head = groups[a.key] && groups[a.key] !== group ? h('div.tl-group', (group = groups[a.key])) : null;
-        const now = level(a.key);
-        return [head, h('div.tl-arow',
-          h('div', h('strong', AREA_TEXT[a.key]?.[0] || a.key), h('div.tl-small', AREA_TEXT[a.key]?.[1] || '')),
-          h('div.tl-tri', LEVELS.filter(([n]) => n <= a.max).map(([n, label]) => h('button', {
-            type: 'button', 'aria-pressed': String(now === n), onclick: () => save({ access: { accountId: accessFor, area: a.key, level: n } }),
-          }, label))))];
-      })));
-    function rerender() { const v = document.querySelector('.sh-view'); if (v) settings(v); }
+      h('div.tl-people', people.map((p) => {
+        const custom = customFor === p.id || presetOf(levelsFor(p.id)) === 'custom';
+        return h('div.tl-person',
+          h('div.tl-personrow', h('strong', p.name), pick(p)),
+          custom && customFor === p.id ? grid(p) : custom ? h('button.sh-link', { type: 'button', onclick: () => { customFor = p.id; settings(document.querySelector('.sh-view')); } }, 'Show what is set') : null);
+      })),
+      h('div.tl-presets', (s.presets || []).map((x) => h('div', h('strong', x.label), h('p.tl-small', x.text)))));
+  }
+
+  function notifyView(s, save) {
+    const chosen = new Set(s.notify.map((n) => n.hive_user_id));
+    const pick = h('select', h('option', { value: '' }, 'Add somebody from HIVE…'),
+      s.hiveUsers.filter((u) => !chosen.has(u.id)).map((u) => h('option', { value: u.id }, `${u.name}${u.hasEmail ? '' : ' (no email in HIVE)'}`)));
+    const flag = (n, key, field) => h('td.num', h('input', {
+      type: 'checkbox', checked: Boolean(n[field]), 'aria-label': `${n.name} ${key}`,
+      onchange: (e) => save({ notify: { hiveUserId: n.hive_user_id, name: n.name, [key]: e.target.checked } }),
+    }));
+    return h('div.card',
+      h('div.sh-cardhead', h('h2', 'Who is told'), h('span.sh-sub', 'HIVE sends these, as a web push to their phone and an email, to the HIVE login chosen here. Things that need a decision come straight away; the rest is in the daily summary.')),
+      h('div.table-wrap', h('table',
+        h('thead', h('tr', ['Who', 'Web push', 'Email', 'Amounts', 'Daily summary', 'Staff answered', 'Correction to approve', ''].map((t) => h('th', t)))),
+        h('tbody', s.notify.length ? s.notify.map((n) => h('tr',
+          h('td', h('strong', n.name)),
+          flag(n, 'push', 'push'), flag(n, 'email', 'email'), flag(n, 'amounts', 'amounts'),
+          flag(n, 'onClosed', 'on_closed'), flag(n, 'onAnswer', 'on_answer'), flag(n, 'onApproval', 'on_approval'),
+          h('td', h('button.btn', { type: 'button', onclick: () => save({ notify: { hiveUserId: n.hive_user_id, remove: true } }) }, 'Remove'))))
+          : h('tr', h('td', { colspan: 8 }, h('span.muted', 'Nobody yet. Add yourself and the supervisors.')))))),
+      h('form.tl-inline', {
+        onsubmit: (e) => {
+          e.preventDefault();
+          const id = Number(pick.value);
+          const u = s.hiveUsers.find((x) => x.id === id);
+          if (u) save({ notify: { hiveUserId: id, name: u.name, push: true, email: true, amounts: true, onClosed: true, onAnswer: true, onApproval: false } });
+        },
+      }, pick, h('button.btn.primary', { type: 'submit' }, 'Add')),
+      h('p.tl-small', 'Daily summary: one message each morning with yesterday’s shifts and what waits for an admin. Untick Amounts for somebody who should see how the drawers came out, not by how much.'));
   }
 
   function checksView(s, save) {
@@ -392,36 +389,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
       })));
   }
 
-  function notifyView(s, save) {
-    const chosen = new Set(s.notify.map((n) => n.hive_user_id));
-    const pick = h('select', h('option', { value: '' }, 'Add somebody from HIVE…'),
-      s.hiveUsers.filter((u) => !chosen.has(u.id)).map((u) => h('option', { value: u.id }, `${u.name}${u.hasEmail ? '' : ' (no email in HIVE)'}`)));
-    const flag = (n, key, field) => h('td.num', h('input', {
-      type: 'checkbox', checked: Boolean(n[field]), 'aria-label': `${n.name} ${key}`,
-      onchange: (e) => save({ notify: { hiveUserId: n.hive_user_id, name: n.name, [key]: e.target.checked } }),
-    }));
-    return h('div.card',
-      h('div.sh-cardhead', h('h2', 'Who is told'), h('span.sh-sub', 'HIVE sends these, as a web push to their phone and an email, to the HIVE login chosen here.')),
-      h('div.table-wrap', h('table',
-        h('thead', h('tr', ['Who', 'Web push', 'Email', 'Amounts', 'Shift closed', 'Staff answered', 'Correction to approve', ''].map((t) => h('th', t)))),
-        h('tbody', s.notify.length ? s.notify.map((n) => h('tr',
-          h('td', h('strong', n.name)),
-          flag(n, 'push', 'push'), flag(n, 'email', 'email'), flag(n, 'amounts', 'amounts'),
-          flag(n, 'onClosed', 'on_closed'), flag(n, 'onAnswer', 'on_answer'), flag(n, 'onApproval', 'on_approval'),
-          h('td', h('button.btn', { type: 'button', onclick: () => save({ notify: { hiveUserId: n.hive_user_id, remove: true } }) }, 'Remove'))))
-          : h('tr', h('td', { colspan: 8 }, h('span.muted', 'Nobody yet. Add yourself and the supervisors.')))))),
-      h('form.tl-inline', {
-        onsubmit: (e) => {
-          e.preventDefault();
-          const id = Number(pick.value);
-          const u = s.hiveUsers.find((x) => x.id === id);
-          if (u) save({ notify: { hiveUserId: id, name: u.name, push: true, email: true, amounts: true, onClosed: true, onAnswer: true, onApproval: false } });
-        },
-      }, pick, h('button.btn.primary', { type: 'submit' }, 'Add')),
-      h('p.tl-small', 'Untick Amounts for somebody who should hear that a shift closed but not what was in the drawer.'));
-  }
-
-  function peopleView(s, save) {
+  function loginsView(s, save) {
     return h('div.card',
       h('div.sh-cardhead', h('h2', 'Whose ASSD login is whose'), h('span.sh-sub', 'A closed shift belongs to whoever closed it in HIVE. This is only for a shift nobody closed: it goes on the list of the HIVE person named here.')),
       s.people.length ? h('div.tl-list', s.people.map((p) => h('div.tl-arow',
@@ -432,22 +400,50 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
         : h('p.muted', 'No ASSD logins in the journal loaded so far.'));
   }
 
-  function smallView(s, save) {
-    const amount = h('input', { type: 'number', min: '0', step: '0.01', value: (s.threshold / 100).toFixed(2), style: 'width:8rem' });
+
+  /** The numbers that decide what is raised and how far back things are read. */
+  async function limitsView(s, save, v) {
+    let t = null;
+    try { t = await api('/todo'); } catch { t = null; }
+    const amount = h('input', { type: 'number', min: '0', step: '0.01', value: (s.threshold / 100).toFixed(2), style: 'width:7rem', id: 'tl-small' });
     const checkout = h('input', { type: 'time', value: s.checkoutTime || '12:00', id: 'tl-checkout-time' });
-    return h('div',
-      h('div.card',
-        h('div.sh-cardhead', h('h2', 'Small differences'), h('span.sh-sub', 'A difference this small or smaller is left off everybody’s list, and off Unpaid stays. Zero puts every pesewa on it.')),
-        h('form.tl-inline', { onsubmit: (e) => { e.preventDefault(); save({ threshold: amount.value }); } },
-          h('label', 'Ignore up to GH₵ ', amount), h('button.btn.primary', { type: 'submit' }, 'Save'))),
-      h('div.card',
-        h('div.sh-cardhead', h('h2', 'Check-out time'), h('span.sh-sub', 'When a guest leaves on their last day. Unpaid stays uses it to tell who leaves in the next 24 hours and who has gone.')),
-        h('form.tl-inline', { onsubmit: (e) => { e.preventDefault(); save({ checkoutTime: checkout.value }); } },
-          h('label', 'Check-out at ', checkout), h('button.btn.primary', { type: 'submit' }, 'Save'))));
+    const days = t ? h('input', { type: 'number', min: '0', max: '90', value: String(t.unbilledDays), style: 'width:5rem', id: 'tl-unbilled' }) : null;
+    const back = t ? h('input', { type: 'number', min: '7', max: '730', value: String(t.lookbackDays ?? 90), style: 'width:5rem', id: 'tl-lookback' }) : null;
+    const laundry = t ? h('input', { type: 'number', min: '1', max: '60', value: String(t.laundryDays ?? 3), style: 'width:5rem', id: 'tl-laundry' }) : null;
+    const said = h('span.small');
+    const row = (label, help, input, unit = '') => h('div.tl-limit', h('div', h('strong', label), h('div.tl-small', help)), h('label', input, unit));
+    return h('div.card',
+      h('div.sh-cardhead', h('h2', 'Limits'), h('span.sh-sub', 'What is small enough to leave alone, and how far back Insight looks.')),
+      h('form.tl-limits', {
+        onsubmit: async (e) => {
+          e.preventDefault();
+          said.textContent = 'Saving…'; said.className = 'small';
+          try {
+            await api('/till/settings', { method: 'POST', body: { threshold: amount.value, checkoutTime: checkout.value } });
+            let note = 'Saved.';
+            if (t) {
+              const out = await api('/todo/settings', { method: 'POST', body: { unbilledDays: days.value, lookbackDays: back.value, laundryDays: laundry.value } });
+              if (out.checked) note = out.checked.ok ? 'Saved, and Odoo asked again for the new look-back.' : `Saved. Odoo could not be asked: ${out.checked.error}`;
+            }
+            forget();
+            await settings(v);
+            v.prepend(banner('good', note));
+          } catch (err) { said.textContent = err.message; said.className = 'small form-error'; }
+        },
+      },
+      row('Small differences', 'A difference this small or smaller is left off everybody’s list and off Unpaid stays, and a supervisor’s correction this small counts without waiting for an admin.', amount, ' GH₵'),
+      days ? row('PO without a posted bill', 'Raise it on the Inbox after this many days, from the day the cash left or the day it was ordered.', days, ' days') : null,
+      back ? row('Look for POs over the last', 'How far back the Inbox looks for cash POs and bills.', back, ' days') : null,
+      laundry ? row('Refresh reads the laundry for the last', 'Refresh now reads the laundry system this far back, up to today.', laundry, ' days') : null,
+      row('Guests leave by', 'Check-out time on their last day. Unpaid stays uses it to tell who leaves in the next 24 hours.', checkout),
+      h('div.tl-actions', h('button.btn.primary', { type: 'submit' }, 'Save'), said)));
   }
 
   return {
-    closing, answers, settings,
-    ...(admin ? { approvals } : {}),
+    read, forget, notLinked, shiftReport, issueCard, peopleExtras, settings,
+    ...(admin ? { answerApprovalCard, correctionCard } : {}),
   };
 }
+
+/** What a line on a closing report that did not count says. */
+const UNCOUNTED = { claimed: 'Already claimed', missing: 'Not in Odoo', 'no-po': 'No PO', unchecked: 'Not checked', report: 'Report on form', cancel: 'Cancelled' };

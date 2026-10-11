@@ -264,7 +264,7 @@ async function withAssd(env, items) {
   return items;
 }
 
-/** Shifts → To-do → Advances. Admin, or whoever an admin gave "Advances". */
+/** Shifts → Inbox → Advances. Admin, or whoever an admin gave "Advances". */
 export async function advancesView(env, account, { fetchImpl } = {}) {
   const access = await requireArea(env, account, 'advances', 1);
   const { items, formLive: live, odoo } = await gatherAdvances(env, { fetchImpl });
@@ -387,7 +387,7 @@ export async function tellDifferences(env, { fetchImpl, on = today() } = {}) {
               recipients: to, kind: 'till.approval',
               title: `${x.po}: ${x.diff < 0 ? `refund of ${cedis(amount)}` : `deficit of ${cedis(amount)}`}`,
               body: `Final price ${cedis(x.total)}; ${cedis(x.paid)} was paid from the drawer on ${x.day} ${x.slot}${x.by ? ` (${x.by})` : ''}. `
-                + 'More than five days ago, so only admins are told. See Insight → Shifts → To-do → Advances.',
+                + 'More than five days ago, so only admins are told. See Insight → Shifts → Inbox → Advances.',
             },
           }).catch(() => null);
           sentTo = 'admins';

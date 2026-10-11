@@ -45,6 +45,25 @@ export const AREAS = [
 const AREA_MAX = new Map(AREAS.map((a) => [a.key, a.max]));
 
 /**
+ * Ready-made sets of access, so most supervisors are one choice. Anything not
+ * named is Hidden. Custom is any other mix, set area by area.
+ */
+export const PRESETS = [
+  {
+    key: 'frontdesk', label: 'Front desk supervisor',
+    text: 'Sees shifts and closing reports without amounts. Acts on staff answers, unpaid stays and advances, and reopens a report.',
+    levels: { day: 1, week: 1, month: 1, reports: 1, answers: 2, reopen: 2, unpaid: 2, advances: 2 },
+  },
+  {
+    key: 'accounts', label: 'Accounts',
+    text: 'Sees amounts, the bank and Odoo. Acts on card and bank, cash movements, POs, staff answers, money out and advances, and loads files.',
+    levels: {
+      day: 1, week: 1, month: 1, reports: 1, money: 1, moves: 2, answers: 2, money_out: 2, net: 1, bank: 2, odoo: 1, files: 2, unpaid: 1, advances: 2,
+    },
+  },
+];
+
+/**
  * Admin, supervisor or uploader. An owner is an admin; so is anybody given the
  * reports without a role. A supervisor holds the reports grant with the role
  * `supervisor`, and sees only the Shifts screen. An uploader holds it with
@@ -112,7 +131,7 @@ async function rentals(env, { active = false } = {}) {
   } catch { return []; }
 }
 
-async function threshold(env) {
+export async function threshold(env) {
   const s = await getSettings(env.DB).catch(() => ({}));
   return Math.max(0, Number(s.till_threshold) || 0);
 }
@@ -461,6 +480,7 @@ async function settingsView(env, users, shifts) {
     notify: notify.map((n) => ({ ...n, hive_user_id: Number(n.hive_user_id) })),
     access: accessRows,
     areas: AREAS,
+    presets: PRESETS,
     supervisors,
     hiveUsers: users.map((u) => ({ id: Number(u.id), name: u.name, role: u.role, hasEmail: Boolean(u.email) })),
     people: assdUsers.map((u) => ({ assdUser: u, hiveUserId: mapped.find((m) => m.assd_user === u)?.hive_user_id ?? null })),
@@ -647,6 +667,11 @@ export async function saveSettings(env, body, account) {
     if (!Number.isInteger(accountId) || accountId < 0) throw badRequest('Whose access?');
     if (a.reset) {
       await run(env.DB, 'DELETE FROM till_access WHERE account_id = ?1 AND account_id <> 0', accountId);
+    } else if (a.preset) {
+      const preset = PRESETS.find((x) => x.key === a.preset);
+      if (!preset) throw badRequest('Which preset?');
+      await env.DB.batch(AREAS.map((x) => env.DB.prepare(`INSERT INTO till_access (account_id, area, level) VALUES (?1, ?2, ?3)
+        ON CONFLICT (account_id, area) DO UPDATE SET level = ?3`).bind(accountId, x.key, Math.min(x.max, preset.levels[x.key] || 0))));
     } else {
       const max = AREA_MAX.get(String(a.area));
       if (max == null) throw badRequest('Which part of Shifts?');

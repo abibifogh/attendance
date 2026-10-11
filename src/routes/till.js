@@ -555,15 +555,8 @@ export async function closeShift(ctx) {
     .bind(actorOf(ctx), 'till.closed', String(reportId), JSON.stringify({ day, slot })).run().catch(() => {});
 
   const report = { day, slot, cash, envelopes, expenses, rentals, checks, floatOk: body.floatOk, floatDiff, toSafe: body.toSafe };
-  const look = { name: ctx.session.user.name, device, rentalLabels: setup.rentals };
-  await tell(ctx, 'closed', {
-    title: `${labelOf({ day, slot })} closed · ${ctx.session.user.name}`,
-    withAmounts: closedSummary(report, true),
-    withoutAmounts: closedSummary(report, false),
-    mailWith: safeMail(() => closedMail(report, true, look)),
-    mailWithout: safeMail(() => closedMail(report, false, look)),
-  });
-
+  // Nobody is emailed for each shift closed any more: the people who follow
+  // the till get one summary a morning from Insight instead.
   return json({ ok: true, id: reportId, report });
 }
 
@@ -676,6 +669,21 @@ export function closedMail(r, amounts, { name, device, rentalLabels } = {}) {
  * Tell whoever Insight says to tell about `event`. Never fails the action that
  * caused it: a closed shift is closed whether or not a phone buzzed.
  */
+/**
+ * THE ADDRESS ON THEIR RECORD as well as the one on their login. A login
+ * needs a PIN and nothing else, so most carry no address, and a person chosen
+ * in Insight to hear about the till would otherwise get the bell and never the
+ * email. Null when the login has an address of its own.
+ */
+async function recordEmail(db, userId) {
+  const known = await db.prepare(
+    `SELECT u.email AS login_email, hp.personal_email
+       FROM users u LEFT JOIN hr_profile hp ON hp.staff_id = u.staff_id
+      WHERE u.id = ?`,
+  ).bind(Number(userId)).first().catch(() => null);
+  return known && !isEmail(String(known.login_email || '').trim()) ? firstUsableEmail(known.personal_email) : null;
+}
+
 async function tell(ctx, event, { title, withAmounts, withoutAmounts, mailWith, mailWithout }) {
   const plan = await insightOrNull(ctx.env, '/api/link/till/recipients', { event });
   if (!plan) {
@@ -686,17 +694,8 @@ async function tell(ctx, event, { title, withAmounts, withoutAmounts, mailWith, 
     return;
   }
   for (const r of plan.to || []) {
-    // THE ADDRESS ON THEIR RECORD as well as the one on their login. A login
-    // needs a PIN and nothing else, so most carry no address, and a person
-    // chosen in Insight to hear about closed shifts would otherwise get the
-    // bell and never the email.
     // eslint-disable-next-line no-await-in-loop
-    const known = r.email ? await ctx.db.prepare(
-      `SELECT u.email AS login_email, hp.personal_email
-         FROM users u LEFT JOIN hr_profile hp ON hp.staff_id = u.staff_id
-        WHERE u.id = ?`,
-    ).bind(Number(r.userId)).first().catch(() => null) : null;
-    const emailTo = known && !isEmail(String(known.login_email || '').trim()) ? firstUsableEmail(known.personal_email) : null;
+    const emailTo = r.email ? await recordEmail(ctx.db, r.userId) : null;
     // eslint-disable-next-line no-await-in-loop
     await createNotice(ctx.db, {
       kind: `till.${event}`, level: 'info', title, body: r.amounts ? withAmounts : withoutAmounts,
@@ -740,10 +739,10 @@ export async function answer(ctx) {
     if (found.state === 'change') throw badRequest(`${found.name} came down in price: money is due back on it, which does not explain cash leaving the drawer.`);
     // An advance belongs on the shift that gave it out, where the next shift
     // can see it. Afterwards, only an approved PO answers.
-    if (found.state === 'advance') throw badRequest(`${found.name} is not confirmed in Odoo yet: it is still a requisition. Get it approved, then add it here.`);
+    if (found.state === 'advance') throw badRequest(`${found.name} is not approved in Odoo yet: it is still a requisition. Get it approved, then add it here.`);
     if (!found.counted) {
-      const why = { missing: 'is not in Odoo', claimed: 'has already been claimed', unconfirmed: 'is not confirmed in Odoo yet', report: 'is approved but not on the expense form yet: report it there first' }[found.state]
-        || `is ${found.state} in Odoo, not confirmed`;
+      const why = { missing: 'is not in Odoo', claimed: 'has already been claimed', unconfirmed: 'is not approved in Odoo yet', report: 'is approved but not on the expense form yet: report it there first' }[found.state]
+        || `is ${found.state} in Odoo, not approved`;
       throw badRequest(`${found.name || typed} ${why}.`);
     }
     // The PO's own total (or, for a top-up, what is left of it), never a typed amount.
@@ -1023,6 +1022,48 @@ export async function linkExpect(ctx) {
     }, ctx);
   }
   return json({ ok: true, sentTo: to.length ? to.map((p) => p.name).filter(Boolean).join(', ') || `${to.length} people` : 'nobody' });
+}
+
+/**
+ * The daily till summary, sent by Insight each morning: yesterday's shifts and
+ * what waits for an admin, to whoever Insight says gets it, with or without
+ * the amounts.
+ */
+export async function linkSummary(ctx) {
+  const body = await fromInsight(ctx);
+  const title = str(body.title, 'Title', { required: true, max: 200 });
+  const lines = (Array.isArray(body.lines) ? body.lines : []).slice(0, 6);
+  const needs = (Array.isArray(body.needs) ? body.needs : []).slice(0, 12);
+  const insightUrl = (() => { try { return new URL(ctx.env.INSIGHT_SSO_URL).origin; } catch { return null; } })();
+  let sent = 0;
+  for (const p of (Array.isArray(body.recipients) ? body.recipients : []).slice(0, 50)) {
+    const userId = Number(p.userId);
+    if (!Number.isInteger(userId)) continue;
+    const amounts = Boolean(p.amounts);
+    const sub = String((amounts ? body.subWith : body.sub) || '').slice(0, 300);
+    // eslint-disable-next-line no-await-in-loop
+    const emailTo = p.email ? await recordEmail(ctx.db, userId) : null;
+    const toneOf = { good: 'good', warn: 'warn', bad: 'bad' };
+    const facts = [
+      ...lines.map((l) => [String(l.label || '').slice(0, 80), String((amounts ? l.with : l.without) || '').slice(0, 80), toneOf[l.tone] ? { tone: toneOf[l.tone], strong: l.tone !== 'good' } : undefined]),
+      ...(needs.length ? needs.map(([label, value]) => [String(label || '').slice(0, 120), String(value || '').slice(0, 40), { tone: 'warn' }]) : [['Needs you', 'Nothing', { tone: 'good' }]]),
+    ];
+    // eslint-disable-next-line no-await-in-loop
+    await createNotice(ctx.db, {
+      kind: 'till.summary', level: 'info', title, body: sub, link: insightUrl ? `${insightUrl}/#/shifts` : null, actor: 'Insight',
+      userId, push: p.push !== false, email: Boolean(p.email), emailTo, text: false,
+      mail: safeMail(() => ({
+        tone: needs.length ? 'warn' : 'good', status: 'Daily summary', eyebrow: 'Till',
+        headline: title, sub, facts,
+        note: needs.length ? 'Open the Inbox in Insight to deal with what is waiting.' : 'Nothing is waiting for you.',
+        button: insightUrl ? 'Open the Inbox' : undefined,
+        subject: title, preheader: sub,
+        why: 'You get this because you follow the till in Insight.',
+      })),
+    }, ctx);
+    sent += 1;
+  }
+  return json({ ok: true, sent });
 }
 
 /** Tell people something Insight decided. */
