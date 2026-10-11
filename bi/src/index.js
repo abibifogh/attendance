@@ -17,7 +17,8 @@ import * as stays from './routes/stays.js';
 import * as revenue from './routes/revenue.js';
 import * as cashpo from './routes/cashpo.js';
 import * as todo from './routes/todo.js';
-import { verifyLink } from './lib/link.js';
+import * as advances from './routes/advances.js';
+import { verifyForm, verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
 import { loadFacts } from './insight/facts.js';
 import { reloadLaundry } from './warehouse/etl.js';
@@ -88,6 +89,9 @@ const ROUTES = [
     const checked = await cashpo.refreshCashPos(env).catch((err) => ({ ok: false, error: String(err?.message || err) }));
     return { ...saved, checked };
   }],
+  // Advances under To-do: an admin, or whoever an admin gave "Advances".
+  ['GET', '/api/advances', 'shifts', (env, ctx) => advances.advancesView(env, ctx.account)],
+  ['POST', '/api/advances/decide', 'shifts', (env, ctx) => advances.decide(env, ctx.body, ctx.account)],
   ['POST', '/api/todo/:id/answer', 'shifts', (env, ctx) => todo.answerTodo(env, ctx.params.id, ctx.body, ctx.account)],
   ['POST', '/api/todo/:id/decide', 'shifts', (env, ctx) => todo.decideTodo(env, ctx.params.id, ctx.body, ctx.account)],
   ['POST', '/api/todo/:id/assign', 'shifts', (env, ctx) => todo.assignTodo(env, ctx.params.id, ctx.body, ctx.account)],
@@ -155,6 +159,15 @@ const ROUTES = [
   ['POST', '/api/link/till/po', 'link', (env, ctx) => till.linkPo(env, ctx.body)],
   ['POST', '/api/link/till/issues', 'link', (env, ctx) => till.linkIssues(env, ctx.body)],
   ['POST', '/api/link/till/recipients', 'link', (env, ctx) => till.linkRecipients(env, ctx.body)],
+
+  // The expense form: a script on the Google Form posts each response the
+  // moment it is submitted, signed with the form's own secret.
+  ['POST', '/api/link/expense-form', 'form', async (env, ctx) => {
+    const saved = await advances.ingestForm(env, ctx.body);
+    const tell = advances.tellDifferences(env);
+    if (ctx.execution?.waitUntil) ctx.execution.waitUntil(tell); else await tell;
+    return saved;
+  }],
 
   // Loading and configuring. Owners only: these change what every other screen
   // in the group is built on.
@@ -240,6 +253,14 @@ export default {
           at: request.headers.get('X-Till-At'), sig: request.headers.get('X-Till-Sig'), path: url.pathname, bodyText: text,
         });
         if (!ok) throw new HttpError(401, 'That request did not come from HIVE.');
+        try { body = JSON.parse(text || '{}'); } catch { throw badRequest('That was not JSON.'); }
+      } else if (permission === 'form') {
+        if (!env.EXPENSE_FORM_SECRET) throw new HttpError(503, 'The expense form is not connected yet: set EXPENSE_FORM_SECRET.');
+        const text = await request.text();
+        const ok = await verifyForm(env.EXPENSE_FORM_SECRET, {
+          at: request.headers.get('X-Form-At'), sig: request.headers.get('X-Form-Sig'), bodyText: text,
+        });
+        if (!ok) throw new HttpError(401, 'That did not come from the expense form.');
         try { body = JSON.parse(text || '{}'); } catch { throw badRequest('That was not JSON.'); }
       }
 

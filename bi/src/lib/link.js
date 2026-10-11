@@ -71,3 +71,16 @@ export async function callLink({ binding, secret, path, body = {}, fetchImpl = n
   }
   return data;
 }
+
+/**
+ * Whether a post is from the script on the expense form: signed with the
+ * form's own secret, under a label of its own, recent and unaltered. The
+ * script signs `expense-form`, the time in milliseconds and the body, each on
+ * its own line.
+ */
+export async function verifyForm(secret, { at, sig, bodyText, now = Date.now() }) {
+  if (!secret || !at || !sig) return false;
+  const stamp = Number(at);
+  if (!Number.isFinite(stamp) || Math.abs(now - stamp) > WINDOW_MS) return false;
+  return same(await hmac(secret, `expense-form\n${at}\n${bodyText}`), String(sig).toLowerCase());
+}

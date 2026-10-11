@@ -476,6 +476,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'till.expect',
+    group: 'money',
+    label: 'Expect cash back in the drawer',
+    who: 'Whoever is on the next reception shift',
+    when: 'A PO advanced from a drawer was bought for less, and the change is coming back',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'till.answer',
     group: 'money',
     label: 'Somebody has answered for their till',

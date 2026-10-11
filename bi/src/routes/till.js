@@ -6,6 +6,7 @@ import { listSources, secretNameFor } from '../connectors/index.js';
 import { purchaseOrders } from '../connectors/odoo.js';
 import { compare, issuesFor, readReport, withStatus, FINAL, KINDS } from '../shifts/till.js';
 import { shifts as shiftsFor } from './shifts.js';
+import { formLive, poExtras } from './advances.js';
 
 /**
  * Closing a shift in HIVE, as this app sees it.
@@ -39,6 +40,7 @@ export const AREAS = [
   { key: 'reports', max: 1 }, { key: 'money', max: 1 }, { key: 'moves', max: 2 },
   { key: 'answers', max: 2 }, { key: 'money_out', max: 2 }, { key: 'reopen', max: 2 }, { key: 'net', max: 1 },
   { key: 'bank', max: 2 }, { key: 'odoo', max: 1 }, { key: 'files', max: 2 }, { key: 'unpaid', max: 2 },
+  { key: 'advances', max: 2 },
 ];
 const AREA_MAX = new Map(AREAS.map((a) => [a.key, a.max]));
 
@@ -234,7 +236,10 @@ export async function linkPo(env, body, { fetchImpl } = {}) {
   // A PO already paid from the safe cannot be paid from a drawer too.
   const fromSafe = new Map((await all(env.DB, 'SELECT po, day FROM safe_entry WHERE po IS NOT NULL').catch(() => []))
     .map((r) => [String(r.po).toUpperCase(), r.day]));
+  // What the expense form says about each, and anything an admin decided.
+  const extras = await poExtras(env, result.orders.map((o) => o.name));
   return {
+    formLive: formLive(env),
     found: typed.map((t) => {
       const variants = new Set(poVariants(t));
       const order = result.orders.find((o) => variants.has(String(o.name).toUpperCase()));
@@ -243,6 +248,7 @@ export async function linkPo(env, body, { fetchImpl } = {}) {
         ? {
           typed: t, name: order.name, vendor: order.vendor, total: order.total, state: order.state, confirmed: CONFIRMED.has(order.state), orderedOn: order.orderedOn,
           ...(safeDay ? { safe: { day: safeDay } } : {}),
+          ...extras(order.name),
         }
         : { typed: t, name: null };
     }),

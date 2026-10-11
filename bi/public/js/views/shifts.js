@@ -4,6 +4,7 @@ import { table, banner } from './components.js';
 import { filesPanel } from './files.js';
 import { tillViews } from './till.js';
 import { todoPanel } from './todo.js';
+import { advancesPanel } from './advances.js';
 import { state } from '../app.js';
 
 /**
@@ -422,8 +423,21 @@ export async function renderShifts(root, { range }) {
           if (count) el.append(h('span.sh-badge', String(count)));
         }
       }).catch(() => {});
-      todoPanel(v, { admin, onChange: badge })
-        .catch((err) => mount(v, banner('problem', err.message)));
+      // Advances sit beside the money to-do, for whoever was given them.
+      const subs = may('advances') ? [['todo', 'Money to-do'], ['advances', 'Advances']] : [['todo', 'Money to-do']];
+      let sub = store.get('todo-sub', 'todo');
+      if (!subs.some(([id]) => id === sub)) sub = 'todo';
+      const inner = h('div');
+      const openSub = () => {
+        mount(v,
+          subs.length > 1 ? h('div.td-pills.adv-switch', subs.map(([id, label]) => h('button', {
+            type: 'button', 'aria-pressed': String(sub === id), onclick: () => { sub = id; store.set('todo-sub', id); openSub(); },
+          }, label))) : null,
+          inner);
+        (sub === 'advances' ? advancesPanel(inner) : todoPanel(inner, { admin, onChange: badge }))
+          .catch((err) => mount(inner, banner('problem', err.message)));
+      };
+      openSub();
       return undefined;
     }
     if (section === 'safe') {

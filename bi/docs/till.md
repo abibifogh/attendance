@@ -39,7 +39,7 @@ sort out**. Admins and supervisors work it all from Insight → **Shifts**.
 | Was your opening float correct? (and by how much, and why, if not) | Only they know what they were handed. |
 | Cash in the drawer now, one total | Checked against ASSD's own closing count. |
 | Did you move cash to the safe? If yes: each envelope's number (digits only) and amount | Compared with what ASSD labelled safe. Both are required once they say Yes. |
-| Each expense: the PO number | One box: type a PO number, or several at once ("P00412, 415, 420"), and tap **Add**. Each is looked up in Odoo (read-only) straight away and listed with its supplier, its amount (the PO's own total, which cannot be typed over), whether it counts, and **×** to remove it. Counts only if the PO is confirmed and has not been claimed on another shift. A PO Odoo has but nobody has approved (a request for quotation, one waiting for approval, or a cancelled one) stops the report: the line says "Get it approved first", **Sign and send** stays off, and HIVE refuses it if sent anyway. Approve it in Odoo and tap **check again** on its line, or remove it. A PO's price can change in Odoo after it was paid: when somebody opens Close shift, **Prices changed on POs already paid** lists every PO paid from a drawer in the last 14 days whose total now differs (Odoo's answer is remembered ten minutes; signing always asks afresh) from what was paid, with **I paid the GH₵ 20.00** (a top-up) or **The GH₵ 20.00 came back** (change back), and **Not on my shift**. Tapped, the difference joins that shift's list and counts there; the earlier shift's report is never changed. Typing such a PO in the box does the same. A PO's payments never add up to more or less than its total in Odoo now. |
+| Each expense: the PO number | One box: type a PO number, or several at once ("P00412, 415, 420"), and tap **Add**. Each is looked up in Odoo (read-only) straight away and listed with its supplier, its amount (the PO's own total, which cannot be typed over) and a chip: **✓ Counted** (approved in Odoo and reported on the expense form), **Advance** (still waiting for approval: cash given out before the purchase, counted at the requisition's amount, in this person's name), **Report on form** (approved but not on the expense form yet: it stops the report until it is), or **Cancelled** (remove it). A PO paid on another shift is **Already claimed**. Above the box, **From the last shift** lists what earlier shifts left, and each one holds up **Sign and send** (the **To close:** line says what): an advance not yet approved and reported, a **Refund** (the PO was bought for less: put the money in the drawer and tap **Done**), or a **Deficit** (bought for more: **Done** if it was paid from this drawer, or **Not on my shift**). Refunds and deficits are shown for POs paid in the last five days; older ones go to the admins in Insight. See [Advances](advances.md). |
 | Padlocks at the start and the end | Fewer means a padlock was rented, so ASSD should have a deposit (article 405); more means one came back, so ASSD should have a refund. |
 | Is the scale / hair dryer at the front desk? | A physical check. A No needs the guest who has it or an explanation before they can sign. Admins add more items under Till settings → Front desk checks. |
 | Anything the supervisor should know (optional) | |
@@ -149,12 +149,13 @@ minutes, or altered on the way, is refused.
 | Asked by | Asks | For |
 | --- | --- | --- |
 | HIVE | `/api/link/till/setup` | Which checks and rentals the form asks about |
-| HIVE | `/api/link/till/po` | Whether a PO is in Odoo, and confirmed |
+| HIVE | `/api/link/till/po` | Whether a PO is in Odoo, and confirmed; whether it is on the expense form; any admin decision on it |
 | HIVE | `/api/link/till/issues` | One person's list |
 | HIVE | `/api/link/till/recipients` | Who to tell about an event, and how |
 | Insight | `/api/link/till/recover` | A shortage as a one-month advance |
 | Insight | `/api/link/till/reopen` | Reopen a signed report |
 | Insight | `/api/link/till/tell` | Tell people something was settled, sent back or needs approving |
+| Insight | `/api/link/till/expect` | Tell whoever is rostered on the next reception shift that a refund is coming back to the drawer |
 | Insight | `/api/link/mail` | Send one email from HIVE's address: an invitation, or word that somebody joined (see `invitations.md`) |
 
 Insight also reads HIVE's database directly, read-only, as it always has:

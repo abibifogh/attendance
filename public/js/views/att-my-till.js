@@ -18,6 +18,13 @@ import { field, formDialog } from './att-shared.js';
  */
 
 const SLOT = { morning: 'Morning', afternoon: 'Afternoon', night: 'Night' };
+/** An advance from an earlier shift, not settled yet: what it is waiting for. */
+const ADV_CHIP = { approve: 'Approve in Odoo', report: 'Report on form', cancel: 'Cancelled' };
+const ADV_TEXT = {
+  approve: 'Waiting for approval in Odoo. Once approved, it has to be reported on the expense form.',
+  report: 'Approved in Odoo. Now it has to be reported on the expense form.',
+  cancel: 'Cancelled in Odoo. Ask an admin to close it.',
+};
 /** An amount that can go below nothing: change coming back is − GH₵ 20.00. */
 const signedCedis = (minor) => (minor != null && minor < 0 ? `− ${cedis(minor)}` : cedis(minor));
 const cedis = (minor) => (minor == null ? '—' : `GH₵ ${(Math.abs(minor) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
@@ -69,11 +76,21 @@ export async function renderAttMyTill() {
   f.expenses = (f.expenses || []).filter((e) => String(e.po ?? '').trim());
   const save = () => { store.set(draftKey(), f); store.set('which', which); };
 
-  // POs paid on earlier shifts whose price has changed in Odoo since: asked
-  // once when the form opens, so a top-up or change back that went through
-  // this drawer is put on this shift.
-  let priceChanges = [];
-  api.tillPoChanges().then((d) => { priceChanges = d.changes || []; if (priceChanges.length) paint(); }).catch(() => {});
+  // What earlier shifts left for this one: advances not settled yet, and
+  // refunds or deficits on POs whose final price differs from what was paid.
+  // Asked when the form opens and when the shift changes.
+  let earlier = { advances: [], changes: [] };
+  let earlierFor = null;
+  function loadEarlier(fresh = false) {
+    const key = `${which.day}|${which.slot}`;
+    earlierFor = key;
+    return api.tillPoChanges({ day: which.day, slot: which.slot, fresh }).then((d) => {
+      if (earlierFor !== key) return;
+      earlier = { advances: d.advances || [], changes: d.changes || [] };
+      paint();
+    }).catch(() => {});
+  }
+  loadEarlier();
 
   paint();
   return host;
@@ -95,6 +112,8 @@ export async function renderAttMyTill() {
             which = { day, slot };
             f = store.get(draftKey()) || blank();
             store.set('which', which);
+            earlier = { advances: [], changes: [] };
+            loadEarlier();
             paint();
           },
         }, data.choices.map((c) => h('option', { value: `${c.day}|${c.slot}`, selected: c.day === which.day && c.slot === which.slot },
@@ -149,9 +168,11 @@ export async function renderAttMyTill() {
           h('button.btn-sm', { type: 'button', onclick: () => { f.envelopes.push({ no: '', amount: '' }); set({}); } }, '+ Another envelope'),
           h('p.till-hint', `To the safe: ${cedis(safeTotal)}. Numbers only, as written on the envelope. Each one is checked against ASSD's cash movements.`)) : null),
 
-      card('Expenses paid from the drawer', { note: 'each needs an approved PO' },
-        h('p.till-hint', 'Type one PO number or several, then Add. Each is checked in Odoo straight away; its amount is the PO’s total.'),
-        priceChangesBox(),
+      card('Expenses paid from the drawer', { note: 'each needs a PO' },
+        fromLastShift(),
+        h('h4.till-group', 'This shift'),
+        h('p.till-hint', 'Type one PO number or several, then Add. Each is checked in Odoo straight away; its amount is the PO’s total. '
+          + 'A PO still waiting for approval goes in as an advance.'),
         addPos(),
         f.expenses.length ? h('div.till-polist', f.expenses.map((e, i) => expenseRow(e, i))) : null,
         f.expenses.length ? h('div.till-pototals',
@@ -187,37 +208,52 @@ export async function renderAttMyTill() {
         field('Anything the supervisor should know (optional)', h('textarea', { rows: 2, oninput: (e) => { f.note = e.target.value; save(); } }, f.note))),
 
       h('div.till-send',
-        h('p.till-need', { hidden: !missing.length }, 'Still needed: ', h('strong', missing.join(', '))),
+        h('p.till-need', { hidden: !missing.length }, 'To close: ', h('strong', missing.join(', '))),
         h('button.btn.btn-primary.till-sign', { type: 'button', disabled: missing.length > 0, onclick: sign }, 'Sign and send')));
   }
 
-  /** The POs whose price changed since they were paid, not yet on this shift or put aside here. */
-  function priceChangesBox() {
-    const onList = new Set(f.expenses.map((e) => e.look?.name).filter(Boolean));
-    const mine = priceChanges.filter((c) => !onList.has(c.name) && !(f.notMine || []).includes(c.name));
-    if (!mine.length) return null;
-    const when = (c) => `${c.first.day ? dayText(c.first.day) : ''}${c.first.slot ? `, ${(SLOT[c.first.slot] || c.first.slot).toLowerCase()}` : ''}${c.first.by ? ` (${c.first.by})` : ''}`;
+  /** Refunds and deficits not yet put on this shift, or put aside as not on it. */
+  function openChanges() {
+    const onList = new Set(f.expenses.filter((e) => e.look?.counted && ['topup', 'change'].includes(e.look.state)).map((e) => e.look.name));
+    return earlier.changes.filter((c) => !onList.has(c.name) && !(c.amount > 0 && (f.notMine || []).includes(c.name)));
+  }
+
+  /** What earlier shifts left: each has to be sorted before this one is signed. */
+  function fromLastShift() {
+    const changes = openChanges();
+    if (!earlier.advances.length && !changes.length) return null;
+    const when = (x) => `${x.day ? dayText(x.day) : ''}${x.slot ? `, ${(SLOT[x.slot] || x.slot).toLowerCase()}` : ''}${x.by ? ` (${x.by})` : ''}`;
+    const again = h('button.till-link', {
+      type: 'button',
+      onclick: async (ev) => { ev.target.disabled = true; ev.target.textContent = 'checking…'; await loadEarlier(true); },
+    }, 'check again');
     return h('div.till-changes',
-      h('h4', 'Prices changed on POs already paid'),
-      h('p', 'Odoo now has a different total for these. If the difference moved through your drawer on this shift, add it here.'),
-      mine.map((c) => h('div.till-change',
+      h('h4', 'From the last shift'),
+      h('p', 'Each of these has to be sorted before this shift can be signed. ', again),
+      earlier.advances.map((a) => h('div.till-change', { dataset: { po: a.name } },
         h('div.till-change-text',
-          h('div', h('b', c.name), ` ${c.vendor ? `${c.vendor} · ` : ''}total now ${cedis(c.total)}, was ${cedis(c.paidSoFar)}`),
-          h('div.till-change-sub',
-            c.paidSoFar === c.first.paid ? `${cedis(c.paidSoFar)} paid on ${when(c)}. ` : `${cedis(c.paidSoFar)} paid so far, first on ${when(c)}. `,
-            h('b', { class: c.amount > 0 ? 'till-up' : 'till-down' }, c.amount > 0 ? `${cedis(c.amount)} more to pay.` : `${cedis(c.amount)} change due back.`))),
+          h('div', h('b', a.name), ` ${a.vendor ? `${a.vendor} · ` : ''}advance of ${cedis(a.paid)}`),
+          h('div.till-change-sub', `Given out on ${when(a.first)}. `, h('b', ADV_TEXT[a.status] || ''))),
+        h('div.till-change-act', h(`span.till-chip.${a.status === 'report' ? 'warn' : 'bad'}`, ADV_CHIP[a.status] || 'Waiting')))),
+      changes.map((c) => h('div.till-change', { dataset: { po: c.name } },
+        h('div.till-change-text',
+          h('div', h('b', c.name), ` ${c.vendor ? `${c.vendor} · ` : ''}bought for ${cedis(c.total)}, ${cedis(c.paidSoFar)} paid from the drawer`),
+          h('div.till-change-sub', `${c.advance ? 'Advanced' : 'Paid'} on ${when(c.first)}. `,
+            h('b', { class: c.amount > 0 ? 'till-up' : 'till-down' },
+              c.amount < 0 ? `Put ${cedis(c.amount)} in the drawer.` : `${cedis(c.amount)} more paid from the drawer.`))),
         h('div.till-change-act',
+          h(`span.till-chip.${c.amount < 0 ? 'ok' : 'warn'}`, c.amount < 0 ? 'Refund' : 'Deficit'),
           h('button.btn.btn-primary', {
             type: 'button',
             onclick: () => {
               f.expenses.push({ po: c.name, look: { name: c.name, vendor: c.vendor, total: c.total, state: c.state, counted: true, confirmed: true, amount: c.amount, paidSoFar: c.paidSoFar, claimed: c.first } });
               save(); paint();
             },
-          }, c.amount > 0 ? `I paid the ${cedis(c.amount)}` : `The ${cedis(c.amount)} came back`),
-          h('button.btn', {
+          }, 'Done'),
+          c.amount > 0 ? h('button.btn', {
             type: 'button',
             onclick: () => { f.notMine = [...(f.notMine || []), c.name]; save(); paint(); },
-          }, 'Not on my shift')))));
+          }, 'Not on my shift') : null))));
   }
 
   /** One box for one PO number or several: each is looked up and joins the list. */
@@ -245,8 +281,9 @@ export async function renderAttMyTill() {
           f.expenses.push({ po: one.po, look });
         }
         box.value = '';
-        const notYet = found.filter((x) => unapproved(x)).length;
-        if (notYet) toast(`${notYet} not approved in Odoo yet: get ${notYet === 1 ? 'it' : 'them'} approved first.`, 'bad');
+        const notYet = found.filter((x) => unapproved(x));
+        if (notYet.length && notYet.every((x) => x.state === 'report')) toast(`${notYet.length === 1 ? 'It is' : 'They are'} approved in Odoo: report ${notYet.length === 1 ? 'it' : 'them'} on the expense form first.`, 'bad');
+        else if (notYet.length) toast(`${notYet.length} cannot go on the report: see the list.`, 'bad');
       } catch (err) { toast(err.message, 'bad'); }
       save();
       paint();
@@ -257,10 +294,10 @@ export async function renderAttMyTill() {
       h('p.till-hint', f.expenses.length ? 'Separate several with commas or spaces. Enter works too.' : 'No expenses on this shift? Leave it empty.'));
   }
 
-  /** Why a PO found in Odoo cannot be used yet, or null when it can. */
+  /** Why a PO found in Odoo stops the report being signed, or null when it does not. */
   function unapproved(L) {
     if (!L?.name || L.counted || ['claimed', 'missing', 'unchecked', 'confirmed'].includes(L.state)) return null;
-    return ({ draft: 'still a request for quotation', sent: 'still a request for quotation', 'to approve': 'waiting for approval', cancel: 'cancelled' })[L.state] || 'not approved';
+    return ({ report: 'not on the expense form yet', cancel: 'cancelled in Odoo' })[L.state] || 'not approved in Odoo';
   }
 
   /** One PO on the list: what Odoo says about it, and whether it counts. */
@@ -284,6 +321,10 @@ export async function renderAttMyTill() {
     } else if (L.counted && (L.state === 'topup' || L.state === 'change')) {
       chip = h('span.till-chip.ok', '✓ Counted');
       who = L.state === 'topup' ? `Price went up from ${cedis(L.paidSoFar)} to ${cedis(L.total)}` : `Price went down from ${cedis(L.paidSoFar)} to ${cedis(L.total)}`;
+    } else if (L.counted && L.state === 'advance') {
+      chip = h('span.till-chip.warn', 'Advance');
+      why = h('span.till-why.warn', 'Still waiting for approval in Odoo, so it goes in as an advance in your name. '
+        + 'Once bought, get it approved and report it on the expense form: the next shift cannot close until then.');
     } else if (L.counted) {
       chip = h('span.till-chip.ok', '✓ Counted');
     } else if (L.state === 'claimed') {
@@ -295,10 +336,13 @@ export async function renderAttMyTill() {
       chip = h('span.till-chip.warn', 'Not found');
       who = 'Not in Odoo';
       why = h('span.till-why.warn', 'Check the number, or remove it.');
+    } else if (L.state === 'report') {
+      chip = h('span.till-chip.bad', 'Report on form');
+      why = h('span.till-why.bad', 'Approved in Odoo. ', h('strong', 'Report it on the expense form first'), ', then ', recheck,
+        '. You cannot close your shift with it until then.');
     } else if (unapproved(L)) {
-      chip = h('span.till-chip.bad', 'Not approved');
-      why = h('span.till-why.bad', `${unapproved(L).replace(/^./, (c) => c.toUpperCase())} in Odoo. `,
-        h('strong', 'Get it approved first'), ', then ', recheck, '. You cannot close your shift with it until then.');
+      chip = h('span.till-chip.bad', L.state === 'cancel' ? 'Cancelled' : 'Not approved');
+      why = h('span.till-why.bad', `${unapproved(L).replace(/^./, (c) => c.toUpperCase())}. Remove it from the report.`);
     } else if (L.state === 'unchecked') {
       chip = h('span.till-chip.warn', 'Not checked');
       why = h('span.till-why.warn', 'Odoo could not be reached: ', recheck, '.');
@@ -308,7 +352,7 @@ export async function renderAttMyTill() {
     }
     return h('div.till-poline', { dataset: { po: L?.name || e.po } },
       h('b.till-poname', L?.name || e.po,
-        L?.state === 'topup' ? h('span.till-potag', 'Top-up') : L?.state === 'change' ? h('span.till-potag', 'Change back') : null),
+        L?.state === 'topup' ? h('span.till-potag', 'Deficit') : L?.state === 'change' ? h('span.till-potag', 'Refund') : null),
       h('span.till-povendor', who),
       h('b.till-poamt', L?.amount != null ? signedCedis(L.amount) : L?.total != null ? cedis(L.total) : '—'),
       h('span.till-postate', chip,
@@ -324,8 +368,11 @@ export async function renderAttMyTill() {
     if (f.toSafe === null) out.push('whether cash went to the safe');
     else if (f.toSafe && f.envelopes.some((e) => !/^\d+$/.test(e.no) || !(toMinor(e.amount) > 0))) out.push('each envelope number and amount');
     if (f.expenses.some((e) => String(e.po).trim() && !e.look)) out.push('each PO checked in Odoo');
-    const waiting = f.expenses.filter((e) => String(e.po).trim() && unapproved(e.look)).map((e) => e.look.name);
-    if (waiting.length) out.push(`${waiting.join(', ')} approved in Odoo first`);
+    for (const e of f.expenses.filter((x) => String(x.po).trim() && unapproved(x.look))) {
+      out.push(e.look.state === 'report' ? `${e.look.name} reported on the expense form` : `${e.look.name} removed (${unapproved(e.look)})`);
+    }
+    for (const a of earlier.advances) out.push(`${a.name} ${a.status === 'approve' ? 'approved in Odoo' : a.status === 'report' ? 'reported on the expense form' : 'closed by an admin'}`);
+    for (const c of openChanges()) out.push(c.amount < 0 ? `${c.name} refund in the drawer (Done)` : `${c.name} deficit: Done or Not on my shift`);
     for (const r of data.setup.rentals) {
       const v = f.rentals[r.id] || {};
       if (!/^\d+$/.test(String(v.start ?? '').trim()) || !/^\d+$/.test(String(v.end ?? '').trim())) out.push(`the ${r.label.toLowerCase()} count`);
@@ -361,6 +408,7 @@ export async function renderAttMyTill() {
       toSafe: f.toSafe,
       envelopes: f.toSafe ? f.envelopes : [],
       expenses: f.expenses.filter((e) => String(e.po).trim()).map((e) => ({ po: e.po })),
+      notMine: f.notMine || [],
       rentals: f.rentals,
       checks: data.setup.checks.map((c) => ({ id: c.id, ...f.checks[c.id] })),
       note: f.note,

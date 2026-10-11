@@ -343,7 +343,7 @@ export const api = {
   myAdvances: () => request('/api/me/advances'),
   myTill: () => request('/api/me/till'),
   tillPo: (body) => request('/api/me/till/po', { method: 'POST', body }),
-  tillPoChanges: () => request('/api/me/till/po-changes'),
+  tillPoChanges: ({ day, slot, fresh } = {}) => request(`/api/me/till/po-changes?day=${encodeURIComponent(day || '')}&slot=${encodeURIComponent(slot || '')}${fresh ? '&fresh=1' : ''}`),
   closeTill: (body) => request('/api/me/till', { method: 'POST', body }),
   tillIssues: () => request('/api/me/till/issues'),
   tillAnswer: (body) => request('/api/me/till/answer', { method: 'POST', body }),
