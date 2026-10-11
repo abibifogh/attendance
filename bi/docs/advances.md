@@ -46,6 +46,11 @@ GH₵ X*, *Refund not in ASSD* (the shift that took it in shows no surplus),
 *Cancelled in Odoo*, *Closed* or *Settled*. Open a line for what Odoo, the
 form and the drawers each say.
 
+Below the list, **On the expense form, not paid from a drawer** lists form
+entries whose PO no HIVE shift paid (the safe, a transfer, a supplier
+account). They are never chased. An admin ticks the ones looked at and
+**Clears** them (or **Clear all listed**); **Undo** puts them back.
+
 ## Connecting the expense form, once
 
 1. Make up a long random password (a password manager can make one). This is
