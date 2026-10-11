@@ -70,7 +70,7 @@ export async function renderAccounts(root) {
                   account.hasPassword ? '' : ' · no password set yet')),
               ...systems.map((system) => h('td', { style: { textAlign: 'center' } },
                 // Insight has two ways in: everything, or Shifts as a
-                // supervisor, with the parts set under Shifts → Till settings.
+                // supervisor, with the parts set under Shifts → Settings.
                 system.id === 'insight' && !account.isOwner
                   ? h('select', {
                     title: `${account.name} → Insight`,
@@ -156,7 +156,7 @@ export async function renderAccounts(root) {
     const LEVELS = [
       ['owner', 'Owner', 'Everything, every system, and manages accounts'],
       ['admin', 'Admin', 'Every report and all of Shifts'],
-      ['supervisor', 'Supervisor', 'Shifts only, as set in Till settings'],
+      ['supervisor', 'Supervisor', 'Shifts only, as set in Shifts → Settings'],
       ['uploader', 'Uploads only', 'Loads the ASSD journal, bank statement and card report. Sees nothing else'],
       ['none', 'No reports', 'The hub only: a way into other systems'],
     ];
@@ -350,7 +350,7 @@ export async function renderAccounts(root) {
 
     // The level, chosen in one place when somebody is added rather than
     // ticked in the grid afterwards. Owner and admin see everything here; a
-    // supervisor sees Shifts only, with the parts set under Till settings.
+    // supervisor sees Shifts only, with the parts set under Shifts → Settings.
     const insightGrant = account?.access?.find((a) => a.systemId === 'insight');
     const current = account?.isOwner ? 'owner'
       : insightGrant ? (['supervisor', 'uploader'].includes(insightGrant.role) ? insightGrant.role : 'admin')
@@ -358,7 +358,7 @@ export async function renderAccounts(root) {
     const LEVELS = [
       ['owner', 'Owner', 'Everything, every system, and can manage these accounts.'],
       ['admin', 'Admin', 'Every report and all of Shifts, including the till settings. Cannot manage accounts or Setup.'],
-      ['supervisor', 'Supervisor', 'Shifts only, with the parts an admin chooses under Shifts → Till settings → Supervisor access.'],
+      ['supervisor', 'Supervisor', 'Shifts only, with the parts an admin chooses under Shifts → Settings → Who sees what.'],
       ['uploader', 'Uploads only', 'Loads the ASSD journal, the bank statement and the card terminal report. Sees none of the numbers, and nothing else in Insight.'],
       ['none', 'No reports', 'Only the hub: a way into the other systems ticked below.'],
     ];

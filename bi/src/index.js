@@ -90,7 +90,7 @@ const ROUTES = [
     const checked = await cashpo.refreshCashPos(env).catch((err) => ({ ok: false, error: String(err?.message || err) }));
     return { ...saved, checked };
   }],
-  // Advances under To-do: an admin, or whoever an admin gave "Advances".
+  // Advances in the Inbox: an admin, or whoever an admin gave "Advances".
   ['GET', '/api/advances', 'shifts', (env, ctx) => advances.advancesView(env, ctx.account)],
   ['POST', '/api/advances/decide', 'shifts', (env, ctx) => advances.decide(env, ctx.body, ctx.account)],
   ['POST', '/api/advances/clear', 'shifts', (env, ctx) => advances.clearElsewhere(env, ctx.body, ctx.account)],

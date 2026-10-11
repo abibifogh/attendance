@@ -191,7 +191,7 @@ test('a PO answers cash that left the drawer, once', async () => {
   const key = 'unexplained:2026-10-07:afternoon';
   const env = { INSIGHT: insight({ issues: [{ key, kind: 'unexplained', label: 'Cash left the drawer with no envelope or PO', day: '2026-10-07', slot: 'afternoon', amount: -18000 }] }) };
   await assert.rejects(answer(ctx(db, AMA, { env, body: { key: 'drawer:x', how: 'explain', text: 'hm' }, path: '/api/me/till/answer' })), /not on your list/);
-  await assert.rejects(answer(ctx(db, AMA, { env, body: { key, how: 'po', po: '420' }, path: '/api/me/till/answer' })), /draft in Odoo|not confirmed/);
+  await assert.rejects(answer(ctx(db, AMA, { env, body: { key, how: 'po', po: '420' }, path: '/api/me/till/answer' })), /draft in Odoo|not approved/);
   await answer(ctx(db, AMA, { env, body: { key, how: 'po', po: '415' }, path: '/api/me/till/answer' }));
   assert.deepEqual({ ...raw.prepare('SELECT po, via, day, slot, paid FROM till_po').get() }, { po: 'P00415', via: 'answer', day: '2026-10-07', slot: 'afternoon', paid: 18000 });
   await assert.rejects(answer(ctx(db, AMA, { env, body: { key, how: 'po', po: '415' }, path: '/api/me/till/answer' })), /already been claimed/);

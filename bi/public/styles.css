@@ -1200,3 +1200,69 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .adv-erow input { margin: 0; }
 .adv-undo { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
 .adv-undo > .banner { flex: 1 1 16rem; margin: 0; }
+
+/* Shifts: Day / Week / Month, and Back from a shift */
+.sh-modes { display: inline-flex; border: 1px solid var(--sh-line); border-radius: 9px; overflow: hidden; }
+.sh-modes button { font: inherit; font-size: .86rem; border: 0; border-right: 1px solid var(--sh-line); background: var(--surface); color: var(--ink-2); padding: .38rem .8rem; cursor: pointer; }
+.sh-modes button:last-child { border-right: 0; }
+.sh-modes button[aria-pressed='true'] { background: var(--ink); color: var(--plane); }
+.sh-back { justify-self: start; font: inherit; font-size: .9rem; font-weight: 600; color: var(--series-1); background: none; border: 0; padding: .2rem 0; cursor: pointer; }
+.sh-back:hover { text-decoration: underline; }
+
+/* The Inbox: kind chips, then the list and the one picked */
+.ib-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
+.ib-refresh { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-left: auto; }
+.ib-give { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; padding: .5rem .8rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.ib-split { display: grid; grid-template-columns: minmax(0, 25rem) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.ib-list { padding: .35rem; display: grid; gap: 2px; max-height: 72vh; overflow-y: auto; position: sticky; top: 4.5rem; }
+.ib-row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: .6rem; align-items: center; padding: .55rem .65rem; border-radius: 9px; cursor: pointer; }
+.ib-row:hover { background: var(--surface-2); }
+.ib-row.on { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--series-1); }
+.ib-row:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
+.ib-row.done { opacity: .6; }
+.ib-row input { margin: 0; }
+.ib-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); justify-self: center; }
+.ib-dot.short { background: var(--sh-bad); } .ib-dot.over { background: var(--sh-warn); } .ib-dot.ok { background: var(--sh-good); }
+.ib-t { display: grid; min-width: 0; }
+.ib-t b { font-size: .88rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ib-t small { color: var(--muted); font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ib-r { display: grid; justify-items: end; gap: .15rem; font-size: .86rem; }
+.ib-r .sh-chip { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
+.ib-detail { display: grid; gap: .6rem; min-width: 0; }
+.ib-detail > .card, .ib-detail > article { margin: 0; }
+.ib-detail .td-detail { position: static; }
+.ib-step { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; }
+.ib-step .small { margin-right: auto; color: var(--ink-2); }
+@media (max-width: 760px) {
+  .ib-split { grid-template-columns: minmax(0, 1fr); }
+  .ib-list { position: static; max-height: 45vh; }
+  .ib-refresh { margin-left: 0; }
+}
+.adv-dhead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .4rem .8rem; }
+.adv-dhead h2 { margin: 0; font-size: 1.05rem; }
+.adv-detail.card { padding: 1rem 1.1rem; }
+
+/* A shift's closing report: HIVE beside ASSD */
+.tl-vs { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.tl-vs th, .tl-vs td { text-align: left; padding: .45rem .55rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+.tl-vs th { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); background: var(--surface-2); }
+.tl-vs td:first-child { color: var(--ink-2); white-space: nowrap; }
+.tl-act { display: inline-flex; flex-wrap: wrap; gap: .4rem; }
+.sh-peoplelists { display: grid; gap: 1rem; }
+
+/* Settings: who sees what, and the limits */
+.tl-stack { display: grid; gap: 1rem; }
+.tl-people { display: grid; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.tl-person { display: grid; gap: .6rem; padding: .7rem .9rem; border-top: 1px solid var(--border); }
+.tl-person:first-child { border-top: 0; }
+.tl-personrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
+.tl-personrow select { min-width: 14rem; max-width: 100%; }
+.tl-presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .8rem; margin-top: 1rem; }
+.tl-presets > div { background: var(--surface-2); border-radius: 10px; padding: .7rem .8rem; }
+.tl-presets p { margin: .25rem 0 0; }
+.tl-limits { display: grid; gap: 0; }
+.tl-limit { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem 1rem; padding: .7rem 0; border-bottom: 1px solid var(--border); }
+.tl-limit > div { flex: 1 1 18rem; min-width: 0; }
+.tl-limit label { white-space: nowrap; }
+.tl-limits .tl-actions { padding-top: .8rem; }
+.tl-person .sh-link { justify-self: start; }

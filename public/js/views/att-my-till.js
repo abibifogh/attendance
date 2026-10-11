@@ -128,7 +128,7 @@ export async function renderAttMyTill() {
       h('dl.till-dl',
         h('dt', 'Drawer'), h('dd', cedis(r.cash)),
         h('dt', 'Safe'), h('dd', envelopes),
-        h('dt', 'Expenses'), h('dd', r.expenses.length ? r.expenses.map((e) => `${e.name || e.po || 'no PO'}${e.kind === 'topup' ? ' top-up' : e.kind === 'change' ? ' change back' : ''} ${signedCedis(e.paid)}${e.counted ? '' : ' (not counted)'}`).join(', ') : 'none'),
+        h('dt', 'Expenses'), h('dd', r.expenses.length ? r.expenses.map((e) => `${e.name || e.po || 'no PO'}${e.kind === 'topup' ? ' deficit' : e.kind === 'change' ? ' refund' : e.advance ? ' advance' : ''} ${signedCedis(e.paid)}${e.counted ? '' : ' (not counted)'}`).join(', ') : 'none'),
         h('dt', 'Opening float'), h('dd', r.floatOk ? 'Correct' : `Out by ${signed(r.floatDiff)}`)),
       h('p.till-hint', 'If something in it was wrong, ask a supervisor to reopen it. Anything that does not agree will appear under To sort out.'));
   }
@@ -347,8 +347,8 @@ export async function renderAttMyTill() {
       chip = h('span.till-chip.warn', 'Not checked');
       why = h('span.till-why.warn', 'Odoo could not be reached: ', recheck, '.');
     } else {
-      chip = h('span.till-chip.warn', 'Not confirmed');
-      why = h('span.till-why.warn', `It is ${L.state} in Odoo. It counts once it is confirmed: `, recheck, '.');
+      chip = h('span.till-chip.warn', 'Approve in Odoo');
+      why = h('span.till-why.warn', `It is ${L.state} in Odoo. It counts once it is approved: `, recheck, '.');
     }
     return h('div.till-poline', { dataset: { po: L?.name || e.po } },
       h('b.till-poname', L?.name || e.po,

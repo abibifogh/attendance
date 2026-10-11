@@ -739,10 +739,10 @@ export async function answer(ctx) {
     if (found.state === 'change') throw badRequest(`${found.name} came down in price: money is due back on it, which does not explain cash leaving the drawer.`);
     // An advance belongs on the shift that gave it out, where the next shift
     // can see it. Afterwards, only an approved PO answers.
-    if (found.state === 'advance') throw badRequest(`${found.name} is not confirmed in Odoo yet: it is still a requisition. Get it approved, then add it here.`);
+    if (found.state === 'advance') throw badRequest(`${found.name} is not approved in Odoo yet: it is still a requisition. Get it approved, then add it here.`);
     if (!found.counted) {
-      const why = { missing: 'is not in Odoo', claimed: 'has already been claimed', unconfirmed: 'is not confirmed in Odoo yet', report: 'is approved but not on the expense form yet: report it there first' }[found.state]
-        || `is ${found.state} in Odoo, not confirmed`;
+      const why = { missing: 'is not in Odoo', claimed: 'has already been claimed', unconfirmed: 'is not approved in Odoo yet', report: 'is approved but not on the expense form yet: report it there first' }[found.state]
+        || `is ${found.state} in Odoo, not approved`;
       throw badRequest(`${found.name || typed} ${why}.`);
     }
     // The PO's own total (or, for a top-up, what is left of it), never a typed amount.

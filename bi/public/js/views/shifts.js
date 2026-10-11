@@ -3,25 +3,23 @@ import { api } from '../api.js';
 import { table, banner } from './components.js';
 import { filesPanel } from './files.js';
 import { tillViews } from './till.js';
-import { todoPanel } from './todo.js';
-import { advancesPanel } from './advances.js';
+import { todoDetail, todoSub, todoTitle, todoAge } from './todo.js';
+import { advanceDetail, advanceStatus, advanceOpen, advanceWhen, elsewhereCard } from './advances.js';
 import { state } from '../app.js';
 
 /**
  * Shifts: the front desk's control sheet, done from the source records.
  *
- * Five views of one reconciliation:
- * - **Week**: every shift in the window as a coloured tile (green agrees,
- *   amber needs a look, red needs an answer), and card and MoMo recorded
- *   against what arrived, day by day.
- * - **Shift**: one shift's story. The drawer as a waterfall from the opening
- *   count to the closing count, how the shift was paid, card and MoMo placed
- *   on the clock, and where the cash went. A recount or the expense sheet's
- *   total previews as it is typed and is saved with one button.
- * - **Exceptions**: everything that does not agree, grouped by what went
- *   wrong, each answered with one tap.
- * - **People**: each person's shifts and how their drawer came out.
- * - **Files**: the three uploads, and which days each one covers.
+ * Six tabs:
+ * - **Shifts**: the day, week or month, every shift as a coloured tile
+ *   (green agrees, amber needs a look, red needs an answer). Tap one for its
+ *   story: the closing report from HIVE beside ASSD, the drawer as a
+ *   waterfall, how it was paid, card and MoMo on the clock, where the cash went.
+ * - **Inbox**: everything somebody has to act on, in one list: what does not
+ *   agree, staff answers, POs, advances, unpaid stays, and what waits for an
+ *   admin. Kind chips filter it; the one picked opens beside the list.
+ * - **People**: each person's shifts, how their drawer came out, and their list.
+ * - **Safe**, **Files** and **Settings**.
  *
  * Every state is shown as a word or an icon as well as a colour.
  */
@@ -73,18 +71,17 @@ const MODES = [
 ];
 const TONE = { good: 'var(--sh-good)', warn: 'var(--sh-warn)', bad: 'var(--sh-bad)', open: 'var(--sh-info)' };
 const SEVERITY_COLOUR = { critical: 'var(--sh-bad)', warning: 'var(--sh-warn)', info: 'var(--sh-info)' };
-const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['shift', 'Shift'], ['exceptions', 'Exceptions'], ['stays', 'Unpaid stays'], ['todo', 'To-do'], ['people', 'People'], ['safe', 'Safe'], ['files', 'Files'],
-  ['closing', 'Closing reports'], ['answers', 'Answers'], ['approvals', 'Approvals'], ['settings', 'Till settings']];
-// The tabs in four groups: a switch picks the group, pills its tabs.
-const GROUPS = [
-  ['overview', 'Overview', ['day', 'week', 'month', 'shift']],
-  ['act', 'To act on', ['exceptions', 'stays', 'todo', 'answers', 'approvals']],
-  ['cash', 'Cash', ['closing', 'safe']],
-  ['setup', 'Set up', ['people', 'files', 'settings']],
-];
-const groupOf = (id) => GROUPS.find(([, , ids]) => ids.includes(id))?.[0] || 'overview';
-const TILL = new Set(['closing', 'answers', 'approvals', 'settings']);
+const TABS = [['shifts', 'Shifts'], ['inbox', 'Inbox'], ['people', 'People'], ['safe', 'Safe'], ['files', 'Files'], ['settings', 'Settings']];
+/** Where a tab of the old screen now lives, for a saved choice from before. */
+const MOVED = {
+  day: 'shifts', week: 'shifts', month: 'shifts', shift: 'shifts', closing: 'shifts',
+  exceptions: 'inbox', stays: 'inbox', todo: 'inbox', answers: 'inbox', approvals: 'inbox',
+};
 const PERIODS = ['day', 'week', 'month'];
+/** The Inbox's kinds, in the order the chips show them. */
+const INBOX_KINDS = [['drawer', 'Drawer'], ['bank', 'Card & bank'], ['po', 'POs'], ['advance', 'Advances'], ['stay', 'Unpaid stays'], ['admin', 'Waiting for admin']];
+/** Exception groups about the drawer; the rest are card, MoMo and the bank. */
+const DRAWER_GROUPS = new Set(['drawer', 'unlabelled', 'laundry']);
 
 /** Day arithmetic on `YYYY-MM-DD`, at noon UTC so no clock change moves it. */
 const plusDays = (day, n) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -162,69 +159,75 @@ export async function renderShifts(root, { range }) {
   const may = (area, level = 1) => admin || (who.access?.[area] || 0) >= level;
   const canShifts = admin || ['day', 'week', 'month', 'money', 'bank', 'net', 'files', 'moves'].some((k) => may(k));
   const canFix = may('moves', 2) && may('money');
-  const allowed = {
-    day: may('day'), week: may('week'), month: may('month'), shift: may('money'), exceptions: may('bank'),
-    people: may('net'), stays: may('unpaid'), todo: admin || who.role === 'supervisor', safe: admin, files: may('files'), closing: may('reports'), answers: may('answers'), approvals: admin, settings: admin,
+  const periods = PERIODS.filter((p) => may(p));
+  // What each source of the Inbox needs.
+  const can = {
+    exceptions: may('bank'), stays: may('unpaid'), todo: admin || who.role === 'supervisor',
+    answers: may('answers'), advances: may('advances'), approvals: admin,
   };
-  const views = VIEWS.filter(([id]) => allowed[id]);
-  const periods = PERIODS.filter((p) => allowed[p]);
-  let section = store.get('section', periods.includes('week') ? 'week' : views[0]?.[0]);
-  if (!views.some(([id]) => id === section)) section = views[0]?.[0] || 'week';
+  const allowed = {
+    shifts: periods.length > 0 || may('money'),
+    inbox: Object.values(can).some(Boolean),
+    people: may('net') || may('answers'), safe: admin, files: may('files'), settings: admin,
+  };
+  const views = TABS.filter(([id]) => allowed[id]);
+  let section = store.get('section', 'shifts');
+  section = MOVED[section] || section;
+  if (!views.some(([id]) => id === section)) section = views[0]?.[0] || 'shifts';
   // Day, week or month, and the day it is anchored on. The anchor follows the
   // window chosen at the top of Insight until somebody moves it here.
-  let mode = store.get('mode', PERIODS.includes(section) ? section : 'week');
+  let mode = store.get('mode', 'week');
   if (!PERIODS.includes(mode) || (periods.length && !periods.includes(mode))) mode = periods.includes('week') ? 'week' : periods[0] || 'week';
   let anchor = store.get('anchorFor', '') === range.to ? store.get('anchor', range.to) : range.to;
   let period = periodOf(mode, anchor);
   let jumped = false;
   let currentId = store.get('shift', null);
-  let filter = 'all';
-  let showAnswered = false;
-  // The exception open on the right of the Exceptions inbox, and where it sat
-  // in the list, so answering one opens the one after it.
-  let exOpen = null;
-  let exAt = 0;
+  // A shift opened from the period: its story fills the Shifts tab until Back.
+  let detail = false;
   // Exceptions ticked to reconcile together.
   const picked = new Set();
-  // What is being typed and not yet saved, per shift: a recount, a sheet total.
+  // What is being typed and not yet saved, per shift: a recount.
   const drafts = {};
 
   const till = tillViews({ who, period: () => period, describeKey });
 
-  // The Exceptions inbox by keyboard: 1 to 8 answer the one open, J and K move.
+  // The Inbox: which kind is shown, which item is open, whether done ones show.
+  const inbox = { kind: 'all', open: null, at: 0, showDone: false, ticked: new Set(), elsewhere: {} };
+  // The Inbox by keyboard: J and K move, 1 to 8 answer an exception that is open.
   document.addEventListener('keydown', (e) => {
-    if (section !== 'exceptions' || !view.isConnected || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (section !== 'inbox' || !view.isConnected || e.metaKey || e.ctrlKey || e.altKey) return;
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
-    const box = view.querySelector('.sh-exdetail');
+    const box = view.querySelector('.ib-detail');
     if (!box) return;
     if (/^[1-8]$/.test(e.key)) {
       const b = box.querySelectorAll('.sh-answers button')[Number(e.key) - 1];
       if (b) { e.preventDefault(); b.click(); }
     } else if (e.key === 'j' || e.key === 'k') {
-      const b = box.querySelectorAll('.sh-exnav .btn')[e.key === 'j' ? 1 : 0];
+      const b = box.querySelectorAll('.ib-step .btn')[e.key === 'j' ? 1 : 0];
       if (b && !b.disabled) { e.preventDefault(); b.click(); }
     }
   });
 
-  // Stays not fully paid. They depend on the moment, not on the days on
-  // screen, so they are read once here and again whenever they are answered.
+  // What the Inbox reads besides the period's own exceptions: stays not
+  // fully paid, the money to-do, advances, and the till's answers and
+  // approvals. Read in the background on opening, so the tab shows its count,
+  // and again after anything in it is answered.
   let stays = null;
-  // Only the ones that are certain count: a stay booked before the journal
-  // loaded begins may have been paid then, out of sight.
-  const staysOpen = () => (stays ? [...stays.leaving, ...stays.left].filter((x) => !x.answer && !x.unsure).length : 0);
+  const sources = { todo: null, advances: null, till: null };
   function readStays() {
-    if (!allowed.stays) return Promise.resolve(null);
+    if (!can.stays) return Promise.resolve(null);
     return api('/stays').then((d) => { stays = d; return d; });
   }
-  readStays().then(() => { if (stays && staysOpen() && section !== 'stays') paint(); }).catch(() => {});
-
-  // The money to-do list: a supervisor's own open items, or what waits for an admin.
-  let todoBadge = 0;
-  function readTodo() {
-    if (!allowed.todo) return Promise.resolve(0);
-    return api('/todo').then((d) => { todoBadge = admin ? d.counts.answered : d.counts.open; return todoBadge; });
+  async function readInbox(force = false) {
+    const quiet = (p) => p.catch(() => null);
+    await Promise.all([
+      can.stays ? quiet(readStays()) : null,
+      can.todo ? quiet(api(`/todo${inbox.showDone ? '?closed=1' : ''}`).then((d) => { sources.todo = d; })) : null,
+      can.advances ? quiet(api('/advances').then((d) => { sources.advances = d; })) : null,
+      can.answers || can.approvals ? quiet(till.read(force).then((d) => { sources.till = d; })) : null,
+    ].filter(Boolean));
   }
-  readTodo().then((n) => { if (n && section !== 'todo') paint(); }).catch(() => {});
+  readInbox().then(() => { if (view.isConnected && data) paint(); }).catch(() => {});
 
   // Each period's data, once read, kept for as long as the screen is open, so
   // going back to a day, week or month already seen is instant. Anything that
@@ -284,19 +287,37 @@ export async function renderShifts(root, { range }) {
     readAhead();
   }
 
+  /**
+   * Go somewhere on the screen: a tab, a period ('day', 'week', 'month', with
+   * the day to anchor it on), or 'shift' with the one to open.
+   */
   async function go(next, shiftId = null, day = null) {
-    section = next;
     if (shiftId) currentId = shiftId;
-    store.set('section', section);
     if (currentId) store.set('shift', currentId);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    if (PERIODS.includes(next) && periods.includes(next) && (next !== mode || (day && day !== anchor))) {
-      mode = next;
-      if (day) anchor = day;
-      remember();
-      return load(null, { cached: true });
+    if (next === 'shift') {
+      section = 'shifts';
+      detail = true;
+      store.set('section', section);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return paint();
     }
-    paint();
+    if (PERIODS.includes(next)) {
+      section = 'shifts';
+      detail = false;
+      store.set('section', section);
+      if (periods.includes(next) && (next !== mode || (day && day !== anchor))) {
+        mode = next;
+        if (day) anchor = day;
+        remember();
+        return load(null, { cached: true });
+      }
+      return paint();
+    }
+    section = next;
+    if (next === 'shifts') detail = false;
+    store.set('section', section);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return paint();
   }
 
   function remember() {
@@ -367,85 +388,46 @@ export async function renderShifts(root, { range }) {
   // ------------------------------------------------------------- frame --
 
   /** The number on a tab: what waits in it. */
-  const badgeOf = (id) => (id === 'exceptions' ? waiting().length : id === 'stays' ? staysOpen() : id === 'todo' ? todoBadge : 0);
+  const badgeOf = (id) => (id === 'inbox' ? inboxItems().filter((x) => x.counts).length : 0);
 
   function paint(notice = null) {
     const has = shifts.length > 0;
     const v = h('div.sh-view');
     const people = new Set(shifts.map((s) => s.user)).size;
-    const group = groupOf(section);
-    // Coming back to a group opens the tab last used in it.
-    store.set(`in-${group}`, section);
-    const groups = GROUPS.map(([id, label, ids]) => [id, label, views.filter(([v_]) => ids.includes(v_))]).filter(([, , vs]) => vs.length);
-    const [, , tabs] = groups.find(([id]) => id === group) || groups[0] || [null, null, []];
     mount(view,
       notice,
       h('div.sh-head',
         h('h1', 'Shifts'),
-        groups.length > 1 ? h('div.sh-groups', { role: 'tablist', 'aria-label': 'Parts of Shifts' }, groups.map(([id, label, vs]) => {
-          const n = vs.reduce((t, [v_]) => t + badgeOf(v_), 0);
-          return h('button', {
-            type: 'button', role: 'tab', 'aria-selected': String(id === group), dataset: { group: id },
-            onclick: () => { if (id !== group) go(store.get(`in-${id}`, '') && vs.some(([v_]) => v_ === store.get(`in-${id}`, '')) ? store.get(`in-${id}`, '') : vs[0][0]); },
-          }, label, n ? h('span.sh-badge', String(n)) : null);
-        })) : null,
         h('span.sh-count', has ? `${shifts.length} shift${shifts.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'}` : 'No shifts loaded for these days')),
       h('div.sh-nav',
-        h('div.sh-tabs', { role: 'tablist' }, tabs.map(([id, label]) => h('button', {
+        views.length > 1 ? h('div.sh-groups', { role: 'tablist', 'aria-label': 'Parts of Shifts' }, views.map(([id, label]) => h('button', {
           type: 'button', role: 'tab', 'aria-selected': String(section === id), dataset: { tab: id }, onclick: () => go(id),
-        }, label, badgeOf(id) ? h('span.sh-badge', String(badgeOf(id))) : null))),
+        }, label, badgeOf(id) ? h('span.sh-badge', String(badgeOf(id))) : null))) : null,
         h('span.sh-rule', { 'aria-hidden': 'true' }),
-        periodBar(),
+        section === 'shifts' && !detail && periods.length > 1 ? h('div.sh-modes', { role: 'group', 'aria-label': 'Day, week or month' },
+          periods.map((m) => h('button', { type: 'button', 'aria-pressed': String(mode === m), onclick: () => go(m) }, m[0].toUpperCase() + m.slice(1)))) : null,
+        ['settings', 'files'].includes(section) || (section === 'shifts' && detail) ? null : periodBar(),
         data.journalEndsInside ? h('details.sh-jnote',
           h('summary', `Journal ends inside ${shortDay(data.journalEndsInside.day)} ${SLOT[data.journalEndsInside.slot].label.toLowerCase()}`),
           h('p', `The journal loaded so far stops inside the ${SLOT[data.journalEndsInside.slot].label.toLowerCase()} shift of `
             + `${shortDay(data.journalEndsInside.day)}, so that shift is shown as far as it goes. Export ASSD one day past the last shift you want to read.`)) : null),
       // Never for a supervisor: the totals are the owner's view of the business.
-      has && admin && data.totals ? kpis() : null,
+      has && admin && data.totals && section === 'shifts' && !detail ? kpis() : null,
       v);
-    if (TILL.has(section)) {
-      Promise.resolve(till[section]?.(v)).catch((err) => mount(v, banner('problem', err.message)));
+    if (section === 'settings') {
+      Promise.resolve(till.settings(v)).catch((err) => mount(v, banner('problem', err.message)));
       return undefined;
     }
-    if (section === 'stays') {
-      staysView(v).catch((err) => mount(v, banner('problem', err.message)));
-      return undefined;
-    }
-    if (section === 'todo') {
-      // An answer changes the count on the tab, and nothing else around it.
-      const badge = () => readTodo().then(() => {
-        const tab = view.querySelector('.sh-tabs [data-tab="todo"]');
-        const grp = view.querySelector('.sh-groups [data-group="act"]');
-        const n = GROUPS.find(([id]) => id === 'act')[2].filter((id) => allowed[id]).reduce((t, id) => t + badgeOf(id), 0);
-        for (const [el, count] of [[tab, todoBadge], [grp, n]]) {
-          if (!el) continue;
-          el.querySelector('.sh-badge')?.remove();
-          if (count) el.append(h('span.sh-badge', String(count)));
-        }
-      }).catch(() => {});
-      // Advances sit beside the money to-do, for whoever was given them.
-      const subs = may('advances') ? [['todo', 'Money to-do'], ['advances', 'Advances']] : [['todo', 'Money to-do']];
-      let sub = store.get('todo-sub', 'todo');
-      if (!subs.some(([id]) => id === sub)) sub = 'todo';
-      const inner = h('div');
-      const openSub = () => {
-        mount(v,
-          subs.length > 1 ? h('div.td-pills.adv-switch', subs.map(([id, label]) => h('button', {
-            type: 'button', 'aria-pressed': String(sub === id), onclick: () => { sub = id; store.set('todo-sub', id); openSub(); },
-          }, label))) : null,
-          inner);
-        (sub === 'advances' ? advancesPanel(inner) : todoPanel(inner, { admin, onChange: badge }))
-          .catch((err) => mount(inner, banner('problem', err.message)));
-      };
-      openSub();
-      return undefined;
-    }
+    if (section === 'inbox') return inboxView(v);
     if (section === 'safe') {
       safeView(v).catch((err) => mount(v, banner('problem', err.message)));
       return undefined;
     }
-    if (!has && section !== 'files') return mount(v, nothingYet());
-    ({ day: dayView, week, month: monthView, shift: shiftView, exceptions: exceptionsView, people: peopleView, files: filesView })[section](v);
+    if (section === 'files') return filesView(v);
+    if (!has) return mount(v, nothingYet());
+    if (section === 'people') return peopleView(v);
+    if (detail) return shiftView(v);
+    ({ day: dayView, week, month: monthView })[mode](v);
     return undefined;
   }
 
@@ -484,7 +466,7 @@ export async function renderShifts(root, { range }) {
         h('span.sh-meter', h('b', { style: `width:${t.received ? Math.min(100, (t.card / Math.max(t.card, t.received)) * 100) : 0}%;background:var(--sh-card)` }))),
       tile('people', 'var(--sh-warn)', 'Drawer variance', t.counted ? signed(t.variance) : '—',
         t.counted ? `${t.counted} of ${t.shifts} shifts with an opening and closing count` : 'No counts in these days yet'),
-      tile('exceptions', 'var(--sh-bad)', 'Waiting for an answer', String(open),
+      tile('inbox', 'var(--sh-bad)', 'Waiting for an answer', String(open),
         open ? 'Differences somebody has to explain' : 'Everything answered or explained', null, open ? 'var(--sh-bad-ink)' : 'var(--sh-good-ink)'));
   }
 
@@ -493,73 +475,51 @@ export async function renderShifts(root, { range }) {
   const STAY_ANSWERS = ['Paid, not in the journal yet', 'Guest is paying now', 'Company or agent pays', 'Guest owes, chasing', 'Written off', 'Not a problem'];
 
   /**
-   * Guests leaving in the next 24 hours who still owe, and guests who left
-   * owing. Each one can be answered; a supervisor's answer waits for an admin.
+   * One stay not fully paid: a guest leaving in the next 24 hours who still
+   * owes, or one who left owing. Answered here; a supervisor's answer waits
+   * for an admin.
    */
-  async function staysView(v) {
-    mount(v, h('p.muted', 'Reading the reservations…'));
-    const d = await readStays();
-    const nights = (x) => `${x.nights} night${x.nights === 1 ? '' : 's'}, ${dayText(x.firstNight)} to ${dayText(x.checkout)}`;
-    const methods = (x) => Object.entries(x.byMethod || {}).filter(([, a]) => a).map(([m, a]) => `${({ cash: 'cash', card: 'card', prepaid: 'prepaid', other: 'other' })[m] || m} ${money(a)}`).join(' · ');
-    const row = (x, tone) => {
-      const note = h('input', { type: 'text', maxlength: '600', placeholder: 'What happened (optional)', value: x.answer?.note || '' });
-      const said = h('span.small');
-      const answer = async (value) => {
-        said.textContent = 'Saving…';
-        try {
-          const out = await api('/shifts/answer', { method: 'POST', body: { key: x.key, answer: value, note: value ? note.value : '' } });
-          await staysView(v);
-          paint();
-          if (out?.pending) mount(v.querySelector('.sh-staysaid') || v, banner('good', 'Sent to an admin to approve.'));
-        } catch (err) { said.textContent = err.message; }
-      };
-      return h(`article.sh-ex.${tone}${x.answer ? '.done' : ''}`,
-        h('div.hd', h('span.sq', '₵'), h('h3', `Reservation ${x.ref || x.seq}`), h('span.amt.num', data.redacted || d.redacted ? 'owes' : money(x.balance))),
-        h('div.sh-meta',
-          h('span', x.rooms.join(', ') || 'Room'),
-          h('span', nights(x)),
-          h('span', `check-out ${dayText(x.checkout)} ${x.checkoutAt.slice(11)}`),
-          x.bookedBy ? h('span', `booked by ${nameOf(x.bookedBy)}`) : null),
-        d.redacted ? null : h('div.sh-staymoney',
-          h('div', h('small', 'Charged'), h('b', whole(x.charged))),
-          h('div', h('small', 'Paid'), h('b', whole(x.paid))),
-          h('div.owes', h('small', 'Owes'), h('b', whole(x.balance)))),
-        methods(x) ? h('p.small', `Paid so far: ${methods(x)}`) : h('p.small', 'No payment in the journal loaded.'),
-        x.unsure ? h('p.small.muted', `Booked ${dayText(x.bookedOn)}, before the first day of journal loaded (${dayText(d.journal.from)}). A payment taken then would not show: check ASSD.`) : null,
-        x.proposed ? h('div.sh-waiting',
-          h('span', `⏳ Waiting for an admin: ${x.proposed.answer}${x.proposed.note ? `: ${x.proposed.note}` : ''} (${x.proposed.by})`),
-          admin ? [
-            h('button.btn.primary', { type: 'button', onclick: async () => { await api('/till/approve', { method: 'POST', body: { answer: x.key, ok: true } }); await staysView(v); paint(); } }, 'Approve'),
-            h('button.btn', { type: 'button', onclick: async () => { await api('/till/approve', { method: 'POST', body: { answer: x.key, ok: false } }); await staysView(v); paint(); } }, 'Reject'),
-          ] : null)
-          : x.answer ? h('div.sh-done',
-            h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''} (${x.answer.by})`),
-            may('unpaid', 2) ? h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change') : null)
-            : may('unpaid', 2) ? h('div.sh-answers', note, STAY_ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said) : null);
+  function stayCard(x, after) {
+    const d = stays || {};
+    const tone = x.unsure ? 'info' : x.left ? 'bad' : 'warn';
+    const nights = `${x.nights} night${x.nights === 1 ? '' : 's'}, ${dayText(x.firstNight)} to ${dayText(x.checkout)}`;
+    const methods = Object.entries(x.byMethod || {}).filter(([, a]) => a).map(([m, a]) => `${({ cash: 'cash', card: 'card', prepaid: 'prepaid', other: 'other' })[m] || m} ${money(a)}`).join(' · ');
+    const note = h('input', { type: 'text', maxlength: '600', placeholder: 'What happened (optional)', value: x.answer?.note || '' });
+    const said = h('span.small');
+    const answer = async (value) => {
+      said.textContent = 'Saving…';
+      try {
+        const out = await api('/shifts/answer', { method: 'POST', body: { key: x.key, answer: value, note: value ? note.value : '' } });
+        await after(out?.pending ? 'Sent to an admin to approve.' : 'Saved.');
+      } catch (err) { said.textContent = err.message; }
     };
-    const open = (list) => list.filter((x) => !x.answer).length;
-    const sure = (list) => list.filter((x) => !x.unsure);
-    const unsure = [...d.leaving, ...d.left].filter((x) => x.unsure);
-    mount(v,
-      h('div.sh-staysaid'),
-      !d.journal ? banner('warning', 'No ASSD journal loaded yet. Load it under Files.') : null,
-      h('section.card',
-        h('div.sh-cardhead', h('h2', `Leaving in the next 24 hours, not fully paid (${open(sure(d.leaving))})`),
-          h('p.sh-sub', `Check-out is taken as ${d.checkoutTime} on the day after the last night. Collect before they go.`)),
-        sure(d.leaving).length ? h('div.sh-exgrid', sure(d.leaving).map((x) => row(x, 'warn')))
-          : h('p.muted', d.journal ? 'Nobody leaving in the next 24 hours owes anything, in the journal loaded.' : '')),
-      h('section.card',
-        h('div.sh-cardhead', h('h2', `Checked out, still owing (${open(sure(d.left))})`),
-          h('p.sh-sub', 'Guests whose last night has passed and whose payments do not cover what they were charged. The last 60 days.')),
-        sure(d.left).length ? h('div.sh-exgrid', sure(d.left).map((x) => row(x, 'bad')))
-          : h('p.muted', d.journal ? 'Nobody has left owing, in the journal loaded.' : '')),
-      unsure.length ? h('details.card.sh-unsure',
-        h('summary', h('b', `Check these in ASSD (${unsure.length})`),
-          h('span.sh-sub', ` Booked before ${dayText(d.journal.from)}, the first day of journal loaded. They may have paid then. Load earlier journals and they sort themselves out.`)),
-        h('div.sh-exgrid', unsure.map((x) => row(x, 'info')))) : null,
-      d.journal ? h('p.sh-sub', `Read from the ASSD journal loaded, ${dayText(d.journal.from)} to ${dayText(d.journal.to)}. `
-        + 'A stay is judged once its last night is inside that, so export the journal through tomorrow to see tomorrow’s check-outs. '
-        + 'Journals loaded before this check began need loading again for their charges.') : null);
+    const decide = (ok) => async () => {
+      try { await api('/till/approve', { method: 'POST', body: { answer: x.key, ok } }); await after(ok ? 'Approved.' : 'Rejected.'); } catch (err) { said.textContent = err.message; }
+    };
+    return h(`article.sh-ex.${tone}${x.answer ? '.done' : ''}`,
+      h('div.hd', h('span.sq', '₵'), h('h3', `Reservation ${x.ref || x.seq}`), h('span.amt.num', d.redacted ? 'owes' : money(x.balance))),
+      h('div.sh-meta',
+        h('span', x.rooms.join(', ') || 'Room'),
+        h('span', nights),
+        h('span', `check-out ${dayText(x.checkout)} ${x.checkoutAt.slice(11)}`),
+        x.bookedBy ? h('span', `booked by ${nameOf(x.bookedBy)}`) : null),
+      h('p.small', x.left ? 'Checked out, still owing.' : 'Leaving in the next 24 hours, not fully paid. Collect before they go.'),
+      d.redacted ? null : h('div.sh-staymoney',
+        h('div', h('small', 'Charged'), h('b', whole(x.charged))),
+        h('div', h('small', 'Paid'), h('b', whole(x.paid))),
+        h('div.owes', h('small', 'Owes'), h('b', whole(x.balance)))),
+      methods ? h('p.small', `Paid so far: ${methods}`) : h('p.small', 'No payment in the journal loaded.'),
+      x.unsure ? h('p.small.muted', `Booked ${dayText(x.bookedOn)}, before the first day of journal loaded (${dayText(d.journal?.from)}). A payment taken then would not show: check ASSD.`) : null,
+      x.proposed ? h('div.sh-waiting',
+        h('span', `⏳ Waiting for an admin: ${x.proposed.answer}${x.proposed.note ? `: ${x.proposed.note}` : ''} (${x.proposed.by})`),
+        admin ? [
+          h('button.btn.primary', { type: 'button', onclick: decide(true) }, 'Approve'),
+          h('button.btn', { type: 'button', onclick: decide(false) }, 'Reject'),
+        ] : null, said)
+        : x.answer ? h('div.sh-done',
+          h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''} (${x.answer.by})`),
+          may('unpaid', 2) ? h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change') : null, said)
+          : may('unpaid', 2) ? h('div.sh-answers', note, STAY_ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said) : null);
   }
 
   // -------------------------------------------------------------- safe --
@@ -989,6 +949,28 @@ export async function renderShifts(root, { range }) {
   function shiftView(v) {
     const s = byId.get(currentId) || shifts[shifts.length - 1];
     const i = shifts.indexOf(s);
+    // The closing report from HIVE, read on its own so the drawer shows at once.
+    const report = h('div');
+    till.shiftReport(s.day, s.slot, () => load()).then((card) => mount(report, card)).catch(() => {});
+    const back = h('button.sh-back', { type: 'button', onclick: () => go(mode) }, `‹ Back to ${period.label}`);
+    const head = h('section.card',
+      h('div.sh-shifthead',
+        h('button.sh-arrow', { type: 'button', disabled: i <= 0, 'aria-label': 'Previous shift', onclick: () => go('shift', shifts[i - 1].id) }, '‹'),
+        h('div.t', avatar(s.user, true),
+          h('div', h('h2', nameOf(s.user)),
+            h('div.m', glyph(s.slot), `${SLOT[s.slot].label} · ${SLOT[s.slot].hours} · ${dayText(s.day, { weekday: 'long', day: 'numeric', month: 'long' })}`,
+              s.double ? h('span.sh-chip.none', 'covered two slots') : null))),
+        h(`span.sh-status.${tone(s)}`, { good: '✓ All agrees', warn: '! Have a look', bad: '! Needs an answer', open: 'Journal ends here' }[tone(s)]),
+        h('button.sh-arrow', { type: 'button', disabled: i >= shifts.length - 1, 'aria-label': 'Next shift', onclick: () => go('shift', shifts[i + 1].id) }, '›')));
+    // Without the amounts, the drawer's story is nothing but blanks: the
+    // closing report and what does not agree are what there is to see.
+    if (!may('money')) {
+      mount(v, back, head, report,
+        exceptionsOf(s).length ? h('section.card',
+          h('div.sh-cardhead', h('h2', 'What does not agree on this shift')),
+          h('div.sh-exgrid', exceptionsOf(s).map(exceptionCard))) : null);
+      return;
+    }
     const status = h('span');
     const fall = h('div.sh-fall');
     const vbox = h('div');
@@ -1003,49 +985,35 @@ export async function renderShifts(root, { range }) {
       placeholder: s.closing?.total != null ? cedis(s.closing.total) : '0.00',
       value: draft.recount !== undefined ? cedis(draft.recount) : (r.closingFrom === 'typed' ? cedis(r.closing) : ''),
     });
-    const sheet = h('input', {
-      id: 'sh-sheet', type: 'number', inputmode: 'decimal', step: '0.01', min: '0', disabled: !s.drawerOut && s.expense?.sheetTotal == null,
-      placeholder: s.drawerOut ? 'labels the movements' : 'nothing moved out',
-      value: draft.sheet !== undefined ? cedis(draft.sheet) : cedis(s.expense?.sheetTotal),
-    });
     const needOpening = r.openingFrom == null || r.openingFrom === 'typed';
     const opening = needOpening ? h('input', {
       id: 'sh-opening', type: 'number', inputmode: 'decimal', step: '0.01', min: '0', placeholder: 'only if ASSD has none',
       value: r.openingFrom === 'typed' ? cedis(r.opening) : '',
     }) : null;
     recount.addEventListener('input', () => { draft.recount = typedMinor(recount.value); redraw(); });
-    sheet.addEventListener('input', () => { draft.sheet = typedMinor(sheet.value); redraw(); });
 
     async function save() {
       said.textContent = 'Saving…';
       try {
         await api('/shifts/count', { method: 'POST', body: { day: s.day, slot: s.slot, closing: recount.value, opening: opening ? opening.value : null, note: r.note || '' } });
-        if (s.drawerOut || s.expense) {
-          await api('/shifts/expense', { method: 'POST', body: { day: s.day, slot: s.slot, sheetTotal: sheet.value, poNumbers: s.expense?.poNumbers || '' } });
-        }
         delete drafts[s.id];
         await load(banner('good', `Saved for ${nameOf(s.user)}’s ${SLOT[s.slot].label.toLowerCase()} shift of ${shortDay(s.day)}.`));
       } catch (err) { said.textContent = err.message; }
     }
 
+    // Here the status moves as a recount is typed.
+    head.querySelector('.sh-status').replaceWith(status);
     mount(v,
-      h('section.card',
-        h('div.sh-shifthead',
-          h('button.sh-arrow', { type: 'button', disabled: i <= 0, 'aria-label': 'Previous shift', onclick: () => go('shift', shifts[i - 1].id) }, '‹'),
-          h('div.t', avatar(s.user, true),
-            h('div', h('h2', nameOf(s.user)),
-              h('div.m', glyph(s.slot), `${SLOT[s.slot].label} · ${SLOT[s.slot].hours} · ${dayText(s.day, { weekday: 'long', day: 'numeric', month: 'long' })}`,
-                s.double ? h('span.sh-chip.none', 'covered two slots') : null))),
-          status,
-          h('button.sh-arrow', { type: 'button', disabled: i >= shifts.length - 1, 'aria-label': 'Next shift', onclick: () => go('shift', shifts[i + 1].id) }, '›'))),
+      back,
+      head,
+      report,
       h('div.sh-two',
         h('section.card',
           h('div.sh-cardhead', h('div', h('h2', 'The drawer'),
-            h('p.sh-sub', 'From ASSD’s count at hand-over to its count at the end. Type a recount or the expense sheet’s total and the picture moves; Save keeps it.'))),
+            h('p.sh-sub', 'From ASSD’s count at hand-over to its count at the end. Expenses come from the closing report in HIVE. Type a recount and the picture moves; Save keeps it.'))),
           fall, vbox,
           h('div.sh-inputs',
             h('label.field', { for: 'sh-recount' }, 'Recount the drawer (optional)', recount),
-            h('label.field', { for: 'sh-sheet' }, 'Expense sheet total', sheet),
             opening ? h('label.field', { for: 'sh-opening' }, 'Opening count', opening) : null),
           h('div.sh-save', h('button.btn.primary', { type: 'button', onclick: save, disabled: s.open }, 'Save'), unsaved, said)),
         h('section.card',
@@ -1075,8 +1043,7 @@ export async function renderShifts(root, { range }) {
 
     function redraw() {
       const n = numbers(s);
-      const dirty = (draft.recount !== undefined && draft.recount !== (r.closingFrom === 'typed' ? r.closing : null))
-        || (draft.sheet !== undefined && draft.sheet !== (s.expense?.sheetTotal ?? null));
+      const dirty = draft.recount !== undefined && draft.recount !== (r.closingFrom === 'typed' ? r.closing : null);
       unsaved.textContent = dirty ? 'Not saved yet' : '';
       const t = tone(s);
       mount(status, h(`span.sh-status.${t}`, { good: '✓ All agrees', warn: '! Have a look', bad: '! Needs an answer', open: 'Journal ends here' }[t]));
@@ -1280,25 +1247,25 @@ export async function renderShifts(root, { range }) {
       .map((m) => ({ label: `ASSD ${m.seq}${m.kind !== 'expenses' ? ' (part of a movement)' : ''}`, amount: m.kind === 'expenses' ? m.amount : m.expenses }));
     // What the typed expense sheet settled on top of what the counts labelled.
     const fromSheet = (n.expenses || 0) - moves.reduce((t, m) => t + m.amount, 0);
-    if (fromSheet > 0) moves.push({ label: 'From the expense sheet (unlabelled cash)', amount: fromSheet });
+    if (fromSheet > 0) moves.push({ label: exp.sheetFrom === 'report' ? 'From the closing report (unlabelled cash)' : 'From the expense sheet (unlabelled cash)', amount: fromSheet });
     const confirmed = (o) => o.state === 'purchase' || o.state === 'done';
-    const po = (o) => `${o.name}${o.kind === 'topup' ? ' (top-up)' : o.kind === 'change' ? ' (change back)' : ''} · ${o.vendor || ''} · ${confirmed(o) ? 'confirmed' : o.state}${o.fromReport ? ' · on the closing report' : ''}`;
+    const po = (o) => `${o.name}${o.kind === 'topup' ? ' (deficit)' : o.kind === 'change' ? ' (refund)' : o.advance ? ' (advance)' : ''} · ${o.vendor || ''} · ${confirmed(o) ? 'approved' : o.state}${o.fromReport ? ' · on the closing report' : ''}`;
     const orders = (exp.odoo?.orders || []).map((o) => ({ ...o, amount: o.total }));
     const { pairs, spare } = pairUp(moves, orders);
     const rows = [
       ...pairs.map(({ l, r }) => ({
         state: r.length ? (r.every(confirmed) ? 'ok' : 'bad') : (orders.length ? 'bad' : 'none'),
         cells: [l.label, money(l.amount),
-          r.length ? h('span', r.map((o) => h('div', po(o))), r.length > 1 ? h('small', 'several POs, one payment') : null, r.some((o) => !confirmed(o)) ? h('small', 'not confirmed in Odoo, so not counted') : null)
+          r.length ? h('span', r.map((o) => h('div', po(o))), r.length > 1 ? h('small', 'several POs, one payment') : null, r.some((o) => !confirmed(o)) ? h('small', 'not approved in Odoo, so not counted') : null)
             : (orders.length ? 'No PO of this amount' : 'No PO numbers yet'),
           r.length ? money(r.reduce((t, o) => t + o.total, 0)) : '—'],
       })),
-      ...spare.map((o) => ({ state: 'bad', cells: ['No payment of this amount', '—', h('span', po(o), !confirmed(o) ? h('small', 'not confirmed in Odoo') : null), money(o.total)] })),
+      ...spare.map((o) => ({ state: 'bad', cells: ['No payment of this amount', '—', h('span', po(o), !confirmed(o) ? h('small', 'not approved in Odoo') : null), money(o.total)] })),
     ];
     const unknown = exp.odoo?.unknown || [];
     return h('div.sh-detail',
       lineTable([{ label: 'Paid out' }, { label: 'Amount', num: true }, { label: 'Odoo PO' }, { label: 'PO total', num: true }], rows,
-        ['Total', money(n.expenses), exp.sheetTotal != null ? `Expense sheet ${money(exp.sheetTotal)}` : '', exp.odooTotal != null ? money(exp.odooTotal) : '—']),
+        ['Total', money(n.expenses), exp.sheetTotal != null ? `${exp.sheetFrom === 'report' ? 'Closing report' : 'Expense sheet'} ${money(exp.sheetTotal)}` : '', exp.odooTotal != null ? money(exp.odooTotal) : '—']),
       unknown.length ? h('p.small', `✗ Not in Odoo: ${unknown.join(', ')}`) : null);
   }
 
@@ -1482,46 +1449,29 @@ export async function renderShifts(root, { range }) {
       h('div.sh-fixrow', note, said));
   }
 
+  /**
+   * The POs behind this shift's expenses, as the closing report in HIVE gave
+   * them: Odoo's state and whether each is on the expense form. Nothing to
+   * type here; a PO is added in HIVE, where the shift is closed.
+   */
   function odooBlock(s) {
-    if (!s.drawerOut && !s.expense) return null;
     const exp = s.expense || {};
-    const pos = h('input', { id: 'sh-pos', type: 'text', value: exp.poNumbers || '', placeholder: 'P00412, P00413' });
-    const said = h('span.small');
     const orders = exp.odoo?.orders || [];
-    const unknown = exp.odoo?.unknown || [];
-    const sheet = exp.sheetTotal;
-    const odoo = exp.odooTotal;
-    const verdict = sheet == null || odoo == null ? null
-      : sheet === odoo ? `The expense sheet and Odoo agree at ${money(sheet)}.`
-        : `The expense sheet says ${money(sheet)} and Odoo says ${money(odoo)}: ${money(Math.abs(sheet - odoo))} ${sheet > odoo ? 'is not in Odoo' : 'more in Odoo than on the sheet'}.`;
+    if (!orders.length) return s.drawerOut ? h('p.sh-sub', 'No POs on a closing report for this shift. They are added in HIVE when the shift is closed.') : null;
+    const approved = (o) => o.state === 'purchase' || o.state === 'done';
+    const formChip = (o) => (!o.fromReport ? h('span.sh-chip.none', '—')
+      : o.reported ? h('span.sh-chip.ok', 'Reported')
+        : data.formLive ? h('span.sh-chip.short', 'Report on form') : h('span.sh-chip.none', 'Form not connected'));
     return h('div.sh-odoo',
-      h('p.sh-sub', 'The Odoo purchase orders behind this shift’s expenses. Insight reads each order (vendor, total, state) without changing anything in Odoo.'),
-      h('div.sh-inputs',
-        h('label.field', { for: 'sh-pos' }, 'Odoo PO numbers', pos),
-        h('div', h('button.btn.primary', {
-          type: 'button',
-          onclick: async () => {
-            said.textContent = 'Saving and asking Odoo…';
-            const draftSheet = drafts[s.id]?.sheet;
-            try {
-              await api('/shifts/expense', {
-                method: 'POST',
-                body: { day: s.day, slot: s.slot, sheetTotal: cedis(draftSheet !== undefined ? draftSheet : sheet), poNumbers: pos.value, pull: true },
-              });
-              await load();
-            } catch (err) { said.textContent = err.message; }
-          },
-        }, 'Save and read from Odoo'), ' ', said)),
-      orders.length ? table([
-        { label: 'PO', get: (o) => o.name },
-        { label: 'Vendor (Odoo)', get: (o) => o.vendor },
-        { label: 'Total', num: true, get: (o) => money(o.total), foot: (list) => money(list.reduce((t, o) => t + o.total, 0)) },
-        { label: 'State', get: (o) => `${o.state}${o.billed ? ` · ${o.billed.replace(/_/g, ' ')}` : ''}` },
-        { label: 'Ordered', get: (o) => o.orderedOn || '' },
-      ], orders, { footer: orders }) : null,
-      unknown.length ? banner('warning', `Odoo does not know ${unknown.join(', ')}. Check the numbers.`) : null,
-      verdict ? h('p', verdict) : null,
-      exp.pulledAt ? h('p.small.muted', `Read from Odoo ${String(exp.pulledAt).slice(0, 16)}.`) : null);
+      h('p.sh-sub', 'The POs on this shift’s closing report in HIVE, with what Odoo and the expense form say about each.'),
+      table([
+        { label: 'PO', get: (o) => `${o.name}${o.kind === 'topup' ? ' (deficit)' : o.kind === 'change' ? ' (refund)' : o.advance ? ' (advance)' : ''}` },
+        { label: 'Vendor', get: (o) => o.vendor || '' },
+        { label: 'Paid', num: true, get: (o) => money(o.total), foot: (list) => money(list.reduce((t, o) => t + o.total, 0)) },
+        { label: 'Odoo', get: (o) => (approved(o) ? h('span.sh-chip.ok', 'Approved') : o.advance ? h('span.sh-chip.over', 'Approve in Odoo') : h('span.sh-chip.none', o.state)) },
+        { label: 'Expense form', get: formChip },
+      ], orders, { footer: orders }),
+      (exp.odoo?.unknown || []).length ? banner('warning', `Odoo does not know ${exp.odoo.unknown.join(', ')}.`) : null);
   }
 
   // -------------------------------------------------------- exceptions --
@@ -1664,7 +1614,7 @@ export async function renderShifts(root, { range }) {
         x.seqs ? h('span', `ASSD ${x.seqs.join(', ')}`) : x.seq ? h('span', `ASSD ${x.seq}`) : null),
       evidence(x),
       h('p', describe(x)),
-      x.slot && byId.has(`${x.day}|${x.slot}`) && section !== 'shift'
+      x.slot && byId.has(`${x.day}|${x.slot}`) && !(section === 'shifts' && detail)
         ? h('div', h('button.sh-link', { type: 'button', onclick: () => go('shift', `${x.day}|${x.slot}`) }, 'Open the shift')) : null,
       x.action && !x.answer ? h('div', h('button.btn.primary', {
         type: 'button',
@@ -1762,104 +1712,265 @@ export async function renderShifts(root, { range }) {
   }
   const exLabel = (o) => `${o.user ? `${nameOf(o.user)}, ` : ''}${o.day ? dayText(o.day) : ''}${o.slot ? ` ${SLOT[o.slot].label.toLowerCase()}` : ''}`;
 
-  /**
-   * Exceptions as an inbox: the pairs that are probably the same money first,
-   * one click each; then a short line per exception on the left and the one
-   * picked, in full, on the right.
-   */
-  function exceptionsView(v) {
-    const all = data.exceptions;
-    const need = all.filter((x) => x.severity !== 'info');
-    const done = need.filter((x) => x.answer).length;
-    const frac = need.length ? done / need.length : 1;
-    const groups = data.groups.filter((g) => all.some((x) => x.group === g.id));
-    if (filter !== 'all' && !groups.some((g) => g.id === filter)) filter = 'all';
-    const shown = all
-      .filter((x) => filter === 'all' || x.group === filter)
-      .filter((x) => showAnswered || !x.answer || x.severity === 'info')
-      .sort((a, b) => (Boolean(a.answer) - Boolean(b.answer))
-        || ['critical', 'warning', 'info'].indexOf(a.severity) - ['critical', 'warning', 'info'].indexOf(b.severity)
-        || (a.day < b.day ? 1 : -1));
-    // Keep the open one; if it has gone (answered), open the one now in its place.
-    let at = shown.findIndex((x) => x.key === exOpen);
-    if (at < 0) at = Math.min(exAt, shown.length - 1);
-    const current = shown[at] || null;
-    exOpen = current?.key || null;
-    exAt = Math.max(0, at);
-    const ring = svg('svg.sh-ring', { viewBox: '0 0 64 64', 'aria-hidden': 'true' },
-      svg('circle', { cx: 32, cy: 32, r: 26, stroke: 'var(--surface-2)' }),
-      svg('circle', { cx: 32, cy: 32, r: 26, stroke: 'var(--sh-good)', 'stroke-linecap': 'round', 'stroke-dasharray': `${163.4 * frac} 163.4`, transform: 'rotate(-90 32 32)' }));
+  // -------------------------------------------------------------- inbox --
+
+  /** Pairs that are probably the same money, each reconciled with one click. */
+  function pairsCard() {
     const pairs = likelyPairs();
+    if (!pairs.length) return null;
+    const said = h('span.small');
+    return h('section.card.sh-pairs',
+      h('div.sh-cardhead',
+        h('div', h('h2', `Probably the same money · ${pairs.length}`),
+          h('p.sh-sub', 'The same amount one way and the other, within a week. Reconciling answers both.')),
+        pairs.length > 1 ? h('button.btn', {
+          type: 'button',
+          onclick: async (e) => {
+            e.target.disabled = true;
+            said.textContent = 'Reconciling…';
+            try {
+              for (const [a, b] of pairs) {
+                // eslint-disable-next-line no-await-in-loop
+                await api('/shifts/link', { method: 'POST', body: { keys: [a.key, b.key], note: `Same ${money(Math.abs(a.amount))}: ${exLabel(a)} and ${exLabel(b)}` } });
+              }
+              await refreshInbox(`${pairs.length} pairs reconciled.`);
+            } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+          },
+        }, `Reconcile all ${pairs.length}`) : null),
+      pairs.map(([a, b]) => h('div.sh-pair',
+        h('div', h('b.num', money(Math.abs(a.amount))), h('span', ` · ${(KIND[a.kind] || [a.kind])[0]} · ${exLabel(a)}`)),
+        h('span.sh-pairarrow', { 'aria-hidden': 'true' }, '↔'),
+        h('div', h('b.num', money(Math.abs(b.amount))), h('span', ` · ${(KIND[b.kind] || [b.kind])[0]} · ${exLabel(b)}`)),
+        h('button.btn.primary', {
+          type: 'button',
+          onclick: async (e) => {
+            e.target.disabled = true;
+            try { await reconcile([a.key, b.key], `Same ${money(Math.abs(a.amount))}: ${exLabel(a)} and ${exLabel(b)}`); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+          },
+        }, 'Reconcile'))),
+      said);
+  }
+
+  /** Read every source of the Inbox again, then the period, and show `notice`. */
+  async function refreshInbox(notice = null) {
+    await readInbox(true);
+    await load(typeof notice === 'string' ? banner('good', notice) : notice);
+  }
+
+  const daysAgo = (day) => {
+    if (!day) return 0;
+    const today = new Date().toISOString().slice(0, 10);
+    return Math.max(0, Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${String(day).slice(0, 10)}T12:00:00Z`)) / 86_400_000));
+  };
+
+  /**
+   * Everything to act on, from every source, as one kind of line: what it
+   * is, whose, how much, how long it has waited, and what opens beside it.
+   * `counts` marks what goes on the tab's number.
+   */
+  function inboxItems() {
+    const out = [];
+    const after = (m) => refreshInbox(m);
+    // What does not agree, in the days on screen. An admin sees a
+    // supervisor's proposed answer under Waiting for admin, from the approvals.
+    if (can.exceptions && data) {
+      for (const x of data.exceptions) {
+        if (x.severity === 'info') continue;
+        const waitingAdmin = Boolean(x.proposed);
+        if (admin && waitingAdmin) continue;
+        const done = Boolean(x.answer) || Boolean(x.link && !x.proposed);
+        if (done && !inbox.showDone) continue;
+        const sev = x.severity === 'critical' ? 'short' : 'over';
+        out.push({
+          id: `ex:${x.key}`, kind: waitingAdmin ? 'admin' : DRAWER_GROUPS.has(x.group) ? 'drawer' : 'bank',
+          title: (KIND[x.kind] || [x.kind])[0], sub: exLabel(x), amount: x.amount == null ? '' : money(Math.abs(x.amount)),
+          chip: done ? ['ok', 'Answered'] : waitingAdmin ? ['none', 'Waiting for admin'] : null, tone: sev, done,
+          age: daysAgo(x.day), counts: !done && !waitingAdmin, render: () => exceptionCard(x),
+        });
+      }
+    }
+    // Staff answers from HIVE, waiting for a decision.
+    if (can.answers && sources.till) {
+      for (const i of sources.till.issues || []) {
+        if (i.status !== 'answered') continue;
+        out.push({
+          id: `is:${i.key}`, kind: 'drawer', title: `${i.name || 'Somebody'} answered`,
+          sub: `${sources.till.kinds?.[i.kind] || i.kind} · ${dayText(i.day)} ${SLOT[i.slot]?.label.toLowerCase() || ''}`,
+          amount: may('money') && i.amount ? money(Math.abs(i.amount)) : '', chip: ['over', 'Answered'], tone: 'over',
+          age: daysAgo(i.answer?.at || i.day), counts: true, render: () => till.issueCard(i, () => after('Done.')),
+        });
+      }
+    }
+    // What waits for an admin: supervisors' answers and corrections.
+    if (can.approvals && sources.till) {
+      for (const a of sources.till.answerApprovals || []) {
+        out.push({
+          id: `aa:${a.type}:${a.id}`, kind: 'admin', title: a.type === 'link' ? `Reconciled ${a.keys.length} together` : `Answered “${a.answer}”`,
+          sub: `by ${a.by}`, amount: '', chip: ['none', 'Approve'], tone: 'none', age: daysAgo(a.at), counts: true,
+          render: () => till.answerApprovalCard(a, () => after('Done.')),
+        });
+      }
+      for (const a of sources.till.approvals || []) {
+        out.push({
+          id: `co:${a.seq}`, kind: 'admin', title: `Correction · ASSD ${a.seq}`, sub: `by ${a.by}${a.day ? ` · ${dayText(a.day)}` : ''}`,
+          amount: money(a.amount), chip: ['none', 'Approve'], tone: 'none', age: daysAgo(a.at), counts: true,
+          render: () => till.correctionCard(a, () => after('Done.')),
+        });
+      }
+    }
+    // Stays not fully paid.
+    if (can.stays && stays) {
+      for (const [list, left] of [[stays.leaving || [], false], [stays.left || [], true]]) {
+        for (const x0 of list) {
+          const x = { ...x0, left };
+          if (admin && x.proposed) continue;
+          const done = Boolean(x.answer);
+          if (done && !inbox.showDone) continue;
+          out.push({
+            id: `st:${x.key}`, kind: x.proposed ? 'admin' : 'stay', title: `${x.rooms.join(', ') || 'Room'} · ${left ? 'left owing' : 'leaving, owes'}`,
+            sub: `Reservation ${x.ref || x.seq} · check-out ${dayText(x.checkout)}`, amount: stays.redacted ? '' : money(x.balance),
+            chip: done ? ['ok', 'Answered'] : x.unsure ? ['none', 'Check in ASSD'] : x.proposed ? ['none', 'Waiting for admin'] : null,
+            tone: left ? 'short' : 'over', done, age: daysAgo(x.checkout), counts: !done && !x.unsure && !x.proposed,
+            render: () => stayCard(x, after),
+          });
+        }
+      }
+    }
+    // The money to-do: cash POs with no bill, paid ≠ PO, bills with no PO.
+    if (can.todo && sources.todo) {
+      const today = new Date().toISOString().slice(0, 10);
+      for (const t0 of sources.todo.items || []) {
+        const t = { ...t0, age: todoAge(t0, today) };
+        const done = t.state === 'closed';
+        if (done && !inbox.showDone) continue;
+        const waitingAdmin = t.state === 'answered';
+        out.push({
+          id: `td:${t.id}`, kind: waitingAdmin ? 'admin' : 'po', title: todoTitle(t), sub: todoSub(t, { admin }),
+          amount: money(t.kind === 'differs' ? Math.abs(t.amount) : t.amount), chip: done ? ['ok', 'Closed'] : waitingAdmin ? ['none', admin ? 'Approve' : 'Waiting for admin'] : null,
+          tone: 'over', done, age: t.age, counts: !done && (admin ? waitingAdmin : !waitingAdmin), todo: t,
+          render: () => todoDetail(t, { admin, supervisors: sources.todo.supervisors || [], after }),
+        });
+      }
+    }
+    // Advances, and POs whose final price differs from what was paid.
+    if (can.advances && sources.advances) {
+      for (const x of sources.advances.items || []) {
+        const done = !advanceOpen(x);
+        if (done && !inbox.showDone) continue;
+        const [tone, label] = advanceStatus(x);
+        out.push({
+          id: `ad:${x.po}`, kind: 'advance', title: `${x.po}${x.vendor ? ` · ${x.vendor}` : ''}`,
+          sub: `${x.advance ? 'Advanced' : 'Paid'} ${advanceWhen(x)}${x.by ? ` · ${x.by}` : ''}`, amount: money(x.advance ? x.advanced : x.paid),
+          chip: [tone, label], tone, done, age: daysAgo(x.day), counts: !done,
+          render: () => advanceDetail(x, { canAct: sources.advances.canAct, formLive: sources.advances.formLive, after }),
+        });
+      }
+    }
+    return out.sort((a, b) => Number(a.done) - Number(b.done) || b.age - a.age);
+  }
+
+  /**
+   * The Inbox: one list of everything to act on, kind chips across the top,
+   * the one picked in full beside it.
+   */
+  function inboxView(v) {
+    const all = inboxItems();
+    const kinds = INBOX_KINDS.filter(([k]) => all.some((x) => x.kind === k));
+    if (inbox.kind !== 'all' && !kinds.some(([k]) => k === inbox.kind)) inbox.kind = 'all';
+    const shown = all.filter((x) => inbox.kind === 'all' || x.kind === inbox.kind);
+    let at = shown.findIndex((x) => x.id === inbox.open);
+    if (at < 0) at = Math.min(inbox.at, shown.length - 1);
+    const current = shown[at] || null;
+    inbox.open = current?.id || null;
+    inbox.at = Math.max(0, at);
     const open = (i) => {
-      exAt = i; exOpen = shown[i]?.key || null;
-      const list = v.querySelector('.sh-exlist');
+      inbox.at = i; inbox.open = shown[i]?.id || null;
+      const list = v.querySelector('.ib-list');
       const keep = list ? list.scrollTop : 0;
-      exceptionsView(v);
-      const again = v.querySelector('.sh-exlist');
+      inboxView(v);
+      const again = v.querySelector('.ib-list');
       if (again) again.scrollTop = keep;
       again?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'nearest' });
-      if (window.matchMedia('(max-width: 760px)').matches) v.querySelector('.sh-exdetail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (window.matchMedia('(max-width: 760px)').matches) v.querySelector('.ib-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
     const said = h('span.small');
+    const refresh = h('button.btn', {
+      type: 'button',
+      title: 'Ask Odoo about the cash POs and bills, and read the laundry system, now',
+      onclick: async () => {
+        refresh.disabled = true; said.textContent = 'Asking Odoo and the laundry system…'; said.className = 'small';
+        const parts = [];
+        try {
+          if (can.todo) {
+            const r = await api('/todo/check', { method: 'POST' });
+            const t = r.todos || {};
+            parts.push(`Odoo: ${r.pos} cash PO${r.pos === 1 ? '' : 's'} checked, ${t.closed || 0} cleared, ${t.raised || 0} new`);
+          }
+          const l = await api('/todo/laundry', { method: 'POST' }).catch((err) => ({ error: err.message }));
+          parts.push(l.error ? `Laundry: ${l.error}` : `Laundry: ${dayText(l.from)} to ${dayText(l.to)} read`);
+          await refreshInbox(`${parts.join('. ')}.`);
+        } catch (err) { said.textContent = err.message; said.className = 'small form-error'; refresh.disabled = false; }
+      },
+    }, '↻ Refresh now');
+    const count = (k) => all.filter((x) => (k === 'all' || x.kind === k) && !x.done).length;
+    const ticked = [...inbox.ticked].filter((id) => shown.some((x) => x.id === id && x.todo));
+    const giveTo = admin && sources.todo?.supervisors?.length && shown.some((x) => x.todo && x.todo.state !== 'closed') ? (() => {
+      const to = h('select', { 'aria-label': 'Give to' }, h('option', { value: '' }, 'Give to…'),
+        sources.todo.supervisors.map((p) => h('option', { value: String(p.id) }, p.name)));
+      const gave = h('span.small');
+      return h('div.ib-give',
+        h('span.small', h('b', String(ticked.length)), ' PO item', ticked.length === 1 ? '' : 's', ' ticked'),
+        to,
+        h('button.btn', {
+          type: 'button', disabled: !ticked.length,
+          onclick: async () => {
+            if (!to.value) { gave.textContent = 'Choose who to give them to.'; return; }
+            try {
+              const out = await api('/todo/assign', { method: 'POST', body: { ids: ticked.map((id) => Number(id.slice(3))), accountId: Number(to.value) } });
+              inbox.ticked.clear();
+              await refreshInbox(`${out.moved} item${out.moved === 1 ? '' : 's'} given to ${out.to}.`);
+            } catch (err) { gave.textContent = err.message; }
+          },
+        }, 'Give'), gave);
+    })() : null;
 
     mount(v,
-      h('section.card.sh-exhead',
-        h('div.sh-progress', ring,
-          h('h2', { style: 'margin:0;flex:1' }, `${done} of ${need.length} answered`),
-          h('label.sh-exkind', h('span.sr', 'Show'),
-            h('select', { onchange: (e) => { filter = e.target.value; exAt = 0; exOpen = null; paint(); } },
-              h('option', { value: 'all', selected: filter === 'all' }, `All kinds (${all.length})`),
-              groups.map((g) => h('option', { value: g.id, selected: filter === g.id },
-                `${g.title.split(/[:—]/)[0].trim()} (${all.filter((x) => x.group === g.id).length})`)))),
-          done ? h('label.check', h('input', { type: 'checkbox', checked: showAnswered, onchange: (e) => { showAnswered = e.target.checked; paint(); } }), ` Show the ${done} answered`) : null)),
-      pairs.length ? h('section.card.sh-pairs',
-        h('div.sh-cardhead',
-          h('div', h('h2', `Probably the same money · ${pairs.length}`),
-            h('p.sh-sub', 'The same amount one way and the other, within a week. Reconciling answers both.')),
-          pairs.length > 1 ? h('button.btn', {
-            type: 'button',
-            onclick: async (e) => {
-              e.target.disabled = true;
-              said.textContent = 'Reconciling…';
-              try {
-                for (const [a, b] of pairs) {
-                  await api('/shifts/link', { method: 'POST', body: { keys: [a.key, b.key], note: `Same ${money(Math.abs(a.amount))}: ${exLabel(a)} and ${exLabel(b)}` } });
-                }
-                await load(banner('good', `${pairs.length} pairs reconciled.`));
-              } catch (err) { said.textContent = err.message; e.target.disabled = false; }
-            },
-          }, `Reconcile all ${pairs.length}`) : null),
-        pairs.map(([a, b]) => h('div.sh-pair',
-          h('div', h('b.num', money(Math.abs(a.amount))), h('span', ` · ${(KIND[a.kind] || [a.kind])[0]} · ${exLabel(a)}`)),
-          h('span.sh-pairarrow', { 'aria-hidden': 'true' }, '↔'),
-          h('div', h('b.num', money(Math.abs(b.amount))), h('span', ` · ${(KIND[b.kind] || [b.kind])[0]} · ${exLabel(b)}`)),
-          h('button.btn.primary', {
-            type: 'button',
-            onclick: async (e) => {
-              e.target.disabled = true;
-              try { await reconcile([a.key, b.key], `Same ${money(Math.abs(a.amount))}: ${exLabel(a)} and ${exLabel(b)}`); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
-            },
-          }, 'Reconcile'))),
-        said) : null,
-      shown.length ? h('div.sh-inbox',
-        h('div.sh-exlist', { role: 'listbox', 'aria-label': 'Exceptions' },
-          shown.map((x, i) => h('button.sh-exrow', {
-            type: 'button', role: 'option', 'aria-current': String(i === at), 'aria-selected': String(i === at),
-            class: x.answer ? 'done' : x.severity === 'info' ? 'info' : '',
+      h('div.ib-bar',
+        h('div.td-pills', { role: 'group', 'aria-label': 'Kinds' },
+          [['all', 'All'], ...kinds].map(([k, label]) => h('button', {
+            type: 'button', 'aria-pressed': String(inbox.kind === k), onclick: () => { inbox.kind = k; inbox.at = 0; inbox.open = null; inboxView(v); },
+          }, `${label} · ${count(k)}`))),
+        h('label.small', h('input', {
+          type: 'checkbox', checked: inbox.showDone,
+          onchange: async (e) => { inbox.showDone = e.target.checked; await readInbox(); inboxView(v); },
+        }), ' Show done'),
+        h('div.ib-refresh', refresh, said)),
+      inbox.kind === 'all' || inbox.kind === 'bank' ? pairsCard() : null,
+      giveTo,
+      shown.length ? h('div.ib-split',
+        h('div.card.ib-list', { role: 'listbox', 'aria-label': 'To act on' },
+          shown.map((x, i) => h(`div.ib-row${i === at ? '.on' : ''}${x.done ? '.done' : ''}`, {
+            role: 'option', tabindex: '0', 'aria-current': String(i === at), 'aria-selected': String(i === at),
             onclick: () => open(i),
+            onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(i); } },
           },
-          h('i', { style: `background:${SEVERITY_COLOUR[x.severity]}` }),
-          h('span.t', h('b', (KIND[x.kind] || [x.kind])[0]),
-            h('small', [exLabel(x), x.answer ? ' · answered' : x.proposed ? ' · waiting for an admin' : '', may('bank', 2) && !x.answer && relatedTo(x).length ? ' · match found' : ''].join(''))),
-          h('b.num', x.amount == null ? '' : money(Math.abs(x.amount)))))),
-        h('div.sh-exdetail',
-          h('div.sh-exnav',
+          admin && x.todo && x.todo.state !== 'closed' ? h('input', {
+            type: 'checkbox', 'aria-label': `Tick ${x.title}`, checked: inbox.ticked.has(x.id),
+            onclick: (e) => e.stopPropagation(),
+            onchange: (e) => { if (e.target.checked) inbox.ticked.add(x.id); else inbox.ticked.delete(x.id); inboxView(v); },
+          }) : h('i.ib-dot', { class: x.tone }),
+          h('span.ib-t', h('b', x.title), h('small', `${INBOX_KINDS.find(([k]) => k === x.kind)?.[1] || ''} · ${x.sub}`)),
+          h('span.ib-r', x.amount ? h('b.num', x.amount) : null,
+            x.chip ? h(`span.sh-chip.${x.chip[0]}`, x.chip[1]) : h('small.muted', x.age ? `${x.age} d` : 'today'))))),
+        h('div.ib-detail',
+          h('div.ib-step',
             h('span.small', `${at + 1} of ${shown.length}`),
             h('button.btn', { type: 'button', disabled: at <= 0, onclick: () => open(at - 1) }, '‹ Previous'),
             h('button.btn', { type: 'button', disabled: at >= shown.length - 1, onclick: () => open(at + 1) }, 'Next ›')),
-          current ? exceptionCard(current) : null,
-          h('p.small.muted', 'Keys 1 to 8 give the answers in order; J and K move down and up.')))
-        : h('section.card', h('p', '✓ Nothing waiting here. Every card and MoMo payment and every drawer count in these days agrees, or has an answer.')),
+          current ? current.render() : null,
+          current?.kind === 'drawer' || current?.kind === 'bank' ? h('p.small.muted', 'J and K move down and up; 1 to 8 give an exception’s answers in order.') : null))
+        : h('section.card', h('p', inbox.kind === 'all' ? '✓ Nothing waiting. Everything in these days agrees, or has an answer.' : '✓ Nothing of this kind waiting.')),
+      inbox.kind === 'advance' && sources.advances ? elsewhereCard(sources.advances, inbox.elsewhere, refreshInbox, () => inboxView(v)) : null,
       pickedBar());
   }
 
@@ -1893,6 +2004,10 @@ export async function renderShifts(root, { range }) {
   // ------------------------------------------------------------ people --
 
   function peopleView(v) {
+    // Each person's list from HIVE, read on its own, under their drawers.
+    const extras = h('div.sh-peoplelists');
+    if (may('answers')) till.read().then((d) => mount(extras, till.peopleExtras(d))).catch(() => {});
+    if (!may('net')) { mount(v, extras); return; }
     const rows = data.people.map((p) => ({ ...p, mine: shifts.filter((s) => s.user === p.user) })).filter((p) => p.mine.length);
     const widest = Math.max(1, ...rows.map((p) => Math.abs(p.variance)));
     mount(v, h('section.card',
@@ -1913,7 +2028,7 @@ export async function renderShifts(root, { range }) {
           h('div.sh-strip', p.mine.map((s) => h('button', {
             type: 'button', title: `${dayText(s.day)} · ${SLOT[s.slot].label}`, style: `background:${TONE[tone(s)]}`, onclick: () => go('shift', s.id),
           }, dayText(s.day, { day: 'numeric' })))));
-      }))));
+      }))), extras);
   }
 
   // ------------------------------------------------------------- files --
