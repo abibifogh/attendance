@@ -92,6 +92,7 @@ const ROUTES = [
   // Advances under To-do: an admin, or whoever an admin gave "Advances".
   ['GET', '/api/advances', 'shifts', (env, ctx) => advances.advancesView(env, ctx.account)],
   ['POST', '/api/advances/decide', 'shifts', (env, ctx) => advances.decide(env, ctx.body, ctx.account)],
+  ['POST', '/api/advances/clear', 'shifts', (env, ctx) => advances.clearElsewhere(env, ctx.body, ctx.account)],
   ['POST', '/api/todo/:id/answer', 'shifts', (env, ctx) => todo.answerTodo(env, ctx.params.id, ctx.body, ctx.account)],
   ['POST', '/api/todo/:id/decide', 'shifts', (env, ctx) => todo.decideTodo(env, ctx.params.id, ctx.body, ctx.account)],
   ['POST', '/api/todo/:id/assign', 'shifts', (env, ctx) => todo.assignTodo(env, ctx.params.id, ctx.body, ctx.account)],

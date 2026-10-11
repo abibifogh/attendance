@@ -39,6 +39,8 @@ export async function advancesPanel(v) {
   let d = null;
   let showAll = false;
   let open = null;
+  let elseOpen = false;
+  const picked = new Set();
 
   async function load(notice = null) {
     mount(v, h('p.muted', 'Reading advances…'));
@@ -66,10 +68,42 @@ export async function advancesPanel(v) {
         h('label.small', h('input', { type: 'checkbox', checked: showAll, onchange: (e) => { showAll = e.target.checked; draw(); } }), ' Show settled and closed')),
       h('div.card.adv-list',
         items.length ? items.map(row) : h('p.muted.td-empty', showAll ? 'No advances or price differences in the last two months.' : 'Nothing open. Every advance is settled.')),
-      d.elsewhere?.length ? h('details.card.adv-else',
-        h('summary', `On the expense form, not paid from a drawer · ${d.elsewhere.length}`),
-        h('p.small.muted', 'Paid some other way (the safe, a transfer, a supplier account). Listed for reference, never chased.'),
-        h('div.adv-elist', d.elsewhere.map((e) => h('div', h('b', e.po), ` ${money(e.total)}`, h('span.muted', ` · ${String(e.at || '').slice(0, 10)}`))))) : null);
+      elsewhereCard());
+  }
+
+  /** Form entries no drawer paid: for reference, and an admin clears each once looked at. */
+  function elsewhereCard() {
+    const list = d.elsewhere?.list || [];
+    if (!list.length) return null;
+    for (const po of [...picked]) if (!list.some((e) => e.po === po)) picked.delete(po);
+    const said = h('span.small');
+    const clear = async (pos, button) => {
+      button.disabled = true; said.textContent = 'Clearing…'; said.className = 'small';
+      try {
+        await api('/advances/clear', { method: 'POST', body: { pos } });
+        picked.clear();
+        const undo = h('button.btn', { type: 'button', onclick: async (e) => {
+          e.target.disabled = true;
+          try { await api('/advances/clear', { method: 'POST', body: { pos, restore: true } }); await load(banner('good', 'Put back.')); }
+          catch (err) { e.target.disabled = false; e.target.textContent = err.message; }
+        } }, 'Undo');
+        await load(h('div.adv-undo', banner('good', `Cleared ${pos.length} from the list.`), undo));
+      } catch (err) { said.textContent = err.message; said.className = 'small form-error'; button.disabled = false; }
+    };
+    const more = d.elsewhere.count > list.length ? ` (showing ${list.length})` : '';
+    return h('details.card.adv-else', { open: elseOpen, ontoggle: (e) => { elseOpen = e.target.open; } },
+      h('summary', `On the expense form, not paid from a drawer · ${d.elsewhere.count}${more}`),
+      h('p.small.muted', 'Paid some other way (the safe, a transfer, a supplier account). Listed for reference, never chased.'
+        + (d.canClear ? ' Clear each once you have looked at it.' : '')),
+      d.canClear ? h('div.adv-clearbar',
+        h('button.btn', { type: 'button', disabled: !picked.size, onclick: (e) => clear([...picked], e.target) }, picked.size ? `Clear ${picked.size} ticked` : 'Clear ticked'),
+        h('button.btn', { type: 'button', onclick: (e) => clear(list.map((x) => x.po), e.target) }, `Clear all ${list.length} listed`),
+        said) : null,
+      h('div.adv-elist', list.map((e) => (d.canClear
+        ? h('label.adv-erow',
+          h('input', { type: 'checkbox', checked: picked.has(e.po), onchange: (ev) => { if (ev.target.checked) picked.add(e.po); else picked.delete(e.po); draw(); } }),
+          h('span', h('b', e.po), ` ${money(e.total)}`, h('span.muted', ` · ${String(e.at || '').slice(0, 10)}`)))
+        : h('div', h('b', e.po), ` ${money(e.total)}`, h('span.muted', ` · ${String(e.at || '').slice(0, 10)}`))))));
   }
 
   function row(x) {

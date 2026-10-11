@@ -189,7 +189,15 @@ test('a refund is told once to the next shift; old differences only to the admin
   assert.equal(hive.length, 0);
 
   const view = await advances.advancesView(env, OWNER, { fetchImpl });
-  assert.deepEqual(view.elsewhere.map((e) => e.po), ['P00999']);
+  assert.deepEqual(view.elsewhere.list.map((e) => e.po), ['P00999']);
+  assert.equal(view.canClear, true);
+
+  // An admin clears it once looked at; a supervisor may not; Undo puts it back.
+  await assert.rejects(advances.clearElsewhere(env, { pos: ['P00999'] }, SUP), /Only an admin/);
+  await advances.clearElsewhere(env, { pos: ['999'] }, OWNER);
+  assert.deepEqual((await advances.advancesView(env, OWNER, { fetchImpl })).elsewhere, { list: [], count: 0 });
+  await advances.clearElsewhere(env, { pos: ['P00999'], restore: true }, OWNER);
+  assert.equal((await advances.advancesView(env, OWNER, { fetchImpl })).elsewhere.count, 1);
 });
 
 test('the form endpoint takes only what its script signed, and nothing until the secret is set', async () => {

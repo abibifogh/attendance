@@ -1,11 +1,11 @@
 import { all, first, run } from '../lib/db.js';
-import { badRequest, HttpError, str } from '../lib/http.js';
+import { badRequest, forbidden, HttpError, str } from '../lib/http.js';
 import { addDays } from '../lib/dates.js';
 import { callLink } from '../lib/link.js';
 import { listSources, secretNameFor } from '../connectors/index.js';
 import { purchaseOrders } from '../connectors/odoo.js';
 import { poName } from './cashpo.js';
-import { linkRecipients, requireArea } from './till.js';
+import { linkRecipients, requireArea, roleOf } from './till.js';
 import { shifts as shiftsFor } from './shifts.js';
 
 /**
@@ -274,6 +274,7 @@ export async function advancesView(env, account, { fetchImpl } = {}) {
   const open = items.filter((x) => !['settled', 'closed'].includes(x.status));
   return {
     canAct: (access.advances || 0) >= 2,
+    canClear: roleOf(account) === 'admin',
     formLive: live,
     odoo,
     items: items.sort((a, b) => Number(['settled', 'closed'].includes(a.status)) - Number(['settled', 'closed'].includes(b.status)) || (a.day < b.day ? 1 : -1)),
@@ -283,13 +284,40 @@ export async function advancesView(env, account, { fetchImpl } = {}) {
   };
 }
 
-/** Responses on the form for a PO no HIVE shift paid: paid some other way, listed, never chased. */
+/**
+ * Responses on the form for a PO no HIVE shift paid: paid some other way,
+ * listed, never chased. An admin clears each once looked at.
+ */
 async function reportedElsewhere(env) {
-  const rows = await all(env.DB, `SELECT po, SUM(COALESCE(amount, 0) + COALESCE(tnt, 0)) AS total, MAX(submitted_at) AS at
-      FROM expense_report WHERE po IS NOT NULL AND received_at >= datetime('now', '-60 days') GROUP BY po ORDER BY at DESC LIMIT 200`).catch(() => []);
-  if (!rows.length || !env.ATT_DB) return [];
+  const rows = await all(env.DB, `SELECT e.po, SUM(COALESCE(e.amount, 0) + COALESCE(e.tnt, 0)) AS total, MAX(e.submitted_at) AS at
+      FROM expense_report e
+     WHERE e.po IS NOT NULL AND e.received_at >= datetime('now', '-60 days')
+       AND e.po NOT IN (SELECT po FROM expense_cleared)
+     GROUP BY e.po ORDER BY at DESC LIMIT 500`).catch(() => []);
+  if (!rows.length || !env.ATT_DB) return { list: [], count: 0 };
   const paid = new Set((await all(env.ATT_DB, 'SELECT DISTINCT po FROM till_po').catch(() => [])).map((r) => String(r.po).toUpperCase()));
-  return rows.filter((r) => !paid.has(r.po)).slice(0, 50).map((r) => ({ po: r.po, total: Number(r.total) || 0, at: r.at }));
+  const left = rows.filter((r) => !paid.has(r.po));
+  return { list: left.slice(0, 100).map((r) => ({ po: r.po, total: Number(r.total) || 0, at: r.at })), count: left.length };
+}
+
+/** An admin clears form entries no drawer paid, once looked at; or puts them back. */
+export async function clearElsewhere(env, body, account) {
+  if (roleOf(account) !== 'admin') throw forbidden('Only an admin can clear these.');
+  const pos = [...new Set((Array.isArray(body?.pos) ? body.pos : []).map((p) => poName(String(p ?? '').trim())).filter(Boolean))];
+  if (!pos.length) throw badRequest('Choose at least one.');
+  if (pos.length > 500) throw badRequest('500 at most at once.');
+  const statements = [];
+  for (let i = 0; i < pos.length; i += 90) {
+    const chunk = pos.slice(i, i + 90);
+    if (body?.restore) {
+      statements.push(env.DB.prepare(`DELETE FROM expense_cleared WHERE po IN (${chunk.map((_, j) => `?${j + 1}`).join(', ')})`).bind(...chunk));
+    } else {
+      const rows = chunk.map((_, j) => `(?${j + 2}, ?1)`).join(', ');
+      statements.push(env.DB.prepare(`INSERT OR IGNORE INTO expense_cleared (po, by_name) VALUES ${rows}`).bind(who(account), ...chunk));
+    }
+  }
+  await env.DB.batch(statements);
+  return { ok: true, pos, restored: Boolean(body?.restore) };
 }
 
 /** More time until a day, or close with a reason. */
