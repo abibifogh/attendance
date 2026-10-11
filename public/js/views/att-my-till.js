@@ -54,7 +54,7 @@ export async function renderAttMyTill() {
   const blank = () => ({
     floatOk: null, floatDiff: '', floatNote: '', cash: '',
     toSafe: null, envelopes: [{ no: '', amount: '' }],
-    expenses: [{ po: '', look: null }],
+    expenses: [],
     rentals: Object.fromEntries(data.setup.rentals.map((r) => [r.id, {
       start: data.handedOver?.rentals?.[r.id]?.end != null ? String(data.handedOver.rentals[r.id].end) : '', end: '',
     }])),
@@ -63,6 +63,8 @@ export async function renderAttMyTill() {
   });
   const draftKey = () => `draft-${which.day}-${which.slot}`;
   let f = store.get(draftKey()) || blank();
+  // Drafts from before the one-list form kept an empty row to type in.
+  f.expenses = (f.expenses || []).filter((e) => String(e.po ?? '').trim());
   const save = () => { store.set(draftKey(), f); store.set('which', which); };
 
   paint();
@@ -138,14 +140,13 @@ export async function renderAttMyTill() {
           h('button.btn-sm', { type: 'button', onclick: () => { f.envelopes.push({ no: '', amount: '' }); set({}); } }, '+ Another envelope'),
           h('p.till-hint', `To the safe: ${cedis(safeTotal)}. Numbers only, as written on the envelope. Each one is checked against ASSD's cash movements.`)) : null),
 
-      card('Expenses paid from the drawer', { note: 'each needs a PO' },
-        h('p.till-hint', 'Type the PO number and tap Find in Odoo. An expense counts only when Odoo has a confirmed PO for it, and its amount is the PO’s total.'),
-        severalAtOnce(),
-        f.expenses.map((e, i) => expenseRow(e, i)),
-        h('button.btn-sm', { type: 'button', onclick: () => { f.expenses.push({ po: '', look: null }); set({}); } }, '+ Another expense'),
-        h('dl.till-dl',
-          h('dt', 'Counted'), h('dd', cedis(counted)),
-          h('dt', 'Not counted yet'), h('dd', { class: uncounted ? 'till-bad' : '' }, cedis(uncounted)))),
+      card('Expenses paid from the drawer', { note: 'each needs an approved PO' },
+        h('p.till-hint', 'Type one PO number or several, then Add. Each is checked in Odoo straight away; its amount is the PO’s total.'),
+        addPos(),
+        f.expenses.length ? h('div.till-polist', f.expenses.map((e, i) => expenseRow(e, i))) : null,
+        f.expenses.length ? h('div.till-pototals',
+          h('span', 'Counted ', h('b', cedis(counted))),
+          h('span', 'Not counted ', h('b', { class: uncounted ? 'till-bad' : '' }, cedis(uncounted)))) : null),
 
       data.setup.rentals.length ? card('Rentals', {},
         data.setup.rentals.map((r) => {
@@ -180,40 +181,41 @@ export async function renderAttMyTill() {
         h('button.btn.btn-primary.till-sign', { type: 'button', disabled: missing.length > 0, onclick: sign }, 'Sign and send')));
   }
 
-  /** Several PO numbers typed or pasted at once: each gets a row and is looked up. */
-  function severalAtOnce() {
+  /** One box for one PO number or several: each is looked up and joins the list. */
+  function addPos() {
     const box = h('input', {
-      id: 'till-po-many', placeholder: 'e.g. P00412, P00415, 420', autocapitalize: 'characters',
-      'aria-label': 'Several PO numbers at once',
+      id: 'till-po-add', placeholder: 'P00412, 415, 420', autocapitalize: 'characters', enterkeyhint: 'done',
+      'aria-label': 'PO numbers paid from the drawer',
+      onkeydown: (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); add(); } },
     });
-    const add = async (ev) => {
+    const button = h('button.btn.btn-primary', { type: 'button', onclick: () => add() }, 'Add');
+    async function add() {
       const typed = [...new Set(box.value.split(/[\s,;]+/).map((p) => p.trim()).filter(Boolean))];
-      if (!typed.length) { toast('Type the PO numbers first, separated by commas or spaces.', 'bad'); return; }
-      const have = new Set(f.expenses.map((e) => String(e.po).trim().toUpperCase()).filter(Boolean));
+      if (!typed.length) { toast('Type a PO number first. Several can go in at once, with commas or spaces.', 'bad'); box.focus(); return; }
+      const have = new Set(f.expenses.map((e) => String(e.look?.name || e.po).trim().toUpperCase()));
       const fresh = typed.filter((p) => !have.has(p.toUpperCase()));
-      if (!fresh.length) { toast('Those are already on the list.'); return; }
-      ev.target.disabled = true;
+      if (!fresh.length) { toast(typed.length === 1 ? 'That PO is already on the list.' : 'Those are already on the list.'); return; }
+      button.disabled = true; box.disabled = true;
       try {
         const { found } = await api.tillPo({ pos: fresh });
-        // Fill the empty rows first, then add more.
         for (const one of found) {
-          const empty = f.expenses.find((e) => !String(e.po).trim());
           const look = { ...one };
           delete look.po;
-          if (empty) { empty.po = one.po; empty.look = look; } else f.expenses.push({ po: one.po, look });
+          // The same PO typed two ways ("412" and "P00412") is one line.
+          if (look.name && f.expenses.some((e) => e.look?.name === look.name)) continue;
+          f.expenses.push({ po: one.po, look });
         }
         box.value = '';
         const notYet = found.filter((x) => unapproved(x)).length;
-        toast(`${found.length} PO${found.length === 1 ? '' : 's'} added. ${found.filter((x) => x.counted).length} confirmed in Odoo.`
-          + (notYet ? ` ${notYet} not approved yet: get ${notYet === 1 ? 'it' : 'them'} approved first.` : ''), notYet ? 'bad' : undefined);
+        if (notYet) toast(`${notYet} not approved in Odoo yet: get ${notYet === 1 ? 'it' : 'them'} approved first.`, 'bad');
       } catch (err) { toast(err.message, 'bad'); }
-      ev.target.disabled = false;
       save();
       paint();
-    };
-    return h('div.till-many',
-      field('Several POs at once', box),
-      h('button.btn-sm', { type: 'button', onclick: add }, 'Add and find all'));
+      host.querySelector('#till-po-add')?.focus();
+    }
+    return h('div',
+      h('div.till-poadd', box, button),
+      h('p.till-hint', f.expenses.length ? 'Separate several with commas or spaces. Enter works too.' : 'No expenses on this shift? Leave it empty.'));
   }
 
   /** Why a PO found in Odoo cannot be used yet, or null when it can. */
@@ -222,57 +224,53 @@ export async function renderAttMyTill() {
     return ({ draft: 'still a request for quotation', sent: 'still a request for quotation', 'to approve': 'waiting for approval', cancel: 'cancelled' })[L.state] || 'not approved';
   }
 
+  /** One PO on the list: what Odoo says about it, and whether it counts. */
   function expenseRow(e, i) {
-    let result = null;
     const L = e.look;
-    if (L) {
-      if (L.counted) {
-        result = h('div.till-po.ok', h('strong', `${L.name} · ${L.vendor || ''}`), ' · confirmed',
-          h('div', `Counted: ${cedis(L.total)}`));
-      } else if (L.state === 'claimed') {
-        result = L.claimed?.by === 'the safe'
-          ? h('div.till-po.bad', h('strong', 'Paid from the safe'), ` on ${L.claimed.day ? dayText(L.claimed.day) : 'another day'}. It was not paid from the drawer. Not counted.`)
-          : h('div.till-po.bad', h('strong', 'Already claimed'), ` on ${SLOT[L.claimed?.slot] || ''} ${L.claimed?.day ? dayText(L.claimed.day) : ''}${L.claimed?.by ? ` by ${L.claimed.by}` : ''}. A PO is paid from the drawer once. Not counted.`);
-      } else if (L.state === 'missing') {
-        result = h('div.till-po.bad', h('strong', e.po), ' is not in Odoo. Check the number. Not counted.');
-      } else if (unapproved(L)) {
-        result = h('div.till-po.bad',
-          h('strong', `${L.name} · ${L.vendor || ''}`), ` is not approved in Odoo (${unapproved(L)}).`,
-          h('div', h('strong', 'Get it approved first'), ', then press Find in Odoo again. You cannot close your shift with it until then. If it should not be here, remove it.'));
-      } else {
-        result = h('div.till-po.warn', h('strong', `${L.name} · ${L.vendor || ''}`), ` is ${L.state} in Odoo, not confirmed. It counts once it is confirmed.`);
-      }
+    const recheck = h('button.till-link', {
+      type: 'button',
+      onclick: async (ev) => {
+        ev.target.disabled = true;
+        try { e.look = await api.tillPo({ po: e.po.trim() }); } catch (err) { toast(err.message, 'bad'); }
+        save();
+        paint();
+      },
+    }, L ? 'check again' : 'check it now');
+    let chip;
+    let who = L?.vendor || '';
+    let why = null;
+    if (!L) {
+      chip = h('span.till-chip.warn', 'Not checked');
+      why = h('span.till-why.warn', 'Not checked in Odoo yet: ', recheck, '.');
+    } else if (L.counted) {
+      chip = h('span.till-chip.ok', '✓ Counted');
+    } else if (L.state === 'claimed') {
+      chip = h('span.till-chip.bad', L.claimed?.by === 'the safe' ? 'Paid from the safe' : 'Already claimed');
+      why = h('span.till-why.bad', L.claimed?.by === 'the safe'
+        ? `Paid from the safe on ${L.claimed.day ? dayText(L.claimed.day) : 'another day'}, not from the drawer. Not counted.`
+        : `Claimed on the ${(SLOT[L.claimed?.slot] || '').toLowerCase()} shift of ${L.claimed?.day ? dayText(L.claimed.day) : ''}${L.claimed?.by ? ` by ${L.claimed.by}` : ''}. A PO is paid from the drawer once. Not counted.`);
+    } else if (L.state === 'missing') {
+      chip = h('span.till-chip.warn', 'Not found');
+      who = 'Not in Odoo';
+      why = h('span.till-why.warn', 'Check the number, or remove it.');
+    } else if (unapproved(L)) {
+      chip = h('span.till-chip.bad', 'Not approved');
+      why = h('span.till-why.bad', `${unapproved(L).replace(/^./, (c) => c.toUpperCase())} in Odoo. `,
+        h('strong', 'Get it approved first'), ', then ', recheck, '. You cannot close your shift with it until then.');
+    } else if (L.state === 'unchecked') {
+      chip = h('span.till-chip.warn', 'Not checked');
+      why = h('span.till-why.warn', 'Odoo could not be reached: ', recheck, '.');
+    } else {
+      chip = h('span.till-chip.warn', 'Not confirmed');
+      why = h('span.till-why.warn', `It is ${L.state} in Odoo. It counts once it is confirmed: `, recheck, '.');
     }
-    return h('div.till-expense',
-      h('div.till-row',
-        field('PO number', h('input', {
-          value: e.po, placeholder: 'P00412', id: `till-po-${i}`, autocapitalize: 'characters',
-          oninput: (ev) => { e.po = ev.target.value; e.look = null; save(); refreshNeed(); },
-        })),
-        // The amount is the PO's, from Odoo, and cannot be typed over.
-        field('Amount (from Odoo)', h('input', {
-          value: L?.total != null ? (L.total / 100).toFixed(2) : '', placeholder: 'Find the PO first', id: `till-paid-${i}`,
-          readonly: true, tabindex: -1, class: 'till-locked', 'aria-readonly': 'true',
-        }))),
-      h('div.till-actions',
-        h('button.btn-sm', {
-          type: 'button',
-          onclick: async (ev) => {
-            if (!e.po.trim()) { toast('Type the PO number first.', 'bad'); return; }
-            ev.target.disabled = true;
-            try {
-              e.look = await api.tillPo({ po: e.po.trim() });
-            } catch (err) { toast(err.message, 'bad'); }
-            save();
-            paint();
-          },
-        }, 'Find in Odoo'),
-        // The last row is emptied rather than taken away, so there is always one to type in.
-        f.expenses.length > 1 || String(e.po).trim() ? h('button.btn-sm', {
-          type: 'button',
-          onclick: () => { if (f.expenses.length > 1) f.expenses.splice(i, 1); else { e.po = ''; e.look = null; } save(); paint(); },
-        }, 'Remove') : null),
-      result);
+    return h('div.till-poline', { dataset: { po: L?.name || e.po } },
+      h('b.till-poname', L?.name || e.po),
+      h('span.till-povendor', who),
+      h('b.till-poamt', L?.total != null ? cedis(L.total) : '—'),
+      h('span.till-postate', chip,
+        h('button.till-x', { type: 'button', 'aria-label': `Remove ${L?.name || e.po}`, onclick: () => { f.expenses.splice(i, 1); save(); paint(); } }, '×')),
+      why);
   }
 
   function stillNeeded() {
@@ -282,7 +280,7 @@ export async function renderAttMyTill() {
     if (toMinor(f.cash) == null) out.push('the cash in the drawer');
     if (f.toSafe === null) out.push('whether cash went to the safe');
     else if (f.toSafe && f.envelopes.some((e) => !/^\d+$/.test(e.no) || !(toMinor(e.amount) > 0))) out.push('each envelope number and amount');
-    if (f.expenses.some((e) => String(e.po).trim() && !e.look)) out.push('"Find in Odoo" on each PO');
+    if (f.expenses.some((e) => String(e.po).trim() && !e.look)) out.push('each PO checked in Odoo');
     const waiting = f.expenses.filter((e) => String(e.po).trim() && unapproved(e.look)).map((e) => e.look.name);
     if (waiting.length) out.push(`${waiting.join(', ')} approved in Odoo first`);
     for (const r of data.setup.rentals) {

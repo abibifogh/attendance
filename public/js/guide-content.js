@@ -2524,8 +2524,8 @@ export const GUIDE = [
         'Type the cash in the drawer now, as one total.',
         'Say whether you moved cash to the safe. If you did, the number on each envelope and the '
           + 'amount in it.',
-        'For each expense paid from the drawer, the PO number and what you paid. Find in Odoo '
-          + 'checks it there and then.',
+        'For the expenses paid from the drawer, type each PO number (several at once, with commas) '
+          + 'and tap Add. Each is checked in Odoo there and then and listed with its amount.',
         'Count the padlocks at the start and at the end.',
         'Look for the scale and the hair dryer. If one is not at the desk, which guest has it, '
           + 'or where it is.',
