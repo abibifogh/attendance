@@ -50,11 +50,26 @@ function sendAllPast() {
 
 /** The expense form: by its id, or the form this script is part of. */
 function form_() {
-  const id = PropertiesService.getScriptProperties().getProperty('FORM_ID');
-  if (id) return FormApp.openById(id.trim());
+  const raw = prop_('FORM_ID');
+  if (raw) {
+    // The code alone, or the whole address pasted: docs.google.com/forms/d/<code>/edit
+    const id = (raw.match(/\/d\/(?:e\/)?([\w-]{20,})/) || [null, raw])[1].trim();
+    return FormApp.openById(id);
+  }
   const form = FormApp.getActiveForm();
-  if (!form) throw new Error('Set FORM_ID under Project Settings → Script properties: the long code in the form\'s address.');
+  if (!form) {
+    const names = Object.keys(PropertiesService.getScriptProperties().getProperties());
+    throw new Error(`Set FORM_ID under Project Settings → Script properties: the long code in the form's address. `
+      + `The properties set now are: ${names.length ? names.join(', ') : 'none'}.`);
+  }
   return form;
+}
+
+/** A script property, forgiving of case and stray spaces in its name. */
+function prop_(name) {
+  const all = PropertiesService.getScriptProperties().getProperties();
+  const key = Object.keys(all).find((k) => k.trim().toUpperCase() === name);
+  return key ? String(all[key]).trim() : '';
 }
 
 function onSubmit(e) {
@@ -81,8 +96,7 @@ function toRecord_(response) {
 }
 
 function check_() {
-  const props = PropertiesService.getScriptProperties();
-  if (!props.getProperty('INSIGHT_URL') || !props.getProperty('FORM_SECRET')) {
+  if (!prop_('INSIGHT_URL') || !prop_('FORM_SECRET')) {
     throw new Error('Set INSIGHT_URL and FORM_SECRET under Project Settings → Script properties first.');
   }
   const titles = form_().getItems().map((i) => i.getTitle().trim().toLowerCase());
@@ -94,11 +108,10 @@ function check_() {
 }
 
 function send_(responses) {
-  const props = PropertiesService.getScriptProperties();
-  const url = `${String(props.getProperty('INSIGHT_URL')).replace(/\/+$/, '')}/api/link/expense-form`;
+  const url = `${prop_('INSIGHT_URL').replace(/\/+$/, '')}/api/link/expense-form`;
   const body = JSON.stringify({ responses });
   const at = String(Date.now());
-  const raw = Utilities.computeHmacSha256Signature(`expense-form\n${at}\n${body}`, props.getProperty('FORM_SECRET'), Utilities.Charset.UTF_8);
+  const raw = Utilities.computeHmacSha256Signature(`expense-form\n${at}\n${body}`, prop_('FORM_SECRET'), Utilities.Charset.UTF_8);
   const sig = raw.map((b) => (`0${(b & 0xff).toString(16)}`).slice(-2)).join('');
   const res = UrlFetchApp.fetch(url, {
     method: 'post',
