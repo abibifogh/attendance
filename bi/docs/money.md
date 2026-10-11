@@ -18,7 +18,7 @@ which no other system reports.
     twice);
   - **not revenue**: a deposit, a tax.
 
-  A rental's deposit article (Till settings) starts as *not revenue* and the
+  A rental's deposit article (Shifts → Settings → Front desk) starts as *not revenue* and the
   laundry article as *counted by another system*. Anything else starts *not
   decided*, is not counted, and the page says how much is waiting.
 - It is written whenever a journal is uploaded, again each night, and again when
@@ -46,7 +46,8 @@ it buy, by part of the business.
 
 ## The to-do list
 
-Shifts → **To-do**, for admins and supervisors. Two checks raise items each
+Shifts → **Inbox → POs**, for admins and supervisors (an answered item waits
+under **Waiting for admin**). Two checks raise items each
 time Odoo is asked:
 
 | Item | Raised when | Clears itself when |
@@ -54,8 +55,8 @@ time Odoo is asked:
 | PO with no posted bill in Odoo | a PO confirmed in Odoo still has no posted bill 7 days after the cash left the drawer or the safe, or, for any other PO ordered in the last 90 days, after it was ordered; a draft bill is named on the item | the bill is posted in Odoo |
 | Paid is not what the PO says | what left the cash differs from the PO's total | the two agree |
 
-Both numbers are an admin's, at the foot of the To-do list: **Raise a PO with
-no posted bill after [7] days … looking back over POs of the last [90] days**
+Both numbers are an admin's, under Shifts → Settings → Limits: **PO without a
+posted bill** after [7] days, and **look for POs over the last** [90] days
 (7 to 730). A changed look-back asks Odoo again when saved; a shorter one closes
 the items for POs ordered before it ("Ordered before the N-day look-back"), and
 a longer one brings them back. POs paid in cash are chased whatever the
@@ -71,24 +72,20 @@ posted bill beside the cash ones.
   PO corrected, the bill linked to its PO) and clears itself on the next check.
   An answer given before this changed still waits for an admin: **Approve**
   closes it, **Send back** returns it with the reason.
-- The list reads like an inbox: a short line per item on the left (oldest
-  first, answers waiting for an admin at the top), everything about the one
-  picked on the right, with **Previous** and **Next**. Filter by kind, search by
-  PO or supplier, and **Group by** (a dropdown) supplier, supervisor (admins
-  only), shift or how long it has waited (over 3 weeks, 2 to 3, 1 to 2, under a week); each group folds to
-  one line with its count, total and oldest, and can be ticked as a whole.
-- **Check laundry now**, beside it, reads the laundry system alone for the last
-  three days up to today (an admin sets how many, 1 to 60, at the foot of the
-  list), so a finished shift's laundry is compared without
-  waiting for the nightly run (which stops at yesterday). Only the laundry
-  system's own figures are replaced. It needs Insight's key for the laundry
-  (the repository secret `INSIGHT_LAUNDRY_TOKEN`, then **Set Insight's
-  secrets**); without it the laundry is never read, and the button says so.
-- **Check Odoo now** at the top of the list asks Odoo again for everybody who
+- The items sit in the Shifts **Inbox** with everything else to act on: a
+  short line each on the left (oldest first), everything about the one picked
+  on the right, with **Previous** and **Next**. The **POs** chip shows them
+  alone.
+- **Refresh now**, at the top of the Inbox, asks Odoo again for everybody who
   has a list, supervisors included, so a bill posted a minute ago clears its
-  item straight away. It does the same as the button on the Money page.
-- An admin can tick several items (or **Select all shown**) and give them to one
-  supervisor at once.
+  item straight away (the same as the button on the Money page), and reads the
+  laundry system for the last three days up to today (an admin sets how many,
+  1 to 60, under Settings → Limits), so a finished shift's laundry is compared
+  without waiting for the nightly run. Only the laundry system's own figures
+  are replaced. It needs Insight's key for the laundry (the repository secret
+  `INSIGHT_LAUNDRY_TOKEN`, then **Set Insight's secrets**); without it the
+  laundry is never read, and Refresh now says so.
+- An admin can tick several PO items and give them to one supervisor at once.
 - An admin sees everything, can give an item to another supervisor, or close
   one with **Nothing needed** and a reason. An
   item closed by a person does not come back; one that closed itself comes back

@@ -2554,8 +2554,8 @@ export const GUIDE = [
           + 'My pay → My advance and comes off one payslip.',
         'A supervisor may send it back to you for more.',
       ] },
-      { note: 'Who is told when a shift is closed, and what supervisors can see, is set in '
-        + 'Insight → Shifts → Till settings. Give somebody "My till" under Users to put the '
+      { note: 'Who gets the daily till summary, and what supervisors can see, is set in '
+        + 'Insight → Shifts → Settings. Give somebody "My till" under Users to put the '
         + 'closing form in front of them.' },
     ],
   },

@@ -21,13 +21,19 @@ sort out**. Admins and supervisors work it all from Insight → **Shifts**.
    Somebody who only loads the files (the ASSD journal, the bank statement
    and the card terminal report) gets **Uploads only**: an Upload files page
    and the hub, and none of the numbers.
-4. **Choose what supervisors see.** Insight → Shifts → Till settings →
-   Supervisor access. Each part is Hidden, See, or See and act, the same for
-   every supervisor or set per person. Day and Week are shown and Month is
-   hidden to start with.
-5. **Choose who is told.** Till settings → Who is told. Pick HIVE logins, and
+4. **Choose what supervisors see.** Insight → Shifts → Settings → Who sees
+   what. Pick a preset for each supervisor: **Front desk supervisor** (shifts
+   and closing reports without amounts; acts on staff answers, unpaid stays and
+   advances, and reopens a report) or **Accounts** (amounts, bank and Odoo;
+   acts on card and bank, cash movements, POs, staff answers, money out and
+   advances; loads files). **Custom** sets each part by hand as Hidden, See,
+   or See and act. "New supervisors start as" sets what somebody gets before
+   they are given their own.
+5. **Choose who is told.** Settings → Who is told. Pick HIVE logins, and
    for each: web push, email, whether the message carries amounts, and which
-   events (a shift closed, staff answered, a supervisor correction to approve).
+   messages: the **daily summary** (each morning at 06:45: yesterday's shifts
+   and what waits for an admin), staff answered, a supervisor correction to
+   approve. Nobody is messaged for each shift closed.
 6. **Load the journal again** for the days you want rentals checked on. Older
    uploads did not keep ASSD's article lines, which is where padlock deposits
    and refunds are read from.
@@ -41,7 +47,7 @@ sort out**. Admins and supervisors work it all from Insight → **Shifts**.
 | Did you move cash to the safe? If yes: each envelope's number (digits only) and amount | Compared with what ASSD labelled safe. Both are required once they say Yes. |
 | Each expense: the PO number | One box: type a PO number, or several at once ("P00412, 415, 420"), and tap **Add**. Each is looked up in Odoo (read-only) straight away and listed with its supplier, its amount (the PO's own total, which cannot be typed over) and a chip: **✓ Counted** (approved in Odoo and reported on the expense form), **Advance** (still waiting for approval: cash given out before the purchase, counted at the requisition's amount, in this person's name), **Report on form** (approved but not on the expense form yet: it stops the report until it is), or **Cancelled** (remove it). A PO paid on another shift is **Already claimed**. Above the box, **From the last shift** lists what earlier shifts left, and each one holds up **Sign and send** (the **To close:** line says what): an advance not yet approved and reported, a **Refund** (the PO was bought for less: put the money in the drawer and tap **Done**), or a **Deficit** (bought for more: **Done** if it was paid from this drawer, or **Not on my shift**). Refunds and deficits are shown for POs paid in the last five days; older ones go to the admins in Insight. See [Advances](advances.md). |
 | Padlocks at the start and the end | Fewer means a padlock was rented, so ASSD should have a deposit (article 405); more means one came back, so ASSD should have a refund. |
-| Is the scale / hair dryer at the front desk? | A physical check. A No needs the guest who has it or an explanation before they can sign. Admins add more items under Till settings → Front desk checks. |
+| Is the scale / hair dryer at the front desk? | A physical check. A No needs the guest who has it or an explanation before they can sign. Admins add more items under Settings → Front desk. |
 | Anything the supervisor should know (optional) | |
 
 Name, date and shift come from their HIVE sign-in and the clock. ASSD's cash
@@ -56,7 +62,7 @@ settings → Rentals when the desk starts counting them.
 ## What goes on somebody's list
 
 A shift belongs to whoever closed it in HIVE. A shift nobody closed belongs to
-the HIVE login mapped to its ASSD user under Till settings → People.
+the HIVE login mapped to its ASSD user under Settings → Front desk → Whose ASSD login is whose.
 
 - **The drawer did not agree**: ASSD's closing count against what the drawer
   should have held.
@@ -67,7 +73,7 @@ the HIVE login mapped to its ASSD user under Till settings → People.
 - **A rental count did not agree with ASSD.**
 - **No closing report**, from the first day anybody closed a shift in HIVE.
 
-A difference no bigger than the amount under Till settings → Small
+A difference no bigger than the amount under Settings → Limits → Small
 differences is left off.
 
 Staff explain, add the PO, or say they will pay it back. An admin, or a
@@ -80,10 +86,12 @@ it back. Settled items leave the person's list, and they are told.
 ## Supervisors' corrections and answers
 
 A supervisor given **Correct cash movements → See and act** can correct a
-movement, but it counts only once an admin approves it under Shifts →
-Approvals. The same goes for a supervisor's answer to an exception and for
+movement, but it counts only once an admin approves it under Shifts → Inbox →
+Waiting for admin. A movement at or under the small-differences limit
+(Settings → Limits) is the exception: the correction counts straight away,
+and the daily summary lists it. The same goes for a supervisor's answer to an exception and for
 exceptions a supervisor reconciles together: they show as "Waiting for an
-admin" and stay on the list until an admin approves them (Shifts → Approvals,
+admin" and stay on the list until an admin approves them (Shifts → Inbox → Waiting for admin,
 or Approve on the exception itself). Reject puts them back. An admin's own
 answers clear at once. Admins chosen under Who is told hear about each one.
 
@@ -95,7 +103,7 @@ A report is matched to its shift by day and shift. Somebody who closes after
 eleven at night is offered the night by the clock, so an afternoon closed late
 can land on the night row. Where ASSD has somebody on a shift with no report
 and that person's report is on the shift just before or after (one ASSD has
-somebody else on, or nobody), Closing reports says so on both rows, and an
+somebody else on, or nobody), the shift's closing report says so, and an
 admin (or a supervisor allowed to reopen) can press **Move it to this shift**:
 the report and its POs move, and the person is told. A report cannot be moved
 onto a shift its writer already has a report for.

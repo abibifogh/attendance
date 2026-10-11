@@ -153,7 +153,7 @@ export async function renderShifts(root, { range }) {
   let byId = new Map();
   let colours = {};
   // What this person may open. An admin, everything; a supervisor, what an
-  // admin gave them under Till settings. The server cuts the data to match.
+  // admin gave them under Settings. The server cuts the data to match.
   const who = state.me?.account?.till || { role: 'admin', access: {} };
   const admin = who.role === 'admin';
   const may = (area, level = 1) => admin || (who.access?.[area] || 0) >= level;

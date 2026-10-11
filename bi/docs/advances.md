@@ -35,18 +35,18 @@
 
 ## Who sees it
 
-Insight → Shifts → To-do → **Advances**. Admins always. A supervisor only if
-an admin gives them **Advances** under Till settings → supervisor access:
+Insight → Shifts → Inbox → **Advances**. Admins always. A supervisor only if
+an admin gives them **Advances** under Settings → Who sees what:
 *See* shows the list; *See and act* also allows More time and Close. Shift
 variances are shown only to those who also see amounts.
 
 Each line has one status: *Approve in Odoo*, *Report on form* (either marked
 *overdue* once the next shift's day has passed), *Refund GH₵ X*, *Deficit
 GH₵ X*, *Refund not in ASSD* (the shift that took it in shows no surplus),
-*Cancelled in Odoo*, *Closed* or *Settled*. Open a line for what Odoo, the
+*Cancelled*, *Closed* or *✓ Counted*. Open a line for what Odoo, the
 form and the drawers each say.
 
-Below the list, **On the expense form, not paid from a drawer** lists form
+Under **Advances**, below the list, **On the expense form, not paid from a drawer** lists form
 entries whose PO no HIVE shift paid (the safe, a transfer, a supplier
 account). They are never chased. An admin ticks the ones looked at and
 **Clears** them (or **Clear all listed**); **Undo** puts them back.
