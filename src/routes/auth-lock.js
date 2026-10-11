@@ -1,8 +1,9 @@
 import { badRequest, json, readJson, str, unauthorized } from '../lib/http.js';
 import {
-  getPepper, hashPin, isReservedPin, markPinOk, pinLooksRight, throttleCheck,
-  throttleFail, throttleReset, verifyPasswordKey,
+  createToken, getPepper, hashPin, isReservedPin, markPinOk, pinLooksRight, sessionCookie,
+  throttleCheck, throttleFail, throttleReset, tokenTtl, verifyPasswordKey,
 } from '../lib/auth.js';
+import { effectivePermissions } from '../lib/permissions.js';
 
 /**
  * The PIN again, to carry on where they left off.
@@ -16,6 +17,16 @@ import {
  * takes the person the session already names and asks whether these digits are
  * theirs. Typing a colleague's PIN into somebody else's locked phone unlocks
  * nothing.
+ *
+ * A SHARED COMPUTER IS THE EXCEPTION THAT IS NOT ONE. At the front desk two
+ * receptionists use one PC, and the second one sits down at the first one's
+ * locked session and types their own PIN, which was refused as "not your
+ * PIN" with no hint of whose it wanted. So a PIN that belongs to somebody
+ * else is taken as what it is: that person signing in. The old session ends,
+ * a new one is issued exactly as the sign-in keypad would issue it, and the
+ * page starts again from nothing, so none of the first person's screen is
+ * shown to the second. It opens nothing the sign-in keypad would not, and it
+ * counts against the same throttle.
  *
  * Throttled like a sign-in, because it is the same guessing surface, and by
  * the same counter so a locked phone is not a way round the keypad closing.
@@ -70,8 +81,15 @@ export async function unlock(ctx) {
     if (!ok) await wrong();
   } else {
     const typed = str(body.pin, 'PIN', { max: 64, fallback: '' });
-    if (!typed || !row.pin_hash) await wrong();
-    if (await hashPin(typed, pepper) !== row.pin_hash) await wrong();
+    if (!typed) await wrong();
+    const hash = await hashPin(typed, pepper);
+    if (!row.pin_hash || hash !== row.pin_hash) {
+      const other = await db.prepare(
+        'SELECT id, name, role, permissions, active, email FROM users WHERE pin_hash = ? AND active = 1',
+      ).bind(hash).first().catch(() => null);
+      if (other && Number(other.id) !== Number(row.id)) return switchTo(ctx, other, typed);
+      await wrong();
+    }
 
     // The same reckoning the sign-in does, and for the same reason. Unlocking
     // with six digits is proof the six digits are theirs, which settles an
@@ -84,4 +102,45 @@ export async function unlock(ctx) {
 
   await throttleReset(db, ip);
   return json({ ok: true, mustChangePin: short });
+}
+
+/**
+ * Somebody else's PIN at a locked screen: they are signing in.
+ *
+ * The same session the sign-in keypad would give them, and the same settling
+ * of a PIN that meets the length rule. The browser is told to start again, so
+ * nothing the previous person had open survives into the new session.
+ */
+async function switchTo(ctx, user, typed) {
+  const { db, env, url, request } = ctx;
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  await throttleReset(db, ip);
+
+  const shortPin = !pinLooksRight(typed);
+  if (!shortPin) await markPinOk(db, user.id);
+
+  const now = Math.floor(Date.now() / 1000);
+  const token = await createToken({
+    uid: user.id,
+    role: user.role,
+    recovery: 0,
+    via: 'pin',
+    ...(shortPin ? { shortPin: 1 } : {}),
+    iat: now,
+    exp: now + tokenTtl(user.role),
+  }, env.SESSION_SECRET);
+
+  await db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?")
+    .bind(user.id).run().catch(() => {});
+
+  return json({
+    ok: true,
+    switched: true,
+    name: user.name,
+    role: user.role,
+    mustChangePin: shortPin,
+    permissions: effectivePermissions(user),
+  }, {
+    headers: { 'Set-Cookie': sessionCookie(token, user.role, url.protocol === 'https:') },
+  });
 }

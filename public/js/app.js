@@ -1095,6 +1095,7 @@ function watchForTheRoom() {
     // What they hold as well as what they last used. The lock asks for the
     // wrong credential otherwise, and used to give no way to correct it.
     who: () => ({
+      name: state.name,
       signsInWith: state.signedInWith,
       email: state.email,
       hasPin: state.hasPin,

@@ -146,11 +146,19 @@ test('their own PIN opens it', async () => {
   assert.equal(out.ok, true);
 });
 
-test('somebody else’s PIN does not, however valid it is', async () => {
+test('somebody else’s PIN does not open it: it signs them in instead, from nothing', async () => {
   const { db } = await setup();
   // Kofi's PIN is a real PIN and it signs Kofi in. It must not open Ama's
-  // locked phone, or the lock is a lock anybody in the building can pick.
-  await assert.rejects(() => unlockFor(db, { pin: '550011' }, asUser(1)), /not your PIN/);
+  // locked screen, or the lock is a lock anybody in the building can pick. On
+  // the shared front-desk PC, though, Kofi typing his own PIN means Kofi is
+  // signing in: Ama's session ends, Kofi gets his own, and the page starts
+  // again so nothing of Ama's is shown.
+  const response = await unlock(ctx(db, { pin: '550011' }, asUser(1), { SESSION_SECRET: 'test-secret-0123456789' }));
+  const out = await response.json();
+  assert.equal(out.switched, true);
+  assert.match(out.name, /Kofi/);
+  assert.match(response.headers.get('Set-Cookie') ?? '', /HttpOnly/, 'a session of their own');
+  assert.notEqual(out.unlocked, true);
 });
 
 test('a wrong PIN is refused and a missing one too', async () => {

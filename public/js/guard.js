@@ -232,6 +232,14 @@ function showLock() {
   const say = (words) => { said.textContent = words; };
 
   const finish = (out) => {
+    // Somebody else's PIN: they have signed in, and the previous person's
+    // screen must not be shown to them. Start the app again from nothing.
+    if (out?.switched) {
+      forgetSeen();
+      window.location.replace(`${window.location.pathname}#/`);
+      window.location.reload();
+      return;
+    }
     locked = false;
     touched();
     writeSeen();
@@ -298,9 +306,16 @@ function showLock() {
   // The way out of a wrong guess. Only where there is somewhere to go: most of
   // the property holds a PIN and nothing else, and offering them a password
   // they do not have is worse than not offering.
+  const first = String(me.name ?? '').trim().split(/\s+/)[0] || '';
   const asks = h('p.muted.lock-asks', recovery
     ? 'Type the PIN you signed in with to carry on.'
     : 'Nothing you were doing has been lost.');
+  // On a shared computer the next person sits down at somebody else's locked
+  // screen. Saying whose it is, and that their own PIN works, is the difference
+  // between signing in and being told "That is not your PIN".
+  const notThem = !recovery && first
+    ? h('p.muted.lock-asks', `Not ${first}? Tap your own PIN to sign in as yourself.`)
+    : null;
 
   const swap = h('button.btn-sm.lock-swap');
   const showPassword = (on) => {
@@ -318,8 +333,9 @@ function showLock() {
   const screen = h('div.lock-screen',
     h('div.lock-card',
       h('div.lock-mark', h('img', { src: '/icons/hive-192.png', alt: '', width: 44, height: 44 })),
-      h('h2', 'Welcome back'),
+      h('h2', first ? `Welcome back, ${first}` : 'Welcome back'),
       asks,
+      notThem,
       recovery ? typedPane : h('div', typedPane, padPane),
       said,
       canSwap ? swap : null,
