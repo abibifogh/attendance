@@ -206,6 +206,7 @@ async function checkPo(ctx, typed) {
   const answer = await insight(ctx.env, '/api/link/till/po', { names: [typed] });
   const found = answer?.found?.[0] || { typed, name: null };
   if (!found.name) return { ...found, state: 'missing', counted: false };
+  await rememberOdoo(ctx.db, found);
   // Paid from the safe already: Insight says so, and it is not the drawer's.
   if (found.safe) return { ...found, state: 'claimed', counted: false, claimed: { day: found.safe.day, slot: null, by: 'the safe' } };
   const before = await paidAgainst(ctx.db, found.name);
@@ -228,36 +229,72 @@ const kindOf = (found) => (found.state === 'topup' ? 'topup' : found.state === '
 const amountOf = (found) => (found.amount != null ? Number(found.amount) : Number(found.total) || 0);
 
 /**
- * POs paid from drawers in the last month whose total in Odoo has changed
+ * POs paid from drawers in the last fortnight whose total in Odoo has changed
  * since: shown when somebody opens Close shift, so a top-up or change back
  * that went through their drawer is put on their own shift there and then.
+ *
+ * Cheap on purpose: two queries for what was paid, and Odoo asked only for
+ * POs it has not been asked about in the last ten minutes, twenty at a time
+ * and all at once. Signing asks Odoo afresh, so a remembered answer never
+ * decides what counts.
  */
 export async function poChanges(ctx) {
   const tz = await timezoneOf(ctx.db);
   const since = addDays(todayIn(tz), -PO_CHANGE_DAYS);
-  const names = ((await ctx.db.prepare('SELECT DISTINCT po FROM till_po WHERE day >= ?1').bind(since).all()).results || [])
-    .map((r) => r.po);
-  if (!names.length) return json({ changes: [] });
-  const changes = [];
-  for (let i = 0; i < names.length; i += 20) {
+  const sums = (await ctx.db.prepare(
+    `SELECT po, SUM(paid) AS paid FROM till_po
+      WHERE po IN (SELECT DISTINCT po FROM till_po WHERE day >= ?1) GROUP BY po`,
+  ).bind(since).all()).results || [];
+  if (!sums.length) return json({ changes: [] });
+  const firsts = new Map(((await ctx.db.prepare(
+    `SELECT t.po, t.day, t.slot, t.paid, r.name AS who FROM till_po t LEFT JOIN till_report r ON r.id = t.report_id
+      WHERE t.kind = 'claim' AND t.po IN (SELECT DISTINCT po FROM till_po WHERE day >= ?1)`,
+  ).bind(since).all()).results || []).map((r) => [r.po, { day: r.day, slot: r.slot, by: r.who || null, paid: Number(r.paid) || 0 }]));
+
+  // What Odoo said in the last ten minutes, and what it has to be asked.
+  const fresh = new Map(((await ctx.db.prepare(
+    "SELECT * FROM till_po_odoo WHERE checked_at >= datetime('now', ?1)",
+  ).bind(`-${PO_ODOO_MINUTES} minutes`).all().catch(() => ({ results: [] }))).results || [])
+    .map((r) => [r.po, { name: r.po, total: r.total, vendor: r.vendor, state: r.state, confirmed: Boolean(r.confirmed), safe: r.safe_day ? { day: r.safe_day } : null }]));
+  const ask = sums.map((r) => r.po).filter((po) => !fresh.has(po));
+  const chunks = [];
+  for (let i = 0; i < ask.length; i += 20) chunks.push(ask.slice(i, i + 20));
+  const answers = await Promise.all(chunks.map((names) => insightOrNull(ctx.env, '/api/link/till/po', { names })));
+  if (answers.some((a) => !a)) return json({ changes: [], unchecked: true });
+  for (const found of answers.flatMap((a) => a.found || [])) {
+    if (!found.name) continue;
+    fresh.set(String(found.name).toUpperCase(), found);
     // eslint-disable-next-line no-await-in-loop
-    const answer = await insightOrNull(ctx.env, '/api/link/till/po', { names: names.slice(i, i + 20) });
-    if (!answer) return json({ changes: [], unchecked: true });
-    for (const found of answer.found || []) {
-      if (!found.name || !found.confirmed || found.safe) continue;
-      // eslint-disable-next-line no-await-in-loop
-      const before = await paidAgainst(ctx.db, found.name);
-      const diff = (Number(found.total) || 0) - (before?.paid ?? 0);
-      if (!before || diff === 0) continue;
-      changes.push({
-        name: found.name, vendor: found.vendor ?? null, total: found.total, paidSoFar: before.paid,
-        amount: diff, state: diff > 0 ? 'topup' : 'change', first: before.first,
-      });
-    }
+    await rememberOdoo(ctx.db, found);
+  }
+
+  const changes = [];
+  for (const { po, paid } of sums) {
+    const found = fresh.get(po);
+    if (!found || !found.confirmed || found.safe) continue;
+    const diff = (Number(found.total) || 0) - (Number(paid) || 0);
+    if (diff === 0) continue;
+    const first = firsts.get(po) || { day: null, slot: null, by: null, paid: Number(paid) || 0 };
+    changes.push({
+      name: found.name, vendor: found.vendor ?? null, total: found.total, paidSoFar: Number(paid) || 0,
+      amount: diff, state: diff > 0 ? 'topup' : 'change', first,
+    });
   }
   return json({ changes });
 }
-const PO_CHANGE_DAYS = 30;
+const PO_CHANGE_DAYS = 14;
+const PO_ODOO_MINUTES = 10;
+
+/** Keep what Odoo said about a PO for the next few minutes. */
+async function rememberOdoo(db, found) {
+  if (!found?.name) return;
+  await db.prepare(
+    `INSERT INTO till_po_odoo (po, total, vendor, state, confirmed, safe_day, checked_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))
+     ON CONFLICT (po) DO UPDATE SET total = ?2, vendor = ?3, state = ?4, confirmed = ?5, safe_day = ?6, checked_at = datetime('now')`,
+  ).bind(String(found.name).toUpperCase(), found.total ?? null, found.vendor ?? null, found.state ?? null,
+    found.confirmed ? 1 : 0, found.safe?.day ?? null).run().catch(() => {});
+}
 
 /** Look a PO up while somebody types it. Read-only all the way to Odoo. */
 export async function lookUpPo(ctx) {

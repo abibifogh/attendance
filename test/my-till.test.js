@@ -337,9 +337,16 @@ test('a PO whose price changed after it was paid: the difference counts on the s
     await closeShift(ctx(db, AMA, { env, body: good(first) }));
     const changes = async (who = KOFI) => (await (await poChanges(ctx(db, who, { env, path: '/api/me/till/po-changes' }))).json()).changes;
     assert.deepEqual(await changes(), [], 'nothing changed yet');
+    const asked = () => env.INSIGHT.asked.filter(([p]) => p.endsWith('/po')).length;
+    const before = asked();
+    await changes();
+    assert.equal(asked(), before, 'opened again straight away: Odoo is not asked again');
 
-    // The supplier charged GH₵ 20 more and the PO was amended in Odoo.
+    // The supplier charged GH₵ 20 more and the PO was amended in Odoo. What
+    // Odoo said is remembered ten minutes; forget it, as ten minutes passing would.
     ODOO.P00412.total = was + 2000;
+    assert.deepEqual(await changes(), [], 'within ten minutes, the remembered answer');
+    raw.exec("UPDATE till_po_odoo SET checked_at = datetime('now', '-11 minutes')");
     const up = await changes();
     assert.equal(up.length, 1);
     assert.deepEqual([up[0].name, up[0].state, up[0].amount, up[0].paidSoFar, up[0].first.by], ['P00412', 'topup', 2000, was, 'Ama Test']);
@@ -356,6 +363,7 @@ test('a PO whose price changed after it was paid: the difference counts on the s
 
     // Then it came down to GH₵ 430: GH₵ 30 change is due back.
     ODOO.P00412.total = was - 1000;
+    raw.exec("UPDATE till_po_odoo SET checked_at = datetime('now', '-11 minutes')");
     const down = await changes(AMA);
     assert.deepEqual([down[0].state, down[0].amount, down[0].paidSoFar], ['change', -3000, was + 2000]);
     // Change coming back does not explain cash leaving a drawer.

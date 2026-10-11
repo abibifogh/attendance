@@ -25,3 +25,16 @@ ALTER TABLE till_po_next RENAME TO till_po;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_till_po_claim ON till_po (po) WHERE kind = 'claim';
 CREATE INDEX IF NOT EXISTS idx_till_po_shift ON till_po (day, slot);
 CREATE INDEX IF NOT EXISTS idx_till_po_po ON till_po (po);
+
+-- What Odoo last said about a PO paid from a drawer, kept ten minutes, so
+-- opening Close shift again does not ask Odoo the same thing again. Signing
+-- always asks afresh.
+CREATE TABLE IF NOT EXISTS till_po_odoo (
+  po         TEXT    PRIMARY KEY,
+  total      INTEGER,
+  vendor     TEXT,
+  state      TEXT,
+  confirmed  INTEGER NOT NULL DEFAULT 0,
+  safe_day   TEXT,
+  checked_at TEXT    NOT NULL
+);
