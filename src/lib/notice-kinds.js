@@ -460,11 +460,11 @@ export const KINDS = [
   // Who is told is chosen in Insight, person by person, with push and email
   // each ticked or not there; these switches can still silence a kind.
   {
-    key: 'till.closed',
+    key: 'till.summary',
     group: 'money',
-    label: 'A shift has been closed',
+    label: 'Daily till summary',
     who: 'Whoever Insight says to tell',
-    when: 'Somebody signs their closing report',
+    when: 'Every morning: yesterday’s shifts, and what waits for an admin',
     ways: ['push', 'email'],
   },
   {

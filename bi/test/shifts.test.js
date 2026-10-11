@@ -440,6 +440,18 @@ test('a person can correct what a movement was, match a duplicate, and pair a re
   await assert.rejects(routes.saveMovement(env, { seq: 300508, kind: 'split', expenses: '150' }, OWNER), /less than the whole/);
   await assert.rejects(routes.saveMovement(env, { seq: 300502, kind: 'safe' }, OWNER), /not a Cash Movement/);
 
+  // A supervisor's correction of a small movement counts straight away; a bigger one waits for an admin.
+  const SUP = { id: 9, name: 'Sam Sup', access: [{ systemId: 'insight', role: 'supervisor' }] };
+  await routes.saveMovement(env, { seq: 300508, kind: 'clear' }, OWNER);
+  const big = await routes.saveMovement(env, { seq: 300508, kind: 'safe' }, SUP, { pending: true, smallUpTo: 10000 });
+  assert.deepEqual([big.pending, big.small], [true, false], 'GH₵150 is over a GH₵100 limit');
+  await routes.saveMovement(env, { seq: 300508, kind: 'clear' }, OWNER);
+  const small = await routes.saveMovement(env, { seq: 300508, kind: 'safe' }, SUP, { pending: true, smallUpTo: 20000 });
+  assert.deepEqual([small.pending, small.small], [false, true]);
+  const row = await env.DB.prepare('SELECT status, decided_by FROM shift_movement WHERE seq = 300508').first();
+  assert.deepEqual({ ...row }, { status: 'applied', decided_by: routes.SMALL_BY });
+  await routes.saveMovement(env, { seq: 300508, kind: 'split', expenses: '30' }, OWNER);
+
   // Undo from either end of a pair.
   await routes.saveMovement(env, { seq: 300528, kind: 'clear' }, OWNER);
   ({ bravo } = await read());
