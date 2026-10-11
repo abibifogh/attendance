@@ -44,17 +44,44 @@ const SLOT_ORDER = ['morning', 'afternoon', 'night'];
 /** Whether the expense form is connected. Until it is, nothing waits for it. */
 export const formLive = (env) => Boolean(env?.EXPENSE_FORM_SECRET);
 
-/** GH₵ 1,200.50, "1200.5", 1200.5 → 120050 pesewas; nothing usable → null. */
+/** GH₵ 1,200.50, "1200.5", 1200.5 → 120050 pesewas; anything else (words, nothing) → null. */
 export function toMinor(value) {
   if (value == null || value === '') return null;
-  const n = Number(String(value).replace(/[^0-9.\-]/g, ''));
-  return Number.isFinite(n) ? Math.round(n * 100) : null;
+  if (typeof value === 'number') return Number.isFinite(value) ? Math.round(value * 100) : null;
+  const text = String(value).replace(/GH[S₵C]?|₵|cedis?|,|\s/gi, '');
+  return /^-?\d+(\.\d+)?$/.test(text) ? Math.round(Number(text) * 100) : null;
 }
 
 /**
- * Responses from the form. Each is { responseId, po, amount, tnt, by,
- * submittedAt }; sending one twice keeps one row. Up to 500 at once, for the
- * script's "send every past response".
+ * The POs a response names, as Odoo names them. Typed every which way on the
+ * form: 4123, 4123.0, P04123, p04123, PO4123, POO123 (a letter O for a nought),
+ * P004123, two at once ("4123 & 4124"). Anything that is not a number (N/A,
+ * a name, "Bolt") names no PO.
+ */
+export function formPos(typed) {
+  const out = [];
+  for (const raw of String(typed ?? '').toUpperCase().split(/[,&/;+]|\bAND\b|\s+/)) {
+    let t = raw.replace(/[^A-Z0-9.]/g, '').replace(/\.0+$/, '');
+    if (!/^P?O*\d/.test(t) && !/^PO/.test(t)) continue;
+    t = t.replace(/^P/, '').replace(/O/g, '0');
+    if (!/^\d+$/.test(t)) continue;
+    const digits = t.replace(/^0+(?=\d)/, '');
+    // Nought, or a phone number: not a PO.
+    if (digits === '0' || digits.length > 6) continue;
+    const name = `P${digits.padStart(5, '0')}`;
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
+}
+
+/**
+ * Responses from the form. Each is { responseId, po, amount, tnt, tntIncluded,
+ * by, submittedAt }; sending one twice keeps one copy. Up to 500 at once, for
+ * the script's "send past responses".
+ *
+ * TnT counts on top of the amount, unless the form says the transport was
+ * included in the invoice: then the amount has it already. A response naming
+ * two POs marks both reported, with no amount, since it cannot be split.
  */
 export async function ingestForm(env, body) {
   const list = Array.isArray(body?.responses) ? body.responses : [body];
@@ -63,14 +90,19 @@ export async function ingestForm(env, body) {
   for (const r of list) {
     const id = String(r?.responseId ?? '').trim().slice(0, 120);
     if (!id) continue;
-    const typed = String(r?.po ?? '').trim().slice(0, 40);
-    const po = typed ? poName(typed.replace(/^PO\s*/i, '')) : null;
+    const typed = String(r?.po ?? '').trim().slice(0, 60);
+    const pos = formPos(typed);
+    const one = pos.length <= 1;
+    const tnt = r?.tntIncluded ? 0 : toMinor(r?.tnt) ?? 0;
+    const rest = [typed || null, one ? toMinor(r?.amount) : null, one ? tnt : null,
+      String(r?.by ?? '').slice(0, 120) || null, String(r?.submittedAt ?? '').slice(0, 30) || null];
     // eslint-disable-next-line no-await-in-loop
-    await run(env.DB, `INSERT INTO expense_report (response_id, po, po_typed, amount, tnt, by_name, submitted_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-        ON CONFLICT (response_id) DO UPDATE SET po = ?2, po_typed = ?3, amount = ?4, tnt = ?5, by_name = ?6, submitted_at = ?7`,
-    id, po, typed || null, toMinor(r?.amount), toMinor(r?.tnt) ?? 0, String(r?.by ?? '').slice(0, 120) || null,
-    String(r?.submittedAt ?? '').slice(0, 30) || null);
+    await run(env.DB, "DELETE FROM expense_report WHERE response_id = ?1 OR response_id LIKE ?1 || '#%'", id);
+    for (const [i, po] of (pos.length ? pos : [null]).entries()) {
+      // eslint-disable-next-line no-await-in-loop
+      await run(env.DB, `INSERT INTO expense_report (response_id, po, po_typed, amount, tnt, by_name, submitted_at)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`, i ? `${id}#${i + 1}` : id, po, ...rest);
+    }
     saved += 1;
   }
   return { ok: true, saved };
@@ -81,9 +113,16 @@ export async function reportedFor(env, names) {
   const wanted = [...new Set(names.filter(Boolean).map((n) => poName(n)))];
   const out = new Map();
   if (!wanted.length) return out;
-  const rows = await all(env.DB, `SELECT po, SUM(COALESCE(amount, 0)) AS amount, SUM(COALESCE(tnt, 0)) AS tnt, COUNT(*) AS n
+  const rows = await all(env.DB, `SELECT po, SUM(COALESCE(amount, 0)) AS amount, SUM(COALESCE(tnt, 0)) AS tnt, COUNT(*) AS n,
+        SUM(amount IS NULL) AS together
       FROM expense_report WHERE po IN (${wanted.map((_, i) => `?${i + 1}`).join(', ')}) GROUP BY po`, ...wanted).catch(() => []);
-  for (const r of rows) out.set(r.po, { amount: Number(r.amount) || 0, tnt: Number(r.tnt) || 0, total: (Number(r.amount) || 0) + (Number(r.tnt) || 0), count: Number(r.n) || 0 });
+  for (const r of rows) {
+    out.set(r.po, {
+      amount: Number(r.amount) || 0, tnt: Number(r.tnt) || 0, total: (Number(r.amount) || 0) + (Number(r.tnt) || 0), count: Number(r.n) || 0,
+      // Reported on one response with other POs: reported, the amount not its own.
+      ...(Number(r.together) ? { together: true } : {}),
+    });
+  }
   return out;
 }
 
@@ -173,7 +212,7 @@ export async function gatherAdvances(env, { fetchImpl, on = today() } = {}) {
     else status = 'settled';
     items.push({
       po, vendor: order?.vendor ?? claim.vendor ?? null, advance, advanced: Number(claim.paid) || 0, paid, total, confirmed, state: order?.state ?? null,
-      reported, amountDiffers: Boolean(reported && total != null && reported.total !== total),
+      reported, amountDiffers: Boolean(reported && !reported.together && total != null && reported.total !== total),
       by: claim.who || null, userId: claim.user_id, day: claim.day, slot: claim.slot, due, old,
       diff, moves, decision, status, settled,
       // Past the day of the shift it was due by, with no more time given.

@@ -55,15 +55,22 @@ form and the drawers each say.
    secret.
 3. **Actions → "Set Insight's secrets" → Run workflow.**
 4. Open the expense form in Google Forms → **⋮ → Apps Script**. Delete what is
-   there and paste in [`expense-form.gs`](expense-form.gs). If the questions
-   are not called *PO number*, *Amount* and *TnT*, change the titles at the
-   top to match.
+   there and paste in [`expense-form.gs`](expense-form.gs). It reads these
+   questions: *Enter the Purchase Order number*, *Enter the GHS Value*, *Was
+   there transportation?*, *How much was transportation?* and *Select Your
+   Name*. If one is renamed on the form, change its title at the top of the
+   script to match.
 5. In the script editor: **Project Settings (⚙) → Script properties → Add**:
    - `INSIGHT_URL`: Insight's address, for example `https://insight.example.com`
    - `FORM_SECRET`: the same secret as in step 2
 6. Back in the editor, choose **setUp** and press **Run**. Google asks for
    permission the first time; allow it.
 7. Choose **sendAllPast** and press **Run**, to send the responses already on
-   the form.
+   the form from 1 October 2026 on (`SEND_FROM` at the top of the script).
+
+PO numbers are read however they were typed: 4123, P04123, p04123, PO4123,
+POO123, or two on one response ("4123 & 4124", both marked reported). *N/A*,
+a name or a phone number names no PO. TnT is added to the amount, unless the
+answer to *Was there transportation?* says it was included in the invoice.
 
 From then on each response reaches Insight the moment it is submitted.

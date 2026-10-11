@@ -88,7 +88,7 @@ export async function advancesPanel(v) {
     const said = h('span.small');
     const facts = [
       ['Odoo', x.state ? `${x.state}${x.total != null ? ` · ${money(x.total)}` : ''}` : 'not read'],
-      ['Expense form', x.reported ? `${money(x.reported.amount)} + ${money(x.reported.tnt)} TnT = ${money(x.reported.total)}${x.amountDiffers ? ' · not the PO’s total' : ''}` : d.formLive ? 'not reported yet' : 'not connected'],
+      ['Expense form', x.reported?.together ? 'reported on one response with other POs' : x.reported ? `${money(x.reported.amount)} + ${money(x.reported.tnt)} TnT = ${money(x.reported.total)}${x.amountDiffers ? ' · not the PO’s total' : ''}` : d.formLive ? 'not reported yet' : 'not connected'],
       ['From drawers', money(x.paid)],
       x.advance ? ['Next shift', `${when(x.due)}${x.overdue ? ' · overdue' : ''}`] : null,
     ].filter(Boolean);
