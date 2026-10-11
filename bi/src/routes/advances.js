@@ -86,26 +86,40 @@ export function formPos(typed) {
 export async function ingestForm(env, body) {
   const list = Array.isArray(body?.responses) ? body.responses : [body];
   if (!list.length || list.length > 500) throw badRequest('Send between 1 and 500 responses.');
-  let saved = 0;
+  const ids = [];
+  const rows = [];
   for (const r of list) {
     const id = String(r?.responseId ?? '').trim().slice(0, 120);
-    if (!id) continue;
+    if (!id || ids.includes(id)) continue;
+    ids.push(id);
     const typed = String(r?.po ?? '').trim().slice(0, 60);
     const pos = formPos(typed);
     const one = pos.length <= 1;
     const tnt = r?.tntIncluded ? 0 : toMinor(r?.tnt) ?? 0;
     const rest = [typed || null, one ? toMinor(r?.amount) : null, one ? tnt : null,
       String(r?.by ?? '').slice(0, 120) || null, String(r?.submittedAt ?? '').slice(0, 30) || null];
-    // eslint-disable-next-line no-await-in-loop
-    await run(env.DB, "DELETE FROM expense_report WHERE response_id = ?1 OR response_id LIKE ?1 || '#%'", id);
-    for (const [i, po] of (pos.length ? pos : [null]).entries()) {
-      // eslint-disable-next-line no-await-in-loop
-      await run(env.DB, `INSERT INTO expense_report (response_id, po, po_typed, amount, tnt, by_name, submitted_at)
-          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`, i ? `${id}#${i + 1}` : id, po, ...rest);
-    }
-    saved += 1;
+    for (const [i, po] of (pos.length ? pos : [null]).entries()) rows.push([i ? `${id}#${i + 1}` : id, po, ...rest]);
   }
-  return { ok: true, saved };
+  if (!ids.length) return { ok: true, saved: 0 };
+
+  // A few statements in one batch, not two per response: a Worker may only
+  // make so many database calls in one request, and D1 takes at most a
+  // hundred values in one statement.
+  const statements = [];
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90);
+    const marks = chunk.map((_, j) => `?${j + 1}`).join(', ');
+    statements.push(env.DB.prepare(`DELETE FROM expense_report WHERE response_id IN (${marks})
+        OR (instr(response_id, '#') > 0 AND substr(response_id, 1, instr(response_id, '#') - 1) IN (${marks}))`).bind(...chunk));
+  }
+  for (let i = 0; i < rows.length; i += 14) {
+    const chunk = rows.slice(i, i + 14);
+    const values = chunk.map((_, j) => `(${[1, 2, 3, 4, 5, 6, 7].map((k) => `?${j * 7 + k}`).join(', ')})`).join(', ');
+    statements.push(env.DB.prepare(`INSERT INTO expense_report (response_id, po, po_typed, amount, tnt, by_name, submitted_at)
+        VALUES ${values}`).bind(...chunk.flat()));
+  }
+  await env.DB.batch(statements);
+  return { ok: true, saved: ids.length };
 }
 
 /** What the form says about each PO: amount and TnT added up over its responses. */
