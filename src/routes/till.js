@@ -6,6 +6,7 @@ import { createNotice } from '../lib/notices.js';
 import { callLink, verifyLink } from '../lib/till-link.js';
 import { addDays, nowIn, todayIn } from '../util/dates.js';
 import { firstMonthFor } from '../lib/advances.js';
+import { nextOnReception } from '../lib/till-watch.js';
 import { firstUsableEmail, isEmail, sendEmail, senderWithName } from '../lib/notify.js';
 import { firstName, sayDate, sayHours, sayMonth, sayShortDate } from '../lib/email-design.js';
 
@@ -169,32 +170,211 @@ export async function myTill(ctx) {
 
 // ----------------------------------------------------------------- the POs --
 
+/** A requisition: cash may go out against it before the purchase, as an advance. */
+const REQUISITION = new Set(['draft', 'sent', 'to approve']);
+/** Reported on the expense form, or the form is not connected yet so nothing waits for it. */
+const reportedOk = (found) => !found?.formLive || Boolean(found?.reported);
+
 /**
- * A PO Odoo has but nobody has approved: a request for quotation, one waiting
- * for approval, or a cancelled one. It cannot be used to close a shift.
+ * Why a PO on a closing report stops it being signed, or null when it does
+ * not. A requisition does not: it goes in as an advance. One approved in Odoo
+ * has to be on the expense form too.
  */
-const NOT_APPROVED = { draft: 'still a request for quotation', sent: 'still a request for quotation', 'to approve': 'waiting for approval', cancel: 'cancelled' };
+const BLOCKED = { report: 'approved but not on the expense form yet', cancel: 'cancelled in Odoo' };
 export function notApproved(found) {
   if (!found?.name || found.counted || ['claimed', 'missing', 'unchecked', 'confirmed'].includes(found.state)) return null;
-  return NOT_APPROVED[found.state] || 'not approved';
+  return BLOCKED[found.state] || 'not approved in Odoo';
 }
 
-/** Whether a PO is in Odoo, confirmed, and not already claimed here. */
+/**
+ * What has been paid from drawers against a PO so far: its first payment
+ * (who, when) and the sum of every row, top-ups added and change taken off.
+ */
+async function paidAgainst(db, name) {
+  const rows = (await db.prepare(
+    'SELECT t.*, r.name AS who FROM till_po t LEFT JOIN till_report r ON r.id = t.report_id WHERE t.po = ?1 ORDER BY t.id',
+  ).bind(String(name).toUpperCase()).all()).results || [];
+  if (!rows.length) return null;
+  const first = rows.find((r) => (r.kind || 'claim') === 'claim') || rows[0];
+  return {
+    paid: rows.reduce((t, r) => t + (Number(r.paid) || 0), 0),
+    advance: Number(first.advance) === 1,
+    first: { day: first.day, slot: first.slot, by: first.who || null, paid: Number(first.paid) || 0 },
+  };
+}
+
+/** Ask Insight about POs: Odoo, the expense form, any admin decision. */
+async function askInsight(env, names) {
+  const answer = await insight(env, '/api/link/till/po', { names });
+  return (answer?.found || []).map((f) => ({ ...f, formLive: Boolean(answer?.formLive) }));
+}
+
+/**
+ * Whether a PO can go on a closing report, and as what.
+ *
+ * Approved in Odoo and on the expense form: counted, at its total. Still a
+ * requisition: counted as an advance, at what the requisition says. One
+ * already paid from a drawer whose total has changed in Odoo since is not
+ * "claimed": the difference is a top-up (more to pay) or change back (money
+ * due back), and counts on the shift where it moves.
+ */
 async function checkPo(ctx, typed) {
-  const answer = await insight(ctx.env, '/api/link/till/po', { names: [typed] });
-  const found = answer?.found?.[0] || { typed, name: null };
+  const found = (await askInsight(ctx.env, [typed]))[0] || { typed, name: null };
   if (!found.name) return { ...found, state: 'missing', counted: false };
+  await rememberOdoo(ctx.db, found);
   // Paid from the safe already: Insight says so, and it is not the drawer's.
   if (found.safe) return { ...found, state: 'claimed', counted: false, claimed: { day: found.safe.day, slot: null, by: 'the safe' } };
-  const claimed = await ctx.db.prepare('SELECT t.*, r.name AS who FROM till_po t LEFT JOIN till_report r ON r.id = t.report_id WHERE t.po = ?1')
-    .bind(String(found.name).toUpperCase()).first();
-  if (claimed) {
-    return {
-      ...found, state: 'claimed', counted: false,
-      claimed: { day: claimed.day, slot: claimed.slot, by: claimed.who || null },
-    };
+  const before = await paidAgainst(ctx.db, found.name);
+  if (before) {
+    const diff = (Number(found.total) || 0) - before.paid;
+    if (found.confirmed && reportedOk(found) && diff !== 0 && !found.decision?.closed) {
+      return {
+        ...found, state: diff > 0 ? 'topup' : 'change', counted: true, amount: diff,
+        paidSoFar: before.paid, claimed: before.first,
+      };
+    }
+    return { ...found, state: 'claimed', counted: false, paidSoFar: before.paid, claimed: before.first, advance: before.advance };
   }
-  return { ...found, state: found.confirmed ? 'confirmed' : found.state || 'unconfirmed', counted: Boolean(found.confirmed) };
+  if (found.confirmed) return reportedOk(found) ? { ...found, state: 'confirmed', counted: true } : { ...found, state: 'report', counted: false };
+  if (REQUISITION.has(found.state)) return { ...found, odoo: found.state, state: 'advance', counted: true, advance: true };
+  return { ...found, state: found.state || 'unconfirmed', counted: false };
+}
+
+/** The kind of till_po row a looked-up PO makes. */
+const kindOf = (found) => (found.state === 'topup' ? 'topup' : found.state === 'change' ? 'change' : 'claim');
+/** What it counts on this shift: the difference for a top-up or change, else the PO's total. */
+const amountOf = (found) => (found.amount != null ? Number(found.amount) : Number(found.total) || 0);
+
+const SLOT_INDEX = { morning: 0, afternoon: 1, night: 2 };
+const earlierThan = (a, b) => a.day < b.day || (a.day === b.day && SLOT_INDEX[a.slot] < SLOT_INDEX[b.slot]);
+
+/**
+ * What earlier shifts left for the shift being closed.
+ *
+ * ADVANCES not settled yet: the PO is still waiting for approval in Odoo, or
+ * approved and not on the expense form. Each holds up every later shift
+ * until it is settled, or an admin gives it more time or closes it.
+ *
+ * DIFFERENCES on a PO paid within the last five days whose final total is
+ * not what left the drawers: a refund (money back in the drawer) or a deficit
+ * (more paid out). Older ones are for the admins, not the desk.
+ *
+ * Cheap on purpose: one query for what was paid, and Insight asked only about
+ * POs it has not been asked about in the last ten minutes, twenty at a time
+ * and all at once. Signing asks afresh (`fresh`), so a remembered answer never
+ * decides what may be signed.
+ */
+export async function fromEarlier(ctx, { day, slot, userId, fresh = false }) {
+  const tz = await timezoneOf(ctx.db);
+  const today = todayIn(tz);
+  const recent = addDays(today, -PO_CHANGE_DAYS);
+  const rows = (await ctx.db.prepare(
+    `SELECT t.*, COALESCE(r.name, u.name) AS who FROM till_po t
+       LEFT JOIN till_report r ON r.id = t.report_id LEFT JOIN users u ON u.id = t.user_id
+      WHERE t.po IN (SELECT po FROM till_po WHERE kind = 'claim' AND (day >= ?1 OR (advance = 1 AND day >= ?2)))
+      ORDER BY t.id`,
+  ).bind(recent, addDays(today, -ADVANCE_DAYS)).all()).results || [];
+  const byPo = new Map();
+  for (const r of rows) {
+    if (!byPo.has(r.po)) byPo.set(r.po, []);
+    byPo.get(r.po).push(r);
+  }
+  if (!byPo.size) return { advances: [], changes: [] };
+
+  // What Insight said in the last ten minutes, and what it has to be asked.
+  const known = new Map();
+  if (!fresh) {
+    for (const r of (await ctx.db.prepare("SELECT po, data FROM till_po_odoo WHERE checked_at >= datetime('now', ?1)")
+      .bind(`-${PO_ODOO_MINUTES} minutes`).all().catch(() => ({ results: [] }))).results || []) {
+      try { known.set(r.po, JSON.parse(r.data)); } catch { /* asked again */ }
+    }
+  }
+  const ask = [...byPo.keys()].filter((po) => !known.has(po));
+  const chunks = [];
+  for (let i = 0; i < ask.length; i += 20) chunks.push(ask.slice(i, i + 20));
+  let answers;
+  try { answers = await Promise.all(chunks.map((names) => askInsight(ctx.env, names))); } catch { return { advances: [], changes: [], unchecked: true }; }
+  for (const found of answers.flat()) {
+    if (!found.name) continue;
+    known.set(String(found.name).toUpperCase(), found);
+    // eslint-disable-next-line no-await-in-loop
+    await rememberOdoo(ctx.db, found);
+  }
+  const skipped = new Set(((await ctx.db.prepare('SELECT po, total FROM till_po_skip WHERE user_id = ?1')
+    .bind(userId).all().catch(() => ({ results: [] }))).results || []).map((r) => `${r.po}|${r.total}`));
+
+  const advances = [];
+  const changes = [];
+  for (const [po, list] of byPo) {
+    const found = known.get(po);
+    if (!found || found.safe || found.decision?.closed) continue;
+    const claim = list.find((r) => (r.kind || 'claim') === 'claim') || list[0];
+    const first = { day: claim.day, slot: claim.slot, by: claim.who || null, paid: Number(claim.paid) || 0 };
+    const settled = found.confirmed && reportedOk(found);
+    if (Number(claim.advance) === 1 && !settled) {
+      const moreTime = found.decision?.until && found.decision.until >= today;
+      if (!moreTime && earlierThan(claim, { day, slot })) {
+        advances.push({
+          name: found.name, vendor: found.vendor ?? null, total: found.total, paid: first.paid, first,
+          status: found.state === 'cancel' ? 'cancel' : found.confirmed ? 'report' : 'approve',
+        });
+      }
+      continue;
+    }
+    if (!settled || claim.day < recent) continue;
+    const paid = list.reduce((t, r) => t + (Number(r.paid) || 0), 0);
+    const diff = (Number(found.total) || 0) - paid;
+    if (diff === 0) continue;
+    changes.push({
+      name: found.name, vendor: found.vendor ?? null, total: found.total, paidSoFar: paid,
+      amount: diff, state: diff > 0 ? 'topup' : 'change', first, advance: Number(claim.advance) === 1,
+      reported: found.reported || null, notMine: diff > 0 && skipped.has(`${po}|${found.total}`),
+    });
+  }
+  return { advances, changes };
+}
+
+/** The Close shift screen's "From the last shift", for the shift it is on. */
+export async function poChanges(ctx) {
+  const tz = await timezoneOf(ctx.db);
+  const shift = shiftAt(nowIn(tz));
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(ctx.url.searchParams.get('day') || '') ? ctx.url.searchParams.get('day') : shift.day;
+  const slot = SLOTS.includes(ctx.url.searchParams.get('slot')) ? ctx.url.searchParams.get('slot') : shift.slot;
+  const out = await fromEarlier(ctx, { day, slot, userId: Number(ctx.session.user.id), fresh: ctx.url.searchParams.get('fresh') === '1' });
+  return json({ ...out, changes: out.changes.filter((c) => !c.notMine) });
+}
+
+/** How long after its shift a refund or deficit is still the desk's to record. */
+const PO_CHANGE_DAYS = 5;
+/** How far back an unsettled advance is followed. */
+const ADVANCE_DAYS = 60;
+const PO_ODOO_MINUTES = 10;
+
+/** Keep what Insight said about a PO for the next few minutes. */
+async function rememberOdoo(db, found) {
+  if (!found?.name) return;
+  await db.prepare(
+    `INSERT INTO till_po_odoo (po, data, checked_at) VALUES (?1, ?2, datetime('now'))
+     ON CONFLICT (po) DO UPDATE SET data = ?2, checked_at = datetime('now')`,
+  ).bind(String(found.name).toUpperCase(), JSON.stringify(found)).run().catch(() => {});
+}
+
+/** What stops a shift being signed, from earlier shifts, in words; empty when nothing does. */
+export function earlierBlocks(earlier, expenses, notMine = []) {
+  const out = [];
+  const when = (f) => `${SLOT_LABEL[f.slot] || ''} ${f.day || ''}${f.by ? `, ${f.by}` : ''}`.trim();
+  for (const a of earlier.advances || []) {
+    const what = { approve: 'approve it in Odoo', report: 'report it on the expense form', cancel: 'cancelled in Odoo: an admin has to close it' }[a.status];
+    out.push(`${a.name} advance of ${cedis(a.paid)} (${when(a.first)}): ${what}`);
+  }
+  const onReport = new Set(expenses.filter((e) => e.counted && e.kind !== 'claim').map((e) => e.name));
+  for (const c of earlier.changes || []) {
+    if (onReport.has(c.name) || c.notMine || (c.amount > 0 && notMine.includes(c.name))) continue;
+    out.push(c.amount < 0
+      ? `${c.name}: put the ${cedis(c.amount)} refund in the drawer and tap Done`
+      : `${c.name}: ${cedis(c.amount)} more was paid. Tap Done if it was from your drawer, or Not on my shift`);
+  }
+  return out;
 }
 
 /** Look a PO up while somebody types it. Read-only all the way to Odoo. */
@@ -308,20 +488,37 @@ export async function closeShift(ctx) {
       found = { ...found, state: 'claimed', counted: false, claimed: { day, slot, by: ctx.session.user.name } };
     }
     expenses.push({
-      po, paid: Number(found.total) || 0, name: found.name, state: found.state, vendor: found.vendor ?? null, total: found.total ?? null,
-      counted: found.counted, claimed: found.claimed ?? null,
+      po, paid: amountOf(found), name: found.name, state: found.state, vendor: found.vendor ?? null, total: found.total ?? null,
+      counted: found.counted, claimed: found.claimed ?? null, kind: kindOf(found),
+      ...(found.paidSoFar != null ? { paidSoFar: found.paidSoFar } : {}),
+      ...(found.state === 'advance' ? { advance: true, odoo: found.odoo } : {}),
     });
   }
 
-  // An unapproved PO is not spending anybody agreed to: get it approved first.
+  // A cancelled PO is not spending anybody agreed to, and an approved one has
+  // to be on the expense form first. A requisition goes in as an advance.
   const unapproved = expenses.filter((x) => notApproved(x));
   if (unapproved.length) {
     const list = unapproved.map((x) => `${x.name} (${notApproved(x)})`).join(', ');
-    throw badRequest(`${unapproved.length === 1 ? 'This PO is' : 'These POs are'} not approved in Odoo: ${list}. `
-      + 'Get it approved first, then close your shift. Or remove it from the report.');
+    const fix = unapproved.every((x) => x.state === 'report') ? 'Report it on the expense form first, then close your shift.'
+      : 'Sort it out first, then close your shift.';
+    throw badRequest(`${unapproved.length === 1 ? 'This PO cannot go on the report' : 'These POs cannot go on the report'}: ${list}. `
+      + `${fix} Or remove it from the report.`);
   }
 
+  // What earlier shifts left: unsettled advances, and refunds or deficits.
+  // Asked afresh. If Insight cannot be reached, nothing is held up by it.
+  const notMine = (Array.isArray(body.notMine) ? body.notMine : []).map((n) => String(n).toUpperCase()).slice(0, 40);
+  const earlier = await fromEarlier(ctx, { day, slot, userId, fresh: true }).catch(() => null);
+  const blocks = earlier ? earlierBlocks(earlier, expenses, notMine) : [];
+  if (blocks.length) throw badRequest(`To close: ${blocks.join('; ')}.`);
+
   await reauthenticate(ctx, body);
+  for (const c of (earlier?.changes || []).filter((x) => x.amount > 0 && notMine.includes(String(x.name).toUpperCase()))) {
+    // eslint-disable-next-line no-await-in-loop
+    await ctx.db.prepare('INSERT OR IGNORE INTO till_po_skip (po, total, user_id) VALUES (?1, ?2, ?3)')
+      .bind(String(c.name).toUpperCase(), c.total, userId).run().catch(() => {});
+  }
   const note = str(body.note, 'Note', { max: 1000 });
   const device = ['phone', 'pc'].includes(body.device) ? body.device : null;
 
@@ -335,10 +532,16 @@ export async function closeShift(ctx) {
 
   for (const e of expenses.filter((x) => x.counted)) {
     try {
+      // A top-up or change back is the difference left now: if another shift
+      // settled it in the last few seconds, there is nothing left to count.
+      if (e.kind !== 'claim') {
+        const now = await paidAgainst(ctx.db, e.name);
+        if ((Number(e.total) || 0) - (now?.paid ?? 0) !== e.paid) throw new Error('settled elsewhere');
+      }
       await ctx.db.prepare(
-        `INSERT INTO till_po (po, report_id, user_id, day, slot, paid, total, vendor, state, via)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'report')`,
-      ).bind(String(e.name).toUpperCase(), reportId, userId, day, slot, e.paid, e.total, e.vendor, e.state).run();
+        `INSERT INTO till_po (po, kind, report_id, user_id, day, slot, paid, total, vendor, state, via, advance)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'report', ?11)`,
+      ).bind(String(e.name).toUpperCase(), e.kind, reportId, userId, day, slot, e.paid, e.total, e.vendor, e.odoo || e.state, e.advance ? 1 : 0).run();
     } catch {
       // Claimed by somebody else in the last few seconds. It stays on the
       // report, uncounted, and shows up on their list like any other.
@@ -534,19 +737,24 @@ export async function answer(ctx) {
     if (issue.kind !== 'unexplained') throw badRequest('A PO only answers cash that left the drawer.');
     const typed = str(body.po, 'PO number', { required: true, max: 30 });
     const found = await checkPo(ctx, typed);
+    if (found.state === 'change') throw badRequest(`${found.name} came down in price: money is due back on it, which does not explain cash leaving the drawer.`);
+    // An advance belongs on the shift that gave it out, where the next shift
+    // can see it. Afterwards, only an approved PO answers.
+    if (found.state === 'advance') throw badRequest(`${found.name} is not confirmed in Odoo yet: it is still a requisition. Get it approved, then add it here.`);
     if (!found.counted) {
-      const why = { missing: 'is not in Odoo', claimed: 'has already been claimed', unconfirmed: 'is not confirmed in Odoo yet' }[found.state]
+      const why = { missing: 'is not in Odoo', claimed: 'has already been claimed', unconfirmed: 'is not confirmed in Odoo yet', report: 'is approved but not on the expense form yet: report it there first' }[found.state]
         || `is ${found.state} in Odoo, not confirmed`;
       throw badRequest(`${found.name || typed} ${why}.`);
     }
-    // The PO's own total, never a typed amount.
-    const paid = found.total;
+    // The PO's own total (or, for a top-up, what is left of it), never a typed amount.
+    const paid = amountOf(found);
     const report = await ctx.db.prepare('SELECT id FROM till_report WHERE day = ?1 AND slot = ?2 AND user_id = ?3 AND reopened_at IS NULL')
       .bind(issue.day, issue.slot, userId).first();
     await ctx.db.prepare(
-      `INSERT INTO till_po (po, report_id, user_id, day, slot, paid, total, vendor, state, via)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'answer')`,
-    ).bind(String(found.name).toUpperCase(), report?.id ?? null, userId, issue.day, issue.slot, paid, found.total, found.vendor, found.state).run();
+      `INSERT INTO till_po (po, kind, report_id, user_id, day, slot, paid, total, vendor, state, via, advance)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'answer', ?11)`,
+    ).bind(String(found.name).toUpperCase(), kindOf(found), report?.id ?? null, userId, issue.day, issue.slot, paid, found.total, found.vendor,
+      found.odoo || found.state, found.advance ? 1 : 0).run();
     await ctx.db.prepare('INSERT INTO till_answer (key, user_id, how, text, po, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)')
       .bind(key, userId, 'po', `${found.name}, ${found.vendor || 'Odoo'}, ${cedis(Math.min(paid, found.total))}`, found.name, nowUtc()).run();
     return json({ ok: true, found });
@@ -761,6 +969,60 @@ function tellMail(kind, title, text) {
     subject: title, preheader: text || undefined,
     why: 'You get this because it is about your till.',
   };
+}
+
+/**
+ * A refund is coming back to a drawer: tell whoever is on the rota for the
+ * next reception shift to expect that much more cash than ASSD shows, and
+ * why. Nobody rostered: the people Insight tells about closed shifts instead.
+ * Deficits are never sent here.
+ */
+export async function linkExpect(ctx) {
+  const body = await fromInsight(ctx);
+  const po = str(body.po, 'PO', { required: true, max: 30 });
+  const amount = Number(body.amount);
+  if (!Number.isInteger(amount) || amount <= 0) throw badRequest('How much is coming back?');
+  const tz = await timezoneOf(ctx.db);
+  const vendor = str(body.vendor, 'Vendor', { max: 120 });
+  const by = str(body.by, 'By', { max: 120 });
+  const paid = Number(body.paid) || 0;
+  const total = Number(body.total) || 0;
+  const tnt = Number(body.reported?.tnt) || 0;
+  const shift = SLOT_LABEL[body.slot] && /^\d{4}-\d{2}-\d{2}$/.test(String(body.day || ''))
+    ? `${SLOT_LABEL[body.slot].toLowerCase()} shift of ${sayShortDate(body.day)}` : 'an earlier shift';
+  const bought = tnt ? `${cedis(total)} (${cedis(total - tnt)} + ${cedis(tnt)} TnT)` : cedis(total);
+  const title = `Your next shift: expect ${cedis(amount)} more than ASSD`;
+  const text = `${po}${vendor ? `, ${vendor}` : ''}: ${cedis(paid)} was advanced from the drawer on the ${shift}${by ? ` by ${by}` : ''}, `
+    + `and it was bought for ${bought}. The ${cedis(amount)} change comes back into the drawer. Put it in, and tap Done for it under Close shift.`;
+  const mail = safeMail(() => ({
+    tone: 'info', status: 'Expect cash', eyebrow: 'Till',
+    headline: title, sub: `${po}${vendor ? ` · ${vendor}` : ''}`,
+    facts: [
+      ['PO', `${po}${vendor ? `, ${vendor}` : ''}`],
+      ['Advanced', `${cedis(paid)}, ${shift}${by ? `, ${by}` : ''}`],
+      ['Bought for', bought],
+      ['Coming back', cedis(amount), { tone: 'good', strong: true }],
+    ],
+    note: 'ASSD will show it as a surplus on the shift it comes in. Put it in the drawer and tap Done for it under Close shift.',
+    button: 'Close shift',
+    subject: title, preheader: text,
+    why: 'You get this because you are on the next reception shift.',
+  }));
+
+  const people = await nextOnReception(ctx.db, { timezone: tz }).catch(() => []);
+  let to = people.map((p) => ({ userId: p.userId, name: p.name, push: true, email: true, emailTo: p.emailTo }));
+  if (!to.length) {
+    const plan = await insightOrNull(ctx.env, '/api/link/till/recipients', { event: 'closed' });
+    to = (plan?.to || []).map((r) => ({ userId: r.userId, name: r.name, push: r.push, email: r.email, emailTo: null }));
+  }
+  for (const p of to.slice(0, 20)) {
+    // eslint-disable-next-line no-await-in-loop
+    await createNotice(ctx.db, {
+      kind: 'till.expect', level: 'info', title, body: text, link: '#/att-my-till', actor: 'HIVE',
+      userId: Number(p.userId), push: p.push !== false, email: Boolean(p.email), emailTo: p.emailTo || null, text: false, mail,
+    }, ctx);
+  }
+  return json({ ok: true, sentTo: to.length ? to.map((p) => p.name).filter(Boolean).join(', ') || `${to.length} people` : 'nobody' });
 }
 
 /** Tell people something Insight decided. */

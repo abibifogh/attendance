@@ -4,6 +4,7 @@ import { validateMapping, FACTS } from '../connectors/supabase.js';
 import { runEtl } from '../warehouse/etl.js';
 import { rebuildAssdRevenue } from './revenue.js';
 import { refreshCashPos, restoreCashCost } from './cashpo.js';
+import { tellDifferences } from './advances.js';
 import { analyse } from '../insight/engine.js';
 import { badRequest, str } from '../lib/http.js';
 import { isDay, todayIn, addDays } from '../lib/dates.js';
@@ -219,6 +220,9 @@ export async function refresh(env, body) {
     extra.cash = { error: String(err?.message || err) };
     await restoreCashCost(env).catch(() => {});
   }
+  // A PO's final price that differs from what a drawer paid: said once, to
+  // the next reception shift or, when old, to the admins. Never throws.
+  extra.advances = await tellDifferences(env, { on: today });
   // Findings are computed over a longer window than the load, because a trend
   // needs a run-up. Loading ten days and then judging a trend on ten days
   // would call every ordinary week a crisis.

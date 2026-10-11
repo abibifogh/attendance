@@ -29,6 +29,7 @@ const AREA_TEXT = {
   bank: ['Bank statement and card matching', 'The Exceptions view: card and MoMo against the terminal and the bank.'],
   odoo: ['PO details from Odoo', 'Vendor and total behind each PO.'],
   files: ['Upload journal, statement and card report', 'The Files view. Act means load files.'],
+  advances: ['Advances', 'Under To-do: cash given out before a purchase, and POs whose final price differs. Act means give more time or close one with a reason.'],
   unpaid: ['Unpaid stays', 'Guests leaving in the next 24 hours who still owe, and guests who left owing. Act means answer them (an admin approves).'],
 };
 const KIND_TONE = { drawer: 'bad', unexplained: 'bad', overclaimed: 'warn', rental: 'warn', noreport: 'info' };

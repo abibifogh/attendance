@@ -42,7 +42,15 @@ export async function gatherCashPos(env) {
   const put = (po, row) => { if (po && !out.has(up(po))) out.set(up(po), { po: up(po), ...row }); };
   if (env.ATT_DB) {
     try {
-      for (const r of await all(env.ATT_DB, 'SELECT po, day, slot, paid, total, vendor FROM till_po ORDER BY day, slot')) {
+      for (const r of await all(env.ATT_DB, 'SELECT * FROM till_po ORDER BY day, slot')) {
+        // A PO whose price changed is paid over several shifts: a top-up adds,
+        // change back takes off. What left the drawers is the sum.
+        const have = out.get(up(r.po));
+        if (have && have.paidFrom === 'drawer' && (r.kind || 'claim') !== 'claim') {
+          have.paid += Number(r.paid) || 0;
+          have.source += `; ${r.kind === 'change' ? 'change back' : 'top-up'} ${r.day} ${SLOT[r.slot] || r.slot}`;
+          continue;
+        }
         put(r.po, { paidFrom: 'drawer', paidDay: r.day, paid: Number(r.paid) || 0, vendor: r.vendor || null, source: `closing report, ${r.day} ${SLOT[r.slot] || r.slot}` });
       }
     } catch { /* HIVE not upgraded */ }

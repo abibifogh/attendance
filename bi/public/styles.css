@@ -1170,3 +1170,28 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .sh .tl-near { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; margin-top: .4rem; font-size: .82rem; color: var(--ink-2); }
 .sh .tl-warn { color: var(--sh-warn-ink); }
 .sh-todo-buttons { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; }
+
+/* Advances, under To-do */
+.adv-switch { margin: 0 0 .8rem; }
+.adv-list { padding: 0; overflow: hidden; }
+.adv-row { border-bottom: 1px solid var(--border); }
+.adv-row:last-child { border-bottom: 0; }
+.adv-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .15rem .8rem; align-items: center; width: 100%; padding: .65rem .9rem; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.adv-line:hover { background: var(--surface-2); }
+.adv-line[aria-expanded='true'] { background: color-mix(in srgb, var(--series-1) 8%, transparent); }
+.adv-po { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adv-amt { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.adv-who { color: var(--ink-2); min-width: 0; }
+.adv-line .sh-chip { justify-self: end; }
+.adv-detail { padding: .2rem .9rem .9rem; display: grid; gap: .55rem; }
+.adv-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .25rem .9rem; margin: 0; font-size: .88rem; }
+.adv-dl dt { color: var(--ink-2); }
+.adv-dl dd { margin: 0; }
+.adv-moves { display: grid; gap: .3rem; }
+.adv-act { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
+.adv-group { display: inline-flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.adv-group input { font: inherit; font-size: .85rem; padding: .35rem .55rem; border-radius: 8px; border: 1px solid var(--sh-line); background: var(--surface); color: var(--ink); max-width: 100%; }
+.adv-group input[type='text'] { width: 14rem; }
+.adv-else { margin-top: .8rem; }
+.adv-else summary { cursor: pointer; font-weight: 600; }
+.adv-elist { display: grid; gap: .25rem; font-size: .88rem; margin-top: .4rem; }

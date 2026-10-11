@@ -21,10 +21,11 @@ const recordEmail = (row) => (isEmail(String(row.login_email ?? '').trim()) ? nu
  * conversation.
  *
  * It repeats every half hour until they clock in, because one notification at
- * 06:20 is one notification somebody asleep does not hear. The moment a
+ * 06:20 is one notification somebody asleep does not hear, but THREE TIMES A
+ * DAY AT MOST: by the third, anybody who is coming knows, and a phone buzzing
+ * all shift long is not help, it is an accusation on a timer. The moment a
  * clock-in is recorded it stops, and it stops on its own when the shift they
- * were down for has ended: after that there is nothing left to arrive for, and
- * a phone still buzzing about it is not help, it is an accusation on a timer.
+ * were down for has ended.
  *
  * TWO THINGS KEEP IT FROM BEING A NUISANCE, WHICH IS THE ONLY WAY A
  * NOTIFICATION SURVIVES ON A PHONE AT ALL.
@@ -56,6 +57,9 @@ const AFTER_GRACE_MINUTES = 5;
 
 /** And how often to say it again while they are still not here. */
 const REPEAT_MINUTES = 30;
+
+/** And how many times in a day at most. */
+const MAX_LATE_NUDGES = 3;
 
 export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
   const settings = await db.prepare('SELECT key, value FROM settings').all()
@@ -199,6 +203,10 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
     // Which half hour of being overdue this is. Claimed before anything is
     // sent, so two runs of the watcher cannot both send the same one.
     const slot = Math.floor(overdue / REPEAT_MINUTES);
+    const already = await db.prepare(
+      "SELECT COUNT(*) AS n FROM att_nudge WHERE staff_id = ?1 AND day = ?2 AND kind LIKE 'late:%'",
+    ).bind(staffId, found.day).first().catch(() => null);
+    if (Number(already?.n ?? 0) >= MAX_LATE_NUDGES) continue;
     if (!await claim(db, staffId, found.day, `late:${slot}`)) continue;
 
     const late = Math.round(found.minutesIn);

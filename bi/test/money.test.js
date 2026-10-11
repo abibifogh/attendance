@@ -319,3 +319,16 @@ test('an admin sets how many days Check laundry now reads', async () => {
   assert.equal((await todo.listTodos(env, SUP_A)).laundryDays, 14);
   assert.equal(await todo.laundryDaysOf(env), 14);
 });
+
+test('a PO paid over several shifts (a top-up, change back) is what left the drawers in all', async () => {
+  const { env } = await setUp();
+  const hiveDb = env.ATT_DB;
+  await hiveDb.prepare(`INSERT INTO till_po (po, kind, user_id, day, slot, paid, total, vendor, state) VALUES
+    ('P00412', 'topup', 8, '2026-08-03', 'morning', 500, 3500, 'A Produce Seller', 'purchase'),
+    ('P00412', 'change', 8, '2026-08-04', 'night', -200, 3300, 'A Produce Seller', 'purchase')`).run();
+  const pos = await cashpo.gatherCashPos(env);
+  const p = pos.get('P00412');
+  assert.equal(p.paid, 3300, '3000 + 500 − 200');
+  assert.equal(p.paidDay, '2026-08-01', 'the day it was first paid');
+  assert.match(p.source, /top-up 2026-08-03 morning; change back 2026-08-04 night/);
+});

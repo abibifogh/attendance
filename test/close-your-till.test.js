@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { isReceptionShift, reportSlotFor, watchTills } from '../src/lib/till-watch.js';
+import { isReceptionShift, nextOnReception, reportSlotFor, watchTills } from '../src/lib/till-watch.js';
 import { goesOut, KINDS } from '../src/lib/notice-kinds.js';
 
 /**
@@ -144,4 +144,12 @@ test('a rota shift is filed under the closing-report shift its start is nearest'
 test('every notification kind now emails by default', () => {
   for (const k of KINDS) assert.ok(goesOut({}, k.key, 'email'), `${k.key} emails`);
   assert.ok(KINDS.some((k) => k.key === 'till.close_due'));
+});
+
+test('the next reception shift: whoever is rostered on the next one to start', async () => {
+  const later = setup({ endsIn: 10 * 60 });
+  const [who] = await nextOnReception(later.db, { timezone: 'UTC' });
+  assert.deepEqual([who.userId, who.name], [7, 'Kwame']);
+  const now = setup({ endsIn: 10 });
+  assert.deepEqual(await nextOnReception(now.db, { timezone: 'UTC' }), [], 'already on shift is not the next one');
 });

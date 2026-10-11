@@ -7001,6 +7001,47 @@ tr:hover .rota-who-more,
 .till input, .till select, .till textarea { width: 100%; font-size: 1rem; }
 .till input.till-big { font-size: 1.35rem; font-weight: 700; text-align: right; }
 .till-shift { max-width: 22rem; }
+/* expenses: one box to add PO numbers, one list of what Odoo said about each */
+.till-poadd { display: flex; gap: .5rem; margin-top: .5rem; }
+.till-poadd input { flex: 1; min-width: 0; }
+.till-polist { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; margin: .2rem 0 .6rem; }
+.till-poline { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: .3rem .8rem; padding: .65rem .8rem; border-top: 1px solid var(--border); }
+.till-poline:first-child { border-top: 0; }
+.till-poname { font-variant-numeric: tabular-nums; }
+.till-povendor { color: var(--text-dim); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.till-poamt { font-variant-numeric: tabular-nums; text-align: right; }
+.till-postate { display: inline-flex; align-items: center; gap: .3rem; justify-self: end; }
+.till-chip { font-size: .76rem; font-weight: 600; padding: .15rem .55rem; border-radius: 999px; white-space: nowrap; }
+.till-chip.ok { background: var(--good-soft); color: var(--good); }
+.till-chip.bad { background: var(--bad-soft); color: var(--bad); }
+.till-chip.warn { background: var(--warn-soft); color: var(--warn); }
+.till-poline .till-x { border: 0; background: none; font: inherit; font-size: 1.25rem; line-height: 1; color: var(--text-dim); padding: .1rem .3rem; cursor: pointer; }
+.till-poline .till-x:hover { color: var(--text); }
+.till-why { grid-column: 2 / -1; font-size: .85rem; line-height: 1.45; }
+.till-why.bad { color: var(--bad); }
+.till-why.warn { color: var(--warn); }
+.till-link { border: 0; background: none; padding: 0; font: inherit; line-height: inherit; vertical-align: baseline; min-height: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
+.till-potag { margin-left: .45rem; font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); }
+.till-group { margin: .9rem 0 .1rem; font-size: .9rem; }
+.till-changes { border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border)); background: var(--warn-soft); border-radius: var(--radius-sm); padding: .75rem .9rem; margin: .5rem 0 .8rem; }
+.till-changes h4 { margin: 0 0 .15rem; font-size: .95rem; }
+.till-changes > p { margin: 0 0 .4rem; font-size: .85rem; color: var(--text-dim); }
+.till-change { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding: .6rem 0; border-top: 1px solid color-mix(in srgb, var(--warn) 25%, var(--border)); }
+.till-change:first-of-type { border-top: 0; }
+.till-change-text { flex: 1 1 18rem; min-width: 0; font-size: .92rem; }
+.till-change-sub { color: var(--text-dim); font-size: .85rem; margin-top: .15rem; }
+.till-up { color: var(--bad); }
+.till-down { color: var(--good); }
+.till-change-act { display: flex; flex-direction: column; gap: .35rem; }
+@media (max-width: 520px) { .till-change-act { flex: 1 1 100%; } .till-change-act .btn { width: 100%; } }
+.till-change-act .till-chip { align-self: flex-start; }
+.till-pototals { display: flex; flex-wrap: wrap; gap: .4rem 1.6rem; }
+.till-pototals b { font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) {
+  .till-poline { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "po amt" "who st" "why why"; }
+  .till-poname { grid-area: po; } .till-poamt { grid-area: amt; } .till-povendor { grid-area: who; } .till-postate { grid-area: st; }
+  .till-why { grid-area: why; }
+}
 .till-expense { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .7rem; margin-bottom: .6rem; }
 .till-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .2rem 0 .4rem; }
 .till-po { font-size: .86rem; border-radius: var(--radius-sm); padding: .5rem .6rem; margin-top: .4rem; }

@@ -237,3 +237,49 @@ async function claim(db, staffId, day, kind) {
   ).bind(staffId, day, kind).run().catch(() => null);
   return Number(done?.meta?.changes ?? 0) > 0;
 }
+
+/**
+ * Whoever is on the rota for the next reception shift to start: the people
+ * who may close a till, on a published reception shift starting after now,
+ * today or tomorrow, not on leave. Everybody on that same earliest start, so
+ * two people sharing a shift both hear. Empty when nobody is rostered.
+ */
+export async function nextOnReception(db, { timezone = 'UTC' } = {}) {
+  const now = nowIn(timezone);
+  const [today, clock] = now.split(' ');
+  const minutesNow = toMinutes(clock) ?? 0;
+  const tomorrow = addDays(today, 1);
+
+  const logins = await db.prepare(
+    `SELECT u.id AS user_id, u.name, u.staff_id, u.role, u.permissions, u.email AS login_email, hp.personal_email
+       FROM users u LEFT JOIN hr_profile hp ON hp.staff_id = u.staff_id
+      WHERE u.active = 1 AND u.staff_id IS NOT NULL`,
+  ).all().catch(() => ({ results: [] }));
+  const people = (logins.results ?? []).filter((u) => allows('till', effectivePermissions(u)));
+  if (!people.length) return [];
+  const ds = await loadDataset(db, { from: today, to: tomorrow });
+
+  let best = null;
+  const found = [];
+  for (const person of people) {
+    const staffId = Number(person.staff_id);
+    const staff = ds.staffById.get(staffId);
+    if (!staff?.active) continue;
+    for (const [day, offset] of [[today, 0], [tomorrow, 1440]]) {
+      const shift = publishedShift(ds, staffId, day);
+      if (!shift || !isReceptionShift(shift, staff)) continue;
+      const start = toMinutes(shift.starts_at);
+      if (start == null || start + offset <= minutesNow) continue;
+      const at = start + offset;
+      if (best == null || at < best) { best = at; found.length = 0; }
+      if (at === best) {
+        found.push({
+          userId: Number(person.user_id), name: staff.name || person.name, day, shift,
+          emailTo: isEmail(String(person.login_email ?? '').trim()) ? null : firstUsableEmail(person.personal_email),
+        });
+      }
+      break;
+    }
+  }
+  return found;
+}

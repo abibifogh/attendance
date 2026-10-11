@@ -345,6 +345,13 @@ test('it keeps going every half hour while the shift is still running', async ()
   assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 1);
 
   assert.equal(sent.length, 3, 'three half hours, three messages');
+
+  // And no more that day: three is enough for anybody who is coming.
+  rosterAgo(raw, 110);
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 0);
+  rosterAgo(raw, 140);
+  assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 0);
+  assert.equal(sent.length, 3, 'three times a day at most');
 });
 
 test('it stops the moment they clock in', async () => {

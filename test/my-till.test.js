@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  answer, closeShift, closedSummary, linkMail, linkMove, linkRecover, linkReopen, lookUpPo, myTill, shiftAt,
+  answer, closeShift, closedSummary, linkExpect, linkMail, linkMove, linkRecover, linkReopen, lookUpPo, myTill, poChanges, shiftAt,
 } from '../src/routes/till.js';
 import { signLink, verifyLink } from '../src/lib/till-link.js';
 import { getPepper, hashPin } from '../src/lib/auth.js';
@@ -36,10 +36,11 @@ const ODOO = {
   P00412: { name: 'P00412', vendor: 'A Produce Seller', total: 44000, state: 'purchase', confirmed: true },
   P00415: { name: 'P00415', vendor: 'A Gas Seller', total: 18000, state: 'purchase', confirmed: true },
   P00420: { name: 'P00420', vendor: 'A Hardware Shop', total: 6500, state: 'draft', confirmed: false },
+  P00421: { name: 'P00421', vendor: 'A Paint Shop', total: 9000, state: 'cancel', confirmed: false },
 };
 
 /** Insight, as far as HIVE can tell. */
-function insight({ issues = [], recipients = [{ userId: 3, name: 'Boss', push: true, email: false, amounts: true }] } = {}) {
+function insight({ issues = [], recipients = [{ userId: 3, name: 'Boss', push: true, email: false, amounts: true }], form = null } = {}) {
   const asked = [];
   return {
     asked,
@@ -54,9 +55,10 @@ function insight({ issues = [], recipients = [{ userId: 3, name: 'Boss', push: t
         return Response.json({ checks: [{ id: 1, label: 'Scale' }, { id: 2, label: 'Hair dryer' }], rentals: [{ id: 'padlock', label: 'Padlocks', unit: 'padlock' }] });
       }
       if (url.pathname.endsWith('/po')) {
-        return Response.json({ found: body.names.map((t) => {
+        return Response.json({ formLive: Boolean(form), found: body.names.map((t) => {
           const digits = String(t).replace(/\D/g, '').padStart(5, '0');
-          return ODOO[`P${digits}`] ? { typed: t, ...ODOO[`P${digits}`] } : { typed: t, name: null };
+          const o = ODOO[`P${digits}`];
+          return o ? { typed: t, ...o, reported: form?.reported?.[o.name] || null, decision: form?.decisions?.[o.name] || null } : { typed: t, name: null };
         }) });
       }
       if (url.pathname.endsWith('/recipients')) return Response.json({ to: recipients });
@@ -138,7 +140,8 @@ test('closing a shift: checked, signed, stored and told', async () => {
   // Several at once, as typed or pasted: each looked up, repeats dropped.
   const many = await (await lookUpPo(ctx(db, AMA, { env, body: { pos: ['412', ' 415 ', '420', '999', '412'] }, path: '/api/me/till/po' }))).json();
   assert.deepEqual(many.found.map((f) => [f.po, f.name, f.counted, f.total ?? null]),
-    [['412', 'P00412', true, 44000], ['415', 'P00415', true, 18000], ['420', 'P00420', false, 6500], ['999', null, false, null]]);
+    [['412', 'P00412', true, 44000], ['415', 'P00415', true, 18000], ['420', 'P00420', true, 6500], ['999', null, false, null]]);
+  assert.equal(many.found[2].state, 'advance', 'a requisition goes in as an advance');
   await assert.rejects(lookUpPo(ctx(db, AMA, { env, body: { pos: [] }, path: '/api/me/till/po' })), /at least one/);
 
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift, { pin: '000000' }) })), /PIN is not right/);
@@ -148,9 +151,9 @@ test('closing a shift: checked, signed, stored and told', async () => {
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift, { rentals: {} }) })), /Padlocks at the start/);
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good({ day: '2020-01-01', slot: 'morning' }) })), /cannot be closed from here/);
 
-  // A PO nobody has approved cannot close a shift: get it approved first.
-  await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift, { expenses: [{ po: '412', paid: '1' }, { po: '420', paid: '65' }] }) })),
-    /This PO is not approved in Odoo: P00420 \(still a request for quotation\)\. Get it approved first/);
+  // A cancelled PO cannot close a shift.
+  await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift, { expenses: [{ po: '412', paid: '1' }, { po: '421', paid: '90' }] }) })),
+    /This PO cannot go on the report: P00421 \(cancelled in Odoo\)/);
   assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM till_report').get().n, 0, 'nothing was stored');
 
   const sent = await (await closeShift(ctx(db, AMA, { env, body: good(shift, { expenses: [{ po: '412', paid: '1' }] }) }))).json();
@@ -325,4 +328,135 @@ test('Insight can move a report to the shift it belongs to, with its POs, only w
   await closeShift(ctx(db, AMA, { env, body: good(wrong, { expenses: [] }) }));
   const second = raw.prepare('SELECT id FROM till_report WHERE day = ? AND slot = ?').get(wrong.day, wrong.slot).id;
   await assert.rejects(call(JSON.stringify({ reportId: second, day: right.day, slot: right.slot })), /already has a report/);
+});
+
+test('a PO whose price changed after it was paid: the difference counts on the shift where it moves', async () => {
+  const { db, raw } = await setup();
+  const env = { INSIGHT: insight() };
+  const screen = await (await myTill(ctx(db, AMA, { env }))).json();
+  const [first, second, third] = screen.choices;
+  const was = ODOO.P00412.total;
+  try {
+    await closeShift(ctx(db, AMA, { env, body: good(first) }));
+    const changes = async (who = KOFI) => (await (await poChanges(ctx(db, who, { env, path: '/api/me/till/po-changes' }))).json()).changes;
+    assert.deepEqual(await changes(), [], 'nothing changed yet');
+    const asked = () => env.INSIGHT.asked.filter(([p]) => p.endsWith('/po')).length;
+    const before = asked();
+    await changes();
+    assert.equal(asked(), before, 'opened again straight away: Odoo is not asked again');
+
+    // The supplier charged GH₵ 20 more and the PO was amended in Odoo. What
+    // Odoo said is remembered ten minutes; forget it, as ten minutes passing would.
+    ODOO.P00412.total = was + 2000;
+    assert.deepEqual(await changes(), [], 'within ten minutes, the remembered answer');
+    raw.exec("UPDATE till_po_odoo SET checked_at = datetime('now', '-11 minutes')");
+    const up = await changes();
+    assert.equal(up.length, 1);
+    assert.deepEqual([up[0].name, up[0].state, up[0].amount, up[0].paidSoFar, up[0].first.by], ['P00412', 'topup', 2000, was, 'Ama Test']);
+    const look = await (await lookUpPo(ctx(db, KOFI, { env, body: { po: '412' }, path: '/api/me/till/po' }))).json();
+    assert.deepEqual([look.state, look.counted, look.amount], ['topup', true, 2000], 'typed again, it is the top-up, not "already claimed"');
+
+    const topped = await (await closeShift(ctx(db, KOFI, { env, body: good(second, { pin: '135791', expenses: [{ po: '412' }] }) }))).json();
+    assert.deepEqual(topped.report.expenses.map((e) => [e.name, e.kind, e.paid, e.counted]), [['P00412', 'topup', 2000, true]]);
+    assert.deepEqual(raw.prepare("SELECT kind, paid FROM till_po WHERE po = 'P00412' ORDER BY id").all().map((r) => [r.kind, r.paid]),
+      [['claim', was], ['topup', 2000]]);
+    assert.deepEqual(await changes(), [], 'settled: no longer shown');
+    const again = await (await lookUpPo(ctx(db, KOFI, { env, body: { po: '412' }, path: '/api/me/till/po' }))).json();
+    assert.deepEqual([again.state, again.counted], ['claimed', false], 'paid in full: claimed again');
+
+    // Then it came down to GH₵ 430: GH₵ 30 change is due back.
+    ODOO.P00412.total = was - 1000;
+    raw.exec("UPDATE till_po_odoo SET checked_at = datetime('now', '-11 minutes')");
+    const down = await changes(AMA);
+    assert.deepEqual([down[0].state, down[0].amount, down[0].paidSoFar], ['change', -3000, was + 2000]);
+    // Change coming back does not explain cash leaving a drawer.
+    const key = `unexplained:${third.day}:${third.slot}`;
+    const withIssue = { INSIGHT: insight({ issues: [{ key, kind: 'unexplained', label: 'Cash left', day: third.day, slot: third.slot, amount: -3000 }] }) };
+    await assert.rejects(answer(ctx(db, AMA, { env: withIssue, body: { key, how: 'po', po: '412' }, path: '/api/me/till/answer' })), /came down in price/);
+    const back = await (await closeShift(ctx(db, AMA, { env, body: good(third, { expenses: [{ po: '412' }] }) }))).json();
+    assert.deepEqual(back.report.expenses.map((e) => [e.kind, e.paid, e.counted]), [['change', -3000, true]]);
+    assert.equal(raw.prepare("SELECT SUM(paid) AS n FROM till_po WHERE po = 'P00412'").get().n, was - 1000, 'what left the drawers is the PO’s total now');
+  } finally {
+    ODOO.P00412.total = was;
+  }
+});
+
+test('an advance: given out against a requisition, it holds up the next shift until approved and reported', async () => {
+  const { db, raw } = await setup();
+  const form = { reported: {}, decisions: {} };
+  const env = { INSIGHT: insight({ form }) };
+  const screen = await (await myTill(ctx(db, AMA, { env }))).json();
+  // Oldest first: Ama's shift, then Kofi's after it.
+  const [first, second, third, fourth] = [...screen.choices].reverse();
+  const was = { ...ODOO.P00420 };
+  const earlier = async (shift, who = KOFI, fresh = true) => (await (await poChanges(ctx(db, who, {
+    env, path: `/api/me/till/po-changes?day=${shift.day}&slot=${shift.slot}${fresh ? '&fresh=1' : ''}`,
+  }))).json());
+  try {
+    const out = await (await closeShift(ctx(db, AMA, { env, body: good(first, { expenses: [{ po: '420' }] }) }))).json();
+    assert.deepEqual(out.report.expenses.map((e) => [e.name, e.state, e.counted, e.paid, e.advance]), [['P00420', 'advance', true, 6500, true]]);
+    assert.deepEqual({ ...raw.prepare('SELECT advance, paid, state FROM till_po').get() }, { advance: 1, paid: 6500, state: 'draft' });
+    assert.deepEqual((await earlier(first, AMA)).advances, [], 'not on its own shift');
+
+    // The next shift sees it, and cannot close until it is approved.
+    const pending = (await earlier(second)).advances;
+    assert.deepEqual(pending.map((a) => [a.name, a.status, a.paid, a.first.by]), [['P00420', 'approve', 6500, 'Ama Test']]);
+    const kofi = (shift, extra = {}) => closeShift(ctx(db, KOFI, { env, body: good(shift, { pin: '135791', expenses: [], ...extra }) }));
+    await assert.rejects(kofi(second), /To close: P00420 advance of GH₵ 65\.00 \(Morning|Afternoon|Night/);
+    await assert.rejects(kofi(second), /approve it in Odoo/);
+
+    // Approved, but not on the expense form yet.
+    Object.assign(ODOO.P00420, { state: 'purchase', confirmed: true });
+    await assert.rejects(kofi(second), /report it on the expense form/);
+    // A PO typed now that is approved and not reported cannot go on a report.
+    const look = await (await lookUpPo(ctx(db, KOFI, { env, body: { po: '415' }, path: '/api/me/till/po' }))).json();
+    assert.deepEqual([look.state, look.counted], ['report', false]);
+    form.reported.P00415 = { amount: 17000, tnt: 1000, total: 18000, count: 1 };
+
+    // An admin gives it more time: not in the way meanwhile.
+    form.decisions.P00420 = { until: '2999-01-01', closed: false };
+    assert.deepEqual((await earlier(second)).advances, []);
+    form.decisions.P00420 = null;
+
+    // Reported for exactly what was given out: settled.
+    form.reported.P00420 = { amount: 6000, tnt: 500, total: 6500, count: 1 };
+    await kofi(second);
+    assert.deepEqual(await earlier(third), { advances: [], changes: [] });
+
+    // Bought for less after all: GH₵ 5 change comes back. It holds up a shift until it is in a drawer.
+    ODOO.P00420.total = 6000;
+    form.reported.P00420 = { amount: 5500, tnt: 500, total: 6000, count: 1 };
+    const back = (await earlier(third)).changes;
+    assert.deepEqual(back.map((c) => [c.name, c.state, c.amount]), [['P00420', 'change', -500]]);
+    await assert.rejects(kofi(third), /P00420: put the GH₵ 5\.00 refund in the drawer and tap Done/);
+    await assert.rejects(kofi(third, { notMine: ['P00420'] }), /refund/, 'a refund cannot be put aside');
+    const done = await (await kofi(third, { expenses: [{ po: '420' }] })).json();
+    assert.deepEqual(done.report.expenses.map((e) => [e.kind, e.paid, e.counted]), [['change', -500, true]]);
+
+    // A deficit: Done if it went through this drawer, or Not on my shift.
+    ODOO.P00420.total = 7000;
+    form.reported.P00420 = { amount: 6500, tnt: 500, total: 7000, count: 1 };
+    await assert.rejects(kofi(fourth), /P00420: GH₵ 10\.00 more was paid/);
+    await kofi(fourth, { notMine: ['P00420'] });
+    assert.deepEqual({ ...raw.prepare('SELECT po, total, user_id FROM till_po_skip').get() }, { po: 'P00420', total: 7000, user_id: 8 });
+    assert.deepEqual((await earlier(fourth)).changes, [], 'not asked of Kofi again');
+    assert.equal((await earlier(fourth, AMA)).changes.length, 1, 'still asked of anybody else');
+  } finally {
+    Object.assign(ODOO.P00420, was);
+  }
+});
+
+test('a refund coming back: whoever is next on reception is told, or the till list when nobody is rostered', async () => {
+  const { db, raw } = await setup();
+  const path = '/api/link/till/expect';
+  const body = JSON.stringify({ po: 'P00420', vendor: 'A Hardware Shop', amount: 500, paid: 6500, total: 6000, reported: { amount: 5500, tnt: 500 }, by: 'Ama Test', day: '2026-10-08', slot: 'morning' });
+  const call = async (b = body, secret = SECRET) => linkExpect({ db, env: { INSIGHT_SSO_SECRET: SECRET, INSIGHT: insight() }, url: new URL(`https://x${path}`), executionContext: null,
+    request: new Request(`https://x${path}`, { method: 'POST', headers: await signLink(secret, path, b), body: b }) });
+  await assert.rejects(call(body, 'wrong'), /did not come from Insight/);
+  const out = await (await call()).json();
+  assert.equal(out.sentTo, 'Boss', 'nobody on the rota: the people told about closed shifts');
+  const n = raw.prepare("SELECT * FROM app_notices WHERE kind = 'till.expect'").get();
+  assert.equal(n.user_id, 3);
+  assert.equal(n.title, 'Your next shift: expect GH₵ 5.00 more than ASSD');
+  assert.match(n.body, /GH₵ 65\.00 was advanced from the drawer on the morning shift of .* by Ama Test, and it was bought for GH₵ 60\.00 \(GH₵ 55\.00 \+ GH₵ 5\.00 TnT\)/);
 });

@@ -198,6 +198,7 @@ export const ROUTES = [
   ['GET', '/api/me/till', 'till', till.myTill],
   ['POST', '/api/me/till', 'till', till.closeShift],
   ['POST', '/api/me/till/po', 'till', till.lookUpPo],
+  ['GET', '/api/me/till/po-changes', 'till', till.poChanges],
   ['GET', '/api/me/till/issues', 'till', till.myIssues],
   ['POST', '/api/me/till/answer', 'till', till.answer],
   // And Insight asking, server to server. No session reaches these; each
@@ -206,6 +207,7 @@ export const ROUTES = [
   ['POST', '/api/link/till/reopen', 'public', till.linkReopen],
   ['POST', '/api/link/till/move', 'public', till.linkMove],
   ['POST', '/api/link/till/tell', 'public', till.linkTell],
+  ['POST', '/api/link/till/expect', 'public', till.linkExpect],
   ['POST', '/api/link/mail', 'public', till.linkMail],
   ['GET', '/api/me/report', 'att_me', mine.myReport],
   ['POST', '/api/me/leave', 'att_me', mine.askForLeave],

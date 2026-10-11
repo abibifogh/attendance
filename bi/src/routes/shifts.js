@@ -532,11 +532,17 @@ export async function shifts(env, query, account) {
   // person gave their POs does not read as having none.
   const reportPos = new Map();
   if (env.ATT_DB) {
-    const rows = await all(env.ATT_DB, 'SELECT po, day, slot, total, vendor, state FROM till_po WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => []);
+    const rows = await all(env.ATT_DB, 'SELECT * FROM till_po WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => []);
     for (const r of rows) {
       const key = `${r.day}|${r.slot}`;
       if (!reportPos.has(key)) reportPos.set(key, []);
-      reportPos.get(key).push({ name: r.po, vendor: r.vendor || '', total: Number(r.total) || 0, state: r.state || 'purchase', fromReport: true });
+      // A top-up or change back on a later shift is the difference that moved
+      // through that drawer, not the PO's whole total again.
+      const kind = r.kind || 'claim';
+      reportPos.get(key).push({
+        name: r.po, vendor: r.vendor || '', total: kind === 'claim' ? Number(r.total) || 0 : Number(r.paid) || 0,
+        state: r.state || 'purchase', fromReport: true, ...(kind !== 'claim' ? { kind } : {}),
+      });
     }
   }
 
