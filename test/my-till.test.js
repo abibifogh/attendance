@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  answer, closeShift, closedSummary, linkMail, linkMove, linkRecover, linkReopen, lookUpPo, myTill, shiftAt,
+  answer, closeShift, closedSummary, linkMail, linkMove, linkRecover, linkReopen, lookUpPo, myTill, poChanges, shiftAt,
 } from '../src/routes/till.js';
 import { signLink, verifyLink } from '../src/lib/till-link.js';
 import { getPepper, hashPin } from '../src/lib/auth.js';
@@ -325,4 +325,47 @@ test('Insight can move a report to the shift it belongs to, with its POs, only w
   await closeShift(ctx(db, AMA, { env, body: good(wrong, { expenses: [] }) }));
   const second = raw.prepare('SELECT id FROM till_report WHERE day = ? AND slot = ?').get(wrong.day, wrong.slot).id;
   await assert.rejects(call(JSON.stringify({ reportId: second, day: right.day, slot: right.slot })), /already has a report/);
+});
+
+test('a PO whose price changed after it was paid: the difference counts on the shift where it moves', async () => {
+  const { db, raw } = await setup();
+  const env = { INSIGHT: insight() };
+  const screen = await (await myTill(ctx(db, AMA, { env }))).json();
+  const [first, second, third] = screen.choices;
+  const was = ODOO.P00412.total;
+  try {
+    await closeShift(ctx(db, AMA, { env, body: good(first) }));
+    const changes = async (who = KOFI) => (await (await poChanges(ctx(db, who, { env, path: '/api/me/till/po-changes' }))).json()).changes;
+    assert.deepEqual(await changes(), [], 'nothing changed yet');
+
+    // The supplier charged GH₵ 20 more and the PO was amended in Odoo.
+    ODOO.P00412.total = was + 2000;
+    const up = await changes();
+    assert.equal(up.length, 1);
+    assert.deepEqual([up[0].name, up[0].state, up[0].amount, up[0].paidSoFar, up[0].first.by], ['P00412', 'topup', 2000, was, 'Ama Test']);
+    const look = await (await lookUpPo(ctx(db, KOFI, { env, body: { po: '412' }, path: '/api/me/till/po' }))).json();
+    assert.deepEqual([look.state, look.counted, look.amount], ['topup', true, 2000], 'typed again, it is the top-up, not "already claimed"');
+
+    const topped = await (await closeShift(ctx(db, KOFI, { env, body: good(second, { pin: '135791', expenses: [{ po: '412' }] }) }))).json();
+    assert.deepEqual(topped.report.expenses.map((e) => [e.name, e.kind, e.paid, e.counted]), [['P00412', 'topup', 2000, true]]);
+    assert.deepEqual(raw.prepare("SELECT kind, paid FROM till_po WHERE po = 'P00412' ORDER BY id").all().map((r) => [r.kind, r.paid]),
+      [['claim', was], ['topup', 2000]]);
+    assert.deepEqual(await changes(), [], 'settled: no longer shown');
+    const again = await (await lookUpPo(ctx(db, KOFI, { env, body: { po: '412' }, path: '/api/me/till/po' }))).json();
+    assert.deepEqual([again.state, again.counted], ['claimed', false], 'paid in full: claimed again');
+
+    // Then it came down to GH₵ 430: GH₵ 30 change is due back.
+    ODOO.P00412.total = was - 1000;
+    const down = await changes(AMA);
+    assert.deepEqual([down[0].state, down[0].amount, down[0].paidSoFar], ['change', -3000, was + 2000]);
+    // Change coming back does not explain cash leaving a drawer.
+    const key = `unexplained:${third.day}:${third.slot}`;
+    const withIssue = { INSIGHT: insight({ issues: [{ key, kind: 'unexplained', label: 'Cash left', day: third.day, slot: third.slot, amount: -3000 }] }) };
+    await assert.rejects(answer(ctx(db, AMA, { env: withIssue, body: { key, how: 'po', po: '412' }, path: '/api/me/till/answer' })), /came down in price/);
+    const back = await (await closeShift(ctx(db, AMA, { env, body: good(third, { expenses: [{ po: '412' }] }) }))).json();
+    assert.deepEqual(back.report.expenses.map((e) => [e.kind, e.paid, e.counted]), [['change', -3000, true]]);
+    assert.equal(raw.prepare("SELECT SUM(paid) AS n FROM till_po WHERE po = 'P00412'").get().n, was - 1000, 'what left the drawers is the PO’s total now');
+  } finally {
+    ODOO.P00412.total = was;
+  }
 });

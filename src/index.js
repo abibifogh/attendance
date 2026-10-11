@@ -198,6 +198,7 @@ export const ROUTES = [
   ['GET', '/api/me/till', 'till', till.myTill],
   ['POST', '/api/me/till', 'till', till.closeShift],
   ['POST', '/api/me/till/po', 'till', till.lookUpPo],
+  ['GET', '/api/me/till/po-changes', 'till', till.poChanges],
   ['GET', '/api/me/till/issues', 'till', till.myIssues],
   ['POST', '/api/me/till/answer', 'till', till.answer],
   // And Insight asking, server to server. No session reaches these; each

@@ -18,6 +18,8 @@ import { field, formDialog } from './att-shared.js';
  */
 
 const SLOT = { morning: 'Morning', afternoon: 'Afternoon', night: 'Night' };
+/** An amount that can go below nothing: change coming back is − GH₵ 20.00. */
+const signedCedis = (minor) => (minor != null && minor < 0 ? `− ${cedis(minor)}` : cedis(minor));
 const cedis = (minor) => (minor == null ? '—' : `GH₵ ${(Math.abs(minor) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 const signed = (minor) => (minor > 0 ? '+' : minor < 0 ? '−' : '') + cedis(minor);
 const toMinor = (text) => {
@@ -67,6 +69,12 @@ export async function renderAttMyTill() {
   f.expenses = (f.expenses || []).filter((e) => String(e.po ?? '').trim());
   const save = () => { store.set(draftKey(), f); store.set('which', which); };
 
+  // POs paid on earlier shifts whose price has changed in Odoo since: asked
+  // once when the form opens, so a top-up or change back that went through
+  // this drawer is put on this shift.
+  let priceChanges = [];
+  api.tillPoChanges().then((d) => { priceChanges = d.changes || []; if (priceChanges.length) paint(); }).catch(() => {});
+
   paint();
   return host;
 
@@ -101,15 +109,16 @@ export async function renderAttMyTill() {
       h('dl.till-dl',
         h('dt', 'Drawer'), h('dd', cedis(r.cash)),
         h('dt', 'Safe'), h('dd', envelopes),
-        h('dt', 'Expenses'), h('dd', r.expenses.length ? r.expenses.map((e) => `${e.name || e.po || 'no PO'} ${cedis(e.paid)}${e.counted ? '' : ' (not counted)'}`).join(', ') : 'none'),
+        h('dt', 'Expenses'), h('dd', r.expenses.length ? r.expenses.map((e) => `${e.name || e.po || 'no PO'}${e.kind === 'topup' ? ' top-up' : e.kind === 'change' ? ' change back' : ''} ${signedCedis(e.paid)}${e.counted ? '' : ' (not counted)'}`).join(', ') : 'none'),
         h('dt', 'Opening float'), h('dd', r.floatOk ? 'Correct' : `Out by ${signed(r.floatDiff)}`)),
       h('p.till-hint', 'If something in it was wrong, ask a supervisor to reopen it. Anything that does not agree will appear under To sort out.'));
   }
 
   function form() {
     const missing = stillNeeded();
-    const counted = f.expenses.filter((e) => e.look?.counted).reduce((t, e) => t + (e.look.total || 0), 0);
-    const uncounted = f.expenses.filter((e) => e.look && !e.look.counted).reduce((t, e) => t + (e.look.total || 0), 0);
+    const amount = (L) => (L.amount != null ? L.amount : L.total || 0);
+    const counted = f.expenses.filter((e) => e.look?.counted).reduce((t, e) => t + amount(e.look), 0);
+    const uncounted = f.expenses.filter((e) => e.look && !e.look.counted).reduce((t, e) => t + amount(e.look), 0);
     const safeTotal = f.envelopes.reduce((t, e) => t + (toMinor(e.amount) || 0), 0);
     const set = (patch) => { Object.assign(f, patch); save(); paint(); };
     const input = (value, onInput, attrs = {}) => h('input', {
@@ -142,10 +151,11 @@ export async function renderAttMyTill() {
 
       card('Expenses paid from the drawer', { note: 'each needs an approved PO' },
         h('p.till-hint', 'Type one PO number or several, then Add. Each is checked in Odoo straight away; its amount is the PO’s total.'),
+        priceChangesBox(),
         addPos(),
         f.expenses.length ? h('div.till-polist', f.expenses.map((e, i) => expenseRow(e, i))) : null,
         f.expenses.length ? h('div.till-pototals',
-          h('span', 'Counted ', h('b', cedis(counted))),
+          h('span', 'Counted ', h('b', signedCedis(counted))),
           h('span', 'Not counted ', h('b', { class: uncounted ? 'till-bad' : '' }, cedis(uncounted)))) : null),
 
       data.setup.rentals.length ? card('Rentals', {},
@@ -179,6 +189,35 @@ export async function renderAttMyTill() {
       h('div.till-send',
         h('p.till-need', { hidden: !missing.length }, 'Still needed: ', h('strong', missing.join(', '))),
         h('button.btn.btn-primary.till-sign', { type: 'button', disabled: missing.length > 0, onclick: sign }, 'Sign and send')));
+  }
+
+  /** The POs whose price changed since they were paid, not yet on this shift or put aside here. */
+  function priceChangesBox() {
+    const onList = new Set(f.expenses.map((e) => e.look?.name).filter(Boolean));
+    const mine = priceChanges.filter((c) => !onList.has(c.name) && !(f.notMine || []).includes(c.name));
+    if (!mine.length) return null;
+    const when = (c) => `${c.first.day ? dayText(c.first.day) : ''}${c.first.slot ? `, ${(SLOT[c.first.slot] || c.first.slot).toLowerCase()}` : ''}${c.first.by ? ` (${c.first.by})` : ''}`;
+    return h('div.till-changes',
+      h('h4', 'Prices changed on POs already paid'),
+      h('p', 'Odoo now has a different total for these. If the difference moved through your drawer on this shift, add it here.'),
+      mine.map((c) => h('div.till-change',
+        h('div.till-change-text',
+          h('div', h('b', c.name), ` ${c.vendor ? `${c.vendor} · ` : ''}total now ${cedis(c.total)}, was ${cedis(c.paidSoFar)}`),
+          h('div.till-change-sub',
+            c.paidSoFar === c.first.paid ? `${cedis(c.paidSoFar)} paid on ${when(c)}. ` : `${cedis(c.paidSoFar)} paid so far, first on ${when(c)}. `,
+            h('b', { class: c.amount > 0 ? 'till-up' : 'till-down' }, c.amount > 0 ? `${cedis(c.amount)} more to pay.` : `${cedis(c.amount)} change due back.`))),
+        h('div.till-change-act',
+          h('button.btn.btn-primary', {
+            type: 'button',
+            onclick: () => {
+              f.expenses.push({ po: c.name, look: { name: c.name, vendor: c.vendor, total: c.total, state: c.state, counted: true, confirmed: true, amount: c.amount, paidSoFar: c.paidSoFar, claimed: c.first } });
+              save(); paint();
+            },
+          }, c.amount > 0 ? `I paid the ${cedis(c.amount)}` : `The ${cedis(c.amount)} came back`),
+          h('button.btn', {
+            type: 'button',
+            onclick: () => { f.notMine = [...(f.notMine || []), c.name]; save(); paint(); },
+          }, 'Not on my shift')))));
   }
 
   /** One box for one PO number or several: each is looked up and joins the list. */
@@ -242,6 +281,9 @@ export async function renderAttMyTill() {
     if (!L) {
       chip = h('span.till-chip.warn', 'Not checked');
       why = h('span.till-why.warn', 'Not checked in Odoo yet: ', recheck, '.');
+    } else if (L.counted && (L.state === 'topup' || L.state === 'change')) {
+      chip = h('span.till-chip.ok', '✓ Counted');
+      who = L.state === 'topup' ? `Price went up from ${cedis(L.paidSoFar)} to ${cedis(L.total)}` : `Price went down from ${cedis(L.paidSoFar)} to ${cedis(L.total)}`;
     } else if (L.counted) {
       chip = h('span.till-chip.ok', '✓ Counted');
     } else if (L.state === 'claimed') {
@@ -265,9 +307,10 @@ export async function renderAttMyTill() {
       why = h('span.till-why.warn', `It is ${L.state} in Odoo. It counts once it is confirmed: `, recheck, '.');
     }
     return h('div.till-poline', { dataset: { po: L?.name || e.po } },
-      h('b.till-poname', L?.name || e.po),
+      h('b.till-poname', L?.name || e.po,
+        L?.state === 'topup' ? h('span.till-potag', 'Top-up') : L?.state === 'change' ? h('span.till-potag', 'Change back') : null),
       h('span.till-povendor', who),
-      h('b.till-poamt', L?.total != null ? cedis(L.total) : '—'),
+      h('b.till-poamt', L?.amount != null ? signedCedis(L.amount) : L?.total != null ? cedis(L.total) : '—'),
       h('span.till-postate', chip,
         h('button.till-x', { type: 'button', 'aria-label': `Remove ${L?.name || e.po}`, onclick: () => { f.expenses.splice(i, 1); save(); paint(); } }, '×')),
       why);

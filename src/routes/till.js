@@ -179,23 +179,85 @@ export function notApproved(found) {
   return NOT_APPROVED[found.state] || 'not approved';
 }
 
-/** Whether a PO is in Odoo, confirmed, and not already claimed here. */
+/**
+ * What has been paid from drawers against a PO so far: its first payment
+ * (who, when) and the sum of every row, top-ups added and change taken off.
+ */
+async function paidAgainst(db, name) {
+  const rows = (await db.prepare(
+    'SELECT t.*, r.name AS who FROM till_po t LEFT JOIN till_report r ON r.id = t.report_id WHERE t.po = ?1 ORDER BY t.id',
+  ).bind(String(name).toUpperCase()).all()).results || [];
+  if (!rows.length) return null;
+  const first = rows.find((r) => (r.kind || 'claim') === 'claim') || rows[0];
+  return {
+    paid: rows.reduce((t, r) => t + (Number(r.paid) || 0), 0),
+    first: { day: first.day, slot: first.slot, by: first.who || null, paid: Number(first.paid) || 0 },
+  };
+}
+
+/**
+ * Whether a PO is in Odoo, confirmed, and not already claimed here.
+ *
+ * One already paid from a drawer whose total has changed in Odoo since is
+ * not "claimed": the difference is a top-up (more to pay) or change back
+ * (money due back), and counts on the shift where it moves.
+ */
 async function checkPo(ctx, typed) {
   const answer = await insight(ctx.env, '/api/link/till/po', { names: [typed] });
   const found = answer?.found?.[0] || { typed, name: null };
   if (!found.name) return { ...found, state: 'missing', counted: false };
   // Paid from the safe already: Insight says so, and it is not the drawer's.
   if (found.safe) return { ...found, state: 'claimed', counted: false, claimed: { day: found.safe.day, slot: null, by: 'the safe' } };
-  const claimed = await ctx.db.prepare('SELECT t.*, r.name AS who FROM till_po t LEFT JOIN till_report r ON r.id = t.report_id WHERE t.po = ?1')
-    .bind(String(found.name).toUpperCase()).first();
-  if (claimed) {
-    return {
-      ...found, state: 'claimed', counted: false,
-      claimed: { day: claimed.day, slot: claimed.slot, by: claimed.who || null },
-    };
+  const before = await paidAgainst(ctx.db, found.name);
+  if (before) {
+    const diff = (Number(found.total) || 0) - before.paid;
+    if (found.confirmed && diff !== 0) {
+      return {
+        ...found, state: diff > 0 ? 'topup' : 'change', counted: true, amount: diff,
+        paidSoFar: before.paid, claimed: before.first,
+      };
+    }
+    return { ...found, state: 'claimed', counted: false, paidSoFar: before.paid, claimed: before.first };
   }
   return { ...found, state: found.confirmed ? 'confirmed' : found.state || 'unconfirmed', counted: Boolean(found.confirmed) };
 }
+
+/** The kind of till_po row a looked-up PO makes. */
+const kindOf = (found) => (found.state === 'topup' ? 'topup' : found.state === 'change' ? 'change' : 'claim');
+/** What it counts on this shift: the difference for a top-up or change, else the PO's total. */
+const amountOf = (found) => (found.amount != null ? Number(found.amount) : Number(found.total) || 0);
+
+/**
+ * POs paid from drawers in the last month whose total in Odoo has changed
+ * since: shown when somebody opens Close shift, so a top-up or change back
+ * that went through their drawer is put on their own shift there and then.
+ */
+export async function poChanges(ctx) {
+  const tz = await timezoneOf(ctx.db);
+  const since = addDays(todayIn(tz), -PO_CHANGE_DAYS);
+  const names = ((await ctx.db.prepare('SELECT DISTINCT po FROM till_po WHERE day >= ?1').bind(since).all()).results || [])
+    .map((r) => r.po);
+  if (!names.length) return json({ changes: [] });
+  const changes = [];
+  for (let i = 0; i < names.length; i += 20) {
+    // eslint-disable-next-line no-await-in-loop
+    const answer = await insightOrNull(ctx.env, '/api/link/till/po', { names: names.slice(i, i + 20) });
+    if (!answer) return json({ changes: [], unchecked: true });
+    for (const found of answer.found || []) {
+      if (!found.name || !found.confirmed || found.safe) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const before = await paidAgainst(ctx.db, found.name);
+      const diff = (Number(found.total) || 0) - (before?.paid ?? 0);
+      if (!before || diff === 0) continue;
+      changes.push({
+        name: found.name, vendor: found.vendor ?? null, total: found.total, paidSoFar: before.paid,
+        amount: diff, state: diff > 0 ? 'topup' : 'change', first: before.first,
+      });
+    }
+  }
+  return json({ changes });
+}
+const PO_CHANGE_DAYS = 30;
 
 /** Look a PO up while somebody types it. Read-only all the way to Odoo. */
 export async function lookUpPo(ctx) {
@@ -308,8 +370,9 @@ export async function closeShift(ctx) {
       found = { ...found, state: 'claimed', counted: false, claimed: { day, slot, by: ctx.session.user.name } };
     }
     expenses.push({
-      po, paid: Number(found.total) || 0, name: found.name, state: found.state, vendor: found.vendor ?? null, total: found.total ?? null,
-      counted: found.counted, claimed: found.claimed ?? null,
+      po, paid: amountOf(found), name: found.name, state: found.state, vendor: found.vendor ?? null, total: found.total ?? null,
+      counted: found.counted, claimed: found.claimed ?? null, kind: kindOf(found),
+      ...(found.paidSoFar != null ? { paidSoFar: found.paidSoFar } : {}),
     });
   }
 
@@ -335,10 +398,16 @@ export async function closeShift(ctx) {
 
   for (const e of expenses.filter((x) => x.counted)) {
     try {
+      // A top-up or change back is the difference left now: if another shift
+      // settled it in the last few seconds, there is nothing left to count.
+      if (e.kind !== 'claim') {
+        const now = await paidAgainst(ctx.db, e.name);
+        if ((Number(e.total) || 0) - (now?.paid ?? 0) !== e.paid) throw new Error('settled elsewhere');
+      }
       await ctx.db.prepare(
-        `INSERT INTO till_po (po, report_id, user_id, day, slot, paid, total, vendor, state, via)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'report')`,
-      ).bind(String(e.name).toUpperCase(), reportId, userId, day, slot, e.paid, e.total, e.vendor, e.state).run();
+        `INSERT INTO till_po (po, kind, report_id, user_id, day, slot, paid, total, vendor, state, via)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'report')`,
+      ).bind(String(e.name).toUpperCase(), e.kind, reportId, userId, day, slot, e.paid, e.total, e.vendor, e.state).run();
     } catch {
       // Claimed by somebody else in the last few seconds. It stays on the
       // report, uncounted, and shows up on their list like any other.
@@ -534,19 +603,20 @@ export async function answer(ctx) {
     if (issue.kind !== 'unexplained') throw badRequest('A PO only answers cash that left the drawer.');
     const typed = str(body.po, 'PO number', { required: true, max: 30 });
     const found = await checkPo(ctx, typed);
+    if (found.state === 'change') throw badRequest(`${found.name} came down in price: money is due back on it, which does not explain cash leaving the drawer.`);
     if (!found.counted) {
       const why = { missing: 'is not in Odoo', claimed: 'has already been claimed', unconfirmed: 'is not confirmed in Odoo yet' }[found.state]
         || `is ${found.state} in Odoo, not confirmed`;
       throw badRequest(`${found.name || typed} ${why}.`);
     }
-    // The PO's own total, never a typed amount.
-    const paid = found.total;
+    // The PO's own total (or, for a top-up, what is left of it), never a typed amount.
+    const paid = amountOf(found);
     const report = await ctx.db.prepare('SELECT id FROM till_report WHERE day = ?1 AND slot = ?2 AND user_id = ?3 AND reopened_at IS NULL')
       .bind(issue.day, issue.slot, userId).first();
     await ctx.db.prepare(
-      `INSERT INTO till_po (po, report_id, user_id, day, slot, paid, total, vendor, state, via)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'answer')`,
-    ).bind(String(found.name).toUpperCase(), report?.id ?? null, userId, issue.day, issue.slot, paid, found.total, found.vendor, found.state).run();
+      `INSERT INTO till_po (po, kind, report_id, user_id, day, slot, paid, total, vendor, state, via)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'answer')`,
+    ).bind(String(found.name).toUpperCase(), kindOf(found), report?.id ?? null, userId, issue.day, issue.slot, paid, found.total, found.vendor, found.state).run();
     await ctx.db.prepare('INSERT INTO till_answer (key, user_id, how, text, po, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)')
       .bind(key, userId, 'po', `${found.name}, ${found.vendor || 'Odoo'}, ${cedis(Math.min(paid, found.total))}`, found.name, nowUtc()).run();
     return json({ ok: true, found });

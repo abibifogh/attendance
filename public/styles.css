@@ -7021,6 +7021,18 @@ tr:hover .rota-who-more,
 .till-why.bad { color: var(--bad); }
 .till-why.warn { color: var(--warn); }
 .till-link { border: 0; background: none; padding: 0; font: inherit; line-height: inherit; vertical-align: baseline; min-height: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
+.till-potag { margin-left: .45rem; font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); }
+.till-changes { border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border)); background: var(--warn-soft); border-radius: var(--radius-sm); padding: .75rem .9rem; margin: .5rem 0 .8rem; }
+.till-changes h4 { margin: 0 0 .15rem; font-size: .95rem; }
+.till-changes > p { margin: 0 0 .4rem; font-size: .85rem; color: var(--text-dim); }
+.till-change { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding: .6rem 0; border-top: 1px solid color-mix(in srgb, var(--warn) 25%, var(--border)); }
+.till-change:first-of-type { border-top: 0; }
+.till-change-text { flex: 1 1 18rem; min-width: 0; font-size: .92rem; }
+.till-change-sub { color: var(--text-dim); font-size: .85rem; margin-top: .15rem; }
+.till-up { color: var(--bad); }
+.till-down { color: var(--good); }
+.till-change-act { display: flex; flex-direction: column; gap: .35rem; }
+@media (max-width: 520px) { .till-change-act { flex: 1 1 100%; } .till-change-act .btn { width: 100%; } }
 .till-pototals { display: flex; flex-wrap: wrap; gap: .4rem 1.6rem; }
 .till-pototals b { font-variant-numeric: tabular-nums; }
 @media (max-width: 520px) {
