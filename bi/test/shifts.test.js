@@ -391,6 +391,17 @@ test('the drawer, from ASSD’s own counts, and a recount when one is typed', as
   assert.ok(!out.exceptions.some((x) => x.kind === 'drawer-short'));
 });
 
+test('each PO on a shift says whether it is on the expense form', async () => {
+  const env = await loaded();
+  const orders = [{ name: 'P00901', total: 3000, state: 'purchase' }, { name: 'P00902', total: 2000, state: 'purchase' }];
+  await env.DB.prepare("INSERT INTO shift_expense (day, slot, po_numbers, odoo, by_name, at) VALUES ('2026-08-01', 'morning', 'P00901 P00902', ?1, 'Test', '2026-08-01 12:00')")
+    .bind(JSON.stringify({ orders })).run();
+  await env.DB.prepare("INSERT INTO expense_report (response_id, po, po_typed, amount, tnt, by_name, submitted_at) VALUES ('r1', 'P00901', 'p00901', 3000, 0, 'Test', '2026-08-01 13:00')").run();
+  const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+  const [alpha] = out.days[0].shifts;
+  assert.deepEqual(alpha.expense.odoo.orders.map((o) => [o.name, o.reported]), [['P00901', true], ['P00902', false]]);
+});
+
 test('a person can correct what a movement was, match a duplicate, and pair a reversal across shifts', async () => {
   const env = await loaded();
   const read = async () => {

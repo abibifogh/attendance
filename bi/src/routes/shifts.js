@@ -542,29 +542,29 @@ export async function shifts(env, query, account) {
   // settles cash movements nothing labelled, the way a typed expense sheet
   // used to, so nobody has to type the total in here.
   const reportPaid = new Map();
-  if (env.ATT_DB) {
-    const rows = await all(env.ATT_DB, 'SELECT * FROM till_po WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => []);
-    // Which of them are on the expense form.
-    const reported = new Set();
-    const names = [...new Set(rows.map((r) => String(r.po).toUpperCase()))];
-    for (let i = 0; i < names.length; i += 90) {
-      const chunk = names.slice(i, i + 90);
-      // eslint-disable-next-line no-await-in-loop
-      for (const r of await all(env.DB, `SELECT DISTINCT po FROM expense_report WHERE po IN (${chunk.map((_, j) => `?${j + 1}`).join(', ')})`, ...chunk).catch(() => [])) reported.add(r.po);
-    }
-    for (const r of rows) {
-      const key = `${r.day}|${r.slot}`;
-      if (!reportPos.has(key)) reportPos.set(key, []);
-      reportPaid.set(key, (reportPaid.get(key) || 0) + (Number(r.paid) || 0));
-      // A top-up or change back on a later shift is the difference that moved
-      // through that drawer, not the PO's whole total again.
-      const kind = r.kind || 'claim';
-      reportPos.get(key).push({
-        name: r.po, vendor: r.vendor || '', total: kind === 'claim' ? Number(r.total) || 0 : Number(r.paid) || 0,
-        state: r.state || 'purchase', fromReport: true, ...(kind !== 'claim' ? { kind } : {}),
-        reported: reported.has(String(r.po).toUpperCase()), advance: Number(r.advance) === 1,
-      });
-    }
+  // Which POs are on the expense form: those on closing reports and those
+  // typed here.
+  const reported = new Set();
+  const poRows = env.ATT_DB ? await all(env.ATT_DB, 'SELECT * FROM till_po WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => []) : [];
+  const typedPos = expenses.flatMap((e) => { try { return (JSON.parse(e.odoo || 'null')?.orders || []).map((o) => o.name); } catch { return []; } });
+  const names = [...new Set([...poRows.map((r) => r.po), ...typedPos].map((x) => String(x).toUpperCase()))];
+  for (let i = 0; i < names.length; i += 90) {
+    const chunk = names.slice(i, i + 90);
+    // eslint-disable-next-line no-await-in-loop
+    for (const r of await all(env.DB, `SELECT DISTINCT po FROM expense_report WHERE po IN (${chunk.map((_, j) => `?${j + 1}`).join(', ')})`, ...chunk).catch(() => [])) reported.add(String(r.po).toUpperCase());
+  }
+  for (const r of poRows) {
+    const key = `${r.day}|${r.slot}`;
+    if (!reportPos.has(key)) reportPos.set(key, []);
+    reportPaid.set(key, (reportPaid.get(key) || 0) + (Number(r.paid) || 0));
+    // A top-up or change back on a later shift is the difference that moved
+    // through that drawer, not the PO's whole total again.
+    const kind = r.kind || 'claim';
+    reportPos.get(key).push({
+      name: r.po, vendor: r.vendor || '', total: kind === 'claim' ? Number(r.total) || 0 : Number(r.paid) || 0,
+      state: r.state || 'purchase', fromReport: true, ...(kind !== 'claim' ? { kind } : {}),
+      reported: reported.has(String(r.po).toUpperCase()), advance: Number(r.advance) === 1,
+    });
   }
 
   // The register, in slot order. ASSD counts the drawer at every hand-over:
@@ -753,6 +753,7 @@ export async function shifts(env, query, account) {
     const fromReport = (reportPos.get(`${s.day}|${s.slotName}`) || [])
       .filter((o) => !(odoo?.orders || []).some((x) => String(x.name).toUpperCase() === String(o.name).toUpperCase()));
     if (fromReport.length) odoo = { ...(odoo || {}), orders: [...(odoo?.orders || []), ...fromReport] };
+    if (odoo?.orders) odoo = { ...odoo, orders: odoo.orders.map((o) => ({ ...o, reported: reported.has(String(o.name).toUpperCase()) })) };
     const cardLines = s.lines.filter((l) => l.amount > 0);
     const found = cardLines.filter((l) => l.events.length);
     byDay.get(s.day)?.push({
