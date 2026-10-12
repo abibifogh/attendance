@@ -652,12 +652,13 @@ export async function saveSettings(env, body, account) {
     else {
       const flag = (v, d) => (v == null ? d : v ? 1 : 0);
       const old = await first(env.DB, 'SELECT * FROM till_notify WHERE hive_user_id = ?1', id);
-      await run(env.DB, `INSERT INTO till_notify (hive_user_id, name, push, email, amounts, on_closed, on_answer, on_approval)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-        ON CONFLICT (hive_user_id) DO UPDATE SET name = ?2, push = ?3, email = ?4, amounts = ?5, on_closed = ?6, on_answer = ?7, on_approval = ?8`,
+      await run(env.DB, `INSERT INTO till_notify (hive_user_id, name, push, email, amounts, on_closed, on_answer, on_approval, on_summary)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        ON CONFLICT (hive_user_id) DO UPDATE SET name = ?2, push = ?3, email = ?4, amounts = ?5, on_closed = ?6, on_answer = ?7, on_approval = ?8, on_summary = ?9`,
       id, str(n.name, 'Name', { max: 120 }) || old?.name || `HIVE ${id}`,
       flag(n.push, old?.push ?? 1), flag(n.email, old?.email ?? 1), flag(n.amounts, old?.amounts ?? 1),
-      flag(n.onClosed, old?.on_closed ?? 1), flag(n.onAnswer, old?.on_answer ?? 1), flag(n.onApproval, old?.on_approval ?? 0));
+      flag(n.onClosed, old?.on_closed ?? 1), flag(n.onAnswer, old?.on_answer ?? 1), flag(n.onApproval, old?.on_approval ?? 0),
+      flag(n.onSummary, old?.on_summary ?? 1));
     }
   }
 
