@@ -1266,3 +1266,32 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .tl-limit label { white-space: nowrap; }
 .tl-limits .tl-actions { padding-top: .8rem; }
 .tl-person .sh-link { justify-self: start; }
+
+/* Shifts: the title, tabs and period on a dark band of their own, full width,
+   so they read apart from Insight's top bar. The band is painted out to the
+   window's edges with a shadow, which takes no room and never scrolls sideways. */
+.sh-band {
+  --band: #16232e; --band-ink: #e8eef3; --band-dim: #9fb1c0; --band-line: #3a4c5c;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; margin-top: -1.1rem; padding-block: 1rem .9rem;
+  background: var(--band); color: var(--band-ink);
+  box-shadow: 0 0 0 100vmax var(--band); clip-path: inset(0 -100vmax);
+}
+.sh-band .sh-head h1 { color: #fff; }
+.sh-band .sh-count { color: var(--band-dim); }
+.sh-band .sh-nav { border-bottom: 0; padding-bottom: 0; }
+.sh-band .sh-groups { background: transparent; padding: 0; gap: 4px; }
+.sh-band .sh-groups button { color: #b9c7d3; }
+.sh-band .sh-groups button:hover { color: #fff; background: rgba(255, 255, 255, .07); }
+.sh-band .sh-groups button[aria-selected='true'] { background: #fff; color: var(--band); box-shadow: none; }
+.sh-band .sh-groups button:focus-visible, .sh-band .sh-modes button:focus-visible, .sh-band .sh-arrow:focus-visible { outline: 2px solid #8fc1ff; outline-offset: 2px; }
+.sh-band .sh-rule { background: var(--band-line); }
+.sh-band .sh-modes { border-color: var(--band-line); }
+.sh-band .sh-modes button { background: transparent; color: #b9c7d3; border-right-color: var(--band-line); }
+.sh-band .sh-modes button[aria-pressed='true'] { background: #fff; color: var(--band); }
+.sh-band .sh-arrow { background: transparent; border-color: var(--band-line); color: #fff; }
+.sh-band .sh-plabel { color: #fff; }
+.sh-band .sh-period .btn { background: transparent; border-color: var(--band-line); color: #fff; }
+.sh-band .sh-jnote summary { background: #3b3320; border-color: #6b5a2a; color: #f0cf7c; }
+.sh-band .sh-jnote summary::before { color: #f0cf7c; }
+.sh-band .sh-jnote p { color: var(--ink-2); }
+@media (max-width: 640px) { .sh-band { margin-top: -.8rem; } }
