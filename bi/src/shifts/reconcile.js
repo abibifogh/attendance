@@ -557,6 +557,8 @@ export const GROUPS = [
     help: 'Opening count, plus the cash taken, less what was moved out, against the count at the end of the shift — ASSD’s own counts unless somebody typed a recount. Also listed: a hand-over where the next person’s first count differed from the last person’s closing count.' },
   { id: 'unlabelled', title: 'Cash moved out of the drawer with no label', severity: 'warning',
     help: 'A Cash Movement out of the front drawer that no count labelled as expenses or the safe, on a shift with no expense sheet to settle it. Say where each one went.' },
+  { id: 'nopo', title: 'Expenses with no PO', severity: 'warning',
+    help: 'Cash paid out of the drawer as expenses with no PO: none on the closing report in HIVE and none linked in Insight. Link the PO on the shift, or answer why there is none.' },
   { id: 'laundry', title: 'The laundry did not agree with the laundry system', severity: 'warning',
     help: 'Every shift, the laundry ASSD has against what the laundry system took in the same hours (06:00–14:00, 14:00–22:00, 22:00–06:00). Compared once the laundry system has been read for the whole shift.' },
   { id: 'keying', title: 'Keying slips: transposed digits, one digit off, a decimal in the wrong place', severity: 'warning',

@@ -183,6 +183,15 @@ refresh (table `laundry_txn`; order number, time and money only). A shift is
 compared only once the laundry system has been read for the whole of it; a
 difference is listed in the Inbox as "The laundry did not agree".
 
+## Expenses with no PO
+
+From the first closing report in HIVE on, a shift whose drawer paid out
+expenses with no PO at all (none on its closing report, none linked in
+Insight) is flagged: **Expenses with no PO**, under Inbox → POs and on the
+shift, which then cannot read as all agreeing. The card has the PO box:
+linking the PO takes it off, or answer why there is none. Shifts before the
+first closing report are history and are not flagged.
+
 ## Cash moved out with no label
 
 A Cash Movement out of the front drawer that no count labelled as expenses or
