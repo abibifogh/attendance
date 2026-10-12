@@ -494,6 +494,21 @@ test('a person can correct what a movement was, match a duplicate, and pair a re
   assert.equal(bravo.register.variance, 2000);
 });
 
+test('a supervisor labelling cash no count labelled counts straight away; changing a count’s label waits', async () => {
+  const env = await loaded();
+  const SUP = { id: 9, name: 'Sam Sup', access: [{ systemId: 'insight', role: 'supervisor' }] };
+  const filled = await routes.saveMovement(env, { seq: 300526, kind: 'expenses' }, SUP, { pending: true, smallUpTo: 0 });
+  assert.deepEqual([filled.pending, filled.filled], [false, true], 'ASSD 300526 had no label');
+  const row = await env.DB.prepare('SELECT status, decided_by FROM shift_movement WHERE seq = 300526').first();
+  assert.deepEqual({ ...row }, { status: 'applied', decided_by: routes.UNLABELLED_BY });
+  const safe = await routes.saveMovement(env, { seq: 300528, kind: 'safe' }, SUP, { pending: true, smallUpTo: 0 });
+  assert.equal(safe.pending, false);
+  const relabel = await routes.saveMovement(env, { seq: 300508, kind: 'safe' }, SUP, { pending: true, smallUpTo: 0 });
+  assert.deepEqual([relabel.pending, relabel.filled], [true, false], 'the count before ASSD 300508 labelled it; changing that is an admin’s call');
+  const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+  assert.ok(!out.exceptions.some((x) => x.kind === 'movement-unlabelled'), 'both unlabelled movements are labelled now');
+});
+
 test('what each cash movement was', () => {
   const counts = [
     { seq: 1, notes: 61200, receipts: 176300, total: 237500 },

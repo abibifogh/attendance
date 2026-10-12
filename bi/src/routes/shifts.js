@@ -286,11 +286,11 @@ async function correctionsFor(env, lo, hi) {
 
 /** A Cash Movement on the front drawer, with the amount it took out (negative: put back). */
 async function drawerMovement(env, seq) {
-  const row = await first(env.DB, 'SELECT seq, kind, register, data FROM assd_entry WHERE seq = ?1', seq);
+  const row = await first(env.DB, 'SELECT seq, kind, day, register, data FROM assd_entry WHERE seq = ?1', seq);
   if (!row || row.kind !== 'Cash Movement' || row.register !== DRAWER) return null;
   let data = {};
   try { data = JSON.parse(row.data); } catch { data = {}; }
-  return { seq: row.seq, amount: -(data.movement || 0) };
+  return { seq: row.seq, day: row.day, amount: -(data.movement || 0) };
 }
 
 /**
@@ -303,6 +303,26 @@ async function drawerMovement(env, seq) {
  */
 /** Who decided a supervisor's correction that was small enough to count straight away. */
 export const SMALL_BY = 'Counted straight away (small)';
+/** Who decided a supervisor's label for cash no count had labelled. */
+export const UNLABELLED_BY = 'Counted straight away (had no label)';
+
+/**
+ * What the counts said a movement was before anybody corrected it:
+ * expenses, safe, split, part (some receipts, the rest unsaid) or unlabelled.
+ */
+async function autoLabel(env, move) {
+  if (!isDay(move.day)) return null;
+  try {
+    const out = await shifts(env, { from: addDays(move.day, -1), to: addDays(move.day, 1) }, null);
+    for (const d of out.days || []) {
+      for (const sh of d.shifts || []) {
+        const m = (sh.moves || []).find((x) => x.seq === move.seq);
+        if (m) return m.auto || m.kind;
+      }
+    }
+  } catch { /* not known: it waits for an admin */ }
+  return null;
+}
 
 export async function saveMovement(env, body, account, { pending = false, smallUpTo = null } = {}) {
   const seq = Number(body?.seq);
@@ -360,13 +380,18 @@ export async function saveMovement(env, body, account, { pending = false, smallU
   // under the small-differences limit, it is not worth an admin's decision.
   // It is marked, so the daily summary can list it.
   const small = pending && smallUpTo > 0 && Math.abs(move.amount) <= smallUpTo;
-  const status = pending && !small ? 'pending' : 'applied';
+  // Cash no count labelled, labelled expenses or the safe, counts straight
+  // away too: it fills in what was missing rather than overruling a count.
+  const filled = pending && !small && ['expenses', 'safe', 'split'].includes(kind)
+    && ['unlabelled', 'part'].includes(await autoLabel(env, move));
+  const status = pending && !small && !filled ? 'pending' : 'applied';
+  const decidedBy = small ? SMALL_BY : filled ? UNLABELLED_BY : null;
   await run(env.DB, `INSERT INTO shift_movement (seq, kind, expenses, pair, note, by_name, at, status, decided_by, decided_at)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
     ON CONFLICT (seq) DO UPDATE SET kind = ?2, expenses = ?3, pair = ?4, note = ?5, by_name = ?6, at = ?7, status = ?8,
       decided_by = ?9, decided_at = ?10`,
-  rowSeq, kind, expenses, pair, note, who(account), now(), status, small ? SMALL_BY : null, small ? now() : null);
-  return { ok: true, pending: status === 'pending', small, seq: rowSeq, kind };
+  rowSeq, kind, expenses, pair, note, who(account), now(), status, decidedBy, decidedBy ? now() : null);
+  return { ok: true, pending: status === 'pending', small, filled, seq: rowSeq, kind };
 }
 
 /**
