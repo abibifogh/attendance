@@ -720,11 +720,25 @@ export async function shifts(env, query, account) {
       const exp = expenseOf.get(key);
       let pulled = [];
       try { pulled = JSON.parse(exp?.odoo || 'null')?.orders || []; } catch { pulled = []; }
-      if (!poList(exp?.po_numbers).length && !pulled.length && !(reportPos.get(key) || []).length) {
+      const fromReport = (reportPos.get(key) || [])
+        .filter((o) => !pulled.some((x) => String(x.name).toUpperCase() === String(o.name).toUpperCase()));
+      const seqs = s.moves.filter((m) => ['expenses', 'split', 'part'].includes(m.kind)).map((m) => m.seq);
+      if (!poList(exp?.po_numbers).length && !pulled.length && !fromReport.length) {
         exceptions.push({
           ...base, key: `nopo:${s.day}:${s.slotName}`, kind: 'expense-no-po', group: 'nopo', severity: 'warning',
-          amount: r.expenses, seqs: s.moves.filter((m) => ['expenses', 'split', 'part'].includes(m.kind)).map((m) => m.seq),
+          amount: r.expenses, seqs,
         });
+      } else if (pulled.length || fromReport.length) {
+        // The POs, as Odoo has them, against what left the drawer as
+        // expenses. Typed POs not read from Odoo yet are not judged.
+        const poTotal = Math.round([...pulled, ...fromReport].reduce((t, o) => t + (Number(o.total) || 0), 0));
+        const gap = r.expenses - poTotal;
+        if (gap !== 0) {
+          exceptions.push({
+            ...base, key: `pogap:${s.day}:${s.slotName}:${r.expenses}:${poTotal}`, kind: 'expense-po-gap', group: 'nopo', severity: 'warning',
+            amount: gap, expenses: r.expenses, poTotal, seqs, pos: [...pulled, ...fromReport].map((o) => o.name),
+          });
+        }
       }
     }
     for (const m of s.moves.filter((x) => x.kind === 'corrected')) {
