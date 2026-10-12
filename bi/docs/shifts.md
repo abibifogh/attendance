@@ -26,8 +26,13 @@ shift, a small note at the end of the line says which; open it for what to do.
     and Reopen); the drawer as bars from the opening count to the closing
     count; how the shift was paid; card and MoMo on the clock; where the cash
     went, with the POs from the closing report and whether each is approved in
-    Odoo and on the expense form. Nothing about expenses is typed here: they
-    come from HIVE. A recount can still be typed and saved. Without the
+    Odoo and on the expense form. Expenses come from HIVE; where a closing
+    report gave no PO (cash a count labelled expenses, or a movement labelled
+    expenses by hand), POs can be linked here: **Link POs to these
+    expenses**, typed as staff write them (4123, P04123), read from Odoo at
+    once and paired with the payments by amount. A PO already on another
+    shift is refused; each linked one can be unlinked (×). Labelling a
+    movement as Expenses also takes PO numbers. A recount can still be typed and saved. Without the
     amounts, a supervisor sees the closing report and what does not agree.
 - **Inbox**: everything somebody has to act on, as one list: what does not
   agree (drawer, card and bank), staff answers from HIVE, POs with no posted
