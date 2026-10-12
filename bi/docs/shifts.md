@@ -219,7 +219,10 @@ behind it, each marked ✓ (agrees), ✗ (does not) or · (nothing to match):
   and how it was labelled, what the drawer should hold, and the closing count.
 - **Card and MoMo**: each card line in ASSD and the terminal or MoMo payment it
   was matched to (time, card, approval code, amount), lines with nothing found,
-  and payments that arrived but are not in ASSD.
+  and payments that arrived but are not in ASSD. A line keyed and reversed in
+  the same shift took no money: it is listed with a · and not counted. A line
+  whose difference has been answered counts as accounted for ("7 of 8 found,
+  1 answered").
 - **Expenses**: each expense movement (and what the closing report settled)
   against the Odoo PO of the same amount, or several POs that add up to it;
   POs not approved in Odoo, and numbers Odoo does not know. Each PO says

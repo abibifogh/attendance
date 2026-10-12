@@ -337,6 +337,8 @@ export async function renderShifts(root, { range }) {
   // ------------------------------------------------------------- facts --
 
   const exceptionsOf = (s) => data.exceptions.filter((x) => x.day === s.day && x.slot === s.slot);
+  /** "7 of 9 card and MoMo found", with those whose difference was answered. */
+  const cardText = (s, word = '') => `${s.cardFound} of ${s.cardLines} card and MoMo${word} found${s.cardAnswered ? `, ${s.cardAnswered} answered` : ''}`;
   const waiting = () => data.exceptions.filter((x) => x.severity !== 'info' && !x.answer);
 
   /** The register with what is being typed applied, so the screen moves as somebody types. */
@@ -744,7 +746,6 @@ export async function renderShifts(root, { range }) {
         if (!s) { add(grid, h('div.sh-tile.empty', 'Not in the journal yet')); continue; }
         const t = tone(s);
         const toAnswer = exceptionsOf(s).filter((x) => !x.answer && x.severity !== 'info').length;
-        const cardLines = s.lines.filter((l) => l.amount > 0);
         add(grid, h(`button.sh-tile.${t}${s.id === currentId ? '.sel' : ''}`, {
           type: 'button', title: `${nameOf(s.user)} · ${SLOT[sl].label} · ${dayText(s.day)}`, onclick: () => go('shift', s.id),
         },
@@ -752,7 +753,7 @@ export async function renderShifts(root, { range }) {
         h('span.sh-fig', h('span.num', `Cash ${whole(s.cash)}`), chip(s.register?.variance ?? s.register?.varianceSign, s.open)),
         mixBar(s),
         h('span.sh-fig',
-          h('span', cardLines.length ? `${s.cardFound}/${cardLines.length} card` : 'no card'),
+          h('span', s.cardLines ? `${s.cardFound + (s.cardAnswered || 0)}/${s.cardLines} card` : 'no card'),
           toAnswer ? h('span.sh-chip.short', `${toAnswer} to answer`) : null)));
       }
     }
@@ -849,7 +850,6 @@ export async function renderShifts(root, { range }) {
     const t = tone(s);
     const m = modesOf(s);
     const toAnswer = exceptionsOf(s).filter((x) => !x.answer && x.severity !== 'info').length;
-    const cardLines = s.lines.filter((l) => l.amount > 0 || (data.redacted && l.amount == null));
     const v = r.variance ?? r.varianceSign;
     return h(`button.sh-daycard.${t}`, { type: 'button', onclick: () => go('shift', s.id) },
       h('div.top', glyph(s.slot), h('span', `${SLOT[s.slot].label} · ${SLOT[s.slot].hours}`),
@@ -866,7 +866,7 @@ export async function renderShifts(root, { range }) {
       mixBar(s),
       h('div.sh-mixkey', MODES.filter(([k]) => m[k] > 0).map(([k, label, c]) => h('span', h('i', { style: `background:${c}` }), `${label === 'Card and MoMo' ? 'Card' : label.replace('Prepaid by ', 'Prepaid ')} ${whole(m[k])}`))),
       h('div.sh-fig',
-        h('span', cardLines.length ? `${s.cardFound} of ${cardLines.length} card and MoMo found` : 'No card or MoMo'),
+        h('span', s.cardLines ? cardText(s) : 'No card or MoMo'),
         toAnswer ? h('span.sh-chip.short', `${toAnswer} to answer`) : null),
       h('span.sh-open', 'Open the shift →'));
   }
@@ -1118,9 +1118,9 @@ export async function renderShifts(root, { range }) {
     if (n.variance == null) out.push(['info', 'i', s.open ? 'No closing count yet: the journal ends inside this shift' : 'No closing count in ASSD']);
     else if (n.variance === 0) out.push(['good', '✓', 'The drawer agrees with the closing count', drawerDetail(s, n)]);
     else out.push([n.variance < 0 ? 'bad' : 'warn', '!', `Drawer ${n.variance > 0 ? 'over' : 'short'} by ${money(Math.abs(n.variance))}`, drawerDetail(s, n)]);
-    const lines = s.lines.filter((l) => l.amount > 0);
-    if (!lines.length) out.push(['info', '·', 'No card or MoMo this shift']);
-    else out.push([s.cardFound === lines.length ? 'good' : 'bad', s.cardFound === lines.length ? '✓' : '!', `${s.cardFound} of ${lines.length} card and MoMo payments found`, cardDetail(s)]);
+    const allCard = s.cardFound + (s.cardAnswered || 0) === s.cardLines;
+    if (!s.cardLines) out.push(['info', '·', 'No card or MoMo this shift', s.lines.some((l) => l.how === 'corrected') ? cardDetail(s) : null]);
+    else out.push([allCard ? 'good' : 'bad', allCard ? '✓' : '!', cardText(s, ' payments'), cardDetail(s)]);
     const exp = s.expense;
     if (exp?.sheetTotal != null || n.expenses) {
       // Agrees when what left the drawer is what Odoo approved, and every PO
@@ -1232,19 +1232,25 @@ export async function renderShifts(root, { range }) {
   function cardDetail(s) {
     const howText = { exact: 'same amount, in the shift', late: 'same amount, just outside the shift', together: 'one payment for several ASSD lines', parts: 'paid in parts', corrected: 'keyed and reversed', regrouped: 'same money, split differently' };
     const event = (e) => `${e.kind === 'momo' ? 'MoMo' : `Card${e.last4 ? ` …${e.last4}` : ''}`} · ${e.at ? clock(e.at) : shortDay(e.day)}${e.approval ? ` · appr. ${e.approval}` : ''} · ${e.source === 'bank' ? 'bank' : 'terminal'}`;
-    const rows = s.lines.filter((l) => l.amount > 0).map((l) => {
+    const rows = s.lines.filter((l) => l.amount > 0 || (data.redacted && l.amount == null)).map((l) => {
+      if (l.how === 'corrected') {
+        const back = exceptionsOf(s).find((o) => o.kind === 'corrected' && o.pair === l.seq);
+        return { state: 'none', cells: [`ASSD ${l.seq}`, money(l.amount), h('span.muted', `Keyed and reversed${back ? ` (ASSD ${back.seq})` : ''}. Nothing taken, not counted.`)] };
+      }
       const found = l.events || [];
       const got = found.reduce((t, e) => t + e.amount, 0);
       const x = exceptionsOf(s).find((o) => o.seq === l.seq && o.amount === l.amount && o.event);
-      const state = found.length ? (got === l.amount || l.how === 'together' || l.how === 'regrouped' ? 'ok' : 'bad') : 'bad';
+      const said = !found.length && exceptionsOf(s).find((o) => o.seq === l.seq && o.amount === l.amount && o.answer);
+      const state = found.length ? (got === l.amount || l.how === 'together' || l.how === 'regrouped' ? 'ok' : 'bad') : said ? 'ok' : 'bad';
       return {
         state,
         cells: [
           `ASSD ${l.seq}`,
           money(l.amount),
           found.length ? h('span', found.map((e) => h('div', `${event(e)} · ${money(e.amount)}`)), h('small', howText[l.how] || l.how || ''))
-            : x ? h('span', h('div', `Nearest: ${event(x.event)} · ${money(x.event.amount)}`), h('small', (KIND[x.kind] || [x.kind])[0]))
-              : h('span.muted', 'Nothing found near the shift'),
+            : h('span',
+              x ? h('div', `Nearest: ${event(x.event)} · ${money(x.event.amount)}`) : h('div.muted', 'Nothing found near the shift'),
+              said ? h('small', `Answered: ${said.answer.answer}${said.answer.by ? ` (${said.answer.by})` : ''}`) : x ? h('small', (KIND[x.kind] || [x.kind])[0]) : null),
         ],
       };
     });

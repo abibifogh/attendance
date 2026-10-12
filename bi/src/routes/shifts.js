@@ -754,8 +754,13 @@ export async function shifts(env, query, account) {
       .filter((o) => !(odoo?.orders || []).some((x) => String(x.name).toUpperCase() === String(o.name).toUpperCase()));
     if (fromReport.length) odoo = { ...(odoo || {}), orders: [...(odoo?.orders || []), ...fromReport] };
     if (odoo?.orders) odoo = { ...odoo, orders: odoo.orders.map((o) => ({ ...o, reported: reported.has(String(o.name).toUpperCase()) })) };
-    const cardLines = s.lines.filter((l) => l.amount > 0);
+    // A line keyed and reversed in the same shift took no money: it is not a
+    // payment to find. A line whose difference has been answered is
+    // accounted for.
+    const cardLines = s.lines.filter((l) => l.amount > 0 && l.how !== 'corrected');
     const found = cardLines.filter((l) => l.events.length);
+    const answered = cardLines.filter((l) => !l.events.length && exceptions.some((x) => x.day === s.day && x.slot === s.slotName
+      && x.seq === l.seq && x.amount === l.amount && x.answer));
     byDay.get(s.day)?.push({
       day: s.day, slot: s.slotName, user: s.user, users: s.users, double: s.double, open: s.open,
       startSeq: s.startSeq, endSeq: s.endSeq,
@@ -767,7 +772,7 @@ export async function shifts(env, query, account) {
       items: s.items, stockStart: s.stockStart, stockEnd: s.stockEnd,
       expensesMoved: s.expensesMoved, safeMoved: s.safeMoved, unlabelledMoved: s.unlabelledMoved,
       lines: s.lines,
-      cardFound: found.length, cardLines: cardLines.length,
+      cardFound: found.length, cardAnswered: answered.length, cardLines: cardLines.length,
       cardFoundAmount: found.reduce((t, l) => t + l.amount, 0),
       register: register.get(s.index),
       expense: expense || fromReport.length ? {

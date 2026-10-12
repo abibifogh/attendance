@@ -278,9 +278,11 @@ test('the explained differences: split differently, keyed on another shift, corr
     ev('e1', '2026-08-01 09:00:00', 96700), ev('e2', '2026-08-01 09:05:00', 96800),
     ev('e3', '2026-08-01 15:00:00', 10000), ev('e4', '2026-08-01 16:00:00', 124100),
   ];
-  const { exceptions } = reconcile(shifts, events, []);
+  const { exceptions, shifts: placed } = reconcile(shifts, events, []);
   const kinds = exceptions.map((x) => x.kind).sort();
   assert.deepEqual(kinds, ['corrected', 'other-shift', 'regrouped']);
+  const b = placed.find((x) => x.user === 'B');
+  assert.equal(b.lines.find((l) => l.seq === 6).how, 'corrected', 'the line put back is marked, so it is not counted as a payment to find');
   const regrouped = exceptions.find((x) => x.kind === 'regrouped');
   assert.equal(regrouped.amount, 193500);
   assert.deepEqual(regrouped.seqs, [1, 2, 3]);
@@ -533,6 +535,8 @@ test('answers stick to their exception, and the same file twice changes nothing'
   assert.equal(answered.answer.answer, 'Guest owes — chasing');
   assert.equal(answered.answer.by, 'Test Owner');
   assert.equal(again.totals.open, first.totals.open - 1);
+  const shiftOf = (out) => out.days.flatMap((d) => d.shifts).find((x) => x.day === failed.day && x.slot === failed.slot);
+  assert.equal(shiftOf(again).cardAnswered, shiftOf(first).cardAnswered + 1, 'the answered line counts as accounted for');
 });
 
 test('typed input is checked', async () => {
