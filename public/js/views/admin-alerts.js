@@ -29,6 +29,9 @@ export function alertsSetup(data, reload) {
   const cc = h('textarea', {
     rows: 2, placeholder: 'one address per line', value: (data.cc ?? []).join('\n'),
   });
+  const medicalPayTo = h('textarea', {
+    rows: 2, placeholder: 'one address per line', value: (data.medicalPayTo ?? []).join('\n'),
+  });
   const emailEnabled = h('input', { type: 'checkbox', checked: data.emailEnabled });
   const pushEnabled = h('input', { type: 'checkbox', checked: data.pushEnabled });
   const inAppEnabled = h('input', { type: 'checkbox', checked: data.inAppEnabled });
@@ -69,6 +72,7 @@ export function alertsSetup(data, reload) {
         senderName: senderName.value.trim(),
         replyTo: replyTo.value.trim(),
         cc: cc.value.split('\n').map((v) => v.trim()).filter(Boolean),
+        medicalPayTo: medicalPayTo.value.split('\n').map((v) => v.trim()).filter(Boolean),
         siteUrl: siteUrl.value.trim(),
         smsEnabled: smsEnabled.checked,
         smsProvider: smsProvider.value,
@@ -152,6 +156,9 @@ export function alertsSetup(data, reload) {
           h('small.muted', 'Gets one copy of every notification email HIVE sends, however many '
             + 'people it went to. Never copied: account invitations and signing codes, because '
             + 'they carry a private link or code')),
+        h('label.field', h('span', 'Approved medical claims go to be paid by'), medicalPayTo,
+          h('small.muted', 'Gets a payment voucher PDF with the receipts each time a medical claim is '
+            + 'approved. Leave empty to send none')),
         h('label.field', h('span', 'This site\'s address'), siteUrl,
           h('small.muted', 'Used for the link in the email and the alert')),
         !data.providerConfigured

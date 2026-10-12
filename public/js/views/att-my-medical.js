@@ -106,9 +106,11 @@ export async function renderAttMyMedical(params) {
 
 function claimBlock(claim, { cash, reload }) {
   const tone = { approved: 'good', requested: 'warn', rejected: '', withdrawn: '' }[claim.status];
-  const label = {
-    approved: 'approved', requested: 'waiting', rejected: 'not approved', withdrawn: 'taken back',
-  }[claim.status] ?? claim.status;
+  // Approved is not the end of it: the money still has to be handed over, and
+  // somebody waiting for cash wants to know which of the two they are at.
+  const label = claim.status === 'approved'
+    ? (claim.paidAt ? 'approved and paid' : 'approved, to be paid in cash')
+    : ({ requested: 'waiting', rejected: 'not approved', withdrawn: 'taken back' }[claim.status] ?? claim.status);
 
   return h('div.adv-block',
     h('div.adv-block-head',

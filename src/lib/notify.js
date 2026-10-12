@@ -213,6 +213,7 @@ const MOST_IN_A_BATCH = 100;
  */
 export async function sendEmail({
   apiKey, from, to, subject, html, text, replyTo = null, headers = null, cc = null,
+  attachments = null,
 }) {
   const each = (Array.isArray(to) ? to : [to])
     .map((one) => String(one ?? '').trim())
@@ -237,6 +238,8 @@ export async function sendEmail({
     text: text || asPlainText(html),
     ...(replyTo ? { reply_to: replyTo } : {}),
     ...(headers ? { headers } : {}),
+    // Files, as the provider takes them: a name and the bytes in base64.
+    ...(attachments?.length ? { attachments } : {}),
   });
 
   const post = async (path, payload) => {
@@ -282,6 +285,16 @@ export async function sendEmail({
  */
 export function ccFor(settings) {
   return parseRecipients(settings?.email_cc).filter((a) => isEmail(a));
+}
+
+/** Bytes as base64, in pieces, so a large file does not overflow the call stack. */
+export function toBase64(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes ?? []);
+  let binary = '';
+  for (let i = 0; i < b.length; i += 0x8000) {
+    binary += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
 }
 
 /**

@@ -59,6 +59,7 @@ export async function renderAttMedical(params) {
     ),
 
     data.waiting.length ? waitingCard(data, reload, cash) : null,
+    toPayCard(data, reload, cash),
 
     h('div.grid.grid-4.med-tiles',
       tile('Allowed this year', cash(data.totals.allowance),
@@ -89,6 +90,90 @@ export async function renderAttMedical(params) {
   );
 
   return host;
+}
+
+// --------------------------------------------------------------------------
+// Paying
+// --------------------------------------------------------------------------
+
+/**
+ * Approved, and not yet paid.
+ *
+ * Every approved claim goes to finance as a payment voucher with the receipts.
+ * Whoever pays it in cash marks it paid here, so this card is the list of what
+ * the property still owes. It only appears when there is something on it.
+ */
+function toPayCard(data, reload, cash) {
+  const owed = (data.people ?? []).flatMap((p) => (p.claims ?? [])
+    .filter((c) => c.status === 'approved' && !c.paidAt)
+    .map((c) => ({ ...c, staffName: p.staff.name })));
+  if (!owed.length) return null;
+  const total = owed.reduce((n, c) => n + Number(c.approved ?? c.amount), 0);
+  return card('Approved, not yet paid', { wide: true, note: `${owed.length} · ${cash(total)}` },
+    h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
+      'Each one has been emailed to finance as a payment voucher with the receipts. Mark it paid '
+      + 'once the cash has gone out.'),
+    owed.map((claim) => h('div.med-claim',
+      h('div.med-claim-head',
+        h('div',
+          h('div.adv-who', claim.staffName),
+          h('div.muted', `${cash(claim.approved ?? claim.amount)} in cash · approved `
+            + fmtDay(String(claim.decidedAt ?? '').slice(0, 10))),
+          h('div.muted', claim.sentToPayAt
+            ? `Sent to finance ${fmtDay(String(claim.sentToPayAt).slice(0, 10))}`
+            : 'Not sent to finance yet')),
+        h('div.btn-row',
+          h('button.btn-sm.btn-primary', { onclick: () => markPaid(claim, claim.staffName, reload) }, 'Mark as paid'),
+          h('button.btn-sm', { onclick: () => sendAgain(claim, reload) },
+            claim.sentToPayAt ? 'Send to finance again' : 'Send to finance'))))));
+}
+
+/** The payment state of one approved claim, in a person's list. */
+function paymentLine(claim, name, reload) {
+  if (claim.paidAt) {
+    return h('div.med-standing',
+      h('span.pill.good', 'Paid'),
+      h('span.muted', ` ${fmtDay(String(claim.paidAt).slice(0, 10))}`
+        + (claim.paidBy ? ` by ${String(claim.paidBy).replace(/\s*\([^)]*\)$/, '')}` : '')
+        + (claim.paidNote ? ` · ${claim.paidNote}` : '')),
+      h('button.btn-ghost.btn-sm', {
+        onclick: async (e) => {
+          e.stopPropagation();
+          try {
+            await api.medicalPaid(claim.id, { paid: false });
+            toast('Marked as not paid.', 'good');
+            await reload();
+          } catch (err) { toast(err.message, 'bad'); }
+        },
+      }, 'Undo'));
+  }
+  return h('div.med-standing',
+    h('span.pill.warn', 'Not paid yet'),
+    h('button.btn-sm', { onclick: (e) => { e.stopPropagation(); markPaid(claim, name, reload); } }, 'Mark as paid'));
+}
+
+async function markPaid(claim, name, reload) {
+  const done = await formDialog({
+    title: `Mark ${name}’s claim as paid`,
+    submitLabel: 'Mark as paid',
+    body: h('div',
+      h('p.muted', 'Paid in cash. Add a note if it helps, for example the voucher or cash book number.'),
+      field('Note', h('input', { type: 'text', name: 'note', maxlength: 200 }))),
+    onSubmit: (form) => api.medicalPaid(claim.id, { note: form.get('note') }),
+  });
+  if (!done) return;
+  toast('Marked as paid.', 'good');
+  await reload();
+}
+
+async function sendAgain(claim, reload) {
+  try {
+    const out = await api.medicalSendToPay(claim.id);
+    toast(`Sent to ${(out.to ?? []).join(', ')} with the voucher and receipts.`, 'good');
+    await reload();
+  } catch (err) {
+    toast(err.message, 'bad');
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -192,7 +277,7 @@ async function decide(claim, approve, reload, cash) {
     }),
   });
   if (!done) return;
-  toast(`Approved. ${claim.staffName} has been told.`, 'good');
+  toast(`Approved. ${claim.staffName} has been told, and finance has the payment voucher.`, 'good');
   await reload();
 }
 
@@ -219,6 +304,7 @@ function personRows(person, { cash, reload }) {
             h('span.muted', fmtDay(String(claim.askedAt).slice(0, 10)))),
           claim.what ? h('div.adv-reason', claim.what) : null,
           claim.decision ? h('div.adv-reason', `“${claim.decision}”`) : null,
+          claim.status === 'approved' ? paymentLine(claim, person.staff.name, reload) : null,
           receiptList(claim, cash)))
         : h('p.muted', { style: { fontSize: '.85rem' } }, 'No claims this year.')));
 

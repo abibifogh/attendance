@@ -339,6 +339,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'medical.to_pay',
+    group: 'money',
+    label: 'An approved medical claim to pay',
+    who: 'The address set for paying medical claims',
+    when: 'A medical claim is approved, with the payment voucher and receipts as a PDF',
+    ways: ['email'],
+  },
+  {
     key: 'medical.approved',
     group: 'money',
     label: 'Your medical claim is approved',
