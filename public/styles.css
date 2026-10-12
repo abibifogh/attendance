@@ -4133,6 +4133,8 @@ html { touch-action: manipulation; }
   background: var(--surface-2); padding: .6rem .75rem .7rem;
   display: grid; gap: .5rem;
 }
+.claim-bill.is-missing { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad); }
+.claim-bill.is-missing .claim-file-status { color: var(--bad); }
 .claim-bill-head { display: flex; align-items: center; justify-content: space-between; min-height: 1.9rem; }
 .claim-bill-head strong { font-size: .9rem; }
 .claim-bill-grid { display: grid; grid-template-columns: 9rem 10rem minmax(0, 1fr); gap: .5rem; }

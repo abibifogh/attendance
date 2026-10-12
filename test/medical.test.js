@@ -60,6 +60,14 @@ const KOFI = { user: { id: 7, name: 'Kofi Mensah', role: 'staff', staff_id: 1 },
 const AMA = { user: { id: 8, name: 'Ama Boateng', role: 'staff', staff_id: 2 }, permissions: ['att_me'] };
 const WAGES = { user: { id: 3, name: 'Yaa', role: 'admin' }, permissions: ['hr_pay'] };
 
+// Every bill needs a photo of its receipt, so a bill in these tests gets one
+// unless it says otherwise (`bare: true`) or brings its own.
+const photographed = (body) => (Array.isArray(body?.receipts) ? {
+  ...body,
+  receipts: body.receipts.map((r) => (r?.bare || r?.file || r?.files ? r
+    : { ...r, files: [{ base64: PIXEL, mime: 'image/png', filename: 'receipt.png' }] })),
+} : body);
+
 const ctx = (db, session, { body = null, query = '' } = {}) => ({
   db,
   env: {},
@@ -69,7 +77,7 @@ const ctx = (db, session, { body = null, query = '' } = {}) => ({
   request: new Request('https://x/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
+    body: JSON.stringify(photographed(body) ?? {}),
   }),
 });
 
@@ -179,6 +187,23 @@ test('unticking somebody takes the year off them and leaves their claims alone',
 // Claiming
 // ---------------------------------------------------------------------------
 
+test('a bill with no photo of its receipt cannot be sent', async () => {
+  const { raw, db } = setup();
+  await giveAllowance(db, [{ staffId: 1, qualifies: true, allowance: 1000 }]);
+  await assert.rejects(
+    () => claim(ctx(db, KOFI, {
+      body: {
+        receipts: [
+          { amount: 120, what: 'Consultation', spentOn: today },
+          { amount: 80, what: 'Pharmacy', spentOn: today, bare: true },
+        ],
+      },
+    })),
+    /Bill 2 has no photo of its receipt/,
+  );
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM hr_medical_claim').get().n, 0, 'and nothing is kept');
+});
+
 test('a claim carries its bills, and the office is told', async () => {
   const { raw, db } = setup();
   await giveAllowance(db, [{ staffId: 1, qualifies: true, allowance: 1000 }]);
@@ -188,7 +213,7 @@ test('a claim carries its bills, and the office is told', async () => {
       what: 'Malaria treatment',
       receipts: [
         { amount: 120.5, what: 'Consultation', spentOn: today, file: { base64: PIXEL, mime: 'image/png', filename: 'bill.png' } },
-        { amount: 79.5, what: 'Pharmacy', spentOn: today },
+        { amount: 79.5, what: 'Pharmacy', spentOn: today, files: [{ base64: PIXEL, mime: 'image/png', filename: 'p.png' }] },
       ],
     },
   })));
@@ -205,7 +230,7 @@ test('a claim carries its bills, and the office is told', async () => {
   assert.equal(mine.standing.waiting, 200);
   assert.equal(mine.claims[0].receipts.length, 2);
   assert.equal(mine.claims[0].receipts[0].hasFile, true);
-  assert.equal(mine.claims[0].receipts[1].hasFile, false, 'a bill with no picture is allowed');
+  assert.equal(mine.claims[0].receipts[1].hasFile, true);
 
   // The picture went into the document store rather than into the claim row.
   const doc = raw.prepare("SELECT * FROM hr_document WHERE kind = 'medical_receipt'").get();

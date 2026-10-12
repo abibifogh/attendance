@@ -861,6 +861,11 @@ export async function claim(ctx) {
     // `files` for up to five; `file` from a screen that only ever sent one.
     const files = (Array.isArray(r.files) ? r.files : r.file ? [r.file] : [])
       .filter((f) => f && f.base64);
+    // Every bill needs its receipt. Whoever decides the claim, and whoever
+    // pays it, is going on the picture.
+    if (!files.length) {
+      throw badRequest(`Bill ${i + 1} has no photo of its receipt. Add one before sending the claim.`);
+    }
     if (files.length > MAX_FILES) {
       throw badRequest(`Bill ${i + 1} has ${files.length} pictures. Five is the most on one bill.`);
     }
