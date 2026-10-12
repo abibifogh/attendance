@@ -1296,7 +1296,38 @@ export async function renderShifts(root, { range }) {
     return h('div.sh-detail',
       lineTable([{ label: 'Paid out' }, { label: 'Amount', num: true }, { label: 'Odoo PO' }, { label: 'PO total', num: true }], rows,
         ['Total', money(n.expenses), exp.sheetTotal != null ? `${exp.sheetFrom === 'report' ? 'Closing report' : 'Expense sheet'} ${money(exp.sheetTotal)}` : '', exp.odooTotal != null ? money(exp.odooTotal) : '—']),
-      unknown.length ? h('p.small', `✗ Not in Odoo: ${unknown.join(', ')}`) : null);
+      unknown.length ? h('p.small', `✗ Not in Odoo: ${unknown.join(', ')}`) : null,
+      n.expenses > 0 ? poLinker(s) : null);
+  }
+
+  /**
+   * Link POs to this shift's expenses, for cash no closing report gave a PO
+   * for: typed the way staff write them (4123, P04123), read from Odoo at
+   * once and paired with the movements by amount. Each linked one can be
+   * unlinked.
+   */
+  function poLinker(s) {
+    if (!canFix) return null;
+    const exp = s.expense || {};
+    const fromReport = new Set((exp.fromReport || []).map((x) => String(x).toUpperCase()));
+    const linked = String(exp.poNumbers || '').split(/[\s,;]+/).filter(Boolean).filter((x) => !fromReport.has(x.toUpperCase()));
+    const typed = h('input', { type: 'text', maxlength: '200', placeholder: 'PO numbers, e.g. 4123, 4124', 'aria-label': 'PO numbers to link' });
+    const said = h('span.small');
+    const send = async (body, button) => {
+      if (button) button.disabled = true;
+      said.textContent = 'Reading Odoo…'; said.className = 'small';
+      try {
+        const out = await api('/shifts/expense/link', { method: 'POST', body: { day: s.day, slot: s.slot, ...body } });
+        await load(banner(out.warning ? 'warning' : 'good', out.warning ? `Linked. Odoo could not be read just now: ${out.warning}`
+          : out.unknown?.length ? `Linked. Odoo does not know ${out.unknown.join(', ')}.` : body.remove ? `Unlinked ${body.remove}.` : 'Linked and read from Odoo.'));
+      } catch (err) { said.textContent = err.message; said.className = 'small form-error'; if (button) button.disabled = false; }
+    };
+    return h('div.sh-polink',
+      h('b', 'Link POs to these expenses'),
+      linked.length ? h('div.sh-polinked', linked.map((po) => h('span.sh-chip.none', po,
+        h('button.sh-link', { type: 'button', 'aria-label': `Unlink ${po}`, title: 'Unlink', onclick: (e) => send({ remove: po }, e.target) }, '×')))) : null,
+      h('div.sh-fixrow', typed, h('button.btn', { type: 'button', onclick: (e) => send({ add: typed.value }, e.target) }, 'Link'), said),
+      h('small.muted', 'For expenses no closing report gave a PO for. They are matched to the payments above by amount.'));
   }
 
   function laundryDetail(s) {
@@ -1438,10 +1469,15 @@ export async function renderShifts(root, { range }) {
   function fixer(s, m) {
     const note = h('input', { type: 'text', maxlength: '400', placeholder: 'Why (optional)', value: m.manual?.note || '' });
     const said = h('span.small');
+    const pos = h('input', { type: 'text', maxlength: '200', placeholder: 'PO numbers (optional)', 'aria-label': 'PO numbers for these expenses' });
     const send = async (body) => {
       said.textContent = 'Saving…';
       try {
         const out = await api('/shifts/movement', { method: 'POST', body: { seq: m.seq, note: note.value, ...body } });
+        // POs typed with Expenses are linked to the shift's expenses.
+        if (['expenses', 'split'].includes(body.kind) && pos.value.trim()) {
+          await api('/shifts/expense/link', { method: 'POST', body: { day: s.day, slot: s.slot, add: pos.value } });
+        }
         await load(banner('good', out?.pending
           ? 'Sent to an admin. It counts once they approve it, and they have been told.'
           : 'Movement corrected. The drawer and its exceptions are worked out again.'));
@@ -1474,6 +1510,7 @@ export async function renderShifts(root, { range }) {
       h('p.sh-sub', 'What did this movement really take out of the drawer?'),
       h('div.sh-fixrow', choice('Expenses', { kind: 'expenses' }, m.kind !== 'expenses'), choice('Cash to the safe', { kind: 'safe' }, m.kind !== 'safe'),
         h('span', 'or split:'), split, h('button.btn', { type: 'button', onclick: () => send({ kind: 'split', expenses: split.value }) }, 'Split')),
+      h('div.sh-fixrow', h('span', 'Expenses for'), pos),
       pick('A duplicate of', twins, 'duplicate'),
       pick('Put back by', elsewhere(-m.amount), 'reverses'),
       h('div.sh-fixrow', note, said));
@@ -1487,7 +1524,10 @@ export async function renderShifts(root, { range }) {
   function odooBlock(s) {
     const exp = s.expense || {};
     const orders = exp.odoo?.orders || [];
-    if (!orders.length) return s.drawerOut ? h('p.sh-sub', 'No POs on a closing report for this shift. They are added in HIVE when the shift is closed.') : null;
+    if (!orders.length) {
+      return s.drawerOut ? [h('p.sh-sub', 'No POs on a closing report for this shift. They are added in HIVE when the shift is closed, or linked here.'),
+        s.register?.expenses > 0 ? poLinker(s) : null] : null;
+    }
     const approved = (o) => o.state === 'purchase' || o.state === 'done';
     const formChip = (o) => (o.kind ? h('span.sh-chip.none', '—')
       : o.reported ? h('span.sh-chip.ok', 'Reported')
@@ -1501,7 +1541,8 @@ export async function renderShifts(root, { range }) {
         { label: 'Odoo', get: (o) => (approved(o) ? h('span.sh-chip.ok', 'Approved') : o.advance ? h('span.sh-chip.over', 'Approve in Odoo') : h('span.sh-chip.none', o.state)) },
         { label: 'Expense form', get: formChip },
       ], orders, { footer: orders }),
-      (exp.odoo?.unknown || []).length ? banner('warning', `Odoo does not know ${exp.odoo.unknown.join(', ')}.`) : null);
+      (exp.odoo?.unknown || []).length ? banner('warning', `Odoo does not know ${exp.odoo.unknown.join(', ')}.`) : null,
+      s.register?.expenses > 0 ? poLinker(s) : null);
   }
 
   // -------------------------------------------------------- exceptions --

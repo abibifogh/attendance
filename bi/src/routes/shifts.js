@@ -195,6 +195,47 @@ export async function saveExpense(env, body, account) {
   return { ok: true };
 }
 
+/**
+ * Link POs to a shift's expenses, or unlink one: for cash a count labelled
+ * expenses, or a movement labelled expenses by hand, that no closing report
+ * gave a PO for. Only the PO numbers change; they are read from Odoo at once
+ * and paired with the expense movements by amount. A PO already on another
+ * shift, on a closing report or linked here, is refused.
+ */
+export async function linkPos(env, body, account) {
+  const day = dayOf(body?.day);
+  const slot = slotOf(body?.slot);
+  const { formPos } = await import('./advances.js');
+  const add = formPos(body?.add);
+  const remove = formPos(body?.remove);
+  if (!add.length && !remove.length) throw badRequest('Type a PO number, for example 4123 or P04123.');
+  const row = await first(env.DB, 'SELECT po_numbers FROM shift_expense WHERE day = ?1 AND slot = ?2', day, slot);
+  const names = [...new Set([...poList(row?.po_numbers), ...add])].filter((n) => !remove.includes(n)).slice(0, 40);
+
+  for (const name of add) {
+    const onReport = env.ATT_DB ? await first(env.ATT_DB, 'SELECT day, slot FROM till_po WHERE UPPER(po) = ?1 AND NOT (day = ?2 AND slot = ?3) LIMIT 1', name, day, slot).catch(() => null) : null;
+    if (onReport) throw badRequest(`${name} is already on the closing report of ${onReport.day} ${onReport.slot}.`);
+    const linked = await all(env.DB, "SELECT day, slot, po_numbers FROM shift_expense WHERE po_numbers LIKE ?1 AND NOT (day = ?2 AND slot = ?3)", `%${name}%`, day, slot);
+    const other = linked.find((r) => poList(r.po_numbers).includes(name));
+    if (other) throw badRequest(`${name} is already linked to ${other.day} ${other.slot}. Unlink it there first.`);
+  }
+
+  await run(env.DB, `INSERT INTO shift_expense (day, slot, po_numbers, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5)
+    ON CONFLICT (day, slot) DO UPDATE SET po_numbers = ?3, by_name = ?4, at = ?5`,
+  day, slot, names.join(', ') || null, who(account), now());
+  if (!names.length) {
+    await run(env.DB, 'UPDATE shift_expense SET odoo = NULL, pulled_at = NULL WHERE day = ?1 AND slot = ?2', day, slot);
+    return { ok: true, linked: [] };
+  }
+  try {
+    const out = await pullOrders(env, { day, slot });
+    return { ok: true, linked: names, unknown: out.unknown || [] };
+  } catch (err) {
+    // Saved either way; Odoo is read again next time.
+    return { ok: true, linked: names, warning: String(err?.message || err) };
+  }
+}
+
 /** PO numbers typed any old way: `P00412, P00413 p417`. */
 export function poList(value) {
   return [...new Set(String(value || '').toUpperCase().split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean))].slice(0, 40);

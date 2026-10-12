@@ -404,6 +404,29 @@ test('each PO on a shift says whether it is on the expense form', async () => {
   assert.deepEqual(alpha.expense.odoo.orders.map((o) => [o.name, o.reported]), [['P00901', true], ['P00902', false]]);
 });
 
+test('POs are linked to a shift’s expenses, refused when another shift has them, and unlinked', async () => {
+  const env = await loaded();
+  await routes.saveExpense(env, { day: '2026-08-01', slot: 'morning', sheetTotal: '150' }, OWNER);
+  // Odoo is not set up in the test: the POs are saved and Odoo is read later.
+  const out = await routes.linkPos(env, { day: '2026-08-01', slot: 'morning', add: '4123, p04124 & PO4123' }, OWNER);
+  assert.deepEqual(out.linked, ['P04123', 'P04124']);
+  assert.match(out.warning, /Odoo/);
+  let row = await env.DB.prepare("SELECT * FROM shift_expense WHERE day = '2026-08-01' AND slot = 'morning'").first();
+  assert.equal(row.po_numbers, 'P04123, P04124');
+  assert.equal(row.sheet_total, 15000, 'the typed total is left alone');
+
+  await assert.rejects(routes.linkPos(env, { day: '2026-08-01', slot: 'afternoon', add: 'P04124' }, OWNER), /already linked to 2026-08-01 morning/);
+  await assert.rejects(routes.linkPos(env, { day: '2026-08-01', slot: 'afternoon', add: 'N/A' }, OWNER), /Type a PO number/);
+
+  await routes.linkPos(env, { day: '2026-08-01', slot: 'morning', remove: 'P04123' }, OWNER);
+  row = await env.DB.prepare("SELECT * FROM shift_expense WHERE day = '2026-08-01' AND slot = 'morning'").first();
+  assert.equal(row.po_numbers, 'P04124');
+  const after = await routes.linkPos(env, { day: '2026-08-01', slot: 'morning', remove: '4124' }, OWNER);
+  assert.deepEqual(after.linked, []);
+  const shift = (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).days[0].shifts[0];
+  assert.equal(shift.expense.poNumbers, null);
+});
+
 test('a person can correct what a movement was, match a duplicate, and pair a reversal across shifts', async () => {
   const env = await loaded();
   const read = async () => {
