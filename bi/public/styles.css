@@ -1202,10 +1202,10 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .adv-undo > .banner { flex: 1 1 16rem; margin: 0; }
 
 /* Shifts: Day / Week / Month, and Back from a shift */
-.sh-modes { display: inline-flex; border: 1px solid var(--sh-line); border-radius: 9px; overflow: hidden; }
-.sh-modes button { font: inherit; font-size: .86rem; border: 0; border-right: 1px solid var(--sh-line); background: var(--surface); color: var(--ink-2); padding: .38rem .8rem; cursor: pointer; }
-.sh-modes button:last-child { border-right: 0; }
-.sh-modes button[aria-pressed='true'] { background: var(--ink); color: var(--plane); }
+.sh-span { display: inline-flex; border: 1px solid var(--sh-line); border-radius: 9px; overflow: hidden; }
+.sh-span button { font: inherit; font-size: .86rem; border: 0; border-right: 1px solid var(--sh-line); background: var(--surface); color: var(--ink-2); padding: .38rem .8rem; cursor: pointer; }
+.sh-span button:last-child { border-right: 0; }
+.sh-span button[aria-pressed='true'] { background: var(--ink); color: var(--plane); }
 .sh-back { justify-self: start; font: inherit; font-size: .9rem; font-weight: 600; color: var(--series-1); background: none; border: 0; padding: .2rem 0; cursor: pointer; }
 .sh-back:hover { text-decoration: underline; }
 
@@ -1283,11 +1283,11 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .sh-band .sh-groups button { color: #b9c7d3; }
 .sh-band .sh-groups button:hover { color: #fff; background: rgba(255, 255, 255, .07); }
 .sh-band .sh-groups button[aria-selected='true'] { background: #fff; color: var(--band); box-shadow: none; }
-.sh-band .sh-groups button:focus-visible, .sh-band .sh-modes button:focus-visible, .sh-band .sh-arrow:focus-visible { outline: 2px solid #8fc1ff; outline-offset: 2px; }
+.sh-band .sh-groups button:focus-visible, .sh-band .sh-span button:focus-visible, .sh-band .sh-arrow:focus-visible { outline: 2px solid #8fc1ff; outline-offset: 2px; }
 .sh-band .sh-rule { background: var(--band-line); }
-.sh-band .sh-modes { border-color: var(--band-line); }
-.sh-band .sh-modes button { background: transparent; color: #b9c7d3; border-right-color: var(--band-line); }
-.sh-band .sh-modes button[aria-pressed='true'] { background: #fff; color: var(--band); }
+.sh-band .sh-span { border-color: var(--band-line); }
+.sh-band .sh-span button { background: transparent; color: #b9c7d3; border-right-color: var(--band-line); }
+.sh-band .sh-span button[aria-pressed='true'] { background: #fff; color: var(--band); }
 .sh-band .sh-arrow { background: transparent; border-color: var(--band-line); color: #fff; }
 .sh-band .sh-plabel { color: #fff; }
 .sh-band .sh-period .btn { background: transparent; border-color: var(--band-line); color: #fff; }

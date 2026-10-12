@@ -222,6 +222,10 @@ behind it, each marked ✓ (agrees), ✗ (does not) or · (nothing to match):
   and payments that arrived but are not in ASSD.
 - **Expenses**: each expense movement (and what the closing report settled)
   against the Odoo PO of the same amount, or several POs that add up to it;
-  POs not approved in Odoo, and numbers Odoo does not know.
+  POs not approved in Odoo, and numbers Odoo does not know. Each PO says
+  *on the form ✓* or *not on the form*, and the note itself says how many of
+  the shift's POs are on the expense form ("2 of 3 on the expense form"). It
+  is green only when the amount agrees with Odoo, every PO is approved, and
+  every PO is on the form.
 - **Laundry**: each laundry line in ASSD against the laundry system's payment
   of the same amount in the shift's hours.

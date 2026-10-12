@@ -407,7 +407,7 @@ export async function renderShifts(root, { range }) {
           type: 'button', role: 'tab', 'aria-selected': String(section === id), dataset: { tab: id }, onclick: () => go(id),
         }, label, badgeOf(id) ? h('span.sh-badge', String(badgeOf(id))) : null))) : null,
         h('span.sh-rule', { 'aria-hidden': 'true' }),
-        section === 'shifts' && !detail && periods.length > 1 ? h('div.sh-modes', { role: 'group', 'aria-label': 'Day, week or month' },
+        section === 'shifts' && !detail && periods.length > 1 ? h('div.sh-span', { role: 'group', 'aria-label': 'Day, week or month' },
           periods.map((m) => h('button', { type: 'button', 'aria-pressed': String(mode === m), onclick: () => go(m) }, m[0].toUpperCase() + m.slice(1)))) : null,
         ['settings', 'files'].includes(section) || (section === 'shifts' && detail) ? null : periodBar(),
         data.journalEndsInside ? h('details.sh-jnote',
@@ -1123,9 +1123,18 @@ export async function renderShifts(root, { range }) {
     else out.push([s.cardFound === lines.length ? 'good' : 'bad', s.cardFound === lines.length ? '✓' : '!', `${s.cardFound} of ${lines.length} card and MoMo payments found`, cardDetail(s)]);
     const exp = s.expense;
     if (exp?.sheetTotal != null || n.expenses) {
-      const agree = exp?.sheetTotal != null && exp?.odooTotal != null && exp.sheetTotal === exp.odooTotal;
-      out.push([agree ? 'good' : exp?.odooTotal != null ? 'warn' : 'info', agree ? '✓' : 'i',
-        `Expenses ${money(exp?.sheetTotal ?? n.expenses)}${exp?.odooTotal != null ? ` · Odoo ${money(exp.odooTotal)}` : exp?.poNumbers ? ' · Odoo not read yet' : ' · no PO numbers yet'}`,
+      // Agrees when what left the drawer is what Odoo approved, and every PO
+      // is on the expense form (once the form is connected).
+      const paid = exp?.sheetTotal ?? n.expenses;
+      const orders = (exp?.odoo?.orders || []).filter((o) => !o.kind);
+      const onForm = orders.filter((o) => o.reported).length;
+      const sameAmount = exp?.odooTotal != null && Math.round(paid) === Math.round(exp.odooTotal);
+      const approved = orders.every((o) => o.state === 'purchase' || o.state === 'done');
+      const allOnForm = !data.formLive || onForm === orders.length;
+      const agree = orders.length > 0 && sameAmount && approved && allOnForm;
+      const form = data.formLive && orders.length ? ` · ${onForm} of ${orders.length} on the expense form` : '';
+      out.push([agree ? 'good' : exp?.odooTotal != null ? 'warn' : 'info', agree ? '✓' : exp?.odooTotal != null ? '!' : 'i',
+        `Expenses ${money(paid)}${exp?.odooTotal != null ? ` · Odoo ${money(exp.odooTotal)}` : exp?.poNumbers ? ' · Odoo not read yet' : ' · no PO numbers yet'}${form}`,
         expenseDetail(s, n)]);
     }
     if (n.sheetGap) {
@@ -1252,7 +1261,8 @@ export async function renderShifts(root, { range }) {
     const fromSheet = (n.expenses || 0) - moves.reduce((t, m) => t + m.amount, 0);
     if (fromSheet > 0) moves.push({ label: exp.sheetFrom === 'report' ? 'From the closing report (unlabelled cash)' : 'From the expense sheet (unlabelled cash)', amount: fromSheet });
     const confirmed = (o) => o.state === 'purchase' || o.state === 'done';
-    const po = (o) => `${o.name}${o.kind === 'topup' ? ' (deficit)' : o.kind === 'change' ? ' (refund)' : o.advance ? ' (advance)' : ''} · ${o.vendor || ''} · ${confirmed(o) ? 'approved' : o.state}${o.fromReport ? ' · on the closing report' : ''}`;
+    const formWord = (o) => (o.kind || !data.formLive ? '' : o.reported ? ' · on the form ✓' : ' · not on the form');
+    const po = (o) => `${o.name}${o.kind === 'topup' ? ' (deficit)' : o.kind === 'change' ? ' (refund)' : o.advance ? ' (advance)' : ''} · ${o.vendor || ''} · ${confirmed(o) ? 'approved' : o.state}${formWord(o)}`;
     const orders = (exp.odoo?.orders || []).map((o) => ({ ...o, amount: o.total }));
     const { pairs, spare } = pairUp(moves, orders);
     const rows = [
@@ -1462,7 +1472,7 @@ export async function renderShifts(root, { range }) {
     const orders = exp.odoo?.orders || [];
     if (!orders.length) return s.drawerOut ? h('p.sh-sub', 'No POs on a closing report for this shift. They are added in HIVE when the shift is closed.') : null;
     const approved = (o) => o.state === 'purchase' || o.state === 'done';
-    const formChip = (o) => (!o.fromReport ? h('span.sh-chip.none', '—')
+    const formChip = (o) => (o.kind ? h('span.sh-chip.none', '—')
       : o.reported ? h('span.sh-chip.ok', 'Reported')
         : data.formLive ? h('span.sh-chip.short', 'Report on form') : h('span.sh-chip.none', 'Form not connected'));
     return h('div.sh-odoo',
