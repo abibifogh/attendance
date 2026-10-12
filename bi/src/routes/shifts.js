@@ -608,6 +608,9 @@ export async function shifts(env, query, account) {
   // settles cash movements nothing labelled, the way a typed expense sheet
   // used to, so nobody has to type the total in here.
   const reportPaid = new Map();
+  // Expenses are expected to carry a PO from the first closing report in
+  // HIVE on; shifts before it are history and are not flagged.
+  const poFrom = env.ATT_DB ? (await first(env.ATT_DB, 'SELECT MIN(day) AS day FROM till_report').catch(() => null))?.day || null : null;
   // Which POs are on the expense form: those on closing reports and those
   // typed here.
   const reported = new Set();
@@ -708,6 +711,34 @@ export async function shifts(env, query, account) {
           ...base, key: `unlabelled:${m.seq}`, kind: 'movement-unlabelled', group: 'unlabelled', severity: 'warning',
           seq: m.seq, amount, whole: m.amount, part: m.kind === 'part', labels: true, pending: proposed.get(m.seq) || null,
         });
+      }
+    }
+    // Expenses paid from the drawer with no PO at all: not on a closing
+    // report, not linked here. Linking one takes it off.
+    if (r.expenses > 0 && poFrom && s.day >= poFrom) {
+      const key = `${s.day}|${s.slotName}`;
+      const exp = expenseOf.get(key);
+      let pulled = [];
+      try { pulled = JSON.parse(exp?.odoo || 'null')?.orders || []; } catch { pulled = []; }
+      const fromReport = (reportPos.get(key) || [])
+        .filter((o) => !pulled.some((x) => String(x.name).toUpperCase() === String(o.name).toUpperCase()));
+      const seqs = s.moves.filter((m) => ['expenses', 'split', 'part'].includes(m.kind)).map((m) => m.seq);
+      if (!poList(exp?.po_numbers).length && !pulled.length && !fromReport.length) {
+        exceptions.push({
+          ...base, key: `nopo:${s.day}:${s.slotName}`, kind: 'expense-no-po', group: 'nopo', severity: 'warning',
+          amount: r.expenses, seqs,
+        });
+      } else if (pulled.length || fromReport.length) {
+        // The POs, as Odoo has them, against what left the drawer as
+        // expenses. Typed POs not read from Odoo yet are not judged.
+        const poTotal = Math.round([...pulled, ...fromReport].reduce((t, o) => t + (Number(o.total) || 0), 0));
+        const gap = r.expenses - poTotal;
+        if (gap !== 0) {
+          exceptions.push({
+            ...base, key: `pogap:${s.day}:${s.slotName}:${r.expenses}:${poTotal}`, kind: 'expense-po-gap', group: 'nopo', severity: 'warning',
+            amount: gap, expenses: r.expenses, poTotal, seqs, pos: [...pulled, ...fromReport].map((o) => o.name),
+          });
+        }
       }
     }
     for (const m of s.moves.filter((x) => x.kind === 'corrected')) {
@@ -1028,7 +1059,7 @@ export function forSupervisor(payload, access) {
   // supervisor's: never sent, whatever else they were given.
   let out = { ...payload, totals: null };
   if (!access.bank) {
-    out = { ...out, exceptions: (out.exceptions || []).filter((x) => ['drawer', 'unlabelled', 'laundry', 'explained'].includes(x.group)) };
+    out = { ...out, exceptions: (out.exceptions || []).filter((x) => ['drawer', 'unlabelled', 'nopo', 'laundry', 'explained'].includes(x.group)) };
   }
   if (!access.net) out = { ...out, people: [] };
   if (!access.files) out = { ...out, canUpload: false };

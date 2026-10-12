@@ -61,6 +61,8 @@ const KIND = {
   'bank-only': ['In the bank, not on the terminal', '?'],
   'laundry-mismatch': ['The laundry did not agree', 'L'],
   'movement-unlabelled': ['Cash moved out with no label', '?'],
+  'expense-no-po': ['Expenses with no PO', '#'],
+  'expense-po-gap': ['PO total does not match the expenses', '#'],
 };
 const MODES = [
   ['cash', 'Cash', 'var(--sh-cash)'],
@@ -1129,7 +1131,9 @@ export async function renderShifts(root, { range }) {
       const allOnForm = !data.formLive || onForm === orders.length;
       const agree = orders.length > 0 && sameAmount && approved && allOnForm;
       const form = data.formLive && orders.length ? ` · ${onForm} of ${orders.length} on the expense form` : '';
-      out.push([agree ? 'good' : exp?.odooTotal != null ? 'warn' : 'info', agree ? '✓' : exp?.odooTotal != null ? '!' : 'i',
+      // Expenses with no PO at all are flagged, never left grey.
+      const noPo = !orders.length && !exp?.poNumbers;
+      out.push([agree ? 'good' : exp?.odooTotal != null || noPo ? 'warn' : 'info', agree ? '✓' : exp?.odooTotal != null || noPo ? '!' : 'i',
         `Expenses ${money(paid)}${exp?.odooTotal != null ? ` · Odoo ${money(exp.odooTotal)}` : exp?.poNumbers ? ' · Odoo not read yet' : ' · no PO numbers yet'}${form}`,
         expenseDetail(s, n)]);
     }
@@ -1327,7 +1331,7 @@ export async function renderShifts(root, { range }) {
       linked.length ? h('div.sh-polinked', linked.map((po) => h('span.sh-chip.none', po,
         h('button.sh-link', { type: 'button', 'aria-label': `Unlink ${po}`, title: 'Unlink', onclick: (e) => send({ remove: po }, e.target) }, '×')))) : null,
       h('div.sh-fixrow', typed, h('button.btn', { type: 'button', onclick: (e) => send({ add: typed.value }, e.target) }, 'Link'), said),
-      h('small.muted', 'For expenses no closing report gave a PO for. They are matched to the payments above by amount.'));
+      h('small.muted', 'For expenses no closing report gave a PO for. Each is matched to the expense payments by amount.'));
   }
 
   function laundryDetail(s) {
@@ -1578,6 +1582,8 @@ export async function renderShifts(root, { range }) {
       case 'movement-corrected': return `${nameOf(x.by)} moved ${money(x.amount)} out and ${nameOf(x.reversedBy)} put it back (ASSD ${x.reversedSeq}). It nets to nothing.`;
       case 'movement-twice': return `${money(x.amount)} was moved out of the drawer twice (ASSD ${x.pair} and ${x.seq}), and the drawer counted over. If the second never moved any cash, match it as a duplicate.`;
       case 'movement-reversal': return `${money(x.amount)} was put back into the drawer (ASSD ${x.seq}). It matches ASSD ${x.pair}, moved out on ${nameOf(x.pairShift?.user)}’s ${SLOT[x.pairShift?.slot]?.label.toLowerCase() || ''} shift of ${shortDay(x.pairShift?.day)}. If one undoes the other, match them: both are left out.`;
+      case 'expense-no-po': return `${money(x.amount)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''} with no PO: none on the closing report in HIVE and none linked here. Link the PO, or answer why there is none.`;
+      case 'expense-po-gap': return `${money(x.expenses)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''}, but the POs (${(x.pos || []).join(', ')}) come to ${money(x.poTotal)} in Odoo: ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} was paid than the POs say. Link the missing PO, unlink a wrong one, or answer why.`;
       case 'movement-unlabelled': return `${money(x.amount)} ${x.part ? `of the ${money(x.whole)} moved out` : 'moved out of the drawer'} (ASSD ${x.seq}) and no count says whether it went to the safe or on expenses.`
         + `${x.pending ? ` ${x.pending.by} has proposed: ${x.pending.kind}. Waiting for an admin.` : ' Say which.'}`;
       case 'laundry-mismatch': return `ASSD has ${money(x.assd)} of laundry on this shift; the laundry system took ${money(x.system)} in the same hours`
@@ -1709,6 +1715,7 @@ export async function renderShifts(root, { range }) {
         x.seqs ? h('span', `ASSD ${x.seqs.join(', ')}`) : x.seq ? h('span', `ASSD ${x.seq}`) : null),
       evidence(x),
       h('p', describe(x)),
+      ['expense-no-po', 'expense-po-gap'].includes(x.kind) && !x.answer && byId.has(`${x.day}|${x.slot}`) ? poLinker(byId.get(`${x.day}|${x.slot}`)) : null,
       x.slot && byId.has(`${x.day}|${x.slot}`) && !(section === 'shifts' && detail)
         ? h('div', h('button.sh-link', { type: 'button', onclick: () => go('shift', `${x.day}|${x.slot}`) }, 'Open the shift')) : null,
       x.action && !x.answer ? h('div', h('button.btn.primary', {
@@ -1877,7 +1884,7 @@ export async function renderShifts(root, { range }) {
         if (done && !inbox.showDone) continue;
         const sev = x.severity === 'critical' ? 'short' : 'over';
         out.push({
-          id: `ex:${x.key}`, kind: waitingAdmin ? 'admin' : DRAWER_GROUPS.has(x.group) ? 'drawer' : 'bank',
+          id: `ex:${x.key}`, kind: waitingAdmin ? 'admin' : x.group === 'nopo' ? 'po' : DRAWER_GROUPS.has(x.group) ? 'drawer' : 'bank',
           title: (KIND[x.kind] || [x.kind])[0], sub: exLabel(x), amount: x.amount == null ? '' : money(Math.abs(x.amount)),
           chip: done ? ['ok', 'Answered'] : waitingAdmin ? ['none', 'Waiting for admin'] : null, tone: sev, done,
           age: daysAgo(x.day), counts: !done && !waitingAdmin, render: () => exceptionCard(x),

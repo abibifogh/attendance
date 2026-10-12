@@ -183,6 +183,23 @@ refresh (table `laundry_txn`; order number, time and money only). A shift is
 compared only once the laundry system has been read for the whole of it; a
 difference is listed in the Inbox as "The laundry did not agree".
 
+## Expenses and their POs
+
+From the first closing report in HIVE on, two things about a shift's
+expenses are flagged, under Inbox → POs and on the shift, which then cannot
+read as all agreeing:
+
+- **Expenses with no PO**: the drawer paid out expenses and there is no PO at
+  all (none on its closing report, none linked in Insight).
+- **PO total does not match the expenses**: the POs, as Odoo has them, add up
+  to more or less than what left the drawer as expenses. POs typed but not
+  read from Odoo yet are not judged.
+
+Each card has the PO box: linking the right PO (or unlinking a wrong one)
+takes it off, or answer why. An answer holds while the amounts stay the
+same. Shifts before the first closing report are history and are not
+flagged.
+
 ## Cash moved out with no label
 
 A Cash Movement out of the front drawer that no count labelled as expenses or

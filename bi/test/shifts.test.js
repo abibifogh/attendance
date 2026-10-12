@@ -509,6 +509,37 @@ test('a supervisor labelling cash no count labelled counts straight away; changi
   assert.ok(!out.exceptions.some((x) => x.kind === 'movement-unlabelled'), 'both unlabelled movements are labelled now');
 });
 
+test('expenses with no PO are flagged from the first closing report on, and linking a PO clears them', async () => {
+  const env = await loaded();
+  const hive = freshDb('../migrations');
+  env.ATT_DB = hive.db;
+  const report = (day) => hive.raw.prepare(`INSERT INTO till_report (day, slot, user_id, name, float_ok, cash, to_safe, envelopes, expenses, rentals, checks, signed_at, device)
+    VALUES (?, 'night', 1, 'Test', 1, 0, 0, '[]', '[]', '{}', '[]', ?, 'pc')`).run(day, `${day} 23:00:00`);
+  const flagged = async () => (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).exceptions.filter((x) => x.kind === 'expense-no-po');
+
+  report('2026-08-02');
+  assert.deepEqual(await flagged(), [], 'before the first closing report: history, not flagged');
+
+  hive.raw.exec('DELETE FROM till_report');
+  report('2026-08-01');
+  const [x] = await flagged();
+  assert.deepEqual([x.slot, x.amount, x.group, x.severity], ['morning', 5000, 'nopo', 'warning']);
+  assert.ok(x.seqs.includes(300508));
+
+  await routes.linkPos(env, { day: '2026-08-01', slot: 'morning', add: '4123' }, OWNER);
+  assert.deepEqual(await flagged(), [], 'a linked PO takes it off');
+
+  // Read from Odoo: the PO's total against the GH₵50 of expenses.
+  const gaps = async () => (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).exceptions.filter((x) => x.kind === 'expense-po-gap');
+  const odoo = (total) => env.DB.prepare("UPDATE shift_expense SET odoo = ?1 WHERE day = '2026-08-01' AND slot = 'morning'")
+    .bind(JSON.stringify({ orders: [{ name: 'P04123', total, state: 'purchase' }], unknown: [] })).run();
+  await odoo(4000);
+  const [gap] = await gaps();
+  assert.deepEqual([gap.amount, gap.expenses, gap.poTotal, gap.pos], [1000, 5000, 4000, ['P04123']]);
+  await odoo(5000);
+  assert.deepEqual(await gaps(), [], 'the PO matches the expenses');
+});
+
 test('what each cash movement was', () => {
   const counts = [
     { seq: 1, notes: 61200, receipts: 176300, total: 237500 },
