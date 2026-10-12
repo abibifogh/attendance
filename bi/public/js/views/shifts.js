@@ -969,9 +969,7 @@ export async function renderShifts(root, { range }) {
     // closing report and what does not agree are what there is to see.
     if (!may('money')) {
       mount(v, back, head, report,
-        exceptionsOf(s).length ? h('section.card',
-          h('div.sh-cardhead', h('h2', 'What does not agree on this shift')),
-          h('div.sh-exgrid', exceptionsOf(s).map(exceptionCard))) : null);
+        exceptionsBlock(s));
       return;
     }
     const status = h('span');
@@ -1039,9 +1037,7 @@ export async function renderShifts(root, { range }) {
           h('p.sh-sub', 'Each Cash Movement out of the front drawer, labelled by the Money Count done just before it.'))),
         movesBlock(s),
         odooBlock(s)),
-      exceptionsOf(s).length ? h('section.card',
-        h('div.sh-cardhead', h('h2', 'What does not agree on this shift')),
-        h('div.sh-exgrid', exceptionsOf(s).map(exceptionCard))) : null);
+      exceptionsBlock(s));
     redraw();
 
     function redraw() {
@@ -1140,7 +1136,16 @@ export async function renderShifts(root, { range }) {
     if (n.sheetGap) {
       out.push(['warn', '!', `The expense sheet says ${money(n.sheet)}; the movements labelled ${money(n.expenses)} as expenses. Correct a movement below, or check the sheet.`]);
     }
-    if (s.corrected) out.push(['info', 'i', 'A cash movement on this shift was corrected by hand']);
+    // Movements somebody matched or labelled: settled, so said plainly and green.
+    for (const m of (s.moves || []).filter((x) => x.manual)) {
+      const by = m.manual.by ? ` (${m.manual.by})` : '';
+      const text = m.kind === 'excluded'
+        ? { duplicate: `ASSD ${m.seq} matched as a duplicate of ASSD ${m.pair}: left out of the drawer`,
+          reverses: `ASSD ${m.seq} matched with ASSD ${m.pair}: one puts the other back, both left out`,
+          'reversed-by': `ASSD ${m.seq} matched with ASSD ${m.pair}: one puts the other back, both left out` }[m.reason] || `ASSD ${m.seq} matched and left out of the drawer`
+        : `ASSD ${m.seq} labelled by hand: ${{ expenses: 'expenses', safe: 'cash to the safe', split: `${money(m.expenses)} expenses, ${money(m.safe)} to the safe` }[m.kind] || m.kind}`;
+      out.push(['good', '✓', `${text}${by}`]);
+    }
     // The laundry, against the laundry system in this shift's hours.
     const ls = s.laundrySystem;
     if (ls) {
@@ -1261,8 +1266,14 @@ export async function renderShifts(root, { range }) {
 
   function expenseDetail(s, n) {
     const exp = s.expense || {};
+    // A movement another was matched to as its duplicate says so, so the one left is not taken for a stray.
+    const twinOf = (seq) => (s.moves || []).find((x) => x.kind === 'excluded' && x.reason === 'duplicate' && x.pair === seq);
     const moves = (s.moves || []).filter((m) => ['expenses', 'split', 'part'].includes(m.kind))
-      .map((m) => ({ label: `ASSD ${m.seq}${m.kind !== 'expenses' ? ' (part of a movement)' : ''}`, amount: m.kind === 'expenses' ? m.amount : m.expenses }));
+      .map((m) => ({
+        label: h('span', `ASSD ${m.seq}${m.kind !== 'expenses' ? ' (part of a movement)' : ''}`,
+          twinOf(m.seq) ? h('small', `✓ ASSD ${twinOf(m.seq).seq} matched as its duplicate, left out`) : null),
+        amount: m.kind === 'expenses' ? m.amount : m.expenses,
+      }));
     // What the typed expense sheet settled on top of what the counts labelled.
     const fromSheet = (n.expenses || 0) - moves.reduce((t, m) => t + m.amount, 0);
     if (fromSheet > 0) moves.push({ label: exp.sheetFrom === 'report' ? 'From the closing report (unlabelled cash)' : 'From the expense sheet (unlabelled cash)', amount: fromSheet });
@@ -1598,9 +1609,33 @@ export async function renderShifts(root, { range }) {
       : `${keys.length} exceptions reconciled together. They count as answered.`));
   }
 
+  /** Answered, or explained by the rules: nothing left to do. */
+  const settled = (x) => Boolean(x.answer) || x.severity === 'info';
+
+  /**
+   * A shift's differences: what still needs somebody first, then what was
+   * matched or explained, in green, so a settled one does not read as a
+   * problem.
+   */
+  function exceptionsBlock(s) {
+    const all = exceptionsOf(s);
+    const open = all.filter((x) => !settled(x));
+    const done = all.filter(settled);
+    return [
+      open.length ? h('section.card',
+        h('div.sh-cardhead', h('h2', 'What does not agree on this shift')),
+        h('div.sh-exgrid', open.map(exceptionCard))) : null,
+      done.length ? h('section.card.sh-settled',
+        h('div.sh-cardhead', h('div', h('h2', `✓ Matched and explained · ${done.length}`),
+          h('p.sh-sub', 'Differences already answered, matched or explained by the rules. Nothing to do; Undo is still there.'))),
+        h('div.sh-exgrid', done.map(exceptionCard))) : null,
+    ];
+  }
+
   function exceptionCard(x) {
-    const sev = x.severity === 'critical' ? 'bad' : x.severity === 'warning' ? 'warn' : 'info';
-    const [title, mark] = KIND[x.kind] || [x.kind, '!'];
+    const sev = settled(x) ? 'ok' : x.severity === 'critical' ? 'bad' : x.severity === 'warning' ? 'warn' : 'info';
+    const [title, kindMark] = KIND[x.kind] || [x.kind, '!'];
+    const mark = settled(x) ? '✓' : kindMark;
     const note = h('input', { type: 'text', maxlength: '600', placeholder: 'What happened (optional)', value: x.answer?.note || '' });
     const said = h('span.small');
     const answer = async (value) => {

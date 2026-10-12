@@ -210,6 +210,13 @@ Answers go through the same approval as exceptions: a supervisor's answer
 waits for an admin. Supervisors see the list and may answer by default
 (Settings → Who sees what → Unpaid stays).
 
+On a shift's page, differences still waiting for somebody are under **What
+does not agree on this shift**. Those already answered, matched or explained
+by the rules are listed apart, in green, under **Matched and explained**,
+with Undo still there. A movement matched or labelled by hand shows as a
+green ✓ note under "How it was paid" ("ASSD 216161 matched as a duplicate of
+ASSD 216148"), and the expense it duplicated says so in its Details.
+
 ## What each note on a shift was made of
 
 On a shift's page, each note under "How it was paid" opens to the lines
