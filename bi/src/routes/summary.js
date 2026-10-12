@@ -1,7 +1,7 @@
 import { all, first } from '../lib/db.js';
 import { addDays } from '../lib/dates.js';
 import { callLink } from '../lib/link.js';
-import { shifts as shiftsFor, SMALL_BY } from './shifts.js';
+import { shifts as shiftsFor, SMALL_BY, UNLABELLED_BY } from './shifts.js';
 import { gatherAdvances } from './advances.js';
 
 /**
@@ -45,12 +45,13 @@ export async function summaryFor(env, { day = addDays(today(), -1), on = today()
   const off = lines.filter((l) => l.tone === 'bad' || l.tone === 'warn');
 
   const count = async (sql, ...binds) => Number((await first(env.DB, sql, ...binds).catch(() => null))?.n ?? 0);
-  const [corrections, answers, links, todo, small] = await Promise.all([
+  const [corrections, answers, links, todo, small, filled] = await Promise.all([
     count("SELECT COUNT(*) AS n FROM shift_movement WHERE status = 'pending'"),
     count("SELECT COUNT(*) AS n FROM shift_answer WHERE status = 'pending'"),
     count("SELECT COUNT(*) AS n FROM shift_link WHERE status = 'pending'"),
     count("SELECT COUNT(*) AS n FROM money_todo WHERE state = 'answered'"),
     count('SELECT COUNT(*) AS n FROM shift_movement WHERE decided_by = ?1 AND substr(decided_at, 1, 10) = ?2', SMALL_BY, day),
+    count('SELECT COUNT(*) AS n FROM shift_movement WHERE decided_by = ?1 AND substr(decided_at, 1, 10) = ?2', UNLABELLED_BY, day),
   ]);
   let overdue = [];
   try { overdue = (await gatherAdvances(env, { fetchImpl, on })).items.filter((x) => x.overdue); } catch { overdue = []; }
@@ -62,6 +63,7 @@ export async function summaryFor(env, { day = addDays(today(), -1), on = today()
     ...overdue.slice(0, 5).map((x) => [`Advance ${x.po} overdue${x.by ? ` (${x.by})` : ''}`, cedis(x.advanced)]),
     overdue.length > 5 ? [`And ${overdue.length - 5} more advances overdue`, ''] : null,
     small ? ['Small corrections that counted straight away', String(small)] : null,
+    filled ? ['Unlabelled cash labelled by a supervisor', String(filled)] : null,
   ].filter(Boolean);
 
   const closed = closedBy.size;

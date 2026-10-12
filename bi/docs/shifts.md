@@ -188,7 +188,8 @@ difference is listed in the Inbox as "The laundry did not agree".
 A Cash Movement out of the front drawer that no count labelled as expenses or
 the safe, on a shift with no closing report or expense sheet to settle it, is
 listed in the Inbox. "It went to the safe" or "It was expenses" on the exception labels
-it (a supervisor's label waits for an admin).
+it. A supervisor's label counts straight away too, since it fills in what no
+count said; the daily summary lists it.
 
 ## Unpaid stays
 

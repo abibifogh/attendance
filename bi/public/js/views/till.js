@@ -22,7 +22,7 @@ const AREA_TEXT = {
   month: ['Month', 'The calendar and week-by-week totals.'],
   reports: ['Closing reports from HIVE', 'Float, drawer, safe envelopes, POs, rentals, front desk checks.'],
   money: ['Cash, card and MoMo amounts', 'Without this a supervisor sees Agrees, Short or Over, never the amount. The Shift view needs it.'],
-  moves: ['Correct cash movements', 'Act means propose a correction. It counts only once an admin approves it.'],
+  moves: ['Correct cash movements', 'Act means label cash no count labelled (counts at once) and propose other corrections (an admin approves them).'],
   answers: ['Staff answers', 'Act means accept an explanation or send it back.'],
   money_out: ['Write off, recover from pay, paid in cash', 'Recovering adds a one-month advance to the person’s HIVE pay.'],
   reopen: ['Reopen a signed report', 'So its person can send it again. The reason is kept.'],

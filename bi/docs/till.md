@@ -87,9 +87,11 @@ it back. Settled items leave the person's list, and they are told.
 
 A supervisor given **Correct cash movements → See and act** can correct a
 movement, but it counts only once an admin approves it under Shifts → Inbox →
-Waiting for admin. A movement at or under the small-differences limit
-(Settings → Limits) is the exception: the correction counts straight away,
-and the daily summary lists it. The same goes for a supervisor's answer to an exception and for
+Waiting for admin. Two exceptions count straight away, and the daily summary lists
+them: a movement at or under the small-differences limit (Settings →
+Limits), and cash no count labelled, labelled expenses, the safe or a split.
+Changing a label a count gave, and matching duplicates or reversals, still
+wait. The same goes for a supervisor's answer to an exception and for
 exceptions a supervisor reconciles together: they show as "Waiting for an
 admin" and stay on the list until an admin approves them (Shifts → Inbox → Waiting for admin,
 or Approve on the exception itself). Reject puts them back. An admin's own
