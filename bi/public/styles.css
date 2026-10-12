@@ -1304,3 +1304,12 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .sh-polinked .sh-chip { display: inline-flex; align-items: center; gap: .3rem; }
 .sh-polinked .sh-link { text-decoration: none; font-size: .95rem; line-height: 1; color: var(--ink-2); }
 .sh-polink input { flex: 1 1 12rem; min-width: 0; }
+
+/* Receipts in the counts, under the drawer. */
+.sh-receipts { margin-top: .7rem; padding: .6rem .75rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); display: grid; gap: .2rem; font-size: .84rem; color: var(--ink-2); }
+.sh-rrow { display: flex; justify-content: space-between; gap: .8rem; }
+.sh-rrow b { color: var(--ink); }
+.sh-rrow.strong { border-top: 1px solid var(--border); padding-top: .25rem; margin-top: .1rem; color: var(--ink); font-weight: 600; }
+/* A suggestion on an exception: what the data says happened. */
+.sh-suggest { display: grid; gap: .5rem; padding: .65rem .75rem; border-radius: 10px; background: color-mix(in srgb, var(--series-1) 10%, var(--surface)); font-size: .85rem; }
+.sh-suggest b { color: color-mix(in srgb, var(--series-1) 70%, var(--ink)); }

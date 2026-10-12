@@ -62,6 +62,7 @@ const KIND = {
   'laundry-mismatch': ['The laundry did not agree', 'L'],
   'movement-unlabelled': ['Cash moved out with no label', '?'],
   'expense-no-po': ['Expenses with no PO', '#'],
+  'receipts-swapped': ['Receipts swapped for cash', '✓'],
   'expense-po-gap': ['PO total does not match the expenses', '#'],
 };
 const MODES = [
@@ -348,7 +349,7 @@ export async function renderShifts(root, { range }) {
     const r = s.register || {};
     const d = drafts[s.id] || {};
     // A recount being typed wins; a cleared box falls back to ASSD's own count.
-    const closing = d.recount !== undefined ? (d.recount ?? s.closing?.total ?? null) : r.closing;
+    const closing = d.recount !== undefined ? (d.recount ?? s.closing?.notes ?? null) : r.closing;
     const sheet = d.sheet !== undefined ? d.sheet : (s.expense?.sheetTotal ?? null);
     // The same rule as the server: labelled movements decide; the sheet only
     // settles what nothing labelled, and a disagreement is shown, not hidden.
@@ -858,10 +859,10 @@ export async function renderShifts(root, { range }) {
         h(`span.sh-status.${t}`, { good: '✓ Agrees', warn: '! Look at it', bad: '! Answer needed', open: 'Journal ends here' }[t])),
       h('div.sh-who', avatar(s.user, true), h('b', { style: 'font-size:1.1rem' }, nameOf(s.user))),
       h('dl.sh-mini',
-        h('dt', 'Opening count'), h('dd.num', money(r.opening)),
+        h('dt', 'Opening notes'), h('dd.num', money(r.opening)),
         h('dt', '+ Cash taken'), h('dd.num', money(s.cash)),
-        h('dt', '− Moved out'), h('dd.num', money(s.drawerOut)),
-        h('dt', 'Closing count'), h('dd.num', money(r.closing))),
+        h('dt', '− Spent and moved out'), h('dd.num', money(r.opening != null && r.expected != null ? r.opening + s.cash - r.expected : null)),
+        h('dt', 'Closing notes'), h('dd.num', money(r.closing))),
       h('div.sh-dayvar', v == null ? h('span.sh-chip.none', s.open ? 'journal ends here' : 'no closing count')
         : v === 0 ? h('span.sh-chip.ok', '✓ The drawer agrees')
           : h(`span.sh-chip.${v > 0 ? 'over' : 'short'}`, `${v > 0 ? 'Over' : 'Short'}${data.redacted ? '' : ` ${money(Math.abs(v))}`}`)),
@@ -1013,10 +1014,10 @@ export async function renderShifts(root, { range }) {
       h('div.sh-two',
         h('section.card',
           h('div.sh-cardhead', h('div', h('h2', 'The drawer'),
-            h('p.sh-sub', 'From ASSD’s count at hand-over to its count at the end. Expenses come from the closing report in HIVE. Type a recount and the picture moves; Save keeps it.'))),
+            h('p.sh-sub', 'Notes and coins, from ASSD’s count at hand-over to its count at the end. Receipts in the counts are expenses, not cash. Type a recount of the notes and coins and the picture moves; Save keeps it.'))),
           fall, vbox,
           h('div.sh-inputs',
-            h('label.field', { for: 'sh-recount' }, 'Recount the drawer (optional)', recount),
+            h('label.field', { for: 'sh-recount' }, 'Recount the notes and coins (optional)', recount),
             opening ? h('label.field', { for: 'sh-opening' }, 'Opening count', opening) : null),
           h('div.sh-save', h('button.btn.primary', { type: 'button', onclick: save, disabled: s.open }, 'Save'), unsaved, said)),
         h('section.card',
@@ -1049,16 +1050,24 @@ export async function renderShifts(root, { range }) {
       const t = tone(s);
       mount(status, h(`span.sh-status.${t}`, { good: '✓ All agrees', warn: '! Have a look', bad: '! Needs an answer', open: 'Journal ends here' }[t]));
 
-      const steps = [{ lab: 'Opening count', sm: r.openingFrom === 'typed' ? 'typed' : 'ASSD, at hand-over', from: 0, to: r.opening ?? 0, c: 'var(--muted)', amt: money(r.opening) }];
+      // Notes and coins only: receipts in a count are not cash. Those that
+      // appeared on this shift are its expenses.
+      const rc = r.receipts || {};
+      const steps = [{ lab: 'Opening notes and coins', sm: r.openingFrom === 'typed' ? 'typed' : r.openingFrom === 'carried' ? 'last shift’s closing' : 'ASSD, at hand-over', from: 0, to: r.opening ?? 0, c: 'var(--muted)', amt: money(r.opening) }];
       let at = (r.opening ?? 0) + s.cash;
       steps.push({ lab: '+ Cash taken', sm: s.laundryCash ? `incl. ${money(s.laundryCash)} laundry` : '', from: r.opening ?? 0, to: at, c: 'var(--sh-cash)', amt: money(s.cash) });
-      if (n.expenses) { steps.push({ lab: '− Expenses', sm: s.corrected ? 'counted and corrected' : n.sheetTyped && n.expenses !== s.expensesMoved ? 'counted, rest from the sheet' : 'receipts counted', from: at - n.expenses, to: at, c: 'var(--sh-expense)', amt: money(n.expenses) }); at -= n.expenses; }
-      if (n.toSafe) { steps.push({ lab: '− To the safe', sm: s.corrected ? 'counted and corrected' : 'notes counted', from: at - n.toSafe, to: at, c: 'var(--sh-safe)', amt: money(n.toSafe) }); at -= n.toSafe; }
-      if (n.unlabelled) { steps.push({ lab: '− Not labelled', sm: 'type the sheet total', from: at - n.unlabelled, to: at, c: 'var(--muted)', hatch: true, amt: money(n.unlabelled) }); at -= n.unlabelled; }
+      if (r.putBack) { steps.push({ lab: '+ Put back', sm: 'a movement the other way', from: at, to: at + r.putBack, c: 'var(--sh-cash)', amt: money(r.putBack) }); at += r.putBack; }
+      if (rc.reconciled?.amount) { steps.push({ lab: '+ Cash for receipts', sm: 'receipts swapped for cash, reconciled', from: at, to: at + rc.reconciled.amount, c: 'var(--sh-cash)', amt: money(rc.reconciled.amount) }); at += rc.reconciled.amount; }
+      if (n.expenses) {
+        const words = [rc.in ? 'new receipts in the counts' : '', rc.direct ? 'paid straight out' : '', r.fromSheet ? 'from the closing report' : ''].filter(Boolean).join(', ');
+        steps.push({ lab: '− Expenses', sm: words || 'receipts in the counts', from: at - n.expenses, to: at, c: 'var(--sh-expense)', amt: money(n.expenses) }); at -= n.expenses;
+      }
+      if (n.toSafe) { steps.push({ lab: '− Cash to the safe', sm: s.corrected ? 'notes, as corrected' : 'notes only', from: at - n.toSafe, to: at, c: 'var(--sh-safe)', amt: money(n.toSafe) }); at -= n.toSafe; }
+      if (n.unlabelled) { steps.push({ lab: '− Not labelled', sm: 'say what it was below', from: at - n.unlabelled, to: at, c: 'var(--muted)', hatch: true, amt: money(n.unlabelled) }); at -= n.unlabelled; }
       steps.push({ lab: '= Should hold', from: 0, to: r.expected ?? 0, c: 'var(--ink-2)', amt: money(r.expected), total: true });
       steps.push({
-        lab: 'Closing count',
-        sm: n.recounted ? 'your recount' : n.closing == null ? 'not in the journal' : `ASSD, at the end${r.receiptsAtClose ? `, incl. ${money(r.receiptsAtClose)} receipts` : ''}`,
+        lab: 'Closing notes and coins',
+        sm: n.recounted ? 'your recount' : n.closing == null ? 'not in the journal' : 'ASSD, at the end',
         from: 0, to: n.closing ?? 0, total: true, amt: money(n.closing),
         c: n.variance == null ? 'var(--muted)' : n.variance === 0 ? 'var(--sh-good)' : n.variance > 0 ? 'var(--sh-warn)' : 'var(--sh-bad)',
       });
@@ -1087,7 +1096,8 @@ export async function renderShifts(root, { range }) {
           : n.variance === 0 ? 'What should be in the drawer is exactly what was counted.'
             : `It should have held ${money(r.expected)}; ${n.recounted ? 'the recount' : 'ASSD counted'} ${money(n.closing)}.${!n.recounted && r.assdVariance === n.variance ? ' ASSD booked the same difference itself.' : ''}`),
         r.corrected && r.assdVariance !== n.variance ? h('p', `ASSD booked ${signed(r.assdVariance)} before the corrections to its cash movements.`) : null,
-        r.handoverGap ? h('p', `This shift’s first count was ${money(Math.abs(r.handoverGap.amount))} ${r.handoverGap.amount < 0 ? 'less' : 'more'} than ${nameOf(r.handoverGap.from)}’s closing count.`) : null));
+        r.handoverGap ? h('p', `This shift’s first count was ${money(Math.abs(r.handoverGap.amount))} ${r.handoverGap.amount < 0 ? 'less' : 'more'} than ${nameOf(r.handoverGap.from)}’s closing count.`) : null),
+        receiptsPanel(r));
 
       mount(checksList, checks(s, n).map(([cls_, mark, text, detail]) => (detail
         ? h('li.sh-hasdetail', h('details',
@@ -1095,6 +1105,19 @@ export async function renderShifts(root, { range }) {
           detail))
         : h('li', h(`span.sh-ic.${cls_}`, String(mark)), h('span', text)))));
     }
+  }
+
+  /** The receipts in the counts: at hand-over, at the end, out, and what is new. */
+  function receiptsPanel(r) {
+    const rc = r.receipts || {};
+    if (!rc.open && !rc.close && !rc.in && !rc.out) return null;
+    const row = (label, value, strong = false) => h(`div.sh-rrow${strong ? '.strong' : ''}`, h('span', label), h('b.num', money(value)));
+    return h('div.sh-receipts',
+      row('Receipts in the drawer at hand-over', rc.open ?? 0),
+      row('Receipts in the drawer at the end', rc.close ?? 0),
+      rc.moved ? row('Receipts taken out with a cash movement', rc.moved) : null,
+      rc.swapped > 0 ? row('Receipts taken out with no movement (swapped for cash)', rc.swapped) : null,
+      row('New receipts: this shift’s expenses', rc.in ?? 0, true));
   }
 
   function modesBlock(s) {
@@ -1123,7 +1146,8 @@ export async function renderShifts(root, { range }) {
     if (exp?.sheetTotal != null || n.expenses) {
       // Agrees when what left the drawer is what Odoo approved, and every PO
       // is on the expense form (once the form is connected).
-      const paid = exp?.sheetTotal ?? n.expenses;
+      // The expenses as ASSD's counts show them, held against the POs.
+      const paid = n.expenses ?? exp?.sheetTotal;
       const orders = (exp?.odoo?.orders || []).filter((o) => !o.kind);
       const onForm = orders.filter((o) => o.reported).length;
       const sameAmount = exp?.odooTotal != null && Math.round(paid) === Math.round(exp.odooTotal);
@@ -1138,8 +1162,10 @@ export async function renderShifts(root, { range }) {
         expenseDetail(s, n)]);
     }
     if (n.sheetGap) {
-      out.push(['warn', '!', `The expense sheet says ${money(n.sheet)}; the movements labelled ${money(n.expenses)} as expenses. Correct a movement below, or check the sheet.`]);
+      out.push(['warn', '!', `The ${exp?.sheetFrom === 'report' ? 'closing report' : 'expense sheet'} says ${money(n.sheet)} was spent; ASSD’s counts show ${money(n.expenses)} of expenses. Link the missing PO, or check the counts.`]);
     }
+    const rcp = s.register?.receipts;
+    if (rcp?.reconciled?.amount) out.push(['good', '✓', `${money(rcp.reconciled.amount)} of receipts swapped for cash, reconciled${rcp.reconciled.by ? ` (${rcp.reconciled.by})` : ''}`]);
     // Movements somebody matched or labelled: settled, so said plainly and green.
     for (const m of (s.moves || []).filter((x) => x.manual)) {
       const by = m.manual.by ? ` (${m.manual.by})` : '';
@@ -1214,24 +1240,27 @@ export async function renderShifts(root, { range }) {
 
   function drawerDetail(s, n) {
     const r = s.register || {};
-    const moveText = (m) => ({
-      expenses: 'expenses', safe: 'to the safe', split: `${money(m.expenses)} expenses, ${money(m.safe)} to the safe`,
-      part: `${money(m.expenses)} expenses, rest not labelled`, unlabelled: 'not labelled', corrected: 'keyed by mistake, put back',
-      returned: 'put back into the drawer', excluded: 'left out (matched)',
-    })[m.kind] || m.kind;
+    const moveText = (m) => {
+      const parts = [m.receipts ? `${money(m.receipts)} receipts` : '', m.direct ? `${money(m.direct)} expenses` : '', m.safe ? `${money(m.safe)} to the safe` : ''].filter(Boolean);
+      if (m.kind === 'part' || m.kind === 'unlabelled') parts.push(`${money(m.cash)} not labelled`);
+      return ({ corrected: 'keyed by mistake, put back', returned: 'put back into the drawer', excluded: 'left out (matched)' })[m.kind] || parts.join(', ') || m.kind;
+    };
+    const rc = r.receipts || {};
     const rows = [
-      { state: r.opening == null ? 'bad' : 'ok', cells: ['Opening count', r.openingFrom === 'typed' ? 'typed here' : r.openingFrom === 'carried' ? 'last shift’s closing' : `ASSD ${s.opening?.seq ?? ''}${s.opening?.receipts ? `, incl. ${money(s.opening.receipts)} receipts` : ''}`, money(r.opening)] },
+      { state: r.opening == null ? 'bad' : 'ok', cells: ['Opening notes and coins', r.openingFrom === 'typed' ? 'typed here' : r.openingFrom === 'carried' ? 'last shift’s closing' : `ASSD ${s.opening?.seq ?? ''}${s.opening?.receipts ? ` (and ${money(s.opening.receipts)} of receipts, not cash)` : ''}`, money(r.opening)] },
       ...(s.cashLines || []).map((c) => ({ state: 'ok', cells: [`+ ${c.kind}`, `ASSD ${c.seq} · ${nameOf(c.user)} · ${c.label}`, money(c.amount)] })),
+      ...(rc.list || []).map((x) => ({ state: 'ok', cells: ['− New receipts', `in the count ASSD ${x.seq}: expenses`, money(-x.amount)] })),
       ...(s.moves || []).filter((m) => m.kind !== 'corrected' && m.kind !== 'excluded').map((m) => ({
         state: ['unlabelled', 'part'].includes(m.kind) ? 'bad' : 'ok',
-        cells: ['− Cash movement', `ASSD ${m.seq} · ${moveText(m)}${m.manual ? ' (corrected by hand)' : ''}`, money(-m.amount)],
+        cells: ['− Cash movement', `ASSD ${m.seq} · ${moveText(m)}${m.receipts ? ' (receipts are not cash)' : ''}${m.manual ? ' (corrected by hand)' : ''}`, money(-(m.amount - (m.receipts || 0)))],
       })),
+      rc.reconciled?.amount ? { state: 'ok', cells: ['+ Cash for receipts', `receipts swapped for cash, reconciled by ${rc.reconciled.by || 'somebody'}`, money(rc.reconciled.amount)] } : null,
       ...(s.moves || []).filter((m) => m.kind === 'corrected' || m.kind === 'excluded').map((m) => ({
         state: 'none', cells: ['Not counted', `ASSD ${m.seq} · ${moveText(m)}`, money(-m.amount)],
       })),
       { state: 'none', cells: [h('b', '= Should hold'), '', h('b', money(r.expected))] },
-      { state: n.variance == null ? 'bad' : n.variance === 0 ? 'ok' : 'bad', cells: [h('b', 'Closing count'), n.recounted ? 'your recount' : `ASSD ${s.closing?.seq ?? ''}${r.receiptsAtClose ? `, incl. ${money(r.receiptsAtClose)} receipts` : ''}`, h('b', money(n.closing))] },
-    ];
+      { state: n.variance == null ? 'bad' : n.variance === 0 ? 'ok' : 'bad', cells: [h('b', 'Closing notes and coins'), n.recounted ? 'your recount' : `ASSD ${s.closing?.seq ?? ''}${s.closing?.receipts ? ` (and ${money(s.closing.receipts)} of receipts, not cash)` : ''}`, h('b', money(n.closing))] },
+    ].filter(Boolean);
     return h('div.sh-detail',
       lineTable([{ label: 'Line' }, { label: 'From' }, { label: 'Amount', num: true }], rows),
       h('p.small', n.variance == null ? 'No closing count to hold it against.' : n.variance === 0 ? '✓ The count matches what should be there.'
@@ -1272,12 +1301,16 @@ export async function renderShifts(root, { range }) {
     const exp = s.expense || {};
     // A movement another was matched to as its duplicate says so, so the one left is not taken for a stray.
     const twinOf = (seq) => (s.moves || []).find((x) => x.kind === 'excluded' && x.reason === 'duplicate' && x.pair === seq);
-    const moves = (s.moves || []).filter((m) => ['expenses', 'split', 'part'].includes(m.kind))
-      .map((m) => ({
-        label: h('span', `ASSD ${m.seq}${m.kind !== 'expenses' ? ' (part of a movement)' : ''}`,
+    // The expenses: receipts as they appeared in the counts, and cash a
+    // movement paid straight out.
+    const moves = [
+      ...((s.register?.receipts?.list) || []).map((x) => ({ label: h('span', `New receipts in the count ASSD ${x.seq}`), amount: x.amount })),
+      ...(s.moves || []).filter((m) => m.direct > 0).map((m) => ({
+        label: h('span', `ASSD ${m.seq}, paid straight out`,
           twinOf(m.seq) ? h('small', `✓ ASSD ${twinOf(m.seq).seq} matched as its duplicate, left out`) : null),
-        amount: m.kind === 'expenses' ? m.amount : m.expenses,
-      }));
+        amount: m.direct,
+      })),
+    ];
     // What the typed expense sheet settled on top of what the counts labelled.
     const fromSheet = (n.expenses || 0) - moves.reduce((t, m) => t + m.amount, 0);
     if (fromSheet > 0) moves.push({ label: exp.sheetFrom === 'report' ? 'From the closing report (unlabelled cash)' : 'From the expense sheet (unlabelled cash)', amount: fromSheet });
@@ -1298,7 +1331,7 @@ export async function renderShifts(root, { range }) {
     ];
     const unknown = exp.odoo?.unknown || [];
     return h('div.sh-detail',
-      lineTable([{ label: 'Paid out' }, { label: 'Amount', num: true }, { label: 'Odoo PO' }, { label: 'PO total', num: true }], rows,
+      lineTable([{ label: 'Expenses' }, { label: 'Amount', num: true }, { label: 'Odoo PO' }, { label: 'PO total', num: true }], rows,
         ['Total', money(n.expenses), exp.sheetTotal != null ? `${exp.sheetFrom === 'report' ? 'Closing report' : 'Expense sheet'} ${money(exp.sheetTotal)}` : '', exp.odooTotal != null ? money(exp.odooTotal) : '—']),
       unknown.length ? h('p.small', `✗ Not in Odoo: ${unknown.join(', ')}`) : null,
       n.expenses > 0 ? poLinker(s) : null);
@@ -1421,7 +1454,7 @@ export async function renderShifts(root, { range }) {
     const moves = s.moves || [];
     if (!moves.length) return h('p.sh-sub', 'Nothing was moved out of the drawer on this shift.');
     const tag = {
-      expenses: ['Expenses', 'var(--sh-expense)'], safe: ['To the safe', 'var(--sh-safe)'], split: ['Expenses + safe', 'var(--series-7)'],
+      expenses: ['Expenses', 'var(--sh-expense)'], safe: ['To the safe', 'var(--sh-safe)'], split: ['Receipts + safe', 'var(--series-7)'],
       part: ['Part labelled', 'var(--muted)'], unlabelled: ['Not labelled', 'var(--muted)'], corrected: ['Put back', 'var(--sh-bad)'],
       returned: ['Put back', 'var(--sh-good)'], excluded: ['Matched', 'var(--ink-2)'],
     };
@@ -1434,12 +1467,17 @@ export async function renderShifts(root, { range }) {
           'reversed-by': `Put back by ASSD ${m.pair}${where(m.pairShift)}. Neither moved cash, so both are left out.`,
         }[m.reason] || 'Left out of the drawer.';
       }
+      // Receipts carried out are not cash: they were expenses when they
+      // appeared in a count. A correction says what the cash part was.
+      const rec = m.receipts ? `${money(m.receipts)} of receipts to the back office` : '';
       const base = {
-        expenses: m.manual ? 'Expenses, as corrected.' : 'The receipts on the count before it.',
-        safe: m.manual ? 'Cash to the safe, as corrected.' : 'The notes on the count before it.',
-        split: `${money(m.expenses)} expenses and ${money(m.safe)} to the safe${m.manual ? ', as corrected' : ', as counted just before'}.`,
-        part: `${money(m.expenses)} in receipts as counted; the rest has no count before it.`,
-        unlabelled: 'No count before it said what it was. Correct it here, or the expense sheet total settles it.',
+        expenses: m.manual ? [rec, `${money(m.direct)} expenses paid straight out, as corrected`].filter(Boolean).join('; ') + '.'
+          : 'Receipts to the back office: expenses already, when they appeared in the count. No cash.',
+        safe: m.manual ? [rec, `${money(m.safe)} of notes to the safe, as corrected`].filter(Boolean).join('; ') + '.' : 'Notes to the safe, as the count before it.',
+        split: m.manual ? [rec, `${money(m.direct)} expenses and ${money(m.safe)} to the safe, as corrected`].filter(Boolean).join('; ') + '.'
+          : `${money(m.receipts)} of receipts to the back office and ${money(m.safe)} of notes to the safe, as counted just before.`,
+        part: `${money(m.receipts)} of receipts as counted; the other ${money(m.cash)} has no count to say what it was.`,
+        unlabelled: 'No count before it said what it was. Say what it was here, or the closing report settles it.',
         corrected: `Keyed by mistake and put back by ${nameOf(m.reversedByUser)} (ASSD ${m.reversedBy}) on the same shift. It nets to nothing.`,
         returned: 'Money put back into the drawer. If it undoes a movement on another shift, match them.',
       }[m.kind] || '';
@@ -1510,11 +1548,16 @@ export async function renderShifts(root, { range }) {
     const split = h('input', { type: 'number', inputmode: 'decimal', step: '0.01', min: '0', placeholder: 'expenses part' });
     const twins = (s.moves || []).filter((x) => x.seq !== m.seq && x.amount === m.amount && !['corrected', 'excluded'].includes(x.kind))
       .map((x) => [x.seq, `ASSD ${x.seq} · ${money(x.amount)} · ${nameOf(x.user)}`]);
+    // The receipts part comes from the counts and is not cash; only the
+    // cash part is said here.
+    const cashPart = m.cash ?? m.amount;
     return h('div.sh-fixbox',
-      h('p.sh-sub', 'What did this movement really take out of the drawer?'),
-      h('div.sh-fixrow', choice('Expenses', { kind: 'expenses' }, m.kind !== 'expenses'), choice('Cash to the safe', { kind: 'safe' }, m.kind !== 'safe'),
-        h('span', 'or split:'), split, h('button.btn', { type: 'button', onclick: () => send({ kind: 'split', expenses: split.value }) }, 'Split')),
-      h('div.sh-fixrow', h('span', 'Expenses for'), pos),
+      h('p.sh-sub', m.receipts
+        ? `${money(m.receipts)} of it was receipts, from the count before it: expenses already, not cash. What was the other ${money(cashPart)}?`
+        : 'What did this movement really take out of the drawer?'),
+      cashPart > 0 ? h('div.sh-fixrow', choice('Expenses paid straight out', { kind: 'expenses' }, m.kind !== 'expenses'), choice('Cash to the safe', { kind: 'safe' }, m.kind !== 'safe'),
+        h('span', 'or split:'), split, h('button.btn', { type: 'button', onclick: () => send({ kind: 'split', expenses: split.value }) }, 'Split')) : null,
+      cashPart > 0 ? h('div.sh-fixrow', h('span', 'Expenses for'), pos) : null,
       pick('A duplicate of', twins, 'duplicate'),
       pick('Put back by', elsewhere(-m.amount), 'reverses'),
       h('div.sh-fixrow', note, said));
@@ -1582,6 +1625,7 @@ export async function renderShifts(root, { range }) {
       case 'movement-corrected': return `${nameOf(x.by)} moved ${money(x.amount)} out and ${nameOf(x.reversedBy)} put it back (ASSD ${x.reversedSeq}). It nets to nothing.`;
       case 'movement-twice': return `${money(x.amount)} was moved out of the drawer twice (ASSD ${x.pair} and ${x.seq}), and the drawer counted over. If the second never moved any cash, match it as a duplicate.`;
       case 'movement-reversal': return `${money(x.amount)} was put back into the drawer (ASSD ${x.seq}). It matches ASSD ${x.pair}, moved out on ${nameOf(x.pairShift?.user)}’s ${SLOT[x.pairShift?.slot]?.label.toLowerCase() || ''} shift of ${shortDay(x.pairShift?.day)}. If one undoes the other, match them: both are left out.`;
+      case 'receipts-swapped': return `${money(x.amount)} of receipts${x.receiptsFrom ? ` left in the drawer by ${nameOf(x.receiptsFrom)}’s shift` : ''} left with no cash movement and were swapped for cash put into the drawer. They are expenses where they first appeared, with their PO; here they are not cash.`;
       case 'expense-no-po': return `${money(x.amount)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''} with no PO: none on the closing report in HIVE and none linked here. Link the PO, or answer why there is none.`;
       case 'expense-po-gap': return `${money(x.expenses)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''}, but the POs (${(x.pos || []).join(', ')}) come to ${money(x.poTotal)} in Odoo: ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} was paid than the POs say. Link the missing PO, unlink a wrong one, or answer why.`;
       case 'movement-unlabelled': return `${money(x.amount)} ${x.part ? `of the ${money(x.whole)} moved out` : 'moved out of the drawer'} (ASSD ${x.seq}) and no count says whether it went to the safe or on expenses.`
@@ -1656,6 +1700,29 @@ export async function renderShifts(root, { range }) {
       : `${keys.length} exceptions reconciled together. They count as answered.`));
   }
 
+  /**
+   * On a drawer that counted over: receipts taken out of the drawer with no
+   * movement were swapped for cash put in. When the counts show it, Insight
+   * says so and one tap reconciles it; otherwise the amount can be typed.
+   */
+  function receiptsSwapBox(x, said) {
+    const amount = h('input', { type: 'number', inputmode: 'decimal', step: '0.01', min: '0', value: x.swapped ? (x.swapped / 100).toFixed(2) : '', 'aria-label': 'Receipts swapped for cash', placeholder: 'amount' });
+    const send = async (value) => {
+      said.textContent = 'Saving…';
+      try {
+        await api('/shifts/receipts', { method: 'POST', body: { day: x.day, slot: x.slot, amount: value } });
+        await load(banner('good', 'Reconciled. The drawer is worked out again.'));
+      } catch (err) { said.textContent = err.message; }
+    };
+    return h('div.sh-suggest',
+      x.swapped
+        ? [h('span', h('b', 'It matches receipts that left the drawer. '),
+          `${money(x.swapped)} of receipts${x.receiptsFrom ? `, in the drawer at hand-over from ${nameOf(x.receiptsFrom)}’s shift,` : ''} left with no cash movement, and the notes went up by as much: they were swapped for cash. They are expenses where they first appeared, with their PO.`),
+        h('span', h('button.btn.primary', { type: 'button', onclick: () => send((x.swapped / 100).toFixed(2)) }, `Reconcile: ${money(x.swapped)} of receipts swapped for cash`))]
+        : h('span', 'Receipts from an earlier shift swapped for cash? Type how much and reconcile it.'),
+      x.swapped ? null : h('div.sh-fixrow', amount, h('button.btn', { type: 'button', onclick: () => send(amount.value) }, 'Reconcile')));
+  }
+
   /** Answered, or explained by the rules: nothing left to do. */
   const settled = (x) => Boolean(x.answer) || x.severity === 'info';
 
@@ -1728,6 +1795,15 @@ export async function renderShifts(root, { range }) {
           } catch (err) { said.textContent = err.message; }
         },
       }, x.kind === 'movement-twice' ? 'Match as a duplicate' : 'Match them')) : null,
+      // A surplus that receipts swapped for cash explain: reconcile it.
+      x.kind === 'drawer-over' && !x.answer && !x.proposed && may('moves', 2) ? receiptsSwapBox(x, said) : null,
+      x.kind === 'receipts-swapped' ? h('div.sh-done', h('span', `✓ Reconciled (${x.by || 'somebody'}${x.at ? `, ${String(x.at).slice(0, 16)}` : ''})${x.note ? ` · ${x.note}` : ''}`),
+        may('moves', 2) ? h('button.sh-link', {
+          type: 'button',
+          onclick: async () => {
+            try { await api('/shifts/receipts', { method: 'POST', body: { day: x.day, slot: x.slot, amount: '' } }); await load(banner('good', 'Undone. The drawer is worked out again.')); } catch (err) { said.textContent = err.message; }
+          },
+        }, 'Undo') : null) : null,
       x.labels && !x.answer && !x.proposed && !x.pending && may('moves', 2) ? h('div.sh-labels',
         [['safe', 'It went to the safe'], ['expenses', 'It was expenses']].map(([kind, words]) => h('button.btn', {
           type: 'button',
@@ -1774,7 +1850,7 @@ export async function renderShifts(root, { range }) {
             try { await api('/shifts/unlink', { method: 'POST', body: { id: x.link.id } }); await load(banner('good', 'Undone. Those exceptions are open again.')); } catch (err) { said.textContent = err.message; }
           },
         }, 'Undo') : null)
-      : x.severity === 'info' && !x.answer ? h('div.sh-done', h('span', { style: 'color:var(--ink-2)' }, 'Explained by the rules; no answer needed'))
+      : x.severity === 'info' && !x.answer && x.kind !== 'receipts-swapped' ? h('div.sh-done', h('span', { style: 'color:var(--ink-2)' }, 'Explained by the rules; no answer needed'))
         : x.answer ? h('div.sh-done',
           h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''}${x.answer.by ? ` (${x.answer.by}${x.answer.at ? `, ${String(x.answer.at).slice(0, 16)}` : ''})` : ''}`),
           // A correction to a movement is undone, not re-answered: the

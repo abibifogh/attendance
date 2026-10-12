@@ -236,6 +236,26 @@ export async function linkPos(env, body, account) {
   }
 }
 
+/**
+ * Reconcile receipts that left the drawer with no movement: they were swapped
+ * for cash put into the drawer, so the notes went up by as much. The amount
+ * is added back to what the drawer should hold. An empty amount undoes it.
+ */
+export async function saveReceiptsSwap(env, body, account) {
+  const day = dayOf(body?.day);
+  const slot = slotOf(body?.slot);
+  const amount = cedis(body?.amount, 'Amount');
+  if (!amount) {
+    await run(env.DB, 'DELETE FROM shift_receipts_swap WHERE day = ?1 AND slot = ?2', day, slot);
+    return { ok: true, removed: true };
+  }
+  if (amount < 0) throw badRequest('The amount is what was swapped: more than nothing.');
+  const note = str(body?.note, 'Note', { max: 400 });
+  await run(env.DB, `INSERT INTO shift_receipts_swap (day, slot, amount, note, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+    ON CONFLICT (day, slot) DO UPDATE SET amount = ?3, note = ?4, by_name = ?5, at = ?6`, day, slot, amount, note, who(account), now());
+  return { ok: true };
+}
+
 /** PO numbers typed any old way: `P00412, P00413 p417`. */
 export function poList(value) {
   return [...new Set(String(value || '').toUpperCase().split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean))].slice(0, 40);
@@ -599,6 +619,8 @@ export async function shifts(env, query, account) {
   }]));
 
   const countOf = new Map(counts.map((c) => [`${c.day}|${c.slot}`, c]));
+  const swaps = await all(env.DB, 'SELECT * FROM shift_receipts_swap WHERE day BETWEEN ?1 AND ?2', addDays(from, -3), to).catch(() => []);
+  const swapOf = new Map(swaps.map((w) => [`${w.day}|${w.slot}`, w]));
   const expenseOf = new Map(expenses.map((e) => [`${e.day}|${e.slot}`, e]));
   // The POs on each shift's closing report in HIVE, already checked against
   // Odoo when it was signed. Shown with any typed here, so a shift whose
@@ -641,16 +663,23 @@ export async function shifts(env, query, account) {
   // A count typed here is a recount, and when there is one it is used instead.
   const ordered = [...result.shifts].sort((a, b) => a.slot - b.slot);
   const register = new Map();
+  const previousUser = new Map();
   let previousClosing = null;
   for (const s of ordered) {
     const typed = countOf.get(`${s.day}|${s.slotName}`);
     const expense = expenseOf.get(`${s.day}|${s.slotName}`);
-    const assdOpening = s.opening?.total ?? null;
+    // The drawer in notes and coins. Receipts in a count are not cash: the
+    // ones that appeared on this shift are its expenses; those carried out
+    // with a movement are not cash moved; those that left with no movement
+    // were swapped for cash, which a person reconciles.
+    const swap = swapOf.get(`${s.day}|${s.slotName}`) || null;
+    const assdOpening = s.opening?.notes ?? null;
     const opening = typed?.opening ?? assdOpening ?? previousClosing?.amount ?? null;
     const openingFrom = typed?.opening != null ? 'typed' : assdOpening != null ? 'assd' : previousClosing ? 'carried' : null;
     const out = s.drawerOut;
-    const expected = opening == null ? null : opening + s.cash - out;
-    const closing = typed?.closing ?? s.closing?.total ?? null;
+    const swapped = swap?.amount || 0;
+    const expected = opening == null ? null : opening + s.cash - s.receiptsIn - (out - s.receiptsMoved) + swapped;
+    const closing = typed?.closing ?? s.closing?.notes ?? null;
     const closingFrom = typed?.closing != null ? 'typed' : s.closing ? 'assd' : null;
     // Expenses: what each movement was, as the count before it labelled it
     // or as a person corrected it. The expense sheet's total only settles
@@ -658,13 +687,21 @@ export async function shifts(env, query, account) {
     // expenses, the rest went to the safe. Where the sheet and the labelled
     // movements disagree, the gap is shown rather than written over.
     const sheet = expense?.sheet_total ?? reportPaid.get(`${s.day}|${s.slotName}`) ?? null;
-    const fromSheet = sheet != null ? Math.min(s.unlabelledMoved, Math.max(0, sheet - s.expensesMoved)) : 0;
-    const expenses = s.expensesMoved + fromSheet;
+    const fromSheet = sheet != null ? Math.min(s.unlabelledMoved, Math.max(0, sheet - s.expenses)) : 0;
+    const expenses = s.expenses + fromSheet;
     const toSafe = s.safeMoved + (sheet != null ? s.unlabelledMoved - fromSheet : 0);
     const unlabelled = sheet != null ? 0 : s.unlabelledMoved;
     register.set(s.index, {
       opening, openingFrom, cashIn: s.cash, laundryCash: s.laundryCash, out,
-      expenses, toSafe, unlabelled, expensesFrom: fromSheet ? 'sheet' : 'assd',
+      expenses, toSafe, unlabelled, expensesFrom: fromSheet ? 'sheet' : 'assd', fromSheet,
+      // Money put back into the drawer by a movement the other way.
+      putBack: -s.moves.filter((m) => m.kind === 'returned').reduce((t, m) => t + m.amount, 0),
+      receipts: {
+        open: s.opening?.receipts ?? null, close: s.closing?.receipts ?? null,
+        in: s.receiptsIn, out: s.receiptsOut, moved: s.receiptsMoved, swapped: s.receiptsSwapped,
+        direct: s.directExpenses, list: s.receiptsNew,
+        reconciled: swap ? { amount: swap.amount, note: swap.note, by: swap.by_name, at: swap.at } : null,
+      },
       sheetGap: sheet != null && sheet !== expenses ? sheet - expenses : null,
       corrected: s.corrected,
       expected, closing, closingFrom,
@@ -678,6 +715,7 @@ export async function shifts(env, query, account) {
         ? { amount: assdOpening - previousClosing.amount, from: previousClosing.user } : null,
       note: typed?.note || null, countedBy: typed?.by_name || null, countedAt: typed?.at || null,
     });
+    previousUser.set(s.index, previousClosing?.user || null);
     previousClosing = closing != null ? { amount: closing, user: s.user } : null;
   }
 
@@ -692,6 +730,16 @@ export async function shifts(env, query, account) {
         ...base, key: `drawer:${s.day}:${s.slotName}`, kind: r.variance < 0 ? 'drawer-short' : 'drawer-over',
         group: 'drawer', severity: r.variance < 0 ? 'critical' : 'warning', amount: r.variance,
         expected: r.expected, closing: r.closing, closingFrom: r.closingFrom,
+        // Receipts that left with no movement, not yet reconciled: the likely story of a surplus.
+        swapped: r.receipts.swapped - (r.receipts.reconciled?.amount || 0) > 0 ? r.receipts.swapped - (r.receipts.reconciled?.amount || 0) : null,
+        receiptsFrom: r.receipts.open ? previousUser.get(s.index) || null : null,
+      });
+    }
+    if (r.receipts.reconciled?.amount) {
+      exceptions.push({
+        ...base, key: `receipts:${s.day}:${s.slotName}`, kind: 'receipts-swapped', group: 'explained', severity: 'info',
+        amount: r.receipts.reconciled.amount, by: r.receipts.reconciled.by, at: r.receipts.reconciled.at, note: r.receipts.reconciled.note,
+        receiptsFrom: r.receipts.open ? previousUser.get(s.index) || null : null,
       });
     }
     if (r.handoverGap) {
@@ -1035,6 +1083,8 @@ const MONEY_KEYS = new Set([
   'countVariance', 'cashIn', 'out', 'expenses', 'toSafe', 'unlabelled', 'sheetGap', 'assdVariance', 'receiptsAtClose',
   'cardRecorded', 'received', 'commission', 'cardFoundAmount', 'assd', 'system', 'systemCash', 'sheetTotal',
   'odooTotal', 'safe', 'short', 'over', 'flaggedAmount', 'collected', 'charged', 'paid', 'balance',
+  'open', 'close', 'in', 'moved', 'swapped', 'direct', 'putBack', 'fromSheet', 'poTotal', 'gap',
+  'receiptsIn', 'receiptsOut', 'receiptsMoved', 'receiptsSwapped', 'directExpenses',
 ]);
 
 /** The same object with every amount taken out. Agrees, short and over survive as a sign. */

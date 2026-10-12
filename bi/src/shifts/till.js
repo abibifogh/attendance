@@ -78,7 +78,10 @@ export function countedPos(pos, day, slot) {
  */
 export function compare(shift, report, { pos = [], rentals = [] } = {}) {
   const r = shift.register || {};
-  const out = r.out ?? shift.drawerOut ?? 0;
+  // What left the drawer as money: expenses (receipts that appeared and
+  // cash paid straight out) and cash moved out. Receipts carried to the back
+  // office are paper, not money leaving.
+  const out = r.receipts ? (r.expenses || 0) + (r.toSafe || 0) + (r.unlabelled || 0) : (r.out ?? shift.drawerOut ?? 0);
   const counted = countedPos(pos, shift.day, shift.slot);
   const envelopes = envelopeTotal(report);
   const rentalRows = rentals.map((rental) => {

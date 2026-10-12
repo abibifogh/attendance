@@ -326,9 +326,20 @@ export function summarise(shift, corrections = new Map()) {
     expensesMoved: 0,
     safeMoved: 0,
     unlabelledMoved: 0,
+    // Receipts: those that appeared in this shift's counts (its expenses),
+    // those that left, those carried out with a movement, and those that left
+    // with none (swapped for cash).
+    receiptsIn: 0,
+    receiptsNew: [],
+    receiptsOut: 0,
+    receiptsMoved: 0,
+    receiptsSwapped: 0,
+    directExpenses: 0,
+    expenses: 0,
   };
   const counts = [];
   const movements = [];
+  const order = [];
 
   for (const e of shift.entries) {
     s.users[e.user] = (s.users[e.user] || 0) + 1;
@@ -369,8 +380,12 @@ export function summarise(shift, corrections = new Map()) {
     if (e.kind === 'Money Count') {
       const receipts = e.expensesCounted || 0;
       counts.push({ seq: e.seq, user: e.user, notes: e.counted, receipts, total: e.counted + receipts, at: movements.length });
+      order.push({ count: counts.length - 1 });
     }
-    if (e.kind === 'Cash Movement') movements.push({ seq: e.seq, user: e.user, amount: -e.movement, countsBefore: counts.length });
+    if (e.kind === 'Cash Movement') {
+      movements.push({ seq: e.seq, user: e.user, amount: -e.movement, countsBefore: counts.length });
+      order.push({ move: e.seq });
+    }
   }
 
   const kept = [];
@@ -393,20 +408,77 @@ export function summarise(shift, corrections = new Map()) {
   });
   s.moves = [...labelled, ...excluded].sort((a, b) => a.seq - b.seq);
   s.corrected = s.moves.some((m) => m.manual);
+  // Each movement in parts: receipts carried to the back office (read from
+  // the counts, and already expenses when they appeared in one), and the
+  // cash part: expenses paid straight out of the drawer, notes to the safe,
+  // or not said. A correction by hand says what the cash part was.
+  const auto = new Map(labelMovements(kept, counts.map((c) => ({ ...c, used: false }))).map((m) => [m.seq, m]));
   for (const m of s.moves) {
-    if (m.kind === 'expenses') s.expensesMoved += m.amount;
-    else if (m.kind === 'safe') s.safeMoved += m.amount;
-    else if (m.kind === 'split') { s.expensesMoved += m.expenses; s.safeMoved += m.safe; }
-    else if (m.kind === 'part') { s.expensesMoved += m.expenses; s.unlabelledMoved += m.amount - m.expenses; }
-    else if (m.kind === 'unlabelled') s.unlabelledMoved += m.amount;
+    if (!['expenses', 'safe', 'split', 'part', 'unlabelled'].includes(m.kind)) continue;
+    const a = auto.get(m.seq) || m;
+    const receipts = a.kind === 'expenses' ? a.amount : ['split', 'part'].includes(a.kind) ? a.expenses : 0;
+    const cash = m.amount - receipts;
+    let direct = 0; let safe = 0; let unlabelled = 0;
+    if (m.manual) {
+      if (m.kind === 'expenses') direct = cash;
+      else if (m.kind === 'safe') safe = cash;
+      else if (m.kind === 'split') { direct = Math.min(cash, Math.max(0, m.expenses || 0)); safe = cash - direct; }
+    } else if (m.kind === 'safe' || m.kind === 'split') safe = cash;
+    else if (m.kind === 'part' || m.kind === 'unlabelled') unlabelled = cash;
+    Object.assign(m, { receipts, direct, cash, safe });
+    s.receiptsMoved += receipts;
+    s.directExpenses += direct;
+    s.safeMoved += safe;
+    s.unlabelledMoved += unlabelled;
   }
-  s.expensesCounted = s.expensesMoved;
-  // The drawer by ASSD's own counts: what the shift's first count found,
-  // plus the cash it took, less what it moved out, against its last count.
-  // ASSD books the same difference as an End cash deficit/surplus.
+  // Receipts in the counts. A receipt that appears in a count is spent on
+  // this shift: that is its expenses, and each needs a PO. One that leaves
+  // goes to the back office with a movement, or, with none, was swapped for
+  // cash put into the drawer.
+  // In the order things happened: receipts that leave the counts are
+  // paired with a movement that carried them out, before or after (staff
+  // sometimes take them out, count, and key the movement later). Receipts a
+  // movement carried that no count saw leave were replaced by new ones;
+  // receipts that left with no movement were swapped for cash.
+  const receiptsOf = new Map(s.moves.map((m) => [m.seq, m.receipts || 0]));
+  let dropped = 0;
+  let carried = 0;
+  for (const step of order) {
+    if (step.move) {
+      const r = receiptsOf.get(step.move) || 0;
+      const matched = Math.min(r, dropped);
+      dropped -= matched;
+      carried += r - matched;
+      continue;
+    }
+    if (!step.count) continue;
+    const delta = counts[step.count].receipts - counts[step.count - 1].receipts;
+    if (delta > 0) {
+      s.receiptsIn += delta;
+      s.receiptsNew.push({ seq: counts[step.count].seq, amount: delta });
+    } else if (delta < 0) {
+      const matched = Math.min(-delta, carried);
+      carried -= matched;
+      dropped += -delta - matched;
+    }
+  }
+  if (carried > 0 && counts.length) {
+    // Carried out, yet the count still shows as much: new receipts took their place.
+    s.receiptsIn += carried;
+    s.receiptsNew.push({ seq: counts[counts.length - 1].seq, amount: carried });
+  }
+  s.receiptsSwapped = dropped;
+  s.receiptsOut = s.receiptsMoved + s.receiptsSwapped;
+  s.expenses = s.receiptsIn + s.directExpenses;
+  s.expensesMoved = s.expenses;
+  s.expensesCounted = s.expenses;
+  // The drawer in notes and coins: what the first count found, plus the cash
+  // taken, less the receipts that appeared and the cash moved out. It differs
+  // from ASSD's own balance (which counts receipts as if they were cash) only
+  // by receipts that left the drawer with no movement.
   if (s.opening && s.closing) {
-    s.expected = s.opening.total + s.cash - s.drawerOut;
-    s.countVariance = s.closing.total - s.expected;
+    s.expected = s.opening.notes + s.cash - s.receiptsIn - (s.drawerOut - s.receiptsMoved);
+    s.countVariance = s.closing.notes - s.expected;
   } else {
     s.expected = null;
     s.countVariance = null;
