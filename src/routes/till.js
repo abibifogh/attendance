@@ -555,8 +555,17 @@ export async function closeShift(ctx) {
     .bind(actorOf(ctx), 'till.closed', String(reportId), JSON.stringify({ day, slot })).run().catch(() => {});
 
   const report = { day, slot, cash, envelopes, expenses, rentals, checks, floatOk: body.floatOk, floatDiff, toSafe: body.toSafe };
-  // Nobody is emailed for each shift closed any more: the people who follow
-  // the till get one summary a morning from Insight instead.
+  // Told the moment it is signed, by phone and email, to whoever Insight says
+  // follows closed shifts. The morning summary is a separate choice there.
+  const look = { name: ctx.session.user.name, device, rentalLabels: setup.rentals };
+  await tell(ctx, 'closed', {
+    title: `${labelOf({ day, slot })} closed · ${ctx.session.user.name}`,
+    withAmounts: closedSummary(report, true),
+    withoutAmounts: closedSummary(report, false),
+    mailWith: safeMail(() => closedMail(report, true, look)),
+    mailWithout: safeMail(() => closedMail(report, false, look)),
+  });
+
   return json({ ok: true, id: reportId, report });
 }
 

@@ -339,24 +339,24 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
       onchange: (e) => save({ notify: { hiveUserId: n.hive_user_id, name: n.name, [key]: e.target.checked } }),
     }));
     return h('div.card',
-      h('div.sh-cardhead', h('h2', 'Who is told'), h('span.sh-sub', 'HIVE sends these, as a web push to their phone and an email, to the HIVE login chosen here. Things that need a decision come straight away; the rest is in the daily summary.')),
+      h('div.sh-cardhead', h('h2', 'Who is told'), h('span.sh-sub', 'HIVE sends these, as a web push to their phone and an email, to the HIVE login chosen here.')),
       h('div.table-wrap', h('table',
-        h('thead', h('tr', ['Who', 'Web push', 'Email', 'Amounts', 'Daily summary', 'Staff answered', 'Correction to approve', ''].map((t) => h('th', t)))),
+        h('thead', h('tr', ['Who', 'Web push', 'Email', 'Amounts', 'Shift closed', 'Daily summary', 'Staff answered', 'Correction to approve', ''].map((t) => h('th', t)))),
         h('tbody', s.notify.length ? s.notify.map((n) => h('tr',
           h('td', h('strong', n.name)),
           flag(n, 'push', 'push'), flag(n, 'email', 'email'), flag(n, 'amounts', 'amounts'),
-          flag(n, 'onClosed', 'on_closed'), flag(n, 'onAnswer', 'on_answer'), flag(n, 'onApproval', 'on_approval'),
+          flag(n, 'onClosed', 'on_closed'), flag(n, 'onSummary', 'on_summary'), flag(n, 'onAnswer', 'on_answer'), flag(n, 'onApproval', 'on_approval'),
           h('td', h('button.btn', { type: 'button', onclick: () => save({ notify: { hiveUserId: n.hive_user_id, remove: true } }) }, 'Remove'))))
-          : h('tr', h('td', { colspan: 8 }, h('span.muted', 'Nobody yet. Add yourself and the supervisors.')))))),
+          : h('tr', h('td', { colspan: 9 }, h('span.muted', 'Nobody yet. Add yourself and the supervisors.')))))),
       h('form.tl-inline', {
         onsubmit: (e) => {
           e.preventDefault();
           const id = Number(pick.value);
           const u = s.hiveUsers.find((x) => x.id === id);
-          if (u) save({ notify: { hiveUserId: id, name: u.name, push: true, email: true, amounts: true, onClosed: true, onAnswer: true, onApproval: false } });
+          if (u) save({ notify: { hiveUserId: id, name: u.name, push: true, email: true, amounts: true, onClosed: true, onSummary: true, onAnswer: true, onApproval: false } });
         },
       }, pick, h('button.btn.primary', { type: 'submit' }, 'Add')),
-      h('p.tl-small', 'Daily summary: one message each morning with yesterday’s shifts and what waits for an admin. Untick Amounts for somebody who should see how the drawers came out, not by how much.'));
+      h('p.tl-small', 'Shift closed: the moment somebody signs their closing report. Daily summary: one message each morning with yesterday’s shifts and what waits for an admin. Untick Amounts for somebody who should see how the drawers came out, not by how much.'));
   }
 
   function checksView(s, save) {

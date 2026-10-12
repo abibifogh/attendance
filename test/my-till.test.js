@@ -165,9 +165,11 @@ test('closing a shift: checked, signed, stored and told', async () => {
   assert.deepEqual(lines.map((e) => [e.name, e.counted, e.state]), [['P00412', true, 'confirmed']]);
   assert.deepEqual(raw.prepare('SELECT po, paid, total FROM till_po').all().map((r) => ({ ...r })), [{ po: 'P00412', paid: 44000, total: 44000 }]);
 
-  // Nobody is told each time a shift closes: the daily summary covers it.
-  assert.equal(raw.prepare("SELECT COUNT(*) AS n FROM app_notices WHERE kind LIKE 'till.%'").get().n, 0);
-  assert.match(closedSummary(sent.report, true), /Drawer GH₵ 1,083.50 · safe GH₵ 1,500.00 in envelope 417 · hair dryer not at the desk \(Room 12\) · padlocks 6 → 5\./);
+  // The boss was told the moment it was signed, with the amounts, because Insight said so.
+  const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'till.closed'").get();
+  assert.equal(notice.user_id, 3);
+  assert.match(notice.body, /Drawer GH₵ 1,083.50 · safe GH₵ 1,500.00 in envelope 417 · hair dryer not at the desk \(Room 12\) · padlocks 6 → 5\./);
+  assert.ok(binding.asked.some(([p, body]) => p.endsWith('/recipients') && body.event === 'closed'), 'Insight was asked who follows closed shifts');
 
   await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift) })), /already closed that shift/);
 

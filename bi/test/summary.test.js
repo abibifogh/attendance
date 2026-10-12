@@ -17,8 +17,8 @@ async function setUp() {
   const { db, raw } = freshDb();
   const hive = freshDb('../migrations');
   hive.raw.exec("INSERT INTO till_report (day, slot, user_id, name, float_ok, cash, to_safe, signed_at) VALUES ('2026-10-10', 'morning', 7, 'Ama Test', 1, 1000, 0, '2026-10-10 14:00:00')");
-  raw.exec(`INSERT INTO till_notify (hive_user_id, name, push, email, amounts, on_closed, on_answer, on_approval) VALUES
-      (3, 'Boss', 1, 1, 1, 1, 1, 1), (9, 'Quiet', 1, 1, 1, 0, 1, 0);
+  raw.exec(`INSERT INTO till_notify (hive_user_id, name, push, email, amounts, on_closed, on_answer, on_approval, on_summary) VALUES
+      (3, 'Boss', 1, 1, 1, 0, 1, 1, 1), (9, 'Quiet', 1, 1, 1, 1, 1, 0, 0);
     INSERT INTO shift_movement (seq, kind, by_name, at, status) VALUES (101, 'safe', 'Sam', '2026-10-10 09:00:00', 'pending');
     INSERT INTO shift_movement (seq, kind, by_name, at, status, decided_by, decided_at) VALUES (102, 'expenses', 'Sam', '2026-10-10 10:00:00', 'applied', '${SMALL_BY}', '2026-10-10 10:00:00');
     INSERT INTO money_todo (key, kind, ref, state, opened_at) VALUES ('differs:P00412', 'differs', 'P00412', 'answered', '2026-10-09 10:00:00');`);
@@ -50,9 +50,9 @@ test('sent once, through HIVE, to whoever gets the daily summary', async () => {
   const out = await sendDailySummary(env, { fetchImpl, day: '2026-10-10', on: '2026-10-11' });
   assert.equal(out.sent, 1);
   assert.equal(asked[0][0], '/api/link/till/summary');
-  assert.deepEqual(asked[0][1].recipients.map((r) => r.userId), [3], 'only those ticked for the daily summary');
+  assert.deepEqual(asked[0][1].recipients.map((r) => r.userId), [3], 'only those ticked for the daily summary, not those ticked for each shift closed');
 
   const none = { ...env };
-  await env.DB.prepare('UPDATE till_notify SET on_closed = 0').run();
+  await env.DB.prepare('UPDATE till_notify SET on_summary = 0').run();
   assert.deepEqual(await sendDailySummary(none, { fetchImpl }), { sent: 0, reason: 'nobody gets the daily summary' });
 });

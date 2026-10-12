@@ -31,9 +31,9 @@ sort out**. Admins and supervisors work it all from Insight → **Shifts**.
    they are given their own.
 5. **Choose who is told.** Settings → Who is told. Pick HIVE logins, and
    for each: web push, email, whether the message carries amounts, and which
-   messages: the **daily summary** (each morning at 06:45: yesterday's shifts
-   and what waits for an admin), staff answered, a supervisor correction to
-   approve. Nobody is messaged for each shift closed.
+   messages: **shift closed** (the moment somebody signs their closing report),
+   the **daily summary** (each morning at 06:45: yesterday's shifts and what
+   waits for an admin), staff answered, a supervisor correction to approve.
 6. **Load the journal again** for the days you want rentals checked on. Older
    uploads did not keep ASSD's article lines, which is where padlock deposits
    and refunds are read from.

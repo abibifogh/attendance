@@ -78,7 +78,7 @@ export async function summaryFor(env, { day = addDays(today(), -1), on = today()
 /** Send yesterday's summary through HIVE to everybody who gets it. Never throws. */
 export async function sendDailySummary(env, { fetchImpl, day, on } = {}) {
   try {
-    const rows = await all(env.DB, 'SELECT * FROM till_notify WHERE on_closed = 1').catch(() => []);
+    const rows = await all(env.DB, 'SELECT * FROM till_notify WHERE on_summary = 1').catch(() => []);
     const recipients = rows.filter((r) => r.push || r.email).map((r) => ({
       userId: Number(r.hive_user_id), name: r.name, push: Boolean(r.push), email: Boolean(r.email), amounts: Boolean(r.amounts),
     }));
