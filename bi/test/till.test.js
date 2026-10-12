@@ -235,21 +235,22 @@ test('a supervisor gets what the admin chose, and nothing more', async () => {
 
 test('a supervisor’s correction waits for an admin', async () => {
   const { env } = await setUp();
-  const bravo = async () => (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).days[0].shifts.find((s) => s.user === 'BRAVO');
-  assert.equal((await bravo()).register.expenses, 5000);
-  const out = await routes.saveMovement(env, { seq: 400114, kind: 'safe' }, SUPERVISOR, { pending: true });
-  assert.deepEqual([out.pending, out.seq], [true, 400114]);
-  let b = await bravo();
-  assert.equal(b.register.expenses, 5000, 'not counted yet');
-  assert.equal(b.moves.find((m) => m.seq === 400114).pending.by, 'Sam Supervisor');
+  // ALPHA's GH₵200 movement: the count before it was all notes, so to the safe.
+  const alpha = async () => (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).days[0].shifts.find((s) => s.user === 'ALPHA');
+  assert.deepEqual([(await alpha()).register.expenses, (await alpha()).register.toSafe], [0, 20000]);
+  const out = await routes.saveMovement(env, { seq: 400106, kind: 'expenses' }, SUPERVISOR, { pending: true });
+  assert.deepEqual([out.pending, out.seq], [true, 400106]);
+  let a = await alpha();
+  assert.equal(a.register.expenses, 0, 'not counted yet');
+  assert.equal(a.moves.find((m) => m.seq === 400106).pending.by, 'Sam Supervisor');
 
   const waiting = (await till.overview(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).approvals;
-  assert.deepEqual(waiting.map((a) => [a.seq, a.kind, a.amount]), [[400114, 'safe', 5000]]);
-  await assert.rejects(till.approve(env, { seq: 400114, ok: true }, SUPERVISOR), /Only an admin/);
-  await till.approve(env, { seq: 400114, ok: true }, OWNER);
-  b = await bravo();
-  assert.deepEqual([b.register.expenses, b.register.toSafe], [0, 5000]);
-  await assert.rejects(routes.saveMovement(env, { seq: 400114, kind: 'expenses' }, SUPERVISOR, { pending: true }), /already been corrected/);
+  assert.deepEqual(waiting.map((x) => [x.seq, x.kind, x.amount]), [[400106, 'expenses', 20000]]);
+  await assert.rejects(till.approve(env, { seq: 400106, ok: true }, SUPERVISOR), /Only an admin/);
+  await till.approve(env, { seq: 400106, ok: true }, OWNER);
+  a = await alpha();
+  assert.deepEqual([a.register.expenses, a.register.toSafe], [20000, 0]);
+  await assert.rejects(routes.saveMovement(env, { seq: 400106, kind: 'safe' }, SUPERVISOR, { pending: true }), /already been corrected/);
 });
 
 test('exceptions reconciled together count as answered, and come back when undone', async () => {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { freshDb } from './helpers.js';
 import {
-  assdMoney, assdDate, journalWindow, mergeEntry, parseJournal, segment, methodOf, labelMovements,
+  assdMoney, assdDate, journalWindow, mergeEntry, parseJournal, segment, methodOf, labelMovements, summarise,
 } from '../src/shifts/assd.js';
 import { parseTerminalCsv, csvRow, unwrap } from '../src/shifts/terminal.js';
 import { parseStatement, classify, sheetTime } from '../src/shifts/bank.js';
@@ -435,15 +435,18 @@ test('a person can correct what a movement was, match a duplicate, and pair a re
     return { out, alpha: all.find((x) => x.user === 'ALPHA' && x.day === '2026-08-01'), bravo: all.find((x) => x.user === 'BRAVO'), charlie: all.find((x) => x.user === 'CHARLIE') };
   };
 
-  // Relabel: the counted split was really all cash to the safe, then a split by hand.
-  await routes.saveMovement(env, { seq: 300508, kind: 'safe', note: 'no receipts that day' }, OWNER);
+  // Relabel what the cash part was. The GH₵50 of receipts in the count
+  // before it are expenses whatever is said; a hand label says what the other
+  // GH₵100 was: all to the safe, then GH₵30 of it spent straight out.
+  await routes.saveMovement(env, { seq: 300508, kind: 'safe', note: 'notes to the safe' }, OWNER);
   let { alpha } = await read();
-  assert.deepEqual([alpha.register.expenses, alpha.register.toSafe], [0, 15000]);
+  assert.deepEqual([alpha.register.expenses, alpha.register.toSafe], [5000, 10000]);
   assert.equal(alpha.moves[0].auto, 'split');
+  assert.equal(alpha.moves[0].receipts, 5000);
   assert.equal(alpha.moves[0].manual.by, 'Test Owner');
   await routes.saveMovement(env, { seq: 300508, kind: 'split', expenses: '30' }, OWNER);
   ({ alpha } = await read());
-  assert.deepEqual([alpha.register.expenses, alpha.register.toSafe], [3000, 12000]);
+  assert.deepEqual([alpha.register.expenses, alpha.register.toSafe], [8000, 7000]);
 
   // A duplicate within the shift: left out, and the surplus goes with it.
   let { out, bravo } = await read();
@@ -538,6 +541,60 @@ test('expenses with no PO are flagged from the first closing report on, and link
   assert.deepEqual([gap.amount, gap.expenses, gap.poTotal, gap.pos], [1000, 5000, 4000, ['P04123']]);
   await odoo(5000);
   assert.deepEqual(await gaps(), [], 'the PO matches the expenses');
+});
+
+test('the drawer in notes and coins: receipts that appear are expenses, carried out they are not cash, swapped they are a surplus', () => {
+  let seq = 0;
+  const base = { register: '001', user: 'A', payments: [], laundry: [], items: [] };
+  const count = (notes, receipts = 0) => ({ ...base, seq: seq += 1, kind: 'Money Count', counted: notes * 100, expensesCounted: receipts * 100 });
+  const move = (amount) => ({ ...base, seq: seq += 1, kind: 'Cash Movement', movement: -amount * 100 });
+  const sale = (amount) => ({ ...base, seq: seq += 1, kind: 'Cash Register', payments: [{ method: 'cash', label: 'Cash', amount: amount * 100, date: '2026-08-01' }] });
+
+  // The morning: GH₵70 spent (a receipt appears), notes and receipts moved
+  // out together, and GH₵30 more spent at the end, left in the drawer.
+  const morning = summarise({ user: 'A', startSeq: 0, entries: [
+    count(800), sale(500), count(1230, 70), move(1300), count(0), sale(100), count(70, 30),
+  ] });
+  assert.equal(morning.expenses, 10000, 'GH₵70 and GH₵30 of new receipts');
+  assert.deepEqual([morning.receiptsIn, morning.receiptsMoved, morning.receiptsSwapped], [10000, 7000, 0]);
+  assert.equal(morning.safeMoved, 123000, 'the notes of the GH₵1,300 went to the safe');
+  assert.equal(morning.countVariance, 0, '800 + 600 − 100 spent − 1,230 to the safe = 70');
+  assert.deepEqual(morning.receiptsNew.map((x) => x.amount), [7000, 3000]);
+
+  // The afternoon: the GH₵30 of receipts left in the drawer are taken out
+  // with no movement, and cash put in for them: GH₵30 over in notes, which
+  // is what reconciling them explains.
+  const afternoon = summarise({ user: 'B', startSeq: 100, entries: [count(70, 30), sale(50), count(150)] });
+  assert.equal(afternoon.expenses, 0, 'nothing new was spent');
+  assert.deepEqual([afternoon.receiptsOut, afternoon.receiptsMoved, afternoon.receiptsSwapped], [3000, 0, 3000]);
+  assert.equal(afternoon.countVariance, 3000);
+
+  // Receipts taken out and counted before the movement is keyed: paired, not counted twice.
+  const later = summarise({ user: 'C', startSeq: 200, entries: [count(100), count(60, 40), count(60), move(40), count(60)] });
+  assert.deepEqual([later.expenses, later.receiptsSwapped, later.countVariance], [4000, 0, 0]);
+
+  // Receipts carried out, and a new one before the next count: both expenses.
+  const again = summarise({ user: 'D', startSeq: 300, entries: [count(100), count(50, 50), move(50), count(30, 20)] });
+  assert.deepEqual([again.expenses, again.receiptsSwapped, again.countVariance], [7000, 0, 0]);
+});
+
+test('receipts swapped for cash are reconciled on the shift, and undone', async () => {
+  const env = await loaded();
+  const alpha = async () => {
+    const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+    return { s: out.days[0].shifts[0], out };
+  };
+  const before = (await alpha()).s.register;
+  await routes.saveReceiptsSwap(env, { day: '2026-08-01', slot: 'morning', amount: '2', note: 'swapped at hand-over' }, OWNER);
+  let { s, out } = await alpha();
+  assert.equal(s.register.expected, before.expected + 200);
+  assert.equal(s.register.variance, before.variance - 200);
+  assert.equal(s.register.receipts.reconciled.by, 'Test Owner');
+  assert.ok(out.exceptions.some((x) => x.kind === 'receipts-swapped' && x.amount === 200 && x.severity === 'info'));
+  await routes.saveReceiptsSwap(env, { day: '2026-08-01', slot: 'morning', amount: '' }, OWNER);
+  ({ s } = await alpha());
+  assert.equal(s.register.expected, before.expected);
+  assert.equal(s.register.receipts.reconciled, null);
 });
 
 test('what each cash movement was', () => {

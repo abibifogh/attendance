@@ -107,16 +107,34 @@ Everything typed is signed with the name of whoever typed it.
   and MoMo (staff record MoMo as card), prepaid by bank transfer, prepaid by
   card online. Only cash goes into the drawer. Laundry paid in cash is part of
   the cash. Back-office entries on register 015 are never a shift's.
-- **Counts.** ASSD's Money Count is a count of the drawer: the notes, plus a
-  "Total Expenses PAID" line for receipts of things bought out of the drawer.
-  A shift's first count is its opening and its last is its closing.
+- **Counts.** ASSD's Money Count is a count of the drawer: the notes and
+  coins, plus a "Total Expenses PAID" line for receipts of things bought out
+  of the drawer. A shift's first count is its opening and its last is its
+  closing.
+- **The drawer is held to its notes and coins.** Receipts are not cash.
+  Opening notes and coins, plus the cash taken, less the expenses and the
+  cash moved out, is what the drawer should hold; the closing count's notes
+  and coins are held against it. This gives the same short or over as ASSD's
+  own balance (which counts receipts as if they were cash), except where
+  receipts left the drawer with no movement (below).
+- **Expenses are the receipts that appear.** A receipt that appears in a
+  count is spent on that shift: it is that shift's expenses, and needs a PO.
+  Receipts left in the drawer at hand-over are the earlier shift's, not
+  asked for twice. Under the drawer, a panel says the receipts at hand-over,
+  at the end, taken out, and what is new.
 - **Cash moved out.** Every Cash Movement takes money from the front drawer
-  (register 001) to the back office (015). ASSD records only the amount, so
-  what it was comes from the Money Count done just before it: the receipts are
-  expenses and the notes are cash to the safe. A movement put straight back by
-  an equal one the other way on the same shift is a correction, such as 17,630
-  keyed for 1,763. A movement with no count before it is shown as not
-  labelled.
+  (register 001) to the back office (015). ASSD records only the amount. The
+  receipts in it, read from the count before it, are paper to the back
+  office, not cash; the rest is notes to the safe when the count before it
+  says so. Receipts taken out and counted before the movement is keyed are
+  paired with it. A movement put straight back by an equal one the other way
+  on the same shift is a correction, such as 17,630 keyed for 1,763. Cash in
+  a movement no count explains is shown as not labelled.
+- **Receipts swapped for cash.** Receipts that leave the drawer with no
+  movement, the notes going up by as much, were swapped for cash put into the
+  drawer: that shift reads over by as much. The Drawer over card says so and
+  **Reconcile** adds the cash back; it then sits under Matched and explained,
+  with Undo. Where the counts cannot show it, the amount can be typed.
 - **The closing report's expenses** settle only what nothing labelled: what
   the POs on the shift's closing report in HIVE paid, less what is already
   counted as expenses, is expenses, and the rest went to the safe. If they
@@ -125,7 +143,9 @@ Everything typed is signed with the name of whoever typed it.
   is still used for its shift.)
 - **Correcting a movement.** Under "Where the cash went", Correct on any
   movement says what it really was:
-  - expenses, cash to the safe, or a split of the two;
+  - what its cash part was: expenses paid straight out, cash to the safe, or
+    a split of the two (receipts in it come from the counts and are not
+    changed here);
   - a duplicate of another movement on the same shift, moved twice but taken
     out once. It is left out of the drawer, which clears the surplus;
   - put back on another shift. A movement into the drawer on a later shift

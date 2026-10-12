@@ -116,6 +116,7 @@ const ROUTES = [
   ['POST', '/api/shifts/expense', 'shifts', adminOnly((env, ctx) => shiftRoutes.saveExpense(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/expense/pull', 'shifts', adminOnly((env, ctx) => shiftRoutes.pullOrders(env, ctx.body))],
   ['POST', '/api/shifts/expense/link', 'shifts', linkPos],
+  ['POST', '/api/shifts/receipts', 'shifts', receiptsSwap],
   ['POST', '/api/shifts/answer', 'shifts', async (env, ctx) => {
     // An unpaid stay is answered by whoever may act on Unpaid stays; anything else by whoever may act on the exceptions.
     const stay = String(ctx.body?.key || '').startsWith('stay:');
@@ -463,6 +464,12 @@ async function waitsForAdmin(env, ctx, saving, text) {
 }
 
 /** A correction to a cash movement: an admin's applies, a supervisor's waits for an admin. */
+/** Reconcile receipts swapped for cash: an admin, or whoever may act on cash movements. */
+async function receiptsSwap(env, ctx) {
+  if (till.roleOf(ctx.account) !== 'admin') await till.requireArea(env, ctx.account, 'moves', 2);
+  return shiftRoutes.saveReceiptsSwap(env, ctx.body, ctx.account);
+}
+
 /** Link POs to a shift's expenses: an admin, or whoever may act on cash movements. */
 async function linkPos(env, ctx) {
   if (till.roleOf(ctx.account) !== 'admin') await till.requireArea(env, ctx.account, 'moves', 2);
