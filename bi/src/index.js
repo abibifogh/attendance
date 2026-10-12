@@ -124,6 +124,7 @@ const ROUTES = [
     return waitsForAdmin(env, ctx, shiftRoutes.saveAnswer(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }),
       `${ctx.account?.name || 'A supervisor'} answered ${stay ? 'an unpaid stay' : 'an exception'}: ${ctx.body?.answer || ''}.`);
   }],
+  ['POST', '/api/shifts/answer-many', 'shifts', answerMany],
   ['POST', '/api/shifts/movement', 'shifts', movement],
   ['POST', '/api/shifts/link', 'shifts', area('bank', 2, (env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
   ['POST', '/api/shifts/unlink', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }))],
@@ -193,6 +194,7 @@ const ROUTES = [
   ['POST', '/api/accounts', 'owner', (env, ctx) => accounts.save(env, ctx.body, ctx.account)],
   ['POST', '/api/accounts/:id/password', 'owner', (env, ctx) => accounts.setPassword(env, ctx.params.id, ctx.body)],
   ['POST', '/api/accounts/:id/access', 'owner', (env, ctx) => accounts.setAccess(env, ctx.params.id, ctx.body, ctx.account)],
+  ['POST', '/api/accounts/:id/delete', 'owner', (env, ctx) => accounts.remove(env, ctx.params.id, ctx.account)],
   ['POST', '/api/systems/:id', 'owner', (env, ctx) => accounts.saveSystem(env, ctx.params.id, ctx.body)],
   ['GET', '/api/sso/log', 'owner', (env) => accounts.handoffLog(env)],
   ['GET', '/api/invitations', 'owner', async (env) => ({ invitations: await invitations.list(env) })],
@@ -454,6 +456,35 @@ async function shiftsRead(env, ctx) {
 const isSupervisor = (ctx) => till.roleOf(ctx.account) !== 'admin';
 
 /** A supervisor's answer waits for an admin; tell the admins, without holding up the reply. */
+/**
+ * One answer for many exceptions and unpaid stays, ticked together in the
+ * Inbox. Each is saved as if answered on its own; one already settled by an
+ * admin is skipped and counted. A supervisor's wait for an admin, who is told
+ * once for the lot.
+ */
+async function answerMany(env, ctx) {
+  const keys = [...new Set((Array.isArray(ctx.body?.keys) ? ctx.body.keys : []).map((k) => String(k || '').trim()).filter(Boolean))].slice(0, 300);
+  if (!keys.length) throw badRequest('Tick what to answer.');
+  if (!String(ctx.body?.answer || '').trim()) throw badRequest('Choose the answer.');
+  if (keys.some((k) => k.startsWith('stay:'))) await till.requireArea(env, ctx.account, 'unpaid', 2);
+  if (keys.some((k) => !k.startsWith('stay:'))) await till.requireArea(env, ctx.account, 'bank', 2);
+  const pending = isSupervisor(ctx);
+  let saved = 0;
+  const skipped = [];
+  for (const key of keys) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await shiftRoutes.saveAnswer(env, { key, answer: ctx.body?.answer, note: ctx.body?.note }, ctx.account, { pending });
+      saved += 1;
+    } catch (err) { skipped.push({ key, why: String(err?.message || err) }); }
+  }
+  if (pending && saved) {
+    const tell = till.tellApprovers(env, { text: `${ctx.account?.name || 'A supervisor'} answered ${saved} item${saved === 1 ? '' : 's'} at once: ${ctx.body?.answer || ''}.` });
+    if (ctx.execution?.waitUntil) ctx.execution.waitUntil(tell); else await tell;
+  }
+  return { ok: true, saved, skipped, pending };
+}
+
 async function waitsForAdmin(env, ctx, saving, text) {
   const out = await saving;
   if (out?.pending) {

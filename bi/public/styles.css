@@ -1313,3 +1313,13 @@ label.field textarea.inv-note { font-family: var(--sans); }
 /* A suggestion on an exception: what the data says happened. */
 .sh-suggest { display: grid; gap: .5rem; padding: .65rem .75rem; border-radius: 10px; background: color-mix(in srgb, var(--series-1) 10%, var(--surface)); font-size: .85rem; }
 .sh-suggest b { color: color-mix(in srgb, var(--series-1) 70%, var(--ink)); }
+
+/* A button that removes something for good. */
+.btn.danger { color: var(--sh-bad-ink, #a32121); border-color: color-mix(in srgb, var(--sh-bad, #d33a3a) 45%, transparent); }
+.btn.danger:hover { background: color-mix(in srgb, var(--sh-bad, #d33a3a) 10%, transparent); }
+
+/* Ticking Inbox items to act on them together. */
+.ib-bulk { display: grid; gap: .5rem; }
+.ib-all { display: inline-flex; align-items: center; gap: .35rem; font-size: .86rem; font-weight: 600; }
+.ib-bulkbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; padding: .55rem .8rem; border: 1px solid color-mix(in srgb, var(--series-1) 40%, transparent); border-radius: var(--radius); background: color-mix(in srgb, var(--series-1) 7%, var(--surface)); }
+.ib-bulkbar input[type=text] { flex: 1 1 14rem; min-width: 0; }

@@ -87,6 +87,37 @@ export async function save(env, body, actor) {
 }
 
 /**
+ * Delete an account for good: its way in, its grants and its pending
+ * invitations go; what it signed (names on answers, counts, decisions) stays,
+ * because those carry the name as written. Its open money to-dos go back to
+ * the pool to be handed out again. The hand-off log keeps its rows.
+ *
+ * Nobody deletes themselves, and the last active owner stays.
+ */
+export async function remove(env, id, actor) {
+  const accountId = Number(id);
+  const account = await first(env.DB, 'SELECT * FROM accounts WHERE id = ?1', accountId);
+  if (!account) throw notFound('No such account');
+  if (actor?.id === accountId) throw badRequest('You cannot delete your own account.');
+  if (account.is_owner === 1 && account.active === 1) await refuseIfLastOwner(env.DB, accountId);
+  const steps = [
+    'DELETE FROM account_access WHERE account_id = ?1',
+    'DELETE FROM till_access WHERE account_id = ?1',
+    'DELETE FROM invitations WHERE account_id = ?1',
+    'DELETE FROM sso_codes WHERE account_id = ?1',
+    "UPDATE money_todo SET assignee_id = NULL, assignee_name = NULL WHERE assignee_id = ?1 AND state != 'closed'",
+    'DELETE FROM accounts WHERE id = ?1',
+  ];
+  // Written out rather than left to the foreign keys, which are not enforced
+  // everywhere this runs; a table an older database lacks is skipped.
+  for (const sql of steps) {
+    // eslint-disable-next-line no-await-in-loop
+    await run(env.DB, sql, accountId).catch((err) => { if (!/no such table/i.test(String(err?.message))) throw err; });
+  }
+  return list(env);
+}
+
+/**
  * Set somebody's password.
  *
  * The browser has already done the stretching; what arrives is a derived key,

@@ -42,8 +42,12 @@ shift, a small note at the end of the line says which; open it for what to do.
   move, and on a keyboard J and K move and 1 to 8 give an exception's answers.
   **Probably the same money** sits above the list (see below). **Show done**
   brings back what was answered or closed. **Refresh now** asks Odoo about the
-  cash POs and reads the laundry system there and then. An admin can tick PO
-  items and give them to a supervisor together.
+  cash POs and reads the laundry system there and then. Exceptions, unpaid
+  stays and open money to-dos can be ticked, one by one or with **Select
+  all** (everything of the chip shown): **Answer N ticked** gives them all
+  one answer and note (a supervisor's wait for an admin, who is told once;
+  a to-do takes the note as what happened, and an admin's closes it), and an
+  admin can **Give** the ticked to-dos to a supervisor.
 - **People**: each person's shifts, cash and cards, and net drawer variance;
   then what is still with staff under To sort out in HIVE, each person's month,
   and what was settled lately.

@@ -1964,6 +1964,7 @@ export async function renderShifts(root, { range }) {
           title: (KIND[x.kind] || [x.kind])[0], sub: exLabel(x), amount: x.amount == null ? '' : money(Math.abs(x.amount)),
           chip: done ? ['ok', 'Answered'] : waitingAdmin ? ['none', 'Waiting for admin'] : null, tone: sev, done,
           age: daysAgo(x.day), counts: !done && !waitingAdmin, render: () => exceptionCard(x),
+          bulk: !done && !waitingAdmin && may('bank', 2) ? { type: 'answer', key: x.key } : null,
         });
       }
     }
@@ -2010,6 +2011,7 @@ export async function renderShifts(root, { range }) {
             chip: done ? ['ok', 'Answered'] : x.unsure ? ['none', 'Check in ASSD'] : x.proposed ? ['none', 'Waiting for admin'] : null,
             tone: left ? 'short' : 'over', done, age: daysAgo(x.checkout), counts: !done && !x.unsure && !x.proposed,
             render: () => stayCard(x, after),
+            bulk: !done && !x.proposed && may('unpaid', 2) ? { type: 'answer', key: x.key, stay: true } : null,
           });
         }
       }
@@ -2026,6 +2028,7 @@ export async function renderShifts(root, { range }) {
           id: `td:${t.id}`, kind: waitingAdmin ? 'admin' : 'po', title: todoTitle(t), sub: todoSub(t, { admin }),
           amount: money(t.kind === 'differs' ? Math.abs(t.amount) : t.amount), chip: done ? ['ok', 'Closed'] : waitingAdmin ? ['none', admin ? 'Approve' : 'Waiting for admin'] : null,
           tone: 'over', done, age: t.age, counts: !done && (admin ? waitingAdmin : !waitingAdmin), todo: t,
+          bulk: t.state === 'open' ? { type: 'todo', id: t.id } : null,
           render: () => todoDetail(t, { admin, supervisors: sources.todo.supervisors || [], after }),
         });
       }
@@ -2051,6 +2054,51 @@ export async function renderShifts(root, { range }) {
    * The Inbox: one list of everything to act on, kind chips across the top,
    * the one picked in full beside it.
    */
+  /**
+   * One answer for everything ticked: exceptions and unpaid stays take the
+   * chosen answer (a supervisor's wait for an admin, as one by one); money
+   * to-dos take the note, or the answer when there is no note, and an admin's
+   * answer closes them.
+   */
+  function bulkActions(items, redraw) {
+    const answers = items.some((x) => x.bulk.stay) && items.every((x) => x.bulk.stay || x.bulk.type === 'todo')
+      ? STAY_ANSWERS : items.some((x) => x.bulk.stay) ? [...new Set([...ANSWERS, ...STAY_ANSWERS])] : ANSWERS;
+    const pick = h('select', { 'aria-label': 'Answer' }, h('option', { value: '' }, 'Answer…'), answers.map((a) => h('option', { value: a }, a)));
+    const note = h('input', { type: 'text', maxlength: '400', placeholder: 'Note (optional; what happened, for to-dos)', 'aria-label': 'Note' });
+    const said = h('span.small');
+    const go = h('button.btn.primary', {
+      type: 'button',
+      onclick: async () => {
+        const answer = pick.value;
+        const keys = items.filter((x) => x.bulk.type === 'answer').map((x) => x.bulk.key);
+        const todos = items.filter((x) => x.bulk.type === 'todo');
+        if (!answer && (keys.length || !note.value.trim())) { said.textContent = 'Choose the answer.'; return; }
+        go.disabled = true; said.textContent = 'Saving…'; said.className = 'small';
+        try {
+          let done = 0; const skipped = [];
+          if (keys.length) {
+            const out = await api('/shifts/answer-many', { method: 'POST', body: { keys, answer, note: note.value } });
+            done += out.saved; skipped.push(...out.skipped);
+          }
+          for (const x of todos) {
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              await api(`/todo/${x.bulk.id}/answer`, { method: 'POST', body: { answer: note.value.trim() || answer } });
+              done += 1;
+            } catch (err) { skipped.push({ key: x.title, why: err.message }); }
+          }
+          inbox.ticked.clear();
+          await refreshInbox(`Answered ${done}${skipped.length ? `; ${skipped.length} skipped (${skipped[0].why})` : ''}.${!admin ? ' An admin approves them.' : ''}`);
+        } catch (err) { said.textContent = err.message; said.className = 'small form-error'; go.disabled = false; }
+      },
+    }, `Answer ${items.length} ticked`);
+    return h('div.ib-bulkbar',
+      h('span.small', h('b', String(items.length)), ' ticked'),
+      pick, note, go,
+      h('button.sh-link', { type: 'button', onclick: () => { inbox.ticked.clear(); redraw(); } }, 'Clear'),
+      said);
+  }
+
   function inboxView(v) {
     const all = inboxItems();
     const kinds = INBOX_KINDS.filter(([k]) => all.some((x) => x.kind === k));
@@ -2091,8 +2139,18 @@ export async function renderShifts(root, { range }) {
       },
     }, '↻ Refresh now');
     const count = (k) => all.filter((x) => (k === 'all' || x.kind === k) && !x.done).length;
-    const ticked = [...inbox.ticked].filter((id) => shown.some((x) => x.id === id && x.todo));
-    const giveTo = admin && sources.todo?.supervisors?.length && shown.some((x) => x.todo && x.todo.state !== 'closed') ? (() => {
+    // Ticked: what can be acted on together. Select all ticks every one shown.
+    const tickable = shown.filter((x) => x.bulk);
+    for (const id of [...inbox.ticked]) if (!tickable.some((x) => x.id === id)) inbox.ticked.delete(id);
+    const tickedItems = tickable.filter((x) => inbox.ticked.has(x.id));
+    const ticked = tickedItems.filter((x) => x.todo).map((x) => x.id);
+    const selectAll = tickable.length ? h('label.ib-all', h('input', {
+      type: 'checkbox', checked: tickedItems.length > 0 && tickedItems.length === tickable.length,
+      indeterminate: tickedItems.length > 0 && tickedItems.length < tickable.length,
+      onchange: (e) => { inbox.ticked.clear(); if (e.target.checked) for (const x of tickable) inbox.ticked.add(x.id); inboxView(v); },
+    }), ` Select all · ${tickable.length}`) : null;
+    const bulkBar = tickedItems.length ? bulkActions(tickedItems, () => inboxView(v)) : null;
+    const giveTo = admin && sources.todo?.supervisors?.length && ticked.length ? (() => {
       const to = h('select', { 'aria-label': 'Give to' }, h('option', { value: '' }, 'Give to…'),
         sources.todo.supervisors.map((p) => h('option', { value: String(p.id) }, p.name)));
       const gave = h('span.small');
@@ -2124,7 +2182,7 @@ export async function renderShifts(root, { range }) {
         }), ' Show done'),
         h('div.ib-refresh', refresh, said)),
       inbox.kind === 'all' || inbox.kind === 'bank' ? pairsCard() : null,
-      giveTo,
+      selectAll || bulkBar ? h('div.ib-bulk', selectAll, bulkBar, giveTo) : null,
       shown.length ? h('div.ib-split',
         h('div.card.ib-list', { role: 'listbox', 'aria-label': 'To act on' },
           shown.map((x, i) => h(`div.ib-row${i === at ? '.on' : ''}${x.done ? '.done' : ''}`, {
@@ -2132,7 +2190,7 @@ export async function renderShifts(root, { range }) {
             onclick: () => open(i),
             onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(i); } },
           },
-          admin && x.todo && x.todo.state !== 'closed' ? h('input', {
+          x.bulk ? h('input', {
             type: 'checkbox', 'aria-label': `Tick ${x.title}`, checked: inbox.ticked.has(x.id),
             onclick: (e) => e.stopPropagation(),
             onchange: (e) => { if (e.target.checked) inbox.ticked.add(x.id); else inbox.ticked.delete(x.id); inboxView(v); },
