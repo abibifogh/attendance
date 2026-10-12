@@ -396,6 +396,9 @@ export async function renderShifts(root, { range }) {
     const people = new Set(shifts.map((s) => s.user)).size;
     mount(view,
       notice,
+      // The title, tabs and period on a dark band of their own, so they read
+      // apart from Insight's top bar above them.
+      h('div.sh-band',
       h('div.sh-head',
         h('h1', 'Shifts'),
         h('span.sh-count', has ? `${shifts.length} shift${shifts.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'}` : 'No shifts loaded for these days')),
@@ -410,7 +413,7 @@ export async function renderShifts(root, { range }) {
         data.journalEndsInside ? h('details.sh-jnote',
           h('summary', `Journal ends inside ${shortDay(data.journalEndsInside.day)} ${SLOT[data.journalEndsInside.slot].label.toLowerCase()}`),
           h('p', `The journal loaded so far stops inside the ${SLOT[data.journalEndsInside.slot].label.toLowerCase()} shift of `
-            + `${shortDay(data.journalEndsInside.day)}, so that shift is shown as far as it goes. Export ASSD one day past the last shift you want to read.`)) : null),
+            + `${shortDay(data.journalEndsInside.day)}, so that shift is shown as far as it goes. Export ASSD one day past the last shift you want to read.`)) : null)),
       // Never for a supervisor: the totals are the owner's view of the business.
       has && admin && data.totals && section === 'shifts' && !detail ? kpis() : null,
       v);
