@@ -1394,3 +1394,11 @@ label.field textarea.inv-note { font-family: var(--sans); }
   .sh-otable th:nth-child(3), .sh-otable td:nth-child(3) { display: none; }
 }
 .sh-otable .sh-link { text-align: left; }
+/* The expense form against a month of shifts. */
+.fm-card { display: grid; gap: .5rem; }
+.fm-card > summary { cursor: pointer; }
+.fm-list { display: grid; gap: .1rem; }
+.fm-row { display: flex; gap: .6rem; align-items: flex-start; justify-content: space-between; padding: .45rem 0; border-bottom: 1px solid var(--border); font-size: .88rem; }
+label.fm-row { justify-content: flex-start; cursor: pointer; }
+label.fm-row input { margin-top: .2rem; }
+.fm-unsure > summary { cursor: pointer; font-weight: 600; padding: .3rem 0; }

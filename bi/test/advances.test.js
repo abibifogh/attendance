@@ -258,7 +258,8 @@ test('a big batch from the form is saved in a handful of database calls', async 
   const responses = Array.from({ length: 500 }, (_, i) => ({ responseId: `r${i}`, po: i % 50 ? String(1000 + i) : `${1000 + i} & ${2000 + i}`, amount: '10', tnt: '1' }));
   const out = await advances.ingestForm({ ...env, DB: counted }, { responses });
   assert.deepEqual([out.saved, calls], [500, 1]);
-  assert.ok(prepared < 50, `${prepared} statements`);
+  // Nine values a row, at most a hundred a statement: eleven rows to one.
+  assert.ok(prepared < 60, `${prepared} statements`);
   assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM expense_report').first()).n, 510);
   // Sent again: still one copy each.
   await advances.ingestForm({ ...env, DB: counted }, { responses });

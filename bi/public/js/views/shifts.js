@@ -2224,7 +2224,8 @@ export async function renderShifts(root, { range }) {
 
   function inboxView(v) {
     const all = inboxItems();
-    const kinds = INBOX_KINDS.filter(([k]) => all.some((x) => x.kind === k));
+    // POs is always there for an admin: it holds the expense form's matching too.
+    const kinds = INBOX_KINDS.filter(([k]) => all.some((x) => x.kind === k) || (k === 'po' && admin));
     if (inbox.kind !== 'all' && !kinds.some(([k]) => k === inbox.kind)) inbox.kind = 'all';
     const shown = all.filter((x) => inbox.kind === 'all' || x.kind === inbox.kind);
     let at = shown.findIndex((x) => x.id === inbox.open);
@@ -2305,6 +2306,7 @@ export async function renderShifts(root, { range }) {
         }), ' Show done'),
         h('div.ib-refresh', refresh, said)),
       inbox.kind === 'all' || inbox.kind === 'bank' ? pairsCard() : null,
+      inbox.kind === 'po' && admin ? formMatchCard() : null,
       selectAll || bulkBar ? h('div.ib-bulk', selectAll, bulkBar, giveTo) : null,
       shown.length ? h('div.ib-split',
         h('div.card.ib-list', { role: 'listbox', 'aria-label': 'To act on' },
@@ -2331,6 +2333,73 @@ export async function renderShifts(root, { range }) {
         : h('section.card', h('p', inbox.kind === 'all' ? '✓ Nothing waiting. Everything in these days agrees, or has an answer.' : '✓ Nothing of this kind waiting.')),
       inbox.kind === 'advance' && sources.advances ? elsewhereCard(sources.advances, inbox.elsewhere, refreshInbox, () => inboxView(v)) : null,
       pickedBar());
+  }
+
+  /**
+   * The expense form against a month of shifts: POs that clearly belong to a
+   * shift's expenses, ticked to link at once; the rest listed with the POs
+   * that could be theirs. For catching up on a backlog.
+   */
+  const formMatch = { month: new Date().toISOString().slice(0, 7), out: null, open: false };
+  function formMatchCard() {
+    const body = h('div');
+    const month = h('input', { type: 'month', value: formMatch.month, 'aria-label': 'Month' });
+    const said = h('span.small');
+    const when = (x) => `${dayText(x.day)}, ${SLOT[x.slot]?.label.toLowerCase() || x.slot}`;
+    const poText = (p) => `${p.po} (${money(p.value)}${p.days?.length ? `, dated ${p.days.map((d) => dayText(d)).join(' and ')}` : `, sent ${String(p.submitted).slice(5, 16)}`}${p.by?.length ? `, ${p.by.join(', ')}` : ''})`;
+    const show = () => {
+      const out = formMatch.out;
+      if (!out) return mount(body);
+      const ticks = out.clear.map(() => h('input', { type: 'checkbox', checked: true }));
+      const go = h('button.btn.primary', { type: 'button', disabled: !out.clear.length }, `Link the ticked POs`);
+      const progress = h('span.small');
+      go.onclick = async () => {
+        const items = out.clear.filter((_, i) => ticks[i].checked).map((c) => ({ day: c.day, slot: c.slot, pos: c.pos.map((p) => p.po) }));
+        if (!items.length) { progress.textContent = 'Tick at least one.'; return; }
+        go.disabled = true;
+        const failed = [];
+        let linked = 0;
+        for (let i = 0; i < items.length; i += 5) {
+          progress.textContent = `Linking ${Math.min(i + 5, items.length)} of ${items.length}…`;
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const r = await api('/shifts/form-match/apply', { method: 'POST', body: { items: items.slice(i, i + 5) } });
+            for (const d of r.done) if (d.ok) linked += 1; else failed.push(`${when(d)}: ${d.error}`);
+          } catch (err) { failed.push(err.message); }
+        }
+        formMatch.out = null;
+        await refreshInbox(`POs linked on ${linked} shift${linked === 1 ? '' : 's'} from the expense form.${failed.length ? ` Not linked: ${failed.join(' · ')}` : ''}`);
+      };
+      mount(body,
+        h('p', h('b', `${out.clear.length} shift${out.clear.length === 1 ? '' : 's'} clearly matched`), ` · ${out.unsure.length} not sure · ${out.leftOver} PO${out.leftOver === 1 ? '' : 's'} on the form not tied to a shift (paid from the safe left out: ${out.form.safe}).`),
+        out.form.undated ? h('p.small', `${out.form.undated} of the form’s ${out.form.responses} responses have no date of the expense in Insight, so they are matched by when they were sent. Update the script on the expense form and run sendAllPast in it again for surer matches.`) : null,
+        out.clear.length ? h('div.fm-list', out.clear.map((c, i) => h('label.fm-row',
+          ticks[i],
+          h('span',
+            h('b', `${when(c)} · ${nameOf(c.user)}`), ` — ${c.part ? `${money(c.pos.reduce((t, p) => t + p.value, 0))} of the ${money(c.target)} with no PO` : `the ${money(c.target)} with no PO`}`,
+            h('br'), h('span.small', `${c.pos.map(poText).join(' + ')}. It ${c.why}.`))))) : null,
+        out.clear.length ? h('div.sh-labels', go, progress) : null,
+        out.unsure.length ? h('details.fm-unsure', h('summary', `Not sure: ${out.unsure.length} shift${out.unsure.length === 1 ? '' : 's'} for a person to decide`),
+          out.unsure.map((u) => h('div.fm-row',
+            h('span', h('b', `${when(u)} · ${nameOf(u.user)}`), ` — ${money(u.target)} with no PO`, h('br'),
+              h('span.small', u.could.length ? `Could be: ${u.could.map(poText).join('; ')}.` : 'Nothing on the form for that day.')),
+            h('button.sh-link', { type: 'button', onclick: () => openShift(u.day, u.slot) }, 'Open the shift')))) : null);
+    };
+    const find = h('button.btn', {
+      type: 'button',
+      onclick: async () => {
+        formMatch.month = month.value || formMatch.month;
+        find.disabled = true; said.textContent = 'Reading the month’s shifts and the form…';
+        try { formMatch.out = await api(`/shifts/form-match?month=${formMatch.month}`); said.textContent = ''; show(); } catch (err) { said.textContent = err.message; }
+        find.disabled = false;
+      },
+    }, 'Find matches');
+    show();
+    return h('details.card.fm-card', { open: formMatch.open, ontoggle: (e) => { formMatch.open = e.target.open; } },
+      h('summary', h('b', 'Link POs from the expense form'), h('span.small', ' · for a month of backlog')),
+      h('p.small', 'Matches the POs on the expense form (paid from the cash register) to the shifts whose expenses have none, by amount, the date of the expense, when it was sent and who sent it. Only what clearly belongs to one shift is ticked; nothing is linked until you press Link.'),
+      h('div.sh-labels', month, find, said),
+      body);
   }
 
   /** The bar that appears once exceptions are ticked: what they net to, and Reconcile together. */
