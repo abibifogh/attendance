@@ -349,6 +349,8 @@ export const ROUTES = [
   ['POST', '/api/medical/sheet/check', 'hr_pay', medical.checkSheet],
   ['POST', '/api/medical/sheet', 'hr_pay', medical.importSheet],
   ['POST', '/api/medical/claims/:id/decide', 'hr_pay', medical.decideClaim],
+  ['POST', '/api/medical/claims/:id/paid', 'hr_pay', medical.markPaid],
+  ['POST', '/api/medical/claims/:id/send-to-pay', 'hr_pay', medical.resendToPay],
   // Readable by whoever decides the claim and by whoever handed the bill in.
   // The check is on the receipt itself — see `receipt`.
   ['GET', '/api/medical/receipt/:id', ['hr_pay', 'att_me'], medical.receipt],

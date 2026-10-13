@@ -106,9 +106,11 @@ export async function renderAttMyMedical(params) {
 
 function claimBlock(claim, { cash, reload }) {
   const tone = { approved: 'good', requested: 'warn', rejected: '', withdrawn: '' }[claim.status];
-  const label = {
-    approved: 'approved', requested: 'waiting', rejected: 'not approved', withdrawn: 'taken back',
-  }[claim.status] ?? claim.status;
+  // Approved is not the end of it: the money still has to be handed over, and
+  // somebody waiting for cash wants to know which of the two they are at.
+  const label = claim.status === 'approved'
+    ? (claim.paidAt ? 'approved and paid' : 'approved, to be paid in cash')
+    : ({ requested: 'waiting', rejected: 'not approved', withdrawn: 'taken back' }[claim.status] ?? claim.status);
 
   return h('div.adv-block',
     h('div.adv-block-head',
@@ -212,7 +214,8 @@ async function makeClaim(data, reload, cash) {
     const pick = h('button.btn-sm.claim-add-file', { type: 'button', onclick: () => picker.click() },
       '+ Add photos or PDF');
 
-    const row = { amount, what, spentOn, files: [], title, remove: null };
+    const row = { amount, what, spentOn, files: [], title, remove: null, card: null, status };
+    let billCard = null;
 
     const repaint = () => {
       mount(chips, row.files.map((f) => h('div.claim-file', { title: f.filename },
@@ -230,7 +233,8 @@ async function makeClaim(data, reload, cash) {
             repaint();
           },
         }, '✕'))));
-      count.textContent = row.files.length ? `${row.files.length} of ${FILES}` : `Up to ${FILES}`;
+      count.textContent = row.files.length ? `${row.files.length} of ${FILES}` : 'Photo of the receipt needed';
+      if (row.files.length) billCard?.classList.remove('is-missing');
       pick.disabled = row.files.length >= FILES;
       pick.hidden = row.files.length >= FILES;
     };
@@ -272,7 +276,7 @@ async function makeClaim(data, reload, cash) {
       },
     }, '✕');
 
-    const billCard = h('div.claim-bill',
+    billCard = h('div.claim-bill',
       h('div.claim-bill-head', title, row.remove),
       h('div.claim-bill-grid',
         h('label.field.claim-amount', h('span', `Amount (${data.currency})`), amount),
@@ -280,6 +284,7 @@ async function makeClaim(data, reload, cash) {
         h('label.field.claim-what', h('span', 'What for'), what)),
       h('div.claim-files-row', chips, h('div.claim-files-add', pick, count), picker),
       status);
+    row.card = billCard;
 
     rows.push(row);
     list.append(billCard);
@@ -299,8 +304,8 @@ async function makeClaim(data, reload, cash) {
       h('p', `Put each bill on separately, up to ten on one claim. Each bill takes up to ${FILES} `
         + 'photos or PDFs: the receipt, the prescription, a second page. Photos are made smaller '
         + 'on your phone before they are sent.'),
-      h('p', { style: { marginBottom: 0 } }, 'A bill with no picture can still be sent, but whoever '
-        + 'decides is taking it on trust, so bring the paper one to the office.')),
+      h('p', { style: { marginBottom: 0 } }, 'Every bill needs at least one photo of its receipt. '
+        + 'A claim with a bill that has no photo cannot be sent.')),
     body: h('div',
       left != null
         ? h('div.claim-left',
@@ -322,6 +327,15 @@ async function makeClaim(data, reload, cash) {
           files: r.files.map((f) => ({ base64: f.base64, mime: f.mime, filename: f.filename })),
         }));
       if (!receipts.length) throw new Error('Put an amount on at least one bill.');
+      const bare = rows.filter((r) => Number(r.amount.value) > 0 && !r.files.length);
+      for (const r of rows) r.card.classList.toggle('is-missing', bare.includes(r));
+      if (bare.length) {
+        for (const r of bare) r.status.textContent = 'Add a photo of this receipt before sending.';
+        bare[0].card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const which = bare.map((r) => r.title.textContent).join(', ');
+        throw new Error(`${which} ${bare.length === 1 ? 'has' : 'have'} no photo of the receipt. `
+          + 'Every bill needs one.');
+      }
       return api.myMedicalClaim({ what: form.get('what'), receipts });
     },
   });

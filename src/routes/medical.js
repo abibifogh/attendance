@@ -6,7 +6,13 @@ import {
 } from '../lib/medical.js';
 import { MONTHS, matchStaff, readMedicalSheet } from '../lib/medical-sheet.js';
 import { isDay, todayIn } from '../util/dates.js';
-import { firstName, sayShortDate } from '../lib/email-design.js';
+import { firstName, renderMail, sayShortDate } from '../lib/email-design.js';
+import { buildVoucher, claimRef, shortDate, shortStamp } from '../lib/medical-voucher.js';
+import {
+  ccFor, isEmail, parseRecipients, senderNameOf, senderWithName, sendEmail, toBase64,
+} from '../lib/notify.js';
+import { CHANNELS_KEY, goesOut, readChannels } from '../lib/notice-kinds.js';
+import { originOf } from '../lib/site.js';
 
 /**
  * Medical allowance claims.
@@ -97,6 +103,10 @@ const shapeClaim = (claim, receipts) => ({
   decidedBy: claim.decided_by,
   decidedAt: claim.decided_at,
   decision: claim.decision,
+  sentToPayAt: claim.sent_to_pay_at ?? null,
+  paidAt: claim.paid_at ?? null,
+  paidBy: claim.paid_by ?? null,
+  paidNote: claim.paid_note ?? null,
   receipts: receipts.map((r) => ({
     id: r.id,
     what: r.what,
@@ -523,7 +533,211 @@ export async function decideClaim(ctx, idParam) {
     }),
   });
 
+  // And to whoever pays it, with the voucher and the receipts. After the
+  // response where the runtime allows, because building a PDF of photographs
+  // is not something the person pressing Approve should wait for, and never
+  // able to undo the approval if it fails: the office can send it again.
+  const sending = sendToPay(ctx, id).catch((err) => console.error('medical payout email failed', err));
+  if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(sending);
+  else await sending;
+
   return json({ ok: true, status: 'approved', approved: amount, left });
+}
+
+// --------------------------------------------------------------------------
+// Paying it
+// --------------------------------------------------------------------------
+
+/** Two decimal places always, the way a voucher is written. */
+const cash = (amount, currency = 'GHS') => `${currency} ${round2(amount).toLocaleString('en-GB', {
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+})}`;
+
+/**
+ * Email the payment voucher for an approved claim.
+ *
+ * To the address set for paying medical claims (info@hostelaccra.com unless
+ * somebody changes it), copied like every HIVE email. The PDF is a voucher and
+ * then every receipt photo, one to a page; a receipt that cannot go on a page
+ * is attached as its own file. Pay by is always cash. Held to the property's
+ * email switches like any notice. Returns what happened, and records it.
+ */
+export async function sendToPay(ctx, claimId) {
+  const db = ctx.db;
+  const rows = await db.prepare('SELECT key, value FROM settings').all().catch(() => ({ results: [] }));
+  const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
+  const log = (status, to, detail) => db.prepare(
+    'INSERT INTO email_log (kind, day, recipients, status, detail) VALUES (?, ?, ?, ?, ?)',
+  ).bind('notice', null, to || null, status, String(detail).slice(0, 500)).run().catch(() => {});
+
+  const to = parseRecipients(settings.medical_pay_to).filter((a) => isEmail(a));
+  if (!to.length) return { sent: false, reason: 'no address set for paying medical claims' };
+  if (settings.notice_email === '0') return { sent: false, reason: 'email for notices is switched off' };
+  if (!goesOut(readChannels(settings[CHANNELS_KEY]), 'medical.to_pay', 'email', true)) {
+    await log('skipped', to.join(', '), 'medical.to_pay: switched off for this kind');
+    return { sent: false, reason: 'switched off for this kind' };
+  }
+  const apiKey = ctx.env?.RESEND_API_KEY;
+  const from = (settings.email_from || '').trim();
+  if (!apiKey || !from) return { sent: false, reason: !apiKey ? 'no email provider key' : 'no "from" address set' };
+
+  const claim = await db.prepare('SELECT * FROM hr_medical_claim WHERE id = ?').bind(claimId).first();
+  if (!claim || claim.status !== 'approved') return { sent: false, reason: 'not an approved claim' };
+  const staff = await db.prepare('SELECT id, name, department, employee_no FROM att_staff WHERE id = ?')
+    .bind(claim.staff_id).first() ?? { name: 'Somebody' };
+
+  // The bills and every picture on each, read in full.
+  const { byClaim } = await claimsFor(db, { year: claim.year, staffId: claim.staff_id });
+  const receipts = [];
+  for (const r of byClaim.get(claim.id) ?? []) {
+    // Every picture on the bill, in order; a bill from before there could be
+    // several has only its one document.
+    const fileRows = r.files?.length
+      ? await db.prepare('SELECT document_id FROM hr_medical_receipt_file WHERE receipt_id = ? ORDER BY seq, id')
+        .bind(r.id).all().then((x) => (x.results ?? []).map((f) => f.document_id)).catch(() => [])
+      : [r.document_id];
+    const files = [];
+    for (const docId of fileRows.filter(Boolean)) {
+      const doc = await db.prepare('SELECT * FROM hr_document WHERE id = ?').bind(docId).first().catch(() => null);
+      if (!doc) continue;
+      files.push({ bytes: await readFile(db, doc), mime: doc.mime, filename: doc.filename });
+    }
+    receipts.push({ what: r.what, amount: r.amount, spent_on: r.spent_on, files });
+  }
+
+  const allowanceRow = await db.prepare('SELECT * FROM hr_medical_allowance WHERE staff_id = ? AND year = ?')
+    .bind(claim.staff_id, claim.year).first().catch(() => null);
+  const theirs = await db.prepare('SELECT * FROM hr_medical_claim WHERE staff_id = ? AND year = ?')
+    .bind(claim.staff_id, claim.year).all().catch(() => ({ results: [] }));
+  const standing = standingOf(allowanceRow, theirs.results ?? []);
+  const amount = round2(claim.approved ?? claim.amount);
+  const currency = settings.currency || 'GHS';
+  const money = (n) => cash(n, currency);
+  const property = settings.property_name || 'HIVE';
+  const company = settings.company_legal_name || null;
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+  const voucher = await buildVoucher({
+    claim, staff, money, property, company, receipts, generatedAt: now,
+    allowance: standing
+      ? { allowance: standing.opening, paidBefore: round2(standing.spent - amount), left: standing.left }
+      : null,
+  });
+
+  const ref = claimRef(claim.id);
+  const approver = String(claim.decided_by ?? '').replace(/\s*\([^)]*\)\s*$/, '');
+  const cut = amount < round2(claim.amount);
+  const fileName = `Medical claim ${ref} - ${staff.name}.pdf`.replace(/[\\/:*?"<>|]/g, '');
+  const { subject, html } = renderMail({
+    notice: {
+      title: `Please pay ${staff.name} ${money(amount)} · medical claim ${ref}`,
+      mail: {
+        subject: `Please pay ${staff.name} ${money(amount)} · medical claim ${ref}`,
+        preheader: `Approved by ${approver || 'the office'}. Pay in cash. The voucher and receipts are attached.`,
+        tone: 'warn',
+        status: 'To pay',
+        eyebrow: `Medical claim · ${ref}`,
+        headline: `Please pay ${staff.name} ${money(amount)}`,
+        sub: `An approved medical claim · ${shortDate(claim.decided_at)}`,
+        facts: [
+          ['Amount to pay', money(amount), { big: true, strong: true }],
+          ['Pay by', 'Cash', { strong: true }],
+          ['Staff', [staff.name, staff.employee_no ? `no. ${staff.employee_no}` : null].filter(Boolean).join(', ')],
+          ['Department', staff.department || null],
+          cut ? ['Claimed', money(claim.amount)] : null,
+          ['Approved by', approver || null],
+          ['Approved on', shortStamp(claim.decided_at)],
+          ['Claim reference', ref],
+        ].filter(Boolean),
+        table: receipts.length ? {
+          head: ['Bill', 'Date', 'Amount'],
+          right: true,
+          rows: [
+            ...receipts.map((r) => [r.what || 'Bill', r.spent_on ? sayShortDate(r.spent_on) : '', money(r.amount)]),
+            [{ text: 'Approved to pay', strong: true }, '', { text: money(amount), strong: true }],
+          ],
+        } : null,
+        quote: claim.decision ? { by: 'A note with the approval', text: claim.decision } : null,
+        note: `The attached PDF (${voucher.pages} page${voucher.pages === 1 ? '' : 's'}) has the voucher and `
+          + 'every receipt. Pay the amount in cash, have the staff member sign the voucher, and mark the '
+          + 'claim as paid in HIVE under Medical.'
+          + (voucher.separate.length
+            ? ` ${voucher.separate.length} receipt${voucher.separate.length === 1 ? ' is' : 's are'} attached as separate files.`
+            : ''),
+        settingsLink: false,
+        why: `You get this because ${to.join(', ')} pays approved medical claims for ${property}.`,
+      },
+    },
+    propertyName: property,
+    companyName: company,
+    siteUrl: originOf(settings.site_url),
+  });
+
+  const attachments = [
+    { filename: fileName, content: toBase64(voucher.bytes) },
+    ...voucher.separate.map((f) => ({
+      filename: `${ref} receipt ${f.number} - ${f.filename || 'receipt'}`.replace(/[\\/:*?"<>|]/g, ''),
+      content: toBase64(f.bytes),
+    })),
+  ];
+
+  try {
+    await sendEmail({
+      apiKey,
+      from: senderWithName(from, senderNameOf(settings)),
+      to,
+      cc: ccFor(settings),
+      subject,
+      html,
+      replyTo: (settings.email_reply_to || '').trim() || null,
+      attachments,
+    });
+  } catch (err) {
+    await log('failed', to.join(', '), `medical.to_pay ${ref}: ${err.message}`);
+    return { sent: false, reason: err.message };
+  }
+
+  await db.prepare("UPDATE hr_medical_claim SET sent_to_pay_at = datetime('now') WHERE id = ?")
+    .bind(claim.id).run().catch(() => {});
+  await log('sent', to.join(', '), `medical.to_pay ${ref}`);
+  return { sent: true, to, pages: voucher.pages };
+}
+
+/** Send the voucher again, from the office screen, if the first one went astray. */
+export async function resendToPay(ctx, idParam) {
+  const id = int(idParam, 'Claim', { required: true, min: 1 });
+  const claim = await ctx.db.prepare('SELECT status FROM hr_medical_claim WHERE id = ?').bind(id).first();
+  if (!claim) throw notFound('No such claim.');
+  if (claim.status !== 'approved') throw badRequest('Only an approved claim goes to be paid.');
+  const out = await sendToPay(ctx, id);
+  if (!out.sent) throw badRequest(`It could not be sent: ${out.reason}.`);
+  await audit(ctx, 'medical.sent_to_pay', id, { to: out.to });
+  return json({ ok: true, to: out.to });
+}
+
+/** Mark an approved claim as paid, or take that back. */
+export async function markPaid(ctx, idParam) {
+  const id = int(idParam, 'Claim', { required: true, min: 1 });
+  const body = await readJson(ctx.request).catch(() => ({}));
+  const claim = await ctx.db.prepare('SELECT * FROM hr_medical_claim WHERE id = ?').bind(id).first();
+  if (!claim) throw notFound('No such claim.');
+  if (claim.status !== 'approved') throw badRequest('Only an approved claim can be paid.');
+
+  if (body.paid === false) {
+    await ctx.db.prepare(
+      'UPDATE hr_medical_claim SET paid_at = NULL, paid_by = NULL, paid_note = NULL WHERE id = ?',
+    ).bind(id).run();
+    await audit(ctx, 'medical.unpaid', id, {});
+    return json({ ok: true, paid: false });
+  }
+
+  if (claim.paid_at) throw badRequest('That claim is already marked as paid.');
+  const note = str(body.note, 'Note', { max: 200 });
+  await ctx.db.prepare(
+    "UPDATE hr_medical_claim SET paid_at = datetime('now'), paid_by = ?2, paid_note = ?3 WHERE id = ?1",
+  ).bind(id, actorOf(ctx), note).run();
+  await audit(ctx, 'medical.paid', id, { amount: round2(claim.approved ?? claim.amount), note });
+  return json({ ok: true, paid: true });
 }
 
 /**
@@ -647,6 +861,11 @@ export async function claim(ctx) {
     // `files` for up to five; `file` from a screen that only ever sent one.
     const files = (Array.isArray(r.files) ? r.files : r.file ? [r.file] : [])
       .filter((f) => f && f.base64);
+    // Every bill needs its receipt. Whoever decides the claim, and whoever
+    // pays it, is going on the picture.
+    if (!files.length) {
+      throw badRequest(`Bill ${i + 1} has no photo of its receipt. Add one before sending the claim.`);
+    }
     if (files.length > MAX_FILES) {
       throw badRequest(`Bill ${i + 1} has ${files.length} pictures. Five is the most on one bill.`);
     }

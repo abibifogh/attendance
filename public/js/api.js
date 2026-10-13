@@ -377,6 +377,8 @@ export const api = {
   medicalSheetCheck: (body) => request('/api/medical/sheet/check', { method: 'POST', body }),
   medicalSheetImport: (body) => request('/api/medical/sheet', { method: 'POST', body }),
   medicalDecide: (id, body) => request(`/api/medical/claims/${id}/decide`, { method: 'POST', body }),
+  medicalPaid: (id, body) => request(`/api/medical/claims/${id}/paid`, { method: 'POST', body }),
+  medicalSendToPay: (id) => request(`/api/medical/claims/${id}/send-to-pay`, { method: 'POST', body: {} }),
   medicalReceiptUrl: (id, fileId = null) => `/api/medical/receipt/${id}${fileId ? `?file=${fileId}` : ''}`,
 
   // ------------------------------------------------------------- payroll --
