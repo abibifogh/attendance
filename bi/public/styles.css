@@ -1438,3 +1438,8 @@ label.fm-row input { margin-top: .2rem; }
 .sh-swapfrom { display: grid; gap: .25rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .65rem; font-size: .86rem; }
 .sh-swaprow { display: flex; justify-content: space-between; gap: .6rem; align-items: baseline; }
 .sh-swapfrom small { color: var(--ink-2); }
+.sh-legs { display: grid; gap: .3rem; margin-top: .35rem; border-top: 1px solid var(--border); padding-top: .45rem; }
+.sh-legs td small { display: block; color: var(--ink-2); }
+.sh-legs td.n small { display: inline; }
+@media (max-width: 560px) { .sh-legs .sh-otable th:nth-child(3), .sh-legs .sh-otable td:nth-child(3) { display: table-cell; } .sh-legs .sh-otable th:nth-child(2), .sh-legs .sh-otable td:nth-child(2) { display: none; } }
+@media (max-width: 560px) { .sh-legs .sh-otable { font-size: .78rem; } .sh-legs .sh-otable .n { white-space: normal; } .sh-legs .sh-otable th, .sh-legs .sh-otable td { padding: .3rem .25rem; } }

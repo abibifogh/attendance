@@ -568,6 +568,9 @@ test('the drawer in notes and coins: receipts that appear are expenses, carried 
   assert.equal(afternoon.expenses, 0, 'nothing new was spent');
   assert.deepEqual([afternoon.receiptsOut, afternoon.receiptsMoved, afternoon.receiptsSwapped], [3000, 0, 3000]);
   assert.equal(afternoon.countVariance, 3000);
+  // Both sides of it: where the receipts appeared, and the count they left at.
+  assert.deepEqual({ ...morning.receiptsNew[0].leg, prev: null }, { prev: null, receiptsBefore: 0, receiptsAfter: 7000, notesBefore: 80000, notesAfter: 123000 });
+  assert.deepEqual({ ...afternoon.receiptsSwaps[0].leg, prev: null }, { prev: null, receiptsBefore: 3000, receiptsAfter: 0, notesBefore: 7000, notesAfter: 15000 });
 
   // Receipts taken out and counted before the movement is keyed: paired, not counted twice.
   const later = summarise({ user: 'C', startSeq: 200, entries: [count(100), count(60, 40), count(60), move(40), count(60)] });
@@ -809,9 +812,9 @@ test('receipts trail: a movement says whose receipts it carried, and earlier shi
   ];
   const { origins, trail } = routes.receiptTrail(ordered);
   assert.deepEqual(origins.get(211), [
-    { day: '2026-01-05', slot: 'morning', user: 'ALPHA', seqs: [10], amount: 12000, earlier: undefined, here: false },
-    { day: '2026-01-05', slot: 'afternoon', user: 'BRAVO', seqs: [110], amount: 16800, earlier: undefined, here: false },
-    { day: '2026-01-06', slot: 'morning', user: 'CHARLIE', seqs: [210], amount: 96200, earlier: undefined, here: true },
+    { day: '2026-01-05', slot: 'morning', user: 'ALPHA', seqs: [10], amount: 12000, earlier: undefined, leg: undefined, here: false },
+    { day: '2026-01-05', slot: 'afternoon', user: 'BRAVO', seqs: [110], amount: 16800, earlier: undefined, leg: undefined, here: false },
+    { day: '2026-01-06', slot: 'morning', user: 'CHARLIE', seqs: [210], amount: 96200, earlier: undefined, leg: undefined, here: true },
   ]);
   // Alpha's 120 was handed over twice and taken out by Charlie.
   assert.equal(trail.get(0).left, 12000);
