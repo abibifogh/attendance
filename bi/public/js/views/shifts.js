@@ -1987,22 +1987,23 @@ export async function renderShifts(root, { range }) {
   function legsBlock(from) {
     const when = (o) => `${dayText(o.day)}, ${SLOT[o.slot]?.label.toLowerCase() || o.slot}`;
     const span = (a, b) => `${whole(a)} → ${whole(b)}`;
-    const diff = (a, b) => { const d = b - a; return d ? ` (${d > 0 ? '+' : '−'}${whole(Math.abs(d))})` : ''; };
+    const diff = (a, b) => { const d = b - a; return d ? `${d > 0 ? '+' : '−'}${whole(Math.abs(d))}` : 'no change'; };
+    const cells = (l) => [
+      h('td.n.num', span(l.receiptsBefore, l.receiptsAfter), h('small', diff(l.receiptsBefore, l.receiptsAfter))),
+      h('td.n.num', span(l.notesBefore, l.notesAfter), h('small', diff(l.notesBefore, l.notesAfter)))];
     const rows = [];
     for (const o of from.filter((x) => x.leg)) {
       rows.push(h('tr',
-        h('td', h('b', 'Spent'), h('br'), h('small', o.here ? 'this shift' : '', o.here ? '' : h('button.sh-link', { type: 'button', onclick: () => openShift(o.day, o.slot) }, when(o)))),
-        h('td', `ASSD ${o.leg.prev} → ${o.seqs?.[0] ?? ''}`),
-        h('td.n.num', span(o.leg.receiptsBefore, o.leg.receiptsAfter), h('small', diff(o.leg.receiptsBefore, o.leg.receiptsAfter))),
-        h('td.n.num', span(o.leg.notesBefore, o.leg.notesAfter), h('small', diff(o.leg.notesBefore, o.leg.notesAfter)))));
+        h('td', h('b', 'Spent'),
+          h('small', o.here ? 'this shift' : h('button.sh-link', { type: 'button', onclick: () => openShift(o.day, o.slot) }, when(o))),
+          h('small', `ASSD ${o.leg.prev} → ${o.seqs?.[0] ?? ''}`)),
+        ...cells(o.leg)));
     }
     const gone = [...new Map(from.filter((x) => x.goneLeg).map((x) => [x.gone, x.goneLeg])).entries()];
     for (const [seq, l] of gone) {
       rows.push(h('tr',
-        h('td', h('b', 'Taken out, no cash movement'), h('br'), h('small', 'this shift')),
-        h('td', `ASSD ${l.prev} → ${seq}`),
-        h('td.n.num', span(l.receiptsBefore, l.receiptsAfter), h('small', diff(l.receiptsBefore, l.receiptsAfter))),
-        h('td.n.num', span(l.notesBefore, l.notesAfter), h('small', diff(l.notesBefore, l.notesAfter)))));
+        h('td', h('b', 'Taken out, no cash movement'), h('small', 'this shift'), h('small', `ASSD ${l.prev} → ${seq}`)),
+        ...cells(l)));
     }
     if (!rows.length) return null;
     const [seq, l] = gone[0] || [];
@@ -2011,7 +2012,7 @@ export async function renderShifts(root, { range }) {
     return h('div.sh-legs',
       h('b', 'Both sides of the swap'),
       h('table.sh-otable',
-        h('thead', h('tr', h('th', 'What'), h('th', 'Counts'), h('th.n', 'Receipts'), h('th.n', 'Notes and coins'))),
+        h('thead', h('tr', h('th', 'What'), h('th.n', 'Receipts'), h('th.n', 'Notes and coins'))),
         h('tbody', rows)),
       l ? h('small', up === out
         ? `Between the count before and ASSD ${seq}, the receipts went down by ${money(out)} and the notes and coins went up by exactly as much: the cash came back for the receipts.`
