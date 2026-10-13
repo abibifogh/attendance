@@ -275,6 +275,31 @@ test('Insight can send one email through HIVE, only when it signs the request', 
   }
 });
 
+test('an email from Insight can carry a small CSV, and nothing else', async () => {
+  const { db, raw } = await setup();
+  raw.exec("INSERT INTO settings (key, value) VALUES ('email_from', 'desk@hotel.test') ON CONFLICT (key) DO UPDATE SET value = excluded.value");
+  const path = '/api/link/mail';
+  const send = async (attachments) => {
+    const body = JSON.stringify({ to: 'accounts@example.test', subject: 'Prepaid stays', html: '<p>Hi</p>', kind: 'insight_prepaid', attachments });
+    return linkMail({
+      db, env: { INSIGHT_SSO_SECRET: SECRET, RESEND_API_KEY: 'k' }, url: new URL(`https://x${path}`), session: null, executionContext: null,
+      request: new Request(`https://x${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(await signLink(SECRET, path, body)) }, body }),
+    });
+  };
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { sent.push(JSON.parse(init.body)); return Response.json({ id: 'x' }); };
+  try {
+    await send([{ filename: 'prepaid-stays-2026-09.csv', content: btoa('Reservation,Charged\r\n1,2') }]);
+    assert.deepEqual(sent[0].attachments, [{ filename: 'prepaid-stays-2026-09.csv', content: btoa('Reservation,Charged\r\n1,2') }]);
+    await assert.rejects(send([{ filename: 'run.exe', content: 'AAAA' }]), /Only a CSV/);
+    await assert.rejects(send([{ filename: 'a.csv', content: 'not base64!' }]), /not a small CSV/);
+    assert.equal(sent.length, 1);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test('the daily summary reaches an address on the staff record, with or without amounts, and says why when it cannot', async () => {
   const { db, raw } = await setup();
   // Ama has a login with no address on it, and her address on her staff record. The boss has neither.

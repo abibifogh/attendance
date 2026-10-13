@@ -16,6 +16,7 @@ import * as safebook from './routes/safebook.js';
 import * as stays from './routes/stays.js';
 import * as revenue from './routes/revenue.js';
 import * as cashpo from './routes/cashpo.js';
+import * as prepaid from './routes/prepaid.js';
 import * as todo from './routes/todo.js';
 import * as advances from './routes/advances.js';
 import { sendDailySummary } from './routes/summary.js';
@@ -69,6 +70,20 @@ const ROUTES = [
   // Money, from the shifts: the rooms' revenue out of the ASSD journal, and spending paid in cash.
   ['GET', '/api/money/cash', 'insight', (env, ctx) => cashpo.cashView(env, rangeOf(ctx.query))],
   ['POST', '/api/money/cash/refresh', 'insight', (env, ctx) => cashpo.refreshNow(env, ctx.account)],
+  ['GET', '/api/money/prepaid', 'insight', (env, ctx) => prepaid.prepaidView(env, ctx.query)],
+  ['GET', '/api/money/prepaid.csv', 'insight', async (env, ctx) => {
+    const { month, csv } = await prepaid.prepaidCsv(env, ctx.query);
+    return new Response(`\ufeff${csv}`, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="prepaid-stays-${month}.csv"`, 'Cache-Control': 'no-store' } });
+  }],
+  ['POST', '/api/money/prepaid/mail', 'insight', async (env, ctx) => {
+    await till.requireAdmin(ctx.account);
+    return prepaid.saveMailSettings(env, ctx.body, { origin: ctx.url.origin });
+  }],
+  ['POST', '/api/money/prepaid/send', 'insight', async (env, ctx) => {
+    await till.requireAdmin(ctx.account);
+    if (!ctx.account?.email) throw badRequest('Your account has no email address to send it to.');
+    return prepaid.sendSummary(env, { month: ctx.body?.month, to: ctx.account.email, origin: ctx.url.origin });
+  }],
   ['GET', '/api/money/articles', 'insight', (env, ctx) => revenue.articlesView(env, rangeOf(ctx.query))],
   ['POST', '/api/money/articles', 'insight', (env, ctx) => revenue.saveArticle(env, ctx.body, ctx.account)],
   // The money to-do list: a supervisor's own, everything for an admin.
@@ -304,6 +319,11 @@ export default {
     // night shift has handed over.
     if (event?.cron === SUMMARY_CRON) {
       execution.waitUntil(sendDailySummary(env).then((out) => { if (out.error) console.error('Daily summary', out.error); }));
+      // On the 5th, last month's prepaid stays to whoever an admin chose.
+      if (new Date(event.scheduledTime || Date.now()).getUTCDate() === 5) {
+        execution.waitUntil(prepaid.sendSummary(env).then((out) => { if (out.failed?.length) console.error('Prepaid summary', out.failed); })
+          .catch((err) => console.error('Prepaid summary', err)));
+      }
       return;
     }
     execution.waitUntil(admin.refresh(env, { trigger: 'schedule' }).catch((err) => {

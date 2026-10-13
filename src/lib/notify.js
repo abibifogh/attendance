@@ -212,7 +212,7 @@ const MOST_IN_A_BATCH = 100;
  * as a mistake to a person, and it costs the same.
  */
 export async function sendEmail({
-  apiKey, from, to, subject, html, text, replyTo = null, headers = null, cc = null,
+  apiKey, from, to, subject, html, text, replyTo = null, headers = null, cc = null, attachments = null,
 }) {
   const each = (Array.isArray(to) ? to : [to])
     .map((one) => String(one ?? '').trim())
@@ -237,6 +237,7 @@ export async function sendEmail({
     text: text || asPlainText(html),
     ...(replyTo ? { reply_to: replyTo } : {}),
     ...(headers ? { headers } : {}),
+    ...(attachments?.length ? { attachments } : {}),
   });
 
   const post = async (path, payload) => {

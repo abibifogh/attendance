@@ -120,3 +120,25 @@ estimates. The nightly read looks two months back for pay runs, so a month
 finalised late is still picked up. The estimate has no allowances or bonus, so
 a month can still move a little when its payslips arrive. People paid outside
 HIVE's payroll are not in a paid month's wages.
+
+## Prepaid stays
+
+Money → **Prepaid stays** shows a month of reservations, by the month the
+guest arrived (the first night charged; a reservation with no night belongs to
+the day it was keyed). For each: its ASSD reservation number and rooms, the
+stay and nights, what it was charged, what was prepaid and how (bank transfer
+or card online, with the day the prepayment was keyed in ASSD), what was paid
+at the desk, the balance, and **Prepaid in full**, **Part prepaid** or **Not
+prepaid**. Above it: how many arrived and what they were charged, the prepaid
+total and its share, how the month was paid, and the prepaid share of the six
+months to it. **Download CSV** gives the whole month. Guests are identified by
+reservation number and room only: their names are taken out of the journal
+before it leaves the browser.
+
+**Monthly prepaid summary.** An admin adds the addresses, any address, on the
+same page. On the 5th of every month, with the morning summary (06:45 Accra),
+the month before goes to each of them through HIVE's email: the figures, every
+prepaid reservation, and all the month's reservations as a CSV attached. Each
+month is sent once. **Send … now, to me only** sends the month on screen to the
+admin pressing it, to see what goes out.
+
