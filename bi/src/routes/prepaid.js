@@ -110,6 +110,46 @@ export function totalsOf(list) {
 
 const thisMonth = (now = new Date()) => now.toISOString().slice(0, 7);
 
+/**
+ * Whether the journals loaded cover a whole month, day by day. A month with a
+ * gap, or one the journal stops inside, is not complete: its summary would be
+ * short, so the 5th holds it and asks an admin instead.
+ */
+export async function coverageOf(env, month) {
+  const rows = await all(env.DB, "SELECT from_day, to_day FROM shift_upload WHERE kind = 'journal' AND from_day IS NOT NULL AND to_day IS NOT NULL ORDER BY from_day").catch(() => []);
+  const from = firstOf(month);
+  const to = lastOf(month);
+  // Join the uploads end to end from the 1st; the first day none covers ends it.
+  let reached = null;
+  for (const r of rows) {
+    if (reached == null) {
+      if (r.to_day < from) continue;
+      if (r.from_day > from) break;
+      reached = r.to_day;
+    } else if (r.from_day <= addDays(reached, 1)) {
+      if (r.to_day > reached) reached = r.to_day;
+    } else break;
+  }
+  const complete = reached != null && reached >= to;
+  const loaded = rows.length ? { from: rows[0].from_day, to: rows.reduce((m, r) => (r.to_day > m ? r.to_day : m), rows[0].to_day) } : null;
+  // The stretches of the month the journals do cover, joined, for saying so.
+  const within = [];
+  for (const r of rows) {
+    const a = r.from_day < from ? from : r.from_day;
+    const b = r.to_day > to ? to : r.to_day;
+    if (a > b) continue;
+    const lastRange = within[within.length - 1];
+    if (lastRange && a <= addDays(lastRange.to, 1)) { if (b > lastRange.to) lastRange.to = b; } else within.push({ from: a, to: b });
+  }
+  return {
+    complete,
+    within,
+    // The last day of the month the journal reaches without a gap, if any.
+    through: reached == null ? null : reached > to ? to : reached,
+    loaded,
+  };
+}
+
 /** The page: one month, its reservations, and the six months to it. */
 export async function prepaidView(env, query = {}, { now = new Date() } = {}) {
   const month = MONTH.test(String(query.month || '')) ? query.month : shiftMonth(thisMonth(now), -1);
@@ -128,6 +168,7 @@ export async function prepaidView(env, query = {}, { now = new Date() } = {}) {
     months,
     reservations: list,
     journal: uploads[0]?.hi ? { from: uploads[0].lo, to: uploads[0].hi } : null,
+    coverage: await coverageOf(env, month),
     mail: await mailSettings(env),
   };
 }
@@ -161,7 +202,7 @@ async function mailSettings(env) {
   const raw = (await getSettings(env.DB).catch(() => ({})))[SETTING];
   let s = {};
   try { s = JSON.parse(raw || '{}'); } catch { s = {}; }
-  return { emails: Array.isArray(s.emails) ? s.emails : [], lastSent: s.lastSent || null, origin: s.origin || null };
+  return { emails: Array.isArray(s.emails) ? s.emails : [], lastSent: s.lastSent || null, origin: s.origin || null, held: s.held || null };
 }
 
 /** An admin sets who gets the monthly summary. */
@@ -226,20 +267,38 @@ export function summaryEmail({ month, totals, previous, list, link }) {
 }
 
 /**
- * Send a month's summary: to everyone chosen (the monthly run), or to one
- * address (an admin trying it). Each address is one email through HIVE.
+ * Send a month's summary.
+ *
+ * - `auto`: the 5th's run. A month already sent is skipped. A month the
+ *   journals do not cover whole is not sent: it is held, and the admins are
+ *   asked, once, to load the rest and send it from the page.
+ * - `to`: one address, an admin trying it. Always goes.
+ * - otherwise: everyone chosen, pressed by an admin. A month not complete is
+ *   refused unless `anyway`, so the page can ask first.
  */
-export async function sendSummary(env, { month, to = null, fetchImpl, origin = null, now = new Date() } = {}) {
+export async function sendSummary(env, { month, to = null, auto = false, anyway = false, fetchImpl, origin = null, now = new Date() } = {}) {
   const m = MONTH.test(String(month || '')) ? month : shiftMonth(thisMonth(now), -1);
   const settings = await mailSettings(env);
-  // The monthly run sends a month once, however often it is woken.
-  if (!to && settings.lastSent?.month === m) return { sent: 0, month: m, reason: 'already sent' };
+  if (auto && settings.lastSent?.month === m) return { sent: 0, month: m, reason: 'already sent' };
   const recipients = to ? [String(to).trim().toLowerCase()] : settings.emails;
-  if (!recipients.length) return { sent: 0, reason: 'nobody gets the prepaid summary' };
+  if (!recipients.length) return { sent: 0, month: m, reason: 'nobody gets the prepaid summary' };
   if (recipients.some((e) => !EMAIL.test(e))) throw badRequest('That is not an email address.');
+  const base = origin || settings.origin || null;
+
+  if (!to) {
+    const coverage = await coverageOf(env, m);
+    if (!coverage.complete && auto) {
+      // Held, and the admins told once for the month.
+      const told = settings.held?.month === m;
+      await setSetting(env.DB, SETTING, JSON.stringify({ ...settings, held: { month: m, at: now.toISOString(), through: coverage.through, words: coverageWords(coverage, monthName(m)) } }));
+      if (!told) await askAdmins(env, { month: m, coverage, base, fetchImpl });
+      return { sent: 0, month: m, held: true, coverage };
+    }
+    if (!coverage.complete && !anyway) return { sent: 0, month: m, incomplete: true, coverage };
+  }
+
   const view = await prepaidView(env, { month: m }, { now });
   const previous = view.months[view.months.length - 2] || null;
-  const base = origin || settings.origin || null;
   const mail = summaryEmail({ month: m, totals: view.totals, previous, list: view.reservations, link: base ? `${base}/#/prepaid?month=${m}` : null });
   const attachments = [{ filename: mail.filename, content: btoa(unescape(encodeURIComponent(mail.csv))) }];
   let sent = 0;
@@ -254,6 +313,45 @@ export async function sendSummary(env, { month, to = null, fetchImpl, origin = n
       sent += 1;
     } catch (err) { failed.push(`${one}: ${err.message}`); }
   }
-  if (!to && sent) await setSetting(env.DB, SETTING, JSON.stringify({ ...settings, lastSent: { at: now.toISOString(), month: m, count: sent } }));
+  if (!to && sent) {
+    const held = settings.held?.month === m ? null : settings.held;
+    await setSetting(env.DB, SETTING, JSON.stringify({ ...settings, held, lastSent: { at: now.toISOString(), month: m, count: sent, by: auto ? 'the 5th' : 'by hand' } }));
+  }
   return { sent, month: m, failed };
+}
+
+/** What the journals cover of a month, in a sentence. */
+export function coverageWords(coverage, name) {
+  const span = (r) => (r.from === r.to ? shortDay(r.from) : `${shortDay(r.from)} to ${shortDay(r.to)}`);
+  if (!coverage?.within?.length) return `No journal loaded covers ${name}`;
+  return `The journals loaded cover ${coverage.within.map(span).join(', ')} only`;
+}
+
+/** The admins: owners, and anybody given Insight who is not a supervisor or an uploader. */
+async function adminEmails(env) {
+  const rows = await all(env.DB, `SELECT DISTINCT a.email FROM accounts a
+    LEFT JOIN account_access x ON x.account_id = a.id AND x.system_id = 'insight'
+    WHERE a.active = 1 AND (a.is_owner = 1 OR (x.account_id IS NOT NULL AND COALESCE(x.role, '') NOT IN ('supervisor', 'uploader')))`).catch(() => []);
+  return rows.map((r) => r.email).filter((e) => EMAIL.test(e || ''));
+}
+
+/** A month held on the 5th: each admin is asked to load the rest and send it. */
+async function askAdmins(env, { month, coverage, base, fetchImpl }) {
+  const name = monthName(month);
+  const where = coverageWords(coverage, name);
+  const link = base ? `${base}/#/prepaid?month=${month}` : null;
+  const html = frame(`
+    <h1 style="margin:0 0 10px;font-size:21px;color:#111110">${esc(name)}’s prepaid summary is waiting for you</h1>
+    <p style="margin:0 0 12px">It was not sent this morning: ${esc(where)}, so the month is not complete and the figures would be short.</p>
+    <p style="margin:0 0 16px">Load the rest of ${esc(name)}’s ASSD journal under Shifts → Files, then open Prepaid stays and press <strong>Send to everyone</strong>. Or send it as it is from the same page.</p>
+    ${link ? `<a href="${esc(link)}" style="display:inline-block;background:#2a78d6;color:#ffffff;text-decoration:none;font-weight:700;border-radius:10px;padding:12px 20px">Open Prepaid stays</a>` : ''}
+    <p style="margin:18px 0 0;padding-top:12px;border-top:1px solid #ecebe6;font-size:12px;color:#6b6a64">You get this because you are an admin in Insight.</p>`);
+  const text = `${name}'s prepaid summary is waiting for you. ${where}, so the month is not complete. Load the rest of the journal under Shifts → Files, then open Prepaid stays and press Send to everyone.${link ? `\n${link}` : ''}`;
+  for (const one of (await adminEmails(env)).slice(0, 10)) {
+    // eslint-disable-next-line no-await-in-loop
+    await callLink({
+      binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
+      body: { to: one, subject: `${name}’s prepaid summary is waiting for you`, html, text, kind: 'insight_prepaid', senderName: 'Insight' },
+    }).catch(() => {});
+  }
 }

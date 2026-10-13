@@ -81,6 +81,10 @@ const ROUTES = [
   }],
   ['POST', '/api/money/prepaid/send', 'insight', async (env, ctx) => {
     await till.requireAdmin(ctx.account);
+    // To everyone chosen, or to the admin pressing it, to see it first.
+    if (ctx.body?.everyone) {
+      return prepaid.sendSummary(env, { month: ctx.body?.month, anyway: Boolean(ctx.body?.anyway), origin: ctx.url.origin });
+    }
     if (!ctx.account?.email) throw badRequest('Your account has no email address to send it to.');
     return prepaid.sendSummary(env, { month: ctx.body?.month, to: ctx.account.email, origin: ctx.url.origin });
   }],
@@ -321,7 +325,7 @@ export default {
       execution.waitUntil(sendDailySummary(env).then((out) => { if (out.error) console.error('Daily summary', out.error); }));
       // On the 5th, last month's prepaid stays to whoever an admin chose.
       if (new Date(event.scheduledTime || Date.now()).getUTCDate() === 5) {
-        execution.waitUntil(prepaid.sendSummary(env).then((out) => { if (out.failed?.length) console.error('Prepaid summary', out.failed); })
+        execution.waitUntil(prepaid.sendSummary(env, { auto: true }).then((out) => { if (out.failed?.length) console.error('Prepaid summary', out.failed); })
           .catch((err) => console.error('Prepaid summary', err)));
       }
       return;

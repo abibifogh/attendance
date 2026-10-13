@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { freshDb } from './helpers.js';
 import {
-  reservationOf, viaOf, totalsOf, prepaidView, csvOf, saveMailSettings, sendSummary, lastOf, shiftMonth,
+  reservationOf, viaOf, totalsOf, prepaidView, csvOf, saveMailSettings, sendSummary, lastOf, shiftMonth, coverageOf,
 } from '../src/routes/prepaid.js';
 import { verifyLink } from '../src/lib/link.js';
 
@@ -52,12 +52,9 @@ test('a month of stays by arrival, its totals and the six months to it', async (
   assert.equal(totalsOf([]).share, null);
 });
 
-test('who gets the summary: real addresses only, and the 5th sends each month once, with the CSV', async () => {
-  const { env } = await loaded();
-  await assert.rejects(saveMailSettings(env, { emails: ['not an address'] }), /not an email address/);
-  const saved = await saveMailSettings(env, { emails: ['Accounts@Example.test', 'gm@example.test', 'gm@example.test'] }, { origin: 'https://insight.example.test' });
-  assert.deepEqual(saved.emails, ['accounts@example.test', 'gm@example.test']);
+const journal = (raw, from, to) => raw.prepare("INSERT INTO shift_upload (kind, name, from_day, to_day, rows, at) VALUES ('journal', 'j.pdf', ?, ?, 10, '2026-10-01')").run(from, to);
 
+function hive() {
   const calls = [];
   const fetchImpl = async (request) => {
     const url = new URL(request.url);
@@ -66,8 +63,32 @@ test('who gets the summary: real addresses only, and the 5th sends each month on
     calls.push([url.pathname, JSON.parse(text)]);
     return Response.json({ ok: true });
   };
+  return { calls, fetchImpl };
+}
+
+test('a month is complete only when the journals cover every day of it', async () => {
+  const { env, raw } = await loaded();
+  assert.deepEqual(await coverageOf(env, '2026-09'), { complete: false, within: [], through: null, loaded: null });
+  journal(raw, '2026-08-25', '2026-09-12');
+  journal(raw, '2026-09-14', '2026-10-02');
+  let c = await coverageOf(env, '2026-09');
+  assert.deepEqual([c.complete, c.through], [false, '2026-09-12'], 'the 13th is missing');
+  assert.deepEqual(c.within, [{ from: '2026-09-01', to: '2026-09-12' }, { from: '2026-09-14', to: '2026-09-30' }]);
+  journal(raw, '2026-09-12', '2026-09-20');
+  c = await coverageOf(env, '2026-09');
+  assert.deepEqual([c.complete, c.through], [true, '2026-09-30']);
+});
+
+test('who gets the summary: real addresses only, and the 5th sends each month once, with the CSV', async () => {
+  const { env, raw } = await loaded();
+  journal(raw, '2026-08-01', '2026-10-01');
+  await assert.rejects(saveMailSettings(env, { emails: ['not an address'] }), /not an email address/);
+  const saved = await saveMailSettings(env, { emails: ['Accounts@Example.test', 'gm@example.test', 'gm@example.test'] }, { origin: 'https://insight.example.test' });
+  assert.deepEqual(saved.emails, ['accounts@example.test', 'gm@example.test']);
+
+  const { calls, fetchImpl } = hive();
   const now = new Date('2026-10-05T06:45:00Z');
-  const out = await sendSummary(env, { fetchImpl, now });
+  const out = await sendSummary(env, { auto: true, fetchImpl, now });
   assert.deepEqual([out.sent, out.month], [2, '2026-09']);
   assert.deepEqual(calls.map(([p, b]) => [p, b.to]), [['/api/link/mail', 'accounts@example.test'], ['/api/link/mail', 'gm@example.test']]);
   const mail = calls[0][1];
@@ -78,8 +99,36 @@ test('who gets the summary: real addresses only, and the 5th sends each month on
   assert.equal(mail.attachments[0].filename, 'prepaid-stays-2026-09.csv');
   assert.match(atob(mail.attachments[0].content), /70470-60470/);
 
-  const again = await sendSummary(env, { fetchImpl, now });
+  const again = await sendSummary(env, { auto: true, fetchImpl, now });
   assert.equal(again.sent, 0, 'not twice for the same month');
   const mine = await sendSummary(env, { fetchImpl, now, to: 'me@example.test', month: '2026-09' });
   assert.equal(mine.sent, 1, 'trying it, to yourself, always goes');
+  const byHand = await sendSummary(env, { fetchImpl, now, month: '2026-09' });
+  assert.equal(byHand.sent, 2, 'an admin can send it to everyone again by hand');
+});
+
+test('a month the journals do not cover whole is held on the 5th, the admins asked once, and sent by hand', async () => {
+  const { env, raw } = await loaded();
+  journal(raw, '2026-08-01', '2026-09-27');
+  raw.exec(`INSERT INTO accounts (email, name, is_owner, active) VALUES ('owner@example.test', 'Owner', 1, 1), ('sup@example.test', 'Sup', 0, 1);
+    INSERT INTO account_access (account_id, system_id, role) VALUES (2, 'insight', 'supervisor');`);
+  await saveMailSettings(env, { emails: ['accounts@example.test'] }, { origin: 'https://insight.example.test' });
+  const { calls, fetchImpl } = hive();
+  const now = new Date('2026-10-05T06:45:00Z');
+
+  const held = await sendSummary(env, { auto: true, fetchImpl, now });
+  assert.deepEqual([held.sent, held.held, held.coverage.through], [0, true, '2026-09-27']);
+  assert.deepEqual(calls.map(([, b]) => b.to), ['owner@example.test'], 'only the admins are asked, not the recipients nor a supervisor');
+  assert.match(calls[0][1].subject, /September 2026’s prepaid summary is waiting for you/);
+  assert.match(calls[0][1].html, /The journals loaded cover 1 Sept? to 27 Sept? only/);
+  await sendSummary(env, { auto: true, fetchImpl, now });
+  assert.equal(calls.length, 1, 'asked once for the month');
+  assert.equal((await prepaidView(env, { month: '2026-09' })).mail.held.month, '2026-09');
+
+  const refused = await sendSummary(env, { fetchImpl, now, month: '2026-09' });
+  assert.deepEqual([refused.sent, refused.incomplete], [0, true], 'by hand, the page asks first');
+  const sent = await sendSummary(env, { fetchImpl, now, month: '2026-09', anyway: true });
+  assert.equal(sent.sent, 1);
+  const after = (await prepaidView(env, { month: '2026-09' })).mail;
+  assert.deepEqual([after.held, after.lastSent.month, after.lastSent.by], [null, '2026-09', 'by hand']);
 });

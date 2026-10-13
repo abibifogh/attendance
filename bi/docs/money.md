@@ -139,6 +139,15 @@ before it leaves the browser.
 same page. On the 5th of every month, with the morning summary (06:45 Accra),
 the month before goes to each of them through HIVE's email: the figures, every
 prepaid reservation, and all the month's reservations as a CSV attached. Each
-month is sent once. **Send … now, to me only** sends the month on screen to the
-admin pressing it, to see what goes out.
+month is sent once by the 5th.
 
+- **Only a whole month goes by itself.** If the journals loaded do not cover
+  every day of the month, the 5th does not send it. Instead each admin gets an
+  email saying the month is waiting and which days are loaded, and the page
+  shows the same prompt at the top. Load the rest under Shifts → Files, then
+  press **Send … to everyone**; or send it as it is.
+- **Send … to everyone** sends the month on screen to all the addresses at any
+  time. It asks first if the month is not complete, or was sent already.
+- **Send a test to me** sends the month on screen to the admin pressing it.
+
+The page says when a month is not complete, and which days the journals cover.

@@ -1370,3 +1370,6 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .pp-email button { border: 0; background: none; font: inherit; font-weight: 700; color: var(--ink-2); cursor: pointer; padding: 0 .3rem; }
 .pp-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; }
 .pp-row input { flex: 1 1 16rem; min-width: 0; }
+.pp-partial { margin: .35rem 0 0; color: color-mix(in srgb, var(--warning) 50%, var(--ink)); font-size: .88rem; font-weight: 600; }
+.pp-held { display: grid; gap: .6rem; padding: .8rem 1rem; border-radius: var(--radius); border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent); background: color-mix(in srgb, var(--warning) 12%, var(--surface)); }
+.pp-flash { padding: .6rem .9rem; border-radius: var(--radius); background: color-mix(in srgb, var(--good) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); }
