@@ -166,6 +166,16 @@ Everything typed is signed with the name of whoever typed it.
   button for each reading; until somebody answers, only what is sure is
   counted. Whichever reading is used, the card says which and why, and the
   other button changes it.
+- **Receipts still in the count after a movement.** A movement keyed
+  after a count with receipts in it looks like it took them out. If the
+  counts after it still show them (often the same count done twice), it
+  reads two ways: they stayed in the drawer and the movement was cash, or
+  they went and new receipts of the same amount came in. The drawer agrees
+  either way; the expenses differ. They are counted once (stayed) unless a
+  person says otherwise. When some of the shift's POs add up to exactly the
+  movement, it was cash paid for them: settled as stayed. Otherwise the shift
+  gets **Receipts still in the count after a movement: stayed, or new?**
+  with one button for each, and Undo.
 - **Receipts swapped for cash.** Receipts that leave the drawer with no
   movement, the notes going up by as much, were swapped for cash put into the
   drawer: that shift reads over by as much. The Drawer over card says so and

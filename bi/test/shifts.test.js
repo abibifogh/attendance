@@ -573,9 +573,38 @@ test('the drawer in notes and coins: receipts that appear are expenses, carried 
   const later = summarise({ user: 'C', startSeq: 200, entries: [count(100), count(60, 40), count(60), move(40), count(60)] });
   assert.deepEqual([later.expenses, later.receiptsSwapped, later.countVariance], [4000, 0, 0]);
 
-  // Receipts carried out, and a new one before the next count: both expenses.
+  // A movement that seems to carry GH₵50 of receipts while the next count
+  // still shows GH₵20: either GH₵20 of them stayed and the movement had GH₵20
+  // of cash in it, or all went and GH₵20 of new ones came. Unanswered, they
+  // are counted once (stayed) and asked about; the drawer agrees either way.
+  const from = seq;
   const again = summarise({ user: 'D', startSeq: 300, entries: [count(100), count(50, 50), move(50), count(30, 20)] });
-  assert.deepEqual([again.expenses, again.receiptsSwapped, again.countVariance], [7000, 0, 0]);
+  assert.deepEqual([again.expenses, again.receiptsSwapped, again.countVariance], [5000, 0, 0]);
+  assert.deepEqual(again.carriedAsk.map((a) => [a.amount, a.reading]), [[2000, null]]);
+  const moveSeq = again.carriedAsk[0].seq;
+  assert.deepEqual([again.moves[0].receipts, again.moves[0].cash, again.moves[0].stayed], [3000, 2000, 2000]);
+  seq = from;
+  const told = summarise({ user: 'D', startSeq: 300, entries: [count(100), count(50, 50), move(50), count(30, 20)] },
+    new Map([[`count:${moveSeq}`, { reading: 'new', by: 'Test' }]]));
+  assert.deepEqual([told.expenses, told.countVariance, told.moves[0].receipts], [7000, 0, 5000], 'new ones came: both expenses');
+});
+
+test('receipts a movement seems to carry that the counts still show: counted once, settled by its POs, or asked', async () => {
+  let seq = 400;
+  const base = { register: '001', user: 'E', payments: [], laundry: [], items: [] };
+  const count = (notes, receipts = 0) => ({ ...base, seq: seq += 1, kind: 'Money Count', counted: notes * 100, expensesCounted: receipts * 100 });
+  const move = (amount) => ({ ...base, seq: seq += 1, kind: 'Cash Movement', movement: -amount * 100 });
+  // GH₵138 of receipts in the count; GH₵936 paid out for two POs; the counts
+  // after still show the GH₵138 (counted twice by the person).
+  const s = summarise({ user: 'E', startSeq: 400, entries: [count(2573), count(1499, 138), move(936), count(1499, 138), count(1499, 138)] },
+    new Map([[403, { kind: 'expenses', by: 'Test' }]]));
+  assert.equal(s.receiptsIn, 13800, 'the GH₵138 once, not twice');
+  assert.deepEqual([s.moves[0].receipts, s.moves[0].direct], [0, 93600], 'the movement was all cash, labelled expenses by hand');
+  assert.equal(s.expenses, 107400);
+  assert.equal(s.countVariance, 0);
+  // The POs on the shift add up to the movement: it was cash for them.
+  assert.deepEqual(routes.readCarried(s, s.carriedAsk[0], [84000, 9600]), { reading: 'stayed', why: 'pos' });
+  assert.equal(routes.readCarried(s, s.carriedAsk[0], [84000]), null, 'nothing settles it: asked');
 });
 
 test('receipts swapped for cash are reconciled on the shift, and undone', async () => {
@@ -637,6 +666,10 @@ test('a person’s reading of a count is saved, checked and taken back', async (
   assert.equal((await env.DB.prepare('SELECT reading, by_name FROM shift_receipts_read WHERE count_seq = 300507').first()).by_name, 'Test Owner');
   await routes.saveReceiptsRead(env, { seq: 300507, reading: '' }, OWNER);
   assert.equal(await env.DB.prepare('SELECT * FROM shift_receipts_read').first(), null);
+  // A movement's receipts: stayed, or new ones came.
+  await assert.rejects(routes.saveReceiptsRead(env, { seq: 300507, reading: 'stayed' }, OWNER), /not a Cash Movement/);
+  await routes.saveReceiptsRead(env, { seq: 300508, reading: 'stayed' }, OWNER);
+  assert.equal((await env.DB.prepare('SELECT reading FROM shift_receipts_read WHERE count_seq = 300508').first()).reading, 'stayed');
 });
 
 test('what each cash movement was', () => {

@@ -64,6 +64,7 @@ const KIND = {
   'expense-no-po': ['Expenses with no PO', '#'],
   'receipts-swapped': ['Receipts swapped for cash', '✓'],
   'receipts-unclear': ['Receipts handed in: all, or only some?', '?'],
+  'receipts-carried': ['Receipts still in the count after a movement: stayed, or new?', '?'],
   'expense-po-gap': ['PO total does not match the expenses', '#'],
 };
 const MODES = [
@@ -1573,6 +1574,7 @@ export async function renderShifts(root, { range }) {
             m.kind === 'expenses' && !m.manual && m.receipts >= m.amount ? 'Receipts' : tag[m.kind]?.[0] || m.kind),
           h('span',
             h('small', `${said(m)} · ${nameOf(m.user)}, ASSD ${m.seq}`),
+            m.stayed ? h('small.sh-manual', ` The counts after it still show ${money(m.stayed)} of the receipts from the count before it: read as staying in the drawer, so that much of it was cash.`) : null,
             m.manual ? h('small.sh-manual', ` Corrected by ${m.manual.by || 'somebody'}${m.manual.note ? `: ${m.manual.note}` : ''}${m.auto ? ` (ASSD's count said ${tag[m.auto]?.[0].toLowerCase() || m.auto})` : ''}.`) : null,
             m.pending ? h('small.sh-manual', ` Waiting for an admin: ${m.pending.by || 'a supervisor'} says ${({ expenses: 'it was expenses', safe: 'it went to the safe', split: 'it was split', duplicate: `it duplicates ASSD ${m.pending.pair}`, reverses: `it pairs with ASSD ${m.pending.pair}` })[m.pending.kind] || m.pending.kind}.`) : null),
           h('span.sh-moveend',
@@ -1754,6 +1756,11 @@ export async function renderShifts(root, { range }) {
         return `The receipts went from ${money(x.prev)} to ${money(x.now)} at ASSD ${x.seq}, with no cash movement. Either only ${money(x.left)} of them were handed in and nothing new was spent, or all ${money(x.prev)} were handed in and the ${money(x.now)} now counted is new spending.`
           + (x.reading ? ` Read as: ${x.reading === 'all' ? `all handed in, ${money(x.now)} new` : `only ${money(x.left)} handed in`}, because ${said}.` : ' Neither the closing report nor the drawer settles it: say which.');
       }
+      case 'receipts-carried': {
+        const said = { pos: `the shift’s POs add up to the ${money(x.move)} movement, so it was cash paid for them`, person: `${x.by || 'somebody'} said so` }[x.why];
+        return `The count before the ${money(x.move)} movement (ASSD ${x.seq}) showed receipts, so the movement looked like it took ${money(x.amount)} of them out. But the counts after it still show them. Either they stayed in the drawer and the movement was ${money(x.amount)} of cash, or they went and ${money(x.amount)} of new receipts came in. The drawer agrees either way; what changes is the expenses.`
+          + (x.reading ? ` Read as: ${x.reading === 'stayed' ? 'they stayed; the movement was cash' : 'they went; new receipts came'}, because ${said}.` : ' Counted once (as stayed) until you say which.');
+      }
       case 'receipts-swapped': return `${money(x.amount)} of receipts${x.receiptsFrom ? ` left in the drawer by ${nameOf(x.receiptsFrom)}’s shift` : ''} left with no cash movement and were swapped for cash put into the drawer. They are expenses where they first appeared, with their PO; here they are not cash.`;
       case 'expense-no-po': return `${money(x.amount)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''} with no PO: none on the closing report in HIVE and none linked here. Link the PO, or answer why there is none.`;
       case 'expense-po-gap': return `${money(x.expenses)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''}, but the POs (${(x.pos || []).join(', ')}) come to ${money(x.poTotal)} in Odoo: ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} was paid than the POs say. Link the missing PO, unlink a wrong one, or answer why.`;
@@ -1888,7 +1895,7 @@ export async function renderShifts(root, { range }) {
         await load();
       } catch (err) { said.textContent = err.message; }
     };
-    const canLink = may('bank', 2) && !x.answer && !x.proposed && x.severity !== 'info' && x.kind !== 'receipts-unclear';
+    const canLink = may('bank', 2) && !x.answer && !x.proposed && x.severity !== 'info' && !['receipts-unclear', 'receipts-carried'].includes(x.kind);
     const decide = async (ok) => {
       said.textContent = 'Saving…';
       try {
@@ -1928,6 +1935,23 @@ export async function renderShifts(root, { range }) {
       x.kind === 'drawer-over' && !x.answer && !x.proposed && may('moves', 2) ? receiptsSwapBox(x, said) : null,
       x.kind === 'receipts-unclear' && may('moves', 2) ? h('div.sh-labels',
         [['all', `All ${money(x.prev)} handed in; ${money(x.now)} is new`], ['some', `Only ${money(x.left)} handed in; nothing new`]].map(([reading, words]) => h(`button.btn${x.reading === reading ? '.primary' : ''}`, {
+          type: 'button', 'aria-pressed': String(x.reading === reading),
+          onclick: async () => {
+            said.textContent = 'Saving…';
+            try {
+              await api('/shifts/receipts-read', { method: 'POST', body: { seq: x.seq, reading } });
+              await load(banner('good', 'Saved. The drawer and its expenses are worked out again.'));
+            } catch (err) { said.textContent = err.message; }
+          },
+        }, words)),
+        x.why === 'person' ? h('button.sh-link', {
+          type: 'button',
+          onclick: async () => {
+            try { await api('/shifts/receipts-read', { method: 'POST', body: { seq: x.seq, reading: '' } }); await load(banner('good', 'Back to what the evidence says.')); } catch (err) { said.textContent = err.message; }
+          },
+        }, 'Undo') : null) : null,
+      x.kind === 'receipts-carried' && may('moves', 2) ? h('div.sh-labels',
+        [['stayed', `They stayed; the movement was ${money(x.amount)} of cash`], ['new', `They went; ${money(x.amount)} of new receipts came`]].map(([reading, words]) => h(`button.btn${x.reading === reading ? '.primary' : ''}`, {
           type: 'button', 'aria-pressed': String(x.reading === reading),
           onclick: async () => {
             said.textContent = 'Saving…';
@@ -1996,7 +2020,7 @@ export async function renderShifts(root, { range }) {
             try { await api('/shifts/unlink', { method: 'POST', body: { id: x.link.id } }); await load(banner('good', 'Undone. Those exceptions are open again.')); } catch (err) { said.textContent = err.message; }
           },
         }, 'Undo') : null)
-      : x.severity === 'info' && !x.answer && !['receipts-swapped', 'receipts-unclear'].includes(x.kind) ? h('div.sh-done', h('span', { style: 'color:var(--ink-2)' }, 'Explained by the rules; no answer needed'))
+      : x.severity === 'info' && !x.answer && !['receipts-swapped', 'receipts-unclear', 'receipts-carried'].includes(x.kind) ? h('div.sh-done', h('span', { style: 'color:var(--ink-2)' }, 'Explained by the rules; no answer needed'))
         : x.answer ? h('div.sh-done',
           h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''}${x.answer.by ? ` (${x.answer.by}${x.answer.at ? `, ${String(x.answer.at).slice(0, 16)}` : ''})` : ''}`),
           // A correction to a movement is undone, not re-answered: the
@@ -2013,7 +2037,7 @@ export async function renderShifts(root, { range }) {
           }, 'Undo') : null)
             : h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change'), said)
           // Its own two buttons are the answer to a count read two ways.
-          : x.kind === 'receipts-unclear' ? said
+          : ['receipts-unclear', 'receipts-carried'].includes(x.kind) ? said
             : h('div.sh-answers', note, ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said));
   }
 

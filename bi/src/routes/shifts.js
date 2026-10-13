@@ -327,6 +327,20 @@ export function readReceipts(s, ask, reportPaid) {
   return null;
 }
 
+/**
+ * A movement that seems to carry receipts the counts after it still show:
+ * the receipts stayed and the movement was cash, or they went and new ones
+ * came. The shift's POs settle it when some of them add up to exactly the
+ * movement: it was cash paid for them. Otherwise nothing here can say.
+ */
+export function readCarried(s, ask, poTotals) {
+  const list = (poTotals || []).filter((x) => x > 0).slice(0, 14);
+  for (let mask = 1; mask < (1 << list.length); mask += 1) {
+    if (list.reduce((t, x, i) => t + (mask & (1 << i) ? x : 0), 0) === ask.move) return { reading: 'stayed', why: 'pos' };
+  }
+  return null;
+}
+
 /** Count a reading of 'all' on a shift already summarised as 'some'. */
 function applyAll(s, ask) {
   s.receiptsIn += ask.now;
@@ -431,9 +445,14 @@ export async function saveReceiptsRead(env, body, account) {
     await run(env.DB, 'DELETE FROM shift_receipts_read WHERE count_seq = ?1', seq);
     return { ok: true };
   }
-  if (!['all', 'some'].includes(reading)) throw badRequest('Say whether all the receipts were handed in, or only some.');
-  const row = await first(env.DB, "SELECT seq FROM assd_entry WHERE seq = ?1 AND kind = 'Money Count'", seq);
-  if (!row) throw badRequest(`ASSD ${seq} is not a Money Count.`);
+  // A count: were all its receipts handed in, or only some. A movement: did
+  // the receipts it seems to carry stay in the drawer, or go with new ones
+  // in their place.
+  const forMove = ['stayed', 'new'].includes(reading);
+  if (!forMove && !['all', 'some'].includes(reading)) throw badRequest('Say whether all the receipts were handed in, or only some.');
+  const kind = forMove ? 'Cash Movement' : 'Money Count';
+  const row = await first(env.DB, 'SELECT seq FROM assd_entry WHERE seq = ?1 AND kind = ?2', seq, kind);
+  if (!row) throw badRequest(`ASSD ${seq} is not a ${kind}.`);
   await run(env.DB, `INSERT INTO shift_receipts_read (count_seq, reading, by_name, at) VALUES (?1, ?2, ?3, ?4)
     ON CONFLICT (count_seq) DO UPDATE SET reading = ?2, by_name = ?3, at = ?4`, seq, reading, who(account), now());
   return { ok: true };
@@ -815,6 +834,14 @@ export async function shifts(env, query, account) {
       ask.decided = guess;
       if (guess?.reading === 'all') applyAll(s, ask);
     }
+    // Movements that seem to carry receipts the counts still show: counted
+    // once (stayed) unless a person said new ones came; the shift's POs may
+    // settle it, or it waits for a person.
+    const poTotals = [...(reportPos.get(`${s.day}|${s.slotName}`) || []).map((o) => Math.round(o.total)),
+      ...(() => { try { return (JSON.parse(expense?.odoo || 'null')?.orders || []).map((o) => Math.round(Number(o.total) || 0)); } catch { return []; } })()];
+    for (const ask of s.carriedAsk || []) {
+      ask.decided = ask.reading ? { reading: ask.reading, why: 'person', by: ask.said?.by || null, at: ask.said?.at || null } : readCarried(s, ask, poTotals);
+    }
     const swap = swapOf.get(`${s.day}|${s.slotName}`) || null;
     const assdOpening = s.opening?.notes ?? null;
     const opening = typed?.opening ?? assdOpening ?? previousClosing?.amount ?? null;
@@ -894,6 +921,13 @@ export async function shifts(env, query, account) {
         ...base, key: `receipts-read:${ask.seq}`, kind: 'receipts-unclear', group: d ? 'explained' : 'drawer', severity: d ? 'info' : 'warning',
         seq: ask.seq, amount: ask.left, prev: ask.prev, now: ask.now, left: ask.left, reading: d?.reading || null, why: d?.why || null,
         by: d?.by || null, at: d?.at || null,
+      });
+    }
+    for (const ask of s.carriedAsk || []) {
+      const d = ask.decided;
+      exceptions.push({
+        ...base, key: `receipts-carried:${ask.seq}`, kind: 'receipts-carried', group: d ? 'explained' : 'drawer', severity: d ? 'info' : 'warning',
+        seq: ask.seq, amount: ask.amount, move: ask.move, reading: d?.reading || null, why: d?.why || null, by: d?.by || null, at: d?.at || null,
       });
     }
     if (r.receipts.reconciled?.amount) {
