@@ -186,6 +186,15 @@ Everything typed is signed with the name of whoever typed it.
   count they first appeared in, the hand-over, the count where they left with
   no cash movement, the cash put in for them, the drawer after reconciling,
   and who reconciled it, when and why (the note typed), with Undo.
+- **Keyed twice, or not paid: what else saw it.** A card or MoMo line ASSD
+  has twice (paid once), with no payment found, or declined on the terminal
+  shows ASSD, the terminal and, for laundry, the laundry system side by side:
+  how many lines, how many paid, how many tries the terminal declined in the
+  shift's hours, and how many payments of that amount the laundry system took.
+  The text says what that means: laundry paid once but keyed twice (reverse
+  the second line in ASSD); paid twice in the laundry system (both real, one
+  paid another way or owed); a failed try keyed as well; or the laundry
+  system not read yet.
 - **One payment seen twice.** Laundry paid by card on the hotel terminal and
   not keyed in ASSD shows as a card payment ASSD lacks and as laundry ASSD
   lacks. When the laundry system has a card payment of the same amount, on

@@ -770,6 +770,24 @@ export async function shifts(env, query, account) {
     });
   }
 
+  // A card or MoMo line ASSD has twice, or with no payment found: what else
+  // says what happened. The terminal's declined tries of that amount in the
+  // shift's hours (a failed first try is often keyed too), and, for laundry,
+  // how many payments of that amount the laundry system took.
+  for (const x of exceptions.filter((e) => ['duplicate', 'not-found', 'failed'].includes(e.kind) && e.seq)) {
+    const s = result.shifts.find((o) => o.day === x.day && o.slotName === x.slot);
+    if (!s) continue;
+    const w = s.window;
+    x.declined = x.kind === 'failed' ? [] : declines.filter((d) => d.amount === x.amount && d.at && minuteAt(d.at) >= w.start - 30 && minuteAt(d.at) < w.end + 30)
+      .map((d) => ({ at: d.at, last4: d.last4 || null, status: d.status || null }));
+    const seqs = [x.seq, x.pair].filter(Boolean);
+    if (!(s.laundryLines || []).some((ll) => seqs.includes(ll.seq))) continue;
+    const l = laundryOfShift(s);
+    x.laundry = l
+      ? { read: true, same: l.list.filter((t) => t.kind === 'payment' && t.amount === x.amount).map((t) => ({ at: t.at, method: t.method, ref: t.ref })) }
+      : { read: false };
+  }
+
   // What people typed.
   const answerOf = new Map(answers.map((a) => [a.key, {
     answer: a.answer, note: a.note, by: a.by_name, at: a.at, status: a.status || 'applied', approvedBy: a.decided_by || null,

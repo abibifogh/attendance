@@ -1432,3 +1432,5 @@ label.fm-row input { margin-top: .2rem; }
 @media (max-width: 560px) { .sh-swap .sh-otable th:nth-child(3), .sh-swap .sh-otable td:nth-child(3) { display: table-cell; } .sh-swap .sh-otable th:nth-child(4), .sh-swap .sh-otable td:nth-child(4) { display: none; } }
 .sh-flow .sh-link { text-align: left; }
 @media (max-width: 560px) { .sh-flow .ar { display: none; } }
+.sh-evidence.sh-three { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+.sh-evidence.sh-three span.small { color: var(--ink-2); }

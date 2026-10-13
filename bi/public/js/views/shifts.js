@@ -1770,14 +1770,14 @@ export async function renderShifts(root, { range }) {
     const e = x.event || {};
     const paid = `${e.kind === 'momo' ? 'MoMo' : `card${e.last4 ? ` …${e.last4}` : ''}`} ${money(e.amount)}`;
     switch (x.kind) {
-      case 'failed': return `The terminal declined it at ${when(e.at)} (${e.status || 'not approved'}) and never approved it afterwards. ASSD has it as paid by card.`;
-      case 'not-found': return 'ASSD says card or MoMo. Nothing of this amount was approved, received or credited near the shift.';
+      case 'failed': return [`The terminal declined it at ${when(e.at)} (${e.status || 'not approved'}) and never approved it afterwards. ASSD has it as paid by card.`, ...othersSay(x)].join(' ');
+      case 'not-found': return ['ASSD says card or MoMo. Nothing of this amount was approved, received or credited near the shift.', ...othersSay(x)].join(' ');
       case 'zero': return 'A card payment keyed with no amount.';
       case 'double-charge': return `Card …${e.last4} was charged ${money(e.amount)} twice, ${x.minutesApart} minutes apart (${time(x.twin?.at)} and ${time(e.at)}). ASSD has it once.`;
       case 'transposition': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: the same digits in another order.`;
       case 'decimal': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: out by a factor of ten.`;
       case 'keying': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: one digit different.`;
-      case 'duplicate': return `Keyed twice in this shift (also ASSD ${x.pair}) and paid once.`;
+      case 'duplicate': return [`Keyed twice in this shift (also ASSD ${x.pair}) and paid once on the terminal.`, ...othersSay(x)].join(' ');
       case 'not-recorded': return `${e.kind === 'momo' ? 'MoMo received' : 'Approved on the terminal'} at ${when(e.at, e.day)}${e.last4 ? `, card …${e.last4}` : ''}. ASSD has no payment of this amount.`;
       case 'never-settled': return `Approved on the terminal ${when(e.at)}, card …${e.last4}, approval ${e.approval}. No bank credit six days on.`;
       case 'reversal': return `The bank took ${money(Math.abs(x.amount))} back from card …${e.last4} (tapped ${shortDay(e.day)}).${x.pairedWith ? ' It answers a refund keyed in ASSD.' : ' No refund of that amount is keyed in ASSD in these days.'}`;
@@ -1822,6 +1822,31 @@ export async function renderShifts(root, { range }) {
     }
   }
 
+  /** What the terminal's declined tries and the laundry system say about a line keyed twice or not paid. */
+  function othersSay(x) {
+    const out = [];
+    const hm = (at) => String(at || '').slice(11, 16);
+    const amount = money(x.amount);
+    for (const d of x.declined || []) out.push(`The terminal declined ${amount} at ${hm(d.at)}${d.last4 ? ` (card …${d.last4})` : ''}: a failed try, keyed as well${x.kind === 'duplicate' ? '.' : ', or the guest paid another way.'}`);
+    const l = x.laundry;
+    if (!l) return out;
+    if (!l.read) { out.push('It is laundry; the laundry system has not been read for this shift yet, so it cannot say how many were paid.'); return out; }
+    const n = l.same.length;
+    const list = l.same.map((t) => `${t.method || 'paid'} ${hm(t.at)}${t.ref ? `, ${t.ref}` : ''}`).join('; ');
+    if (x.kind === 'duplicate') {
+      out.push(n === 1 ? `The laundry system took ${amount} once (${list}): one laundry payment, keyed twice. Reverse the second line in ASSD.`
+        : n > 1 ? `The laundry system took ${amount} ${n} times (${list}): both were real. Only one reached the terminal; the other was paid another way, or is owed.`
+          : `The laundry system has no payment of ${amount} on this shift.`);
+    } else if (x.kind === 'failed') {
+      out.push(n ? `It is laundry, and the laundry system has it paid (${list}): the guest paid after all, another way or on a later try.`
+        : `It is laundry, and the laundry system has no payment of ${amount} on this shift either: it may still be owed.`);
+    } else {
+      out.push(n ? `The laundry system took ${amount} (${list}).${l.same.some((t) => t.method === 'cash') ? ' In cash there: ASSD may have the wrong way of paying.' : ''}`
+        : `The laundry system has no payment of ${amount} on this shift either.`);
+    }
+    return out;
+  }
+
   function evidence(x) {
     const box = (a, mid, b) => h('div.sh-evidence', h('div', h('small', a[0]), a[1]), h('span.vs', mid), h('div', h('small', b[0]), b[1]));
     if (['keying', 'transposition', 'decimal'].includes(x.kind) && x.event) {
@@ -1841,6 +1866,16 @@ export async function renderShifts(root, { range }) {
           h('div', h('small', h('i', { style: 'background:#d8812f' }), 'Laundry system'), h('b.num', money(x.laundry?.amount)),
             h('span', `Paid by card ${hm(x.laundry?.at)}${x.laundry?.ref ? ` · ${x.laundry.ref}` : ''}`))),
         h('p.sh-paired', `✓ Same amount, both by card, ${x.minutesApart === 0 ? 'the same minute' : `${x.minutesApart} minute${x.minutesApart === 1 ? '' : 's'} apart`}, on this shift: one payment, seen twice.`));
+    }
+    if (['duplicate', 'not-found'].includes(x.kind) && (x.laundry || x.declined?.length)) {
+      const cell = (label, value, sub) => h('div', h('small', label), h('b', value), sub ? h('span.small', sub) : null);
+      const lines = x.kind === 'duplicate' ? 2 : 1;
+      const paid = x.kind === 'duplicate' ? 1 : 0;
+      const same = x.laundry?.same?.length;
+      return h('div.sh-evidence.sh-three',
+        cell('ASSD', `${lines} × ${whole(x.amount)}`, 'card or MoMo'),
+        cell('Terminal', `${paid} paid`, x.declined?.length ? `${x.declined.length} declined` : 'none declined'),
+        x.laundry ? cell('Laundry system', x.laundry.read ? `${same} × ${whole(x.amount)}` : 'not read', x.laundry.read ? 'payments' : 'yet') : null);
     }
     if (x.kind === 'laundry-mismatch') return box(['ASSD', h('b', whole(x.assd))], 'vs', [x.paired ? 'Laundry system, the rest' : 'Laundry system', h('b', whole(x.system - (x.paired || 0)))]);
     if (x.kind === 'failed') return box(['Terminal', h('b', { style: 'color:var(--sh-bad-ink)' }, 'Declined')], 'vs', ['ASSD', h('b', 'Paid')]);
