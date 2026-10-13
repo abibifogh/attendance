@@ -1408,3 +1408,27 @@ label.fm-row input { margin-top: .2rem; }
   .sh-handed .sh-otable th:nth-child(3), .sh-handed .sh-otable td:nth-child(3) { display: table-cell; }
   .sh-handed .sh-otable th:nth-child(2), .sh-handed .sh-otable td:nth-child(2) { display: none; }
 }
+/* One payment seen twice: both sides. */
+.sh-sides { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: .4rem; align-items: stretch; margin: .2rem 0; }
+.sh-sides > div { background: var(--surface-2); border-radius: 10px; padding: .55rem .7rem; display: grid; gap: .1rem; font-size: .85rem; }
+.sh-sides small { font-size: .68rem; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); font-weight: 700; display: flex; gap: .35rem; align-items: center; }
+.sh-sides small i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.sh-sides b { font-size: 1.15rem; }
+.sh-sides span { color: var(--ink-2); }
+.sh-sides .eq { align-self: center; font-weight: 800; font-size: 1.2rem; color: var(--sh-good-ink); }
+.sh-paired { background: color-mix(in srgb, var(--sh-good) 14%, transparent); color: var(--sh-good-ink); border-radius: 8px; padding: .4rem .6rem; font-size: .84rem; margin: .4rem 0 0; }
+.sh-seen .sh-otable { margin: .3rem 0; }
+.sh-seen .sh-otable td:first-child { font-weight: 600; }
+@media (max-width: 560px) { .sh-seen .sh-otable td:nth-child(3) { display: table-cell; } }
+/* Receipts swapped for cash, in detail. */
+.sh-swap { display: grid; gap: .55rem; }
+.sh-flow { display: flex; flex-wrap: wrap; gap: .35rem; align-items: stretch; }
+.sh-flow .st { flex: 1 1 140px; min-width: 0; }
+.sh-flow .st { border: 1px solid var(--border); border-radius: 10px; padding: .5rem .65rem; background: var(--surface); font-size: .82rem; }
+.sh-flow .st b { display: block; font-size: .88rem; }
+.sh-flow .st small { color: var(--ink-2); }
+.sh-flow .ar { align-self: center; color: var(--muted); }
+.sh-why { background: var(--surface-2); border-radius: 8px; padding: .5rem .65rem; font-size: .85rem; }
+@media (max-width: 560px) { .sh-swap .sh-otable th:nth-child(3), .sh-swap .sh-otable td:nth-child(3) { display: table-cell; } .sh-swap .sh-otable th:nth-child(4), .sh-swap .sh-otable td:nth-child(4) { display: none; } }
+.sh-flow .sh-link { text-align: left; }
+@media (max-width: 560px) { .sh-flow .ar { display: none; } }

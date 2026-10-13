@@ -381,6 +381,40 @@ test('the laundry is compared shift by shift, once the laundry system has been r
   assert.equal(data.days[0].shifts.find((s) => s.user === 'BRAVO').laundrySystem.collected, 0, 'BRAVO: none either side, so no exception');
 });
 
+test('laundry paid by card on the terminal and not keyed in ASSD is one difference, not two', async () => {
+  const { env } = await setUp();
+  await env.DB.prepare("INSERT INTO etl_run (id, from_day, to_day, status) VALUES (1, '2026-07-25', '2026-08-02', 'ok')").run();
+  await env.DB.prepare("INSERT INTO etl_source_run (run_id, source_id, status) VALUES (1, 'laundry', 'ok')").run();
+  // The guest paid GH₵14 for laundry by card on the hotel terminal at 10:15; the laundry system has it at 10:12.
+  await env.DB.prepare(`INSERT INTO terminal_txn (rrn, at, day, kind, amount, last4, approved, loaded_at)
+    VALUES ('T1', '2026-08-01 10:15:00', '2026-08-01', 'card', 1400, '8159', 1, '2026-08-02 08:00:00')`).run();
+  await env.DB.prepare("INSERT INTO laundry_txn (source_id, kind, ref, at, day, amount, method) VALUES ('laundry', 'payment', 'L-9', '2026-08-01 10:12:00', '2026-08-01', 1400, 'card')").run();
+  const read = async () => (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).exceptions;
+
+  let x = await read();
+  const one = x.find((e) => e.kind === 'laundry-card');
+  assert.deepEqual([one.key, one.amount, one.minutesApart, one.laundry.ref, one.event.last4, one.user], ['laundry-card:t:T1', 1400, 3, 'L-9', '8159', 'ALPHA']);
+  assert.equal(x.some((e) => e.kind === 'not-recorded' || e.kind === 'laundry-mismatch'), false, 'neither shown on its own');
+
+  // One answer settles both.
+  await routes.saveAnswer(env, { key: one.key, answer: 'Keyed in ASSD now' }, OWNER);
+  x = await read();
+  assert.equal(x.find((e) => e.key === one.key).answer.answer, 'Keyed in ASSD now');
+
+  // Not the same payment: apart again, each to answer, and the card says why.
+  await routes.saveAnswer(env, { key: one.key, answer: 'Not the same payment' }, OWNER);
+  x = await read();
+  assert.equal(x.some((e) => e.kind === 'laundry-card'), false);
+  assert.equal(x.find((e) => e.kind === 'not-recorded').split.key, one.key);
+  assert.equal(x.find((e) => e.kind === 'laundry-mismatch').amount, -1400);
+
+  // Further apart than half an hour: not paired.
+  await routes.saveAnswer(env, { key: one.key, answer: '' }, OWNER);
+  await env.DB.prepare("UPDATE laundry_txn SET at = '2026-08-01 11:00:00' WHERE ref = 'L-9'").run();
+  x = await read();
+  assert.equal(x.some((e) => e.kind === 'laundry-card'), false);
+});
+
 // ------------------------------------------------- a supervisor’s answers --
 
 test('a supervisor’s answers and reconciliations wait for an admin before they clear', async () => {
