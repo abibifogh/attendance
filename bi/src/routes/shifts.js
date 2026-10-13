@@ -371,7 +371,7 @@ export function receiptTrail(ordered) {
   const shiftOf = (s) => ({ day: s.day, slot: s.slotName, user: s.user });
   const lots = [];
   const origins = new Map();
-  const trail = new Map(ordered.map((s) => [s.index, { left: 0, cleared: [], still: 0 }]));
+  const trail = new Map(ordered.map((s) => [s.index, { left: 0, cleared: [], still: 0, swaps: [] }]));
   // Takes `amount` off the oldest lots, as `how` on shift `by`.
   const take = (amount, by, how, seq) => {
     const out = [];
@@ -423,12 +423,15 @@ export function receiptTrail(ordered) {
         if (last && last.index === s.index) last.amount += short; else out.push({ index: s.index, ...shiftOf(s), seqs: [], amount: short });
       }
       if (e.move) origins.set(e.move.seq, out.map((o) => ({ ...o, here: o.index === s.index })));
+      // Whose receipts left with no movement, at which count.
+      if (e.how === 'swapped') trail.get(s.index).swaps.push({ seq: e.seq, amount: e.out, origins: out.map((o) => ({ ...o, here: o.index === s.index })) });
     }
     // What it handed over of its own.
     trail.get(s.index).left = lots.filter((l) => l.index === s.index).reduce((t, l) => t + l.amount, 0);
   }
   for (const l of lots) if (trail.has(l.index)) trail.get(l.index).still += l.amount;
   for (const o of origins.values()) for (const x of o) delete x.index;
+  for (const t of trail.values()) for (const w of t.swaps) for (const x of w.origins) delete x.index;
   return { origins, trail };
 }
 
@@ -1059,6 +1062,52 @@ export async function shifts(env, query, account) {
     x.answer = { answer: 'Reconciled together', note: link.note, by: link.by, at: link.at, link: link.id };
   }
 
+  // One payment seen twice: laundry paid by card on the hotel's terminal and
+  // not keyed in ASSD shows as a card payment ASSD lacks and as laundry ASSD
+  // lacks. A card payment the laundry system took, the same amount, on the
+  // same shift and within half an hour of one the terminal approved, with no
+  // other that could be it, is the same money: one difference, settled by
+  // one answer. "Not the same payment" keeps them apart.
+  const PAIR_MINUTES = 30;
+  const SPLIT = 'Not the same payment';
+  const gone = new Set();
+  for (const lx of exceptions.filter((x) => x.kind === 'laundry-mismatch' && x.amount < 0)) {
+    const home = result.shifts.find((o) => o.day === lx.day && o.slotName === lx.slot);
+    const pays = (laundryIn.get(home?.index)?.list || []).filter((p) => p.kind === 'payment' && p.method === 'card' && p.at);
+    let paired = 0;
+    const made = [];
+    for (const p of pays) {
+      const near = exceptions.filter((x) => x.kind === 'not-recorded' && x.event?.kind === 'card' && x.event.at && !gone.has(x.key)
+        && x.day === lx.day && x.slot === lx.slot && x.amount === p.amount && Math.abs(minuteAt(x.event.at) - minuteAt(p.at)) <= PAIR_MINUTES);
+      if (near.length !== 1) continue;
+      const [card] = near;
+      const rivals = pays.filter((q) => q !== p && q.amount === p.amount && Math.abs(minuteAt(q.at) - minuteAt(card.event.at)) <= PAIR_MINUTES);
+      if (rivals.length) continue;
+      const key = `laundry-card:${card.event.id}`;
+      const said = answerOf.get(key);
+      if (said?.answer === SPLIT && said.status !== 'pending') { card.split = { key, by: said.by, at: said.at }; continue; }
+      const x = {
+        day: lx.day, slot: lx.slot, user: lx.user, key, kind: 'laundry-card', group: lx.group, severity: 'warning',
+        amount: p.amount, event: card.event, laundry: { at: p.at, ref: p.ref, amount: p.amount },
+        minutesApart: Math.abs(minuteAt(card.event.at) - minuteAt(p.at)), merged: [card.key, lx.key],
+        answer: said && said.status !== 'pending' ? said : card.answer || null,
+        proposed: said && said.status === 'pending' ? said : null,
+      };
+      exceptions.push(x);
+      made.push(x);
+      gone.add(card.key);
+      paired += p.amount;
+    }
+    if (!paired) continue;
+    lx.amount += paired;
+    lx.paired = paired;
+    if (lx.amount !== 0) continue;
+    // All of the laundry's difference was these payments: an answer it had is theirs.
+    gone.add(lx.key);
+    for (const x of made) if (!x.answer && !x.proposed && lx.answer) x.answer = lx.answer;
+  }
+  for (let i = exceptions.length - 1; i >= 0; i -= 1) if (gone.has(exceptions[i].key)) exceptions.splice(i, 1);
+
   // What people settled by correcting a movement leaves a record, answered,
   // so it can be found again under "Show answered" and undone. Without it a
   // duplicate matched away took its exception, and the drawer difference it
@@ -1201,6 +1250,8 @@ export async function shifts(env, query, account) {
     ...base,
     days,
     formLive: Boolean(env.EXPENSE_FORM_SECRET),
+    // Look-alike differences a person said are not related: not suggested again.
+    notPairs: answers.filter((r) => String(r.key).startsWith('notpair:') && (r.status || 'applied') !== 'pending').map((r) => r.key),
     exceptions: exceptions.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0)),
     people: [...people.values()].sort((a, b) => a.variance - b.variance),
     totals,

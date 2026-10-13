@@ -30,6 +30,8 @@ const SLOT = {
   afternoon: { label: 'Afternoon', hours: '14:00–22:00', start: 14 },
   night: { label: 'Night', hours: '22:00–06:00', start: 22 },
 };
+// For one payment seen twice: the laundry's card payment on the hotel's terminal.
+const PAIR_ANSWERS = ['Keyed in ASSD now', 'Staff reminded', 'Explained', 'Not the same payment'];
 const ANSWERS = [
   'Explained', 'Corrected in ASSD', 'Guest paid another way', 'Guest owes, chasing',
   'Deposit for a later stay', 'Refund due to the guest', 'Staff to account for it', 'Not a problem',
@@ -64,6 +66,7 @@ const KIND = {
   'expense-no-po': ['Expenses with no PO', '#'],
   'receipts-swapped': ['Receipts swapped for cash', '✓'],
   'receipts-unclear': ['Receipts handed in: all, or only some?', '?'],
+  'laundry-card': ['Laundry paid by card, not in ASSD', 'L'],
   'receipts-carried': ['Receipts still in the count after a movement: stayed, or new?', '?'],
   'expense-po-gap': ['PO total does not match the expenses', '#'],
 };
@@ -1139,6 +1142,49 @@ export async function renderShifts(root, { range }) {
   }
 
   /**
+   * Receipts swapped for cash, reconciled: whose they were (each earlier
+   * shift a link), where they left the drawer with no movement, the cash put
+   * in for them, and who reconciled it and why.
+   */
+  function swapDetail(s, n) {
+    const rc = s.register?.receipts || {};
+    const rec = rc.reconciled || {};
+    const swaps = rc.trail?.swaps || [];
+    const shiftOf = (o) => `${dayText(o.day)}, ${SLOT[o.slot]?.label.toLowerCase() || o.slot}`;
+    const link = (o) => (o.here ? 'this shift' : o.earlier ? 'before these days' : h('button.sh-link', { type: 'button', onclick: () => openShift(o.day, o.slot) }, shiftOf(o)));
+    const rows = swaps.flatMap((w) => w.origins.map((o) => ({ ...o, gone: w.seq })));
+    const first = rows[0];
+    const earlier = rows.filter((o) => !o.here);
+    const step = (title, ...lines) => h('div.st', h('b', title), h('small', ...lines));
+    const gone = [...new Set(rows.map((o) => o.gone))];
+    const owners = [...new Set(earlier.filter((o) => o.user).map((o) => `${nameOf(o.user)}’s`))];
+    return h('div.sh-swap',
+      first ? h('div.sh-flow',
+        step('Spent', first.here ? 'on this shift' : link(first), first.user && !first.here ? ` · ${nameOf(first.user)}` : '', h('br'),
+          first.seqs?.length ? `first in count ASSD ${first.seqs.join(', ')}` : ''),
+        earlier.length ? [h('span.ar', '→'), step('Handed over', `in the drawer at ${nameOf(s.user)}’s first count${s.opening?.seq ? `, ASSD ${s.opening.seq}` : ''}`)] : null,
+        h('span.ar', '→'),
+        step('Gone, no cash movement', `count ASSD ${gone.join(', ')} · notes up by ${money(rec.amount)}`)) : null,
+      h('table.sh-otable',
+        h('thead', h('tr', h('th', 'Receipts'), h('th', 'Spent on'), h('th', 'By'), h('th', 'Left the drawer'), h('th.n', 'Amount'))),
+        h('tbody',
+          rows.map((o) => h('tr', h('td', `${money(o.amount)} of receipts`), h('td', link(o)), h('td', o.user ? nameOf(o.user) : '—'), h('td', `count ASSD ${o.gone}`), h('td.n.num', money(o.amount)))),
+          h('tr', h('td', 'Cash put in for them'), h('td', 'this shift'), h('td', nameOf(s.user)), h('td', 'notes went up by as much'), h('td.n.num', `+${money(rec.amount)}`))),
+        h('tfoot', h('tr', h('td', 'Drawer after reconciling'), h('td'), h('td'), h('td'),
+          h('td.n', n.variance == null ? '—' : n.variance === 0 ? 'agrees' : `${n.variance > 0 ? 'over' : 'short'} ${money(Math.abs(n.variance))}`)))),
+      h('div.sh-why', h('b', 'Why: '), rec.note ? `“${rec.note}”` : 'no note given', ` · Reconciled by ${rec.by || 'somebody'}${rec.at ? `, ${dayText(String(rec.at).slice(0, 10))} ${String(rec.at).slice(11, 16)}` : ''}`,
+        may('moves', 2) ? [' · ', h('button.sh-link', {
+          type: 'button',
+          onclick: async () => {
+            try { await api('/shifts/receipts', { method: 'POST', body: { day: s.day, slot: s.slot, amount: '' } }); await load(banner('good', 'Undone. The drawer is worked out again.')); } catch (err) { window.alert(err.message); }
+          },
+        }, 'Undo')] : null),
+      h('p.small', earlier.length
+        ? `They are still ${owners.join(' and ') || 'the earlier'} shift${owners.length > 1 ? 's’' : '’s'} expenses, with their PO there. On ${owners.length > 1 ? 'those shifts' : 'that shift'} the same receipts say: taken out with no cash movement on ${nameOf(s.user)}’s shift, and reconciled here.`
+        : 'They are this shift’s expenses, with their PO here.'));
+  }
+
+  /**
    * The receipts a shift handed over, as one check: who took them out, and
    * when, with each later shift to open. Taking them out settles the
    * drawer, not their PO: they stay this shift's expenses.
@@ -1238,7 +1284,7 @@ export async function renderShifts(root, { range }) {
       out.push(['warn', '!', `The ${exp?.sheetFrom === 'report' ? 'closing report' : 'expense sheet'} says ${money(n.sheet)} was spent; ASSD’s counts show ${money(n.expenses)} of expenses. Link the missing PO, or check the counts.`]);
     }
     const rcp = s.register?.receipts;
-    if (rcp?.reconciled?.amount) out.push(['good', '✓', `${money(rcp.reconciled.amount)} of receipts swapped for cash, reconciled${rcp.reconciled.by ? ` (${rcp.reconciled.by})` : ''}`]);
+    if (rcp?.reconciled?.amount) out.push(['good', '✓', `${money(rcp.reconciled.amount)} of receipts swapped for cash, reconciled${rcp.reconciled.by ? ` (${rcp.reconciled.by})` : ''}`, swapDetail(s, n)]);
     // Receipts this shift left in the drawer: settled once a later shift took them out.
     const tr = rcp?.trail;
     if (tr?.left) out.push(handedOver(tr, n));
@@ -1368,7 +1414,7 @@ export async function renderShifts(root, { range }) {
         ],
       };
     });
-    const extra = exceptionsOf(s).filter((x) => ['not-recorded', 'bank-only', 'double-charge'].includes(x.kind) && x.event);
+    const extra = exceptionsOf(s).filter((x) => ['not-recorded', 'bank-only', 'double-charge', 'laundry-card'].includes(x.kind) && x.event);
     for (const x of extra) rows.push({ state: 'bad', cells: ['Not in ASSD', '—', h('span', h('div', `${event(x.event)} · ${money(x.event.amount)}`), h('small', (KIND[x.kind] || [x.kind])[0]))] });
     return h('div.sh-detail', lineTable([{ label: 'ASSD line' }, { label: 'ASSD', num: true }, { label: 'Matched to' }], rows));
   }
@@ -1768,7 +1814,9 @@ export async function renderShifts(root, { range }) {
         + `${x.pending ? ` ${x.pending.by} has proposed: ${x.pending.kind}. Waiting for an admin.` : ' Say which.'}`;
       case 'laundry-mismatch': return `ASSD has ${money(x.assd)} of laundry on this shift; the laundry system took ${money(x.system)} in the same hours`
         + `${x.payments ? ` (${x.payments} payment${x.payments === 1 ? '' : 's'})` : ''}${x.charged ? `, and accepted ${money(x.charged)} of new orders` : ''}.`
-        + ` ${x.amount > 0 ? 'Laundry was charged at the desk that the laundry system has not taken.' : 'The laundry took money that ASSD does not show.'}`;
+        + ` ${x.amount > 0 ? 'Laundry was charged at the desk that the laundry system has not taken.' : 'The laundry took money that ASSD does not show.'}`
+        + (x.paired ? ` ${money(x.paired)} of it was paid by card on the hotel's terminal and is shown on its own; this is what is left.` : '');
+      case 'laundry-card': return `The guest paid the laundry by card on the hotel terminal, and it was not keyed in ASSD. The money arrived; ASSD’s laundry for this shift is ${money(x.amount)} short.`;
       case 'bank-only': return `A card credit on the bank statement, card …${e.last4}, tapped ${shortDay(e.day)}, with no record on the terminal report.`;
       default: return '';
     }
@@ -1783,7 +1831,18 @@ export async function renderShifts(root, { range }) {
       return box(['ASSD', marked(a, b)], 'vs', [x.event.kind === 'momo' ? 'MoMo' : 'Terminal', marked(b, a)]);
     }
     if (x.kind === 'drawer-short' || x.kind === 'drawer-over') return box(['Should hold', h('b', whole(x.expected))], '→', ['Counted', h('b', whole(x.closing))]);
-    if (x.kind === 'laundry-mismatch') return box(['ASSD', h('b', whole(x.assd))], 'vs', ['Laundry system', h('b', whole(x.system))]);
+    if (x.kind === 'laundry-card') {
+      const hm = (at) => String(at || '').slice(11, 16);
+      return h('div',
+        h('div.sh-sides',
+          h('div', h('small', h('i', { style: 'background:#3f78d3' }), 'Card terminal'), h('b.num', money(x.event?.amount)),
+            h('span', `Approved ${hm(x.event?.at)}${x.event?.last4 ? ` · card …${x.event.last4}` : ''}`)),
+          h('span.eq', '='),
+          h('div', h('small', h('i', { style: 'background:#d8812f' }), 'Laundry system'), h('b.num', money(x.laundry?.amount)),
+            h('span', `Paid by card ${hm(x.laundry?.at)}${x.laundry?.ref ? ` · ${x.laundry.ref}` : ''}`))),
+        h('p.sh-paired', `✓ Same amount, both by card, ${x.minutesApart === 0 ? 'the same minute' : `${x.minutesApart} minute${x.minutesApart === 1 ? '' : 's'} apart`}, on this shift: one payment, seen twice.`));
+    }
+    if (x.kind === 'laundry-mismatch') return box(['ASSD', h('b', whole(x.assd))], 'vs', [x.paired ? 'Laundry system, the rest' : 'Laundry system', h('b', whole(x.system - (x.paired || 0)))]);
     if (x.kind === 'failed') return box(['Terminal', h('b', { style: 'color:var(--sh-bad-ink)' }, 'Declined')], 'vs', ['ASSD', h('b', 'Paid')]);
     if (x.kind === 'movement-corrected') return box(['Keyed', h('b', h('s', whole(x.amount)))], '→', ['Put back by', h('b', nameOf(x.reversedBy))]);
     return null;
@@ -1871,10 +1930,11 @@ export async function renderShifts(root, { range }) {
     const all = exceptionsOf(s);
     const open = all.filter((x) => !settled(x));
     const done = all.filter(settled);
+    const seen = seenTwice(s);
     return [
       open.length ? h('section.card',
         h('div.sh-cardhead', h('h2', 'What does not agree on this shift')),
-        h('div.sh-exgrid', open.map(exceptionCard))) : null,
+        h('div.sh-exgrid', seen.map(seenTwiceCard), open.map(exceptionCard))) : null,
       done.length ? h('section.card.sh-settled',
         h('div.sh-cardhead', h('div', h('h2', `✓ Matched and explained · ${done.length}`),
           h('p.sh-sub', 'Differences already answered, matched or explained by the rules. Nothing to do; Undo is still there.'))),
@@ -1918,6 +1978,13 @@ export async function renderShifts(root, { range }) {
         x.seqs ? h('span', `ASSD ${x.seqs.join(', ')}`) : x.seq ? h('span', `ASSD ${x.seq}`) : null),
       evidence(x),
       h('p', describe(x)),
+      x.split ? h('p.small', `Said not to be the laundry’s card payment of the same amount (${x.split.by || 'somebody'}). `,
+        h('button.sh-link', {
+          type: 'button',
+          onclick: async () => {
+            try { await api('/shifts/answer', { method: 'POST', body: { key: x.split.key, answer: '' } }); await load(banner('good', 'Paired with the laundry payment again.')); } catch (err) { said.textContent = err.message; }
+          },
+        }, 'Undo')) : null,
       ['expense-no-po', 'expense-po-gap'].includes(x.kind) && !x.answer && byId.has(`${x.day}|${x.slot}`) ? poLinker(byId.get(`${x.day}|${x.slot}`)) : null,
       x.slot && byId.has(`${x.day}|${x.slot}`) && !(section === 'shifts' && detail)
         ? h('div', h('button.sh-link', { type: 'button', onclick: () => go('shift', `${x.day}|${x.slot}`) }, 'Open the shift')) : null,
@@ -2038,7 +2105,8 @@ export async function renderShifts(root, { range }) {
             : h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change'), said)
           // Its own two buttons are the answer to a count read two ways.
           : ['receipts-unclear', 'receipts-carried'].includes(x.kind) ? said
-            : h('div.sh-answers', note, ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said));
+            : h('div.sh-answers', note, (x.kind === 'laundry-card' ? PAIR_ANSWERS : ANSWERS).map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said,
+              x.kind === 'laundry-card' ? h('p.small', { style: 'flex-basis:100%;margin:.2rem 0 0' }, 'Answered here, both are settled. “Not the same payment” splits them back into two.') : null));
   }
 
   /**
@@ -2060,6 +2128,64 @@ export async function renderShifts(root, { range }) {
     }
     return out;
   }
+  /**
+   * The same money seen twice, by two checks that do not net against each
+   * other: laundry ASSD does not show, and on the same shift a drawer over
+   * or a card payment ASSD does not show, of the same amount. Suggested, not
+   * assumed; a person reconciles them together or says they are not related.
+   */
+  function seenTwice(only = null) {
+    if (!may('bank', 2)) return [];
+    const open = (x) => !x.answer && !x.proposed && !x.link && x.severity !== 'info';
+    const no = new Set(data.notPairs || []);
+    const used = new Set();
+    const out = [];
+    for (const a of data.exceptions.filter((x) => x.kind === 'laundry-mismatch' && x.amount < 0 && open(x))) {
+      if (only && (a.day !== only.day || a.slot !== only.slot)) continue;
+      const b = data.exceptions.find((x) => !used.has(x.key) && open(x) && x.day === a.day && x.slot === a.slot
+        && ((x.kind === 'drawer-over' && x.amount === -a.amount) || (x.kind === 'not-recorded' && x.amount === -a.amount))
+        && !no.has(`notpair:${a.key}|${x.key}`));
+      if (!b) continue;
+      used.add(b.key);
+      out.push([b, a]);
+    }
+    return out;
+  }
+
+  /** One suggestion: the two side by side, Reconcile together or Not related. */
+  function seenTwiceCard([b, a]) {
+    const said = h('span.small');
+    const amount = money(Math.abs(a.amount));
+    const why = b.kind === 'drawer-over'
+      ? 'A laundry payment in cash that was not keyed in ASSD: the notes went up and ASSD shows no laundry.'
+      : 'A laundry payment on the hotel terminal that was not keyed in ASSD; the times alone did not settle it.';
+    const line = (x, what, value) => h('tr', h('td', (KIND[x.kind] || [x.kind])[0]), h('td', what), h('td.n.num', value));
+    return h('article.sh-ex.warn.sh-seen',
+      h('div.hd', h('span.sq', '?'), h('h3', `These look like the same ${amount}`), h('span.amt.num', amount)),
+      h('div.sh-meta', a.user ? [avatar(a.user), h('b', nameOf(a.user))] : null, h('span', dayText(a.day)), h('span', SLOT[a.slot]?.label.toLowerCase() || ''), h('span', 'Suggested')),
+      h('table.sh-otable', h('tbody',
+        b.kind === 'drawer-over' ? line(b, `notes ${amount} more than expected`, `+${amount}`)
+          : line(b, `approved ${String(b.event?.at || '').slice(11, 16)}${b.event?.last4 ? `, card …${b.event.last4}` : ''}`, amount),
+        line(a, `the laundry system took ${amount} ASSD does not show${a.paired ? ' (besides the card payment shown on its own)' : ''}`, amount))),
+      h('p', why),
+      h('div.sh-labels',
+        h('button.btn.primary', {
+          type: 'button',
+          onclick: async (e) => {
+            e.target.disabled = true; said.textContent = 'Reconciling…';
+            try { await reconcile([b.key, a.key], `Same ${amount}: ${(KIND[b.kind] || [b.kind])[0].toLowerCase()} and the laundry. One laundry payment, not keyed in ASSD.`); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+          },
+        }, 'Reconcile together'),
+        h('button.btn', {
+          type: 'button',
+          onclick: async (e) => {
+            e.target.disabled = true;
+            try { await api('/shifts/answer', { method: 'POST', body: { key: `notpair:${a.key}|${b.key}`, answer: 'Not related' } }); await load(banner('good', 'Not suggested again.')); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+          },
+        }, 'Not related'),
+        said));
+  }
+
   const exLabel = (o) => `${o.user ? `${nameOf(o.user)}, ` : ''}${o.day ? dayText(o.day) : ''}${o.slot ? ` ${SLOT[o.slot].label.toLowerCase()}` : ''}`;
 
   // -------------------------------------------------------------- inbox --
@@ -2067,7 +2193,14 @@ export async function renderShifts(root, { range }) {
   /** Pairs that are probably the same money, each reconciled with one click. */
   function pairsCard() {
     const pairs = likelyPairs();
-    if (!pairs.length) return null;
+    const inPairs = new Set(pairs.flat().map((x) => x.key));
+    // The same money seen twice on a shift, each as its own suggestion.
+    const seen = seenTwice().filter(([b, a]) => !inPairs.has(b.key) && !inPairs.has(a.key));
+    const seenBlock = seen.length ? h('div.sh-exgrid', seen.map(seenTwiceCard)) : null;
+    if (!pairs.length) {
+      return seen.length ? h('section.card.sh-pairs', h('div.sh-cardhead', h('div', h('h2', `Probably the same money · ${seen.length}`),
+        h('p.sh-sub', 'The same amount seen twice on a shift. Reconciling answers both.'))), seenBlock) : null;
+    }
     const said = h('span.small');
     return h('section.card.sh-pairs',
       h('div.sh-cardhead',
@@ -2098,6 +2231,7 @@ export async function renderShifts(root, { range }) {
             try { await reconcile([a.key, b.key], `Same ${money(Math.abs(a.amount))}: ${exLabel(a)} and ${exLabel(b)}`); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
           },
         }, 'Reconcile'))),
+      seenBlock,
       said);
   }
 

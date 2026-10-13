@@ -181,6 +181,25 @@ Everything typed is signed with the name of whoever typed it.
   drawer: that shift reads over by as much. The Drawer over card says so and
   **Reconcile** adds the cash back; it then sits under Matched and explained,
   with Undo. Where the counts cannot show it, the amount can be typed.
+- **Receipts swapped for cash, in detail.** Once reconciled, the green line's
+  Details show whose receipts they were (each earlier shift a link), the
+  count they first appeared in, the hand-over, the count where they left with
+  no cash movement, the cash put in for them, the drawer after reconciling,
+  and who reconciled it, when and why (the note typed), with Undo.
+- **One payment seen twice.** Laundry paid by card on the hotel terminal and
+  not keyed in ASSD shows as a card payment ASSD lacks and as laundry ASSD
+  lacks. When the laundry system has a card payment of the same amount, on
+  the same shift, within 30 minutes of one the terminal approved, and no other
+  could be it, the two are one difference: **Laundry paid by card, not in
+  ASSD**, with both sides. One answer settles both; *Not the same payment*
+  splits them back (with Undo). What is left of the laundry's difference, if
+  anything, stays on its own.
+- **Look-alikes, suggested.** Laundry ASSD does not show, and on the same
+  shift a drawer over or a card payment ASSD does not show, of the same
+  amount: *These look like the same GH₵…*, with *Reconcile together* (one
+  click) or *Not related* (not suggested again). On the shift and in the
+  Inbox.
+
 - **The closing report's expenses** settle only what nothing labelled: what
   the POs on the shift's closing report in HIVE paid, less what is already
   counted as expenses, is expenses, and the rest went to the safe. If they

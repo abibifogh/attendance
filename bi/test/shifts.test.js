@@ -845,6 +845,9 @@ test('receipts trail: swapped, gone at a hand-over, from before, and carried bef
     { amount: 1500, how: 'moved', seq: 205, day: '2026-01-06', slot: 'morning', user: 'CHARLIE' },
   ]);
   assert.deepEqual(origins.get(205).map((o) => [o.user || 'earlier', o.amount, o.here]), [['ALPHA', 1500, false], ['CHARLIE', 1000, true]]);
+  // Whose receipts left with no movement, at which count.
+  assert.deepEqual(trail.get(1).swaps.map((w) => [w.seq, w.amount, w.origins.map((o) => [o.user || 'earlier', o.amount, o.here])]),
+    [[105, 2500, [['earlier', 2000, false], ['ALPHA', 500, false]]]]);
   assert.equal(trail.get(2).left, 0);
   assert.equal(trail.get(1).left, 0);
 });
