@@ -1460,6 +1460,21 @@ export async function renderShifts(root, { range }) {
       returned: ['Put back', 'var(--sh-good)'], excluded: ['Matched', 'var(--ink-2)'],
     };
     const where = (p) => (p ? ` on ${nameOf(p.user)}’s ${SLOT[p.slot]?.label.toLowerCase() || ''} shift of ${shortDay(p.day)}` : ' outside these days');
+    // Receipts a movement carried: first those the shift before left in the
+    // drawer (that shift's expenses), then this shift's own.
+    let leftBefore = s.register?.receipts?.open || 0;
+    const parts = new Map();
+    for (const m of moves) {
+      if (!(m.receipts > 0)) continue;
+      const before = Math.min(leftBefore, m.receipts);
+      leftBefore -= before;
+      parts.set(m.seq, { before, own: m.receipts - before });
+    }
+    const whose = (m) => {
+      const x = parts.get(m.seq);
+      if (!x?.before) return '';
+      return x.own ? ` (${money(x.before)} left in the drawer by the shift before, ${money(x.own)} from this shift)` : ' (all left in the drawer by the shift before)';
+    };
     const said = (m) => {
       if (m.kind === 'excluded') {
         return {
@@ -1470,14 +1485,14 @@ export async function renderShifts(root, { range }) {
       }
       // Receipts carried out are not cash: they were expenses when they
       // appeared in a count. A correction says what the cash part was.
-      const rec = m.receipts ? `${money(m.receipts)} of receipts to the back office` : '';
+      const rec = m.receipts ? `${money(m.receipts)} of receipts to the back office${whose(m)}` : '';
       const base = {
         expenses: m.manual ? [rec, `${money(m.direct)} expenses paid straight out, as corrected`].filter(Boolean).join('; ') + '.'
-          : 'Receipts to the back office: expenses already, when they appeared in the count. No cash.',
+          : `${rec}. They are expenses of the shift whose count they first appeared on, not cash.`,
         safe: m.manual ? [rec, `${money(m.safe)} of notes to the safe, as corrected`].filter(Boolean).join('; ') + '.' : 'Notes to the safe, as the count before it.',
         split: m.manual ? [rec, `${money(m.direct)} expenses and ${money(m.safe)} to the safe, as corrected`].filter(Boolean).join('; ') + '.'
-          : `${money(m.receipts)} of receipts to the back office and ${money(m.safe)} of notes to the safe, as counted just before.`,
-        part: `${money(m.receipts)} of receipts as counted; the other ${money(m.cash)} has no count to say what it was.`,
+          : `${rec} and ${money(m.safe)} of notes to the safe, as counted just before.`,
+        part: `${rec}, as counted; the other ${money(m.cash)} has no count to say what it was.`,
         unlabelled: 'No count before it said what it was. Say what it was here, or the closing report settles it.',
         corrected: `Keyed by mistake and put back by ${nameOf(m.reversedByUser)} (ASSD ${m.reversedBy}) on the same shift. It nets to nothing.`,
         returned: 'Money put back into the drawer. If it undoes a movement on another shift, match them.',
@@ -1489,7 +1504,9 @@ export async function renderShifts(root, { range }) {
       const open = () => { fix.hidden = !fix.hidden; if (!fix.hidden && !fix.firstChild) mount(fix, fixer(s, m)); };
       return h('div',
         h('div.sh-move',
-          h('span.tag', { style: `background:${tag[m.kind]?.[1] || 'var(--muted)'}` }, tag[m.kind]?.[0] || m.kind),
+          // A movement that carried nothing but receipts says so, rather than "Expenses".
+          h('span.tag', { style: `background:${tag[m.kind]?.[1] || 'var(--muted)'}` },
+            m.kind === 'expenses' && !m.manual && m.receipts >= m.amount ? 'Receipts' : tag[m.kind]?.[0] || m.kind),
           h('span',
             h('small', `${said(m)} · ${nameOf(m.user)}, ASSD ${m.seq}`),
             m.manual ? h('small.sh-manual', ` Corrected by ${m.manual.by || 'somebody'}${m.manual.note ? `: ${m.manual.note}` : ''}${m.auto ? ` (ASSD's count said ${tag[m.auto]?.[0].toLowerCase() || m.auto})` : ''}.`) : null,
@@ -1552,6 +1569,14 @@ export async function renderShifts(root, { range }) {
     // The receipts part comes from the counts and is not cash; only the
     // cash part is said here.
     const cashPart = m.cash ?? m.amount;
+    const dup = pick('A duplicate of', twins, 'duplicate');
+    const back = pick('Put back by', elsewhere(-m.amount), 'reverses');
+    if (m.receipts && cashPart <= 0) {
+      // Nothing but receipts: no cash to label; only a duplicate or a reversal is left to say.
+      return h('div.sh-fixbox',
+        h('p.sh-sub', `All ${money(m.receipts)} of it was receipts, read from the counts: there is no cash in it to label. The receipts are expenses of the shift whose count they first appeared on.`),
+        dup, back, dup || back ? h('div.sh-fixrow', note, said) : null);
+    }
     return h('div.sh-fixbox',
       h('p.sh-sub', m.receipts
         ? `${money(m.receipts)} of it was receipts, from the count before it: expenses already, not cash. What was the other ${money(cashPart)}?`
@@ -1559,8 +1584,8 @@ export async function renderShifts(root, { range }) {
       cashPart > 0 ? h('div.sh-fixrow', choice('Expenses paid straight out', { kind: 'expenses' }, m.kind !== 'expenses'), choice('Cash to the safe', { kind: 'safe' }, m.kind !== 'safe'),
         h('span', 'or split:'), split, h('button.btn', { type: 'button', onclick: () => send({ kind: 'split', expenses: split.value }) }, 'Split')) : null,
       cashPart > 0 ? h('div.sh-fixrow', h('span', 'Expenses for'), pos) : null,
-      pick('A duplicate of', twins, 'duplicate'),
-      pick('Put back by', elsewhere(-m.amount), 'reverses'),
+      dup,
+      back,
       h('div.sh-fixrow', note, said));
   }
 
