@@ -415,6 +415,30 @@ test('laundry paid by card on the terminal and not keyed in ASSD is one differen
   assert.equal(x.some((e) => e.kind === 'laundry-card'), false);
 });
 
+test('laundry keyed twice by card says what the terminal and the laundry system saw', async () => {
+  // ALPHA keys GH₵70 of laundry by card twice; the terminal approved it once.
+  const laundry = (seq) => block('Reservation', 'ALPHA', seq, '01.08.26', '001',
+    ['01.08.26   540   Laundry   1   70,00   70,00 GHS   0', '01.08.26   CR.   CREDIT CARD   70,00 GHS', '70,00 GHS'], 'Test Guest / 1 Road');
+  const lines = journal();
+  const at = lines.findIndex((l) => l.includes('400103'));
+  const start = lines.lastIndexOf(lines.slice(0, at).reverse().find((l) => l.startsWith('Reservation')), at);
+  const end = lines.findIndex((l, i) => i > at && l.startsWith('Money Count'));
+  const { env } = await setUp([...lines.slice(0, start), ...laundry(400103), ...laundry(400104), ...lines.slice(end)]);
+  await env.DB.prepare(`INSERT INTO terminal_txn (rrn, at, day, kind, amount, last4, approved, loaded_at)
+    VALUES ('T7', '2026-08-01 09:30:00', '2026-08-01', 'card', 7000, '4242', 1, '2026-08-02 08:00:00')`).run();
+  const read = async () => (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).exceptions.find((e) => e.kind === 'duplicate');
+
+  let x = await read();
+  assert.ok(x, 'keyed twice');
+  assert.deepEqual([x.declined, x.laundry], [[], { read: false }], 'the laundry system not read yet');
+
+  await env.DB.prepare("INSERT INTO etl_run (id, from_day, to_day, status) VALUES (1, '2026-07-25', '2026-08-02', 'ok')").run();
+  await env.DB.prepare("INSERT INTO etl_source_run (run_id, source_id, status) VALUES (1, 'laundry', 'ok')").run();
+  await env.DB.prepare("INSERT INTO laundry_txn (source_id, kind, ref, at, day, amount, method) VALUES ('laundry', 'payment', 'L-7', '2026-08-01 09:27:00', '2026-08-01', 7000, 'card')").run();
+  x = await read();
+  assert.deepEqual(x.laundry, { read: true, same: [{ at: '2026-08-01 09:27:00', method: 'card', ref: 'L-7' }] }, 'paid once in the laundry system too');
+});
+
 // ------------------------------------------------- a supervisor’s answers --
 
 test('a supervisor’s answers and reconciliations wait for an admin before they clear', async () => {
