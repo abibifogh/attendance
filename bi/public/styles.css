@@ -1434,3 +1434,7 @@ label.fm-row input { margin-top: .2rem; }
 @media (max-width: 560px) { .sh-flow .ar { display: none; } }
 .sh-evidence.sh-three { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
 .sh-evidence.sh-three span.small { color: var(--ink-2); }
+/* Where receipts that left with no movement were spent. */
+.sh-swapfrom { display: grid; gap: .25rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .65rem; font-size: .86rem; }
+.sh-swaprow { display: flex; justify-content: space-between; gap: .6rem; align-items: baseline; }
+.sh-swapfrom small { color: var(--ink-2); }

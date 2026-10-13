@@ -1807,7 +1807,7 @@ export async function renderShifts(root, { range }) {
         return `The count before the ${money(x.move)} movement (ASSD ${x.seq}) showed receipts, so the movement looked like it took ${money(x.amount)} of them out. But the counts after it still show them. Either they stayed in the drawer and the movement was ${money(x.amount)} of cash, or they went and ${money(x.amount)} of new receipts came in. The drawer agrees either way; what changes is the expenses.`
           + (x.reading ? ` Read as: ${x.reading === 'stayed' ? 'they stayed; the movement was cash' : 'they went; new receipts came'}, because ${said}.` : ' Counted once (as stayed) until you say which.');
       }
-      case 'receipts-swapped': return `${money(x.amount)} of receipts${x.receiptsFrom ? ` left in the drawer by ${nameOf(x.receiptsFrom)}’s shift` : ''} left with no cash movement and were swapped for cash put into the drawer. They are expenses where they first appeared, with their PO; here they are not cash.`;
+      case 'receipts-swapped': return `${money(x.amount)} of receipts went out of the drawer with no cash movement, and cash was put in for them: the notes went up by as much. Here they are not cash; they stay expenses of the shift they were spent on, below.`;
       case 'expense-no-po': return `${money(x.amount)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''} with no PO: none on the closing report in HIVE and none linked here. Link the PO, or answer why there is none.`;
       case 'expense-po-gap': return `${money(x.expenses)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''}, but the POs (${(x.pos || []).join(', ')}) come to ${money(x.poTotal)} in Odoo: ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} was paid than the POs say. Link the missing PO, unlink a wrong one, or answer why.`;
       case 'movement-unlabelled': return `${money(x.amount)} ${x.part ? `of the ${money(x.whole)} moved out` : 'moved out of the drawer'} (ASSD ${x.seq}) and no count says whether it went to the safe or on expenses.`
@@ -1944,13 +1944,37 @@ export async function renderShifts(root, { range }) {
         await load(banner('good', 'Reconciled. The drawer is worked out again.'));
       } catch (err) { said.textContent = err.message; }
     };
+    const from = x.swapFrom || [];
+    const gone = [...new Set(from.map((o) => o.gone))];
     return h('div.sh-suggest',
       x.swapped
-        ? [h('span', h('b', 'It matches receipts that left the drawer. '),
-          `${money(x.swapped)} of receipts${x.receiptsFrom ? `, in the drawer at hand-over from ${nameOf(x.receiptsFrom)}’s shift,` : ''} left with no cash movement, and the notes went up by as much: they were swapped for cash. They are expenses where they first appeared, with their PO.`),
+        ? [h('span', h('b', 'The extra cash matches receipts that went missing. '),
+          `${money(x.swapped)} of receipts were in the drawer, then gone at count ASSD ${gone.join(', ') || '?'}, with no cash movement to take them out. At the same time the notes went up by ${money(x.swapped)}. Most likely someone took the receipts out and put cash in their place.`),
+        from.length ? swapFromBlock(from) : null,
         h('span', h('button.btn.primary', { type: 'button', onclick: () => send((x.swapped / 100).toFixed(2)) }, `Reconcile: ${money(x.swapped)} of receipts swapped for cash`))]
         : h('span', 'Receipts from an earlier shift swapped for cash? Type how much and reconcile it.'),
       x.swapped ? null : h('div.sh-fixrow', amount, h('button.btn', { type: 'button', onclick: () => send(amount.value) }, 'Reconcile')));
+  }
+
+  /**
+   * Whose receipts left the drawer with no movement: each shift they were
+   * spent on (a link), by whom, the count they first appeared in, and the
+   * count where they went. Their PO belongs to that shift.
+   */
+  function swapFromBlock(from) {
+    const when = (o) => `${dayText(o.day)}, ${SLOT[o.slot]?.label.toLowerCase() || o.slot}`;
+    const others = from.filter((o) => !o.here && !o.earlier);
+    return h('div.sh-swapfrom',
+      h('b', 'Where the receipts were spent'),
+      from.map((o) => h('div.sh-swaprow',
+        h('span', o.here ? `This shift, ${when(o)}` : o.earlier ? 'Before the days Insight has read'
+          : h('button.sh-link', { type: 'button', onclick: () => openShift(o.day, o.slot) }, when(o)),
+        o.user ? ` · ${nameOf(o.user)}` : '',
+        o.seqs?.length ? ` · first in count ASSD ${o.seqs.join(', ')}` : ''),
+        h('b.num', money(o.amount)))),
+      h('small', others.length
+        ? `They are that shift’s expenses: their PO belongs there, not here.`
+        : 'They are this shift’s expenses: their PO belongs here.'));
   }
 
   /** Answered, or explained by the rules: nothing left to do. */
@@ -2069,6 +2093,7 @@ export async function renderShifts(root, { range }) {
             try { await api('/shifts/receipts-read', { method: 'POST', body: { seq: x.seq, reading: '' } }); await load(banner('good', 'Back to what the evidence says.')); } catch (err) { said.textContent = err.message; }
           },
         }, 'Undo') : null) : null,
+      x.kind === 'receipts-swapped' && x.swapFrom?.length ? swapFromBlock(x.swapFrom) : null,
       x.kind === 'receipts-swapped' ? h('div.sh-done', h('span', `✓ Reconciled (${x.by || 'somebody'}${x.at ? `, ${String(x.at).slice(0, 16)}` : ''})${x.note ? ` · ${x.note}` : ''}`),
         may('moves', 2) ? h('button.sh-link', {
           type: 'button',

@@ -920,6 +920,9 @@ export async function shifts(env, query, account) {
     register.get(s.index).receipts.trail = tr;
   }
 
+  // Whose receipts left a shift's drawer with no movement, and at which count.
+  const swapFromOf = (r) => (r.receipts.trail?.swaps || []).flatMap((w) => w.origins.map((o) => ({ ...o, gone: w.seq })));
+
   // The drawer's own exceptions: a count that did not agree, a hand-over
   // where the next count differed from the last, and a movement keyed wrong
   // and put back.
@@ -934,6 +937,7 @@ export async function shifts(env, query, account) {
         // Receipts that left with no movement, not yet reconciled: the likely story of a surplus.
         swapped: r.receipts.swapped - (r.receipts.reconciled?.amount || 0) > 0 ? r.receipts.swapped - (r.receipts.reconciled?.amount || 0) : null,
         receiptsFrom: r.receipts.open ? previousUser.get(s.index) || null : null,
+        swapFrom: swapFromOf(r),
       });
     }
     for (const ask of s.receiptsAsk || []) {
@@ -956,6 +960,7 @@ export async function shifts(env, query, account) {
         ...base, key: `receipts:${s.day}:${s.slotName}`, kind: 'receipts-swapped', group: 'explained', severity: 'info',
         amount: r.receipts.reconciled.amount, by: r.receipts.reconciled.by, at: r.receipts.reconciled.at, note: r.receipts.reconciled.note,
         receiptsFrom: r.receipts.open ? previousUser.get(s.index) || null : null,
+        swapFrom: swapFromOf(r),
       });
     }
     if (r.handoverGap) {
