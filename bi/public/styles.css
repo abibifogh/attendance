@@ -1439,7 +1439,13 @@ label.fm-row input { margin-top: .2rem; }
 .sh-swaprow { display: flex; justify-content: space-between; gap: .6rem; align-items: baseline; }
 .sh-swapfrom small { color: var(--ink-2); }
 .sh-legs { display: grid; gap: .3rem; margin-top: .35rem; border-top: 1px solid var(--border); padding-top: .45rem; }
+/* A difference card never grows past its column; what is inside wraps. */
+.sh-exgrid > * { min-width: 0; }
+.sh-ex { grid-template-columns: minmax(0, 1fr); min-width: 0; overflow-wrap: anywhere; }
+.sh-legs .sh-otable { table-layout: fixed; width: 100%; font-size: .8rem; }
+.sh-legs .sh-otable th:first-child { width: 38%; }
+.sh-legs .sh-otable th, .sh-legs .sh-otable td { padding: .3rem .3rem; white-space: normal; }
+.sh-legs .sh-otable th { font-size: .66rem; }
 .sh-legs td small { display: block; color: var(--ink-2); }
-.sh-legs td.n small { display: inline; }
-@media (max-width: 560px) { .sh-legs .sh-otable th:nth-child(3), .sh-legs .sh-otable td:nth-child(3) { display: table-cell; } .sh-legs .sh-otable th:nth-child(2), .sh-legs .sh-otable td:nth-child(2) { display: none; } }
-@media (max-width: 560px) { .sh-legs .sh-otable { font-size: .78rem; } .sh-legs .sh-otable .n { white-space: normal; } .sh-legs .sh-otable th, .sh-legs .sh-otable td { padding: .3rem .25rem; } }
+@media (max-width: 560px) { .sh-legs .sh-otable th:nth-child(3), .sh-legs .sh-otable td:nth-child(3) { display: table-cell; } }
+.sh-ex b.num, .sh-ex span.num { overflow-wrap: normal; white-space: nowrap; }
