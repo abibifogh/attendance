@@ -334,6 +334,8 @@ export function summarise(shift, corrections = new Map()) {
     receiptsOut: 0,
     receiptsMoved: 0,
     receiptsSwapped: 0,
+    // The same, count by count: where receipts left with no movement.
+    receiptsSwaps: [],
     // Counts that can be read two ways (see the ledger below).
     receiptsAsk: [],
     directExpenses: 0,
@@ -443,14 +445,26 @@ export function summarise(shift, corrections = new Map()) {
   // movement carried that no count saw leave were replaced by new ones;
   // receipts that left with no movement were swapped for cash.
   const receiptsOf = new Map(s.moves.map((m) => [m.seq, m.receipts || 0]));
-  let dropped = 0;
+  // Receipts that left a count and no movement has carried yet, count by
+  // count, oldest first.
+  const dropped = [];
+  const drop = (seq, amount) => { if (amount > 0) dropped.push({ seq, amount }); };
+  const take = (amount) => {
+    let left = amount;
+    while (left > 0 && dropped.length) {
+      const d = dropped[0];
+      const n = Math.min(left, d.amount);
+      d.amount -= n;
+      left -= n;
+      if (!d.amount) dropped.shift();
+    }
+    return amount - left;
+  };
   let carried = 0;
   for (const step of order) {
     if (step.move) {
       const r = receiptsOf.get(step.move) || 0;
-      const matched = Math.min(r, dropped);
-      dropped -= matched;
-      carried += r - matched;
+      carried += r - take(r);
       continue;
     }
     if (!step.count) continue;
@@ -473,11 +487,11 @@ export function summarise(shift, corrections = new Map()) {
         const said = corrections.get(`count:${seq}`) || null;
         s.receiptsAsk.push({ seq, prev: counts[step.count - 1].receipts, now, left, reading: said?.reading || null, said });
         if (said?.reading === 'all') {
-          dropped += left + now;
+          drop(seq, left + now);
           s.receiptsIn += now;
           s.receiptsNew.push({ seq, amount: now, reading: 'all' });
-        } else dropped += left;
-      } else dropped += left;
+        } else drop(seq, left);
+      } else drop(counts[step.count].seq, left);
     }
   }
   if (carried > 0 && counts.length) {
@@ -485,7 +499,8 @@ export function summarise(shift, corrections = new Map()) {
     s.receiptsIn += carried;
     s.receiptsNew.push({ seq: counts[counts.length - 1].seq, amount: carried });
   }
-  s.receiptsSwapped = dropped;
+  s.receiptsSwaps = dropped;
+  s.receiptsSwapped = dropped.reduce((t, d) => t + d.amount, 0);
   s.receiptsOut = s.receiptsMoved + s.receiptsSwapped;
   s.expenses = s.receiptsIn + s.directExpenses;
   s.expensesMoved = s.expenses;

@@ -134,6 +134,15 @@ Everything typed is signed with the name of whoever typed it.
   paired with it. A movement put straight back by an equal one the other way
   on the same shift is a correction, such as 17,630 keyed for 1,763. Cash in
   a movement no count explains is shown as not labelled.
+- **Whose receipts a movement carried.** Receipts are followed from shift to
+  shift, oldest first. When a movement carries receipts earlier shifts left
+  in the drawer, a bar and a table under it list each shift they came from
+  (a link to it), the person, the count they first appeared in and how much,
+  with this shift's part highlighted: only that part is this shift's
+  spending and needs its PO. On the earlier shift, the receipts panel says
+  which later shift took them out (or that they are still in the drawer),
+  and its checks show it settled once all are out. Receipts missing from the
+  next shift's first count are said too.
 - **Receipts that went down, with some still there.** If a count shows fewer
   receipts than the count before, no cash movement took them, and some are
   still there (say GH₵70 down to GH₵50), it reads two ways: only GH₵20 were
