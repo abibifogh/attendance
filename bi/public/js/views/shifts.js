@@ -324,6 +324,21 @@ export async function renderShifts(root, { range }) {
     return paint();
   }
 
+  /** Open one shift, reading its days first when they are not on screen. */
+  function openShift(day, slot) {
+    const id = `${day}|${slot}`;
+    if (byId.has(id)) return go('shift', id);
+    currentId = id;
+    store.set('shift', id);
+    section = 'shifts';
+    detail = true;
+    store.set('section', section);
+    anchor = day;
+    remember();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return load(null, { cached: true });
+  }
+
   function remember() {
     store.set('mode', mode);
     store.set('anchor', anchor);
@@ -1118,7 +1133,29 @@ export async function renderShifts(root, { range }) {
       row('Receipts in the drawer at the end', rc.close ?? 0),
       rc.moved ? row('Receipts taken out with a cash movement', rc.moved) : null,
       rc.swapped > 0 ? row('Receipts taken out with no cash movement', rc.swapped) : null,
-      row('New receipts: this shift’s expenses', rc.in ?? 0, true));
+      row('New receipts: this shift’s expenses', rc.in ?? 0, true),
+      leftWords(rc.trail).map((x) => h(`div.sh-rleft.${x.tone}`, h('span', x.mark), h('span', x.text))));
+  }
+
+  /**
+   * What became of the receipts a shift left in the drawer: which later
+   * shift took them out, or that they are still there.
+   */
+  function leftWords(t) {
+    if (!t?.left) return [];
+    const shiftWords = (c) => `${nameOf(c.user)}’s ${SLOT[c.slot]?.label.toLowerCase() || ''} shift of ${dayText(c.day)}`;
+    const how = {
+      moved: (c) => `were carried to the back office on ${shiftWords(c)} (ASSD ${c.seq})`,
+      swapped: (c) => `were taken out with no cash movement on ${shiftWords(c)} (count ASSD ${c.seq})${c.reconciled ? ', and reconciled there' : ': reconcile it on that shift'}`,
+      handover: (c) => `were not in ${nameOf(c.user)}’s first count (ASSD ${c.seq}), on ${dayText(c.day)}`,
+    };
+    const open = (c) => c.how === 'handover' || (c.how === 'swapped' && !c.reconciled);
+    const out = t.cleared.map((c) => ({
+      tone: open(c) ? 'warn' : 'good', mark: open(c) ? '!' : '✓',
+      text: `${money(c.amount)} of the receipts left in the drawer ${how[c.how]?.(c) || ''}.`,
+    }));
+    if (t.still) out.push({ tone: 'info', mark: 'i', text: `${money(t.still)} of them still in the drawer: handed over, not taken out yet.` });
+    return out;
   }
 
   function modesBlock(s) {
@@ -1167,6 +1204,18 @@ export async function renderShifts(root, { range }) {
     }
     const rcp = s.register?.receipts;
     if (rcp?.reconciled?.amount) out.push(['good', '✓', `${money(rcp.reconciled.amount)} of receipts swapped for cash, reconciled${rcp.reconciled.by ? ` (${rcp.reconciled.by})` : ''}`]);
+    // Receipts this shift left in the drawer: settled once a later shift took them out.
+    const tr = rcp?.trail;
+    if (tr?.left) {
+      const gone = tr.cleared.filter((c) => c.how !== 'handover');
+      const by = [...new Set(gone.map((c) => `${nameOf(c.user)}’s ${SLOT[c.slot]?.label.toLowerCase() || ''} shift of ${dayText(c.day)}`))].join(' and ');
+      const missing = tr.cleared.some((c) => c.how === 'handover');
+      const swapped = tr.cleared.find((c) => c.how === 'swapped' && !c.reconciled);
+      out.push(tr.still ? ['info', 'i', `${money(tr.still)} of this shift’s receipts are still in the drawer, not taken out yet${gone.length ? `; the rest went on ${by}` : ''}`]
+        : missing ? ['warn', '!', `Some of this shift’s receipts were not in the next shift’s first count${gone.length ? `; the rest went on ${by}` : ''}`]
+        : swapped ? ['warn', '!', `This shift’s receipts left the drawer with no cash movement on ${nameOf(swapped.user)}’s ${SLOT[swapped.slot]?.label.toLowerCase() || ''} shift of ${dayText(swapped.day)}: reconcile it there`]
+          : ['good', '✓', `The ${money(tr.left)} of receipts this shift left in the drawer were taken out on ${by}`]);
+    }
     // Movements somebody matched or labelled: settled, so said plainly and green.
     for (const m of (s.moves || []).filter((x) => x.manual)) {
       const by = m.manual.by ? ` (${m.manual.by})` : '';
@@ -1460,21 +1509,10 @@ export async function renderShifts(root, { range }) {
       returned: ['Put back', 'var(--sh-good)'], excluded: ['Matched', 'var(--ink-2)'],
     };
     const where = (p) => (p ? ` on ${nameOf(p.user)}’s ${SLOT[p.slot]?.label.toLowerCase() || ''} shift of ${shortDay(p.day)}` : ' outside these days');
-    // Receipts a movement carried: first those the shift before left in the
-    // drawer (that shift's expenses), then this shift's own.
-    let leftBefore = s.register?.receipts?.open || 0;
-    const parts = new Map();
-    for (const m of moves) {
-      if (!(m.receipts > 0)) continue;
-      const before = Math.min(leftBefore, m.receipts);
-      leftBefore -= before;
-      parts.set(m.seq, { before, own: m.receipts - before });
-    }
-    const whose = (m) => {
-      const x = parts.get(m.seq);
-      if (!x?.before) return '';
-      return x.own ? ` (${money(x.before)} left in the drawer by the shift before, ${money(x.own)} from this shift)` : ' (all left in the drawer by the shift before)';
-    };
+    // Receipts a movement carried: those earlier shifts left in the drawer
+    // (their expenses), oldest first, then this shift's own.
+    const earlierOf = (m) => (m.origins || []).filter((o) => !o.here);
+    const whose = (m) => (earlierOf(m).length ? ', some left in the drawer by earlier shifts (below)' : '');
     const said = (m) => {
       if (m.kind === 'excluded') {
         return {
@@ -1488,7 +1526,8 @@ export async function renderShifts(root, { range }) {
       const rec = m.receipts ? `${money(m.receipts)} of receipts to the back office${whose(m)}` : '';
       const base = {
         expenses: m.manual ? [rec, `${money(m.direct)} expenses paid straight out, as corrected`].filter(Boolean).join('; ') + '.'
-          : `${rec}. They are expenses of the shift whose count they first appeared on, not cash.`,
+          : earlierOf(m).length ? `${money(m.receipts)} of receipts went to the back office. No cash.`
+            : `${rec}. They are expenses of the shift whose count they first appeared on, not cash.`,
         safe: m.manual ? [rec, `${money(m.safe)} of notes to the safe, as corrected`].filter(Boolean).join('; ') + '.' : 'Notes to the safe, as the count before it.',
         split: m.manual ? [rec, `${money(m.direct)} expenses and ${money(m.safe)} to the safe, as corrected`].filter(Boolean).join('; ') + '.'
           : `${rec} and ${money(m.safe)} of notes to the safe, as counted just before.`,
@@ -1514,8 +1553,42 @@ export async function renderShifts(root, { range }) {
           h('span.sh-moveend',
             h('span.amt.num', ['corrected', 'excluded'].includes(m.kind) ? h('s', money(Math.abs(m.amount))) : m.amount < 0 ? `+${money(-m.amount)}` : money(m.amount)),
             m.kind === 'corrected' || !canFix || (!admin && m.manual) ? null : h('button.sh-link', { type: 'button', onclick: open }, m.pending ? 'Change' : 'Correct'))),
+        earlierOf(m).length ? originsBlock(m) : null,
         fix);
     }));
+  }
+
+  /**
+   * Whose receipts a movement carried, shift by shift: a bar, and a table
+   * with each earlier shift to open. Only this shift's part is its spending.
+   */
+  function originsBlock(m) {
+    const list = m.origins || [];
+    const browns = ['#c9b8a6', '#a8917b', '#8f7a66', '#b6a48f'];
+    let b = 0;
+    const colourOf = list.map((o) => (o.here ? 'var(--sh-expense)' : browns[b++ % browns.length]));
+    const when = (o) => `${dayText(o.day)}, ${SLOT[o.slot]?.label.toLowerCase() || o.slot}`;
+    const own = list.filter((o) => o.here).reduce((t, o) => t + (o.amount || 0), 0);
+    const others = list.filter((o) => !o.here);
+    const people = [...new Set(others.filter((o) => o.user).map((o) => `${nameOf(o.user)}’s`))];
+    const named = people.length > 1 ? `${people.slice(0, -1).join(', ')} and ${people[people.length - 1]}` : people[0] || 'earlier';
+    return h('div.sh-origins',
+      data.redacted ? null : h('div.sh-obar', list.map((o, i) => h('b', { style: `flex:${o.amount || 1};background:${colourOf[i]}`, title: `${o.here ? 'This shift' : o.user ? nameOf(o.user) : 'Before these days'} ${money(o.amount)}` },
+        o.here ? `${whole(o.amount)} · this shift` : whole(o.amount)))),
+      h('table.sh-otable',
+        h('thead', h('tr', h('th', 'Spent on'), h('th', 'By'), h('th', 'First in the count'), h('th.n', 'Receipts'))),
+        h('tbody', list.map((o, i) => h(`tr${o.here ? '.here' : ''}`,
+          h('td', h('i.sh-odot', { style: `background:${colourOf[i]}` }),
+            o.here ? `This shift · ${when(o)}`
+              : o.earlier ? 'Before these days'
+                : h('button.sh-link', { type: 'button', onclick: () => openShift(o.day, o.slot) }, when(o))),
+          h('td', o.user ? nameOf(o.user) : '—'),
+          h('td', o.seqs?.length ? o.seqs.map((x) => `ASSD ${x}`).join(', ') : o.here ? 'not yet in a count' : '—'),
+          h('td.n.num', money(o.amount))))),
+        h('tfoot', h('tr', h('td', 'Total moved out'), h('td'), h('td'), h('td.n.num', money(m.receipts))))),
+      h('p.sh-sub', own
+        ? `Only ${money(own)} is this shift’s spending: that is the expense on its card, and the PO it needs. The ${money(m.receipts - own)} is on ${named} shift${people.length > 1 ? 's' : ''}, with ${people.length > 1 ? 'their' : 'its'} POs.`
+        : `None of it is this shift’s spending: the receipts are on ${named} shift${people.length > 1 ? 's' : ''}, with ${people.length > 1 ? 'their' : 'its'} POs.`));
   }
 
   /**

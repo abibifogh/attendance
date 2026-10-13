@@ -1373,3 +1373,24 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .pp-partial { margin: .35rem 0 0; color: color-mix(in srgb, var(--warning) 50%, var(--ink)); font-size: .88rem; font-weight: 600; }
 .pp-held { display: grid; gap: .6rem; padding: .8rem 1rem; border-radius: var(--radius); border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent); background: color-mix(in srgb, var(--warning) 12%, var(--surface)); }
 .pp-flash { padding: .6rem .9rem; border-radius: var(--radius); background: color-mix(in srgb, var(--good) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); }
+/* Whose receipts a movement carried, shift by shift. */
+.sh-origins { margin-top: .3rem; padding: .6rem .75rem; display: grid; gap: .4rem; background: var(--surface-2); border-radius: 10px; min-width: 0; }
+.sh-origins .sh-sub { margin: 0; }
+.sh-obar { display: flex; height: 22px; border-radius: 6px; overflow: hidden; }
+.sh-obar b { display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden; white-space: nowrap; color: #fff; font-size: .72rem; font-weight: 700; padding: 0 .3rem; }
+.sh-otable { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.sh-otable th, .sh-otable td { padding: .3rem .4rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.sh-otable th { font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); font-weight: 600; }
+.sh-otable .n { text-align: right; white-space: nowrap; }
+.sh-otable tr.here td { background: color-mix(in srgb, var(--sh-expense) 12%, transparent); font-weight: 600; }
+.sh-otable tfoot td { font-weight: 700; border-bottom: 0; }
+.sh-odot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: .4rem; vertical-align: -1px; }
+.sh-rleft { display: flex; gap: .45rem; align-items: baseline; color: var(--ink); }
+.sh-rleft > span:first-child { font-weight: 700; width: 1em; text-align: center; }
+.sh-rleft.good > span:first-child { color: var(--sh-good-ink); }
+.sh-rleft.warn > span:first-child { color: var(--sh-warn-ink); }
+.sh-rleft.info > span:first-child { color: var(--ink-2); }
+@media (max-width: 560px) {
+  .sh-otable th:nth-child(3), .sh-otable td:nth-child(3) { display: none; }
+}
+.sh-otable .sh-link { text-align: left; }

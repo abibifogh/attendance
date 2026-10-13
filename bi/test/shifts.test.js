@@ -759,3 +759,59 @@ test('a duplicate matched away leaves an answered record that can be undone', as
   assert.equal(all.some((x) => x.kind === 'movement-matched'), false);
   assert.ok(all.some((x) => x.kind === 'movement-twice'));
 });
+
+test('receipts trail: a movement says whose receipts it carried, and earlier shifts say who took theirs out', () => {
+  const shift = (index, day, slotName, user, open, extra) => ({
+    index, day, slotName, user, opening: open == null ? null : { seq: index * 100, receipts: open },
+    receiptsNew: [], receiptsSwaps: [], moves: [], ...extra,
+  });
+  const ordered = [
+    shift(0, '2026-01-05', 'morning', 'ALPHA', 0, { receiptsNew: [{ seq: 10, amount: 12000 }] }),
+    shift(1, '2026-01-05', 'afternoon', 'BRAVO', 12000, { receiptsNew: [{ seq: 110, amount: 16800 }] }),
+    shift(2, '2026-01-06', 'morning', 'CHARLIE', 28800, {
+      receiptsNew: [{ seq: 210, amount: 96200 }],
+      moves: [{ seq: 211, receipts: 125000 }],
+    }),
+    shift(3, '2026-01-06', 'afternoon', 'DELTA', 0, { receiptsNew: [{ seq: 310, amount: 5000 }] }),
+  ];
+  const { origins, trail } = routes.receiptTrail(ordered);
+  assert.deepEqual(origins.get(211), [
+    { day: '2026-01-05', slot: 'morning', user: 'ALPHA', seqs: [10], amount: 12000, earlier: undefined, here: false },
+    { day: '2026-01-05', slot: 'afternoon', user: 'BRAVO', seqs: [110], amount: 16800, earlier: undefined, here: false },
+    { day: '2026-01-06', slot: 'morning', user: 'CHARLIE', seqs: [210], amount: 96200, earlier: undefined, here: true },
+  ]);
+  // Alpha's 120 was handed over twice and taken out by Charlie.
+  assert.equal(trail.get(0).left, 12000);
+  assert.deepEqual(trail.get(0).cleared, [{ amount: 12000, how: 'moved', seq: 211, day: '2026-01-06', slot: 'morning', user: 'CHARLIE' }]);
+  assert.equal(trail.get(0).still, 0);
+  assert.equal(trail.get(1).cleared[0].amount, 16800);
+  // Charlie's own were carried out on the shift: nothing handed over.
+  assert.equal(trail.get(2).left, 0);
+  assert.deepEqual(trail.get(2).cleared, []);
+  // Delta's are still in the drawer.
+  assert.equal(trail.get(3).left, 5000);
+  assert.equal(trail.get(3).still, 5000);
+});
+
+test('receipts trail: swapped, gone at a hand-over, from before, and carried before they were counted', () => {
+  const ordered = [
+    { index: 0, day: '2026-01-05', slotName: 'morning', user: 'ALPHA', opening: { seq: 1, receipts: 3000 },
+      receiptsNew: [{ seq: 5, amount: 2000 }], receiptsSwaps: [], moves: [] },
+    // 1,000 fewer at Bravo's first count than Alpha left.
+    { index: 1, day: '2026-01-05', slotName: 'afternoon', user: 'BRAVO', opening: { seq: 100, receipts: 4000 },
+      receiptsNew: [], receiptsSwaps: [{ seq: 105, amount: 2500 }], moves: [] },
+    // Charlie moves 1,500 of receipts before the count shows 1,000 new ones.
+    { index: 2, day: '2026-01-06', slotName: 'morning', user: 'CHARLIE', opening: { seq: 200, receipts: 1500 },
+      receiptsNew: [{ seq: 210, amount: 1000 }], receiptsSwaps: [], moves: [{ seq: 205, receipts: 2500 }] },
+  ];
+  const { origins, trail } = routes.receiptTrail(ordered);
+  // Bravo's opening took 1,000 of the oldest (from before) off at the hand-over;
+  // the swap took the other 2,000 from before and 500 of Alpha's.
+  assert.deepEqual(trail.get(0).cleared, [
+    { amount: 500, how: 'swapped', seq: 105, day: '2026-01-05', slot: 'afternoon', user: 'BRAVO' },
+    { amount: 1500, how: 'moved', seq: 205, day: '2026-01-06', slot: 'morning', user: 'CHARLIE' },
+  ]);
+  assert.deepEqual(origins.get(205).map((o) => [o.user || 'earlier', o.amount, o.here]), [['ALPHA', 1500, false], ['CHARLIE', 1000, true]]);
+  assert.equal(trail.get(2).left, 0);
+  assert.equal(trail.get(1).left, 0);
+});
