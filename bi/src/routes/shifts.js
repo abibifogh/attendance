@@ -383,7 +383,7 @@ export function receiptTrail(ordered) {
       need -= n;
       if (!lot.amount) lots.shift();
       const last = out[out.length - 1];
-      if (last && last.index === lot.index) { last.amount += n; if (!last.seqs.includes(lot.seq)) last.seqs.push(lot.seq); } else out.push({ index: lot.index, ...lot.from, seqs: lot.seq ? [lot.seq] : [], amount: n, earlier: lot.earlier || undefined });
+      if (last && last.index === lot.index) { last.amount += n; if (!last.seqs.includes(lot.seq)) last.seqs.push(lot.seq); } else out.push({ index: lot.index, ...lot.from, seqs: lot.seq ? [lot.seq] : [], amount: n, earlier: lot.earlier || undefined, leg: lot.leg || undefined });
       if (lot.index !== by.index && trail.has(lot.index)) {
         const t = trail.get(lot.index);
         const same = t.cleared.find((c) => c.seq === seq && c.how === how);
@@ -405,15 +405,15 @@ export function receiptTrail(ordered) {
     // receipts (they appear later, as new): those are its own already.
     let owed = 0;
     const events = [
-      ...(s.receiptsSwaps || []).map((x) => ({ seq: x.seq, at: 0, out: x.amount, how: 'swapped' })),
+      ...(s.receiptsSwaps || []).map((x) => ({ seq: x.seq, at: 0, out: x.amount, how: 'swapped', leg: x.leg || null })),
       ...(s.moves || []).filter((m) => m.receipts > 0).map((m) => ({ seq: m.seq, at: 0, out: m.receipts, how: 'moved', move: m })),
-      ...(s.receiptsNew || []).map((x) => ({ seq: x.seq, at: 1, add: x.amount })),
+      ...(s.receiptsNew || []).map((x) => ({ seq: x.seq, at: 1, add: x.amount, leg: x.leg || null })),
     ].sort((a, b) => a.seq - b.seq || a.at - b.at);
     for (const e of events) {
       if (e.add) {
         const paid = Math.min(owed, e.add);
         owed -= paid;
-        if (e.add > paid) lots.push({ index: s.index, from: shiftOf(s), seq: e.seq, amount: e.add - paid });
+        if (e.add > paid) lots.push({ index: s.index, from: shiftOf(s), seq: e.seq, amount: e.add - paid, leg: e.leg || null });
         continue;
       }
       const { out, short } = take(e.out, s, e.how, e.seq);
@@ -424,7 +424,7 @@ export function receiptTrail(ordered) {
       }
       if (e.move) origins.set(e.move.seq, out.map((o) => ({ ...o, here: o.index === s.index })));
       // Whose receipts left with no movement, at which count.
-      if (e.how === 'swapped') trail.get(s.index).swaps.push({ seq: e.seq, amount: e.out, origins: out.map((o) => ({ ...o, here: o.index === s.index })) });
+      if (e.how === 'swapped') trail.get(s.index).swaps.push({ seq: e.seq, amount: e.out, leg: e.leg || null, origins: out.map((o) => ({ ...o, here: o.index === s.index })) });
     }
     // What it handed over of its own.
     trail.get(s.index).left = lots.filter((l) => l.index === s.index).reduce((t, l) => t + l.amount, 0);
@@ -921,7 +921,7 @@ export async function shifts(env, query, account) {
   }
 
   // Whose receipts left a shift's drawer with no movement, and at which count.
-  const swapFromOf = (r) => (r.receipts.trail?.swaps || []).flatMap((w) => w.origins.map((o) => ({ ...o, gone: w.seq })));
+  const swapFromOf = (r) => (r.receipts.trail?.swaps || []).flatMap((w) => w.origins.map((o) => ({ ...o, gone: w.seq, goneLeg: w.leg })));
 
   // The drawer's own exceptions: a count that did not agree, a hand-over
   // where the next count differed from the last, and a movement keyed wrong
@@ -1354,6 +1354,7 @@ const MONEY_KEYS = new Set([
   'odooTotal', 'safe', 'short', 'over', 'flaggedAmount', 'collected', 'charged', 'paid', 'balance',
   'open', 'close', 'in', 'moved', 'swapped', 'direct', 'putBack', 'fromSheet', 'poTotal', 'gap',
   'receiptsIn', 'receiptsOut', 'receiptsMoved', 'receiptsSwapped', 'directExpenses', 'left', 'still',
+  'receiptsBefore', 'receiptsAfter', 'notesBefore', 'notesAfter',
 ]);
 
 /** The same object with every amount taken out. Agrees, short and over survive as a sign. */

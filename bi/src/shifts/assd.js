@@ -452,7 +452,10 @@ export function summarise(shift, corrections = new Map()) {
   // Receipts that left a count and no movement has carried yet, count by
   // count, oldest first.
   const dropped = [];
-  const drop = (seq, amount) => { if (amount > 0) dropped.push({ seq, amount }); };
+  const drop = (seq, amount, leg = null) => { if (amount > 0) dropped.push({ seq, amount, leg }); };
+  // A count against the one before it: what the receipts and the notes were either side.
+  const legOf = (i) => ({ prev: counts[i - 1].seq, receiptsBefore: counts[i - 1].receipts, receiptsAfter: counts[i].receipts,
+    notesBefore: counts[i - 1].notes, notesAfter: counts[i].notes });
   const take = (amount) => {
     let left = amount;
     while (left > 0 && dropped.length) {
@@ -490,7 +493,7 @@ export function summarise(shift, corrections = new Map()) {
     const delta = counts[step.count].receipts - counts[step.count - 1].receipts;
     if (delta > 0) {
       s.receiptsIn += delta;
-      s.receiptsNew.push({ seq: counts[step.count].seq, amount: delta });
+      s.receiptsNew.push({ seq: counts[step.count].seq, amount: delta, leg: legOf(step.count) });
     } else if (delta < 0) {
       const matched = Math.min(-delta, carried);
       carried -= matched;
@@ -507,11 +510,11 @@ export function summarise(shift, corrections = new Map()) {
         const said = corrections.get(`count:${seq}`) || null;
         s.receiptsAsk.push({ seq, prev: counts[step.count - 1].receipts, now, left, reading: said?.reading || null, said });
         if (said?.reading === 'all') {
-          drop(seq, left + now);
+          drop(seq, left + now, legOf(step.count));
           s.receiptsIn += now;
-          s.receiptsNew.push({ seq, amount: now, reading: 'all' });
-        } else drop(seq, left);
-      } else drop(counts[step.count].seq, left);
+          s.receiptsNew.push({ seq, amount: now, reading: 'all', leg: legOf(step.count) });
+        } else drop(seq, left, legOf(step.count));
+      } else drop(counts[step.count].seq, left, legOf(step.count));
     }
   }
   // A movement that seems to carry receipts the counts after it still show

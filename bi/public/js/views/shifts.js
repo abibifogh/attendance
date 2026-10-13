@@ -1152,7 +1152,7 @@ export async function renderShifts(root, { range }) {
     const swaps = rc.trail?.swaps || [];
     const shiftOf = (o) => `${dayText(o.day)}, ${SLOT[o.slot]?.label.toLowerCase() || o.slot}`;
     const link = (o) => (o.here ? 'this shift' : o.earlier ? 'before these days' : h('button.sh-link', { type: 'button', onclick: () => openShift(o.day, o.slot) }, shiftOf(o)));
-    const rows = swaps.flatMap((w) => w.origins.map((o) => ({ ...o, gone: w.seq })));
+    const rows = swaps.flatMap((w) => w.origins.map((o) => ({ ...o, gone: w.seq, goneLeg: w.leg })));
     const first = rows[0];
     const earlier = rows.filter((o) => !o.here);
     const step = (title, ...lines) => h('div.st', h('b', title), h('small', ...lines));
@@ -1179,6 +1179,7 @@ export async function renderShifts(root, { range }) {
             try { await api('/shifts/receipts', { method: 'POST', body: { day: s.day, slot: s.slot, amount: '' } }); await load(banner('good', 'Undone. The drawer is worked out again.')); } catch (err) { window.alert(err.message); }
           },
         }, 'Undo')] : null),
+      legsBlock(rows),
       h('p.small', earlier.length
         ? `They are still ${owners.join(' and ') || 'the earlier'} shift${owners.length > 1 ? 's’' : '’s'} expenses, with their PO there. On ${owners.length > 1 ? 'those shifts' : 'that shift'} the same receipts say: taken out with no cash movement on ${nameOf(s.user)}’s shift, and reconciled here.`
         : 'They are this shift’s expenses, with their PO here.'));
@@ -1974,7 +1975,47 @@ export async function renderShifts(root, { range }) {
         h('b.num', money(o.amount)))),
       h('small', others.length
         ? `They are that shift’s expenses: their PO belongs there, not here.`
-        : 'They are this shift’s expenses: their PO belongs here.'));
+        : 'They are this shift’s expenses: their PO belongs here.'),
+      legsBlock(from));
+  }
+
+  /**
+   * Both sides of a swap: the count where the receipts appeared (spent from
+   * the drawer) and the count where they went with no movement, each with
+   * the receipts and the notes and coins either side of it.
+   */
+  function legsBlock(from) {
+    const when = (o) => `${dayText(o.day)}, ${SLOT[o.slot]?.label.toLowerCase() || o.slot}`;
+    const span = (a, b) => `${whole(a)} → ${whole(b)}`;
+    const diff = (a, b) => { const d = b - a; return d ? ` (${d > 0 ? '+' : '−'}${whole(Math.abs(d))})` : ''; };
+    const rows = [];
+    for (const o of from.filter((x) => x.leg)) {
+      rows.push(h('tr',
+        h('td', h('b', 'Spent'), h('br'), h('small', o.here ? 'this shift' : '', o.here ? '' : h('button.sh-link', { type: 'button', onclick: () => openShift(o.day, o.slot) }, when(o)))),
+        h('td', `ASSD ${o.leg.prev} → ${o.seqs?.[0] ?? ''}`),
+        h('td.n.num', span(o.leg.receiptsBefore, o.leg.receiptsAfter), h('small', diff(o.leg.receiptsBefore, o.leg.receiptsAfter))),
+        h('td.n.num', span(o.leg.notesBefore, o.leg.notesAfter), h('small', diff(o.leg.notesBefore, o.leg.notesAfter)))));
+    }
+    const gone = [...new Map(from.filter((x) => x.goneLeg).map((x) => [x.gone, x.goneLeg])).entries()];
+    for (const [seq, l] of gone) {
+      rows.push(h('tr',
+        h('td', h('b', 'Taken out, no cash movement'), h('br'), h('small', 'this shift')),
+        h('td', `ASSD ${l.prev} → ${seq}`),
+        h('td.n.num', span(l.receiptsBefore, l.receiptsAfter), h('small', diff(l.receiptsBefore, l.receiptsAfter))),
+        h('td.n.num', span(l.notesBefore, l.notesAfter), h('small', diff(l.notesBefore, l.notesAfter)))));
+    }
+    if (!rows.length) return null;
+    const [seq, l] = gone[0] || [];
+    const out = l ? l.receiptsBefore - l.receiptsAfter : 0;
+    const up = l ? l.notesAfter - l.notesBefore : 0;
+    return h('div.sh-legs',
+      h('b', 'Both sides of the swap'),
+      h('table.sh-otable',
+        h('thead', h('tr', h('th', 'What'), h('th', 'Counts'), h('th.n', 'Receipts'), h('th.n', 'Notes and coins'))),
+        h('tbody', rows)),
+      l ? h('small', up === out
+        ? `Between the count before and ASSD ${seq}, the receipts went down by ${money(out)} and the notes and coins went up by exactly as much: the cash came back for the receipts.`
+        : `Between the count before and ASSD ${seq}, the receipts went down by ${money(out)} and the notes and coins went ${up >= 0 ? 'up' : 'down'} by ${money(Math.abs(up))}; anything taken or paid between the two counts is in that too.`) : null);
   }
 
   /** Answered, or explained by the rules: nothing left to do. */
