@@ -597,6 +597,48 @@ test('receipts swapped for cash are reconciled on the shift, and undone', async 
   assert.equal(s.register.receipts.reconciled, null);
 });
 
+test('receipts that went down with some still there are read by the evidence, or asked about', () => {
+  let seq = 1000;
+  const base = { register: '001', user: 'B', payments: [], laundry: [], items: [] };
+  const count = (notes, receipts = 0) => ({ ...base, seq: seq += 1, kind: 'Money Count', counted: notes * 100, expensesCounted: receipts * 100 });
+  const shift = (entries, corrections) => summarise({ user: 'B', startSeq: 1000, entries }, corrections);
+
+  // The morning left a GH₵70 receipt. The afternoon's count shows GH₵50.
+  // 1. Swapped for GH₵70 cash and GH₵50 spent: notes 930 + 70 − 50 = 950.
+  const swapped = shift([count(930, 70), count(950, 50)]);
+  assert.deepEqual(swapped.receiptsAsk.map((a) => [a.prev, a.now, a.left, a.reading]), [[7000, 5000, 2000, null]]);
+  assert.deepEqual([swapped.expenses, swapped.receiptsSwapped, swapped.countVariance], [0, 2000, 2000], 'unanswered: only what is sure');
+  assert.equal(routes.readReceipts(swapped, swapped.receiptsAsk[0], null), null, 'the drawer cannot settle this one');
+  assert.deepEqual(routes.readReceipts(swapped, swapped.receiptsAsk[0], 5000), { reading: 'all', why: 'report' }, 'the closing report lists GH₵50 spent');
+  const askSeq = swapped.receiptsAsk[0].seq;
+  const answered = shift([count(930, 70), { ...count(950, 50), seq: askSeq }], new Map([[`count:${askSeq}`, { reading: 'all', by: 'Test' }]]));
+  assert.deepEqual([answered.expenses, answered.receiptsSwapped, answered.countVariance], [5000, 7000, 7000], 'GH₵50 is new; GH₵70 over, which Reconcile clears');
+
+  // 2. Taken out with no cash put in, and GH₵50 spent: notes 880. Only "all" makes the drawer agree.
+  const takenOut = shift([count(930, 70), count(880, 50)]);
+  assert.equal(takenOut.countVariance, -5000);
+  assert.deepEqual(routes.readReceipts(takenOut, takenOut.receiptsAsk[0], null), { reading: 'all', why: 'drawer' });
+
+  // 3. Only GH₵20 of the receipts handed in, nothing spent: notes unchanged. Only "some" agrees.
+  const partly = shift([count(930, 70), count(930, 50)]);
+  assert.deepEqual(routes.readReceipts(partly, partly.receiptsAsk[0], null), { reading: 'some', why: 'drawer' });
+  assert.deepEqual(routes.readReceipts(partly, partly.receiptsAsk[0], 0), { reading: 'some', why: 'report' });
+
+  // Not asked: all handed in and nothing left, or the receipts kept and more added.
+  assert.equal(shift([count(930, 70), count(1000)]).receiptsAsk.length, 0);
+  assert.equal(shift([count(930, 70), count(880, 120)]).receiptsAsk.length, 0);
+});
+
+test('a person’s reading of a count is saved, checked and taken back', async () => {
+  const env = await loaded();
+  await assert.rejects(routes.saveReceiptsRead(env, { seq: 300508, reading: 'all' }, OWNER), /not a Money Count/);
+  await assert.rejects(routes.saveReceiptsRead(env, { seq: 300507, reading: 'maybe' }, OWNER), /all the receipts/);
+  await routes.saveReceiptsRead(env, { seq: 300507, reading: 'some' }, OWNER);
+  assert.equal((await env.DB.prepare('SELECT reading, by_name FROM shift_receipts_read WHERE count_seq = 300507').first()).by_name, 'Test Owner');
+  await routes.saveReceiptsRead(env, { seq: 300507, reading: '' }, OWNER);
+  assert.equal(await env.DB.prepare('SELECT * FROM shift_receipts_read').first(), null);
+});
+
 test('what each cash movement was', () => {
   const counts = [
     { seq: 1, notes: 61200, receipts: 176300, total: 237500 },

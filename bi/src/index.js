@@ -136,6 +136,10 @@ const ROUTES = [
   ['POST', '/api/shifts/expense/pull', 'shifts', adminOnly((env, ctx) => shiftRoutes.pullOrders(env, ctx.body))],
   ['POST', '/api/shifts/expense/link', 'shifts', linkPos],
   ['POST', '/api/shifts/receipts', 'shifts', receiptsSwap],
+  ['POST', '/api/shifts/receipts-read', 'shifts', async (env, ctx) => {
+    if (till.roleOf(ctx.account) !== 'admin') await till.requireArea(env, ctx.account, 'moves', 2);
+    return shiftRoutes.saveReceiptsRead(env, ctx.body, ctx.account);
+  }],
   ['POST', '/api/shifts/answer', 'shifts', async (env, ctx) => {
     // An unpaid stay is answered by whoever may act on Unpaid stays; anything else by whoever may act on the exceptions.
     const stay = String(ctx.body?.key || '').startsWith('stay:');

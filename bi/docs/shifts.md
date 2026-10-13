@@ -134,6 +134,17 @@ Everything typed is signed with the name of whoever typed it.
   paired with it. A movement put straight back by an equal one the other way
   on the same shift is a correction, such as 17,630 keyed for 1,763. Cash in
   a movement no count explains is shown as not labelled.
+- **Receipts that went down, with some still there.** If a count shows fewer
+  receipts than the count before, no cash movement took them, and some are
+  still there (say GH₵70 down to GH₵50), it reads two ways: only GH₵20 were
+  handed in and nothing new was spent, or all GH₵70 were handed in and the
+  GH₵50 now counted is new spending. Insight never guesses quietly. It takes
+  the reading the shift's closing report fits (its expenses match one of
+  them), or else the one under which the drawer agrees. If neither settles
+  it, the shift gets **Receipts handed in: all, or only some?**, with one
+  button for each reading; until somebody answers, only what is sure is
+  counted. Whichever reading is used, the card says which and why, and the
+  other button changes it.
 - **Receipts swapped for cash.** Receipts that leave the drawer with no
   movement, the notes going up by as much, were swapped for cash put into the
   drawer: that shift reads over by as much. The Drawer over card says so and
