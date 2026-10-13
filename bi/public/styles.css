@@ -1313,3 +1313,63 @@ label.field textarea.inv-note { font-family: var(--sans); }
 /* A suggestion on an exception: what the data says happened. */
 .sh-suggest { display: grid; gap: .5rem; padding: .65rem .75rem; border-radius: 10px; background: color-mix(in srgb, var(--series-1) 10%, var(--surface)); font-size: .85rem; }
 .sh-suggest b { color: color-mix(in srgb, var(--series-1) 70%, var(--ink)); }
+
+/* A button that removes something for good. */
+.btn.danger { color: var(--sh-bad-ink, #a32121); border-color: color-mix(in srgb, var(--sh-bad, #d33a3a) 45%, transparent); }
+.btn.danger:hover { background: color-mix(in srgb, var(--sh-bad, #d33a3a) 10%, transparent); }
+
+/* Ticking Inbox items to act on them together. */
+.ib-bulk { display: grid; gap: .5rem; }
+.ib-all { display: inline-flex; align-items: center; gap: .35rem; font-size: .86rem; font-weight: 600; }
+.ib-bulkbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; padding: .55rem .8rem; border: 1px solid color-mix(in srgb, var(--series-1) 40%, transparent); border-radius: var(--radius); background: color-mix(in srgb, var(--series-1) 7%, var(--surface)); }
+.ib-bulkbar input[type=text] { flex: 1 1 14rem; min-width: 0; }
+
+/* ---------------------------------------------------------- prepaid stays -- */
+.pp { --pp-bank: var(--series-7); --pp-online: var(--series-5); --pp-desk: var(--series-3); --pp-none: var(--grid); display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+.pp > * { min-width: 0; }
+.pp-top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .8rem; }
+.pp-top h1 { margin: 0; }
+.pp-top p { margin: .2rem 0 0; }
+.pp-month { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.pp-month b { min-width: 9.5rem; text-align: center; }
+.pp-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .8rem; }
+.pp-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .8rem 1rem; display: grid; gap: .1rem; }
+.pp-tile small { color: var(--ink-2); }
+.pp-tile b { font-size: 1.45rem; font-variant-numeric: tabular-nums; }
+.pp-tile span { color: var(--muted); font-size: .84rem; }
+.pp-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 1rem; }
+@media (max-width: 900px) { .pp-grid { grid-template-columns: minmax(0, 1fr); } }
+.pp-stack { display: flex; height: 24px; border-radius: 7px; overflow: hidden; margin: .4rem 0 .7rem; background: var(--surface-2); }
+.pp-stack b { display: block; min-width: 2px; }
+.pp-key { display: grid; gap: .3rem; font-size: .88rem; }
+.pp-key i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: .4rem; vertical-align: -1px; }
+.pp-months { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .4rem; align-items: end; min-height: 150px; }
+.pp-mo { display: grid; justify-items: center; gap: .3rem; border: 0; background: none; font: inherit; color: var(--ink-2); cursor: pointer; padding: 0; }
+.pp-mo small { font-size: .76rem; white-space: nowrap; }
+.pp-mo.on small { color: var(--ink); font-weight: 700; }
+.pp-col { width: min(38px, 80%); border-radius: 5px 5px 0 0; display: flex; flex-direction: column-reverse; overflow: hidden; background: var(--pp-none); }
+.pp-col b { display: block; }
+.pp-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .6rem; }
+.pp-chips button { border: 1px solid var(--line, var(--border)); border-radius: 999px; padding: .25rem .7rem; background: var(--surface); color: var(--ink); font: inherit; font-size: .85rem; cursor: pointer; }
+.pp-chips button[aria-pressed='true'] { background: var(--ink); color: var(--plane); border-color: var(--ink); }
+.pp-table { overflow-x: auto; }
+.pp-table table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.pp-table th { text-align: left; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); padding: .45rem .5rem; border-bottom: 1px solid var(--border); }
+.pp-table td { padding: .5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+.pp-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pp-table td small { display: block; color: var(--muted); font-size: .75rem; }
+.pp-table tfoot td { font-weight: 700; border-bottom: 0; }
+.pp-st { display: inline-block; border-radius: 999px; padding: .1rem .55rem; font-size: .76rem; font-weight: 700; white-space: nowrap; }
+.pp-st.full { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good-text); }
+.pp-st.part { background: color-mix(in srgb, var(--warning) 20%, transparent); color: color-mix(in srgb, var(--warning) 45%, var(--ink)); }
+.pp-st.none { background: var(--surface-2); color: var(--ink-2); }
+.pp-mail { display: grid; gap: .6rem; }
+.pp-mail h2, .pp-mail .sub { margin: 0; }
+.pp-emails { display: flex; flex-wrap: wrap; gap: .4rem; }
+.pp-email { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid var(--border); border-radius: 999px; padding: .2rem .3rem .2rem .7rem; background: var(--surface-2); font-size: .86rem; }
+.pp-email button { border: 0; background: none; font: inherit; font-weight: 700; color: var(--ink-2); cursor: pointer; padding: 0 .3rem; }
+.pp-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; }
+.pp-row input { flex: 1 1 16rem; min-width: 0; }
+.pp-partial { margin: .35rem 0 0; color: color-mix(in srgb, var(--warning) 50%, var(--ink)); font-size: .88rem; font-weight: 600; }
+.pp-held { display: grid; gap: .6rem; padding: .8rem 1rem; border-radius: var(--radius); border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent); background: color-mix(in srgb, var(--warning) 12%, var(--surface)); }
+.pp-flash { padding: .6rem .9rem; border-radius: var(--radius); background: color-mix(in srgb, var(--good) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); }

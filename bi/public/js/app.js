@@ -17,6 +17,7 @@ import { renderShifts } from './views/shifts.js';
 import { renderLogin as renderLoginView, markGlyph } from './views/login.js';
 import { renderJoin } from './views/join.js';
 import { renderUpload } from './views/files.js';
+import { renderPrepaid } from './views/prepaid.js';
 
 export const state = {
   boot: null,
@@ -42,6 +43,8 @@ const ROUTES = [
   { path: 'labour', label: 'Labour', render: renderLabour },
   { path: 'guests', label: 'Guests', render: renderDemand },
   { path: 'cash', label: 'Cash', render: renderCash },
+  // A month of its own rather than the window: its address names the month.
+  { path: 'prepaid', label: 'Prepaid stays', render: renderPrepaid, ownHash: true },
   // The one screen a supervisor gets, with the parts an admin gave them.
   { path: 'shifts', label: 'Shifts', render: renderShifts, needs: 'shifts' },
   // The one screen an uploader gets: the three shift files, nothing in them.
@@ -60,7 +63,7 @@ const ROUTES = [
  */
 const NAV_GROUPS = [
   ['Today', ['hub', 'brief', 'findings']],
-  ['Money', ['money', 'yardstick', 'cash', 'books', 'buying']],
+  ['Money', ['money', 'yardstick', 'cash', 'prepaid', 'books', 'buying']],
   ['Operations', ['shifts', 'upload', 'labour', 'guests']],
   ['Admin', ['accounts', 'reports', 'setup']],
 ];
@@ -222,9 +225,11 @@ async function renderApp() {
     const route = visible.find((r) => r.path === path) || visible[0];
     // The window rides in the address, so a reload keeps it and a link to a
     // screen is a link to the days somebody was actually looking at.
-    const want = route.needs === 'insight' || route.needs === 'shifts'
-      ? `#/${route.path}?from=${state.range.from}&to=${state.range.to}`
-      : `#/${route.path}`;
+    const own = route.ownHash && location.hash.split('?')[0] === `#/${route.path}`;
+    const want = own ? location.hash
+      : !route.ownHash && (route.needs === 'insight' || route.needs === 'shifts')
+        ? `#/${route.path}?from=${state.range.from}&to=${state.range.to}`
+        : `#/${route.path}`;
     if (location.hash !== want) location.hash = want;
     for (const [path, button] of links) {
       if (path === route.path) button.setAttribute('aria-current', 'page');
@@ -236,7 +241,7 @@ async function renderApp() {
     if (group) where.append(h('b', route.label));
     // The window means nothing on the hub or the accounts screen, so neither
     // the label nor the picker appears there.
-    const windowed = route.needs === 'insight' || route.needs === 'shifts';
+    const windowed = !route.ownHash && (route.needs === 'insight' || route.needs === 'shifts');
     if (picker) picker.style.display = windowed ? '' : 'none';
     mount(view, h('p.muted', 'Reading…'));
     try {

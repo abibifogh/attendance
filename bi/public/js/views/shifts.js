@@ -63,6 +63,7 @@ const KIND = {
   'movement-unlabelled': ['Cash moved out with no label', '?'],
   'expense-no-po': ['Expenses with no PO', '#'],
   'receipts-swapped': ['Receipts swapped for cash', '✓'],
+  'receipts-unclear': ['Receipts handed in: all, or only some?', '?'],
   'expense-po-gap': ['PO total does not match the expenses', '#'],
 };
 const MODES = [
@@ -1116,7 +1117,7 @@ export async function renderShifts(root, { range }) {
       row('Receipts in the drawer at hand-over', rc.open ?? 0),
       row('Receipts in the drawer at the end', rc.close ?? 0),
       rc.moved ? row('Receipts taken out with a cash movement', rc.moved) : null,
-      rc.swapped > 0 ? row('Receipts taken out with no movement (swapped for cash)', rc.swapped) : null,
+      rc.swapped > 0 ? row('Receipts taken out with no cash movement', rc.swapped) : null,
       row('New receipts: this shift’s expenses', rc.in ?? 0, true));
   }
 
@@ -1625,6 +1626,11 @@ export async function renderShifts(root, { range }) {
       case 'movement-corrected': return `${nameOf(x.by)} moved ${money(x.amount)} out and ${nameOf(x.reversedBy)} put it back (ASSD ${x.reversedSeq}). It nets to nothing.`;
       case 'movement-twice': return `${money(x.amount)} was moved out of the drawer twice (ASSD ${x.pair} and ${x.seq}), and the drawer counted over. If the second never moved any cash, match it as a duplicate.`;
       case 'movement-reversal': return `${money(x.amount)} was put back into the drawer (ASSD ${x.seq}). It matches ASSD ${x.pair}, moved out on ${nameOf(x.pairShift?.user)}’s ${SLOT[x.pairShift?.slot]?.label.toLowerCase() || ''} shift of ${shortDay(x.pairShift?.day)}. If one undoes the other, match them: both are left out.`;
+      case 'receipts-unclear': {
+        const said = { report: 'the closing report’s expenses fit it', drawer: 'it is the reading under which the drawer agrees', person: `${x.by || 'somebody'} said so` }[x.why];
+        return `The receipts went from ${money(x.prev)} to ${money(x.now)} at ASSD ${x.seq}, with no cash movement. Either only ${money(x.left)} of them were handed in and nothing new was spent, or all ${money(x.prev)} were handed in and the ${money(x.now)} now counted is new spending.`
+          + (x.reading ? ` Read as: ${x.reading === 'all' ? `all handed in, ${money(x.now)} new` : `only ${money(x.left)} handed in`}, because ${said}.` : ' Neither the closing report nor the drawer settles it: say which.');
+      }
       case 'receipts-swapped': return `${money(x.amount)} of receipts${x.receiptsFrom ? ` left in the drawer by ${nameOf(x.receiptsFrom)}’s shift` : ''} left with no cash movement and were swapped for cash put into the drawer. They are expenses where they first appeared, with their PO; here they are not cash.`;
       case 'expense-no-po': return `${money(x.amount)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''} with no PO: none on the closing report in HIVE and none linked here. Link the PO, or answer why there is none.`;
       case 'expense-po-gap': return `${money(x.expenses)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''}, but the POs (${(x.pos || []).join(', ')}) come to ${money(x.poTotal)} in Odoo: ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} was paid than the POs say. Link the missing PO, unlink a wrong one, or answer why.`;
@@ -1759,7 +1765,7 @@ export async function renderShifts(root, { range }) {
         await load();
       } catch (err) { said.textContent = err.message; }
     };
-    const canLink = may('bank', 2) && !x.answer && !x.proposed && x.severity !== 'info';
+    const canLink = may('bank', 2) && !x.answer && !x.proposed && x.severity !== 'info' && x.kind !== 'receipts-unclear';
     const decide = async (ok) => {
       said.textContent = 'Saving…';
       try {
@@ -1797,6 +1803,23 @@ export async function renderShifts(root, { range }) {
       }, x.kind === 'movement-twice' ? 'Match as a duplicate' : 'Match them')) : null,
       // A surplus that receipts swapped for cash explain: reconcile it.
       x.kind === 'drawer-over' && !x.answer && !x.proposed && may('moves', 2) ? receiptsSwapBox(x, said) : null,
+      x.kind === 'receipts-unclear' && may('moves', 2) ? h('div.sh-labels',
+        [['all', `All ${money(x.prev)} handed in; ${money(x.now)} is new`], ['some', `Only ${money(x.left)} handed in; nothing new`]].map(([reading, words]) => h(`button.btn${x.reading === reading ? '.primary' : ''}`, {
+          type: 'button', 'aria-pressed': String(x.reading === reading),
+          onclick: async () => {
+            said.textContent = 'Saving…';
+            try {
+              await api('/shifts/receipts-read', { method: 'POST', body: { seq: x.seq, reading } });
+              await load(banner('good', 'Saved. The drawer and its expenses are worked out again.'));
+            } catch (err) { said.textContent = err.message; }
+          },
+        }, words)),
+        x.why === 'person' ? h('button.sh-link', {
+          type: 'button',
+          onclick: async () => {
+            try { await api('/shifts/receipts-read', { method: 'POST', body: { seq: x.seq, reading: '' } }); await load(banner('good', 'Back to what the evidence says.')); } catch (err) { said.textContent = err.message; }
+          },
+        }, 'Undo') : null) : null,
       x.kind === 'receipts-swapped' ? h('div.sh-done', h('span', `✓ Reconciled (${x.by || 'somebody'}${x.at ? `, ${String(x.at).slice(0, 16)}` : ''})${x.note ? ` · ${x.note}` : ''}`),
         may('moves', 2) ? h('button.sh-link', {
           type: 'button',
@@ -1850,7 +1873,7 @@ export async function renderShifts(root, { range }) {
             try { await api('/shifts/unlink', { method: 'POST', body: { id: x.link.id } }); await load(banner('good', 'Undone. Those exceptions are open again.')); } catch (err) { said.textContent = err.message; }
           },
         }, 'Undo') : null)
-      : x.severity === 'info' && !x.answer && x.kind !== 'receipts-swapped' ? h('div.sh-done', h('span', { style: 'color:var(--ink-2)' }, 'Explained by the rules; no answer needed'))
+      : x.severity === 'info' && !x.answer && !['receipts-swapped', 'receipts-unclear'].includes(x.kind) ? h('div.sh-done', h('span', { style: 'color:var(--ink-2)' }, 'Explained by the rules; no answer needed'))
         : x.answer ? h('div.sh-done',
           h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''}${x.answer.by ? ` (${x.answer.by}${x.answer.at ? `, ${String(x.answer.at).slice(0, 16)}` : ''})` : ''}`),
           // A correction to a movement is undone, not re-answered: the
@@ -1866,7 +1889,9 @@ export async function renderShifts(root, { range }) {
             },
           }, 'Undo') : null)
             : h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change'), said)
-          : h('div.sh-answers', note, ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said));
+          // Its own two buttons are the answer to a count read two ways.
+          : x.kind === 'receipts-unclear' ? said
+            : h('div.sh-answers', note, ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said));
   }
 
   /**
@@ -1964,6 +1989,7 @@ export async function renderShifts(root, { range }) {
           title: (KIND[x.kind] || [x.kind])[0], sub: exLabel(x), amount: x.amount == null ? '' : money(Math.abs(x.amount)),
           chip: done ? ['ok', 'Answered'] : waitingAdmin ? ['none', 'Waiting for admin'] : null, tone: sev, done,
           age: daysAgo(x.day), counts: !done && !waitingAdmin, render: () => exceptionCard(x),
+          bulk: !done && !waitingAdmin && may('bank', 2) ? { type: 'answer', key: x.key } : null,
         });
       }
     }
@@ -2010,6 +2036,7 @@ export async function renderShifts(root, { range }) {
             chip: done ? ['ok', 'Answered'] : x.unsure ? ['none', 'Check in ASSD'] : x.proposed ? ['none', 'Waiting for admin'] : null,
             tone: left ? 'short' : 'over', done, age: daysAgo(x.checkout), counts: !done && !x.unsure && !x.proposed,
             render: () => stayCard(x, after),
+            bulk: !done && !x.proposed && may('unpaid', 2) ? { type: 'answer', key: x.key, stay: true } : null,
           });
         }
       }
@@ -2026,6 +2053,7 @@ export async function renderShifts(root, { range }) {
           id: `td:${t.id}`, kind: waitingAdmin ? 'admin' : 'po', title: todoTitle(t), sub: todoSub(t, { admin }),
           amount: money(t.kind === 'differs' ? Math.abs(t.amount) : t.amount), chip: done ? ['ok', 'Closed'] : waitingAdmin ? ['none', admin ? 'Approve' : 'Waiting for admin'] : null,
           tone: 'over', done, age: t.age, counts: !done && (admin ? waitingAdmin : !waitingAdmin), todo: t,
+          bulk: t.state === 'open' ? { type: 'todo', id: t.id } : null,
           render: () => todoDetail(t, { admin, supervisors: sources.todo.supervisors || [], after }),
         });
       }
@@ -2051,6 +2079,51 @@ export async function renderShifts(root, { range }) {
    * The Inbox: one list of everything to act on, kind chips across the top,
    * the one picked in full beside it.
    */
+  /**
+   * One answer for everything ticked: exceptions and unpaid stays take the
+   * chosen answer (a supervisor's wait for an admin, as one by one); money
+   * to-dos take the note, or the answer when there is no note, and an admin's
+   * answer closes them.
+   */
+  function bulkActions(items, redraw) {
+    const answers = items.some((x) => x.bulk.stay) && items.every((x) => x.bulk.stay || x.bulk.type === 'todo')
+      ? STAY_ANSWERS : items.some((x) => x.bulk.stay) ? [...new Set([...ANSWERS, ...STAY_ANSWERS])] : ANSWERS;
+    const pick = h('select', { 'aria-label': 'Answer' }, h('option', { value: '' }, 'Answer…'), answers.map((a) => h('option', { value: a }, a)));
+    const note = h('input', { type: 'text', maxlength: '400', placeholder: 'Note (optional; what happened, for to-dos)', 'aria-label': 'Note' });
+    const said = h('span.small');
+    const go = h('button.btn.primary', {
+      type: 'button',
+      onclick: async () => {
+        const answer = pick.value;
+        const keys = items.filter((x) => x.bulk.type === 'answer').map((x) => x.bulk.key);
+        const todos = items.filter((x) => x.bulk.type === 'todo');
+        if (!answer && (keys.length || !note.value.trim())) { said.textContent = 'Choose the answer.'; return; }
+        go.disabled = true; said.textContent = 'Saving…'; said.className = 'small';
+        try {
+          let done = 0; const skipped = [];
+          if (keys.length) {
+            const out = await api('/shifts/answer-many', { method: 'POST', body: { keys, answer, note: note.value } });
+            done += out.saved; skipped.push(...out.skipped);
+          }
+          for (const x of todos) {
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              await api(`/todo/${x.bulk.id}/answer`, { method: 'POST', body: { answer: note.value.trim() || answer } });
+              done += 1;
+            } catch (err) { skipped.push({ key: x.title, why: err.message }); }
+          }
+          inbox.ticked.clear();
+          await refreshInbox(`Answered ${done}${skipped.length ? `; ${skipped.length} skipped (${skipped[0].why})` : ''}.${!admin ? ' An admin approves them.' : ''}`);
+        } catch (err) { said.textContent = err.message; said.className = 'small form-error'; go.disabled = false; }
+      },
+    }, `Answer ${items.length} ticked`);
+    return h('div.ib-bulkbar',
+      h('span.small', h('b', String(items.length)), ' ticked'),
+      pick, note, go,
+      h('button.sh-link', { type: 'button', onclick: () => { inbox.ticked.clear(); redraw(); } }, 'Clear'),
+      said);
+  }
+
   function inboxView(v) {
     const all = inboxItems();
     const kinds = INBOX_KINDS.filter(([k]) => all.some((x) => x.kind === k));
@@ -2091,8 +2164,18 @@ export async function renderShifts(root, { range }) {
       },
     }, '↻ Refresh now');
     const count = (k) => all.filter((x) => (k === 'all' || x.kind === k) && !x.done).length;
-    const ticked = [...inbox.ticked].filter((id) => shown.some((x) => x.id === id && x.todo));
-    const giveTo = admin && sources.todo?.supervisors?.length && shown.some((x) => x.todo && x.todo.state !== 'closed') ? (() => {
+    // Ticked: what can be acted on together. Select all ticks every one shown.
+    const tickable = shown.filter((x) => x.bulk);
+    for (const id of [...inbox.ticked]) if (!tickable.some((x) => x.id === id)) inbox.ticked.delete(id);
+    const tickedItems = tickable.filter((x) => inbox.ticked.has(x.id));
+    const ticked = tickedItems.filter((x) => x.todo).map((x) => x.id);
+    const selectAll = tickable.length ? h('label.ib-all', h('input', {
+      type: 'checkbox', checked: tickedItems.length > 0 && tickedItems.length === tickable.length,
+      indeterminate: tickedItems.length > 0 && tickedItems.length < tickable.length,
+      onchange: (e) => { inbox.ticked.clear(); if (e.target.checked) for (const x of tickable) inbox.ticked.add(x.id); inboxView(v); },
+    }), ` Select all · ${tickable.length}`) : null;
+    const bulkBar = tickedItems.length ? bulkActions(tickedItems, () => inboxView(v)) : null;
+    const giveTo = admin && sources.todo?.supervisors?.length && ticked.length ? (() => {
       const to = h('select', { 'aria-label': 'Give to' }, h('option', { value: '' }, 'Give to…'),
         sources.todo.supervisors.map((p) => h('option', { value: String(p.id) }, p.name)));
       const gave = h('span.small');
@@ -2124,7 +2207,7 @@ export async function renderShifts(root, { range }) {
         }), ' Show done'),
         h('div.ib-refresh', refresh, said)),
       inbox.kind === 'all' || inbox.kind === 'bank' ? pairsCard() : null,
-      giveTo,
+      selectAll || bulkBar ? h('div.ib-bulk', selectAll, bulkBar, giveTo) : null,
       shown.length ? h('div.ib-split',
         h('div.card.ib-list', { role: 'listbox', 'aria-label': 'To act on' },
           shown.map((x, i) => h(`div.ib-row${i === at ? '.on' : ''}${x.done ? '.done' : ''}`, {
@@ -2132,7 +2215,7 @@ export async function renderShifts(root, { range }) {
             onclick: () => open(i),
             onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(i); } },
           },
-          admin && x.todo && x.todo.state !== 'closed' ? h('input', {
+          x.bulk ? h('input', {
             type: 'checkbox', 'aria-label': `Tick ${x.title}`, checked: inbox.ticked.has(x.id),
             onclick: (e) => e.stopPropagation(),
             onchange: (e) => { if (e.target.checked) inbox.ticked.add(x.id); else inbox.ticked.delete(x.id); inboxView(v); },

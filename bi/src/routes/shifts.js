@@ -301,7 +301,63 @@ async function correctionsFor(env, lo, hi) {
       out.set(r.pair, { kind: 'excluded', reason: 'reversed-by', pair: r.seq, ...who });
     } else out.set(r.seq, { kind: r.kind, expenses: r.expenses, ...who });
   }
+  // How people read counts whose receipts went down with some still there.
+  const reads = await all(env.DB, 'SELECT * FROM shift_receipts_read WHERE count_seq BETWEEN ?1 AND ?2', lo, hi).catch(() => []);
+  for (const r of reads) out.set(`count:${r.count_seq}`, { reading: r.reading, by: r.by_name, at: r.at });
   return out;
+}
+
+/**
+ * A count whose receipts went down with no movement and some still there
+ * reads two ways: only the difference was handed in, or all of them were and
+ * the ones now counted are new. Without a person's answer, the evidence
+ * decides: the closing report's expenses, then the drawer itself. Returns
+ * the reading and why, or nothing when neither settles it.
+ */
+export function readReceipts(s, ask, reportPaid) {
+  if (reportPaid != null) {
+    const shown = s.receiptsIn + s.directExpenses;
+    if (reportPaid - shown === ask.now) return { reading: 'all', why: 'report' };
+    if (reportPaid === shown) return { reading: 'some', why: 'report' };
+  }
+  if (s.countVariance != null) {
+    if (s.countVariance === 0) return { reading: 'some', why: 'drawer' };
+    if (s.countVariance + ask.now === 0) return { reading: 'all', why: 'drawer' };
+  }
+  return null;
+}
+
+/** Count a reading of 'all' on a shift already summarised as 'some'. */
+function applyAll(s, ask) {
+  s.receiptsIn += ask.now;
+  s.receiptsSwapped += ask.now;
+  s.receiptsOut += ask.now;
+  s.expenses += ask.now;
+  s.expensesMoved = s.expenses;
+  s.expensesCounted = s.expenses;
+  s.receiptsNew.push({ seq: ask.seq, amount: ask.now, reading: 'all' });
+  if (s.expected != null) { s.expected -= ask.now; s.countVariance += ask.now; }
+}
+
+/**
+ * A person reads a count's receipts: 'all' (every receipt before it was handed
+ * in, those now counted are new), 'some' (only the difference was), or ''
+ * to go back to what the evidence says.
+ */
+export async function saveReceiptsRead(env, body, account) {
+  const seq = Number(body?.seq);
+  if (!Number.isInteger(seq)) throw badRequest('Which count? Its ASSD number is needed.');
+  const reading = String(body?.reading || '');
+  if (!reading) {
+    await run(env.DB, 'DELETE FROM shift_receipts_read WHERE count_seq = ?1', seq);
+    return { ok: true };
+  }
+  if (!['all', 'some'].includes(reading)) throw badRequest('Say whether all the receipts were handed in, or only some.');
+  const row = await first(env.DB, "SELECT seq FROM assd_entry WHERE seq = ?1 AND kind = 'Money Count'", seq);
+  if (!row) throw badRequest(`ASSD ${seq} is not a Money Count.`);
+  await run(env.DB, `INSERT INTO shift_receipts_read (count_seq, reading, by_name, at) VALUES (?1, ?2, ?3, ?4)
+    ON CONFLICT (count_seq) DO UPDATE SET reading = ?2, by_name = ?3, at = ?4`, seq, reading, who(account), now());
+  return { ok: true };
 }
 
 /** A Cash Movement on the front drawer, with the amount it took out (negative: put back). */
@@ -672,6 +728,14 @@ export async function shifts(env, query, account) {
     // ones that appeared on this shift are its expenses; those carried out
     // with a movement are not cash moved; those that left with no movement
     // were swapped for cash, which a person reconciles.
+    // Counts that read two ways and nobody answered: the evidence decides,
+    // or they wait for a person, counted meanwhile only as far as is sure.
+    for (const ask of s.receiptsAsk || []) {
+      if (ask.reading) { ask.decided = { reading: ask.reading, why: 'person', by: ask.said?.by || null, at: ask.said?.at || null }; continue; }
+      const guess = readReceipts(s, ask, reportPaid.get(`${s.day}|${s.slotName}`) ?? null);
+      ask.decided = guess;
+      if (guess?.reading === 'all') applyAll(s, ask);
+    }
     const swap = swapOf.get(`${s.day}|${s.slotName}`) || null;
     const assdOpening = s.opening?.notes ?? null;
     const opening = typed?.opening ?? assdOpening ?? previousClosing?.amount ?? null;
@@ -733,6 +797,14 @@ export async function shifts(env, query, account) {
         // Receipts that left with no movement, not yet reconciled: the likely story of a surplus.
         swapped: r.receipts.swapped - (r.receipts.reconciled?.amount || 0) > 0 ? r.receipts.swapped - (r.receipts.reconciled?.amount || 0) : null,
         receiptsFrom: r.receipts.open ? previousUser.get(s.index) || null : null,
+      });
+    }
+    for (const ask of s.receiptsAsk || []) {
+      const d = ask.decided;
+      exceptions.push({
+        ...base, key: `receipts-read:${ask.seq}`, kind: 'receipts-unclear', group: d ? 'explained' : 'drawer', severity: d ? 'info' : 'warning',
+        seq: ask.seq, amount: ask.left, prev: ask.prev, now: ask.now, left: ask.left, reading: d?.reading || null, why: d?.why || null,
+        by: d?.by || null, at: d?.at || null,
       });
     }
     if (r.receipts.reconciled?.amount) {

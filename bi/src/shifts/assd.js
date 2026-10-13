@@ -334,6 +334,8 @@ export function summarise(shift, corrections = new Map()) {
     receiptsOut: 0,
     receiptsMoved: 0,
     receiptsSwapped: 0,
+    // Counts that can be read two ways (see the ledger below).
+    receiptsAsk: [],
     directExpenses: 0,
     expenses: 0,
   };
@@ -459,7 +461,23 @@ export function summarise(shift, corrections = new Map()) {
     } else if (delta < 0) {
       const matched = Math.min(-delta, carried);
       carried -= matched;
-      dropped += -delta - matched;
+      const left = -delta - matched;
+      const now = counts[step.count].receipts;
+      if (left > 0 && now > 0) {
+        // Fewer receipts than before, with none carried out by a movement,
+        // and some still there: either only `left` of them were handed in,
+        // or all of them were and the ones now counted are new. The counts
+        // cannot say which; a person's answer, or the evidence the Shifts
+        // screen weighs (summary of it in `receiptsAsk`), decides.
+        const seq = counts[step.count].seq;
+        const said = corrections.get(`count:${seq}`) || null;
+        s.receiptsAsk.push({ seq, prev: counts[step.count - 1].receipts, now, left, reading: said?.reading || null, said });
+        if (said?.reading === 'all') {
+          dropped += left + now;
+          s.receiptsIn += now;
+          s.receiptsNew.push({ seq, amount: now, reading: 'all' });
+        } else dropped += left;
+      } else dropped += left;
     }
   }
   if (carried > 0 && counts.length) {

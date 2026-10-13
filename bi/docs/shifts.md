@@ -42,8 +42,12 @@ shift, a small note at the end of the line says which; open it for what to do.
   move, and on a keyboard J and K move and 1 to 8 give an exception's answers.
   **Probably the same money** sits above the list (see below). **Show done**
   brings back what was answered or closed. **Refresh now** asks Odoo about the
-  cash POs and reads the laundry system there and then. An admin can tick PO
-  items and give them to a supervisor together.
+  cash POs and reads the laundry system there and then. Exceptions, unpaid
+  stays and open money to-dos can be ticked, one by one or with **Select
+  all** (everything of the chip shown): **Answer N ticked** gives them all
+  one answer and note (a supervisor's wait for an admin, who is told once;
+  a to-do takes the note as what happened, and an admin's closes it), and an
+  admin can **Give** the ticked to-dos to a supervisor.
 - **People**: each person's shifts, cash and cards, and net drawer variance;
   then what is still with staff under To sort out in HIVE, each person's month,
   and what was settled lately.
@@ -130,6 +134,17 @@ Everything typed is signed with the name of whoever typed it.
   paired with it. A movement put straight back by an equal one the other way
   on the same shift is a correction, such as 17,630 keyed for 1,763. Cash in
   a movement no count explains is shown as not labelled.
+- **Receipts that went down, with some still there.** If a count shows fewer
+  receipts than the count before, no cash movement took them, and some are
+  still there (say GH₵70 down to GH₵50), it reads two ways: only GH₵20 were
+  handed in and nothing new was spent, or all GH₵70 were handed in and the
+  GH₵50 now counted is new spending. Insight never guesses quietly. It takes
+  the reading the shift's closing report fits (its expenses match one of
+  them), or else the one under which the drawer agrees. If neither settles
+  it, the shift gets **Receipts handed in: all, or only some?**, with one
+  button for each reading; until somebody answers, only what is sure is
+  counted. Whichever reading is used, the card says which and why, and the
+  other button changes it.
 - **Receipts swapped for cash.** Receipts that leave the drawer with no
   movement, the notes going up by as much, were swapped for cash put into the
   drawer: that shift reads over by as much. The Drawer over card says so and
