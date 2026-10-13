@@ -815,3 +815,34 @@ test('receipts trail: swapped, gone at a hand-over, from before, and carried bef
   assert.equal(trail.get(2).left, 0);
   assert.equal(trail.get(1).left, 0);
 });
+
+test('the expense form against a month of shifts: clear POs are proposed, those paid from the safe or already used are not, and applying links them', async () => {
+  const env = await loaded();
+  const { ingestForm } = await import('../src/routes/advances.js');
+  const fm = await import('../src/routes/formmatch.js');
+  await ingestForm(env, { responses: [
+    // The morning's GH₵50 of receipts, dated that day.
+    { responseId: 'f1', po: 'P00950', amount: '45', tnt: '5', by: 'Test', submittedAt: '2026-08-01 16:00', expenseDate: '2026-08-01', paidFrom: 'Cash Register' },
+    // The same amount, paid from the safe: not a shift's.
+    { responseId: 'f2', po: 'P00951', amount: '50', by: 'Test', submittedAt: '2026-08-01 10:00', expenseDate: '2026-08-01', paidFrom: 'Big Safe' },
+    // Another day.
+    { responseId: 'f3', po: 'P00952', amount: '50', by: 'Test', submittedAt: '2026-08-03 10:00', expenseDate: '2026-08-03', paidFrom: 'Cash Register' },
+  ] });
+  const row = await env.DB.prepare("SELECT expense_day, paid_from FROM expense_report WHERE response_id = 'f2'").first();
+  assert.deepEqual({ ...row }, { expense_day: '2026-08-01', paid_from: 'safe' });
+
+  const out = await fm.formMatches(env, { month: '2026-08' }, OWNER);
+  const morning = out.clear.find((c) => c.day === '2026-08-01' && c.slot === 'morning');
+  assert.deepEqual(morning.pos.map((p) => p.po), ['P00950']);
+  assert.equal(morning.target, 5000);
+  assert.ok(!JSON.stringify(out).includes('P00951'), 'paid from the safe');
+  assert.equal(out.form.safe, 1);
+
+  const done = await fm.applyMatches(env, { items: [{ day: '2026-08-01', slot: 'morning', pos: ['P00950'] }] }, OWNER);
+  assert.equal(done.done[0].ok, true);
+  const linked = await env.DB.prepare("SELECT po_numbers FROM shift_expense WHERE day = '2026-08-01' AND slot = 'morning'").first();
+  assert.equal(linked.po_numbers, 'P00950');
+  // Linked now: not offered again.
+  const again = await fm.formMatches(env, { month: '2026-08' }, OWNER);
+  assert.ok(!again.clear.some((c) => c.pos.some((p) => p.po === 'P00950')));
+});

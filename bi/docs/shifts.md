@@ -134,6 +134,18 @@ Everything typed is signed with the name of whoever typed it.
   paired with it. A movement put straight back by an equal one the other way
   on the same shift is a correction, such as 17,630 keyed for 1,763. Cash in
   a movement no count explains is shown as not labelled.
+- **POs from the expense form, for a backlog.** Inbox → POs → *Link POs from
+  the expense form*: choose a month and press *Find matches*. Each shift
+  whose expenses have no PO (or more than its POs cover) is held against the
+  form's POs paid from the cash register and not yet tied to anything: dated
+  that day (a night shift: that day or the next), or, with no date, sent
+  during the shift or within six hours of its end. A set of POs adding up to
+  exactly what is missing is clear when it is the only one, or the only one
+  sent during the shift or by the person on it; failing that, a PO that is
+  exactly one of the shift's receipts is clear on its own. A PO two shifts
+  could each claim goes to neither. The clear ones come ticked; *Link the
+  ticked POs* links them as if typed on each shift. The rest are listed
+  under *Not sure* with the POs that could be theirs, to open and decide.
 - **Whose receipts a movement carried.** Receipts are followed from shift to
   shift, oldest first. When a movement carries receipts earlier shifts left
   in the drawer, a bar and a table under it list each shift they came from

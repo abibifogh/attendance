@@ -19,6 +19,7 @@ import * as cashpo from './routes/cashpo.js';
 import * as prepaid from './routes/prepaid.js';
 import * as todo from './routes/todo.js';
 import * as advances from './routes/advances.js';
+import * as formmatch from './routes/formmatch.js';
 import { sendDailySummary } from './routes/summary.js';
 import { verifyForm, verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
@@ -135,6 +136,9 @@ const ROUTES = [
   ['POST', '/api/shifts/expense', 'shifts', adminOnly((env, ctx) => shiftRoutes.saveExpense(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/expense/pull', 'shifts', adminOnly((env, ctx) => shiftRoutes.pullOrders(env, ctx.body))],
   ['POST', '/api/shifts/expense/link', 'shifts', linkPos],
+  // A month of backlog: POs on the expense form that clearly belong to a shift.
+  ['GET', '/api/shifts/form-match', 'shifts', adminOnly((env, ctx) => formmatch.formMatches(env, ctx.query, ctx.account))],
+  ['POST', '/api/shifts/form-match/apply', 'shifts', adminOnly((env, ctx) => formmatch.applyMatches(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/receipts', 'shifts', receiptsSwap],
   ['POST', '/api/shifts/receipts-read', 'shifts', async (env, ctx) => {
     if (till.roleOf(ctx.account) !== 'admin') await till.requireArea(env, ctx.account, 'moves', 2);

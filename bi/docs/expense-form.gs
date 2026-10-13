@@ -7,7 +7,8 @@
  *
  * Each response is sent to Insight the moment it is submitted: the PO number,
  * the amount, the TnT and whether the invoice included it, who sent it and
- * when. Nothing else: not the receipt, not the notes. Each is signed with
+ * when, the date of the expense and whether it was paid from the cash
+ * register or the safe. Nothing else: not the receipt, not the notes. Each is signed with
  * the form's secret, so Insight takes it from this script and nobody else.
  *
  * Script properties (Project Settings → Script properties):
@@ -25,6 +26,9 @@ const QUESTIONS = {
   // "Yes, included in the invoice" means the amount has the transport in it already.
   transport: 'Was there transportation?',
   by: 'Select Your Name',
+  // Optional: what ties a response to a shift. Left out when the form has no such question.
+  date: 'Date of the expense:',
+  paidFrom: 'Did you pay from cash register or did you use petty cash from the safe?',
 };
 
 /** sendAllPast sends the responses from this day on, and none before it. */
@@ -92,6 +96,8 @@ function toRecord_(response) {
     tntIncluded: /included/i.test(pick(QUESTIONS.transport)),
     by: pick(QUESTIONS.by),
     submittedAt: Utilities.formatDate(response.getTimestamp(), 'UTC', 'yyyy-MM-dd HH:mm'),
+    expenseDate: pick(QUESTIONS.date),
+    paidFrom: pick(QUESTIONS.paidFrom),
   };
 }
 
