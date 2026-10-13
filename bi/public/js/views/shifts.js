@@ -1138,6 +1138,40 @@ export async function renderShifts(root, { range }) {
   }
 
   /**
+   * The receipts a shift handed over, as one check: who took them out, and
+   * when, with each later shift to open. Taking them out settles the
+   * drawer, not their PO: they stay this shift's expenses.
+   */
+  function handedOver(tr, n) {
+    const shiftOf = (c) => `${dayText(c.day)}, ${SLOT[c.slot]?.label.toLowerCase() || c.slot}`;
+    const gone = tr.cleared.filter((c) => c.how !== 'handover');
+    const missing = tr.cleared.filter((c) => c.how === 'handover').reduce((t, c) => t + c.amount, 0);
+    const swapped = tr.cleared.find((c) => c.how === 'swapped' && !c.reconciled);
+    const people = [...new Set(gone.map((c) => `${c.day}|${c.slot}`))];
+    const who = people.length === 1 ? `${nameOf(gone[0].user)}, ${shiftOf(gone[0])}` : `${people.length} later shifts`;
+    const head = `Receipts handed over ${money(tr.left)}`;
+    const [tone, mark, text] = tr.still ? ['info', 'i', `${head} · ${money(tr.still)} still in the drawer`]
+      : missing ? ['warn', '!', `${head} · ${money(missing)} not in the next count`]
+        : swapped ? ['warn', '!', `${head} · left with no cash movement: reconcile on ${nameOf(swapped.user)}’s shift`]
+          : ['good', '✓', `${head} · taken out by ${who}`];
+    const what = (c) => ({
+      moved: `To the back office, ASSD ${c.seq}`,
+      swapped: `No cash movement (count ASSD ${c.seq})${c.reconciled ? ', reconciled' : ', not reconciled yet'}`,
+      handover: `Not in the first count, ASSD ${c.seq}`,
+    })[c.how] || c.how;
+    const detail = h('div.sh-handed',
+      h('table.sh-otable',
+        h('thead', h('tr', h('th', 'Shift'), h('th', 'By'), h('th', 'What happened'), h('th.n', 'Receipts'))),
+        h('tbody',
+          tr.cleared.map((c) => h('tr',
+            h('td', h('button.sh-link', { type: 'button', onclick: () => openShift(c.day, c.slot) }, shiftOf(c))),
+            h('td', nameOf(c.user)), h('td', what(c)), h('td.n.num', money(c.amount)))),
+          tr.still ? h('tr', h('td', 'Still in the drawer'), h('td'), h('td', 'Not taken out yet'), h('td.n.num', money(tr.still))) : null)),
+      h('p.small', `They are still this shift’s expenses${n.expenses ? ` (part of its ${money(n.expenses)})` : ''}: their PO is linked here, not on the shift that took them out.`));
+    return [tone, mark, text, detail];
+  }
+
+  /**
    * What became of the receipts a shift left in the drawer: which later
    * shift took them out, or that they are still there.
    */
@@ -1206,16 +1240,7 @@ export async function renderShifts(root, { range }) {
     if (rcp?.reconciled?.amount) out.push(['good', '✓', `${money(rcp.reconciled.amount)} of receipts swapped for cash, reconciled${rcp.reconciled.by ? ` (${rcp.reconciled.by})` : ''}`]);
     // Receipts this shift left in the drawer: settled once a later shift took them out.
     const tr = rcp?.trail;
-    if (tr?.left) {
-      const gone = tr.cleared.filter((c) => c.how !== 'handover');
-      const by = [...new Set(gone.map((c) => `${nameOf(c.user)}’s ${SLOT[c.slot]?.label.toLowerCase() || ''} shift of ${dayText(c.day)}`))].join(' and ');
-      const missing = tr.cleared.some((c) => c.how === 'handover');
-      const swapped = tr.cleared.find((c) => c.how === 'swapped' && !c.reconciled);
-      out.push(tr.still ? ['info', 'i', `${money(tr.still)} of this shift’s receipts are still in the drawer, not taken out yet${gone.length ? `; the rest went on ${by}` : ''}`]
-        : missing ? ['warn', '!', `Some of this shift’s receipts were not in the next shift’s first count${gone.length ? `; the rest went on ${by}` : ''}`]
-        : swapped ? ['warn', '!', `This shift’s receipts left the drawer with no cash movement on ${nameOf(swapped.user)}’s ${SLOT[swapped.slot]?.label.toLowerCase() || ''} shift of ${dayText(swapped.day)}: reconcile it there`]
-          : ['good', '✓', `The ${money(tr.left)} of receipts this shift left in the drawer were taken out on ${by}`]);
-    }
+    if (tr?.left) out.push(handedOver(tr, n));
     // Movements somebody matched or labelled: settled, so said plainly and green.
     for (const m of (s.moves || []).filter((x) => x.manual)) {
       const by = m.manual.by ? ` (${m.manual.by})` : '';
