@@ -74,9 +74,26 @@ export function formPos(typed) {
   return out;
 }
 
+/** The form's date of the expense, as yyyy-mm-dd, whatever way it came. */
+function formDay(value) {
+  const s = String(value ?? '').trim();
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  return dmy ? `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}` : null;
+}
+
+/** "Cash Register" or "Big Safe", as the form's answer has it. */
+function paidFrom(value) {
+  const s = String(value ?? '');
+  if (/safe/i.test(s)) return 'safe';
+  if (/register|till|drawer/i.test(s)) return 'register';
+  return null;
+}
+
 /**
  * Responses from the form. Each is { responseId, po, amount, tnt, tntIncluded,
- * by, submittedAt }; sending one twice keeps one copy. Up to 500 at once, for
+ * by, submittedAt, expenseDate, paidFrom }; sending one twice keeps one copy. Up to 500 at once, for
  * the script's "send past responses".
  *
  * TnT counts on top of the amount, unless the form says the transport was
@@ -97,7 +114,8 @@ export async function ingestForm(env, body) {
     const one = pos.length <= 1;
     const tnt = r?.tntIncluded ? 0 : toMinor(r?.tnt) ?? 0;
     const rest = [typed || null, one ? toMinor(r?.amount) : null, one ? tnt : null,
-      String(r?.by ?? '').slice(0, 120) || null, String(r?.submittedAt ?? '').slice(0, 30) || null];
+      String(r?.by ?? '').slice(0, 120) || null, String(r?.submittedAt ?? '').slice(0, 30) || null,
+      formDay(r?.expenseDate), paidFrom(r?.paidFrom)];
     for (const [i, po] of (pos.length ? pos : [null]).entries()) rows.push([i ? `${id}#${i + 1}` : id, po, ...rest]);
   }
   if (!ids.length) return { ok: true, saved: 0 };
@@ -112,10 +130,10 @@ export async function ingestForm(env, body) {
     statements.push(env.DB.prepare(`DELETE FROM expense_report WHERE response_id IN (${marks})
         OR (instr(response_id, '#') > 0 AND substr(response_id, 1, instr(response_id, '#') - 1) IN (${marks}))`).bind(...chunk));
   }
-  for (let i = 0; i < rows.length; i += 14) {
-    const chunk = rows.slice(i, i + 14);
-    const values = chunk.map((_, j) => `(${[1, 2, 3, 4, 5, 6, 7].map((k) => `?${j * 7 + k}`).join(', ')})`).join(', ');
-    statements.push(env.DB.prepare(`INSERT INTO expense_report (response_id, po, po_typed, amount, tnt, by_name, submitted_at)
+  for (let i = 0; i < rows.length; i += 11) {
+    const chunk = rows.slice(i, i + 11);
+    const values = chunk.map((_, j) => `(${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((k) => `?${j * 9 + k}`).join(', ')})`).join(', ');
+    statements.push(env.DB.prepare(`INSERT INTO expense_report (response_id, po, po_typed, amount, tnt, by_name, submitted_at, expense_day, paid_from)
         VALUES ${values}`).bind(...chunk.flat()));
   }
   await env.DB.batch(statements);

@@ -568,14 +568,46 @@ test('the drawer in notes and coins: receipts that appear are expenses, carried 
   assert.equal(afternoon.expenses, 0, 'nothing new was spent');
   assert.deepEqual([afternoon.receiptsOut, afternoon.receiptsMoved, afternoon.receiptsSwapped], [3000, 0, 3000]);
   assert.equal(afternoon.countVariance, 3000);
+  // Both sides of it: where the receipts appeared, and the count they left at.
+  assert.deepEqual({ ...morning.receiptsNew[0].leg, prev: null }, { prev: null, receiptsBefore: 0, receiptsAfter: 7000, notesBefore: 80000, notesAfter: 123000 });
+  assert.deepEqual({ ...afternoon.receiptsSwaps[0].leg, prev: null }, { prev: null, receiptsBefore: 3000, receiptsAfter: 0, notesBefore: 7000, notesAfter: 15000 });
 
   // Receipts taken out and counted before the movement is keyed: paired, not counted twice.
   const later = summarise({ user: 'C', startSeq: 200, entries: [count(100), count(60, 40), count(60), move(40), count(60)] });
   assert.deepEqual([later.expenses, later.receiptsSwapped, later.countVariance], [4000, 0, 0]);
 
-  // Receipts carried out, and a new one before the next count: both expenses.
+  // A movement that seems to carry GH₵50 of receipts while the next count
+  // still shows GH₵20: either GH₵20 of them stayed and the movement had GH₵20
+  // of cash in it, or all went and GH₵20 of new ones came. Unanswered, they
+  // are counted once (stayed) and asked about; the drawer agrees either way.
+  const from = seq;
   const again = summarise({ user: 'D', startSeq: 300, entries: [count(100), count(50, 50), move(50), count(30, 20)] });
-  assert.deepEqual([again.expenses, again.receiptsSwapped, again.countVariance], [7000, 0, 0]);
+  assert.deepEqual([again.expenses, again.receiptsSwapped, again.countVariance], [5000, 0, 0]);
+  assert.deepEqual(again.carriedAsk.map((a) => [a.amount, a.reading]), [[2000, null]]);
+  const moveSeq = again.carriedAsk[0].seq;
+  assert.deepEqual([again.moves[0].receipts, again.moves[0].cash, again.moves[0].stayed], [3000, 2000, 2000]);
+  seq = from;
+  const told = summarise({ user: 'D', startSeq: 300, entries: [count(100), count(50, 50), move(50), count(30, 20)] },
+    new Map([[`count:${moveSeq}`, { reading: 'new', by: 'Test' }]]));
+  assert.deepEqual([told.expenses, told.countVariance, told.moves[0].receipts], [7000, 0, 5000], 'new ones came: both expenses');
+});
+
+test('receipts a movement seems to carry that the counts still show: counted once, settled by its POs, or asked', async () => {
+  let seq = 400;
+  const base = { register: '001', user: 'E', payments: [], laundry: [], items: [] };
+  const count = (notes, receipts = 0) => ({ ...base, seq: seq += 1, kind: 'Money Count', counted: notes * 100, expensesCounted: receipts * 100 });
+  const move = (amount) => ({ ...base, seq: seq += 1, kind: 'Cash Movement', movement: -amount * 100 });
+  // GH₵138 of receipts in the count; GH₵936 paid out for two POs; the counts
+  // after still show the GH₵138 (counted twice by the person).
+  const s = summarise({ user: 'E', startSeq: 400, entries: [count(2573), count(1499, 138), move(936), count(1499, 138), count(1499, 138)] },
+    new Map([[403, { kind: 'expenses', by: 'Test' }]]));
+  assert.equal(s.receiptsIn, 13800, 'the GH₵138 once, not twice');
+  assert.deepEqual([s.moves[0].receipts, s.moves[0].direct], [0, 93600], 'the movement was all cash, labelled expenses by hand');
+  assert.equal(s.expenses, 107400);
+  assert.equal(s.countVariance, 0);
+  // The POs on the shift add up to the movement: it was cash for them.
+  assert.deepEqual(routes.readCarried(s, s.carriedAsk[0], [84000, 9600]), { reading: 'stayed', why: 'pos' });
+  assert.equal(routes.readCarried(s, s.carriedAsk[0], [84000]), null, 'nothing settles it: asked');
 });
 
 test('receipts swapped for cash are reconciled on the shift, and undone', async () => {
@@ -595,6 +627,52 @@ test('receipts swapped for cash are reconciled on the shift, and undone', async 
   ({ s } = await alpha());
   assert.equal(s.register.expected, before.expected);
   assert.equal(s.register.receipts.reconciled, null);
+});
+
+test('receipts that went down with some still there are read by the evidence, or asked about', () => {
+  let seq = 1000;
+  const base = { register: '001', user: 'B', payments: [], laundry: [], items: [] };
+  const count = (notes, receipts = 0) => ({ ...base, seq: seq += 1, kind: 'Money Count', counted: notes * 100, expensesCounted: receipts * 100 });
+  const shift = (entries, corrections) => summarise({ user: 'B', startSeq: 1000, entries }, corrections);
+
+  // The morning left a GH₵70 receipt. The afternoon's count shows GH₵50.
+  // 1. Swapped for GH₵70 cash and GH₵50 spent: notes 930 + 70 − 50 = 950.
+  const swapped = shift([count(930, 70), count(950, 50)]);
+  assert.deepEqual(swapped.receiptsAsk.map((a) => [a.prev, a.now, a.left, a.reading]), [[7000, 5000, 2000, null]]);
+  assert.deepEqual([swapped.expenses, swapped.receiptsSwapped, swapped.countVariance], [0, 2000, 2000], 'unanswered: only what is sure');
+  assert.equal(routes.readReceipts(swapped, swapped.receiptsAsk[0], null), null, 'the drawer cannot settle this one');
+  assert.deepEqual(routes.readReceipts(swapped, swapped.receiptsAsk[0], 5000), { reading: 'all', why: 'report' }, 'the closing report lists GH₵50 spent');
+  const askSeq = swapped.receiptsAsk[0].seq;
+  const answered = shift([count(930, 70), { ...count(950, 50), seq: askSeq }], new Map([[`count:${askSeq}`, { reading: 'all', by: 'Test' }]]));
+  assert.deepEqual([answered.expenses, answered.receiptsSwapped, answered.countVariance], [5000, 7000, 7000], 'GH₵50 is new; GH₵70 over, which Reconcile clears');
+
+  // 2. Taken out with no cash put in, and GH₵50 spent: notes 880. Only "all" makes the drawer agree.
+  const takenOut = shift([count(930, 70), count(880, 50)]);
+  assert.equal(takenOut.countVariance, -5000);
+  assert.deepEqual(routes.readReceipts(takenOut, takenOut.receiptsAsk[0], null), { reading: 'all', why: 'drawer' });
+
+  // 3. Only GH₵20 of the receipts handed in, nothing spent: notes unchanged. Only "some" agrees.
+  const partly = shift([count(930, 70), count(930, 50)]);
+  assert.deepEqual(routes.readReceipts(partly, partly.receiptsAsk[0], null), { reading: 'some', why: 'drawer' });
+  assert.deepEqual(routes.readReceipts(partly, partly.receiptsAsk[0], 0), { reading: 'some', why: 'report' });
+
+  // Not asked: all handed in and nothing left, or the receipts kept and more added.
+  assert.equal(shift([count(930, 70), count(1000)]).receiptsAsk.length, 0);
+  assert.equal(shift([count(930, 70), count(880, 120)]).receiptsAsk.length, 0);
+});
+
+test('a person’s reading of a count is saved, checked and taken back', async () => {
+  const env = await loaded();
+  await assert.rejects(routes.saveReceiptsRead(env, { seq: 300508, reading: 'all' }, OWNER), /not a Money Count/);
+  await assert.rejects(routes.saveReceiptsRead(env, { seq: 300507, reading: 'maybe' }, OWNER), /all the receipts/);
+  await routes.saveReceiptsRead(env, { seq: 300507, reading: 'some' }, OWNER);
+  assert.equal((await env.DB.prepare('SELECT reading, by_name FROM shift_receipts_read WHERE count_seq = 300507').first()).by_name, 'Test Owner');
+  await routes.saveReceiptsRead(env, { seq: 300507, reading: '' }, OWNER);
+  assert.equal(await env.DB.prepare('SELECT * FROM shift_receipts_read').first(), null);
+  // A movement's receipts: stayed, or new ones came.
+  await assert.rejects(routes.saveReceiptsRead(env, { seq: 300507, reading: 'stayed' }, OWNER), /not a Cash Movement/);
+  await routes.saveReceiptsRead(env, { seq: 300508, reading: 'stayed' }, OWNER);
+  assert.equal((await env.DB.prepare('SELECT reading FROM shift_receipts_read WHERE count_seq = 300508').first()).reading, 'stayed');
 });
 
 test('what each cash movement was', () => {
@@ -716,4 +794,94 @@ test('a duplicate matched away leaves an answered record that can be undone', as
   all = await read();
   assert.equal(all.some((x) => x.kind === 'movement-matched'), false);
   assert.ok(all.some((x) => x.kind === 'movement-twice'));
+});
+
+test('receipts trail: a movement says whose receipts it carried, and earlier shifts say who took theirs out', () => {
+  const shift = (index, day, slotName, user, open, extra) => ({
+    index, day, slotName, user, opening: open == null ? null : { seq: index * 100, receipts: open },
+    receiptsNew: [], receiptsSwaps: [], moves: [], ...extra,
+  });
+  const ordered = [
+    shift(0, '2026-01-05', 'morning', 'ALPHA', 0, { receiptsNew: [{ seq: 10, amount: 12000 }] }),
+    shift(1, '2026-01-05', 'afternoon', 'BRAVO', 12000, { receiptsNew: [{ seq: 110, amount: 16800 }] }),
+    shift(2, '2026-01-06', 'morning', 'CHARLIE', 28800, {
+      receiptsNew: [{ seq: 210, amount: 96200 }],
+      moves: [{ seq: 211, receipts: 125000 }],
+    }),
+    shift(3, '2026-01-06', 'afternoon', 'DELTA', 0, { receiptsNew: [{ seq: 310, amount: 5000 }] }),
+  ];
+  const { origins, trail } = routes.receiptTrail(ordered);
+  assert.deepEqual(origins.get(211), [
+    { day: '2026-01-05', slot: 'morning', user: 'ALPHA', seqs: [10], amount: 12000, earlier: undefined, leg: undefined, here: false },
+    { day: '2026-01-05', slot: 'afternoon', user: 'BRAVO', seqs: [110], amount: 16800, earlier: undefined, leg: undefined, here: false },
+    { day: '2026-01-06', slot: 'morning', user: 'CHARLIE', seqs: [210], amount: 96200, earlier: undefined, leg: undefined, here: true },
+  ]);
+  // Alpha's 120 was handed over twice and taken out by Charlie.
+  assert.equal(trail.get(0).left, 12000);
+  assert.deepEqual(trail.get(0).cleared, [{ amount: 12000, how: 'moved', seq: 211, day: '2026-01-06', slot: 'morning', user: 'CHARLIE' }]);
+  assert.equal(trail.get(0).still, 0);
+  assert.equal(trail.get(1).cleared[0].amount, 16800);
+  // Charlie's own were carried out on the shift: nothing handed over.
+  assert.equal(trail.get(2).left, 0);
+  assert.deepEqual(trail.get(2).cleared, []);
+  // Delta's are still in the drawer.
+  assert.equal(trail.get(3).left, 5000);
+  assert.equal(trail.get(3).still, 5000);
+});
+
+test('receipts trail: swapped, gone at a hand-over, from before, and carried before they were counted', () => {
+  const ordered = [
+    { index: 0, day: '2026-01-05', slotName: 'morning', user: 'ALPHA', opening: { seq: 1, receipts: 3000 },
+      receiptsNew: [{ seq: 5, amount: 2000 }], receiptsSwaps: [], moves: [] },
+    // 1,000 fewer at Bravo's first count than Alpha left.
+    { index: 1, day: '2026-01-05', slotName: 'afternoon', user: 'BRAVO', opening: { seq: 100, receipts: 4000 },
+      receiptsNew: [], receiptsSwaps: [{ seq: 105, amount: 2500 }], moves: [] },
+    // Charlie moves 1,500 of receipts before the count shows 1,000 new ones.
+    { index: 2, day: '2026-01-06', slotName: 'morning', user: 'CHARLIE', opening: { seq: 200, receipts: 1500 },
+      receiptsNew: [{ seq: 210, amount: 1000 }], receiptsSwaps: [], moves: [{ seq: 205, receipts: 2500 }] },
+  ];
+  const { origins, trail } = routes.receiptTrail(ordered);
+  // Bravo's opening took 1,000 of the oldest (from before) off at the hand-over;
+  // the swap took the other 2,000 from before and 500 of Alpha's.
+  assert.deepEqual(trail.get(0).cleared, [
+    { amount: 500, how: 'swapped', seq: 105, day: '2026-01-05', slot: 'afternoon', user: 'BRAVO' },
+    { amount: 1500, how: 'moved', seq: 205, day: '2026-01-06', slot: 'morning', user: 'CHARLIE' },
+  ]);
+  assert.deepEqual(origins.get(205).map((o) => [o.user || 'earlier', o.amount, o.here]), [['ALPHA', 1500, false], ['CHARLIE', 1000, true]]);
+  // Whose receipts left with no movement, at which count.
+  assert.deepEqual(trail.get(1).swaps.map((w) => [w.seq, w.amount, w.origins.map((o) => [o.user || 'earlier', o.amount, o.here])]),
+    [[105, 2500, [['earlier', 2000, false], ['ALPHA', 500, false]]]]);
+  assert.equal(trail.get(2).left, 0);
+  assert.equal(trail.get(1).left, 0);
+});
+
+test('the expense form against a month of shifts: clear POs are proposed, those paid from the safe or already used are not, and applying links them', async () => {
+  const env = await loaded();
+  const { ingestForm } = await import('../src/routes/advances.js');
+  const fm = await import('../src/routes/formmatch.js');
+  await ingestForm(env, { responses: [
+    // The morning's GH₵50 of receipts, dated that day.
+    { responseId: 'f1', po: 'P00950', amount: '45', tnt: '5', by: 'Test', submittedAt: '2026-08-01 16:00', expenseDate: '2026-08-01', paidFrom: 'Cash Register' },
+    // The same amount, paid from the safe: not a shift's.
+    { responseId: 'f2', po: 'P00951', amount: '50', by: 'Test', submittedAt: '2026-08-01 10:00', expenseDate: '2026-08-01', paidFrom: 'Big Safe' },
+    // Another day.
+    { responseId: 'f3', po: 'P00952', amount: '50', by: 'Test', submittedAt: '2026-08-03 10:00', expenseDate: '2026-08-03', paidFrom: 'Cash Register' },
+  ] });
+  const row = await env.DB.prepare("SELECT expense_day, paid_from FROM expense_report WHERE response_id = 'f2'").first();
+  assert.deepEqual({ ...row }, { expense_day: '2026-08-01', paid_from: 'safe' });
+
+  const out = await fm.formMatches(env, { month: '2026-08' }, OWNER);
+  const morning = out.clear.find((c) => c.day === '2026-08-01' && c.slot === 'morning');
+  assert.deepEqual(morning.pos.map((p) => p.po), ['P00950']);
+  assert.equal(morning.target, 5000);
+  assert.ok(!JSON.stringify(out).includes('P00951'), 'paid from the safe');
+  assert.equal(out.form.safe, 1);
+
+  const done = await fm.applyMatches(env, { items: [{ day: '2026-08-01', slot: 'morning', pos: ['P00950'] }] }, OWNER);
+  assert.equal(done.done[0].ok, true);
+  const linked = await env.DB.prepare("SELECT po_numbers FROM shift_expense WHERE day = '2026-08-01' AND slot = 'morning'").first();
+  assert.equal(linked.po_numbers, 'P00950');
+  // Linked now: not offered again.
+  const again = await fm.formMatches(env, { month: '2026-08' }, OWNER);
+  assert.ok(!again.clear.some((c) => c.pos.some((p) => p.po === 'P00950')));
 });

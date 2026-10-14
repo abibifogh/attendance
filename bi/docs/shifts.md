@@ -42,8 +42,12 @@ shift, a small note at the end of the line says which; open it for what to do.
   move, and on a keyboard J and K move and 1 to 8 give an exception's answers.
   **Probably the same money** sits above the list (see below). **Show done**
   brings back what was answered or closed. **Refresh now** asks Odoo about the
-  cash POs and reads the laundry system there and then. An admin can tick PO
-  items and give them to a supervisor together.
+  cash POs and reads the laundry system there and then. Exceptions, unpaid
+  stays and open money to-dos can be ticked, one by one or with **Select
+  all** (everything of the chip shown): **Answer N ticked** gives them all
+  one answer and note (a supervisor's wait for an admin, who is told once;
+  a to-do takes the note as what happened, and an admin's closes it), and an
+  admin can **Give** the ticked to-dos to a supervisor.
 - **People**: each person's shifts, cash and cards, and net drawer variance;
   then what is still with staff under To sort out in HIVE, each person's month,
   and what was settled lately.
@@ -130,11 +134,81 @@ Everything typed is signed with the name of whoever typed it.
   paired with it. A movement put straight back by an equal one the other way
   on the same shift is a correction, such as 17,630 keyed for 1,763. Cash in
   a movement no count explains is shown as not labelled.
+- **POs from the expense form, for a backlog.** Inbox → POs → *Link POs from
+  the expense form*: choose a month and press *Find matches*. Each shift
+  whose expenses have no PO (or more than its POs cover) is held against the
+  form's POs paid from the cash register and not yet tied to anything: dated
+  that day (a night shift: that day or the next), or, with no date, sent
+  during the shift or within six hours of its end. A set of POs adding up to
+  exactly what is missing is clear when it is the only one, or the only one
+  sent during the shift or by the person on it; failing that, a PO that is
+  exactly one of the shift's receipts is clear on its own. A PO two shifts
+  could each claim goes to neither. The clear ones come ticked; *Link the
+  ticked POs* links them as if typed on each shift. The rest are listed
+  under *Not sure* with the POs that could be theirs, to open and decide.
+- **Whose receipts a movement carried.** Receipts are followed from shift to
+  shift, oldest first. When a movement carries receipts earlier shifts left
+  in the drawer, a bar and a table under it list each shift they came from
+  (a link to it), the person, the count they first appeared in and how much,
+  with this shift's part highlighted: only that part is this shift's
+  spending and needs its PO. On the earlier shift, the receipts panel says
+  which later shift took them out (or that they are still in the drawer),
+  and its checks show it settled once all are out. Receipts missing from the
+  next shift's first count are said too.
+- **Receipts that went down, with some still there.** If a count shows fewer
+  receipts than the count before, no cash movement took them, and some are
+  still there (say GH₵70 down to GH₵50), it reads two ways: only GH₵20 were
+  handed in and nothing new was spent, or all GH₵70 were handed in and the
+  GH₵50 now counted is new spending. Insight never guesses quietly. It takes
+  the reading the shift's closing report fits (its expenses match one of
+  them), or else the one under which the drawer agrees. If neither settles
+  it, the shift gets **Receipts handed in: all, or only some?**, with one
+  button for each reading; until somebody answers, only what is sure is
+  counted. Whichever reading is used, the card says which and why, and the
+  other button changes it.
+- **Receipts still in the count after a movement.** A movement keyed
+  after a count with receipts in it looks like it took them out. If the
+  counts after it still show them (often the same count done twice), it
+  reads two ways: they stayed in the drawer and the movement was cash, or
+  they went and new receipts of the same amount came in. The drawer agrees
+  either way; the expenses differ. They are counted once (stayed) unless a
+  person says otherwise. When some of the shift's POs add up to exactly the
+  movement, it was cash paid for them: settled as stayed. Otherwise the shift
+  gets **Receipts still in the count after a movement: stayed, or new?**
+  with one button for each, and Undo.
 - **Receipts swapped for cash.** Receipts that leave the drawer with no
   movement, the notes going up by as much, were swapped for cash put into the
   drawer: that shift reads over by as much. The Drawer over card says so and
   **Reconcile** adds the cash back; it then sits under Matched and explained,
   with Undo. Where the counts cannot show it, the amount can be typed.
+- **Receipts swapped for cash, in detail.** Once reconciled, the green line's
+  Details show whose receipts they were (each earlier shift a link), the
+  count they first appeared in, the hand-over, the count where they left with
+  no cash movement, the cash put in for them, the drawer after reconciling,
+  and who reconciled it, when and why (the note typed), with Undo.
+- **Keyed twice, or not paid: what else saw it.** A card or MoMo line ASSD
+  has twice (paid once), with no payment found, or declined on the terminal
+  shows ASSD, the terminal and, for laundry, the laundry system side by side:
+  how many lines, how many paid, how many tries the terminal declined in the
+  shift's hours, and how many payments of that amount the laundry system took.
+  The text says what that means: laundry paid once but keyed twice (reverse
+  the second line in ASSD); paid twice in the laundry system (both real, one
+  paid another way or owed); a failed try keyed as well; or the laundry
+  system not read yet.
+- **One payment seen twice.** Laundry paid by card on the hotel terminal and
+  not keyed in ASSD shows as a card payment ASSD lacks and as laundry ASSD
+  lacks. When the laundry system has a card payment of the same amount, on
+  the same shift, within 30 minutes of one the terminal approved, and no other
+  could be it, the two are one difference: **Laundry paid by card, not in
+  ASSD**, with both sides. One answer settles both; *Not the same payment*
+  splits them back (with Undo). What is left of the laundry's difference, if
+  anything, stays on its own.
+- **Look-alikes, suggested.** Laundry ASSD does not show, and on the same
+  shift a drawer over or a card payment ASSD does not show, of the same
+  amount: *These look like the same GH₵…*, with *Reconcile together* (one
+  click) or *Not related* (not suggested again). On the shift and in the
+  Inbox.
+
 - **The closing report's expenses** settle only what nothing labelled: what
   the POs on the shift's closing report in HIVE paid, less what is already
   counted as expenses, is expenses, and the rest went to the safe. If they

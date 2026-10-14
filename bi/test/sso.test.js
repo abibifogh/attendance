@@ -366,3 +366,25 @@ test('a system address must be https, and single sign-on needs one before it can
     () => saveSystem(env, 'breakfast', { ssoUrl: '', ssoEnabled: true }),
     /needs a sign-in address/);
 });
+
+test('an account is deleted for good, but never your own or the last owner', async () => {
+  const { db, env } = await hub({ owner: true });
+  const { save, remove } = await import('../src/routes/accounts.js');
+  await save(env, { email: 'kofi@nice.test', name: 'Kofi Asare' }, { email: 'owner' });
+  const kofi = (await all(db, "SELECT id FROM accounts WHERE email = 'kofi@nice.test'"))[0].id;
+  await run(db, "INSERT INTO account_access (account_id, system_id, role) VALUES (?1, 'attendance', 'staff')", kofi);
+  await run(db, "INSERT INTO till_access (account_id, area, level) VALUES (?1, 'bank', 2)", kofi);
+  await run(db, `INSERT INTO money_todo (key, kind, ref, day, amount, state, assignee_id, assignee_name, opened_at)
+    VALUES ('unbilled:P00412', 'unbilled', 'P00412', '2026-10-01', 100, 'open', ?1, 'Kofi Asare', '2026-10-01')`, kofi);
+
+  await assert.rejects(() => remove(env, 1, { id: 1 }), /your own account/);
+  await assert.rejects(() => remove(env, 1, { id: kofi }), /last active owner/);
+
+  const out = await remove(env, kofi, { id: 1 });
+  assert.ok(!out.accounts.some((a) => a.email === 'kofi@nice.test'));
+  assert.equal((await all(db, 'SELECT * FROM account_access WHERE account_id = ?1', kofi)).length, 0);
+  assert.equal((await all(db, 'SELECT * FROM till_access WHERE account_id = ?1', kofi)).length, 0);
+  assert.equal((await all(db, 'SELECT * FROM money_todo WHERE assignee_id = ?1', kofi)).length, 0, 'open to-dos go back to the pool');
+  // The address is free again.
+  await save(env, { email: 'kofi@nice.test', name: 'Kofi Asare' }, { email: 'owner' });
+});

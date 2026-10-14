@@ -334,6 +334,12 @@ export function summarise(shift, corrections = new Map()) {
     receiptsOut: 0,
     receiptsMoved: 0,
     receiptsSwapped: 0,
+    // The same, count by count: where receipts left with no movement.
+    receiptsSwaps: [],
+    // Counts that can be read two ways (see the ledger below).
+    receiptsAsk: [],
+    // Movements that seem to carry receipts the counts after still show.
+    carriedAsk: [],
     directExpenses: 0,
     expenses: 0,
   };
@@ -413,10 +419,7 @@ export function summarise(shift, corrections = new Map()) {
   // cash part: expenses paid straight out of the drawer, notes to the safe,
   // or not said. A correction by hand says what the cash part was.
   const auto = new Map(labelMovements(kept, counts.map((c) => ({ ...c, used: false }))).map((m) => [m.seq, m]));
-  for (const m of s.moves) {
-    if (!['expenses', 'safe', 'split', 'part', 'unlabelled'].includes(m.kind)) continue;
-    const a = auto.get(m.seq) || m;
-    const receipts = a.kind === 'expenses' ? a.amount : ['split', 'part'].includes(a.kind) ? a.expenses : 0;
+  const setParts = (m, receipts, sign = 1) => {
     const cash = m.amount - receipts;
     let direct = 0; let safe = 0; let unlabelled = 0;
     if (m.manual) {
@@ -424,12 +427,17 @@ export function summarise(shift, corrections = new Map()) {
       else if (m.kind === 'safe') safe = cash;
       else if (m.kind === 'split') { direct = Math.min(cash, Math.max(0, m.expenses || 0)); safe = cash - direct; }
     } else if (m.kind === 'safe' || m.kind === 'split') safe = cash;
-    else if (m.kind === 'part' || m.kind === 'unlabelled') unlabelled = cash;
+    else unlabelled = cash;
     Object.assign(m, { receipts, direct, cash, safe });
-    s.receiptsMoved += receipts;
-    s.directExpenses += direct;
-    s.safeMoved += safe;
-    s.unlabelledMoved += unlabelled;
+    s.receiptsMoved += sign * receipts;
+    s.directExpenses += sign * direct;
+    s.safeMoved += sign * safe;
+    s.unlabelledMoved += sign * unlabelled;
+  };
+  for (const m of s.moves) {
+    if (!['expenses', 'safe', 'split', 'part', 'unlabelled'].includes(m.kind)) continue;
+    const a = auto.get(m.seq) || m;
+    setParts(m, a.kind === 'expenses' ? a.amount : ['split', 'part'].includes(a.kind) ? a.expenses : 0);
   }
   // Receipts in the counts. A receipt that appears in a count is spent on
   // this shift: that is its expenses, and each needs a PO. One that leaves
@@ -441,33 +449,101 @@ export function summarise(shift, corrections = new Map()) {
   // movement carried that no count saw leave were replaced by new ones;
   // receipts that left with no movement were swapped for cash.
   const receiptsOf = new Map(s.moves.map((m) => [m.seq, m.receipts || 0]));
-  let dropped = 0;
+  // Receipts that left a count and no movement has carried yet, count by
+  // count, oldest first.
+  const dropped = [];
+  const drop = (seq, amount, leg = null) => { if (amount > 0) dropped.push({ seq, amount, leg }); };
+  // A count against the one before it: what the receipts and the notes were either side.
+  const legOf = (i) => ({ prev: counts[i - 1].seq, receiptsBefore: counts[i - 1].receipts, receiptsAfter: counts[i].receipts,
+    notesBefore: counts[i - 1].notes, notesAfter: counts[i].notes });
+  const take = (amount) => {
+    let left = amount;
+    while (left > 0 && dropped.length) {
+      const d = dropped[0];
+      const n = Math.min(left, d.amount);
+      d.amount -= n;
+      left -= n;
+      if (!d.amount) dropped.shift();
+    }
+    return amount - left;
+  };
+  // Receipts a movement carried that no count has seen leave yet, movement
+  // by movement, oldest first.
+  const carriedBy = [];
   let carried = 0;
+  const settle = (amount) => {
+    let left = amount;
+    while (left > 0 && carriedBy.length) {
+      const c = carriedBy[0];
+      const n = Math.min(left, c.amount);
+      c.amount -= n;
+      left -= n;
+      if (!c.amount) carriedBy.shift();
+    }
+  };
   for (const step of order) {
     if (step.move) {
       const r = receiptsOf.get(step.move) || 0;
-      const matched = Math.min(r, dropped);
-      dropped -= matched;
-      carried += r - matched;
+      const more = r - take(r);
+      if (more > 0) carriedBy.push({ seq: step.move, amount: more });
+      carried += more;
       continue;
     }
     if (!step.count) continue;
     const delta = counts[step.count].receipts - counts[step.count - 1].receipts;
     if (delta > 0) {
       s.receiptsIn += delta;
-      s.receiptsNew.push({ seq: counts[step.count].seq, amount: delta });
+      s.receiptsNew.push({ seq: counts[step.count].seq, amount: delta, leg: legOf(step.count) });
     } else if (delta < 0) {
       const matched = Math.min(-delta, carried);
       carried -= matched;
-      dropped += -delta - matched;
+      settle(matched);
+      const left = -delta - matched;
+      const now = counts[step.count].receipts;
+      if (left > 0 && now > 0) {
+        // Fewer receipts than before, with none carried out by a movement,
+        // and some still there: either only `left` of them were handed in,
+        // or all of them were and the ones now counted are new. The counts
+        // cannot say which; a person's answer, or the evidence the Shifts
+        // screen weighs (summary of it in `receiptsAsk`), decides.
+        const seq = counts[step.count].seq;
+        const said = corrections.get(`count:${seq}`) || null;
+        s.receiptsAsk.push({ seq, prev: counts[step.count - 1].receipts, now, left, reading: said?.reading || null, said });
+        if (said?.reading === 'all') {
+          drop(seq, left + now, legOf(step.count));
+          s.receiptsIn += now;
+          s.receiptsNew.push({ seq, amount: now, reading: 'all', leg: legOf(step.count) });
+        } else drop(seq, left, legOf(step.count));
+      } else drop(counts[step.count].seq, left, legOf(step.count));
     }
   }
-  if (carried > 0 && counts.length) {
-    // Carried out, yet the count still shows as much: new receipts took their place.
-    s.receiptsIn += carried;
-    s.receiptsNew.push({ seq: counts[counts.length - 1].seq, amount: carried });
+  // A movement that seems to carry receipts the counts after it still show
+  // reads two ways: the receipts stayed in the drawer and the movement was
+  // cash, or they went and new ones of the same amount came in. The counts
+  // cannot say which. A person's answer decides; until then the receipts
+  // are counted once, as having stayed, and the evidence the Shifts screen
+  // weighs may settle it (see `carriedAsk`).
+  for (const c of carriedBy) {
+    const m = s.moves.find((x) => x.seq === c.seq);
+    if (!m || !counts.length) continue;
+    const said = corrections.get(`count:${c.seq}`) || null;
+    s.carriedAsk.push({ seq: c.seq, amount: c.amount, move: m.amount, reading: said?.reading || null, said });
+    if (said?.reading === 'new') {
+      s.receiptsIn += c.amount;
+      s.receiptsNew.push({ seq: counts[counts.length - 1].seq, amount: c.amount, reading: 'new', move: c.seq });
+      continue;
+    }
+    // Stayed: this much less of the movement was receipts, as much more cash.
+    setParts(m, m.receipts, -1);
+    const receipts = m.receipts - c.amount;
+    if (!m.manual && m.kind === 'expenses') { m.kind = receipts ? 'part' : 'unlabelled'; m.expenses = receipts; }
+    else if (!m.manual && ['split', 'part'].includes(m.kind)) m.expenses = receipts;
+    if (!m.manual && m.kind === 'part' && !receipts) m.kind = 'unlabelled';
+    setParts(m, receipts);
+    m.stayed = c.amount;
   }
-  s.receiptsSwapped = dropped;
+  s.receiptsSwaps = dropped;
+  s.receiptsSwapped = dropped.reduce((t, d) => t + d.amount, 0);
   s.receiptsOut = s.receiptsMoved + s.receiptsSwapped;
   s.expenses = s.receiptsIn + s.directExpenses;
   s.expensesMoved = s.expenses;

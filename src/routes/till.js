@@ -1113,6 +1113,14 @@ export async function linkMail(ctx) {
   const html = str(body.html, 'Message', { required: true, max: 60000 });
   const text = str(body.text, 'Plain text', { max: 20000 }) || undefined;
   const kind = /^[a-z_.]{1,40}$/.test(String(body.kind ?? '')) ? body.kind : 'insight';
+  // A list Insight attaches (a month's prepaid stays): a CSV, by name, small.
+  const attachments = (Array.isArray(body.attachments) ? body.attachments : []).slice(0, 2).map((a) => {
+    const filename = String(a?.filename ?? '');
+    const content = String(a?.content ?? '');
+    if (!/^[A-Za-z0-9._-]{1,80}\.csv$/.test(filename)) throw badRequest('Only a CSV can be attached.');
+    if (!/^[A-Za-z0-9+/=]+$/.test(content) || content.length > 1_400_000) throw badRequest('That attachment is not a small CSV.');
+    return { filename, content };
+  });
 
   const rows = await ctx.db.prepare('SELECT key, value FROM settings WHERE key IN (\'email_from\', \'email_reply_to\')').all();
   const settings = Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value]));
@@ -1135,6 +1143,7 @@ export async function linkMail(ctx) {
       html,
       text,
       replyTo: isEmail(body.replyTo) ? body.replyTo : ((settings.email_reply_to || '').trim() || null),
+      attachments,
     });
   } catch (err) {
     await log('failed', err.message);

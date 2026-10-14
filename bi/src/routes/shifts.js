@@ -301,7 +301,164 @@ async function correctionsFor(env, lo, hi) {
       out.set(r.pair, { kind: 'excluded', reason: 'reversed-by', pair: r.seq, ...who });
     } else out.set(r.seq, { kind: r.kind, expenses: r.expenses, ...who });
   }
+  // How people read counts whose receipts went down with some still there.
+  const reads = await all(env.DB, 'SELECT * FROM shift_receipts_read WHERE count_seq BETWEEN ?1 AND ?2', lo, hi).catch(() => []);
+  for (const r of reads) out.set(`count:${r.count_seq}`, { reading: r.reading, by: r.by_name, at: r.at });
   return out;
+}
+
+/**
+ * A count whose receipts went down with no movement and some still there
+ * reads two ways: only the difference was handed in, or all of them were and
+ * the ones now counted are new. Without a person's answer, the evidence
+ * decides: the closing report's expenses, then the drawer itself. Returns
+ * the reading and why, or nothing when neither settles it.
+ */
+export function readReceipts(s, ask, reportPaid) {
+  if (reportPaid != null) {
+    const shown = s.receiptsIn + s.directExpenses;
+    if (reportPaid - shown === ask.now) return { reading: 'all', why: 'report' };
+    if (reportPaid === shown) return { reading: 'some', why: 'report' };
+  }
+  if (s.countVariance != null) {
+    if (s.countVariance === 0) return { reading: 'some', why: 'drawer' };
+    if (s.countVariance + ask.now === 0) return { reading: 'all', why: 'drawer' };
+  }
+  return null;
+}
+
+/**
+ * A movement that seems to carry receipts the counts after it still show:
+ * the receipts stayed and the movement was cash, or they went and new ones
+ * came. The shift's POs settle it when some of them add up to exactly the
+ * movement: it was cash paid for them. Otherwise nothing here can say.
+ */
+export function readCarried(s, ask, poTotals) {
+  const list = (poTotals || []).filter((x) => x > 0).slice(0, 14);
+  for (let mask = 1; mask < (1 << list.length); mask += 1) {
+    if (list.reduce((t, x, i) => t + (mask & (1 << i) ? x : 0), 0) === ask.move) return { reading: 'stayed', why: 'pos' };
+  }
+  return null;
+}
+
+/** Count a reading of 'all' on a shift already summarised as 'some'. */
+function applyAll(s, ask) {
+  s.receiptsIn += ask.now;
+  s.receiptsSwapped += ask.now;
+  s.receiptsSwaps.push({ seq: ask.seq, amount: ask.now });
+  s.receiptsOut += ask.now;
+  s.expenses += ask.now;
+  s.expensesMoved = s.expenses;
+  s.expensesCounted = s.expenses;
+  s.receiptsNew.push({ seq: ask.seq, amount: ask.now, reading: 'all' });
+  if (s.expected != null) { s.expected -= ask.now; s.countVariance += ask.now; }
+}
+
+/**
+ * Receipts from shift to shift. A receipt stays in the drawer until it is
+ * carried out, and may be handed over a few times first; it is the expense of
+ * the shift whose count it first appeared on. Followed oldest first:
+ *
+ *  - `origins`: for each movement that carried receipts, whose they were.
+ *  - `trail`: for each shift, what became of the receipts it left in the
+ *    drawer, and which later shift took them out.
+ *
+ * Shifts are in slot order and summarised. A hand-over count that shows
+ * fewer receipts than were left takes the oldest off; one that shows more
+ * holds receipts from before (`earlier`).
+ */
+export function receiptTrail(ordered) {
+  const shiftOf = (s) => ({ day: s.day, slot: s.slotName, user: s.user });
+  const lots = [];
+  const origins = new Map();
+  const trail = new Map(ordered.map((s) => [s.index, { left: 0, cleared: [], still: 0, swaps: [] }]));
+  // Takes `amount` off the oldest lots, as `how` on shift `by`.
+  const take = (amount, by, how, seq) => {
+    const out = [];
+    let need = amount;
+    while (need > 0 && lots.length) {
+      const lot = lots[0];
+      const n = Math.min(need, lot.amount);
+      lot.amount -= n;
+      need -= n;
+      if (!lot.amount) lots.shift();
+      const last = out[out.length - 1];
+      if (last && last.index === lot.index) { last.amount += n; if (!last.seqs.includes(lot.seq)) last.seqs.push(lot.seq); } else out.push({ index: lot.index, ...lot.from, seqs: lot.seq ? [lot.seq] : [], amount: n, earlier: lot.earlier || undefined, leg: lot.leg || undefined });
+      if (lot.index !== by.index && trail.has(lot.index)) {
+        const t = trail.get(lot.index);
+        const same = t.cleared.find((c) => c.seq === seq && c.how === how);
+        if (same) same.amount += n;
+        else t.cleared.push({ amount: n, how, seq, ...shiftOf(by) });
+      }
+    }
+    return { out, short: need };
+  };
+  const total = () => lots.reduce((t, l) => t + l.amount, 0);
+  for (const s of ordered) {
+    const open = s.opening?.receipts;
+    if (open != null) {
+      const have = total();
+      if (open < have) take(have - open, s, 'handover', s.opening.seq);
+      else if (open > have) lots.push({ index: null, from: null, seq: null, amount: open - have, earlier: true });
+    }
+    // What this shift's own movements carried before its counts showed the
+    // receipts (they appear later, as new): those are its own already.
+    let owed = 0;
+    const events = [
+      ...(s.receiptsSwaps || []).map((x) => ({ seq: x.seq, at: 0, out: x.amount, how: 'swapped', leg: x.leg || null })),
+      ...(s.moves || []).filter((m) => m.receipts > 0).map((m) => ({ seq: m.seq, at: 0, out: m.receipts, how: 'moved', move: m })),
+      ...(s.receiptsNew || []).map((x) => ({ seq: x.seq, at: 1, add: x.amount, leg: x.leg || null })),
+    ].sort((a, b) => a.seq - b.seq || a.at - b.at);
+    for (const e of events) {
+      if (e.add) {
+        const paid = Math.min(owed, e.add);
+        owed -= paid;
+        if (e.add > paid) lots.push({ index: s.index, from: shiftOf(s), seq: e.seq, amount: e.add - paid, leg: e.leg || null });
+        continue;
+      }
+      const { out, short } = take(e.out, s, e.how, e.seq);
+      if (short) {
+        owed += short;
+        const last = out[out.length - 1];
+        if (last && last.index === s.index) last.amount += short; else out.push({ index: s.index, ...shiftOf(s), seqs: [], amount: short });
+      }
+      if (e.move) origins.set(e.move.seq, out.map((o) => ({ ...o, here: o.index === s.index })));
+      // Whose receipts left with no movement, at which count.
+      if (e.how === 'swapped') trail.get(s.index).swaps.push({ seq: e.seq, amount: e.out, leg: e.leg || null, origins: out.map((o) => ({ ...o, here: o.index === s.index })) });
+    }
+    // What it handed over of its own.
+    trail.get(s.index).left = lots.filter((l) => l.index === s.index).reduce((t, l) => t + l.amount, 0);
+  }
+  for (const l of lots) if (trail.has(l.index)) trail.get(l.index).still += l.amount;
+  for (const o of origins.values()) for (const x of o) delete x.index;
+  for (const t of trail.values()) for (const w of t.swaps) for (const x of w.origins) delete x.index;
+  return { origins, trail };
+}
+
+/**
+ * A person reads a count's receipts: 'all' (every receipt before it was handed
+ * in, those now counted are new), 'some' (only the difference was), or ''
+ * to go back to what the evidence says.
+ */
+export async function saveReceiptsRead(env, body, account) {
+  const seq = Number(body?.seq);
+  if (!Number.isInteger(seq)) throw badRequest('Which count? Its ASSD number is needed.');
+  const reading = String(body?.reading || '');
+  if (!reading) {
+    await run(env.DB, 'DELETE FROM shift_receipts_read WHERE count_seq = ?1', seq);
+    return { ok: true };
+  }
+  // A count: were all its receipts handed in, or only some. A movement: did
+  // the receipts it seems to carry stay in the drawer, or go with new ones
+  // in their place.
+  const forMove = ['stayed', 'new'].includes(reading);
+  if (!forMove && !['all', 'some'].includes(reading)) throw badRequest('Say whether all the receipts were handed in, or only some.');
+  const kind = forMove ? 'Cash Movement' : 'Money Count';
+  const row = await first(env.DB, 'SELECT seq FROM assd_entry WHERE seq = ?1 AND kind = ?2', seq, kind);
+  if (!row) throw badRequest(`ASSD ${seq} is not a ${kind}.`);
+  await run(env.DB, `INSERT INTO shift_receipts_read (count_seq, reading, by_name, at) VALUES (?1, ?2, ?3, ?4)
+    ON CONFLICT (count_seq) DO UPDATE SET reading = ?2, by_name = ?3, at = ?4`, seq, reading, who(account), now());
+  return { ok: true };
 }
 
 /** A Cash Movement on the front drawer, with the amount it took out (negative: put back). */
@@ -613,6 +770,24 @@ export async function shifts(env, query, account) {
     });
   }
 
+  // A card or MoMo line ASSD has twice, or with no payment found: what else
+  // says what happened. The terminal's declined tries of that amount in the
+  // shift's hours (a failed first try is often keyed too), and, for laundry,
+  // how many payments of that amount the laundry system took.
+  for (const x of exceptions.filter((e) => ['duplicate', 'not-found', 'failed'].includes(e.kind) && e.seq)) {
+    const s = result.shifts.find((o) => o.day === x.day && o.slotName === x.slot);
+    if (!s) continue;
+    const w = s.window;
+    x.declined = x.kind === 'failed' ? [] : declines.filter((d) => d.amount === x.amount && d.at && minuteAt(d.at) >= w.start - 30 && minuteAt(d.at) < w.end + 30)
+      .map((d) => ({ at: d.at, last4: d.last4 || null, status: d.status || null }));
+    const seqs = [x.seq, x.pair].filter(Boolean);
+    if (!(s.laundryLines || []).some((ll) => seqs.includes(ll.seq))) continue;
+    const l = laundryOfShift(s);
+    x.laundry = l
+      ? { read: true, same: l.list.filter((t) => t.kind === 'payment' && t.amount === x.amount).map((t) => ({ at: t.at, method: t.method, ref: t.ref })) }
+      : { read: false };
+  }
+
   // What people typed.
   const answerOf = new Map(answers.map((a) => [a.key, {
     answer: a.answer, note: a.note, by: a.by_name, at: a.at, status: a.status || 'applied', approvedBy: a.decided_by || null,
@@ -672,6 +847,22 @@ export async function shifts(env, query, account) {
     // ones that appeared on this shift are its expenses; those carried out
     // with a movement are not cash moved; those that left with no movement
     // were swapped for cash, which a person reconciles.
+    // Counts that read two ways and nobody answered: the evidence decides,
+    // or they wait for a person, counted meanwhile only as far as is sure.
+    for (const ask of s.receiptsAsk || []) {
+      if (ask.reading) { ask.decided = { reading: ask.reading, why: 'person', by: ask.said?.by || null, at: ask.said?.at || null }; continue; }
+      const guess = readReceipts(s, ask, reportPaid.get(`${s.day}|${s.slotName}`) ?? null);
+      ask.decided = guess;
+      if (guess?.reading === 'all') applyAll(s, ask);
+    }
+    // Movements that seem to carry receipts the counts still show: counted
+    // once (stayed) unless a person said new ones came; the shift's POs may
+    // settle it, or it waits for a person.
+    const poTotals = [...(reportPos.get(`${s.day}|${s.slotName}`) || []).map((o) => Math.round(o.total)),
+      ...(() => { try { return (JSON.parse(expense?.odoo || 'null')?.orders || []).map((o) => Math.round(Number(o.total) || 0)); } catch { return []; } })()];
+    for (const ask of s.carriedAsk || []) {
+      ask.decided = ask.reading ? { reading: ask.reading, why: 'person', by: ask.said?.by || null, at: ask.said?.at || null } : readCarried(s, ask, poTotals);
+    }
     const swap = swapOf.get(`${s.day}|${s.slotName}`) || null;
     const assdOpening = s.opening?.notes ?? null;
     const opening = typed?.opening ?? assdOpening ?? previousClosing?.amount ?? null;
@@ -719,6 +910,19 @@ export async function shifts(env, query, account) {
     previousClosing = closing != null ? { amount: closing, user: s.user } : null;
   }
 
+  // Receipts from shift to shift: whose each movement carried, and which
+  // later shift took out what each shift left in the drawer.
+  const { origins, trail } = receiptTrail(ordered);
+  for (const s of ordered) {
+    const tr = trail.get(s.index);
+    // Taken out with no movement is settled once that shift reconciled it.
+    for (const c of tr.cleared) if (c.how === 'swapped') c.reconciled = Boolean(swapOf.get(`${c.day}|${c.slot}`)?.amount);
+    register.get(s.index).receipts.trail = tr;
+  }
+
+  // Whose receipts left a shift's drawer with no movement, and at which count.
+  const swapFromOf = (r) => (r.receipts.trail?.swaps || []).flatMap((w) => w.origins.map((o) => ({ ...o, gone: w.seq, goneLeg: w.leg })));
+
   // The drawer's own exceptions: a count that did not agree, a hand-over
   // where the next count differed from the last, and a movement keyed wrong
   // and put back.
@@ -733,6 +937,22 @@ export async function shifts(env, query, account) {
         // Receipts that left with no movement, not yet reconciled: the likely story of a surplus.
         swapped: r.receipts.swapped - (r.receipts.reconciled?.amount || 0) > 0 ? r.receipts.swapped - (r.receipts.reconciled?.amount || 0) : null,
         receiptsFrom: r.receipts.open ? previousUser.get(s.index) || null : null,
+        swapFrom: swapFromOf(r),
+      });
+    }
+    for (const ask of s.receiptsAsk || []) {
+      const d = ask.decided;
+      exceptions.push({
+        ...base, key: `receipts-read:${ask.seq}`, kind: 'receipts-unclear', group: d ? 'explained' : 'drawer', severity: d ? 'info' : 'warning',
+        seq: ask.seq, amount: ask.left, prev: ask.prev, now: ask.now, left: ask.left, reading: d?.reading || null, why: d?.why || null,
+        by: d?.by || null, at: d?.at || null,
+      });
+    }
+    for (const ask of s.carriedAsk || []) {
+      const d = ask.decided;
+      exceptions.push({
+        ...base, key: `receipts-carried:${ask.seq}`, kind: 'receipts-carried', group: d ? 'explained' : 'drawer', severity: d ? 'info' : 'warning',
+        seq: ask.seq, amount: ask.amount, move: ask.move, reading: d?.reading || null, why: d?.why || null, by: d?.by || null, at: d?.at || null,
       });
     }
     if (r.receipts.reconciled?.amount) {
@@ -740,6 +960,7 @@ export async function shifts(env, query, account) {
         ...base, key: `receipts:${s.day}:${s.slotName}`, kind: 'receipts-swapped', group: 'explained', severity: 'info',
         amount: r.receipts.reconciled.amount, by: r.receipts.reconciled.by, at: r.receipts.reconciled.at, note: r.receipts.reconciled.note,
         receiptsFrom: r.receipts.open ? previousUser.get(s.index) || null : null,
+        swapFrom: swapFromOf(r),
       });
     }
     if (r.handoverGap) {
@@ -864,6 +1085,52 @@ export async function shifts(env, query, account) {
     x.answer = { answer: 'Reconciled together', note: link.note, by: link.by, at: link.at, link: link.id };
   }
 
+  // One payment seen twice: laundry paid by card on the hotel's terminal and
+  // not keyed in ASSD shows as a card payment ASSD lacks and as laundry ASSD
+  // lacks. A card payment the laundry system took, the same amount, on the
+  // same shift and within half an hour of one the terminal approved, with no
+  // other that could be it, is the same money: one difference, settled by
+  // one answer. "Not the same payment" keeps them apart.
+  const PAIR_MINUTES = 30;
+  const SPLIT = 'Not the same payment';
+  const gone = new Set();
+  for (const lx of exceptions.filter((x) => x.kind === 'laundry-mismatch' && x.amount < 0)) {
+    const home = result.shifts.find((o) => o.day === lx.day && o.slotName === lx.slot);
+    const pays = (laundryIn.get(home?.index)?.list || []).filter((p) => p.kind === 'payment' && p.method === 'card' && p.at);
+    let paired = 0;
+    const made = [];
+    for (const p of pays) {
+      const near = exceptions.filter((x) => x.kind === 'not-recorded' && x.event?.kind === 'card' && x.event.at && !gone.has(x.key)
+        && x.day === lx.day && x.slot === lx.slot && x.amount === p.amount && Math.abs(minuteAt(x.event.at) - minuteAt(p.at)) <= PAIR_MINUTES);
+      if (near.length !== 1) continue;
+      const [card] = near;
+      const rivals = pays.filter((q) => q !== p && q.amount === p.amount && Math.abs(minuteAt(q.at) - minuteAt(card.event.at)) <= PAIR_MINUTES);
+      if (rivals.length) continue;
+      const key = `laundry-card:${card.event.id}`;
+      const said = answerOf.get(key);
+      if (said?.answer === SPLIT && said.status !== 'pending') { card.split = { key, by: said.by, at: said.at }; continue; }
+      const x = {
+        day: lx.day, slot: lx.slot, user: lx.user, key, kind: 'laundry-card', group: lx.group, severity: 'warning',
+        amount: p.amount, event: card.event, laundry: { at: p.at, ref: p.ref, amount: p.amount },
+        minutesApart: Math.abs(minuteAt(card.event.at) - minuteAt(p.at)), merged: [card.key, lx.key],
+        answer: said && said.status !== 'pending' ? said : card.answer || null,
+        proposed: said && said.status === 'pending' ? said : null,
+      };
+      exceptions.push(x);
+      made.push(x);
+      gone.add(card.key);
+      paired += p.amount;
+    }
+    if (!paired) continue;
+    lx.amount += paired;
+    lx.paired = paired;
+    if (lx.amount !== 0) continue;
+    // All of the laundry's difference was these payments: an answer it had is theirs.
+    gone.add(lx.key);
+    for (const x of made) if (!x.answer && !x.proposed && lx.answer) x.answer = lx.answer;
+  }
+  for (let i = exceptions.length - 1; i >= 0; i -= 1) if (gone.has(exceptions[i].key)) exceptions.splice(i, 1);
+
   // What people settled by correcting a movement leaves a record, answered,
   // so it can be found again under "Show answered" and undone. Without it a
   // duplicate matched away took its exception, and the drawer difference it
@@ -913,7 +1180,7 @@ export async function shifts(env, query, account) {
       laundrySystem: laundryOfShift(s),
       cashLines: s.cashLines || [], laundryLines: s.laundryLines || [],
       drawerOut: s.drawerOut, expensesCounted: s.expensesCounted, booked: s.booked, corrected: s.corrected,
-      modes: s.modes, moves: s.moves.map((m) => ({ ...m, pending: proposed.get(m.seq) || null })), opening: s.opening, closing: s.closing,
+      modes: s.modes, moves: s.moves.map((m) => ({ ...m, pending: proposed.get(m.seq) || null, origins: origins.get(m.seq) || null })), opening: s.opening, closing: s.closing,
       items: s.items, stockStart: s.stockStart, stockEnd: s.stockEnd,
       expensesMoved: s.expensesMoved, safeMoved: s.safeMoved, unlabelledMoved: s.unlabelledMoved,
       lines: s.lines,
@@ -1006,6 +1273,8 @@ export async function shifts(env, query, account) {
     ...base,
     days,
     formLive: Boolean(env.EXPENSE_FORM_SECRET),
+    // Look-alike differences a person said are not related: not suggested again.
+    notPairs: answers.filter((r) => String(r.key).startsWith('notpair:') && (r.status || 'applied') !== 'pending').map((r) => r.key),
     exceptions: exceptions.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0)),
     people: [...people.values()].sort((a, b) => a.variance - b.variance),
     totals,
@@ -1084,7 +1353,8 @@ const MONEY_KEYS = new Set([
   'cardRecorded', 'received', 'commission', 'cardFoundAmount', 'assd', 'system', 'systemCash', 'sheetTotal',
   'odooTotal', 'safe', 'short', 'over', 'flaggedAmount', 'collected', 'charged', 'paid', 'balance',
   'open', 'close', 'in', 'moved', 'swapped', 'direct', 'putBack', 'fromSheet', 'poTotal', 'gap',
-  'receiptsIn', 'receiptsOut', 'receiptsMoved', 'receiptsSwapped', 'directExpenses',
+  'receiptsIn', 'receiptsOut', 'receiptsMoved', 'receiptsSwapped', 'directExpenses', 'left', 'still',
+  'receiptsBefore', 'receiptsAfter', 'notesBefore', 'notesAfter',
 ]);
 
 /** The same object with every amount taken out. Agrees, short and over survive as a sign. */

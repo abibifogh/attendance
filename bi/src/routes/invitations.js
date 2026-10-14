@@ -361,7 +361,7 @@ async function tellInviter(env, row, { subject, lines, link = null, fetchImpl })
 // ----------------------------------------------------------------- email --
 
 const ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
-const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (c) => ESCAPE[c]);
+export const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (c) => ESCAPE[c]);
 const FONT = "font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif";
 
 function header(iconUrl) {
@@ -372,7 +372,7 @@ function header(iconUrl) {
     </tr></table></td></tr>`;
 }
 
-function frame(inner, iconUrl) {
+export function frame(inner, iconUrl) {
   return `<!doctype html><html><body style="margin:0;padding:24px 12px;background:#e9e8e2">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:14px;border:1px solid #e1e0da">

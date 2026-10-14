@@ -92,7 +92,9 @@ export async function renderAccounts(root) {
                 account.hasPassword ? null : ' ',
                 h('button.btn', { onclick: () => setPassword(account) }, 'Set password'),
                 ' ',
-                h('button.btn', { onclick: () => edit(account, systems, accounts) }, 'Edit'))))))),
+                h('button.btn', { onclick: () => edit(account, systems, accounts) }, 'Edit'),
+                // Not yourself: an owner who deletes their own account is locked out mid-sentence.
+                account.email === state.me?.account?.email ? null : [' ', h('button.btn.danger', { onclick: () => removeAccount(account) }, 'Delete')])))))),
         h('button.btn', { style: { marginTop: '.8rem' }, onclick: () => edit(null, systems, accounts) }, 'Add without an invitation')),
 
       h('div.card',
@@ -442,6 +444,22 @@ export async function renderAccounts(root) {
 
     document.body.append(dialog);
     dialog.showModal();
+  }
+
+  /**
+   * Delete an account for good, after saying what goes and what stays. To
+   * keep somebody out for now and let them back later, untick "Can sign in"
+   * under Edit instead.
+   */
+  async function removeAccount(account) {
+    if (!window.confirm(`Delete ${account.name} (${account.email})?\n\n`
+      + 'They can no longer sign in, and their access and any invitation go. '
+      + 'What they answered or decided keeps their name. Their open money to-dos go back to be handed out again.\n\n'
+      + 'To keep them out for now instead, use Edit and untick "Can sign in".')) return;
+    try {
+      await api(`/accounts/${account.id}/delete`, { method: 'POST' });
+      await repaint({ text: `Deleted ${account.name}.` });
+    } catch (err) { alert(err.message); }
   }
 
   /**

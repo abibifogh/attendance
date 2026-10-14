@@ -30,6 +30,8 @@ const SLOT = {
   afternoon: { label: 'Afternoon', hours: '14:00–22:00', start: 14 },
   night: { label: 'Night', hours: '22:00–06:00', start: 22 },
 };
+// For one payment seen twice: the laundry's card payment on the hotel's terminal.
+const PAIR_ANSWERS = ['Keyed in ASSD now', 'Staff reminded', 'Explained', 'Not the same payment'];
 const ANSWERS = [
   'Explained', 'Corrected in ASSD', 'Guest paid another way', 'Guest owes, chasing',
   'Deposit for a later stay', 'Refund due to the guest', 'Staff to account for it', 'Not a problem',
@@ -63,6 +65,9 @@ const KIND = {
   'movement-unlabelled': ['Cash moved out with no label', '?'],
   'expense-no-po': ['Expenses with no PO', '#'],
   'receipts-swapped': ['Receipts swapped for cash', '✓'],
+  'receipts-unclear': ['Receipts handed in: all, or only some?', '?'],
+  'laundry-card': ['Laundry paid by card, not in ASSD', 'L'],
+  'receipts-carried': ['Receipts still in the count after a movement: stayed, or new?', '?'],
   'expense-po-gap': ['PO total does not match the expenses', '#'],
 };
 const MODES = [
@@ -321,6 +326,21 @@ export async function renderShifts(root, { range }) {
     store.set('section', section);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return paint();
+  }
+
+  /** Open one shift, reading its days first when they are not on screen. */
+  function openShift(day, slot) {
+    const id = `${day}|${slot}`;
+    if (byId.has(id)) return go('shift', id);
+    currentId = id;
+    store.set('shift', id);
+    section = 'shifts';
+    detail = true;
+    store.set('section', section);
+    anchor = day;
+    remember();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return load(null, { cached: true });
   }
 
   function remember() {
@@ -1116,8 +1136,108 @@ export async function renderShifts(root, { range }) {
       row('Receipts in the drawer at hand-over', rc.open ?? 0),
       row('Receipts in the drawer at the end', rc.close ?? 0),
       rc.moved ? row('Receipts taken out with a cash movement', rc.moved) : null,
-      rc.swapped > 0 ? row('Receipts taken out with no movement (swapped for cash)', rc.swapped) : null,
-      row('New receipts: this shift’s expenses', rc.in ?? 0, true));
+      rc.swapped > 0 ? row('Receipts taken out with no cash movement', rc.swapped) : null,
+      row('New receipts: this shift’s expenses', rc.in ?? 0, true),
+      leftWords(rc.trail).map((x) => h(`div.sh-rleft.${x.tone}`, h('span', x.mark), h('span', x.text))));
+  }
+
+  /**
+   * Receipts swapped for cash, reconciled: whose they were (each earlier
+   * shift a link), where they left the drawer with no movement, the cash put
+   * in for them, and who reconciled it and why.
+   */
+  function swapDetail(s, n) {
+    const rc = s.register?.receipts || {};
+    const rec = rc.reconciled || {};
+    const swaps = rc.trail?.swaps || [];
+    const shiftOf = (o) => `${dayText(o.day)}, ${SLOT[o.slot]?.label.toLowerCase() || o.slot}`;
+    const link = (o) => (o.here ? 'this shift' : o.earlier ? 'before these days' : h('button.sh-link', { type: 'button', onclick: () => openShift(o.day, o.slot) }, shiftOf(o)));
+    const rows = swaps.flatMap((w) => w.origins.map((o) => ({ ...o, gone: w.seq, goneLeg: w.leg })));
+    const first = rows[0];
+    const earlier = rows.filter((o) => !o.here);
+    const step = (title, ...lines) => h('div.st', h('b', title), h('small', ...lines));
+    const gone = [...new Set(rows.map((o) => o.gone))];
+    const owners = [...new Set(earlier.filter((o) => o.user).map((o) => `${nameOf(o.user)}’s`))];
+    return h('div.sh-swap',
+      first ? h('div.sh-flow',
+        step('Spent', first.here ? 'on this shift' : link(first), first.user && !first.here ? ` · ${nameOf(first.user)}` : '', h('br'),
+          first.seqs?.length ? `first in count ASSD ${first.seqs.join(', ')}` : ''),
+        earlier.length ? [h('span.ar', '→'), step('Handed over', `in the drawer at ${nameOf(s.user)}’s first count${s.opening?.seq ? `, ASSD ${s.opening.seq}` : ''}`)] : null,
+        h('span.ar', '→'),
+        step('Gone, no cash movement', `count ASSD ${gone.join(', ')} · notes up by ${money(rec.amount)}`)) : null,
+      h('table.sh-otable',
+        h('thead', h('tr', h('th', 'Receipts'), h('th', 'Spent on'), h('th', 'By'), h('th', 'Left the drawer'), h('th.n', 'Amount'))),
+        h('tbody',
+          rows.map((o) => h('tr', h('td', `${money(o.amount)} of receipts`), h('td', link(o)), h('td', o.user ? nameOf(o.user) : '—'), h('td', `count ASSD ${o.gone}`), h('td.n.num', money(o.amount)))),
+          h('tr', h('td', 'Cash put in for them'), h('td', 'this shift'), h('td', nameOf(s.user)), h('td', 'notes went up by as much'), h('td.n.num', `+${money(rec.amount)}`))),
+        h('tfoot', h('tr', h('td', 'Drawer after reconciling'), h('td'), h('td'), h('td'),
+          h('td.n', n.variance == null ? '—' : n.variance === 0 ? 'agrees' : `${n.variance > 0 ? 'over' : 'short'} ${money(Math.abs(n.variance))}`)))),
+      h('div.sh-why', h('b', 'Why: '), rec.note ? `“${rec.note}”` : 'no note given', ` · Reconciled by ${rec.by || 'somebody'}${rec.at ? `, ${dayText(String(rec.at).slice(0, 10))} ${String(rec.at).slice(11, 16)}` : ''}`,
+        may('moves', 2) ? [' · ', h('button.sh-link', {
+          type: 'button',
+          onclick: async () => {
+            try { await api('/shifts/receipts', { method: 'POST', body: { day: s.day, slot: s.slot, amount: '' } }); await load(banner('good', 'Undone. The drawer is worked out again.')); } catch (err) { window.alert(err.message); }
+          },
+        }, 'Undo')] : null),
+      legsBlock(rows),
+      h('p.small', earlier.length
+        ? `They are still ${owners.join(' and ') || 'the earlier'} shift${owners.length > 1 ? 's’' : '’s'} expenses, with their PO there. On ${owners.length > 1 ? 'those shifts' : 'that shift'} the same receipts say: taken out with no cash movement on ${nameOf(s.user)}’s shift, and reconciled here.`
+        : 'They are this shift’s expenses, with their PO here.'));
+  }
+
+  /**
+   * The receipts a shift handed over, as one check: who took them out, and
+   * when, with each later shift to open. Taking them out settles the
+   * drawer, not their PO: they stay this shift's expenses.
+   */
+  function handedOver(tr, n) {
+    const shiftOf = (c) => `${dayText(c.day)}, ${SLOT[c.slot]?.label.toLowerCase() || c.slot}`;
+    const gone = tr.cleared.filter((c) => c.how !== 'handover');
+    const missing = tr.cleared.filter((c) => c.how === 'handover').reduce((t, c) => t + c.amount, 0);
+    const swapped = tr.cleared.find((c) => c.how === 'swapped' && !c.reconciled);
+    const people = [...new Set(gone.map((c) => `${c.day}|${c.slot}`))];
+    const who = people.length === 1 ? `${nameOf(gone[0].user)}, ${shiftOf(gone[0])}` : `${people.length} later shifts`;
+    const head = `Receipts handed over ${money(tr.left)}`;
+    const [tone, mark, text] = tr.still ? ['info', 'i', `${head} · ${money(tr.still)} still in the drawer`]
+      : missing ? ['warn', '!', `${head} · ${money(missing)} not in the next count`]
+        : swapped ? ['warn', '!', `${head} · left with no cash movement: reconcile on ${nameOf(swapped.user)}’s shift`]
+          : ['good', '✓', `${head} · taken out by ${who}`];
+    const what = (c) => ({
+      moved: `To the back office, ASSD ${c.seq}`,
+      swapped: `No cash movement (count ASSD ${c.seq})${c.reconciled ? ', reconciled' : ', not reconciled yet'}`,
+      handover: `Not in the first count, ASSD ${c.seq}`,
+    })[c.how] || c.how;
+    const detail = h('div.sh-handed',
+      h('table.sh-otable',
+        h('thead', h('tr', h('th', 'Shift'), h('th', 'By'), h('th', 'What happened'), h('th.n', 'Receipts'))),
+        h('tbody',
+          tr.cleared.map((c) => h('tr',
+            h('td', h('button.sh-link', { type: 'button', onclick: () => openShift(c.day, c.slot) }, shiftOf(c))),
+            h('td', nameOf(c.user)), h('td', what(c)), h('td.n.num', money(c.amount)))),
+          tr.still ? h('tr', h('td', 'Still in the drawer'), h('td'), h('td', 'Not taken out yet'), h('td.n.num', money(tr.still))) : null)),
+      h('p.small', `They are still this shift’s expenses${n.expenses ? ` (part of its ${money(n.expenses)})` : ''}: their PO is linked here, not on the shift that took them out.`));
+    return [tone, mark, text, detail];
+  }
+
+  /**
+   * What became of the receipts a shift left in the drawer: which later
+   * shift took them out, or that they are still there.
+   */
+  function leftWords(t) {
+    if (!t?.left) return [];
+    const shiftWords = (c) => `${nameOf(c.user)}’s ${SLOT[c.slot]?.label.toLowerCase() || ''} shift of ${dayText(c.day)}`;
+    const how = {
+      moved: (c) => `were carried to the back office on ${shiftWords(c)} (ASSD ${c.seq})`,
+      swapped: (c) => `were taken out with no cash movement on ${shiftWords(c)} (count ASSD ${c.seq})${c.reconciled ? ', and reconciled there' : ': reconcile it on that shift'}`,
+      handover: (c) => `were not in ${nameOf(c.user)}’s first count (ASSD ${c.seq}), on ${dayText(c.day)}`,
+    };
+    const open = (c) => c.how === 'handover' || (c.how === 'swapped' && !c.reconciled);
+    const out = t.cleared.map((c) => ({
+      tone: open(c) ? 'warn' : 'good', mark: open(c) ? '!' : '✓',
+      text: `${money(c.amount)} of the receipts left in the drawer ${how[c.how]?.(c) || ''}.`,
+    }));
+    if (t.still) out.push({ tone: 'info', mark: 'i', text: `${money(t.still)} of them still in the drawer: handed over, not taken out yet.` });
+    return out;
   }
 
   function modesBlock(s) {
@@ -1165,7 +1285,10 @@ export async function renderShifts(root, { range }) {
       out.push(['warn', '!', `The ${exp?.sheetFrom === 'report' ? 'closing report' : 'expense sheet'} says ${money(n.sheet)} was spent; ASSD’s counts show ${money(n.expenses)} of expenses. Link the missing PO, or check the counts.`]);
     }
     const rcp = s.register?.receipts;
-    if (rcp?.reconciled?.amount) out.push(['good', '✓', `${money(rcp.reconciled.amount)} of receipts swapped for cash, reconciled${rcp.reconciled.by ? ` (${rcp.reconciled.by})` : ''}`]);
+    if (rcp?.reconciled?.amount) out.push(['good', '✓', `${money(rcp.reconciled.amount)} of receipts swapped for cash, reconciled${rcp.reconciled.by ? ` (${rcp.reconciled.by})` : ''}`, swapDetail(s, n)]);
+    // Receipts this shift left in the drawer: settled once a later shift took them out.
+    const tr = rcp?.trail;
+    if (tr?.left) out.push(handedOver(tr, n));
     // Movements somebody matched or labelled: settled, so said plainly and green.
     for (const m of (s.moves || []).filter((x) => x.manual)) {
       const by = m.manual.by ? ` (${m.manual.by})` : '';
@@ -1292,7 +1415,7 @@ export async function renderShifts(root, { range }) {
         ],
       };
     });
-    const extra = exceptionsOf(s).filter((x) => ['not-recorded', 'bank-only', 'double-charge'].includes(x.kind) && x.event);
+    const extra = exceptionsOf(s).filter((x) => ['not-recorded', 'bank-only', 'double-charge', 'laundry-card'].includes(x.kind) && x.event);
     for (const x of extra) rows.push({ state: 'bad', cells: ['Not in ASSD', '—', h('span', h('div', `${event(x.event)} · ${money(x.event.amount)}`), h('small', (KIND[x.kind] || [x.kind])[0]))] });
     return h('div.sh-detail', lineTable([{ label: 'ASSD line' }, { label: 'ASSD', num: true }, { label: 'Matched to' }], rows));
   }
@@ -1459,6 +1582,10 @@ export async function renderShifts(root, { range }) {
       returned: ['Put back', 'var(--sh-good)'], excluded: ['Matched', 'var(--ink-2)'],
     };
     const where = (p) => (p ? ` on ${nameOf(p.user)}’s ${SLOT[p.slot]?.label.toLowerCase() || ''} shift of ${shortDay(p.day)}` : ' outside these days');
+    // Receipts a movement carried: those earlier shifts left in the drawer
+    // (their expenses), oldest first, then this shift's own.
+    const earlierOf = (m) => (m.origins || []).filter((o) => !o.here);
+    const whose = (m) => (earlierOf(m).length ? ', some left in the drawer by earlier shifts (below)' : '');
     const said = (m) => {
       if (m.kind === 'excluded') {
         return {
@@ -1469,14 +1596,15 @@ export async function renderShifts(root, { range }) {
       }
       // Receipts carried out are not cash: they were expenses when they
       // appeared in a count. A correction says what the cash part was.
-      const rec = m.receipts ? `${money(m.receipts)} of receipts to the back office` : '';
+      const rec = m.receipts ? `${money(m.receipts)} of receipts to the back office${whose(m)}` : '';
       const base = {
         expenses: m.manual ? [rec, `${money(m.direct)} expenses paid straight out, as corrected`].filter(Boolean).join('; ') + '.'
-          : 'Receipts to the back office: expenses already, when they appeared in the count. No cash.',
+          : earlierOf(m).length ? `${money(m.receipts)} of receipts went to the back office. No cash.`
+            : `${rec}. They are expenses of the shift whose count they first appeared on, not cash.`,
         safe: m.manual ? [rec, `${money(m.safe)} of notes to the safe, as corrected`].filter(Boolean).join('; ') + '.' : 'Notes to the safe, as the count before it.',
         split: m.manual ? [rec, `${money(m.direct)} expenses and ${money(m.safe)} to the safe, as corrected`].filter(Boolean).join('; ') + '.'
-          : `${money(m.receipts)} of receipts to the back office and ${money(m.safe)} of notes to the safe, as counted just before.`,
-        part: `${money(m.receipts)} of receipts as counted; the other ${money(m.cash)} has no count to say what it was.`,
+          : `${rec} and ${money(m.safe)} of notes to the safe, as counted just before.`,
+        part: `${rec}, as counted; the other ${money(m.cash)} has no count to say what it was.`,
         unlabelled: 'No count before it said what it was. Say what it was here, or the closing report settles it.',
         corrected: `Keyed by mistake and put back by ${nameOf(m.reversedByUser)} (ASSD ${m.reversedBy}) on the same shift. It nets to nothing.`,
         returned: 'Money put back into the drawer. If it undoes a movement on another shift, match them.',
@@ -1488,16 +1616,53 @@ export async function renderShifts(root, { range }) {
       const open = () => { fix.hidden = !fix.hidden; if (!fix.hidden && !fix.firstChild) mount(fix, fixer(s, m)); };
       return h('div',
         h('div.sh-move',
-          h('span.tag', { style: `background:${tag[m.kind]?.[1] || 'var(--muted)'}` }, tag[m.kind]?.[0] || m.kind),
+          // A movement that carried nothing but receipts says so, rather than "Expenses".
+          h('span.tag', { style: `background:${tag[m.kind]?.[1] || 'var(--muted)'}` },
+            m.kind === 'expenses' && !m.manual && m.receipts >= m.amount ? 'Receipts' : tag[m.kind]?.[0] || m.kind),
           h('span',
             h('small', `${said(m)} · ${nameOf(m.user)}, ASSD ${m.seq}`),
+            m.stayed ? h('small.sh-manual', ` The counts after it still show ${money(m.stayed)} of the receipts from the count before it: read as staying in the drawer, so that much of it was cash.`) : null,
             m.manual ? h('small.sh-manual', ` Corrected by ${m.manual.by || 'somebody'}${m.manual.note ? `: ${m.manual.note}` : ''}${m.auto ? ` (ASSD's count said ${tag[m.auto]?.[0].toLowerCase() || m.auto})` : ''}.`) : null,
             m.pending ? h('small.sh-manual', ` Waiting for an admin: ${m.pending.by || 'a supervisor'} says ${({ expenses: 'it was expenses', safe: 'it went to the safe', split: 'it was split', duplicate: `it duplicates ASSD ${m.pending.pair}`, reverses: `it pairs with ASSD ${m.pending.pair}` })[m.pending.kind] || m.pending.kind}.`) : null),
           h('span.sh-moveend',
             h('span.amt.num', ['corrected', 'excluded'].includes(m.kind) ? h('s', money(Math.abs(m.amount))) : m.amount < 0 ? `+${money(-m.amount)}` : money(m.amount)),
             m.kind === 'corrected' || !canFix || (!admin && m.manual) ? null : h('button.sh-link', { type: 'button', onclick: open }, m.pending ? 'Change' : 'Correct'))),
+        earlierOf(m).length ? originsBlock(m) : null,
         fix);
     }));
+  }
+
+  /**
+   * Whose receipts a movement carried, shift by shift: a bar, and a table
+   * with each earlier shift to open. Only this shift's part is its spending.
+   */
+  function originsBlock(m) {
+    const list = m.origins || [];
+    const browns = ['#c9b8a6', '#a8917b', '#8f7a66', '#b6a48f'];
+    let b = 0;
+    const colourOf = list.map((o) => (o.here ? 'var(--sh-expense)' : browns[b++ % browns.length]));
+    const when = (o) => `${dayText(o.day)}, ${SLOT[o.slot]?.label.toLowerCase() || o.slot}`;
+    const own = list.filter((o) => o.here).reduce((t, o) => t + (o.amount || 0), 0);
+    const others = list.filter((o) => !o.here);
+    const people = [...new Set(others.filter((o) => o.user).map((o) => `${nameOf(o.user)}’s`))];
+    const named = people.length > 1 ? `${people.slice(0, -1).join(', ')} and ${people[people.length - 1]}` : people[0] || 'earlier';
+    return h('div.sh-origins',
+      data.redacted ? null : h('div.sh-obar', list.map((o, i) => h('b', { style: `flex:${o.amount || 1};background:${colourOf[i]}`, title: `${o.here ? 'This shift' : o.user ? nameOf(o.user) : 'Before these days'} ${money(o.amount)}` },
+        o.here ? `${whole(o.amount)} · this shift` : whole(o.amount)))),
+      h('table.sh-otable',
+        h('thead', h('tr', h('th', 'Spent on'), h('th', 'By'), h('th', 'First in the count'), h('th.n', 'Receipts'))),
+        h('tbody', list.map((o, i) => h(`tr${o.here ? '.here' : ''}`,
+          h('td', h('i.sh-odot', { style: `background:${colourOf[i]}` }),
+            o.here ? `This shift · ${when(o)}`
+              : o.earlier ? 'Before these days'
+                : h('button.sh-link', { type: 'button', onclick: () => openShift(o.day, o.slot) }, when(o))),
+          h('td', o.user ? nameOf(o.user) : '—'),
+          h('td', o.seqs?.length ? o.seqs.map((x) => `ASSD ${x}`).join(', ') : o.here ? 'not yet in a count' : '—'),
+          h('td.n.num', money(o.amount))))),
+        h('tfoot', h('tr', h('td', 'Total moved out'), h('td'), h('td'), h('td.n.num', money(m.receipts))))),
+      h('p.sh-sub', own
+        ? `Only ${money(own)} is this shift’s spending: that is the expense on its card, and the PO it needs. The ${money(m.receipts - own)} is on ${named} shift${people.length > 1 ? 's' : ''}, with ${people.length > 1 ? 'their' : 'its'} POs.`
+        : `None of it is this shift’s spending: the receipts are on ${named} shift${people.length > 1 ? 's' : ''}, with ${people.length > 1 ? 'their' : 'its'} POs.`));
   }
 
   /**
@@ -1551,6 +1716,14 @@ export async function renderShifts(root, { range }) {
     // The receipts part comes from the counts and is not cash; only the
     // cash part is said here.
     const cashPart = m.cash ?? m.amount;
+    const dup = pick('A duplicate of', twins, 'duplicate');
+    const back = pick('Put back by', elsewhere(-m.amount), 'reverses');
+    if (m.receipts && cashPart <= 0) {
+      // Nothing but receipts: no cash to label; only a duplicate or a reversal is left to say.
+      return h('div.sh-fixbox',
+        h('p.sh-sub', `All ${money(m.receipts)} of it was receipts, read from the counts: there is no cash in it to label. The receipts are expenses of the shift whose count they first appeared on.`),
+        dup, back, dup || back ? h('div.sh-fixrow', note, said) : null);
+    }
     return h('div.sh-fixbox',
       h('p.sh-sub', m.receipts
         ? `${money(m.receipts)} of it was receipts, from the count before it: expenses already, not cash. What was the other ${money(cashPart)}?`
@@ -1558,8 +1731,8 @@ export async function renderShifts(root, { range }) {
       cashPart > 0 ? h('div.sh-fixrow', choice('Expenses paid straight out', { kind: 'expenses' }, m.kind !== 'expenses'), choice('Cash to the safe', { kind: 'safe' }, m.kind !== 'safe'),
         h('span', 'or split:'), split, h('button.btn', { type: 'button', onclick: () => send({ kind: 'split', expenses: split.value }) }, 'Split')) : null,
       cashPart > 0 ? h('div.sh-fixrow', h('span', 'Expenses for'), pos) : null,
-      pick('A duplicate of', twins, 'duplicate'),
-      pick('Put back by', elsewhere(-m.amount), 'reverses'),
+      dup,
+      back,
       h('div.sh-fixrow', note, said));
   }
 
@@ -1598,14 +1771,14 @@ export async function renderShifts(root, { range }) {
     const e = x.event || {};
     const paid = `${e.kind === 'momo' ? 'MoMo' : `card${e.last4 ? ` …${e.last4}` : ''}`} ${money(e.amount)}`;
     switch (x.kind) {
-      case 'failed': return `The terminal declined it at ${when(e.at)} (${e.status || 'not approved'}) and never approved it afterwards. ASSD has it as paid by card.`;
-      case 'not-found': return 'ASSD says card or MoMo. Nothing of this amount was approved, received or credited near the shift.';
+      case 'failed': return [`The terminal declined it at ${when(e.at)} (${e.status || 'not approved'}) and never approved it afterwards. ASSD has it as paid by card.`, ...othersSay(x)].join(' ');
+      case 'not-found': return ['ASSD says card or MoMo. Nothing of this amount was approved, received or credited near the shift.', ...othersSay(x)].join(' ');
       case 'zero': return 'A card payment keyed with no amount.';
       case 'double-charge': return `Card …${e.last4} was charged ${money(e.amount)} twice, ${x.minutesApart} minutes apart (${time(x.twin?.at)} and ${time(e.at)}). ASSD has it once.`;
       case 'transposition': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: the same digits in another order.`;
       case 'decimal': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: out by a factor of ten.`;
       case 'keying': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: one digit different.`;
-      case 'duplicate': return `Keyed twice in this shift (also ASSD ${x.pair}) and paid once.`;
+      case 'duplicate': return [`Keyed twice in this shift (also ASSD ${x.pair}) and paid once on the terminal.`, ...othersSay(x)].join(' ');
       case 'not-recorded': return `${e.kind === 'momo' ? 'MoMo received' : 'Approved on the terminal'} at ${when(e.at, e.day)}${e.last4 ? `, card …${e.last4}` : ''}. ASSD has no payment of this amount.`;
       case 'never-settled': return `Approved on the terminal ${when(e.at)}, card …${e.last4}, approval ${e.approval}. No bank credit six days on.`;
       case 'reversal': return `The bank took ${money(Math.abs(x.amount))} back from card …${e.last4} (tapped ${shortDay(e.day)}).${x.pairedWith ? ' It answers a refund keyed in ASSD.' : ' No refund of that amount is keyed in ASSD in these days.'}`;
@@ -1625,17 +1798,54 @@ export async function renderShifts(root, { range }) {
       case 'movement-corrected': return `${nameOf(x.by)} moved ${money(x.amount)} out and ${nameOf(x.reversedBy)} put it back (ASSD ${x.reversedSeq}). It nets to nothing.`;
       case 'movement-twice': return `${money(x.amount)} was moved out of the drawer twice (ASSD ${x.pair} and ${x.seq}), and the drawer counted over. If the second never moved any cash, match it as a duplicate.`;
       case 'movement-reversal': return `${money(x.amount)} was put back into the drawer (ASSD ${x.seq}). It matches ASSD ${x.pair}, moved out on ${nameOf(x.pairShift?.user)}’s ${SLOT[x.pairShift?.slot]?.label.toLowerCase() || ''} shift of ${shortDay(x.pairShift?.day)}. If one undoes the other, match them: both are left out.`;
-      case 'receipts-swapped': return `${money(x.amount)} of receipts${x.receiptsFrom ? ` left in the drawer by ${nameOf(x.receiptsFrom)}’s shift` : ''} left with no cash movement and were swapped for cash put into the drawer. They are expenses where they first appeared, with their PO; here they are not cash.`;
+      case 'receipts-unclear': {
+        const said = { report: 'the closing report’s expenses fit it', drawer: 'it is the reading under which the drawer agrees', person: `${x.by || 'somebody'} said so` }[x.why];
+        return `The receipts went from ${money(x.prev)} to ${money(x.now)} at ASSD ${x.seq}, with no cash movement. Either only ${money(x.left)} of them were handed in and nothing new was spent, or all ${money(x.prev)} were handed in and the ${money(x.now)} now counted is new spending.`
+          + (x.reading ? ` Read as: ${x.reading === 'all' ? `all handed in, ${money(x.now)} new` : `only ${money(x.left)} handed in`}, because ${said}.` : ' Neither the closing report nor the drawer settles it: say which.');
+      }
+      case 'receipts-carried': {
+        const said = { pos: `the shift’s POs add up to the ${money(x.move)} movement, so it was cash paid for them`, person: `${x.by || 'somebody'} said so` }[x.why];
+        return `The count before the ${money(x.move)} movement (ASSD ${x.seq}) showed receipts, so the movement looked like it took ${money(x.amount)} of them out. But the counts after it still show them. Either they stayed in the drawer and the movement was ${money(x.amount)} of cash, or they went and ${money(x.amount)} of new receipts came in. The drawer agrees either way; what changes is the expenses.`
+          + (x.reading ? ` Read as: ${x.reading === 'stayed' ? 'they stayed; the movement was cash' : 'they went; new receipts came'}, because ${said}.` : ' Counted once (as stayed) until you say which.');
+      }
+      case 'receipts-swapped': return `${money(x.amount)} of receipts went out of the drawer with no cash movement, and cash was put in for them: the notes went up by as much. Here they are not cash; they stay expenses of the shift they were spent on, below.`;
       case 'expense-no-po': return `${money(x.amount)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''} with no PO: none on the closing report in HIVE and none linked here. Link the PO, or answer why there is none.`;
       case 'expense-po-gap': return `${money(x.expenses)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''}, but the POs (${(x.pos || []).join(', ')}) come to ${money(x.poTotal)} in Odoo: ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} was paid than the POs say. Link the missing PO, unlink a wrong one, or answer why.`;
       case 'movement-unlabelled': return `${money(x.amount)} ${x.part ? `of the ${money(x.whole)} moved out` : 'moved out of the drawer'} (ASSD ${x.seq}) and no count says whether it went to the safe or on expenses.`
         + `${x.pending ? ` ${x.pending.by} has proposed: ${x.pending.kind}. Waiting for an admin.` : ' Say which.'}`;
       case 'laundry-mismatch': return `ASSD has ${money(x.assd)} of laundry on this shift; the laundry system took ${money(x.system)} in the same hours`
         + `${x.payments ? ` (${x.payments} payment${x.payments === 1 ? '' : 's'})` : ''}${x.charged ? `, and accepted ${money(x.charged)} of new orders` : ''}.`
-        + ` ${x.amount > 0 ? 'Laundry was charged at the desk that the laundry system has not taken.' : 'The laundry took money that ASSD does not show.'}`;
+        + ` ${x.amount > 0 ? 'Laundry was charged at the desk that the laundry system has not taken.' : 'The laundry took money that ASSD does not show.'}`
+        + (x.paired ? ` ${money(x.paired)} of it was paid by card on the hotel's terminal and is shown on its own; this is what is left.` : '');
+      case 'laundry-card': return `The guest paid the laundry by card on the hotel terminal, and it was not keyed in ASSD. The money arrived; ASSD’s laundry for this shift is ${money(x.amount)} short.`;
       case 'bank-only': return `A card credit on the bank statement, card …${e.last4}, tapped ${shortDay(e.day)}, with no record on the terminal report.`;
       default: return '';
     }
+  }
+
+  /** What the terminal's declined tries and the laundry system say about a line keyed twice or not paid. */
+  function othersSay(x) {
+    const out = [];
+    const hm = (at) => String(at || '').slice(11, 16);
+    const amount = money(x.amount);
+    for (const d of x.declined || []) out.push(`The terminal declined ${amount} at ${hm(d.at)}${d.last4 ? ` (card …${d.last4})` : ''}: a failed try, keyed as well${x.kind === 'duplicate' ? '.' : ', or the guest paid another way.'}`);
+    const l = x.laundry;
+    if (!l) return out;
+    if (!l.read) { out.push('It is laundry; the laundry system has not been read for this shift yet, so it cannot say how many were paid.'); return out; }
+    const n = l.same.length;
+    const list = l.same.map((t) => `${t.method || 'paid'} ${hm(t.at)}${t.ref ? `, ${t.ref}` : ''}`).join('; ');
+    if (x.kind === 'duplicate') {
+      out.push(n === 1 ? `The laundry system took ${amount} once (${list}): one laundry payment, keyed twice. Reverse the second line in ASSD.`
+        : n > 1 ? `The laundry system took ${amount} ${n} times (${list}): both were real. Only one reached the terminal; the other was paid another way, or is owed.`
+          : `The laundry system has no payment of ${amount} on this shift.`);
+    } else if (x.kind === 'failed') {
+      out.push(n ? `It is laundry, and the laundry system has it paid (${list}): the guest paid after all, another way or on a later try.`
+        : `It is laundry, and the laundry system has no payment of ${amount} on this shift either: it may still be owed.`);
+    } else {
+      out.push(n ? `The laundry system took ${amount} (${list}).${l.same.some((t) => t.method === 'cash') ? ' In cash there: ASSD may have the wrong way of paying.' : ''}`
+        : `The laundry system has no payment of ${amount} on this shift either.`);
+    }
+    return out;
   }
 
   function evidence(x) {
@@ -1647,7 +1857,28 @@ export async function renderShifts(root, { range }) {
       return box(['ASSD', marked(a, b)], 'vs', [x.event.kind === 'momo' ? 'MoMo' : 'Terminal', marked(b, a)]);
     }
     if (x.kind === 'drawer-short' || x.kind === 'drawer-over') return box(['Should hold', h('b', whole(x.expected))], '→', ['Counted', h('b', whole(x.closing))]);
-    if (x.kind === 'laundry-mismatch') return box(['ASSD', h('b', whole(x.assd))], 'vs', ['Laundry system', h('b', whole(x.system))]);
+    if (x.kind === 'laundry-card') {
+      const hm = (at) => String(at || '').slice(11, 16);
+      return h('div',
+        h('div.sh-sides',
+          h('div', h('small', h('i', { style: 'background:#3f78d3' }), 'Card terminal'), h('b.num', money(x.event?.amount)),
+            h('span', `Approved ${hm(x.event?.at)}${x.event?.last4 ? ` · card …${x.event.last4}` : ''}`)),
+          h('span.eq', '='),
+          h('div', h('small', h('i', { style: 'background:#d8812f' }), 'Laundry system'), h('b.num', money(x.laundry?.amount)),
+            h('span', `Paid by card ${hm(x.laundry?.at)}${x.laundry?.ref ? ` · ${x.laundry.ref}` : ''}`))),
+        h('p.sh-paired', `✓ Same amount, both by card, ${x.minutesApart === 0 ? 'the same minute' : `${x.minutesApart} minute${x.minutesApart === 1 ? '' : 's'} apart`}, on this shift: one payment, seen twice.`));
+    }
+    if (['duplicate', 'not-found'].includes(x.kind) && (x.laundry || x.declined?.length)) {
+      const cell = (label, value, sub) => h('div', h('small', label), h('b', value), sub ? h('span.small', sub) : null);
+      const lines = x.kind === 'duplicate' ? 2 : 1;
+      const paid = x.kind === 'duplicate' ? 1 : 0;
+      const same = x.laundry?.same?.length;
+      return h('div.sh-evidence.sh-three',
+        cell('ASSD', `${lines} × ${whole(x.amount)}`, 'card or MoMo'),
+        cell('Terminal', `${paid} paid`, x.declined?.length ? `${x.declined.length} declined` : 'none declined'),
+        x.laundry ? cell('Laundry system', x.laundry.read ? `${same} × ${whole(x.amount)}` : 'not read', x.laundry.read ? 'payments' : 'yet') : null);
+    }
+    if (x.kind === 'laundry-mismatch') return box(['ASSD', h('b', whole(x.assd))], 'vs', [x.paired ? 'Laundry system, the rest' : 'Laundry system', h('b', whole(x.system - (x.paired || 0)))]);
     if (x.kind === 'failed') return box(['Terminal', h('b', { style: 'color:var(--sh-bad-ink)' }, 'Declined')], 'vs', ['ASSD', h('b', 'Paid')]);
     if (x.kind === 'movement-corrected') return box(['Keyed', h('b', h('s', whole(x.amount)))], '→', ['Put back by', h('b', nameOf(x.reversedBy))]);
     return null;
@@ -1714,13 +1945,78 @@ export async function renderShifts(root, { range }) {
         await load(banner('good', 'Reconciled. The drawer is worked out again.'));
       } catch (err) { said.textContent = err.message; }
     };
+    const from = x.swapFrom || [];
+    const gone = [...new Set(from.map((o) => o.gone))];
     return h('div.sh-suggest',
       x.swapped
-        ? [h('span', h('b', 'It matches receipts that left the drawer. '),
-          `${money(x.swapped)} of receipts${x.receiptsFrom ? `, in the drawer at hand-over from ${nameOf(x.receiptsFrom)}’s shift,` : ''} left with no cash movement, and the notes went up by as much: they were swapped for cash. They are expenses where they first appeared, with their PO.`),
+        ? [h('span', h('b', 'The extra cash matches receipts that went missing. '),
+          `${money(x.swapped)} of receipts were in the drawer, then gone at count ASSD ${gone.join(', ') || '?'}, with no cash movement to take them out. At the same time the notes went up by ${money(x.swapped)}. Most likely someone took the receipts out and put cash in their place.`),
+        from.length ? swapFromBlock(from) : null,
         h('span', h('button.btn.primary', { type: 'button', onclick: () => send((x.swapped / 100).toFixed(2)) }, `Reconcile: ${money(x.swapped)} of receipts swapped for cash`))]
         : h('span', 'Receipts from an earlier shift swapped for cash? Type how much and reconcile it.'),
       x.swapped ? null : h('div.sh-fixrow', amount, h('button.btn', { type: 'button', onclick: () => send(amount.value) }, 'Reconcile')));
+  }
+
+  /**
+   * Whose receipts left the drawer with no movement: each shift they were
+   * spent on (a link), by whom, the count they first appeared in, and the
+   * count where they went. Their PO belongs to that shift.
+   */
+  function swapFromBlock(from) {
+    const when = (o) => `${dayText(o.day)}, ${SLOT[o.slot]?.label.toLowerCase() || o.slot}`;
+    const others = from.filter((o) => !o.here && !o.earlier);
+    return h('div.sh-swapfrom',
+      h('b', 'Where the receipts were spent'),
+      from.map((o) => h('div.sh-swaprow',
+        h('span', o.here ? `This shift, ${when(o)}` : o.earlier ? 'Before the days Insight has read'
+          : h('button.sh-link', { type: 'button', onclick: () => openShift(o.day, o.slot) }, when(o)),
+        o.user ? ` · ${nameOf(o.user)}` : '',
+        o.seqs?.length ? ` · first in count ASSD ${o.seqs.join(', ')}` : ''),
+        h('b.num', money(o.amount)))),
+      h('small', others.length
+        ? `They are that shift’s expenses: their PO belongs there, not here.`
+        : 'They are this shift’s expenses: their PO belongs here.'),
+      legsBlock(from));
+  }
+
+  /**
+   * Both sides of a swap: the count where the receipts appeared (spent from
+   * the drawer) and the count where they went with no movement, each with
+   * the receipts and the notes and coins either side of it.
+   */
+  function legsBlock(from) {
+    const when = (o) => `${dayText(o.day)}, ${SLOT[o.slot]?.label.toLowerCase() || o.slot}`;
+    const span = (a, b) => `${whole(a)} → ${whole(b)}`;
+    const diff = (a, b) => { const d = b - a; return d ? `${d > 0 ? '+' : '−'}${whole(Math.abs(d))}` : 'no change'; };
+    const cells = (l) => [
+      h('td.n.num', span(l.receiptsBefore, l.receiptsAfter), h('small', diff(l.receiptsBefore, l.receiptsAfter))),
+      h('td.n.num', span(l.notesBefore, l.notesAfter), h('small', diff(l.notesBefore, l.notesAfter)))];
+    const rows = [];
+    for (const o of from.filter((x) => x.leg)) {
+      rows.push(h('tr',
+        h('td', h('b', 'Spent'),
+          h('small', o.here ? 'this shift' : h('button.sh-link', { type: 'button', onclick: () => openShift(o.day, o.slot) }, when(o))),
+          h('small', `ASSD ${o.leg.prev} → ${o.seqs?.[0] ?? ''}`)),
+        ...cells(o.leg)));
+    }
+    const gone = [...new Map(from.filter((x) => x.goneLeg).map((x) => [x.gone, x.goneLeg])).entries()];
+    for (const [seq, l] of gone) {
+      rows.push(h('tr',
+        h('td', h('b', 'Taken out, no cash movement'), h('small', 'this shift'), h('small', `ASSD ${l.prev} → ${seq}`)),
+        ...cells(l)));
+    }
+    if (!rows.length) return null;
+    const [seq, l] = gone[0] || [];
+    const out = l ? l.receiptsBefore - l.receiptsAfter : 0;
+    const up = l ? l.notesAfter - l.notesBefore : 0;
+    return h('div.sh-legs',
+      h('b', 'Both sides of the swap'),
+      h('table.sh-otable',
+        h('thead', h('tr', h('th', 'What'), h('th.n', 'Receipts'), h('th.n', 'Notes and coins'))),
+        h('tbody', rows)),
+      l ? h('small', up === out
+        ? `Between the count before and ASSD ${seq}, the receipts went down by ${money(out)} and the notes and coins went up by exactly as much: the cash came back for the receipts.`
+        : `Between the count before and ASSD ${seq}, the receipts went down by ${money(out)} and the notes and coins went ${up >= 0 ? 'up' : 'down'} by ${money(Math.abs(up))}; anything taken or paid between the two counts is in that too.`) : null);
   }
 
   /** Answered, or explained by the rules: nothing left to do. */
@@ -1735,10 +2031,11 @@ export async function renderShifts(root, { range }) {
     const all = exceptionsOf(s);
     const open = all.filter((x) => !settled(x));
     const done = all.filter(settled);
+    const seen = seenTwice(s);
     return [
       open.length ? h('section.card',
         h('div.sh-cardhead', h('h2', 'What does not agree on this shift')),
-        h('div.sh-exgrid', open.map(exceptionCard))) : null,
+        h('div.sh-exgrid', seen.map(seenTwiceCard), open.map(exceptionCard))) : null,
       done.length ? h('section.card.sh-settled',
         h('div.sh-cardhead', h('div', h('h2', `✓ Matched and explained · ${done.length}`),
           h('p.sh-sub', 'Differences already answered, matched or explained by the rules. Nothing to do; Undo is still there.'))),
@@ -1759,7 +2056,7 @@ export async function renderShifts(root, { range }) {
         await load();
       } catch (err) { said.textContent = err.message; }
     };
-    const canLink = may('bank', 2) && !x.answer && !x.proposed && x.severity !== 'info';
+    const canLink = may('bank', 2) && !x.answer && !x.proposed && x.severity !== 'info' && !['receipts-unclear', 'receipts-carried'].includes(x.kind);
     const decide = async (ok) => {
       said.textContent = 'Saving…';
       try {
@@ -1782,6 +2079,13 @@ export async function renderShifts(root, { range }) {
         x.seqs ? h('span', `ASSD ${x.seqs.join(', ')}`) : x.seq ? h('span', `ASSD ${x.seq}`) : null),
       evidence(x),
       h('p', describe(x)),
+      x.split ? h('p.small', `Said not to be the laundry’s card payment of the same amount (${x.split.by || 'somebody'}). `,
+        h('button.sh-link', {
+          type: 'button',
+          onclick: async () => {
+            try { await api('/shifts/answer', { method: 'POST', body: { key: x.split.key, answer: '' } }); await load(banner('good', 'Paired with the laundry payment again.')); } catch (err) { said.textContent = err.message; }
+          },
+        }, 'Undo')) : null,
       ['expense-no-po', 'expense-po-gap'].includes(x.kind) && !x.answer && byId.has(`${x.day}|${x.slot}`) ? poLinker(byId.get(`${x.day}|${x.slot}`)) : null,
       x.slot && byId.has(`${x.day}|${x.slot}`) && !(section === 'shifts' && detail)
         ? h('div', h('button.sh-link', { type: 'button', onclick: () => go('shift', `${x.day}|${x.slot}`) }, 'Open the shift')) : null,
@@ -1797,6 +2101,41 @@ export async function renderShifts(root, { range }) {
       }, x.kind === 'movement-twice' ? 'Match as a duplicate' : 'Match them')) : null,
       // A surplus that receipts swapped for cash explain: reconcile it.
       x.kind === 'drawer-over' && !x.answer && !x.proposed && may('moves', 2) ? receiptsSwapBox(x, said) : null,
+      x.kind === 'receipts-unclear' && may('moves', 2) ? h('div.sh-labels',
+        [['all', `All ${money(x.prev)} handed in; ${money(x.now)} is new`], ['some', `Only ${money(x.left)} handed in; nothing new`]].map(([reading, words]) => h(`button.btn${x.reading === reading ? '.primary' : ''}`, {
+          type: 'button', 'aria-pressed': String(x.reading === reading),
+          onclick: async () => {
+            said.textContent = 'Saving…';
+            try {
+              await api('/shifts/receipts-read', { method: 'POST', body: { seq: x.seq, reading } });
+              await load(banner('good', 'Saved. The drawer and its expenses are worked out again.'));
+            } catch (err) { said.textContent = err.message; }
+          },
+        }, words)),
+        x.why === 'person' ? h('button.sh-link', {
+          type: 'button',
+          onclick: async () => {
+            try { await api('/shifts/receipts-read', { method: 'POST', body: { seq: x.seq, reading: '' } }); await load(banner('good', 'Back to what the evidence says.')); } catch (err) { said.textContent = err.message; }
+          },
+        }, 'Undo') : null) : null,
+      x.kind === 'receipts-carried' && may('moves', 2) ? h('div.sh-labels',
+        [['stayed', `They stayed; the movement was ${money(x.amount)} of cash`], ['new', `They went; ${money(x.amount)} of new receipts came`]].map(([reading, words]) => h(`button.btn${x.reading === reading ? '.primary' : ''}`, {
+          type: 'button', 'aria-pressed': String(x.reading === reading),
+          onclick: async () => {
+            said.textContent = 'Saving…';
+            try {
+              await api('/shifts/receipts-read', { method: 'POST', body: { seq: x.seq, reading } });
+              await load(banner('good', 'Saved. The drawer and its expenses are worked out again.'));
+            } catch (err) { said.textContent = err.message; }
+          },
+        }, words)),
+        x.why === 'person' ? h('button.sh-link', {
+          type: 'button',
+          onclick: async () => {
+            try { await api('/shifts/receipts-read', { method: 'POST', body: { seq: x.seq, reading: '' } }); await load(banner('good', 'Back to what the evidence says.')); } catch (err) { said.textContent = err.message; }
+          },
+        }, 'Undo') : null) : null,
+      x.kind === 'receipts-swapped' && x.swapFrom?.length ? swapFromBlock(x.swapFrom) : null,
       x.kind === 'receipts-swapped' ? h('div.sh-done', h('span', `✓ Reconciled (${x.by || 'somebody'}${x.at ? `, ${String(x.at).slice(0, 16)}` : ''})${x.note ? ` · ${x.note}` : ''}`),
         may('moves', 2) ? h('button.sh-link', {
           type: 'button',
@@ -1850,7 +2189,7 @@ export async function renderShifts(root, { range }) {
             try { await api('/shifts/unlink', { method: 'POST', body: { id: x.link.id } }); await load(banner('good', 'Undone. Those exceptions are open again.')); } catch (err) { said.textContent = err.message; }
           },
         }, 'Undo') : null)
-      : x.severity === 'info' && !x.answer && x.kind !== 'receipts-swapped' ? h('div.sh-done', h('span', { style: 'color:var(--ink-2)' }, 'Explained by the rules; no answer needed'))
+      : x.severity === 'info' && !x.answer && !['receipts-swapped', 'receipts-unclear', 'receipts-carried'].includes(x.kind) ? h('div.sh-done', h('span', { style: 'color:var(--ink-2)' }, 'Explained by the rules; no answer needed'))
         : x.answer ? h('div.sh-done',
           h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''}${x.answer.by ? ` (${x.answer.by}${x.answer.at ? `, ${String(x.answer.at).slice(0, 16)}` : ''})` : ''}`),
           // A correction to a movement is undone, not re-answered: the
@@ -1866,7 +2205,10 @@ export async function renderShifts(root, { range }) {
             },
           }, 'Undo') : null)
             : h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change'), said)
-          : h('div.sh-answers', note, ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said));
+          // Its own two buttons are the answer to a count read two ways.
+          : ['receipts-unclear', 'receipts-carried'].includes(x.kind) ? said
+            : h('div.sh-answers', note, (x.kind === 'laundry-card' ? PAIR_ANSWERS : ANSWERS).map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said,
+              x.kind === 'laundry-card' ? h('p.small', { style: 'flex-basis:100%;margin:.2rem 0 0' }, 'Answered here, both are settled. “Not the same payment” splits them back into two.') : null));
   }
 
   /**
@@ -1888,6 +2230,64 @@ export async function renderShifts(root, { range }) {
     }
     return out;
   }
+  /**
+   * The same money seen twice, by two checks that do not net against each
+   * other: laundry ASSD does not show, and on the same shift a drawer over
+   * or a card payment ASSD does not show, of the same amount. Suggested, not
+   * assumed; a person reconciles them together or says they are not related.
+   */
+  function seenTwice(only = null) {
+    if (!may('bank', 2)) return [];
+    const open = (x) => !x.answer && !x.proposed && !x.link && x.severity !== 'info';
+    const no = new Set(data.notPairs || []);
+    const used = new Set();
+    const out = [];
+    for (const a of data.exceptions.filter((x) => x.kind === 'laundry-mismatch' && x.amount < 0 && open(x))) {
+      if (only && (a.day !== only.day || a.slot !== only.slot)) continue;
+      const b = data.exceptions.find((x) => !used.has(x.key) && open(x) && x.day === a.day && x.slot === a.slot
+        && ((x.kind === 'drawer-over' && x.amount === -a.amount) || (x.kind === 'not-recorded' && x.amount === -a.amount))
+        && !no.has(`notpair:${a.key}|${x.key}`));
+      if (!b) continue;
+      used.add(b.key);
+      out.push([b, a]);
+    }
+    return out;
+  }
+
+  /** One suggestion: the two side by side, Reconcile together or Not related. */
+  function seenTwiceCard([b, a]) {
+    const said = h('span.small');
+    const amount = money(Math.abs(a.amount));
+    const why = b.kind === 'drawer-over'
+      ? 'A laundry payment in cash that was not keyed in ASSD: the notes went up and ASSD shows no laundry.'
+      : 'A laundry payment on the hotel terminal that was not keyed in ASSD; the times alone did not settle it.';
+    const line = (x, what, value) => h('tr', h('td', (KIND[x.kind] || [x.kind])[0]), h('td', what), h('td.n.num', value));
+    return h('article.sh-ex.warn.sh-seen',
+      h('div.hd', h('span.sq', '?'), h('h3', `These look like the same ${amount}`), h('span.amt.num', amount)),
+      h('div.sh-meta', a.user ? [avatar(a.user), h('b', nameOf(a.user))] : null, h('span', dayText(a.day)), h('span', SLOT[a.slot]?.label.toLowerCase() || ''), h('span', 'Suggested')),
+      h('table.sh-otable', h('tbody',
+        b.kind === 'drawer-over' ? line(b, `notes ${amount} more than expected`, `+${amount}`)
+          : line(b, `approved ${String(b.event?.at || '').slice(11, 16)}${b.event?.last4 ? `, card …${b.event.last4}` : ''}`, amount),
+        line(a, `the laundry system took ${amount} ASSD does not show${a.paired ? ' (besides the card payment shown on its own)' : ''}`, amount))),
+      h('p', why),
+      h('div.sh-labels',
+        h('button.btn.primary', {
+          type: 'button',
+          onclick: async (e) => {
+            e.target.disabled = true; said.textContent = 'Reconciling…';
+            try { await reconcile([b.key, a.key], `Same ${amount}: ${(KIND[b.kind] || [b.kind])[0].toLowerCase()} and the laundry. One laundry payment, not keyed in ASSD.`); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+          },
+        }, 'Reconcile together'),
+        h('button.btn', {
+          type: 'button',
+          onclick: async (e) => {
+            e.target.disabled = true;
+            try { await api('/shifts/answer', { method: 'POST', body: { key: `notpair:${a.key}|${b.key}`, answer: 'Not related' } }); await load(banner('good', 'Not suggested again.')); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+          },
+        }, 'Not related'),
+        said));
+  }
+
   const exLabel = (o) => `${o.user ? `${nameOf(o.user)}, ` : ''}${o.day ? dayText(o.day) : ''}${o.slot ? ` ${SLOT[o.slot].label.toLowerCase()}` : ''}`;
 
   // -------------------------------------------------------------- inbox --
@@ -1895,7 +2295,14 @@ export async function renderShifts(root, { range }) {
   /** Pairs that are probably the same money, each reconciled with one click. */
   function pairsCard() {
     const pairs = likelyPairs();
-    if (!pairs.length) return null;
+    const inPairs = new Set(pairs.flat().map((x) => x.key));
+    // The same money seen twice on a shift, each as its own suggestion.
+    const seen = seenTwice().filter(([b, a]) => !inPairs.has(b.key) && !inPairs.has(a.key));
+    const seenBlock = seen.length ? h('div.sh-exgrid', seen.map(seenTwiceCard)) : null;
+    if (!pairs.length) {
+      return seen.length ? h('section.card.sh-pairs', h('div.sh-cardhead', h('div', h('h2', `Probably the same money · ${seen.length}`),
+        h('p.sh-sub', 'The same amount seen twice on a shift. Reconciling answers both.'))), seenBlock) : null;
+    }
     const said = h('span.small');
     return h('section.card.sh-pairs',
       h('div.sh-cardhead',
@@ -1926,6 +2333,7 @@ export async function renderShifts(root, { range }) {
             try { await reconcile([a.key, b.key], `Same ${money(Math.abs(a.amount))}: ${exLabel(a)} and ${exLabel(b)}`); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
           },
         }, 'Reconcile'))),
+      seenBlock,
       said);
   }
 
@@ -1964,6 +2372,7 @@ export async function renderShifts(root, { range }) {
           title: (KIND[x.kind] || [x.kind])[0], sub: exLabel(x), amount: x.amount == null ? '' : money(Math.abs(x.amount)),
           chip: done ? ['ok', 'Answered'] : waitingAdmin ? ['none', 'Waiting for admin'] : null, tone: sev, done,
           age: daysAgo(x.day), counts: !done && !waitingAdmin, render: () => exceptionCard(x),
+          bulk: !done && !waitingAdmin && may('bank', 2) ? { type: 'answer', key: x.key } : null,
         });
       }
     }
@@ -2010,6 +2419,7 @@ export async function renderShifts(root, { range }) {
             chip: done ? ['ok', 'Answered'] : x.unsure ? ['none', 'Check in ASSD'] : x.proposed ? ['none', 'Waiting for admin'] : null,
             tone: left ? 'short' : 'over', done, age: daysAgo(x.checkout), counts: !done && !x.unsure && !x.proposed,
             render: () => stayCard(x, after),
+            bulk: !done && !x.proposed && may('unpaid', 2) ? { type: 'answer', key: x.key, stay: true } : null,
           });
         }
       }
@@ -2026,6 +2436,7 @@ export async function renderShifts(root, { range }) {
           id: `td:${t.id}`, kind: waitingAdmin ? 'admin' : 'po', title: todoTitle(t), sub: todoSub(t, { admin }),
           amount: money(t.kind === 'differs' ? Math.abs(t.amount) : t.amount), chip: done ? ['ok', 'Closed'] : waitingAdmin ? ['none', admin ? 'Approve' : 'Waiting for admin'] : null,
           tone: 'over', done, age: t.age, counts: !done && (admin ? waitingAdmin : !waitingAdmin), todo: t,
+          bulk: t.state === 'open' ? { type: 'todo', id: t.id } : null,
           render: () => todoDetail(t, { admin, supervisors: sources.todo.supervisors || [], after }),
         });
       }
@@ -2051,9 +2462,55 @@ export async function renderShifts(root, { range }) {
    * The Inbox: one list of everything to act on, kind chips across the top,
    * the one picked in full beside it.
    */
+  /**
+   * One answer for everything ticked: exceptions and unpaid stays take the
+   * chosen answer (a supervisor's wait for an admin, as one by one); money
+   * to-dos take the note, or the answer when there is no note, and an admin's
+   * answer closes them.
+   */
+  function bulkActions(items, redraw) {
+    const answers = items.some((x) => x.bulk.stay) && items.every((x) => x.bulk.stay || x.bulk.type === 'todo')
+      ? STAY_ANSWERS : items.some((x) => x.bulk.stay) ? [...new Set([...ANSWERS, ...STAY_ANSWERS])] : ANSWERS;
+    const pick = h('select', { 'aria-label': 'Answer' }, h('option', { value: '' }, 'Answer…'), answers.map((a) => h('option', { value: a }, a)));
+    const note = h('input', { type: 'text', maxlength: '400', placeholder: 'Note (optional; what happened, for to-dos)', 'aria-label': 'Note' });
+    const said = h('span.small');
+    const go = h('button.btn.primary', {
+      type: 'button',
+      onclick: async () => {
+        const answer = pick.value;
+        const keys = items.filter((x) => x.bulk.type === 'answer').map((x) => x.bulk.key);
+        const todos = items.filter((x) => x.bulk.type === 'todo');
+        if (!answer && (keys.length || !note.value.trim())) { said.textContent = 'Choose the answer.'; return; }
+        go.disabled = true; said.textContent = 'Saving…'; said.className = 'small';
+        try {
+          let done = 0; const skipped = [];
+          if (keys.length) {
+            const out = await api('/shifts/answer-many', { method: 'POST', body: { keys, answer, note: note.value } });
+            done += out.saved; skipped.push(...out.skipped);
+          }
+          for (const x of todos) {
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              await api(`/todo/${x.bulk.id}/answer`, { method: 'POST', body: { answer: note.value.trim() || answer } });
+              done += 1;
+            } catch (err) { skipped.push({ key: x.title, why: err.message }); }
+          }
+          inbox.ticked.clear();
+          await refreshInbox(`Answered ${done}${skipped.length ? `; ${skipped.length} skipped (${skipped[0].why})` : ''}.${!admin ? ' An admin approves them.' : ''}`);
+        } catch (err) { said.textContent = err.message; said.className = 'small form-error'; go.disabled = false; }
+      },
+    }, `Answer ${items.length} ticked`);
+    return h('div.ib-bulkbar',
+      h('span.small', h('b', String(items.length)), ' ticked'),
+      pick, note, go,
+      h('button.sh-link', { type: 'button', onclick: () => { inbox.ticked.clear(); redraw(); } }, 'Clear'),
+      said);
+  }
+
   function inboxView(v) {
     const all = inboxItems();
-    const kinds = INBOX_KINDS.filter(([k]) => all.some((x) => x.kind === k));
+    // POs is always there for an admin: it holds the expense form's matching too.
+    const kinds = INBOX_KINDS.filter(([k]) => all.some((x) => x.kind === k) || (k === 'po' && admin));
     if (inbox.kind !== 'all' && !kinds.some(([k]) => k === inbox.kind)) inbox.kind = 'all';
     const shown = all.filter((x) => inbox.kind === 'all' || x.kind === inbox.kind);
     let at = shown.findIndex((x) => x.id === inbox.open);
@@ -2091,8 +2548,18 @@ export async function renderShifts(root, { range }) {
       },
     }, '↻ Refresh now');
     const count = (k) => all.filter((x) => (k === 'all' || x.kind === k) && !x.done).length;
-    const ticked = [...inbox.ticked].filter((id) => shown.some((x) => x.id === id && x.todo));
-    const giveTo = admin && sources.todo?.supervisors?.length && shown.some((x) => x.todo && x.todo.state !== 'closed') ? (() => {
+    // Ticked: what can be acted on together. Select all ticks every one shown.
+    const tickable = shown.filter((x) => x.bulk);
+    for (const id of [...inbox.ticked]) if (!tickable.some((x) => x.id === id)) inbox.ticked.delete(id);
+    const tickedItems = tickable.filter((x) => inbox.ticked.has(x.id));
+    const ticked = tickedItems.filter((x) => x.todo).map((x) => x.id);
+    const selectAll = tickable.length ? h('label.ib-all', h('input', {
+      type: 'checkbox', checked: tickedItems.length > 0 && tickedItems.length === tickable.length,
+      indeterminate: tickedItems.length > 0 && tickedItems.length < tickable.length,
+      onchange: (e) => { inbox.ticked.clear(); if (e.target.checked) for (const x of tickable) inbox.ticked.add(x.id); inboxView(v); },
+    }), ` Select all · ${tickable.length}`) : null;
+    const bulkBar = tickedItems.length ? bulkActions(tickedItems, () => inboxView(v)) : null;
+    const giveTo = admin && sources.todo?.supervisors?.length && ticked.length ? (() => {
       const to = h('select', { 'aria-label': 'Give to' }, h('option', { value: '' }, 'Give to…'),
         sources.todo.supervisors.map((p) => h('option', { value: String(p.id) }, p.name)));
       const gave = h('span.small');
@@ -2124,7 +2591,8 @@ export async function renderShifts(root, { range }) {
         }), ' Show done'),
         h('div.ib-refresh', refresh, said)),
       inbox.kind === 'all' || inbox.kind === 'bank' ? pairsCard() : null,
-      giveTo,
+      inbox.kind === 'po' && admin ? formMatchCard() : null,
+      selectAll || bulkBar ? h('div.ib-bulk', selectAll, bulkBar, giveTo) : null,
       shown.length ? h('div.ib-split',
         h('div.card.ib-list', { role: 'listbox', 'aria-label': 'To act on' },
           shown.map((x, i) => h(`div.ib-row${i === at ? '.on' : ''}${x.done ? '.done' : ''}`, {
@@ -2132,7 +2600,7 @@ export async function renderShifts(root, { range }) {
             onclick: () => open(i),
             onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(i); } },
           },
-          admin && x.todo && x.todo.state !== 'closed' ? h('input', {
+          x.bulk ? h('input', {
             type: 'checkbox', 'aria-label': `Tick ${x.title}`, checked: inbox.ticked.has(x.id),
             onclick: (e) => e.stopPropagation(),
             onchange: (e) => { if (e.target.checked) inbox.ticked.add(x.id); else inbox.ticked.delete(x.id); inboxView(v); },
@@ -2150,6 +2618,73 @@ export async function renderShifts(root, { range }) {
         : h('section.card', h('p', inbox.kind === 'all' ? '✓ Nothing waiting. Everything in these days agrees, or has an answer.' : '✓ Nothing of this kind waiting.')),
       inbox.kind === 'advance' && sources.advances ? elsewhereCard(sources.advances, inbox.elsewhere, refreshInbox, () => inboxView(v)) : null,
       pickedBar());
+  }
+
+  /**
+   * The expense form against a month of shifts: POs that clearly belong to a
+   * shift's expenses, ticked to link at once; the rest listed with the POs
+   * that could be theirs. For catching up on a backlog.
+   */
+  const formMatch = { month: new Date().toISOString().slice(0, 7), out: null, open: false };
+  function formMatchCard() {
+    const body = h('div');
+    const month = h('input', { type: 'month', value: formMatch.month, 'aria-label': 'Month' });
+    const said = h('span.small');
+    const when = (x) => `${dayText(x.day)}, ${SLOT[x.slot]?.label.toLowerCase() || x.slot}`;
+    const poText = (p) => `${p.po} (${money(p.value)}${p.days?.length ? `, dated ${p.days.map((d) => dayText(d)).join(' and ')}` : `, sent ${String(p.submitted).slice(5, 16)}`}${p.by?.length ? `, ${p.by.join(', ')}` : ''})`;
+    const show = () => {
+      const out = formMatch.out;
+      if (!out) return mount(body);
+      const ticks = out.clear.map(() => h('input', { type: 'checkbox', checked: true }));
+      const go = h('button.btn.primary', { type: 'button', disabled: !out.clear.length }, `Link the ticked POs`);
+      const progress = h('span.small');
+      go.onclick = async () => {
+        const items = out.clear.filter((_, i) => ticks[i].checked).map((c) => ({ day: c.day, slot: c.slot, pos: c.pos.map((p) => p.po) }));
+        if (!items.length) { progress.textContent = 'Tick at least one.'; return; }
+        go.disabled = true;
+        const failed = [];
+        let linked = 0;
+        for (let i = 0; i < items.length; i += 5) {
+          progress.textContent = `Linking ${Math.min(i + 5, items.length)} of ${items.length}…`;
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const r = await api('/shifts/form-match/apply', { method: 'POST', body: { items: items.slice(i, i + 5) } });
+            for (const d of r.done) if (d.ok) linked += 1; else failed.push(`${when(d)}: ${d.error}`);
+          } catch (err) { failed.push(err.message); }
+        }
+        formMatch.out = null;
+        await refreshInbox(`POs linked on ${linked} shift${linked === 1 ? '' : 's'} from the expense form.${failed.length ? ` Not linked: ${failed.join(' · ')}` : ''}`);
+      };
+      mount(body,
+        h('p', h('b', `${out.clear.length} shift${out.clear.length === 1 ? '' : 's'} clearly matched`), ` · ${out.unsure.length} not sure · ${out.leftOver} PO${out.leftOver === 1 ? '' : 's'} on the form not tied to a shift (paid from the safe left out: ${out.form.safe}).`),
+        out.form.undated ? h('p.small', `${out.form.undated} of the form’s ${out.form.responses} responses have no date of the expense in Insight, so they are matched by when they were sent. Update the script on the expense form and run sendAllPast in it again for surer matches.`) : null,
+        out.clear.length ? h('div.fm-list', out.clear.map((c, i) => h('label.fm-row',
+          ticks[i],
+          h('span',
+            h('b', `${when(c)} · ${nameOf(c.user)}`), ` — ${c.part ? `${money(c.pos.reduce((t, p) => t + p.value, 0))} of the ${money(c.target)} with no PO` : `the ${money(c.target)} with no PO`}`,
+            h('br'), h('span.small', `${c.pos.map(poText).join(' + ')}. It ${c.why}.`))))) : null,
+        out.clear.length ? h('div.sh-labels', go, progress) : null,
+        out.unsure.length ? h('details.fm-unsure', h('summary', `Not sure: ${out.unsure.length} shift${out.unsure.length === 1 ? '' : 's'} for a person to decide`),
+          out.unsure.map((u) => h('div.fm-row',
+            h('span', h('b', `${when(u)} · ${nameOf(u.user)}`), ` — ${money(u.target)} with no PO`, h('br'),
+              h('span.small', u.could.length ? `Could be: ${u.could.map(poText).join('; ')}.` : 'Nothing on the form for that day.')),
+            h('button.sh-link', { type: 'button', onclick: () => openShift(u.day, u.slot) }, 'Open the shift')))) : null);
+    };
+    const find = h('button.btn', {
+      type: 'button',
+      onclick: async () => {
+        formMatch.month = month.value || formMatch.month;
+        find.disabled = true; said.textContent = 'Reading the month’s shifts and the form…';
+        try { formMatch.out = await api(`/shifts/form-match?month=${formMatch.month}`); said.textContent = ''; show(); } catch (err) { said.textContent = err.message; }
+        find.disabled = false;
+      },
+    }, 'Find matches');
+    show();
+    return h('details.card.fm-card', { open: formMatch.open, ontoggle: (e) => { formMatch.open = e.target.open; } },
+      h('summary', h('b', 'Link POs from the expense form'), h('span.small', ' · for a month of backlog')),
+      h('p.small', 'Matches the POs on the expense form (paid from the cash register) to the shifts whose expenses have none, by amount, the date of the expense, when it was sent and who sent it. Only what clearly belongs to one shift is ticked; nothing is linked until you press Link.'),
+      h('div.sh-labels', month, find, said),
+      body);
   }
 
   /** The bar that appears once exceptions are ticked: what they net to, and Reconcile together. */

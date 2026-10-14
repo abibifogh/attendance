@@ -197,6 +197,19 @@ jobs:
           workingDirectory: bi
           command: d1 migrations apply insight --remote
 
+      # The stylesheet carries this deploy's version in its address, so a
+      # browser that kept an old copy cannot pair it with the new screens
+      # (new markup drawn with old styles: words on top of each other).
+      # index.html itself is never kept (see public/_headers). The scripts are
+      # left alone: views import app.js by its plain name, and a versioned
+      # copy would be a second, separate module.
+      - name: Stamp this version on the stylesheet
+        if: steps.ready.outputs.ready == 'true'
+        run: |
+          v="${GITHUB_SHA::8}"
+          sed -i "s#href=\"/styles.css\"#href=\"/styles.css?v=$v\"#" bi/public/index.html
+          grep -q "styles.css?v=$v" bi/public/index.html
+
       - name: Publish Insight
         if: steps.ready.outputs.ready == 'true'
         uses: cloudflare/wrangler-action@v3

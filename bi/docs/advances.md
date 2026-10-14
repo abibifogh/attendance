@@ -85,6 +85,14 @@ answer to *Was there transportation?* says it was included in the invoice.
 
 From then on each response reaches Insight the moment it is submitted.
 
+The script also sends *Date of the expense:* and whether it was paid from
+the cash register or the safe (*Did you pay from cash register or did you
+use petty cash from the safe?*). Insight uses them to tie a PO to a shift;
+neither is required. With a script from before they were added, paste the
+new [`expense-form.gs`](expense-form.gs) over it (keep the script
+properties), save, and run **sendAllPast** once more: responses already sent
+are updated, not doubled.
+
 A separate project rather than the form's own script editor: a form whose
 script was once tied to a Google Cloud project that has since been deleted
 cannot be given permissions ("Error 401: deleted_client"). A new project is

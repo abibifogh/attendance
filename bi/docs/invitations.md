@@ -60,3 +60,13 @@ SHA-256 of each link's token is stored, so a copy of the database contains no
 working links. The token rides after the `#` in the address, so it never
 reaches a server log. The password is stretched in the browser exactly as at
 sign-in; the server sees a derived key, never the password.
+
+## Deleting an account
+
+Admin → Accounts → **Delete** on a row removes an account for good: it can no
+longer sign in, and its access, Shifts access and any invitation go. What it
+answered or decided keeps its name, written at the time. Its open money
+to-dos go back to be handed out again. Nobody can delete their own account,
+and the last active owner stays. To keep somebody out for now and let them
+back later, untick **Can sign in** under Edit instead.
+
