@@ -599,6 +599,8 @@ export async function bootstrap(ctx) {
         // the head of a report, so they travel with the bootstrap rather than
         // being fetched again by each screen that needs them.
         || key.startsWith('company_')
+        // And which GRA office it files its PAYE with, for the schedule.
+        || key.startsWith('gra_tax_office')
         || SCREEN_SWITCHES.has(key)),
     ),
     open: Number(open?.n ?? 0),

@@ -262,6 +262,44 @@ test('the schedule sheet is headed the way the form is headed', async () => {
   assert.ok(text.includes('Bonus Income(up to 15% of Annual Basic salary)'));
 });
 
+test('the schedule sits in the same cells as the GRA template, tax office ticked', async () => {
+  const { raw, db } = setup();
+  raw.exec("UPDATE settings SET value = 'TSC' WHERE key = 'gra_tax_office_kind'");
+  raw.exec("UPDATE settings SET value = 'ACCRA CENTRAL' WHERE key = 'gra_tax_office'");
+  await aMonth(db);
+  const res = await exportBook(ctx(db, { query: `?month=${MONTH}` }));
+  const all = new TextDecoder().decode(new Uint8Array(await res.arrayBuffer()));
+  // The sheets are stored, not compressed, so each reads as text. The schedule
+  // is the third.
+  const text = all.match(/<worksheet[\s\S]*?<\/worksheet>/g)[2];
+  const cell = (ref) => {
+    const m = new RegExp(`<c r="${ref}"[^>]*?(?:/>|>(.*?)</c>)`).exec(text);
+    return m ? (m[1] ?? '').replace(/<[^>]+>/g, '') : null;
+  };
+
+  assert.equal(cell('A1'), 'GHANA REVENUE AUTHORITY');
+  assert.equal(cell('A5'), "EMPLOYER'S MONTHLY TAX DEDUCTIONS SCHEDULE (P. A. Y. E.)");
+  assert.equal(cell('D7'), 'LTO');
+  assert.equal(cell('F7'), 'TSC ✓', 'the office kind is ticked');
+  assert.equal(cell('G7'), 'ACCRA CENTRAL');
+  assert.equal(cell('D9'), 'Sir Tobys Ghana LTD');
+  assert.equal(cell('U9'), '07/2026');
+  assert.equal(cell('D11'), 'C000490916X');
+  assert.equal(cell('AM12'), 'schedule2022', "the GRA's own mark on its template");
+  assert.equal(cell('A13'), '1');
+  assert.equal(cell('I14'), 'PENSIONS');
+  assert.equal(cell('A15'), 'Ser. No');
+  assert.equal(cell('E15'), 'Residency/ Part-Time/  Casual ', 'spelt as the GRA spells it');
+  assert.equal(cell('L15'), 'Bonus Income(up to 15% of Annual Basic salary)');
+  assert.equal(cell('AB15'), 'Remarks');
+  assert.equal(cell('C18'), 'Ama Boateng', 'and the people start on row 18');
+  assert.equal(cell('A20'), 'TOTALS');
+  assert.ok(text.includes('showGridLines="0"'));
+  assert.ok(text.includes('<col min="39" max="39" width="9" hidden="1"/>'));
+  assert.ok(text.includes('<mergeCell ref="I14:J14"/>'));
+  assert.ok(all.includes('Times New Roman'));
+});
+
 test('the figures on the sheet are the figures on the screen', async () => {
   const { db } = setup();
   await aMonth(db);

@@ -154,6 +154,13 @@ async function companyTab(reload) {
           'The Taxpayer Identification Number the GRA issued', { maxlength: 40 }),
         text('company_ssnit', 'SSNIT employer number', s.company_ssnit,
           'What a member of staff is asked for at a SSNIT branch', { maxlength: 40 }),
+        h('label.field', h('span', 'GRA tax office'),
+          h('select', { name: 'gra_tax_office_kind' },
+            [['', 'Not said'], ['LTO', 'LTO, Large Taxpayer Office'], ['TSC', 'TSC, Taxpayer Service Centre']]
+              .map(([value, label]) => h('option', { value, selected: (s.gra_tax_office_kind ?? '') === value }, label))),
+          h('small.muted', 'Ticked at the top of the PAYE schedule')),
+        text('gra_tax_office', 'Name of the tax office', s.gra_tax_office,
+          'As the PAYE schedule asks for it, e.g. NIMA', { maxlength: 60 }),
       ),
 
       logoCard(s, reload),

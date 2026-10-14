@@ -205,21 +205,24 @@ export const RESIDENCIES = [
 /** What the form's column 4 is usually one of here. */
 export const POSITIONS = ['MANAGEMENT', 'SENIOR', 'JUNIOR'];
 
+// `label` is the heading tidied for a screen; `form` is where the GRA's own
+// workbook spells it differently (stray spaces and all), and the exported
+// sheet uses that so it reads exactly as the GRA's does.
 export const PAYE_COLUMNS = [
   { no: '1', key: 'no', label: 'Ser. No', width: 7 },
   { no: '2', key: 'tin', label: 'TIN / GH. CARD NO.', text: true, width: 20 },
   { no: '3', key: 'name', label: 'Name Of Employee', width: 28 },
   { no: '4', key: 'position', label: 'Position', width: 16 },
-  { no: '5', key: 'residency', label: 'Residency/ Part-Time/ Casual', width: 18 },
+  { no: '5', key: 'residency', label: 'Residency/ Part-Time/ Casual', form: 'Residency/ Part-Time/  Casual ', width: 18 },
   { no: '6', key: 'basic', label: 'Basic Salary', money: true },
   { no: '7', key: 'secondary', label: 'Secondary Employment (Y / N)', width: 12 },
   { no: '8', key: 'paidSsnit', label: 'Paid SSNIT (Y / N)', width: 10 },
-  { no: '9', key: 'ssf', label: 'Social Security Fund', money: true },
-  { no: '10', key: 'thirdTier', label: 'Third Tier', money: true },
+  { no: '9', key: 'ssf', label: 'Social Security Fund', form: 'Social Security Fund ', money: true },
+  { no: '10', key: 'thirdTier', label: 'Third Tier', form: 'Third Tier ', money: true },
   { no: '11', key: 'allowances', label: 'Cash Allowances', money: true },
   { no: '12', key: 'bonus', label: 'Bonus Income(up to 15% of Annual Basic salary)', money: true, width: 16 },
   { no: '13', key: 'bonusTax', label: 'Final Tax on Bonus Income', money: true, width: 13 },
-  { no: '14', key: 'excessBonus', label: 'Excess Bonus', money: true },
+  { no: '14', key: 'excessBonus', label: 'Excess Bonus', form: '  Excess Bonus', money: true },
   { no: '15', key: 'totalCash', label: 'Total Cash emolument (6+11+14)', money: true, width: 15 },
   { no: '16', key: 'accommodation', label: 'Accommodation Element', money: true, width: 13 },
   { no: '17', key: 'vehicle', label: 'Vehicle Element', money: true, width: 12 },
@@ -227,7 +230,7 @@ export const PAYE_COLUMNS = [
   { no: '19', key: 'assessable', label: 'Total Assessable Income (15+16+17+18)', money: true, width: 15 },
   { no: '20', key: 'relief', label: 'Deductible Reliefs', money: true, width: 12 },
   { no: '21', key: 'reliefs', label: 'Total Reliefs (9+10+20)', money: true, width: 13 },
-  { no: '22', key: 'chargeable', label: 'Chargeable Income (19 - 21)', money: true, width: 14 },
+  { no: '22', key: 'chargeable', label: 'Chargeable Income (19 - 21)', form: 'Chargeable Income           (19 - 21)', money: true, width: 14 },
   { no: '23', key: 'tax', label: 'Tax Deductible', money: true, width: 13 },
   { no: '24', key: 'overtime', label: 'Overtime Income', money: true, width: 12 },
   { no: '25', key: 'overtimeTax', label: 'Overtime Tax', money: true, width: 12 },

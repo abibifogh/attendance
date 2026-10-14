@@ -55,42 +55,86 @@ export function cellRef(col, row) {
 /** The letters on their own, for a merge range or a column width. */
 export const colName = (col) => cellRef(col, 0).replace(/\d+$/, '');
 
-// The styles a payroll actually uses. Kept to a handful: a workbook with
-// thirty formats nobody chose is harder to read, not easier.
-const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00"/></numFmts>
-<fonts count="3">
-<font><sz val="10"/><name val="Calibri"/></font>
-<font><b/><sz val="10"/><name val="Calibri"/></font>
-<font><b/><sz val="12"/><name val="Calibri"/></font>
-</fonts>
-<fills count="3">
-<fill><patternFill patternType="none"/></fill>
-<fill><patternFill patternType="gray125"/></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFEFEFEF"/><bgColor indexed="64"/></patternFill></fill>
-</fills>
-<borders count="2">
-<border><left/><right/><top/><bottom/><diagonal/></border>
-<border><left/><right/><top style="thin"/><bottom style="thin"/><diagonal/></border>
-</borders>
-<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="7">
-<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
-<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/>
-<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
-<xf numFmtId="164" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
-<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf>
-<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"/>
-<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyBorder="1"/>
-</cellXfs>
-<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
-</styleSheet>`;
+// The styles a payroll uses most, by name, so a caller never types a bare
+// index. The order is fixed: these are the first styles in every workbook.
+const BASE = [
+  {},
+  { b: true },
+  { fmt: '#,##0.00' },
+  { b: true, fmt: '#,##0.00', border: { t: 'thin', b: 'thin' } },
+  { b: true, fill: 'FFEFEFEF', border: { t: 'thin', b: 'thin' }, wrap: true, v: 'center' },
+  { b: true, sz: 12 },
+  { b: true, border: { t: 'thin', b: 'thin' } },
+];
 
-/** What each style number above means, so a caller never types a bare index. */
+/** What each named style is, as an index into the list above. */
 export const S = {
   plain: 0, bold: 1, money: 2, moneyTotal: 3, head: 4, title: 5, total: 6,
 };
+
+/**
+ * Every style a workbook uses, gathered as the cells are written.
+ *
+ * A cell can name one of the styles above by number, or describe its own:
+ * `{ font, sz, b, color, fill, border: { l, r, t, b }, h, v, wrap, fmt }`.
+ * A form copied from somebody else's paper (the GRA's, say) needs its own
+ * boxes and shading, and a fixed list of seven would never have them.
+ */
+function styleBook() {
+  const fonts = [];
+  const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>'];
+  const borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>'];
+  const fmts = [];
+  const xfs = [];
+  const seen = new Map();
+  const slot = (list, xml) => {
+    const at = list.indexOf(xml);
+    if (at >= 0) return at;
+    list.push(xml);
+    return list.length - 1;
+  };
+
+  const add = (style = {}) => {
+    const key = JSON.stringify(style);
+    if (seen.has(key)) return seen.get(key);
+    const font = slot(fonts, `<font>${style.b ? '<b/>' : ''}${style.i ? '<i/>' : ''}<sz val="${style.sz ?? 10}"/>`
+      + `${style.color ? `<color rgb="${style.color}"/>` : ''}<name val="${esc(style.font ?? 'Calibri')}"/></font>`);
+    const fill = style.fill
+      ? slot(fills, `<fill><patternFill patternType="solid"><fgColor rgb="${style.fill}"/><bgColor indexed="64"/></patternFill></fill>`)
+      : 0;
+    const side = (name, value) => (value ? `<${name} style="${value}"><color auto="1"/></${name}>` : `<${name}/>`);
+    const bd = style.border ?? {};
+    const border = style.border
+      ? slot(borders, `<border>${side('left', bd.l)}${side('right', bd.r)}${side('top', bd.t)}${side('bottom', bd.b)}<diagonal/></border>`)
+      : 0;
+    let numFmt = 0;
+    if (style.fmt === '@') numFmt = 49;
+    else if (style.fmt) numFmt = 164 + slot(fmts, style.fmt);
+    const align = style.h || style.v || style.wrap
+      ? `<alignment${style.h ? ` horizontal="${style.h}"` : ''}${style.v ? ` vertical="${style.v}"` : ''}${style.wrap ? ' wrapText="1"' : ''}/>`
+      : '';
+    xfs.push(`<xf numFmtId="${numFmt}" fontId="${font}" fillId="${fill}" borderId="${border}" xfId="0"`
+      + `${numFmt ? ' applyNumberFormat="1"' : ''}${fill ? ' applyFill="1"' : ''}${border ? ' applyBorder="1"' : ''}`
+      + `${align ? ` applyAlignment="1">${align}</xf>` : '/>'}`);
+    seen.set(key, xfs.length - 1);
+    return xfs.length - 1;
+  };
+  for (const style of BASE) add(style);
+
+  return {
+    id: (s) => (typeof s === 'number' ? s : add(s)),
+    xml: () => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+${fmts.length ? `<numFmts count="${fmts.length}">${fmts.map((f, i) => `<numFmt numFmtId="${164 + i}" formatCode="${esc(f)}"/>`).join('')}</numFmts>` : ''}
+<fonts count="${fonts.length}">${fonts.join('')}</fonts>
+<fills count="${fills.length}">${fills.join('')}</fills>
+<borders count="${borders.length}">${borders.join('')}</borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="${xfs.length}">${xfs.join('')}</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`,
+  };
+}
 
 /**
  * One cell.
@@ -101,12 +145,13 @@ export const S = {
  * employee number need or the leading zero goes. `{ f, v }` is a formula, with
  * `v` the figure it comes to today.
  */
-function cellXml(value, col, row) {
+function cellXml(value, col, row, styles) {
   const at = cellRef(col, row);
   const cell = value != null && typeof value === 'object' && !Array.isArray(value)
     ? value
     : { v: value };
-  const style = cell.s ? ` s="${cell.s}"` : '';
+  const id = cell.s != null ? styles.id(cell.s) : 0;
+  const style = id ? ` s="${id}"` : '';
   const v = cell.v;
 
   // A formula, with the value it comes to written beside it so the sheet
@@ -123,25 +168,48 @@ function cellXml(value, col, row) {
   return `<c r="${at}"${style} t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
 }
 
-function sheetXml({ rows = [], widths = [], merges = [], freeze = 0 }) {
-  const cols = widths.length
-    ? `<cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>`
-    : '';
+/**
+ * One sheet. Beyond the rows: `widths`, `merges`, `freeze` (rows held at the
+ * top), `freezeCols` (columns held at the left), `hidden` (column indexes
+ * nobody needs to see), `heights` ({ row index: points }), `gridLines: false`
+ * and `landscape: true`, which also fits the sheet to one page wide.
+ */
+function sheetXml({
+  rows = [], widths = [], merges = [], freeze = 0, freezeCols = 0, hidden = [], heights = {},
+  gridLines = true, landscape = false,
+}, styles) {
+  const count = Math.max(widths.length, ...hidden.map((i) => i + 1), 0);
+  const colXml = [];
+  for (let i = 0; i < count; i += 1) {
+    const w = widths[i];
+    const hide = hidden.includes(i);
+    if (w == null && !hide) continue;
+    colXml.push(`<col min="${i + 1}" max="${i + 1}" width="${w ?? 9}"${w != null ? ' customWidth="1"' : ''}${hide ? ' hidden="1"' : ''}/>`);
+  }
+  const cols = colXml.length ? `<cols>${colXml.join('')}</cols>` : '';
   const body = rows.map((cells, r) => {
-    const inner = (cells ?? []).map((cell, c) => cellXml(cell, c, r)).join('');
-    return inner ? `<row r="${r + 1}">${inner}</row>` : `<row r="${r + 1}"/>`;
+    const inner = (cells ?? []).map((cell, c) => cellXml(cell, c, r, styles)).join('');
+    const ht = heights[r] ? ` ht="${heights[r]}" customHeight="1"` : '';
+    return inner ? `<row r="${r + 1}"${ht}>${inner}</row>` : `<row r="${r + 1}"${ht}/>`;
   }).join('');
-  const pane = freeze
-    ? `<sheetView workbookViewId="0"><pane ySplit="${freeze}" topLeftCell="A${freeze + 1}" activePane="bottomLeft" state="frozen"/></sheetView>`
-    : '<sheetView workbookViewId="0"/>';
+  const grid = gridLines ? '' : ' showGridLines="0"';
+  let pane = '';
+  if (freeze || freezeCols) {
+    const top = `${colName(freezeCols)}${freeze + 1}`;
+    const which = freeze && freezeCols ? 'bottomRight' : freeze ? 'bottomLeft' : 'topRight';
+    pane = `<pane${freezeCols ? ` xSplit="${freezeCols}"` : ''}${freeze ? ` ySplit="${freeze}"` : ''} topLeftCell="${top}" activePane="${which}" state="frozen"/>`;
+  }
+  const view = `<sheetView workbookViewId="0"${grid}>${pane}</sheetView>`;
   const merged = merges.length
     ? `<mergeCells count="${merges.length}">${merges.map((m) => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>`
     : '';
+  const fit = landscape ? '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' : '';
+  const page = landscape ? '<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>' : '';
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<sheetViews>${pane}</sheetViews>${cols}<sheetData>${body}</sheetData>${merged}
-<pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.3" footer="0.3"/>
+${fit}<sheetViews>${view}</sheetViews>${cols}<sheetData>${body}</sheetData>${merged}
+<pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.3" footer="0.3"/>${page}
 </worksheet>`;
 }
 
@@ -185,8 +253,12 @@ ${list.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxm
 <Relationship Id="rId${list.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`);
 
-  add('xl/styles.xml', STYLES);
-  list.forEach((s, i) => add(`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s)));
+  // The sheets first, because the styles are whatever the sheets turned out
+  // to use.
+  const styles = styleBook();
+  const sheetsXml = list.map((s) => sheetXml(s, styles));
+  add('xl/styles.xml', styles.xml());
+  sheetsXml.forEach((xml, i) => add(`xl/worksheets/sheet${i + 1}.xml`, xml));
 
   return zip(parts);
 }

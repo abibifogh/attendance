@@ -4696,6 +4696,73 @@ html { touch-action: manipulation; }
   border-bottom: 0; padding-bottom: 0; text-align: center;
 }
 
+/* The GRA's PAYE form, as its own workbook looks (DT 107A, 2022). Paper
+   colours whatever the theme, because it is a copy of a piece of paper:
+   Times New Roman, black rules, the heading block in a frame with boxes for
+   the tax office, the employer and the month, and the bonus and overtime
+   columns shaded light, their final taxes darker. */
+.gra-form {
+  --gra-ink: #000; --gra-rule: #000; --gra-light: #f2f2f2; --gra-dark: #d8d8d8;
+  background: #fff; color: var(--gra-ink);
+  font-family: 'Times New Roman', Times, serif;
+  min-width: 150rem; width: max-content; max-width: none;
+}
+.gra-head {
+  border: 1px solid var(--gra-rule); border-bottom: 0;
+  padding: .5rem 1rem 1rem;
+}
+/* The sheet is far wider than a screen, so the heading block stays over the
+   left of it, where the boxes are, rather than centring itself off to one
+   side where nobody scrolls. */
+.gra-head-inner { position: sticky; left: 1rem; max-width: 92rem; display: grid; gap: .1rem; }
+.gra-title { text-align: center; font-weight: 700; font-size: 1.75rem; line-height: 1.15; }
+.gra-sub { text-align: center; font-weight: 700; font-size: 1.1rem; }
+.gra-doc { text-align: center; font-weight: 700; font-size: 1.25rem; margin: 1.1rem 0 .9rem; }
+.gra-fields {
+  display: grid; grid-template-columns: 17rem minmax(0, 44rem) 1fr;
+  gap: .55rem 1rem; align-items: start; font-size: .95rem;
+}
+.gra-label { font-weight: 700; font-size: 1rem; padding-top: .2rem; }
+.gra-box {
+  display: inline-block; border: 1px solid var(--gra-rule);
+  padding: .15rem .55rem; min-height: 1.6rem; min-width: 3rem;
+}
+.gra-office-boxes { display: flex; }
+.gra-office-boxes .gra-box + .gra-box { border-left: 0; }
+.gra-tick { min-width: 5.5rem; text-align: center; }
+.gra-office-name { flex: 1; text-align: center; }
+.gra-office-notes {
+  display: grid; grid-template-columns: 11rem 1fr; text-align: center;
+  border: 1px solid var(--gra-rule); border-top: 0; font-size: .9rem;
+}
+.gra-employer { font-weight: 700; font-size: 1.3rem; display: block; }
+.gra-tin { font-weight: 700; font-size: 1.15rem; display: block; letter-spacing: .02em; }
+.gra-month { display: flex; gap: 1rem; align-items: flex-start; justify-self: center; }
+.gra-month-box { display: grid; justify-items: center; gap: .15rem; }
+.gra-month-box .gra-box { font-weight: 700; min-width: 9rem; text-align: center; }
+.gra-month-box small { font-size: .85rem; }
+
+.gra-table { border-collapse: collapse; width: 100%; font-size: .8rem; }
+.gra-table th, .gra-table td {
+  border: 1px solid var(--gra-rule); padding: .25rem .35rem;
+  vertical-align: middle; color: var(--gra-ink);
+}
+.gra-table th {
+  font-weight: 400; text-align: center; text-transform: none; letter-spacing: 0;
+  white-space: normal; overflow-wrap: break-word; font-size: .78rem;
+}
+.gra-nums th { border-bottom: 0; padding: .15rem .3rem; font-size: .85rem; }
+.gra-nums th:first-child, .gra-heads th:first-child { text-align: left; }
+.gra-group th { border-top: 0; border-bottom: 0; height: 1.3rem; }
+.gra-group th.gra-pensions { border: 1px solid var(--gra-rule); font-size: .85rem; }
+.gra-heads th { height: 4.6rem; }
+.gra-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gra-table td.no, .gra-table td.position, .gra-table td.residency,
+.gra-table td.secondary, .gra-table td.paidSsnit { text-align: center; }
+.gra-table .is-light { background: var(--gra-light); }
+.gra-table .is-dark { background: var(--gra-dark); }
+.gra-table tfoot td { font-weight: 700; background: var(--gra-dark); }
+
 .returns-tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; }
 .returns-tier {
   border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .6rem .7rem;
@@ -4740,6 +4807,16 @@ html { touch-action: manipulation; }
   .returns-paye th { font-size: 4.6pt; }
   .returns-nums th { font-size: 4.2pt; }
   .returns-paye th, .returns-paye td { padding: .3mm .4mm; }
+  /* The GRA's form across a landscape page, shrunk rather than cut. */
+  .gra-head-inner { position: static; max-width: none; }
+  .gra-form { min-width: 0; width: 100%; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .gra-table { font-size: 5pt; }
+  .gra-table th { font-size: 4.6pt; }
+  .gra-table th, .gra-table td { padding: .3mm .4mm; }
+  .gra-heads th { height: auto; }
+  .gra-title { font-size: 14pt; } .gra-sub { font-size: 10pt; } .gra-doc { font-size: 11pt; margin: 2mm 0; }
+  .gra-fields { font-size: 7pt; grid-template-columns: 40mm 100mm 1fr; }
+  .gra-label { font-size: 7pt; } .gra-employer { font-size: 9pt; } .gra-tin { font-size: 8pt; }
   .returns-block { break-inside: avoid; }
   /* The last page must not push a blank sheet out of the printer. */
   .preview-pages > *:last-child,

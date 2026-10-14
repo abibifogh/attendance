@@ -1159,7 +1159,7 @@ export async function deleteDevice(ctx, id) {
  */
 const CLEARABLE = new Set([
   'property_address', 'company_legal_name', 'company_phone', 'company_email',
-  'company_website', 'company_tin', 'company_ssnit',
+  'company_website', 'company_tin', 'company_ssnit', 'gra_tax_office_kind', 'gra_tax_office',
   // Taking a maps key off has to be possible, and blank is the way anybody
   // would try to do it.
   'maps_key', 'maps_region',
@@ -1210,6 +1210,14 @@ const SETTINGS = new Map([
   ['company_website', (v) => str(v, 'Website', { max: 120, fallback: '' })],
   ['company_tin', (v) => str(v, 'TIN', { max: 40, fallback: '' })],
   ['company_ssnit', (v) => str(v, 'SSNIT employer number', { max: 40, fallback: '' })],
+  // The heading of the GRA's PAYE schedule asks which office the property
+  // files with: a tick against LTO or TSC, and the office's name.
+  ['gra_tax_office_kind', (v) => {
+    const kind = String(v ?? '').trim().toUpperCase();
+    if (kind && !['LTO', 'TSC'].includes(kind)) throw badRequest('The tax office is either LTO or TSC.');
+    return kind;
+  }],
+  ['gra_tax_office', (v) => str(v, 'Tax office', { max: 60, fallback: '' })],
   ['hr_link_days', (v) => String(int(v, 'How long a link lasts', { min: 1, max: 90 }))],
 
   // Whether a member of staff sees how much leave they have left on their own

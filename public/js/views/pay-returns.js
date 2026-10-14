@@ -119,37 +119,15 @@ export function returnsSheet(data, niceMonth) {
     // ---- the PAYE schedule ----------------------------------------------
     h('section.returns-block',
       h('h2', 'PAYE schedule'),
+      h('div.table-wrap', graForm(data, schedule, columns, figure)),
       h('p.muted',
-        `The GRA's own form, column for column, in ${data.currency}. Deductible reliefs are `
-        + 'left at nought because they are claimed on a certificate the GRA issues to the '
-        + 'person, not something a payroll knows.'),
+        `Amounts in ${data.currency}. Deductible reliefs are left at nought unless a relief is `
+        + 'set against the person, because they are claimed on a certificate the GRA issues to '
+        + 'the person, not something a payroll knows.'),
       h('p.muted',
-        'A bonus is taxed at 5% as a final tax up to 15% of annual basic salary. Anything past '
-        + 'that ceiling is the excess bonus: it is income rather than a separate tax, so it is '
-        + 'already inside the chargeable income beside it and the graduated bands were applied '
-        + 'to the two together.'),
-      h('div.table-wrap',
-        h('table.returns-table.returns-paye',
-          h('thead',
-            // The form's own column numbers, above its own headings. Whoever
-            // is filing has the paper form beside them and works down it by
-            // number, so the screen says the same numbers in the same order.
-            h('tr.returns-nums', columns.map((c) => h('th', c.no ?? ''))),
-            h('tr', columns.map((c) => h(c.money ? 'th.num' : 'th', c.label)))),
-          h('tbody',
-            schedule.rows.map((row) => h('tr', columns.map((c) => h(
-              c.money ? 'td.num' : 'td',
-              c.money
-                ? (row[c.key] === null ? '' : figure(row[c.key]))
-                : String(row[c.key] ?? ''),
-            )))),
-            h('tr.returns-total', columns.map((c, i) => {
-              if (i === 0) return h('td', h('strong', 'Totals'));
-              const total = schedule.totals[c.key];
-              return c.money && total !== undefined
-                ? h('td.num', h('strong', figure(total)))
-                : h(c.money ? 'td.num' : 'td', '');
-            }))))),
+        'A bonus is taxed at 5% as a final tax up to the 15% ceiling (column 12 and 13). Anything '
+        + 'past that ceiling is the excess bonus (column 14): it is income rather than a separate '
+        + 'tax, so it is already inside the chargeable income and the tax deductible beside it.'),
 
       data.missing.length
         ? h('div.returns-warn',
@@ -169,3 +147,71 @@ function tier(label, amount, detail, strong) {
 }
 
 const pct = (rate) => `${Math.round(Number(rate) * 1000) / 10}%`;
+
+/**
+ * The GRA's form, as the paper looks.
+ *
+ * Copied from the GRA's own workbook (DT 107A, 2022): the heading block in its
+ * frame with the boxes for the tax office, the employer and the month, the
+ * column numbers along the top, PENSIONS over columns 9 and 10, the bonus and
+ * overtime columns shaded the way the form shades them, and TOTALS along the
+ * bottom. Whoever files it has the GRA's sheet beside them, and the two should
+ * look the same.
+ */
+function graForm(data, schedule, columns, figure) {
+  const employer = data.employer ?? {};
+  const office = employer.taxOffice ?? {};
+  const [year, mm] = String(data.month ?? '').split('-');
+  const asFiled = mm && year ? `${mm}/${year}` : '';
+  const shade = (c) => ({
+    bonus: 'is-light', overtime: 'is-light', bonusTax: 'is-dark', overtimeTax: 'is-dark',
+  }[c.key] ?? '');
+  const cls = (c, base = '') => [base, c.money ? 'num' : '', shade(c)].filter(Boolean).join(' ');
+  const tick = (kind) => h('span.gra-box.gra-tick', { class: office.kind === kind ? 'is-ticked' : '' },
+    kind, office.kind === kind ? h('b', { 'aria-label': 'ticked' }, ' ✓') : null);
+  const pensionAt = columns.findIndex((c) => c.key === 'ssf');
+
+  return h('div.gra-form',
+    h('div.gra-head', h('div.gra-head-inner',
+      h('div.gra-title', 'GHANA REVENUE AUTHORITY'),
+      h('div.gra-sub', 'DOMESTIC TAX REVENUE DIVISION'),
+      h('div.gra-doc', 'EMPLOYER’S MONTHLY TAX DEDUCTIONS SCHEDULE (P. A. Y. E.)'),
+      h('div.gra-fields',
+        h('div.gra-label', 'CURRENT TAX OFFICE'),
+        h('div.gra-office',
+          h('div.gra-office-boxes', tick('LTO'), tick('TSC'), h('span.gra-box.gra-office-name', office.name || '')),
+          h('div.gra-office-notes', h('span', '(tick one)'), h('span', 'Name of Tax Office'))),
+        h('div'),
+        h('div.gra-label', 'NAME OF EMPLOYER'),
+        h('div.gra-box.gra-employer', employer.name || ''),
+        h('div.gra-month',
+          h('span.gra-label', 'FOR THE MONTH OF'),
+          h('span.gra-month-box',
+            h('span.gra-box', asFiled),
+            h('small', '(MM/YYYY)'))),
+        h('div.gra-label', 'EMPLOYER’S TIN / GH. CARD NO.'),
+        h('div.gra-box.gra-tin', employer.tin || ''),
+        h('div')))),
+
+    h('table.gra-table',
+      h('thead',
+        h('tr.gra-nums', columns.map((c) => h('th', { class: shade(c) }, c.no ?? ''))),
+        h('tr.gra-group', columns.map((c, i) => {
+          if (i === pensionAt) return h('th.gra-pensions', { colSpan: 2 }, 'PENSIONS');
+          if (i === pensionAt + 1) return null;
+          return h('th', { class: shade(c) });
+        })),
+        h('tr.gra-heads', columns.map((c) => h('th', { class: cls(c) }, c.label)))),
+      h('tbody',
+        schedule.rows.map((row) => h('tr', columns.map((c) => h('td', { class: cls(c, c.key) },
+          c.money
+            ? (row[c.key] === null ? '' : (Number(row[c.key]) ? figure(row[c.key]) : '-'))
+            : String(row[c.key] ?? '')))))),
+      h('tfoot',
+        h('tr', columns.map((c, i) => {
+          if (i === 0) return h('td.gra-total-label', { colSpan: 1 }, 'TOTALS');
+          const total = schedule.totals[c.key];
+          return h('td', { class: cls(c) }, c.money && total !== undefined ? (Number(total) ? figure(total) : '-') : '');
+        })))));
+}
+

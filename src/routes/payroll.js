@@ -1141,8 +1141,16 @@ async function monthReturn(ctx) {
 /** The month's journal and PAYE schedule, for the screen. */
 export async function returns(ctx) {
   const { month, data, totals, journal, schedule, ssnit, missing } = await monthReturn(ctx);
+  const map = (await settingsOf(ctx.db)).settings ?? {};
   return json({
     month,
+    // What the heading of the GRA's form asks for, so the screen can head the
+    // schedule the way the paper does.
+    employer: {
+      name: map.company_legal_name || data.property || '',
+      tin: map.company_tin || '',
+      taxOffice: taxOfficeOf(map),
+    },
     currency: data.currency,
     property: data.property,
     status: data.run.status,
@@ -1165,6 +1173,18 @@ export async function returns(ctx) {
     // these, and a number does not tell them whose record to open.
     missing,
   });
+}
+
+/**
+ * The GRA office the property files with, as the form's heading asks for it:
+ * which kind of office (a tick against LTO or TSC) and its name.
+ */
+export function taxOfficeOf(settings = {}) {
+  const kind = String(settings.gra_tax_office_kind ?? '').toUpperCase();
+  return {
+    kind: ['LTO', 'TSC'].includes(kind) ? kind : '',
+    name: String(settings.gra_tax_office ?? '').trim(),
+  };
 }
 
 /**
@@ -1254,66 +1274,163 @@ export async function exportBook(ctx) {
   };
 
   // ---- the GRA schedule, on the GRA's own form ---------------------------
+  //
+  // Copied from the GRA's own workbook (DT 107A, the one marked
+  // "schedule2022"), cell for cell: the boxed heading block, Times New Roman,
+  // the column numbers, PENSIONS over columns 9 and 10, headings three rows
+  // tall, the bonus and overtime columns shaded the way the form shades them,
+  // and the rows starting on row 18 where the form starts them. It is meant to
+  // be filed or pasted into the GRA's sheet as it comes out.
   const cols = PAYE_COLUMNS;
-  const last = colName(cols.length - 1);
-  const at = (letter, value) => {
-    const row = [];
-    row[letter.charCodeAt(0) - 65] = value;
-    return row;
-  };
-  const put = (pairs) => {
-    const row = [];
-    for (const [letter, value] of pairs) row[letter.charCodeAt(0) - 65] = value;
-    return row;
-  };
+  const width = cols.length; // A to AB
+  const office = taxOfficeOf(map);
 
-  const rows = [
-    at('A', { v: 'GHANA REVENUE AUTHORITY', s: S.title }),
-    at('A', { v: 'DOMESTIC TAX REVENUE DIVISION', s: S.bold }),
-    [], [],
-    at('A', { v: "EMPLOYER'S MONTHLY TAX DEDUCTIONS SCHEDULE (P. A. Y. E.)", s: S.title }),
-    [],
-    put([['A', { v: 'CURRENT TAX OFFICE', s: S.bold }], ['D', 'LTO'], ['F', 'TSC'], ['G', 'NIMA']]),
-    put([['D', '(tick one)'], ['G', 'Name of Tax Office']]),
-    put([['A', { v: 'NAME OF EMPLOYER', s: S.bold }], ['D', { v: employer, s: S.bold }],
-      ['S', { v: 'FOR THE MONTH OF', s: S.bold }], ['U', { v: asFiled, s: S.bold, text: true }]]),
-    put([['V', '(MM/YYYY)']]),
-    put([['A', { v: "EMPLOYER'S TIN / GH. CARD NO.", s: S.bold }],
-      ['D', { v: employerTin, s: S.bold, text: true }]]),
-    [],
-    // The numbers printed above the columns. Text, not numbers, because the
-    // form numbers two of its columns 26 and a spreadsheet asked for a number
-    // there quietly makes it 26 twice over as a figure nobody can sort on.
-    cols.map((c) => ({ v: c.no, s: S.bold, text: true })),
-    at('I', { v: 'PENSIONS', s: S.head }),
-    cols.map((c) => head(c.label)),
-    [], [],
-    ...schedule.rows.map((row) => cols.map((c) => {
-      const value = row[c.key];
-      if (c.money) return money(value);
-      if (c.text) return { v: value ?? '', text: true };
-      return value ?? '';
-    })),
-    cols.map((c, i) => {
-      if (i === 0) return { v: 'TOTALS', s: S.total };
-      if (!c.money) return { v: '', s: S.total };
-      return totalMoney(schedule.totals[c.key]);
-    }),
+  const TNR = 'Times New Roman';
+  const box = { l: 'thin', r: 'thin', t: 'thin', b: 'thin' };
+  const ACCOUNTING = '_-* #,##0.00_-;\\-* #,##0.00_-;_-* "-"??_-;_-@';
+  // The form's shading: the bonus and the overtime light, their final taxes
+  // darker, so the two concessionary rates stand out from the graduated tax.
+  const SHADE = { bonus: 'FFF2F2F2', overtime: 'FFF2F2F2', bonusTax: 'FFD8D8D8', overtimeTax: 'FFD8D8D8' };
+  const st = (extra = {}) => ({ font: TNR, sz: 11, ...extra });
+
+  // The heading block sits in a frame: a line down the left of column A, down
+  // the right of the last column, and across the top of row 1.
+  const framed = (r, cells = []) => {
+    const row = [];
+    for (let c = 0; c < width; c += 1) {
+      const given = cells[c];
+      const cell = given != null && typeof given === 'object' ? { ...given } : { v: given ?? '' };
+      const style = { ...st(), ...(cell.s ?? {}) };
+      const border = { ...(style.border ?? {}) };
+      if (c === 0) border.l = 'thin';
+      if (c === width - 1) border.r = 'thin';
+      if (r === 0) border.t = 'thin';
+      style.border = Object.keys(border).length ? border : undefined;
+      if (!style.border) delete style.border;
+      row[c] = { ...cell, s: style };
+    }
+    return row;
+  };
+  const L = (letter) => {
+    let n = 0;
+    for (const ch of letter) n = n * 26 + (ch.charCodeAt(0) - 64);
+    return n - 1;
+  };
+  const cells = (pairs) => {
+    const row = [];
+    for (const [letter, cell] of pairs) row[L(letter)] = cell;
+    return row;
+  };
+  const tick = (kind) => (office.kind === kind ? `${kind} ✓` : kind);
+  const ruled = (letters, b) => letters.map((x) => [x, { v: '', s: st({ border: b }) }]);
+
+  const heading = [
+    framed(0, cells([['A', { v: 'GHANA REVENUE AUTHORITY', s: st({ b: true, sz: 22, h: 'center' }) }]])),
+    framed(1, cells([['A', { v: 'DOMESTIC TAX REVENUE DIVISION', s: st({ b: true, sz: 14, h: 'center' }) }]])),
+    framed(2), framed(3),
+    framed(4, cells([['A', { v: "EMPLOYER'S MONTHLY TAX DEDUCTIONS SCHEDULE (P. A. Y. E.)", s: st({ b: true, sz: 16, h: 'center' }) }]])),
+    framed(5),
+    framed(6, cells([
+      ['A', { v: 'CURRENT TAX OFFICE', s: st({ b: true, sz: 12 }) }],
+      ['C', { v: '', s: st({ border: { r: 'thin' } }) }],
+      ['D', { v: tick('LTO'), s: st({ h: 'center', border: box }) }],
+      ['E', { v: '', s: st({ border: { r: 'thin', t: 'thin', b: 'thin' } }) }],
+      ['F', { v: tick('TSC'), s: st({ h: 'center', border: box }) }],
+      ['G', { v: office.name, s: st({ h: 'center', border: box }) }],
+      ...ruled(['H', 'I', 'J', 'K', 'L', 'M'], { t: 'thin', b: 'thin' }),
+      ['N', { v: '', s: st({ border: { r: 'thin', t: 'thin', b: 'thin' } }) }],
+    ])),
+    framed(7, cells([
+      ['D', { v: '(tick one)', s: st({ h: 'center', border: { t: 'thin', b: 'thin' } }) }],
+      ...ruled(['E', 'F'], { t: 'thin', b: 'thin' }),
+      ['G', { v: 'Name of Tax Office', s: st({ h: 'center', border: { t: 'thin', b: 'thin' } }) }],
+      ...ruled(['H', 'I', 'J', 'K', 'L', 'M', 'N'], { t: 'thin', b: 'thin' }),
+    ])),
+    framed(8, cells([
+      ['A', { v: 'NAME OF EMPLOYER', s: st({ b: true, sz: 12 }) }],
+      ['C', { v: '', s: st({ border: { r: 'thin' } }) }],
+      ['D', { v: employer, s: st({ b: true, sz: 16, border: box }) }],
+      ...ruled(['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'], { t: 'thin', b: 'thin' }),
+      ['N', { v: '', s: st({ border: { r: 'thin', t: 'thin', b: 'thin' } }) }],
+      ['S', { v: 'FOR THE MONTH OF', s: st({ b: true, sz: 12 }) }],
+      ['U', { v: asFiled, text: true, s: st({ b: true, sz: 12, h: 'center', border: { l: 'thin', t: 'thin', b: 'thin' } }) }],
+      ...ruled(['V', 'W'], { t: 'thin', b: 'thin' }),
+      ['X', { v: '', s: st({ border: { l: 'thin' } }) }],
+    ])),
+    framed(9, cells([['V', '(MM/YYYY)']])),
+    framed(10, cells([
+      ['A', { v: "EMPLOYER'S TIN / GH. CARD NO.", s: st({ b: true, sz: 12 }) }],
+      ['C', { v: '', s: st({ border: { r: 'thin' } }) }],
+      ['D', { v: employerTin, text: true, s: st({ b: true, sz: 14, border: box }) }],
+      ...ruled(['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'], { t: 'thin', b: 'thin' }),
+      ['O', { v: '', s: st({ border: { r: 'thin', t: 'thin', b: 'thin' } }) }],
+    ])),
+    framed(11),
   ];
+  // The GRA's own mark on its template, in a hidden column, where the form
+  // keeps it.
+  heading[11][L('AM')] = { v: 'schedule2022', s: st({ sz: 11 }) };
+
+  // Column numbers. Text, not numbers, because the form numbers two of its
+  // columns 26 and a spreadsheet asked for a number there quietly makes it 26
+  // twice over as a figure nobody can sort on.
+  const numbers = cols.map((c, i) => ({
+    v: c.no, text: true, s: st({ h: i === 0 ? 'left' : 'center', border: { l: 'thin', r: 'thin', t: 'thin' } }),
+  }));
+  const pensions = cols.map((c, i) => {
+    if (i === L('I')) return { v: 'PENSIONS', s: st({ h: 'center', border: box }) };
+    if (i === L('J')) return { v: '', s: st({ border: { r: 'thin', t: 'thin', b: 'thin' } }) };
+    return { v: '', s: st({ border: { l: 'thin', r: 'thin' } }) };
+  });
+  const headStyle = (c, i) => st({
+    sz: 10, wrap: true, v: 'center', h: i === 0 ? 'left' : 'center', border: box,
+    ...(SHADE[c.key] ? { fill: SHADE[c.key] } : {}),
+  });
+  const headings = cols.map((c, i) => ({ v: c.form ?? c.label, s: headStyle(c, i) }));
+  const under = (bottom) => cols.map((c, i) => ({
+    v: '', s: { ...headStyle(c, i), border: { l: 'thin', r: 'thin', ...(bottom ? { b: 'thin' } : {}) } },
+  }));
+
+  const centred = new Set(['position', 'residency', 'secondary', 'paidSsnit', 'remarks']);
+  const lined = { l: 'thin', r: 'thin', b: 'thin' };
+  const body = schedule.rows.map((row) => cols.map((c) => {
+    const value = row[c.key];
+    const fill = SHADE[c.key] ? { fill: SHADE[c.key] } : {};
+    if (c.money) return { v: round2(Number(value) || 0), s: st({ sz: 10, fmt: ACCOUNTING, border: lined, ...fill }) };
+    if (c.key === 'no') return { v: value, s: st({ sz: 10, fmt: '0', h: 'center', border: lined }) };
+    return {
+      v: value ?? '',
+      text: Boolean(c.text),
+      s: st({ sz: 10, fmt: '@', h: centred.has(c.key) ? 'center' : 'left', border: lined }),
+    };
+  }));
+  const totalRow = cols.map((c, i) => {
+    const s0 = st({ sz: 10, b: true, fill: 'FFD8D8D8', border: box });
+    if (i === 0) return { v: 'TOTALS', s: s0 };
+    if (!c.money) return { v: '', s: s0 };
+    return { v: round2(Number(schedule.totals[c.key]) || 0), s: { ...s0, fmt: ACCOUNTING } };
+  });
+
+  // The form's own widths, column by column.
+  const GRA_WIDTHS = [8.9, 17.7, 19.4, 12, 18.4, 10.9, 9, 8.6, 10.9, 8.9, 10.4, 16.1, 8.9, 9,
+    11.1, 8.9, 9, 9, 13.9, 10.1, 9.9, 10.4, 11.4, 10, 8.9, 11.1, 11.6, 8.9];
 
   const scheduleSheet = {
     name: 'PAYE schedule',
-    freeze: 15,
-    widths: cols.map((c) => c.width ?? 13),
-    // The heading block spans the page the way the form does, and each column
-    // heading is three rows tall so the long ones wrap instead of being cut.
+    freeze: 17,
+    freezeCols: 3,
+    gridLines: false,
+    landscape: true,
+    hidden: [L('AM')],
+    widths: cols.map((c, i) => GRA_WIDTHS[i] ?? c.width ?? 13),
+    // The three titles centred across the sheet, as they print on the form.
     merges: [
-      `A1:${last}1`, `A2:${last}2`, `A5:${last}5`,
+      `A1:${colName(width - 1)}1`, `A2:${colName(width - 1)}2`, `A5:${colName(width - 1)}5`,
       'D7:E7', 'G7:N7', 'D8:F8', 'G8:N8', 'D9:N9', 'U9:W9', 'D11:O11',
       'I14:J14',
       ...cols.map((c, i) => `${colName(i)}15:${colName(i)}17`),
     ],
-    rows,
+    rows: [...heading, numbers, pensions, headings, under(false), under(true), ...body, totalRow],
   };
 
   // ---- the SSNIT return --------------------------------------------------
