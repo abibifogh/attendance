@@ -20,6 +20,7 @@ import * as prepaid from './routes/prepaid.js';
 import * as todo from './routes/todo.js';
 import * as advances from './routes/advances.js';
 import * as formmatch from './routes/formmatch.js';
+import * as np from './routes/niceplace.js';
 import { sendDailySummary } from './routes/summary.js';
 import { verifyForm, verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
@@ -191,6 +192,18 @@ const ROUTES = [
   ['POST', '/api/link/till/po', 'link', (env, ctx) => till.linkPo(env, ctx.body)],
   ['POST', '/api/link/till/issues', 'link', (env, ctx) => till.linkIssues(env, ctx.body)],
   ['POST', '/api/link/till/recipients', 'link', (env, ctx) => till.linkRecipients(env, ctx.body)],
+
+  // Nice Place: the open link staff send the counters from (its own token
+  // in the address, no account), and the page that holds them to the money.
+  ['GET', '/api/np/form', 'public', (env, ctx) => np.linkForm(env, ctx.query)],
+  ['POST', '/api/np/send', 'public', (env, ctx) => np.sendReading(env, ctx.body)],
+  ['GET', '/api/np', 'insight', (env, ctx) => np.npView(env, ctx.query, ctx.account, { admin: till.roleOf(ctx.account) === 'admin' })],
+  ['GET', '/api/np/photo/:id', 'insight', (env, ctx) => np.photo(env, ctx.params.id)],
+  ['POST', '/api/np/income', 'insight', adminOnly((env, ctx) => np.saveIncome(env, ctx.body, ctx.account))],
+  ['POST', '/api/np/settings', 'insight', adminOnly((env, ctx) => np.saveSettings(env, ctx.body))],
+  ['POST', '/api/np/reading', 'insight', adminOnly((env, ctx) => np.editReading(env, ctx.body, ctx.account))],
+  ['POST', '/api/np/check', 'insight', (env, ctx) => np.checkReading(env, ctx.body, ctx.account)],
+  ['POST', '/api/np/answer', 'insight', (env, ctx) => np.answer(env, ctx.body, ctx.account)],
 
   // The expense form: a script on the Google Form posts each response the
   // moment it is submitted, signed with the form's own secret.
