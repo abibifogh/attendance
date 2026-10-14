@@ -78,7 +78,10 @@ export async function renderAttMyTill() {
 
   // What earlier shifts left for this one: advances not settled yet, and
   // refunds or deficits on POs whose final price differs from what was paid.
-  // Asked when the form opens and when the shift changes.
+  // Asked afresh when the form opens and when the shift changes, never from
+  // HIVE's ten-minute memory of Odoo: an admin's "more time" or "close" in
+  // Insight, or a PO just approved or reported, has to show at once, or the
+  // Sign button stays locked on an answer that is no longer true.
   let earlier = { advances: [], changes: [] };
   let earlierFor = null;
   function loadEarlier(fresh = false) {
@@ -90,7 +93,7 @@ export async function renderAttMyTill() {
       paint();
     }).catch(() => {});
   }
-  loadEarlier();
+  loadEarlier(true);
 
   paint();
   return host;
@@ -113,7 +116,7 @@ export async function renderAttMyTill() {
             f = store.get(draftKey()) || blank();
             store.set('which', which);
             earlier = { advances: [], changes: [] };
-            loadEarlier();
+            loadEarlier(true);
             paint();
           },
         }, data.choices.map((c) => h('option', { value: `${c.day}|${c.slot}`, selected: c.day === which.day && c.slot === which.slot },
