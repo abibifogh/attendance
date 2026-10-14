@@ -19,3 +19,5 @@
 # one means a new file name, so a week's cache is safe.
 /vendor/*
   Cache-Control: public, max-age=604800
+/np.html
+  Cache-Control: no-cache
