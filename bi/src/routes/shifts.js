@@ -659,6 +659,10 @@ export async function removeLink(env, body, account, { pending = false } = {}) {
   return { ok: true };
 }
 
+/** The answers that make a guest's overpayment a refund owed, and keep a pair apart. */
+export const REFUND_DUE = 'Refund due to the guest';
+export const NOT_SAME = 'Not the same payment';
+
 export async function saveAnswer(env, body, account, { pending = false } = {}) {
   const key = str(body?.key, 'Exception', { required: true, max: 200 });
   const answer = str(body?.answer, 'Answer', { max: 60 });
@@ -677,7 +681,51 @@ export async function saveAnswer(env, body, account, { pending = false } = {}) {
   await run(env.DB, `INSERT INTO shift_answer (key, answer, note, by_name, at, status, decided_by, decided_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL)
     ON CONFLICT (key) DO UPDATE SET answer = ?2, note = ?3, by_name = ?4, at = ?5, status = ?6, decided_by = NULL, decided_at = NULL`,
   key, answer, note, who(account), now(), status);
+  // A refund owed is kept with what was paid, so the list of them does not
+  // depend on the days on screen.
+  if (key.startsWith('paid-more:') && answer === REFUND_DUE) await keepRefund(env, key);
   return { ok: true, pending };
+}
+
+async function keepRefund(env, key) {
+  const day = key.split(':')[1];
+  if (!isDay(day)) return;
+  const data = await shifts(env, { from: day, to: day }, { isOwner: true });
+  const x = (data.exceptions || []).find((e) => e.key === key);
+  if (!x) return;
+  await run(env.DB, `INSERT INTO guest_refund (key, day, slot, assd_user, seq, amount, assd, paid, method, last4, paid_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+    ON CONFLICT (key) DO UPDATE SET amount = ?6, assd = ?7, paid = ?8, method = ?9, last4 = ?10, paid_at = ?11`,
+  key, x.day, x.slot, x.user || null, x.seq ?? null, x.amount, x.assd ?? null, x.paid ?? null, x.event?.kind || null, x.event?.last4 || null, x.event?.at || null);
+}
+
+/** Refunds owed to guests: answered so, and not yet paid back. With `paid`, the last ones paid back too. */
+export async function refundsOwed(env) {
+  const rows = await all(env.DB, `SELECT r.*, a.note, a.by_name AS answered_by, a.at AS answered_at FROM guest_refund r
+    JOIN shift_answer a ON a.key = r.key
+    WHERE a.answer = ?1 AND COALESCE(a.status, 'applied') = 'applied' ORDER BY r.day, r.slot`, REFUND_DUE).catch(() => []);
+  const view = (r) => ({
+    key: r.key, day: r.day, slot: r.slot, user: r.assd_user, seq: r.seq, amount: r.amount, assd: r.assd, paid: r.paid,
+    method: r.method, last4: r.last4, paidAt: r.paid_at, note: r.note, answeredBy: r.answered_by, answeredAt: r.answered_at,
+    paidBack: r.paid_back_at ? { by: r.paid_back_by, at: r.paid_back_at } : null,
+  });
+  return {
+    owed: rows.filter((r) => !r.paid_back_at).map(view),
+    paid: rows.filter((r) => r.paid_back_at).sort((a, b) => String(b.paid_back_at).localeCompare(String(a.paid_back_at))).slice(0, 10).map(view),
+  };
+}
+
+/** A refund owed, paid back to the guest; or, with `undo`, not after all. */
+export async function refundPaid(env, body, account) {
+  const key = str(body?.key, 'Which refund', { required: true, max: 200 });
+  const row = await first(env.DB, 'SELECT * FROM guest_refund WHERE key = ?1', key);
+  if (!row) throw badRequest('That refund is not on the list.');
+  if (body?.undo) await run(env.DB, 'UPDATE guest_refund SET paid_back_by = NULL, paid_back_at = NULL WHERE key = ?1', key);
+  else {
+    if (row.paid_back_at) throw badRequest(`Already paid back (${row.paid_back_by}).`);
+    await run(env.DB, 'UPDATE guest_refund SET paid_back_by = ?1, paid_back_at = ?2 WHERE key = ?3', who(account), now(), key);
+  }
+  return { ok: true };
 }
 
 /** What has been loaded, and nothing about what is in it: the Upload page. */
@@ -765,7 +813,9 @@ export async function shifts(env, query, account) {
     id: `t:${t.rrn}`, kind: t.kind, amount: t.amount, at: t.at, last4: t.last4, status: t.status,
   }));
 
-  const result = reconcile(raw, events, declines, { open });
+  // A guest who paid more: the pairs somebody said are not one payment.
+  const notSame = answers.filter((a) => String(a.key).startsWith('paid-more:') && a.answer === NOT_SAME && (a.status || 'applied') === 'applied');
+  const result = reconcile(raw, events, declines, { open, notSame: notSame.map((a) => a.key) });
   const inRange = (day) => day >= from && day <= to;
   const placed = result.shifts.filter((s) => inRange(s.day));
 
@@ -1152,6 +1202,23 @@ export async function shifts(env, query, account) {
       shares: shares.map((y) => ({ userId: Number(y.userId), name: y.name, amount: Number(y.amount) })),
     };
     x.answer = { answer: 'Put on a staff account', note: m.reason, by: m.by_name, at: m.at, status: 'applied' };
+  }
+
+  // A guest who paid more: a refund owed says whether it was paid back; a
+  // line kept apart from the larger payment says so, to be paired again.
+  const refundRows = await all(env.DB, 'SELECT * FROM guest_refund WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => []);
+  const refundOf = new Map(refundRows.map((r) => [r.key, r]));
+  const keptApart = new Map(notSame.map((a) => [a.key, a]));
+  for (const x of exceptions) {
+    if (x.kind === 'paid-more') {
+      const r = refundOf.get(x.key);
+      x.refund = r?.paid_back_at ? { paidBack: { by: r.paid_back_by, at: r.paid_back_at } } : null;
+    }
+    if (x.seq != null && x.kind !== 'paid-more' && x.day && x.slot && x.key.startsWith(`${x.kind}:`)) {
+      const key = `paid-more:${x.day}:${x.slot}:${x.key.slice(x.kind.length + 1)}`;
+      const said = keptApart.get(key);
+      if (said) x.split = { key, by: said.by_name, at: said.at, what: 'paid-more' };
+    }
   }
 
   // Exceptions reconciled together: each one is answered by the group.

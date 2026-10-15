@@ -154,6 +154,9 @@ const ROUTES = [
       `${ctx.account?.name || 'A supervisor'} answered ${stay ? 'an unpaid stay' : 'an exception'}: ${ctx.body?.answer || ''}.`);
   }],
   ['POST', '/api/shifts/answer-many', 'shifts', answerMany],
+  // Refunds owed to guests who paid more by card or MoMo than ASSD shows.
+  ['GET', '/api/shifts/refunds', 'shifts', area('bank', 1, (env) => shiftRoutes.refundsOwed(env))],
+  ['POST', '/api/shifts/refunds/paid', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.refundPaid(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/movement', 'shifts', movement],
   ['POST', '/api/shifts/link', 'shifts', onKeys((env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
   ['POST', '/api/shifts/unlink', 'shifts', anyOf(['bank', 'moves'], 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }))],
