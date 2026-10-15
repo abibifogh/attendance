@@ -341,6 +341,61 @@ export function readCarried(s, ask, poTotals) {
   return null;
 }
 
+/**
+ * A movement whose amount is exactly some of the shift's POs was cash paid
+ * for them. The counts may say receipts left the drawer around it, and the
+ * movement was read as carrying them: then it was not, and those receipts
+ * left with no movement (they are reconciled as swapped for cash, like any
+ * others). `pos` is [{ name, paid }]: what each PO took out of the drawer.
+ *
+ * A movement labelled by hand as the safe or a split keeps its label. A PO
+ * that is exactly a movement with no receipts in it is that movement's, and
+ * not counted for another. Returns the movements read again.
+ */
+export function cashForPos(s, pos) {
+  const list = (pos || []).filter((p) => p.paid > 0).map((p, i) => ({ ...p, i }));
+  if (!list.length) return [];
+  const used = new Set();
+  const live = (s.moves || []).filter((m) => m.amount > 0 && ['expenses', 'safe', 'split', 'part', 'unlabelled'].includes(m.kind));
+  for (const m of live.filter((x) => !(x.receipts > 0))) {
+    const same = list.find((p) => !used.has(p.i) && p.paid === m.amount);
+    if (same) used.add(same.i);
+  }
+  const changed = [];
+  const candidates = live
+    .filter((m) => m.receipts > 0 && !(m.manual && ['safe', 'split'].includes(m.kind)))
+    .filter((m) => (m.drops || []).reduce((t, d) => t + d.amount, 0) === m.receipts)
+    .sort((a, b) => b.amount - a.amount);
+  for (const m of candidates) {
+    const free = list.filter((p) => !used.has(p.i)).slice(0, 14);
+    let pick = null;
+    for (let mask = 1; mask < (1 << free.length) && !pick; mask += 1) {
+      const set = free.filter((_, b) => mask & (1 << b));
+      if (set.reduce((t, p) => t + p.paid, 0) === m.amount) pick = set;
+    }
+    if (!pick) continue;
+    for (const p of pick) used.add(p.i);
+    const receipts = m.receipts;
+    // Out with the old parts, in with all of it as expenses paid straight out.
+    s.receiptsMoved -= receipts;
+    s.directExpenses += m.amount - (m.direct || 0);
+    s.safeMoved -= m.safe || 0;
+    s.unlabelledMoved -= m.unlabelledCash || 0;
+    Object.assign(m, { receipts: 0, cash: m.amount, direct: m.amount, safe: 0, unlabelledCash: 0, wasReceipts: receipts, byPos: pick.map((p) => p.name) });
+    if (!m.manual) { m.kind = 'expenses'; m.expenses = 0; }
+    // The receipts left the counts with no movement.
+    for (const d of m.drops) s.receiptsSwaps.push({ seq: d.seq, amount: d.amount, leg: d.leg || null });
+    s.receiptsSwaps.sort((a, b) => a.seq - b.seq);
+    s.receiptsSwapped += receipts;
+    s.expenses = s.receiptsIn + s.directExpenses;
+    s.expensesMoved = s.expenses;
+    s.expensesCounted = s.expenses;
+    if (s.expected != null) { s.expected -= receipts; s.countVariance += receipts; }
+    changed.push(m);
+  }
+  return changed;
+}
+
 /** Count a reading of 'all' on a shift already summarised as 'some'. */
 function applyAll(s, ask) {
   s.receiptsIn += ask.now;
@@ -819,6 +874,19 @@ export async function shifts(env, query, account) {
     // eslint-disable-next-line no-await-in-loop
     for (const r of await all(env.DB, `SELECT DISTINCT po FROM expense_report WHERE po IN (${chunk.map((_, j) => `?${j + 1}`).join(', ')})`, ...chunk).catch(() => [])) reported.add(String(r.po).toUpperCase());
   }
+  // What each PO took out of each shift's drawer: from its closing report,
+  // and the POs linked here (their Odoo total).
+  const poPaid = new Map();
+  const paidOn = (key, name, paid) => { if (!poPaid.has(key)) poPaid.set(key, []); poPaid.get(key).push({ name: String(name).toUpperCase(), paid: Math.round(paid) }); };
+  for (const r of poRows) paidOn(`${r.day}|${r.slot}`, r.po, Number(r.paid) || 0);
+  for (const e of expenses) {
+    let orders = [];
+    try { orders = JSON.parse(e.odoo || 'null')?.orders || []; } catch { orders = []; }
+    for (const o of orders) {
+      const key = `${e.day}|${e.slot}`;
+      if (!(poPaid.get(key) || []).some((p) => p.name === String(o.name).toUpperCase())) paidOn(key, o.name, Number(o.total) || 0);
+    }
+  }
   for (const r of poRows) {
     const key = `${r.day}|${r.slot}`;
     if (!reportPos.has(key)) reportPos.set(key, []);
@@ -849,6 +917,9 @@ export async function shifts(env, query, account) {
     // were swapped for cash, which a person reconciles.
     // Counts that read two ways and nobody answered: the evidence decides,
     // or they wait for a person, counted meanwhile only as far as is sure.
+    // A movement that is exactly some of the shift's POs was cash for them,
+    // not receipts carried out (those left with no movement).
+    cashForPos(s, poPaid.get(`${s.day}|${s.slotName}`));
     for (const ask of s.receiptsAsk || []) {
       if (ask.reading) { ask.decided = { reading: ask.reading, why: 'person', by: ask.said?.by || null, at: ask.said?.at || null }; continue; }
       const guess = readReceipts(s, ask, reportPaid.get(`${s.day}|${s.slotName}`) ?? null);
@@ -1369,6 +1440,17 @@ export function withoutMoney(value) {
   }
   return out;
 }
+
+// The drawer's own exceptions (cash, receipts, POs, laundry): acted on with
+// "Correct cash movements" as well as with the bank. Card and bank lines need the bank.
+const CASH_KEYS = ['drawer:', 'handover:', 'unlabelled:', 'receipts:', 'receipts-read:', 'receipts-carried:', 'nopo:', 'pogap:',
+  'laundry:', 'laundry-card:', 'movement:', 'movement-twice:', 'movement-reversal:', 'matched:', 'labelled:'];
+export const isCashKey = (key) => {
+  const k = String(key || '');
+  // "Not related" names the two it keeps apart.
+  if (k.startsWith('notpair:')) return k.slice(8).split('|').every(isCashKey);
+  return CASH_KEYS.some((p) => k.startsWith(p));
+};
 
 /**
  * The Shifts screen cut down to what a supervisor was given: amounts only with

@@ -148,14 +148,15 @@ const ROUTES = [
   ['POST', '/api/shifts/answer', 'shifts', async (env, ctx) => {
     // An unpaid stay is answered by whoever may act on Unpaid stays; anything else by whoever may act on the exceptions.
     const stay = String(ctx.body?.key || '').startsWith('stay:');
-    await till.requireArea(env, ctx.account, stay ? 'unpaid' : 'bank', 2);
+    if (stay) await till.requireArea(env, ctx.account, 'unpaid', 2);
+    else await mayActOn(env, ctx.account, [String(ctx.body?.key || '')]);
     return waitsForAdmin(env, ctx, shiftRoutes.saveAnswer(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }),
       `${ctx.account?.name || 'A supervisor'} answered ${stay ? 'an unpaid stay' : 'an exception'}: ${ctx.body?.answer || ''}.`);
   }],
   ['POST', '/api/shifts/answer-many', 'shifts', answerMany],
   ['POST', '/api/shifts/movement', 'shifts', movement],
-  ['POST', '/api/shifts/link', 'shifts', area('bank', 2, (env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
-  ['POST', '/api/shifts/unlink', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }))],
+  ['POST', '/api/shifts/link', 'shifts', onKeys((env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
+  ['POST', '/api/shifts/unlink', 'shifts', anyOf(['bank', 'moves'], 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }))],
   ['GET', '/api/shifts/files', 'shifts', area('files', 1, (env) => shiftRoutes.filesStatus(env))],
   ['POST', '/api/shifts/journal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/bank', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadBank(env, ctx.body, ctx.account))],
@@ -486,6 +487,35 @@ function area(name, level, handler) {
   };
 }
 
+/** Whoever may act on every one of these exceptions: the bank for any, or cash movements when all are the drawer's. */
+async function mayActOn(env, account, keys) {
+  if (keys.length && keys.every(shiftRoutes.isCashKey)) {
+    const access = await till.accessOf(env, account);
+    if ((access.bank || 0) >= 2) return;
+    await till.requireArea(env, account, 'moves', 2);
+    return;
+  }
+  await till.requireArea(env, account, 'bank', 2);
+}
+
+/** A handler for whoever may do `level` with any of these areas (a supervisor undoes only their own, still waiting). */
+function anyOf(names, level, handler) {
+  return async (env, ctx) => {
+    const access = await till.accessOf(env, ctx.account);
+    if (!names.some((n) => (access[n] || 0) >= level)) await till.requireArea(env, ctx.account, names[0], level);
+    return handler(env, ctx);
+  };
+}
+
+/** A handler on the exceptions named in the body's keys. */
+function onKeys(handler) {
+  return async (env, ctx) => {
+    const keys = Array.isArray(ctx.body?.keys) ? ctx.body.keys.map(String) : [String(ctx.body?.key || '')];
+    await mayActOn(env, ctx.account, keys);
+    return handler(env, ctx);
+  };
+}
+
 /** The Shifts screen's data, cut to what a supervisor was given. */
 async function shiftsRead(env, ctx) {
   const role = till.roleOf(ctx.account);
@@ -512,7 +542,7 @@ async function answerMany(env, ctx) {
   if (!keys.length) throw badRequest('Tick what to answer.');
   if (!String(ctx.body?.answer || '').trim()) throw badRequest('Choose the answer.');
   if (keys.some((k) => k.startsWith('stay:'))) await till.requireArea(env, ctx.account, 'unpaid', 2);
-  if (keys.some((k) => !k.startsWith('stay:'))) await till.requireArea(env, ctx.account, 'bank', 2);
+  if (keys.some((k) => !k.startsWith('stay:'))) await mayActOn(env, ctx.account, keys.filter((k) => !k.startsWith('stay:')));
   const pending = isSupervisor(ctx);
   let saved = 0;
   const skipped = [];

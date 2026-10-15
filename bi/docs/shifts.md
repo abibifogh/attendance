@@ -166,6 +166,14 @@ Everything typed is signed with the name of whoever typed it.
   button for each reading; until somebody answers, only what is sure is
   counted. Whichever reading is used, the card says which and why, and the
   other button changes it.
+- **A movement that is exactly its POs.** When a cash movement's amount is
+  exactly some of the shift's POs (what the closing report says each took
+  from the drawer, or the POs linked here), it was cash paid for them, even
+  if the counts lost receipts around it. Those receipts left with no
+  movement: they show as taken out with no cash movement (with whose they
+  were), and the drawer over by as much is reconciled as receipts swapped for
+  cash. A PO equal to a movement with no receipts in it is that movement's.
+  A movement labelled by hand as the safe or a split keeps its label.
 - **Receipts still in the count after a movement.** A movement keyed
   after a count with receipts in it looks like it took them out. If the
   counts after it still show them (often the same count done twice), it
