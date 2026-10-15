@@ -280,8 +280,9 @@ code and card, to check each one arrived.
 | Recorded as paid, but the payment failed | The terminal declined the amount and never approved it afterwards, yet ASSD has it as paid by card. |
 | Recorded as card or MoMo, no payment found | Nothing of that amount arrived near the shift. |
 | The same card charged twice | Two approved charges to one card, same amount, within 30 minutes, and ASSD has one. |
+| A guest paid less than ASSD shows | Critical. A card or MoMo line no payment matched, and a smaller payment on the same shift that ASSD does not show: money ASSD counts as taken never came. See below. |
 | A guest paid more than ASSD shows | A card or MoMo line no payment matched, and a larger payment on the same shift that ASSD does not show. See below. |
-| Keying slips | Transposed digits, one digit different, or out by a factor of ten against a payment in the same shift. A payment one digit larger than its line is read as the guest paying more instead. |
+| Keying slips | Transposed digits, one digit different, or out by a factor of ten against a payment in the same shift. A payment one digit larger or smaller than its line is read as the guest paying more or less instead. |
 | Keyed twice in ASSD | The same amount twice in one shift, paid once. |
 | Money received that ASSD does not show | Approved on the terminal or received by MoMo during the shift, and not in ASSD. |
 | Did not reach the bank, or went back out | No bank credit six days after approval, a card reversal, or a refund keyed in ASSD. |
@@ -290,7 +291,7 @@ code and card, to check each one arrived.
 The last shift in a journal is shown as far as the journal goes. Money taken
 after the export ran is not reported as missing from ASSD.
 
-### A guest who paid more than ASSD shows
+### A guest who paid more, or less, than ASSD shows
 
 A bill keyed in ASSD as GH₵ 300 by card, and GH₵ 420 taken on the terminal,
 is one card in the Inbox: **The guest paid more than ASSD shows · GH₵ 120**,
@@ -303,7 +304,13 @@ with both sides. It is put together only when all of these hold:
   in time it is; with none matched around it, the shift's own hours);
 - it is the only such pair either way on the shift: two that could be it are
   never guessed between;
-- it is not out by a factor of ten or swapped digits, which stay keying slips.
+- it is not out by a factor of ten or swapped digits from any line still open,
+  which stay keying slips, and the line is not one keyed twice (another of
+  its amount was paid), which stays "Keyed twice".
+
+A smaller payment, under the same rules, is **The guest paid less than ASSD
+shows**: critical, because money ASSD counts as taken never came. A line with
+both a larger and a smaller payment near it is neither.
 
 ASSD calls card and MoMo both "credit card", so a line may pair with either.
 
@@ -311,7 +318,11 @@ Answers: **Refund due to the guest** (it goes on **Refunds owed to guests** in
 the Inbox, whatever days are on screen, until somebody presses **Paid back**),
 **Deposit for a later stay**, **Keyed short in ASSD**, or **Not the same
 payment**, which puts the two back as the matcher sees them alone and notes it
-on the line. Answered by whoever has Bank statement and card matching.
+on the line. Paying less is answered **Guest owes, chasing**, **Rest paid
+another way**, **Keyed too high in ASSD**, or **Not the same payment**. Both
+are answered by whoever has Bank statement and card matching. In "Probably the
+same money", a guest who paid less is offered beside money of the same amount
+that arrived later, the rest paid on another shift.
 
 ## Laundry, shift by shift
 
