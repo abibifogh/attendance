@@ -85,6 +85,11 @@ it back. Settled items leave the person's list, and they are told.
 
 ## Supervisors' corrections and answers
 
+The drawer's own exceptions (drawer short or over, hand-over counts, receipts,
+movements, POs, laundry) follow **Correct cash movements**: See shows them in
+the Inbox, See and act lets the supervisor answer and reconcile them. Card and
+bank lines follow **Bank statement and card matching** alone.
+
 A supervisor given **Correct cash movements → See and act** can correct a
 movement, but it counts only once an admin approves it under Shifts → Inbox →
 Waiting for admin. Two exceptions count straight away, and the daily summary lists

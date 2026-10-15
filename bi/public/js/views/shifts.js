@@ -167,10 +167,15 @@ export async function renderShifts(root, { range }) {
   const may = (area, level = 1) => admin || (who.access?.[area] || 0) >= level;
   const canShifts = admin || ['day', 'week', 'month', 'money', 'bank', 'net', 'files', 'moves'].some((k) => may(k));
   const canFix = may('moves', 2) && may('money');
+  // The drawer's own exceptions follow "Correct cash movements" as well as the
+  // bank; card and bank lines follow the bank alone.
+  const CASH_GROUPS = new Set(['drawer', 'unlabelled', 'nopo', 'laundry', 'explained']);
+  const seesEx = (x) => may('bank') || (may('moves') && CASH_GROUPS.has(x.group));
+  const actsOn = (x) => may('bank', 2) || (may('moves', 2) && CASH_GROUPS.has(x.group));
   const periods = PERIODS.filter((p) => may(p));
   // What each source of the Inbox needs.
   const can = {
-    exceptions: may('bank'), stays: may('unpaid'), todo: admin || who.role === 'supervisor',
+    exceptions: may('bank') || may('moves'), stays: may('unpaid'), todo: admin || who.role === 'supervisor',
     answers: may('answers'), advances: may('advances'), approvals: admin,
   };
   const allowed = {
@@ -192,8 +197,11 @@ export async function renderShifts(root, { range }) {
   let currentId = store.get('shift', null);
   // A shift opened from the period: its story fills the Shifts tab until Back.
   let detail = false;
-  // Exceptions ticked to reconcile together.
+  // Exceptions ticked to reconcile together, kept as they were when ticked,
+  // so a tick on another day or week stays while the next one is found
+  // (a supervisor may only open one day at a time).
   const picked = new Set();
+  const pickedAs = new Map();
   // What is being typed and not yet saved, per shift: a recount.
   const drafts = {};
 
@@ -1621,6 +1629,7 @@ export async function renderShifts(root, { range }) {
             m.kind === 'expenses' && !m.manual && m.receipts >= m.amount ? 'Receipts' : tag[m.kind]?.[0] || m.kind),
           h('span',
             h('small', `${said(m)} · ${nameOf(m.user)}, ASSD ${m.seq}`),
+            m.byPos ? h('small.sh-manual', ` It is exactly the shift’s POs ${m.byPos.join(' + ')}: read as cash paid for them.${m.wasReceipts ? ` The ${money(m.wasReceipts)} of receipts the counts lost around it left with no cash movement.` : ''}`) : null,
             m.stayed ? h('small.sh-manual', ` The counts after it still show ${money(m.stayed)} of the receipts from the count before it: read as staying in the drawer, so that much of it was cash.`) : null,
             m.manual ? h('small.sh-manual', ` Corrected by ${m.manual.by || 'somebody'}${m.manual.note ? `: ${m.manual.note}` : ''}${m.auto ? ` (ASSD's count said ${tag[m.auto]?.[0].toLowerCase() || m.auto})` : ''}.`) : null,
             m.pending ? h('small.sh-manual', ` Waiting for an admin: ${m.pending.by || 'a supervisor'} says ${({ expenses: 'it was expenses', safe: 'it went to the safe', split: 'it was split', duplicate: `it duplicates ASSD ${m.pending.pair}`, reverses: `it pairs with ASSD ${m.pending.pair}` })[m.pending.kind] || m.pending.kind}.`) : null),
@@ -1925,7 +1934,7 @@ export async function renderShifts(root, { range }) {
 
   async function reconcile(keys, note) {
     const out = await api('/shifts/link', { method: 'POST', body: { keys, note } });
-    picked.clear();
+    picked.clear(); pickedAs.clear();
     await load(banner('good', out.pending
       ? `${keys.length} exceptions reconciled together and sent to an admin. They clear once approved.`
       : `${keys.length} exceptions reconciled together. They count as answered.`));
@@ -2040,6 +2049,8 @@ export async function renderShifts(root, { range }) {
         h('div.sh-cardhead', h('div', h('h2', `✓ Matched and explained · ${done.length}`),
           h('p.sh-sub', 'Differences already answered, matched or explained by the rules. Nothing to do; Undo is still there.'))),
         h('div.sh-exgrid', done.map(exceptionCard))) : null,
+      // Ticked here, or on another shift or day: reconcile them from here too.
+      pickedBar(),
     ];
   }
 
@@ -2056,7 +2067,7 @@ export async function renderShifts(root, { range }) {
         await load();
       } catch (err) { said.textContent = err.message; }
     };
-    const canLink = may('bank', 2) && !x.answer && !x.proposed && x.severity !== 'info' && !['receipts-unclear', 'receipts-carried'].includes(x.kind);
+    const canLink = actsOn(x) && !x.answer && !x.proposed && x.severity !== 'info' && !['receipts-unclear', 'receipts-carried'].includes(x.kind);
     const decide = async (ok) => {
       said.textContent = 'Saving…';
       try {
@@ -2070,7 +2081,7 @@ export async function renderShifts(root, { range }) {
     return h(`article.sh-ex.${sev}${x.answer ? '.done' : ''}${picked.has(x.key) ? '.picked' : ''}`,
       h('div.hd', h('span.sq', mark), h('h3', title), h('span.amt.num', money(Math.abs(x.amount ?? 0))),
         canLink ? h('label.sh-pick', { title: 'Tick to reconcile with others' },
-          h('input', { type: 'checkbox', checked: picked.has(x.key), onchange: (e) => { if (e.target.checked) picked.add(x.key); else picked.delete(x.key); paint(); } }),
+          h('input', { type: 'checkbox', checked: picked.has(x.key), onchange: (e) => { if (e.target.checked) { picked.add(x.key); pickedAs.set(x.key, x); } else { picked.delete(x.key); pickedAs.delete(x.key); } paint(); } }),
           h('span', 'Reconcile with others')) : null),
       h('div.sh-meta',
         x.user ? [avatar(x.user), h('b', nameOf(x.user))] : null,
@@ -2183,7 +2194,7 @@ export async function renderShifts(root, { range }) {
         h('span', `✓ Reconciled together with ${others.length} other${others.length === 1 ? '' : 's'}: `,
           others.map((k) => data.exceptions.find((o) => o.key === k)).map((o, i) => (o ? label(o) : 'one outside these days')).join('; '),
           x.link.note ? ` · ${x.link.note}` : '', ` (${x.link.by})`),
-        may('bank', 2) ? h('button.sh-link', {
+        may('bank', 2) || may('moves', 2) ? h('button.sh-link', {
           type: 'button',
           onclick: async () => {
             try { await api('/shifts/unlink', { method: 'POST', body: { id: x.link.id } }); await load(banner('good', 'Undone. Those exceptions are open again.')); } catch (err) { said.textContent = err.message; }
@@ -2217,12 +2228,12 @@ export async function renderShifts(root, { range }) {
    * exception is in one pair at most.
    */
   function likelyPairs() {
-    if (!may('bank', 2)) return [];
+    if (!may('bank', 2) && !may('moves', 2)) return [];
     const used = new Set();
     const out = [];
     for (const x of data.exceptions) {
-      if (x.answer || x.proposed || x.severity === 'info' || used.has(x.key)) continue;
-      const o = relatedTo(x).find((r) => !used.has(r.key));
+      if (x.answer || x.proposed || x.severity === 'info' || used.has(x.key) || !actsOn(x)) continue;
+      const o = relatedTo(x).find((r) => !used.has(r.key) && actsOn(r));
       if (!o) continue;
       used.add(x.key); used.add(o.key);
       // The money that never arrived on the left, what arrived on the right.
@@ -2237,7 +2248,7 @@ export async function renderShifts(root, { range }) {
    * assumed; a person reconciles them together or says they are not related.
    */
   function seenTwice(only = null) {
-    if (!may('bank', 2)) return [];
+    if (!may('bank', 2) && !may('moves', 2)) return [];
     const open = (x) => !x.answer && !x.proposed && !x.link && x.severity !== 'info';
     const no = new Set(data.notPairs || []);
     const used = new Set();
@@ -2246,7 +2257,7 @@ export async function renderShifts(root, { range }) {
       if (only && (a.day !== only.day || a.slot !== only.slot)) continue;
       const b = data.exceptions.find((x) => !used.has(x.key) && open(x) && x.day === a.day && x.slot === a.slot
         && ((x.kind === 'drawer-over' && x.amount === -a.amount) || (x.kind === 'not-recorded' && x.amount === -a.amount))
-        && !no.has(`notpair:${a.key}|${x.key}`));
+        && !no.has(`notpair:${a.key}|${x.key}`) && actsOn(x));
       if (!b) continue;
       used.add(b.key);
       out.push([b, a]);
@@ -2361,7 +2372,7 @@ export async function renderShifts(root, { range }) {
     // supervisor's proposed answer under Waiting for admin, from the approvals.
     if (can.exceptions && data) {
       for (const x of data.exceptions) {
-        if (x.severity === 'info') continue;
+        if (x.severity === 'info' || !seesEx(x)) continue;
         const waitingAdmin = Boolean(x.proposed);
         if (admin && waitingAdmin) continue;
         const done = Boolean(x.answer) || Boolean(x.link && !x.proposed);
@@ -2372,7 +2383,7 @@ export async function renderShifts(root, { range }) {
           title: (KIND[x.kind] || [x.kind])[0], sub: exLabel(x), amount: x.amount == null ? '' : money(Math.abs(x.amount)),
           chip: done ? ['ok', 'Answered'] : waitingAdmin ? ['none', 'Waiting for admin'] : null, tone: sev, done,
           age: daysAgo(x.day), counts: !done && !waitingAdmin, render: () => exceptionCard(x),
-          bulk: !done && !waitingAdmin && may('bank', 2) ? { type: 'answer', key: x.key } : null,
+          bulk: !done && !waitingAdmin && actsOn(x) ? { type: 'answer', key: x.key } : null,
         });
       }
     }
@@ -2689,7 +2700,7 @@ export async function renderShifts(root, { range }) {
 
   /** The bar that appears once exceptions are ticked: what they net to, and Reconcile together. */
   function pickedBar() {
-    const chosen = [...picked].map((k) => data.exceptions.find((x) => x.key === k)).filter(Boolean);
+    const chosen = [...picked].map((k) => data.exceptions.find((x) => x.key === k) || pickedAs.get(k)).filter(Boolean);
     if (!chosen.length) return null;
     const flows = chosen.map(flowOf);
     const known = flows.every((f) => f != null);
@@ -2710,7 +2721,7 @@ export async function renderShifts(root, { range }) {
           try { await reconcile(chosen.map((x) => x.key), note.value.trim()); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
         },
       }, chosen.length < 2 ? 'Tick at least two' : 'Reconcile together'),
-      h('button.btn', { type: 'button', onclick: () => { picked.clear(); paint(); } }, 'Clear'),
+      h('button.btn', { type: 'button', onclick: () => { picked.clear(); pickedAs.clear(); paint(); } }, 'Clear'),
       said);
   }
 
