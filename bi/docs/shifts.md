@@ -324,6 +324,34 @@ are answered by whoever has Bank statement and card matching. In "Probably the
 same money", a guest who paid less is offered beside money of the same amount
 that arrived later, the rest paid on another shift.
 
+## Odoo activities
+
+Insight reads Odoo's activities (to-dos, calls, approvals and the like) with
+the same read-only Odoo user, and never creates, changes or completes one:
+that is done in Odoo. It sees every activity that user may see, which with
+purchases and accounting shared is those on purchase orders and bills; give
+the user read access elsewhere in Odoo to see more.
+
+- **Who is who.** Admin › Accounts has an **Odoo user** column. Pick each
+  person's Odoo login once; one with the same email in Odoo is suggested and
+  linked only on **Confirm**. One Odoo user goes with one account.
+- **Inbox › Odoo** (admins): every activity overdue or due today: what it is
+  on (with the supplier and amount for a PO or bill), whose it is, when it
+  was due, its note, the shift a PO was paid from, and **Open in Odoo**.
+- **Inbox › Mine in Odoo**: what Odoo has assigned to the person signed in,
+  once they are linked. A supervisor sees only their own.
+- **A shift's PO table** has a **Waiting on** column when a PO has an open
+  activity: what, whose, how late. Shown to admins and to supervisors who see
+  Odoo.
+- **People › Odoo activities** (admins): each person's open activities by when
+  due, and this month's done, and how many of those were done after their due
+  date. "Done late" is known for an activity Insight saw open before it was
+  done; one opened and done between two reads counts as done, not late.
+
+Odoo is asked when the Inbox opens, at most every ten minutes, and on
+**Refresh now**. If it does not answer, the last read is shown and the reason
+is given.
+
 ## Laundry, shift by shift
 
 Every shift's laundry in ASSD (article 540) is held against what the laundry

@@ -1570,3 +1570,12 @@ label.fm-row input { margin-top: .2rem; }
 .np-counters th { overflow-wrap: normal; word-break: normal; }
 .np-scale > div { min-width: 0; overflow: hidden; }
 @media (max-width: 560px) { .np-scale > div span:nth-child(even) { visibility: hidden; } }
+
+/* Odoo activities: read from Odoo, done there. */
+.sh-odooact .sq { background: color-mix(in srgb, #8a5cd6 16%, transparent); color: #7a4cc6; }
+.sh-late { color: var(--sh-bad-ink); font-weight: 700; }
+.sh-due { color: var(--sh-warn-ink, #b06d00); font-weight: 700; }
+.sh-planned { color: var(--ink-2); }
+.sh-actbar { display: flex; gap: 2px; height: 8px; width: 9rem; border-radius: 4px; overflow: hidden; background: var(--surface-2); }
+.sh-actbar i { display: block; height: 100%; }
+.sh-odooact a.btn.primary { display: inline-block; background: var(--series-1); border-color: transparent; color: #fff; text-decoration: none; }
