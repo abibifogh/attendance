@@ -961,6 +961,15 @@ export async function linkMove(ctx) {
 
 /** Insight's own words, in the design, with the label that fits. */
 function tellMail(kind, title, text) {
+  if (kind === 'till.moved') {
+    return {
+      tone: 'warn', status: 'On your account', eyebrow: 'Till',
+      headline: title, intro: text || undefined,
+      button: 'See my till list',
+      subject: title, preheader: text || undefined,
+      why: 'You get this because an admin put a till difference on your account, or took it off.',
+    };
+  }
   if (kind === 'till.approval') {
     return {
       tone: 'warn', status: 'Needs your answer', eyebrow: 'Till',
@@ -1078,7 +1087,7 @@ export async function linkSummary(ctx) {
 /** Tell people something Insight decided. */
 export async function linkTell(ctx) {
   const body = await fromInsight(ctx);
-  const kind = ['till.settled', 'till.approval'].includes(body.kind) ? body.kind : 'till.settled';
+  const kind = ['till.settled', 'till.approval', 'till.moved'].includes(body.kind) ? body.kind : 'till.settled';
   const title = str(body.title, 'Title', { required: true, max: 200 });
   const text = str(body.body, 'Body', { max: 800 });
   const people = Array.isArray(body.recipients)
@@ -1088,7 +1097,7 @@ export async function linkTell(ctx) {
     if (!Number.isInteger(Number(p.userId))) continue;
     // eslint-disable-next-line no-await-in-loop
     await createNotice(ctx.db, {
-      kind, level: 'info', title, body: text, link: kind === 'till.settled' ? '#/att-my-till-issues' : null,
+      kind, level: 'info', title, body: text, link: kind === 'till.approval' ? null : '#/att-my-till-issues',
       userId: Number(p.userId), push: p.push !== false, email: Boolean(p.email), text: false,
       mail: safeMail(() => tellMail(kind, title, text)),
     }, ctx);

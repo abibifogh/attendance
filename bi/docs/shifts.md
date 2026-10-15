@@ -77,6 +77,12 @@ each then counts as answered. Where an exception of the same amount pulling
 the other way sits within a week, it is offered under **Possibly the same
 money** with a one-tap reconcile. **Undo** opens them all again.
 
+A drawer short or over that is reconciled (once an admin approves it) is
+settled on its shift: the drawer box turns green and says so, the shift no
+longer asks for a look on its account, and the difference leaves its person's
+**To sort out** list in HIVE. Its size is still shown, because it is still
+what ASSD counted.
+
 ## What you load, and how often
 
 All three are loaded on the Shifts tab under **Load files**, by an owner. The

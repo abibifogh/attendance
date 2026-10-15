@@ -896,7 +896,8 @@ export async function shifts(env, query, account) {
     const kind = r.kind || 'claim';
     reportPos.get(key).push({
       name: r.po, vendor: r.vendor || '', total: kind === 'claim' ? Number(r.total) || 0 : Number(r.paid) || 0,
-      state: r.state || 'purchase', fromReport: true, ...(kind !== 'claim' ? { kind } : {}),
+      // HIVE saves an approved PO as "confirmed"; Odoo's own word for it is "purchase".
+      state: !r.state || r.state === 'confirmed' ? 'purchase' : r.state, fromReport: true, ...(kind !== 'claim' ? { kind } : {}),
       reported: reported.has(String(r.po).toUpperCase()), advance: Number(r.advance) === 1,
     });
   }
@@ -1136,6 +1137,21 @@ export async function shifts(env, query, account) {
     // A supervisor's answer is shown, and counts for nothing until an admin approves it.
     x.answer = a && a.status !== 'pending' ? a : null;
     x.proposed = a && a.status === 'pending' ? a : null;
+  }
+
+  // Put on staff accounts by an admin: answered, with who carries what and why.
+  const movedRows = await all(env.DB, 'SELECT * FROM till_move WHERE undone_at IS NULL AND day BETWEEN ?1 AND ?2', from, to).catch(() => []);
+  const movedOf = new Map(movedRows.map((m) => [m.key, m]));
+  for (const x of exceptions) {
+    const m = movedOf.get(x.key);
+    if (!m || x.answer) continue;
+    let shares = [];
+    try { shares = JSON.parse(m.shares); } catch { shares = []; }
+    x.moved = {
+      id: m.id, reason: m.reason, by: m.by_name, at: m.at, ownerName: m.owner_name,
+      shares: shares.map((y) => ({ userId: Number(y.userId), name: y.name, amount: Number(y.amount) })),
+    };
+    x.answer = { answer: 'Put on a staff account', note: m.reason, by: m.by_name, at: m.at, status: 'applied' };
   }
 
   // Exceptions reconciled together: each one is answered by the group.

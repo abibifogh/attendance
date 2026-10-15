@@ -83,6 +83,30 @@ makes a one-month advance in HIVE, so it comes off the next payslip the way
 any advance does; it is offered only once the person has said they will pay
 it back. Settled items leave the person's list, and they are told.
 
+## Putting a difference on somebody's account
+
+A drawer short, a drawer over or a hand-over difference belongs to whoever
+held that shift's drawer. When it is really somebody else's (two people held
+the drawer, a hand-over without a count, somebody covering), an admin opens it
+in Shifts → Inbox (or on the shift) and presses **Put on a staff account**:
+
+- **Who and how much.** One person or several, front desk first. All of it is
+  placed; to keep part on the shift's own person, add them as one of the lines.
+- **Why.** Required: a quick reason (Both held the drawer, Handed over without
+  counting, Covered this shift, Agreed with them) and/or a sentence.
+
+Each person gets a HIVE message (push and email) and finds their share on
+**To sort out**, marked *Moved to you* with the reason, where they explain it
+or say they will pay it back. It is then settled like anything else on their
+list (Accept, Paid in cash, Recover from pay, Write off). The shift's own
+person, if none of it is theirs any more, is told it has left their list. The
+card on the shift reads "Put on staff accounts: …, Reason: …".
+
+**Undo** takes it back off their accounts, puts it back on the shift and tells
+them; it is refused once anybody's share has been settled. Under People,
+**This month, per person** counts what was put on each person; tap a name for
+every line on their account and why it is theirs.
+
 ## Supervisors' corrections and answers
 
 The drawer's own exceptions (drawer short or over, hand-over counts, receipts,
