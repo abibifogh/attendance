@@ -29,6 +29,7 @@ export const KINDS = {
   overclaimed: 'Envelopes and POs add up to more than left the drawer',
   rental: 'A rental count did not agree with ASSD',
   noreport: 'No closing report',
+  moved: 'Put on their account by an admin',
 };
 
 /** Outcomes that settle an issue for good. "back" sends it back to the person. */

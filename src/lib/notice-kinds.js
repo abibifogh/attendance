@@ -524,6 +524,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'till.moved',
+    group: 'money',
+    label: 'A till difference was put on your account',
+    who: 'Whoever it was put on, and the person whose shift it was',
+    when: 'An admin puts a drawer short or over on somebody\u2019s account, or undoes it',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'till.reopened',
     group: 'money',
     label: 'Your closing report was reopened',

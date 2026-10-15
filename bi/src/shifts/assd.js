@@ -428,7 +428,7 @@ export function summarise(shift, corrections = new Map()) {
       else if (m.kind === 'split') { direct = Math.min(cash, Math.max(0, m.expenses || 0)); safe = cash - direct; }
     } else if (m.kind === 'safe' || m.kind === 'split') safe = cash;
     else unlabelled = cash;
-    Object.assign(m, { receipts, direct, cash, safe });
+    Object.assign(m, { receipts, direct, cash, safe, unlabelledCash: unlabelled });
     s.receiptsMoved += sign * receipts;
     s.directExpenses += sign * direct;
     s.safeMoved += sign * safe;
@@ -456,11 +456,22 @@ export function summarise(shift, corrections = new Map()) {
   // A count against the one before it: what the receipts and the notes were either side.
   const legOf = (i) => ({ prev: counts[i - 1].seq, receiptsBefore: counts[i - 1].receipts, receiptsAfter: counts[i].receipts,
     notesBefore: counts[i - 1].notes, notesAfter: counts[i].notes });
-  const take = (amount) => {
+  // Each movement keeps the counts its receipts were seen leaving at
+  // (`drops`): if its POs later say it was all cash, those receipts left
+  // with no movement after all (see cashForPos on the Shifts screen).
+  const moveOf = new Map(s.moves.map((m) => [m.seq, m]));
+  const dropsOn = (seq, piece) => {
+    const m = moveOf.get(seq);
+    if (!m) return;
+    m.drops = m.drops || [];
+    m.drops.push(piece);
+  };
+  const take = (amount, seq) => {
     let left = amount;
     while (left > 0 && dropped.length) {
       const d = dropped[0];
       const n = Math.min(left, d.amount);
+      dropsOn(seq, { seq: d.seq, amount: n, leg: d.leg || null });
       d.amount -= n;
       left -= n;
       if (!d.amount) dropped.shift();
@@ -471,11 +482,12 @@ export function summarise(shift, corrections = new Map()) {
   // by movement, oldest first.
   const carriedBy = [];
   let carried = 0;
-  const settle = (amount) => {
+  const settle = (amount, piece) => {
     let left = amount;
     while (left > 0 && carriedBy.length) {
       const c = carriedBy[0];
       const n = Math.min(left, c.amount);
+      dropsOn(c.seq, { ...piece, amount: n });
       c.amount -= n;
       left -= n;
       if (!c.amount) carriedBy.shift();
@@ -484,7 +496,7 @@ export function summarise(shift, corrections = new Map()) {
   for (const step of order) {
     if (step.move) {
       const r = receiptsOf.get(step.move) || 0;
-      const more = r - take(r);
+      const more = r - take(r, step.move);
       if (more > 0) carriedBy.push({ seq: step.move, amount: more });
       carried += more;
       continue;
@@ -497,7 +509,7 @@ export function summarise(shift, corrections = new Map()) {
     } else if (delta < 0) {
       const matched = Math.min(-delta, carried);
       carried -= matched;
-      settle(matched);
+      settle(matched, { seq: counts[step.count].seq, leg: legOf(step.count) });
       const left = -delta - matched;
       const now = counts[step.count].receipts;
       if (left > 0 && now > 0) {

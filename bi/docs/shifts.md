@@ -11,7 +11,8 @@ the arrows step a day, a week (Monday to Sunday) or a month at a time, and
 **Latest** jumps to the newest shifts loaded. When the journal stops inside a
 shift, a small note at the end of the line says which; open it for what to do.
 
-- **Shifts**: Day, Week or Month, chosen with the switch beside the tabs.
+- **Shifts**: Day, Week, Month or Dates, chosen with the switch beside the tabs
+  (it is in the Inbox too, and there it keeps you in the Inbox).
   - **Day**: the day's three shifts as large cards, each with the drawer in
     four lines, how it came out, how guests paid and what is open; the day's
     cash, card and MoMo against what arrived, commission and laundry.
@@ -20,6 +21,12 @@ shift, a small note at the end of the line says which; open it for what to do.
     against what arrived, day by day.
   - **Month**: a calendar, each day's three shifts as coloured bars; the month
     week by week below it.
+  - **Dates**: From and To, for days that cross a week or a month, such as a
+    surplus and the shortage it answers a few shifts later. Up to ten days
+    show as tiles, longer as a calendar; ‹ › move by the same number of days.
+    This is the date range for supervisors, who do not get the one at the top
+    right: as many as 62 days for whoever may see Month, 7 for whoever may see
+    only Week.
   - **Tap a shift** for its story, with **‹ Back** to the period and arrows to
     the shift before and after: the **closing report** from HIVE beside ASSD
     (drawer, safe, what left the drawer, rentals, float, front desk checks,
@@ -69,6 +76,12 @@ when they do not net to nothing. Any number can be reconciled together, and
 each then counts as answered. Where an exception of the same amount pulling
 the other way sits within a week, it is offered under **Possibly the same
 money** with a one-tap reconcile. **Undo** opens them all again.
+
+A drawer short or over that is reconciled (once an admin approves it) is
+settled on its shift: the drawer box turns green and says so, the shift no
+longer asks for a look on its account, and the difference leaves its person's
+**To sort out** list in HIVE. Its size is still shown, because it is still
+what ASSD counted.
 
 ## What you load, and how often
 
@@ -166,6 +179,14 @@ Everything typed is signed with the name of whoever typed it.
   button for each reading; until somebody answers, only what is sure is
   counted. Whichever reading is used, the card says which and why, and the
   other button changes it.
+- **A movement that is exactly its POs.** When a cash movement's amount is
+  exactly some of the shift's POs (what the closing report says each took
+  from the drawer, or the POs linked here), it was cash paid for them, even
+  if the counts lost receipts around it. Those receipts left with no
+  movement: they show as taken out with no cash movement (with whose they
+  were), and the drawer over by as much is reconciled as receipts swapped for
+  cash. A PO equal to a movement with no receipts in it is that movement's.
+  A movement labelled by hand as the safe or a split keeps its label.
 - **Receipts still in the count after a movement.** A movement keyed
   after a count with receipts in it looks like it took them out. If the
   counts after it still show them (often the same count done twice), it
@@ -259,7 +280,9 @@ code and card, to check each one arrived.
 | Recorded as paid, but the payment failed | The terminal declined the amount and never approved it afterwards, yet ASSD has it as paid by card. |
 | Recorded as card or MoMo, no payment found | Nothing of that amount arrived near the shift. |
 | The same card charged twice | Two approved charges to one card, same amount, within 30 minutes, and ASSD has one. |
-| Keying slips | Transposed digits, one digit different, or out by a factor of ten against a payment in the same shift. |
+| A guest paid less than ASSD shows | Critical. A card or MoMo line no payment matched, and a smaller payment on the same shift that ASSD does not show: money ASSD counts as taken never came. See below. |
+| A guest paid more than ASSD shows | A card or MoMo line no payment matched, and a larger payment on the same shift that ASSD does not show. See below. |
+| Keying slips | Transposed digits, one digit different, or out by a factor of ten against a payment in the same shift. A payment one digit larger or smaller than its line is read as the guest paying more or less instead. |
 | Keyed twice in ASSD | The same amount twice in one shift, paid once. |
 | Money received that ASSD does not show | Approved on the terminal or received by MoMo during the shift, and not in ASSD. |
 | Did not reach the bank, or went back out | No bank credit six days after approval, a card reversal, or a refund keyed in ASSD. |
@@ -267,6 +290,39 @@ code and card, to check each one arrived.
 
 The last shift in a journal is shown as far as the journal goes. Money taken
 after the export ran is not reported as missing from ASSD.
+
+### A guest who paid more, or less, than ASSD shows
+
+A bill keyed in ASSD as GH₵ 300 by card, and GH₵ 420 taken on the terminal,
+is one card in the Inbox: **The guest paid more than ASSD shows · GH₵ 120**,
+with both sides. It is put together only when all of these hold:
+
+- the ASSD line found no payment, and the larger payment is one ASSD does not
+  show, inside the same shift's hours;
+- the payment arrived within 30 minutes of the payments matched to the lines
+  keyed just before and just after it (ASSD has no clock, so this is how near
+  in time it is; with none matched around it, the shift's own hours);
+- it is the only such pair either way on the shift: two that could be it are
+  never guessed between;
+- it is not out by a factor of ten or swapped digits from any line still open,
+  which stay keying slips, and the line is not one keyed twice (another of
+  its amount was paid), which stays "Keyed twice".
+
+A smaller payment, under the same rules, is **The guest paid less than ASSD
+shows**: critical, because money ASSD counts as taken never came. A line with
+both a larger and a smaller payment near it is neither.
+
+ASSD calls card and MoMo both "credit card", so a line may pair with either.
+
+Answers: **Refund due to the guest** (it goes on **Refunds owed to guests** in
+the Inbox, whatever days are on screen, until somebody presses **Paid back**),
+**Deposit for a later stay**, **Keyed short in ASSD**, or **Not the same
+payment**, which puts the two back as the matcher sees them alone and notes it
+on the line. Paying less is answered **Guest owes, chasing**, **Rest paid
+another way**, **Keyed too high in ASSD**, or **Not the same payment**. Both
+are answered by whoever has Bank statement and card matching. In "Probably the
+same money", a guest who paid less is offered beside money of the same amount
+that arrived later, the rest paid on another shift.
 
 ## Laundry, shift by shift
 

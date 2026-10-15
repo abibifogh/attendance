@@ -341,6 +341,61 @@ export function readCarried(s, ask, poTotals) {
   return null;
 }
 
+/**
+ * A movement whose amount is exactly some of the shift's POs was cash paid
+ * for them. The counts may say receipts left the drawer around it, and the
+ * movement was read as carrying them: then it was not, and those receipts
+ * left with no movement (they are reconciled as swapped for cash, like any
+ * others). `pos` is [{ name, paid }]: what each PO took out of the drawer.
+ *
+ * A movement labelled by hand as the safe or a split keeps its label. A PO
+ * that is exactly a movement with no receipts in it is that movement's, and
+ * not counted for another. Returns the movements read again.
+ */
+export function cashForPos(s, pos) {
+  const list = (pos || []).filter((p) => p.paid > 0).map((p, i) => ({ ...p, i }));
+  if (!list.length) return [];
+  const used = new Set();
+  const live = (s.moves || []).filter((m) => m.amount > 0 && ['expenses', 'safe', 'split', 'part', 'unlabelled'].includes(m.kind));
+  for (const m of live.filter((x) => !(x.receipts > 0))) {
+    const same = list.find((p) => !used.has(p.i) && p.paid === m.amount);
+    if (same) used.add(same.i);
+  }
+  const changed = [];
+  const candidates = live
+    .filter((m) => m.receipts > 0 && !(m.manual && ['safe', 'split'].includes(m.kind)))
+    .filter((m) => (m.drops || []).reduce((t, d) => t + d.amount, 0) === m.receipts)
+    .sort((a, b) => b.amount - a.amount);
+  for (const m of candidates) {
+    const free = list.filter((p) => !used.has(p.i)).slice(0, 14);
+    let pick = null;
+    for (let mask = 1; mask < (1 << free.length) && !pick; mask += 1) {
+      const set = free.filter((_, b) => mask & (1 << b));
+      if (set.reduce((t, p) => t + p.paid, 0) === m.amount) pick = set;
+    }
+    if (!pick) continue;
+    for (const p of pick) used.add(p.i);
+    const receipts = m.receipts;
+    // Out with the old parts, in with all of it as expenses paid straight out.
+    s.receiptsMoved -= receipts;
+    s.directExpenses += m.amount - (m.direct || 0);
+    s.safeMoved -= m.safe || 0;
+    s.unlabelledMoved -= m.unlabelledCash || 0;
+    Object.assign(m, { receipts: 0, cash: m.amount, direct: m.amount, safe: 0, unlabelledCash: 0, wasReceipts: receipts, byPos: pick.map((p) => p.name) });
+    if (!m.manual) { m.kind = 'expenses'; m.expenses = 0; }
+    // The receipts left the counts with no movement.
+    for (const d of m.drops) s.receiptsSwaps.push({ seq: d.seq, amount: d.amount, leg: d.leg || null });
+    s.receiptsSwaps.sort((a, b) => a.seq - b.seq);
+    s.receiptsSwapped += receipts;
+    s.expenses = s.receiptsIn + s.directExpenses;
+    s.expensesMoved = s.expenses;
+    s.expensesCounted = s.expenses;
+    if (s.expected != null) { s.expected -= receipts; s.countVariance += receipts; }
+    changed.push(m);
+  }
+  return changed;
+}
+
 /** Count a reading of 'all' on a shift already summarised as 'some'. */
 function applyAll(s, ask) {
   s.receiptsIn += ask.now;
@@ -604,6 +659,10 @@ export async function removeLink(env, body, account, { pending = false } = {}) {
   return { ok: true };
 }
 
+/** The answers that make a guest's overpayment a refund owed, and keep a pair apart. */
+export const REFUND_DUE = 'Refund due to the guest';
+export const NOT_SAME = 'Not the same payment';
+
 export async function saveAnswer(env, body, account, { pending = false } = {}) {
   const key = str(body?.key, 'Exception', { required: true, max: 200 });
   const answer = str(body?.answer, 'Answer', { max: 60 });
@@ -622,7 +681,59 @@ export async function saveAnswer(env, body, account, { pending = false } = {}) {
   await run(env.DB, `INSERT INTO shift_answer (key, answer, note, by_name, at, status, decided_by, decided_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL)
     ON CONFLICT (key) DO UPDATE SET answer = ?2, note = ?3, by_name = ?4, at = ?5, status = ?6, decided_by = NULL, decided_at = NULL`,
   key, answer, note, who(account), now(), status);
+  // A refund owed is kept with what was paid, so the list of them does not
+  // depend on the days on screen.
+  if (key.startsWith('paid-more:') && answer === REFUND_DUE) await keepRefund(env, key);
   return { ok: true, pending };
+}
+
+async function keepRefund(env, key) {
+  const day = key.split(':')[1];
+  if (!isDay(day)) return;
+  const data = await shifts(env, { from: day, to: day }, { isOwner: true });
+  const x = (data.exceptions || []).find((e) => e.key === key);
+  if (!x) return;
+  await run(env.DB, `INSERT INTO guest_refund (key, day, slot, assd_user, seq, amount, assd, paid, method, last4, paid_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+    ON CONFLICT (key) DO UPDATE SET amount = ?6, assd = ?7, paid = ?8, method = ?9, last4 = ?10, paid_at = ?11`,
+  key, x.day, x.slot, x.user || null, x.seq ?? null, x.amount, x.assd ?? null, x.paid ?? null, x.event?.kind || null, x.event?.last4 || null, x.event?.at || null);
+}
+
+/** Refunds owed to guests: answered so, and not yet paid back. With `paid`, the last ones paid back too. */
+export async function refundsOwed(env) {
+  const rows = await all(env.DB, `SELECT r.*, a.note, a.by_name AS answered_by, a.at AS answered_at FROM guest_refund r
+    JOIN shift_answer a ON a.key = r.key
+    WHERE a.answer = ?1 AND COALESCE(a.status, 'applied') = 'applied' ORDER BY r.day, r.slot`, REFUND_DUE).catch(() => []);
+  const view = (r) => ({
+    key: r.key, day: r.day, slot: r.slot, user: r.assd_user, seq: r.seq, amount: r.amount, assd: r.assd, paid: r.paid,
+    method: r.method, last4: r.last4, paidAt: r.paid_at, note: r.note, answeredBy: r.answered_by, answeredAt: r.answered_at,
+    paidBack: r.paid_back_at ? { by: r.paid_back_by, at: r.paid_back_at } : null,
+  });
+  return {
+    owed: rows.filter((r) => !r.paid_back_at).map(view),
+    paid: rows.filter((r) => r.paid_back_at).sort((a, b) => String(b.paid_back_at).localeCompare(String(a.paid_back_at))).slice(0, 10).map(view),
+  };
+}
+
+/** A refund owed, paid back to the guest; or, with `undo`, not after all. */
+export async function refundPaid(env, body, account) {
+  const key = str(body?.key, 'Which refund', { required: true, max: 200 });
+  const row = await first(env.DB, 'SELECT * FROM guest_refund WHERE key = ?1', key);
+  if (!row) throw badRequest('That refund is not on the list.');
+  if (body?.undo) await run(env.DB, 'UPDATE guest_refund SET paid_back_by = NULL, paid_back_at = NULL WHERE key = ?1', key);
+  else {
+    if (row.paid_back_at) throw badRequest(`Already paid back (${row.paid_back_by}).`);
+    await run(env.DB, 'UPDATE guest_refund SET paid_back_by = ?1, paid_back_at = ?2 WHERE key = ?3', who(account), now(), key);
+  }
+  return { ok: true };
+}
+
+/** The day an ASSD line was keyed on. */
+export async function whereIs(env, query) {
+  const seq = Number(query?.seq);
+  if (!Number.isInteger(seq)) throw badRequest('Which ASSD line?');
+  const row = await first(env.DB, 'SELECT day FROM assd_entry WHERE seq = ?1', seq);
+  return { seq, day: row?.day || null };
 }
 
 /** What has been loaded, and nothing about what is in it: the Upload page. */
@@ -710,7 +821,9 @@ export async function shifts(env, query, account) {
     id: `t:${t.rrn}`, kind: t.kind, amount: t.amount, at: t.at, last4: t.last4, status: t.status,
   }));
 
-  const result = reconcile(raw, events, declines, { open });
+  // A guest who paid more: the pairs somebody said are not one payment.
+  const notSame = answers.filter((a) => /^paid-(more|less):/.test(String(a.key)) && a.answer === NOT_SAME && (a.status || 'applied') === 'applied');
+  const result = reconcile(raw, events, declines, { open, notSame: notSame.map((a) => a.key) });
   const inRange = (day) => day >= from && day <= to;
   const placed = result.shifts.filter((s) => inRange(s.day));
 
@@ -819,6 +932,19 @@ export async function shifts(env, query, account) {
     // eslint-disable-next-line no-await-in-loop
     for (const r of await all(env.DB, `SELECT DISTINCT po FROM expense_report WHERE po IN (${chunk.map((_, j) => `?${j + 1}`).join(', ')})`, ...chunk).catch(() => [])) reported.add(String(r.po).toUpperCase());
   }
+  // What each PO took out of each shift's drawer: from its closing report,
+  // and the POs linked here (their Odoo total).
+  const poPaid = new Map();
+  const paidOn = (key, name, paid) => { if (!poPaid.has(key)) poPaid.set(key, []); poPaid.get(key).push({ name: String(name).toUpperCase(), paid: Math.round(paid) }); };
+  for (const r of poRows) paidOn(`${r.day}|${r.slot}`, r.po, Number(r.paid) || 0);
+  for (const e of expenses) {
+    let orders = [];
+    try { orders = JSON.parse(e.odoo || 'null')?.orders || []; } catch { orders = []; }
+    for (const o of orders) {
+      const key = `${e.day}|${e.slot}`;
+      if (!(poPaid.get(key) || []).some((p) => p.name === String(o.name).toUpperCase())) paidOn(key, o.name, Number(o.total) || 0);
+    }
+  }
   for (const r of poRows) {
     const key = `${r.day}|${r.slot}`;
     if (!reportPos.has(key)) reportPos.set(key, []);
@@ -828,7 +954,8 @@ export async function shifts(env, query, account) {
     const kind = r.kind || 'claim';
     reportPos.get(key).push({
       name: r.po, vendor: r.vendor || '', total: kind === 'claim' ? Number(r.total) || 0 : Number(r.paid) || 0,
-      state: r.state || 'purchase', fromReport: true, ...(kind !== 'claim' ? { kind } : {}),
+      // HIVE saves an approved PO as "confirmed"; Odoo's own word for it is "purchase".
+      state: !r.state || r.state === 'confirmed' ? 'purchase' : r.state, fromReport: true, ...(kind !== 'claim' ? { kind } : {}),
       reported: reported.has(String(r.po).toUpperCase()), advance: Number(r.advance) === 1,
     });
   }
@@ -849,6 +976,9 @@ export async function shifts(env, query, account) {
     // were swapped for cash, which a person reconciles.
     // Counts that read two ways and nobody answered: the evidence decides,
     // or they wait for a person, counted meanwhile only as far as is sure.
+    // A movement that is exactly some of the shift's POs was cash for them,
+    // not receipts carried out (those left with no movement).
+    cashForPos(s, poPaid.get(`${s.day}|${s.slotName}`));
     for (const ask of s.receiptsAsk || []) {
       if (ask.reading) { ask.decided = { reading: ask.reading, why: 'person', by: ask.said?.by || null, at: ask.said?.at || null }; continue; }
       const guess = readReceipts(s, ask, reportPaid.get(`${s.day}|${s.slotName}`) ?? null);
@@ -1065,6 +1195,41 @@ export async function shifts(env, query, account) {
     // A supervisor's answer is shown, and counts for nothing until an admin approves it.
     x.answer = a && a.status !== 'pending' ? a : null;
     x.proposed = a && a.status === 'pending' ? a : null;
+  }
+
+  // Put on staff accounts by an admin: answered, with who carries what and why.
+  const movedRows = await all(env.DB, 'SELECT * FROM till_move WHERE undone_at IS NULL AND day BETWEEN ?1 AND ?2', from, to).catch(() => []);
+  const movedOf = new Map(movedRows.map((m) => [m.key, m]));
+  for (const x of exceptions) {
+    const m = movedOf.get(x.key);
+    if (!m || x.answer) continue;
+    let shares = [];
+    try { shares = JSON.parse(m.shares); } catch { shares = []; }
+    x.moved = {
+      id: m.id, reason: m.reason, by: m.by_name, at: m.at, ownerName: m.owner_name,
+      shares: shares.map((y) => ({ userId: Number(y.userId), name: y.name, amount: Number(y.amount) })),
+    };
+    x.answer = { answer: 'Put on a staff account', note: m.reason, by: m.by_name, at: m.at, status: 'applied' };
+  }
+
+  // A guest who paid more: a refund owed says whether it was paid back; a
+  // line kept apart from the larger payment says so, to be paired again.
+  const refundRows = await all(env.DB, 'SELECT * FROM guest_refund WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => []);
+  const refundOf = new Map(refundRows.map((r) => [r.key, r]));
+  const keptApart = new Map(notSame.map((a) => [a.key, a]));
+  for (const x of exceptions) {
+    if (x.kind === 'paid-more') {
+      const r = refundOf.get(x.key);
+      x.refund = r?.paid_back_at ? { paidBack: { by: r.paid_back_by, at: r.paid_back_at } } : null;
+    }
+    if (x.seq != null && !['paid-more', 'paid-less'].includes(x.kind) && x.day && x.slot && x.key.startsWith(`${x.kind}:`)) {
+      const line = x.key.slice(x.kind.length + 1);
+      for (const what of ['paid-more', 'paid-less']) {
+        const key = `${what}:${x.day}:${x.slot}:${line}`;
+        const said = keptApart.get(key);
+        if (said) x.split = { key, by: said.by_name, at: said.at, what };
+      }
+    }
   }
 
   // Exceptions reconciled together: each one is answered by the group.
@@ -1369,6 +1534,17 @@ export function withoutMoney(value) {
   }
   return out;
 }
+
+// The drawer's own exceptions (cash, receipts, POs, laundry): acted on with
+// "Correct cash movements" as well as with the bank. Card and bank lines need the bank.
+const CASH_KEYS = ['drawer:', 'handover:', 'unlabelled:', 'receipts:', 'receipts-read:', 'receipts-carried:', 'nopo:', 'pogap:',
+  'laundry:', 'laundry-card:', 'movement:', 'movement-twice:', 'movement-reversal:', 'matched:', 'labelled:'];
+export const isCashKey = (key) => {
+  const k = String(key || '');
+  // "Not related" names the two it keeps apart.
+  if (k.startsWith('notpair:')) return k.slice(8).split('|').every(isCashKey);
+  return CASH_KEYS.some((p) => k.startsWith(p));
+};
 
 /**
  * The Shifts screen cut down to what a supervisor was given: amounts only with

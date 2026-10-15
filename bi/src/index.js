@@ -20,6 +20,7 @@ import * as prepaid from './routes/prepaid.js';
 import * as todo from './routes/todo.js';
 import * as advances from './routes/advances.js';
 import * as formmatch from './routes/formmatch.js';
+import * as np from './routes/niceplace.js';
 import { sendDailySummary } from './routes/summary.js';
 import { verifyForm, verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
@@ -147,14 +148,20 @@ const ROUTES = [
   ['POST', '/api/shifts/answer', 'shifts', async (env, ctx) => {
     // An unpaid stay is answered by whoever may act on Unpaid stays; anything else by whoever may act on the exceptions.
     const stay = String(ctx.body?.key || '').startsWith('stay:');
-    await till.requireArea(env, ctx.account, stay ? 'unpaid' : 'bank', 2);
+    if (stay) await till.requireArea(env, ctx.account, 'unpaid', 2);
+    else await mayActOn(env, ctx.account, [String(ctx.body?.key || '')]);
     return waitsForAdmin(env, ctx, shiftRoutes.saveAnswer(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }),
       `${ctx.account?.name || 'A supervisor'} answered ${stay ? 'an unpaid stay' : 'an exception'}: ${ctx.body?.answer || ''}.`);
   }],
   ['POST', '/api/shifts/answer-many', 'shifts', answerMany],
+  // Which day an ASSD line is on, so an approval can open its shift.
+  ['GET', '/api/shifts/where', 'shifts', adminOnly((env, ctx) => shiftRoutes.whereIs(env, ctx.query))],
+  // Refunds owed to guests who paid more by card or MoMo than ASSD shows.
+  ['GET', '/api/shifts/refunds', 'shifts', area('bank', 1, (env) => shiftRoutes.refundsOwed(env))],
+  ['POST', '/api/shifts/refunds/paid', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.refundPaid(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/movement', 'shifts', movement],
-  ['POST', '/api/shifts/link', 'shifts', area('bank', 2, (env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
-  ['POST', '/api/shifts/unlink', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }))],
+  ['POST', '/api/shifts/link', 'shifts', onKeys((env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
+  ['POST', '/api/shifts/unlink', 'shifts', anyOf(['bank', 'moves'], 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }))],
   ['GET', '/api/shifts/files', 'shifts', area('files', 1, (env) => shiftRoutes.filesStatus(env))],
   ['POST', '/api/shifts/journal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/bank', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadBank(env, ctx.body, ctx.account))],
@@ -183,6 +190,10 @@ const ROUTES = [
   ['POST', '/api/till/reopen', 'shifts', (env, ctx) => till.reopen(env, ctx.body, ctx.account)],
   ['POST', '/api/till/move', 'shifts', (env, ctx) => till.moveReport(env, ctx.body, ctx.account)],
   ['POST', '/api/till/approve', 'shifts', (env, ctx) => till.approve(env, ctx.body, ctx.account)],
+  // A difference put on staff accounts, and taken back off.
+  ['GET', '/api/till/staff', 'shifts', (env, ctx) => till.staffList(env, ctx.account)],
+  ['POST', '/api/till/charge', 'shifts', (env, ctx) => till.moveToStaff(env, ctx.body, ctx.account)],
+  ['POST', '/api/till/charge/undo', 'shifts', (env, ctx) => till.undoMove(env, ctx.body, ctx.account)],
   ['POST', '/api/till/settings', 'shifts', (env, ctx) => till.saveSettings(env, ctx.body, ctx.account)],
 
   // The till link: HIVE asking, server to server, signed with the secret the
@@ -191,6 +202,18 @@ const ROUTES = [
   ['POST', '/api/link/till/po', 'link', (env, ctx) => till.linkPo(env, ctx.body)],
   ['POST', '/api/link/till/issues', 'link', (env, ctx) => till.linkIssues(env, ctx.body)],
   ['POST', '/api/link/till/recipients', 'link', (env, ctx) => till.linkRecipients(env, ctx.body)],
+
+  // Nice Place: the open link staff send the counters from (its own token
+  // in the address, no account), and the page that holds them to the money.
+  ['GET', '/api/np/form', 'public', (env, ctx) => np.linkForm(env, ctx.query)],
+  ['POST', '/api/np/send', 'public', (env, ctx) => np.sendReading(env, ctx.body)],
+  ['GET', '/api/np', 'insight', (env, ctx) => np.npView(env, ctx.query, ctx.account, { admin: till.roleOf(ctx.account) === 'admin' })],
+  ['GET', '/api/np/photo/:id', 'insight', (env, ctx) => np.photo(env, ctx.params.id)],
+  ['POST', '/api/np/income', 'insight', adminOnly((env, ctx) => np.saveIncome(env, ctx.body, ctx.account))],
+  ['POST', '/api/np/settings', 'insight', adminOnly((env, ctx) => np.saveSettings(env, ctx.body))],
+  ['POST', '/api/np/reading', 'insight', adminOnly((env, ctx) => np.editReading(env, ctx.body, ctx.account))],
+  ['POST', '/api/np/check', 'insight', (env, ctx) => np.checkReading(env, ctx.body, ctx.account)],
+  ['POST', '/api/np/answer', 'insight', (env, ctx) => np.answer(env, ctx.body, ctx.account)],
 
   // The expense form: a script on the Google Form posts each response the
   // moment it is submitted, signed with the form's own secret.
@@ -473,6 +496,35 @@ function area(name, level, handler) {
   };
 }
 
+/** Whoever may act on every one of these exceptions: the bank for any, or cash movements when all are the drawer's. */
+async function mayActOn(env, account, keys) {
+  if (keys.length && keys.every(shiftRoutes.isCashKey)) {
+    const access = await till.accessOf(env, account);
+    if ((access.bank || 0) >= 2) return;
+    await till.requireArea(env, account, 'moves', 2);
+    return;
+  }
+  await till.requireArea(env, account, 'bank', 2);
+}
+
+/** A handler for whoever may do `level` with any of these areas (a supervisor undoes only their own, still waiting). */
+function anyOf(names, level, handler) {
+  return async (env, ctx) => {
+    const access = await till.accessOf(env, ctx.account);
+    if (!names.some((n) => (access[n] || 0) >= level)) await till.requireArea(env, ctx.account, names[0], level);
+    return handler(env, ctx);
+  };
+}
+
+/** A handler on the exceptions named in the body's keys. */
+function onKeys(handler) {
+  return async (env, ctx) => {
+    const keys = Array.isArray(ctx.body?.keys) ? ctx.body.keys.map(String) : [String(ctx.body?.key || '')];
+    await mayActOn(env, ctx.account, keys);
+    return handler(env, ctx);
+  };
+}
+
 /** The Shifts screen's data, cut to what a supervisor was given. */
 async function shiftsRead(env, ctx) {
   const role = till.roleOf(ctx.account);
@@ -499,7 +551,7 @@ async function answerMany(env, ctx) {
   if (!keys.length) throw badRequest('Tick what to answer.');
   if (!String(ctx.body?.answer || '').trim()) throw badRequest('Choose the answer.');
   if (keys.some((k) => k.startsWith('stay:'))) await till.requireArea(env, ctx.account, 'unpaid', 2);
-  if (keys.some((k) => !k.startsWith('stay:'))) await till.requireArea(env, ctx.account, 'bank', 2);
+  if (keys.some((k) => !k.startsWith('stay:'))) await mayActOn(env, ctx.account, keys.filter((k) => !k.startsWith('stay:')));
   const pending = isSupervisor(ctx);
   let saved = 0;
   const skipped = [];

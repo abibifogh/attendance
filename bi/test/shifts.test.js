@@ -296,6 +296,37 @@ test('a card keyed twice but paid once, and a decimal slip', () => {
   assert.deepEqual(exceptions.map((x) => x.kind).sort(), ['decimal', 'duplicate']);
 });
 
+test('a guest who paid more than ASSD shows: one pair, on the shift, near where it was keyed', () => {
+  const lines = [[1, 10000], [2, 30000], [3, 15000]];
+  const around = [ev('e1', '2026-08-01 09:00:00', 10000), ev('e3', '2026-08-01 10:40:00', 15000)];
+  const run = (more, options = {}) => reconcile([shift('A', '2026-08-01', lines)], [...around, ...more], [], options).exceptions
+    .map((x) => [x.kind, x.amount]).sort();
+
+  const out = reconcile([shift('A', '2026-08-01', lines)], [...around, ev('e2', '2026-08-01 10:16:00', 42000)], []);
+  assert.deepEqual(out.exceptions.map((x) => [x.kind, x.key, x.amount, x.assd, x.paid, x.severity]),
+    [['paid-more', 'paid-more:2026-08-01:morning:2:1', 12000, 30000, 42000, 'warning']]);
+  assert.equal(out.shifts[0].lines[1].how, 'paid-more');
+
+  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 42000)], { notSame: ['paid-more:2026-08-01:morning:2:1'] }),
+    [['not-found', 30000], ['not-recorded', 42000]], 'said not to be one payment: two again');
+  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 42000), ev('e4', '2026-08-01 10:30:00', 51000)]),
+    [['not-found', 30000], ['not-recorded', 42000], ['not-recorded', 51000]], 'two could be it: neither is guessed');
+  assert.deepEqual(run([ev('e2', '2026-08-01 13:30:00', 42000)]),
+    [['not-found', 30000], ['not-recorded', 42000]], 'far from the payments keyed around it');
+  // Less: critical, money ASSD counts as taken never came.
+  const less = reconcile([shift('A', '2026-08-01', lines)], [...around, ev('e2', '2026-08-01 10:16:00', 18000)], []).exceptions;
+  assert.deepEqual(less.map((x) => [x.kind, x.key, x.amount, x.assd, x.paid, x.severity, x.group]),
+    [['paid-less', 'paid-less:2026-08-01:morning:2:1', 12000, 30000, 18000, 'critical', 'paidless']]);
+  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 18000)], { notSame: ['paid-less:2026-08-01:morning:2:1'] }),
+    [['not-found', 30000], ['not-recorded', 18000]], 'said not to be one payment: two again');
+  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 25000)]), [['paid-less', 5000]], '300 against 250: paid less, not a slip');
+  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 42000), ev('e4', '2026-08-01 10:20:00', 18000)]),
+    [['not-found', 30000], ['not-recorded', 18000], ['not-recorded', 42000]], 'one larger and one smaller near it: neither is guessed');
+  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 3000)]), [['decimal', 30000]], 'a nought too few stays a slip');
+  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 35000)]), [['paid-more', 5000]], '300 against 350: paid more, not a slip');
+  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 300000)]), [['decimal', 30000]], 'a nought too many stays a slip');
+});
+
 test('settlement: joined on approval and card, or never settled, or the bank alone', () => {
   const approved = [
     { rrn: 'r1', at: '2026-08-01 07:43:00', amount: 7000, last4: '0001', approval: 'ZZZ' },
@@ -343,7 +374,6 @@ test('the whole screen, from the three files', async () => {
     'drawer-short:-200',
     'failed:88300',
     'handover-gap:-800',
-    'keying:27600',
     'movement-reversal:2000',
     'movement-twice:2000',
     // The two 20.00 movements nothing labelled, each flagged on its own.
@@ -351,6 +381,8 @@ test('the whole screen, from the three files', async () => {
     'movement-unlabelled:2000',
     'not-found:64000',
     'not-recorded:3500',
+    // 276 keyed, 279 taken: a slip of one digit, and the guest paid 3 more.
+    'paid-more:300',
   ], 'the 1,999 taken after the journal ends is not called unrecorded');
 
   const bravo = day1.shifts[1];
@@ -884,4 +916,94 @@ test('the expense form against a month of shifts: clear POs are proposed, those 
   // Linked now: not offered again.
   const again = await fm.formMatches(env, { month: '2026-08' }, OWNER);
   assert.ok(!again.clear.some((c) => c.pos.some((p) => p.po === 'P00950')));
+});
+
+test('a movement that is exactly some of the shift’s POs was cash for them; the receipts the counts lost left with no movement', () => {
+  let seq = 600;
+  const base = { register: '001', user: 'F', payments: [], laundry: [], items: [] };
+  const count = (notes, receipts = 0) => ({ ...base, seq: seq += 1, kind: 'Money Count', counted: notes * 100, expensesCounted: receipts * 100 });
+  const move = (amount) => ({ ...base, seq: seq += 1, kind: 'Cash Movement', movement: -amount * 100 });
+  const sale = (amount) => ({ ...base, seq: seq += 1, kind: 'Cash Register', payments: [{ method: 'cash', label: 'Cash', amount: amount * 100, date: '2026-08-01' }] });
+  // GH₵175 of an earlier shift's receipts at hand-over; GH₵427 and GH₵50
+  // moved out, both labelled expenses by hand; the counts lose GH₵50 of
+  // receipts around the first. Notes: 579 + 30 − 427 − 50 = 132, counted 203.
+  const entries = [count(579, 175), sale(30), count(609, 175), move(427), count(182, 125), move(50), count(203, 125)];
+  const big = 604; const small = 606;
+  const labels = new Map([[big, { kind: 'expenses', by: 'Test' }], [small, { kind: 'expenses', by: 'Test' }]]);
+  const s = summarise({ user: 'F', startSeq: 600, entries }, labels);
+  // As the counts read it: GH₵50 of the old receipts went with the GH₵427.
+  assert.deepEqual([s.moves.find((m) => m.seq === big).receipts, s.expenses, s.countVariance], [5000, 42700, 2100]);
+  assert.deepEqual(s.moves.find((m) => m.seq === big).drops.map((d) => [d.seq, d.amount]), [[605, 5000]]);
+
+  // The POs: GH₵30 + GH₵147 + GH₵250 is the GH₵427, GH₵50 the other.
+  const pos = [{ name: 'P1', paid: 3000 }, { name: 'P2', paid: 5000 }, { name: 'P3', paid: 14700 }, { name: 'P4', paid: 25000 }];
+  const changed = routes.cashForPos(s, pos);
+  assert.deepEqual(changed.map((m) => [m.seq, m.byPos, m.wasReceipts]), [[big, ['P1', 'P3', 'P4'], 5000]]);
+  const m = s.moves.find((x) => x.seq === big);
+  assert.deepEqual([m.receipts, m.direct, m.cash], [0, 42700, 42700]);
+  assert.equal(s.expenses, 47700, 'all GH₵477 the POs say');
+  assert.equal(s.receiptsSwapped, 5000, 'the GH₵50 of receipts left with no movement');
+  assert.deepEqual(s.receiptsSwaps.map((w) => [w.seq, w.amount]), [[605, 5000]]);
+  assert.equal(s.countVariance, 7100, 'over by GH₵71: GH₵50 of it reconciled as receipts swapped for cash, GH₵21 left');
+
+  // No POs that add up: nothing changes.
+  const t = summarise({ user: 'F', startSeq: 600, entries: (seq = 600, [count(579, 175), sale(30), count(609, 175), move(427), count(182, 125), move(50), count(203, 125)]) }, labels);
+  assert.deepEqual(routes.cashForPos(t, [{ name: 'P9', paid: 40000 }]), []);
+  assert.equal(t.expenses, 42700);
+});
+
+test('the drawer’s own exceptions are told apart from the bank’s by their keys', async () => {
+  // A supervisor with "Correct cash movements" answers the first kind; only the bank answers the second.
+  const env = await loaded();
+  const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER);
+  const cash = new Set(['drawer', 'unlabelled', 'nopo', 'laundry', 'explained']);
+  assert.ok(out.exceptions.some((x) => cash.has(x.group)) && out.exceptions.some((x) => !cash.has(x.group)), 'both kinds in the scenario');
+  for (const x of out.exceptions) assert.equal(routes.isCashKey(x.key), cash.has(x.group), x.key);
+  assert.equal(routes.isCashKey('laundry-card:12'), true);
+  assert.equal(routes.isCashKey('notpair:laundry:2026-08-01:morning|drawer:2026-08-01:morning'), true);
+  assert.equal(routes.isCashKey('notpair:laundry:2026-08-01:morning|bank-only:4'), false);
+  assert.equal(routes.isCashKey('reversal:4'), false, 'a bank reversal, not a movement reversal');
+  assert.equal(routes.isCashKey(''), false);
+});
+
+test('a guest who paid more: refund owed until paid back, or kept apart as two', async () => {
+  const env = await loaded();
+  const read = async () => (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER)).exceptions;
+  const x = (await read()).find((e) => e.kind === 'paid-more');
+  assert.deepEqual([x.amount, x.assd, x.paid, x.group], [300, 27600, 27900, 'paidmore']);
+
+  await routes.saveAnswer(env, { key: x.key, answer: 'Refund due to the guest', note: 'Charged 279 for a 276 bill' }, OWNER);
+  let list = await routes.refundsOwed(env);
+  assert.deepEqual(list.owed.map((r) => [r.key, r.amount, r.paid, r.method, r.note]), [[x.key, 300, 27900, 'card', 'Charged 279 for a 276 bill']]);
+
+  await routes.refundPaid(env, { key: x.key }, OWNER);
+  await assert.rejects(routes.refundPaid(env, { key: x.key }, OWNER), /Already paid back/);
+  list = await routes.refundsOwed(env);
+  assert.deepEqual([list.owed.length, list.paid[0].paidBack.by], [0, 'Test Owner']);
+  assert.equal((await read()).find((e) => e.key === x.key).refund.paidBack.by, 'Test Owner');
+  await routes.refundPaid(env, { key: x.key, undo: true }, OWNER);
+  assert.equal((await routes.refundsOwed(env)).owed.length, 1, 'undone: owed again');
+
+  // A supervisor's answer counts once an admin approves it; another answer takes it off the list.
+  await routes.saveAnswer(env, { key: x.key, answer: 'Keyed short in ASSD' }, OWNER);
+  assert.equal((await routes.refundsOwed(env)).owed.length, 0);
+
+  // Not the same payment: what the matcher says without it (here a slip of
+  // one digit), and the line says it was kept apart.
+  await routes.saveAnswer(env, { key: x.key, answer: 'Not the same payment' }, OWNER);
+  const after = await read();
+  assert.ok(!after.some((e) => e.kind === 'paid-more'));
+  const line = after.find((e) => e.seq === x.seq && e.amount === 27600);
+  assert.equal(line.kind, 'keying');
+  assert.equal(line.split.key, x.key);
+});
+
+test('the day an ASSD line is on, so an approval can open its shift', async () => {
+  const env = await loaded();
+  const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+  const s = out.days[0].shifts[0];
+  assert.ok(s.startSeq <= s.endSeq, 'each shift says which ASSD lines are its own');
+  assert.deepEqual(await routes.whereIs(env, { seq: s.startSeq }), { seq: s.startSeq, day: '2026-08-01' });
+  assert.deepEqual(await routes.whereIs(env, { seq: 1 }), { seq: 1, day: null });
+  await assert.rejects(routes.whereIs(env, { seq: 'x' }), /Which ASSD line/);
 });

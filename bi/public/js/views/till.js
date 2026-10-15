@@ -167,8 +167,9 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     const short = i.amount < 0;
     return h(`div.tl-issue.${KIND_TONE[i.kind] || 'info'}`,
       h('div.tl-issue-head', h('strong', i.name || (i.assdUser ? `ASSD ${i.assdUser}` : 'Nobody named')), h('span.tl-amount', amount)),
-      h('div.tl-small', `${SLOT[i.slot]} · ${dayText(i.day)} · ${i.kind ? ({ drawer: 'drawer', unexplained: 'cash out, no envelope or PO', overclaimed: 'more claimed than moved', rental: 'rental count', noreport: 'no closing report' })[i.kind] : ''}`),
+      h('div.tl-small', `${SLOT[i.slot]} · ${dayText(i.day)} · ${i.kind ? ({ drawer: 'drawer', unexplained: 'cash out, no envelope or PO', overclaimed: 'more claimed than moved', rental: 'rental count', noreport: 'no closing report', moved: 'put on their account' })[i.kind] : ''}`),
       h('p.tl-text', i.text),
+      i.moved ? h('div.tl-said', h('b', 'Why it is theirs'), `${i.moved.reason} (${i.moved.by || 'an admin'}${i.moved.at ? `, ${String(i.moved.at).slice(0, 16)}` : ''})`) : null,
       i.answer ? h('div.tl-said', h('b', i.answer.how === 'repay' ? 'Will pay it back' : i.answer.how === 'po' ? 'Added a PO' : 'Their explanation'), i.answer.text) : null,
       i.decision?.outcome === 'back' ? h('div.tl-small', `Sent back by ${i.decision.by}: ${i.decision.note || ''}`) : null,
       i.userId == null ? h('p.tl-small', 'Nobody to ask: map this ASSD login to a HIVE person under Settings → Front desk.') : null,
@@ -186,8 +187,8 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
 
   // ------------------------------------------------------- approvals --
 
-  /** A supervisor's answer or reconciliation, for an admin to approve. */
-  function answerApprovalCard(a, after) {
+  /** A supervisor's answer or reconciliation, for an admin to approve. `open` opens the shift an exception is on. */
+  function answerApprovalCard(a, after, { open = null } = {}) {
     const go = (ok) => async (e) => {
       e.target.disabled = true;
       try { await api('/till/approve', { method: 'POST', body: { [a.type]: a.id, ok } }); onChange(); await after(); } catch (err) { alert(err.message); e.target.disabled = false; }
@@ -195,15 +196,16 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     return h('div.tl-issue.warn',
       h('div.tl-issue-head', h('strong', a.by), h('span.tl-small', String(a.at).slice(0, 16))),
       h('p.tl-text', a.type === 'link' ? `Reconciled ${a.keys.length} exceptions together:` : `Answered “${a.answer}” for:`),
-      h('ul.tl-keys', a.keys.map((k) => h('li', describeKey(k)))),
+      h('ul.tl-keys', a.keys.map((k) => h('li', describeKey(k),
+        open ? [' · ', h('button.sh-link', { type: 'button', onclick: (e) => open(k, e.target) }, 'Open the shift')] : null))),
       a.note ? h('div.tl-said', h('b', 'Note'), a.note) : null,
       h('div.tl-actions',
         h('button.btn.primary', { type: 'button', onclick: go(true) }, 'Approve'),
         h('button.btn', { type: 'button', onclick: go(false) }, 'Reject')));
   }
 
-  /** A supervisor's correction to a cash movement, for an admin to approve. */
-  function correctionCard(a, after) {
+  /** A supervisor's correction to a cash movement, for an admin to approve. `open` opens its shift. */
+  function correctionCard(a, after, { open = null } = {}) {
     const what = ({
       expenses: 'was an expense', safe: 'went to the safe', split: `was split, ${money(a.expenses)} of it expenses`,
       duplicate: `is a duplicate of ASSD ${a.pair}`, reverses: `puts back ASSD ${a.pair}`,
@@ -219,7 +221,8 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
       a.note ? h('div.tl-said', h('b', 'Why'), a.note) : null,
       h('div.tl-actions',
         h('button.btn.primary', { type: 'button', onclick: go(true) }, 'Approve'),
-        h('button.btn', { type: 'button', onclick: go(false) }, 'Reject')));
+        h('button.btn', { type: 'button', onclick: go(false) }, 'Reject'),
+        open ? h('button.btn', { type: 'button', onclick: (e) => open(`seq:${a.seq}`, e.target, a.day) }, 'Open the shift') : null));
   }
 
   // ---------------------------------------------------------- people --
@@ -238,7 +241,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
             h('td', `${SLOT[i.slot]} · ${dayText(i.day)}`), h('td', i.name || '—'), h('td', d.kinds?.[i.kind] || i.kind),
             h('td.num', access.money && i.amount ? signed(i.amount) : '')))))))
         : null,
-      d.net ? netCard(d.net) : null,
+      d.net ? netCard(d.net, list) : null,
       settled.length ? h('div.card',
         h('div.sh-cardhead', h('h2', 'Settled lately')),
         h('div.table-wrap', h('table',
@@ -250,13 +253,42 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     ];
   }
 
-  function netCard(net) {
+  function netCard(net, issues = []) {
+    const month = new Date().toISOString().slice(0, 7);
+    const stands = (i) => (i.status === 'settled' ? OUTCOME[i.decision?.outcome] || 'Settled'
+      : i.status === 'answered' ? (i.answer?.how === 'repay' ? 'Will pay it back' : 'Answered, waiting for you')
+        : 'Waiting for them');
+    // Every line on one person's account this month, with why each is theirs.
+    const account = (p) => {
+      const mine = issues.filter((i) => Number(i.userId) === Number(p.userId) && String(i.day).startsWith(month) && i.amount
+        && ['drawer', 'unexplained', 'rental', 'moved'].includes(i.kind));
+      return h('tr.tl-account', h('td', { colspan: '5' },
+        h('table', h('thead', h('tr', ['Shift', 'What', 'Amount', 'Where it stands'].map((t) => h('th', t)))),
+          h('tbody', mine.map((i) => h('tr',
+            h('td', `${dayText(i.day)} ${SLOT[i.slot] || ''}`, i.moved?.ownerName ? h('small', { style: 'display:block' }, `${i.moved.ownerName}’s shift`) : null),
+            h('td', i.kind === 'moved' ? 'Moved to them' : ({ drawer: 'Drawer', unexplained: 'Cash out, no envelope or PO', rental: 'Rental count' })[i.kind],
+              i.moved ? h('small', { style: 'display:block' }, `${i.moved.reason} (${i.moved.by || 'an admin'})`) : null),
+            h('td.num', access.money ? signed(i.amount) : (i.amount < 0 ? 'Short' : 'Over')),
+            h('td', stands(i))))),
+          h('tfoot', h('tr', h('td', { colspan: '2' }, 'Net'), h('td.num', signed(p.net)), h('td'))))));
+    };
+    let open = null;
+    const body = h('tbody');
+    const draw = () => body.replaceChildren(...net.flatMap((p) => [
+      h(`tr.tl-acctrow${open === p.userId ? '.on' : ''}`,
+      h('td', h('button.sh-link', {
+        type: 'button', 'aria-expanded': String(open === p.userId), title: 'Every line on their account',
+        onclick: () => { open = open === p.userId ? null : p.userId; draw(); },
+      }, `${open === p.userId ? '▾' : '▸'} ${p.name || `HIVE ${p.userId}`}`)), h('td.num', money(p.short)), h('td.num', money(p.over)),
+      h('td.num', signed(p.net)), h('td.num', String(p.count))),
+      open === p.userId ? account(p) : null,
+    ].filter(Boolean)));
+    draw();
     return h('div.card',
-      h('div.sh-cardhead', h('h2', 'This month, per person'), h('span.sh-sub', 'Every difference put on their list, settled or not.')),
+      h('div.sh-cardhead', h('h2', 'This month, per person'), h('span.sh-sub', 'Every difference on their account, their own shifts and any put on them, settled or not. Tap a name for every line.')),
       h('div.table-wrap', h('table',
         h('thead', h('tr', ['Who', 'Short', 'Over', 'Net', 'Times'].map((t) => h('th', t)))),
-        h('tbody', net.map((p) => h('tr', h('td', p.name || `HIVE ${p.userId}`), h('td.num', money(p.short)), h('td.num', money(p.over)),
-          h('td.num', signed(p.net)), h('td.num', String(p.count))))))));
+        body)));
   }
 
 

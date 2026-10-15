@@ -18,6 +18,7 @@ import { renderLogin as renderLoginView, markGlyph } from './views/login.js';
 import { renderJoin } from './views/join.js';
 import { renderUpload } from './views/files.js';
 import { renderPrepaid } from './views/prepaid.js';
+import { renderNicePlace } from './views/niceplace.js';
 
 export const state = {
   boot: null,
@@ -49,6 +50,8 @@ const ROUTES = [
   { path: 'shifts', label: 'Shifts', render: renderShifts, needs: 'shifts' },
   // The one screen an uploader gets: the three shift files, nothing in them.
   { path: 'upload', label: 'Upload files', render: renderUpload, needs: 'upload' },
+  // The public washroom: its door counters against the money reported.
+  { path: 'niceplace', label: 'Nice Place', render: renderNicePlace },
   { path: 'buying', label: 'Buying', render: renderSuppliers },
   { path: 'books', label: 'Books', render: renderBooks },
   { path: 'findings', label: 'Findings', render: renderFindings, needs: 'insight' },
@@ -64,7 +67,7 @@ const ROUTES = [
 const NAV_GROUPS = [
   ['Today', ['hub', 'brief', 'findings']],
   ['Money', ['money', 'yardstick', 'cash', 'prepaid', 'books', 'buying']],
-  ['Operations', ['shifts', 'upload', 'labour', 'guests']],
+  ['Operations', ['shifts', 'upload', 'niceplace', 'labour', 'guests']],
   ['Admin', ['accounts', 'reports', 'setup']],
 ];
 
