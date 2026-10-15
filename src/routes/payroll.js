@@ -1275,14 +1275,14 @@ export async function exportBook(ctx) {
 
   // ---- the GRA schedule, on the GRA's own form ---------------------------
   //
-  // Copied from the GRA's own workbook (DT 107A, the one marked
-  // "schedule2022"), cell for cell: the boxed heading block, Times New Roman,
+  // Copied from the GRA's own workbook (the September 2026 template, marked
+  // "paye202609grra"), cell for cell: the boxed heading block, Times New Roman,
   // the column numbers, PENSIONS over columns 9 and 10, headings three rows
   // tall, the bonus and overtime columns shaded the way the form shades them,
   // and the rows starting on row 18 where the form starts them. It is meant to
   // be filed or pasted into the GRA's sheet as it comes out.
   const cols = PAYE_COLUMNS;
-  const width = cols.length; // A to AB
+  const width = cols.length; // A to AC
   const office = taxOfficeOf(map);
 
   const TNR = 'Times New Roman';
@@ -1369,13 +1369,12 @@ export async function exportBook(ctx) {
   ];
   // The GRA's own mark on its template, in a hidden column, where the form
   // keeps it.
-  heading[11][L('AM')] = { v: 'schedule2022', s: st({ sz: 11 }) };
+  heading[11][L('BA')] = { v: 'paye202609grra', s: st({ sz: 11 }) };
 
-  // Column numbers. Text, not numbers, because the form numbers two of its
-  // columns 26 and a spreadsheet asked for a number there quietly makes it 26
-  // twice over as a figure nobody can sort on.
+  // Column numbers, as numbers, the way the template stores them; the
+  // Adjustment column has none.
   const numbers = cols.map((c, i) => ({
-    v: c.no, text: true, s: st({ h: i === 0 ? 'left' : 'center', border: { l: 'thin', r: 'thin', t: 'thin' } }),
+    v: c.no === '' ? '' : Number(c.no), s: st({ h: i === 0 ? 'left' : 'center', border: { l: 'thin', r: 'thin', t: 'thin' } }),
   }));
   const pensions = cols.map((c, i) => {
     if (i === L('I')) return { v: 'PENSIONS', s: st({ h: 'center', border: box }) };
@@ -1383,7 +1382,7 @@ export async function exportBook(ctx) {
     return { v: '', s: st({ border: { l: 'thin', r: 'thin' } }) };
   });
   const headStyle = (c, i) => st({
-    sz: 10, wrap: true, v: 'center', h: i === 0 ? 'left' : 'center', border: box,
+    sz: 11, wrap: true, v: 'center', h: i === 0 ? 'left' : 'center', border: box,
     ...(SHADE[c.key] ? { fill: SHADE[c.key] } : {}),
   });
   const headings = cols.map((c, i) => ({ v: c.form ?? c.label, s: headStyle(c, i) }));
@@ -1396,24 +1395,28 @@ export async function exportBook(ctx) {
   const body = schedule.rows.map((row) => cols.map((c) => {
     const value = row[c.key];
     const fill = SHADE[c.key] ? { fill: SHADE[c.key] } : {};
-    if (c.money) return { v: round2(Number(value) || 0), s: st({ sz: 10, fmt: ACCOUNTING, border: lined, ...fill }) };
-    if (c.key === 'no') return { v: value, s: st({ sz: 10, fmt: '0', h: 'center', border: lined }) };
+    if (c.money) return { v: round2(Number(value) || 0), s: st({ fmt: ACCOUNTING, border: lined, ...fill }) };
+    if (c.key === 'no') return { v: value, s: st({ fmt: '0', h: 'center', border: lined }) };
     return {
       v: value ?? '',
       text: Boolean(c.text),
-      s: st({ sz: 10, fmt: '@', h: centred.has(c.key) ? 'center' : 'left', border: lined }),
+      s: st({ fmt: '@', h: centred.has(c.key) ? 'center' : 'left', border: lined }),
     };
   }));
   const totalRow = cols.map((c, i) => {
-    const s0 = st({ sz: 10, b: true, fill: 'FFD8D8D8', border: box });
+    const s0 = st({ b: true, fill: 'FFD8D8D8', border: box });
     if (i === 0) return { v: 'TOTALS', s: s0 };
     if (!c.money) return { v: '', s: s0 };
     return { v: round2(Number(schedule.totals[c.key]) || 0), s: { ...s0, fmt: ACCOUNTING } };
   });
 
   // The form's own widths, column by column.
-  const GRA_WIDTHS = [8.9, 17.7, 19.4, 12, 18.4, 10.9, 9, 8.6, 10.9, 8.9, 10.4, 16.1, 8.9, 9,
-    11.1, 8.9, 9, 9, 13.9, 10.1, 9.9, 10.4, 11.4, 10, 8.9, 11.1, 11.6, 8.9];
+  const GRA_WIDTHS = [8.8, 9.8, 19.3, 12, 15.2, 18.5, 10.8, 10.2, 10.8, 9.8, 10.5, 11.5, 11.7, 9,
+    11.2, 8.8, 9, 9, 13.8, 10.2, 9.8, 10.3, 11.5, 8.8, 9, 10.3, 11.2, 8.8, 9];
+  // The template's own dropdowns, on the rows it fills.
+  const firstRow = 18;
+  const lastRow = firstRow + Math.max(schedule.rows.length, 1) - 1;
+  const span = (a, b) => `${a}${firstRow}:${b}${lastRow}`;
 
   const scheduleSheet = {
     name: 'PAYE schedule',
@@ -1421,11 +1424,20 @@ export async function exportBook(ctx) {
     freezeCols: 3,
     gridLines: false,
     landscape: true,
-    hidden: [L('AM')],
+    hidden: [L('BA')],
+    lists: [
+      { ref: span('G', 'H'), options: ['Y', 'N'] },
+      { ref: span('D', 'D'), options: ['EXPATRIATE', 'MANAGEMENT', 'SENIOR', 'JUNIOR', 'OTHER'] },
+      {
+        ref: span('E', 'E'),
+        options: ['Resident-Full-Time', 'Non-Resident', 'Resident-Part-Time', 'Resident-Casual',
+          'Secondary@5%', 'Secondary@10%', 'Secondary@17.5%', 'Secondary@25%', 'Secondary@30%', 'Secondary@35%'],
+      },
+    ],
     widths: cols.map((c, i) => GRA_WIDTHS[i] ?? c.width ?? 13),
-    // The three titles centred across the sheet, as they print on the form.
+    // The three titles centred across A to AA, as the template centres them.
     merges: [
-      `A1:${colName(width - 1)}1`, `A2:${colName(width - 1)}2`, `A5:${colName(width - 1)}5`,
+      'A1:AA1', 'A2:AA2', 'A5:AA5',
       'D7:E7', 'G7:N7', 'D8:F8', 'G8:N8', 'D9:N9', 'U9:W9', 'D11:O11',
       'I14:J14',
       ...cols.map((c, i) => `${colName(i)}15:${colName(i)}17`),

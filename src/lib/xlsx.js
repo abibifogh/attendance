@@ -171,12 +171,13 @@ function cellXml(value, col, row, styles) {
 /**
  * One sheet. Beyond the rows: `widths`, `merges`, `freeze` (rows held at the
  * top), `freezeCols` (columns held at the left), `hidden` (column indexes
- * nobody needs to see), `heights` ({ row index: points }), `gridLines: false`
- * and `landscape: true`, which also fits the sheet to one page wide.
+ * nobody needs to see), `heights` ({ row index: points }), `gridLines: false`,
+ * `landscape: true`, which also fits the sheet to one page wide, and `lists`:
+ * dropdowns, as `[{ ref: 'D18:D40', options: ['A', 'B'] }]`.
  */
 function sheetXml({
   rows = [], widths = [], merges = [], freeze = 0, freezeCols = 0, hidden = [], heights = {},
-  gridLines = true, landscape = false,
+  gridLines = true, landscape = false, lists = [],
 }, styles) {
   const count = Math.max(widths.length, ...hidden.map((i) => i + 1), 0);
   const colXml = [];
@@ -203,12 +204,17 @@ function sheetXml({
   const merged = merges.length
     ? `<mergeCells count="${merges.length}">${merges.map((m) => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>`
     : '';
+  const dropdowns = lists.length
+    ? `<dataValidations count="${lists.length}">${lists.map((l) => `<dataValidation type="list" allowBlank="1" `
+      + `showInputMessage="1" showErrorMessage="1" sqref="${l.ref}"><formula1>"${esc(l.options.join(','))}"</formula1>`
+      + '</dataValidation>').join('')}</dataValidations>`
+    : '';
   const fit = landscape ? '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' : '';
   const page = landscape ? '<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>' : '';
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-${fit}<sheetViews>${view}</sheetViews>${cols}<sheetData>${body}</sheetData>${merged}
+${fit}<sheetViews>${view}</sheetViews>${cols}<sheetData>${body}</sheetData>${merged}${dropdowns}
 <pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.3" footer="0.3"/>${page}
 </worksheet>`;
 }

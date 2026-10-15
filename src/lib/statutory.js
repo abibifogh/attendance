@@ -203,7 +203,7 @@ export const RESIDENCIES = [
 ];
 
 /** What the form's column 4 is usually one of here. */
-export const POSITIONS = ['MANAGEMENT', 'SENIOR', 'JUNIOR'];
+export const POSITIONS = ['MANAGEMENT', 'SENIOR', 'JUNIOR', 'EXPATRIATE', 'OTHER'];
 
 // `label` is the heading tidied for a screen; `form` is where the GRA's own
 // workbook spells it differently (stray spaces and all), and the exported
@@ -234,7 +234,12 @@ export const PAYE_COLUMNS = [
   { no: '23', key: 'tax', label: 'Tax Deductible', money: true, width: 13 },
   { no: '24', key: 'overtime', label: 'Overtime Income', money: true, width: 12 },
   { no: '25', key: 'overtimeTax', label: 'Overtime Tax', money: true, width: 12 },
-  { no: '26', key: 'total', label: 'Total Tax Payable to GRA (13+23+25)', money: true, width: 15 },
+  // Added on the GRA's September 2026 template (paye202609grra), with no
+  // number of its own. The form's total adds it in: 13 + 23 + 25 + this.
+  { no: '', key: 'adjustment', label: 'Adjustment', money: true, width: 11 },
+  // The template numbers the total 25, the same as overtime tax beside it.
+  // Copied as printed: whoever files it works down the GRA's sheet by number.
+  { no: '25', key: 'total', label: 'Total Tax Payable to GRA (13+23+25)', money: true, width: 15 },
   { no: '26', key: 'severance', label: 'Severance pay paid', money: true, width: 12 },
   { no: '27', key: 'remarks', label: 'Remarks', width: 18 },
 ];
@@ -313,6 +318,9 @@ export function payeSchedule({ lines = [], people = new Map() }) {
       tax,
       overtime: 0,
       overtimeTax: 0,
+      // Nothing to adjust from a payroll worked out here. Nought rather than
+      // blank, because the total beside it adds it in.
+      adjustment: 0,
       total: round2(line.paye?.total ?? 0),
       // Reported, not taxed. What severance costs in tax depends on what it
       // was for, and that is a decision above a payroll.

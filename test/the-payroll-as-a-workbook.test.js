@@ -168,17 +168,20 @@ test('a number stays a number and a TIN stays text', () => {
 // The GRA form
 // ---------------------------------------------------------------------------
 
-test('the schedule has the form twenty-seven columns, in order', () => {
-  assert.equal(PAYE_COLUMNS.length, 28, 'the form prints 27 numbers over 28 columns');
+test('the schedule has the columns of the September 2026 form, in order', () => {
+  assert.equal(PAYE_COLUMNS.length, 29, 'the form prints 27 numbers over 29 columns');
   assert.deepEqual(PAYE_COLUMNS.map((c) => c.no).slice(0, 3), ['1', '2', '3']);
   assert.deepEqual(
     PAYE_COLUMNS.map((c) => c.label).slice(0, 6),
     ['Ser. No', 'TIN / GH. CARD NO.', 'Name Of Employee', 'Position',
       'Residency/ Part-Time/ Casual', 'Basic Salary'],
   );
-  // The form numbers two of its columns 26, which is why the position and the
-  // number are not the same thing.
-  assert.deepEqual(PAYE_COLUMNS.slice(-3).map((c) => c.no), ['26', '26', '27']);
+  // The form numbers overtime tax and the total both 25, gives Adjustment no
+  // number at all, and then carries on: the position and the number are not
+  // the same thing.
+  assert.deepEqual(PAYE_COLUMNS.slice(-6).map((c) => c.no), ['24', '25', '', '25', '26', '27']);
+  assert.deepEqual(PAYE_COLUMNS.slice(-5, -3).map((c) => c.label),
+    ['Overtime Tax', 'Adjustment']);
   assert.equal(PAYE_COLUMNS.at(-1).label, 'Remarks');
 });
 
@@ -285,17 +288,21 @@ test('the schedule sits in the same cells as the GRA template, tax office ticked
   assert.equal(cell('D9'), 'Sir Tobys Ghana LTD');
   assert.equal(cell('U9'), '07/2026');
   assert.equal(cell('D11'), 'C000490916X');
-  assert.equal(cell('AM12'), 'schedule2022', "the GRA's own mark on its template");
+  assert.equal(cell('BA12'), 'paye202609grra', "the GRA's own mark on its template");
   assert.equal(cell('A13'), '1');
   assert.equal(cell('I14'), 'PENSIONS');
   assert.equal(cell('A15'), 'Ser. No');
   assert.equal(cell('E15'), 'Residency/ Part-Time/  Casual ', 'spelt as the GRA spells it');
   assert.equal(cell('L15'), 'Bonus Income(up to 15% of Annual Basic salary)');
-  assert.equal(cell('AB15'), 'Remarks');
+  assert.equal(cell('Z15'), 'Adjustment');
+  assert.equal(cell('AA15'), 'Total Tax Payable to GRA (13+23+25)');
+  assert.equal(cell('AC15'), 'Remarks');
   assert.equal(cell('C18'), 'Ama Boateng', 'and the people start on row 18');
   assert.equal(cell('A20'), 'TOTALS');
   assert.ok(text.includes('showGridLines="0"'));
-  assert.ok(text.includes('<col min="39" max="39" width="9" hidden="1"/>'));
+  assert.ok(text.includes('<col min="53" max="53" width="9" hidden="1"/>'));
+  assert.ok(text.includes('<mergeCell ref="A1:AA1"/>'));
+  assert.ok(text.includes('sqref="D18:D19"><formula1>"EXPATRIATE,MANAGEMENT,SENIOR,JUNIOR,OTHER"'));
   assert.ok(text.includes('<mergeCell ref="I14:J14"/>'));
   assert.ok(all.includes('Times New Roman'));
 });
@@ -386,7 +393,7 @@ test('the form only takes a residency it prints', async () => {
   assert.deepEqual(RESIDENCIES, [
     'Resident-Full-Time', 'Resident-Part-Time', 'Resident-Casual', 'Non-Resident',
   ]);
-  assert.deepEqual(POSITIONS, ['MANAGEMENT', 'SENIOR', 'JUNIOR']);
+  assert.deepEqual(POSITIONS, ['MANAGEMENT', 'SENIOR', 'JUNIOR', 'EXPATRIATE', 'OTHER']);
 });
 
 test('severance goes in its own column and moves nothing else', async () => {
