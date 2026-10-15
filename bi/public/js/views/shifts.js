@@ -32,6 +32,9 @@ const SLOT = {
 };
 // For one payment seen twice: the laundry's card payment on the hotel's terminal.
 const PAIR_ANSWERS = ['Keyed in ASSD now', 'Staff reminded', 'Explained', 'Not the same payment'];
+/** A guest who paid more: owed back, kept for later, keyed short, or two payments after all. */
+const REFUND_DUE = 'Refund due to the guest';
+const PAID_MORE_ANSWERS = [REFUND_DUE, 'Deposit for a later stay', 'Keyed short in ASSD', 'Not the same payment'];
 /** Quick reasons for putting a difference on somebody's account; the box takes the rest. */
 const MOVE_REASONS = ['Both held the drawer', 'Handed over without counting', 'Covered this shift', 'Agreed with them'];
 const MOVABLE = new Set(['drawer-short', 'drawer-over', 'handover-gap']);
@@ -70,6 +73,7 @@ const KIND = {
   'receipts-swapped': ['Receipts swapped for cash', '✓'],
   'receipts-unclear': ['Receipts handed in: all, or only some?', '?'],
   'laundry-card': ['Laundry paid by card, not in ASSD', 'L'],
+  'paid-more': ['The guest paid more than ASSD shows', '+'],
   'receipts-carried': ['Receipts still in the count after a movement: stayed, or new?', '?'],
   'expense-po-gap': ['PO total does not match the expenses', '#'],
 };
@@ -248,7 +252,7 @@ export async function renderShifts(root, { range }) {
   // approvals. Read in the background on opening, so the tab shows its count,
   // and again after anything in it is answered.
   let stays = null;
-  const sources = { todo: null, advances: null, till: null };
+  const sources = { todo: null, advances: null, till: null, refunds: null };
   function readStays() {
     if (!can.stays) return Promise.resolve(null);
     return api('/stays').then((d) => { stays = d; return d; });
@@ -260,6 +264,7 @@ export async function renderShifts(root, { range }) {
       can.todo ? quiet(api(`/todo${inbox.showDone ? '?closed=1' : ''}`).then((d) => { sources.todo = d; })) : null,
       can.advances ? quiet(api('/advances').then((d) => { sources.advances = d; })) : null,
       can.answers || can.approvals ? quiet(till.read(force).then((d) => { sources.till = d; })) : null,
+      may('bank') ? quiet(api('/shifts/refunds').then((d) => { sources.refunds = d; })) : null,
     ].filter(Boolean));
   }
   readInbox().then(() => { if (view.isConnected && data) paint(); }).catch(() => {});
@@ -1863,6 +1868,7 @@ export async function renderShifts(root, { range }) {
       case 'transposition': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: the same digits in another order.`;
       case 'decimal': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: out by a factor of ten.`;
       case 'keying': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: one digit different.`;
+      case 'paid-more': return `ASSD has ${money(x.assd)} by card or MoMo (ASSD ${x.seq}); ${paid} was ${e.kind === 'momo' ? 'received' : 'approved'} at ${time(e.at)}. The guest paid ${money(x.amount)} more than ASSD shows: owed back, a deposit for later, or keyed short.`;
       case 'duplicate': return [`Keyed twice in this shift (also ASSD ${x.pair}) and paid once on the terminal.`, ...othersSay(x)].join(' ');
       case 'not-recorded': return `${e.kind === 'momo' ? 'MoMo received' : 'Approved on the terminal'} at ${when(e.at, e.day)}${e.last4 ? `, card …${e.last4}` : ''}. ASSD has no payment of this amount.`;
       case 'never-settled': return `Approved on the terminal ${when(e.at)}, card …${e.last4}, approval ${e.approval}. No bank credit six days on.`;
@@ -1942,6 +1948,16 @@ export async function renderShifts(root, { range }) {
       return box(['ASSD', marked(a, b)], 'vs', [x.event.kind === 'momo' ? 'MoMo' : 'Terminal', marked(b, a)]);
     }
     if (x.kind === 'drawer-short' || x.kind === 'drawer-over') return box(['Should hold', h('b', whole(x.expected))], '→', ['Counted', h('b', whole(x.closing))]);
+    if (x.kind === 'paid-more') {
+      const e = x.event || {};
+      return h('div',
+        h('div.sh-sides.sh-paidmore',
+          h('div', h('small', h('i', { style: 'background:var(--sh-info)' }), 'ASSD'), h('b.num', money(x.assd)), h('span', `Card or MoMo · ASSD ${x.seq}`)),
+          h('span.eq', `+${whole(x.amount)}`, h('small', 'more')),
+          h('div', h('small', h('i', { style: `background:${e.kind === 'momo' ? 'var(--sh-warn)' : '#3f78d3'}` }), e.kind === 'momo' ? 'MoMo' : 'Card terminal'), h('b.num', money(x.paid)),
+            h('span', `${e.kind === 'momo' ? 'Received' : 'Approved'} ${time(e.at)}${e.last4 ? ` · card …${e.last4}` : ''}`))),
+        h('p.sh-paired.sh-paidmore', `Same shift, close to the payments keyed around it, and no other payment that could be either one: one payment, ${money(x.amount)} more than ASSD shows.`));
+    }
     if (x.kind === 'laundry-card') {
       const hm = (at) => String(at || '').slice(11, 16);
       return h('div',
@@ -2140,6 +2156,8 @@ export async function renderShifts(root, { range }) {
       said.textContent = 'Saving…';
       try {
         await api('/shifts/answer', { method: 'POST', body: { key: x.key, answer: value, note: value ? note.value : '' } });
+        // A refund owed goes on, or comes off, the list of them.
+        if (x.kind === 'paid-more') await readInbox(true).catch(() => null);
         await load();
       } catch (err) { said.textContent = err.message; }
     };
@@ -2166,7 +2184,9 @@ export async function renderShifts(root, { range }) {
         x.seqs ? h('span', `ASSD ${x.seqs.join(', ')}`) : x.seq ? h('span', `ASSD ${x.seq}`) : null),
       evidence(x),
       h('p', describe(x)),
-      x.split ? h('p.small', `Said not to be the laundry’s card payment of the same amount (${x.split.by || 'somebody'}). `,
+      x.split ? h('p.small', x.split.what === 'paid-more'
+        ? `Said not to be the same payment as the larger one that arrived on this shift (${x.split.by || 'somebody'}). `
+        : `Said not to be the laundry’s card payment of the same amount (${x.split.by || 'somebody'}). `,
         h('button.sh-link', {
           type: 'button',
           onclick: async () => {
@@ -2174,6 +2194,9 @@ export async function renderShifts(root, { range }) {
           },
         }, 'Undo')) : null,
       ['expense-no-po', 'expense-po-gap'].includes(x.kind) && !x.answer && byId.has(`${x.day}|${x.slot}`) ? poLinker(byId.get(`${x.day}|${x.slot}`)) : null,
+      x.kind === 'paid-more' && x.answer?.answer === REFUND_DUE ? h('p.small', x.refund?.paidBack
+        ? `✓ Paid back to the guest (${x.refund.paidBack.by}, ${String(x.refund.paidBack.at).slice(0, 16)}).`
+        : 'On “Refunds owed to guests” in the Inbox until somebody says it was paid back.') : null,
       x.slot && byId.has(`${x.day}|${x.slot}`) && !(section === 'shifts' && detail)
         ? h('div', h('button.sh-link', { type: 'button', onclick: () => go('shift', `${x.day}|${x.slot}`) }, 'Open the shift')) : null,
       x.action && !x.answer ? h('div', h('button.btn.primary', {
@@ -2306,7 +2329,7 @@ export async function renderShifts(root, { range }) {
             : h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change'), said)
           // Its own two buttons are the answer to a count read two ways.
           : ['receipts-unclear', 'receipts-carried'].includes(x.kind) ? said
-            : [h('div.sh-answers', note, (x.kind === 'laundry-card' ? PAIR_ANSWERS : ANSWERS).map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)),
+            : [h('div.sh-answers', note, (x.kind === 'laundry-card' ? PAIR_ANSWERS : x.kind === 'paid-more' ? PAID_MORE_ANSWERS : ANSWERS).map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)),
               movable(x) ? h('button.sh-movebtn', { type: 'button', 'aria-expanded': String(moving === x.key), onclick: () => { moving = moving === x.key ? null : x.key; paint(); } }, 'Put on a staff account') : null,
               said,
               x.kind === 'laundry-card' ? h('p.small', { style: 'flex-basis:100%;margin:.2rem 0 0' }, 'Answered here, both are settled. “Not the same payment” splits them back into two.') : null),
@@ -2475,6 +2498,29 @@ export async function renderShifts(root, { range }) {
   // -------------------------------------------------------------- inbox --
 
   /** Pairs that are probably the same money, each reconciled with one click. */
+  /** Refunds owed to guests who paid more than ASSD shows, whatever days are on screen, until paid back. */
+  function refundsCard() {
+    const owed = sources.refunds?.owed || [];
+    if (!owed.length) return null;
+    const said = h('span.small');
+    const paidBy = (r) => (r.method === 'momo' ? 'MoMo' : `card${r.last4 ? ` …${r.last4}` : ''}`);
+    return h('section.card.sh-refunds',
+      h('div.sh-cardhead', h('div', h('h2', `Refunds owed to guests · ${owed.length}`),
+        h('p.sh-sub', 'Guests who paid more by card or MoMo than ASSD shows, answered “Refund due to the guest”. Each stays here until it is paid back.'))),
+      owed.map((r) => h('div.sh-refund',
+        h('div',
+          h('b.num', `${money(r.amount)} · ${paidBy(r)}`),
+          h('small', `${dayText(r.day)} ${SLOT[r.slot]?.label.toLowerCase() || ''}${r.user ? ` · ${nameOf(r.user)}` : ''} · ${daysAgo(r.day)} day${daysAgo(r.day) === 1 ? '' : 's'}${r.note ? ` · ${r.note}` : ''}`)),
+        may('bank', 2) ? h('button.btn', {
+          type: 'button',
+          onclick: async (e) => {
+            e.target.disabled = true;
+            try { await api('/shifts/refunds/paid', { method: 'POST', body: { key: r.key } }); await refreshInbox(`${money(r.amount)} paid back.`); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+          },
+        }, 'Paid back') : null)),
+      said);
+  }
+
   function pairsCard() {
     const pairs = likelyPairs();
     const inPairs = new Set(pairs.flat().map((x) => x.key));
@@ -2773,6 +2819,7 @@ export async function renderShifts(root, { range }) {
         }), ' Show done'),
         h('div.ib-refresh', refresh, said)),
       inbox.kind === 'all' || inbox.kind === 'bank' ? pairsCard() : null,
+      inbox.kind === 'all' || inbox.kind === 'bank' ? refundsCard() : null,
       inbox.kind === 'po' && admin ? formMatchCard() : null,
       selectAll || bulkBar ? h('div.ib-bulk', selectAll, bulkBar, giveTo) : null,
       shown.length ? h('div.ib-split',

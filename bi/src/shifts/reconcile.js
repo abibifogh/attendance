@@ -38,6 +38,10 @@ const SLOT_MINUTES = 8 * 60;
 
 /** Grace either side of a shift's hours, for hand-overs that run late. */
 export const TOLERANCE_MINUTES = 90;
+/** How far from the payments around it a larger payment may be and still be the guest's. */
+export const PAID_MORE_MINUTES = 30;
+/** A paid-more pair's key: its shift and its ASSD line, so it can be found by day. */
+export const paidMoreKey = (s, line) => `paid-more:${s.day}:${s.slotName}:${line.key}`;
 /** How far apart the parts of one split payment can be. */
 const SPLIT_MINUTES = 45;
 /** How close two charges to the same card have to be to look like one charge twice. */
@@ -225,6 +229,8 @@ export function isOneDigitOff(a, b) {
  */
 export function reconcile(shifts, events, declines = [], options = {}) {
   const tolerance = options.tolerance ?? TOLERANCE_MINUTES;
+  // Pairs somebody said are not one payment, by their paid-more key.
+  const notSame = new Set(options.notSame || []);
   const evs = events.map((e) => ({ ...e, minute: minuteOf(e.at), by: null }));
   const decl = declines.map((d) => ({ kind: 'card', ...d, minute: minuteOf(d.at) }));
   const timed = evs.filter((e) => e.minute != null);
@@ -400,6 +406,43 @@ export function reconcile(shifts, events, declines = [], options = {}) {
     }
   }
 
+  // A guest who paid more than ASSD shows: ASSD has a card or MoMo line no
+  // payment matched, and a larger one arrived that ASSD does not show. ASSD
+  // has no clock and calls card and MoMo alike, so the pair is found by place:
+  // the same shift, inside its own hours, within half an hour of the payments
+  // matched to the lines keyed just before and after it, and the only such
+  // pair either way. A decimal in the wrong place or swapped digits stay
+  // keying slips. "Not the same payment" keeps a pair apart.
+  for (const s of out) {
+    if (s.open) continue;
+    const clocked = s.lines.filter((l) => l.events.length === 1 && l.events[0].minute != null);
+    const near = (line) => {
+      const before = clocked.filter((l) => l.seq < line.seq).sort((a, b) => b.seq - a.seq)[0];
+      const after = clocked.filter((l) => l.seq > line.seq).sort((a, b) => a.seq - b.seq)[0];
+      const a = before ? before.events[0].minute : s.window.start;
+      const b = after ? after.events[0].minute : s.window.end;
+      return { from: Math.min(a, b) - PAID_MORE_MINUTES, to: Math.max(a, b) + PAID_MORE_MINUTES };
+    };
+    const pairs = [];
+    for (const line of unexplained(s).filter((l) => l.amount > 0)) {
+      const key = paidMoreKey(s, line);
+      if (notSame.has(key)) continue;
+      const w = near(line);
+      for (const e of timed) {
+        if (!free(e) || !inside(e, s, true) || e.amount <= line.amount || e.minute < w.from || e.minute > w.to) continue;
+        if (isDecimalSlip(line.amount, e.amount) || isTransposition(line.amount, e.amount)) continue;
+        pairs.push({ line, e, key });
+      }
+    }
+    for (const p of pairs) {
+      if (pairs.filter((q) => q.line === p.line).length !== 1 || pairs.filter((q) => q.e === p.e).length !== 1) continue;
+      p.e.by = p.line.key;
+      p.line.events = [p.e];
+      p.line.how = 'paid-more';
+      raise('paid-more', s, p.line, p.e, { key: p.key, amount: p.e.amount - p.line.amount, assd: p.line.amount, paid: p.e.amount });
+    }
+  }
+
   // Slips of the finger.
   for (const s of out) {
     for (const line of unexplained(s).filter((l) => l.amount > 0)) {
@@ -563,6 +606,8 @@ export const GROUPS = [
     help: 'Every shift, the laundry ASSD has against what the laundry system took in the same hours (06:00–14:00, 14:00–22:00, 22:00–06:00). Compared once the laundry system has been read for the whole shift.' },
   { id: 'keying', title: 'Keying slips: transposed digits, one digit off, a decimal in the wrong place', severity: 'warning',
     help: 'The terminal took one amount and ASSD records a slightly different one. The difference is real money on one side or the other.' },
+  { id: 'paidmore', title: 'A guest paid more than ASSD shows', severity: 'warning',
+    help: 'A card or MoMo line no payment matched, and a larger payment on the same shift, near where the line was keyed, that ASSD does not show: one payment, more than ASSD has. Owed back, a deposit for later, or keyed short.' },
   { id: 'duplicate', title: 'Keyed twice in ASSD', severity: 'warning',
     help: 'The same amount recorded twice in the shift, paid once.' },
   { id: 'unrecorded', title: 'Money received that ASSD does not show', severity: 'warning',
@@ -578,6 +623,7 @@ const GROUP = {
   'not-found': 'missing', zero: 'missing',
   'double-charge': 'double',
   transposition: 'keying', decimal: 'keying', keying: 'keying',
+  'paid-more': 'paidmore',
   duplicate: 'duplicate',
   'not-recorded': 'unrecorded',
   'never-settled': 'settlement', reversal: 'settlement', refund: 'settlement',
@@ -586,7 +632,7 @@ const GROUP = {
 
 const SEVERITY = {
   failed: 'critical', 'not-found': 'critical', zero: 'warning', 'double-charge': 'critical',
-  transposition: 'warning', decimal: 'warning', keying: 'warning', duplicate: 'warning',
+  transposition: 'warning', decimal: 'warning', keying: 'warning', 'paid-more': 'warning', duplicate: 'warning',
   'not-recorded': 'warning', 'never-settled': 'warning', reversal: 'warning', refund: 'info',
   regrouped: 'info', 'other-shift': 'info', corrected: 'info', 'bank-only': 'info',
 };
