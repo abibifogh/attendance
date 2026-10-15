@@ -11,7 +11,8 @@ the arrows step a day, a week (Monday to Sunday) or a month at a time, and
 **Latest** jumps to the newest shifts loaded. When the journal stops inside a
 shift, a small note at the end of the line says which; open it for what to do.
 
-- **Shifts**: Day, Week or Month, chosen with the switch beside the tabs.
+- **Shifts**: Day, Week, Month or Dates, chosen with the switch beside the tabs
+  (it is in the Inbox too, and there it keeps you in the Inbox).
   - **Day**: the day's three shifts as large cards, each with the drawer in
     four lines, how it came out, how guests paid and what is open; the day's
     cash, card and MoMo against what arrived, commission and laundry.
@@ -20,6 +21,12 @@ shift, a small note at the end of the line says which; open it for what to do.
     against what arrived, day by day.
   - **Month**: a calendar, each day's three shifts as coloured bars; the month
     week by week below it.
+  - **Dates**: From and To, for days that cross a week or a month, such as a
+    surplus and the shortage it answers a few shifts later. Up to ten days
+    show as tiles, longer as a calendar; ‹ › move by the same number of days.
+    This is the date range for supervisors, who do not get the one at the top
+    right: as many as 62 days for whoever may see Month, 7 for whoever may see
+    only Week.
   - **Tap a shift** for its story, with **‹ Back** to the period and arrows to
     the shift before and after: the **closing report** from HIVE beside ASSD
     (drawer, safe, what left the drawer, rentals, float, front desk checks,
