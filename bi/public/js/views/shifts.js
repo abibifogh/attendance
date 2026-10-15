@@ -422,9 +422,14 @@ export async function renderShifts(root, { range }) {
     return { ...r, closing, expenses, toSafe, unlabelled, variance, recounted, sheetTyped: sheet != null, sheet, sheetGap };
   }
 
+  /** The drawer's own difference, once answered or reconciled with others: settled, whatever its size. */
+  const drawerSettled = (s) => exceptionsOf(s).find((x) => x.key === `drawer:${s.day}:${s.slot}`)?.answer || null;
+  const settledWords = (a) => (a.link ? 'reconciled with others' : `answered: ${a.answer}`);
+
   function tone(s) {
     if (s.open) return 'open';
-    const open = exceptionsOf(s).filter((x) => !x.answer);
+    // What the rules explained needs nobody, whatever the drawer says.
+    const open = exceptionsOf(s).filter((x) => !x.answer && x.severity !== 'info');
     const v = s.register?.variance ?? s.register?.varianceSign;
     if (open.some((x) => x.severity === 'critical')) return 'bad';
     if (v != null && v < 0 && open.length) return 'bad';
@@ -433,9 +438,10 @@ export async function renderShifts(root, { range }) {
   }
 
   const avatar = (user, large = false) => h(`span.sh-av${large ? '.lg' : ''}`, { style: `--pc:${colours[user] || 'var(--sh-info)'}` }, (user || '?')[0]);
-  const chip = (v, open) => (open ? h('span.sh-chip.none', 'ends here')
+  const chip = (v, open, settled = false) => (open ? h('span.sh-chip.none', 'ends here')
     : v == null ? h('span.sh-chip.none', 'no count')
       : v === 0 ? h('span.sh-chip.ok', '✓ agrees')
+        : settled ? h('span.sh-chip.ok', { title: 'Answered or reconciled' }, data.redacted ? '✓ settled' : `✓ ${v > 0 ? '+' : '−'}${whole(Math.abs(v))}`)
         : h(`span.sh-chip.${v > 0 ? 'over' : 'short'}`, data.redacted ? (v > 0 ? 'over' : 'short') : `${v > 0 ? '+' : '−'}${whole(Math.abs(v))}`));
   const modesOf = (s) => {
     const out = {};
@@ -841,7 +847,7 @@ export async function renderShifts(root, { range }) {
           type: 'button', title: `${nameOf(s.user)} · ${SLOT[sl].label} · ${dayText(s.day)}`, onclick: () => go('shift', s.id),
         },
         h('span.sh-who', avatar(s.user), h('b', nameOf(s.user))),
-        h('span.sh-fig', h('span.num', `Cash ${whole(s.cash)}`), chip(s.register?.variance ?? s.register?.varianceSign, s.open)),
+        h('span.sh-fig', h('span.num', `Cash ${whole(s.cash)}`), chip(s.register?.variance ?? s.register?.varianceSign, s.open, Boolean(drawerSettled(s)))),
         mixBar(s),
         h('span.sh-fig',
           h('span', s.cardLines ? `${s.cardFound + (s.cardAnswered || 0)}/${s.cardLines} card` : 'no card'),
@@ -1176,13 +1182,16 @@ export async function renderShifts(root, { range }) {
           })),
         h('span.amt.num', x.amt))));
 
-      const cls = n.variance == null ? 'none' : n.variance === 0 ? 'ok' : n.variance > 0 ? 'over' : 'short';
+      // Answered or reconciled: still the size it was, no longer anything to do.
+      const settled = n.variance && !n.recounted ? drawerSettled(s) : null;
+      const cls = n.variance == null ? 'none' : n.variance === 0 || settled ? 'ok' : n.variance > 0 ? 'over' : 'short';
       mount(vbox, h(`div.sh-vbox.${cls}`,
         h('div.big.num', n.variance == null ? 'No closing count' : n.variance === 0 ? '✓ The drawer agrees' : `${n.variance > 0 ? 'Over' : 'Short'} ${money(Math.abs(n.variance))}`),
         h('p', n.variance == null
           ? (s.open ? 'The journal stops inside this shift. Load a journal that runs a day past it.' : 'ASSD has no closing count for this shift. Type a recount to check it.')
           : n.variance === 0 ? 'What should be in the drawer is exactly what was counted.'
             : `It should have held ${money(r.expected)}; ${n.recounted ? 'the recount' : 'ASSD counted'} ${money(n.closing)}.${!n.recounted && r.assdVariance === n.variance ? ' ASSD booked the same difference itself.' : ''}`),
+        settled ? h('p', h('b', `✓ ${settledWords(settled).charAt(0).toUpperCase()}${settledWords(settled).slice(1)}`), settled.note ? `: ${settled.note}` : '', settled.by ? ` (${settled.by})` : '') : null,
         r.corrected && r.assdVariance !== n.variance ? h('p', `ASSD booked ${signed(r.assdVariance)} before the corrections to its cash movements.`) : null,
         r.handoverGap ? h('p', `This shift’s first count was ${money(Math.abs(r.handoverGap.amount))} ${r.handoverGap.amount < 0 ? 'less' : 'more'} than ${nameOf(r.handoverGap.from)}’s closing count.`) : null),
         receiptsPanel(r));
@@ -1326,6 +1335,7 @@ export async function renderShifts(root, { range }) {
     const out = [];
     if (n.variance == null) out.push(['info', 'i', s.open ? 'No closing count yet: the journal ends inside this shift' : 'No closing count in ASSD']);
     else if (n.variance === 0) out.push(['good', '✓', 'The drawer agrees with the closing count', drawerDetail(s, n)]);
+    else if (drawerSettled(s) && !n.recounted) out.push(['good', '✓', `Drawer ${n.variance > 0 ? 'over' : 'short'} by ${money(Math.abs(n.variance))}, ${settledWords(drawerSettled(s))}`, drawerDetail(s, n)]);
     else out.push([n.variance < 0 ? 'bad' : 'warn', '!', `Drawer ${n.variance > 0 ? 'over' : 'short'} by ${money(Math.abs(n.variance))}`, drawerDetail(s, n)]);
     const allCard = s.cardFound + (s.cardAnswered || 0) === s.cardLines;
     if (!s.cardLines) out.push(['info', '·', 'No card or MoMo this shift', s.lines.some((l) => l.how === 'corrected') ? cardDetail(s) : null]);

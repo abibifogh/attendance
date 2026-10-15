@@ -199,12 +199,25 @@ async function shiftList(env, from, to) {
 
 /** Everything that does not agree between `from` and `to`, with where each stands. */
 export async function issuesBetween(env, from, to) {
-  const [list, reports, pos, active, map, since, small, answers, decided] = await Promise.all([
+  const [list, reports, pos, active, map, since, small, answers, decided, linked] = await Promise.all([
     shiftList(env, from, to), hiveReports(env, from, to), hivePos(env, from, to), rentals(env, { active: true }),
-    people(env), goLive(env), threshold(env), hiveAnswers(env), resolutions(env),
+    people(env), goLive(env), threshold(env), hiveAnswers(env), resolutions(env), reconciled(env),
   ]);
-  const issues = issuesFor({ shifts: list, reports, pos, rentals: active, people: map, since, threshold: small });
+  // A drawer difference reconciled with others (and approved) is one story
+  // told twice: it nets out, so it leaves its person's list.
+  const issues = issuesFor({ shifts: list, reports, pos, rentals: active, people: map, since, threshold: small })
+    .filter((i) => !(i.kind === 'drawer' && linked.has(i.key)));
   return { shifts: list, reports, pos, rentals: active, issues: withStatus(issues, { answers, resolutions: decided }) };
+}
+
+/** Every exception reconciled together with others, once applied. */
+async function reconciled(env) {
+  const out = new Set();
+  const rows = await all(env.DB, "SELECT keys FROM shift_link WHERE COALESCE(status, 'applied') = 'applied'").catch(() => []);
+  for (const row of rows) {
+    try { for (const k of JSON.parse(row.keys)) out.add(String(k)); } catch { /* a broken row reconciles nothing */ }
+  }
+  return out;
 }
 
 const LOOKBACK = 60;

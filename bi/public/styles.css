@@ -788,6 +788,7 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh-answers input { flex: 1 1 100%; }
 .sh-ex.done { opacity: .85; }
 .sh-done { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .82rem; color: var(--sh-good-ink); font-weight: 600; }
+.sh-done > button, .sh-done > .sh-link { flex: none; white-space: nowrap; }
 
 /* people */
 .sh-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .8rem; }

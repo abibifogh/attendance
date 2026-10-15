@@ -617,3 +617,19 @@ test('a shift card shows the POs from its closing report, not "no PO numbers yet
   assert.deepEqual(again.expense.odoo.orders.map((o) => o.name), ['P00412']);
   assert.deepEqual(again.expense.fromReport, []);
 });
+
+test('a drawer difference reconciled with others leaves its person’s list; one waiting for an admin does not', async () => {
+  // BRAVO counts 20 more than the drawer should hold at the end.
+  const lines = journal().map((l) => l.replace('00005   10 GHS   5   10,00   50,00 GHS', '00005   10 GHS   7   10,00   70,00 GHS'));
+  const { env } = await setUp(lines);
+  const drawer = async () => (await till.issuesBetween(env, '2026-08-01', '2026-08-02')).issues.filter((i) => i.kind === 'drawer');
+  assert.deepEqual((await drawer()).map((i) => [i.key, i.userId, i.amount]), [['drawer:2026-08-01:afternoon', 8, 2000]]);
+
+  await routes.saveLink(env, { keys: ['drawer:2026-08-01:afternoon', 'drawer:2026-08-03:morning'], note: 'The 20 short the next morning' }, SUPERVISOR, { pending: true });
+  assert.equal((await drawer()).length, 1, 'still theirs until an admin approves');
+  await env.DB.prepare("UPDATE shift_link SET status = 'applied'").run();
+  assert.deepEqual(await drawer(), [], 'reconciled: off the list');
+  assert.ok(!(await till.linkIssues(env, { userId: 8 })).issues.some((i) => i.kind === 'drawer'), 'and off HIVE’s To sort out');
+  await env.DB.prepare('DELETE FROM shift_link').run();
+  assert.equal((await drawer()).length, 1, 'undone: back on it');
+});
