@@ -1448,6 +1448,8 @@ label.fm-row input { margin-top: .2rem; }
 .sh-sides.sh-paidmore .eq { color: var(--series-1); font-size: 1rem; text-align: center; line-height: 1.1; display: grid; }
 .sh-sides.sh-paidmore .eq small { color: var(--series-1); text-transform: none; letter-spacing: 0; font-weight: 600; justify-content: center; }
 .sh-paired.sh-paidmore { background: color-mix(in srgb, var(--series-1) 12%, transparent); color: var(--ink); }
+.sh-sides.sh-paidmore.less .eq, .sh-sides.sh-paidmore.less .eq small { color: var(--sh-bad-ink); }
+.sh-paired.sh-paidmore.less { background: color-mix(in srgb, var(--sh-bad) 12%, transparent); }
 .sh-refunds { display: grid; gap: .1rem; }
 .sh-refund { display: flex; justify-content: space-between; align-items: center; gap: .8rem; padding: .55rem 0; border-top: 1px solid var(--sh-line); }
 .sh-refund small { display: block; color: var(--ink-2); }

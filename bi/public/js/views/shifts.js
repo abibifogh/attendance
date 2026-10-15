@@ -35,6 +35,8 @@ const PAIR_ANSWERS = ['Keyed in ASSD now', 'Staff reminded', 'Explained', 'Not t
 /** A guest who paid more: owed back, kept for later, keyed short, or two payments after all. */
 const REFUND_DUE = 'Refund due to the guest';
 const PAID_MORE_ANSWERS = [REFUND_DUE, 'Deposit for a later stay', 'Keyed short in ASSD', 'Not the same payment'];
+/** A guest who paid less: owes the rest, paid it another way, ASSD keyed too high, or two payments after all. */
+const PAID_LESS_ANSWERS = ['Guest owes, chasing', 'Rest paid another way', 'Keyed too high in ASSD', 'Not the same payment'];
 /** Quick reasons for putting a difference on somebody's account; the box takes the rest. */
 const MOVE_REASONS = ['Both held the drawer', 'Handed over without counting', 'Covered this shift', 'Agreed with them'];
 const MOVABLE = new Set(['drawer-short', 'drawer-over', 'handover-gap']);
@@ -74,6 +76,7 @@ const KIND = {
   'receipts-unclear': ['Receipts handed in: all, or only some?', '?'],
   'laundry-card': ['Laundry paid by card, not in ASSD', 'L'],
   'paid-more': ['The guest paid more than ASSD shows', '+'],
+  'paid-less': ['The guest paid less than ASSD shows', '−'],
   'receipts-carried': ['Receipts still in the count after a movement: stayed, or new?', '?'],
   'expense-po-gap': ['PO total does not match the expenses', '#'],
 };
@@ -1868,6 +1871,7 @@ export async function renderShifts(root, { range }) {
       case 'transposition': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: the same digits in another order.`;
       case 'decimal': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: out by a factor of ten.`;
       case 'keying': return `The terminal took ${paid} at ${time(e.at)}. ASSD has ${money(x.amount)}: one digit different.`;
+      case 'paid-less': return `ASSD has ${money(x.assd)} by card or MoMo (ASSD ${x.seq}); only ${paid} was ${e.kind === 'momo' ? 'received' : 'approved'}, at ${time(e.at)}. ${money(x.amount)} ASSD counts as taken never arrived: the guest owes it, paid it another way, or ASSD was keyed too high.`;
       case 'paid-more': return `ASSD has ${money(x.assd)} by card or MoMo (ASSD ${x.seq}); ${paid} was ${e.kind === 'momo' ? 'received' : 'approved'} at ${time(e.at)}. The guest paid ${money(x.amount)} more than ASSD shows: owed back, a deposit for later, or keyed short.`;
       case 'duplicate': return [`Keyed twice in this shift (also ASSD ${x.pair}) and paid once on the terminal.`, ...othersSay(x)].join(' ');
       case 'not-recorded': return `${e.kind === 'momo' ? 'MoMo received' : 'Approved on the terminal'} at ${when(e.at, e.day)}${e.last4 ? `, card …${e.last4}` : ''}. ASSD has no payment of this amount.`;
@@ -1948,15 +1952,16 @@ export async function renderShifts(root, { range }) {
       return box(['ASSD', marked(a, b)], 'vs', [x.event.kind === 'momo' ? 'MoMo' : 'Terminal', marked(b, a)]);
     }
     if (x.kind === 'drawer-short' || x.kind === 'drawer-over') return box(['Should hold', h('b', whole(x.expected))], '→', ['Counted', h('b', whole(x.closing))]);
-    if (x.kind === 'paid-more') {
+    if (x.kind === 'paid-more' || x.kind === 'paid-less') {
       const e = x.event || {};
+      const less = x.kind === 'paid-less';
       return h('div',
-        h('div.sh-sides.sh-paidmore',
+        h(`div.sh-sides.sh-paidmore${less ? '.less' : ''}`,
           h('div', h('small', h('i', { style: 'background:var(--sh-info)' }), 'ASSD'), h('b.num', money(x.assd)), h('span', `Card or MoMo · ASSD ${x.seq}`)),
-          h('span.eq', `+${whole(x.amount)}`, h('small', 'more')),
+          h('span.eq', `${less ? '−' : '+'}${whole(x.amount)}`, h('small', less ? 'less' : 'more')),
           h('div', h('small', h('i', { style: `background:${e.kind === 'momo' ? 'var(--sh-warn)' : '#3f78d3'}` }), e.kind === 'momo' ? 'MoMo' : 'Card terminal'), h('b.num', money(x.paid)),
             h('span', `${e.kind === 'momo' ? 'Received' : 'Approved'} ${time(e.at)}${e.last4 ? ` · card …${e.last4}` : ''}`))),
-        h('p.sh-paired.sh-paidmore', `Same shift, close to the payments keyed around it, and no other payment that could be either one: one payment, ${money(x.amount)} more than ASSD shows.`));
+        h(`p.sh-paired.sh-paidmore${less ? '.less' : ''}`, `Same shift, close to the payments keyed around it, and no other payment that could be either one: one payment, ${money(x.amount)} ${less ? 'less' : 'more'} than ASSD shows.`));
     }
     if (x.kind === 'laundry-card') {
       const hm = (at) => String(at || '').slice(11, 16);
@@ -1993,8 +1998,8 @@ export async function renderShifts(root, { range }) {
   function flowOf(x) {
     const a = Math.abs(x.amount ?? 0);
     if (x.amount == null) return null;
-    if (['not-recorded', 'bank-only', 'double-charge'].includes(x.kind)) return a;
-    if (['not-found', 'failed', 'zero', 'never-settled', 'reversal', 'duplicate'].includes(x.kind)) return -a;
+    if (['not-recorded', 'bank-only', 'double-charge', 'paid-more'].includes(x.kind)) return a;
+    if (['not-found', 'failed', 'zero', 'never-settled', 'reversal', 'duplicate', 'paid-less'].includes(x.kind)) return -a;
     if (['drawer-over', 'drawer-short', 'handover-gap'].includes(x.kind)) return x.amount;
     if (x.kind === 'movement-twice') return a;
     return null;
@@ -2184,8 +2189,8 @@ export async function renderShifts(root, { range }) {
         x.seqs ? h('span', `ASSD ${x.seqs.join(', ')}`) : x.seq ? h('span', `ASSD ${x.seq}`) : null),
       evidence(x),
       h('p', describe(x)),
-      x.split ? h('p.small', x.split.what === 'paid-more'
-        ? `Said not to be the same payment as the larger one that arrived on this shift (${x.split.by || 'somebody'}). `
+      x.split ? h('p.small', x.split.what === 'paid-more' || x.split.what === 'paid-less'
+        ? `Said not to be the same payment as the ${x.split.what === 'paid-more' ? 'larger' : 'smaller'} one that arrived on this shift (${x.split.by || 'somebody'}). `
         : `Said not to be the laundry’s card payment of the same amount (${x.split.by || 'somebody'}). `,
         h('button.sh-link', {
           type: 'button',
@@ -2329,7 +2334,7 @@ export async function renderShifts(root, { range }) {
             : h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change'), said)
           // Its own two buttons are the answer to a count read two ways.
           : ['receipts-unclear', 'receipts-carried'].includes(x.kind) ? said
-            : [h('div.sh-answers', note, (x.kind === 'laundry-card' ? PAIR_ANSWERS : x.kind === 'paid-more' ? PAID_MORE_ANSWERS : ANSWERS).map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)),
+            : [h('div.sh-answers', note, (x.kind === 'laundry-card' ? PAIR_ANSWERS : x.kind === 'paid-more' ? PAID_MORE_ANSWERS : x.kind === 'paid-less' ? PAID_LESS_ANSWERS : ANSWERS).map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)),
               movable(x) ? h('button.sh-movebtn', { type: 'button', 'aria-expanded': String(moving === x.key), onclick: () => { moving = moving === x.key ? null : x.key; paint(); } }, 'Put on a staff account') : null,
               said,
               x.kind === 'laundry-card' ? h('p.small', { style: 'flex-basis:100%;margin:.2rem 0 0' }, 'Answered here, both are settled. “Not the same payment” splits them back into two.') : null),

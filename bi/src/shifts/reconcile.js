@@ -40,8 +40,8 @@ const SLOT_MINUTES = 8 * 60;
 export const TOLERANCE_MINUTES = 90;
 /** How far from the payments around it a larger payment may be and still be the guest's. */
 export const PAID_MORE_MINUTES = 30;
-/** A paid-more pair's key: its shift and its ASSD line, so it can be found by day. */
-export const paidMoreKey = (s, line) => `paid-more:${s.day}:${s.slotName}:${line.key}`;
+/** A paid-more (or paid-less) pair's key: its shift and its ASSD line, so it can be found by day. */
+export const paidMoreKey = (s, line, kind = 'paid-more') => `${kind}:${s.day}:${s.slotName}:${line.key}`;
 /** How far apart the parts of one split payment can be. */
 const SPLIT_MINUTES = 45;
 /** How close two charges to the same card have to be to look like one charge twice. */
@@ -406,8 +406,10 @@ export function reconcile(shifts, events, declines = [], options = {}) {
     }
   }
 
-  // A guest who paid more than ASSD shows: ASSD has a card or MoMo line no
-  // payment matched, and a larger one arrived that ASSD does not show. ASSD
+  // A guest who paid more, or less, than ASSD shows: ASSD has a card or MoMo
+  // line no payment matched, and a larger or smaller one arrived that ASSD
+  // does not show. Less is critical: money ASSD counts as taken never came.
+  // A line with a larger and a smaller payment near it is neither. ASSD
   // has no clock and calls card and MoMo alike, so the pair is found by place:
   // the same shift, inside its own hours, within half an hour of the payments
   // matched to the lines keyed just before and after it, and the only such
@@ -424,22 +426,28 @@ export function reconcile(shifts, events, declines = [], options = {}) {
       return { from: Math.min(a, b) - PAID_MORE_MINUTES, to: Math.max(a, b) + PAID_MORE_MINUTES };
     };
     const pairs = [];
-    for (const line of unexplained(s).filter((l) => l.amount > 0)) {
-      const key = paidMoreKey(s, line);
-      if (notSame.has(key)) continue;
+    const open = unexplained(s).filter((l) => l.amount > 0);
+    // Better explained otherwise: a line keyed twice (another of its amount
+    // was paid), and a payment that is a slip of any line still open.
+    const twice = (line) => s.lines.some((l) => l !== line && l.amount === line.amount && l.events.length);
+    const slipOfAny = (e) => open.some((l) => isDecimalSlip(l.amount, e.amount) || isTransposition(l.amount, e.amount));
+    for (const line of open.filter((l) => !twice(l))) {
       const w = near(line);
       for (const e of timed) {
-        if (!free(e) || !inside(e, s, true) || e.amount <= line.amount || e.minute < w.from || e.minute > w.to) continue;
-        if (isDecimalSlip(line.amount, e.amount) || isTransposition(line.amount, e.amount)) continue;
-        pairs.push({ line, e, key });
+        if (!free(e) || !inside(e, s, true) || e.amount <= 0 || e.amount === line.amount || e.minute < w.from || e.minute > w.to) continue;
+        if (slipOfAny(e)) continue;
+        const kind = e.amount > line.amount ? 'paid-more' : 'paid-less';
+        const key = paidMoreKey(s, line, kind);
+        if (notSame.has(key)) continue;
+        pairs.push({ line, e, key, kind });
       }
     }
     for (const p of pairs) {
       if (pairs.filter((q) => q.line === p.line).length !== 1 || pairs.filter((q) => q.e === p.e).length !== 1) continue;
       p.e.by = p.line.key;
       p.line.events = [p.e];
-      p.line.how = 'paid-more';
-      raise('paid-more', s, p.line, p.e, { key: p.key, amount: p.e.amount - p.line.amount, assd: p.line.amount, paid: p.e.amount });
+      p.line.how = p.kind;
+      raise(p.kind, s, p.line, p.e, { key: p.key, amount: Math.abs(p.e.amount - p.line.amount), assd: p.line.amount, paid: p.e.amount });
     }
   }
 
@@ -594,6 +602,8 @@ export const GROUPS = [
     help: 'The terminal declined these and never approved the same amount afterwards, yet ASSD has them as paid by card. The guest may have left without paying.' },
   { id: 'missing', title: 'Recorded as card or MoMo, no payment found', severity: 'critical',
     help: 'ASSD says card or MoMo; no approved card, no MoMo receipt and no bank credit of that amount anywhere near the shift.' },
+  { id: 'paidless', title: 'A guest paid less than ASSD shows', severity: 'critical',
+    help: 'A card or MoMo line no payment matched, and a smaller payment on the same shift, near where the line was keyed, that ASSD does not show: one payment, less than ASSD counts as taken. The guest owes the rest, paid it another way, or ASSD was keyed too high.' },
   { id: 'double', title: 'The same card charged twice', severity: 'critical',
     help: 'Two approved charges to one card for the same amount within half an hour, and only one in ASSD. The guest is owed a refund, or ASSD is missing a payment.' },
   { id: 'drawer', title: 'The drawer did not agree with its count', severity: 'critical',
@@ -623,7 +633,7 @@ const GROUP = {
   'not-found': 'missing', zero: 'missing',
   'double-charge': 'double',
   transposition: 'keying', decimal: 'keying', keying: 'keying',
-  'paid-more': 'paidmore',
+  'paid-more': 'paidmore', 'paid-less': 'paidless',
   duplicate: 'duplicate',
   'not-recorded': 'unrecorded',
   'never-settled': 'settlement', reversal: 'settlement', refund: 'settlement',
@@ -632,7 +642,7 @@ const GROUP = {
 
 const SEVERITY = {
   failed: 'critical', 'not-found': 'critical', zero: 'warning', 'double-charge': 'critical',
-  transposition: 'warning', decimal: 'warning', keying: 'warning', 'paid-more': 'warning', duplicate: 'warning',
+  transposition: 'warning', decimal: 'warning', keying: 'warning', 'paid-more': 'warning', 'paid-less': 'critical', duplicate: 'warning',
   'not-recorded': 'warning', 'never-settled': 'warning', reversal: 'warning', refund: 'info',
   regrouped: 'info', 'other-shift': 'info', corrected: 'info', 'bank-only': 'info',
 };

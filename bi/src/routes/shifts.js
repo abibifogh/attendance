@@ -814,7 +814,7 @@ export async function shifts(env, query, account) {
   }));
 
   // A guest who paid more: the pairs somebody said are not one payment.
-  const notSame = answers.filter((a) => String(a.key).startsWith('paid-more:') && a.answer === NOT_SAME && (a.status || 'applied') === 'applied');
+  const notSame = answers.filter((a) => /^paid-(more|less):/.test(String(a.key)) && a.answer === NOT_SAME && (a.status || 'applied') === 'applied');
   const result = reconcile(raw, events, declines, { open, notSame: notSame.map((a) => a.key) });
   const inRange = (day) => day >= from && day <= to;
   const placed = result.shifts.filter((s) => inRange(s.day));
@@ -1214,10 +1214,13 @@ export async function shifts(env, query, account) {
       const r = refundOf.get(x.key);
       x.refund = r?.paid_back_at ? { paidBack: { by: r.paid_back_by, at: r.paid_back_at } } : null;
     }
-    if (x.seq != null && x.kind !== 'paid-more' && x.day && x.slot && x.key.startsWith(`${x.kind}:`)) {
-      const key = `paid-more:${x.day}:${x.slot}:${x.key.slice(x.kind.length + 1)}`;
-      const said = keptApart.get(key);
-      if (said) x.split = { key, by: said.by_name, at: said.at, what: 'paid-more' };
+    if (x.seq != null && !['paid-more', 'paid-less'].includes(x.kind) && x.day && x.slot && x.key.startsWith(`${x.kind}:`)) {
+      const line = x.key.slice(x.kind.length + 1);
+      for (const what of ['paid-more', 'paid-less']) {
+        const key = `${what}:${x.day}:${x.slot}:${line}`;
+        const said = keptApart.get(key);
+        if (said) x.split = { key, by: said.by_name, at: said.at, what };
+      }
     }
   }
 

@@ -313,8 +313,16 @@ test('a guest who paid more than ASSD shows: one pair, on the shift, near where 
     [['not-found', 30000], ['not-recorded', 42000], ['not-recorded', 51000]], 'two could be it: neither is guessed');
   assert.deepEqual(run([ev('e2', '2026-08-01 13:30:00', 42000)]),
     [['not-found', 30000], ['not-recorded', 42000]], 'far from the payments keyed around it');
-  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 25000)]),
-    [['not-found', 30000], ['not-recorded', 25000]], 'less than ASSD shows is not this');
+  // Less: critical, money ASSD counts as taken never came.
+  const less = reconcile([shift('A', '2026-08-01', lines)], [...around, ev('e2', '2026-08-01 10:16:00', 18000)], []).exceptions;
+  assert.deepEqual(less.map((x) => [x.kind, x.key, x.amount, x.assd, x.paid, x.severity, x.group]),
+    [['paid-less', 'paid-less:2026-08-01:morning:2:1', 12000, 30000, 18000, 'critical', 'paidless']]);
+  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 18000)], { notSame: ['paid-less:2026-08-01:morning:2:1'] }),
+    [['not-found', 30000], ['not-recorded', 18000]], 'said not to be one payment: two again');
+  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 25000)]), [['paid-less', 5000]], '300 against 250: paid less, not a slip');
+  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 42000), ev('e4', '2026-08-01 10:20:00', 18000)]),
+    [['not-found', 30000], ['not-recorded', 18000], ['not-recorded', 42000]], 'one larger and one smaller near it: neither is guessed');
+  assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 3000)]), [['decimal', 30000]], 'a nought too few stays a slip');
   assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 35000)]), [['paid-more', 5000]], '300 against 350: paid more, not a slip');
   assert.deepEqual(run([ev('e2', '2026-08-01 10:16:00', 300000)]), [['decimal', 30000]], 'a nought too many stays a slip');
 });
