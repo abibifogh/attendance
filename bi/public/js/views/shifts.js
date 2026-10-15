@@ -379,6 +379,32 @@ export async function renderShifts(root, { range }) {
     return load(null, { cached: true });
   }
 
+  /**
+   * Open the shift something waiting for an admin is about: an exception by
+   * its key, or an ASSD line (`seq:N`). Keys that name their day and shift
+   * open it directly; one that names only a line is found by the shift whose
+   * ASSD numbers run around it.
+   */
+  async function openWhere(key, button = null, dayHint = null) {
+    const k = String(key);
+    const known = data?.exceptions?.find((x) => x.key === k && x.day && x.slot);
+    if (known) return openShift(known.day, known.slot);
+    const named = /^[a-z-]+:(\d{4}-\d{2}-\d{2}):(morning|afternoon|night)\b/.exec(k);
+    if (named) return openShift(named[1], named[2]);
+    const line = /^(?:seq|[a-z-]+):(\d+)(?::\d+)?$/.exec(k);
+    const fail = (text) => { if (button) { button.textContent = text; button.disabled = true; } };
+    if (!line) return fail('Shift not known');
+    const seq = Number(line[1]);
+    try {
+      const day = dayHint || (await api(`/shifts/where?seq=${seq}`)).day;
+      if (!day) return fail('Not in the journal');
+      // A night's lines after midnight carry the next day's date.
+      const d = await fetchPeriod({ from: plusDays(day, -1), to: day });
+      const s = d.days.flatMap((x) => x.shifts).find((x) => x.startSeq <= seq && seq <= x.endSeq);
+      return s ? openShift(s.day, s.slot) : fail('Shift not found');
+    } catch (err) { return fail(err.message); }
+  }
+
   function remember() {
     store.set('mode', mode);
     store.set('anchor', anchor);
@@ -2627,14 +2653,14 @@ export async function renderShifts(root, { range }) {
         out.push({
           id: `aa:${a.type}:${a.id}`, kind: 'admin', title: a.type === 'link' ? `Reconciled ${a.keys.length} together` : `Answered “${a.answer}”`,
           sub: `by ${a.by}`, amount: '', chip: ['none', 'Approve'], tone: 'none', age: daysAgo(a.at), counts: true,
-          render: () => till.answerApprovalCard(a, () => after('Done.')),
+          render: () => till.answerApprovalCard(a, () => after('Done.'), { open: openWhere }),
         });
       }
       for (const a of sources.till.approvals || []) {
         out.push({
           id: `co:${a.seq}`, kind: 'admin', title: `Correction · ASSD ${a.seq}`, sub: `by ${a.by}${a.day ? ` · ${dayText(a.day)}` : ''}`,
           amount: money(a.amount), chip: ['none', 'Approve'], tone: 'none', age: daysAgo(a.at), counts: true,
-          render: () => till.correctionCard(a, () => after('Done.')),
+          render: () => till.correctionCard(a, () => after('Done.'), { open: openWhere }),
         });
       }
     }

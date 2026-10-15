@@ -997,3 +997,13 @@ test('a guest who paid more: refund owed until paid back, or kept apart as two',
   assert.equal(line.kind, 'keying');
   assert.equal(line.split.key, x.key);
 });
+
+test('the day an ASSD line is on, so an approval can open its shift', async () => {
+  const env = await loaded();
+  const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+  const s = out.days[0].shifts[0];
+  assert.ok(s.startSeq <= s.endSeq, 'each shift says which ASSD lines are its own');
+  assert.deepEqual(await routes.whereIs(env, { seq: s.startSeq }), { seq: s.startSeq, day: '2026-08-01' });
+  assert.deepEqual(await routes.whereIs(env, { seq: 1 }), { seq: 1, day: null });
+  await assert.rejects(routes.whereIs(env, { seq: 'x' }), /Which ASSD line/);
+});
