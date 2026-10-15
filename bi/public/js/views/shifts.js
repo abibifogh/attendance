@@ -99,7 +99,10 @@ const monthEnd = (day) => { const d = new Date(`${monthStart(day)}T12:00:00Z`); 
 const plusMonths = (day, n) => { const d = new Date(`${monthStart(day)}T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 10); };
 
 /** The days a period covers, and what to call it. Weeks run Monday to Sunday, as the rota does. */
-function periodOf(mode, anchor) {
+function periodOf(mode, anchor, dates = null) {
+  if (mode === 'dates' && dates) {
+    return { from: dates.from, to: dates.to, label: `${shortDay(dates.from)} to ${shortDay(dates.to)} ${dates.to.slice(0, 4)}` };
+  }
   if (mode === 'day') {
     return { from: anchor, to: anchor, label: new Date(`${anchor}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) };
   }
@@ -189,10 +192,20 @@ export async function renderShifts(root, { range }) {
   if (!views.some(([id]) => id === section)) section = views[0]?.[0] || 'shifts';
   // Day, week or month, and the day it is anchored on. The anchor follows the
   // window chosen at the top of Insight until somebody moves it here.
+  // Or any days somebody chooses, From and To: as many as a month for whoever
+  // may see a month, a week for whoever may see a week.
+  const longest = may('month') ? 62 : may('week') ? 7 : 0;
+  const choices = longest ? [...periods, 'dates'] : periods;
   let mode = store.get('mode', 'week');
-  if (!PERIODS.includes(mode) || (periods.length && !periods.includes(mode))) mode = periods.includes('week') ? 'week' : periods[0] || 'week';
+  if (!choices.includes(mode)) mode = periods.includes('week') ? 'week' : periods[0] || 'week';
   let anchor = store.get('anchorFor', '') === range.to ? store.get('anchor', range.to) : range.to;
-  let period = periodOf(mode, anchor);
+  let dates = (() => {
+    const [from, to] = String(store.get('dates', '')).split('|');
+    return /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) && from <= to ? { from, to } : { from: plusDays(anchor, -6), to: anchor };
+  })();
+  const periodNow = () => periodOf(mode, anchor, dates);
+  const spanOf = (d) => Math.round((Date.parse(`${d.to}T12:00:00Z`) - Date.parse(`${d.from}T12:00:00Z`)) / 86400000) + 1;
+  let period = periodNow();
   let jumped = false;
   let currentId = store.get('shift', null);
   // A shift opened from the period: its story fills the Shifts tab until Back.
@@ -261,7 +274,7 @@ export async function renderShifts(root, { range }) {
   function readAhead() {
     if (!canShifts) return;
     const others = [...periods.filter((m) => m !== mode).map((m) => periodOf(m, anchor)),
-      periodOf(mode, mode === 'day' ? plusDays(anchor, -1) : mode === 'week' ? plusDays(anchor, -7) : plusMonths(anchor, -1))];
+      mode === 'dates' ? null : periodOf(mode, mode === 'day' ? plusDays(anchor, -1) : mode === 'week' ? plusDays(anchor, -7) : plusMonths(anchor, -1))].filter(Boolean);
     setTimeout(() => { for (const p of others) fetchPeriod(p).catch(() => {}); }, 400);
   }
 
@@ -271,7 +284,7 @@ export async function renderShifts(root, { range }) {
    * something has just changed.
    */
   async function load(notice = null, { cached = false } = {}) {
-    period = periodOf(mode, anchor);
+    period = periodNow();
     if (!cached) cache.clear();
     const waitingFor = canShifts && !cache.has(keyOf(period));
     if (waitingFor && view.firstChild) view.classList.add('sh-loading');
@@ -317,13 +330,14 @@ export async function renderShifts(root, { range }) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return paint();
     }
-    if (PERIODS.includes(next)) {
+    if (PERIODS.includes(next) || next === 'dates') {
       section = 'shifts';
       detail = false;
       store.set('section', section);
-      if (periods.includes(next) && (next !== mode || (day && day !== anchor))) {
+      if (choices.includes(next) && (next !== mode || (day && day !== anchor))) {
         mode = next;
         if (day) anchor = day;
+        if (mode === 'dates') anchor = dates.to;
         remember();
         return load(null, { cached: true });
       }
@@ -355,6 +369,16 @@ export async function renderShifts(root, { range }) {
     store.set('mode', mode);
     store.set('anchor', anchor);
     store.set('anchorFor', range.to);
+    store.set('dates', `${dates.from}|${dates.to}`);
+  }
+
+  /** Day, week, month or chosen dates, staying on the tab somebody is on. */
+  function setMode(next) {
+    if (next === mode || !choices.includes(next)) return undefined;
+    mode = next;
+    if (mode === 'dates') anchor = dates.to;
+    remember();
+    return load(null, { cached: true });
   }
 
   /** Move the period: a day, a week or a month at a time, or to a given day. */
@@ -363,7 +387,14 @@ export async function renderShifts(root, { range }) {
     remember();
     return load(notice, { cached });
   }
-  const step = (n) => moveTo(mode === 'day' ? plusDays(anchor, n) : mode === 'week' ? plusDays(anchor, 7 * n) : plusMonths(anchor, n));
+  const step = (n) => {
+    if (mode === 'dates') {
+      const by = spanOf(dates) * n;
+      dates = { from: plusDays(dates.from, by), to: plusDays(dates.to, by) };
+      return moveTo(dates.to);
+    }
+    return moveTo(mode === 'day' ? plusDays(anchor, n) : mode === 'week' ? plusDays(anchor, 7 * n) : plusMonths(anchor, n));
+  };
 
   // ------------------------------------------------------------- facts --
 
@@ -440,8 +471,10 @@ export async function renderShifts(root, { range }) {
           type: 'button', role: 'tab', 'aria-selected': String(section === id), dataset: { tab: id }, onclick: () => go(id),
         }, label, badgeOf(id) ? h('span.sh-badge', String(badgeOf(id))) : null))) : null,
         h('span.sh-rule', { 'aria-hidden': 'true' }),
-        section === 'shifts' && !detail && periods.length > 1 ? h('div.sh-span', { role: 'group', 'aria-label': 'Day, week or month' },
-          periods.map((m) => h('button', { type: 'button', 'aria-pressed': String(mode === m), onclick: () => go(m) }, m[0].toUpperCase() + m.slice(1)))) : null,
+        ((section === 'shifts' && !detail) || section === 'inbox') && choices.length > 1 ? h('div.sh-span', { role: 'group', 'aria-label': 'Day, week, month or dates' },
+          choices.map((m) => h('button', {
+            type: 'button', 'aria-pressed': String(mode === m), onclick: () => (section === 'shifts' ? go(m) : setMode(m)),
+          }, m[0].toUpperCase() + m.slice(1)))) : null,
         ['settings', 'files'].includes(section) || (section === 'shifts' && detail) ? null : periodBar(),
         data.journalEndsInside ? h('details.sh-jnote',
           h('summary', `Journal ends inside ${shortDay(data.journalEndsInside.day)} ${SLOT[data.journalEndsInside.slot].label.toLowerCase()}`),
@@ -463,7 +496,8 @@ export async function renderShifts(root, { range }) {
     if (!has) return mount(v, nothingYet());
     if (section === 'people') return peopleView(v);
     if (detail) return shiftView(v);
-    ({ day: dayView, week, month: monthView })[mode](v);
+    // Chosen dates: side by side up to ten days, as a calendar beyond.
+    ({ day: dayView, week, month: monthView, dates: spanOf(dates) <= 10 ? week : monthView })[mode](v);
     return undefined;
   }
 
@@ -471,6 +505,7 @@ export async function renderShifts(root, { range }) {
   function periodBar() {
     const latest = data.coverage?.journal?.to || null;
     const away = latest && (latest < period.from || latest > period.to);
+    if (mode === 'dates') return datesBar();
     return h('div.sh-period',
       h('button.sh-arrow', { type: 'button', 'aria-label': `Previous ${mode}`, onclick: () => step(-1) }, '‹'),
       h('strong.sh-plabel', period.label),
@@ -478,10 +513,35 @@ export async function renderShifts(root, { range }) {
       away ? h('button.btn', { type: 'button', onclick: () => moveTo(latest) }, `Latest: ${shortDay(latest)}`) : null);
   }
 
+  /** From and To, for days that are not one day, week or month. */
+  function datesBar() {
+    const from = h('input', { type: 'date', value: dates.from, 'aria-label': 'From' });
+    const to = h('input', { type: 'date', value: dates.to, 'aria-label': 'To' });
+    const said = h('small.sh-dsaid');
+    const show = () => {
+      if (!from.value || !to.value) { said.textContent = 'Both dates, please.'; return undefined; }
+      // Backwards is a slip: turned round, not refused.
+      let next = from.value <= to.value ? { from: from.value, to: to.value } : { from: to.value, to: from.value };
+      let note = null;
+      if (spanOf(next) > longest) {
+        next = { from: plusDays(next.to, -(longest - 1)), to: next.to };
+        note = banner('warning', `${longest} days at most at a time: showing ${shortDay(next.from)} to ${shortDay(next.to)}.`);
+      }
+      dates = next;
+      return moveTo(dates.to, note);
+    };
+    return h('div.sh-period.sh-dates',
+      h('button.sh-arrow', { type: 'button', 'aria-label': 'Earlier days', onclick: () => step(-1) }, '‹'),
+      h('label', 'From', from), h('label', 'To', to),
+      h('button.btn', { type: 'button', onclick: show }, 'Show'),
+      h('button.sh-arrow', { type: 'button', 'aria-label': 'Later days', onclick: () => step(1) }, '›'),
+      said);
+  }
+
   function nothingYet() {
     const c = data.coverage || {};
     return h('div.card',
-      h('h2', `No shifts in this ${mode} yet`),
+      h('h2', mode === 'dates' ? 'No shifts on these days yet' : `No shifts in this ${mode} yet`),
       h('p.sh-sub', c.journal
         ? `The ASSD journal loaded so far covers ${shortDay(c.journal.from)} to ${shortDay(c.journal.to)}. Choose days inside that, or load the journal for these.`
         : 'Load the ASSD detail journal to begin. The bank statement and the card terminal report make the card and MoMo checks possible; the journal alone already gives the cash.'),

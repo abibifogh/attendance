@@ -1292,6 +1292,10 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .sh-band .sh-arrow { background: transparent; border-color: var(--band-line); color: #fff; }
 .sh-band .sh-plabel { color: #fff; }
 .sh-band .sh-period .btn { background: transparent; border-color: var(--band-line); color: #fff; }
+.sh-dates label { display: inline-flex; align-items: center; gap: .35rem; font-size: .85rem; }
+.sh-band .sh-dates label { color: var(--band-dim); }
+.sh-dates input[type=date] { padding: .3rem .45rem; border-radius: 8px; font: inherit; font-size: .9rem; }
+.sh-band .sh-dates input[type=date] { background: transparent; color: #fff; border: 1px solid var(--band-line); color-scheme: dark; }
 .sh-band .sh-jnote summary { background: #3b3320; border-color: #6b5a2a; color: #f0cf7c; }
 .sh-band .sh-jnote summary::before { color: #f0cf7c; }
 .sh-band .sh-jnote p { color: var(--ink-2); }
