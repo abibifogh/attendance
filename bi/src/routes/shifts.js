@@ -896,7 +896,8 @@ export async function shifts(env, query, account) {
     const kind = r.kind || 'claim';
     reportPos.get(key).push({
       name: r.po, vendor: r.vendor || '', total: kind === 'claim' ? Number(r.total) || 0 : Number(r.paid) || 0,
-      state: r.state || 'purchase', fromReport: true, ...(kind !== 'claim' ? { kind } : {}),
+      // HIVE saves an approved PO as "confirmed"; Odoo's own word for it is "purchase".
+      state: !r.state || r.state === 'confirmed' ? 'purchase' : r.state, fromReport: true, ...(kind !== 'claim' ? { kind } : {}),
       reported: reported.has(String(r.po).toUpperCase()), advance: Number(r.advance) === 1,
     });
   }

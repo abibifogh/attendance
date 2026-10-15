@@ -633,3 +633,11 @@ test('a drawer difference reconciled with others leaves its person’s list; one
   await env.DB.prepare('DELETE FROM shift_link').run();
   assert.equal((await drawer()).length, 1, 'undone: back on it');
 });
+
+test('a PO HIVE saved as confirmed reads as approved on the shift', async () => {
+  const { env, hive } = await setUp();
+  hive.raw.prepare("UPDATE till_po SET state = 'confirmed'").run();
+  const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+  const bravo = out.days[0].shifts.find((s) => s.slot === 'afternoon');
+  assert.deepEqual(bravo.expense.odoo.orders.map((o) => [o.name, o.state]), [['P00412', 'purchase']]);
+});
