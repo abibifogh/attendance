@@ -728,6 +728,14 @@ export async function refundPaid(env, body, account) {
   return { ok: true };
 }
 
+/** The day an ASSD line was keyed on. */
+export async function whereIs(env, query) {
+  const seq = Number(query?.seq);
+  if (!Number.isInteger(seq)) throw badRequest('Which ASSD line?');
+  const row = await first(env.DB, 'SELECT day FROM assd_entry WHERE seq = ?1', seq);
+  return { seq, day: row?.day || null };
+}
+
 /** What has been loaded, and nothing about what is in it: the Upload page. */
 export async function filesStatus(env) {
   const uploads = await all(env.DB, 'SELECT kind, name, from_day, to_day, rows, note, by_name, at FROM shift_upload ORDER BY id DESC LIMIT 40');

@@ -154,6 +154,8 @@ const ROUTES = [
       `${ctx.account?.name || 'A supervisor'} answered ${stay ? 'an unpaid stay' : 'an exception'}: ${ctx.body?.answer || ''}.`);
   }],
   ['POST', '/api/shifts/answer-many', 'shifts', answerMany],
+  // Which day an ASSD line is on, so an approval can open its shift.
+  ['GET', '/api/shifts/where', 'shifts', adminOnly((env, ctx) => shiftRoutes.whereIs(env, ctx.query))],
   // Refunds owed to guests who paid more by card or MoMo than ASSD shows.
   ['GET', '/api/shifts/refunds', 'shifts', area('bank', 1, (env) => shiftRoutes.refundsOwed(env))],
   ['POST', '/api/shifts/refunds/paid', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.refundPaid(env, ctx.body, ctx.account))],
