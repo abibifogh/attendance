@@ -97,7 +97,13 @@ const MOVED = {
 };
 const PERIODS = ['day', 'week', 'month'];
 /** The Inbox's kinds, in the order the chips show them. */
-const INBOX_KINDS = [['drawer', 'Drawer'], ['bank', 'Card & bank'], ['po', 'POs'], ['advance', 'Advances'], ['stay', 'Unpaid stays'], ['admin', 'Waiting for admin']];
+const INBOX_KINDS = [['drawer', 'Drawer'], ['bank', 'Card & bank'], ['po', 'POs'], ['advance', 'Advances'], ['stay', 'Unpaid stays'], ['admin', 'Waiting for admin'],
+  ['odoo', 'Odoo'], ['mine', '✓ Mine in Odoo']];
+/** What Odoo calls the records activities sit on, in words. */
+const ODOO_MODELS = { 'purchase.order': 'Purchase order', 'account.move': 'Bill or invoice', 'res.partner': 'Contact', 'stock.picking': 'Transfer', 'hr.employee': 'Employee', 'crm.lead': 'Lead' };
+const odooWhat = (a) => `${ODOO_MODELS[a.model] || a.model}${a.resName ? ` ${a.resName}` : ''}`;
+const odooTitle = (a) => a.summary || `${a.type || 'Activity'}${a.resName ? ` ${a.resName}` : ''}`;
+const odooWhen = (a) => (a.state === 'overdue' ? `${a.late} day${a.late === 1 ? '' : 's'} late` : a.state === 'today' ? 'Today' : 'Planned');
 /** Exception groups about the drawer; the rest are card, MoMo and the bank. */
 const DRAWER_GROUPS = new Set(['drawer', 'unlabelled', 'laundry']);
 
@@ -255,7 +261,8 @@ export async function renderShifts(root, { range }) {
   // approvals. Read in the background on opening, so the tab shows its count,
   // and again after anything in it is answered.
   let stays = null;
-  const sources = { todo: null, advances: null, till: null, refunds: null };
+  const sources = { todo: null, advances: null, till: null, refunds: null, odoo: null };
+  let askOdoo = false;
   function readStays() {
     if (!can.stays) return Promise.resolve(null);
     return api('/stays').then((d) => { stays = d; return d; });
@@ -268,6 +275,9 @@ export async function renderShifts(root, { range }) {
       can.advances ? quiet(api('/advances').then((d) => { sources.advances = d; })) : null,
       can.answers || can.approvals ? quiet(till.read(force).then((d) => { sources.till = d; })) : null,
       may('bank') ? quiet(api('/shifts/refunds').then((d) => { sources.refunds = d; })) : null,
+      // Odoo's activities: everyone's for an admin, one's own once linked, and those on POs with Odoo shared.
+      // Odoo itself is asked again only on Refresh now; otherwise at most every ten minutes.
+      quiet(api(`/odoo/activities${askOdoo ? '?force=1' : ''}`).then((d) => { sources.odoo = d; askOdoo = false; })),
     ].filter(Boolean));
   }
   readInbox().then(() => { if (view.isConnected && data) paint(); }).catch(() => {});
@@ -1860,6 +1870,23 @@ export async function renderShifts(root, { range }) {
    * them: Odoo's state and whether each is on the expense form. Nothing to
    * type here; a PO is added in HIVE, where the shift is closed.
    */
+  /** Open Odoo activities on these POs, by PO name. */
+  function waitingOn(orders) {
+    const names = new Set(orders.map((o) => String(o.name).toUpperCase()));
+    const out = new Map();
+    for (const a of sources.odoo?.activities || []) {
+      if (a.model !== 'purchase.order' || !names.has(String(a.resName).toUpperCase())) continue;
+      const key = String(a.resName).toUpperCase();
+      if (!out.has(key)) out.set(key, []);
+      out.get(key).push(a);
+    }
+    return out;
+  }
+  const waitingCell = (list) => (list?.length ? list.map((a) => h('div',
+    h('b', a.summary || a.type || 'Activity'), ` · ${a.account || a.userName || 'nobody'}`,
+    a.state !== 'planned' ? h('div', h(`span.${a.state === 'overdue' ? 'sh-late' : 'sh-due'}`, odooWhen(a).toLowerCase())) : h('div.small', `due ${dayText(a.deadline)}`)))
+    : h('span', { style: 'color:var(--ink-2)' }, '—'));
+
   function odooBlock(s) {
     const exp = s.expense || {};
     const orders = exp.odoo?.orders || [];
@@ -1879,6 +1906,7 @@ export async function renderShifts(root, { range }) {
         { label: 'Paid', num: true, get: (o) => money(o.total), foot: (list) => money(list.reduce((t, o) => t + o.total, 0)) },
         { label: 'Odoo', get: (o) => (approved(o) ? h('span.sh-chip.ok', 'Approved') : o.advance ? h('span.sh-chip.over', 'Approve in Odoo') : h('span.sh-chip.none', o.state)) },
         { label: 'Expense form', get: formChip },
+        ...(waitingOn(orders).size ? [{ label: 'Waiting on', get: (o) => waitingCell(waitingOn(orders).get(String(o.name).toUpperCase())) }] : []),
       ], orders, { footer: orders }),
       (exp.odoo?.unknown || []).length ? banner('warning', `Odoo does not know ${exp.odoo.unknown.join(', ')}.`) : null,
       s.register?.expenses > 0 ? poLinker(s) : null);
@@ -2529,6 +2557,23 @@ export async function renderShifts(root, { range }) {
   // -------------------------------------------------------------- inbox --
 
   /** Pairs that are probably the same money, each reconciled with one click. */
+  /** One Odoo activity: what it is on, whose it is, when it was due; done in Odoo, not here. */
+  function odooCard(a) {
+    const row = (label, ...value) => h('tr', h('td', { style: 'width:9rem;color:var(--ink-2)' }, label), h('td', ...value));
+    return h(`article.sh-ex.${a.state === 'overdue' ? 'bad' : 'warn'}.sh-odooact`,
+      h('div.hd', h('span.sq', 'O'), h('h3', odooTitle(a)), h('span.amt', odooWhen(a))),
+      h('div.sh-meta', h('span', `${a.type || 'Activity'} · in Odoo`)),
+      h('table.sh-otable', h('tbody',
+        row('On', `${odooWhat(a)}${a.partner ? ` · ${a.partner}` : ''}${a.amount != null ? ` · ${money(a.amount)}` : ''}`),
+        row('Waiting on', a.userName ? h('b', a.userName) : 'nobody', a.account && a.account !== a.userName ? ` (${a.account} in Insight)` : ''),
+        row('Due', a.deadline ? dayText(a.deadline) : '—', a.state === 'overdue' ? h('span.sh-late', ` · ${odooWhen(a)}`) : a.state === 'today' ? ' · today' : ''),
+        a.note ? row('Note', a.note) : null,
+        a.shift ? row('Shift', `Paid from the drawer on ${dayText(a.shift.day)} ${SLOT[a.shift.slot]?.label.toLowerCase() || ''}${a.shift.name ? ` (${a.shift.name})` : ''} · `,
+          h('button.sh-link', { type: 'button', onclick: () => openShift(a.shift.day, a.shift.slot) }, 'Open the shift')) : null)),
+      h('div.sh-labels', a.url ? h('a.btn.primary', { href: a.url, target: '_blank', rel: 'noopener' }, 'Open in Odoo') : null),
+      h('p.small', 'Done in Odoo, not here: Insight only reads. It leaves this list at the next read after it is marked done.'));
+  }
+
   /** Refunds owed to guests who paid more than ASSD shows, whatever days are on screen, until paid back. */
   function refundsCard() {
     const owed = sources.refunds?.owed || [];
@@ -2646,6 +2691,16 @@ export async function renderShifts(root, { range }) {
           age: daysAgo(i.answer?.at || i.day), counts: true, render: () => till.issueCard(i, () => after('Done.')),
         });
       }
+    }
+    // Odoo activities overdue or due today: everybody's for an admin, and one's own.
+    for (const a of (sources.odoo?.activities || []).filter((x) => x.state !== 'planned')) {
+      const item = (kind) => ({
+        id: `${kind}:${a.id}`, kind, title: odooTitle(a), sub: `${odooWhat(a)}${a.partner ? ` · ${a.partner}` : ''}${kind === 'odoo' ? ` · ${a.account || a.userName || 'nobody'}` : ''}`,
+        amount: '', chip: [a.state === 'overdue' ? 'short' : 'over', odooWhen(a)], tone: a.state === 'overdue' ? 'short' : 'over',
+        age: a.late, counts: kind === 'mine' ? !admin : true, render: () => odooCard(a),
+      });
+      if (admin) out.push(item('odoo'));
+      if (a.mine) out.push(item('mine'));
     }
     // What waits for an admin: supervisors' answers and corrections.
     if (can.approvals && sources.till) {
@@ -2802,6 +2857,7 @@ export async function renderShifts(root, { range }) {
           }
           const l = await api('/todo/laundry', { method: 'POST' }).catch((err) => ({ error: err.message }));
           parts.push(l.error ? `Laundry: ${l.error}` : `Laundry: ${dayText(l.from)} to ${dayText(l.to)} read`);
+          askOdoo = true;
           await refreshInbox(`${parts.join('. ')}.`);
         } catch (err) { said.textContent = err.message; said.className = 'small form-error'; refresh.disabled = false; }
       },
@@ -2851,6 +2907,8 @@ export async function renderShifts(root, { range }) {
         h('div.ib-refresh', refresh, said)),
       inbox.kind === 'all' || inbox.kind === 'bank' ? pairsCard() : null,
       inbox.kind === 'all' || inbox.kind === 'bank' ? refundsCard() : null,
+      // Odoo did not answer: the last read is what is shown, and why is said.
+      sources.odoo?.error && ['odoo', 'mine'].includes(inbox.kind) ? banner('warning', `${sources.odoo.error} Showing what was read${sources.odoo.readAt ? ` at ${String(sources.odoo.readAt).slice(0, 16)}` : ' last'}.`) : null,
       inbox.kind === 'po' && admin ? formMatchCard() : null,
       selectAll || bulkBar ? h('div.ib-bulk', selectAll, bulkBar, giveTo) : null,
       shown.length ? h('div.ib-split',
@@ -2976,11 +3034,49 @@ export async function renderShifts(root, { range }) {
 
   // ------------------------------------------------------------ people --
 
+  /** Each person's Odoo activities this month: open by when due, and done, late or not. Tap a name for the list. */
+  function odooPeople() {
+    const people = sources.odoo?.people;
+    if (!admin || !people?.length) return null;
+    const body = h('tbody');
+    let open = null;
+    const draw = () => body.replaceChildren(...people.flatMap((p) => {
+      const mine = (sources.odoo.activities || []).filter((a) => Number(a.userId) === p.userId);
+      const total = Math.max(1, p.overdue + p.today + p.planned);
+      return [
+        h(`tr.tl-acctrow${open === p.userId ? '.on' : ''}`,
+          h('td', h('button.sh-link', { type: 'button', 'aria-expanded': String(open === p.userId), onclick: () => { open = open === p.userId ? null : p.userId; draw(); } },
+            `${open === p.userId ? '▾' : '▸'} ${p.name}`), p.linked ? null : h('small', { style: 'color:var(--ink-2)' }, ' (Odoo only)')),
+          h('td.num', { style: p.overdue ? 'color:var(--sh-bad-ink);font-weight:700' : '' }, String(p.overdue)),
+          h('td.num', String(p.today)), h('td.num', String(p.planned)), h('td.num', String(p.done)), h('td.num', String(p.doneLate)),
+          h('td', h('div.sh-actbar',
+            h('i', { style: `width:${(p.overdue / total) * 100}%;background:var(--sh-bad)` }),
+            h('i', { style: `width:${(p.today / total) * 100}%;background:var(--sh-warn)` }),
+            h('i', { style: `width:${(p.planned / total) * 100}%;background:var(--series-1)` })))),
+        open === p.userId ? h('tr.tl-account', h('td', { colspan: '7' },
+          mine.length ? h('table', h('tbody', mine.map((a) => h('tr',
+            h('td', h('b', odooTitle(a)), h('small', { style: 'display:block' }, `${odooWhat(a)}${a.partner ? ` · ${a.partner}` : ''}`)),
+            h('td', a.deadline ? dayText(a.deadline) : '—'),
+            h('td', h(`span.${a.state === 'overdue' ? 'sh-late' : a.state === 'today' ? 'sh-due' : 'sh-planned'}`, odooWhen(a))),
+            h('td', a.url ? h('a', { href: a.url, target: '_blank', rel: 'noopener' }, 'Open in Odoo') : null)))))
+            : h('p.small', 'Nothing open in Odoo.'))) : null,
+      ].filter(Boolean);
+    }));
+    draw();
+    return h('section.card',
+      h('div.sh-cardhead', h('div', h('h2', 'Odoo activities'),
+        h('p.sh-sub', `Everyone with activities in Odoo: open ones by when they are due, and this month's done, and how many of those late. Read from Odoo${sources.odoo.readAt ? ` at ${String(sources.odoo.readAt).slice(11, 16)}` : ''}; never changed there.`))),
+      h('div.table-wrap', h('table',
+        h('thead', h('tr', ['Who', 'Overdue', 'Today', 'Planned', 'Done this month', 'Done late', ''].map((t, i) => h(i && i < 6 ? 'th.num' : 'th', t)))),
+        body)));
+  }
+
   function peopleView(v) {
     // Each person's list from HIVE, read on its own, under their drawers.
     const extras = h('div.sh-peoplelists');
     if (may('answers')) till.read().then((d) => mount(extras, till.peopleExtras(d))).catch(() => {});
-    if (!may('net')) { mount(v, extras); return; }
+    const odooCard = odooPeople();
+    if (!may('net')) { mount(v, extras, odooCard); return; }
     const rows = data.people.map((p) => ({ ...p, mine: shifts.filter((s) => s.user === p.user) })).filter((p) => p.mine.length);
     const widest = Math.max(1, ...rows.map((p) => Math.abs(p.variance)));
     mount(v, h('section.card',
@@ -3001,7 +3097,7 @@ export async function renderShifts(root, { range }) {
           h('div.sh-strip', p.mine.map((s) => h('button', {
             type: 'button', title: `${dayText(s.day)} · ${SLOT[s.slot].label}`, style: `background:${TONE[tone(s)]}`, onclick: () => go('shift', s.id),
           }, dayText(s.day, { day: 'numeric' })))));
-      }))), extras);
+      }))), extras, odooCard);
   }
 
   // ------------------------------------------------------------- files --

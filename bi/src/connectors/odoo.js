@@ -505,3 +505,72 @@ export async function confirmedPoBills({ config: settings, token, since, fetchIm
     };
   });
 }
+
+// ------------------------------------------------------------ activities --
+
+/** Odoo keeps an activity's note as HTML; what a person wrote, as text. */
+const plain = (html) => String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+  .trim();
+
+/**
+ * Every activity still to do in Odoo that its read-only user may see: an
+ * activity done is no longer one, so this is the open list. One `search_read`
+ * on `mail.activity`, and one each on the purchase orders and bills they sit
+ * on, for the supplier and the amount.
+ */
+export async function openActivities({ config: settings, token, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const rows = await searchRead(config, 'mail.activity', [],
+    ['res_model', 'res_id', 'res_name', 'activity_type_id', 'summary', 'note', 'date_deadline', 'user_id'], { fetchImpl });
+  const brief = new Map();
+  for (const model of ['purchase.order', 'account.move']) {
+    const ids = [...new Set(rows.filter((r) => r.res_model === model).map((r) => r.res_id))];
+    for (let i = 0; i < ids.length; i += 200) {
+      // eslint-disable-next-line no-await-in-loop
+      const found = await searchRead(config, model, [['id', 'in', ids.slice(i, i + 200)]], ['name', 'partner_id', 'amount_total'], { fetchImpl });
+      for (const f of found) brief.set(`${model}:${f.id}`, { partner: refName(f.partner_id), amount: toMinor(f.amount_total) });
+    }
+  }
+  return rows.map((r) => ({
+    id: r.id,
+    model: String(r.res_model || ''),
+    resId: r.res_id ?? null,
+    resName: String(r.res_name || ''),
+    type: refName(r.activity_type_id),
+    summary: String(r.summary || ''),
+    note: plain(r.note),
+    deadline: r.date_deadline ? String(r.date_deadline).slice(0, 10) : null,
+    userId: refId(r.user_id),
+    userName: refName(r.user_id),
+    ...(brief.get(`${r.res_model}:${r.res_id}`) || { partner: null, amount: null }),
+  }));
+}
+
+/**
+ * Activities marked done since a day: Odoo writes each into the record's
+ * history as a message carrying its activity type. One `search_read` on
+ * `mail.message`. The author is a partner, not a user.
+ */
+export async function doneActivities({ config: settings, token, since, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const rows = await searchRead(config, 'mail.message',
+    [['mail_activity_type_id', '!=', false], ['date', '>=', `${since} 00:00:00`]],
+    ['model', 'res_id', 'record_name', 'mail_activity_type_id', 'author_id', 'date'], { fetchImpl });
+  return rows.map((r) => ({
+    id: r.id,
+    model: String(r.model || ''),
+    resId: r.res_id ?? null,
+    resName: String(r.record_name || ''),
+    type: refName(r.mail_activity_type_id),
+    partnerId: refId(r.author_id),
+    doneAt: r.date ? String(r.date).slice(0, 19) : null,
+  }));
+}
+
+/** Odoo's own people (not portal users): who an activity can be for. One `search_read` on `res.users`. */
+export async function odooUsers({ config: settings, token, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const rows = await searchRead(config, 'res.users', [['share', '=', false]], ['name', 'login', 'email', 'partner_id'], { fetchImpl });
+  return rows.map((r) => ({ id: r.id, name: String(r.name || ''), login: String(r.login || ''), email: String(r.email || ''), partnerId: refId(r.partner_id) }));
+}

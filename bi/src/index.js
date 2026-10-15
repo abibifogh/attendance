@@ -21,6 +21,7 @@ import * as todo from './routes/todo.js';
 import * as advances from './routes/advances.js';
 import * as formmatch from './routes/formmatch.js';
 import * as np from './routes/niceplace.js';
+import * as odooact from './routes/odooact.js';
 import { sendDailySummary } from './routes/summary.js';
 import { verifyForm, verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
@@ -192,6 +193,10 @@ const ROUTES = [
   ['POST', '/api/till/approve', 'shifts', (env, ctx) => till.approve(env, ctx.body, ctx.account)],
   // A difference put on staff accounts, and taken back off.
   ['GET', '/api/till/staff', 'shifts', (env, ctx) => till.staffList(env, ctx.account)],
+  // Odoo activities, read only: what waits for whom, and who is who in Odoo.
+  ['GET', '/api/odoo/activities', 'shifts', (env, ctx) => odooact.activitiesView(env, ctx.query, ctx.account)],
+  ['GET', '/api/odoo/links', 'owner', (env, ctx) => odooact.linksView(env, ctx.account)],
+  ['POST', '/api/odoo/links', 'owner', (env, ctx) => odooact.saveLink(env, ctx.body, ctx.account)],
   ['POST', '/api/till/charge', 'shifts', (env, ctx) => till.moveToStaff(env, ctx.body, ctx.account)],
   ['POST', '/api/till/charge/undo', 'shifts', (env, ctx) => till.undoMove(env, ctx.body, ctx.account)],
   ['POST', '/api/till/settings', 'shifts', (env, ctx) => till.saveSettings(env, ctx.body, ctx.account)],

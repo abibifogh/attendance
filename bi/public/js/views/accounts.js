@@ -19,19 +19,47 @@ const when = (sql) => (sql ? new Date(`${String(sql).replace(' ', 'T')}Z`)
  * the till", and that is a column, not five separate pages.
  */
 export async function renderAccounts(root) {
-  const [data, invited] = await Promise.all([api('/accounts'), api('/invitations').catch(() => ({ invitations: [] }))]);
+  const [data, invited, links] = await Promise.all([api('/accounts'), api('/invitations').catch(() => ({ invitations: [] })),
+    api('/odoo/links').catch(() => null)]);
   const view = h('div');
   add(root, view);
   let invitations = invited.invitations;
   let flash = null;
+  // Who is who in Odoo; the column shows only once Odoo has been read.
+  let odoo = links && links.users?.length ? links : null;
   paint(data);
 
   /** After any change to invitations: both lists, since an invitation makes an account. */
   async function repaint(message = null) {
     flash = message;
-    const [fresh, inv] = await Promise.all([api('/accounts'), api('/invitations')]);
+    const [fresh, inv, links] = await Promise.all([api('/accounts'), api('/invitations'),
+      // Who is who in Odoo; nothing when Odoo is not set up or not answering.
+      api('/odoo/links').catch(() => null)]);
     invitations = inv.invitations;
+    odoo = links && links.users?.length ? links : null;
     paint(fresh);
+  }
+
+  /** Each person's Odoo login: chosen once, suggested by the same email, never assumed. */
+  function odooCell(account) {
+    const linked = odoo.links[account.id];
+    const suggested = linked == null ? odoo.suggest[account.id] : null;
+    const said = h('span.small');
+    const save = async (value) => {
+      said.textContent = 'Saving…';
+      try {
+        await api('/odoo/links', { method: 'POST', body: { accountId: account.id, odooUserId: value === '' ? null : Number(value) } });
+        await repaint(value === '' ? `${account.name} is not linked to Odoo.` : `${account.name} is linked to Odoo. Their Odoo activities show in their Inbox.`);
+      } catch (err) { said.textContent = err.message; said.className = 'small form-error'; }
+    };
+    const pick = h('select', { title: `${account.name} in Odoo`, onchange: (e) => save(e.target.value) },
+      h('option', { value: '', selected: linked == null && suggested == null }, 'Not in Odoo'),
+      odoo.users.map((u) => h('option', { value: String(u.id), selected: (linked ?? suggested) === u.id }, u.name)));
+    return h('td',
+      pick,
+      linked != null ? h('div.small', { style: { color: 'var(--good)' } }, '✓ Linked')
+        : suggested != null ? h('div.small', '✓ Same email in Odoo ', h('button.btn', { type: 'button', onclick: () => save(String(suggested)) }, 'Confirm')) : null,
+      said);
   }
 
   function paint(data) {
@@ -60,6 +88,7 @@ export async function renderAccounts(root) {
             h('thead', h('tr',
               h('th', 'Person'),
               ...systems.map((s) => h('th.num', { style: { textAlign: 'center' } }, s.label)),
+              odoo ? h('th', 'Odoo user') : null,
               h('th', ''))),
             h('tbody', accounts.map((account) => h('tr',
               h('td',
@@ -87,6 +116,7 @@ export async function renderAccounts(root) {
                     title: account.isOwner ? 'An owner reaches everything' : `${account.name} → ${system.label}`,
                     onchange: (event) => toggle(account, system, event.target.checked),
                   }))),
+              odoo ? odooCell(account) : null,
               h('td',
                 account.hasPassword ? null : h('button.btn', { onclick: () => inviteAgain(account) }, 'Invite'),
                 account.hasPassword ? null : ' ',
