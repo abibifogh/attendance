@@ -641,3 +641,62 @@ test('a PO HIVE saved as confirmed reads as approved on the shift', async () => 
   const bravo = out.days[0].shifts.find((s) => s.slot === 'afternoon');
   assert.deepEqual(bravo.expense.odoo.orders.map((o) => [o.name, o.state]), [['P00412', 'purchase']]);
 });
+
+test('an admin puts a drawer difference on staff accounts, with a reason; they are told, and undo puts it back', async () => {
+  // BRAVO (Kofi, 8) counts 20 more than the drawer should hold.
+  const lines = journal().map((l) => l.replace('00005   10 GHS   5   10,00   50,00 GHS', '00005   10 GHS   7   10,00   70,00 GHS'));
+  const { env, hive } = await setUp(lines);
+  hive.raw.exec("INSERT INTO users (id, name, role, active) VALUES (9, 'Yaw Test', 'staff', 1)");
+  const told = [];
+  const fetchImpl = async (request) => { told.push(JSON.parse(await request.text())); return Response.json({ ok: true }); };
+  const key = 'drawer:2026-08-01:afternoon';
+  const listOf = async (userId) => (await till.issuesBetween(env, '2026-08-01', '2026-08-02')).issues
+    .filter((i) => Number(i.userId) === userId && ['drawer', 'moved'].includes(i.kind)).map((i) => [i.kind, i.amount]);
+  assert.deepEqual(await listOf(8), [['drawer', 2000]]);
+
+  const move = (body, who = OWNER) => till.moveToStaff(env, { key, reason: 'Yaw relieved Kofi without a count', ...body }, who, { fetchImpl });
+  await assert.rejects(move({ shares: [{ userId: 9, amount: 2000 }] }, SUPERVISOR), /Only an admin/);
+  await assert.rejects(move({ shares: [{ userId: 9, amount: 2000 }], reason: '' }), /reason/i);
+  await assert.rejects(move({ shares: [{ userId: 9, amount: 1500 }] }), /come to GH₵15\.00 and the difference is GH₵20\.00/);
+  await assert.rejects(move({ shares: [{ userId: 9, amount: 1000 }, { userId: 9, amount: 1000 }] }), /chosen twice/);
+  await assert.rejects(move({ shares: [{ userId: 99, amount: 2000 }] }), /from the list/);
+  await assert.rejects(till.moveToStaff(env, { key: 'not-found:1', shares: [], reason: 'x' }, OWNER), /Only a drawer/);
+
+  const out = await move({ shares: [{ userId: 9, amount: 1200 }, { userId: 8, amount: 800 }] });
+  assert.equal(out.told, 2, 'both carriers told; Kofi carries a share, so no separate word that it left him');
+  assert.deepEqual(told.map((t) => [t.userIds[0], t.kind, t.title]), [
+    [9, 'till.moved', 'Moved to your account: GH₵12.00 over'],
+    [8, 'till.moved', 'Moved to your account: GH₵8.00 over'],
+  ]);
+  assert.match(told[0].body, /Kofi Test's shift\)\. Why: Yaw relieved Kofi without a count/);
+  assert.deepEqual(await listOf(8), [['moved', 800]], 'his own drawer item is replaced by his share');
+  assert.deepEqual(await listOf(9), [['moved', 1200]]);
+  const yaw = (await till.issuesBetween(env, '2026-08-01', '2026-08-02')).issues.find((i) => i.userId === 9);
+  assert.equal(yaw.moved.reason, 'Yaw relieved Kofi without a count');
+  assert.match(yaw.text, /The drawer was over by GH₵20\.00 on Kofi Test's shift\. GH₵12\.00 of it is on your account\./);
+
+  // On the Shifts screen the card is answered, with who carries what.
+  const shift = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+  const x = shift.exceptions.find((e) => e.key === key);
+  assert.equal(x.answer.answer, 'Put on a staff account');
+  assert.deepEqual(x.moved.shares.map((y) => [y.name, y.amount]), [['Yaw Test', 1200], ['Kofi Test', 800]]);
+  await assert.rejects(move({ shares: [{ userId: 9, amount: 2000 }] }), /already/);
+
+  // A settled share keeps the move; until then, undo puts it back and tells them.
+  await env.DB.prepare("INSERT INTO till_resolution (key, hive_user_id, outcome, by_name, at) VALUES (?1, 9, 'accept', 'Test Owner', '2026-08-03 09:00:00')").bind(yaw.key).run();
+  await assert.rejects(till.undoMove(env, { id: out.id }, OWNER, { fetchImpl }), /Yaw Test's share was accepted already/);
+  await env.DB.prepare('DELETE FROM till_resolution').run();
+  told.length = 0;
+  await till.undoMove(env, { id: out.id }, OWNER, { fetchImpl });
+  assert.deepEqual(told.map((t) => [t.userIds[0], t.title]), [[9, 'Taken off your account: GH₵12.00 over'], [8, 'Taken off your account: GH₵8.00 over']]);
+  assert.deepEqual(await listOf(8), [['drawer', 2000]], 'back as it was');
+  assert.deepEqual(await listOf(9), []);
+  await assert.rejects(till.undoMove(env, { id: out.id }, OWNER, { fetchImpl }), /undone already/);
+
+  // All of it on somebody else: the shift's own person is told it left them.
+  told.length = 0;
+  await move({ shares: [{ userId: 9, amount: 2000 }] });
+  assert.deepEqual(told.map((t) => [t.userIds[0], t.title]), [[9, 'Moved to your account: GH₵20.00 over'], [8, 'Moved off your list: GH₵20.00 over']]);
+  assert.match(told[1].body, /now on Yaw Test's account/);
+  assert.deepEqual(await listOf(8), []);
+});

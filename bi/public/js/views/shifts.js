@@ -32,6 +32,9 @@ const SLOT = {
 };
 // For one payment seen twice: the laundry's card payment on the hotel's terminal.
 const PAIR_ANSWERS = ['Keyed in ASSD now', 'Staff reminded', 'Explained', 'Not the same payment'];
+/** Quick reasons for putting a difference on somebody's account; the box takes the rest. */
+const MOVE_REASONS = ['Both held the drawer', 'Handed over without counting', 'Covered this shift', 'Agreed with them'];
+const MOVABLE = new Set(['drawer-short', 'drawer-over', 'handover-gap']);
 const ANSWERS = [
   'Explained', 'Corrected in ASSD', 'Guest paid another way', 'Guest owes, chasing',
   'Deposit for a later stay', 'Refund due to the guest', 'Staff to account for it', 'Not a problem',
@@ -214,6 +217,9 @@ export async function renderShifts(root, { range }) {
   // so a tick on another day or week stays while the next one is found
   // (a supervisor may only open one day at a time).
   const picked = new Set();
+  // The difference whose "Put on a staff account" panel is open, and HIVE's people, read once.
+  let moving = null;
+  let staff = null;
   const pickedAs = new Map();
   // What is being typed and not yet saved, per shift: a recount.
   const drafts = {};
@@ -2270,6 +2276,18 @@ export async function renderShifts(root, { range }) {
             try { await api('/shifts/unlink', { method: 'POST', body: { id: x.link.id } }); await load(banner('good', 'Undone. Those exceptions are open again.')); } catch (err) { said.textContent = err.message; }
           },
         }, 'Undo') : null)
+      : x.moved ? h('div.sh-done',
+        h('span', `✓ Put on ${x.moved.shares.length === 1 ? 'the account of' : 'staff accounts:'} `,
+          x.moved.shares.map((y) => `${y.name}${y.amount == null ? '' : ` ${money(Math.abs(y.amount))}`}`).join(', '),
+          `. Reason: ${x.moved.reason}`,
+          h('small', { style: 'display:block;font-weight:400' }, `${x.moved.by || 'An admin'}${x.moved.at ? `, ${String(x.moved.at).slice(0, 16)}` : ''} · told in HIVE`)),
+        admin ? h('button.sh-link', {
+          type: 'button',
+          onclick: async () => {
+            said.textContent = 'Undoing…';
+            try { await api('/till/charge/undo', { method: 'POST', body: { id: x.moved.id } }); till.forget(); await load(banner('good', 'Taken off their accounts and back on the shift. They have been told.')); } catch (err) { said.textContent = err.message; }
+          },
+        }, 'Undo') : null, said)
       : x.severity === 'info' && !x.answer && !['receipts-swapped', 'receipts-unclear', 'receipts-carried'].includes(x.kind) ? h('div.sh-done', h('span', { style: 'color:var(--ink-2)' }, 'Explained by the rules; no answer needed'))
         : x.answer ? h('div.sh-done',
           h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''}${x.answer.by ? ` (${x.answer.by}${x.answer.at ? `, ${String(x.answer.at).slice(0, 16)}` : ''})` : ''}`),
@@ -2288,8 +2306,91 @@ export async function renderShifts(root, { range }) {
             : h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change'), said)
           // Its own two buttons are the answer to a count read two ways.
           : ['receipts-unclear', 'receipts-carried'].includes(x.kind) ? said
-            : h('div.sh-answers', note, (x.kind === 'laundry-card' ? PAIR_ANSWERS : ANSWERS).map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said,
-              x.kind === 'laundry-card' ? h('p.small', { style: 'flex-basis:100%;margin:.2rem 0 0' }, 'Answered here, both are settled. “Not the same payment” splits them back into two.') : null));
+            : [h('div.sh-answers', note, (x.kind === 'laundry-card' ? PAIR_ANSWERS : ANSWERS).map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)),
+              movable(x) ? h('button.sh-movebtn', { type: 'button', 'aria-expanded': String(moving === x.key), onclick: () => { moving = moving === x.key ? null : x.key; paint(); } }, 'Put on a staff account') : null,
+              said,
+              x.kind === 'laundry-card' ? h('p.small', { style: 'flex-basis:100%;margin:.2rem 0 0' }, 'Answered here, both are settled. “Not the same payment” splits them back into two.') : null),
+            movable(x) && moving === x.key ? movePanel(x) : null]);
+  }
+
+  /** A drawer short, over or hand-over difference an admin may put on staff accounts. */
+  const movable = (x) => admin && MOVABLE.has(x.kind) && Boolean(x.amount) && !x.answer && !x.proposed && !x.link;
+
+  /** Who carries a difference, how much each, and why: all of it placed, the reason required. */
+  function movePanel(x) {
+    const whole = Math.abs(x.amount);
+    const word = x.amount < 0 ? 'short' : 'over';
+    const rows = [];
+    const list = h('div.sh-mvrows');
+    const left = h('b.num');
+    const said = h('span.small');
+    const why = h('textarea', { rows: 2, maxlength: '500', placeholder: 'What happened, in a sentence (required unless a reason above says it)' });
+    let chip = null;
+    const chips = MOVE_REASONS.map((text) => h('button.sh-mvchip', {
+      type: 'button',
+      onclick: (e) => {
+        chip = chip === text ? null : text;
+        for (const b of chips) b.setAttribute('aria-pressed', String(b.textContent === chip));
+        e.preventDefault();
+      },
+    }, text));
+    const options = (sel) => {
+      const group = (label, people) => (people.length ? h('optgroup', { label }, people.map((u) => h('option', { value: String(u.id) }, u.name))) : null);
+      sel.replaceChildren(h('option', { value: '' }, 'Choose somebody'), group('Front desk', staff?.frontDesk || []), group('Everyone else', staff?.others || []));
+    };
+    const placed = () => rows.reduce((t, r) => t + (typedMinor(r.amount.value) || 0), 0);
+    const recount = () => {
+      const rest = whole - placed();
+      left.textContent = rest === 0 ? money(0) : `${rest < 0 ? '−' : ''}${money(Math.abs(rest))}`;
+      left.style.color = rest === 0 ? 'var(--sh-good-ink)' : 'var(--sh-bad-ink)';
+    };
+    const addRow = (amount) => {
+      const sel = h('select', { 'aria-label': 'Who' });
+      options(sel);
+      const box = h('input', { type: 'text', inputmode: 'decimal', value: cedis(amount), 'aria-label': 'How much', oninput: recount });
+      const row = { sel, amount: box };
+      const el = h('div.sh-mvrow', sel, box, h('button.sh-mvx', {
+        type: 'button', 'aria-label': 'Remove', onclick: () => { if (rows.length < 2) return; rows.splice(rows.indexOf(row), 1); el.remove(); recount(); },
+      }, '×'));
+      rows.push(row);
+      list.append(el);
+      recount();
+    };
+    addRow(whole);
+    if (!staff) {
+      api('/till/staff').then((d) => { staff = d; for (const r of rows) options(r.sel); }).catch((err) => { said.textContent = err.message; });
+    }
+    const go_ = async (e) => {
+      const shares = rows.map((r) => ({ userId: Number(r.sel.value), amount: typedMinor(r.amount.value) }));
+      if (shares.some((y) => !y.userId)) { said.textContent = 'Choose who, on every line.'; return; }
+      if (shares.some((y) => !(y.amount > 0))) { said.textContent = 'Type how much, on every line.'; return; }
+      if (placed() !== whole) { said.textContent = `Place all ${money(whole)}: put the rest on somebody, or add the shift’s own person.`; return; }
+      const reason = [chip, why.value.trim()].filter(Boolean).join('. ');
+      if (!reason) { said.textContent = 'Say why: pick a reason or write one.'; why.focus(); return; }
+      e.target.disabled = true;
+      said.textContent = 'Moving…';
+      try {
+        const out = await api('/till/charge', { method: 'POST', body: { key: x.key, shares, reason } });
+        moving = null;
+        till.forget();
+        await load(banner('good', `Put on ${shares.length === 1 ? 'a staff account' : `${shares.length} staff accounts`}. ${out.told ? `${out.told} told in HIVE.` : 'HIVE could not be reached to tell them; it is on their list all the same.'}`));
+      } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+    };
+    recount();
+    return h('div.sh-mvpanel',
+      h('h4', 'Put on a staff account'),
+      h('p.small', `Who carries the ${money(whole)} ${word}, and how much each. All of it is placed.`),
+      list,
+      h('button.sh-link', { type: 'button', onclick: () => addRow(0) }, '+ Another person'),
+      h('div.sh-mvleft', h('span', 'Still to place'), left),
+      h('div.sh-mvlab', 'Reason (required)'),
+      h('div.sh-mvchips', chips),
+      why,
+      h('p.sh-mvtell', 'Each of them gets a message in HIVE with the amount, the shift and this reason, and it goes on their To sort out list. If it leaves the shift’s own person altogether, they are told too.'),
+      h('div.sh-labels',
+        h('button.btn.primary', { type: 'button', onclick: go_ }, `Move ${money(whole)}`),
+        h('button.btn', { type: 'button', onclick: () => { moving = null; paint(); } }, 'Cancel'),
+        said));
   }
 
   /**

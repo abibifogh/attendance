@@ -185,6 +185,10 @@ const ROUTES = [
   ['POST', '/api/till/reopen', 'shifts', (env, ctx) => till.reopen(env, ctx.body, ctx.account)],
   ['POST', '/api/till/move', 'shifts', (env, ctx) => till.moveReport(env, ctx.body, ctx.account)],
   ['POST', '/api/till/approve', 'shifts', (env, ctx) => till.approve(env, ctx.body, ctx.account)],
+  // A difference put on staff accounts, and taken back off.
+  ['GET', '/api/till/staff', 'shifts', (env, ctx) => till.staffList(env, ctx.account)],
+  ['POST', '/api/till/charge', 'shifts', (env, ctx) => till.moveToStaff(env, ctx.body, ctx.account)],
+  ['POST', '/api/till/charge/undo', 'shifts', (env, ctx) => till.undoMove(env, ctx.body, ctx.account)],
   ['POST', '/api/till/settings', 'shifts', (env, ctx) => till.saveSettings(env, ctx.body, ctx.account)],
 
   // The till link: HIVE asking, server to server, signed with the secret the

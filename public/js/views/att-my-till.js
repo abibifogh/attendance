@@ -528,6 +528,9 @@ export async function renderAttMyTillIssues() {
       note: issue.status === 'answered' ? 'with the supervisor' : 'needs your answer',
     },
     h('div.till-amount', h('strong', amount), h('span.till-kind', issue.label)),
+    // Put on this person's account by an admin, from somebody's shift: why, and by whom.
+    issue.moved ? h('div.till-moved', h('strong', 'Why: '), issue.moved.reason || '',
+      h('div.till-hint', `Put on your account by ${issue.moved.by || 'an admin'}${issue.moved.from ? `, from ${issue.moved.from}’s shift` : ''}.`)) : null,
     issue.sentBack ? h('div.alert.warn', `Sent back${issue.sentBack.by ? ` by ${issue.sentBack.by}` : ''}: ${issue.sentBack.note || 'more is needed.'}`) : null,
     h('p', issue.text),
     action);

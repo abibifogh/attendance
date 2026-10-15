@@ -167,8 +167,9 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     const short = i.amount < 0;
     return h(`div.tl-issue.${KIND_TONE[i.kind] || 'info'}`,
       h('div.tl-issue-head', h('strong', i.name || (i.assdUser ? `ASSD ${i.assdUser}` : 'Nobody named')), h('span.tl-amount', amount)),
-      h('div.tl-small', `${SLOT[i.slot]} · ${dayText(i.day)} · ${i.kind ? ({ drawer: 'drawer', unexplained: 'cash out, no envelope or PO', overclaimed: 'more claimed than moved', rental: 'rental count', noreport: 'no closing report' })[i.kind] : ''}`),
+      h('div.tl-small', `${SLOT[i.slot]} · ${dayText(i.day)} · ${i.kind ? ({ drawer: 'drawer', unexplained: 'cash out, no envelope or PO', overclaimed: 'more claimed than moved', rental: 'rental count', noreport: 'no closing report', moved: 'put on their account' })[i.kind] : ''}`),
       h('p.tl-text', i.text),
+      i.moved ? h('div.tl-said', h('b', 'Why it is theirs'), `${i.moved.reason} (${i.moved.by || 'an admin'}${i.moved.at ? `, ${String(i.moved.at).slice(0, 16)}` : ''})`) : null,
       i.answer ? h('div.tl-said', h('b', i.answer.how === 'repay' ? 'Will pay it back' : i.answer.how === 'po' ? 'Added a PO' : 'Their explanation'), i.answer.text) : null,
       i.decision?.outcome === 'back' ? h('div.tl-small', `Sent back by ${i.decision.by}: ${i.decision.note || ''}`) : null,
       i.userId == null ? h('p.tl-small', 'Nobody to ask: map this ASSD login to a HIVE person under Settings → Front desk.') : null,
@@ -238,7 +239,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
             h('td', `${SLOT[i.slot]} · ${dayText(i.day)}`), h('td', i.name || '—'), h('td', d.kinds?.[i.kind] || i.kind),
             h('td.num', access.money && i.amount ? signed(i.amount) : '')))))))
         : null,
-      d.net ? netCard(d.net) : null,
+      d.net ? netCard(d.net, list) : null,
       settled.length ? h('div.card',
         h('div.sh-cardhead', h('h2', 'Settled lately')),
         h('div.table-wrap', h('table',
@@ -250,13 +251,42 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     ];
   }
 
-  function netCard(net) {
+  function netCard(net, issues = []) {
+    const month = new Date().toISOString().slice(0, 7);
+    const stands = (i) => (i.status === 'settled' ? OUTCOME[i.decision?.outcome] || 'Settled'
+      : i.status === 'answered' ? (i.answer?.how === 'repay' ? 'Will pay it back' : 'Answered, waiting for you')
+        : 'Waiting for them');
+    // Every line on one person's account this month, with why each is theirs.
+    const account = (p) => {
+      const mine = issues.filter((i) => Number(i.userId) === Number(p.userId) && String(i.day).startsWith(month) && i.amount
+        && ['drawer', 'unexplained', 'rental', 'moved'].includes(i.kind));
+      return h('tr.tl-account', h('td', { colspan: '5' },
+        h('table', h('thead', h('tr', ['Shift', 'What', 'Amount', 'Where it stands'].map((t) => h('th', t)))),
+          h('tbody', mine.map((i) => h('tr',
+            h('td', `${dayText(i.day)} ${SLOT[i.slot] || ''}`, i.moved?.ownerName ? h('small', { style: 'display:block' }, `${i.moved.ownerName}’s shift`) : null),
+            h('td', i.kind === 'moved' ? 'Moved to them' : ({ drawer: 'Drawer', unexplained: 'Cash out, no envelope or PO', rental: 'Rental count' })[i.kind],
+              i.moved ? h('small', { style: 'display:block' }, `${i.moved.reason} (${i.moved.by || 'an admin'})`) : null),
+            h('td.num', access.money ? signed(i.amount) : (i.amount < 0 ? 'Short' : 'Over')),
+            h('td', stands(i))))),
+          h('tfoot', h('tr', h('td', { colspan: '2' }, 'Net'), h('td.num', signed(p.net)), h('td'))))));
+    };
+    let open = null;
+    const body = h('tbody');
+    const draw = () => body.replaceChildren(...net.flatMap((p) => [
+      h(`tr.tl-acctrow${open === p.userId ? '.on' : ''}`,
+      h('td', h('button.sh-link', {
+        type: 'button', 'aria-expanded': String(open === p.userId), title: 'Every line on their account',
+        onclick: () => { open = open === p.userId ? null : p.userId; draw(); },
+      }, `${open === p.userId ? '▾' : '▸'} ${p.name || `HIVE ${p.userId}`}`)), h('td.num', money(p.short)), h('td.num', money(p.over)),
+      h('td.num', signed(p.net)), h('td.num', String(p.count))),
+      open === p.userId ? account(p) : null,
+    ].filter(Boolean)));
+    draw();
     return h('div.card',
-      h('div.sh-cardhead', h('h2', 'This month, per person'), h('span.sh-sub', 'Every difference put on their list, settled or not.')),
+      h('div.sh-cardhead', h('h2', 'This month, per person'), h('span.sh-sub', 'Every difference on their account, their own shifts and any put on them, settled or not. Tap a name for every line.')),
       h('div.table-wrap', h('table',
         h('thead', h('tr', ['Who', 'Short', 'Over', 'Net', 'Times'].map((t) => h('th', t)))),
-        h('tbody', net.map((p) => h('tr', h('td', p.name || `HIVE ${p.userId}`), h('td.num', money(p.short)), h('td.num', money(p.over)),
-          h('td.num', signed(p.net)), h('td.num', String(p.count))))))));
+        body)));
   }
 
 

@@ -7143,6 +7143,8 @@ tr:hover .rota-who-more,
 .till-amount strong { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
 .till-kind { font-size: .8rem; color: var(--text-dim); }
 .till-said { background: var(--surface-2); border-radius: var(--radius-sm); padding: .55rem .65rem; font-size: .9rem; }
+.till-moved { background: var(--warn-soft); border-radius: var(--radius-sm); padding: .55rem .65rem; font-size: .9rem; margin: .4rem 0; }
+.till-moved .till-hint { margin-top: .25rem; }
 .till-answer textarea { margin: .4rem 0; }
 .till-cleared { text-align: center; margin-top: 1rem; }
 @media (min-width: 900px) { .till-send { justify-items: end; } .till-sign { min-width: 16rem; } }

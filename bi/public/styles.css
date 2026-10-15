@@ -786,6 +786,24 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh-answers button { border: 1px solid var(--sh-line); background: var(--surface); color: var(--ink); font: inherit; border-radius: 999px; padding: .28rem .65rem; font-size: .78rem; cursor: pointer; }
 .sh-answers button:hover { border-color: var(--sh-good); color: var(--sh-good-ink); }
 .sh-answers input { flex: 1 1 100%; }
+.sh-answers .sh-movebtn { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+.sh-answers .sh-movebtn[aria-expanded='true'] { background: var(--series-1); color: #fff; }
+.sh-mvpanel { border: 1.5px solid var(--series-1); border-radius: 12px; padding: .8rem .9rem; margin-top: .6rem; display: grid; gap: .45rem; }
+.sh-mvpanel h4 { margin: 0; font-size: .95rem; }
+.sh-mvpanel .small { margin: 0; color: var(--ink-2); }
+.sh-mvrows { display: grid; gap: .4rem; }
+.sh-mvrow { display: grid; grid-template-columns: minmax(0, 1fr) 7.5rem 1.6rem; gap: .4rem; align-items: center; }
+.sh-mvrow select, .sh-mvrow input { min-width: 0; }
+.sh-mvrow input { text-align: right; font-variant-numeric: tabular-nums; }
+.sh-mvx { border: 0; background: none; color: var(--muted); font-size: 1.1rem; cursor: pointer; }
+.sh-mvpanel > .sh-link { justify-self: start; }
+.sh-mvleft { display: flex; justify-content: space-between; border: 1px dashed var(--sh-line); border-radius: 8px; padding: .35rem .6rem; font-size: .85rem; }
+.sh-mvlab { font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); margin-top: .2rem; }
+.sh-mvchips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.sh-mvchip { border: 1px solid var(--sh-line); background: var(--surface); color: var(--ink); font: inherit; border-radius: 999px; padding: .28rem .65rem; font-size: .78rem; cursor: pointer; }
+.sh-mvchip[aria-pressed='true'] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.sh-mvpanel textarea { width: 100%; font: inherit; font-size: .88rem; }
+.sh-mvtell { margin: 0; font-size: .8rem; color: var(--ink-2); border-left: 3px solid var(--series-1); padding-left: .55rem; }
 .sh-ex.done { opacity: .85; }
 .sh-done { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .82rem; color: var(--sh-good-ink); font-weight: 600; }
 .sh-done > button, .sh-done > .sh-link { flex: none; white-space: nowrap; }
@@ -921,6 +939,10 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh .tl-text { margin: 0; font-size: .88rem; }
 .sh .tl-said { background: var(--surface-2); border-radius: 9px; padding: .5rem .6rem; font-size: .85rem; }
 .sh .tl-said b { display: block; font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.tl-acctrow.on td { background: var(--surface-2); }
+.tl-account > td { padding: .2rem .4rem .8rem 1.4rem; background: var(--surface-2); }
+.tl-account table { width: 100%; font-size: .85rem; }
+.tl-account small { color: var(--ink-2); }
 .sh .tl-issue textarea { width: 100%; }
 .sh .tl-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
 .sh .tl-inline { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: .6rem; }

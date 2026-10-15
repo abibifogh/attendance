@@ -1139,6 +1139,21 @@ export async function shifts(env, query, account) {
     x.proposed = a && a.status === 'pending' ? a : null;
   }
 
+  // Put on staff accounts by an admin: answered, with who carries what and why.
+  const movedRows = await all(env.DB, 'SELECT * FROM till_move WHERE undone_at IS NULL AND day BETWEEN ?1 AND ?2', from, to).catch(() => []);
+  const movedOf = new Map(movedRows.map((m) => [m.key, m]));
+  for (const x of exceptions) {
+    const m = movedOf.get(x.key);
+    if (!m || x.answer) continue;
+    let shares = [];
+    try { shares = JSON.parse(m.shares); } catch { shares = []; }
+    x.moved = {
+      id: m.id, reason: m.reason, by: m.by_name, at: m.at, ownerName: m.owner_name,
+      shares: shares.map((y) => ({ userId: Number(y.userId), name: y.name, amount: Number(y.amount) })),
+    };
+    x.answer = { answer: 'Put on a staff account', note: m.reason, by: m.by_name, at: m.at, status: 'applied' };
+  }
+
   // Exceptions reconciled together: each one is answered by the group.
   const linkOf = new Map();
   for (const l of links) {
