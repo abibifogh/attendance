@@ -30,6 +30,16 @@
     .ok { width: 64px; height: 64px; border-radius: 50%; background: var(--good-bg); color: var(--good); display: grid; place-items: center; font-size: 32px; margin: 0 auto; }
     .note { font-size: 14px; color: var(--ink-2); }
     .link { background: none; color: var(--blue); padding: 4px; width: auto; font-weight: 600; }
+    /* Numbers read off the picture: green until changed by hand; one not read, red; changed, amber. */
+    .readsaid { display: grid; gap: 8px; }
+    .readsaid p { margin: 0; }
+    .ok-note { background: var(--good-bg); color: var(--good); border-radius: 10px; padding: 10px 12px; font-size: 15px; }
+    .warn { background: #fbf1dc; color: #7a4f00; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    .retake { background: #fff; color: var(--ink); border: 2px solid var(--blue); }
+    .num input.auto { border-color: var(--good); background: var(--good-bg); }
+    .num input.missing { border: 2px solid var(--bad); background: var(--bad-bg); }
+    .num input.changed { border-color: #b06d00; background: #fbf1dc; }
+    .num input::placeholder { font-weight: 500; font-size: 15px; }
   </style>
 </head>
 <body>

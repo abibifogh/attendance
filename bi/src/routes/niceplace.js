@@ -27,7 +27,9 @@ export const SHIFTS = ['day', 'night'];
 export const COUNTERS = ['gb', 'gt', 'lb', 'lt'];
 export const FACILITIES = { toilet: ['gt', 'lt'], shower: ['gb', 'lb'] };
 const KEY = 'np_settings';
-const DEFAULTS = { token: null, allowance: 10, adult: 300, child: 100 };
+const DEFAULTS = { token: null, allowance: 10, adult: 300, child: 100, layout: '' };
+/** Cloudflare Workers AI's model for reading the counters off a picture. */
+export const READ_MODEL = '@cf/meta/llama-4-scout-17b-16e-instruct';
 /** How long after sending a reading the same person may send it again. */
 const RESEND_MINUTES = 60;
 /** The largest picture taken, base64 (the page shrinks it first). */
@@ -115,12 +117,126 @@ export async function sendReading(env, body) {
     if (minutes > RESEND_MINUTES) throw new HttpError(409, `This shift was sent at ${was.sent_at.slice(11, 16)}. To change it now, ask the manager.`);
   }
   const at = now();
+  // What the picture was read as, kept beside what was typed, so a difference shows in Insight.
+  const read = await readOf(env, m[2]);
   const photoId = (await first(env.DB, 'INSERT INTO np_photo (type, data, at) VALUES (?1, ?2, ?3) RETURNING id', m[1], m[2], at)).id;
   if (was?.photo_id) await run(env.DB, 'DELETE FROM np_photo WHERE id = ?1', was.photo_id);
-  await run(env.DB, `INSERT INTO np_reading (day, shift, name, gb, gt, lb, lt, photo_id, sent_at, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
-    ON CONFLICT (day, shift) DO UPDATE SET name = ?3, gb = ?4, gt = ?5, lb = ?6, lt = ?7, photo_id = ?8, at = ?9, checked_by = NULL, checked_at = NULL`,
-  day, shift, name, values.gb, values.gt, values.lb, values.lt, photoId, at);
+  await run(env.DB, `INSERT INTO np_reading (day, shift, name, gb, gt, lb, lt, photo_id, sent_at, at, read_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)
+    ON CONFLICT (day, shift) DO UPDATE SET name = ?3, gb = ?4, gt = ?5, lb = ?6, lt = ?7, photo_id = ?8, at = ?9, checked_by = NULL, checked_at = NULL, read_json = ?10`,
+  day, shift, name, values.gb, values.gt, values.lb, values.lt, photoId, at, read ? JSON.stringify(read) : null);
   return { ok: true, sentAt: was?.sent_at || at, resendUntil: RESEND_MINUTES, replaced: Boolean(was) };
+}
+
+// ----------------------------------------------- reading the picture itself --
+
+/** A reading against what its picture was read as: which typed numbers differ, which were not read. */
+function readCompare(reading) {
+  let read = null;
+  try { read = reading.read_json ? JSON.parse(reading.read_json) : null; } catch { read = null; }
+  if (!read || reading.edited_by) return { read: null, differs: [], unread: [] };
+  return {
+    read,
+    differs: COUNTERS.filter((c) => read[c] != null && read[c] !== reading[c]),
+    unread: COUNTERS.filter((c) => read[c] == null),
+  };
+}
+
+const LABEL = { gb: 'GB', gt: 'GT', lb: 'LB', lt: 'LT' };
+
+async function fingerprint(text) {
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function readPrompt(layout) {
+  return [
+    'This photo should show four people counters at a public washroom: GB (gents bath), GT (gents toilet), LB (ladies bath) and LT (ladies toilet).',
+    layout ? `How they are laid out: ${layout}` : 'Each counter has its label (GB, GT, LB or LT) on it or beside it.',
+    'Read the number each counter shows, digit by digit, exactly as displayed.',
+    'Give a counter as null if it is not in the photo, you cannot tell which counter it is, or any of its digits is blurred, cut off, covered, reflected, too small or uncertain. Never guess a digit: null is the right answer whenever you are not sure.',
+    'In "problem", say in a few plain words what made any counter unreadable (for example "GB is cut off at the left", "glare on LT"), or "" if all four are clear.',
+  ].join('\n');
+}
+
+/** The reader's answer as four counters (null where it could not read one) and what was wrong. */
+export function parseRead(result) {
+  let raw = result?.response ?? result;
+  if (typeof raw === 'string') {
+    const m = raw.match(/\{[\s\S]*\}/);
+    try { raw = m ? JSON.parse(m[0]) : null; } catch { raw = null; }
+  }
+  if (!raw || typeof raw !== 'object') return null;
+  const pick = (k) => {
+    const v = raw[LABEL[k]] ?? raw[k];
+    if (v == null || v === '') return null;
+    const n = Number(String(v).replace(/[\s,]/g, ''));
+    return Number.isInteger(n) && n >= 0 && n <= 99_999_999 ? n : null;
+  };
+  return { gb: pick('gb'), gt: pick('gt'), lb: pick('lb'), lt: pick('lt'), problem: String(raw.problem || '').slice(0, 300) };
+}
+
+/**
+ * Read the four counters off a picture from the open link, so the numbers
+ * fill in by themselves. A counter not read for certain comes back null, and
+ * the page asks for the picture again. The same picture is read once.
+ */
+export async function readCounters(env, body) {
+  const s = await linkSettings(env, body?.t);
+  const photo = String(body?.photo || '');
+  const m = photo.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) throw badRequest('Take a picture of the counters first.');
+  if (m[2].length > PHOTO_MAX) throw badRequest('That picture is too large. Take it again.');
+  if (!env.AI) return { available: false };
+  const hash = await fingerprint(m[2]);
+  let row = await first(env.DB, 'SELECT * FROM np_read WHERE hash = ?1', hash).catch(() => null);
+  if (!row) {
+    let read;
+    try {
+      const result = await env.AI.run(READ_MODEL, {
+        messages: [
+          { role: 'system', content: 'You read numbers off photos of counters for a washroom manager. You never guess: an unclear digit makes the whole counter null.' },
+          { role: 'user', content: [{ type: 'text', text: readPrompt(s.layout) }, { type: 'image_url', image_url: { url: photo } }] },
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            type: 'object',
+            properties: {
+              GB: { type: ['integer', 'null'] }, GT: { type: ['integer', 'null'] }, LB: { type: ['integer', 'null'] }, LT: { type: ['integer', 'null'] },
+              problem: { type: 'string' },
+            },
+            required: ['GB', 'GT', 'LB', 'LT', 'problem'],
+          },
+        },
+        max_tokens: 200,
+        temperature: 0,
+      });
+      read = parseRead(result);
+    } catch {
+      read = null;
+    }
+    // Not answering, or not in a shape that can be trusted: the numbers are typed instead.
+    if (!read) return { available: false };
+    row = { hash, ...read, model: READ_MODEL, at: now() };
+    await run(env.DB, `INSERT INTO np_read (hash, gb, gt, lb, lt, problem, model, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      ON CONFLICT (hash) DO NOTHING`, hash, row.gb, row.gt, row.lb, row.lt, row.problem, row.model, row.at).catch(() => null);
+  }
+  const values = Object.fromEntries(COUNTERS.map((c) => [c, row[c] ?? null]));
+  // Lower than the last reading: a misread, or a counter reset. Said, not refused.
+  const last = await first(env.DB, "SELECT * FROM np_reading ORDER BY day DESC, CASE shift WHEN 'night' THEN 1 ELSE 0 END DESC LIMIT 1").catch(() => null);
+  return {
+    available: true,
+    values,
+    unreadable: COUNTERS.filter((c) => values[c] == null),
+    problem: row.problem || '',
+    lower: last ? COUNTERS.filter((c) => values[c] != null && values[c] < last[c]).map((c) => ({ counter: c, was: last[c], now: values[c] })) : [],
+  };
+}
+
+/** What a picture was read as, if it was: for the reading sent with it. */
+async function readOf(env, data) {
+  const row = await first(env.DB, 'SELECT * FROM np_read WHERE hash = ?1', await fingerprint(data)).catch(() => null);
+  return row ? Object.fromEntries(COUNTERS.map((c) => [c, row[c] ?? null])) : null;
 }
 
 // ------------------------------------------------------------- the workbook --
@@ -301,7 +417,9 @@ export function analyse({ readings, revenue, settings, from, to }) {
       rows.push({
         day, shift, key,
         reading: reading ? { name: reading.name, gb: reading.gb, gt: reading.gt, lb: reading.lb, lt: reading.lt, photoId: reading.photo_id || null,
-          sentAt: reading.sent_at, at: reading.at, editedBy: reading.edited_by || null, checkedBy: reading.checked_by || null, checkedAt: reading.checked_at || null } : null,
+          sentAt: reading.sent_at, at: reading.at, editedBy: reading.edited_by || null, checkedBy: reading.checked_by || null, checkedAt: reading.checked_at || null,
+          // What the picture was read as, and where the typed numbers differ or it could not be read.
+          ...readCompare(reading) } : null,
         before: prev ? { day: prev.day, shift: prev.shift, gb: prev.gb, gt: prev.gt, lb: prev.lb, lt: prev.lt } : null,
         moved: reading ? moved : null,
         first: Boolean(reading && !prev),
@@ -334,7 +452,7 @@ export function analyse({ readings, revenue, settings, from, to }) {
     const order_ = ['bad', 'warn', 'over', 'no-revenue', 'no-reading', 'waiting', 'good'];
     r.status = order_.find((st) => Object.values(r.facilities).some((x) => x.status === st)) || 'waiting';
   }
-  return { rows, usualShare, settings: { allowance: s.allowance, adult: s.adult, child: s.child } };
+  return { rows, usualShare, settings: { allowance: s.allowance, adult: s.adult, child: s.child, layout: s.layout || '' } };
 }
 
 // ---------------------------------------------------------- your page --
@@ -394,6 +512,8 @@ export async function saveSettings(env, body) {
     s[k] = v;
   }
   if (s.child > s.adult) throw badRequest('A child pays less than an adult.');
+  // How the counters sit, for reading them off a picture when they carry no labels.
+  if (body?.layout != null) s.layout = str(body.layout, 'How the counters are laid out', { max: 300 }) || '';
   await setSetting(env.DB, KEY, JSON.stringify(s));
   if (body?.addName) {
     const name = str(body.addName, 'Name', { required: true, max: 80 });

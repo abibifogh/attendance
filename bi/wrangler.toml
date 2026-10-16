@@ -34,6 +34,12 @@ database_id = "9862ed78-69f0-4dfe-a36f-7fe3bd9020c1"
 # next payslip, reopening a closing report, and telling people. A service
 # binding, so the call never leaves Cloudflare; every request is still signed
 # (src/lib/link.js), because HIVE's front door is public.
+# Cloudflare's Workers AI, for reading the Nice Place counters off the
+# picture staff take. On the same Cloudflare account: no key, no other
+# service; well within its free daily allowance at a few pictures a day.
+[ai]
+binding = "AI"
+
 [[services]]
 binding = "HIVE"
 service = "niceoperation-attendance"

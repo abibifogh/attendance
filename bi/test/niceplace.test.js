@@ -145,3 +145,60 @@ test('the workbook saved, the page’s sums, an answer and a fix', async () => {
   await np.saveIncome(env, { rows: workbook(), sheetName: 'SEP 26' }, OWNER);
   assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM np_revenue').first()).n, 4);
 });
+
+test('the counters read off the picture: filled in, a number not read asks for the picture again, typed differently is shown', async () => {
+  const { db } = freshDb();
+  let answer = { response: '{"GB": 1200, "GT": 3400, "LB": 900, "LT": 2700, "problem": ""}' };
+  const asked = [];
+  const env = {
+    DB: db,
+    AI: { run: async (model, input) => { asked.push([model, input]); if (answer instanceof Error) throw answer; return answer; } },
+  };
+  await np.saveSettings(env, { newLink: true, addName: 'Abena', layout: 'left to right: GB, GT, LB, LT' });
+  const { token } = await np.settingsOf(env);
+  const pic = (s) => `data:image/jpeg;base64,${Buffer.from(s).toString('base64')}`;
+
+  await assert.rejects(np.readCounters(env, { t: 'wrong', photo: pic('a') }), /no longer in use/);
+  await assert.rejects(np.readCounters(env, { t: token, photo: '' }), /picture/);
+
+  let out = await np.readCounters(env, { t: token, photo: pic('one') });
+  assert.deepEqual(out, { available: true, values: { gb: 1200, gt: 3400, lb: 900, lt: 2700 }, unreadable: [], problem: '', lower: [] });
+  assert.equal(asked[0][0], np.READ_MODEL);
+  const user = asked[0][1].messages[1].content;
+  assert.match(user[0].text, /left to right: GB, GT, LB, LT/, 'the layout the manager gave is told');
+  assert.equal(user[1].image_url.url, pic('one'), 'the picture goes as it was taken');
+  // The same picture again: read once.
+  await np.readCounters(env, { t: token, photo: pic('one') });
+  assert.equal(asked.length, 1);
+
+  // One not read for certain, as an object this time: the page asks for the picture again.
+  answer = { response: { GB: 1200, GT: null, LB: '900', LT: 2700, problem: 'glare on GT' } };
+  out = await np.readCounters(env, { t: token, photo: pic('two') });
+  assert.deepEqual([out.values, out.unreadable, out.problem], [{ gb: 1200, gt: null, lb: 900, lt: 2700 }, ['gt'], 'glare on GT']);
+
+  // Not answering, or answering nonsense: the numbers are typed, as before.
+  answer = new Error('down');
+  assert.deepEqual(await np.readCounters(env, { t: token, photo: pic('three') }), { available: false });
+  answer = { response: 'I cannot help with that.' };
+  assert.deepEqual(await np.readCounters(env, { t: token, photo: pic('four') }), { available: false });
+  assert.deepEqual(await np.readCounters({ DB: db }, { t: token, photo: pic('five') }), { available: false }, 'no reader bound');
+
+  // Sent with GB typed differently from the picture: kept, and shown.
+  const today = new Date().toISOString().slice(0, 10);
+  await np.sendReading(env, { t: token, name: 'Abena', day: today, shift: 'day', gb: 1250, gt: 3400, lb: 900, lt: 2700, photo: pic('one') });
+  const view = await np.npView(env, { from: today, to: today }, OWNER, { admin: true });
+  const r = view.rows.find((x) => x.reading).reading;
+  assert.deepEqual([r.read.gb, r.differs, r.unread], [1200, ['gb'], []]);
+
+  // Lower than the last reading: said, not refused.
+  answer = { response: '{"GB": 1100, "GT": 3500, "LB": 950, "LT": 2800, "problem": ""}' };
+  out = await np.readCounters(env, { t: token, photo: pic('six') });
+  assert.deepEqual(out.lower, [{ counter: 'gb', was: 1250, now: 1100 }]);
+});
+
+test('the reader’s answer, however it comes back', () => {
+  assert.deepEqual(np.parseRead({ response: 'Here: {"GB": "1,200", "GT": 3400, "LB": -1, "LT": 2.5, "problem": "LB cut off"}' }),
+    { gb: 1200, gt: 3400, lb: null, lt: null, problem: 'LB cut off' });
+  assert.equal(np.parseRead({ response: 'no' }), null);
+  assert.equal(np.parseRead(null), null);
+});

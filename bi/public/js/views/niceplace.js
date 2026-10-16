@@ -178,7 +178,8 @@ export async function renderNicePlace(root) {
           h('th.n', 'Toilet people'), h('th.n', 'Paid for'), h('th.n', 'Toilet GH₵'), h('th.n', 'Shower people'), h('th.n', 'Paid for'), h('th.n', 'Shower GH₵'), h('th', ''))),
         h('tbody', rows.map((r) => h(`tr${open === r.key ? '.on' : ''}${r.status === 'bad' && !r.answer ? '.bad' : ''}`, { onclick: () => { open = r.key; paint(); } },
           h('td', h('b', dayText(r.day)), ` ${SHIFT[r.shift].toLowerCase()}`, h('small', r.reading?.name || r.staff || ''),
-            r.span ? h('small', `covers ${r.span.length} shifts`) : null, r.resets.length ? h('small', `${r.resets.map((c) => c.toUpperCase()).join(', ')} reset`) : null),
+            r.span ? h('small', `covers ${r.span.length} shifts`) : null, r.resets.length ? h('small', `${r.resets.map((c) => c.toUpperCase()).join(', ')} reset`) : null,
+            r.reading?.differs?.length || r.reading?.unread?.length ? h('small.np-typed', `${[...(r.reading.differs || []), ...(r.reading.unread || [])].map((c) => c.toUpperCase()).join(', ')} typed, not as read`) : null),
           h('td', r.reading?.photoId ? h('img.np-thumb', { src: `/api/np/photo/${r.reading.photoId}`, alt: '', loading: 'lazy' }) : h('span.muted', r.reading ? 'typed' : '—')),
           ...['gb', 'gt', 'lb', 'lt'].map((c) => h('td.n.num', String(people(r, c)))),
           ...['toilet', 'shower'].flatMap((f) => {
@@ -201,6 +202,8 @@ export async function renderNicePlace(root) {
     const notes = [];
     if (r.first) notes.push('The first reading: counted from zero, as the counters were set to zero at the start.');
     for (const c of r.resets) notes.push(`${c.toUpperCase()} is lower than at the shift before (${whole(r.before?.[c])} → ${whole(r.reading[c])}): it was reset, so it is counted from zero.`);
+    if (r.reading?.differs?.length) notes.push(`Typed differently from what the picture was read as: ${r.reading.differs.map((c) => `${c.toUpperCase()} typed ${whole(r.reading[c])}, picture ${whole(r.reading.read[c])}`).join('; ')}. Look at the picture.`);
+    if (r.reading?.unread?.length) notes.push(`${r.reading.unread.map((c) => c.toUpperCase()).join(', ')} could not be read from the picture, so ${r.reading.unread.length === 1 ? 'it was' : 'they were'} typed. Look at the picture.`);
     if (r.span) notes.push(`No picture for ${r.span.slice(0, -1).map((x) => `${dayText(x.day)} ${SHIFT[x.shift].toLowerCase()}`).join(', ')}: these counts cover ${r.span.length} shifts, held against the money of all of them.`);
     const facility = (f) => {
       const x = r.facilities[f];
@@ -285,6 +288,7 @@ export async function renderNicePlace(root) {
     const allowance = h('input', { type: 'number', min: '0', max: '500', value: String(data.settings.allowance) });
     const adult = h('input', { type: 'number', step: '0.5', min: '0', value: String(data.settings.adult / 100) });
     const child = h('input', { type: 'number', step: '0.5', min: '0', value: String(data.settings.child / 100) });
+    const layout = h('input', { type: 'text', maxlength: '300', value: data.settings.layout || '', placeholder: 'Each counter is labelled GB, GT, LB or LT' });
     const active = data.staff.filter((p) => p.active);
     return h('section.card.np-settings',
       h('h2', 'Settings'),
@@ -299,7 +303,11 @@ export async function renderNicePlace(root) {
           h('div.np-inline', allowance, h('button.btn', { type: 'button', onclick: () => save({ allowance: allowance.value }, 'Saved.') }, 'Save'))),
         h('div',
           h('b', 'Prices, GH₵, for the toilet and the shower each'),
-          h('div.np-inline', h('label', 'Adult ', adult), h('label', 'Child ', child), h('button.btn', { type: 'button', onclick: () => save({ adult: adult.value, child: child.value }, 'Prices saved.') }, 'Save')))),
+          h('div.np-inline', h('label', 'Adult ', adult), h('label', 'Child ', child), h('button.btn', { type: 'button', onclick: () => save({ adult: adult.value, child: child.value }, 'Prices saved.') }, 'Save'))),
+        h('div',
+          h('b', 'How the counters are laid out'),
+          h('p.small', 'For reading the numbers off the picture. Leave empty if each counter has its label on it; otherwise say where each is, e.g. "left to right: GB, GT, LB, LT".'),
+          h('div.np-inline', layout, h('button.btn', { type: 'button', onclick: () => save({ layout: layout.value }, 'Saved.') }, 'Save')))),
       said);
   }
 
