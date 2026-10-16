@@ -40,7 +40,7 @@ export const AREAS = [
   { key: 'reports', max: 1 }, { key: 'money', max: 1 }, { key: 'moves', max: 2 },
   { key: 'answers', max: 2 }, { key: 'money_out', max: 2 }, { key: 'reopen', max: 2 }, { key: 'net', max: 1 },
   { key: 'bank', max: 2 }, { key: 'odoo', max: 1 }, { key: 'files', max: 2 }, { key: 'unpaid', max: 2 },
-  { key: 'advances', max: 2 },
+  { key: 'advances', max: 2 }, { key: 'niceplace', max: 2 },
 ];
 const AREA_MAX = new Map(AREAS.map((a) => [a.key, a.max]));
 

@@ -1,6 +1,7 @@
 import { h, mount, money } from '../util.js';
 import { api } from '../api.js';
 import { state } from '../app.js';
+import { npReviewBox } from './np-review.js';
 
 /**
  * Nice Place, the public washroom: the counters each shift against the money
@@ -14,7 +15,7 @@ const FAC = { toilet: ['Toilet', ['gt', 'lt']], shower: ['Shower', ['gb', 'lb']]
 const COUNTER = { gb: 'GB · Gents bath', gt: 'GT · Gents toilet', lb: 'LB · Ladies bath', lt: 'LT · Ladies toilet' };
 const STATUS = {
   bad: ['bad', '✕ Not adding up'], warn: ['warn', '! More people than paid'], over: ['warn', '! More money than people'],
-  good: ['good', '✓ Fits'], 'no-revenue': ['none', 'Workbook not uploaded'], 'no-reading': ['none', 'No picture'], waiting: ['none', 'Waiting'],
+  review: ['warn', '! Counter to read'], good: ['good', '✓ Fits'], 'no-revenue': ['none', 'Workbook not uploaded'], 'no-reading': ['none', 'No picture'], waiting: ['none', 'Waiting'],
 };
 const ANSWERS = ['Counter fault', 'Free use (staff, cleaning)', 'Staff to account for it', 'Explained'];
 const dayText = (d, opts = { weekday: 'short', day: 'numeric', month: 'short' }) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { ...opts, timeZone: 'UTC' });
@@ -42,8 +43,10 @@ export async function renderNicePlace(root) {
     const rows = data.rows;
     const count = (st) => rows.filter((r) => r.status === st && !r.answer).length;
     const waiting = rows.filter((r) => ['no-revenue', 'no-reading'].includes(r.status)).length;
+    const toRead = rows.filter((r) => r.pending).length;
     mount(view,
       flash ? h(`div.banner.${flash[0]}`, flash[1]) : null,
+      toRead ? h('div.banner.warning', `${toRead} picture${toRead === 1 ? '' : 's'} sent with a counter that could not be read. Open ${toRead === 1 ? 'it' : 'them'} below (“! Counter to read”) and read the number off the picture. Supervisors given Nice Place see ${toRead === 1 ? 'it' : 'them'} in their Inbox too.`) : null,
       h('section.card',
         h('div.np-bar',
           linkBlock(),
@@ -177,11 +180,12 @@ export async function renderNicePlace(root) {
         h('thead', h('tr', h('th', 'Shift'), h('th', 'Picture'), ...['GB', 'GT', 'LB', 'LT'].map((c) => h('th.n', c)),
           h('th.n', 'Toilet people'), h('th.n', 'Paid for'), h('th.n', 'Toilet GH₵'), h('th.n', 'Shower people'), h('th.n', 'Paid for'), h('th.n', 'Shower GH₵'), h('th', ''))),
         h('tbody', rows.map((r) => h(`tr${open === r.key ? '.on' : ''}${r.status === 'bad' && !r.answer ? '.bad' : ''}`, { onclick: () => { open = r.key; paint(); } },
-          h('td', h('b', dayText(r.day)), ` ${SHIFT[r.shift].toLowerCase()}`, h('small', r.reading?.name || r.staff || ''),
+          h('td', h('b', dayText(r.day)), ` ${SHIFT[r.shift].toLowerCase()}`, h('small', r.reading?.name || r.pending?.name || r.staff || ''),
+            r.pending ? h('small.np-typed', `${r.pending.pending.map((c) => c.toUpperCase()).join(', ')} not read yet`) : null,
             r.span ? h('small', `covers ${r.span.length} shifts`) : null, r.resets.length ? h('small', `${r.resets.map((c) => c.toUpperCase()).join(', ')} reset`) : null,
             r.reading?.differs?.length || r.reading?.unread?.length ? h('small.np-typed', `${[...(r.reading.differs || []), ...(r.reading.unread || [])].map((c) => c.toUpperCase()).join(', ')} typed, not as read`) : null,
             r.reading?.typed ? h('small.np-typed', 'typed: picture not read') : null),
-          h('td', r.reading?.photoId ? h('img.np-thumb', { src: `/api/np/photo/${r.reading.photoId}`, alt: '', loading: 'lazy' }) : h('span.muted', r.reading ? 'typed' : '—')),
+          h('td', (r.reading || r.pending)?.photoId ? h('img.np-thumb', { src: `/api/np/photo/${(r.reading || r.pending).photoId}`, alt: '', loading: 'lazy' }) : h('span.muted', r.reading ? 'typed' : '—')),
           ...['gb', 'gt', 'lb', 'lt'].map((c) => h('td.n.num', String(people(r, c)))),
           ...['toilet', 'shower'].flatMap((f) => {
             const x = r.facilities[f];
@@ -226,6 +230,12 @@ export async function renderNicePlace(root) {
         verdict(x, name),
         x.sheetGap ? h('p.small', `The workbook’s adults and children come to ${money(x.adultMoney + x.childMoney)}, but its revenue says ${money(x.revenue)}.`) : null);
     };
+    if (r.pending) {
+      return h('section.card.np-detail',
+        h('div.np-head', h('h2', `${dayText(r.day, { weekday: 'long', day: 'numeric', month: 'long' })} · ${SHIFT[r.shift]}`), h('button.sh-link', { type: 'button', onclick: () => { open = null; paint(); } }, 'Close')),
+        h('p.sh-sub', 'Not counted yet: worked out once all four numbers are in.'),
+        npReviewBox({ day: r.day, shift: r.shift, ...r.pending, before: r.before }, { after: (words) => load(['good', words]), canAct: isAdmin }));
+    }
     const fix = isAdmin ? fixBlock(r, set) : null;
     return h('section.card.np-detail',
       h('div.np-head', h('h2', `${dayText(r.day, { weekday: 'long', day: 'numeric', month: 'long' })} · ${SHIFT[r.shift]}`), h('button.sh-link', { type: 'button', onclick: () => { open = null; paint(); } }, 'Close')),

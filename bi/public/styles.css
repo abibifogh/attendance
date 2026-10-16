@@ -1584,4 +1584,10 @@ label.fm-row input { margin-top: .2rem; }
 .np-typed { display: block; color: var(--sh-warn-ink, #8a5a00); font-weight: 700; }
 
 .np-readtest .np-photo { max-width: 320px; margin-top: .5rem; }
+.np-review { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 1rem; align-items: start; }
+.np-review .np-photo { max-height: 420px; object-fit: contain; background: #111; }
+.np-review > div > p { margin: 0 0 .6rem; }
+.np-review input { width: 100%; box-sizing: border-box; }
+.np-review input.np-missing { border: 2px dashed #c98a00; background: #fbf1dc; }
+@media (max-width: 720px) { .np-review { grid-template-columns: 1fr; } }
 .np-raw { white-space: pre-wrap; word-break: break-word; font-size: .78rem; background: var(--surface-2); padding: .5rem; border-radius: 8px; max-height: 12rem; overflow: auto; }

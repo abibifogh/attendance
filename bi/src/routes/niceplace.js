@@ -86,7 +86,8 @@ export async function linkForm(env, query) {
 }
 
 const count = (value, label) => {
-  const n = Number(String(value ?? '').replace(/[\s,]/g, ''));
+  const text = String(value ?? '').replace(/[\s,]/g, '');
+  const n = text === '' ? NaN : Number(text);
   if (!Number.isInteger(n) || n < 0 || n > 99_999_999) throw badRequest(`${label}: type the number on the counter, whole, with no letters.`);
   return n;
 };
@@ -105,21 +106,13 @@ export async function sendReading(env, body) {
   const m = photo.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
   if (!m) throw badRequest('Take a picture of the counters first.');
   if (m[2].length > PHOTO_MAX) throw badRequest('That picture is too large. Take it again.');
-  // The numbers come from the picture, not from what was typed. Only when the
-  // reader cannot be reached are typed numbers taken, and the reading says so.
-  let read = await readOf(env, m[2]);
-  if (!read && env.AI) {
-    const out = await readCounters(env, { t: body?.t, photo });
-    if (out.available) read = out.values;
-  }
-  if (read) {
-    const missing = COUNTERS.filter((c) => read[c] == null);
-    if (missing.length) throw badRequest(`${missing.map((c) => LABEL[c]).join(' and ')} could not be read from this picture. Take the picture again.`);
-  }
-  const values = read ? { ...read } : {
-    gb: count(body?.gb, 'GB (gents bath)'), gt: count(body?.gt, 'GT (gents toilet)'),
-    lb: count(body?.lb, 'LB (ladies bath)'), lt: count(body?.lt, 'LT (ladies toilet)'),
-  };
+  // The numbers come from the picture only, never typed. A counter the page
+  // could not read is read once more now; one still not read is left empty
+  // for an admin or a supervisor to read off the picture.
+  const s = await settingsOf(env);
+  const read = await readAgain(env, m[2], photo, s.layout);
+  const values = Object.fromEntries(COUNTERS.map((c) => [c, read?.[c] ?? null]));
+  const pending = COUNTERS.filter((c) => values[c] == null);
 
   const was = await first(env.DB, 'SELECT * FROM np_reading WHERE day = ?1 AND shift = ?2', day, shift);
   if (was) {
@@ -133,8 +126,12 @@ export async function sendReading(env, body) {
   await run(env.DB, `INSERT INTO np_reading (day, shift, name, gb, gt, lb, lt, photo_id, sent_at, at, read_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)
     ON CONFLICT (day, shift) DO UPDATE SET name = ?3, gb = ?4, gt = ?5, lb = ?6, lt = ?7, photo_id = ?8, at = ?9, checked_by = NULL, checked_at = NULL, read_json = ?10`,
   day, shift, name, values.gb, values.gt, values.lb, values.lt, photoId, at, JSON.stringify(read || { unavailable: true }));
-  return { ok: true, sentAt: was?.sent_at || at, resendUntil: RESEND_MINUTES, replaced: Boolean(was) };
+  return { ok: true, sentAt: was?.sent_at || at, resendUntil: RESEND_MINUTES, replaced: Boolean(was), values, pending };
 }
+
+/** A reading still missing a counter: what the reader could not see. */
+const COMPLETE = 'gb IS NOT NULL AND gt IS NOT NULL AND lb IS NOT NULL AND lt IS NOT NULL';
+const isComplete = (r) => COUNTERS.every((c) => r[c] != null);
 
 // ----------------------------------------------- reading the picture itself --
 
@@ -143,8 +140,9 @@ function readCompare(reading) {
   let read = null;
   try { read = reading.read_json ? JSON.parse(reading.read_json) : null; } catch { read = null; }
   if (!read || reading.edited_by) return { read: null, differs: [], unread: [], typed: false };
-  // Sent when the picture could not be read automatically: the numbers were typed.
-  if (read.unavailable) return { read: null, differs: [], unread: [], typed: true };
+  // Sent, before readings could wait for review, when the picture could not be
+  // read automatically: the numbers were typed.
+  if (read.unavailable) return { read: null, differs: [], unread: [], typed: isComplete(reading) };
   return {
     read,
     typed: false,
@@ -160,15 +158,16 @@ async function fingerprint(text) {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function readPrompt(layout) {
+function readPrompt(layout, again = null) {
   return [
+    again?.length ? `${again.map((c) => LABEL[c]).join(' and ')} could not be read the first time. Look again, closely, at ${again.length === 1 ? 'that counter' : 'those counters'}: zoom in on each digit.` : null,
     'This photo should show four people counters at a public washroom: GB (gents bath), GT (gents toilet), LB (ladies bath) and LT (ladies toilet).',
     layout ? `How they are laid out: ${layout}` : 'Each counter has its label (GB, GT, LB or LT) on it or beside it.',
     'Read the number each counter shows, digit by digit, exactly as displayed.',
     'Leading zeros are part of the number (00001 is 1). Give a counter as "" (empty) if it is not in the photo, you cannot tell which counter it is, or any of its digits is blurred, cut off, covered, reflected, too small or uncertain. Never guess a digit: empty is the right answer whenever you are not sure.',
     'Answer with JSON only, no other words: {"GB": "digits", "GT": "digits", "LB": "digits", "LT": "digits", "problem": "..."}.',
     'In "problem", say in a few plain words what made any counter unreadable (for example "GB is cut off at the left", "glare on LT"), or "" if all four are clear.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 /** The reader's answer as four counters (null where it could not read one) and what was wrong. */
@@ -189,20 +188,15 @@ export function parseRead(result) {
 }
 
 /**
- * Read the four counters off a picture from the open link, so the numbers
- * fill in by themselves. A counter not read for certain comes back null, and
- * the page asks for the picture again. The same picture is read once.
- */
-/**
  * Ask the reader about a picture: first for an answer in a fixed JSON shape,
  * then, if that is refused, for plain text holding the same JSON. Every
  * failure is kept, word for word, so an admin can see why a picture was not
  * read. Returns the counters (null where not read) or null.
  */
-async function askReader(env, photo, layout) {
+async function askReader(env, photo, layout, again = null) {
   const messages = [
     { role: 'system', content: 'You read numbers off photos of counters for a washroom manager. You never guess: an unclear digit leaves that counter empty.' },
-    { role: 'user', content: [{ type: 'text', text: readPrompt(layout) }, { type: 'image_url', image_url: { url: photo } }] },
+    { role: 'user', content: [{ type: 'text', text: readPrompt(layout, again) }, { type: 'image_url', image_url: { url: photo } }] },
   ];
   const attempts = [
     // Digits as text: a schema every JSON mode accepts, and "" says not read.
@@ -237,8 +231,9 @@ async function noteRead(env, outcome) {
 
 /**
  * Read the four counters off a picture from the open link, so the numbers
- * fill in by themselves. A counter not read for certain comes back null, and
- * the page asks for the picture again. The same picture is read once.
+ * fill in by themselves. A counter not read for certain comes back null: the
+ * page offers a new picture, or sending this one as it is. The same picture
+ * is read once here; sending it reads what was missed once more.
  */
 export async function readCounters(env, body) {
   const s = await linkSettings(env, body?.t);
@@ -261,7 +256,7 @@ export async function readCounters(env, body) {
   }
   const values = Object.fromEntries(COUNTERS.map((c) => [c, row[c] ?? null]));
   // Lower than the last reading: a misread, or a counter reset. Said, not refused.
-  const last = await first(env.DB, "SELECT * FROM np_reading ORDER BY day DESC, CASE shift WHEN 'night' THEN 1 ELSE 0 END DESC LIMIT 1").catch(() => null);
+  const last = await first(env.DB, `SELECT * FROM np_reading WHERE ${COMPLETE} ORDER BY day DESC, CASE shift WHEN 'night' THEN 1 ELSE 0 END DESC LIMIT 1`).catch(() => null);
   return {
     available: true,
     values,
@@ -283,10 +278,111 @@ export async function readTest(env, body) {
   return { ok: Boolean(read), read, errors, raw: raw ? String(raw).slice(0, 1000) : null, model: READ_MODEL };
 }
 
-/** What a picture was read as, if it was: for the reading sent with it. */
-async function readOf(env, data) {
-  const row = await first(env.DB, 'SELECT * FROM np_read WHERE hash = ?1', await fingerprint(data)).catch(() => null);
-  return row ? Object.fromEntries(COUNTERS.map((c) => [c, row[c] ?? null])) : null;
+/**
+ * What a picture is read as, asking the reader again for any counter not read
+ * before (or for all four, if it was never read). What is read now fills only
+ * what was missing, and is kept for the picture. Null when the reader cannot
+ * be reached and the picture was never read.
+ */
+async function readAgain(env, data, photo, layout) {
+  const hash = await fingerprint(data);
+  const row = await first(env.DB, 'SELECT * FROM np_read WHERE hash = ?1', hash).catch(() => null);
+  const had = row ? Object.fromEntries(COUNTERS.map((c) => [c, row[c] ?? null])) : null;
+  const missing = COUNTERS.filter((c) => had?.[c] == null);
+  if (!missing.length || !env.AI) return had;
+  const { read, errors, raw } = await askReader(env, photo, layout, had ? missing : null);
+  await noteRead(env, { ok: Boolean(read), errors, raw: raw ? String(raw).slice(0, 500) : null, again: Boolean(had) });
+  if (errors.length) console.error('Nice Place: reading a picture again', errors);
+  if (!read) return had;
+  const values = Object.fromEntries(COUNTERS.map((c) => [c, had?.[c] ?? read[c] ?? null]));
+  const problem = COUNTERS.some((c) => values[c] == null) ? (read.problem || row?.problem || '') : '';
+  await run(env.DB, `INSERT INTO np_read (hash, gb, gt, lb, lt, problem, model, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+    ON CONFLICT (hash) DO UPDATE SET gb = ?2, gt = ?3, lb = ?4, lt = ?5, problem = ?6, model = ?7, at = ?8`,
+  hash, values.gb, values.gt, values.lb, values.lt, problem, READ_MODEL, now()).catch(() => null);
+  return values;
+}
+
+/** What made a picture hard to read, in the reader's words, if it said. */
+async function problemOf(env, data) {
+  const row = await first(env.DB, 'SELECT problem FROM np_read WHERE hash = ?1', await fingerprint(data)).catch(() => null);
+  return row?.problem || '';
+}
+
+// ------------------------------------------------- readings waiting for review --
+
+/** Which shift, and its reading with its picture: for reading the counters off it here. */
+async function pendingOne(env, body) {
+  const day = String(body?.day || '');
+  const shift = String(body?.shift || '');
+  if (!isDay(day) || !SHIFTS.includes(shift)) throw badRequest('Which shift?');
+  const was = await first(env.DB, 'SELECT * FROM np_reading WHERE day = ?1 AND shift = ?2', day, shift);
+  if (!was) throw new HttpError(404, 'No reading for this shift.');
+  return was;
+}
+
+/**
+ * Readings sent with a counter that could not be read: for an admin, or a
+ * supervisor given Nice Place, to read off the picture. With the reading
+ * before, so a number far off it stands out.
+ */
+export async function pendingReadings(env) {
+  const rows = await all(env.DB, `SELECT * FROM np_reading WHERE NOT (${COMPLETE}) ORDER BY day, CASE shift WHEN 'night' THEN 1 ELSE 0 END`);
+  const out = [];
+  for (const r of rows) {
+    // eslint-disable-next-line no-await-in-loop
+    const before = await first(env.DB, `SELECT day, shift, gb, gt, lb, lt FROM np_reading WHERE ${COMPLETE}
+      AND (day < ?1 OR (day = ?1 AND ?2 = 'night' AND shift = 'day')) ORDER BY day DESC, CASE shift WHEN 'night' THEN 1 ELSE 0 END DESC LIMIT 1`, r.day, r.shift);
+    // eslint-disable-next-line no-await-in-loop
+    const pic = r.photo_id ? await first(env.DB, 'SELECT data FROM np_photo WHERE id = ?1', r.photo_id) : null;
+    out.push({
+      day: r.day, shift: r.shift, key: `${r.day}|${r.shift}`, name: r.name, sentAt: r.sent_at, photoId: r.photo_id || null,
+      values: Object.fromEntries(COUNTERS.map((c) => [c, r[c] ?? null])),
+      pending: COUNTERS.filter((c) => r[c] == null),
+      // eslint-disable-next-line no-await-in-loop
+      problem: pic ? await problemOf(env, pic.data) : '',
+      before: before || null,
+    });
+  }
+  return { items: out };
+}
+
+/**
+ * The counters read off the picture by a person: an admin, or a supervisor
+ * given Nice Place. A supervisor fills in only a reading still waiting; an
+ * admin may correct any. All four are saved, so a misread one is put right too.
+ */
+export async function reviewReading(env, body, account, { admin = false } = {}) {
+  const was = await pendingOne(env, body);
+  if (!admin && isComplete(was)) throw new HttpError(409, 'This shift’s counters are already in. To change them, ask an admin.');
+  const v = Object.fromEntries(COUNTERS.map((c) => [c, count(body?.[c], LABEL[c])]));
+  const at = now();
+  // Read off the picture by this person: both edited and checked by them.
+  await run(env.DB, `UPDATE np_reading SET gb = ?3, gt = ?4, lb = ?5, lt = ?6, at = ?7, edited_by = ?8, checked_by = ?8, checked_at = ?7
+    WHERE day = ?1 AND shift = ?2`, was.day, was.shift, v.gb, v.gt, v.lb, v.lt, at, who(account));
+  return { ok: true };
+}
+
+/** Ask the reader once more about a reading's picture; what it reads fills only the counters still empty. */
+export async function rereadReading(env, body) {
+  const was = await pendingOne(env, body);
+  if (isComplete(was)) return { ok: true, values: Object.fromEntries(COUNTERS.map((c) => [c, was[c]])), pending: [] };
+  if (!env.AI) throw new HttpError(503, 'The reader is not available. Read the counters off the picture and type them.');
+  const pic = was.photo_id ? await first(env.DB, 'SELECT type, data FROM np_photo WHERE id = ?1', was.photo_id) : null;
+  if (!pic) throw badRequest('This reading has no picture to read.');
+  const s = await settingsOf(env);
+  // Asked fresh about the counters still empty, whatever was kept for the picture.
+  const { read, errors } = await askReader(env, `data:${pic.type};base64,${pic.data}`, s.layout, COUNTERS.filter((c) => was[c] == null));
+  await noteRead(env, { ok: Boolean(read), errors, again: true });
+  const values = Object.fromEntries(COUNTERS.map((c) => [c, was[c] ?? read?.[c] ?? null]));
+  const pending = COUNTERS.filter((c) => values[c] == null);
+  if (read && COUNTERS.some((c) => values[c] !== (was[c] ?? null))) {
+    let kept = {};
+    try { kept = JSON.parse(was.read_json || '{}'); } catch { kept = {}; }
+    const readJson = { ...(kept.unavailable ? {} : kept), ...Object.fromEntries(COUNTERS.map((c) => [c, values[c]])) };
+    await run(env.DB, 'UPDATE np_reading SET gb = ?3, gt = ?4, lb = ?5, lt = ?6, at = ?7, read_json = ?8 WHERE day = ?1 AND shift = ?2',
+      was.day, was.shift, values.gb, values.gt, values.lb, values.lt, now(), JSON.stringify(readJson));
+  }
+  return { ok: true, values, pending, problem: read?.problem || '', error: read ? null : (errors[0] || 'The reader did not answer.') };
 }
 
 // ------------------------------------------------------------- the workbook --
@@ -514,17 +610,36 @@ export async function npView(env, query, account, { admin = false } = {}) {
   const from = isDay(query?.from) ? query.from : addDays(to, -13);
   const s = await settingsOf(env);
   // The reading before the first shift, and the money of every shift a gap may cover.
-  const before = await first(env.DB, `SELECT * FROM np_reading WHERE day < ?1 ORDER BY day DESC, CASE shift WHEN 'night' THEN 1 ELSE 0 END DESC LIMIT 1`, from);
-  const readings = await all(env.DB, 'SELECT * FROM np_reading WHERE day BETWEEN ?1 AND ?2', from, to);
+  const before = await first(env.DB, `SELECT * FROM np_reading WHERE day < ?1 AND ${COMPLETE} ORDER BY day DESC, CASE shift WHEN 'night' THEN 1 ELSE 0 END DESC LIMIT 1`, from);
+  const sent = await all(env.DB, 'SELECT * FROM np_reading WHERE day BETWEEN ?1 AND ?2', from, to);
+  // A reading still missing a counter is not counted until it is read: it waits for review.
+  const readings = sent.filter(isComplete);
+  const waiting = new Map(sent.filter((r) => !isComplete(r)).map((r) => [`${r.day}|${r.shift}`, r]));
   const lo = before?.day || from;
   const revenue = await all(env.DB, 'SELECT * FROM np_revenue WHERE day BETWEEN ?1 AND ?2', lo, to);
   const answers = await all(env.DB, 'SELECT * FROM np_answer WHERE day BETWEEN ?1 AND ?2', from, to);
   const out = analyse({ readings: before ? [before, ...readings] : readings, revenue, settings: s, from, to });
   const answerOf = new Map(answers.map((a) => [`${a.day}|${a.shift}`, { answer: a.answer, note: a.note, by: a.by_name, at: a.at }]));
-  for (const r of out.rows) r.answer = answerOf.get(r.key) || null;
+  for (const r of out.rows) {
+    r.answer = answerOf.get(r.key) || null;
+    const w = waiting.get(r.key);
+    if (!w) { r.pending = null; continue; }
+    const prev = [before, ...readings].filter((x) => x && order(x.day, x.shift) < order(r.day, r.shift))
+      .sort((a, b) => order(b.day, b.shift).localeCompare(order(a.day, a.shift)))[0];
+    // eslint-disable-next-line no-await-in-loop
+    const pic = w.photo_id ? await first(env.DB, 'SELECT data FROM np_photo WHERE id = ?1', w.photo_id) : null;
+    r.pending = {
+      name: w.name, sentAt: w.sent_at, photoId: w.photo_id || null,
+      values: Object.fromEntries(COUNTERS.map((c) => [c, w[c] ?? null])), pending: COUNTERS.filter((c) => w[c] == null),
+      // eslint-disable-next-line no-await-in-loop
+      problem: pic ? await problemOf(env, pic.data) : '',
+    };
+    r.before = prev ? { day: prev.day, shift: prev.shift, gb: prev.gb, gt: prev.gt, lb: prev.lb, lt: prev.lt } : null;
+    r.status = 'review';
+  }
   // Shifts with nothing yet are shown only once readings have started, up to now.
-  const started = out.rows.filter((r) => r.reading || Object.values(r.facilities).some((x) => x.revenue != null)).map((r) => order(r.day, r.shift)).sort()[0];
-  out.rows = out.rows.filter((r) => r.reading || r.status !== 'waiting' || (started && order(r.day, r.shift) > started));
+  const started = out.rows.filter((r) => r.reading || r.pending || Object.values(r.facilities).some((x) => x.revenue != null)).map((r) => order(r.day, r.shift)).sort()[0];
+  out.rows = out.rows.filter((r) => r.reading || r.pending || r.status !== 'waiting' || (started && order(r.day, r.shift) > started));
   const staff = await all(env.DB, 'SELECT id, name, active FROM np_staff ORDER BY active DESC, name');
   const lastUpload = await first(env.DB, 'SELECT MAX(uploaded_at) AS at, MAX(day) AS day FROM np_revenue');
   let readLast = null;

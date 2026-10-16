@@ -108,15 +108,14 @@ test('the open link: its own token, a name from the list, a picture, and a secon
   const body = { t: token, name: 'Abena', day: today, shift: 'day', gb: '1,200', gt: 3400, lb: 900, lt: 2700, photo: pic };
   await assert.rejects(np.sendReading(env, { ...body, name: 'Somebody' }), /Choose your name/);
   await assert.rejects(np.sendReading(env, { ...body, photo: '' }), /picture/);
-  await assert.rejects(np.sendReading(env, { ...body, gt: '34OO' }), /GT/);
   await assert.rejects(np.sendReading(env, { ...body, day: '2020-01-01' }), /date/);
+  // No reader here: the picture is taken all the same, the numbers typed are not, and all four wait to be read.
   const out = await np.sendReading(env, body);
-  assert.equal(out.ok, true);
+  assert.deepEqual([out.ok, out.pending], [true, ['gb', 'gt', 'lb', 'lt']]);
   const row = await env.DB.prepare('SELECT * FROM np_reading').first();
-  assert.deepEqual([row.gb, row.gt, row.name], [1200, 3400, 'Abena']);
+  assert.deepEqual([row.gb, row.gt, row.name], [null, null, 'Abena']);
   // Sent again at once: replaced, the old picture gone.
-  await np.sendReading(env, { ...body, gt: 3401 });
-  assert.equal((await env.DB.prepare('SELECT gt FROM np_reading').first()).gt, 3401);
+  assert.equal((await np.sendReading(env, body)).replaced, true);
   assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM np_photo').first()).n, 1);
   // An hour on, or once the manager has corrected it: no.
   await env.DB.prepare("UPDATE np_reading SET sent_at = datetime('now', '-2 hours')").run();
@@ -186,7 +185,6 @@ test('the counters read off the picture: filled in, a number not read asks for t
   // The numbers come from the picture: GB typed as 1250 is not taken, the picture's 1200 is.
   const today = new Date().toISOString().slice(0, 10);
   const send = (photo, extra = {}) => np.sendReading(env, { t: token, name: 'Abena', day: today, shift: 'day', gb: 1250, gt: 3400, lb: 900, lt: 2700, photo, ...extra });
-  await assert.rejects(send(pic('two')), /GT could not be read from this picture/, 'a counter not read: a new picture');
   await send(pic('one'));
   let view = await np.npView(env, { from: today, to: today }, OWNER, { admin: true });
   let r = view.rows.find((x) => x.reading).reading;
@@ -197,17 +195,83 @@ test('the counters read off the picture: filled in, a number not read asks for t
   await send(pic('seven'));
   assert.equal((await env.DB.prepare('SELECT gb FROM np_reading').first()).gb, 1201);
 
-  // The reader cannot be reached: typed numbers are taken, and Insight says they were typed.
-  answer = new Error('down');
-  await send(pic('eight'));
-  view = await np.npView(env, { from: today, to: today }, OWNER, { admin: true });
-  r = view.rows.find((x) => x.reading).reading;
-  assert.deepEqual([r.gb, r.typed], [1250, true]);
-
   // Lower than the last reading: said, not refused.
   answer = { response: '{"GB": 1100, "GT": 3500, "LB": 950, "LT": 2800, "problem": ""}' };
   out = await np.readCounters(env, { t: token, photo: pic('six') });
-  assert.deepEqual(out.lower, [{ counter: 'gb', was: 1250, now: 1100 }]);
+  assert.deepEqual(out.lower, [{ counter: 'gb', was: 1201, now: 1100 }]);
+
+  // A counter not read on the page: sent all the same, and asked about once more, by name.
+  answer = { response: '{"GB": "", "GT": "3402", "LB": "", "LT": "", "problem": ""}' };
+  const before = asked.length;
+  const sent = await send(pic('two'));
+  assert.equal(asked.length, before + 1, 'read again on sending');
+  assert.match(asked[before][1].messages[1].content[0].text, /^GT could not be read the first time/);
+  assert.deepEqual([sent.values, sent.pending], [{ gb: 1200, gt: 3402, lb: 900, lt: 2700 }, []], 'what was missed is filled in; nothing waits');
+  // The same picture again: nothing missing now, so the reader is not asked.
+  await send(pic('two'));
+  assert.equal(asked.length, before + 1);
+
+  // Still not read the second time: kept empty, for a person to read off the picture.
+  answer = { response: '{"GB": "", "GT": "", "LB": "", "LT": "", "problem": "glare"}' };
+  await np.readCounters(env, { t: token, photo: pic('nine') });
+  const left = await send(pic('nine'));
+  assert.deepEqual(left.pending, ['gb', 'gt', 'lb', 'lt']);
+
+  // The reader cannot be reached: the picture is taken, and all four wait.
+  answer = new Error('down');
+  const down = await send(pic('eight'));
+  assert.deepEqual(down.pending, ['gb', 'gt', 'lb', 'lt']);
+  view = await np.npView(env, { from: today, to: today }, OWNER, { admin: true });
+  r = view.rows.find((x) => x.key === `${today}|day`);
+  assert.deepEqual([r.reading, r.status, r.pending.pending, r.pending.name], [null, 'review', ['gb', 'gt', 'lb', 'lt'], 'Abena']);
+});
+
+test('a counter not read waits: a supervisor given Nice Place reads it off the picture, or the reader is asked again', async () => {
+  const { db } = freshDb();
+  let answer = { response: '{"GB": "100", "GT": "200", "LB": "300", "LT": "400", "problem": ""}' };
+  const env = { DB: db, AI: { run: async () => { if (answer instanceof Error) throw answer; return answer; } } };
+  await np.saveSettings(env, { newLink: true, addName: 'Abena' });
+  const { token } = await np.settingsOf(env);
+  const pic = (s) => `data:image/jpeg;base64,${Buffer.from(s).toString('base64')}`;
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  await np.sendReading(env, { t: token, name: 'Abena', day: yesterday, shift: 'night', photo: pic('a') });
+  answer = { response: '{"GB": "120", "GT": "", "LB": "330", "LT": "", "problem": "GT and LT behind a reflection"}' };
+  const out = await np.sendReading(env, { t: token, name: 'Abena', day: today, shift: 'day', photo: pic('b') });
+  assert.deepEqual(out.pending, ['gt', 'lt']);
+
+  // Waiting, with the reading before for a sense of the numbers, and what the reader said.
+  const { items } = await np.pendingReadings(env);
+  assert.equal(items.length, 1);
+  assert.deepEqual([items[0].values, items[0].pending, items[0].problem], [{ gb: 120, gt: null, lb: 330, lt: null }, ['gt', 'lt'], 'GT and LT behind a reflection']);
+  assert.deepEqual([items[0].before.day, items[0].before.gt], [yesterday, 200]);
+  // Not counted until it is in: the night before is the last reading the sums know.
+  let view = await np.npView(env, { from: yesterday, to: today }, OWNER, { admin: true });
+  assert.equal(view.rows.find((r) => r.key === `${today}|day`).status, 'review');
+
+  // Asked again: one more is read; the other still waits.
+  answer = { response: '{"GB": "", "GT": "260", "LB": "", "LT": "", "problem": "LT still behind a reflection"}' };
+  const again = await np.rereadReading(env, { day: today, shift: 'day' });
+  assert.deepEqual([again.values, again.pending, again.problem], [{ gb: 120, gt: 260, lb: 330, lt: null }, ['lt'], 'LT still behind a reflection']);
+  answer = new Error('down');
+  assert.match((await np.rereadReading(env, { day: today, shift: 'day' })).error, /down/);
+
+  // A supervisor fills it in, every number, and may put a misread one right.
+  const SUP = { id: 7, name: 'Sup Ama' };
+  await assert.rejects(np.reviewReading(env, { day: today, shift: 'day', gb: 120, gt: 260, lb: 330, lt: '' }, SUP), /LT/);
+  await np.reviewReading(env, { day: today, shift: 'day', gb: 125, gt: 260, lb: 330, lt: 470 }, SUP);
+  const row = await env.DB.prepare("SELECT * FROM np_reading WHERE shift = 'day'").first();
+  assert.deepEqual([row.gb, row.lt, row.edited_by, row.checked_by], [125, 470, 'Sup Ama', 'Sup Ama']);
+  assert.equal((await np.pendingReadings(env)).items.length, 0);
+  view = await np.npView(env, { from: yesterday, to: today }, OWNER, { admin: true });
+  const done = view.rows.find((r) => r.key === `${today}|day`);
+  assert.deepEqual([done.pending, done.moved.lt], [null, 70]);
+  // Once in, a supervisor cannot change it; an admin can.
+  await assert.rejects(np.reviewReading(env, { day: today, shift: 'day', gb: 1, gt: 1, lb: 1, lt: 1 }, SUP), /already in/);
+  await np.reviewReading(env, { day: today, shift: 'day', gb: 125, gt: 261, lb: 330, lt: 470 }, OWNER, { admin: true });
+  // And staff can no longer send over it.
+  await assert.rejects(np.sendReading(env, { t: token, name: 'Abena', day: today, shift: 'day', photo: pic('c') }), /manager has already corrected/);
+  await assert.rejects(np.reviewReading(env, { day: '2020-01-01', shift: 'day', gb: 1, gt: 1, lb: 1, lt: 1 }, SUP), /No reading/);
 });
 
 test('the reader’s answer, however it comes back', () => {

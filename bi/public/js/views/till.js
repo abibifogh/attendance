@@ -31,6 +31,7 @@ const AREA_TEXT = {
   odoo: ['PO details from Odoo', 'Vendor and total behind each PO.'],
   files: ['Upload journal, statement and card report', 'The Files view. Act means load files.'],
   advances: ['Advances', 'In the Inbox: cash given out before a purchase, and POs whose final price differs. Act means give more time or close one with a reason.'],
+  niceplace: ['Nice Place counters', 'In the Inbox: a picture sent with a counter the reader could not read. Act means read it off the picture and fill it in.'],
   unpaid: ['Unpaid stays', 'Guests leaving in the next 24 hours who still owe, and guests who left owing. Act means answer them (an admin approves).'],
 };
 export const KIND_TONE = { drawer: 'bad', unexplained: 'bad', overclaimed: 'warn', rental: 'warn', noreport: 'info' };
