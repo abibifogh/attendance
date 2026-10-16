@@ -165,7 +165,8 @@ function readPrompt(layout) {
     'This photo should show four people counters at a public washroom: GB (gents bath), GT (gents toilet), LB (ladies bath) and LT (ladies toilet).',
     layout ? `How they are laid out: ${layout}` : 'Each counter has its label (GB, GT, LB or LT) on it or beside it.',
     'Read the number each counter shows, digit by digit, exactly as displayed.',
-    'Give a counter as null if it is not in the photo, you cannot tell which counter it is, or any of its digits is blurred, cut off, covered, reflected, too small or uncertain. Never guess a digit: null is the right answer whenever you are not sure.',
+    'Leading zeros are part of the number (00001 is 1). Give a counter as "" (empty) if it is not in the photo, you cannot tell which counter it is, or any of its digits is blurred, cut off, covered, reflected, too small or uncertain. Never guess a digit: empty is the right answer whenever you are not sure.',
+    'Answer with JSON only, no other words: {"GB": "digits", "GT": "digits", "LB": "digits", "LT": "digits", "problem": "..."}.',
     'In "problem", say in a few plain words what made any counter unreadable (for example "GB is cut off at the left", "glare on LT"), or "" if all four are clear.',
   ].join('\n');
 }
@@ -192,41 +193,66 @@ export function parseRead(result) {
  * fill in by themselves. A counter not read for certain comes back null, and
  * the page asks for the picture again. The same picture is read once.
  */
+/**
+ * Ask the reader about a picture: first for an answer in a fixed JSON shape,
+ * then, if that is refused, for plain text holding the same JSON. Every
+ * failure is kept, word for word, so an admin can see why a picture was not
+ * read. Returns the counters (null where not read) or null.
+ */
+async function askReader(env, photo, layout) {
+  const messages = [
+    { role: 'system', content: 'You read numbers off photos of counters for a washroom manager. You never guess: an unclear digit leaves that counter empty.' },
+    { role: 'user', content: [{ type: 'text', text: readPrompt(layout) }, { type: 'image_url', image_url: { url: photo } }] },
+  ];
+  const attempts = [
+    // Digits as text: a schema every JSON mode accepts, and "" says not read.
+    { response_format: { type: 'json_schema', json_schema: {
+      type: 'object',
+      properties: { GB: { type: 'string' }, GT: { type: 'string' }, LB: { type: 'string' }, LT: { type: 'string' }, problem: { type: 'string' } },
+      required: ['GB', 'GT', 'LB', 'LT', 'problem'],
+    } } },
+    {},
+  ];
+  const errors = [];
+  let raw = null;
+  for (const extra of attempts) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await env.AI.run(READ_MODEL, { messages, max_tokens: 300, temperature: 0, ...extra });
+      raw = typeof result?.response === 'string' ? result.response : JSON.stringify(result?.response ?? result);
+      const read = parseRead(result);
+      if (read) return { read, errors, raw };
+      errors.push(`Answer not understood: ${String(raw).slice(0, 200)}`);
+    } catch (err) {
+      errors.push(String(err?.message || err).slice(0, 300));
+    }
+  }
+  return { read: null, errors, raw };
+}
+
+/** The last time a picture was read, or not, and why: for the manager. */
+async function noteRead(env, outcome) {
+  try { await setSetting(env.DB, 'np_read_last', JSON.stringify({ at: now(), ...outcome })); } catch { /* the reading stands either way */ }
+}
+
+/**
+ * Read the four counters off a picture from the open link, so the numbers
+ * fill in by themselves. A counter not read for certain comes back null, and
+ * the page asks for the picture again. The same picture is read once.
+ */
 export async function readCounters(env, body) {
   const s = await linkSettings(env, body?.t);
   const photo = String(body?.photo || '');
   const m = photo.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
   if (!m) throw badRequest('Take a picture of the counters first.');
   if (m[2].length > PHOTO_MAX) throw badRequest('That picture is too large. Take it again.');
-  if (!env.AI) return { available: false };
+  if (!env.AI) { await noteRead(env, { ok: false, errors: ['The reader (Workers AI) is not bound to this Worker.'] }); return { available: false }; }
   const hash = await fingerprint(m[2]);
   let row = await first(env.DB, 'SELECT * FROM np_read WHERE hash = ?1', hash).catch(() => null);
   if (!row) {
-    let read;
-    try {
-      const result = await env.AI.run(READ_MODEL, {
-        messages: [
-          { role: 'system', content: 'You read numbers off photos of counters for a washroom manager. You never guess: an unclear digit makes the whole counter null.' },
-          { role: 'user', content: [{ type: 'text', text: readPrompt(s.layout) }, { type: 'image_url', image_url: { url: photo } }] },
-        ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            type: 'object',
-            properties: {
-              GB: { type: ['integer', 'null'] }, GT: { type: ['integer', 'null'] }, LB: { type: ['integer', 'null'] }, LT: { type: ['integer', 'null'] },
-              problem: { type: 'string' },
-            },
-            required: ['GB', 'GT', 'LB', 'LT', 'problem'],
-          },
-        },
-        max_tokens: 200,
-        temperature: 0,
-      });
-      read = parseRead(result);
-    } catch {
-      read = null;
-    }
+    const { read, errors, raw } = await askReader(env, photo, s.layout);
+    await noteRead(env, { ok: Boolean(read), errors, raw: raw ? String(raw).slice(0, 500) : null });
+    if (errors.length) console.error('Nice Place: reading a picture', errors);
     // Not answering, or not in a shape that can be trusted: the numbers are typed instead.
     if (!read) return { available: false };
     row = { hash, ...read, model: READ_MODEL, at: now() };
@@ -243,6 +269,18 @@ export async function readCounters(env, body) {
     problem: row.problem || '',
     lower: last ? COUNTERS.filter((c) => values[c] != null && values[c] < last[c]).map((c) => ({ counter: c, was: last[c], now: values[c] })) : [],
   };
+}
+
+/** An admin tries the reader on a picture: what it read, or exactly why not. Nothing is kept but the note. */
+export async function readTest(env, body) {
+  const photo = String(body?.photo || '');
+  if (!/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(photo)) throw badRequest('Choose a picture.');
+  if (photo.length > PHOTO_MAX + 40) throw badRequest('That picture is too large.');
+  if (!env.AI) return { ok: false, errors: ['The reader (Workers AI) is not bound to this Worker.'], raw: null };
+  const s = await settingsOf(env);
+  const { read, errors, raw } = await askReader(env, photo, s.layout);
+  await noteRead(env, { ok: Boolean(read), errors, raw: raw ? String(raw).slice(0, 500) : null, test: true });
+  return { ok: Boolean(read), read, errors, raw: raw ? String(raw).slice(0, 1000) : null, model: READ_MODEL };
 }
 
 /** What a picture was read as, if it was: for the reading sent with it. */
@@ -489,9 +527,13 @@ export async function npView(env, query, account, { admin = false } = {}) {
   out.rows = out.rows.filter((r) => r.reading || r.status !== 'waiting' || (started && order(r.day, r.shift) > started));
   const staff = await all(env.DB, 'SELECT id, name, active FROM np_staff ORDER BY active DESC, name');
   const lastUpload = await first(env.DB, 'SELECT MAX(uploaded_at) AS at, MAX(day) AS day FROM np_revenue');
+  let readLast = null;
+  try { readLast = JSON.parse((await getSettings(env.DB)).np_read_last || 'null'); } catch { readLast = null; }
   return {
     from, to, ...out, rows: out.rows.reverse(),
     staff, admin,
+    // How the last picture went with the reader, for the manager.
+    readLast: admin ? readLast : null,
     link: admin ? (s.token ? { token: s.token } : null) : (s.token ? {} : null),
     revenueThrough: lastUpload?.day || null, revenueAt: lastUpload?.at || null,
   };

@@ -292,6 +292,34 @@ export async function renderNicePlace(root) {
     const child = h('input', { type: 'number', step: '0.5', min: '0', value: String(data.settings.child / 100) });
     const layout = h('input', { type: 'text', maxlength: '300', value: data.settings.layout || '', placeholder: 'Each counter is labelled GB, GT, LB or LT' });
     const active = data.staff.filter((p) => p.active);
+    /** How the last picture went with the reader, and a way to try one: what it read, or exactly why not. */
+    const readerBox = () => {
+      const last = data.readLast;
+      const out = h('div.np-readtest');
+      const pick = h('input', { type: 'file', accept: 'image/*', hidden: true });
+      pick.addEventListener('change', async () => {
+        if (!pick.files[0]) return;
+        mount(out, h('p.small', 'Reading the picture…'));
+        try {
+          const photo = await shrinkPicture(pick.files[0]);
+          const res = await api('/np/read-test', { method: 'POST', body: { photo } });
+          mount(out,
+            h('img.np-photo', { src: photo, alt: 'The picture tried' }),
+            res.ok
+              ? h('p', h('b', '✓ Read: '), ['gb', 'gt', 'lb', 'lt'].map((c) => `${c.toUpperCase()} ${res.read[c] ?? 'not read'}`).join(' · '), res.read.problem ? ` (${res.read.problem})` : '')
+              : h('p', h('b', 'Not read. '), (res.errors || []).join(' | ') || 'No reason given.'),
+            res.raw ? h('pre.np-raw', res.raw) : null);
+        } catch (err) { mount(out, h('p.small', err.message)); }
+        pick.value = '';
+      });
+      return h('div',
+        h('b', 'Reading the counters off the picture'),
+        last ? h('p.small', `Last picture${last.test ? ' (a try from here)' : ''}, ${String(last.at).slice(0, 16)}: `,
+          last.ok ? h('span', { style: 'color:var(--good)' }, 'read.') : h('span', { style: 'color:var(--critical, #b3261e)' }, `not read: ${(last.errors || []).join(' | ') || 'no reason given'}`))
+          : h('p.small', 'No picture read yet.'),
+        h('div.np-inline', h('button.btn', { type: 'button', onclick: () => pick.click() }, 'Try reading a picture'), pick),
+        out);
+    };
     return h('section.card.np-settings',
       h('h2', 'Settings'),
       h('div.np-setgrid',
@@ -306,6 +334,7 @@ export async function renderNicePlace(root) {
         h('div',
           h('b', 'Prices, GH₵, for the toilet and the shower each'),
           h('div.np-inline', h('label', 'Adult ', adult), h('label', 'Child ', child), h('button.btn', { type: 'button', onclick: () => save({ adult: adult.value, child: child.value }, 'Prices saved.') }, 'Save'))),
+        readerBox(),
         h('div',
           h('b', 'How the counters are laid out'),
           h('p.small', 'For reading the numbers off the picture. Leave empty if each counter has its label on it; otherwise say where each is, e.g. "left to right: GB, GT, LB, LT".'),
@@ -314,6 +343,20 @@ export async function renderNicePlace(root) {
   }
 
   await load();
+}
+
+/** A picture made at most 1280 pixels across, as a JPEG data address: as the staff page sends it. */
+async function shrinkPicture(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url; });
+    const scale = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.8);
+  } finally { URL.revokeObjectURL(url); }
 }
 
 function script(src) {

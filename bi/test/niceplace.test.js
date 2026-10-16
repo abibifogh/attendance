@@ -216,3 +216,42 @@ test('the reader’s answer, however it comes back', () => {
   assert.equal(np.parseRead({ response: 'no' }), null);
   assert.equal(np.parseRead(null), null);
 });
+
+test('the reader: a plainer request when the fixed shape is refused, and why it failed kept for the manager', async () => {
+  const { db } = freshDb();
+  const calls = [];
+  let behave = 'schema-refused';
+  const env = {
+    DB: db,
+    AI: { run: async (model, input) => {
+      calls.push(Boolean(input.response_format));
+      if (behave === 'down') throw new Error('5006: Invalid input');
+      if (input.response_format && behave === 'schema-refused') throw new Error('JSON Mode could not be used with this input');
+      return { response: 'Here you are: {"GB": "00001", "GT": "", "LB": "00000", "LT": "00001", "problem": "GT is not in the photo"}' };
+    } },
+  };
+  await np.saveSettings(env, { newLink: true, addName: 'Abena' });
+  const { token } = await np.settingsOf(env);
+  const pic = (s) => `data:image/jpeg;base64,${Buffer.from(s).toString('base64')}`;
+
+  const out = await np.readCounters(env, { t: token, photo: pic('a') });
+  assert.deepEqual(calls, [true, false], 'the fixed shape first, then plain text');
+  assert.deepEqual([out.values, out.unreadable, out.problem], [{ gb: 1, gt: null, lb: 0, lt: 1 }, ['gt'], 'GT is not in the photo'], 'leading zeros kept as the number; empty is not read');
+  const today = new Date().toISOString().slice(0, 10);
+  let view = await np.npView(env, { from: today, to: today }, OWNER, { admin: true });
+  assert.equal(view.readLast.ok, true);
+  assert.match(view.readLast.errors[0], /JSON Mode could not be used/, 'the refusal is kept, word for word');
+
+  behave = 'down';
+  assert.deepEqual(await np.readCounters(env, { t: token, photo: pic('b') }), { available: false });
+  view = await np.npView(env, { from: today, to: today }, OWNER, { admin: true });
+  assert.deepEqual([view.readLast.ok, view.readLast.errors], [false, ['5006: Invalid input', '5006: Invalid input']]);
+  assert.equal((await np.npView(env, { from: today, to: today }, OWNER, { admin: false })).readLast, null, 'for admins only');
+
+  // An admin tries a picture: what was read, or why not.
+  behave = 'ok';
+  const tried = await np.readTest(env, { photo: pic('c') });
+  assert.deepEqual([tried.ok, tried.read.gb, tried.model], [true, 1, np.READ_MODEL]);
+  assert.deepEqual(await np.readTest({ DB: db }, { photo: pic('c') }), { ok: false, errors: ['The reader (Workers AI) is not bound to this Worker.'], raw: null });
+  await assert.rejects(np.readTest(env, { photo: 'x' }), /Choose a picture/);
+});
