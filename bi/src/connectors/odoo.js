@@ -610,6 +610,35 @@ export async function poChoices({ config: settings, token, fetchImpl = fetch }) 
   };
 }
 
+/**
+ * Who Insight is in Odoo: the login its API key signs in as, on which
+ * database, and whether Odoo lets that login create purchase orders (with
+ * their lines). Every part is Odoo's own answer; one it will not give is null.
+ */
+export async function whoAmI({ config: settings, token, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const opts = { fetchImpl };
+  const out = { uid: null, name: null, login: null, db: config.db || null, host: config.base.replace(/^https?:\/\//, ''), canCreate: null };
+  try {
+    const context = await call(config, 'res.users', 'context_get', {}, opts);
+    out.uid = Number(context?.uid) || null;
+  } catch { /* said as unknown */ }
+  if (out.uid) {
+    try {
+      const rows = await call(config, 'res.users', 'search_read', { domain: [['id', '=', out.uid]], fields: ['name', 'login'], limit: 1 }, opts);
+      const row = (Array.isArray(rows) ? rows : rows?.records || [])[0];
+      if (row) { out.name = row.name || null; out.login = row.login || null; }
+    } catch { /* said as unknown */ }
+  }
+  try {
+    const checks = await Promise.all(['purchase.order', 'purchase.order.line'].map((model) => call(config, 'ir.model.access', 'check',
+      { model, mode: 'create', raise_exception: false }, opts)));
+    // Only a plain yes or no from Odoo counts; anything else is said as unknown, never as a no.
+    out.canCreate = checks.every((x) => x === true) ? true : checks.some((x) => x === false) ? false : null;
+  } catch { /* said as unknown */ }
+  return out;
+}
+
 /** The vendor the last PO for a product went to, if any. */
 export async function lastVendorFor({ config: settings, token, productId, fetchImpl = fetch }) {
   const config = odooConfig(settings, token);

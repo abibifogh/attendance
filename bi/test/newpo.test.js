@@ -20,6 +20,9 @@ function odoo({ fail = null } = {}) {
   const fetchImpl = async (url, init) => {
     const [, model, method] = String(url).match(/\/json\/2\/([^/]+)\/([^/]+)$/);
     const body = JSON.parse(init.body);
+    if (model === 'res.users' && method === 'context_get') return Response.json({ lang: 'en_GB', tz: 'Africa/Accra', uid: 7 });
+    if (model === 'res.users') return Response.json([{ id: 7, name: 'Insight Robot', login: 'insight@example.test' }]);
+    if (model === 'ir.model.access') return Response.json(fail !== 'refuse');
     if (model === 'res.partner') return Response.json(vendors);
     if (model === 'product.product') return Response.json(products);
     if (model === 'purchase.order.line') return Response.json([{ id: 1, partner_id: [11, 'A Fuel Station'] }]);
@@ -143,6 +146,16 @@ test('when Odoo will not create it, its own words are shown; when it made it but
   let o = odoo({ fail: 'refuse' });
   await assert.rejects(newpo.createPo(env, body, OWNER, { fetchImpl: o.fetchImpl }),
     (err) => err.status === 502 && /Odoo did not create the PO\. Odoo answered 422 creating purchase\.order: Incompatible companies/.test(err.message));
+  // Refused for want of rights: which login Odoo refused, and the form warns before anything is typed.
+  o = odoo({ fail: 'refuse' });
+  const denied = async (url, init) => (/purchase\.order\/create$/.test(String(url))
+    ? Response.json({ name: 'odoo.exceptions.AccessError', message: "You are not allowed to create 'Purchase Order Line' (purchase.order.line) records." }, { status: 403 })
+    : o.fetchImpl(url, init));
+  await assert.rejects(newpo.createPo(env, body, OWNER, { fetchImpl: denied }),
+    /Odoo did not allow creating purchase\.order: You are not allowed .* Insight's Odoo key signs in as Insight Robot \(insight@example\.test\) on odoo\.example\.test\./);
+  const form = await newpo.poForm(env, { fetchImpl: denied });
+  assert.deepEqual(form.as, { uid: 7, name: 'Insight Robot', login: 'insight@example.test', db: null, host: 'odoo.example.test', canCreate: false });
+  assert.equal((await newpo.poForm(env, { fetchImpl: odoo().fetchImpl })).as.canCreate, true);
 
   o = odoo({ fail: 'silent' });
   const found = await newpo.createPo(env, body, OWNER, { fetchImpl: o.fetchImpl });

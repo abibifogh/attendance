@@ -1,7 +1,7 @@
 import { all, run } from '../lib/db.js';
 import { badRequest, HttpError, str } from '../lib/http.js';
 import { todayIn, isDay, addDays } from '../lib/dates.js';
-import { poChoices, lastVendorFor, posOnDay, createDraftPo, attachToPo } from '../connectors/odoo.js';
+import { poChoices, lastVendorFor, posOnDay, createDraftPo, attachToPo, whoAmI } from '../connectors/odoo.js';
 import { odooSource } from './safebook.js';
 import { READ_MODEL } from './niceplace.js';
 
@@ -30,8 +30,10 @@ async function source(env) {
 /** What the form needs: Odoo's vendors and products, and today. */
 export async function poForm(env, { fetchImpl } = {}) {
   const s = await source(env);
-  const choices = await poChoices({ ...s, ...(fetchImpl ? { fetchImpl } : {}) });
-  return { ...choices, today: todayIn('UTC') };
+  const opts = { ...s, ...(fetchImpl ? { fetchImpl } : {}) };
+  const [choices, as] = await Promise.all([poChoices(opts), whoAmI(opts).catch(() => null)]);
+  // Who the PO will be created as in Odoo, and whether Odoo lets that login create one.
+  return { ...choices, as, today: todayIn('UTC') };
 }
 
 // ------------------------------------------------------------ matching --
@@ -254,7 +256,15 @@ export async function createPo(env, body, account, { fetchImpl } = {}) {
     console.error('Create PO', err);
     // Odoo may have made it and then failed to answer: looked for once before saying it failed.
     const made = await fromHere();
-    if (!made) throw new HttpError(502, `Odoo did not create the PO. ${String(err?.message || err)}`);
+    if (!made) {
+      // Refused: say which login Odoo refused, so the right one is looked at.
+      let who_ = '';
+      if (/not allowed|did not allow/i.test(String(err?.message))) {
+        const me = await whoAmI(opts).catch(() => null);
+        if (me?.name || me?.login) who_ = ` Insight's Odoo key signs in as ${me.name || ''}${me.login ? ` (${me.login})` : ''} on ${me.db || me.host}.`;
+      }
+      throw new HttpError(502, `Odoo did not create the PO. ${String(err?.message || err)}${who_}`);
+    }
     po = { id: made.id, name: made.name, total: made.total, state: made.state, url: urlOf(made.id) };
   }
   let attached = false;

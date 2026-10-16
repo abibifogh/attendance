@@ -171,6 +171,10 @@ export function openNewPo() {
     mount(inner,
       h('h2', 'New purchase order'),
       h('p.po-sub', 'A draft in Odoo, approved there as usual.'),
+      // Who Odoo will make it as, and a warning before anything is typed when Odoo will not let that login.
+      c.as?.canCreate === false ? h('div.po-warn', h('b', 'Odoo will not let Insight create POs yet. '),
+        `Insight’s Odoo key signs in as ${c.as.name || 'a login'}${c.as.login ? ` (${c.as.login})` : ''} on ${c.as.db || c.as.host}, and Odoo says that login may not create purchase orders. `,
+        'In Odoo, give that login Purchase: User, or make the key on the login you use for POs.') : null,
       said ? h(`p.po-said${said[0] === 'err' ? '.err' : ''}`, said[1]) : null,
       h('div.po-quick',
         h('b', 'Fill it in for me (optional)'),
@@ -188,7 +192,8 @@ export function openNewPo() {
       h('datalist', { id: 'po-vendors' }, c.vendors.map((x) => h('option', { value: x.name }))),
       h('datalist', { id: 'po-products' }, c.products.map((x) => h('option', { value: x.name }))),
       err,
-      h('div.po-acts', h('button.btn', { type: 'button', onclick: close }, 'Cancel'), h('button.btn.primary', { type: 'button', onclick: check }, 'Check')));
+      h('div.po-acts', h('button.btn', { type: 'button', onclick: close }, 'Cancel'), h('button.btn.primary', { type: 'button', onclick: check }, 'Check')),
+      c.as?.name || c.as?.login ? h('p.po-said', { style: 'color:var(--ink-2);font-size:.78rem' }, `In Odoo as ${c.as.name || ''}${c.as.login ? ` (${c.as.login})` : ''} · ${c.as.db || c.as.host}`) : null);
     if (!v.vendor && !said) vendor.focus();
   }
 
