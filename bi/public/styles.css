@@ -160,6 +160,50 @@ details.navmenu.account .navpanel { left: auto; right: 0; }
 @media (max-width: 480px) {
   nav.navgroups { flex-wrap: nowrap; gap: 0; }
   nav.navgroups .navlink, nav.navgroups details.navmenu > summary { padding: .45rem .5rem; font-size: .9rem; }
+  /* With ＋ PO on the row too, the menus a little tighter so it all fits. */
+  nav.navgroups:has(.po-new) .navlink, nav.navgroups:has(.po-new) details.navmenu > summary { padding: .4rem .38rem; font-size: .86rem; }
+  nav.navgroups .po-new { margin-left: auto; padding: .32rem .6rem; font-size: .86rem; }
+}
+/* ＋ PO: Create PO, from any screen. */
+nav.navgroups .po-new {
+  margin-left: .5rem; border: 0; border-radius: 999px; padding: .42rem .9rem; font: inherit; font-weight: 700;
+  background: var(--series-1, #2a6fdb); color: #fff; cursor: pointer; white-space: nowrap;
+}
+nav.navgroups .po-new:hover { filter: brightness(1.08); }
+
+/* The Create PO sheet: from the bottom on a phone, a box in the middle on a computer. */
+.po-sheet { position: fixed; inset: 0; z-index: 90; background: rgba(0, 0, 0, .38); display: flex; align-items: center; justify-content: center; }
+.po-sheet .po-in {
+  background: var(--surface); color: var(--ink); width: min(560px, 100%); max-height: 92vh; overflow: auto;
+  border-radius: 16px; padding: 1.1rem 1.1rem 1.3rem; box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+}
+.po-sheet h2 { margin: 0 0 .15rem; font-size: 1.2rem; }
+.po-sheet .po-sub { color: var(--ink-2); font-size: .86rem; margin: 0 0 .8rem; }
+.po-sheet .po-quick { background: var(--surface-2); border-radius: 12px; padding: .7rem; margin-bottom: .9rem; }
+.po-sheet .po-quick > b { display: block; font-size: .86rem; margin-bottom: .4rem; }
+.po-sheet .po-qrow { display: flex; gap: .4rem; }
+.po-sheet .po-qrow input { flex: 1; min-width: 0; }
+.po-sheet label.po-f { display: grid; gap: .2rem; font-size: .82rem; color: var(--ink-2); margin-bottom: .6rem; }
+.po-sheet input, .po-sheet select { padding: .58rem .7rem; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 1rem; width: 100%; box-sizing: border-box; background: var(--surface); color: var(--ink); }
+.po-sheet .po-two { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.po-sheet .po-acts { display: flex; gap: .5rem; margin-top: .5rem; }
+.po-sheet .po-acts .btn { flex: 1; padding: .7rem; font-size: 1rem; }
+.po-sheet .po-auto { background: color-mix(in srgb, var(--good, #2f7d32) 9%, var(--surface)); border-color: color-mix(in srgb, var(--good, #2f7d32) 55%, var(--border)); }
+.po-sheet .po-ask { border: 2px dashed #c98a00; background: color-mix(in srgb, #c98a00 10%, var(--surface)); }
+.po-sheet .po-hint { font-size: .78rem; color: var(--good, #2f7d32); }
+.po-sheet .po-hint.warn { color: #8a5a00; }
+.po-sheet .po-said { font-size: .85rem; margin: .45rem 0 0; }
+.po-sheet .po-said.err { color: var(--critical, #b3261e); }
+.po-sheet .po-file { display: flex; align-items: center; gap: .5rem; font-size: .85rem; margin-top: .45rem; }
+.po-sheet .po-file img { width: 44px; height: 56px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }
+.po-sheet .po-warn { background: color-mix(in srgb, #c98a00 14%, var(--surface)); color: #7a4f00; border-radius: 10px; padding: .6rem .75rem; font-size: .9rem; margin-top: .7rem; }
+.po-sheet .po-ok { background: color-mix(in srgb, var(--good, #2f7d32) 12%, var(--surface)); border-radius: 10px; padding: .8rem .9rem; }
+.po-sheet dl { display: grid; grid-template-columns: auto 1fr; gap: .35rem .9rem; margin: .4rem 0 0; }
+.po-sheet dt { color: var(--ink-2); }
+.po-sheet dd { margin: 0; }
+@media (max-width: 600px) {
+  .po-sheet { align-items: flex-end; }
+  .po-sheet .po-in { border-radius: 18px 18px 0 0; }
 }
 
 main { padding: 1.1rem; max-width: 1180px; margin: 0 auto; }
