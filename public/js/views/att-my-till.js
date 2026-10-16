@@ -84,16 +84,42 @@ export async function renderAttMyTill() {
   // Sign button stays locked on an answer that is no longer true.
   let earlier = { advances: [], changes: [] };
   let earlierFor = null;
+  let earlierAt = 0;
   function loadEarlier(fresh = false) {
     const key = `${which.day}|${which.slot}`;
     earlierFor = key;
+    earlierAt = Date.now();
     return api.tillPoChanges({ day: which.day, slot: which.slot, fresh }).then((d) => {
       if (earlierFor !== key) return;
-      earlier = { advances: d.advances || [], changes: d.changes || [] };
+      const next = { advances: d.advances || [], changes: d.changes || [] };
+      // Painted again only when something changed, so nobody loses what they are typing.
+      if (JSON.stringify(next) === JSON.stringify(earlier)) return;
+      earlier = next;
       paint();
     }).catch(() => {});
   }
   loadEarlier(true);
+
+  // Kept up to date while the screen stays open: an advance given to somebody
+  // else, more time, or a PO approved or reported meanwhile shows without
+  // "check again". Asked again every two minutes, and on coming back to the
+  // screen, at most every half minute; stopped once the screen is left.
+  const EARLIER_EVERY = 120_000;
+  let onScreen = false;
+  const keepEarlier = () => {
+    if (!host.isConnected) { if (onScreen) stopEarlier(); return; }
+    onScreen = true;
+    if (document.visibilityState !== 'visible' || Date.now() - earlierAt < 30_000) return;
+    loadEarlier(true);
+  };
+  const earlierTimer = setInterval(keepEarlier, EARLIER_EVERY);
+  document.addEventListener('visibilitychange', keepEarlier);
+  window.addEventListener('focus', keepEarlier);
+  function stopEarlier() {
+    clearInterval(earlierTimer);
+    document.removeEventListener('visibilitychange', keepEarlier);
+    window.removeEventListener('focus', keepEarlier);
+  }
 
   paint();
   return host;
