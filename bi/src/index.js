@@ -214,6 +214,8 @@ const ROUTES = [
   ['POST', '/api/np/send', 'public', (env, ctx) => np.sendReading(env, ctx.body)],
   // The counters read off the picture, so the numbers fill in by themselves.
   ['POST', '/api/np/read', 'public', (env, ctx) => np.readCounters(env, ctx.body)],
+  // An admin tries the reader on a picture, to see what it reads or why it cannot.
+  ['POST', '/api/np/read-test', 'insight', adminOnly((env, ctx) => np.readTest(env, ctx.body))],
   ['GET', '/api/np', 'insight', (env, ctx) => np.npView(env, ctx.query, ctx.account, { admin: till.roleOf(ctx.account) === 'admin' })],
   ['GET', '/api/np/photo/:id', 'insight', (env, ctx) => np.photo(env, ctx.params.id)],
   ['POST', '/api/np/income', 'insight', adminOnly((env, ctx) => np.saveIncome(env, ctx.body, ctx.account))],

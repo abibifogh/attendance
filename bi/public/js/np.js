@@ -36,17 +36,17 @@ async function call(path, body) {
   return data;
 }
 
-/** The picture, made at most 1600 pixels across and sent as a JPEG. */
+/** The picture, made at most 1280 pixels across and sent as a JPEG: clear enough to read, small enough to send. */
 async function shrink(file) {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url; });
-    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const scale = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(img.naturalWidth * scale);
     canvas.height = Math.round(img.naturalHeight * scale);
     canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', 0.72);
+    return canvas.toDataURL('image/jpeg', 0.8);
   } finally { URL.revokeObjectURL(url); }
 }
 

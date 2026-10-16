@@ -1582,3 +1582,6 @@ label.fm-row input { margin-top: .2rem; }
 
 /* Nice Place: a number typed differently from what the picture was read as. */
 .np-typed { display: block; color: var(--sh-warn-ink, #8a5a00); font-weight: 700; }
+
+.np-readtest .np-photo { max-width: 320px; margin-top: .5rem; }
+.np-raw { white-space: pre-wrap; word-break: break-word; font-size: .78rem; background: var(--surface-2); padding: .5rem; border-radius: 8px; max-height: 12rem; overflow: auto; }

@@ -33,6 +33,13 @@ pointed out (a misread, or a counter reset) but not refused. Only when the
 reader cannot be reached may the numbers be typed, and that reading is marked
 "typed: picture not read" in Insight. The same picture is read only once.
 
+Settings › **Reading the counters off the picture** says how the last picture
+went (read, or not and the reader's exact words why) and has **Try reading a
+picture**: choose a photo and see what the reader makes of it, and its raw
+answer. The reader is first asked for its answer in a fixed shape; if it
+refuses that, it is asked again in plain words. Pictures are sent at most
+1280 pixels across.
+
 If the counters carry no GB / GT / LB / LT labels, say where each one is under
 Settings › **How the counters are laid out** (for example "left to right:
 GB, GT, LB, LT"); the reader is told.
