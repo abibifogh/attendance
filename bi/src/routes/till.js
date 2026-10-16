@@ -40,7 +40,7 @@ export const AREAS = [
   { key: 'reports', max: 1 }, { key: 'money', max: 1 }, { key: 'moves', max: 2 },
   { key: 'answers', max: 2 }, { key: 'money_out', max: 2 }, { key: 'reopen', max: 2 }, { key: 'net', max: 1 },
   { key: 'bank', max: 2 }, { key: 'odoo', max: 1 }, { key: 'files', max: 2 }, { key: 'unpaid', max: 2 },
-  { key: 'advances', max: 2 },
+  { key: 'advances', max: 2 }, { key: 'niceplace', max: 2 },
 ];
 const AREA_MAX = new Map(AREAS.map((a) => [a.key, a.max]));
 
@@ -610,9 +610,14 @@ const SETTLED_WORDS = { accept: 'accepted', recover: 'recovered from pay', cash:
 /** Who may carry a difference: the front desk first, then everybody else in HIVE. */
 export async function staffList(env, account) {
   await requireAdmin(account);
+  return deskStaff(env);
+}
+
+/** HIVE's active people: those who close shifts at the desk first, then everybody else. */
+export async function deskStaff(env) {
   const users = await hiveUsers(env);
   const mapped = new Set([...(await people(env)).values()].map(Number));
-  const closed = new Set((await hive(env, 'SELECT DISTINCT user_id FROM till_report')).map((r) => Number(r.user_id)));
+  const closed = new Set((await hive(env, 'SELECT DISTINCT user_id FROM till_report UNION SELECT DISTINCT user_id FROM till_po')).map((r) => Number(r.user_id)));
   const desk = (u) => mapped.has(Number(u.id)) || closed.has(Number(u.id));
   const row = (u) => ({ id: Number(u.id), name: u.name });
   return { frontDesk: users.filter(desk).map(row), others: users.filter((u) => !desk(u)).map(row) };
@@ -712,11 +717,11 @@ export async function undoMove(env, body, account, { fetchImpl } = {}) {
 }
 
 /** A message in HIVE. Never fails what was done: true when it went. */
-async function tell(env, userIds, title, text, fetchImpl) {
+export async function tell(env, userIds, title, text, fetchImpl, kind = 'till.moved') {
   try {
     await hiveCall({
       binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/till/tell',
-      body: { userIds, kind: 'till.moved', title, body: text },
+      body: { userIds, kind, title, body: text },
     });
     return true;
   } catch { return false; }

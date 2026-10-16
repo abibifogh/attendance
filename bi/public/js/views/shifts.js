@@ -6,6 +6,7 @@ import { tillViews } from './till.js';
 import { todoDetail, todoSub, todoTitle, todoAge } from './todo.js';
 import { advanceDetail, advanceStatus, advanceOpen, advanceWhen, elsewhereCard } from './advances.js';
 import { state } from '../app.js';
+import { npReviewBox } from './np-review.js';
 
 /**
  * Shifts: the front desk's control sheet, done from the source records.
@@ -98,7 +99,7 @@ const MOVED = {
 const PERIODS = ['day', 'week', 'month'];
 /** The Inbox's kinds, in the order the chips show them. */
 const INBOX_KINDS = [['drawer', 'Drawer'], ['bank', 'Card & bank'], ['po', 'POs'], ['advance', 'Advances'], ['stay', 'Unpaid stays'], ['admin', 'Waiting for admin'],
-  ['odoo', 'Odoo'], ['mine', '✓ Mine in Odoo']];
+  ['np', 'Nice Place'], ['odoo', 'Odoo'], ['mine', '✓ Mine in Odoo']];
 /** What Odoo calls the records activities sit on, in words. */
 const ODOO_MODELS = { 'purchase.order': 'Purchase order', 'account.move': 'Bill or invoice', 'res.partner': 'Contact', 'stock.picking': 'Transfer', 'hr.employee': 'Employee', 'crm.lead': 'Lead' };
 const odooWhat = (a) => `${ODOO_MODELS[a.model] || a.model}${a.resName ? ` ${a.resName}` : ''}`;
@@ -195,7 +196,7 @@ export async function renderShifts(root, { range }) {
   // What each source of the Inbox needs.
   const can = {
     exceptions: may('bank') || may('moves'), stays: may('unpaid'), todo: admin || who.role === 'supervisor',
-    answers: may('answers'), advances: may('advances'), approvals: admin,
+    answers: may('answers'), advances: may('advances'), approvals: admin, niceplace: may('niceplace'),
   };
   const allowed = {
     shifts: periods.length > 0 || may('money'),
@@ -261,7 +262,7 @@ export async function renderShifts(root, { range }) {
   // approvals. Read in the background on opening, so the tab shows its count,
   // and again after anything in it is answered.
   let stays = null;
-  const sources = { todo: null, advances: null, till: null, refunds: null, odoo: null };
+  const sources = { todo: null, advances: null, till: null, refunds: null, odoo: null, np: null };
   let askOdoo = false;
   function readStays() {
     if (!can.stays) return Promise.resolve(null);
@@ -275,6 +276,7 @@ export async function renderShifts(root, { range }) {
       can.advances ? quiet(api('/advances').then((d) => { sources.advances = d; })) : null,
       can.answers || can.approvals ? quiet(till.read(force).then((d) => { sources.till = d; })) : null,
       may('bank') ? quiet(api('/shifts/refunds').then((d) => { sources.refunds = d; })) : null,
+      can.niceplace ? quiet(api('/np/pending').then((d) => { sources.np = d; })) : null,
       // Odoo's activities: everyone's for an admin, one's own once linked, and those on POs with Odoo shared.
       // Odoo itself is asked again only on Refresh now; otherwise at most every ten minutes.
       quiet(api(`/odoo/activities${askOdoo ? '?force=1' : ''}`).then((d) => { sources.odoo = d; askOdoo = false; })),
@@ -2692,6 +2694,18 @@ export async function renderShifts(root, { range }) {
         });
       }
     }
+    // Nice Place pictures with a counter the reader could not read: read off the picture here.
+    if (can.niceplace && sources.np) {
+      for (const p of sources.np.items || []) {
+        out.push({
+          id: `np:${p.key}`, kind: 'np', title: `Read ${p.pending.map((c) => c.toUpperCase()).join(', ')} off the picture`,
+          sub: `${dayText(p.day)} ${p.shift}${p.name ? ` · sent by ${p.name}` : ''}`, amount: '',
+          chip: ['over', 'To read'], tone: 'over', age: daysAgo(p.day), counts: may('niceplace', 2),
+          render: () => h('article.sh-ex.warn', h('div.hd', h('span.sq', 'N'), h('h3', `Nice Place counters · ${dayText(p.day)} ${p.shift}`)),
+            npReviewBox(p, { after, canAct: may('niceplace', 2) })),
+        });
+      }
+    }
     // Odoo activities overdue or due today: everybody's for an admin, and one's own.
     for (const a of (sources.odoo?.activities || []).filter((x) => x.state !== 'planned')) {
       const item = (kind) => ({
@@ -2764,8 +2778,8 @@ export async function renderShifts(root, { range }) {
         out.push({
           id: `ad:${x.po}`, kind: 'advance', title: `${x.po}${x.vendor ? ` · ${x.vendor}` : ''}`,
           sub: `${x.advance ? 'Advanced' : 'Paid'} ${advanceWhen(x)}${x.by ? ` · ${x.by}` : ''}`, amount: money(x.advance ? x.advanced : x.paid),
-          chip: [tone, label], tone, done, age: daysAgo(x.day), counts: !done,
-          render: () => advanceDetail(x, { canAct: sources.advances.canAct, formLive: sources.advances.formLive, after }),
+          chip: [tone, label], tone, done, age: daysAgo(x.day), counts: !done && !x.decision?.given,
+          render: () => advanceDetail(x, { canAct: sources.advances.canAct, formLive: sources.advances.formLive, staff: sources.advances.staff, after }),
         });
       }
     }

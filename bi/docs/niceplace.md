@@ -21,17 +21,37 @@ At the end of each shift, the person on:
 3. takes one picture of the four counters: the four numbers fill in by
    themselves, read off the picture, and cannot be typed over;
 4. checks them against the counters (one wrong means a new picture) and
-   presses **Send**.
+   presses **Send**. Only the name and the picture are needed.
 
 **Reading the picture.** Cloudflare's Workers AI (model Llama 4 Scout, on
 the same Cloudflare account, no key) reads each counter. A counter it cannot
-read for certain (cut off, blurred, glare, covered) is left empty and
-marked, and the page asks for the picture again; **Send** waits until it
-has one with all four. The numbers sent are the picture's, checked again on
-the server, whatever is in the boxes. A number lower than the last reading is
-pointed out (a misread, or a counter reset) but not refused. Only when the
-reader cannot be reached may the numbers be typed, and that reading is marked
-"typed: picture not read" in Insight. The same picture is read only once.
+read for certain (cut off, blurred, glare, covered) is left empty and marked
+"to be read". Nothing is ever typed on the phone. The person can take a
+clearer picture, or send this one as it is:
+
+- **On sending**, the reader is asked once more about the counters it missed,
+  told which ones to look at closely. What it reads now fills them in.
+- **Still not read** (or the reader cannot be reached): the reading is kept
+  with that counter empty, and the phone says the manager will read it. The
+  shift is not counted until all four are in.
+- **An admin or a supervisor** then reads it off the picture. It shows in
+  Shifts › Inbox under **Nice Place** ("Read GT off the picture"), and on the
+  Nice Place page as **! Counter to read**, with a banner. The picture sits
+  beside four boxes: the counters read are filled in, the missing one is
+  empty, and each shows the last reading under it. **Try reading again** asks
+  the reader once more; **Save the four numbers** saves all four (a misread one
+  can be put right too). The reading is then marked as typed and checked by
+  that person, and the shift is worked out.
+
+A supervisor sees this only with **Nice Place counters** set in Settings ›
+access (See shows the readings waiting; See and act lets them fill them in).
+It is in neither preset, so it is given person by person. A supervisor fills in
+only a reading still waiting; once all four are in, only an admin changes it.
+
+The numbers saved are the picture's, checked again on the server, whatever is
+in the boxes. A number lower than the last reading is pointed out (a misread,
+or a counter reset) but not refused. The same picture is read once on the
+page, and again on sending only for what was missed.
 
 Settings › **Reading the counters off the picture** says how the last picture
 went (read, or not and the reader's exact words why) and has **Try reading a
@@ -44,10 +64,10 @@ If the counters carry no GB / GT / LB / LT labels, say where each one is under
 Settings › **How the counters are laid out** (for example "left to right:
 GB, GT, LB, LT"); the reader is told.
 
-In Insight, a reading whose numbers were typed because the picture could not
-be read then says so on its row and in its detail: look at the picture.
+Readings sent before this, typed because the picture could not be read, still
+say "typed: picture not read" in Insight.
 
-A number typed wrong can be sent again within an hour of the first time; after
+A wrong number can be sent again, with a new picture, within an hour of the first time; after
 that an admin fixes it in Insight. The picture is made smaller on the phone
 before it is sent and kept with the reading.
 

@@ -12,6 +12,13 @@
    closing report, and every shift after it, until it is settled. In Insight,
    whoever may act on Advances can give it **More time** (until a day) or
    **Close** it with a reason.
+   **Give it to** one person instead, once it is approved in Odoo: then only
+   that person's Close shift waits for it ("Given to you to report", on every
+   shift they close, whichever shift it is) until it is on the expense form,
+   and everybody else closes as normal. The person who gave the money out is
+   suggested first. They are told at once in HIVE (push and email), and told
+   again if it is given to somebody else, taken back, given more time or
+   closed. **Take it back** makes it hold up every shift again.
 4. **An approved PO** typed on a closing report has to be on the expense form
    already, or the report cannot be signed.
 5. **ASSD.** Every expense, advances included, is moved out in ASSD when the
@@ -37,7 +44,7 @@
 
 Insight → Shifts → Inbox → **Advances**. Admins always. A supervisor only if
 an admin gives them **Advances** under Settings → Who sees what:
-*See* shows the list; *See and act* also allows More time and Close. Shift
+*See* shows the list; *See and act* also allows More time, Give it to and Close. Shift
 variances are shown only to those who also see amounts.
 
 Each line has one status: *Approve in Odoo*, *Report on form* (either marked

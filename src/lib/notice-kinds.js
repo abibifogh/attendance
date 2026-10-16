@@ -548,6 +548,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'till.given',
+    group: 'money',
+    label: 'An advance was given to you to report',
+    who: 'Whoever it was given to',
+    when: 'An admin or a supervisor gives an advance to one person to report on the expense form, or takes it back',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'till.reopened',
     group: 'money',
     label: 'Your closing report was reopened',

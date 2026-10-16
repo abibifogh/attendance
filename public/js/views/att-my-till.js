@@ -230,14 +230,24 @@ export async function renderAttMyTill() {
       type: 'button',
       onclick: async (ev) => { ev.target.disabled = true; ev.target.textContent = 'checking…'; await loadEarlier(true); },
     }, 'check again');
+    const advanceRow = (a) => h('div.till-change', { dataset: { po: a.name } },
+      h('div.till-change-text',
+        h('div', h('b', a.name), ` ${a.vendor ? `${a.vendor} · ` : ''}advance of ${cedis(a.paid)}`),
+        h('div.till-change-sub', `Given out on ${when(a.first)}. `, h('b', ADV_TEXT[a.status] || ''))),
+      h('div.till-change-act', h(`span.till-chip.${a.status === 'report' ? 'warn' : 'bad'}`, ADV_CHIP[a.status] || 'Waiting')));
+    // Given to this person to report: theirs alone, whatever shift they are on.
+    const mine = earlier.advances.filter((a) => a.given);
+    const rest = earlier.advances.filter((a) => !a.given);
+    const givenBy = [...new Set(mine.map((a) => a.given.by).filter(Boolean))];
+    const others = rest.length || changes.length;
     return h('div.till-changes',
-      h('h4', 'From the last shift'),
-      h('p', 'Each of these has to be sorted before this shift can be signed. ', again),
-      earlier.advances.map((a) => h('div.till-change', { dataset: { po: a.name } },
-        h('div.till-change-text',
-          h('div', h('b', a.name), ` ${a.vendor ? `${a.vendor} · ` : ''}advance of ${cedis(a.paid)}`),
-          h('div.till-change-sub', `Given out on ${when(a.first)}. `, h('b', ADV_TEXT[a.status] || ''))),
-        h('div.till-change-act', h(`span.till-chip.${a.status === 'report' ? 'warn' : 'bad'}`, ADV_CHIP[a.status] || 'Waiting')))),
+      mine.length ? [
+        h('h4', 'Given to you to report'),
+        h('p', `${givenBy.length ? `${givenBy.join(' and ')} gave you ${mine.length === 1 ? 'this' : 'these'}. ` : ''}Your shift cannot be signed until ${mine.length === 1 ? 'it is' : 'they are'} on the expense form. `, others ? null : again),
+        mine.map(advanceRow),
+      ] : null,
+      others ? [h('h4', 'From the last shift'), h('p', 'Each of these has to be sorted before this shift can be signed. ', again)] : null,
+      rest.map(advanceRow),
       changes.map((c) => h('div.till-change', { dataset: { po: c.name } },
         h('div.till-change-text',
           h('div', h('b', c.name), ` ${c.vendor ? `${c.vendor} · ` : ''}bought for ${cedis(c.total)}, ${cedis(c.paidSoFar)} paid from the drawer`),

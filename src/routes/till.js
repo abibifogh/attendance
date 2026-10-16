@@ -312,12 +312,18 @@ export async function fromEarlier(ctx, { day, slot, userId, fresh = false }) {
     const first = { day: claim.day, slot: claim.slot, by: claim.who || null, paid: Number(claim.paid) || 0 };
     const settled = found.confirmed && reportedOk(found);
     if (Number(claim.advance) === 1 && !settled) {
+      const status = found.state === 'cancel' ? 'cancel' : found.confirmed ? 'report' : 'approve';
+      // Given to one person to report: their Close shift waits for it, and nobody else's.
+      const given = found.decision?.given;
+      if (given && status === 'report') {
+        if (Number(given.userId) === Number(userId)) {
+          advances.push({ name: found.name, vendor: found.vendor ?? null, total: found.total, paid: first.paid, first, status, given: { by: given.by || null } });
+        }
+        continue;
+      }
       const moreTime = found.decision?.until && found.decision.until >= today;
       if (!moreTime && earlierThan(claim, { day, slot })) {
-        advances.push({
-          name: found.name, vendor: found.vendor ?? null, total: found.total, paid: first.paid, first,
-          status: found.state === 'cancel' ? 'cancel' : found.confirmed ? 'report' : 'approve',
-        });
+        advances.push({ name: found.name, vendor: found.vendor ?? null, total: found.total, paid: first.paid, first, status });
       }
       continue;
     }
@@ -365,7 +371,7 @@ export function earlierBlocks(earlier, expenses, notMine = []) {
   const when = (f) => `${SLOT_LABEL[f.slot] || ''} ${f.day || ''}${f.by ? `, ${f.by}` : ''}`.trim();
   for (const a of earlier.advances || []) {
     const what = { approve: 'approve it in Odoo', report: 'report it on the expense form', cancel: 'cancelled in Odoo: an admin has to close it' }[a.status];
-    out.push(`${a.name} advance of ${cedis(a.paid)} (${when(a.first)}): ${what}`);
+    out.push(`${a.name} advance of ${cedis(a.paid)} (${when(a.first)}${a.given ? `, given to you to report${a.given.by ? ` by ${a.given.by}` : ''}` : ''}): ${what}`);
   }
   const onReport = new Set(expenses.filter((e) => e.counted && e.kind !== 'claim').map((e) => e.name));
   for (const c of earlier.changes || []) {
@@ -961,6 +967,15 @@ export async function linkMove(ctx) {
 
 /** Insight's own words, in the design, with the label that fits. */
 function tellMail(kind, title, text) {
+  if (kind === 'till.given') {
+    return {
+      tone: 'warn', status: 'Yours to report', eyebrow: 'Till',
+      headline: title, intro: text || undefined,
+      button: 'Open Close shift',
+      subject: title, preheader: text || undefined,
+      why: 'You get this because an advance was given to you to report on the expense form, or taken back.',
+    };
+  }
   if (kind === 'till.moved') {
     return {
       tone: 'warn', status: 'On your account', eyebrow: 'Till',
@@ -1087,7 +1102,7 @@ export async function linkSummary(ctx) {
 /** Tell people something Insight decided. */
 export async function linkTell(ctx) {
   const body = await fromInsight(ctx);
-  const kind = ['till.settled', 'till.approval', 'till.moved'].includes(body.kind) ? body.kind : 'till.settled';
+  const kind = ['till.settled', 'till.approval', 'till.moved', 'till.given'].includes(body.kind) ? body.kind : 'till.settled';
   const title = str(body.title, 'Title', { required: true, max: 200 });
   const text = str(body.body, 'Body', { max: 800 });
   const people = Array.isArray(body.recipients)
@@ -1097,7 +1112,7 @@ export async function linkTell(ctx) {
     if (!Number.isInteger(Number(p.userId))) continue;
     // eslint-disable-next-line no-await-in-loop
     await createNotice(ctx.db, {
-      kind, level: 'info', title, body: text, link: kind === 'till.approval' ? null : '#/att-my-till-issues',
+      kind, level: 'info', title, body: text, link: kind === 'till.approval' ? null : kind === 'till.given' ? '#/att-my-till' : '#/att-my-till-issues',
       userId: Number(p.userId), push: p.push !== false, email: Boolean(p.email), text: false,
       mail: safeMail(() => tellMail(kind, title, text)),
     }, ctx);
