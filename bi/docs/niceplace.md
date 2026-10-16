@@ -18,8 +18,27 @@ At the end of each shift, the person on:
 
 1. chooses their name (Settings › Names on the link holds the list);
 2. checks the date and shift (the one after the last sent is suggested);
-3. takes one picture of the four counters;
-4. types the four numbers and presses **Send**.
+3. takes one picture of the four counters: the four numbers fill in by
+   themselves, read off the picture, and cannot be typed over;
+4. checks them against the counters (one wrong means a new picture) and
+   presses **Send**.
+
+**Reading the picture.** Cloudflare's Workers AI (model Llama 4 Scout, on
+the same Cloudflare account, no key) reads each counter. A counter it cannot
+read for certain (cut off, blurred, glare, covered) is left empty and
+marked, and the page asks for the picture again; **Send** waits until it
+has one with all four. The numbers sent are the picture's, checked again on
+the server, whatever is in the boxes. A number lower than the last reading is
+pointed out (a misread, or a counter reset) but not refused. Only when the
+reader cannot be reached may the numbers be typed, and that reading is marked
+"typed: picture not read" in Insight. The same picture is read only once.
+
+If the counters carry no GB / GT / LB / LT labels, say where each one is under
+Settings › **How the counters are laid out** (for example "left to right:
+GB, GT, LB, LT"); the reader is told.
+
+In Insight, a reading whose numbers were typed because the picture could not
+be read then says so on its row and in its detail: look at the picture.
 
 A number typed wrong can be sent again within an hour of the first time; after
 that an admin fixes it in Insight. The picture is made smaller on the phone

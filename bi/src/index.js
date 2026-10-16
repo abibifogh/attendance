@@ -212,6 +212,8 @@ const ROUTES = [
   // in the address, no account), and the page that holds them to the money.
   ['GET', '/api/np/form', 'public', (env, ctx) => np.linkForm(env, ctx.query)],
   ['POST', '/api/np/send', 'public', (env, ctx) => np.sendReading(env, ctx.body)],
+  // The counters read off the picture, so the numbers fill in by themselves.
+  ['POST', '/api/np/read', 'public', (env, ctx) => np.readCounters(env, ctx.body)],
   ['GET', '/api/np', 'insight', (env, ctx) => np.npView(env, ctx.query, ctx.account, { admin: till.roleOf(ctx.account) === 'admin' })],
   ['GET', '/api/np/photo/:id', 'insight', (env, ctx) => np.photo(env, ctx.params.id)],
   ['POST', '/api/np/income', 'insight', adminOnly((env, ctx) => np.saveIncome(env, ctx.body, ctx.account))],

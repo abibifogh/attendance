@@ -1579,3 +1579,6 @@ label.fm-row input { margin-top: .2rem; }
 .sh-actbar { display: flex; gap: 2px; height: 8px; width: 9rem; border-radius: 4px; overflow: hidden; background: var(--surface-2); }
 .sh-actbar i { display: block; height: 100%; }
 .sh-odooact a.btn.primary { display: inline-block; background: var(--series-1); border-color: transparent; color: #fff; text-decoration: none; }
+
+/* Nice Place: a number typed differently from what the picture was read as. */
+.np-typed { display: block; color: var(--sh-warn-ink, #8a5a00); font-weight: 700; }
