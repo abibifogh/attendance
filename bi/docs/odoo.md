@@ -2,9 +2,12 @@
 
 For **Odoo 19 Online, Custom plan** — which is what this was written against.
 
-Insight reads Odoo and never writes to it. `search_read` is the only method
-called anywhere in `src/connectors/odoo.js`, and there is no code path that
-writes. That is not a promise in a comment; it is the whole of the surface.
+Insight reads Odoo, with one exception: **Create PO** (＋ PO in the header,
+admins only) creates a draft purchase order and attaches its receipt. Those
+two `create` calls, on `purchase.order` and `ir.attachment`, are the only
+writes in `src/connectors/odoo.js`; everything else is `search_read`. Nothing
+ever changes, approves or deletes a record that already exists. See
+[create-po.md](create-po.md).
 
 ---
 
@@ -35,7 +38,8 @@ internet still shows — are scheduled for removal in **Odoo Online 21.1, winter
 | Access rights | **Accounting → Billing** and **Purchase → User**. Nothing else. |
 
 Being straight about this: Odoo has no single "read-only" switch. The real
-safeguards are that this connector only ever reads, and that you can revoke
+safeguards are that this connector only ever reads (apart from Create PO's
+drafts and receipts, which **Purchase → User** allows), and that you can revoke
 this user's key instantly without touching your own login. A separate user is
 what makes that revocation cheap.
 

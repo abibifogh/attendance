@@ -19,6 +19,7 @@ import { renderJoin } from './views/join.js';
 import { renderUpload } from './views/files.js';
 import { renderPrepaid } from './views/prepaid.js';
 import { renderNicePlace } from './views/niceplace.js';
+import { openNewPo } from './views/newpo.js';
 
 export const state = {
   boot: null,
@@ -168,6 +169,9 @@ async function renderApp() {
         menus.push(menu);
         return menu;
       }), ...loose.map((r) => link(r, 'button.navlink'))]);
+  // ＋ PO: Create PO from any screen, for admins.
+  const isAdmin = (state.me?.account?.till?.role || (state.me?.account?.isOwner ? 'admin' : null)) === 'admin';
+  if (isAdmin) nav.append(h('button.po-new', { type: 'button', 'aria-label': 'Create a purchase order', onclick: () => { closeMenus(); openNewPo(); } }, '＋ PO'));
   // Where you are, said once beside the window: "Operations › Shifts".
   const where = h('span.navwhere');
 

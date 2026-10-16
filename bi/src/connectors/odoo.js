@@ -44,9 +44,10 @@ const MAX_PAGES = 40;
 /**
  * Everything this connector reads.
  *
- * Read-only by construction: `search_read` is the only method called anywhere
- * in this file, and there is no code path that writes. That is not a promise
- * in a comment — it is the whole of the surface.
+ * Read-only, with one exception kept at the bottom of this file: Create PO
+ * makes a draft purchase order and attaches its receipt (`create` on
+ * purchase.order and ir.attachment, nothing else). Nothing here ever writes
+ * to, confirms or deletes a record that already exists.
  */
 /**
  * The connector's own view of its settings.
@@ -573,4 +574,80 @@ export async function odooUsers({ config: settings, token, fetchImpl = fetch }) 
   const config = odooConfig(settings, token);
   const rows = await searchRead(config, 'res.users', [['share', '=', false]], ['name', 'login', 'email', 'partner_id'], { fetchImpl });
   return rows.map((r) => ({ id: r.id, name: String(r.name || ''), login: String(r.login || ''), email: String(r.email || ''), partnerId: refId(r.partner_id) }));
+}
+
+// ------------------------------------------------------------- Create PO --
+
+/**
+ * What Create PO needs to fill its form: the vendors (anybody a PO has been
+ * raised to; every partner if Odoo has never marked one) and the products
+ * that may be bought.
+ */
+export async function poChoices({ config: settings, token, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const opts = { fetchImpl };
+  let vendors = await searchRead(config, 'res.partner', [['supplier_rank', '>', 0]], ['name'], opts);
+  if (!vendors.length) vendors = await searchRead(config, 'res.partner', [['is_company', '=', true]], ['name'], opts);
+  const products = await searchRead(config, 'product.product', [['purchase_ok', '=', true]], ['name', 'display_name'], opts);
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  return {
+    vendors: vendors.map((r) => ({ id: r.id, name: String(r.name || '').trim() })).filter((r) => r.name).sort(byName),
+    products: products.map((r) => ({ id: r.id, name: String(r.display_name || r.name || '').trim() })).filter((r) => r.name).sort(byName),
+  };
+}
+
+/** The vendor the last PO for a product went to, if any. */
+export async function lastVendorFor({ config: settings, token, productId, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const rows = await call(config, 'purchase.order.line', 'search_read', {
+    domain: [['product_id', '=', Number(productId)], ['state', '!=', 'cancel']], fields: ['partner_id'], limit: 1, order: 'id desc',
+  }, { fetchImpl });
+  const row = (Array.isArray(rows) ? rows : rows?.records || [])[0];
+  return row && Array.isArray(row.partner_id) ? { id: row.partner_id[0], name: refName(row.partner_id) } : null;
+}
+
+/** POs to one vendor on one day that are not cancelled: to warn of a PO raised twice. */
+export async function posOnDay({ config: settings, token, vendorId, day, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const rows = await searchRead(config, 'purchase.order', [
+    ['partner_id', '=', Number(vendorId)], ['date_order', '>=', `${day} 00:00:00`], ['date_order', '<=', `${day} 23:59:59`], ['state', '!=', 'cancel'],
+  ], ['name', 'amount_total', 'state', 'create_uid'], { fetchImpl });
+  return rows.map((r) => ({ id: r.id, name: String(r.name || ''), total: toMinor(r.amount_total), state: String(r.state || ''), by: refName(r.create_uid) }));
+}
+
+/**
+ * A draft purchase order (a request for quotation): one line, the product
+ * and what was paid. Approving it stays in Odoo. `origin` says who made it
+ * from Insight. Returns the new PO as Odoo has it, its total after any tax.
+ */
+export async function createDraftPo({ config: settings, token, vendorId, productId, description, amount, day, origin, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const opts = { fetchImpl };
+  const made = await call(config, 'purchase.order', 'create', {
+    vals_list: [{
+      partner_id: Number(vendorId),
+      date_order: `${day} 12:00:00`,
+      origin,
+      order_line: [[0, 0, { product_id: Number(productId), name: description, product_qty: 1, price_unit: amount / 100 }]],
+    }],
+  }, opts);
+  const id = Array.isArray(made) ? made[0] : Number(made);
+  if (!Number.isInteger(id)) throw new Error('Odoo did not say which PO it made.');
+  const rows = await call(config, 'purchase.order', 'search_read', {
+    domain: [['id', '=', id]], fields: ['name', 'amount_total', 'state'], limit: 1,
+  }, opts);
+  const row = (Array.isArray(rows) ? rows : rows?.records || [])[0] || {};
+  return {
+    id, name: String(row.name || ''), total: row.amount_total != null ? toMinor(row.amount_total) : null, state: String(row.state || 'draft'),
+    url: config.base ? `${config.base}/web#model=purchase.order&id=${id}&view_type=form` : null,
+  };
+}
+
+/** A receipt kept on the PO it is for, in Odoo's attachments. */
+export async function attachToPo({ config: settings, token, poId, name, mimetype, data, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const made = await call(config, 'ir.attachment', 'create', {
+    vals_list: [{ name, datas: data, mimetype, res_model: 'purchase.order', res_id: Number(poId) }],
+  }, { fetchImpl });
+  return Array.isArray(made) ? made[0] : made;
 }

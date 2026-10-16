@@ -22,6 +22,7 @@ import * as advances from './routes/advances.js';
 import * as formmatch from './routes/formmatch.js';
 import * as np from './routes/niceplace.js';
 import * as odooact from './routes/odooact.js';
+import * as newpo from './routes/newpo.js';
 import { sendDailySummary } from './routes/summary.js';
 import { verifyForm, verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
@@ -216,6 +217,13 @@ const ROUTES = [
   ['POST', '/api/np/read', 'public', (env, ctx) => np.readCounters(env, ctx.body)],
   // An admin tries the reader on a picture, to see what it reads or why it cannot.
   ['POST', '/api/np/read-test', 'insight', adminOnly((env, ctx) => np.readTest(env, ctx.body))],
+
+  // Create PO: a draft purchase order in Odoo, typed, or read off a sentence or a receipt. Admins only.
+  ['GET', '/api/po/new', 'insight', adminOnly((env) => newpo.poForm(env))],
+  ['POST', '/api/po/read', 'insight', adminOnly((env, ctx) => newpo.readPo(env, ctx.body))],
+  ['POST', '/api/po/check', 'insight', adminOnly((env, ctx) => newpo.checkPo(env, ctx.body))],
+  ['POST', '/api/po/create', 'insight', adminOnly((env, ctx) => newpo.createPo(env, ctx.body, ctx.account))],
+  ['GET', '/api/po/recent', 'insight', adminOnly((env) => newpo.recentPos(env))],
   ['GET', '/api/np', 'insight', (env, ctx) => np.npView(env, ctx.query, ctx.account, { admin: till.roleOf(ctx.account) === 'admin' })],
   // A picture of the counters: for an admin, and a supervisor given Nice Place, who reads one the reader could not.
   ['GET', '/api/np/photo/:id', 'shifts', area('niceplace', 1, (env, ctx) => np.photo(env, ctx.params.id))],
