@@ -23,16 +23,22 @@ async function loadChoices() {
   return choices;
 }
 
-const words = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w.length > 2);
-/** The product whose name shares most words with the description, if any. */
+const SKIP = new Set(['for', 'the', 'and', 'from', 'with', 'of', 'to', 'at']);
+const words = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !SKIP.has(w));
+/**
+ * The product whose name shares at least half its words with the description
+ * (as the server matches): one shared word, a place name say, is not enough.
+ */
 function productFor(description, products) {
   const want = words(description);
   if (!want.length) return null;
   let best = null;
   for (const p of products) {
     const have = words(p.name);
-    const shared = want.filter((w) => have.some((x) => x === w || x.startsWith(w) || w.startsWith(x))).length;
-    if (shared && (!best || shared > best.shared)) best = { p, shared };
+    if (!have.length) continue;
+    const shared = want.filter((w) => have.some((x) => x === w || (w.length > 3 && (x.startsWith(w) || w.startsWith(x))))).length;
+    const score = shared / Math.max(want.length, have.length);
+    if (score >= 0.5 && (!best || score > best.score)) best = { p, score };
   }
   return best?.p || null;
 }
@@ -191,9 +197,21 @@ export function openNewPo() {
     const create = async (e) => {
       e.target.disabled = true;
       said.className = 'po-said'; said.textContent = 'Creating in Odoo…';
-      try { done(await api('/po/create', { method: 'POST', body: { ...body, ...(v.file ? { file: v.file } : {}) } })); } catch (er) {
+      try {
+        const res = await api('/po/create', { method: 'POST', body: { ...body, seen: out.alike.map((a) => a.name), ...(again ? { again: true } : {}), ...(v.file ? { file: v.file } : {}) } });
+        if (res.already) { already(res.already); e.target.disabled = false; return; }
+        done(res);
+      } catch (er) {
         said.className = 'po-said err'; said.textContent = er.message; e.target.disabled = false;
       }
+    };
+    let again = false;
+    // Odoo has one made from Insight for this already: most likely the last press went through.
+    const already = (a) => {
+      said.className = 'po-said';
+      said.replaceChildren(h('div.po-warn', h('b', `${a.name} is already in Odoo for this`), `, made from Insight (${a.origin}). The last Create most likely went through. `,
+        a.url ? h('a', { href: a.url, target: '_blank', rel: 'noopener' }, 'Open it in Odoo') : null, '. ',
+        h('button.sh-link', { type: 'button', onclick: (ev) => { again = true; create(ev); } }, 'It is a second purchase: create another')));
     };
     const p = out.po;
     mount(inner,
