@@ -5,6 +5,9 @@ import { sayDate, sayHours, sayTime } from './email-design.js';
 import { firstUsableEmail, isEmail } from './notify.js';
 
 /** The address on their staff record, where their login has none. */
+// "AM Shift" and "PM shift" already say shift; "Night" does not.
+const shiftLabel = (name) => (/\bshift\s*$/i.test(String(name ?? '')) ? String(name) : `${name} shift`);
+
 const recordEmail = (row) => (isEmail(String(row.login_email ?? '').trim()) ? null : firstUsableEmail(row.personal_email));
 
 /**
@@ -160,7 +163,7 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
       await createNotice(db, {
         kind: 'attendance.clock_out_due',
         level: 'info',
-        title: `Your ${found.shift.name} ends at ${found.shift.ends_at}`,
+        title: `Your ${shiftLabel(found.shift.name)} ends at ${sayTime(found.shift.ends_at)}`,
         body: 'Clock out at the terminal before you leave. A day with only one tap is held '
           + 'back rather than counted, and somebody has to work out afterwards what time you '
           + 'went home.',
@@ -171,14 +174,16 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
         emailTo: recordEmail(row),
         push: true,
         email: true,
+        // Not copied to the office: it has a push of its own, below.
+        cc: false,
         mail: {
           status: 'Reminder',
           tone: 'info',
           eyebrow: 'Clocking',
-          subject: `Your ${found.shift.name} shift ends at ${sayTime(found.shift.ends_at)}`,
+          subject: `Your ${shiftLabel(found.shift.name)} ends at ${sayTime(found.shift.ends_at)}`,
           preheader: 'Clock out at the terminal before you leave.',
           headline: `Your shift ends at ${sayTime(found.shift.ends_at)}`,
-          sub: `${found.shift.name} shift · ${sayDate(found.day)}`,
+          sub: `${shiftLabel(found.shift.name)} · ${sayDate(found.day)}`,
           facts: [
             ['Clocked in', record?.first_in ? sayTime(record.first_in) : null],
             ['Shift ends', sayTime(found.shift.ends_at)],
@@ -188,6 +193,12 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
           button: 'Open My day',
           why: 'You get this because you are on the rota today.',
         },
+      }, ctx);
+      await tellAdmins(db, {
+        kind: 'attendance.clock_out_due_office',
+        title: `${staff.name}: ${shiftLabel(found.shift.name)} ends at ${sayTime(found.shift.ends_at)}`,
+        body: 'Still clocked in. Reminded to clock out before leaving.',
+        day: found.day,
       }, ctx);
 
       reminded += 1;
@@ -214,8 +225,8 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
       kind: 'attendance.not_clocked_in',
       level: 'warn',
       title: slot === 0
-        ? `Your ${found.shift.name} started at ${found.shift.starts_at}`
-        : `Still nothing recorded — ${describe(late)} into your ${found.shift.name}`,
+        ? `Your ${shiftLabel(found.shift.name)} started at ${sayTime(found.shift.starts_at)}`
+        : `Still nothing recorded, ${describe(late)} into your ${shiftLabel(found.shift.name)}`,
       body: 'Nothing has been recorded for you yet. If you are on your way, tell your '
         + 'manager so somebody can cover you in the meantime. Once you clock in this '
         + 'stops.',
@@ -228,17 +239,19 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
       // A bell they will not see for hours is not the point of this one.
       push: true,
       email: true,
+      // Not copied to the office: it has a push of its own, below.
+      cc: false,
       mail: {
         status: 'Reminder',
         tone: 'warn',
         eyebrow: 'Clocking',
         subject: slot === 0
-          ? `Your ${found.shift.name} shift started at ${sayTime(found.shift.starts_at)}`
-          : `Still nothing recorded, ${describe(late)} into your ${found.shift.name} shift`,
+          ? `Your ${shiftLabel(found.shift.name)} started at ${sayTime(found.shift.starts_at)}`
+          : `Still nothing recorded, ${describe(late)} into your ${shiftLabel(found.shift.name)}`,
         preheader: 'Nothing has been recorded for you yet.',
         headline: slot === 0
-          ? `Your ${found.shift.name} shift started at ${sayTime(found.shift.starts_at)}`
-          : `Still nothing recorded, ${describe(late)} into your ${found.shift.name} shift`,
+          ? `Your ${shiftLabel(found.shift.name)} started at ${sayTime(found.shift.starts_at)}`
+          : `Still nothing recorded, ${describe(late)} into your ${shiftLabel(found.shift.name)}`,
         sub: `${sayDate(found.day)} · nothing recorded yet`,
         facts: [
           ['Shift', `${found.shift.name}, ${sayHours(found.shift.starts_at, found.shift.ends_at)}`],
@@ -250,11 +263,32 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
         why: 'You get this because you are on the rota today.',
       },
     }, ctx);
+    await tellAdmins(db, {
+      kind: 'attendance.not_clocked_in_office',
+      title: slot === 0
+        ? `${staff.name}: ${shiftLabel(found.shift.name)} started at ${sayTime(found.shift.starts_at)}`
+        : `${staff.name}: still nothing recorded, ${describe(late)} in`,
+      body: `Not clocked in yet for the ${shiftLabel(found.shift.name)}, ${sayHours(found.shift.starts_at, found.shift.ends_at)}.`,
+      day: found.day,
+    }, ctx);
 
     nudged += 1;
   }
 
   return { checked, nudged, reminded, day: today };
+}
+
+/**
+ * The office's copy of a reminder: a push to the administrators' phones and
+ * nothing else. No email, because a reminder that goes out every shift would
+ * bury the inbox, and no text. Administrators are whoever can manage logins,
+ * the one permission an administrator always keeps.
+ */
+async function tellAdmins(db, { kind, title, body, day }, ctx) {
+  await createNotice(db, {
+    kind, level: 'info', title, body, link: `#/att-today?day=${day}`, day, actor: 'HIVE',
+    audience: 'users', push: true, email: false, text: false,
+  }, ctx);
 }
 
 /**

@@ -148,6 +148,22 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'attendance.not_clocked_in_office',
+    group: 'day',
+    label: 'Somebody has not clocked in for their shift',
+    who: 'Administrators',
+    when: 'Each time the person is reminded, while their shift runs with nothing recorded',
+    ways: ['push'],
+  },
+  {
+    key: 'attendance.clock_out_due_office',
+    group: 'day',
+    label: 'Somebody has been reminded to clock out',
+    who: 'Administrators',
+    when: 'When a person still clocked in is reminded their shift is ending',
+    ways: ['push'],
+  },
+  {
     key: 'attendance.running_late',
     group: 'day',
     label: 'Somebody is running late',

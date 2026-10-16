@@ -142,7 +142,14 @@ test('a rota shift is filed under the closing-report shift its start is nearest'
 });
 
 test('every notification kind now emails by default', () => {
-  for (const k of KINDS) assert.ok(goesOut({}, k.key, 'email'), `${k.key} emails`);
+  // Except the office's copies of the shift reminders, which are a push and
+  // nothing else: asked for that way, because they go out every shift.
+  const pushOnly = new Set(['attendance.not_clocked_in_office', 'attendance.clock_out_due_office']);
+  for (const k of KINDS.filter((x) => !pushOnly.has(x.key))) assert.ok(goesOut({}, k.key, 'email'), `${k.key} emails`);
+  for (const key of pushOnly) {
+    assert.equal(goesOut({}, key, 'email'), false, `${key} does not email`);
+    assert.equal(goesOut({}, key, 'push'), true, `${key} pushes`);
+  }
   assert.ok(KINDS.some((k) => k.key === 'till.close_due'));
 });
 

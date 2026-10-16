@@ -8,6 +8,7 @@ import { publishRoster, saveRoster } from '../src/routes/attendance.js';
 import { updateSettings } from '../src/routes/attendance-setup.js';
 import { watchShifts } from '../src/lib/shift-watch.js';
 import { b64urlEncode } from '../src/lib/push.js';
+import { sayTime } from '../src/lib/email-design.js';
 
 /**
  * The three things a phone in somebody's pocket is for.
@@ -489,9 +490,45 @@ test('ten minutes before the end, somebody still clocked in is reminded', async 
     "SELECT * FROM app_notices WHERE kind = 'attendance.clock_out_due'",
   ).get();
   assert.ok(notice, 'and it is a notice, not only a buzz');
-  assert.match(notice.title, new RegExp(`ends at ${at.ends_at}`));
+  assert.match(notice.title, new RegExp(`ends at ${sayTime(at.ends_at)}`));
   assert.match(notice.body, /Clock out at the terminal/);
   assert.equal(notice.user_id, 7, 'to them and nobody else');
+});
+
+test('the office is told by a push, and the email to the person copies nobody', async () => {
+  const { db, raw } = setup();
+  raw.prepare(
+    "INSERT INTO users (id, name, role, pin_hash, active) VALUES (9, 'Owner', 'admin', 'z', 1)",
+  ).run();
+  raw.prepare("UPDATE users SET email = 'kofi@example.com' WHERE id = 7").run();
+  for (const [key, value] of [['email_from', 'hive@example.com'], ['email_cc', '["office@example.com"]']]) {
+    raw.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = ?2')
+      .run(key, value);
+  }
+  const { p256dh, auth } = await subscriptionKeys();
+  raw.prepare('INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (9, ?, ?, ?)')
+    .run('https://push.example/admin', p256dh, auth);
+  const sent = [];
+  globalThis.fetch = async (url, init) => {
+    sent.push({ url: String(url), init });
+    return new Response('{"data":[]}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  const at = rosterEndingIn(raw, 8);
+  punch(raw, at.startedAt, 'in');
+
+  await watchShifts(db, { timezone: 'UTC', ctx: { env: { RESEND_API_KEY: 'k' } } });
+
+  const emails = sent.filter((r) => r.url.includes('resend'))
+    .flatMap((r) => [].concat(JSON.parse(r.init.body)));
+  assert.equal(emails.length, 1, 'one email, to the person');
+  assert.deepEqual(emails[0].to, ['kofi@example.com']);
+  assert.equal(emails[0].cc, undefined, 'and nobody copied in');
+  assert.doesNotMatch(emails[0].subject, /shift shift/i);
+
+  assert.ok(sent.some((r) => r.url === 'https://push.example/admin'), 'the administrator gets a push');
+  const office = raw.prepare("SELECT * FROM app_notices WHERE kind = 'attendance.clock_out_due_office'").get();
+  assert.match(office.title, /^Kofi: Early shift ends at/);
+  assert.equal(office.audience, 'users');
 });
 
 test('it is said once, however often the watcher runs', async () => {

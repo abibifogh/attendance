@@ -930,7 +930,7 @@ export async function emailNotice(db, env, notice) {
       apiKey,
       from: senderWithName(from, senderNameOf(settings)),
       to,
-      cc: ccFor(settings),
+      cc: notice.cc === false ? null : ccFor(settings),
       subject,
       html,
       replyTo: (settings.email_reply_to || '').trim() || null,
