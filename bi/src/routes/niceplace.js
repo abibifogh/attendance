@@ -101,14 +101,25 @@ export async function sendReading(env, body) {
   const today = todayIn('UTC');
   if (!isDay(day) || day < addDays(today, -2) || day > today) throw badRequest('Choose the date of the shift: today, or the day before.');
   if (!SHIFTS.includes(shift)) throw badRequest('Choose the shift: day or night.');
-  const values = {
-    gb: count(body?.gb, 'GB (gents bath)'), gt: count(body?.gt, 'GT (gents toilet)'),
-    lb: count(body?.lb, 'LB (ladies bath)'), lt: count(body?.lt, 'LT (ladies toilet)'),
-  };
   const photo = String(body?.photo || '');
   const m = photo.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
   if (!m) throw badRequest('Take a picture of the counters first.');
   if (m[2].length > PHOTO_MAX) throw badRequest('That picture is too large. Take it again.');
+  // The numbers come from the picture, not from what was typed. Only when the
+  // reader cannot be reached are typed numbers taken, and the reading says so.
+  let read = await readOf(env, m[2]);
+  if (!read && env.AI) {
+    const out = await readCounters(env, { t: body?.t, photo });
+    if (out.available) read = out.values;
+  }
+  if (read) {
+    const missing = COUNTERS.filter((c) => read[c] == null);
+    if (missing.length) throw badRequest(`${missing.map((c) => LABEL[c]).join(' and ')} could not be read from this picture. Take the picture again.`);
+  }
+  const values = read ? { ...read } : {
+    gb: count(body?.gb, 'GB (gents bath)'), gt: count(body?.gt, 'GT (gents toilet)'),
+    lb: count(body?.lb, 'LB (ladies bath)'), lt: count(body?.lt, 'LT (ladies toilet)'),
+  };
 
   const was = await first(env.DB, 'SELECT * FROM np_reading WHERE day = ?1 AND shift = ?2', day, shift);
   if (was) {
@@ -117,13 +128,11 @@ export async function sendReading(env, body) {
     if (minutes > RESEND_MINUTES) throw new HttpError(409, `This shift was sent at ${was.sent_at.slice(11, 16)}. To change it now, ask the manager.`);
   }
   const at = now();
-  // What the picture was read as, kept beside what was typed, so a difference shows in Insight.
-  const read = await readOf(env, m[2]);
   const photoId = (await first(env.DB, 'INSERT INTO np_photo (type, data, at) VALUES (?1, ?2, ?3) RETURNING id', m[1], m[2], at)).id;
   if (was?.photo_id) await run(env.DB, 'DELETE FROM np_photo WHERE id = ?1', was.photo_id);
   await run(env.DB, `INSERT INTO np_reading (day, shift, name, gb, gt, lb, lt, photo_id, sent_at, at, read_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)
     ON CONFLICT (day, shift) DO UPDATE SET name = ?3, gb = ?4, gt = ?5, lb = ?6, lt = ?7, photo_id = ?8, at = ?9, checked_by = NULL, checked_at = NULL, read_json = ?10`,
-  day, shift, name, values.gb, values.gt, values.lb, values.lt, photoId, at, read ? JSON.stringify(read) : null);
+  day, shift, name, values.gb, values.gt, values.lb, values.lt, photoId, at, JSON.stringify(read || { unavailable: true }));
   return { ok: true, sentAt: was?.sent_at || at, resendUntil: RESEND_MINUTES, replaced: Boolean(was) };
 }
 
@@ -133,9 +142,12 @@ export async function sendReading(env, body) {
 function readCompare(reading) {
   let read = null;
   try { read = reading.read_json ? JSON.parse(reading.read_json) : null; } catch { read = null; }
-  if (!read || reading.edited_by) return { read: null, differs: [], unread: [] };
+  if (!read || reading.edited_by) return { read: null, differs: [], unread: [], typed: false };
+  // Sent when the picture could not be read automatically: the numbers were typed.
+  if (read.unavailable) return { read: null, differs: [], unread: [], typed: true };
   return {
     read,
+    typed: false,
     differs: COUNTERS.filter((c) => read[c] != null && read[c] !== reading[c]),
     unread: COUNTERS.filter((c) => read[c] == null),
   };

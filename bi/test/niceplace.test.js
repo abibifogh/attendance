@@ -183,12 +183,26 @@ test('the counters read off the picture: filled in, a number not read asks for t
   assert.deepEqual(await np.readCounters(env, { t: token, photo: pic('four') }), { available: false });
   assert.deepEqual(await np.readCounters({ DB: db }, { t: token, photo: pic('five') }), { available: false }, 'no reader bound');
 
-  // Sent with GB typed differently from the picture: kept, and shown.
+  // The numbers come from the picture: GB typed as 1250 is not taken, the picture's 1200 is.
   const today = new Date().toISOString().slice(0, 10);
-  await np.sendReading(env, { t: token, name: 'Abena', day: today, shift: 'day', gb: 1250, gt: 3400, lb: 900, lt: 2700, photo: pic('one') });
-  const view = await np.npView(env, { from: today, to: today }, OWNER, { admin: true });
-  const r = view.rows.find((x) => x.reading).reading;
-  assert.deepEqual([r.read.gb, r.differs, r.unread], [1200, ['gb'], []]);
+  const send = (photo, extra = {}) => np.sendReading(env, { t: token, name: 'Abena', day: today, shift: 'day', gb: 1250, gt: 3400, lb: 900, lt: 2700, photo, ...extra });
+  await assert.rejects(send(pic('two')), /GT could not be read from this picture/, 'a counter not read: a new picture');
+  await send(pic('one'));
+  let view = await np.npView(env, { from: today, to: today }, OWNER, { admin: true });
+  let r = view.rows.find((x) => x.reading).reading;
+  assert.deepEqual([r.gb, r.read.gb, r.differs, r.unread, r.typed], [1200, 1200, [], [], false]);
+
+  // A picture never read on the page is read when it is sent.
+  answer = { response: '{"GB": 1201, "GT": 3401, "LB": 901, "LT": 2701, "problem": ""}' };
+  await send(pic('seven'));
+  assert.equal((await env.DB.prepare('SELECT gb FROM np_reading').first()).gb, 1201);
+
+  // The reader cannot be reached: typed numbers are taken, and Insight says they were typed.
+  answer = new Error('down');
+  await send(pic('eight'));
+  view = await np.npView(env, { from: today, to: today }, OWNER, { admin: true });
+  r = view.rows.find((x) => x.reading).reading;
+  assert.deepEqual([r.gb, r.typed], [1250, true]);
 
   // Lower than the last reading: said, not refused.
   answer = { response: '{"GB": 1100, "GT": 3500, "LB": 950, "LT": 2800, "problem": ""}' };

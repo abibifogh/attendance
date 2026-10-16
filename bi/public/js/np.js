@@ -5,9 +5,9 @@
  * new link from the manager stops the old one. Staff choose their name, the
  * shift (the one after the last sent is suggested) and take a picture of the
  * four counters. The picture is made smaller on the phone, then read: the four
- * numbers fill in by themselves, to be checked. A number that cannot be read
- * for certain asks for the picture again; after two tries it may be typed.
- * When the reader is not available, the numbers are typed, as before.
+ * numbers fill in by themselves and cannot be typed over. A number that cannot
+ * be read for certain, or reads wrong, means a new picture. Only when the
+ * reader cannot be reached are the numbers typed (and Insight says so).
  */
 
 const page = document.getElementById('page');
@@ -64,26 +64,28 @@ async function start() {
   day.addEventListener('change', showWhen); shift.addEventListener('change', showWhen); showWhen();
 
   let photo = null;
-  // What the picture was read as, and how many pictures could not be read in full.
+  // What the picture was read as.
   let read = null;
-  let tries = 0;
   const readSaid = el('div', { class: 'readsaid' });
   const file = el('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true });
   const shot = el('div', { class: 'shot', role: 'button', tabindex: '0' }, el('div', {}, el('b', '📷 Take picture'), 'or choose one from the phone', el('br'), el('small', {}, 'All four counters in one picture, clear and straight')));
   shot.addEventListener('click', () => file.click());
-  const inputs = Object.fromEntries(COUNTERS.map(([k]) => [k, el('input', { inputmode: 'numeric', autocomplete: 'off', placeholder: '0', 'aria-label': k.toUpperCase() })]));
-  for (const [k] of COUNTERS) inputs[k].addEventListener('input', () => inputs[k].classList.toggle('changed', Boolean(read?.values) && inputs[k].value.trim() !== String(read.values[k] ?? '')));
+  // Read only: filled from the picture. Typed only when the reader cannot be reached.
+  const inputs = Object.fromEntries(COUNTERS.map(([k]) => [k, el('input', { inputmode: 'numeric', autocomplete: 'off', placeholder: 'from the picture', readonly: true, 'aria-label': k.toUpperCase() })]));
+  const typing = (on) => { for (const [k] of COUNTERS) { inputs[k].readOnly = !on; inputs[k].placeholder = on ? '0' : 'from the picture'; } };
   const retake = el('button', { type: 'button', class: 'retake', onclick: () => file.click() }, '📷 Take the picture again');
   /** The numbers off the picture: filled in, or the picture asked for again. */
   const readPicture = async () => {
     read = null;
     said.replaceChildren();
     readSaid.replaceChildren(el('p', { class: 'note' }, 'Reading the counters…'));
-    for (const [k] of COUNTERS) { inputs[k].classList.remove('auto', 'changed', 'missing'); }
+    for (const [k] of COUNTERS) { inputs[k].classList.remove('auto', 'missing'); inputs[k].value = ''; }
+    typing(false);
     let out;
     try { out = await call('read', { t: token, photo }); } catch (err) { out = { available: false }; }
     if (!out.available) {
-      readSaid.replaceChildren(el('p', { class: 'note' }, 'Type the numbers on the counters.'));
+      typing(true);
+      readSaid.replaceChildren(el('p', { class: 'warn' }, 'The picture could not be read automatically just now. Type the numbers on the counters; the manager will see they were typed.'));
       return;
     }
     read = out;
@@ -92,21 +94,19 @@ async function start() {
       inputs[k].value = v == null ? '' : String(v);
       inputs[k].classList.toggle('auto', v != null);
       inputs[k].classList.toggle('missing', v == null);
-      inputs[k].placeholder = v == null ? 'not read' : '0';
+      inputs[k].placeholder = v == null ? 'not read' : 'from the picture';
       inputs[k].setAttribute('aria-label', `${label}${v == null ? ', not read from the picture' : ', read from the picture'}`);
     }
     const lower = (out.lower || []).map((x) => el('p', { class: 'warn' }, `${x.counter.toUpperCase()} reads ${x.now.toLocaleString('en-GB')}, lower than the last reading (${x.was.toLocaleString('en-GB')}). If the counter was not reset, take the picture again.`));
     if (!out.unreadable.length) {
-      readSaid.replaceChildren(el('p', { class: 'ok-note' }, '✓ Read from the picture. Check each number against the counters before you send.'), ...lower);
+      readSaid.replaceChildren(el('p', { class: 'ok-note' }, '✓ Read from the picture. Check each number against the counters: if one is wrong, take the picture again.'), retake, ...lower);
       return;
     }
-    tries += 1;
     const names = out.unreadable.map((c) => c.toUpperCase());
-    readSaid.replaceChildren(...[
+    readSaid.replaceChildren(
       el('p', { class: 'err' }, `${names.join(' and ')} could not be read from this picture${out.problem ? ` (${out.problem})` : ''}. Take the picture again: all four counters, close and straight, with no glare.`),
       retake,
-      tries >= 2 ? el('p', { class: 'note' }, 'Still not readable? Type the missing numbers yourself from the counters.') : null,
-      ...lower].filter(Boolean));
+      ...lower);
   };
   file.addEventListener('change', async () => {
     if (!file.files[0]) return;
@@ -120,8 +120,8 @@ async function start() {
   send.addEventListener('click', async () => {
     said.replaceChildren();
     const missing = [!name.value && 'your name', !photo && 'the picture', ...COUNTERS.filter(([k]) => !inputs[k].value.trim()).map(([k]) => k.toUpperCase())].filter(Boolean);
-    // A picture with a counter that could not be read is taken again, twice at most, before a number is typed instead.
-    if (read?.unreadable?.length && tries < 2) { said.replaceChildren(el('p', { class: 'err' }, 'Take the picture again first: not every counter could be read from it.')); return; }
+    // A picture with a counter that could not be read is taken again: the numbers come only from the picture.
+    if (read?.unreadable?.length) { said.replaceChildren(el('p', { class: 'err' }, 'Take the picture again first: not every counter could be read from it.')); return; }
     if (missing.length) { said.replaceChildren(el('p', { class: 'err' }, `Still needed: ${missing.join(', ')}.`)); return; }
     send.disabled = true; send.textContent = 'Sending…';
     try {
@@ -132,7 +132,7 @@ async function start() {
         el('div', { class: 'ok' }, '✓'),
         el('b', { style: 'font-size:19px' }, `Sent at ${String(out.sentAt).slice(11, 16)}`),
         el('p', { class: 'note' }, `Thank you, ${name.value}.`),
-        el('p', { class: 'note' }, `A number typed wrong? Send again within ${out.resendUntil} minutes of the first time and the new one is kept.`),
+        el('p', { class: 'note' }, `A number wrong? Send again with a new picture within ${out.resendUntil} minutes of the first time and the new one is kept.`),
         el('button', { type: 'button', class: 'link', onclick: () => start() }, 'Send again')));
     } catch (err) {
       said.replaceChildren(el('p', { class: 'err' }, err.message));
