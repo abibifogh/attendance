@@ -106,22 +106,36 @@ async function call(config, model, method, body, { fetchImpl = fetch, timeoutMs 
       body: JSON.stringify(body),
     });
   } catch (err) {
-    if (err?.name === 'AbortError') throw new Error(`Odoo did not answer in time reading ${model}.`);
+    if (err?.name === 'AbortError') throw new Error(`Odoo did not answer in time (${model}, ${method}).`);
     throw new Error(`Odoo could not be reached: ${String(err?.message ?? err)}`);
   } finally {
     clearTimeout(timer);
   }
 
-  if (response.status === 401 || response.status === 403) {
+  const doing = method === 'search_read' ? 'reading' : method === 'create' ? 'creating' : `calling ${method} on`;
+  // What Odoo said, in its own words: JSON-2 answers an error with its name and message.
+  const odooSaid = async () => {
+    try {
+      const body = await response.json();
+      const text = body?.message || body?.error?.data?.message || body?.error?.message || JSON.stringify(body);
+      return String(text).replace(/\s+/g, ' ').trim().slice(0, 400);
+    } catch { return ''; }
+  };
+  if (response.status === 401) {
     throw new Error('Odoo refused the API key. Check it, and that the user it belongs to may read accounting.');
+  }
+  if (response.status === 403) {
+    const said = await odooSaid();
+    throw new Error(method === 'search_read' && !said
+      ? 'Odoo refused the API key. Check it, and that the user it belongs to may read accounting.'
+      : `Odoo did not allow ${doing} ${model}${said ? `: ${said}` : '.'}`);
   }
   if (response.status === 404) {
     throw new Error(`Odoo has no ${model} model, or the address is wrong. Check the Odoo address in Setup.`);
   }
   if (!response.ok) {
-    let detail = '';
-    try { detail = JSON.stringify(await response.json()).slice(0, 300); } catch { /* body already gone */ }
-    throw new Error(`Odoo answered ${response.status} reading ${model}. ${detail}`);
+    const said = await odooSaid();
+    throw new Error(`Odoo answered ${response.status} ${doing} ${model}${said ? `: ${said}` : '.'}`);
   }
 
   try {
@@ -611,8 +625,10 @@ export async function posOnDay({ config: settings, token, vendorId, day, fetchIm
   const config = odooConfig(settings, token);
   const rows = await searchRead(config, 'purchase.order', [
     ['partner_id', '=', Number(vendorId)], ['date_order', '>=', `${day} 00:00:00`], ['date_order', '<=', `${day} 23:59:59`], ['state', '!=', 'cancel'],
-  ], ['name', 'amount_total', 'state', 'create_uid'], { fetchImpl });
-  return rows.map((r) => ({ id: r.id, name: String(r.name || ''), total: toMinor(r.amount_total), state: String(r.state || ''), by: refName(r.create_uid) }));
+  ], ['name', 'amount_total', 'state', 'create_uid', 'origin'], { fetchImpl });
+  return rows.map((r) => ({
+    id: r.id, name: String(r.name || ''), total: toMinor(r.amount_total), state: String(r.state || ''), by: refName(r.create_uid), origin: r.origin || '',
+  }));
 }
 
 /**

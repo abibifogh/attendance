@@ -12,7 +12,7 @@ const OWNER = { name: 'Test Owner', isOwner: true, access: [] };
 const today = new Date().toISOString().slice(0, 10);
 
 /** A made-up Odoo behind one fetch, keeping what was created. */
-function odoo() {
+function odoo({ fail = null } = {}) {
   const made = { po: [], attachments: [] };
   const vendors = [{ id: 11, name: 'A Fuel Station' }, { id: 12, name: 'A Hardware Shop Ltd' }, { id: 13, name: 'Another Fuel Depot' }];
   const products = [{ id: 21, name: 'Fuel', display_name: 'Fuel' }, { id: 22, name: 'Maintenance supplies', display_name: 'Maintenance supplies' }];
@@ -24,10 +24,13 @@ function odoo() {
     if (model === 'product.product') return Response.json(products);
     if (model === 'purchase.order.line') return Response.json([{ id: 1, partner_id: [11, 'A Fuel Station'] }]);
     if (model === 'purchase.order' && method === 'create') {
+      if (fail === 'refuse') return Response.json({ name: 'odoo.exceptions.ValidationError', message: 'Incompatible companies on records: the product belongs to another company.' }, { status: 422 });
       const vals = body.vals_list[0];
       const id = 100 + made.po.length;
       made.po.push(vals);
-      pos.push({ id, name: `P0${2517 + made.po.length - 1}`, partner_id: [vals.partner_id, 'x'], amount_total: vals.order_line[0][2].price_unit, state: 'draft', create_uid: [1, 'Insight'], date_order: vals.date_order });
+      pos.push({ id, name: `P0${2517 + made.po.length - 1}`, partner_id: [vals.partner_id, 'x'], amount_total: vals.order_line[0][2].price_unit, state: 'draft', create_uid: [1, 'Insight'], date_order: vals.date_order, origin: vals.origin });
+      // Made, and then no answer: as if the connection dropped.
+      if (fail === 'silent') throw new Error('connection reset');
       return Response.json([id]);
     }
     if (model === 'purchase.order') {
@@ -132,4 +135,23 @@ test('without the reader, a sentence is still read plainly; a receipt says to fi
   const out = await newpo.readPo(env, { text: 'fuel 800 cedis today' }, { fetchImpl });
   assert.deepEqual([out.read.amount, out.read.description, out.read.product.id], [80000, 'Fuel', 21]);
   await assert.rejects(newpo.readPo(env, { file: `data:image/png;base64,${Buffer.from('x').toString('base64')}` }, { fetchImpl }), /by hand/);
+});
+
+test('when Odoo will not create it, its own words are shown; when it made it but did not answer, the PO is found, not made twice', async () => {
+  const env = await setUp(null);
+  const body = { vendorId: 12, productId: 22, amount: '145', description: 'Padlocks', date: today };
+  let o = odoo({ fail: 'refuse' });
+  await assert.rejects(newpo.createPo(env, body, OWNER, { fetchImpl: o.fetchImpl }),
+    (err) => err.status === 502 && /Odoo did not create the PO\. Odoo answered 422 creating purchase\.order: Incompatible companies/.test(err.message));
+
+  o = odoo({ fail: 'silent' });
+  const found = await newpo.createPo(env, body, OWNER, { fetchImpl: o.fetchImpl });
+  assert.deepEqual([found.ok, found.po.name, o.made.po.length], [true, 'P02517', 1], 'the one Odoo made, found');
+  // Pressed again: the PO already made from Insight is said, not made twice...
+  const again = await newpo.createPo(env, body, OWNER, { fetchImpl: o.fetchImpl });
+  assert.deepEqual([again.ok, again.already.name, again.already.origin, o.made.po.length], [false, 'P02517', 'Insight · Test Owner', 1]);
+  // ...unless it was on the last look, or it is a second purchase.
+  assert.equal((await newpo.createPo(env, { ...body, seen: ['P02517'] }, OWNER, { fetchImpl: odoo().fetchImpl })).ok, true);
+  const second = odoo({ fail: null });
+  assert.equal((await newpo.createPo(env, { ...body, again: true }, OWNER, { fetchImpl: second.fetchImpl })).ok, true);
 });

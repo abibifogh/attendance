@@ -236,7 +236,27 @@ export async function createPo(env, body, account, { fetchImpl } = {}) {
   const file = String(body?.file || '');
   const m = file ? file.match(/^data:(image\/(?:jpeg|png|webp)|application\/pdf);base64,([A-Za-z0-9+/=]+)$/) : null;
   if (file && (!m || m[2].length > FILE_MAX)) throw badRequest('That receipt cannot be attached: a photo, or a PDF under 5 MB.');
-  const po = await createDraftPo({ ...opts, vendorId: d.vendor.id, productId: d.product.id, description: d.description, amount: d.amount, day: d.day, origin: `Insight · ${who(account)}` });
+  // A PO made from Insight for this already, that was not on the last look:
+  // pressed again after an answer that never came back. Said, not made twice.
+  const base = String(opts.config?.base || '').replace(/\/+$/, '');
+  const urlOf = (id) => (base ? `${base}/web#model=purchase.order&id=${id}&view_type=form` : null);
+  const seen = new Set((Array.isArray(body?.seen) ? body.seen : []).map(String));
+  const fromHere = async () => (await posOnDay({ ...opts, vendorId: d.vendor.id, day: d.day }).catch(() => []))
+    .find((p) => /^Insight/.test(p.origin) && Math.abs(p.total - d.amount) <= 100 && !seen.has(p.name));
+  if (!body?.again) {
+    const made = await fromHere();
+    if (made) return { ok: false, already: { ...made, url: urlOf(made.id) } };
+  }
+  let po;
+  try {
+    po = await createDraftPo({ ...opts, vendorId: d.vendor.id, productId: d.product.id, description: d.description, amount: d.amount, day: d.day, origin: `Insight · ${who(account)}` });
+  } catch (err) {
+    console.error('Create PO', err);
+    // Odoo may have made it and then failed to answer: looked for once before saying it failed.
+    const made = await fromHere();
+    if (!made) throw new HttpError(502, `Odoo did not create the PO. ${String(err?.message || err)}`);
+    po = { id: made.id, name: made.name, total: made.total, state: made.state, url: urlOf(made.id) };
+  }
   let attached = false;
   let attachError = null;
   if (m) {
