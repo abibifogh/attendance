@@ -5,7 +5,7 @@ import { callLink } from '../lib/link.js';
 import { listSources, secretNameFor } from '../connectors/index.js';
 import { purchaseOrders } from '../connectors/odoo.js';
 import { poName } from './cashpo.js';
-import { linkRecipients, requireArea, roleOf } from './till.js';
+import { deskStaff, linkRecipients, requireArea, roleOf, tell } from './till.js';
 import { shifts as shiftsFor } from './shifts.js';
 
 /**
@@ -16,7 +16,8 @@ import { shifts as shiftsFor } from './shifts.js';
  * draft or waiting for approval) as an ADVANCE. It is settled once its PO is
  * approved in Odoo and on the expense form (the Google Form, sent here by a
  * script on the form). Until then the next shift cannot close; an admin can
- * give it more time or close it.
+ * give it more time, close it, or give it to one person to report: then only
+ * that person's Close shift waits for it, whatever shift they are on.
  *
  * Once approved, the PO's total may not be what left the drawer: a REFUND
  * (bought for less) comes back into a drawer and shows in ASSD as a surplus; a
@@ -38,6 +39,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const nowText = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 const who = (account) => account?.name || account?.email || 'Owner';
 const SLOT_ORDER = ['morning', 'afternoon', 'night'];
+const ghsText = (minor) => `GH₵${(Number(minor || 0) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // ------------------------------------------------------- the expense form --
 
@@ -163,7 +165,11 @@ export async function decisionsFor(env, names) {
   const wanted = [...new Set(names.filter(Boolean).map((n) => poName(n)))];
   if (!wanted.length) return new Map();
   const rows = await all(env.DB, `SELECT * FROM advance_decision WHERE po IN (${wanted.map((_, i) => `?${i + 1}`).join(', ')})`, ...wanted).catch(() => []);
-  return new Map(rows.map((r) => [r.po, { until: r.until_day || null, closed: Boolean(r.closed_at), reason: r.reason || null, by: r.by_name || null }]));
+  return new Map(rows.map((r) => [r.po, {
+    until: r.until_day || null, closed: Boolean(r.closed_at), reason: r.reason || null, by: r.by_name || null,
+    // Given to one person to report: only their Close shift waits for it.
+    given: r.given_to != null ? { userId: Number(r.given_to), name: r.given_name || null, by: r.given_by || null, at: r.given_at || null } : null,
+  }]));
 }
 
 /** What HIVE needs to know about a PO besides Odoo: reported, and any decision. */
@@ -247,8 +253,8 @@ export async function gatherAdvances(env, { fetchImpl, on = today() } = {}) {
       reported, amountDiffers: Boolean(reported && !reported.together && total != null && reported.total !== total),
       by: claim.who || null, userId: claim.user_id, day: claim.day, slot: claim.slot, due, old,
       diff, moves, decision, status, settled,
-      // Past the day of the shift it was due by, with no more time given.
-      overdue: advance && !settled && !decision?.closed && (decision?.until ? decision.until < on : due.day < on),
+      // Past the day of the shift it was due by, with no more time given and not given to anybody.
+      overdue: advance && !settled && !decision?.closed && !decision?.given && (decision?.until ? decision.until < on : due.day < on),
     });
   }
   return { items, formLive: live, odoo: Boolean(orders) };
@@ -290,8 +296,11 @@ export async function advancesView(env, account, { fetchImpl } = {}) {
   // A shift's variance is the drawer's money: only for whoever sees amounts.
   if (!access.money) for (const x of items) for (const m of x.moves) m.variance = null;
   const open = items.filter((x) => !['settled', 'closed'].includes(x.status));
+  const canAct = (access.advances || 0) >= 2;
   return {
-    canAct: (access.advances || 0) >= 2,
+    canAct,
+    // Whom an advance can be given to: the desk first.
+    staff: canAct ? await deskStaff(env).catch(() => null) : null,
     canClear: roleOf(account) === 'admin',
     formLive: live,
     odoo,
@@ -338,29 +347,68 @@ export async function clearElsewhere(env, body, account) {
   return { ok: true, pos, restored: Boolean(body?.restore) };
 }
 
-/** More time until a day, or close with a reason. */
-export async function decide(env, body, account) {
+/** More time until a day, close with a reason, or give it to one person to report. */
+export async function decide(env, body, account, { fetchImpl } = {}) {
   await requireArea(env, account, 'advances', 2);
   const po = poName(str(body?.po, 'PO', { required: true, max: 30 }));
+  const was = await first(env.DB, 'SELECT * FROM advance_decision WHERE po = ?1', po);
+  // Whoever had it to report is told it is no longer theirs.
+  const untell = async (why) => {
+    if (was?.given_to == null) return;
+    await tell(env, [Number(was.given_to)], `${po} is no longer yours to report`, why, fetchImpl, 'till.given');
+  };
   if (body?.action === 'more') {
     const until = str(body?.until, 'Until', { required: true, max: 10 });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(until) || until < today()) throw badRequest('Choose a day from today on.');
     const reason = str(body?.reason, 'Reason', { max: 300 });
     await run(env.DB, `INSERT INTO advance_decision (po, until_day, closed_at, reason, by_name, at) VALUES (?1, ?2, NULL, ?3, ?4, ?5)
-        ON CONFLICT (po) DO UPDATE SET until_day = ?2, closed_at = NULL, reason = ?3, by_name = ?4, at = ?5`, po, until, reason || null, who(account), nowText());
+        ON CONFLICT (po) DO UPDATE SET until_day = ?2, closed_at = NULL, reason = ?3, by_name = ?4, at = ?5,
+          given_to = NULL, given_name = NULL, given_by = NULL, given_at = NULL`, po, until, reason || null, who(account), nowText());
+    await untell(`${who(account)} gave it more time instead. Your Close shift no longer waits for it.`);
+    return { ok: true };
+  }
+  if (body?.action === 'give') {
+    const userId = Number(body?.userId);
+    const staff = await deskStaff(env).catch(() => null);
+    const person = [...(staff?.frontDesk || []), ...(staff?.others || [])].find((u) => u.id === userId);
+    if (!person) throw badRequest('Choose who reports it.');
+    // Only once approved in Odoo: before that there is nothing on the form for anybody to report.
+    const { items } = await gatherAdvances(env, { fetchImpl });
+    const x = items.find((i) => i.po === po);
+    if (!x || !x.advance || x.settled) throw badRequest(`${po} is not an advance waiting to be reported.`);
+    if (x.status !== 'report') throw badRequest(`${po} is not approved in Odoo yet. It can be given to somebody once it is, to report on the expense form.`);
+    if (was?.given_to === userId) return { ok: true, told: true };
+    const at = nowText();
+    await run(env.DB, `INSERT INTO advance_decision (po, until_day, closed_at, reason, by_name, at, given_to, given_name, given_by, given_at)
+        VALUES (?1, NULL, NULL, NULL, ?2, ?3, ?4, ?5, ?2, ?3)
+        ON CONFLICT (po) DO UPDATE SET until_day = NULL, closed_at = NULL, by_name = ?2, at = ?3, given_to = ?4, given_name = ?5, given_by = ?2, given_at = ?3`,
+    po, who(account), at, userId, person.name);
+    await untell(`${who(account)} gave it to ${person.name} instead. Your Close shift no longer waits for it.`);
+    const told = await tell(env, [userId], `${po} is yours to report`,
+      `${who(account)} gave you the ${ghsText(x.advanced)} advance for ${po}${x.vendor ? ` (${x.vendor})` : ''} to report on the expense form. Your next Close shift waits for it.`,
+      fetchImpl, 'till.given');
+    return { ok: true, told };
+  }
+  if (body?.action === 'take') {
+    if (was?.given_to == null) return { ok: true };
+    await run(env.DB, 'UPDATE advance_decision SET given_to = NULL, given_name = NULL, given_by = NULL, given_at = NULL, by_name = ?2, at = ?3 WHERE po = ?1',
+      po, who(account), nowText());
+    await untell(`${who(account)} took it back. Your Close shift no longer waits for it.`);
     return { ok: true };
   }
   if (body?.action === 'close') {
     const reason = str(body?.reason, 'Reason', { required: true, max: 300 });
     await run(env.DB, `INSERT INTO advance_decision (po, until_day, closed_at, reason, by_name, at) VALUES (?1, NULL, ?2, ?3, ?4, ?2)
-        ON CONFLICT (po) DO UPDATE SET until_day = NULL, closed_at = ?2, reason = ?3, by_name = ?4, at = ?2`, po, nowText(), reason, who(account));
+        ON CONFLICT (po) DO UPDATE SET until_day = NULL, closed_at = ?2, reason = ?3, by_name = ?4, at = ?2,
+          given_to = NULL, given_name = NULL, given_by = NULL, given_at = NULL`, po, nowText(), reason, who(account));
+    await untell(`${who(account)} closed it. Your Close shift no longer waits for it.`);
     return { ok: true };
   }
   if (body?.action === 'reopen') {
     await run(env.DB, 'DELETE FROM advance_decision WHERE po = ?1', po);
     return { ok: true };
   }
-  throw badRequest('More time, close, or reopen.');
+  throw badRequest('More time, give it to somebody, take it back, close, or reopen.');
 }
 
 // ------------------------------------------------------------- telling --

@@ -265,3 +265,47 @@ test('a big batch from the form is saved in a handful of database calls', async 
   await advances.ingestForm({ ...env, DB: counted }, { responses });
   assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM expense_report').first()).n, 510);
 });
+
+test('an advance given to one person to report: only their Close shift waits, and they are told', async () => {
+  const { env, paid } = await setUp();
+  const { orders, hive, fetchImpl } = world();
+  paid('P00420', { day: '2026-10-08', amount: 6500, advance: 1 });
+  await saveSettings(env, { access: { accountId: 21, area: 'advances', level: 2 } }, OWNER);
+
+  // Not approved in Odoo yet: nothing to report, so nobody to give it to.
+  await assert.rejects(advances.decide(env, { po: '420', action: 'give', userId: 7 }, SUP, { fetchImpl }), /not approved in Odoo yet/);
+  orders.get('P00420').state = 'purchase';
+  await assert.rejects(advances.decide(env, { po: '420', action: 'give', userId: 99 }, SUP, { fetchImpl }), /Choose who/);
+  const view = await advances.advancesView(env, SUP, { fetchImpl });
+  assert.deepEqual(view.staff.frontDesk.map((p) => p.name), ['Ama Test'], 'the desk first: whoever has closed a shift or paid from a drawer');
+
+  const out = await advances.decide(env, { po: '420', action: 'give', userId: 7 }, SUP, { fetchImpl });
+  assert.equal(out.told, true);
+  const [path, told] = hive.at(-1);
+  assert.equal(path, '/api/link/till/tell');
+  assert.deepEqual([told.kind, told.userIds, told.title], ['till.given', [7], 'P00420 is yours to report']);
+  assert.match(told.body, /Abena Sup gave you the GH₵65\.00 advance for P00420 \(A Hardware Shop\)/);
+
+  let x = (await advances.gatherAdvances(env, { fetchImpl, on: '2026-10-20' })).items[0];
+  assert.deepEqual([x.status, x.decision.given.userId, x.decision.given.name, x.decision.given.by, x.overdue], ['report', 7, 'Ama Test', 'Abena Sup', false],
+    'handed over: not holding up every shift');
+  // What HIVE is told about the PO carries who has it.
+  const extras = await advances.poExtras(env, ['P00420']);
+  assert.equal(extras('P00420').decision.given.userId, 7);
+
+  // Given to somebody else: the first is told it is no longer theirs.
+  await advances.decide(env, { po: '420', action: 'give', userId: 3 }, OWNER, { fetchImpl });
+  assert.deepEqual(hive.slice(-2).map(([, b]) => [b.userIds[0], b.title]), [[7, 'P00420 is no longer yours to report'], [3, 'P00420 is yours to report']]);
+  // More time instead: given to nobody, and they are told.
+  await advances.decide(env, { po: '420', action: 'more', until: '2999-01-01' }, OWNER, { fetchImpl });
+  x = (await advances.gatherAdvances(env, { fetchImpl, on: '2026-10-20' })).items[0];
+  assert.deepEqual([x.decision.given, x.decision.until], [null, '2999-01-01']);
+  assert.equal(hive.at(-1)[1].userIds[0], 3);
+  // Given again, then taken back: holding up every shift again once it is due.
+  await advances.decide(env, { po: '420', action: 'give', userId: 7 }, OWNER, { fetchImpl });
+  assert.equal((await advances.gatherAdvances(env, { fetchImpl, on: '2026-10-20' })).items[0].decision.until, null, 'giving replaces more time');
+  await advances.decide(env, { po: '420', action: 'take' }, OWNER, { fetchImpl });
+  x = (await advances.gatherAdvances(env, { fetchImpl, on: '2026-10-20' })).items[0];
+  assert.deepEqual([x.decision.given, x.overdue], [null, true]);
+  assert.equal(hive.at(-1)[1].title, 'P00420 is no longer yours to report');
+});

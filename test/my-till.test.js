@@ -453,6 +453,15 @@ test('an advance: given out against a requisition, it holds up the next shift un
     assert.deepEqual((await earlier(second)).advances, []);
     form.decisions.P00420 = null;
 
+    // Given to Ama to report: only Ama's Close shift waits for it, whatever shift; Kofi's does not.
+    form.decisions.P00420 = { until: null, closed: false, given: { userId: 7, name: 'Ama Test', by: 'Test Owner' } };
+    assert.deepEqual((await earlier(second)).advances, [], 'not in Kofi’s way');
+    const hers = (await earlier(second, AMA)).advances;
+    assert.deepEqual(hers.map((a) => [a.name, a.status, a.given]), [['P00420', 'report', { by: 'Test Owner' }]]);
+    assert.deepEqual((await earlier(first, AMA)).advances.length, 1, 'even on the shift it was given out on');
+    await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(second, { expenses: [] }) })), /P00420 advance of GH₵ 65\.00 \(.*given to you to report by Test Owner\): report it on the expense form/);
+    form.decisions.P00420 = null;
+
     // Reported for exactly what was given out: settled.
     form.reported.P00420 = { amount: 6000, tnt: 500, total: 6500, count: 1 };
     await kofi(second);

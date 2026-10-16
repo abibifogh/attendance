@@ -2778,8 +2778,8 @@ export async function renderShifts(root, { range }) {
         out.push({
           id: `ad:${x.po}`, kind: 'advance', title: `${x.po}${x.vendor ? ` · ${x.vendor}` : ''}`,
           sub: `${x.advance ? 'Advanced' : 'Paid'} ${advanceWhen(x)}${x.by ? ` · ${x.by}` : ''}`, amount: money(x.advance ? x.advanced : x.paid),
-          chip: [tone, label], tone, done, age: daysAgo(x.day), counts: !done,
-          render: () => advanceDetail(x, { canAct: sources.advances.canAct, formLive: sources.advances.formLive, after }),
+          chip: [tone, label], tone, done, age: daysAgo(x.day), counts: !done && !x.decision?.given,
+          render: () => advanceDetail(x, { canAct: sources.advances.canAct, formLive: sources.advances.formLive, staff: sources.advances.staff, after }),
         });
       }
     }

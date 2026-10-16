@@ -27,7 +27,9 @@ export function advanceStatus(x) {
   const amount = x.diff ? money(Math.abs(x.diff)) : '';
   switch (x.status) {
     case 'approve': return x.overdue ? ['short', 'Approve in Odoo · overdue'] : ['over', 'Approve in Odoo'];
-    case 'report': return x.overdue ? ['short', 'Report on form · overdue'] : ['over', 'Report on form'];
+    case 'report':
+      if (x.decision?.given && x.advance && !x.settled) return ['over', `Given to ${x.decision.given.name || 'somebody'}`];
+      return x.overdue ? ['short', 'Report on form · overdue'] : ['over', 'Report on form'];
     case 'cancelled': return ['short', 'Cancelled'];
     case 'refund': return x.old ? ['short', `Refund ${amount} · for admins`] : ['ok', `Refund ${amount}`];
     case 'deficit': return x.old ? ['short', `Deficit ${amount} · for admins`] : ['over', `Deficit ${amount}`];
@@ -46,25 +48,27 @@ const ASSD = { matched: '✓ in ASSD', differs: 'ASSD shows a different amount',
 export function advanceDetail(x, ctx) {
   const said = h('span.small');
   const [tone, label] = advanceStatus(x);
+  const given = x.advance && !x.settled ? x.decision?.given : null;
   const facts = [
     ['Odoo', x.state ? `${x.state}${x.total != null ? ` · ${money(x.total)}` : ''}` : 'not read'],
     ['Expense form', x.reported?.together ? 'reported on one response with other POs'
       : x.reported ? `${money(x.reported.amount)} + ${money(x.reported.tnt)} TnT = ${money(x.reported.total)}${x.amountDiffers ? ' · not the PO’s total' : ''}`
         : ctx.formLive ? 'not reported yet' : 'not connected'],
     ['From drawers', money(x.paid)],
-    x.advance ? ['Due by', `${advanceWhen(x.due)}${x.overdue ? ' · overdue' : ''}`] : null,
+    x.advance && !given ? ['Due by', `${advanceWhen(x.due)}${x.overdue ? ' · overdue' : ''}`] : null,
+    given ? ['Given to', `${given.name || 'somebody'}${given.by ? `, by ${given.by}` : ''}${given.at ? `, ${dayText(given.at.slice(0, 10))} ${given.at.slice(11, 16)}` : ''} · told in HIVE`] : null,
   ].filter(Boolean);
   return h('article.card.adv-detail',
     h('div.adv-dhead', h('h2', `${x.po}${x.vendor ? ` · ${x.vendor}` : ''}`), h(`span.sh-chip.${tone}`, label)),
     h('p.sh-sub', x.advance
-      ? `Advance of ${money(x.advanced)} given out${x.by ? ` by ${x.by}` : ''} on ${advanceWhen(x)}.${x.overdue ? ' It is holding up every shift until it is settled.' : ''}`
+      ? `Advance of ${money(x.advanced)} given out${x.by ? ` by ${x.by}` : ''} on ${advanceWhen(x)}.${given ? ` Only ${given.name || 'their'}’s Close shift is held up until it is reported.` : x.overdue ? ' It is holding up every shift until it is settled.' : ''}`
       : `${money(x.paid)} paid from the drawer${x.by ? ` by ${x.by}` : ''} on ${advanceWhen(x)}.`),
     h('dl.adv-dl', facts.flatMap(([k, val]) => [h('dt', k), h('dd', val)])),
     x.moves.length ? h('div.adv-moves', x.moves.map((m) => h('div.small',
       `${m.kind === 'change' ? 'Refund' : 'Deficit'} ${money(Math.abs(m.paid))} on ${advanceWhen(m)}${m.who ? ` (${m.who})` : ''}: `,
       h(`span.sh-chip.${m.assd === 'matched' ? 'ok' : m.assd === 'missing' ? 'short' : 'none'}`, ASSD[m.assd] || ''),
       m.variance != null && m.assd !== 'matched' ? h('span.muted', ` shift variance ${money(m.variance)}`) : null))) : null,
-    x.decision ? h('p.small', x.decision.closed
+    x.decision && (x.decision.closed || x.decision.until) ? h('p.small', x.decision.closed
       ? `Closed by ${x.decision.by || 'an admin'}: ${x.decision.reason || ''}`
       : `More time until ${dayText(x.decision.until)}, by ${x.decision.by || 'an admin'}${x.decision.reason ? `: ${x.decision.reason}` : ''}`) : null,
     ctx.canAct ? actions(x, said, ctx) : null,
@@ -81,8 +85,33 @@ function actions(x, said, ctx) {
   }
   const until = h('input', { type: 'date', min: today(), 'aria-label': 'More time until' });
   const reason = h('input', { type: 'text', maxlength: 300, placeholder: 'Reason', 'aria-label': 'Reason' });
+  const given = x.decision?.given;
+  // Given to one person to report: once approved in Odoo, so there is something to report.
+  const canGive = x.advance && !x.settled && x.status === 'report' && ctx.staff;
+  let give = null;
+  if (canGive) {
+    const all = [...(ctx.staff.frontDesk || []), ...(ctx.staff.others || [])];
+    // Whoever gave it out first, then the desk, then everybody else.
+    const first = all.find((p) => p.id === Number(x.userId));
+    const list = [first, ...all.filter((p) => p !== first)].filter(Boolean);
+    const pick = h('select', { 'aria-label': 'Give it to' },
+      h('option', { value: '' }, 'Give it to…'),
+      list.filter((p) => p.id !== given?.userId).map((p) => h('option', { value: String(p.id), selected: !given && p === first }, `${p.name}${p === first ? ' (gave it out)' : ''}`)));
+    const label = () => {
+      const p = list.find((q) => String(q.id) === pick.value);
+      return given ? 'Give to somebody else' : p ? `Give it to ${p.name}` : 'Give it to';
+    };
+    const button = h(`button.btn${given ? '' : '.primary'}`, { type: 'button', onclick: (e) => {
+      if (!pick.value) { said.textContent = 'Choose who reports it.'; said.className = 'small form-error'; return; }
+      send({ action: 'give', userId: Number(pick.value) }, e.target);
+    } }, label());
+    pick.addEventListener('change', () => { button.textContent = label(); });
+    give = h('span.adv-group', pick, button);
+  }
   return h('div.adv-act',
-    x.advance && !x.settled ? h('span.adv-group', until,
+    give,
+    given ? h('button.btn', { type: 'button', onclick: (e) => send({ action: 'take' }, e.target) }, 'Take it back (holds up every shift again)') : null,
+    x.advance && !x.settled && !given ? h('span.adv-group', until,
       h('button.btn', { type: 'button', onclick: (e) => send({ action: 'more', until: until.value, reason: reason.value }, e.target) }, 'More time')) : null,
     h('span.adv-group', reason,
       h('button.btn', { type: 'button', onclick: (e) => send({ action: 'close', reason: reason.value }, e.target) }, 'Close')));
