@@ -143,6 +143,13 @@ export async function renderApprovals(root) {
           paint();
           e.target.blur();
         } catch (err) {
+          // Decided already, elsewhere: it leaves the list, with the system's own words.
+          if (/already|no longer waiting|not there any more|not waiting/i.test(err.message)) {
+            state.said = h('div.banner.warning', `${x.title}: ${err.message.startsWith(`${x.systemLabel}: `) ? err.message.slice(x.systemLabel.length + 2) : err.message}`);
+            state.open = null;
+            await read();
+            return;
+          }
           for (const b of buttons) b.disabled = false;
           said.className = 'small ap-said form-error';
           said.textContent = `${err.message} Nothing was changed.`;

@@ -789,7 +789,7 @@ export async function approve(env, body, account) {
     const col = isLink ? 'id' : 'key';
     const id = isLink ? Number(body.link) : String(body.answer);
     const row = await first(env.DB, `SELECT * FROM ${table} WHERE ${col} = ?1 AND status = 'pending'`, id);
-    if (!row) throw badRequest('That is no longer waiting.');
+    if (!row) throw badRequest(await decidedAs(env, table, col, id));
     if (body.ok) await run(env.DB, `UPDATE ${table} SET status = 'applied', decided_by = ?2, decided_at = ?3 WHERE ${col} = ?1`, id, who(account), now());
     else await run(env.DB, `DELETE FROM ${table} WHERE ${col} = ?1`, id);
     return { ok: true };
@@ -797,13 +797,37 @@ export async function approve(env, body, account) {
   const seq = Number(body?.seq);
   if (!Number.isInteger(seq)) throw badRequest('Which movement?');
   const row = await first(env.DB, "SELECT * FROM shift_movement WHERE seq = ?1 AND status = 'pending'", seq);
-  if (!row) throw badRequest('That correction is no longer waiting.');
+  if (!row) {
+    const was = await first(env.DB, 'SELECT status, decided_by, decided_at FROM shift_movement WHERE seq = ?1', seq).catch(() => null);
+    throw badRequest(was ? `That correction was already ${was.status === 'applied' ? 'approved' : 'rejected'}${was.decided_by ? ` by ${was.decided_by}` : ''}${was.decided_at ? `, ${String(was.decided_at).slice(0, 16)}` : ''}.`
+      : 'That correction is no longer waiting: it was taken back.');
+  }
   if (body?.ok) {
     await run(env.DB, "UPDATE shift_movement SET status = 'applied', decided_by = ?2, decided_at = ?3 WHERE seq = ?1", seq, who(account), now());
   } else {
     await run(env.DB, "UPDATE shift_movement SET status = 'rejected', decided_by = ?2, decided_at = ?3 WHERE seq = ?1", seq, who(account), now());
   }
   return { ok: true };
+}
+
+/**
+ * Why an answer is no longer waiting, in words: approved by whom, put on a
+ * staff account instead, or rejected or taken back (which leave nothing).
+ */
+async function decidedAs(env, table, col, id) {
+  const row = await first(env.DB, `SELECT * FROM ${table} WHERE ${col} = ?1`, id).catch(() => null);
+  if (row && (row.status || 'applied') === 'applied') {
+    return `That was already approved${row.decided_by ? ` by ${row.decided_by}` : ''}${row.decided_at ? `, ${String(row.decided_at).slice(0, 16)}` : ''}.`;
+  }
+  if (table === 'shift_answer') {
+    const moved = await first(env.DB, 'SELECT shares, by_name, at FROM till_move WHERE key = ?1 AND undone_at IS NULL ORDER BY id DESC LIMIT 1', id).catch(() => null);
+    if (moved) {
+      let names = '';
+      try { names = JSON.parse(moved.shares).map((x) => x.name).filter(Boolean).join(' and '); } catch { names = ''; }
+      return `That was already decided: put on ${names ? `${names}'s` : 'a staff'} account${moved.by_name ? ` by ${moved.by_name}` : ''}${moved.at ? `, ${String(moved.at).slice(0, 16)}` : ''}.`;
+    }
+  }
+  return 'That is no longer waiting: it was rejected, or taken back by whoever answered.';
 }
 
 /** Tell the admins that a supervisor's correction is waiting. Never throws. */
