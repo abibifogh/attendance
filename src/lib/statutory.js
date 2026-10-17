@@ -200,6 +200,10 @@ const pct = (rate) => `${round2(Number(rate) * 100)}%`;
  */
 export const RESIDENCIES = [
   'Resident-Full-Time', 'Resident-Part-Time', 'Resident-Casual', 'Non-Resident',
+  // A second job, taxed at the rate in the name on the whole chargeable
+  // income. The form marks column 7 Y for these.
+  'Secondary@5%', 'Secondary@10%', 'Secondary@17.5%', 'Secondary@25%',
+  'Secondary@30%', 'Secondary@35%',
 ];
 
 /** What the form's column 4 is usually one of here. */
@@ -293,9 +297,9 @@ export function payeSchedule({ lines = [], people = new Map() }) {
       // the reading the form had before: the job title, then the department,
       // and resident and full time, which is what almost everybody is.
       position: record.position || record.job_title || line.staff?.department || '',
-      residency: record.residency || 'Resident-Full-Time',
+      residency: record.residency || line.residency || 'Resident-Full-Time',
       basic: round2(line.basic),
-      secondary: 'N',
+      secondary: /^Secondary@/.test(record.residency || line.residency || '') ? 'Y' : 'N',
       paidSsnit: line.ssnit?.qualifies === false ? 'N' : 'Y',
       ssf,
       thirdTier,

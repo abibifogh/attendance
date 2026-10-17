@@ -1,4 +1,6 @@
-import { bonusTaxOn, grossUpBonus, payeOn, round2, ssnitOn } from './tax.js';
+import {
+  bonusTaxOn, grossUpBonus, payeOn, ratesForResidency, round2, ssnitOn,
+} from './tax.js';
 import { TIERS, tierSplit } from './statutory.js';
 
 /**
@@ -44,9 +46,14 @@ function oneLine({
   bonusIsNet = true,
   topUp = 0,
   relief = 0,
-  rates,
+  residency = '',
+  rates: standing,
   tiers = TIERS,
 }) {
+  // Everything below taxes on `rates.bands`. For anybody who is not a
+  // full-time resident in their main job those are one flat band, so the same
+  // sums come out at the GRA's flat rate for them.
+  const rates = ratesForResidency(standing, residency);
   const pay = round2(basic);
   // The worked-out allowance sits with the agreed ones and is taxed like them,
   // because it is cash pay and nothing else. It is marked so a payslip can say
@@ -253,6 +260,10 @@ function oneLine({
       tier2: split.tier2,
       unallocated: split.unallocated,
     },
+    // Said on the line, so a payslip and the return can show why the tax is
+    // a flat share rather than the bands. Null for the ordinary case.
+    residency: residency || null,
+    flatRate: rates.flat ?? null,
     paye: {
       total: tax,
       onSalary: salaryPaye.tax,
@@ -264,7 +275,7 @@ function oneLine({
     loanTotal: loanDue,
     net,
     employerCost: cost,
-    rates: { label: rates.label, ssnitEmployee: rates.ssnitEmployee, ssnitEmployer: rates.ssnitEmployer },
+    rates: { label: standing.label, ssnitEmployee: rates.ssnitEmployee, ssnitEmployer: rates.ssnitEmployer },
   };
 }
 

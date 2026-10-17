@@ -311,6 +311,9 @@ function linesFrom(data, month) {
       // What the GRA has issued them a certificate for. Off before the bands,
       // like the pension, and nought for almost everybody.
       relief: round2(profile.gra_relief ?? 0),
+      // Which footing they are taxed on. Anything but full time and resident in
+      // their main job is a flat rate on the GRA's schedule.
+      residency: profile.gra_residency ?? '',
       rates: data.rates,
       tiers: data.tiers,
     }));
@@ -1952,6 +1955,12 @@ export async function setProfiles(ctx) {
     const graResidency = line.graResidency == null
       ? null
       : str(line.graResidency, 'Residency', { max: 40 });
+    // It decides the tax now, not only a column on the return, so only the
+    // footings the GRA's form knows are taken. A typo would otherwise be taxed
+    // on the bands as if nobody had said anything.
+    if (graResidency && !RESIDENCIES.includes(graResidency)) {
+      throw badRequest(`${graResidency} is not one of the GRA's residencies.`);
+    }
     const graRelief = line.graRelief == null || line.graRelief === ''
       ? null
       : round2(num(line.graRelief, 'Deductible reliefs', { min: 0, max: 1_000_000 }));

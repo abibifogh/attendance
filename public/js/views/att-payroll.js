@@ -2317,7 +2317,9 @@ async function editForReturn(person, mine, data) {
       field('Position', position,
         'Column 4. The grade on the form, not the job. Leave it empty to use their job title.'),
       field('Residency', residency,
-        'Column 5. Resident and full time unless they are here on some other footing.'),
+        'Column 5. Anything but resident and full time is taxed at a flat rate on the whole '
+        + 'chargeable income, as the GRA form does: non-resident 25%, part-time 10%, casual 5%, '
+        + 'a second job at the rate in its name.'),
       field('Deductible reliefs', relief,
         'Column 20. Only what they hold a certificate from the GRA for. Nought for almost '
         + 'everybody.')),

@@ -25,6 +25,10 @@
  *   15% is an annual ceiling, so what has already been paid this year is
  *   counted before the rate is applied.
  *
+ *   Somebody who is not a full-time resident in their main job is taxed at a
+ *   flat rate on the whole chargeable income instead of the bands, as the
+ *   GRA's schedule does it: see flatRateFor.
+ *
  *   Not implemented: the overtime tax for qualifying junior staff (5% and
  *   10%), personal reliefs claimed on a tax credit certificate, and tier-three
  *   voluntary contributions. Each of those is a rule about one person's
@@ -110,6 +114,40 @@ function parseBands(value) {
     // nothing. Fall back to the published figures and carry on.
     return null;
   }
+}
+
+/**
+ * The flat rate somebody is taxed at instead of the bands, or null.
+ *
+ * Only a resident here full time in their main job goes through the graduated
+ * bands. The GRA's own schedule (paye202609grra, column 23) taxes everybody
+ * else at one rate on the whole chargeable income: a non-resident at 25%, a
+ * resident part-time at 10%, a casual at 5%, and a secondary employment at
+ * the rate its name carries. The bonus is not affected: the 5% final tax on
+ * the part under the ceiling is the same for all of them, and only the excess
+ * joins the income this rate is applied to.
+ */
+export const FLAT_RATES = {
+  'Non-Resident': 0.25,
+  'Resident-Part-Time': 0.10,
+  'Resident-Casual': 0.05,
+};
+
+export function flatRateFor(residency) {
+  const said = String(residency ?? '').trim();
+  if (Object.hasOwn(FLAT_RATES, said)) return FLAT_RATES[said];
+  const secondary = /^Secondary@(\d+(?:\.\d+)?)%$/.exec(said);
+  return secondary ? Number(secondary[1]) / 100 : null;
+}
+
+/**
+ * The rates with the bands swapped for one flat band where somebody's
+ * residency calls for it, so every sum downstream — the salary, the bonus
+ * excess, the grossing up — is done at that rate without knowing why.
+ */
+export function ratesForResidency(rates, residency) {
+  const flat = flatRateFor(residency);
+  return flat == null ? rates : { ...rates, bands: [{ width: null, rate: flat }], flat };
 }
 
 /**

@@ -392,6 +392,8 @@ test('a screen that does not ask about them leaves them alone', async () => {
 test('the form only takes a residency it prints', async () => {
   assert.deepEqual(RESIDENCIES, [
     'Resident-Full-Time', 'Resident-Part-Time', 'Resident-Casual', 'Non-Resident',
+    'Secondary@5%', 'Secondary@10%', 'Secondary@17.5%', 'Secondary@25%',
+    'Secondary@30%', 'Secondary@35%',
   ]);
   assert.deepEqual(POSITIONS, ['MANAGEMENT', 'SENIOR', 'JUNIOR', 'EXPATRIATE', 'OTHER']);
 });
