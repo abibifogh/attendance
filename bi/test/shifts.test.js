@@ -1007,3 +1007,17 @@ test('the day an ASSD line is on, so an approval can open its shift', async () =
   assert.deepEqual(await routes.whereIs(env, { seq: 1 }), { seq: 1, day: null });
   await assert.rejects(routes.whereIs(env, { seq: 'x' }), /Which ASSD line/);
 });
+
+test('“Open the shift” for money with no ASSD line: placed by its time, or its day when it has none', async () => {
+  const { db, raw } = freshDb();
+  const env = { DB: db };
+  raw.exec(`INSERT INTO terminal_txn (rrn, at, day, kind, amount, approved, loaded_at) VALUES
+      ('610031901239', '2026-10-15 15:05:00', '2026-10-15', 'card', 1000, 1, '2026-10-16'),
+      ('610031901240', '2026-10-16 02:30:00', '2026-10-16', 'card', 1000, 1, '2026-10-16');
+    INSERT INTO bank_card_txn (id, kind, day, amount, loaded_at) VALUES ('m-1', 'momo', '2026-10-14', 500, '2026-10-16');`);
+  assert.deepEqual(await routes.whereIs(env, { key: 'not-recorded:t:610031901239' }), { key: 'not-recorded:t:610031901239', day: '2026-10-15', slot: 'afternoon' });
+  assert.equal((await routes.whereIs(env, { key: 'not-recorded:t:610031901240' })).slot, 'night', 'after midnight: the night before');
+  assert.equal((await routes.whereIs(env, { key: 'not-recorded:t:610031901240' })).day, '2026-10-15');
+  assert.deepEqual(await routes.whereIs(env, { key: 'not-recorded:b:m-1' }), { key: 'not-recorded:b:m-1', day: '2026-10-14', slot: null });
+  assert.deepEqual(await routes.whereIs(env, { key: 'not-recorded:t:999' }), { key: 'not-recorded:t:999', day: null, slot: null });
+});

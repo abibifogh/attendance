@@ -7154,3 +7154,13 @@ tr:hover .rota-who-more,
 .till-locked { background: var(--surface-2, #f2f1ed); color: var(--ink-2, #52514e); cursor: default; }
 .till-many { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem; margin: .4rem 0 .8rem; padding: .6rem .7rem; border: 1px dashed var(--border, #d0d5dd); border-radius: 10px; }
 .till-many > :first-child { flex: 1 1 14rem; }
+
+/* My till › To sort out: proof an admin asked for. */
+.till-proof { margin-top: .6rem; padding: .7rem .8rem; border: 2px solid var(--accent, #2a6fdb); border-radius: var(--radius-sm, 10px); display: grid; gap: .45rem; }
+.till-proof textarea { width: 100%; box-sizing: border-box; }
+.till-proof-add { border: 2px dashed var(--border); border-radius: 10px; padding: .8rem; background: none; font: inherit; color: inherit; cursor: pointer; }
+.till-proof-files { display: flex; flex-wrap: wrap; gap: .5rem; }
+.till-proof-file { display: grid; gap: .2rem; justify-items: center; }
+.till-proof-file > span { font-size: 1.6rem; }
+.till-proof-file .till-link { font-size: .8rem; }
+.till-proof-file img { width: 72px; height: 90px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }

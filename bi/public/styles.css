@@ -1635,3 +1635,22 @@ label.fm-row input { margin-top: .2rem; }
 .np-review input.np-missing { border: 2px dashed #c98a00; background: #fbf1dc; }
 @media (max-width: 720px) { .np-review { grid-template-columns: 1fr; } }
 .np-raw { white-space: pre-wrap; word-break: break-word; font-size: .78rem; background: var(--surface-2); padding: .5rem; border-radius: 8px; max-height: 12rem; overflow: auto; }
+
+/* Proof for an answer: asked, sent, and the form to send it. */
+.pf-box { margin-top: .6rem; display: grid; gap: .5rem; }
+.pf-box:empty { display: none; }
+.pf-line { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: .4rem; }
+.pf-asked { background: color-mix(in srgb, var(--series-1, #2a6fdb) 9%, var(--surface)); border: 1px solid color-mix(in srgb, var(--series-1, #2a6fdb) 28%, var(--border)); border-radius: 10px; padding: .5rem .65rem; font-size: .9rem; }
+.pf-got { background: color-mix(in srgb, var(--good, #2f7d32) 11%, var(--surface)); border-radius: 10px; padding: .55rem .7rem; margin-top: .4rem; font-size: .9rem; }
+.pf-got.no { background: color-mix(in srgb, var(--critical, #b3261e) 9%, var(--surface)); }
+.pf-ask { border: 2px solid var(--series-1, #2a6fdb); border-radius: 12px; padding: .7rem .8rem; background: var(--surface); }
+.pf-ask > b { display: block; margin-bottom: .45rem; }
+.pf-ask input, .pf-send input { width: 100%; box-sizing: border-box; padding: .5rem .65rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); margin-top: .4rem; }
+.pf-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.pf-chip { border: 1px solid var(--border); border-radius: 999px; padding: .32rem .7rem; font: inherit; font-size: .85rem; background: var(--surface); color: var(--ink); cursor: pointer; }
+.pf-chip.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.pf-files { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .45rem; }
+.pf-file { width: 84px; display: grid; gap: .15rem; text-decoration: none; color: var(--ink-2); font-size: .7rem; }
+.pf-file img, .pf-file .pf-pdf { width: 84px; height: 100px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); display: grid; place-items: center; font-size: 1.8rem; }
+.pf-file small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-add { width: 100%; border: 2px dashed var(--border); border-radius: 12px; padding: .9rem; background: none; font: inherit; color: var(--ink-2); cursor: pointer; margin-top: .5rem; }

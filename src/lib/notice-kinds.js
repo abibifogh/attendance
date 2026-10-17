@@ -548,6 +548,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'till.proof',
+    group: 'money',
+    label: 'Proof was asked for something you answered on your till list',
+    who: 'Whoever gave the answer',
+    when: 'An admin asks for a picture or a PDF (a MoMo screenshot, a slip, a statement), and each morning after until it is sent, three times at most',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'till.given',
     group: 'money',
     label: 'An advance was given to you to report',

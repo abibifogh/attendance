@@ -7,6 +7,7 @@ import { todoDetail, todoSub, todoTitle, todoAge } from './todo.js';
 import { advanceDetail, advanceStatus, advanceOpen, advanceWhen, elsewhereCard } from './advances.js';
 import { state } from '../app.js';
 import { npReviewBox } from './np-review.js';
+import { proofBox, sendCard } from './proof.js';
 
 /**
  * Shifts: the front desk's control sheet, done from the source records.
@@ -99,7 +100,7 @@ const MOVED = {
 const PERIODS = ['day', 'week', 'month'];
 /** The Inbox's kinds, in the order the chips show them. */
 const INBOX_KINDS = [['drawer', 'Drawer'], ['bank', 'Card & bank'], ['po', 'POs'], ['advance', 'Advances'], ['stay', 'Unpaid stays'], ['admin', 'Waiting for admin'],
-  ['np', 'Nice Place'], ['odoo', 'Odoo'], ['mine', '✓ Mine in Odoo']];
+  ['np', 'Nice Place'], ['proof', 'Proof asked'], ['odoo', 'Odoo'], ['mine', '✓ Mine in Odoo']];
 /** What Odoo calls the records activities sit on, in words. */
 const ODOO_MODELS = { 'purchase.order': 'Purchase order', 'account.move': 'Bill or invoice', 'res.partner': 'Contact', 'stock.picking': 'Transfer', 'hr.employee': 'Employee', 'crm.lead': 'Lead' };
 const odooWhat = (a) => `${ODOO_MODELS[a.model] || a.model}${a.resName ? ` ${a.resName}` : ''}`;
@@ -262,7 +263,7 @@ export async function renderShifts(root, { range }) {
   // approvals. Read in the background on opening, so the tab shows its count,
   // and again after anything in it is answered.
   let stays = null;
-  const sources = { todo: null, advances: null, till: null, refunds: null, odoo: null, np: null };
+  const sources = { todo: null, advances: null, till: null, refunds: null, odoo: null, np: null, proof: null };
   let askOdoo = false;
   function readStays() {
     if (!can.stays) return Promise.resolve(null);
@@ -277,6 +278,8 @@ export async function renderShifts(root, { range }) {
       can.answers || can.approvals ? quiet(till.read(force).then((d) => { sources.till = d; })) : null,
       may('bank') ? quiet(api('/shifts/refunds').then((d) => { sources.refunds = d; })) : null,
       can.niceplace ? quiet(api('/np/pending').then((d) => { sources.np = d; })) : null,
+      // Proof an admin asked of this person, for an answer they gave.
+      quiet(api('/proof/mine').then((d) => { sources.proof = d; })),
       // Odoo's activities: everyone's for an admin, one's own once linked, and those on POs with Odoo shared.
       // Odoo itself is asked again only on Refresh now; otherwise at most every ten minutes.
       quiet(api(`/odoo/activities${askOdoo ? '?force=1' : ''}`).then((d) => { sources.odoo = d; askOdoo = false; })),
@@ -405,6 +408,16 @@ export async function renderShifts(root, { range }) {
     if (named) return openShift(named[1], named[2]);
     const line = /^(?:seq|[a-z-]+):(\d+)(?::\d+)?$/.exec(k);
     const fail = (text) => { if (button) { button.textContent = text; button.disabled = true; } };
+    // Money with no ASSD line: a terminal card (t:) or a bank line (b:), placed by its time.
+    if (/(?:^|:)[tb]:[^:]+$/.test(k)) {
+      try {
+        const w = await api(`/shifts/where?key=${encodeURIComponent(k)}`);
+        if (!w.day) return fail('Not in the files loaded');
+        if (w.slot) return openShift(w.day, w.slot);
+        mode = 'day';
+        return moveTo(w.day);
+      } catch (err) { return fail(err.message); }
+    }
     if (!line) return fail('Shift not known');
     const seq = Number(line[1]);
     try {
@@ -2340,6 +2353,8 @@ export async function renderShifts(root, { range }) {
         admin ? [
           h('button.btn.primary', { type: 'button', onclick: () => decide(true) }, 'Approve'),
           h('button.btn', { type: 'button', onclick: () => decide(false) }, 'Reject'),
+          // Proof asked of whoever gave the answer, and what they sent.
+          proofBox(x.proposed.link ? `link:${x.proposed.link}` : `answer:${x.key}`, { who: x.proposed.by }),
         ] : x.proposed.by === state.me?.account?.name ? h('button.sh-link', {
           type: 'button',
           onclick: async () => {
@@ -2349,7 +2364,10 @@ export async function renderShifts(root, { range }) {
               await load(banner('good', 'Taken back.'));
             } catch (err) { said.textContent = err.message; }
           },
-        }, 'Take it back') : null, said)
+        }, 'Take it back') : null,
+        // Somebody an admin allowed to ask for proof (or the one it was asked of) sees it here too.
+        !admin && (may('proof') || x.proposed.by === state.me?.account?.name) ? proofBox(x.proposed.link ? `link:${x.proposed.link}` : `answer:${x.key}`, { who: x.proposed.by }) : null,
+        said)
       : x.link ? h('div.sh-done',
         h('span', `✓ Reconciled together with ${others.length} other${others.length === 1 ? '' : 's'}: `,
           others.map((k) => data.exceptions.find((o) => o.key === k)).map((o, i) => (o ? label(o) : 'one outside these days')).join('; '),
@@ -2693,6 +2711,14 @@ export async function renderShifts(root, { range }) {
           age: daysAgo(i.answer?.at || i.day), counts: true, render: () => till.issueCard(i, () => after('Done.')),
         });
       }
+    }
+    // Proof asked of this person for an answer they gave: pictures or a PDF, sent from here.
+    for (const r of sources.proof?.requests || []) {
+      out.push({
+        id: `pf:${r.id}`, kind: 'proof', title: `${r.askedBy} asks for proof`, sub: `Of “${String(r.about || '').slice(0, 60)}”`, amount: '',
+        chip: ['short', 'Send proof'], tone: 'short', age: daysAgo(r.askedAt), counts: true,
+        render: () => sendCard(r, after),
+      });
     }
     // Nice Place pictures with a counter the reader could not read: read off the picture here.
     if (can.niceplace && sources.np) {

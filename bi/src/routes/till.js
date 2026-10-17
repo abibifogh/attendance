@@ -7,6 +7,7 @@ import { purchaseOrders } from '../connectors/odoo.js';
 import { compare, issuesFor, readReport, withStatus, FINAL, KINDS } from '../shifts/till.js';
 import { shifts as shiftsFor } from './shifts.js';
 import { formLive, poExtras } from './advances.js';
+import { openForHive } from './proof.js';
 
 /**
  * Closing a shift in HIVE, as this app sees it.
@@ -40,7 +41,7 @@ export const AREAS = [
   { key: 'reports', max: 1 }, { key: 'money', max: 1 }, { key: 'moves', max: 2 },
   { key: 'answers', max: 2 }, { key: 'money_out', max: 2 }, { key: 'reopen', max: 2 }, { key: 'net', max: 1 },
   { key: 'bank', max: 2 }, { key: 'odoo', max: 1 }, { key: 'files', max: 2 }, { key: 'unpaid', max: 2 },
-  { key: 'advances', max: 2 }, { key: 'niceplace', max: 2 },
+  { key: 'advances', max: 2 }, { key: 'niceplace', max: 2 }, { key: 'proof', max: 2 },
 ];
 const AREA_MAX = new Map(AREAS.map((a) => [a.key, a.max]));
 
@@ -302,12 +303,15 @@ export async function linkIssues(env, body) {
   const { issues } = await issuesBetween(env, from, to);
   const mine = issues.filter((i) => Number(i.userId) === userId);
   const month = to.slice(0, 7);
+  // Proof an admin asked for, on something they answered.
+  const asked = await openForHive(env, userId).catch(() => new Map());
   return {
     issues: mine.filter((i) => i.status !== 'settled').map((i) => ({
       key: i.key, kind: i.kind, label: i.kind === 'moved' ? 'Moved to you' : KINDS[i.kind], day: i.day, slot: i.slot, amount: i.amount, qty: i.qty ?? null,
       rental: i.rental ?? null, text: i.text, status: i.status, answer: i.answer,
       moved: i.moved ? { reason: i.moved.reason, by: i.moved.by, at: i.moved.at, from: i.moved.ownerName } : null,
       sentBack: i.decision?.outcome === 'back' ? { note: i.decision.note, by: i.decision.by, at: i.decision.at } : null,
+      proof: asked.get(i.key) || null,
     })),
     cleared: mine.filter((i) => i.status === 'settled' && String(i.decision?.at || '').startsWith(month)).length,
   };

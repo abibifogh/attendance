@@ -729,6 +729,19 @@ export async function myIssues(ctx) {
 }
 
 /**
+ * Send the proof an admin asked for, on something on their own list: pictures
+ * or a PDF (or why they cannot), passed to Insight with who is sending it.
+ */
+export async function sendProof(ctx) {
+  const body = await readJson(ctx.request);
+  const userId = Number(ctx.session.user.id);
+  const id = Number(body.id);
+  if (!Number.isInteger(id)) throw badRequest('Which request?');
+  const files = Array.isArray(body.files) ? body.files.slice(0, 6).map((f) => ({ name: String(f?.name || '').slice(0, 120), data: String(f?.data || '') })) : [];
+  return json(await insight(ctx.env, '/api/link/till/proof', { userId, id, files, note: body.note == null ? null : String(body.note).slice(0, 600), cannot: Boolean(body.cannot) }));
+}
+
+/**
  * Answer something on their own list: explain it, offer to pay it back, or
  * give the PO that covers it.
  *
@@ -967,6 +980,15 @@ export async function linkMove(ctx) {
 
 /** Insight's own words, in the design, with the label that fits. */
 function tellMail(kind, title, text) {
+  if (kind === 'till.proof') {
+    return {
+      tone: 'warn', status: 'Proof asked', eyebrow: 'Till',
+      headline: title, intro: text || undefined,
+      button: 'Open To sort out',
+      subject: title, preheader: text || undefined,
+      why: 'You get this because an admin asked for proof of something you answered on your till list.',
+    };
+  }
   if (kind === 'till.given') {
     return {
       tone: 'warn', status: 'Yours to report', eyebrow: 'Till',
@@ -1102,7 +1124,7 @@ export async function linkSummary(ctx) {
 /** Tell people something Insight decided. */
 export async function linkTell(ctx) {
   const body = await fromInsight(ctx);
-  const kind = ['till.settled', 'till.approval', 'till.moved', 'till.given'].includes(body.kind) ? body.kind : 'till.settled';
+  const kind = ['till.settled', 'till.approval', 'till.moved', 'till.given', 'till.proof'].includes(body.kind) ? body.kind : 'till.settled';
   const title = str(body.title, 'Title', { required: true, max: 200 });
   const text = str(body.body, 'Body', { max: 800 });
   const people = Array.isArray(body.recipients)
