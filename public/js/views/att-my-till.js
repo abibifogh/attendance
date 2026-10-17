@@ -336,7 +336,7 @@ export async function renderAttMyTill() {
   /** Why a PO found in Odoo stops the report being signed, or null when it does not. */
   function unapproved(L) {
     if (!L?.name || L.counted || ['claimed', 'missing', 'unchecked', 'confirmed'].includes(L.state)) return null;
-    return ({ report: 'not on the expense form yet', cancel: 'cancelled in Odoo' })[L.state] || 'not approved in Odoo';
+    return ({ report: 'not on the expense form yet', cancel: 'cancelled in Odoo', held: 'made in Insight: an admin has to allow it on a shift first', refused: 'made in Insight: an admin said it is not paid from a drawer' })[L.state] || 'not approved in Odoo';
   }
 
   /** One PO on the list: what Odoo says about it, and whether it counts. */
@@ -379,6 +379,13 @@ export async function renderAttMyTill() {
       chip = h('span.till-chip.bad', 'Report on form');
       why = h('span.till-why.bad', 'Approved in Odoo. ', h('strong', 'Report it on the expense form first'), ', then ', recheck,
         '. You cannot close your shift with it until then.');
+    } else if (L.state === 'held') {
+      chip = h('span.till-chip.warn', 'Waiting for an admin');
+      why = h('span.till-why.warn', `Made in Insight${L.madeInInsight?.by ? ` by ${L.madeInInsight.by}` : ''}. An admin has to allow it to be paid from a drawer: they have been asked. `, recheck,
+        ' once they have. Until then, remove it to close your shift.');
+    } else if (L.state === 'refused') {
+      chip = h('span.till-chip.bad', 'Not from a drawer');
+      why = h('span.till-why.bad', `Made in Insight. ${L.madeInInsight?.decidedBy || 'An admin'} said it is not paid from a drawer${L.madeInInsight?.note ? `: ${L.madeInInsight.note}` : ''}. Remove it from the report.`);
     } else if (unapproved(L)) {
       chip = h('span.till-chip.bad', L.state === 'cancel' ? 'Cancelled' : 'Not approved');
       why = h('span.till-why.bad', `${unapproved(L).replace(/^./, (c) => c.toUpperCase())}. Remove it from the report.`);

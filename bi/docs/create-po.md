@@ -43,3 +43,19 @@ shows.
 Insight never creates a vendor, and never changes, approves or deletes a PO:
 the only things it creates in Odoo are the draft and the receipt attached to
 it. Each PO made is also kept in Insight (`po_created`), with who made it.
+
+## Paid from a shift's drawer
+
+A PO made here is **not** a shift's expense unless an admin allows it, so an
+admin's own PO (a water bill paid by MoMo from the office, say) can never be
+used to cover cash missing from a drawer.
+
+- **When making it:** tick **Staff may pay this from a drawer** if the cash for
+  it will come out of a drawer. Left off, it is not allowed (yet).
+- **When staff try:** a member of staff who types it on a closing report (or
+  as the PO for cash out on their list) is told it is waiting for an admin,
+  and the admins are asked: Shifts › Inbox › Waiting for admin, "Ama wants to
+  pay P02517 from a drawer". **Allow on a shift**, or **Refuse** with a reason
+  (then it can never go on a shift). Once allowed, "check again" on HIVE
+  counts it like any other PO.
+- A PO already paid from a drawer is not affected.

@@ -180,7 +180,11 @@ const reportedOk = (found) => !found?.formLive || Boolean(found?.reported);
  * not. A requisition does not: it goes in as an advance. One approved in Odoo
  * has to be on the expense form too.
  */
-const BLOCKED = { report: 'approved but not on the expense form yet', cancel: 'cancelled in Odoo' };
+const BLOCKED = {
+  report: 'approved but not on the expense form yet', cancel: 'cancelled in Odoo',
+  held: 'made in Insight, and an admin has not allowed it to be paid from a drawer yet (they have been asked)',
+  refused: 'made in Insight, and an admin said it is not paid from a drawer',
+};
 export function notApproved(found) {
   if (!found?.name || found.counted || ['claimed', 'missing', 'unchecked', 'confirmed'].includes(found.state)) return null;
   return BLOCKED[found.state] || 'not approved in Odoo';
@@ -225,6 +229,13 @@ async function checkPo(ctx, typed) {
   // Paid from the safe already: Insight says so, and it is not the drawer's.
   if (found.safe) return { ...found, state: 'claimed', counted: false, claimed: { day: found.safe.day, slot: null, by: 'the safe' } };
   const before = await paidAgainst(ctx.db, found.name);
+  // Made in Insight (an admin's own PO, often paid some other way): a shift's
+  // expense only once an admin allows it. Trying asks them, once.
+  const made = found.madeInInsight;
+  if (!before && made && !made.allowed) {
+    if (!made.refused) await insightOrNull(ctx.env, '/api/link/till/po-ask', { name: found.name, by: ctx.session?.user?.name || null });
+    return { ...found, state: made.refused ? 'refused' : 'held', counted: false };
+  }
   if (before) {
     const diff = (Number(found.total) || 0) - before.paid;
     if (found.confirmed && reportedOk(found) && diff !== 0 && !found.decision?.closed) {
@@ -769,7 +780,7 @@ export async function answer(ctx) {
     // can see it. Afterwards, only an approved PO answers.
     if (found.state === 'advance') throw badRequest(`${found.name} is not approved in Odoo yet: it is still a requisition. Get it approved, then add it here.`);
     if (!found.counted) {
-      const why = { missing: 'is not in Odoo', claimed: 'has already been claimed', unconfirmed: 'is not approved in Odoo yet', report: 'is approved but not on the expense form yet: report it there first' }[found.state]
+      const why = { missing: 'is not in Odoo', claimed: 'has already been claimed', unconfirmed: 'is not approved in Odoo yet', report: 'is approved but not on the expense form yet: report it there first', held: BLOCKED.held, refused: BLOCKED.refused }[found.state]
         || `is ${found.state} in Odoo, not approved`;
       throw badRequest(`${found.name || typed} ${why}.`);
     }

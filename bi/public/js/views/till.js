@@ -193,7 +193,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
   // ------------------------------------------------------- approvals --
 
   /** A supervisor's answer or reconciliation, for an admin to approve. `open` opens the shift an exception is on. */
-  function answerApprovalCard(a, after, { open = null } = {}) {
+  function answerApprovalCard(a, after, { open = null, brief = null } = {}) {
     const go = (ok) => async (e) => {
       e.target.disabled = true;
       try { await api('/till/approve', { method: 'POST', body: { [a.type]: a.id, ok } }); onChange(); await after(); } catch (err) { alert(err.message); e.target.disabled = false; }
@@ -202,7 +202,9 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
       h('div.tl-issue-head', h('strong', a.by), h('span.tl-small', String(a.at).slice(0, 16))),
       h('p.tl-text', a.type === 'link' ? `Reconciled ${a.keys.length} exceptions together:` : `Answered “${a.answer}” for:`),
       h('ul.tl-keys', a.keys.map((k) => h('li', describeKey(k),
-        open ? [' · ', h('button.sh-link', { type: 'button', onclick: (e) => open(k, e.target) }, 'Open the shift')] : null))),
+        open ? [' · ', h('button.sh-link', { type: 'button', onclick: (e) => open(k, e.target) }, 'Open the shift')] : null,
+        // The shift itself, in brief, so the answer can be judged here.
+        brief ? brief(k) : null))),
       a.note ? h('div.tl-said', h('b', 'Note'), a.note) : null,
       h('div.tl-actions',
         h('button.btn.primary', { type: 'button', onclick: go(true) }, 'Approve'),
@@ -212,7 +214,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
   }
 
   /** A supervisor's correction to a cash movement, for an admin to approve. `open` opens its shift. */
-  function correctionCard(a, after, { open = null } = {}) {
+  function correctionCard(a, after, { open = null, brief = null } = {}) {
     const what = ({
       expenses: 'was an expense', safe: 'went to the safe', split: `was split, ${money(a.expenses)} of it expenses`,
       duplicate: `is a duplicate of ASSD ${a.pair}`, reverses: `puts back ASSD ${a.pair}`,
@@ -226,6 +228,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
       h('div.tl-small', `ASSD ${a.seq} · ${a.day ? dayText(a.day) : ''} · ${a.user || ''} · ${String(a.at).slice(0, 16)}`),
       h('p.tl-text', `Says this movement ${what}.`),
       a.note ? h('div.tl-said', h('b', 'Why'), a.note) : null,
+      brief ? brief(`seq:${a.seq}`, a.day) : null,
       h('div.tl-actions',
         h('button.btn.primary', { type: 'button', onclick: go(true) }, 'Approve'),
         h('button.btn', { type: 'button', onclick: go(false) }, 'Reject'),
