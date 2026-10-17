@@ -149,8 +149,18 @@ details.navmenu.account > summary::after { content: ' ▾'; color: var(--muted);
 .navav { width: 1.75rem; height: 1.75rem; border-radius: 50%; display: inline-grid; place-items: center; background: var(--series-1); color: #fff; font-weight: 700; font-size: .8rem; }
 details.navmenu.account .navpanel { left: auto; right: 0; }
 /* Narrower: the menus take their own row under the name, the window and the account. */
-@media (max-width: 1100px) {
+@media (max-width: 1400px) {
   .navwhere { display: none; }
+}
+/* Between the menus fitting on the top row and taking their own: the short forms. */
+@media (min-width: 1181px) and (max-width: 1340px) {
+  .navquick .ap-nav .ap-w, .navname { display: none; }
+  details.navmenu.account > summary { padding-right: .5rem; }
+}
+/* With ✓ Approvals and ＋ PO beside them the menus would crowd the row, so
+   they take their own row a little sooner; the name and window stay on top. */
+@media (max-width: 1180px) {
+  header.top:has(.navquick) nav.navgroups { order: 5; width: 100%; margin: -.3rem -.4rem 0; }
 }
 @media (max-width: 860px) {
   nav.navgroups { order: 5; width: 100%; margin: -.3rem -.4rem 0; }
@@ -160,16 +170,35 @@ details.navmenu.account .navpanel { left: auto; right: 0; }
 @media (max-width: 480px) {
   nav.navgroups { flex-wrap: nowrap; gap: 0; }
   nav.navgroups .navlink, nav.navgroups details.navmenu > summary { padding: .45rem .5rem; font-size: .9rem; }
-  /* With ＋ PO on the row too, the menus a little tighter so it all fits. */
-  nav.navgroups:has(.po-new) .navlink, nav.navgroups:has(.po-new) details.navmenu > summary { padding: .4rem .38rem; font-size: .86rem; }
-  nav.navgroups .po-new { margin-left: auto; padding: .32rem .6rem; font-size: .86rem; }
+}
+/* ✓ Approvals and ＋ PO: after the menus; on a phone, on the top row beside the name. */
+.navquick { display: inline-flex; align-items: center; gap: .5rem; }
+@media (max-width: 1180px) {
+  .navquick { order: 1; }
+  header.top > details.navmenu.account { order: 2; }
+}
+/* A phone: the name, then the two buttons and the account; the window under them. */
+@media (max-width: 600px) {
+  header.top { gap: .5rem .6rem; }
+  header.top .brand { flex: 1 1 0; min-width: 0; }
+  header.top .brand .mark-svg { flex: none; }
+  header.top .brand-n { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  header.top .brand-x { display: none; }
+  header.top .spacer { display: none; }
+  .navquick { gap: .35rem; }
+  header.top > details.rangemenu { order: 4; flex: 1 0 100%; }
+  header.top > details.rangemenu > summary { width: max-content; }
 }
 /* ＋ PO: Create PO, from any screen. */
-nav.navgroups .po-new {
-  margin-left: .5rem; border: 0; border-radius: 999px; padding: .42rem .9rem; font: inherit; font-weight: 700;
+.navquick .po-new {
+  border: 0; border-radius: 999px; padding: .42rem .9rem; font: inherit; font-weight: 700;
   background: var(--series-1, #2a6fdb); color: #fff; cursor: pointer; white-space: nowrap;
 }
-nav.navgroups .po-new:hover { filter: brightness(1.08); }
+
+.navquick .po-new:hover { filter: brightness(1.08); }
+@media (max-width: 480px) {
+  .navquick .po-new, .navquick .ap-nav { padding: .32rem .6rem; font-size: .86rem; }
+}
 
 /* The Create PO sheet: from the bottom on a phone, a box in the middle on a computer. */
 .po-sheet { position: fixed; inset: 0; z-index: 90; background: rgba(0, 0, 0, .38); display: flex; align-items: center; justify-content: center; }
@@ -1666,3 +1695,44 @@ label.fm-row input { margin-top: .2rem; }
 .po-sheet label.po-check { display: flex; gap: .55rem; align-items: flex-start; font-size: .88rem; margin: .2rem 0 .7rem; }
 .po-sheet label.po-check input { width: auto; margin-top: .2rem; }
 .po-sheet label.po-check small { color: var(--ink-2); }
+
+/* Approvals: every system's, in one list, decided here. */
+.navquick .ap-nav {
+  border: 0; border-radius: 999px; padding: .42rem .8rem; font: inherit; font-weight: 700;
+  background: var(--ink); color: var(--plane); cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: .35rem;
+}
+.navquick .ap-nav[aria-current='page'] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--series-4); }
+.navquick .ap-nav .ap-n { background: var(--sh-bad, #d33a3a); color: #fff; border-radius: 999px; padding: 0 .45rem; font-size: .8rem; line-height: 1.35rem; min-width: 1.35rem; text-align: center; }
+.navquick .ap-nav .ap-n:empty { display: none; }
+@media (max-width: 480px) {
+  .navquick .ap-nav { padding: .32rem .6rem; font-size: .86rem; }
+  .navquick .ap-nav .ap-w { display: none; }
+}
+.ap-head h1 { margin: 0 0 .2rem; font-size: 1.25rem; }
+.ap-head p { margin: 0; }
+.ap { display: grid; gap: .8rem; margin-top: .8rem; }
+.ap-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+.ap-sys { font-size: .66rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; padding: .12rem .4rem; border-radius: 5px;
+  background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
+.ap-sys.hive { background: color-mix(in srgb, var(--series-1) 16%, var(--surface)); color: color-mix(in srgb, var(--series-1) 75%, var(--ink)); }
+.ap-sys.pos { background: color-mix(in srgb, var(--series-2) 16%, var(--surface)); color: color-mix(in srgb, var(--series-2) 70%, var(--ink)); }
+.ap-sys.maintenance { background: color-mix(in srgb, var(--series-6) 16%, var(--surface)); color: color-mix(in srgb, var(--series-6) 75%, var(--ink)); }
+.ap-sys.tasks { background: color-mix(in srgb, var(--series-7) 16%, var(--surface)); color: color-mix(in srgb, var(--series-7) 75%, var(--ink)); }
+.ap-detail { display: grid; gap: .6rem; }
+.ap-detail h2 { margin: 0; font-size: 1.15rem; }
+.ap-meta { font-size: .8rem; color: var(--muted); }
+.ap-sub { margin: 0; color: var(--ink-2); }
+.ap-facts { display: grid; grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr); gap: .3rem 1rem; margin: 0; font-size: .9rem; }
+.ap-facts dt { color: var(--muted); }
+.ap-facts dd { margin: 0; overflow-wrap: anywhere; }
+.ap-warn { margin: 0; padding-left: 1.1rem; }
+.ap-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .6rem; }
+.ap-field { display: grid; gap: .2rem; font-size: .8rem; color: var(--muted); }
+.ap-field input, .ap-field select, .ap-detail > input { font: inherit; font-size: .92rem; color: var(--ink); padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.ap-check { display: flex; gap: .4rem; align-items: center; font-size: .88rem; }
+.ap-checks { border: 1px solid var(--border); border-radius: 8px; padding: .4rem .7rem .55rem; display: grid; gap: .3rem; }
+.ap-checks legend { font-size: .8rem; color: var(--muted); padding: 0 .3rem; }
+.ap-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; }
+.ap-said { margin: 0; }
+.ap-said:empty { display: none; }
+.ap-done a { margin-left: .3rem; }

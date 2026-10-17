@@ -24,6 +24,7 @@ import * as np from './routes/niceplace.js';
 import * as odooact from './routes/odooact.js';
 import * as newpo from './routes/newpo.js';
 import * as proof from './routes/proof.js';
+import * as approvals from './routes/approvals.js';
 import { sendDailySummary } from './routes/summary.js';
 import { verifyForm, verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
@@ -238,6 +239,9 @@ const ROUTES = [
   ['POST', '/api/po/check', 'insight', adminOnly((env, ctx) => newpo.checkPo(env, ctx.body))],
   ['POST', '/api/po/create', 'insight', adminOnly((env, ctx) => newpo.createPo(env, ctx.body, ctx.account))],
   ['GET', '/api/po/recent', 'insight', adminOnly((env) => newpo.recentPos(env))],
+  // Approvals: everything waiting for an admin in every system, decided here as them.
+  ['GET', '/api/approvals', 'session', adminOnly((env, ctx) => approvals.list(env, ctx.account))],
+  ['POST', '/api/approvals/decide', 'session', adminOnly((env, ctx) => approvals.decide(env, ctx.body, ctx.account))],
   // A PO made here, paid from a shift's drawer: only once an admin allows it.
   ['GET', '/api/po/drawer', 'shifts', adminOnly((env) => newpo.drawerAsks(env))],
   ['POST', '/api/po/drawer', 'shifts', adminOnly((env, ctx) => newpo.decideDrawer(env, ctx.body, ctx.account))],

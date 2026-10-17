@@ -20,6 +20,7 @@ import { renderUpload } from './views/files.js';
 import { renderPrepaid } from './views/prepaid.js';
 import { renderNicePlace } from './views/niceplace.js';
 import { openNewPo } from './views/newpo.js';
+import { renderApprovals, approvalsCount } from './views/approvals.js';
 
 export const state = {
   boot: null,
@@ -59,6 +60,8 @@ const ROUTES = [
   { path: 'accounts', label: 'Accounts', render: renderAccounts, needs: 'owner' },
   { path: 'reports', label: 'Reports', render: renderReports, needs: 'owner' },
   { path: 'setup', label: 'Setup', render: renderSetup, needs: 'owner' },
+  // Every system's approvals, decided here. Its own button on the menu bar, with the count.
+  { path: 'approvals', label: 'Approvals', render: renderApprovals, needs: 'admin', button: true },
 ];
 
 /**
@@ -84,6 +87,7 @@ function allowed(route) {
   if (me.isOwner || me.bootstrap) return true;
   if (route.needs === 'shifts') return ['admin', 'supervisor'].includes(me.till?.role);
   if (route.needs === 'owner') return false;
+  if (route.needs === 'admin') return me.till?.role === 'admin';
   return me.canSeeReports === true;
 }
 
@@ -158,10 +162,10 @@ async function renderApp() {
     return b;
   };
   const grouped = NAV_GROUPS.map(([name, paths]) => [name, visible.filter((r) => paths.includes(r.path))]).filter(([, rs]) => rs.length);
-  const loose = visible.filter((r) => !NAV_GROUPS.some(([, paths]) => paths.includes(r.path)));
-  const flat = visible.length <= 5;
+  const loose = visible.filter((r) => !r.button && !NAV_GROUPS.some(([, paths]) => paths.includes(r.path)));
+  const flat = visible.filter((r) => !r.button).length <= 5;
   const nav = h('nav.navgroups', { 'aria-label': 'Screens' },
-    flat ? visible.map((r) => link(r, 'button.navlink'))
+    flat ? visible.filter((r) => !r.button).map((r) => link(r, 'button.navlink'))
       : [...grouped.map(([name, rs]) => {
         if (rs.length === 1) return link(rs[0], 'button.navlink');
         const menu = h('details.navmenu', h('summary', name), h('div.navpanel', rs.map((r) => link(r, 'button'))));
@@ -169,9 +173,25 @@ async function renderApp() {
         menus.push(menu);
         return menu;
       }), ...loose.map((r) => link(r, 'button.navlink'))]);
+  // The two buttons used on the go, ✓ Approvals and ＋ PO: beside the menus, or
+  // on the top row beside the name on a phone, where the menus take a row of their own.
+  const quick = h('span.navquick');
+  // ✓ Approvals, with how many wait, for admins: read now, every five minutes, and after each decision.
+  if (visible.some((r) => r.path === 'approvals')) {
+    const n = h('span.ap-n');
+    const b = h('button.ap-nav', { type: 'button', 'aria-label': 'Approvals', onclick: () => { closeMenus(); go('approvals'); }, dataset: { path: 'approvals' } },
+      '✓', h('span.ap-w', ' Approvals'), n);
+    links.set('approvals', b);
+    quick.append(b);
+    const say = (count) => { n.textContent = count ? String(count) : ''; b.setAttribute('aria-label', `Approvals${count ? `, ${count} waiting` : ''}`); };
+    window.addEventListener('approvals:count', (e) => say(e.detail));
+    const ask = () => approvalsCount().then(say).catch(() => {});
+    ask();
+    setInterval(() => { if (document.visibilityState === 'visible' && current() !== 'approvals') ask(); }, 300_000);
+  }
   // ＋ PO: Create PO from any screen, for admins.
   const isAdmin = (state.me?.account?.till?.role || (state.me?.account?.isOwner ? 'admin' : null)) === 'admin';
-  if (isAdmin) nav.append(h('button.po-new', { type: 'button', 'aria-label': 'Create a purchase order', onclick: () => { closeMenus(); openNewPo(); } }, '＋ PO'));
+  if (isAdmin) quick.append(h('button.po-new', { type: 'button', 'aria-label': 'Create a purchase order', onclick: () => { closeMenus(); openNewPo(); } }, '＋ PO'));
   // Where you are, said once beside the window: "Operations › Shifts".
   const where = h('span.navwhere');
 
@@ -207,8 +227,9 @@ async function renderApp() {
 
   mount(root,
     h('header.top',
-      h('span.brand', markGlyph(), boot.group.name, ' · Insight'),
+      h('span.brand', markGlyph(), h('span.brand-n', boot.group.name, h('span.brand-x', ' · Insight'))),
       nav,
+      quick.childElementCount ? quick : null,
       h('span.spacer'),
       where,
       picker,
