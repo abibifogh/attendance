@@ -167,7 +167,7 @@ test('by email: only from the list, each attachment a receipt, and a reply sayin
   const reply = mails.at(-1);
   assert.equal(reply.to, 'owner@example.test');
   assert.equal(reply.subject, 'Re: Fwd: fuel and the rest');
-  assert.match(reply.text, /2 receipts read:\n✓ P02531 · A Fuel Station · GH₵800\.00 · 2026-10-16\n✕ IMG_1\.jpg: Could not be read: too dark/);
+  assert.match(reply.text, /2 receipts read:\n✓ P02531 · A Fuel Station · GH₵800\.00 · 2026-10-16\n✕ IMG_1\.jpg: no PO\. Could not be read: too dark\. It is kept/);
   assert.deepEqual(raw.prepare('SELECT outcome FROM receipt_mail ORDER BY id').all().map((r) => r.outcome), ['ignored', 'ignored', 'read']);
 });
 
@@ -178,4 +178,20 @@ test('the reply is signed for HIVE like every other message', async () => {
   await receipts.saveSettings(env, { senders: 'owner@example.test' });
   await receipts.fromEmail(env, emailOf({ files: [] }));
   assert.equal(ok, true);
+});
+
+test('no placeholder yet: kept; chosen, Try again makes it, with the receipt’s words and the seller on the line', async () => {
+  const { env, made, raw } = await setUp();
+  const first = (await receipts.upload(env, { file: jpg('gas') }, OWNER)).receipt;
+  assert.equal(first.status, 'unread');
+  assert.match(first.problem, /^The vendor was read as “Kofi Gas Ltd”.*then Try again\.$/);
+  await receipts.saveSettings(env, { vendor: { id: 90, name: 'Vendor to confirm' }, product: { id: 99, name: 'Item to classify' } });
+  const again = (await receipts.retry(env, { id: first.id }, OWNER)).receipt;
+  assert.equal(again.status, 'check');
+  assert.equal(again.id, first.id, 'the same receipt, not a second one');
+  assert.equal(made.po[0].order_line[0][2].name, 'Gas refill (from Kofi Gas Ltd)');
+  assert.equal(made.po[0].order_line[0][2].product_id, 99);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM receipt_file').get().n, 0, 'a PO made: the file goes');
+  await assert.rejects(receipts.retry(env, { id: first.id }, OWNER), /has a PO already/);
+  assert.match(receipts.resultLine({ ...first, name: 'IMG_9.jpg' }), /^✕ IMG_9\.jpg: no PO\. The vendor/);
 });

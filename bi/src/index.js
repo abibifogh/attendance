@@ -251,6 +251,7 @@ const ROUTES = [
   ['POST', '/api/receipts/upload', 'insight', adminOnly((env, ctx) => receipts.upload(env, ctx.body, ctx.account))],
   ['GET', '/api/receipts/:id/file', 'insight', adminOnly((env, ctx) => receipts.receiptFile(env, ctx.params.id))],
   ['POST', '/api/receipts/dismiss', 'insight', adminOnly((env, ctx) => receipts.dismiss(env, ctx.body, ctx.account))],
+  ['POST', '/api/receipts/retry', 'insight', adminOnly((env, ctx) => receipts.retry(env, ctx.body, ctx.account))],
   ['GET', '/api/po/recent', 'insight', adminOnly((env) => newpo.recentPos(env))],
   // Approvals: everything waiting for an admin in every system, decided here as them.
   ['GET', '/api/approvals', 'session', adminOnly((env, ctx) => approvals.list(env, ctx.account))],

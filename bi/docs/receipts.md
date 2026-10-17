@@ -23,15 +23,22 @@ one before it goes to Odoo.
 - **Makes a draft PO** with the receipt attached, and a note on the PO of
   exactly what was read. Approving stays in Odoo.
 - **Vendor or item not in Odoo:** the PO uses the placeholders you choose in
-  Settings ("Vendor to confirm", "Item to classify"). The person you choose
+  Settings ("Vendor to confirm", "Item to classify"). Odoo needs an item on
+  every priced PO line (only notes and section headings can be text alone,
+  and they carry no price), so the line goes on the placeholder item and its
+  label is the receipt's own words, e.g. "Diesel Excellium". With the
+  placeholder vendor, the seller's name is added to the label: "Cash blower
+  blaster (from Ike Automobile Machine Shop)". The person you choose
   gets a **To-Do in Odoo** on that PO saying exactly what to change. Complete
   ones get no To-Do.
 - **Seen before:** the same file sent twice, or a PO already in Odoo for the
   same vendor, day and amount, is said and not made again.
 - **Could not be read** (too dark, cut off, an iPhone HEIC picture), or Odoo
   refused it: no PO is made. The receipt is kept, and **Fill it in** opens the
-  usual ＋ PO form with the receipt already there. **Set aside** takes off the
-  list one that is not a receipt.
+  usual ＋ PO form with the receipt already there. **Try again** reads it
+  again and makes the PO, for instance once the placeholders are chosen
+  (**Try all again** does every one). **Set aside** takes off the list one
+  that is not a receipt.
 
 A PO made this way is like any PO made in Insight: staff cannot put it on a
 shift's expenses unless an admin allows it.

@@ -80,7 +80,7 @@ export function resultWords(r) {
   if (r.status === 'check') return `⚠ ${r.po.name} · ${money(r.amount)} · ${r.vendorOk === false ? 'vendor to confirm' : 'item to check'}`;
   if (r.status === 'duplicate') return `= Seen before${r.po?.name ? `: ${r.po.name}` : ''}`;
   if (r.status === 'filled') return `✓ ${r.po?.name || 'PO made'}`;
-  return `✕ No PO: ${r.problem || 'could not be read'}`;
+  return `✕ No PO. ${r.problem || 'It could not be read.'}`;
 }
 
 const dayText = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
