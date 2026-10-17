@@ -110,7 +110,7 @@ export async function renderReceipts(root) {
     return h(`div.rc-row.${x.status}`,
       x.thumb ? h('img.rc-thumb', { src: x.thumb, alt: '' }) : h('span.rc-thumb', x.mime === 'application/pdf' ? '📄' : '🖼'),
       h('div.rc-came', h('b', `${x.came === 'email' ? 'Email' : 'Upload'} · ${x.by || x.from || ''}`), h('small', when(x.at)), x.name ? h('small.muted', x.name) : null),
-      h('div.rc-read', h('div', readAs), h('small', [x.description, x.productName && x.itemOk !== false ? `item: ${x.productName}` : x.itemOk === false ? 'item not matched' : null, x.hint ? `“${x.hint}”` : null].filter(Boolean).join(' · ')),
+      h('div.rc-read', h('div', readAs), h('small', [x.description, x.productName && x.itemOk !== false ? `item: ${x.productName}${x.itemBy === 'reader' ? ' (picked by the reader)' : ''}` : x.itemOk === false ? 'item not matched' : null, x.hint ? `“${x.hint}”` : null].filter(Boolean).join(' · ')),
         x.problem && x.status !== 'complete' ? h('small.rc-problem', x.problem) : null),
       h('div.rc-po', x.po ? h('b', x.po.name) : null, x.po && ['complete', 'check'].includes(x.status) ? ' draft ' : ' ', h(`span.sh-chip.${tone}`, label),
         x.todo ? h('small', ' · To-Do in Odoo') : null),

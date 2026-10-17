@@ -19,7 +19,12 @@ one before it goes to Odoo.
 - **Reads it:** who sold it, the total, the date, what was bought. A line in
   the email (or the "what they are" box) is used as a hint.
 - **Matches it to Odoo:** the vendor and the item, as the ＋ PO form does.
-  Insight never creates a vendor.
+  Insight never creates a vendor. When no item's name shares the words of
+  what was bought, the reader picks the nearest item in Odoo by meaning
+  ("Diesel Excellium" goes on Fuel, a pulley on spare parts). The list says
+  "picked by the reader", and so does the note on the PO. If the reader is
+  not sure, the PO is marked to check and the accountant gets a To-Do. Only
+  when nothing fits is the placeholder item used.
 - **Makes a draft PO** with the receipt attached, and a note on the PO of
   exactly what was read. Approving stays in Odoo.
 - **Vendor or item not in Odoo:** the PO uses the placeholders you choose in

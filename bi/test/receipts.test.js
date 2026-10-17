@@ -54,10 +54,19 @@ const READS = {
   gas: { vendor: 'Kofi Gas Ltd', amount: '420', description: 'Gas refill', date: '2026-10-17', problem: '' },
   hinge: { vendor: 'A Hardware Shop', amount: '145', description: 'Padlock', date: today, problem: '' },
   dark: { vendor: '', amount: '', description: '', date: '', problem: 'too dark' },
+  diesel: { vendor: 'A Fuel Station', amount: '300', description: 'Diesel Excellium', date: '2026-10-12', problem: '' },
+  pulley: { vendor: 'A Hardware Shop', amount: '50', description: '3 Grooves Pulley', date: '2026-10-10', problem: '' },
 };
 const ai = {
   run: async (model, input) => {
     const c = input.messages[0].content;
+    // Picking the nearest product: diesel is plainly fuel; a pulley might be a padlock, the reader is not sure.
+    if (typeof c === 'string' && c.includes('Which of the products below')) {
+      const number = (name) => Number((c.match(new RegExp(`\\n(\\d+)\\. ${name}(\\n|$)`)) || [])[1] || 0);
+      if (/Diesel/.test(c)) return { response: JSON.stringify({ number: number('Fuel'), sure: true }) };
+      if (/Pulley/.test(c)) return { response: JSON.stringify({ number: number('Padlock'), sure: false }) };
+      return { response: JSON.stringify({ number: 0, sure: false }) };
+    }
     const url = Array.isArray(c) ? c[1].image_url.url : '';
     const key = Buffer.from(url.split(',')[1] || '', 'base64').toString();
     return { response: JSON.stringify(READS[key] || READS.dark) };
@@ -194,4 +203,24 @@ test('no placeholder yet: kept; chosen, Try again makes it, with the receipt’s
   assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM receipt_file').get().n, 0, 'a PO made: the file goes');
   await assert.rejects(receipts.retry(env, { id: first.id }, OWNER), /has a PO already/);
   assert.match(receipts.resultLine({ ...first, name: 'IMG_9.jpg' }), /^✕ IMG_9\.jpg: no PO\. The vendor/);
+});
+
+test('words do not match: the reader picks the nearest product, and an unsure pick is left to check', async () => {
+  const { env, made } = await setUp();
+  await receipts.saveSettings(env, { vendor: { id: 90, name: 'Vendor to confirm' }, product: { id: 99, name: 'Item to classify' }, todoUser: { id: 5, name: 'Ewurabena Test' } });
+  const diesel = (await receipts.upload(env, { file: jpg('diesel') }, OWNER)).receipt;
+  assert.deepEqual([diesel.status, diesel.productName, diesel.itemBy], ['complete', 'Fuel', 'reader']);
+  assert.equal(made.po[0].order_line[0][2].product_id, 21, 'on Fuel, not the placeholder');
+  assert.equal(made.po[0].order_line[0][2].name, 'Diesel Excellium', 'the receipt’s own words as the label');
+  assert.match(made.notes[0].body, /picked by the reader as the nearest in Odoo: Fuel/);
+  assert.equal(made.todos.length, 0);
+
+  const pulley = (await receipts.upload(env, { file: jpg('pulley') }, OWNER)).receipt;
+  assert.deepEqual([pulley.status, pulley.productName, pulley.itemBy], ['check', 'Padlock', 'reader']);
+  assert.match(pulley.problem, /the reader put “3 Grooves Pulley” on “Padlock”, but was not sure/);
+  assert.equal(made.todos.length, 1, 'the accountant is asked to check it');
+
+  // Nothing near enough: the placeholder, as before.
+  const gas = (await receipts.upload(env, { file: jpg('gas') }, OWNER)).receipt;
+  assert.deepEqual([gas.productName, gas.itemBy], ['Item to classify', null]);
 });
