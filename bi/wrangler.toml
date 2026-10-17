@@ -45,6 +45,10 @@ binding = "HIVE"
 service = "niceoperation-attendance"
 
 [vars]
+# Where the Maintenance database answers Insight's Approvals page (Maintenance
+# and Team Tasks both). An address, not a secret; the secret that signs each
+# call is SSO_SECRET_MAINTENANCE, below.
+MAINTENANCE_APPROVALS_URL = "https://ibjmiyehfhsmupsokyqt.supabase.co/functions/v1/approvals"
 # Nothing secret lives here. Everything below is a Worker secret, set with
 # `wrangler secret put`:
 #
@@ -62,6 +66,7 @@ service = "niceoperation-attendance"
 #   SSO_SECRET_BREAKFAST
 #   SSO_SECRET_POS
 #   SSO_SECRET_LAUNDRY
+#   SSO_SECRET_MAINTENANCE  signs Approvals calls to Maintenance and Team Tasks
 
 # A little after midnight in Accra: yesterday is finished, and the brief is
 # waiting before anybody opens it. At 06:45, the daily till summary, once the
