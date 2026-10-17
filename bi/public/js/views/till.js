@@ -196,7 +196,11 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
   function answerApprovalCard(a, after, { open = null, brief = null } = {}) {
     const go = (ok) => async (e) => {
       e.target.disabled = true;
-      try { await api('/till/approve', { method: 'POST', body: { [a.type]: a.id, ok } }); onChange(); await after(); } catch (err) { alert(err.message); e.target.disabled = false; }
+      try { await api('/till/approve', { method: 'POST', body: { [a.type]: a.id, ok } }); onChange(); await after(); } catch (err) {
+        alert(err.message);
+        // Decided already, here or elsewhere: the list is read again so it stops showing it.
+        if (/already|no longer waiting/.test(err.message)) { forget(); onChange(); await after().catch(() => {}); } else e.target.disabled = false;
+      }
     };
     return h('div.tl-issue.warn',
       h('div.tl-issue-head', h('strong', a.by), h('span.tl-small', String(a.at).slice(0, 16))),
@@ -221,7 +225,10 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     })[a.kind] || a.kind;
     const go = (ok) => async (e) => {
       e.target.disabled = true;
-      try { await api('/till/approve', { method: 'POST', body: { seq: a.seq, ok } }); onChange(); await after(); } catch (err) { alert(err.message); e.target.disabled = false; }
+      try { await api('/till/approve', { method: 'POST', body: { seq: a.seq, ok } }); onChange(); await after(); } catch (err) {
+        alert(err.message);
+        if (/already|no longer waiting/.test(err.message)) { forget(); onChange(); await after().catch(() => {}); } else e.target.disabled = false;
+      }
     };
     return h('div.tl-issue.warn',
       h('div.tl-issue-head', h('strong', a.by), h('span.tl-amount', money(a.amount))),

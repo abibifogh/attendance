@@ -726,4 +726,6 @@ test('any difference with an amount goes on an account as a deficit or a surplus
   assert.equal(after.answer.answer, 'Put on a staff account');
   assert.equal(after.proposed, null, 'the supervisor\'s answer is set aside');
   assert.equal((await till.pendingAnswers(env)).some((a) => a.id === x.key), false, 'and gone from Approvals');
+  // Approving it from a screen not yet refreshed says how it was decided.
+  await assert.rejects(till.approve(env, { answer: x.key, ok: true }, OWNER), /already decided: put on Kofi Test's account by Test Owner/);
 });
