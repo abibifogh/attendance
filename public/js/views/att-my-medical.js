@@ -168,7 +168,7 @@ function claimBlock(claim, { cash, reload }) {
  * photograph of a pharmacy receipt is legible at a fraction of that, and
  * refusing the upload would send the whole thing back to a paper tray.
  */
-async function makeClaim(data, reload, cash) {
+export async function makeClaim(data, reload, cash) {
   const FILES = data.maxFiles ?? 5;
   const rows = [];
   const list = h('div.claim-bills');

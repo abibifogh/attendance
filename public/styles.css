@@ -7164,3 +7164,184 @@ tr:hover .rota-who-more,
 .till-proof-file > span { font-size: 1.6rem; }
 .till-proof-file .till-link { font-size: .8rem; }
 .till-proof-file img { width: 72px; height: 90px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+
+/* =====================================================================
+   The redesign: two menus, the Inbox and the two Homes.
+   The side menu is dark in both themes, with the gold of the logo for what
+   is active. The one main button on a screen is gold too, as in the emails.
+   ===================================================================== */
+:root {
+  --gold: #f2a93b; --gold-ink: #111419; --gold-deep: #9a6512;
+  --nav-bg: #111419; --nav-ink: #c4cad4; --nav-hover: #1b1f27; --nav-active: #262b35; --nav-rule: #262b35;
+}
+:root[data-theme="dark"] { --nav-bg: #0a0d11; --nav-hover: #161a21; --nav-active: #1f242d; --nav-rule: #1f242d; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --nav-bg: #0a0d11; --nav-hover: #161a21; --nav-active: #1f242d; --nav-rule: #1f242d; }
+}
+
+.btn-primary { background: var(--gold); border-color: var(--gold); color: var(--gold-ink); }
+.btn-primary:hover { background: color-mix(in srgb, var(--gold) 88%, #000); border-color: color-mix(in srgb, var(--gold) 88%, #000); color: var(--gold-ink); }
+
+.icon { display: inline-flex; flex: none; line-height: 0; }
+
+/* ---- the side menu ---- */
+.sidebar {
+  flex: 0 0 236px; width: 236px; background: var(--nav-bg); color: var(--nav-ink);
+  border-right: 0; padding: 1rem .75rem 1.2rem; gap: .2rem;
+}
+.sidebar .side-group { gap: .15rem; margin: 0; }
+.sidebar .side-group-foot { margin-top: .7rem; padding-top: .7rem; border-top: 1px solid var(--nav-rule); }
+.sidebar .side-link {
+  display: flex; align-items: center; gap: .75rem; min-height: 44px; padding: 0 .75rem;
+  border: 0; border-radius: 10px; color: var(--nav-ink); font-size: .92rem; font-weight: 600;
+}
+.sidebar .side-link:hover { background: var(--nav-hover); color: #fff; }
+.sidebar .side-link.active { background: var(--nav-active); color: #fff; border: 0; }
+.sidebar .side-link.active .icon { color: var(--gold); }
+.side-label { flex: 1; min-width: 0; }
+.side-count {
+  background: var(--gold); color: var(--gold-ink); border-radius: 999px;
+  font-size: .72rem; font-weight: 800; padding: .05rem .5rem;
+}
+.sidebar .side-foot { border-top-color: var(--nav-rule); color: var(--nav-ink); }
+.sidebar .side-foot small { color: #8b93a0; }
+
+/* ---- tabs inside a place: one row, and for a manager's own pages a quieter second ---- */
+.group-strips { display: grid; gap: .5rem; margin-bottom: 1rem; }
+.group-strips .group-tabs { margin-bottom: 0; }
+.group-tabs-sub { justify-self: start; }
+
+/* ---- the bottom bar, on phones ---- */
+.bottom-bar { display: none; }
+@media (max-width: 900px) {
+  .bottom-bar {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
+    background: var(--surface); border-top: 1px solid var(--border);
+    padding: .3rem .25rem calc(.4rem + env(safe-area-inset-bottom, 0px));
+  }
+  .bottom-tab {
+    flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: .15rem; min-height: 54px; background: none; border: 0; font: inherit;
+    font-size: .72rem; font-weight: 650; color: var(--text-dim); text-decoration: none; cursor: pointer;
+  }
+  .bottom-tab.active { color: var(--text); }
+  .bottom-tab.active .icon { color: var(--gold-deep); }
+  .bottom-count {
+    position: absolute; top: .25rem; left: calc(50% + .45rem);
+    background: var(--gold); color: var(--gold-ink); border-radius: 999px;
+    font-size: .66rem; font-weight: 800; padding: 0 .35rem;
+  }
+  .main { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)); }
+  /* Staff have nothing that is not on the bottom bar. */
+  .shell.mode-staff .nav-toggle { display: none; }
+  .sidebar { width: 270px; flex-basis: 270px; }
+}
+:root[data-theme="dark"] .bottom-tab.active .icon { color: var(--gold); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .bottom-tab.active .icon { color: var(--gold); } }
+
+/* ---- chips (filters) ---- */
+.chips { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: 1rem; }
+.chip {
+  display: inline-flex; align-items: center; gap: .45rem; min-height: 38px; padding: 0 .9rem;
+  border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+  font: inherit; font-size: .88rem; font-weight: 650; color: var(--text-dim); cursor: pointer;
+}
+.chip small { font-size: .74rem; font-weight: 800; opacity: .8; }
+.chip.on { background: var(--text); border-color: var(--text); color: var(--surface); }
+
+/* ---- the Inbox ---- */
+.decide { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; align-items: start; }
+@media (min-width: 1100px) { .decide { grid-template-columns: minmax(0, 1.25fr) minmax(320px, 1fr); } }
+.decide-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.decide-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem 1rem; align-items: center; padding: .85rem 1rem; border-top: 1px solid var(--border); }
+.decide-item:first-child { border-top: 0; }
+.decide-item.open { background: color-mix(in srgb, var(--gold) 9%, var(--surface)); box-shadow: inset 3px 0 0 var(--gold); }
+.decide-pick { display: flex; align-items: flex-start; gap: .8rem; background: none; border: 0; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; min-width: 0; }
+.decide-text { display: grid; gap: .1rem; min-width: 0; }
+.decide-who { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+.decide-actions { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; }
+.decide-inline { grid-column: 1 / -1; }
+.decide-detail { position: sticky; top: calc(var(--topbar-h) + 1rem); }
+.decide-detail-body { display: grid; gap: .8rem; }
+.decide-detail-head { display: flex; align-items: center; gap: .8rem; }
+.decide-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .45rem 1rem; margin: 0; }
+.decide-facts dt { color: var(--text-dim); }
+.decide-facts dd { margin: 0; }
+.decide-open { font-size: .88rem; font-weight: 650; }
+@media (min-width: 1100px) { .decide-inline { display: none; } }
+@media (max-width: 1099px) { .decide-detail { display: none; } }
+@media (max-width: 620px) {
+  .decide-item { grid-template-columns: minmax(0, 1fr); }
+  .decide-actions { justify-content: flex-start; }
+}
+
+/* ---- Home, for whoever runs the floor ---- */
+.home-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .8rem; margin-bottom: 1rem; }
+.home-tile { display: grid; gap: .1rem; margin: 0; }
+.home-tile-n { font-size: 2rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.home-tile-l { color: var(--text-dim); font-size: .9rem; font-weight: 600; }
+.home-tile.is-warn .home-tile-n { color: var(--warn); }
+.home-tile.is-bad .home-tile-n { color: var(--bad); }
+.home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1rem; align-items: start; }
+.home-grid > .card { margin: 0; }
+.home-list { display: grid; }
+.home-row {
+  display: flex; align-items: center; gap: .75rem; min-height: 48px; padding: .55rem 0;
+  border-top: 1px solid var(--border); color: inherit; text-decoration: none;
+}
+.home-row:first-child { border-top: 0; }
+.home-row:hover .home-row-main strong { text-decoration: underline; }
+.home-row-main { flex: 1; min-width: 0; display: grid; }
+.home-more { padding-top: .6rem; font-size: .88rem; }
+@media (max-width: 620px) { .home-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---- Home, for somebody's own day ---- */
+.my-day { display: grid; gap: 1rem; }
+.my-day > .page-head { margin-bottom: 0; }
+.my-day > .card, .my-day .countdown { margin: 0; }
+.my-todo { display: grid; gap: .55rem; }
+.my-todo h2 { margin: 0; font-size: 1rem; }
+.my-task {
+  display: flex; align-items: center; gap: .8rem; min-height: 60px; padding: .6rem .9rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  color: inherit; text-decoration: none;
+}
+.my-task:hover { border-color: var(--border-strong); }
+.my-task > .icon:last-child { color: var(--text-faint); }
+.my-task-icon { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; flex: none; background: var(--surface-2); color: var(--text-dim); }
+.my-task-icon.is-warn { background: var(--warn-soft); color: var(--warn); }
+.my-task-icon.is-bad { background: var(--bad-soft); color: var(--bad); }
+.my-task-icon.is-info { background: var(--accent-soft); color: var(--accent); }
+.my-task-text { flex: 1; display: grid; min-width: 0; }
+.my-task-text small { color: var(--text-dim); }
+.my-days { display: grid; }
+.my-days-row { display: flex; align-items: center; gap: .9rem; min-height: 46px; border-top: 1px solid var(--border); }
+.my-days-row:first-child { border-top: 0; }
+.my-days-when { width: 3.4rem; display: grid; line-height: 1.2; }
+.my-left { text-align: center; margin: 0; }
+
+/* ---- Requests ---- */
+.requests-h { font-size: 1rem; margin: 0 0 .6rem; }
+.ask-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .6rem; margin-bottom: 1rem; }
+.ask-tile {
+  display: grid; justify-items: start; gap: .6rem; min-height: 96px; padding: .9rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  font: inherit; font-weight: 700; color: var(--text); text-align: left; cursor: pointer;
+}
+.ask-tile:hover { border-color: var(--border-strong); }
+.ask-icon { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--surface-2); color: var(--text-dim); }
+.ask-icon.is-good { background: var(--good-soft); color: var(--good); }
+.ask-icon.is-info { background: var(--accent-soft); color: var(--accent); }
+.ask-icon.is-warn { background: var(--warn-soft); color: var(--warn); }
+.ask-icon.is-bad { background: var(--bad-soft); color: var(--bad); }
+.ask-icon.is-money { background: color-mix(in srgb, var(--info) 14%, var(--surface)); color: var(--info); }
+@media (max-width: 620px) { .ask-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.pill.money { background: color-mix(in srgb, var(--info) 14%, var(--surface)); color: var(--info); }
+.sidebar { align-self: flex-start; min-height: calc(100vh - var(--topbar-h)); min-height: calc(100dvh - var(--topbar-h)); }
+@media (min-width: 901px) { .sidebar .side-foot { display: none; } }
+a.btn, a.btn-sm { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.card-head > a { white-space: nowrap; font-size: .9rem; font-weight: 650; }
+.decide-pick { width: 100%; justify-content: flex-start; }
+.group-strips .group-tabs { justify-self: start; }
+.ask-tile { justify-content: start; align-content: space-between; width: 100%; }

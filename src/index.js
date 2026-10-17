@@ -216,6 +216,11 @@ export const ROUTES = [
   // itself, through HIVE's own routes as the person deciding. Signed by Insight.
   ['POST', '/api/link/approvals/list', 'public', (ctx) => approvals.linkList(ctx, asUser(ctx))],
   ['POST', '/api/link/approvals/decide', 'public', (ctx) => approvals.linkDecide(ctx, asUser(ctx))],
+  // HIVE's own Inbox: the same list for whoever is signed in, decided through
+  // the same routes. Anybody signed in may ask; each kind checks its own
+  // permission, so somebody with none sees an empty inbox.
+  ['GET', '/api/inbox', null, (ctx) => approvals.inboxList(ctx, asUser(ctx, ctx.request.headers.get('X-Hive-Client') || 'inbox'))],
+  ['POST', '/api/inbox/decide', null, (ctx) => approvals.inboxDecide(ctx, asUser(ctx, ctx.request.headers.get('X-Hive-Client') || 'inbox'))],
   ['GET', '/api/me/report', 'att_me', mine.myReport],
   ['POST', '/api/me/leave', 'att_me', mine.askForLeave],
   ['POST', '/api/me/leave/:id/withdraw', 'att_me', mine.withdrawMyLeave],
@@ -815,20 +820,20 @@ const ADMIN_ONLY = new Set(['/api/payroll/slip/:id']);
  * browser's request would be. What comes back is the route's answer; a refusal
  * is thrown with the route's own words.
  */
-function asUser(ctx) {
+function asUser(ctx, by = 'insight') {
   return async (session, method, path, body = null) => {
     const url = new URL(path, 'https://hive.internal');
     for (const [routeMethod, pattern, permission, handler] of ROUTES) {
       if (routeMethod !== method) continue;
       const params = match(pattern, url.pathname);
       if (!params) continue;
-      if (permission === 'public' || locked(url.pathname)) throw forbidden('Not from Insight.');
+      if (permission === 'public' || locked(url.pathname)) throw forbidden(by === 'insight' ? 'Not from Insight.' : 'Not from here.');
       if (!allows(permission, session.permissions)) {
         throw forbidden('Your HIVE login does not have access to that part of HIVE.');
       }
       const request = new Request(url, {
         method,
-        headers: { 'Content-Type': 'application/json', 'X-Hive-Client': 'insight' },
+        headers: { 'Content-Type': 'application/json', 'X-Hive-Client': by },
         body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
       });
       const sub = {
@@ -838,7 +843,7 @@ function asUser(ctx) {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new HttpError(response.status, data.error || 'HIVE refused that.');
       if (live.worthTelling(method, url.pathname)) {
-        live.announce(ctx.env, ctx.executionContext, { topic: live.topicFor(url.pathname), by: 'insight' });
+        live.announce(ctx.env, ctx.executionContext, { topic: live.topicFor(url.pathname), by });
       }
       return data;
     }

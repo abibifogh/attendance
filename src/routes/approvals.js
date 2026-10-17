@@ -1,4 +1,4 @@
-import { badRequest, forbidden, json, str } from '../lib/http.js';
+import { badRequest, forbidden, json, readJson, str } from '../lib/http.js';
 import { allows, effectivePermissions } from '../lib/permissions.js';
 import { recordsOn } from '../lib/records-on-a-login.js';
 import { purposeOf } from '../lib/advances.js';
@@ -436,6 +436,57 @@ export async function linkDecide(ctx, runAs) {
   const run = (method, path, data) => runAs(session, method, path, data);
   const out = await kind.decide(run, id, { decision, note: said || undefined, fields });
   return json({ ok: true, as: session.user.name, said: out?.status || decision, result: out ?? null });
+}
+
+/**
+ * HIVE's own Inbox: the same list, for the person signed in here.
+ *
+ * Every kind goes through HIVE's own route for it with this person's own
+ * session, so what they see and what they may decide is exactly what the
+ * separate screens would allow. A kind they may not decide is left out.
+ */
+export async function inboxList(ctx, runAs) {
+  const session = ctx.session;
+  const run = (method, path, data) => runAs(session, method, path, data);
+  const items = [];
+  const failed = [];
+  for (const [key, kind] of Object.entries(KINDS)) {
+    if (!mayDecide(kind, session)) continue;
+    try {
+      for (const item of await kind.list(run, ctx.db)) { // eslint-disable-line no-await-in-loop
+        items.push({
+          ...item, kind: key, kindLabel: kind.label, id: String(item.id),
+          askedAt: when(item.askedAt), amount: item.amount ?? null,
+          details: (item.details ?? []).filter(([, v]) => v != null && v !== ''),
+          warnings: item.warnings ?? [],
+          link: kind.link,
+        });
+      }
+    } catch (err) {
+      failed.push({ kind: key, label: kind.label, error: err.message });
+    }
+  }
+  // Oldest first: whoever has waited longest is answered first.
+  items.sort((a, b) => String(a.askedAt ?? '').localeCompare(String(b.askedAt ?? '')));
+  return json({ items, failed });
+}
+
+/** One decision from HIVE's Inbox, through the same route its own screen uses. */
+export async function inboxDecide(ctx, runAs) {
+  const body = await readJson(ctx.request);
+  const kind = KINDS[body.kind];
+  if (!kind) throw badRequest('HIVE does not know that kind of request.');
+  const session = ctx.session;
+  if (!mayDecide(kind, session)) throw forbidden(`You may not decide ${kind.label.toLowerCase()} requests.`);
+  const id = String(body.id ?? '').trim();
+  if (!id || id.length > 2000) throw badRequest('Which one?');
+  const decision = String(body.decision || '');
+  const said = str(body.note, 'Note', { max: 500 }) || '';
+  const fields = body.fields && typeof body.fields === 'object' ? body.fields : {};
+  if (!(kind.choices ?? ['approve', 'refuse']).includes(decision)) throw badRequest('HIVE does not know that decision.');
+  const run = (method, path, data) => runAs(session, method, path, data);
+  const out = await kind.decide(run, id, { decision, note: said || undefined, fields });
+  return json({ ok: true, said: out?.status || decision, result: out ?? null });
 }
 
 export const APPROVAL_KINDS = Object.keys(KINDS);

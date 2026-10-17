@@ -184,7 +184,7 @@ function runningCard(advance, cash) {
  * Somebody already paying one back sees only "something else", and the form
  * says why rather than quietly hiding two options.
  */
-async function ask(data, reload, cash) {
+export async function ask(data, reload, cash) {
   const purposes = data.purposes ?? [];
   const other = purposes.find((p) => p.key === 'other');
   const amount = h('input', {

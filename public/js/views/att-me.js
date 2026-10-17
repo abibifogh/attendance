@@ -208,7 +208,7 @@ function seeMore(rows, data, { label, title, empty }) {
  * countdown believable; this is a statement of fact and a statement of fact
  * that flickers looks like it is unsure.
  */
-function onShiftCard(data) {
+export function onShiftCard(data) {
   const on = data.onShift;
   const shift = on.shift;
 
@@ -243,7 +243,7 @@ function onShiftCard(data) {
  * to bed. It ticks, because a countdown that does not tick is a timestamp with
  * extra steps, and the seconds are what make somebody believe it.
  */
-function countdownCard(data) {
+export function countdownCard(data) {
   const next = data.next;
   if (!next?.soon) return null;
 
@@ -376,7 +376,7 @@ function dayRow(entry, data) {
 }
 
 /** One leave request, and the only thing they can do to it. */
-function leaveRow(row, reload) {
+export function leaveRow(row, reload) {
   const pill = { pending: 'warn', approved: 'good', rejected: 'bad' }[row.status] ?? '';
   const label = {
     pending: 'Waiting', approved: 'Approved', rejected: 'Not approved', withdrawn: 'Taken back',
@@ -418,7 +418,7 @@ function leaveRow(row, reload) {
  * actually want is not the length of the holiday, it is how many days come off
  * the balance — and rest days inside the span cost nothing.
  */
-async function askForLeave(data, reload) {
+export async function askForLeave(data, reload) {
   const done = await formDialog({
     title: 'Ask for leave',
     submitLabel: 'Send it',
@@ -650,7 +650,7 @@ function weekdayOf(day) {
  * of it being approved, counted or taken off a balance. So the third tick in
  * the same week says so and sends them next door.
  */
-async function editMyAvailability(data, reload) {
+export async function editMyAvailability(data, reload) {
   const ahead = data.days.filter((d) => d.day >= data.today);
 
   const status = h('select', { name: 'status' },

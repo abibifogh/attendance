@@ -287,6 +287,8 @@ export const api = {
 
   // The handbook. Everybody reads it; the people who write it get the rest.
   handbook: () => request('/api/handbook'),
+  inbox: () => request('/api/inbox'),
+  inboxDecide: (body) => request('/api/inbox/decide', { method: 'POST', body }),
   handbookAck: (id, body) => request(`/api/handbook/${id}/ack`, { method: 'POST', body }),
   handbookSave: (body) => request('/api/handbook', { method: 'POST', body }),
   handbookPublish: (id, body) => request(`/api/handbook/${id}/publish`, { method: 'POST', body }),

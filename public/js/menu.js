@@ -33,10 +33,10 @@ export const HEADINGS_FROM = 7;
  * single screen of is not in the list at all, which is what keeps a rota
  * reader's menu two entries long.
  */
-export function openGroups(routes, groups, holds) {
+export function openGroups(routes, groups, holds, keyOf = (r) => r.group) {
   const out = [];
   for (const group of groups) {
-    const all = routes.filter((r) => r.group === group.key && !r.hidden);
+    const all = routes.filter((r) => keyOf(r) === group.key && !r.hidden);
     const screens = all.filter((r) => holds(r));
     if (!screens.length) continue;
     // The group's own name when its first screen is one of them, and that
@@ -82,4 +82,27 @@ export function menuRuns(groups) {
 export function tabsOf(group) {
   if (!group || group.screens.length < 2) return [];
   return group.screens.map((r) => ({ path: r.path, label: r.tab ?? r.label }));
+}
+
+/** Where a route sits in a given menu. */
+export const groupKeyFor = (mode) => (mode === 'manager' ? (r) => r.mgroup ?? r.group : (r) => r.group);
+
+/**
+ * The tabs of a person's own screens in the manager menu.
+ *
+ * Only the ones marked `mtab` are tabs. A screen `under` one of them (swaps
+ * under shifts, claims under pay) lights its parent and brings its own
+ * siblings up as a second, smaller row, so a manager's own pages read the way
+ * a member of staff's do without five rows of tabs.
+ */
+export function mineTabs(group, path) {
+  if (!group) return { tabs: [], parent: null, siblings: [] };
+  const tabs = group.screens.filter((r) => r.mtab).map((r) => ({ path: r.path, label: r.mtab }));
+  const here = group.screens.find((r) => r.path === path);
+  const parent = here?.mtab ? here.path : here?.under ?? null;
+  const siblings = parent
+    ? group.screens.filter((r) => r.path === parent || r.under === parent)
+      .map((r) => ({ path: r.path, label: r.tab ?? r.label }))
+    : [];
+  return { tabs, parent, siblings: siblings.length > 1 ? siblings : [] };
 }

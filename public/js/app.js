@@ -4,9 +4,9 @@ import { guard, justProved, unguard } from './guard.js';
 import { checkVersion, takeTheNewOne, waitingToRefresh } from './fresh.js';
 import { registerWorker, watchForInstall } from './install.js';
 import { h, holdBehindDialogs, keepScroll, mount, watchScreenHeight } from './util.js';
-import { groupOf, menuRuns, openGroups, tabsOf } from './menu.js';
+import { groupKeyFor, groupOf, mineTabs, openGroups, tabsOf } from './menu.js';
+import { icon } from './icons.js';
 import { renderLogin } from './views/login.js';
-import { alreadyWelcomed, markWelcomed, welcomePanel } from './views/welcome.js';
 import { openAccountDialog, renderForcedPinChange } from './views/account.js';
 import { noticeBell } from './views/notices.js';
 import { renderAttToday } from './views/att-today.js';
@@ -15,6 +15,10 @@ import { renderAttOverview, renderAttWeek } from './views/att-reports.js';
 import { renderAttRota } from './views/att-rota.js';
 import { renderAttWorkload } from './views/att-workload.js';
 import { renderAttMe } from './views/att-me.js';
+import { renderMyDay } from './views/my-day.js';
+import { renderHome } from './views/home.js';
+import { renderInbox, inboxCount } from './views/inbox.js';
+import { renderRequests } from './views/requests.js';
 import { renderAttMyReport } from './views/att-my-report.js';
 import { renderAttMyPayslips } from './views/att-my-payslips.js';
 import { renderDirectory } from './views/directory.js';
@@ -92,167 +96,113 @@ export const state = {
 };
 
 /**
- * The nine things in the menu, and the screens behind each of them.
+ * Two menus, one set of screens.
  *
- * It was twenty-three, one link per screen, and an administrator opening the
- * app was reading a list longer than most of them ever used. The screens are
- * all still here and all still have their own address; what changed is that
- * the ones that answer the same question now arrive together, and the menu
- * names the question rather than every way of asking it.
+ * STAFF, who hold nothing beyond their own record, get five places: Home,
+ * Rota, Requests, Pay and Me. On a phone those are the five tabs along the
+ * bottom, which is where a thumb already is.
+ *
+ * EVERYBODY WHO RUNS SOMETHING gets the side menu: Home, Inbox, Rota,
+ * Attendance, People and Money, then Me and Settings. Fifteen groups became
+ * six, and every decision anybody is waiting on is in one Inbox rather than on
+ * eight different screens.
+ *
+ * A route's `group` is where it sits in the staff menu; `mgroup`, where it
+ * differs, is where it sits in the manager menu. In the manager menu a
+ * person's own screens all sit under Me: `mtab` names the ones that are tabs
+ * there, and `under` says which tab a screen belongs to when it is not one.
  *
  * A group's first screen is the one its link opens. Everything after it is a
- * tab across the top, and only the tabs somebody actually holds are drawn — so
- * the same group is five tabs for an administrator, two for a supervisor and
- * one, with no tabs at all, for a rota reader.
+ * tab across the top, and only the tabs somebody actually holds are drawn.
  */
-const GROUPS = [
-  // Their own, and nobody else's. Two links for a member of staff, who holds
-  // nothing else and for whom this is the whole app.
-  // A new hire's own first week, above their own shifts because on the morning
-  // it is there it is the more useful of the two: they have no shifts yet. It
-  // leaves the menu the day it is finished, which is the whole difference
-  // between a checklist and a screen.
-  { key: 'first-week', label: 'My first week', section: 'Mine' },
-  { key: 'me', label: 'My shifts', section: 'Mine' },
-  // The front desk's own: closing a shift and answering for it. Only for the
-  // people given "My till", which is the front desk and nobody else.
-  { key: 'till', label: 'My till', section: 'Mine' },
-  { key: 'my-pay', label: 'My pay', section: 'Mine' },
-  // Their own paperwork. Not under My pay, which is what they are owed, and
-  // not under My shifts, which is where they are expected: a contract is the
-  // terms the other two are settled by, and somebody looking for it is on an
-  // errand of its own, usually because a bank or a landlord has asked.
-  { key: 'my-file', label: 'My documents', section: 'Mine' },
-  // What is happening, and what is planned. The two screens somebody with a
-  // job to do opens; everything under them is the same question at a
-  // different zoom.
-  // Named for the domain rather than for the first tab of it. "Today" was the
-  // link over the week, the month, the leave book and sign-off, four of which
-  // are not today, and three of these pages already head themselves this.
-  { key: 'day', label: 'Attendance', section: 'The day' },
-  { key: 'rota', label: 'Rota', section: 'The day' },
-  // The staff themselves: who they are, what they are owed, what has been
-  // written to them.
-  { key: 'people', label: 'People', section: 'The people' },
-  { key: 'pay', label: 'Payroll', section: 'The people' },
-  { key: 'letters', label: 'Letters', section: 'The people' },
-  // Reachable by everybody, so it cannot live under People, which is the
-  // personnel records and their permission.
-  { key: 'directory', label: 'Directory', section: 'The people' },
-  // The rules, beside the numbers. Everybody signed in can read both, which is
-  // why neither of them sits under People and its permission.
-  { key: 'handbook', label: 'Handbook', section: 'The people' },
-  // Everybody's first week, for whoever runs them.
-  { key: 'first-weeks', label: 'First weeks', section: 'The people' },
-  // The tail. No heading over these two: one is opened twice a year and the
-  // other is the way out of being stuck, and a section called "everything
-  // else" is a section that says nothing.
-  { key: 'setup', label: 'Setup' },
-  { key: 'guide', label: 'Guide' },
+const STAFF_GROUPS = [
+  { key: 'my-home', label: 'Home', icon: 'home' },
+  { key: 'my-rota', label: 'Rota', icon: 'calendar' },
+  { key: 'requests', label: 'Requests', icon: 'send' },
+  { key: 'my-pay', label: 'Pay', icon: 'cash' },
+  { key: 'me', label: 'Me', icon: 'user' },
 ];
 
+const MANAGER_GROUPS = [
+  { key: 'home', label: 'Home', icon: 'home' },
+  { key: 'inbox', label: 'Inbox', icon: 'inbox' },
+  { key: 'rota', label: 'Rota', icon: 'calendar' },
+  { key: 'day', label: 'Attendance', icon: 'clock' },
+  { key: 'people', label: 'People', icon: 'users' },
+  { key: 'money', label: 'Money', icon: 'wallet' },
+  { key: 'mine', label: 'Me', icon: 'user', foot: true },
+  { key: 'setup', label: 'Settings', icon: 'sliders', foot: true },
+];
+
+/** Who may decide anything at all, which is who has an Inbox. */
+const DECIDES = ['att_manage', 'att_setup', 'att_rota', 'hr_pay', 'hr_manage', 'lunch'];
+
 /**
- * The screens, in the order somebody grows into them.
+ * The screens.
  *
- * Grouped, and inside a group in the order the tabs read left to right. The
- * first of each group is the one the menu link opens, so it is the one most
- * people want: Today before the week, the rota before the workload behind it,
- * this month's payroll before the advances that feed it.
+ * Grouped, and inside a group in the order the tabs read left to right.
  */
 const ROUTES = [
-  // First, and for most people the only one. A member of staff holds this and
-  // nothing else, so it has to be the screen they land on.
+  // ---- a person's own: Home, Rota, Requests, Pay, Me ----------------------
+  { mine: true, group: 'my-home', tab: 'Home', mgroup: 'mine', mtab: 'My day', path: 'my-day', label: 'Home', permission: 'att_me', render: renderMyDay, live: ['rota', 'attendance', 'leave', 'people'] },
+  // A new hire's own first week, beside Home while it is open. It leaves the
+  // menu the day it is finished, which is the whole difference between a
+  // checklist and a screen.
+  { mine: true, group: 'my-home', tab: 'My first week', mgroup: 'mine', mtab: 'First week', path: 'onboarding', label: 'My first week', permission: null, only: () => state.startingOut, render: renderOnboarding, live: ['people'] },
   // `freshEach` is what does not survive arriving here. The week is written to
   // the address so a live redraw keeps it, and dropped on the way in so the
   // screen always opens on this week.
-  { mine: true, group: 'me', tab: 'Shifts', path: 'att-me', label: 'My shifts', permission: 'att_me', render: renderAttMe, live: ['rota', 'attendance', 'leave', 'lunch'], freshEach: ['from'] },
-  // Beside it, because the month is the other question somebody asks about
-  // their own attendance and it is not one the week can answer.
-  { mine: true, group: 'me', tab: 'Report', path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport, live: ['attendance', 'leave'] },
-  // Beside their own week, because giving up a Saturday is a thing you do
-  // while looking at the Saturday.
-  { mine: true, group: 'me', tab: 'Swaps', path: 'swaps', label: 'Swaps', permission: 'att_me', render: renderSwaps, live: ['rota'] },
-  // What they are down to eat, beside the week they are down to work. The
-  // whole lunch list used to happen on an address outside the app, so a member
-  // of staff had no way of reading back their own answer.
-  { mine: true, group: 'me', tab: 'Lunch', path: 'att-my-lunch', label: 'My lunch', permission: 'att_me', render: renderAttMyLunch, live: ['lunch'], freshEach: ['week'] },
+  { mine: true, group: 'my-rota', tab: 'My shifts', mgroup: 'mine', mtab: 'Shifts', path: 'att-me', label: 'My shifts', permission: 'att_me', render: renderAttMe, live: ['rota', 'attendance', 'leave', 'lunch'], freshEach: ['from'] },
+  { mine: true, group: 'my-rota', tab: 'Swaps', mgroup: 'mine', under: 'att-me', path: 'swaps', label: 'Swaps', permission: 'att_me', render: renderSwaps, live: ['rota'] },
+  { mine: true, group: 'my-rota', tab: 'Lunch', mgroup: 'mine', under: 'att-me', path: 'att-my-lunch', label: 'My lunch', permission: 'att_me', render: renderAttMyLunch, live: ['lunch'], freshEach: ['week'] },
+  { mine: true, group: 'my-rota', tab: 'Report', mgroup: 'mine', under: 'att-me', path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport, live: ['attendance', 'leave'] },
+  // Everything somebody can ask for, and what became of it, in one place.
+  { mine: true, group: 'requests', tab: 'Requests', mgroup: 'mine', mtab: 'Requests', path: 'requests', label: 'Requests', permission: 'att_me', render: renderRequests, live: ['leave', 'rota', 'pay', 'lunch'] },
+  { mine: true, group: 'my-pay', tab: 'Payslips', mgroup: 'mine', mtab: 'Pay', path: 'att-my-payslips', label: 'My payslips', permission: 'att_me', render: renderAttMyPayslips, live: ['pay'] },
+  { mine: true, group: 'my-pay', tab: 'Advance', mgroup: 'mine', under: 'att-my-payslips', path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
+  { mine: true, group: 'my-pay', tab: 'Claims', mgroup: 'mine', under: 'att-my-payslips', path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
+  { mine: true, group: 'me', tab: 'Documents', mgroup: 'mine', mtab: 'Documents', path: 'att-my-contracts', label: 'My documents', permission: 'att_me', render: renderMyContracts, live: ['people'] },
 
-  // Closing a front-desk shift, and the shifts that did not agree. Two tabs on
-  // one link: the second is where somebody goes the morning after.
-  { mine: true, group: 'till', tab: 'Close shift', path: 'att-my-till', label: 'Close shift', permission: 'till', render: renderAttMyTill },
-  { mine: true, group: 'till', tab: 'To sort out', path: 'att-my-till-issues', label: 'To sort out', permission: 'till', render: renderAttMyTillIssues },
+  // ---- everybody who runs something --------------------------------------
+  { group: 'home', tab: 'Home', path: 'home', label: 'Home', permission: 'att_view', render: renderHome, live: ['attendance', 'rota', 'leave', 'people', 'pay'] },
+  { group: 'inbox', tab: 'Inbox', path: 'inbox', label: 'Inbox', permission: ['att_manage', 'att_setup', 'att_rota', 'hr_pay', 'hr_manage', 'lunch'], render: renderInbox, live: ['leave', 'rota', 'attendance', 'pay', 'people', 'lunch'] },
 
-  // Money going the other way. Its own link rather than a third tab on their
-  // week: what somebody is owed and what they worked are two different
-  // errands, and mixing them puts a payslip one slip of the thumb from the
-  // screen they check every morning.
-  { mine: true, group: 'my-pay', tab: 'Payslips', path: 'att-my-payslips', label: 'My payslips', permission: 'att_me', render: renderAttMyPayslips, live: ['pay'] },
-  { mine: true, group: 'my-pay', tab: 'Advance', path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
-  { mine: true, group: 'my-pay', tab: 'Claims', path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
-
-  // Their own signed contract, the same document and the same certificate of
-  // signature the office reads, with Save as PDF on it.
-  { mine: true, group: 'my-file', tab: 'Contract', path: 'att-my-contracts', label: 'My contract', permission: 'att_me', render: renderMyContracts, live: ['people'] },
+  { group: 'rota', tab: 'Build', path: 'att-rota', label: 'Rota', permission: ['att_rota', 'att_rota_view'], render: renderAttRota, live: ['rota', 'leave', 'attendance'] },
+  { group: 'rota', tab: 'Swaps', path: 'att-swaps', label: 'Swaps', permission: ['att_rota', 'att_manage'], render: renderSwapQueue, live: ['rota'] },
+  { group: 'rota', tab: 'Workload', path: 'att-workload', label: 'Workload', permission: ['att_rota', 'att_reports'], render: renderAttWorkload, live: ['rota', 'leave'] },
+  { group: 'rota', tab: 'Lunch', path: 'att-lunch', label: 'Lunch', permission: 'lunch', render: renderAttLunch, live: ['lunch', 'rota'] },
 
   { group: 'day', tab: 'Today', path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday, live: ['attendance', 'rota', 'leave'] },
   { group: 'day', tab: 'Week', path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek, live: ['attendance', 'rota', 'leave'] },
-  // The planner reads the month before building the next one. The one thing
-  // they may not see — how much leave anybody has left — comes out of the
-  // answer, not just off the screen.
   { group: 'day', tab: 'Month', path: 'att-overview', label: 'Month', permission: ['att_reports', 'att_rota'], render: renderAttOverview, live: ['attendance', 'rota', 'leave'] },
   { group: 'day', tab: 'Leave', path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave, live: ['leave', 'rota'] },
-  // Last of the five, because it is what closes a period rather than what
-  // reads one, and it is the only tab here that cannot be undone.
+  // Last, because it is what closes a period rather than what reads one, and
+  // it is the only tab here that cannot be undone.
   { group: 'day', tab: 'Sign-off', path: 'signoff', label: 'Sign-off', permission: 'att_signoff', render: renderAttSignoff, live: ['attendance', 'rota', 'leave'] },
 
-  // Whoever builds it, and whoever only needs to know who is on. The screen
-  // itself is the same grid; a reader gets it with nothing on it to press.
-  { group: 'rota', tab: 'Rota', path: 'att-rota', label: 'Rota', permission: ['att_rota', 'att_rota_view'], render: renderAttRota, live: ['rota', 'leave', 'attendance'] },
-  // Beside the rota, because it is read while the rota is being built.
-  // The queue that changes the grid, next to the grid it changes.
-  { group: 'rota', tab: 'Swaps', path: 'att-swaps', label: 'Swaps', permission: ['att_rota', 'att_manage'], render: renderSwapQueue, live: ['rota'] },
-  { group: 'rota', tab: 'Workload', path: 'att-workload', label: 'Workload', permission: ['att_rota', 'att_reports'], render: renderAttWorkload, live: ['rota', 'leave'] },
-  // And the lunch list is the rota read for a different purpose: who is in on
-  // Wednesday, so the kitchen knows how many to cook for.
-  { group: 'rota', tab: 'Lunch', path: 'att-lunch', label: 'Lunch', permission: 'lunch', render: renderAttLunch, live: ['lunch', 'rota'] },
-
-  { group: 'people', tab: 'People', path: 'people', label: 'People', permission: 'hr_view', render: renderPeople, live: ['people'] },
-  // Before People starts: how somebody got onto the books at all.
+  { group: 'people', tab: 'Staff', path: 'people', label: 'People', permission: 'hr_view', render: renderPeople, live: ['people'] },
   { group: 'people', tab: 'Recruitment', path: 'rec', label: 'Recruitment', permission: 'rec_view', render: renderRec, live: ['recruitment'] },
+  { group: 'people', tab: 'First weeks', path: 'onboarding-desk', label: 'First weeks', permission: ['hr_view', 'hr_manage'], render: renderOnboardingDesk, live: ['people'] },
+  { group: 'people', tab: 'Letters', path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters, live: ['letters'] },
+  // Reachable by everybody signed in. Under Me for staff, under People for
+  // everybody who runs something.
+  { group: 'me', tab: 'Directory', mgroup: 'people', path: 'directory', label: 'Directory', permission: null, render: renderDirectory, live: ['people'] },
+  { group: 'me', tab: 'Handbook', mgroup: 'people', path: 'handbook', label: 'Handbook', permission: null, render: renderHandbook, live: ['people'] },
+  { group: 'me', tab: 'HR FAQ', mgroup: 'people', path: 'hr-faq', label: 'HR FAQ', permission: null, render: renderHrFaq, live: ['people'] },
+  { group: 'me', tab: 'Guide', mgroup: 'mine', mtab: 'Guide', path: 'guide', label: 'Guide', permission: null, render: renderGuide },
 
-  { group: 'pay', tab: 'Payroll', path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayrollTab, live: ['pay', 'attendance'] },
-  // Both of these end up on a payslip, and both are held by whoever holds the
-  // payroll. They were three separate links for three parts of one job.
-  { group: 'pay', tab: 'Advances', path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances, live: ['pay'] },
-  { group: 'pay', tab: 'Medical claims', path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
+  { group: 'money', tab: 'Payroll', path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayrollTab, live: ['pay', 'attendance'] },
+  { group: 'money', tab: 'Advances', path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances, live: ['pay'] },
+  { group: 'money', tab: 'Medical claims', path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
 
-  { group: 'letters', tab: 'Letters', path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters, live: ['letters'] },
-
-  // Signed in and nothing more. A number a colleague cannot look up is a
-  // number they ask an administrator for, and that opens a personnel record.
-  { group: 'directory', tab: 'Directory', path: 'directory', label: 'Directory', permission: null, render: renderDirectory, live: ['people'] },
-  { group: 'handbook', tab: 'Handbook', path: 'handbook', label: 'Handbook', permission: null, render: renderHandbook, live: ['people'] },
-  // The quick answers on top of the rules, a tab beside them rather than a
-  // link of their own: a staff member's menu stays a short plain list.
-  { group: 'handbook', tab: 'HR FAQ', path: 'hr-faq', label: 'HR FAQ', permission: null, render: renderHrFaq, live: ['people'] },
-
-  // A first week. The new hire's own is hidden from the menu once it is over,
-  // and the office one sits with the rest of the people screens.
-  // `only` is the second half of the question `permission` asks. A new hire
-  // holds no permission at all, so nothing but the session itself can say
-  // whether this screen is theirs, and it stops being theirs the day the list
-  // is done rather than staying in the menu for the next two years.
-  { mine: true, group: 'first-week', tab: 'My first week', path: 'onboarding', label: 'My first week', permission: null, only: () => state.startingOut, render: renderOnboarding, live: ['people'] },
-  { group: 'first-weeks', tab: 'First weeks', path: 'onboarding-desk', label: 'First weeks', permission: ['hr_view', 'hr_manage'], render: renderOnboardingDesk, live: ['people'] },
-
-  { group: 'setup', tab: 'Setup', path: 'att-setup', label: 'Setup', permission: 'att_setup', render: renderAttSetup, live: ['admin', 'rota', 'attendance'] },
+  { group: 'setup', tab: 'Settings', path: 'att-setup', label: 'Settings', permission: 'att_setup', render: renderAttSetup, live: ['admin', 'rota', 'attendance'] },
   { group: 'setup', tab: 'Notifications', path: 'notifications', label: 'Notifications', permission: 'users', render: renderNotifications, live: ['admin'] },
   { group: 'setup', tab: 'Users & data', path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin, live: ['admin'] },
 
-  // Last in the menu and reachable by everybody. What it contains is filtered
-  // to what the reader actually holds, so it is short for a supervisor and
-  // long for an administrator without either of them being sent elsewhere.
-  { group: 'guide', tab: 'Guide', path: 'guide', label: 'Guide', permission: null, render: renderGuide },
+  // Reached from Home rather than from the menu: closing the till is a job on
+  // the day's list, not a place somebody goes.
+  { mine: true, path: 'att-my-till', label: 'Close your till', permission: 'till', render: renderAttMyTill, hidden: true },
+  { mine: true, path: 'att-my-till-issues', label: 'Till: to sort out', permission: 'till', render: renderAttMyTillIssues, hidden: true },
 
   // Reached by clicking a name rather than from the menu.
   { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, live: ['attendance', 'rota', 'leave'], hidden: true },
@@ -263,10 +213,9 @@ const ROUTES = [
   { path: 'contract', label: 'Contract', permission: 'hr_view', render: renderContract, live: ['people'], hidden: true },
   // The same page, read by the person it is about. A separate path because the
   // permission is the whole difference: hr_view reads anybody's, att_me reads
-  // your own, and the route that decides which is not the place to be clever.
+  // your own.
   { path: 'my-contract', label: 'My contract', permission: 'att_me', render: (params) => renderContract({ ...params, mine: true }), live: ['people'], hidden: true },
   { path: 'letter', label: 'Letter', permission: 'corr_view', render: renderLetter, live: ['letters'], hidden: true },
-  // Writing one. Its own screen rather than a dialog: the page is the point.
   { path: 'letter-compose', label: 'Write', permission: 'corr_write', render: renderLetterCompose, hidden: true },
   { path: 'letter-parties', label: 'Address book', permission: 'corr_view', render: renderLetterParties, live: ['letters'], hidden: true },
   { path: 'letter-signing', label: 'Signature & stamp', permission: 'corr_view', render: renderLetterSigning, live: ['letters'], hidden: true },
@@ -342,13 +291,10 @@ function defaultRoute() {
     return 'onboarding';
   }
 
-  const preferred = ['att-today', 'att-overview', 'att-rota', 'signoff', 'att-leave', 'people',
-    'letters', 'att-setup', 'notifications', 'admin',
-    // A member of staff holds none of the above, and their own week is the
-    // screen they came for. Named rather than left to the fallback, which
-    // walks the route table and would land them wherever it happened to
-    // start.
-    'att-me'];
+  // Home first, for both menus: the manager's for anybody who runs the floor,
+  // their own for everybody else.
+  const preferred = ['home', 'inbox', 'att-today', 'att-overview', 'att-rota', 'signoff', 'att-leave',
+    'people', 'letters', 'att-setup', 'notifications', 'admin', 'my-day', 'att-me'];
   const wanted = preferred.find((path) => allowed(ROUTES.find((r) => r.path === path)));
   return wanted ?? ROUTES.find((r) => allowed(r) && !r.hidden)?.path ?? 'att-today';
 }
@@ -398,9 +344,15 @@ async function signOut() {
   render();
 }
 
+/** Which of the two menus this login gets. */
+function mode() {
+  return nothingElseToShow() ? 'staff' : 'manager';
+}
+
 /** The groups this login can open, worked out against what they hold. */
 function myGroups() {
-  return openGroups(ROUTES, GROUPS, allowed);
+  const which = mode();
+  return openGroups(ROUTES, which === 'staff' ? STAFF_GROUPS : MANAGER_GROUPS, allowed, groupKeyFor(which));
 }
 
 /** Which group the screen on the page belongs to. */
@@ -418,13 +370,21 @@ function hereGroup(groups = myGroups()) {
  */
 function groupStrip() {
   const group = hereGroup();
-  if (!group || group.screens.length < 2) return null;
+  if (!group) return null;
   const here = currentRoute()?.path;
+  const tab = (t, active) => h('a', { href: `#/${t.path}`, class: active ? 'active' : '' }, t.label);
 
-  return h('div.group-tabs.seg.seg-wrap', tabsOf(group).map((tab) => h('a', {
-    href: `#/${tab.path}`,
-    class: here === tab.path ? 'active' : '',
-  }, tab.label)));
+  // A manager's own screens: one row of the five things they are, and the
+  // screens under the one they are on as a smaller second row.
+  if (mode() === 'manager' && group.key === 'mine') {
+    const { tabs, parent, siblings } = mineTabs(group, here);
+    return h('div.group-strips',
+      tabs.length > 1 ? h('div.group-tabs.seg.seg-wrap', tabs.map((t) => tab(t, t.path === parent))) : null,
+      siblings.length ? h('div.group-tabs.group-tabs-sub.seg.seg-sm.seg-wrap', siblings.map((t) => tab(t, t.path === here))) : null);
+  }
+
+  if (group.screens.length < 2) return null;
+  return h('div.group-tabs.seg.seg-wrap', tabsOf(group).map((t) => tab(t, here === t.path)));
 }
 
 function sidebar() {
@@ -435,21 +395,82 @@ function sidebar() {
     href: `#/${group.screens[0].path}`,
     class: current?.key === group.key ? 'side-link active' : 'side-link',
     onclick: () => closeDrawer(),
-  }, group.label);
+  }, icon(group.icon), h('span.side-label', group.label),
+  group.key === 'inbox' ? h('span.side-count', { 'data-inbox-count': '', hidden: true }) : null);
 
-  return h('nav.sidebar',
-    menuRuns(groups).map((run) => h('div.side-group',
-      run.section ? h('div.side-section', run.section) : null,
-      run.groups.map(link))),
+  const main = groups.filter((g) => !g.foot);
+  const foot = groups.filter((g) => g.foot);
+
+  return h('nav.sidebar', { 'aria-label': 'Main menu' },
+    h('div.side-group', main.map(link)),
+    foot.length ? h('div.side-group.side-group-foot', foot.map(link)) : null,
 
     // Only ever seen on a phone, where it is not on the header. Last in the
     // drawer, under everything else, because it is the one thing here nobody
     // wants to press by accident.
     h('div.side-foot.only-phone',
       h('div.side-who', state.name || '', state.name ? h('br') : null,
-        h('small.muted', roleLabel(state.role))),
+        h('small', roleLabel(state.role))),
       h('button.btn-sm', { onclick: signOut }, 'Sign out')),
   );
+}
+
+/**
+ * The tabs along the bottom of a phone.
+ *
+ * Staff get their five places. Everybody else gets their first four and a
+ * More that opens the full menu, because six places and two more do not fit
+ * across a handset.
+ */
+function bottomBar() {
+  const groups = myGroups();
+  if (!groups.length) return null;
+  const current = hereGroup(groups);
+  const staff = mode() === 'staff';
+  const shown = staff ? groups.slice(0, 5) : groups.filter((g) => !g.foot).slice(0, 4);
+
+  const tab = (group) => h('a.bottom-tab', {
+    href: `#/${group.screens[0].path}`,
+    class: current?.key === group.key ? 'bottom-tab active' : 'bottom-tab',
+    'aria-current': current?.key === group.key ? 'page' : null,
+  }, icon(group.icon, 22), h('span', group.label),
+  group.key === 'inbox' ? h('span.bottom-count', { 'data-inbox-count': '', hidden: true }) : null);
+
+  return h('nav.bottom-bar', { 'aria-label': 'Main' },
+    shown.map(tab),
+    staff && groups.length <= 5 ? null : h('button.bottom-tab', {
+      type: 'button',
+      class: shown.some((g) => g.key === current?.key) ? 'bottom-tab' : 'bottom-tab active',
+      onclick: () => document.querySelector('.shell')?.classList.add('nav-open'),
+    }, icon('more', 22), h('span', 'More')));
+}
+
+/**
+ * How many decisions are waiting, on the Inbox link.
+ *
+ * Asked after the page has drawn and never more than once a minute, because
+ * the answer comes from every kind of request at once.
+ */
+let inboxAskedAt = 0;
+async function paintInboxCount(force = false) {
+  if (mode() !== 'manager' || !DECIDES.some((p) => can(p))) return;
+  if (!force && Date.now() - inboxAskedAt < 60_000) {
+    showInboxCount(lastInboxCount);
+    return;
+  }
+  inboxAskedAt = Date.now();
+  lastInboxCount = await inboxCount().catch(() => lastInboxCount);
+  showInboxCount(lastInboxCount);
+}
+let lastInboxCount = 0;
+function showInboxCount(n) {
+  for (const el of document.querySelectorAll('[data-inbox-count]')) {
+    el.textContent = n > 99 ? '99+' : String(n || '');
+    el.hidden = !n;
+  }
+}
+export function inboxChanged() {
+  paintInboxCount(true);
 }
 
 function closeDrawer() {
@@ -626,7 +647,7 @@ function whoStrip() {
 }
 
 function shell(content) {
-  const shellEl = h('div.shell',
+  const shellEl = h(`div.shell.mode-${mode()}`,
     h('header.topbar',
       h('button.btn-ghost.btn-sm.nav-toggle', {
         title: 'Show or hide the menu',
@@ -717,6 +738,7 @@ function shell(content) {
       h('div.nav-scrim', { onclick: closeDrawer }),
       h('main.main', whoStrip(), groupStrip(), content),
     ),
+    bottomBar(),
   );
 
   applyMenu(shellEl);
@@ -857,16 +879,9 @@ export async function render({ quiet = false } = {}) {
     // update quiet: the old view is still there while this is in the air.
     const view = await route.render(routeParams());
     mount(container, view);
-    // The greeting goes above whatever they landed on, once for the session.
-    // Anywhere else and it would be a banner somebody learns to scroll past.
-    if (!alreadyWelcomed()) {
-      markWelcomed();
-      container.prepend(welcomePanel({
-        name: state.name,
-        role: state.role,
-        permissions: state.permissions,
-      }));
-    }
+    paintInboxCount();
+    // No greeting banner any more: Home is the greeting, and says what is
+    // waiting. A banner above every first screen was the same thing twice.
   } catch (err) {
     if (err.status === 401) return; // the unauthorized handler already reset us
     mount(container, h('div.card.empty',

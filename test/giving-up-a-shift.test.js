@@ -687,9 +687,9 @@ test('a staff member reaches the board, and only a planner the queue', () => {
 
 test('it is a tab beside the two screens it belongs to, not a new link', () => {
   const app = readFileSync('public/js/app.js', 'utf8');
-  assert.match(app, /group: 'me', tab: 'Swaps'/);
+  // Beside their own shifts for staff, and beside the rota for whoever runs it.
+  assert.match(app, /group: 'my-rota', tab: 'Swaps'/);
   assert.match(app, /group: 'rota', tab: 'Swaps'/);
-  // Ten links in the menu, not eleven.
   assert.equal(/key: 'swaps', label:/.test(app), false);
 });
 

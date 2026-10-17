@@ -181,9 +181,9 @@ test('everybody signed in, because a directory nobody can open is a list', () =>
 
 test('the screen is a link of its own, reachable without any permission', () => {
   const app = readFileSync('public/js/app.js', 'utf8');
-  assert.match(app, /group: 'directory'.*permission: null/);
-  // Not under People, which is the personnel records and their permission.
-  assert.equal(/group: 'people'.*path: 'directory'/.test(app), false);
+  // Under Me for staff and beside People for managers, and needing no
+  // permission either way: not one of the personnel screens.
+  assert.match(app, /group: 'me', tab: 'Directory', mgroup: 'people', path: 'directory'.*permission: null/);
 });
 
 test('the query names its columns and no others', () => {
