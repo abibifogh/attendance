@@ -13,6 +13,12 @@ The **✓ Approvals** button on Insight's menu bar shows how many are waiting
   corrections, availability, shift swaps, salary advances, medical claims,
   lunch changes, documents sent in, personal details sent in, and sign-off
   questions.
+- **POS** (once linked): spends at the till, purchase orders over the limit,
+  group bookings and changes to a booking, decided here. Counts (bar,
+  kitchen, store room, shop) and shelf changes are listed with a link to the
+  POS's Waiting for you, and decided there, because approving one moves
+  stock. A group booking whose meal times are already on the kitchen's list
+  is refused in the POS too, which cancels them and gives money back.
 
 You see only what you may decide in each system. In HIVE that is what your
 own HIVE login may decide: an admin sees all of it; a login without, say, the
@@ -59,11 +65,20 @@ rota around a swap). An Insight item opens Shifts › Inbox.
   Insight account. Put the same email on your own HIVE login (HIVE › Setup ›
   Users & data), then refresh.
 
-## Coming next
+## Linking the POS
 
-POS, Maintenance and Team Tasks join the same list once each has its own
-signed entry point, the same way HIVE has one. Laundry has nothing that waits
-for approval.
+The POS joins the list by itself once both are true:
+
+- **The POS's reports address is set in Insight** (Setup). This is its notify function's domain.
+- **Insight has `SSO_SECRET_POS`.** It is the same secret the POS's sign-in hand-off already uses.
+
+The POS must also be running the version with the approvals entry point (snpos PR #58). Until then, a yellow line says the POS does not take approvals from Insight yet.
+
+## Still to come
+
+Maintenance and Team Tasks join the same list once each has its own signed
+entry point, the same way HIVE and the POS have one. Laundry has nothing that
+waits for approval.
 
 ## For whoever runs it
 
@@ -72,4 +87,7 @@ HIVE's side is `src/routes/approvals.js`: `POST /api/link/approvals/list` and
 (`SSO_SECRET_ATTENDANCE` here, `INSIGHT_SSO_SECRET` in HIVE). Each decision
 runs HIVE's own route for it, with that route's own permission, as the HIVE
 login whose email matches. Insight's side is `bi/src/routes/approvals.js`;
-each system is one entry in `SYSTEMS` with a `list` and a `decide`.
+each system is one entry in `SYSTEMS` with a `list`, a `decide` and, for the
+POS, a `linked` check. The POS's side is
+`functions/notify/src/insight-approvals.js` in the snpos repository, signed
+the same way with `SSO_SECRET_POS` (`INSIGHT_SSO_SECRET` there).

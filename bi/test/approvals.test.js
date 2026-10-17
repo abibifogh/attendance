@@ -75,3 +75,30 @@ test('an Insight email with no HIVE login is told how to fix it', async () => {
   const out = await approvals.list(env, { ...OWNER, email: 'someone.else@example.test' });
   assert.match(out.systems.find((s) => s.id === 'hive').error, /No HIVE login has the email someone\.else@example\.test/);
 });
+
+test('the POS joins once linked: a signed call to its notify function, its items beside the rest', async () => {
+  const { env, raw } = setUp();
+  // Not linked yet: not in the list at all.
+  assert.equal((await approvals.list(env, OWNER)).systems.some((s) => s.id === 'pos'), false);
+  raw.exec(`INSERT OR REPLACE INTO sources (id, label, kind, config, enabled) VALUES ('pos', 'Restaurant POS', 'snpos_http', '{"base":"https://pos-fn.example.test/"}', 1)`);
+  env.SSO_SECRET_POS = 'pos-secret';
+  const asked = [];
+  const { signLink } = await import('../src/lib/link.js');
+  globalThis.fetch = async (url, init) => {
+    const path = new URL(url).pathname;
+    const want = await signLink('pos-secret', path, init.body, Number(init.headers['X-Till-At']));
+    assert.equal(init.headers['X-Till-Sig'], want['X-Till-Sig']);
+    asked.push([path, JSON.parse(init.body)]);
+    if (path === '/approvals/list') {
+      return Response.json({ ok: true, items: [{ kind: 'spend', id: 'e1', title: 'Spend · A Gas Seller', amount: 25000, askedAt: '2026-10-17T08:00:00Z', decisions: [{ key: 'approve', label: 'Approve' }] }] });
+    }
+    return Response.json({ ok: true, said: 'Approved', as: 'Test Owner via Insight' });
+  };
+  const out = await approvals.list(env, OWNER);
+  const pos = out.items.find((i) => i.system === 'pos');
+  assert.deepEqual([pos.title, pos.amount, pos.systemLabel], ['Spend · A Gas Seller', 25000, 'POS']);
+  assert.deepEqual(asked[0], ['/approvals/list', { email: 'owner@example.test' }]);
+  const done = await approvals.decide(env, { system: 'pos', kind: 'spend', id: 'e1', decision: 'approve' }, OWNER);
+  assert.equal(done.as, 'Test Owner via Insight');
+  assert.equal(asked[1][1].decision, 'approve');
+});
