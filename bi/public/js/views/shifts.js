@@ -401,34 +401,78 @@ export async function renderShifts(root, { range }) {
    * ASSD numbers run around it.
    */
   async function openWhere(key, button = null, dayHint = null) {
-    const k = String(key);
-    const known = data?.exceptions?.find((x) => x.key === k && x.day && x.slot);
-    if (known) return openShift(known.day, known.slot);
-    const named = /^[a-z-]+:(\d{4}-\d{2}-\d{2}):(morning|afternoon|night)\b/.exec(k);
-    if (named) return openShift(named[1], named[2]);
-    const line = /^(?:seq|[a-z-]+):(\d+)(?::\d+)?$/.exec(k);
     const fail = (text) => { if (button) { button.textContent = text; button.disabled = true; } };
-    // Money with no ASSD line: a terminal card (t:) or a bank line (b:), placed by its time.
-    if (/(?:^|:)[tb]:[^:]+$/.test(k)) {
-      try {
-        const w = await api(`/shifts/where?key=${encodeURIComponent(k)}`);
-        if (!w.day) return fail('Not in the files loaded');
-        if (w.slot) return openShift(w.day, w.slot);
-        mode = 'day';
-        return moveTo(w.day);
-      } catch (err) { return fail(err.message); }
-    }
-    if (!line) return fail('Shift not known');
-    const seq = Number(line[1]);
     try {
-      const day = dayHint || (await api(`/shifts/where?seq=${seq}`)).day;
-      if (!day) return fail('Not in the journal');
-      // A night's lines after midnight carry the next day's date.
-      const d = await fetchPeriod({ from: plusDays(day, -1), to: day });
-      const s = d.days.flatMap((x) => x.shifts).find((x) => x.startSeq <= seq && seq <= x.endSeq);
-      return s ? openShift(s.day, s.slot) : fail('Shift not found');
+      const p = await placeOf(key, dayHint);
+      if (p.error) return fail(p.error);
+      if (p.slot) return openShift(p.day, p.slot);
+      mode = 'day';
+      return moveTo(p.day);
     } catch (err) { return fail(err.message); }
   }
+
+  /**
+   * Where an exception is: its day and shift, from the days on screen, its
+   * key, or (a line, or money with no line) asked of the server. A bank line
+   * with no time has a day but no shift. `{ error }` when it cannot be placed.
+   */
+  async function placeOf(key, dayHint = null) {
+    const k = String(key);
+    const known = data?.exceptions?.find((x) => x.key === k && x.day && x.slot);
+    if (known) return { day: known.day, slot: known.slot };
+    const named = /^[a-z-]+:(\d{4}-\d{2}-\d{2}):(morning|afternoon|night)\b/.exec(k);
+    if (named) return { day: named[1], slot: named[2] };
+    // Money with no ASSD line: a terminal card (t:) or a bank line (b:), placed by its time.
+    if (/(?:^|:)[tb]:[^:]+$/.test(k)) {
+      const w = await api(`/shifts/where?key=${encodeURIComponent(k)}`);
+      return w.day ? { day: w.day, slot: w.slot || null } : { error: 'Not in the files loaded' };
+    }
+    const line = /^(?:seq|[a-z-]+):(\d+)(?::\d+)?$/.exec(k);
+    if (!line) return { error: 'Shift not known' };
+    const seq = Number(line[1]);
+    const day = dayHint || (await api(`/shifts/where?seq=${seq}`)).day;
+    if (!day) return { error: 'Not in the journal' };
+    // A night's lines after midnight carry the next day's date.
+    const d = await fetchPeriod({ from: plusDays(day, -1), to: day });
+    const s = d.days.flatMap((x) => x.shifts).find((x) => x.startSeq <= seq && seq <= x.endSeq);
+    return s ? { day: s.day, slot: s.slot } : { error: 'Shift not found' };
+  }
+
+  /**
+   * The shift an answer is about, in brief, beside the answer: who was on and
+   * when, what does not agree and why it was raised, and how the drawer, card
+   * and MoMo stand. Read in the background; Open the shift stays for the rest.
+   */
+  function shiftBrief(key, dayHint = null) {
+    const box = h('div.sh-brief', h('span.small', 'Reading the shift…'));
+    (async () => {
+      const p = await placeOf(key, dayHint);
+      if (p.error) { mount(box, h('span.small', `${p.error}: open the shift to look.`)); return; }
+      const d = await fetchPeriod({ from: p.day, to: p.day });
+      const s = p.slot ? d.days.flatMap((x) => x.shifts).find((x) => x.day === p.day && x.slot === p.slot) : null;
+      const x = d.exceptions.find((o) => o.key === String(key)) || data?.exceptions?.find((o) => o.key === String(key)) || null;
+      const r = s?.register || {};
+      const fig = (label, value) => h('span.sh-brief-fig', h('small', label), h('b.num', value));
+      mount(box,
+        h('div.sh-brief-hd',
+          s ? [avatar(s.user), h('b', nameOf(s.user))] : null,
+          h('span', `${dayText(p.day)}${p.slot ? ` · ${SLOT[p.slot].label} ${SLOT[p.slot].hours}` : ' · no time given'}`),
+          s?.open ? h('span.sh-chip.none', 'ends here') : null),
+        x ? h('div.sh-brief-what',
+          h('b', `${(KIND[x.kind] || [x.kind])[0]}${x.amount != null ? ` · ${money(Math.abs(x.amount))}` : ''}`),
+          h('p', describe(x)),
+          evidence(x)) : null,
+        s ? h('div.sh-brief-figs',
+          fig('Cash in ASSD', whole(s.cash)),
+          h('span.sh-brief-fig', h('small', 'Drawer'), chip(r.variance ?? r.varianceSign, s.open, Boolean(drawerSettled(s)))),
+          s.cardLines ? fig('Card and MoMo', `${s.cardFound + (s.cardAnswered || 0)} of ${s.cardLines} found`) : fig('Card and MoMo', 'none'),
+          r.expenses != null ? fig('Expenses', whole(r.expenses)) : null,
+          fig('Still to answer', String(exceptionsOf2(d, s).length))) : null);
+    })().catch((err) => mount(box, h('span.small', err.message)));
+    return box;
+  }
+  /** Unanswered exceptions on a shift, in a period read for it. */
+  const exceptionsOf2 = (d, s) => d.exceptions.filter((x) => x.day === s.day && x.slot === s.slot && !x.answer && x.severity !== 'info');
 
   function remember() {
     store.set('mode', mode);
@@ -2087,7 +2131,8 @@ export async function renderShifts(root, { range }) {
         + `${x.user ? `, ${nameOf(x.user)}` : ''}${x.amount != null ? `, ${money(Math.abs(x.amount))}` : ''}`;
     }
     const [kind, day, slot] = String(key).split(':');
-    return /^\d{4}-\d{2}-\d{2}$/.test(day || '') ? `${kind}, ${dayText(day)}${slot && SLOT[slot] ? ` ${SLOT[slot].label.toLowerCase()}` : ''} (outside the days on screen)` : `${key} (outside the days on screen)`;
+    const words = (KIND[kind] || [kind])[0];
+    return /^\d{4}-\d{2}-\d{2}$/.test(day || '') ? `${words}, ${dayText(day)}${slot && SLOT[slot] ? ` ${SLOT[slot].label.toLowerCase()}` : ''}` : words;
   }
 
   /** Unanswered exceptions elsewhere of the same amount, pulling the other way. */
@@ -2748,14 +2793,14 @@ export async function renderShifts(root, { range }) {
         out.push({
           id: `aa:${a.type}:${a.id}`, kind: 'admin', title: a.type === 'link' ? `Reconciled ${a.keys.length} together` : `Answered “${a.answer}”`,
           sub: `by ${a.by}`, amount: '', chip: ['none', 'Approve'], tone: 'none', age: daysAgo(a.at), counts: true,
-          render: () => till.answerApprovalCard(a, () => after('Done.'), { open: openWhere }),
+          render: () => till.answerApprovalCard(a, () => after('Done.'), { open: openWhere, brief: shiftBrief }),
         });
       }
       for (const a of sources.till.approvals || []) {
         out.push({
           id: `co:${a.seq}`, kind: 'admin', title: `Correction · ASSD ${a.seq}`, sub: `by ${a.by}${a.day ? ` · ${dayText(a.day)}` : ''}`,
           amount: money(a.amount), chip: ['none', 'Approve'], tone: 'none', age: daysAgo(a.at), counts: true,
-          render: () => till.correctionCard(a, () => after('Done.'), { open: openWhere }),
+          render: () => till.correctionCard(a, () => after('Done.'), { open: openWhere, brief: shiftBrief }),
         });
       }
     }

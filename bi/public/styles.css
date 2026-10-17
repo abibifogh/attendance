@@ -1654,3 +1654,11 @@ label.fm-row input { margin-top: .2rem; }
 .pf-file img, .pf-file .pf-pdf { width: 84px; height: 100px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); display: grid; place-items: center; font-size: 1.8rem; }
 .pf-file small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-add { width: 100%; border: 2px dashed var(--border); border-radius: 12px; padding: .9rem; background: none; font: inherit; color: var(--ink-2); cursor: pointer; margin-top: .5rem; }
+
+/* An answer's shift, in brief, beside the answer. */
+.sh-brief { margin: .5rem 0 .2rem; padding: .6rem .7rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); display: grid; gap: .45rem; list-style: none; }
+.sh-brief-hd { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; font-size: .9rem; }
+.sh-brief-what p { margin: .2rem 0; font-size: .9rem; color: var(--ink-2); }
+.sh-brief-figs { display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; }
+.sh-brief-fig { display: grid; gap: .1rem; }
+.sh-brief-fig small { color: var(--ink-2); font-size: .74rem; }
