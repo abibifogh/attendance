@@ -28,6 +28,9 @@ const PATHS = {
   food: '<path d="M4 11h16M6 11V8a6 6 0 0 1 12 0v3M5 11l1 8h12l1-8"/>',
   leave: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/>',
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  theme: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
 };
 
 /** One icon, as an element, at a size in pixels. */

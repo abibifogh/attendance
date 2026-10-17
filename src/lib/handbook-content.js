@@ -472,7 +472,7 @@ Monthly, into the bank account on your record. Tell the office at once if your
 account details change.
 
 YOUR PAYSLIP
-Every payslip is in HIVE under My pay. It shows your gross pay, what has been
+Every payslip is in HIVE under Pay. It shows your gross pay, what has been
 deducted and why, and what reached your account. You can put a four-digit code
 on that screen so that handing somebody your unlocked phone does not hand them
 your pay.
@@ -486,7 +486,7 @@ Nothing else is deducted without your written agreement, except where the law
 requires it. Section 70 of the Labour Act, 2003 (Act 651) is the rule here.
 
 ADVANCES
-There is a way to ask for an advance in HIVE under My pay. It is not a right and
+There is a way to ask for an advance in HIVE under Pay. It is not a right and
 it is not always possible, and it is repaid from your salary over agreed months.
 
 MEDICAL CLAIMS

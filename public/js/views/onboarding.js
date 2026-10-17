@@ -203,7 +203,7 @@ export async function renderOnboardingDesk() {
             h('div.alert-title', 'Onboarding is switched off'),
             h('div.alert-detail',
               'Nobody is landed on their first week and nobody new gets one. '
-              + 'Setup → Rules, under what staff can do for themselves.')))
+              + 'Settings → Features → For staff.')))
         : null,
 
       openOnes.length

@@ -656,7 +656,7 @@ function shell(content) {
         title: 'Show or hide the menu',
         'aria-label': 'Show or hide the menu',
         onclick: toggleMenu,
-      }, '☰'),
+      }, icon('menu')),
       // The system's own name, with the property underneath rather than
       // instead of it. Somebody working here already knows where they work;
       // which system they are looking at is the thing worth saying.
@@ -673,7 +673,7 @@ function shell(content) {
       ),
       h('div.topbar-spacer'),
       noticeBell(),
-      h('button.btn-ghost.btn-sm', { title: 'Switch light / dark', onclick: toggleTheme }, '🌗'),
+      h('button.btn-ghost.btn-sm.topbar-icon', { title: 'Switch light / dark', 'aria-label': 'Switch light / dark', onclick: toggleTheme }, icon('theme')),
       h('button.btn-ghost.btn-sm.topbar-account', {
         title: state.role === 'admin' ? 'My password and PIN' : 'Change my PIN',
         'aria-label': 'My account',

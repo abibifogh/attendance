@@ -382,7 +382,7 @@ async function sessionFor(db, email) {
             (SELECT group_concat(staff_id) FROM user_staff WHERE user_id = users.id) AS also_staff
        FROM users WHERE LOWER(email) = ?1 AND active = 1 LIMIT 1`,
   ).bind(address).first();
-  if (!user) throw forbidden(`No HIVE login has the email ${address}. Put it on your HIVE login (Setup › Users) to decide HIVE's approvals from Insight.`);
+  if (!user) throw forbidden(`No HIVE login has the email ${address}. Put it on your HIVE login (Settings › Staff and logins) to decide HIVE's approvals from Insight.`);
   const named = { ...user, name: `${user.name}${VIA}` };
   return { user: named, permissions: effectivePermissions(user), via: 'password', records: recordsOn(user.staff_id, user.also_staff) };
 }

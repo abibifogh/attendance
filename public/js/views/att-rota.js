@@ -806,7 +806,7 @@ export async function renderAttRota(params) {
     // over it, because that is exactly when it is worth reading.
     if (entry.alwaysOff) {
       parts.push(h('small.rota-avail', {
-        title: 'A weekday this person never works, set under Setup → Staff',
+        title: 'A weekday this person never works, set under Settings → Staff and logins',
       }, '✕ never works'));
     }
     // A Sunday somebody is on in a month where they are already on as many as
@@ -836,7 +836,7 @@ export async function renderAttRota(params) {
       parts.push(h('small.rota-sunday-note', {
         class: `rota-sunday-note ${over ? 'rota-sunday-loud' : ''}`.trim(),
         title: `On ${worked} of the ${of} Sundays in ${month}. `
-          + `This property marks it at ${cap} a month, set under Setup → Workload.`,
+          + `This property marks it at ${cap} a month, set under Settings → Shifts and clocking → Workload.`,
       },
       `⊙ ${worked}/${of}`,
       // Squeezed into a fortnight the column has no room for the word, and
@@ -2396,7 +2396,13 @@ export async function renderAttRota(params) {
       // rows of buttons above a grid nobody could read anyway, so they go
       // behind one. What stays out is what somebody is meant to act on: the
       // people this plan is overworking, and the days waiting on an answer.
+      !mayEdit ? null : h('button.btn-sm', {
+        onclick: () => suggest(from, to, reload),
+        title: 'Fill the blanks from what this property usually does. '
+          + 'Nothing is published and nothing you have decided is touched',
+      }, 'Suggest a draft'),
       moreActions(
+      { always: true },
       mayEdit && view === 'people'
         ? h('button.btn-sm', { onclick: () => copyWeek(data, reload) }, 'Copy a week')
         : null,
@@ -2411,7 +2417,7 @@ export async function renderAttRota(params) {
           footer: 'Dashed shifts are still a draft and may change.',
         })
         : null,
-      !mayEdit ? null : h('a.btn-sm', {
+      !mayEdit ? null : h('a.btn.btn-sm', {
         href: `/api/att/roster/export?from=${from}&to=${to}`
           + `${params.department ? `&department=${encodeURIComponent(params.department)}` : ''}`
           + `${params.tag ? `&tag=${encodeURIComponent(params.tag)}` : ''}`,
@@ -2438,11 +2444,6 @@ export async function renderAttRota(params) {
         }),
         title: 'Who changed what on this rota, and when',
       }, 'What changed'),
-      !mayEdit ? null : h('button.btn-sm', {
-        onclick: () => suggest(from, to, reload),
-        title: 'Fill the blanks from what this property usually does. '
-          + 'Nothing is published and nothing you have decided is touched',
-      }, 'Suggest a draft'),
       ),
       ),
     ),
@@ -3409,11 +3410,11 @@ function shiftQuestions(draft, reload) {
  * disagrees with the number needs to know which.
  */
 const WHERE_FROM = {
-  shift: 'That is what the shift asks for under Setup \u2192 Shifts.',
+  shift: 'That is what the shift asks for under Settings \u2192 Shifts and clocking.',
   history: 'The shift does not say how many it needs, so this is what the last few weeks did. '
-    + 'Set People needed under Setup \u2192 Shifts to fix it.',
+    + 'Set People needed under Settings \u2192 Shifts and clocking to fix it.',
   cards: 'The shift does not say how many it needs, so this is the number of cards already on '
-    + 'the day. Set People needed under Setup \u2192 Shifts to fix it.',
+    + 'the day. Set People needed under Settings \u2192 Shifts and clocking to fix it.',
   floor: 'The shift does not say how many it needs and there is nothing behind it to go on, so '
     + 'one was assumed.',
 };
@@ -3608,7 +3609,7 @@ async function suggest(from, to, reload) {
             + 'the shift asks for.'
             + (unfilled > 20
               ? ' A long list usually means the shift list is claiming more than the property '
-                + 'runs: under Setup → Shifts, say which days each one runs, which of them '
+                + 'runs: under Settings → Shifts and clocking, say which days each one runs, which of them '
                 + 'stand in for each other, and which are only wanted if somebody is spare.'
               : '')),
           h('ul.finding-list', shortest.map(([name, list]) => h('li',

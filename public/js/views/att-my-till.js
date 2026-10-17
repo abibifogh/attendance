@@ -640,7 +640,7 @@ export async function renderAttMyTillIssues() {
         h(`button.btn${state.how !== 'repay' ? '.btn-primary' : ''}`, { type: 'button', onclick: () => { open.set(issue.key, { ...state, how: 'explain' }); paint(); } }, 'Explain'),
         h(`button.btn${state.how === 'repay' ? '.btn-primary' : ''}`, { type: 'button', onclick: () => { open.set(issue.key, { ...state, how: 'repay' }); paint(); } }, 'I’ll pay it back')) : null,
       h('textarea', { name: 'text', rows: 3, placeholder: state.how === 'repay' ? 'Cash to the supervisor, or from my pay' : 'What happened?' }),
-      state.how === 'repay' ? h('p.till-hint', 'This is your agreement. If it is taken from your pay, it shows under My pay → My advance.') : null,
+      state.how === 'repay' ? h('p.till-hint', 'This is your agreement. If it is taken from your pay, it shows under Pay → Advance.') : null,
       h('div.till-actions', h('button.btn.btn-primary', { type: 'submit' }, 'Send'),
         h('button.btn-sm', { type: 'button', onclick: () => { open.delete(issue.key); paint(); } }, 'Cancel')));
     } else {

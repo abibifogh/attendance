@@ -223,6 +223,10 @@ export function exportButton(href, label = 'Export CSV') {
  * toolbar when it is pressed.
  */
 export function moreActions(...items) {
+  // `{ always: true }` first keeps them behind More on a desk as well, for a
+  // toolbar long enough that even a wide screen reads as a page of buttons.
+  const always = items[0]?.always === true;
+  if (always) items = items.slice(1);
   const real = items.flat().filter(Boolean);
   if (!real.length) return null;
 
@@ -237,7 +241,7 @@ export function moreActions(...items) {
     },
   }, `More (${real.length})`);
 
-  return h('div.toolbar-more-wrap', button, box);
+  return h('div.toolbar-more-wrap', { class: always ? 'toolbar-more-wrap is-always' : 'toolbar-more-wrap' }, button, box);
 }
 
 /**

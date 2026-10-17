@@ -548,7 +548,7 @@ function monthCard(review, month, signs, reload) {
         format: (v, r) => (signs
           ? h('div.btn-row', r.decision
             ? h('button.btn-sm', { onclick: () => undo(r) }, 'Reopen')
-            : h('button.btn-sm.btn-primary', { onclick: () => sign(r) }, 'Sign off'))
+            : h('button.btn-sm', { onclick: () => sign(r) }, 'Sign off'))
           : null),
       },
     ], review.rows, { empty: 'Nobody was rostered or worked in this month.' }),

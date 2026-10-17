@@ -896,7 +896,7 @@ export async function linkRecover(ctx) {
   }, ctx);
   await createNotice(ctx.db, {
     kind: 'till.recovered', level: 'info', title: `${cedis(amount)} will come off your next pay`,
-    body: `${reason}. You can see it under My pay → My advance.`, userId, text: false,
+    body: `${reason}. You can see it under Pay → Advance.`, userId, text: false,
     mail: safeMail(() => ({
       tone: 'warn', status: 'Off your pay', eyebrow: 'Till',
       headline: `${cedis(amount)} will come off your next pay`,
@@ -906,7 +906,7 @@ export async function linkRecover(ctx) {
         ['Reason', reason],
         ['Decided by', by],
       ],
-      note: 'You can see it under My pay, then My advance.',
+      note: 'You can see it under Pay, then Advance.',
       subject: `${cedis(amount)} will come off your next pay`,
       preheader: `${reason}.`,
       why: 'You get this because it affects your pay.',
@@ -1186,7 +1186,7 @@ export async function linkMail(ctx) {
   ).bind(kind, todayIn(), to, status, detail ? String(detail).slice(0, 500) : null).run().catch(() => {});
 
   const missing = !ctx.env.RESEND_API_KEY ? 'HIVE has no email provider key set'
-    : !settings.email_from ? 'HIVE has no "from" address set (Setup → Email)' : null;
+    : !settings.email_from ? 'HIVE has no "from" address set (Settings → Notifications → Email and texts)' : null;
   if (missing) {
     await log('skipped', missing);
     throw new HttpError(503, `Could not email: ${missing}.`);

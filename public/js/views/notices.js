@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { onLive } from '../live.js';
 import { fmtSince as when, h, mount } from '../util.js';
+import { icon } from '../icons.js';
 
 /**
  * The bell.
@@ -110,7 +111,7 @@ export function noticeBell() {
         draw();
       }
     },
-  }, '🔔', count);
+  }, icon('bell'), count);
 
   const paintCount = () => {
     count.textContent = state.unread > 9 ? '9+' : String(state.unread || '');
