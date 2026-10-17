@@ -233,6 +233,8 @@ const ROUTES = [
   ['POST', '/api/np/income', 'insight', adminOnly((env, ctx) => np.saveIncome(env, ctx.body, ctx.account))],
   ['POST', '/api/np/settings', 'insight', adminOnly((env, ctx) => np.saveSettings(env, ctx.body))],
   ['POST', '/api/np/reading', 'insight', adminOnly((env, ctx) => np.editReading(env, ctx.body, ctx.account))],
+  // A picture added in Insight for a shift that has none: read like one from the link.
+  ['POST', '/api/np/upload', 'insight', adminOnly((env, ctx) => np.uploadPhoto(env, ctx.body, ctx.account))],
   ['POST', '/api/np/check', 'insight', (env, ctx) => np.checkReading(env, ctx.body, ctx.account)],
   ['POST', '/api/np/answer', 'insight', (env, ctx) => np.answer(env, ctx.body, ctx.account)],
 

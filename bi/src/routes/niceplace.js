@@ -692,6 +692,42 @@ export async function saveSettings(env, body) {
   return { ok: true };
 }
 
+/**
+ * A picture of the counters added here, for a shift that has none: no
+ * reading at all, or numbers typed without one. It is read like one sent
+ * from the link. With no reading, its numbers become the reading (a counter
+ * not read waits, as one from the link would); with typed numbers, they are
+ * kept and the picture is held against them.
+ */
+export async function uploadPhoto(env, body, account) {
+  const day = String(body?.day || '');
+  const shift = String(body?.shift || '');
+  if (!isDay(day) || !SHIFTS.includes(shift)) throw badRequest('Which shift?');
+  const photo = String(body?.photo || '');
+  const m = photo.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) throw badRequest('Choose a picture of the counters.');
+  if (m[2].length > PHOTO_MAX) throw badRequest('That picture is too large.');
+  const was = await first(env.DB, 'SELECT * FROM np_reading WHERE day = ?1 AND shift = ?2', day, shift);
+  if (was?.photo_id) throw new HttpError(409, 'This shift has a picture already.');
+  const s = await settingsOf(env);
+  const read = await readAgain(env, m[2], photo, s.layout);
+  const values = Object.fromEntries(COUNTERS.map((c) => [c, read?.[c] ?? null]));
+  const at = now();
+  const photoId = (await first(env.DB, 'INSERT INTO np_photo (type, data, at) VALUES (?1, ?2, ?3) RETURNING id', m[1], m[2], at)).id;
+  const readJson = JSON.stringify(read || { unavailable: true });
+  if (was) {
+    // Typed already: the numbers stay; the picture, and what it reads, go with them.
+    await run(env.DB, 'UPDATE np_reading SET photo_id = ?3, read_json = ?4, at = ?5 WHERE day = ?1 AND shift = ?2', day, shift, photoId, readJson, at);
+    return {
+      ok: true, kept: true, values,
+      differs: COUNTERS.filter((c) => values[c] != null && was[c] != null && values[c] !== was[c]).map((c) => ({ counter: c, typed: was[c], read: values[c] })),
+    };
+  }
+  await run(env.DB, `INSERT INTO np_reading (day, shift, name, gb, gt, lb, lt, photo_id, sent_at, at, read_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)`,
+    day, shift, who(account), values.gb, values.gt, values.lb, values.lt, photoId, at, readJson);
+  return { ok: true, kept: false, values, pending: COUNTERS.filter((c) => values[c] == null) };
+}
+
 /** A reading typed or corrected here: a fix, or a shift with no picture. */
 export async function editReading(env, body, account) {
   const day = String(body?.day || '');
