@@ -7363,3 +7363,41 @@ a.btn, a.btn-sm { text-decoration: none; display: inline-flex; align-items: cent
 .today-person-main { display: grid; min-width: 0; }
 .today-person-main a { font-weight: 650; color: var(--text); text-decoration: none; }
 .today-person > .btn-row { grid-column: 2 / -1; margin: 0; }
+
+/* ---- Settings: topics down the side, the panels of one topic beside them ---- */
+.settings-search { flex: 0 1 360px; display: flex; }
+.settings-search input { width: 100%; min-height: 44px; }
+.settings-layout { display: flex; flex-wrap: wrap; gap: 1.2rem; align-items: flex-start; }
+.settings-nav { flex: 1 1 230px; max-width: 270px; display: grid; gap: .25rem; position: sticky; top: calc(var(--topbar-h) + 1rem); }
+.settings-topic {
+  display: grid; gap: .05rem; text-align: left; min-height: 48px; padding: .5rem .85rem;
+  border-radius: 10px; border: 1px solid transparent; background: none; font: inherit; color: var(--text-dim); cursor: pointer;
+}
+.settings-topic span { font-weight: 650; color: var(--text); }
+.settings-topic small { color: var(--text-faint); font-size: .78rem; }
+.settings-topic:hover { background: var(--surface-2); }
+.settings-topic.on { background: var(--surface); border-color: var(--border); box-shadow: var(--shadow); }
+.settings-topic.on span { color: var(--text); }
+.settings-main { flex: 999 1 520px; min-width: 0; display: grid; gap: .9rem; }
+.settings-panels:empty { display: none; }
+@media (max-width: 720px) {
+  .settings-nav { position: static; max-width: none; flex-basis: 100%; display: flex; overflow-x: auto; gap: .4rem; }
+  .settings-topic { flex: none; min-height: 40px; border-color: var(--border); background: var(--surface); }
+  .settings-topic small { display: none; }
+  .settings-search { flex-basis: 100%; }
+}
+.settings-topic { justify-items: start; }
+.settings-body { min-width: 0; overflow-x: auto; }
+.settings-topic { text-align: left; align-content: center; }
+.settings-topic > span, .settings-topic > small { justify-self: start; text-align: left; }
+.settings-topic { justify-content: start; }
+
+/* ---- one record per person ---- */
+.person-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; align-items: start; }
+.person-overview > .card { margin: 0; }
+.person-figures { display: flex; flex-wrap: wrap; gap: 1.5rem; }
+.person-figures > div { display: grid; }
+.person-figures strong { font-size: 1.8rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.person-figures strong.is-warn { color: var(--warn); }
+.person-figures strong.is-bad { color: var(--bad); }
+.person-figures span { color: var(--text-dim); font-size: .88rem; }

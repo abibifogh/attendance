@@ -6,6 +6,7 @@ import { can, navigate, replaceParams } from '../app.js';
 import { field, formDialog } from './att-shared.js';
 import { control, listEditor } from '../fields.js';
 import { EVENTS, STATUS } from './contract.js';
+import { renderAttStaff } from './att-staff.js';
 
 /**
  * One person's file.
@@ -15,13 +16,19 @@ import { EVENTS, STATUS } from './contract.js';
  * and the trail of everything that has happened. The trail is last because it
  * is never read until it matters, and then it is the only thing that does.
  */
+// One record per person. Their attendance and leave, their pay, their
+// details, their papers and their history are tabs here rather than four
+// different screens somebody has to know about.
 const TABS = [
+  ['overview', 'Overview'],
+  ['attendance', 'Attendance'],
+  ['pay', 'Pay'],
   ['details', 'Details'],
-  ['background', 'Contacts & background'],
   ['documents', 'Documents'],
-  ['contracts', 'Contracts'],
-  ['history', 'Links & history'],
+  ['history', 'History'],
 ];
+// Where an old address lands.
+const OLD_TABS = { background: 'details', contracts: 'documents' };
 
 export async function renderPerson(params) {
   const host = h('div');
@@ -31,7 +38,11 @@ export async function renderPerson(params) {
     return host;
   }
 
-  const tab = TABS.some(([key]) => key === params.tab) ? params.tab : 'details';
+  // Only the tabs this login can open: attendance needs the attendance
+  // permission, pay the pay one.
+  const shown = TABS.filter(([key]) => (key === 'attendance' ? can('att_view') : key === 'pay' ? can('hr_pay') : true));
+  const asked = OLD_TABS[params.tab] ?? params.tab;
+  const tab = shown.some(([key]) => key === asked) ? asked : 'overview';
   const [data, model] = await Promise.all([api.hrPerson(id), api.hrModel()]);
 
   const reload = async (next = tab) => {
@@ -39,14 +50,15 @@ export async function renderPerson(params) {
     mount(host, await renderPerson({ id, tab: next }));
   };
 
-  const tabs = h('div.seg.seg-wrap', TABS.map(([key, label]) =>
+  const tabs = h('div.seg.seg-wrap', shown.map(([key, label]) =>
     h('button', { class: tab === key ? 'active' : '', onclick: () => reload(key) }, label)));
 
-  const body = {
-    details: () => detailsTab(data, model, reload),
-    background: () => backgroundTab(data, model, reload),
-    documents: () => documentsTab(data, reload),
-    contracts: () => contractsTab(data, model, reload),
+  const body = await {
+    overview: () => overviewTab(data, model, reload, (key) => reload(key)),
+    attendance: () => renderAttStaff({ id, period: params.period || 'month', day: params.day, embedded: true }),
+    pay: () => payCard(data, reload) ?? emptyState('Pay', 'Only people with payroll access see pay.'),
+    details: () => h('div', detailsTab(data, model, reload), backgroundTab(data, model, reload)),
+    documents: () => h('div', documentsTab(data, reload), contractsTab(data, model, reload)),
     history: () => historyTab(data),
   }[tab]();
 
@@ -60,8 +72,7 @@ export async function renderPerson(params) {
           data.person.active ? '' : ' — has left'),
       ),
       h('div.btn-row',
-        h('button.btn-sm', { onclick: () => navigate('people') }, '‹ Everybody'),
-        h('button.btn-sm', { onclick: () => navigate('att-staff', { id }) }, 'Attendance →'),
+        h('button.btn-sm', { onclick: () => navigate('people') }, '‹ All staff'),
         data.canManage
           ? h('button.btn-sm', {
             title: 'The welcome and the checklist a new hire is landed on',
@@ -146,7 +157,6 @@ function detailsTab(data, model, reload) {
   };
 
   return h('div.grid.grid-2',
-    payCard(data, reload),
     model.sections.map((section) => card(section.label, {
       note: section.fields.some((f) => f.sensitive) ? 'Private' : null,
       actions: editable
@@ -178,6 +188,60 @@ function detailsTab(data, model, reload) {
  * A rate has a date it starts, and the old ones stay. A rise in June must not
  * quietly rewrite what January cost.
  */
+/**
+ * The person at a glance: this month, their leave, what their file is
+ * missing, how to reach them and where they work. Each card opens the tab
+ * that has the rest.
+ */
+async function overviewTab(data, model, reload, go) {
+  const today = todayISO();
+  const report = can('att_view')
+    ? await api.attStaffReport(data.person.id, `${today.slice(0, 8)}01`, today).catch(() => null)
+    : null;
+  const t = report?.totals;
+  const leave = report?.leave;
+  const n = (v) => String(Math.round((Number(v) || 0) * 10) / 10);
+  const pair = (k, v) => (v ? h('div.detail-pair', h('dt', k), h('dd', v)) : null);
+  const open = (key, label) => h('button.btn-sm', { type: 'button', onclick: () => go(key) }, label);
+
+  // How to reach them, from whichever section of the file holds contacts.
+  const contact = model.sections.find((s) => /contact|phone|reach/i.test(`${s.key} ${s.label}`));
+  const contactPairs = (contact?.fields ?? [])
+    .filter((f) => !f.sensitive && data.profile?.[f.key])
+    .slice(0, 4)
+    .map((f) => pair(f.label, String(data.profile[f.key])));
+
+  return h('div.person-overview',
+    t ? card('This month', { actions: open('attendance', 'Every day') },
+      h('div.person-figures',
+        h('div', h('strong', n(t.daysWorked)), h('span', 'days worked')),
+        h('div', h('strong', { class: t.lateCount ? 'is-warn' : '' }, String(t.lateCount ?? 0)), h('span', 'late')),
+        h('div', h('strong', { class: t.daysAbsent ? 'is-bad' : '' }, String(t.daysAbsent ?? 0)), h('span', 'absent')))) : null,
+    leave ? card('Leave', { actions: open('attendance', 'See leave') },
+      h('div.person-figures',
+        h('div', h('strong', n(leave.remaining)), h('span', `of ${n(leave.available)} days left`)),
+        h('div', h('strong', n(leave.taken)), h('span', 'taken this year')))) : null,
+    card('Documents', {
+      note: data.missing.length ? `${data.missing.length} missing` : 'Complete',
+      actions: open('documents', 'Open'),
+    },
+    data.missing.length
+      ? h('p', { style: { margin: 0 } }, `Still needed: ${data.missing.join(', ')}.`)
+      : h('p.muted', { style: { margin: 0 } }, 'Everything the file needs is in.'),
+    data.canManage && data.missing.length
+      ? h('button.btn-sm.btn-primary', { style: { marginTop: '.7rem' }, onclick: () => sendLink(data, reload) }, 'Ask them for it')
+      : null),
+    contactPairs.length ? card('Contact', { actions: open('details', 'Details') }, h('dl.detail-list', contactPairs)) : null,
+    card('Work', {},
+      h('dl.detail-list',
+        pair('Job', data.person.jobTitle),
+        pair('Department', data.person.department),
+        pair('Staff no.', data.person.employeeNo),
+        pair('Started', data.person.hiredOn ? fmtDay(data.person.hiredOn, { withYear: true }) : null),
+        pair('Left', data.person.leftOn ? fmtDay(data.person.leftOn, { withYear: true }) : null))),
+  );
+}
+
 function payCard(data, reload) {
   if (!can('hr_pay')) return null;
 

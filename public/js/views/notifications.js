@@ -34,9 +34,10 @@ export async function renderNotifications(params = {}) {
   const host = h('div');
   const tab = TABS.some(([key]) => key === params.tab) ? params.tab : 'kinds';
 
+  const embedded = Boolean(params.embedded);
   const reload = async (next = tab) => {
-    history.replaceState(null, '', `#/notifications?tab=${next}`);
-    mount(host, await renderNotifications({ tab: next }));
+    if (!embedded) history.replaceState(null, '', `#/notifications?tab=${next}`);
+    mount(host, await renderNotifications({ ...params, tab: next }));
   };
 
   const data = await api.notifications().catch((err) => ({ error: err.message }));
@@ -49,6 +50,11 @@ export async function renderNotifications(params = {}) {
     : tab === 'reach' ? await reachTab()
       : tab === 'sent' ? sentTab(data)
         : setupTab(data);
+
+  if (embedded) {
+    mount(host, body);
+    return host;
+  }
 
   mount(host,
     h('div.page-head',

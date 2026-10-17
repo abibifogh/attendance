@@ -34,9 +34,12 @@ export async function renderAttSetup(params) {
   const host = h('div');
   const tab = TABS.some(([key]) => key === params.tab) ? params.tab : 'staff';
 
+  // Embedded in Settings, it draws only the panel, and stays on Settings'
+  // own address when it redraws.
+  const embedded = Boolean(params.embedded);
   const reload = async (next = tab) => {
-    replaceParams('att-setup', { tab: next });
-    mount(host, await renderAttSetup({ tab: next }));
+    if (!embedded) replaceParams('att-setup', { tab: next });
+    mount(host, await renderAttSetup({ ...params, tab: next }));
   };
 
   // Switching a tab throws away whatever is half-typed on this one, and it
@@ -62,7 +65,7 @@ export async function renderAttSetup(params) {
     workload: workloadTab,
     tax: taxTab,
     birthdays: birthdaysTab,
-  }[tab](reload);
+  }[tab](reload, params);
 
   // The forms under Setup are the ones somebody types a page of figures into
   // and then walks away from. Watched as a whole rather than field by field:
@@ -76,6 +79,11 @@ export async function renderAttSetup(params) {
     () => (guard?.changed() ? 'Changes on this form are not saved' : null),
     { key: 'att-setup' },
   );
+
+  if (embedded) {
+    mount(host, body);
+    return host;
+  }
 
   mount(host,
     h('div.page-head',
@@ -2257,7 +2265,7 @@ function band(title, lead, ...cards) {
   );
 }
 
-async function rulesTab(reload) {
+async function rulesTab(reload, params = {}) {
   const data = await api.attBootstrap();
   const s = data.settings;
 
@@ -2633,9 +2641,20 @@ async function rulesTab(reload) {
 
     bar,
   );
+  // Settings shows the rules a topic at a time. Only the bands asked for stay
+  // on the form, so saving one topic sends only its own settings.
+  if (Array.isArray(params.bands) && params.bands.length) {
+    for (const el of [...form.querySelectorAll(':scope > .rules-band')]) {
+      if (!params.bands.includes(el.querySelector('h3')?.textContent)) el.remove();
+    }
+  }
 
   before = new FormData(form);
   check();
+
+  // The map key and the rebuild sit with the clocking rules, not with every
+  // topic Settings shows.
+  if (Array.isArray(params.bands) && params.bands.length && !params.extras) return h('div', form);
 
   return h('div',
     form,

@@ -19,6 +19,7 @@ import { renderMyDay } from './views/my-day.js';
 import { renderHome } from './views/home.js';
 import { renderInbox, inboxCount } from './views/inbox.js';
 import { renderRequests } from './views/requests.js';
+import { renderSettings } from './views/settings.js';
 import { renderAttMyReport } from './views/att-my-report.js';
 import { renderAttMyPayslips } from './views/att-my-payslips.js';
 import { renderDirectory } from './views/directory.js';
@@ -34,9 +35,6 @@ import { renderAttMedical } from './views/att-medical.js';
 import { renderAttPayrollTab } from './views/att-payroll.js';
 import { renderAttLeave } from './views/att-leave.js';
 import { renderAttSignoff } from './views/att-signoff.js';
-import { renderAttSetup } from './views/att-setup.js';
-import { renderAdmin } from './views/admin.js';
-import { renderNotifications } from './views/notifications.js';
 import { renderPeople } from './views/people.js';
 import { renderRec } from './views/rec.js';
 import { renderRecCandidate } from './views/rec-candidate.js';
@@ -195,9 +193,13 @@ const ROUTES = [
   { group: 'money', tab: 'Advances', path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances, live: ['pay'] },
   { group: 'money', tab: 'Medical claims', path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
 
-  { group: 'setup', tab: 'Settings', path: 'att-setup', label: 'Settings', permission: 'att_setup', render: renderAttSetup, live: ['admin', 'rota', 'attendance'] },
-  { group: 'setup', tab: 'Notifications', path: 'notifications', label: 'Notifications', permission: 'users', render: renderNotifications, live: ['admin'] },
-  { group: 'setup', tab: 'Users & data', path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin, live: ['admin'] },
+  // Everything set once, as topics down the side of one screen.
+  { group: 'setup', tab: 'Settings', path: 'settings', label: 'Settings', permission: ['att_setup', 'users'], render: renderSettings, live: ['admin'] },
+  // The three screens it replaced keep their addresses, and open the topic
+  // that holds what they showed.
+  { alias: 'settings', path: 'att-setup', label: 'Settings', permission: 'att_setup', render: (params) => renderSettings({ ...params, from: 'att-setup' }), live: ['admin'], hidden: true },
+  { alias: 'settings', path: 'notifications', label: 'Settings', permission: 'users', render: (params) => renderSettings({ ...params, from: 'notifications' }), live: ['admin'], hidden: true },
+  { alias: 'settings', path: 'admin', label: 'Settings', permission: 'users', render: (params) => renderSettings({ ...params, from: 'admin' }), live: ['admin'], hidden: true },
 
   // Reached from Home rather than from the menu: closing the till is a job on
   // the day's list, not a place somebody goes.
@@ -294,7 +296,7 @@ function defaultRoute() {
   // Home first, for both menus: the manager's for anybody who runs the floor,
   // their own for everybody else.
   const preferred = ['home', 'inbox', 'att-today', 'att-overview', 'att-rota', 'signoff', 'att-leave',
-    'people', 'letters', 'att-setup', 'notifications', 'admin', 'my-day', 'att-me'];
+    'people', 'letters', 'settings', 'my-day', 'att-me'];
   const wanted = preferred.find((path) => allowed(ROUTES.find((r) => r.path === path)));
   return wanted ?? ROUTES.find((r) => allowed(r) && !r.hidden)?.path ?? 'att-today';
 }
@@ -357,7 +359,8 @@ function myGroups() {
 
 /** Which group the screen on the page belongs to. */
 function hereGroup(groups = myGroups()) {
-  return groupOf(groups, currentRoute()?.path);
+  const route = currentRoute();
+  return groupOf(groups, route?.alias ?? route?.path);
 }
 
 /**

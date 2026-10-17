@@ -205,10 +205,16 @@ test('a link never promises a screen its holder cannot open', () => {
   }
 });
 
-test('somebody who manages logins but does not set the property up lands on their own tab', () => {
-  const setup = menuFor(['users'], { staffId: null }).find((g) => g.key === 'setup');
-  assert.equal(setup.label, 'Notifications');
-  assert.deepEqual(tabsOf(setup).map((t) => t.label), ['Notifications', 'Users & data']);
+test('Settings is one screen, and its old addresses still open it', () => {
+  const settings = ROUTE_LIST.find((r) => r.path === 'settings');
+  assert.deepEqual(settings.permission, ['att_setup', 'users']);
+  assert.equal(labels(['users'], { staffId: null }).includes('Settings'), true);
+  assert.deepEqual(tabsOf(menuFor(roleHolds('admin'), { staffId: null }).find((g) => g.key === 'setup')), []);
+  for (const path of ['att-setup', 'notifications', 'admin']) {
+    const old = ROUTE_LIST.find((r) => r.path === path);
+    assert.equal(old.hidden, true, path);
+    assert.match(APP, new RegExp(`alias: 'settings', path: '${path}'`));
+  }
 });
 
 test('the Inbox is open to whoever may decide something, and to nobody else', () => {
@@ -226,7 +232,7 @@ test('a screen opened by its own address lights up the link it lives under', () 
   const menu = menuFor(roleHolds('admin', 1), { staffId: 1 });
   for (const [path, label] of [
     ['signoff', 'Attendance'], ['att-leave', 'Attendance'], ['att-lunch', 'Rota'],
-    ['rec', 'People'], ['directory', 'People'], ['att-advances', 'Money'], ['admin', 'Settings'],
+    ['rec', 'People'], ['directory', 'People'], ['att-advances', 'Money'], ['settings', 'Settings'],
     ['att-my-payslips', 'Me'], ['swaps', 'Me'], ['inbox', 'Inbox'], ['home', 'Home'],
   ]) {
     assert.equal(groupOf(menu, path)?.label, label, path);

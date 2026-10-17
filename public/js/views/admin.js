@@ -23,9 +23,10 @@ export async function renderAdmin(params = {}) {
   const host = h('div');
   const tab = TABS.some(([key]) => key === params.tab) ? params.tab : 'people';
 
+  const embedded = Boolean(params.embedded);
   const reload = async (next = tab) => {
-    history.replaceState(null, '', `#/admin?tab=${next}`);
-    mount(host, await renderAdmin({ tab: next }));
+    if (!embedded) history.replaceState(null, '', `#/admin?tab=${next}`);
+    mount(host, await renderAdmin({ ...params, tab: next }));
   };
 
   const body = await {
@@ -33,6 +34,11 @@ export async function renderAdmin(params = {}) {
     data: dataTab,
     audit: auditTab,
   }[tab](reload);
+
+  if (embedded) {
+    mount(host, body);
+    return host;
+  }
 
   mount(host,
     h('div.page-head',

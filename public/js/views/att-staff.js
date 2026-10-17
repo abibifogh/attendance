@@ -38,10 +38,14 @@ export async function renderAttStaff(params) {
   ]);
   const single = from === to;
 
+  // Inside a person's record it draws without its own heading, and stays on
+  // the record's address when it moves.
+  const embedded = Boolean(params.embedded);
   const reload = async (next) => {
     const merged = { id, period, day: anchor, all: params.all, ...next };
-    replaceParams('att-staff', merged);
-    mount(host, await renderAttStaff(merged));
+    if (embedded) replaceParams('person', { ...merged, tab: 'attendance' });
+    else replaceParams('att-staff', merged);
+    mount(host, await renderAttStaff({ ...merged, embedded }));
   };
 
   const periods = h('div.seg',
@@ -472,7 +476,7 @@ export async function renderAttStaff(params) {
   if (leaveCard) leaveCard.classList.add('no-print');
 
   mount(host,
-    h('div.page-head',
+    embedded ? null : h('div.page-head',
       h('div',
         h('h1', data.staff.name),
         h('div.sub',
