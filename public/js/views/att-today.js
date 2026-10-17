@@ -230,33 +230,66 @@ export async function renderAttToday(params) {
     { key: 'label', label: 'Status', format: (v, r) => statusPill(r) },
   ];
 
+  // Only against days with something wrong with them. A column of buttons
+  // beside everybody who turned up on time is a column nobody reads.
+  const actionsFor = (r) => (needsAttention(r) ? h('div.btn-row',
+    manages
+      ? (r.resolution === 'resolved'
+        ? h('button.btn-sm', { onclick: () => undo(r) }, 'Undo')
+        : h('button.btn-sm', {
+          class: r.open ? 'btn-primary' : '',
+          onclick: () => resolve(r),
+        }, r.open ? 'Confirm' : 'Change'))
+      : null,
+    fixesTimes
+      ? h('button.btn-sm', {
+        class: !manages && r.open ? 'btn-primary' : '',
+        title: 'Change the clock-in or clock-out',
+        onclick: () => correctTimes(r),
+      }, 'Times')
+      : null,
+  ) : null);
+
   if (manages || fixesTimes) {
-    columns.push({
-      key: 'resolution',
-      label: '',
-      // Only against days with something wrong with them. A column of buttons
-      // beside everybody who turned up on time is a column nobody reads.
-      format: (v, r) => (needsAttention(r) ? h('div.btn-row',
-        manages
-          ? (v === 'resolved'
-            ? h('button.btn-sm', { onclick: () => undo(r) }, 'Undo')
-            : h('button.btn-sm', {
-              class: r.open ? 'btn-primary' : '',
-              onclick: () => resolve(r),
-            }, r.open ? 'Confirm' : 'Change'))
-          : null,
-        fixesTimes
-          ? h('button.btn-sm', {
-            class: !manages && r.open ? 'btn-primary' : '',
-            title: 'Change the clock-in or clock-out',
-            onclick: () => correctTimes(r),
-          }, 'Times')
-          : null,
-      ) : null),
-    });
+    columns.push({ key: 'resolution', label: '', format: (v, r) => actionsFor(r) });
   }
 
+  // On a phone each person is a row, not ten columns to scroll across.
+  const personRow = (r) => h('div.today-person', { class: `today-person is-${standing(r)}` },
+    h('span.today-dot', { class: `is-${standing(r)}`, 'aria-hidden': 'true' }),
+    h('div.today-person-main',
+      h('a', { href: `#/att-staff?id=${r.staff.id}&day=${day}` }, r.staff.name),
+      h('small.muted', [
+        r.shift ? `${r.shift.name} ${r.shift.starts_at}–${r.shift.ends_at}` : null,
+        r.first_in || r.last_out ? `${r.first_in || '—'} → ${r.last_out || '—'}` : null,
+      ].filter(Boolean).join(' · '))),
+    statusPill(r),
+    actionsFor(r));
+
   const departments = byDepartment(data.rows);
+
+  // Phones get a department filter as chips, and the people to deal with
+  // first, across every department.
+  let onlyDept = params.dept || null;
+  const deptChips = departments.length > 1
+    ? h('div.chips.only-narrow', { role: 'group', 'aria-label': 'Department' },
+      [null, ...departments.map((d) => d.department)].map((name) => h('button.chip', {
+        type: 'button',
+        class: onlyDept === name ? 'chip on' : 'chip',
+        'aria-pressed': String(onlyDept === name),
+        onclick: () => {
+          onlyDept = name;
+          for (const c of host.querySelectorAll('[data-dept]')) {
+            c.hidden = Boolean(onlyDept) && c.dataset.dept !== onlyDept;
+          }
+          for (const b of deptChips.querySelectorAll('.chip')) {
+            const on = b.textContent === (name ?? 'Everyone');
+            b.classList.toggle('on', on);
+            b.setAttribute('aria-pressed', String(on));
+          }
+        },
+      }, name ?? 'Everyone')))
+    : null;
 
   mount(host,
     h('div.page-head',
@@ -268,6 +301,7 @@ export async function renderAttToday(params) {
     ),
     nav,
     clocks,
+    quiet,
     birthdays,
 
     h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
@@ -277,10 +311,19 @@ export async function renderAttToday(params) {
       tile('To confirm', fmtNum(data.totals.openCount, 0), data.totals.openCount ? 'waiting on you' : 'all settled', data.totals.openCount ? 'var(--warn)' : null),
     ),
 
-    departments.map((group) => card(group.department, {
-      note: sayHowItStands(group),
-      wide: true,
-    }, table(columns, group.rows, { rowClass: (r) => `row-att-${r.colour}` }))),
+    deptChips,
+
+    departments.map((group) => {
+      const box = card(group.department, {
+        note: sayHowItStands(group),
+        wide: true,
+      },
+      h('div.only-wide', table(columns, group.rows, { rowClass: (r) => `row-att-${r.colour}` })),
+      h('div.today-people.only-narrow', group.rows.map(personRow)));
+      box.dataset.dept = group.department;
+      if (onlyDept && onlyDept !== group.department) box.hidden = true;
+      return box;
+    }),
   );
 
   return host;

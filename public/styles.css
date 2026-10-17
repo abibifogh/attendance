@@ -7345,3 +7345,21 @@ a.btn, a.btn-sm { text-decoration: none; display: inline-flex; align-items: cent
 .decide-pick { width: 100%; justify-content: flex-start; }
 .group-strips .group-tabs { justify-self: start; }
 .ask-tile { justify-content: start; align-content: space-between; width: 100%; }
+
+/* ---- Today on a phone: a row per person rather than ten columns ---- */
+.only-narrow { display: none; }
+@media (max-width: 720px) {
+  .only-wide { display: none; }
+  .only-narrow { display: block; }
+  .chips.only-narrow { display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .chips.only-narrow .chip { flex: none; }
+}
+.today-people { display: grid; }
+.today-person {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+  gap: .3rem .7rem; padding: .7rem 0; border-top: 1px solid var(--border);
+}
+.today-person:first-child { border-top: 0; }
+.today-person-main { display: grid; min-width: 0; }
+.today-person-main a { font-weight: 650; color: var(--text); text-decoration: none; }
+.today-person > .btn-row { grid-column: 2 / -1; margin: 0; }
