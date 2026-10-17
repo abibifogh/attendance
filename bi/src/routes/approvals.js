@@ -1,6 +1,7 @@
 import { all } from '../lib/db.js';
 import { badRequest, HttpError } from '../lib/http.js';
-import { callLink } from '../lib/link.js';
+import { callLink, signLink } from '../lib/link.js';
+import { listSources } from '../connectors/index.js';
 import * as till from './till.js';
 import * as newpo from './newpo.js';
 
@@ -22,6 +23,8 @@ import * as newpo from './newpo.js';
 const SYSTEMS = [
   { id: 'insight', label: 'Insight', list: insightList, decide: insightDecide },
   { id: 'hive', label: 'HIVE', list: hiveList, decide: hiveDecide, system: 'attendance' },
+  // The POS, once its address and the shared secret are set (Setup › sources, SSO_SECRET_POS).
+  { id: 'pos', label: 'POS', list: posList, decide: posDecide, system: 'pos', linked: async (env) => Boolean(env.SSO_SECRET_POS && await posBase(env)) },
 ];
 
 // ----------------------------------------------------------------- Insight --
@@ -134,6 +137,45 @@ async function hiveDecide(env, body, account) {
   return { said: out.said, as: out.as };
 }
 
+// --------------------------------------------------------------------- POS --
+
+/** Where the POS's notify function answers: the address its reports are read from. */
+async function posBase(env) {
+  const source = (await listSources(env.DB).catch(() => [])).find((x) => x.kind === 'snpos_http' && x.config?.base);
+  return source ? String(source.config.base).trim().replace(/\/+$/, '') : null;
+}
+
+/**
+ * One signed call to the POS, the same signature HIVE's link uses, with the
+ * POS's own shared secret: the POS checks it before reading anything.
+ */
+async function pos(env, path, body, { fetchImpl = fetch } = {}) {
+  const base = await posBase(env);
+  if (!base || !env.SSO_SECRET_POS) throw new Error('The POS is not linked: it needs its reports address in Setup and SSO_SECRET_POS.');
+  const text = JSON.stringify(body ?? {});
+  const headers = { 'Content-Type': 'application/json', ...(await signLink(env.SSO_SECRET_POS, path, text)) };
+  let response;
+  try { response = await fetchImpl(`${base}${path}`, { method: 'POST', headers, body: text }); } catch (err) { throw new Error(`The POS could not be reached: ${err.message}`); }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 404 && !data?.error) throw new Error('The POS does not take approvals from Insight yet: its notify function needs updating.');
+  if (!response.ok || data?.ok === false) {
+    const error = new Error(data?.error || `The POS answered ${response.status}.`);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+async function posList(env, account) {
+  const out = await pos(env, '/approvals/list', { email: account.email });
+  return { items: out.items || [], failed: out.failed || [] };
+}
+
+async function posDecide(env, body, account) {
+  const out = await pos(env, '/approvals/decide', { email: account.email, ...body });
+  return { said: out.said, as: out.as };
+}
+
 // ----------------------------------------------------------------- the page --
 
 /** Where each system's own screens are, from Setup › Systems. */
@@ -148,7 +190,8 @@ export async function list(env, account) {
   const home = await homes(env);
   const systems = [];
   const items = [];
-  await Promise.all(SYSTEMS.map(async (s) => {
+  const linked = await Promise.all(SYSTEMS.map((s) => (s.linked ? s.linked(env).catch(() => false) : true)));
+  await Promise.all(SYSTEMS.filter((_, i) => linked[i]).map(async (s) => {
     try {
       if (s.id !== 'insight' && !account.email) throw new Error('Your Insight account has no email, so the other systems cannot tell who you are.');
       const got = await s.list(env, account);
