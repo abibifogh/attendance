@@ -405,6 +405,16 @@ export async function renderShifts(root, { range }) {
     if (named) return openShift(named[1], named[2]);
     const line = /^(?:seq|[a-z-]+):(\d+)(?::\d+)?$/.exec(k);
     const fail = (text) => { if (button) { button.textContent = text; button.disabled = true; } };
+    // Money with no ASSD line: a terminal card (t:) or a bank line (b:), placed by its time.
+    if (/(?:^|:)[tb]:[^:]+$/.test(k)) {
+      try {
+        const w = await api(`/shifts/where?key=${encodeURIComponent(k)}`);
+        if (!w.day) return fail('Not in the files loaded');
+        if (w.slot) return openShift(w.day, w.slot);
+        mode = 'day';
+        return moveTo(w.day);
+      } catch (err) { return fail(err.message); }
+    }
     if (!line) return fail('Shift not known');
     const seq = Number(line[1]);
     try {

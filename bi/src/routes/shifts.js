@@ -6,7 +6,7 @@ import { toMinor } from '../lib/money.js';
 import { parseJournal, journalWindow, mergeEntry, segment, DRAWER } from '../shifts/assd.js';
 import { parseStatement } from '../shifts/bank.js';
 import { parseTerminalCsv } from '../shifts/terminal.js';
-import { reconcile, settlement, GROUPS, SLOTS } from '../shifts/reconcile.js';
+import { reconcile, settlement, GROUPS, SLOTS, minuteOf, slotAt, slotDay, slotName } from '../shifts/reconcile.js';
 import { listSources, secretNameFor } from '../connectors/index.js';
 import { purchaseOrders } from '../connectors/odoo.js';
 
@@ -730,6 +730,20 @@ export async function refundPaid(env, body, account) {
 
 /** The day an ASSD line was keyed on. */
 export async function whereIs(env, query) {
+  // Money with no ASSD line (a card on the terminal, a MoMo or card in the
+  // bank): its shift is the one its time falls in, or its day when it has none.
+  const ev = /(?:^|:)(t|b):([^:]+)$/.exec(String(query?.key || ''));
+  if (ev) {
+    const row = ev[1] === 't'
+      ? await first(env.DB, 'SELECT at, day FROM terminal_txn WHERE rrn = ?1', ev[2])
+      : await first(env.DB, 'SELECT at, day, card_day FROM bank_card_txn WHERE id = ?1', ev[2]);
+    if (!row) return { key: query.key, day: null, slot: null };
+    if (row.at) {
+      const t = slotAt(minuteOf(row.at));
+      return { key: query.key, day: slotDay(t), slot: slotName(t) };
+    }
+    return { key: query.key, day: row.card_day || row.day || null, slot: null };
+  }
   const seq = Number(query?.seq);
   if (!Number.isInteger(seq)) throw badRequest('Which ASSD line?');
   const row = await first(env.DB, 'SELECT day FROM assd_entry WHERE seq = ?1', seq);
