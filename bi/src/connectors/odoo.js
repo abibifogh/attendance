@@ -711,3 +711,39 @@ export async function todoOnPo({ config: settings, token, poId, userId, summary,
     summary: String(summary).slice(0, 120), note: String(note || ''), user_id: Number(userId),
   }, { fetchImpl });
 }
+
+/**
+ * Contacts or products in Odoo by name, as somebody types: for one made in
+ * Odoo just now. A contact counts as a vendor in Odoo's own lists only once a
+ * purchase or bill has used it, so a new "Vendor to confirm" is found here
+ * and not there. Products come back whether or not they may be purchased,
+ * so the screen can say why one cannot be chosen.
+ */
+export async function findInOdoo({ config: settings, token, kind, q, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const text = String(q || '').trim().slice(0, 80);
+  if (text.length < 2) return [];
+  if (kind === 'vendor') {
+    const rows = await call(config, 'res.partner', 'search_read', {
+      domain: [['name', 'ilike', text]], fields: ['name', 'supplier_rank', 'is_company'], limit: 20, order: 'supplier_rank desc, name',
+    }, { fetchImpl });
+    return (Array.isArray(rows) ? rows : rows?.records || []).map((r) => ({ id: r.id, name: String(r.name || '').trim(), vendor: Number(r.supplier_rank) > 0 })).filter((r) => r.name);
+  }
+  const rows = await call(config, 'product.product', 'search_read', {
+    domain: [['name', 'ilike', text]], fields: ['name', 'display_name', 'purchase_ok'], limit: 20, order: 'name',
+  }, { fetchImpl });
+  return (Array.isArray(rows) ? rows : rows?.records || []).map((r) => ({ id: r.id, name: String(r.display_name || r.name || '').trim(), purchaseOk: r.purchase_ok !== false })).filter((r) => r.name);
+}
+
+/** One contact or product by its id, as Odoo has it now; null when it is not there. */
+export async function oneInOdoo({ config: settings, token, kind, id, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const model = kind === 'vendor' ? 'res.partner' : 'product.product';
+  const rows = await call(config, model, 'search_read', {
+    domain: [['id', '=', Number(id)]], fields: kind === 'vendor' ? ['name'] : ['name', 'display_name', 'purchase_ok'], limit: 1,
+  }, { fetchImpl });
+  const r = (Array.isArray(rows) ? rows : rows?.records || []).find((x) => Number(x.id) === Number(id));
+  if (!r) return null;
+  return kind === 'vendor' ? { id: r.id, name: String(r.name || '').trim() }
+    : { id: r.id, name: String(r.display_name || r.name || '').trim(), purchaseOk: r.purchase_ok !== false };
+}

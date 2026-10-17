@@ -26,6 +26,40 @@ const when = (at) => {
 };
 const dayText = (d) => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '');
 
+/**
+ * A contact or product in Odoo, found by typing its name: Odoo is asked
+ * each time, so one made there a minute ago is found. A product that may not
+ * be purchased is shown, and says why it cannot be chosen.
+ */
+function odooPicker(kind, chosen, placeholder) {
+  let value = chosen ? { id: chosen.id, name: chosen.name } : null;
+  const now = h('div.rc-chosen');
+  const box = h('input', { type: 'search', placeholder, autocomplete: 'off', 'aria-label': placeholder });
+  const results = h('div.rc-results', { role: 'listbox' });
+  const show = () => mount(now, value ? [h('b', value.name), ' ', h('button.sh-link', { type: 'button', onclick: () => { value = null; show(); box.focus(); } }, 'Clear')] : h('span.muted', 'None chosen'));
+  let timer = null;
+  let asked = '';
+  box.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = box.value.trim();
+    if (q.length < 2) { mount(results); return; }
+    timer = setTimeout(async () => {
+      asked = q;
+      mount(results, h('small.muted', 'Searching Odoo…'));
+      try {
+        const out = await api(`/po/find?kind=${kind}&q=${encodeURIComponent(q)}`);
+        if (asked !== q) return;
+        mount(results, out.items.length ? out.items.map((x) => (kind === 'product' && !x.purchaseOk
+          ? h('div.rc-result.off', x.name, h('small', ' — not marked “Can be purchased” in Odoo: tick it there first'))
+          : h('button.rc-result', { type: 'button', onclick: () => { value = { id: x.id, name: x.name }; box.value = ''; mount(results); show(); } }, x.name)))
+          : h('small.muted', `Nothing in Odoo called “${q}”. Make it there first, then search again.`));
+      } catch (err) { mount(results, h('small.form-error', err.message)); }
+    }, 300);
+  });
+  show();
+  return { el: h('div.rc-picker', now, box, results), value: () => value };
+}
+
 export async function renderReceipts(root) {
   let data = null;
   let filter = 'all';
@@ -132,8 +166,8 @@ export async function renderReceipts(root) {
       let c;
       try { c = await api('/receipts/choices'); } catch (err) { mount(box, banner('problem', err.message)); return; }
       const pick = (list, chosen, none) => h('select', h('option', { value: '' }, none), list.map((x) => h('option', { value: String(x.id), selected: chosen?.id === x.id }, x.name)));
-      const vendor = pick(c.vendors, s.vendor, 'Choose: e.g. “Vendor to confirm”');
-      const product = pick(c.products, s.product, 'Choose: e.g. “Item to classify”');
+      const vendor = odooPicker('vendor', s.vendor, 'Type to search Odoo, e.g. Vendor to confirm');
+      const product = odooPicker('product', s.product, 'Type to search Odoo, e.g. Item to classify');
       const todo = pick(c.users, s.todoUser, 'Nobody: no To-Do');
       const address = h('input', { value: s.address, placeholder: 'receipts@po.niceoperation.com', maxlength: '200' });
       const senders = h('textarea', { rows: '3', placeholder: 'One email address per line' });
@@ -141,10 +175,10 @@ export async function renderReceipts(root) {
       const said = h('span.small');
       const ref = (sel, list) => (sel.value ? { id: Number(sel.value), name: list.find((x) => x.id === Number(sel.value))?.name } : null);
       mount(box,
-        h('label.rc-f', h('span', 'Vendor used when the receipt’s seller is not in Odoo'), vendor,
-          h('small.muted', 'Make it once in Odoo (a contact called “Vendor to confirm”); the accountant changes it to the real one.')),
-        h('label.rc-f', h('span', 'Item used when what was bought is not matched'), product,
-          h('small.muted', 'A product in Odoo such as “Item to classify”, which may be purchased.')),
+        h('div.rc-f', h('span', 'Vendor used when the receipt’s seller is not in Odoo'), vendor.el,
+          h('small.muted', 'Make it once in Odoo (a contact called “Vendor to confirm”), then search for it here; the accountant changes it to the real one.')),
+        h('div.rc-f', h('span', 'Item used when what was bought is not matched'), product.el,
+          h('small.muted', 'A product in Odoo such as “Item to classify”, with “Can be purchased” ticked.')),
         h('label.rc-f', h('span', 'Who gets a To-Do in Odoo on a draft to check'), todo),
         h('label.rc-f', h('span', 'The receipts email address'), address,
           h('small.muted', 'As set up in Cloudflare Email Routing (see docs/receipts.md). Shown here so people know where to send.')),
@@ -157,7 +191,7 @@ export async function renderReceipts(root) {
             try {
               data.settings = await api('/receipts/settings', {
                 method: 'POST',
-                body: { vendor: ref(vendor, c.vendors), product: ref(product, c.products), todoUser: ref(todo, c.users), address: address.value, senders: senders.value },
+                body: { vendor: vendor.value(), product: product.value(), todoUser: ref(todo, c.users), address: address.value, senders: senders.value },
               });
               paint('Settings saved.');
             } catch (err) { said.textContent = err.message; e.target.disabled = false; }

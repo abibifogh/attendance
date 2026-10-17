@@ -5,7 +5,7 @@ import { callLink } from '../lib/link.js';
 import { readEmail, addressOf } from '../lib/mime.js';
 import { poChoices, posOnDay, createDraftPo, attachToPo, noteOnPo, todoOnPo, odooUsers } from '../connectors/odoo.js';
 import { odooSource } from './safebook.js';
-import { closest, matchProduct, readReceipt } from './newpo.js';
+import { matchProduct, matchVendor, readReceipt } from './newpo.js';
 
 /**
  * Receipts made into draft POs, with nothing to fill in: several chosen at
@@ -58,12 +58,12 @@ export async function receiptSettings(env) {
   };
 }
 
-/** Odoo's vendors, items and people, for the settings' choices. */
+/** Odoo's people, for who gets a To-Do. The placeholders are found by name (`/api/po/find`). */
 export async function settingsChoices(env) {
   const s = await odooSource(env);
   if (!s) throw new HttpError(409, 'Odoo is not set up in Insight yet.');
-  const [{ vendors, products }, users] = await Promise.all([poChoices(s), odooUsers(s).catch(() => [])]);
-  return { vendors, products, users: users.map((u) => ({ id: u.id, name: u.name })) };
+  const users = await odooUsers(s).catch(() => []);
+  return { users: users.map((u) => ({ id: u.id, name: u.name })) };
 }
 
 export async function saveSettings(env, body) {
@@ -162,7 +162,7 @@ async function makePo(env, r, { data, today, fetchImpl }) {
   const opts = { ...s, ...(fetchImpl ? { fetchImpl } : {}) };
   const settings = await receiptSettings(env);
   const { vendors, products } = await poChoices(opts);
-  const vendor = read.vendor ? closest(read.vendor, vendors) : null;
+  const vendor = read.vendor ? await matchVendor(opts, read.vendor, vendors) : null;
   // Words first; failing that, the reader picks the nearest product by meaning.
   const match = read.description ? await matchProduct(env, read.description, products, { vendor: read.vendor }) : null;
   const product = match?.product || null;

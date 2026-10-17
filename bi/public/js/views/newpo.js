@@ -117,6 +117,32 @@ export function openNewPo({ receipt = null, bulk = false, after = null } = {}) {
     mount(inner, h('h2', 'New purchase order'), h('p.po-said.err', err.message), h('div.po-acts', h('button.btn', { type: 'button', onclick: close }, 'Close')));
   });
 
+  /**
+   * As somebody types a name Odoo's lists do not have, Odoo is asked for it by
+   * name: a contact made just now is not on the vendor list until it has been
+   * used, and is found this way. What is found joins the list to choose from.
+   */
+  function lookUp(input, kind) {
+    let timer = null;
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      const q = input.value.trim();
+      const list = kind === 'vendor' ? c.vendors : c.products;
+      if (q.length < 2 || list.some((x) => x.name.toLowerCase() === q.toLowerCase())) return;
+      timer = setTimeout(async () => {
+        const out = await api(`/po/find?kind=${kind}&q=${encodeURIComponent(q)}`).catch(() => null);
+        const data = inner.querySelector(`#po-${kind === 'vendor' ? 'vendors' : 'products'}`);
+        for (const x of out?.items || []) {
+          if (kind === 'product' && !x.purchaseOk) continue;
+          if (list.some((y) => y.id === x.id)) continue;
+          list.push({ id: x.id, name: x.name });
+          data?.append(h('option', { value: x.name }));
+        }
+        const off = (out?.items || []).find((x) => kind === 'product' && !x.purchaseOk && x.name.toLowerCase() === q.toLowerCase());
+        if (off) { input.classList.add('po-ask'); input.title = `“${off.name}” is not marked “Can be purchased” in Odoo: tick it there first.`; }
+      }, 300);
+    });
+  }
   const idOf = (list, name) => list.find((x) => x.name.toLowerCase() === String(name || '').trim().toLowerCase())?.id || null;
 
   function form(said = null) {
@@ -127,11 +153,13 @@ export function openNewPo({ receipt = null, bulk = false, after = null } = {}) {
     };
     const vendor = h('input', { value: v.vendor, placeholder: 'Start typing: vendors in Odoo', autocomplete: 'off' });
     vendor.setAttribute('list', 'po-vendors');
+    lookUp(vendor, 'vendor');
     const amount = h('input', { inputmode: 'decimal', value: v.amount, placeholder: '0.00', autocomplete: 'off' });
     const date = h('input', { type: 'date', value: v.date });
     const description = h('input', { value: v.description, placeholder: 'What is being bought', maxlength: '200' });
     const product = h('input', { value: v.product, placeholder: 'Matched from the description', autocomplete: 'off' });
     product.setAttribute('list', 'po-products');
+    lookUp(product, 'product');
     const drawerBox = h('input', { type: 'checkbox', checked: v.drawer });
     const keep = () => { Object.assign(v, { vendor: vendor.value, amount: amount.value, date: date.value, description: description.value, product: product.value, drawer: drawerBox.checked }); };
     // The item follows the description until somebody chooses one.

@@ -1779,3 +1779,11 @@ label.fm-row input { margin-top: .2rem; }
 .rc-mails ul { margin: .5rem 0 0; padding-left: 1.1rem; font-size: .85rem; display: grid; gap: .25rem; }
 .rc-open { display: flex; flex-wrap: wrap; gap: .4rem .8rem; align-items: center; }
 .rc-open p { margin: 0; flex: 1 1 18rem; }
+.rc-picker { display: grid; gap: .35rem; max-width: 32rem; }
+.rc-picker input { font: inherit; padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.rc-chosen { font-size: .9rem; }
+.rc-results { display: grid; gap: 2px; }
+.rc-results:empty { display: none; }
+.rc-result { text-align: left; border: 1px solid var(--border); border-radius: 8px; padding: .45rem .6rem; background: var(--surface); color: var(--ink); font: inherit; font-size: .9rem; cursor: pointer; }
+.rc-result:hover { background: var(--surface-2); }
+.rc-result.off { cursor: default; color: var(--muted); }
