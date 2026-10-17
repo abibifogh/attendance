@@ -142,6 +142,26 @@ async function pdfText(env, base64, name) {
 }
 
 /**
+ * A receipt read: what was read (vendor as written, amount, description,
+ * date, problem), or null. `hint` is a line somebody wrote with it ("fuel for
+ * the generator"), to help, never to be taken over what the receipt says.
+ * `noText` is a PDF with no text in it, which a photo would read.
+ */
+export async function readReceipt(env, { mime, data, name = null, hint = '', today = todayIn('UTC') }) {
+  const ask_ = prompt('receipt', today) + (hint ? `\nWhoever sent it wrote: "${String(hint).slice(0, 300)}". Use it only to help read the receipt.` : '');
+  if (mime === 'application/pdf') {
+    let content = '';
+    let note = '';
+    try { content = await pdfText(env, data, name); } catch (err) { note = String(err?.message || err); }
+    if (!content) return { read: null, noText: true, said: note || 'This PDF has no text in it (a scan). Take a photo of the receipt instead, or fill in the details by hand.' };
+    const { out } = await ask(env, [{ role: 'user', content: `${ask_}\n\nThe receipt, as text:\n${content.slice(0, 6000)}` }]);
+    return { read: out };
+  }
+  const { out } = await ask(env, [{ role: 'user', content: [{ type: 'text', text: ask_ }, { type: 'image_url', image_url: { url: `data:${mime};base64,${data}` } }] }]);
+  return { read: out };
+}
+
+/**
  * Fill the form from a sentence or a receipt. Returns what was read, matched
  * to a vendor and a product in Odoo where one is close enough, and the vendor
  * the last PO for that product went to when the sentence named none.
@@ -152,7 +172,6 @@ export async function readPo(env, body, { fetchImpl } = {}) {
   const file = String(body?.file || '');
   if (!text && !file) throw badRequest('Type what to buy, or choose a receipt.');
   let read = null;
-  let note = '';
   if (text) {
     if (env.AI) {
       const { out } = await ask(env, [{ role: 'user', content: `${prompt('text', today)}\n\nWhat was typed: ${text}` }]);
@@ -166,18 +185,9 @@ export async function readPo(env, body, { fetchImpl } = {}) {
     if (!m) throw badRequest('Choose a photo or a PDF of the receipt.');
     if (m[2].length > FILE_MAX) throw badRequest('That file is too large: a photo, or a PDF under 5 MB.');
     if (!env.AI) throw new HttpError(503, 'The reader (Workers AI) is not available. Fill in the details by hand; the receipt is still attached.');
-    if (m[1] === 'application/pdf') {
-      let content = '';
-      try { content = await pdfText(env, m[2], body?.name); } catch (err) { note = String(err?.message || err); }
-      if (!content) {
-        return { read: null, said: note || 'This PDF has no text in it (a scan). Take a photo of the receipt instead, or fill in the details by hand.' };
-      }
-      const { out } = await ask(env, [{ role: 'user', content: `${prompt('receipt', today)}\n\nThe receipt, as text:\n${content.slice(0, 6000)}` }]);
-      read = out;
-    } else {
-      const { out } = await ask(env, [{ role: 'user', content: [{ type: 'text', text: prompt('receipt', today) }, { type: 'image_url', image_url: { url: file } }] }]);
-      read = out;
-    }
+    const got = await readReceipt(env, { mime: m[1], data: m[2], name: body?.name, today });
+    if (got.noText) return { read: null, said: got.said };
+    read = got.read;
     if (!read) return { read: null, said: 'The receipt could not be read just now. Fill in the details by hand; the receipt is still attached.' };
   }
   const s = await source(env);

@@ -21,6 +21,7 @@ import { renderPrepaid } from './views/prepaid.js';
 import { renderNicePlace } from './views/niceplace.js';
 import { openNewPo } from './views/newpo.js';
 import { renderApprovals, approvalsCount } from './views/approvals.js';
+import { renderReceipts } from './views/receipts.js';
 
 export const state = {
   boot: null,
@@ -55,6 +56,8 @@ const ROUTES = [
   // The public washroom: its door counters against the money reported.
   { path: 'niceplace', label: 'Nice Place', render: renderNicePlace },
   { path: 'buying', label: 'Buying', render: renderSuppliers },
+  // Receipts made into draft POs, uploaded or emailed in. Admins.
+  { path: 'receipts', label: 'Receipts', render: renderReceipts, needs: 'admin' },
   { path: 'books', label: 'Books', render: renderBooks },
   { path: 'findings', label: 'Findings', render: renderFindings, needs: 'insight' },
   { path: 'accounts', label: 'Accounts', render: renderAccounts, needs: 'owner' },
@@ -70,7 +73,7 @@ const ROUTES = [
  */
 const NAV_GROUPS = [
   ['Today', ['hub', 'brief', 'findings']],
-  ['Money', ['money', 'yardstick', 'cash', 'prepaid', 'books', 'buying']],
+  ['Money', ['money', 'yardstick', 'cash', 'prepaid', 'books', 'buying', 'receipts']],
   ['Operations', ['shifts', 'upload', 'niceplace', 'labour', 'guests']],
   ['Admin', ['accounts', 'reports', 'setup']],
 ];

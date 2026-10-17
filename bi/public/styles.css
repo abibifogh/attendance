@@ -1736,3 +1736,44 @@ label.fm-row input { margin-top: .2rem; }
 .ap-said { margin: 0; }
 .ap-said:empty { display: none; }
 .ap-done a { margin-left: .3rem; }
+
+/* Just the receipts, in the ＋ PO sheet. */
+.po-many { display: grid; gap: .35rem; margin: .6rem 0; }
+.po-mfile { display: grid; grid-template-columns: 2.6rem minmax(0, 1fr) auto; gap: .6rem; align-items: center; padding: .3rem; border: 1px solid var(--border); border-radius: 9px; }
+.po-mfile img, .po-mfile > span:first-child { width: 2.6rem; height: 2.6rem; object-fit: cover; border-radius: 6px; display: grid; place-items: center; background: var(--surface-2); }
+.po-mfile small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-mres { font-size: .8rem; max-width: 15rem; text-align: right; }
+.po-mres.complete, .po-mres.filled { color: var(--good-text); }
+.po-mres.check { color: var(--sh-warn-ink); }
+.po-mres.unread, .po-mres.failed { color: var(--sh-bad-ink); }
+.po-sheet .po-in > input { width: 100%; box-sizing: border-box; font: inherit; padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); }
+
+/* Money › Receipts. */
+.rc { display: grid; gap: .8rem; }
+.rc-head h1 { margin: 0 0 .15rem; font-size: 1.25rem; }
+.rc-top { display: flex; flex-wrap: wrap; gap: .6rem 1rem; align-items: flex-start; justify-content: space-between; }
+.rc-addr { margin: .5rem 0 0; font-size: .9rem; overflow-wrap: anywhere; }
+.rc-list { padding: .2rem .8rem; }
+.rc-row { display: grid; grid-template-columns: 2.8rem minmax(8rem, .9fr) minmax(0, 1.6fr) minmax(8rem, 1fr) auto; gap: .5rem .9rem; align-items: center; padding: .65rem 0; border-top: 1px solid var(--border); }
+.rc-row:first-child { border-top: 0; }
+.rc-row > div { display: grid; gap: .1rem; min-width: 0; }
+.rc-row small { color: var(--muted); }
+.rc-thumb { width: 2.8rem; height: 2.8rem; border-radius: 6px; object-fit: cover; background: var(--surface-2); display: grid; place-items: center; font-size: 1.2rem; }
+.rc-read > div { overflow-wrap: anywhere; }
+.rc-row small.rc-problem { color: var(--sh-warn-ink); }
+.rc-row.unread small.rc-problem, .rc-row.failed small.rc-problem { color: var(--sh-bad-ink); }
+.rc-po { display: block !important; font-size: .88rem; }
+.rc-act { display: flex !important; flex-wrap: wrap; gap: .4rem .6rem; align-items: center; justify-content: flex-end; font-size: .86rem; }
+.rc-row.dismissed { opacity: .55; }
+@media (max-width: 760px) {
+  .rc-row { grid-template-columns: 2.8rem minmax(0, 1fr); }
+  .rc-row > .rc-read, .rc-row > .rc-po, .rc-row > .rc-act { grid-column: 2; }
+  .rc-act { justify-content: flex-start; }
+}
+.rc-set summary, .rc-mails summary { cursor: pointer; font-weight: 600; }
+.rc-set > div { display: grid; gap: .8rem; margin-top: .7rem; }
+.rc-f { display: grid; gap: .25rem; font-size: .88rem; }
+.rc-f > span { font-weight: 600; }
+.rc-f select, .rc-f input, .rc-f textarea { font: inherit; padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); max-width: 32rem; }
+.rc-save { display: flex; gap: .6rem; align-items: center; }
+.rc-mails ul { margin: .5rem 0 0; padding-left: 1.1rem; font-size: .85rem; display: grid; gap: .25rem; }
