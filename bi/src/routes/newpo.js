@@ -1,4 +1,4 @@
-import { all, run } from '../lib/db.js';
+import { all, first, run } from '../lib/db.js';
 import { badRequest, HttpError, str } from '../lib/http.js';
 import { todayIn, isDay, addDays } from '../lib/dates.js';
 import { poChoices, lastVendorFor, posOnDay, createDraftPo, attachToPo, whoAmI } from '../connectors/odoo.js';
@@ -276,13 +276,62 @@ export async function createPo(env, body, account, { fetchImpl } = {}) {
       attached = true;
     } catch (err) { attachError = String(err?.message || err).slice(0, 200); }
   }
-  await run(env.DB, `INSERT INTO po_created (odoo_id, name, vendor, product, description, amount, total, day, receipt, by_name, at)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
-  po.id, po.name, d.vendor.name, d.product.name, d.description, d.amount, po.total, d.day, attached ? 1 : 0, who(account), now()).catch(() => null);
+  // Paid from a drawer only if allowed: ticked here, or later when staff ask.
+  const drawer = body?.drawer === true;
+  await run(env.DB, `INSERT INTO po_created (odoo_id, name, vendor, product, description, amount, total, day, receipt, by_name, at, drawer_ok, drawer_by, drawer_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?11)`,
+  po.id, po.name, d.vendor.name, d.product.name, d.description, d.amount, po.total, d.day, attached ? 1 : 0, who(account), now(),
+  drawer ? 1 : null, drawer ? who(account) : null).catch((err) => console.error('Create PO: keeping it', err));
   return { ok: true, po: { ...po, vendor: d.vendor.name, description: d.description, amount: d.amount, date: d.day }, attached, attachError };
 }
 
 /** The POs made from here lately, newest first. */
 export async function recentPos(env) {
   return { items: await all(env.DB, 'SELECT * FROM po_created ORDER BY id DESC LIMIT 20').catch(() => []) };
+}
+
+// ------------------------------------------- paid from a shift's drawer --
+
+/**
+ * POs made here, as HIVE needs to know them when somebody puts one on a
+ * shift: made in Insight, and whether an admin allowed it from a drawer.
+ */
+export async function madeHere(env, names) {
+  const wanted = [...new Set((names || []).map((n) => String(n || '').trim().toUpperCase()).filter(Boolean))];
+  if (!wanted.length) return new Map();
+  const rows = await all(env.DB, `SELECT * FROM po_created WHERE UPPER(name) IN (${wanted.map((_, i) => `?${i + 1}`).join(', ')}) ORDER BY id`, ...wanted).catch(() => []);
+  return new Map(rows.map((r) => [String(r.name).toUpperCase(), {
+    by: r.by_name, at: r.at, allowed: Number(r.drawer_ok) === 1, refused: r.drawer_ok != null && Number(r.drawer_ok) === 0,
+    decidedBy: r.drawer_by || null, note: r.drawer_note || null,
+  }]));
+}
+
+/** A member of staff tried to put one on a shift: the admins are asked, once. */
+export async function askForDrawer(env, body) {
+  const name = String(body?.name || '').trim().toUpperCase();
+  const by = str(body?.by, 'Who', { max: 120 }) || 'Somebody';
+  if (!name) throw badRequest('Which PO?');
+  await run(env.DB, 'UPDATE po_created SET asked_by = ?2, asked_at = ?3 WHERE UPPER(name) = ?1 AND drawer_ok IS NULL AND asked_at IS NULL', name, by, now());
+  return { ok: true };
+}
+
+/** What is waiting for an admin: POs made here that somebody wants to pay from a drawer. */
+export async function drawerAsks(env) {
+  const rows = await all(env.DB, 'SELECT * FROM po_created WHERE drawer_ok IS NULL AND asked_at IS NOT NULL ORDER BY asked_at').catch(() => []);
+  return { items: rows.map((r) => ({ name: r.name, vendor: r.vendor, description: r.description, amount: r.amount, total: r.total, day: r.day, madeBy: r.by_name, madeAt: r.at, askedBy: r.asked_by, askedAt: r.asked_at })) };
+}
+
+/** Allow it on a shift, or refuse with a reason (or take either back). */
+export async function decideDrawer(env, body, account) {
+  const name = String(body?.name || '').trim().toUpperCase();
+  const row = name ? await first(env.DB, 'SELECT id FROM po_created WHERE UPPER(name) = ?1', name) : null;
+  if (!row) throw new HttpError(404, 'That PO was not made in Insight.');
+  if (body?.undo) {
+    await run(env.DB, 'UPDATE po_created SET drawer_ok = NULL, drawer_by = NULL, drawer_at = NULL, drawer_note = NULL WHERE id = ?1', row.id);
+    return { ok: true };
+  }
+  const allow = body?.allow === true;
+  const note = str(body?.note, 'Why', { required: !allow, max: 300 });
+  await run(env.DB, 'UPDATE po_created SET drawer_ok = ?2, drawer_by = ?3, drawer_at = ?4, drawer_note = ?5 WHERE id = ?1', row.id, allow ? 1 : 0, who(account), now(), note);
+  return { ok: true };
 }

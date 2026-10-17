@@ -77,7 +77,7 @@ export function openNewPo() {
   // What the form holds, and which fields were read (green) or need a choice (amber).
   let v = blank();
   function blank() {
-    return { vendor: '', amount: '', date: new Date().toISOString().slice(0, 10), description: '', product: '', file: null, fileName: '', flags: {}, hints: {} };
+    return { vendor: '', amount: '', date: new Date().toISOString().slice(0, 10), description: '', product: '', drawer: false, file: null, fileName: '', flags: {}, hints: {} };
   }
   let c = null;
 
@@ -101,7 +101,8 @@ export function openNewPo() {
     const description = h('input', { value: v.description, placeholder: 'What is being bought', maxlength: '200' });
     const product = h('input', { value: v.product, placeholder: 'Matched from the description', autocomplete: 'off' });
     product.setAttribute('list', 'po-products');
-    const keep = () => { Object.assign(v, { vendor: vendor.value, amount: amount.value, date: date.value, description: description.value, product: product.value }); };
+    const drawerBox = h('input', { type: 'checkbox', checked: v.drawer });
+    const keep = () => { Object.assign(v, { vendor: vendor.value, amount: amount.value, date: date.value, description: description.value, product: product.value, drawer: drawerBox.checked }); };
     // The item follows the description until somebody chooses one.
     let chosen = Boolean(v.product);
     product.addEventListener('input', () => { chosen = Boolean(product.value); });
@@ -164,7 +165,7 @@ export function openNewPo() {
         !(Number(String(v.amount).replace(/,/g, '')) > 0) && 'the amount', !v.description.trim() && 'the description', !productId && 'the item in Odoo'].filter(Boolean);
       if (missing.length) { err.textContent = `Still needed: ${missing.join('; ')}.`; return; }
       err.textContent = 'Checking…';
-      const body = { vendorId, productId, amount: String(v.amount).replace(/,/g, ''), description: v.description.trim(), date: v.date };
+      const body = { vendorId, productId, amount: String(v.amount).replace(/,/g, ''), description: v.description.trim(), date: v.date, drawer: v.drawer };
       try { confirm(body, await api('/po/check', { method: 'POST', body })); } catch (e) { err.textContent = e.message; }
     };
 
@@ -189,6 +190,8 @@ export function openNewPo() {
       h('div.po-two', field('amount', amount, 'Amount, GH₵'), field('date', date, 'Date')),
       field('description', description, 'Description'),
       field('product', product, 'Item in Odoo'),
+      // An admin's own PO is not a shift's expense unless allowed: here, or when staff ask.
+      h('label.po-check', drawerBox, h('span', 'Staff may pay this from a drawer ', h('small', '(put it on a shift’s expenses). Leave it off for a PO paid another way.'))),
       h('datalist', { id: 'po-vendors' }, c.vendors.map((x) => h('option', { value: x.name }))),
       h('datalist', { id: 'po-products' }, c.products.map((x) => h('option', { value: x.name }))),
       err,
@@ -228,7 +231,8 @@ export function openNewPo() {
         h('dt', 'Total'), h('dd', h('b', money(p.amount))),
         h('dt', 'Date'), h('dd', dayText(p.date)),
         h('dt', 'In Odoo as'), h('dd', 'Draft (Request for quotation), approved in Odoo as usual'),
-        h('dt', 'Receipt'), h('dd', v.file ? `${v.fileName || 'attached'}` : 'none')),
+        h('dt', 'Receipt'), h('dd', v.file ? `${v.fileName || 'attached'}` : 'none'),
+        h('dt', 'From a drawer'), h('dd', v.drawer ? 'Allowed: staff can put it on a shift’s expenses' : 'Not allowed unless you allow it later (staff who try will ask you)')),
       out.alike.length ? h('div.po-warn', '⚠ Looks like one already there: ',
         out.alike.map((a, i) => [i ? '; ' : '', h('b', a.name), ` · ${money(a.total)} · ${a.state === 'draft' ? 'draft' : a.state}${a.by ? `, by ${a.by}` : ''}`]),
         '. Create anyway only if this is a second purchase.') : null,

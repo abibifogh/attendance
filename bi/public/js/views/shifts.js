@@ -263,7 +263,7 @@ export async function renderShifts(root, { range }) {
   // approvals. Read in the background on opening, so the tab shows its count,
   // and again after anything in it is answered.
   let stays = null;
-  const sources = { todo: null, advances: null, till: null, refunds: null, odoo: null, np: null, proof: null };
+  const sources = { todo: null, advances: null, till: null, refunds: null, odoo: null, np: null, proof: null, drawerPos: null };
   let askOdoo = false;
   function readStays() {
     if (!can.stays) return Promise.resolve(null);
@@ -278,6 +278,8 @@ export async function renderShifts(root, { range }) {
       can.answers || can.approvals ? quiet(till.read(force).then((d) => { sources.till = d; })) : null,
       may('bank') ? quiet(api('/shifts/refunds').then((d) => { sources.refunds = d; })) : null,
       can.niceplace ? quiet(api('/np/pending').then((d) => { sources.np = d; })) : null,
+      // POs made in Insight that staff want to pay from a drawer: for an admin to allow.
+      admin ? quiet(api('/po/drawer').then((d) => { sources.drawerPos = d; })) : null,
       // Proof an admin asked of this person, for an answer they gave.
       quiet(api('/proof/mine').then((d) => { sources.proof = d; })),
       // Odoo's activities: everyone's for an admin, one's own once linked, and those on POs with Odoo shared.
@@ -2622,6 +2624,26 @@ export async function renderShifts(root, { range }) {
   // -------------------------------------------------------------- inbox --
 
   /** Pairs that are probably the same money, each reconciled with one click. */
+  /**
+   * A PO made in Insight that a member of staff tried to put on a shift: an
+   * admin's own PO is not a drawer's expense unless allowed.
+   */
+  function drawerPoCard(p, after) {
+    const note = h('input', { type: 'text', maxlength: '300', placeholder: 'Why not (needed to refuse), e.g. paid by MoMo from the office' });
+    const said = h('span.small');
+    const decide = (allow) => async (e) => {
+      if (!allow && !note.value.trim()) { said.textContent = 'Say why it is not paid from a drawer.'; note.focus(); return; }
+      e.target.disabled = true;
+      try { await api('/po/drawer', { method: 'POST', body: { name: p.name, allow, note: note.value } }); await after(allow ? `${p.name} can go on a shift now.` : `${p.name} stays off the shifts.`); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+    };
+    return h('article.sh-ex.warn',
+      h('div.hd', h('span.sq', 'PO'), h('h3', `${p.name} · ${p.vendor || ''}`), h('span.amt.num', money(p.total ?? p.amount))),
+      h('p', `${p.askedBy || 'Somebody'} tried to put it on a shift’s expenses ${p.askedAt ? `(${String(p.askedAt).slice(0, 16)})` : ''}. It was made in Insight by ${p.madeBy || 'an admin'}${p.madeAt ? ` on ${dayText(String(p.madeAt).slice(0, 10))}` : ''}: “${p.description || ''}”.`),
+      h('p.small', 'Allow it if the cash for it came out of a drawer. Refuse it if it was paid another way (the office, MoMo, the bank): then it can never cover cash missing from a drawer.'),
+      note,
+      h('div.sh-labels', h('button.btn.primary', { type: 'button', onclick: decide(true) }, 'Allow on a shift'), h('button.btn', { type: 'button', onclick: decide(false) }, 'Refuse'), said));
+  }
+
   /** One Odoo activity: what it is on, whose it is, when it was due; done in Odoo, not here. */
   function odooCard(a) {
     const row = (label, ...value) => h('tr', h('td', { style: 'width:9rem;color:var(--ink-2)' }, label), h('td', ...value));
@@ -2756,6 +2778,15 @@ export async function renderShifts(root, { range }) {
           age: daysAgo(i.answer?.at || i.day), counts: true, render: () => till.issueCard(i, () => after('Done.')),
         });
       }
+    }
+    // A PO made in Insight that somebody wants to put on a shift: allowed or refused here.
+    for (const p of sources.drawerPos?.items || []) {
+      out.push({
+        id: `pd:${p.name}`, kind: 'admin', title: `${p.askedBy || 'Somebody'} wants to pay ${p.name} from a drawer`,
+        sub: `${p.vendor || ''} · made in Insight by ${p.madeBy || 'an admin'}`, amount: money(p.total ?? p.amount),
+        chip: ['none', 'Allow?'], tone: 'none', age: daysAgo(p.askedAt), counts: true,
+        render: () => drawerPoCard(p, after),
+      });
     }
     // Proof asked of this person for an answer they gave: pictures or a PDF, sent from here.
     for (const r of sources.proof?.requests || []) {

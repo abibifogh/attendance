@@ -8,6 +8,7 @@ import { compare, issuesFor, readReport, withStatus, FINAL, KINDS } from '../shi
 import { shifts as shiftsFor } from './shifts.js';
 import { formLive, poExtras } from './advances.js';
 import { openForHive } from './proof.js';
+import { madeHere } from './newpo.js';
 
 /**
  * Closing a shift in HIVE, as this app sees it.
@@ -277,6 +278,8 @@ export async function linkPo(env, body, { fetchImpl } = {}) {
     .map((r) => [String(r.po).toUpperCase(), r.day]));
   // What the expense form says about each, and anything an admin decided.
   const extras = await poExtras(env, result.orders.map((o) => o.name));
+  // Made in Insight: on a shift only once an admin allows it.
+  const made = await madeHere(env, result.orders.map((o) => o.name));
   return {
     formLive: formLive(env),
     found: typed.map((t) => {
@@ -288,6 +291,7 @@ export async function linkPo(env, body, { fetchImpl } = {}) {
           typed: t, name: order.name, vendor: order.vendor, total: order.total, state: order.state, confirmed: CONFIRMED.has(order.state), orderedOn: order.orderedOn,
           ...(safeDay ? { safe: { day: safeDay } } : {}),
           ...extras(order.name),
+          ...(made.has(String(order.name).toUpperCase()) ? { madeInInsight: made.get(String(order.name).toUpperCase()) } : {}),
         }
         : { typed: t, name: null };
     }),

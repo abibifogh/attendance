@@ -1662,3 +1662,7 @@ label.fm-row input { margin-top: .2rem; }
 .sh-brief-figs { display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; }
 .sh-brief-fig { display: grid; gap: .1rem; }
 .sh-brief-fig small { color: var(--ink-2); font-size: .74rem; }
+
+.po-sheet label.po-check { display: flex; gap: .55rem; align-items: flex-start; font-size: .88rem; margin: .2rem 0 .7rem; }
+.po-sheet label.po-check input { width: auto; margin-top: .2rem; }
+.po-sheet label.po-check small { color: var(--ink-2); }

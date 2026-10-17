@@ -168,3 +168,29 @@ test('when Odoo will not create it, its own words are shown; when it made it but
   const second = odoo({ fail: null });
   assert.equal((await newpo.createPo(env, { ...body, again: true }, OWNER, { fetchImpl: second.fetchImpl })).ok, true);
 });
+
+test('a PO made here is a shift’s expense only once an admin allows it: ticked when made, or when staff ask', async () => {
+  const env = await setUp(null);
+  const { fetchImpl } = odoo();
+  const body = { vendorId: 11, productId: 21, amount: '800', description: 'Fuel', date: today };
+  await newpo.createPo(env, { ...body, drawer: true }, OWNER, { fetchImpl });
+  await newpo.createPo(env, { ...body, vendorId: 12, amount: '145', description: 'Padlocks' }, OWNER, { fetchImpl });
+  let made = await newpo.madeHere(env, ['p02517', 'P02518', 'P99999']);
+  assert.deepEqual([made.get('P02517').allowed, made.get('P02518').allowed, made.get('P02518').refused, made.has('P99999')], [true, false, false, false]);
+
+  // Staff try P02518 on a shift: the admins are asked, once.
+  await newpo.askForDrawer(env, { name: 'P02518', by: 'Kofi Test' });
+  await newpo.askForDrawer(env, { name: 'P02518', by: 'Ama Test' });
+  let asks = (await newpo.drawerAsks(env)).items;
+  assert.deepEqual(asks.map((a) => [a.name, a.askedBy, a.madeBy]), [['P02518', 'Kofi Test', 'Test Owner']]);
+  await assert.rejects(newpo.decideDrawer(env, { name: 'P02518', allow: false }, OWNER), /Why/);
+  await newpo.decideDrawer(env, { name: 'P02518', allow: false, note: 'Paid by MoMo from the office' }, OWNER);
+  made = await newpo.madeHere(env, ['P02518']);
+  assert.deepEqual([made.get('P02518').refused, made.get('P02518').note, made.get('P02518').decidedBy], [true, 'Paid by MoMo from the office', 'Test Owner']);
+  assert.equal((await newpo.drawerAsks(env)).items.length, 0, 'decided: off the Inbox');
+  await newpo.decideDrawer(env, { name: 'P02518', allow: true }, OWNER);
+  assert.equal((await newpo.madeHere(env, ['P02518'])).get('P02518').allowed, true);
+  await assert.rejects(newpo.decideDrawer(env, { name: 'P00001', allow: true }, OWNER), /not made in Insight/);
+  asks = (await newpo.drawerAsks(env)).items;
+  assert.equal(asks.length, 0);
+});

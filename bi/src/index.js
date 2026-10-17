@@ -211,6 +211,8 @@ const ROUTES = [
   ['POST', '/api/link/till/recipients', 'link', (env, ctx) => till.linkRecipients(env, ctx.body)],
   // A staff member sending the proof an admin asked for, from HIVE's To sort out.
   ['POST', '/api/link/till/proof', 'link', (env, ctx) => proof.linkSend(env, ctx.body)],
+  // Staff put a PO made in Insight on a shift: the admins are asked to allow it.
+  ['POST', '/api/link/till/po-ask', 'link', (env, ctx) => newpo.askForDrawer(env, ctx.body)],
 
   // Proof for an answer: asked by admins (and whoever an admin allows), sent by whoever gave the answer.
   ['GET', '/api/proof', 'shifts', (env, ctx) => proof.forTargets(env, ctx.query, ctx.account)],
@@ -236,6 +238,9 @@ const ROUTES = [
   ['POST', '/api/po/check', 'insight', adminOnly((env, ctx) => newpo.checkPo(env, ctx.body))],
   ['POST', '/api/po/create', 'insight', adminOnly((env, ctx) => newpo.createPo(env, ctx.body, ctx.account))],
   ['GET', '/api/po/recent', 'insight', adminOnly((env) => newpo.recentPos(env))],
+  // A PO made here, paid from a shift's drawer: only once an admin allows it.
+  ['GET', '/api/po/drawer', 'shifts', adminOnly((env) => newpo.drawerAsks(env))],
+  ['POST', '/api/po/drawer', 'shifts', adminOnly((env, ctx) => newpo.decideDrawer(env, ctx.body, ctx.account))],
   ['GET', '/api/np', 'insight', (env, ctx) => np.npView(env, ctx.query, ctx.account, { admin: till.roleOf(ctx.account) === 'admin' })],
   // A picture of the counters: for an admin, and a supervisor given Nice Place, who reads one the reader could not.
   ['GET', '/api/np/photo/:id', 'shifts', area('niceplace', 1, (env, ctx) => np.photo(env, ctx.params.id))],

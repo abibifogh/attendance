@@ -58,9 +58,10 @@ function insight({ issues = [], recipients = [{ userId: 3, name: 'Boss', push: t
         return Response.json({ formLive: Boolean(form), found: body.names.map((t) => {
           const digits = String(t).replace(/\D/g, '').padStart(5, '0');
           const o = ODOO[`P${digits}`];
-          return o ? { typed: t, ...o, reported: form?.reported?.[o.name] || null, decision: form?.decisions?.[o.name] || null } : { typed: t, name: null };
+          return o ? { typed: t, ...o, reported: form?.reported?.[o.name] || null, decision: form?.decisions?.[o.name] || null, ...(form?.made?.[o.name] ? { madeInInsight: form.made[o.name] } : {}) } : { typed: t, name: null };
         }) });
       }
+      if (url.pathname.endsWith('/po-ask')) return Response.json({ ok: true });
       if (url.pathname.endsWith('/recipients')) return Response.json({ to: recipients });
       if (url.pathname.endsWith('/issues')) return Response.json({ issues, cleared: 0 });
       return Response.json({ error: 'unknown' }, { status: 404 });
@@ -503,4 +504,24 @@ test('a refund coming back: whoever is next on reception is told, or the till li
   assert.equal(n.user_id, 3);
   assert.equal(n.title, 'Your next shift: expect GH₵ 5.00 more than ASSD');
   assert.match(n.body, /GH₵ 65\.00 was advanced from the drawer on the morning shift of .* by Ama Test, and it was bought for GH₵ 60\.00 \(GH₵ 55\.00 \+ GH₵ 5\.00 TnT\)/);
+});
+
+test('a PO made in Insight: not a shift’s expense until an admin allows it, and trying asks them', async () => {
+  const { db } = await setup();
+  const form = { reported: { P00412: { amount: 44000, tnt: 0, total: 44000, count: 1 } }, decisions: {}, made: { P00412: { by: 'Test Owner', allowed: false, refused: false } } };
+  const ins = insight({ form });
+  const env = { INSIGHT: ins };
+  const screen = await (await myTill(ctx(db, AMA, { env }))).json();
+  const shift = [...screen.choices].reverse()[0];
+  const look = await (await lookUpPo(ctx(db, AMA, { env, body: { po: '412' }, path: '/api/me/till/po' }))).json();
+  assert.deepEqual([look.state, look.counted], ['held', false]);
+  assert.deepEqual(ins.asked.filter(([p]) => p.endsWith('/po-ask')).map(([, b]) => b), [{ name: 'P00412', by: 'Ama Test' }], 'the admins are asked');
+  await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(shift, { expenses: [{ po: '412' }] }) })), /made in Insight, and an admin has not allowed it/);
+  // Refused: never on a shift.
+  form.made.P00412 = { by: 'Test Owner', allowed: false, refused: true, decidedBy: 'Test Owner', note: 'Paid by MoMo' };
+  assert.equal((await (await lookUpPo(ctx(db, AMA, { env, body: { po: '412' }, path: '/api/me/till/po' }))).json()).state, 'refused');
+  // Allowed: counted like any other.
+  form.made.P00412 = { by: 'Test Owner', allowed: true, refused: false };
+  const out = await (await closeShift(ctx(db, AMA, { env, body: good(shift, { expenses: [{ po: '412' }] }) }))).json();
+  assert.deepEqual(out.report.expenses.map((e) => [e.name, e.counted]), [['P00412', true]]);
 });
