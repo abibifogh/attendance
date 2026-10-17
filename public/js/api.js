@@ -347,6 +347,7 @@ export const api = {
   closeTill: (body) => request('/api/me/till', { method: 'POST', body }),
   tillIssues: () => request('/api/me/till/issues'),
   tillAnswer: (body) => request('/api/me/till/answer', { method: 'POST', body }),
+  tillProof: (body) => request('/api/me/till/proof', { method: 'POST', body }),
   myMedical: (year) => request(`/api/me/medical${year ? `?year=${year}` : ''}`),
   myMedicalClaim: (body) => request('/api/me/medical', { method: 'POST', body }),
   myWithdrawClaim: (id) => request(`/api/me/medical/${id}/withdraw`, { method: 'POST', body: {} }),

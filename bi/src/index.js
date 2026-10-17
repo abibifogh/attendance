@@ -23,6 +23,7 @@ import * as formmatch from './routes/formmatch.js';
 import * as np from './routes/niceplace.js';
 import * as odooact from './routes/odooact.js';
 import * as newpo from './routes/newpo.js';
+import * as proof from './routes/proof.js';
 import { sendDailySummary } from './routes/summary.js';
 import { verifyForm, verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
@@ -208,6 +209,17 @@ const ROUTES = [
   ['POST', '/api/link/till/po', 'link', (env, ctx) => till.linkPo(env, ctx.body)],
   ['POST', '/api/link/till/issues', 'link', (env, ctx) => till.linkIssues(env, ctx.body)],
   ['POST', '/api/link/till/recipients', 'link', (env, ctx) => till.linkRecipients(env, ctx.body)],
+  // A staff member sending the proof an admin asked for, from HIVE's To sort out.
+  ['POST', '/api/link/till/proof', 'link', (env, ctx) => proof.linkSend(env, ctx.body)],
+
+  // Proof for an answer: asked by admins (and whoever an admin allows), sent by whoever gave the answer.
+  ['GET', '/api/proof', 'shifts', (env, ctx) => proof.forTargets(env, ctx.query, ctx.account)],
+  ['GET', '/api/proof/mine', 'shifts', (env, ctx) => proof.mine(env, ctx.account)],
+  ['GET', '/api/proof/file/:id', 'shifts', (env, ctx) => proof.file(env, ctx.params.id, ctx.account)],
+  ['POST', '/api/proof/ask', 'shifts', (env, ctx) => proof.ask(env, ctx.body, ctx.account)],
+  ['POST', '/api/proof/remind', 'shifts', (env, ctx) => proof.remind(env, ctx.body, ctx.account)],
+  ['POST', '/api/proof/cancel', 'shifts', (env, ctx) => proof.cancel(env, ctx.body, ctx.account)],
+  ['POST', '/api/proof/send', 'shifts', (env, ctx) => proof.send(env, ctx.body, ctx.account)],
 
   // Nice Place: the open link staff send the counters from (its own token
   // in the address, no account), and the page that holds them to the money.
@@ -377,6 +389,8 @@ export default {
     // night shift has handed over.
     if (event?.cron === SUMMARY_CRON) {
       execution.waitUntil(sendDailySummary(env).then((out) => { if (out.error) console.error('Daily summary', out.error); }));
+      // Proof asked and not sent: a reminder, once a day, three at most.
+      execution.waitUntil(proof.remindDue(env));
       // On the 5th, last month's prepaid stays to whoever an admin chose.
       if (new Date(event.scheduledTime || Date.now()).getUTCDate() === 5) {
         execution.waitUntil(prepaid.sendSummary(env, { auto: true }).then((out) => { if (out.failed?.length) console.error('Prepaid summary', out.failed); })

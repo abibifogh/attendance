@@ -201,6 +201,7 @@ export const ROUTES = [
   ['GET', '/api/me/till/po-changes', 'till', till.poChanges],
   ['GET', '/api/me/till/issues', 'till', till.myIssues],
   ['POST', '/api/me/till/answer', 'till', till.answer],
+  ['POST', '/api/me/till/proof', 'till', till.sendProof],
   // And Insight asking, server to server. No session reaches these; each
   // request is signed with the secret the two share for the sign-in hand-off.
   ['POST', '/api/link/till/recover', 'public', till.linkRecover],

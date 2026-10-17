@@ -500,6 +500,44 @@ export async function renderAttMyTillIssues() {
       h('p.till-hint.till-cleared', `${data.cleared} settled this month. Settled shifts leave this list.`));
   }
 
+  /** Proof an admin asked for: pictures (made smaller here) or a PDF, a note, Send; or why not. */
+  function proofAsk(issue) {
+    const p = issue.proof;
+    const st = open.get(`proof:${issue.key}`) || { files: [], cannot: false };
+    open.set(`proof:${issue.key}`, st);
+    const pick = h('input', { type: 'file', accept: 'image/*,application/pdf', multiple: true, hidden: true });
+    pick.addEventListener('change', async () => {
+      try {
+        for (const f of pick.files) st.files.push(await asProofFile(f)); // eslint-disable-line no-await-in-loop
+      } catch (err) { toast(err.message, 'bad'); }
+      pick.value = '';
+      paint();
+    });
+    const note = h('textarea', { rows: 2, placeholder: st.cannot ? 'Why it cannot be had' : 'A note (optional)' });
+    const send = async (ev) => {
+      if (st.cannot ? !note.value.trim() : !st.files.length) { toast(st.cannot ? 'Say why first.' : 'Add a picture or a PDF first.', 'bad'); return; }
+      ev.target.disabled = true;
+      try {
+        await api.tillProof({ id: p.id, note: note.value, ...(st.cannot ? { cannot: true } : { files: st.files }) });
+        toast(st.cannot ? 'Sent.' : 'Proof sent to the supervisor.');
+        open.delete(`proof:${issue.key}`);
+        data = await api.tillIssues();
+        paint();
+      } catch (err) { toast(err.message, 'bad'); ev.target.disabled = false; }
+    };
+    return h('div.till-proof',
+      h('strong', `${p.by} asks for proof`),
+      h('div', `${p.kinds.join(', ')}${p.note ? `: “${p.note}”` : ''}`),
+      st.cannot ? null : [
+        h('button.till-proof-add', { type: 'button', onclick: () => pick.click() }, '📷 Take a picture, or choose pictures / a PDF'), pick,
+        st.files.length ? h('div.till-proof-files', st.files.map((f, i) => h('div.till-proof-file',
+          f.data.startsWith('data:image') ? h('img', { src: f.data, alt: f.name }) : h('span', '📄'),
+          h('button.till-link', { type: 'button', onclick: () => { st.files.splice(i, 1); paint(); } }, 'Remove')))) : null],
+      note,
+      h('div.till-actions', h('button.btn.btn-primary', { type: 'button', onclick: send }, st.cannot ? 'Send why' : 'Send the proof'),
+        h('button.till-link', { type: 'button', onclick: () => { st.cannot = !st.cannot; paint(); } }, st.cannot ? 'I can send it after all' : 'Can’t get it? Say why instead')));
+  }
+
   function issueCard(issue) {
     const kind = issue.kind;
     const amount = kind === 'rental'
@@ -508,7 +546,9 @@ export async function renderAttMyTillIssues() {
     const tone = issue.amount > 0 ? 'over' : kind === 'noreport' ? 'info' : 'short';
     const state = open.get(issue.key) || null;
     let action;
-    if (issue.status === 'answered') {
+    if (issue.status === 'answered' && issue.proof) {
+      action = [h('div.till-said', h('strong', 'You said: '), issue.answer?.text || ''), proofAsk(issue)];
+    } else if (issue.status === 'answered') {
       action = h('div.till-said', h('strong', 'You said: '), issue.answer?.text || '',
         h('div.till-hint', 'With the supervisor. It leaves this list once it is settled.'));
     } else if (state?.mode === 'po') {
@@ -571,4 +611,22 @@ export async function renderAttMyTillIssues() {
     h('p', issue.text),
     action);
   }
+}
+
+/** A picture made at most 1600 pixels across, as a JPEG; a PDF as it is, up to 1.4 MB. */
+async function asProofFile(file) {
+  if (file.type === 'application/pdf') {
+    if (file.size > 1_400_000) throw new Error(`${file.name} is over 1.4 MB: take a photo of it instead.`);
+    return { name: file.name, data: await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = reject; r.readAsDataURL(file); }) };
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = () => reject(new Error(`${file.name} could not be opened.`)); i.src = url; });
+    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return { name: file.name.replace(/\.\w+$/, '.jpg'), data: canvas.toDataURL('image/jpeg', 0.82) };
+  } finally { URL.revokeObjectURL(url); }
 }

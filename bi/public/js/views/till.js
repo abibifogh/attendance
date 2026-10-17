@@ -1,5 +1,6 @@
 import { h, mount, money } from '../util.js';
 import { api } from '../api.js';
+import { proofBox } from './proof.js';
 import { banner } from './components.js';
 
 /**
@@ -31,6 +32,7 @@ const AREA_TEXT = {
   odoo: ['PO details from Odoo', 'Vendor and total behind each PO.'],
   files: ['Upload journal, statement and card report', 'The Files view. Act means load files.'],
   advances: ['Advances', 'In the Inbox: cash given out before a purchase, and POs whose final price differs. Act means give more time or close one with a reason.'],
+  proof: ['Ask for proof', 'Act means ask whoever gave an answer for pictures or a PDF (a MoMo screenshot, a slip, a statement). See means see the proof sent.'],
   niceplace: ['Nice Place counters', 'In the Inbox: a picture sent with a counter the reader could not read. Act means read it off the picture and fill it in.'],
   unpaid: ['Unpaid stays', 'Guests leaving in the next 24 hours who still owe, and guests who left owing. Act means answer them (an admin approves).'],
 };
@@ -182,7 +184,9 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
           actMoney && short ? h('button.btn', { type: 'button', onclick: decide('cash') }, 'Paid in cash') : null,
           actMoney ? h('button.btn', { type: 'button', onclick: decide('writeoff') }, 'Write off') : null,
           actAnswers && i.status === 'answered' ? h('button.btn', { type: 'button', onclick: decide('back') }, 'Send back') : null),
-        actMoney && short && i.answer?.how !== 'repay' ? h('p.tl-small', 'Recover from pay appears once they have agreed to pay it back.') : null) : null);
+        actMoney && short && i.answer?.how !== 'repay' ? h('p.tl-small', 'Recover from pay appears once they have agreed to pay it back.') : null) : null,
+      // Proof of what they said, asked of them in HIVE.
+      i.status === 'answered' && i.userId != null ? proofBox(`issue:${i.key}`, { who: i.name }) : null);
   }
 
 
@@ -202,7 +206,9 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
       a.note ? h('div.tl-said', h('b', 'Note'), a.note) : null,
       h('div.tl-actions',
         h('button.btn.primary', { type: 'button', onclick: go(true) }, 'Approve'),
-        h('button.btn', { type: 'button', onclick: go(false) }, 'Reject')));
+        h('button.btn', { type: 'button', onclick: go(false) }, 'Reject')),
+      // Proof asked of whoever gave it, and what they sent.
+      proofBox(`${a.type === 'link' ? 'link' : 'answer'}:${a.id}`, { who: a.by }));
   }
 
   /** A supervisor's correction to a cash movement, for an admin to approve. `open` opens its shift. */
