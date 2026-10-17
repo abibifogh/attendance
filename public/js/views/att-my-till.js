@@ -52,12 +52,17 @@ function yesNo(value, onChange, { yes = 'Yes', no = 'No' } = {}) {
 
 // =================================================================== close --
 
+const STEPS = ['Shift and float', 'Cash in the drawer', 'The safe', 'Expenses', 'Checks, then sign'];
+
 export async function renderAttMyTill() {
   const host = h('div.till');
   const data = await api.myTill();
 
   const firstOpen = data.choices.find((c) => !c.done) || data.choices[0];
   let which = store.get('which') || { day: firstOpen.day, slot: firstOpen.slot };
+  // Which of the five steps is on screen, kept with the draft so a phone that
+  // locks halfway through comes back to the same step.
+  let step = Number(store.get('step')) || 0;
   if (!data.choices.some((c) => c.day === which.day && c.slot === which.slot)) which = { day: firstOpen.day, slot: firstOpen.slot };
 
   const blank = () => ({
@@ -128,17 +133,18 @@ export async function renderAttMyTill() {
     const done = data.reports.find((r) => r.day === which.day && r.slot === which.slot);
     mount(host,
       h('div.page-head', h('div',
-        h('h1', 'Close shift'),
-        h('div.sub', 'Signed with your PIN. Insight checks it against ASSD, the card machine and the bank.'))),
+        h('h1', 'Close your till'),
+        h('div.sub', 'Five short steps, signed with your PIN at the end.'))),
       data.linked ? null : h('div.alert.warn', 'Insight cannot be reached just now, so PO numbers cannot be checked. You can still close the shift; '
         + 'any expense that could not be checked will be on your list under To sort out, to add again later.'),
-      card('Which shift', {},
+      done || step === 0 ? card('Which shift', {},
         h('select.till-shift', {
           'aria-label': 'Which shift',
           onchange: (e) => {
             const [day, slot] = e.target.value.split('|');
             save();
             which = { day, slot };
+            step = 0;
             f = store.get(draftKey()) || blank();
             store.set('which', which);
             earlier = { advances: [], changes: [] };
@@ -147,7 +153,7 @@ export async function renderAttMyTill() {
           },
         }, data.choices.map((c) => h('option', { value: `${c.day}|${c.slot}`, selected: c.day === which.day && c.slot === which.slot },
           `${SLOT[c.slot]} · ${dayText(c.day)}${c.done ? ' · closed' : ''}`))),
-        h('p.till-hint', 'Your name, the day and the shift go in for you from your sign-in.')),
+        h('p.till-hint', 'Your name, the day and the shift go in for you from your sign-in.')) : null,
       done ? closedCard(done) : form());
   }
 
@@ -174,19 +180,19 @@ export async function renderAttMyTill() {
       oninput: (e) => { onInput(e.target.value); save(); refreshNeed(); },
     });
 
-    return h('div.till-form',
-      card('Opening float', {},
+    const cards = [];
+    cards.push([0, card('Opening float', {},
         h('p.till-q', 'Was your opening float correct?'),
         yesNo(f.floatOk, (v) => set({ floatOk: v })),
         f.floatOk === false ? h('div.till-more',
           field('How much was it out by? (GH₵, minus if short)', input(f.floatDiff, (v) => { f.floatDiff = v; }, { inputmode: 'decimal', placeholder: '-20.00', id: 'till-float-diff' })),
-          field('Can you explain it?', h('textarea', { rows: 2, oninput: (e) => { f.floatNote = e.target.value; save(); } }, f.floatNote))) : null),
+          field('Can you explain it?', h('textarea', { rows: 2, oninput: (e) => { f.floatNote = e.target.value; save(); } }, f.floatNote))) : null)]);
 
-      card('Cash in the drawer now', {},
+    cards.push([1, card('Cash in the drawer now', {},
         field('One total for everything in the drawer, after any cash went to the safe (GH₵)',
-          input(f.cash, (v) => { f.cash = v; }, { inputmode: 'decimal', placeholder: '0.00', class: 'till-big', id: 'till-cash' }))),
+          input(f.cash, (v) => { f.cash = v; }, { inputmode: 'decimal', placeholder: '0.00', class: 'till-big', id: 'till-cash' })))]);
 
-      card('The safe', {},
+    cards.push([2, card('The safe', {},
         h('p.till-q', 'Did you move cash to the safe on this shift?'),
         yesNo(f.toSafe, (v) => set({ toSafe: v })),
         f.toSafe ? h('div.till-more',
@@ -195,9 +201,9 @@ export async function renderAttMyTill() {
             field('Amount in it (GH₵)', input(e.amount, (v) => { e.amount = v; }, { inputmode: 'decimal', placeholder: '0.00', id: `till-env-amt-${i}` })),
             f.envelopes.length > 1 ? h('button.btn-sm.till-x', { type: 'button', 'aria-label': 'Remove envelope', onclick: () => { f.envelopes.splice(i, 1); set({}); } }, '✕') : null)),
           h('button.btn-sm', { type: 'button', onclick: () => { f.envelopes.push({ no: '', amount: '' }); set({}); } }, '+ Another envelope'),
-          h('p.till-hint', `To the safe: ${cedis(safeTotal)}. Numbers only, as written on the envelope. Each one is checked against ASSD's cash movements.`)) : null),
+          h('p.till-hint', `To the safe: ${cedis(safeTotal)}. Numbers only, as written on the envelope. Each one is checked against ASSD's cash movements.`)) : null)]);
 
-      card('Expenses paid from the drawer', { note: 'each needs a PO' },
+    cards.push([3, card('Expenses paid from the drawer', { note: 'each needs a PO' },
         fromLastShift(),
         h('h4.till-group', 'This shift'),
         h('p.till-hint', 'Type one PO number or several, then Add. Each is checked in Odoo straight away; its amount is the PO’s total. '
@@ -206,9 +212,9 @@ export async function renderAttMyTill() {
         f.expenses.length ? h('div.till-polist', f.expenses.map((e, i) => expenseRow(e, i))) : null,
         f.expenses.length ? h('div.till-pototals',
           h('span', 'Counted ', h('b', signedCedis(counted))),
-          h('span', 'Not counted ', h('b', { class: uncounted ? 'till-bad' : '' }, cedis(uncounted)))) : null),
+          h('span', 'Not counted ', h('b', { class: uncounted ? 'till-bad' : '' }, cedis(uncounted)))) : null)]);
 
-      data.setup.rentals.length ? card('Rentals', {},
+    cards.push([3, data.setup.rentals.length ? card('Rentals', {},
         data.setup.rentals.map((r) => {
           const v = f.rentals[r.id] || (f.rentals[r.id] = { start: '', end: '' });
           const left = data.handedOver?.rentals?.[r.id]?.end;
@@ -219,9 +225,9 @@ export async function renderAttMyTill() {
               field('At the end', input(v.end, (x) => { v.end = x; }, { inputmode: 'numeric', id: `till-${r.id}-end` }))),
             h('p.till-hint', left != null ? `${data.handedOver.name} left ${left}. ` : '',
               `Fewer at the end means one was rented: ASSD should show a ${r.unit} deposit. More means one came back: ASSD should show a refund.`));
-        })) : null,
+        })) : null]);
 
-      data.setup.checks.length ? card('Front desk checks', { note: 'look before you answer' },
+    cards.push([4, data.setup.checks.length ? card('Front desk checks', { note: 'look before you answer' },
         data.setup.checks.map((c) => {
           const v = f.checks[c.id] || (f.checks[c.id] = { ok: null, guest: '', why: '' });
           return h('div.till-check',
@@ -231,14 +237,38 @@ export async function renderAttMyTill() {
               field('Which guest has it? (name or room)', input(v.guest, (x) => { v.guest = x; }, { id: `till-check-${c.id}-guest` })),
               h('p.till-or', 'or'),
               field('Explain where it is', h('textarea', { rows: 2, id: `till-check-${c.id}-why`, oninput: (e) => { v.why = e.target.value; save(); refreshNeed(); } }, v.why))) : null);
-        })) : null,
+        })) : null]);
 
-      card('Anything else?', {},
-        field('Anything the supervisor should know (optional)', h('textarea', { rows: 2, oninput: (e) => { f.note = e.target.value; save(); } }, f.note))),
+    cards.push([4, card('Anything else?', {},
+      field('Anything the supervisor should know (optional)', h('textarea', { rows: 2, oninput: (e) => { f.note = e.target.value; save(); } }, f.note)))]);
 
-      h('div.till-send',
-        h('p.till-need', { hidden: !missing.length }, 'To close: ', h('strong', missing.join(', '))),
-        h('button.btn.btn-primary.till-sign', { type: 'button', disabled: missing.length > 0, onclick: sign }, 'Sign and send')));
+    // One step at a time: five short pages rather than one long form, each
+    // ticked off as it is finished, and the PIN at the end of the last.
+    const open = new Set(needs().map((n) => n.step));
+    const go = (i) => { step = Math.max(0, Math.min(STEPS.length - 1, i)); store.set('step', step); paint(); window.scrollTo(0, 0); };
+    const last = step === STEPS.length - 1;
+
+    return h('div.till-form',
+      h('ol.till-steps', { 'aria-label': `Step ${step + 1} of ${STEPS.length}` },
+        STEPS.map((label, i) => h('li', h('button.till-step', {
+          type: 'button',
+          class: i === step ? 'till-step now' : !open.has(i) ? 'till-step done' : 'till-step',
+          'aria-current': i === step ? 'step' : null,
+          onclick: () => go(i),
+        }, h('i', i !== step && !open.has(i) ? '✓' : String(i + 1)), h('span', label))))),
+      h('div.till-step-head',
+        h('small', `Step ${step + 1} of ${STEPS.length}`),
+        h('h2', STEPS[step])),
+      cards.filter(([i, el]) => i === step && el).map(([, el]) => el),
+      last
+        ? h('div.till-send',
+          h('p.till-need', { hidden: !missing.length }, 'To close: ', h('strong', missing.join(', '))),
+          h('div.till-nav',
+            h('button.btn', { type: 'button', onclick: () => go(step - 1) }, 'Back'),
+            h('button.btn.btn-primary.till-sign', { type: 'button', disabled: missing.length > 0, onclick: sign }, 'Sign and send')))
+        : h('div.till-nav',
+          step > 0 ? h('button.btn', { type: 'button', onclick: () => go(step - 1) }, 'Back') : h('span'),
+          h('button.btn.btn-primary', { type: 'button', onclick: () => go(step + 1) }, 'Next')));
   }
 
   /** Refunds and deficits not yet put on this shift, or put aside as not on it. */
@@ -406,29 +436,35 @@ export async function renderAttMyTill() {
       why);
   }
 
-  function stillNeeded() {
+  /** What is still missing, each against the step it belongs to. */
+  function needs() {
     const out = [];
-    if (f.floatOk === null) out.push('the opening float');
-    else if (f.floatOk === false && toMinor(f.floatDiff) == null) out.push('how much the float was out');
-    if (toMinor(f.cash) == null) out.push('the cash in the drawer');
-    if (f.toSafe === null) out.push('whether cash went to the safe');
-    else if (f.toSafe && f.envelopes.some((e) => !/^\d+$/.test(e.no) || !(toMinor(e.amount) > 0))) out.push('each envelope number and amount');
-    if (f.expenses.some((e) => String(e.po).trim() && !e.look)) out.push('each PO checked in Odoo');
+    const need = (step, text) => out.push({ step, text });
+    if (f.floatOk === null) need(0, 'the opening float');
+    else if (f.floatOk === false && toMinor(f.floatDiff) == null) need(0, 'how much the float was out');
+    if (toMinor(f.cash) == null) need(1, 'the cash in the drawer');
+    if (f.toSafe === null) need(2, 'whether cash went to the safe');
+    else if (f.toSafe && f.envelopes.some((e) => !/^\d+$/.test(e.no) || !(toMinor(e.amount) > 0))) need(2, 'each envelope number and amount');
+    if (f.expenses.some((e) => String(e.po).trim() && !e.look)) need(3, 'each PO checked in Odoo');
     for (const e of f.expenses.filter((x) => String(x.po).trim() && unapproved(x.look))) {
-      out.push(e.look.state === 'report' ? `${e.look.name} reported on the expense form` : `${e.look.name} removed (${unapproved(e.look)})`);
+      need(3, e.look.state === 'report' ? `${e.look.name} reported on the expense form` : `${e.look.name} removed (${unapproved(e.look)})`);
     }
-    for (const a of earlier.advances) out.push(`${a.name} ${a.status === 'approve' ? 'approved in Odoo' : a.status === 'report' ? 'reported on the expense form' : 'closed by an admin'}`);
-    for (const c of openChanges()) out.push(c.amount < 0 ? `${c.name} refund in the drawer (Done)` : `${c.name} deficit: Done or Not on my shift`);
+    for (const a of earlier.advances) need(3, `${a.name} ${a.status === 'approve' ? 'approved in Odoo' : a.status === 'report' ? 'reported on the expense form' : 'closed by an admin'}`);
+    for (const c of openChanges()) need(3, c.amount < 0 ? `${c.name} refund in the drawer (Done)` : `${c.name} deficit: Done or Not on my shift`);
     for (const r of data.setup.rentals) {
       const v = f.rentals[r.id] || {};
-      if (!/^\d+$/.test(String(v.start ?? '').trim()) || !/^\d+$/.test(String(v.end ?? '').trim())) out.push(`the ${r.label.toLowerCase()} count`);
+      if (!/^\d+$/.test(String(v.start ?? '').trim()) || !/^\d+$/.test(String(v.end ?? '').trim())) need(3, `the ${r.label.toLowerCase()} count`);
     }
     for (const c of data.setup.checks) {
       const v = f.checks[c.id] || {};
-      if (v.ok == null) out.push(`the ${c.label.toLowerCase()}`);
-      else if (v.ok === false && !v.guest.trim() && !v.why.trim()) out.push(`who has the ${c.label.toLowerCase()}, or where it is`);
+      if (v.ok == null) need(4, `the ${c.label.toLowerCase()}`);
+      else if (v.ok === false && !v.guest.trim() && !v.why.trim()) need(4, `who has the ${c.label.toLowerCase()}, or where it is`);
     }
     return out;
+  }
+
+  function stillNeeded() {
+    return needs().map((n) => n.text);
   }
 
   function refreshNeed() {
@@ -440,6 +476,11 @@ export async function renderAttMyTill() {
       need.lastChild.textContent = missing.join(', ');
     }
     if (button) button.disabled = missing.length > 0;
+    const open = new Set(needs().map((n) => n.step));
+    host.querySelectorAll('.till-step').forEach((el, i) => {
+      el.classList.toggle('done', !open.has(i) && i !== step);
+      el.querySelector('i').textContent = !open.has(i) && i !== step ? '✓' : String(i + 1);
+    });
   }
 
   async function sign() {
@@ -470,6 +511,8 @@ export async function renderAttMyTill() {
     });
     if (!sent) return;
     store.drop(draftKey());
+    step = 0;
+    store.set('step', 0);
     toast('Signed and sent. Thank you.');
     data.reports.unshift({ ...sent.report, signedAt: new Date().toISOString().replace('T', ' '), floatDiff: sent.report.floatDiff });
     data.choices = data.choices.map((c) => (c.day === which.day && c.slot === which.slot ? { ...c, done: true } : c));

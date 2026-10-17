@@ -45,7 +45,7 @@ export async function renderMyDay() {
   const current = till?.choices?.[0];
   if (current && !current.done && week.onShift) {
     const ends = week.onShift.shift?.ends_at;
-    todo.push(task('cash', 'Close your till', ends ? `Before ${ends}` : 'Before you go home',
+    todo.push(task('cash', 'Close your till', ends ? `Before ${ends} · 5 short steps` : '5 short steps',
       '#/att-my-till', 'warn'));
   }
   const toSort = (issues?.issues ?? []).length;

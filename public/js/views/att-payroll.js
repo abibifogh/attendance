@@ -90,70 +90,20 @@ export async function renderAttPayroll(params) {
 
   const onPayroll = data.staff.filter((s) => s.onPayroll);
 
-  mount(host,
-    h('div.page-head',
-      h('div',
-        h('h1', 'Payroll'),
-        // Which table this month is worked out on, and where it started. A
-        // payroll run after a budget change is exactly when somebody needs to
-        // see that March is still on March's figures.
-        h('div.sub', `${niceMonth(month)} · ${data.rates.label}`,
-          data.rates.from && data.rates.from !== '0000-01'
-            ? h('span.muted', ` · in force from ${niceMonth(data.rates.from)}`)
-            : null),
-      ),
-      h('div.btn-row',
-        // The month and its two arrows stay together: wrapping between them
-        // leaves an arrow stranded above the box it moves.
-        h('div.btn-row.pay-month-pick',
-          h('button.btn-sm', { onclick: () => reload({ month: shiftMonth(month, -1) }) }, '‹'),
-          h('input', {
-            type: 'month', value: month, 'aria-label': 'Month',
-            onchange: (e) => e.target.value && reload({ month: e.target.value }),
-          }),
-          h('button.btn-sm', { onclick: () => reload({ month: shiftMonth(month, 1) }) }, '›')),
-        h('button.btn-sm', { onclick: () => reload({ month: monthOf(todayISO()) }) }, 'This month'),
-        // Leaving the tab asks for the PIN again anyway; this is for somebody
-        // who is staying on the screen and wants it shut behind them now.
-        h('button.btn-ghost.btn-sm', {
-          title: 'Shut the payroll now, without leaving the screen',
-          onclick: () => lockNow(reload),
-        }, 'Lock'),
-        access.hasPin
-          ? h('button.btn-ghost.btn-sm', {
-            title: 'Change the PIN you open the payroll with',
-            onclick: () => changePin(access, reload),
-          }, 'PIN')
-          : null,
-        closed
-          ? null
-          : h('button.btn-sm', {
-            title: 'Bring last month\u2019s scores across so only what changed is typed',
-            onclick: () => startFrom(month, reload),
-          }, 'Start from last month')),
-    ),
+  // The month in four steps, in the order the job is done: check what
+  // everybody is paid, put in the bonuses and anything taken off, close the
+  // month, then hand out the payslips and file the returns. The figures above
+  // the steps stay in view the whole way through.
+  const STEPS = [
+    ['Check pay', `${onPayroll.length} on the payroll`],
+    ['Bonuses and deductions', 'Scores, and money off a bonus'],
+    ['Close the month', 'Locks the figures'],
+    ['Payslips and returns', 'Slips, PAYE, SSNIT'],
+  ];
+  const step = Math.min(4, Math.max(1, Number(params.step) || (closed ? 4 : 1)));
+  const goTo = (n) => reload({ step: n });
 
-    closed
-      ? h('div.alert.good',
-        h('span.alert-icon', '✓'),
-        h('div',
-          h('div.alert-title', `${niceMonth(month)} is closed`),
-          h('div.alert-detail',
-            `Closed by ${data.closedBy || 'somebody'}. Every payslip is written down as it `
-            + 'stood, and nothing here recomputes. Reopening takes back the advance deductions '
-            + 'it recorded.')),
-        h('button.btn-sm', {
-          onclick: async () => {
-            if (!confirmAction(`Open ${niceMonth(month)} again? The payslips are taken back and `
-              + 'so are the advance deductions this payroll recorded.')) return;
-            await api.payrollReopen({ month });
-            toast('Open again.', 'good');
-            await reload();
-          },
-        }, 'Open it again'))
-      : null,
-
-    onPayroll.length
+  const tilesEl = onPayroll.length
       ? h('div.grid.grid-4.pay-tiles',
         tile('Gross', cash(data.totals.gross),
           `${data.totals.people} on the payroll`),
@@ -163,11 +113,9 @@ export async function renderAttPayroll(params) {
         tile('Net to pay', cash(data.totals.net), netSplit(data)),
         tile('Cost to the property', cash(data.totals.cost),
           `including ${cash(data.totals.ssnitEmployer)} employer SSNIT`))
-      : null,
+      : null;
 
-    onPayroll.length ? noAccountWarning(data) : null,
-
-    onPayroll.length
+  const monthCard = onPayroll.length
       ? card('The month', {
         wide: true,
         // Which state the month is in, in a colour rather than a sentence. It
@@ -180,24 +128,7 @@ export async function renderAttPayroll(params) {
         actions: h('div.btn-row',
           comparePicker(data, month, reload),
           exportButton(data, month, closed),
-          data.slips
-            ? h('button.btn-sm', { onclick: () => openAllSlips(data, month) },
-              'Download slips')
-            : null,
-          h('button.btn-sm', { onclick: () => openReturns(month) },
-            'Journal, PAYE and SSNIT'),
-          closed ? null : importButton(month, reload),
-          // Where somebody looks first. The card further down still lists what
-          // has been taken off this month, with the button to put one back.
-          closed ? null : h('button.btn-sm', {
-            onclick: () => addPenalty(data, month, reload),
-            title: 'Take money off somebody\u2019s bonus for this month. They are told straight away',
-          }, 'Take money off a bonus'),
-          closed
-            ? null
-            : h('button.btn.btn-primary', {
-              onclick: () => close(month, data, reload, cash),
-            }, 'Close the month')),
+          closed ? null : importButton(month, reload)),
       },
         h('div.table-wrap', h('table.pay-table',
           h('thead', h('tr',
@@ -287,12 +218,129 @@ export async function renderAttPayroll(params) {
             + 'month comes to; what makes each of them up is on the slip.'))
       : emptyState('Nobody is on the payroll yet',
         'Say what each person is paid and whether SSNIT applies to them, and the month works '
-        + 'itself out.'),
+        + 'itself out.');
 
-    schemesCard(data, month, closed, reload, cash),
-    penaltiesCard(data, month, closed, reload, cash),
-    severanceCard(data, month, closed, reload, cash),
-    peopleCard(data, reload, cash),
+  const stepBar = h('ol.pay-steps', { 'aria-label': `Step ${step} of 4` },
+    STEPS.map(([label, sub], i) => h('li', h('button.pay-step', {
+      type: 'button',
+      class: i + 1 === step ? 'pay-step now' : (i + 1 < step || (closed && i < 3)) ? 'pay-step done' : 'pay-step',
+      'aria-current': i + 1 === step ? 'step' : null,
+      onclick: () => goTo(i + 1),
+    }, h('i', (i + 1 < step || (closed && i < 3)) && i + 1 !== step ? '✓' : String(i + 1)),
+    h('span', h('strong', label), h('small', sub))))));
+
+  const closeCard = card('Close the month', { wide: true },
+    closed
+      ? h('p', `${niceMonth(month)} is closed. The payslips and returns are ready in the next step.`)
+      : h('div',
+        h('p', { style: { marginTop: 0 } }, 'Closing locks every figure and writes each payslip down as it stands. '
+          + 'It can be opened again if something was wrong.'),
+        h('dl.pay-sum',
+          h('dt', 'Gross pay'), h('dd', cash(data.totals.gross)),
+          h('dt', 'PAYE to the GRA'), h('dd', cash(data.totals.paye)),
+          h('dt', 'SSNIT, staff'), h('dd', cash(data.totals.ssnitEmployee)),
+          data.totals.loans ? [h('dt', 'Advances coming off'), h('dd', cash(data.totals.loans))] : null,
+          h('dt', h('strong', 'Net pay to the bank')), h('dd', h('strong', cash(data.totals.net))),
+          h('dt', 'Cost to the property'), h('dd', cash(data.totals.cost))),
+        h('button.btn.btn-primary', { onclick: () => close(month, data, reload, cash) }, 'Close the month')));
+
+  const papersCard = card('Payslips and returns', { wide: true },
+    h('div.pay-papers',
+      data.slips
+        ? h('button.btn', { onclick: () => openAllSlips(data, month) }, 'Download the payslips')
+        : h('p.muted', 'Payslips are an administrator\u2019s to open.'),
+      h('button.btn', { onclick: () => openReturns(month) }, 'Journal, PAYE and SSNIT'),
+      exportButton(data, month, closed)),
+    closed ? null : h('p.muted', 'These are drafts until the month is closed.'));
+
+  const stepBody = {
+    1: [onPayroll.length ? noAccountWarning(data) : null, monthCard, peopleCard(data, reload, cash)],
+    2: [
+      closed ? null : h('div.btn-row', { style: { marginBottom: '1rem' } },
+        h('button.btn-sm', {
+          onclick: () => addPenalty(data, month, reload),
+          title: 'Take money off somebody\u2019s bonus for this month. They are told straight away',
+        }, 'Take money off a bonus')),
+      schemesCard(data, month, closed, reload, cash),
+      penaltiesCard(data, month, closed, reload, cash),
+      severanceCard(data, month, closed, reload, cash),
+    ],
+    3: [closeCard],
+    4: [papersCard],
+  }[step];
+
+  const stepNav = h('div.pay-nav',
+    step > 1 ? h('button.btn', { onclick: () => goTo(step - 1) }, 'Back') : h('span'),
+    step < 4 ? h('button.btn.btn-primary', { onclick: () => goTo(step + 1) },
+      `Next: ${STEPS[step][0].toLowerCase()}`) : null);
+
+  mount(host,
+    h('div.page-head',
+      h('div',
+        h('h1', 'Payroll'),
+        // Which table this month is worked out on, and where it started. A
+        // payroll run after a budget change is exactly when somebody needs to
+        // see that March is still on March's figures.
+        h('div.sub', `${niceMonth(month)} · ${data.rates.label}`,
+          data.rates.from && data.rates.from !== '0000-01'
+            ? h('span.muted', ` · in force from ${niceMonth(data.rates.from)}`)
+            : null),
+      ),
+      h('div.btn-row',
+        // The month and its two arrows stay together: wrapping between them
+        // leaves an arrow stranded above the box it moves.
+        h('div.btn-row.pay-month-pick',
+          h('button.btn-sm', { onclick: () => reload({ month: shiftMonth(month, -1) }) }, '‹'),
+          h('input', {
+            type: 'month', value: month, 'aria-label': 'Month',
+            onchange: (e) => e.target.value && reload({ month: e.target.value }),
+          }),
+          h('button.btn-sm', { onclick: () => reload({ month: shiftMonth(month, 1) }) }, '›')),
+        h('button.btn-sm', { onclick: () => reload({ month: monthOf(todayISO()) }) }, 'This month'),
+        // Leaving the tab asks for the PIN again anyway; this is for somebody
+        // who is staying on the screen and wants it shut behind them now.
+        h('button.btn-ghost.btn-sm', {
+          title: 'Shut the payroll now, without leaving the screen',
+          onclick: () => lockNow(reload),
+        }, 'Lock'),
+        access.hasPin
+          ? h('button.btn-ghost.btn-sm', {
+            title: 'Change the PIN you open the payroll with',
+            onclick: () => changePin(access, reload),
+          }, 'PIN')
+          : null,
+        closed || step !== 2
+          ? null
+          : h('button.btn-sm', {
+            title: 'Bring last month\u2019s scores across so only what changed is typed',
+            onclick: () => startFrom(month, reload),
+          }, 'Start from last month')),
+    ),
+
+    closed
+      ? h('div.alert.good',
+        h('span.alert-icon', '✓'),
+        h('div',
+          h('div.alert-title', `${niceMonth(month)} is closed`),
+          h('div.alert-detail',
+            `Closed by ${data.closedBy || 'somebody'}. Every payslip is written down as it `
+            + 'stood, and nothing here recomputes. Reopening takes back the advance deductions '
+            + 'it recorded.')),
+        h('button.btn-sm', {
+          onclick: async () => {
+            if (!confirmAction(`Open ${niceMonth(month)} again? The payslips are taken back and `
+              + 'so are the advance deductions this payroll recorded.')) return;
+            await api.payrollReopen({ month });
+            toast('Open again.', 'good');
+            await reload();
+          },
+        }, 'Open it again'))
+      : null,
+
+    tilesEl,
+    stepBar,
+    ...stepBody,
+    stepNav,
   );
 
   return host;

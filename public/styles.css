@@ -7401,3 +7401,60 @@ a.btn, a.btn-sm { text-decoration: none; display: inline-flex; align-items: cent
 .person-figures strong.is-warn { color: var(--warn); }
 .person-figures strong.is-bad { color: var(--bad); }
 .person-figures span { color: var(--text-dim); font-size: .88rem; }
+
+/* ---- closing the till, one step at a time ---- */
+.till-steps { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .4rem; }
+.till-step {
+  width: 100%; display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: .4rem .6rem;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface); font: inherit;
+  font-size: .82rem; font-weight: 650; color: var(--text-dim); text-align: left; cursor: pointer;
+}
+.till-step i {
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  font-style: normal; font-weight: 800; font-size: .8rem; background: var(--surface-2); color: var(--text-dim);
+}
+.till-step.done i { background: var(--good-soft); color: var(--good); }
+.till-step.now { border: 2px solid var(--gold); color: var(--text); }
+.till-step.now i { background: var(--gold); color: var(--gold-ink); }
+.till-step-head { margin-bottom: .8rem; }
+.till-step-head small { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--gold-deep); font-size: .75rem; }
+.till-step-head h2 { margin: .1rem 0 0; font-size: 1.4rem; }
+.till-nav { display: flex; justify-content: space-between; gap: .6rem; margin-top: 1rem; }
+.till-nav .btn { min-height: 48px; min-width: 7rem; }
+.till-nav .btn-primary { flex: 1; max-width: 22rem; }
+@media (max-width: 720px) {
+  .till-steps { gap: .3rem; }
+  .till-step { justify-content: center; padding: .3rem; }
+  .till-step span { display: none; }
+}
+:root[data-theme="dark"] .till-step-head small { color: var(--gold); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .till-step-head small { color: var(--gold); } }
+
+/* ---- payroll in four steps ---- */
+.pay-steps { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .6rem; }
+.pay-step {
+  width: 100%; display: flex; align-items: center; gap: .7rem; min-height: 60px; padding: .6rem .8rem;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+  font: inherit; color: var(--text); text-align: left; cursor: pointer;
+}
+.pay-step i {
+  width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  font-style: normal; font-weight: 800; background: var(--surface-2); color: var(--text-dim);
+}
+.pay-step span { display: grid; min-width: 0; }
+.pay-step strong { font-size: .92rem; }
+.pay-step small { color: var(--text-dim); font-size: .78rem; }
+.pay-step.done i { background: var(--good-soft); color: var(--good); }
+.pay-step.now { border: 2px solid var(--gold); background: color-mix(in srgb, var(--gold) 7%, var(--surface)); }
+.pay-step.now i { background: var(--gold); color: var(--gold-ink); }
+.pay-sum { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem 1rem; max-width: 30rem; margin: 0 0 1.2rem; font-variant-numeric: tabular-nums; }
+.pay-sum dt { color: var(--text-dim); }
+.pay-sum dd { margin: 0; text-align: right; }
+.pay-papers { display: flex; flex-wrap: wrap; gap: .6rem; }
+.pay-nav { display: flex; justify-content: space-between; gap: .6rem; margin-top: 1rem; }
+.pay-nav .btn { min-height: 46px; }
+@media (max-width: 720px) {
+  .pay-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .3rem; }
+  .pay-step { justify-content: center; min-height: 48px; padding: .3rem; }
+  .pay-step span { display: none; }
+}
