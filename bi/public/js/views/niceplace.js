@@ -242,7 +242,7 @@ export async function renderNicePlace(root) {
       h('p.sh-sub', [r.reading ? `${r.reading.editedBy ? `Typed in Insight by ${r.reading.editedBy}` : `Sent by ${r.reading.name || 'somebody'} at ${String(r.reading.sentAt).slice(11, 16)}`}` : 'No reading for this shift', r.staff ? `On the workbook: ${r.staff}` : null].filter(Boolean).join(' · ')),
       h('div.np-cols',
         h('div',
-          r.reading?.photoId ? h('a', { href: `/api/np/photo/${r.reading.photoId}`, target: '_blank', rel: 'noopener' }, h('img.np-photo', { src: `/api/np/photo/${r.reading.photoId}`, alt: 'The counters as sent' })) : h('div.np-nophoto', r.reading ? 'Typed in Insight: no picture' : 'No picture sent'),
+          r.reading?.photoId ? h('a', { href: `/api/np/photo/${r.reading.photoId}`, target: '_blank', rel: 'noopener' }, h('img.np-photo', { src: `/api/np/photo/${r.reading.photoId}`, alt: 'The counters as sent' })) : h('div.np-nophoto', r.reading ? 'Typed in Insight: no picture' : 'No picture sent', isAdmin ? addPicture(r) : null),
           r.reading?.photoId ? h('div.np-check',
             r.reading.checkedBy ? [h('span', `✓ Numbers match the picture (${r.reading.checkedBy})`), h('button.sh-link', { type: 'button', onclick: () => set('/np/check', { ok: false }, 'Taken back.') }, 'Undo')]
               : [h('span', 'Do the numbers typed match the picture?'), h('button.btn', { type: 'button', onclick: () => set('/np/check', { ok: true }, 'Marked as matching the picture.') }, 'Yes'),
@@ -278,6 +278,41 @@ export async function renderNicePlace(root) {
     }[x.status] || (() => '');
     const tone = { bad: 'bad', warn: 'warn', over: 'warn', good: 'good' }[x.status] || 'none';
     return h(`p.np-verdict.${tone}`, t());
+  }
+
+  /**
+   * A picture of the counters for a shift that has none. Read like one from
+   * the link: with no reading, what is read becomes it (and a counter not read
+   * waits to be typed); with numbers typed, they stay and the picture is held
+   * against them.
+   */
+  function addPicture(r) {
+    const said = h('span.small');
+    const pick = h('input', { type: 'file', accept: 'image/*', hidden: true });
+    pick.addEventListener('change', async () => {
+      if (!pick.files[0]) return;
+      said.textContent = 'Reading the picture…';
+      try {
+        const photo = await shrinkPicture(pick.files[0]);
+        const out = await api('/np/upload', { method: 'POST', body: { day: r.day, shift: r.shift, photo } });
+        const names = (cs) => cs.map((c) => c.toUpperCase()).join(', ');
+        const read = ['gb', 'gt', 'lb', 'lt'].filter((c) => out.values[c] != null);
+        let words;
+        if (out.kept) {
+          words = out.differs.length
+            ? `Picture added. It reads differently from what was typed: ${out.differs.map((d) => `${d.counter.toUpperCase()} typed ${whole(d.typed)}, picture ${whole(d.read)}`).join('; ')}. Fix a number if the picture is right.`
+            : `Picture added${read.length ? `, and it agrees with the numbers typed (${names(read)} read)` : ''}.`;
+        } else {
+          words = out.pending.length
+            ? `Picture added. ${names(out.pending)} could not be read: type ${out.pending.length === 1 ? 'it' : 'them'} from the picture below.`
+            : 'Picture added, and all four counters read off it. The shift is worked out.';
+        }
+        await load([out.differs?.length || out.pending?.length ? 'warning' : 'good', words]);
+      } catch (err) { said.textContent = err.message; }
+      pick.value = '';
+    });
+    return h('div.np-inline', { style: 'justify-content:center;margin-top:.6rem' },
+      h('button.btn.primary', { type: 'button', onclick: (e) => { e.stopPropagation(); pick.click(); } }, '📷 Add the picture'), pick, said);
   }
 
   function fixBlock(r, set) {

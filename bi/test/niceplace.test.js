@@ -319,3 +319,33 @@ test('the reader: a plainer request when the fixed shape is refused, and why it 
   assert.deepEqual(await np.readTest({ DB: db }, { photo: pic('c') }), { ok: false, errors: ['The reader (Workers AI) is not bound to this Worker.'], raw: null });
   await assert.rejects(np.readTest(env, { photo: 'x' }), /Choose a picture/);
 });
+
+test('a picture added in Insight for a shift with none: read like one from the link, or held against numbers typed', async () => {
+  const { db } = freshDb();
+  let answer = { response: '{"GB": "100", "GT": "200", "LB": "300", "LT": "400", "problem": ""}' };
+  const env = { DB: db, AI: { run: async () => answer } };
+  const pic = (s) => `data:image/jpeg;base64,${Buffer.from(s).toString('base64')}`;
+  const day = '2026-10-16';
+
+  // No reading: what is read becomes it, sent by whoever added it.
+  let out = await np.uploadPhoto(env, { day, shift: 'day', photo: pic('a') }, OWNER);
+  assert.deepEqual([out.kept, out.values, out.pending], [false, { gb: 100, gt: 200, lb: 300, lt: 400 }, []]);
+  let row = await env.DB.prepare("SELECT * FROM np_reading WHERE shift = 'day'").first();
+  assert.deepEqual([row.gb, row.name, Boolean(row.photo_id), row.edited_by], [100, 'Test Owner', true, null]);
+  await assert.rejects(np.uploadPhoto(env, { day, shift: 'day', photo: pic('b') }, OWNER), /has a picture already/);
+
+  // A counter not read: it waits, to be typed from the picture.
+  answer = { response: '{"GB": "110", "GT": "", "LB": "310", "LT": "410", "problem": "glare on GT"}' };
+  out = await np.uploadPhoto(env, { day, shift: 'night', photo: pic('c') }, OWNER);
+  assert.deepEqual(out.pending, ['gt']);
+  assert.equal((await np.pendingReadings(env)).items[0].key, `${day}|night`);
+
+  // Numbers typed without a picture: they stay; the picture is added and held against them.
+  await np.editReading(env, { day: '2026-10-17', shift: 'day', gb: 120, gt: 230, lb: 320, lt: 420 }, OWNER);
+  answer = { response: '{"GB": "120", "GT": "220", "LB": "320", "LT": "420", "problem": ""}' };
+  out = await np.uploadPhoto(env, { day: '2026-10-17', shift: 'day', photo: pic('d') }, OWNER);
+  assert.deepEqual([out.kept, out.differs], [true, [{ counter: 'gt', typed: 230, read: 220 }]]);
+  row = await env.DB.prepare("SELECT * FROM np_reading WHERE day = '2026-10-17'").first();
+  assert.deepEqual([row.gt, Boolean(row.photo_id), row.edited_by], [230, true, 'Test Owner']);
+  await assert.rejects(np.uploadPhoto(env, { day, shift: 'day', photo: 'x' }, OWNER), /Choose a picture/);
+});

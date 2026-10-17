@@ -64,6 +64,14 @@ If the counters carry no GB / GT / LB / LT labels, say where each one is under
 Settings › **How the counters are laid out** (for example "left to right:
 GB, GT, LB, LT"); the reader is told.
 
+**A shift with no picture** (none sent, or numbers typed in Insight): an admin
+opens it and presses **📷 Add the picture**. It is read like one from the
+link. With no reading, what is read becomes the reading, and a counter not
+read waits to be typed from the picture, in the same box as above. With
+numbers already typed, they stay; the picture is kept with them and any
+number it reads differently is said, to fix if the picture is right. A shift
+that has a picture already cannot be given another here.
+
 Readings sent before this, typed because the picture could not be read, still
 say "typed: picture not read" in Insight.
 
