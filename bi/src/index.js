@@ -24,6 +24,8 @@ import * as np from './routes/niceplace.js';
 import * as odooact from './routes/odooact.js';
 import * as newpo from './routes/newpo.js';
 import * as proof from './routes/proof.js';
+import * as approvals from './routes/approvals.js';
+import * as receipts from './routes/receipts.js';
 import { sendDailySummary } from './routes/summary.js';
 import { verifyForm, verifyLink } from './lib/link.js';
 import { first } from './lib/db.js';
@@ -236,8 +238,23 @@ const ROUTES = [
   ['GET', '/api/po/new', 'insight', adminOnly((env) => newpo.poForm(env))],
   ['POST', '/api/po/read', 'insight', adminOnly((env, ctx) => newpo.readPo(env, ctx.body))],
   ['POST', '/api/po/check', 'insight', adminOnly((env, ctx) => newpo.checkPo(env, ctx.body))],
-  ['POST', '/api/po/create', 'insight', adminOnly((env, ctx) => newpo.createPo(env, ctx.body, ctx.account))],
+  ['POST', '/api/po/create', 'insight', adminOnly(async (env, ctx) => {
+    const out = await newpo.createPo(env, ctx.body, ctx.account);
+    // A receipt that could not be read, filled in by hand: it is this PO now.
+    if (out.ok && ctx.body?.receiptId) await receipts.filled(env, ctx.body.receiptId, out.po, ctx.account);
+    return out;
+  })],
+  // Receipts made into draft POs: several chosen at once, or emailed in (the email handler below).
+  ['GET', '/api/receipts', 'insight', adminOnly((env) => receipts.list(env))],
+  ['GET', '/api/receipts/choices', 'insight', adminOnly((env) => receipts.settingsChoices(env))],
+  ['POST', '/api/receipts/settings', 'insight', adminOnly((env, ctx) => receipts.saveSettings(env, ctx.body))],
+  ['POST', '/api/receipts/upload', 'insight', adminOnly((env, ctx) => receipts.upload(env, ctx.body, ctx.account))],
+  ['GET', '/api/receipts/:id/file', 'insight', adminOnly((env, ctx) => receipts.receiptFile(env, ctx.params.id))],
+  ['POST', '/api/receipts/dismiss', 'insight', adminOnly((env, ctx) => receipts.dismiss(env, ctx.body, ctx.account))],
   ['GET', '/api/po/recent', 'insight', adminOnly((env) => newpo.recentPos(env))],
+  // Approvals: everything waiting for an admin in every system, decided here as them.
+  ['GET', '/api/approvals', 'session', adminOnly((env, ctx) => approvals.list(env, ctx.account))],
+  ['POST', '/api/approvals/decide', 'session', adminOnly((env, ctx) => approvals.decide(env, ctx.body, ctx.account))],
   // A PO made here, paid from a shift's drawer: only once an admin allows it.
   ['GET', '/api/po/drawer', 'shifts', adminOnly((env) => newpo.drawerAsks(env))],
   ['POST', '/api/po/drawer', 'shifts', adminOnly((env, ctx) => newpo.decideDrawer(env, ctx.body, ctx.account))],
@@ -389,6 +406,19 @@ export default {
    * brief is waiting before anybody opens it. The window reaches back ten days
    * because every one of the four sources accepts a late correction.
    */
+  /**
+   * An email to the receipts address, handed over by Cloudflare Email
+   * Routing: each photo or PDF in it from somebody on the list becomes a
+   * draft PO. See docs/receipts.md for setting the address up.
+   */
+  async email(message, env, execution) {
+    try {
+      await receipts.fromEmail(env, message);
+    } catch (err) {
+      console.error('Receipts by email', err);
+    }
+  },
+
   async scheduled(event, env, execution) {
     // Two schedules: the nightly load, and the morning summary once the
     // night shift has handed over.

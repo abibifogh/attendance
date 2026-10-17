@@ -696,3 +696,18 @@ export async function attachToPo({ config: settings, token, poId, name, mimetype
   }, { fetchImpl });
   return Array.isArray(made) ? made[0] : made;
 }
+
+/** A note on the PO's chatter, as plain text: what was read off a receipt. */
+export async function noteOnPo({ config: settings, token, poId, text, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  return call(config, 'purchase.order', 'message_post', { ids: [Number(poId)], body: String(text), message_type: 'comment', subtype_xmlid: 'mail.mt_note' }, { fetchImpl });
+}
+
+/** A To-Do on the PO for one Odoo user, due on `day`, saying what to check. */
+export async function todoOnPo({ config: settings, token, poId, userId, summary, note, day, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  return call(config, 'purchase.order', 'activity_schedule', {
+    ids: [Number(poId)], act_type_xmlid: 'mail.mail_activity_data_todo', date_deadline: day,
+    summary: String(summary).slice(0, 120), note: String(note || ''), user_id: Number(userId),
+  }, { fetchImpl });
+}

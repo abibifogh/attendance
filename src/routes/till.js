@@ -835,7 +835,7 @@ export async function answer(ctx) {
 // ------------------------------------------------------ Insight, asking us --
 
 /** Check a request came from Insight, and read its body. */
-async function fromInsight(ctx) {
+export async function fromInsight(ctx) {
   const text = await ctx.request.text();
   const ok = await verifyLink(ctx.env.INSIGHT_SSO_SECRET, {
     at: ctx.request.headers.get('X-Till-At'), sig: ctx.request.headers.get('X-Till-Sig'), path: ctx.url.pathname, bodyText: text,

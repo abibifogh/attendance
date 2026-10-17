@@ -463,7 +463,7 @@ function netByPerson(issues, nameOf) {
 }
 
 /** A supervisor's answers and reconciliations, waiting for an admin. */
-async function pendingAnswers(env) {
+export async function pendingAnswers(env) {
   const answers = await all(env.DB, "SELECT * FROM shift_answer WHERE status = 'pending' ORDER BY at").catch(() => []);
   const links = await all(env.DB, "SELECT * FROM shift_link WHERE status = 'pending' ORDER BY at").catch(() => []);
   return [
@@ -476,7 +476,7 @@ async function pendingAnswers(env) {
   ].sort((a, b) => String(a.at).localeCompare(String(b.at)));
 }
 
-async function pendingMovements(env) {
+export async function pendingMovements(env) {
   try {
     return await all(env.DB, `SELECT m.*, e.day, e.staff, e.data FROM shift_movement m
       LEFT JOIN assd_entry e ON e.seq = m.seq WHERE m.status = 'pending' ORDER BY m.at`)

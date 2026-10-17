@@ -37,6 +37,7 @@ import * as signoff from './routes/signoff.js';
 import * as workload from './routes/workload.js';
 import * as pay from './routes/pay.js';
 import * as advance from './routes/advances.js';
+import * as approvals from './routes/approvals.js';
 import * as medical from './routes/medical.js';
 import * as payroll from './routes/payroll.js';
 import * as payAccess from './routes/payroll-access.js';
@@ -211,6 +212,10 @@ export const ROUTES = [
   ['POST', '/api/link/till/expect', 'public', till.linkExpect],
   ['POST', '/api/link/till/summary', 'public', till.linkSummary],
   ['POST', '/api/link/mail', 'public', till.linkMail],
+  // Insight's Approvals page: what waits here for a decision, and the decision
+  // itself, through HIVE's own routes as the person deciding. Signed by Insight.
+  ['POST', '/api/link/approvals/list', 'public', (ctx) => approvals.linkList(ctx, asUser(ctx))],
+  ['POST', '/api/link/approvals/decide', 'public', (ctx) => approvals.linkDecide(ctx, asUser(ctx))],
   ['GET', '/api/me/report', 'att_me', mine.myReport],
   ['POST', '/api/me/leave', 'att_me', mine.askForLeave],
   ['POST', '/api/me/leave/:id/withdraw', 'att_me', mine.withdrawMyLeave],
@@ -801,6 +806,45 @@ const locked = (pathname) => pathname.startsWith(PAYROLL_PREFIX)
  * payslip is not, whatever else they hold.
  */
 const ADMIN_ONLY = new Set(['/api/payroll/slip/:id']);
+
+/**
+ * Run one of HIVE's own routes as somebody, from inside HIVE.
+ *
+ * For Insight's Approvals page: the session is the person's own login, read
+ * fresh, and the route's own permission is checked against it exactly as a
+ * browser's request would be. What comes back is the route's answer; a refusal
+ * is thrown with the route's own words.
+ */
+function asUser(ctx) {
+  return async (session, method, path, body = null) => {
+    const url = new URL(path, 'https://hive.internal');
+    for (const [routeMethod, pattern, permission, handler] of ROUTES) {
+      if (routeMethod !== method) continue;
+      const params = match(pattern, url.pathname);
+      if (!params) continue;
+      if (permission === 'public' || locked(url.pathname)) throw forbidden('Not from Insight.');
+      if (!allows(permission, session.permissions)) {
+        throw forbidden('Your HIVE login does not have access to that part of HIVE.');
+      }
+      const request = new Request(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', 'X-Hive-Client': 'insight' },
+        body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
+      });
+      const sub = {
+        ...ctx, request, url, session: { ...session, user: { ...session.user } },
+      };
+      const response = await handler(sub, ...params);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new HttpError(response.status, data.error || 'HIVE refused that.');
+      if (live.worthTelling(method, url.pathname)) {
+        live.announce(ctx.env, ctx.executionContext, { topic: live.topicFor(url.pathname), by: 'insight' });
+      }
+      return data;
+    }
+    throw new HttpError(404, 'HIVE has no such route.');
+  };
+}
 
 function match(pattern, pathname) {
   const want = pattern.split('/');

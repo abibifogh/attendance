@@ -63,9 +63,33 @@ const asDataUrl = (file) => new Promise((resolve, reject) => {
   r.readAsDataURL(file);
 });
 
+/** A small picture for the list of receipts. */
+async function thumbOf(dataUrl) {
+  const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = dataUrl; });
+  const scale = Math.min(1, 160 / Math.max(img.naturalWidth, img.naturalHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(img.naturalWidth * scale);
+  canvas.height = Math.round(img.naturalHeight * scale);
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.7);
+}
+
+/** What became of a receipt, in a few words. */
+export function resultWords(r) {
+  if (r.status === 'complete') return `✓ ${r.po.name} · ${r.vendorName} · ${money(r.amount)}`;
+  if (r.status === 'check') return `⚠ ${r.po.name} · ${money(r.amount)} · ${r.vendorOk === false ? 'vendor to confirm' : 'item to check'}`;
+  if (r.status === 'duplicate') return `= Seen before${r.po?.name ? `: ${r.po.name}` : ''}`;
+  if (r.status === 'filled') return `✓ ${r.po?.name || 'PO made'}`;
+  return `✕ No PO: ${r.problem || 'could not be read'}`;
+}
+
 const dayText = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
-export function openNewPo() {
+/**
+ * `receipt`: a kept receipt to fill in by hand ({ id, file, name }), read
+ * straight away; `bulk`: open on "Just the receipts". `after` runs once a PO is made.
+ */
+export function openNewPo({ receipt = null, bulk = false, after = null } = {}) {
   const inner = h('div.po-in', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'New purchase order' });
   const sheet = h('div.po-sheet', inner);
   const close = () => { sheet.remove(); document.removeEventListener('keydown', onKey); };
@@ -77,12 +101,19 @@ export function openNewPo() {
   // What the form holds, and which fields were read (green) or need a choice (amber).
   let v = blank();
   function blank() {
-    return { vendor: '', amount: '', date: new Date().toISOString().slice(0, 10), description: '', product: '', drawer: false, file: null, fileName: '', flags: {}, hints: {} };
+    return { vendor: '', amount: '', date: new Date().toISOString().slice(0, 10), description: '', product: '', drawer: false, file: null, fileName: '', receiptId: null, flags: {}, hints: {} };
   }
   let c = null;
 
+  if (bulk) { many(); return; }
   mount(inner, h('p', 'Loading Odoo’s vendors and items…'));
-  loadChoices().then((d) => { c = d; v.date = d.today || v.date; form(); }).catch((err) => {
+  loadChoices().then((d) => {
+    c = d; v.date = d.today || v.date;
+    if (receipt) {
+      Object.assign(v, { file: receipt.file, fileName: receipt.name || 'Receipt', receiptId: receipt.id, readNow: { file: receipt.file, name: receipt.name } });
+    }
+    form();
+  }).catch((err) => {
     mount(inner, h('h2', 'New purchase order'), h('p.po-said.err', err.message), h('div.po-acts', h('button.btn', { type: 'button', onclick: close }, 'Close')));
   });
 
@@ -171,7 +202,8 @@ export function openNewPo() {
 
     mount(inner,
       h('h2', 'New purchase order'),
-      h('p.po-sub', 'A draft in Odoo, approved there as usual.'),
+      h('p.po-sub', 'A draft in Odoo, approved there as usual.',
+        v.receiptId ? null : [' Several receipts? ', h('button.sh-link', { type: 'button', onclick: () => many() }, 'Just the receipts')]),
       // Who Odoo will make it as, and a warning before anything is typed when Odoo will not let that login.
       c.as?.canCreate === false ? h('div.po-warn', h('b', 'Odoo will not let Insight create POs yet. '),
         `Insight’s Odoo key signs in as ${c.as.name || 'a login'}${c.as.login ? ` (${c.as.login})` : ''} on ${c.as.db || c.as.host}, and Odoo says that login may not create purchase orders. `,
@@ -198,6 +230,70 @@ export function openNewPo() {
       h('div.po-acts', h('button.btn', { type: 'button', onclick: close }, 'Cancel'), h('button.btn.primary', { type: 'button', onclick: check }, 'Check')),
       c.as?.name || c.as?.login ? h('p.po-said', { style: 'color:var(--ink-2);font-size:.78rem' }, `In Odoo as ${c.as.name || ''}${c.as.login ? ` (${c.as.login})` : ''} · ${c.as.db || c.as.host}`) : null);
     if (!v.vendor && !said) vendor.focus();
+    // A kept receipt, opened to be filled in: read it as if just chosen.
+    if (v.readNow) { const now = v.readNow; v.readNow = null; read(now); }
+  }
+
+  /**
+   * Just the receipts: several photos or PDFs, each read and made into a
+   * draft PO straight away, with nothing to fill in. What each became is
+   * said here, and kept in Money › Receipts.
+   */
+  function many() {
+    const files = [];
+    const pick = h('input', { type: 'file', accept: 'image/*,application/pdf', multiple: true, hidden: true });
+    const list = h('div.po-many');
+    const hint = h('input', { placeholder: 'What they are, if it helps (optional), e.g. fuel for the generator', maxlength: '300' });
+    const said = h('p.po-said');
+    const go = h('button.btn.primary', { type: 'button', disabled: true }, 'Make the draft POs');
+    const show = () => {
+      mount(list, files.map((f, i) => h('div.po-mfile', f.thumb ? h('img', { src: f.thumb, alt: '' }) : h('span', '📄'),
+        h('small', f.name), f.result ? h(`span.po-mres.${f.result.status}`, resultWords(f.result)) : f.busy ? h('span.po-mres', 'Reading…')
+          : h('button.sh-link', { type: 'button', onclick: () => { files.splice(i, 1); show(); } }, 'Remove'))));
+      const waiting = files.filter((f) => !f.result).length;
+      go.disabled = !waiting;
+      go.textContent = waiting ? `Make ${waiting} draft PO${waiting === 1 ? '' : 's'}` : 'Make the draft POs';
+    };
+    pick.addEventListener('change', async () => {
+      said.className = 'po-said'; said.textContent = 'Getting them ready…';
+      try {
+        for (const f of pick.files) {
+          // eslint-disable-next-line no-await-in-loop
+          const file = f.type === 'application/pdf' ? (f.size > 7_000_000 ? null : await asDataUrl(f)) : await shrink(f);
+          if (!file) { said.className = 'po-said err'; said.textContent = `${f.name} is over 7 MB: take a photo of it instead.`; continue; }
+          // eslint-disable-next-line no-await-in-loop
+          files.push({ name: f.name, file, thumb: f.type === 'application/pdf' ? null : await thumbOf(file) });
+        }
+        if (!said.classList.contains('err')) said.textContent = '';
+      } catch (err) { said.className = 'po-said err'; said.textContent = err.message; }
+      pick.value = '';
+      show();
+    });
+    go.addEventListener('click', async () => {
+      go.disabled = true;
+      said.className = 'po-said'; said.textContent = '';
+      for (const f of files.filter((x) => !x.result)) {
+        f.busy = true; show();
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          f.result = (await api('/receipts/upload', { method: 'POST', body: { file: f.file, name: f.name, thumb: f.thumb, hint: hint.value } })).receipt;
+        } catch (err) { f.result = { status: 'failed', problem: err.message }; }
+        f.busy = false; show();
+      }
+      const made = files.filter((f) => f.result?.po && ['complete', 'check'].includes(f.result.status)).length;
+      said.textContent = `${made} draft PO${made === 1 ? '' : 's'} made. Each is kept in Money › Receipts, with what to check.`;
+      if (after) after();
+    });
+    mount(inner,
+      h('h2', 'New purchase orders from receipts'),
+      h('p.po-sub', 'Choose or take pictures, or PDFs. Each is read and made into a draft PO straight away, with the receipt attached. No form to fill.'),
+      h('button.pf-add', { type: 'button', onclick: () => pick.click() }, '📷 Take pictures, or choose several photos / PDFs'), pick,
+      list, hint, said,
+      h('div.po-acts', h('button.btn', { type: 'button', onclick: close }, 'Close'), go),
+      h('p.po-said', { style: 'color:var(--ink-2);font-size:.78rem' }, 'Prefer to check each first? ',
+        h('button.sh-link', { type: 'button', onclick: () => { if (c) form(); else { mount(inner, h('p', 'Loading Odoo’s vendors and items…')); loadChoices().then((d) => { c = d; v.date = d.today || v.date; form(); }).catch((err) => { said.className = 'po-said err'; said.textContent = err.message; }); } } }, 'The one-at-a-time form')));
+    show();
+    pick.click();
   }
 
   function confirm(body, out) {
@@ -206,9 +302,10 @@ export function openNewPo() {
       e.target.disabled = true;
       said.className = 'po-said'; said.textContent = 'Creating in Odoo…';
       try {
-        const res = await api('/po/create', { method: 'POST', body: { ...body, seen: out.alike.map((a) => a.name), ...(again ? { again: true } : {}), ...(v.file ? { file: v.file } : {}) } });
+        const res = await api('/po/create', { method: 'POST', body: { ...body, seen: out.alike.map((a) => a.name), ...(again ? { again: true } : {}), ...(v.file ? { file: v.file } : {}), ...(v.receiptId ? { receiptId: v.receiptId } : {}) } });
         if (res.already) { already(res.already); e.target.disabled = false; return; }
         done(res);
+        if (after) after(res);
       } catch (er) {
         said.className = 'po-said err'; said.textContent = er.message; e.target.disabled = false;
       }
