@@ -95,6 +95,17 @@ in Shifts → Inbox (or on the shift) and presses **Put on a staff account**:
 - **Why.** Required: a quick reason (Both held the drawer, Handed over without
   counting, Covered this shift, Agreed with them) and/or a sentence.
 
+**Any other difference with an amount** can go on an account the same way: a
+payment on the terminal not in ASSD, a card declined, a PO total that does not
+match its expenses, and so on. For these the admin also says which way it goes:
+
+- **Deficit: they owe it.** On their account as money they owe, like a drawer short.
+- **Surplus: owed to them.** On their account as money owed to them, like a drawer over.
+
+It works on a difference with a supervisor's answer waiting for approval too:
+**Put on a staff account** sits beside Approve and Reject, and moving it
+decides it instead (the answer is set aside, and it leaves Approvals).
+
 Each person gets a HIVE message (push and email) and finds their share on
 **To sort out**, marked *Moved to you* with the reason, where they explain it
 or say they will pay it back. It is then settled like anything else on their

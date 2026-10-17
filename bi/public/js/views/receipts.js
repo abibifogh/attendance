@@ -50,13 +50,30 @@ export async function renderReceipts(root) {
           h('div', h('h1', 'Receipts'), h('p.small.muted', 'Every receipt sent in, and the draft PO it became. Approving stays in Odoo.')),
           h('button.btn.primary', { type: 'button', onclick: () => openNewPo({ bulk: true, after: () => read() }) }, '＋ Add receipts')),
         s.address ? h('p.rc-addr', '✉ Or email them to ', h('b', s.address), s.senders.length ? ` from ${s.senders.join(', ')}` : ': nobody may send yet (Settings, below)') : h('p.small.muted', 'Emailing receipts in is not set up yet: see Settings, below.'),
-        !s.vendor || !s.product ? banner('warning', 'Choose the placeholder vendor and item (Settings, below): until then a receipt whose vendor or item is not in Odoo is kept here, with no PO.') : null),
+        !s.vendor || !s.product ? banner('warning', 'Choose the placeholder vendor and item (Settings, below). Odoo needs an item on every priced PO line, so an unmatched one goes on the placeholder item, with the receipt’s own words as the line’s label. Until both are chosen, such a receipt is kept here with no PO.') : null),
       message ? banner('good', message) : null,
       h('div.td-pills', { role: 'group', 'aria-label': 'Which' },
         pill('all', 'All', items.length),
         pill('todo', 'To look at', items.filter((x) => ['unread', 'failed', 'check'].includes(x.status)).length),
         pill('complete', 'Complete', items.filter((x) => x.status === 'complete').length)),
-      open.length ? h('p.small', `${open.length} with no PO yet: “Fill it in” opens the usual ＋ PO form with the receipt already there.`) : null,
+      open.length ? h('div.rc-open',
+        h('p.small', `${open.length} with no PO yet. “Try again” reads it again (after choosing the placeholders, say); “Fill it in” opens the usual ＋ PO form with the receipt already there.`),
+        open.filter((x) => x.hasFile).length > 1 ? h('button.btn', {
+          type: 'button',
+          onclick: async (e) => {
+            e.target.disabled = true;
+            const list = open.filter((x) => x.hasFile);
+            let made = 0;
+            for (const [i, x] of list.entries()) {
+              e.target.textContent = `Reading ${i + 1} of ${list.length}…`;
+              // eslint-disable-next-line no-await-in-loop
+              const out = await api('/receipts/retry', { method: 'POST', body: { id: x.id } }).catch(() => null);
+              if (out?.receipt?.po) made += 1;
+            }
+            await read();
+            paint(`${made} of ${list.length} made into draft POs.${made < list.length ? ' The rest still say why.' : ''}`);
+          },
+        }, `Try all ${open.filter((x) => x.hasFile).length} again`) : null) : null,
       shown.length ? h('div.card.rc-list', shown.map(row)) : h('section.card', h('p', items.length ? 'Nothing here.' : 'No receipts yet. Press ＋ Add receipts, or email them in.')),
       settingsCard(),
       data.mails.length ? h('details.card.rc-mails', h('summary', `Emails to the receipts address · ${data.mails.length}`),
@@ -75,6 +92,14 @@ export async function renderReceipts(root) {
       } catch (err) { said.textContent = err.message; }
       e.target.disabled = false;
     };
+    const again = async (e) => {
+      e.target.disabled = true; said.textContent = 'Reading it again…';
+      try {
+        const { receipt } = await api('/receipts/retry', { method: 'POST', body: { id: x.id } });
+        await read();
+        if (!receipt.po) paint(`Still no PO for ${x.name || 'that receipt'}: ${receipt.problem || 'it could not be read'}`);
+      } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+    };
     const setAside = async () => {
       try { await api('/receipts/dismiss', { method: 'POST', body: { id: x.id } }); await read(); } catch (err) { said.textContent = err.message; }
     };
@@ -91,7 +116,7 @@ export async function renderReceipts(root) {
         x.todo ? h('small', ' · To-Do in Odoo') : null),
       h('div.rc-act',
         x.po?.url ? h('a', { href: x.po.url, target: '_blank', rel: 'noopener' }, 'Open in Odoo ↗') : null,
-        ['unread', 'failed'].includes(x.status) && x.hasFile ? [h('button.btn', { type: 'button', onclick: fill }, 'Fill it in'), h('button.sh-link', { type: 'button', onclick: setAside }, 'Set aside')] : null,
+        ['unread', 'failed'].includes(x.status) && x.hasFile ? [h('button.btn', { type: 'button', onclick: again }, 'Try again'), h('button.btn', { type: 'button', onclick: fill }, 'Fill it in'), h('button.sh-link', { type: 'button', onclick: setAside }, 'Set aside')] : null,
         said));
   }
 

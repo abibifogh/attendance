@@ -19,6 +19,10 @@ The **✓ Approvals** button on Insight's menu bar shows how many are waiting
   POS's Waiting for you, and decided there, because approving one moves
   stock. A group booking whose meal times are already on the kitchen's list
   is refused in the POS too, which cancels them and gives money back.
+- **Maintenance** (once linked): tasks done and waiting for review, store
+  counts, stock counts, new parts and tools, and weekly activity plans (a
+  supervisor passes them up; the admin approves).
+- **Team Tasks** (once linked): leads' week plans, for a manager.
 
 You see only what you may decide in each system. In HIVE that is what your
 own HIVE login may decide: an admin sees all of it; a login without, say, the
@@ -74,11 +78,21 @@ The POS joins the list by itself once both are true:
 
 The POS must also be running the version with the approvals entry point (snpos PR #58). Until then, a yellow line says the POS does not take approvals from Insight yet.
 
-## Still to come
+## Linking Maintenance and Team Tasks
 
-Maintenance and Team Tasks join the same list once each has its own signed
-entry point, the same way HIVE and the POS have one. Laundry has nothing that
-waits for approval.
+Both are answered by one server function in the Maintenance database. Set
+one shared secret, the same value in both places:
+
+- In the hostel-maintenance repository: `INSIGHT_APPROVALS_SECRET`, then run
+  its "Deploy Supabase" Action.
+- In this repository: `INSIGHT_SSO_SECRET_MAINTENANCE`, then run "Set
+  Insight's secrets".
+
+Maintenance finds you by the email on your Insight account. A decision goes
+through Maintenance's own rules, as you: only a supervisor or admin passes a
+plan up, only a Team Tasks manager decides a week plan.
+
+Laundry has nothing that waits for approval.
 
 ## For whoever runs it
 

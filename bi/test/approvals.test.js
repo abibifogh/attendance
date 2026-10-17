@@ -102,3 +102,30 @@ test('the POS joins once linked: a signed call to its notify function, its items
   assert.equal(done.as, 'Test Owner via Insight');
   assert.equal(asked[1][1].decision, 'approve');
 });
+
+test('Maintenance and Team Tasks: one signed call, two chips, each decision sent back with its kind', async () => {
+  const { env } = setUp();
+  assert.equal((await approvals.list(env, OWNER)).systems.some((s) => s.id === 'maintenance'), false, 'not linked: not shown');
+  env.SSO_SECRET_MAINTENANCE = 'mx-secret';
+  env.MAINTENANCE_APPROVALS_URL = 'https://mx.example.test/functions/v1/approvals';
+  const asked = [];
+  const { signLink } = await import('../src/lib/link.js');
+  globalThis.fetch = async (url, init) => {
+    const want = await signLink('mx-secret', '/approvals', init.body, Number(init.headers['X-Till-At']));
+    assert.equal(init.headers['X-Till-Sig'], want['X-Till-Sig']);
+    const body = JSON.parse(init.body);
+    asked.push(body);
+    if (body.action === 'list') {
+      return Response.json({ ok: true, items: [
+        { system: 'maintenance', kind: 'issue', id: '7', title: 'Leaking tap · Room 4', askedAt: '2026-10-16T08:00:00Z', decisions: [] },
+        { system: 'tasks', kind: 'week_plan', id: '3', title: 'Week plan · Housekeeping', askedAt: '2026-10-17T08:00:00Z', decisions: [] },
+      ] });
+    }
+    return Response.json({ ok: true, said: 'Approved', as: 'Test Owner' });
+  };
+  const out = await approvals.list(env, OWNER);
+  assert.deepEqual(out.systems.filter((s) => ['maintenance', 'tasks'].includes(s.id)).map((s) => [s.id, s.label, s.count]), [['maintenance', 'Maintenance', 1], ['tasks', 'Team Tasks', 1]]);
+  assert.deepEqual(out.items.filter((i) => i.via === 'maintenance').map((i) => i.systemLabel), ['Maintenance', 'Team Tasks']);
+  await approvals.decide(env, { system: 'tasks', kind: 'week_plan', id: '3', decision: 'approve' }, OWNER);
+  assert.deepEqual([asked[1].action, asked[1].kind, asked[1].email], ['decide', 'week_plan', 'owner@example.test']);
+});

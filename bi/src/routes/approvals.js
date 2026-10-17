@@ -25,6 +25,8 @@ const SYSTEMS = [
   { id: 'hive', label: 'HIVE', list: hiveList, decide: hiveDecide, system: 'attendance' },
   // The POS, once its address and the shared secret are set (Setup › sources, SSO_SECRET_POS).
   { id: 'pos', label: 'POS', list: posList, decide: posDecide, system: 'pos', linked: async (env) => Boolean(env.SSO_SECRET_POS && await posBase(env)) },
+  // Maintenance and Team Tasks: one database, one call; each item says which of the two it is.
+  { id: 'maintenance', label: 'Maintenance', list: mxList, decide: mxDecide, linked: async (env) => Boolean(env.SSO_SECRET_MAINTENANCE && env.MAINTENANCE_APPROVALS_URL), also: { tasks: 'Team Tasks' } },
 ];
 
 // ----------------------------------------------------------------- Insight --
@@ -176,6 +178,41 @@ async function posDecide(env, body, account) {
   return { said: out.said, as: out.as };
 }
 
+// ------------------------------------------------- Maintenance, Team Tasks --
+
+/**
+ * The Maintenance database's `approvals` function, which answers for Team
+ * Tasks too (it lives in the same database). Signed like the others, with
+ * its own secret; the action rides in the body, so the signature does not
+ * depend on how the function's address is spelled.
+ */
+async function mx(env, body, { fetchImpl = fetch } = {}) {
+  const url = env.MAINTENANCE_APPROVALS_URL;
+  if (!url || !env.SSO_SECRET_MAINTENANCE) throw new Error('Maintenance is not linked: it needs MAINTENANCE_APPROVALS_URL and SSO_SECRET_MAINTENANCE.');
+  const text = JSON.stringify(body ?? {});
+  const headers = { 'Content-Type': 'application/json', ...(await signLink(env.SSO_SECRET_MAINTENANCE, '/approvals', text)) };
+  let response;
+  try { response = await fetchImpl(url, { method: 'POST', headers, body: text }); } catch (err) { throw new Error(`Maintenance could not be reached: ${err.message}`); }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 404 && !data?.error) throw new Error('Maintenance does not take approvals from Insight yet: its approvals function is not deployed.');
+  if (!response.ok || data?.ok === false) {
+    const error = new Error(data?.error || `Maintenance answered ${response.status}.`);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+async function mxList(env, account) {
+  const out = await mx(env, { action: 'list', email: account.email });
+  return { items: out.items || [], failed: out.failed || [] };
+}
+
+async function mxDecide(env, body, account) {
+  const out = await mx(env, { action: 'decide', email: account.email, ...body });
+  return { said: out.said, as: out.as };
+}
+
 // ----------------------------------------------------------------- the page --
 
 /** Where each system's own screens are, from Setup › Systems. */
@@ -195,13 +232,23 @@ export async function list(env, account) {
     try {
       if (s.id !== 'insight' && !account.email) throw new Error('Your Insight account has no email, so the other systems cannot tell who you are.');
       const got = await s.list(env, account);
-      for (const item of got.items) items.push({ ...item, system: s.id, systemLabel: s.label });
-      systems.push({ id: s.id, label: s.label, ok: true, count: got.items.length, home: s.system ? home[s.system] : null, partly: got.failed || [] });
+      // One call can answer for two systems (Maintenance and Team Tasks): each item says which.
+      const ids = [s.id, ...Object.keys(s.also || {})];
+      const labelOf = (id) => (id === s.id ? s.label : s.also[id]);
+      for (const item of got.items) {
+        const id = ids.includes(item.system) ? item.system : s.id;
+        items.push({ ...item, system: id, via: s.id, systemLabel: labelOf(id) });
+      }
+      for (const id of ids) {
+        const count = got.items.filter((i) => (ids.includes(i.system) ? i.system : s.id) === id).length;
+        if (id === s.id || count) systems.push({ id, label: labelOf(id), ok: true, count, home: s.system ? home[s.system] : null, partly: id === s.id ? got.failed || [] : [] });
+      }
     } catch (err) {
       systems.push({ id: s.id, label: s.label, ok: false, count: 0, error: err.message });
     }
   }));
-  systems.sort((a, b) => SYSTEMS.findIndex((s) => s.id === a.id) - SYSTEMS.findIndex((s) => s.id === b.id));
+  const order = SYSTEMS.flatMap((s) => [s.id, ...Object.keys(s.also || {})]);
+  systems.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   items.sort((a, b) => String(a.askedAt || '').localeCompare(String(b.askedAt || '')));
   return { systems, items, count: items.length };
 }
@@ -209,7 +256,7 @@ export async function list(env, account) {
 /** One decision, sent to the system the item came from. */
 export async function decide(env, body, account) {
   await till.requireAdmin(account);
-  const system = SYSTEMS.find((s) => s.id === body?.system);
+  const system = SYSTEMS.find((s) => s.id === body?.system || Object.keys(s.also || {}).includes(body?.system));
   if (!system) throw badRequest('Which system?');
   const kind = String(body?.kind || '');
   const id = String(body?.id ?? '');

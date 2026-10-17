@@ -171,7 +171,8 @@ async function makePo(env, r, { data, today, fetchImpl }) {
   r.description = read.description || 'From a receipt';
   const missing = needsSaying({ vendorOk: vendor, itemOk: product, vendorText: read.vendor, description: read.description });
   if (!useVendor || !useProduct) {
-    r.problem = `No PO made: ${missing.join(', and ')}, and no placeholder ${!useVendor ? 'vendor' : 'item'} is chosen in Money › Receipts › Settings.`;
+    r.problem = `${missing.join(', and ')}, and no placeholder ${!useVendor ? 'vendor' : 'item'} is chosen in Money › Receipts › Settings. Choose it there, then Try again.`;
+    r.problem = r.problem.charAt(0).toUpperCase() + r.problem.slice(1);
     return;
   }
   r.vendor_name = useVendor.name;
@@ -185,7 +186,10 @@ async function makePo(env, r, { data, today, fetchImpl }) {
     }
   }
   const po = await createDraftPo({
-    ...opts, vendorId: useVendor.id, productId: useProduct.id, description: r.description, amount: read.amount, day: r.day,
+    ...opts, vendorId: useVendor.id, productId: useProduct.id, amount: read.amount, day: r.day,
+    // The line's label is what the receipt says was bought; with a stand-in
+    // vendor, who sold it too, so the PO reads right before anybody opens it.
+    description: vendor || !read.vendor ? r.description : `${r.description} (from ${read.vendor})`.slice(0, 200),
     origin: `Insight · receipt by ${r.came === 'email' ? 'email' : 'upload'} · ${r.by_name || 'Insight'}`,
   }).catch((err) => { throw new Error(`Odoo did not create the PO: ${String(err?.message || err)}`); });
   Object.assign(r, { po_id: po.id, po_name: po.name, po_url: po.url, status: missing.length ? 'check' : 'complete' });
@@ -246,6 +250,31 @@ export async function list(env) {
     FROM receipt r ORDER BY r.id DESC LIMIT 200`).catch(() => []);
   const mails = await all(env.DB, 'SELECT * FROM receipt_mail ORDER BY id DESC LIMIT 15').catch(() => []);
   return { items: rows.map(shape), mails, settings: await receiptSettings(env) };
+}
+
+/**
+ * Try again: a receipt with no PO (could not be read, no stand-in chosen,
+ * Odoo refused), read and made again from the file kept here. Same row, so
+ * it is still one receipt.
+ */
+export async function retry(env, body, account, { fetchImpl } = {}) {
+  const row = await first(env.DB, 'SELECT * FROM receipt WHERE id = ?1', Number(body?.id));
+  if (!row) throw new HttpError(404, 'No such receipt.');
+  if (!['unread', 'failed'].includes(row.status)) throw badRequest('That one has a PO already.');
+  const parts = await all(env.DB, 'SELECT data FROM receipt_file WHERE receipt_id = ?1 ORDER BY part', row.id);
+  if (!parts.length) throw badRequest('Its file is not kept here any more: use Fill it in, or send it again.');
+  const data = parts.map((p) => p.data).join('');
+  const r = {
+    ...row, status: 'unread', vendor_text: null, amount: null, day: null, description: null, vendor_name: null, product_name: null,
+    vendor_ok: null, item_ok: null, problem: null, po_id: null, po_name: null, po_url: null, todo: 0, by_name: row.by_name || account?.name || 'Insight',
+  };
+  await makePo(env, r, { data, today: todayIn('UTC'), fetchImpl }).catch((err) => { Object.assign(r, { status: 'failed', problem: String(err?.message || err).slice(0, 400) }); });
+  await run(env.DB, `UPDATE receipt SET status = ?2, vendor_text = ?3, amount = ?4, day = ?5, description = ?6, vendor_name = ?7, product_name = ?8,
+      vendor_ok = ?9, item_ok = ?10, problem = ?11, po_id = ?12, po_name = ?13, po_url = ?14, todo = ?15 WHERE id = ?1`,
+  row.id, r.status, r.vendor_text, r.amount, r.day, r.description, r.vendor_name, r.product_name, r.vendor_ok, r.item_ok, r.problem, r.po_id, r.po_name, r.po_url, r.todo);
+  const kept = ['unread', 'failed'].includes(r.status) || r.attachFailed;
+  if (!kept) await dropFile(env, row.id);
+  return { receipt: shape({ ...r, id: row.id, has_file: kept ? 1 : 0 }) };
 }
 
 /** Not a receipt, or dealt with another way: off the list of ones to do. */
@@ -318,7 +347,8 @@ export function resultLine(x) {
   if (x.status === 'complete') return `✓ ${x.po.name} · ${what}`;
   if (x.status === 'check') return `⚠ ${x.po.name} · ${what} · ${x.problem}`;
   if (x.status === 'duplicate') return `= ${x.name || 'A receipt'}: ${x.problem}`;
-  return `✕ ${x.name || 'A receipt'}: ${x.problem || 'could not be read.'} No PO made: it is kept in Insight › Money › Receipts to fill in.`;
+  const why = String(x.problem || 'It could not be read').replace(/\.?\s*$/, '.');
+  return `✕ ${x.name || 'A receipt'}: no PO. ${why} It is kept in Insight › Money › Receipts.`;
 }
 
 async function reply(env, { to, subject, results, skipped, settings }, { fetchImpl } = {}) {
