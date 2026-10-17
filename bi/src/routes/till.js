@@ -594,14 +594,17 @@ export async function moves(env) {
   try { return (await all(env.DB, 'SELECT * FROM till_move WHERE undone_at IS NULL ORDER BY id')).map(readMove); } catch { return []; }
 }
 
+/** Short or over for the drawer; deficit or surplus for anything else put on an account. */
+const moveWord = (kind, amount) => (MOVABLE[kind] ? (amount < 0 ? 'short' : 'over') : (amount < 0 ? 'deficit' : 'surplus'));
+
 /** One move's shares as items on each person's list. */
 export function movedIssues(m) {
-  const what = MOVABLE[m.kind] || 'A difference';
   const whose = m.owner_name ? `${m.owner_name}'s shift` : 'the shift';
+  const said = MOVABLE[m.kind] ? `${MOVABLE[m.kind]} by ${ghs(m.amount)}` : `A ${moveWord(m.kind, m.amount)} of ${ghs(m.amount)}`;
   return m.shares.map((x) => ({
     day: m.day, slot: m.slot, assdUser: m.assd_user, userId: x.userId, reportId: null,
     key: `moved:${m.id}:${x.userId}`, kind: 'moved', amount: x.amount,
-    text: `${what} by ${ghs(m.amount)} on ${whose}.${m.shares.length > 1 ? ` ${ghs(x.amount)} of it is on your account.` : ''}`,
+    text: `${said} on ${whose}.${m.shares.length > 1 ? ` ${ghs(x.amount)} of it is on your account.` : ''}`,
     moved: { id: m.id, reason: m.reason, by: m.by_name, at: m.at, ownerName: m.owner_name, total: m.amount },
   }));
 }
@@ -632,33 +635,45 @@ export async function deskStaff(env) {
 }
 
 /**
- * Put a drawer short, over or hand-over difference on one or more people's
- * accounts. All of it is placed; the reason is required. Each person is told
- * and finds it on their list; the shift's own person, if not among them, is
- * told it has left theirs.
+ * Put a difference on one or more people's accounts. A drawer short, over or
+ * hand-over difference carries its own direction; any other difference with
+ * an amount (a payment not in ASSD, a card declined…) is put on as a deficit
+ * (they owe it) or a surplus (owed to them), which the admin says. All of it
+ * is placed; the reason is required. A supervisor's answer still waiting for
+ * approval is replaced by it. Each person is told and finds it on their list;
+ * the shift's own person, if not among them, is told it has left theirs.
  */
 export async function moveToStaff(env, body, account, { fetchImpl } = {}) {
   await requireAdmin(account);
   const key = str(body?.key, 'Which difference', { required: true, max: 200 });
   const parts = /^(drawer|handover):(\d{4}-\d{2}-\d{2}):(morning|afternoon|night)$/.exec(key);
-  if (!parts) throw badRequest('Only a drawer short, a drawer over or a hand-over difference can be put on a staff account.');
-  const [, , day, slot] = parts;
+  const dayAsked = parts ? parts[2] : String(body?.day || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayAsked)) throw badRequest('Which day is that difference on?');
   const reason = str(body?.reason, 'The reason', { required: true, max: 600 });
 
-  const data = await shiftsFor(env, { from: day, to: day }, { isOwner: true });
+  const data = await shiftsFor(env, { from: dayAsked, to: dayAsked }, { isOwner: true });
   const x = (data.exceptions || []).find((e) => e.key === key);
-  if (!x || !MOVABLE[x.kind] || !x.amount) throw badRequest('That difference is not there any more: the shift may agree now.');
+  if (!x || !x.amount) throw badRequest('That difference is not there any more: the shift may agree now.');
+  const day = x.day || dayAsked;
+  const slot = parts ? parts[3] : x.slot;
+  if (!slot) throw badRequest('That difference is not on one shift, so it cannot be put on a staff account.');
   if ((await moves(env)).some((m) => m.key === key)) throw badRequest('That is on a staff account already. Undo that first.');
-  if (x.answer || x.proposed || x.link) throw badRequest('That has an answer already. Take the answer back first.');
+  if (x.answer || x.link) throw badRequest('That has an answer already. Take the answer back first.');
   const settled = await settledAs(env, key);
   if (settled) throw badRequest(`That was settled on its person's list already (${SETTLED_WORDS[settled.outcome]} by ${settled.by_name || 'an admin'}), so it cannot be moved.`);
+  // A drawer or hand-over difference says which way it goes; anything else is said by the admin.
+  let sign = Math.sign(x.amount);
+  if (!MOVABLE[x.kind]) {
+    if (!['deficit', 'surplus'].includes(body?.direction)) throw badRequest('Say whether it is a deficit (they owe it) or a surplus (owed to them).');
+    sign = body.direction === 'deficit' ? -1 : 1;
+  }
+  const amount = sign * Math.abs(x.amount);
 
   const users = await hiveUsers(env);
   const nameOf = new Map(users.map((u) => [Number(u.id), u.name]));
   const given = Array.isArray(body?.shares) ? body.shares : [];
   if (!given.length) throw badRequest('Choose who carries it.');
   if (given.length > 10) throw badRequest('Ten people at most.');
-  const sign = Math.sign(x.amount);
   const shares = [];
   for (const g of given) {
     const userId = Number(g?.userId);
@@ -670,8 +685,8 @@ export async function moveToStaff(env, body, account, { fetchImpl } = {}) {
     shares.push({ userId, name, amount: sign * amount });
   }
   const placed = shares.reduce((t, y) => t + Math.abs(y.amount), 0);
-  if (placed !== Math.abs(x.amount)) {
-    throw badRequest(`The shares come to ${ghs(placed)} and the difference is ${ghs(x.amount)}. Place all of it.`);
+  if (placed !== Math.abs(amount)) {
+    throw badRequest(`The shares come to ${ghs(placed)} and the difference is ${ghs(amount)}. Place all of it.`);
   }
 
   // The shift's own person: whoever signed its closing report, else the HIVE
@@ -682,10 +697,12 @@ export async function moveToStaff(env, body, account, { fetchImpl } = {}) {
 
   await run(env.DB, `INSERT INTO till_move (key, kind, day, slot, assd_user, owner_id, owner_name, amount, shares, reason, by_name, at)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
-  key, x.kind, day, slot, x.user || null, ownerId, ownerName, x.amount, JSON.stringify(shares), reason, who(account), now());
+  key, x.kind, day, slot, x.user || null, ownerId, ownerName, amount, JSON.stringify(shares), reason, who(account), now());
   const id = (await first(env.DB, 'SELECT id FROM till_move WHERE key = ?1 AND undone_at IS NULL ORDER BY id DESC LIMIT 1', key))?.id ?? null;
+  // A supervisor's answer waiting for approval: this decides it instead.
+  if (x.proposed) await run(env.DB, "DELETE FROM shift_answer WHERE key = ?1 AND status = 'pending'", key).catch(() => null);
 
-  const what = x.amount < 0 ? 'short' : 'over';
+  const what = moveWord(x.kind, amount);
   const whose = ownerName ? ` (${ownerName}'s shift)` : '';
   const told = [];
   for (const y of shares) {
@@ -694,7 +711,7 @@ export async function moveToStaff(env, body, account, { fetchImpl } = {}) {
   }
   if (ownerId != null && !shares.some((y) => y.userId === Number(ownerId))) {
     const names = shares.map((y) => y.name).join(' and ');
-    if (await tell(env, [ownerId], `Moved off your list: ${ghs(x.amount)} ${what}`, `${shiftWords(day, slot)}. It is now on ${names}'s account. Why: ${reason}`, fetchImpl)) told.push(Number(ownerId));
+    if (await tell(env, [ownerId], `Moved off your list: ${ghs(amount)} ${what}`, `${shiftWords(day, slot)}. It is now on ${names}'s account. Why: ${reason}`, fetchImpl)) told.push(Number(ownerId));
   }
   return { ok: true, id, told: told.length };
 }
@@ -713,7 +730,7 @@ export async function undoMove(env, body, account, { fetchImpl } = {}) {
     if (settled) throw badRequest(`${y.name}'s share was ${SETTLED_WORDS[settled.outcome]} already, so it cannot be undone.`);
   }
   await run(env.DB, 'UPDATE till_move SET undone_by = ?1, undone_at = ?2 WHERE id = ?3', who(account), now(), id);
-  const what = m.amount < 0 ? 'short' : 'over';
+  const what = moveWord(m.kind, m.amount);
   for (const y of m.shares) {
     // eslint-disable-next-line no-await-in-loop
     await tell(env, [y.userId], `Taken off your account: ${ghs(y.amount)} ${what}`, `${shiftWords(m.day, m.slot)}. ${who(account)} undid the move.`, fetchImpl);

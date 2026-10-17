@@ -660,7 +660,7 @@ test('an admin puts a drawer difference on staff accounts, with a reason; they a
   await assert.rejects(move({ shares: [{ userId: 9, amount: 1500 }] }), /come to GH₵15\.00 and the difference is GH₵20\.00/);
   await assert.rejects(move({ shares: [{ userId: 9, amount: 1000 }, { userId: 9, amount: 1000 }] }), /chosen twice/);
   await assert.rejects(move({ shares: [{ userId: 99, amount: 2000 }] }), /from the list/);
-  await assert.rejects(till.moveToStaff(env, { key: 'not-found:1', shares: [], reason: 'x' }, OWNER), /Only a drawer/);
+  await assert.rejects(till.moveToStaff(env, { key: 'not-found:1', shares: [], reason: 'x' }, OWNER), /Which day/);
 
   const out = await move({ shares: [{ userId: 9, amount: 1200 }, { userId: 8, amount: 800 }] });
   assert.equal(out.told, 2, 'both carriers told; Kofi carries a share, so no separate word that it left him');
@@ -699,4 +699,31 @@ test('an admin puts a drawer difference on staff accounts, with a reason; they a
   assert.deepEqual(told.map((t) => [t.userIds[0], t.title]), [[9, 'Moved to your account: GH₵20.00 over'], [8, 'Moved off your list: GH₵20.00 over']]);
   assert.match(told[1].body, /now on Yaw Test's account/);
   assert.deepEqual(await listOf(8), []);
+});
+
+test('any difference with an amount goes on an account as a deficit or a surplus, deciding an answer waiting for approval', async () => {
+  const { env, hive } = await setUp();
+  hive.raw.exec("INSERT INTO users (id, name, role, active) VALUES (9, 'Yaw Test', 'staff', 1)");
+  const told = [];
+  const fetchImpl = async (request) => { told.push(JSON.parse(await request.text())); return Response.json({ ok: true }); };
+  const view = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+  const DRAWER = ['drawer-short', 'drawer-over', 'handover-gap'];
+  const x = view.exceptions.find((e) => e.amount && e.slot && e.severity !== 'info' && !DRAWER.includes(e.kind));
+  assert.ok(x, `a difference other than the drawer's: ${view.exceptions.map((e) => e.kind).join(', ')}`);
+  // A supervisor answered it; it waits for an admin.
+  await routes.saveAnswer(env, { key: x.key, answer: 'Explained', note: 'Billed cash instead of card' }, SUPERVISOR, { pending: true });
+  const whole = Math.abs(x.amount);
+  const move = (body) => till.moveToStaff(env, { key: x.key, day: x.day, reason: 'Billed cash instead of card', shares: [{ userId: 8, amount: whole }], ...body }, OWNER, { fetchImpl });
+  await assert.rejects(move({}), /deficit \(they owe it\) or a surplus/);
+  await assert.rejects(move({ day: '' , direction: 'deficit' }), /Which day/);
+  const out = await move({ direction: 'deficit' });
+  assert.equal(out.ok, true);
+  assert.match(told[0].title, new RegExp(`Moved to your account: GH₵${(whole / 100).toFixed(2)} deficit`));
+  const kofi = (await till.issuesBetween(env, '2026-08-01', '2026-08-02')).issues.find((i) => i.userId === 8 && i.kind === 'moved');
+  assert.equal(kofi.amount, -whole, 'a deficit: owed by them');
+  assert.match(kofi.text, /^A deficit of GH₵/);
+  const after = (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).exceptions.find((e) => e.key === x.key);
+  assert.equal(after.answer.answer, 'Put on a staff account');
+  assert.equal(after.proposed, null, 'the supervisor\'s answer is set aside');
+  assert.equal((await till.pendingAnswers(env)).some((a) => a.id === x.key), false, 'and gone from Approvals');
 });

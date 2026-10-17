@@ -2400,8 +2400,11 @@ export async function renderShifts(root, { range }) {
         admin ? [
           h('button.btn.primary', { type: 'button', onclick: () => decide(true) }, 'Approve'),
           h('button.btn', { type: 'button', onclick: () => decide(false) }, 'Reject'),
+          // Or, instead of the answer, put it on somebody's account.
+          movable(x) ? h('button.btn', { type: 'button', 'aria-expanded': String(moving === x.key), onclick: () => { moving = moving === x.key ? null : x.key; paint(); } }, 'Put on a staff account') : null,
           // Proof asked of whoever gave the answer, and what they sent.
           proofBox(x.proposed.link ? `link:${x.proposed.link}` : `answer:${x.key}`, { who: x.proposed.by }),
+          movable(x) && moving === x.key ? movePanel(x) : null,
         ] : x.proposed.by === state.me?.account?.name ? h('button.sh-link', {
           type: 'button',
           onclick: async () => {
@@ -2462,13 +2465,30 @@ export async function renderShifts(root, { range }) {
             movable(x) && moving === x.key ? movePanel(x) : null]);
   }
 
-  /** A drawer short, over or hand-over difference an admin may put on staff accounts. */
-  const movable = (x) => admin && MOVABLE.has(x.kind) && Boolean(x.amount) && !x.answer && !x.proposed && !x.link;
+  /**
+   * A difference an admin may put on staff accounts: any with an amount, on
+   * one shift, not answered yet. One waiting for approval too: moving it
+   * decides it instead of the answer.
+   */
+  const movable = (x) => admin && Boolean(x.amount) && Boolean(x.day && x.slot) && !x.answer && !x.link && !x.moved && x.severity !== 'info';
 
   /** Who carries a difference, how much each, and why: all of it placed, the reason required. */
   function movePanel(x) {
     const whole = Math.abs(x.amount);
-    const word = x.amount < 0 ? 'short' : 'over';
+    // The drawer says which way its difference goes; anything else, the admin says.
+    const own = MOVABLE.has(x.kind);
+    let direction = null;
+    const word = () => (own ? (x.amount < 0 ? 'short' : 'over') : direction || 'difference');
+    const sideBtns = [['deficit', 'Deficit: they owe it'], ['surplus', 'Surplus: owed to them']].map(([key, text]) => h('button.sh-mvchip', {
+      type: 'button', 'aria-pressed': 'false',
+      onclick: (e) => {
+        direction = key;
+        for (const b of sideBtns) b.setAttribute('aria-pressed', String(b === e.currentTarget));
+        intro.textContent = `Who carries the ${money(whole)} ${word()}, and how much each. All of it is placed.`;
+        e.preventDefault();
+      },
+    }, text));
+    const intro = h('p.small', `Who carries the ${money(whole)} ${word()}, and how much each. All of it is placed.`);
     const rows = [];
     const list = h('div.sh-mvrows');
     const left = h('b.num');
@@ -2513,13 +2533,14 @@ export async function renderShifts(root, { range }) {
       const shares = rows.map((r) => ({ userId: Number(r.sel.value), amount: typedMinor(r.amount.value) }));
       if (shares.some((y) => !y.userId)) { said.textContent = 'Choose who, on every line.'; return; }
       if (shares.some((y) => !(y.amount > 0))) { said.textContent = 'Type how much, on every line.'; return; }
+      if (!own && !direction) { said.textContent = 'Say whether it is a deficit (they owe it) or a surplus (owed to them).'; return; }
       if (placed() !== whole) { said.textContent = `Place all ${money(whole)}: put the rest on somebody, or add the shift’s own person.`; return; }
       const reason = [chip, why.value.trim()].filter(Boolean).join('. ');
       if (!reason) { said.textContent = 'Say why: pick a reason or write one.'; why.focus(); return; }
       e.target.disabled = true;
       said.textContent = 'Moving…';
       try {
-        const out = await api('/till/charge', { method: 'POST', body: { key: x.key, shares, reason } });
+        const out = await api('/till/charge', { method: 'POST', body: { key: x.key, day: x.day, shares, reason, ...(own ? {} : { direction }) } });
         moving = null;
         till.forget();
         await load(banner('good', `Put on ${shares.length === 1 ? 'a staff account' : `${shares.length} staff accounts`}. ${out.told ? `${out.told} told in HIVE.` : 'HIVE could not be reached to tell them; it is on their list all the same.'}`));
@@ -2528,7 +2549,9 @@ export async function renderShifts(root, { range }) {
     recount();
     return h('div.sh-mvpanel',
       h('h4', 'Put on a staff account'),
-      h('p.small', `Who carries the ${money(whole)} ${word}, and how much each. All of it is placed.`),
+      own ? null : [h('div.sh-mvlab', 'On their account as (required)'), h('div.sh-mvchips', sideBtns)],
+      intro,
+      x.proposed ? h('p.small', `This decides it instead of ${x.proposed.by}’s answer waiting for approval, which is set aside.`) : null,
       list,
       h('button.sh-link', { type: 'button', onclick: () => addRow(0) }, '+ Another person'),
       h('div.sh-mvleft', h('span', 'Still to place'), left),
