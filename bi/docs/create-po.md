@@ -8,7 +8,10 @@ screen, on a phone or a computer. Admins only for now.
 Three details are enough: **Vendor** (picked from Odoo's vendors as you
 type), **Amount** in GH₵ and **Description**. The **Date** is today unless
 changed. **Item in Odoo** (the product on the PO line, which Odoo needs) is
-matched from the description; choose another if it is wrong.
+matched from the description; choose another if it is wrong. When no item's
+name shares the description's words, the reader picks the nearest by meaning
+("Diesel Excellium" is Fuel): green if it is sure, amber with "check it" if
+not.
 
 Or let Insight fill it in, under **Fill it in for me**:
 

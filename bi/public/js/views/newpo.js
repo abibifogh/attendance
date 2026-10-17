@@ -166,7 +166,11 @@ export function openNewPo({ receipt = null, bulk = false, after = null } = {}) {
         if (r.amount != null) { v.amount = (r.amount / 100).toFixed(2); flags.amount = 'auto'; hints.amount = body.file ? 'The receipt’s total' : from; } else { flags.amount = 'ask'; hints.amount = 'Not read for certain: type it.'; }
         if (r.description) { v.description = r.description; flags.description = 'auto'; hints.description = from; }
         if (r.date) { v.date = r.date; flags.date = 'auto'; hints.date = r.dateFrom === 'read' ? (body.file ? 'The receipt’s date' : from) : 'Today'; }
-        if (r.product) { v.product = r.product.name; flags.product = 'auto'; hints.product = 'Matched from the description'; } else { v.product = ''; flags.product = 'ask'; hints.product = 'Choose the item in Odoo.'; }
+        if (r.product && r.productFrom === 'reader') {
+          // Picked by meaning rather than by its words: said, and left amber unless the reader was sure.
+          v.product = r.product.name; flags.product = r.productSure ? 'auto' : 'ask';
+          hints.product = r.productSure ? 'Picked by the reader as the nearest item' : 'Picked by the reader, not for certain: check it.';
+        } else if (r.product) { v.product = r.product.name; flags.product = 'auto'; hints.product = 'Matched from the description'; } else { v.product = ''; flags.product = 'ask'; hints.product = 'Choose the item in Odoo.'; }
         v.flags = flags;
         v.hints = hints;
         form(out.said ? ['ok', `Read. ${out.said}`] : ['ok', '✓ Read. Check each one, then Check.']);

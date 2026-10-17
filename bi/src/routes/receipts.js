@@ -5,7 +5,7 @@ import { callLink } from '../lib/link.js';
 import { readEmail, addressOf } from '../lib/mime.js';
 import { poChoices, posOnDay, createDraftPo, attachToPo, noteOnPo, todoOnPo, odooUsers } from '../connectors/odoo.js';
 import { odooSource } from './safebook.js';
-import { closest, readReceipt } from './newpo.js';
+import { closest, matchProduct, readReceipt } from './newpo.js';
 
 /**
  * Receipts made into draft POs, with nothing to fill in: several chosen at
@@ -106,10 +106,11 @@ export async function receiptFile(env, id) {
 // --------------------------------------------------------------- reading --
 
 /** What went wrong or needs a look, in a sentence, for the list, the note and the To-Do. */
-function needsSaying({ vendorOk, itemOk, vendorText, description }) {
+function needsSaying({ vendorOk, itemOk, vendorText, description, unsure = null }) {
   const out = [];
   if (!vendorOk) out.push(vendorText ? `the vendor was read as “${vendorText}”, which is not in Odoo` : 'no vendor could be read');
   if (!itemOk) out.push(`the item “${description || 'bought'}” was not matched to one in Odoo`);
+  else if (unsure) out.push(`the reader put “${description || 'what was bought'}” on “${unsure}”, but was not sure`);
   return out;
 }
 
@@ -124,7 +125,7 @@ export async function addReceipt(env, { mime, data, name = '', thumb = null, cam
   const r = {
     hash, name: String(name || '').slice(0, 200) || null, mime, thumb, came, by_name: byName, from_email: fromEmail, subject, hint: String(hint || '').slice(0, 300) || null, at,
     status: 'unread', vendor_text: null, amount: null, day: null, description: null, vendor_name: null, product_name: null,
-    vendor_ok: null, item_ok: null, problem: null, po_id: null, po_name: null, po_url: null, todo: 0, same_as: null,
+    vendor_ok: null, item_ok: null, item_by: null, problem: null, po_id: null, po_name: null, po_url: null, todo: 0, same_as: null,
   };
   let keep = true;
   const twin = await first(env.DB, "SELECT id, po_name, at FROM receipt WHERE hash = ?1 AND status NOT IN ('dismissed', 'duplicate') ORDER BY id LIMIT 1", hash);
@@ -136,10 +137,10 @@ export async function addReceipt(env, { mime, data, name = '', thumb = null, cam
     keep = ['unread', 'failed'].includes(r.status) || r.attachFailed;
   }
   const row = await first(env.DB, `INSERT INTO receipt (hash, name, mime, thumb, came, by_name, from_email, subject, hint, at, status, vendor_text, amount, day, description,
-      vendor_name, product_name, vendor_ok, item_ok, problem, po_id, po_name, po_url, todo, same_as)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25) RETURNING id`,
+      vendor_name, product_name, vendor_ok, item_ok, problem, po_id, po_name, po_url, todo, same_as, item_by)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26) RETURNING id`,
   r.hash, r.name, r.mime, r.thumb, r.came, r.by_name, r.from_email, r.subject, r.hint, r.at, r.status, r.vendor_text, r.amount, r.day, r.description,
-  r.vendor_name, r.product_name, r.vendor_ok, r.item_ok, r.problem, r.po_id, r.po_name, r.po_url, r.todo, r.same_as);
+  r.vendor_name, r.product_name, r.vendor_ok, r.item_ok, r.problem, r.po_id, r.po_name, r.po_url, r.todo, r.same_as, r.item_by);
   if (keep && data.length <= FILE_MAX) await keepFile(env, row.id, data);
   return shape({ ...r, id: row.id, has_file: keep && data.length <= FILE_MAX ? 1 : 0 });
 }
@@ -162,14 +163,20 @@ async function makePo(env, r, { data, today, fetchImpl }) {
   const settings = await receiptSettings(env);
   const { vendors, products } = await poChoices(opts);
   const vendor = read.vendor ? closest(read.vendor, vendors) : null;
-  const product = read.description ? closest(read.description, products) : null;
+  // Words first; failing that, the reader picks the nearest product by meaning.
+  const match = read.description ? await matchProduct(env, read.description, products, { vendor: read.vendor }) : null;
+  const product = match?.product || null;
   r.vendor_ok = vendor ? 1 : 0;
   r.item_ok = product ? 1 : 0;
+  r.item_by = match?.by || null;
   const useVendor = vendor || settings.vendor;
   const useProduct = product || settings.product;
   r.day = read.date || today;
   r.description = read.description || 'From a receipt';
-  const missing = needsSaying({ vendorOk: vendor, itemOk: product, vendorText: read.vendor, description: read.description });
+  const missing = needsSaying({
+    vendorOk: vendor, itemOk: product, vendorText: read.vendor, description: read.description,
+    unsure: match?.by === 'reader' && !match.sure ? product.name : null,
+  });
   if (!useVendor || !useProduct) {
     r.problem = `${missing.join(', and ')}, and no placeholder ${!useVendor ? 'vendor' : 'item'} is chosen in Money › Receipts › Settings. Choose it there, then Try again.`;
     r.problem = r.problem.charAt(0).toUpperCase() + r.problem.slice(1);
@@ -203,6 +210,7 @@ async function makePo(env, r, { data, today, fetchImpl }) {
   // What was read, on the PO, for whoever opens it.
   const read_ = `Read off the receipt by Insight: vendor “${read.vendor || 'none written'}”, total ${ghs(read.amount)}, `
     + `date ${read.date || `none (today, ${today}, used)`}, “${read.description || 'nothing said'}”.`
+    + (match?.by === 'reader' ? ` The item was picked by the reader as the nearest in Odoo: ${product.name}.` : '')
     + (missing.length ? ` To check: ${missing.join('; ')}.` : '') + (r.hint ? ` Sent with: “${r.hint}”.` : '');
   await noteOnPo({ ...opts, poId: po.id, text: read_ }).catch(() => null);
   if (missing.length) {
@@ -225,7 +233,7 @@ function shape(r) {
   return {
     id: r.id, name: r.name, mime: r.mime, thumb: r.thumb || null, came: r.came, by: r.by_name, from: r.from_email, subject: r.subject, hint: r.hint, at: r.at,
     status: r.status, vendorText: r.vendor_text, amount: r.amount, day: r.day, description: r.description,
-    vendorName: r.vendor_name, productName: r.product_name, vendorOk: r.vendor_ok == null ? null : Boolean(r.vendor_ok), itemOk: r.item_ok == null ? null : Boolean(r.item_ok),
+    vendorName: r.vendor_name, productName: r.product_name, vendorOk: r.vendor_ok == null ? null : Boolean(r.vendor_ok), itemOk: r.item_ok == null ? null : Boolean(r.item_ok), itemBy: r.item_by || null,
     problem: r.problem, po: r.po_name ? { id: r.po_id, name: r.po_name, url: r.po_url } : null, todo: Boolean(r.todo), sameAs: r.same_as,
     hasFile: Boolean(r.has_file), doneBy: r.done_by || null, doneAt: r.done_at || null,
   };
@@ -266,12 +274,12 @@ export async function retry(env, body, account, { fetchImpl } = {}) {
   const data = parts.map((p) => p.data).join('');
   const r = {
     ...row, status: 'unread', vendor_text: null, amount: null, day: null, description: null, vendor_name: null, product_name: null,
-    vendor_ok: null, item_ok: null, problem: null, po_id: null, po_name: null, po_url: null, todo: 0, by_name: row.by_name || account?.name || 'Insight',
+    vendor_ok: null, item_ok: null, item_by: null, problem: null, po_id: null, po_name: null, po_url: null, todo: 0, by_name: row.by_name || account?.name || 'Insight',
   };
   await makePo(env, r, { data, today: todayIn('UTC'), fetchImpl }).catch((err) => { Object.assign(r, { status: 'failed', problem: String(err?.message || err).slice(0, 400) }); });
   await run(env.DB, `UPDATE receipt SET status = ?2, vendor_text = ?3, amount = ?4, day = ?5, description = ?6, vendor_name = ?7, product_name = ?8,
-      vendor_ok = ?9, item_ok = ?10, problem = ?11, po_id = ?12, po_name = ?13, po_url = ?14, todo = ?15 WHERE id = ?1`,
-  row.id, r.status, r.vendor_text, r.amount, r.day, r.description, r.vendor_name, r.product_name, r.vendor_ok, r.item_ok, r.problem, r.po_id, r.po_name, r.po_url, r.todo);
+      vendor_ok = ?9, item_ok = ?10, problem = ?11, po_id = ?12, po_name = ?13, po_url = ?14, todo = ?15, item_by = ?16 WHERE id = ?1`,
+  row.id, r.status, r.vendor_text, r.amount, r.day, r.description, r.vendor_name, r.product_name, r.vendor_ok, r.item_ok, r.problem, r.po_id, r.po_name, r.po_url, r.todo, r.item_by);
   const kept = ['unread', 'failed'].includes(r.status) || r.attachFailed;
   if (!kept) await dropFile(env, row.id);
   return { receipt: shape({ ...r, id: row.id, has_file: kept ? 1 : 0 }) };

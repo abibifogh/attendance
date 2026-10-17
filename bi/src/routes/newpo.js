@@ -68,6 +68,49 @@ export function closest(text, list) {
 
 // ------------------------------------------------------------- reading --
 
+const PICK_SCHEMA = {
+  type: 'object',
+  properties: { number: { type: 'integer' }, sure: { type: 'boolean' } },
+  required: ['number', 'sure'],
+};
+
+/**
+ * The product in Odoo nearest what was bought.
+ *
+ * Words first (`closest`), which is certain when it finds one. When no name
+ * shares enough words, the reader picks one by meaning: "Diesel Excellium"
+ * is Fuel, "3 grooves pulley" is a spare part. It also says whether it is
+ * sure, and an unsure pick is left for somebody to check rather than taken
+ * as fact. Null when nothing fits, or there is no reader.
+ */
+export async function matchProduct(env, description, products, { vendor = '' } = {}) {
+  if (!description || !products?.length) return null;
+  const byWords = closest(description, products);
+  if (byWords) return { product: byWords, by: 'words', sure: true };
+  if (!env.AI) return null;
+  const list = products.slice(0, 1500);
+  const ask_ = [
+    `A hotel in Ghana bought: "${String(description).slice(0, 200)}"${vendor ? ` from "${String(vendor).slice(0, 120)}"` : ''}.`,
+    'Which of the products below in its accounts is it? Choose the closest by meaning, not by spelling: diesel or petrol is fuel; a pulley, belt or bearing is a spare part or maintenance; bleach is cleaning.',
+    'Answer with JSON only: {"number": the product\'s number, or 0 if none of them fits, "sure": true only if it is clearly that product}.',
+    '',
+    ...list.map((p, i) => `${i + 1}. ${p.name}`),
+  ].join('\n');
+  for (const extra of [{ response_format: { type: 'json_schema', json_schema: PICK_SCHEMA } }, {}]) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const out = await env.AI.run(READ_MODEL, { messages: [{ role: 'user', content: ask_ }], max_tokens: 60, temperature: 0, ...extra });
+      let raw = out?.response ?? out;
+      if (typeof raw === 'string') { const m = raw.match(/\{[\s\S]*\}/); raw = m ? JSON.parse(m[0]) : null; }
+      const n = Number(raw?.number);
+      if (!Number.isInteger(n)) continue;
+      if (n < 1 || n > list.length) return null;
+      return { product: list[n - 1], by: 'reader', sure: raw.sure === true };
+    } catch { /* tried again without the schema, then nothing */ }
+  }
+  return null;
+}
+
 const SCHEMA = {
   type: 'object',
   properties: {
@@ -194,7 +237,8 @@ export async function readPo(env, body, { fetchImpl } = {}) {
   const opts = { ...s, ...(fetchImpl ? { fetchImpl } : {}) };
   const { vendors, products } = await poChoices(opts);
   const vendor = read.vendor ? closest(read.vendor, vendors) : null;
-  const product = read.description ? closest(read.description, products) : null;
+  const match = read.description ? await matchProduct(env, read.description, products, { vendor: read.vendor }) : null;
+  const product = match?.product || null;
   // No vendor said: the one the last PO for this product went to.
   let suggested = null;
   if (!vendor && product) suggested = await lastVendorFor({ ...opts, productId: product.id }).catch(() => null);
@@ -205,6 +249,9 @@ export async function readPo(env, body, { fetchImpl } = {}) {
       vendorText: read.vendor || '',
       vendorFrom: vendor ? 'read' : suggested ? 'last' : null,
       product: product || null,
+      // Matched by its words, or picked by the reader (and whether it was sure).
+      productFrom: match?.by || null,
+      productSure: match ? match.sure : null,
       date: read.date || today,
       dateFrom: read.date ? 'read' : 'today',
     },

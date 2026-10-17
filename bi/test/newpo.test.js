@@ -194,3 +194,19 @@ test('a PO made here is a shift’s expense only once an admin allows it: ticked
   asks = (await newpo.drawerAsks(env)).items;
   assert.equal(asks.length, 0);
 });
+
+test('the nearest product: by its words first, else picked by the reader, with how sure it is', async () => {
+  const products = [{ id: 21, name: 'Fuel' }, { id: 22, name: 'Maintenance supplies' }];
+  const asked = [];
+  const env = { AI: { run: async (model, input) => { asked.push(input.messages[0].content); return { response: '{"number": 1, "sure": true}' }; } } };
+  assert.deepEqual(await newpo.matchProduct(env, 'fuel', products), { product: products[0], by: 'words', sure: true });
+  assert.equal(asked.length, 0, 'words found it: the reader is not asked');
+  assert.deepEqual(await newpo.matchProduct(env, 'Diesel Excellium', products, { vendor: 'A Fuel Station' }), { product: products[0], by: 'reader', sure: true });
+  assert.match(asked[0], /bought: "Diesel Excellium" from "A Fuel Station"/);
+  assert.match(asked[0], /\n1\. Fuel\n2\. Maintenance supplies$/);
+  const none = { AI: { run: async () => ({ response: '{"number": 0, "sure": false}' }) } };
+  assert.equal(await newpo.matchProduct(none, 'A birthday cake', products), null, 'none fits: none chosen');
+  const silly = { AI: { run: async () => ({ response: '{"number": 9, "sure": true}' }) } };
+  assert.equal(await newpo.matchProduct(silly, 'A birthday cake', products), null, 'a number not on the list is not trusted');
+  assert.equal(await newpo.matchProduct({}, 'Diesel Excellium', products), null, 'no reader: nothing guessed');
+});
