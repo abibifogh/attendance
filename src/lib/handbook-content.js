@@ -436,7 +436,7 @@ If you are ill and cannot work, telephone your supervisor as early as you can on
 the day, and before your shift starts. A message to a colleague is not telling
 us.
 Keep us up to date each day unless we agree otherwise.
-For an absence of more than three days, bring a medical certificate.
+For an absence of two days or more, bring a medical certificate.
 Do not come in with vomiting, diarrhoea, a fever or a skin infection if you work
 with food. Tell us and stay away for 48 hours after it stops. This is not
 optional and it is not held against you.
