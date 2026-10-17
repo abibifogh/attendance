@@ -1,7 +1,7 @@
 import { all, first, run } from '../lib/db.js';
 import { badRequest, HttpError, str } from '../lib/http.js';
 import { todayIn, isDay, addDays } from '../lib/dates.js';
-import { poChoices, lastVendorFor, posOnDay, createDraftPo, attachToPo, whoAmI } from '../connectors/odoo.js';
+import { poChoices, lastVendorFor, posOnDay, createDraftPo, attachToPo, whoAmI, findInOdoo, oneInOdoo } from '../connectors/odoo.js';
 import { odooSource } from './safebook.js';
 import { READ_MODEL } from './niceplace.js';
 
@@ -67,6 +67,21 @@ export function closest(text, list) {
 }
 
 // ------------------------------------------------------------- reading --
+
+/**
+ * The vendor in Odoo for a name as written: among Odoo's vendors first, then
+ * among every contact with a word of that name (a vendor made in Odoo just
+ * now has never been used, so Odoo does not list it as one yet).
+ */
+export async function matchVendor(opts, text, vendors) {
+  if (!text) return null;
+  const known = closest(text, vendors);
+  if (known) return known;
+  const word = words(text).sort((a, b) => b.length - a.length)[0];
+  if (!word) return null;
+  const found = await findInOdoo({ ...opts, kind: 'vendor', q: word }).catch(() => []);
+  return closest(text, found);
+}
 
 const PICK_SCHEMA = {
   type: 'object',
@@ -236,7 +251,7 @@ export async function readPo(env, body, { fetchImpl } = {}) {
   const s = await source(env);
   const opts = { ...s, ...(fetchImpl ? { fetchImpl } : {}) };
   const { vendors, products } = await poChoices(opts);
-  const vendor = read.vendor ? closest(read.vendor, vendors) : null;
+  const vendor = read.vendor ? await matchVendor(opts, read.vendor, vendors) : null;
   const match = read.description ? await matchProduct(env, read.description, products, { vendor: read.vendor }) : null;
   const product = match?.product || null;
   // No vendor said: the one the last PO for this product went to.
@@ -261,10 +276,32 @@ export async function readPo(env, body, { fetchImpl } = {}) {
 
 // ---------------------------------------------------- checking, creating --
 
-function details(body, { vendors, products }) {
-  const vendor = vendors.find((v) => v.id === Number(body?.vendorId));
+/**
+ * Find contacts or products in Odoo by name, for one made there just now
+ * (Odoo lists a contact as a vendor only once it has been used).
+ */
+export async function findPo(env, query, { fetchImpl } = {}) {
+  const s = await source(env);
+  const kind = query?.kind === 'vendor' ? 'vendor' : 'product';
+  return { kind, items: await findInOdoo({ ...s, ...(fetchImpl ? { fetchImpl } : {}), kind, q: query?.q }) };
+}
+
+/**
+ * The vendor and item chosen: from the lists, or, for one found by name and
+ * not in them (a contact never used as a vendor yet), as Odoo has it now.
+ */
+async function details(body, { vendors, products }, opts) {
+  const vendorId = Number(body?.vendorId);
+  const productId = Number(body?.productId);
+  const vendor = vendors.find((v) => v.id === vendorId)
+    || (Number.isInteger(vendorId) && vendorId > 0 ? await oneInOdoo({ ...opts, kind: 'vendor', id: vendorId }).catch(() => null) : null);
   if (!vendor) throw badRequest('Choose the vendor from Odoo’s list. A new vendor is added in Odoo first.');
-  const product = products.find((p) => p.id === Number(body?.productId));
+  let product = products.find((p) => p.id === productId);
+  if (!product && Number.isInteger(productId) && productId > 0) {
+    const found = await oneInOdoo({ ...opts, kind: 'product', id: productId }).catch(() => null);
+    if (found && !found.purchaseOk) throw badRequest(`“${found.name}” is not marked “Can be purchased” in Odoo: tick it there, or choose another item.`);
+    product = found;
+  }
   if (!product) throw badRequest('Choose the item in Odoo.');
   const amount = Math.round(Number(String(body?.amount ?? '').replace(/[,\s]/g, '')) * 100);
   if (!Number.isFinite(amount) || amount <= 0 || amount > 100_000_000) throw badRequest('Amount: GH₵, more than nothing.');
@@ -278,7 +315,7 @@ function details(body, { vendors, products }) {
 export async function checkPo(env, body, { fetchImpl } = {}) {
   const s = await source(env);
   const opts = { ...s, ...(fetchImpl ? { fetchImpl } : {}) };
-  const d = details(body, await poChoices(opts));
+  const d = await details(body, await poChoices(opts), opts);
   const same = await posOnDay({ ...opts, vendorId: d.vendor.id, day: d.day });
   return {
     po: { vendor: d.vendor, product: d.product, amount: d.amount, description: d.description, date: d.day },
@@ -291,7 +328,7 @@ export async function checkPo(env, body, { fetchImpl } = {}) {
 export async function createPo(env, body, account, { fetchImpl } = {}) {
   const s = await source(env);
   const opts = { ...s, ...(fetchImpl ? { fetchImpl } : {}) };
-  const d = details(body, await poChoices(opts));
+  const d = await details(body, await poChoices(opts), opts);
   const file = String(body?.file || '');
   const m = file ? file.match(/^data:(image\/(?:jpeg|png|webp)|application\/pdf);base64,([A-Za-z0-9+/=]+)$/) : null;
   if (file && (!m || m[2].length > FILE_MAX)) throw badRequest('That receipt cannot be attached: a photo, or a PDF under 5 MB.');

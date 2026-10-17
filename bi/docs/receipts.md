@@ -58,9 +58,12 @@ the address and what was done with it, so a sender not on the list is seen.
 ## Settings (Money › Receipts › Settings)
 
 - **Vendor used when the receipt's seller is not in Odoo:** make a contact in
-  Odoo called "Vendor to confirm" once, then choose it here.
-- **Item used when what was bought is not matched:** a product in Odoo that
-  may be purchased, such as "Item to classify".
+  Odoo called "Vendor to confirm" once, then type its name here and pick it.
+  Odoo is searched as you type, so a contact made a minute ago is found (Odoo
+  itself lists a contact as a vendor only once a purchase or bill has used it).
+- **Item used when what was bought is not matched:** a product in Odoo with
+  "Can be purchased" ticked, such as "Item to classify", found by typing its
+  name. One without that tick is shown, and says so.
 - **Who gets a To-Do:** the accountant.
 - **The receipts email address:** what you set up below, shown on the page.
 - **Who may email receipts in:** one address per line. Anything from anybody

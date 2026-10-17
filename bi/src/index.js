@@ -253,6 +253,8 @@ const ROUTES = [
   ['POST', '/api/receipts/dismiss', 'insight', adminOnly((env, ctx) => receipts.dismiss(env, ctx.body, ctx.account))],
   ['POST', '/api/receipts/retry', 'insight', adminOnly((env, ctx) => receipts.retry(env, ctx.body, ctx.account))],
   ['GET', '/api/po/recent', 'insight', adminOnly((env) => newpo.recentPos(env))],
+  // Contacts and products by name, for ones made in Odoo just now.
+  ['GET', '/api/po/find', 'insight', adminOnly((env, ctx) => newpo.findPo(env, ctx.query))],
   // Approvals: everything waiting for an admin in every system, decided here as them.
   ['GET', '/api/approvals', 'session', adminOnly((env, ctx) => approvals.list(env, ctx.account))],
   ['POST', '/api/approvals/decide', 'session', adminOnly((env, ctx) => approvals.decide(env, ctx.body, ctx.account))],

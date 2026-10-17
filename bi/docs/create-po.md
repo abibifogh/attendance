@@ -6,7 +6,8 @@ screen, on a phone or a computer. Admins only for now.
 ## Filling it in
 
 Three details are enough: **Vendor** (picked from Odoo's vendors as you
-type), **Amount** in GH₵ and **Description**. The **Date** is today unless
+type; a contact made in Odoo just now is found by its name too, though Odoo
+lists it as a vendor only once it has been used), **Amount** in GH₵ and **Description**. The **Date** is today unless
 changed. **Item in Odoo** (the product on the PO line, which Odoo needs) is
 matched from the description; choose another if it is wrong. When no item's
 name shares the description's words, the reader picks the nearest by meaning

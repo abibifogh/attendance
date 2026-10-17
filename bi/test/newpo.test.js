@@ -210,3 +210,30 @@ test('the nearest product: by its words first, else picked by the reader, with h
   assert.equal(await newpo.matchProduct(silly, 'A birthday cake', products), null, 'a number not on the list is not trusted');
   assert.equal(await newpo.matchProduct({}, 'Diesel Excellium', products), null, 'no reader: nothing guessed');
 });
+
+test('a contact made in Odoo just now: found by name, and accepted on a PO though Odoo does not list it as a vendor yet', async () => {
+  const env = await setUp();
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    const [, model] = String(url).match(/\/json\/2\/([^/]+)\/([^/]+)$/);
+    const body = JSON.parse(init.body);
+    seen.push([model, body.domain]);
+    if (model === 'res.partner' && body.domain?.[0]?.[0] === 'supplier_rank') return Response.json([{ id: 11, name: 'A Fuel Station' }]);
+    if (model === 'res.partner' && body.domain?.[0]?.[0] === 'name') return Response.json([{ id: 90, name: 'Vendor to confirm', supplier_rank: 0 }]);
+    if (model === 'res.partner') return Response.json(body.domain?.[0]?.[2] === 90 ? [{ id: 90, name: 'Vendor to confirm' }] : []);
+    if (model === 'product.product' && body.domain?.[0]?.[0] === 'name') return Response.json([{ id: 99, name: 'Item to classify', display_name: 'Item to classify', purchase_ok: true }, { id: 98, name: 'Item for sale', display_name: 'Item for sale', purchase_ok: false }]);
+    if (model === 'product.product' && body.domain?.[0]?.[0] === 'id') return Response.json(body.domain[0][2] === 98 ? [{ id: 98, name: 'Item for sale', purchase_ok: false }] : [{ id: 99, name: 'Item to classify', purchase_ok: true }]);
+    if (model === 'product.product') return Response.json([{ id: 21, name: 'Fuel', display_name: 'Fuel' }]);
+    if (model === 'purchase.order') return Response.json([]);
+    return new Response('no', { status: 404 });
+  };
+  const found = await newpo.findPo(env, { kind: 'vendor', q: 'vendor to' }, { fetchImpl });
+  assert.deepEqual(found.items, [{ id: 90, name: 'Vendor to confirm', vendor: false }]);
+  const items = (await newpo.findPo(env, { kind: 'product', q: 'item' }, { fetchImpl })).items;
+  assert.deepEqual(items.map((x) => [x.name, x.purchaseOk]), [['Item to classify', true], ['Item for sale', false]]);
+  const body = { vendorId: 90, productId: 99, amount: '50', description: 'Gas refill', date: today };
+  const out = await newpo.checkPo(env, body, { fetchImpl });
+  assert.deepEqual([out.po.vendor.name, out.po.product.name], ['Vendor to confirm', 'Item to classify']);
+  await assert.rejects(newpo.checkPo(env, { ...body, productId: 98 }, { fetchImpl }), /not marked “Can be purchased”/);
+  assert.deepEqual(await newpo.findPo(env, { kind: 'vendor', q: 'v' }, { fetchImpl }), { kind: 'vendor', items: [] }, 'one letter asks nothing');
+});
