@@ -620,6 +620,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'till.checked',
+    group: 'money',
+    label: 'A shift of yours was checked: what is on it to sort out is final',
+    who: 'Whoever has something on that shift to sort out',
+    when: 'Somebody in Insight marks the shift checked, after looking at its report, drawer and payments',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'till.given',
     group: 'money',
     label: 'An advance was given to you to report',

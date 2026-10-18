@@ -7139,6 +7139,12 @@ tr:hover .rota-who-more,
 .till-issue.till-short { border-left: 4px solid var(--bad); }
 .till-issue.till-over { border-left: 4px solid var(--warn); }
 .till-issue.till-info { border-left: 4px solid var(--accent); }
+/* Not checked yet: the figures may change, so the card is quieter. */
+.till-issue.till-soft { border-style: dashed; border-left: 4px dashed var(--text-dim); background: transparent; box-shadow: none; }
+.till-issue.till-soft .till-amount strong { color: var(--text-dim); }
+.till-group { font-size: 1.05rem; margin: 1.1rem 0 .2rem; }
+.till-group-why { font-size: .9rem; color: var(--text-dim); margin: 0 0 .7rem; }
+.till-checked { display: inline-block; font-size: .8rem; font-weight: 700; color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); border-radius: 999px; padding: .15rem .55rem; margin-bottom: .35rem; }
 .till-amount { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; margin-bottom: .2rem; }
 .till-amount strong { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
 .till-kind { font-size: .8rem; color: var(--text-dim); }

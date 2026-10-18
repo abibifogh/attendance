@@ -962,9 +962,19 @@ export async function renderShifts(root, { range }) {
         mixBar(s),
         h('span.sh-fig',
           h('span', s.cardLines ? `${s.cardFound + (s.cardAnswered || 0)}/${s.cardLines} card` : 'no card'),
-          toAnswer ? h('span.sh-chip.short', `${toAnswer} to answer`) : null)));
+          toAnswer ? h('span.sh-chip.short', `${toAnswer} to answer`) : null),
+        // Checked or not: filled in once the closing reports are read.
+        h('span.sh-ck', { dataset: { k: `${s.day}|${s.slot}` } })));
       }
     }
+    till.checks().then((map) => {
+      for (const el of grid.querySelectorAll('.sh-ck')) {
+        const st = map.get(el.dataset.k);
+        if (!st) continue;
+        el.className = `sh-ck ${st}`;
+        el.textContent = { ok: '✓ Checked', changed: '! Changed since checked', wait: 'Not checked' }[st];
+      }
+    }).catch(() => {});
     const wrap = h('div.sh-weekwrap', grid);
 
     mount(v,
@@ -1163,6 +1173,9 @@ export async function renderShifts(root, { range }) {
     // The closing report from HIVE, read on its own so the drawer shows at once.
     const report = h('div');
     till.shiftReport(s.day, s.slot, () => load()).then((card) => mount(report, card)).catch(() => {});
+    // Checked or not yet: what its people see depends on it.
+    const checked = h('div');
+    till.shiftCheck(s.day, s.slot, (words) => load(banner('good', words))).then((card) => mount(checked, card)).catch(() => {});
     const back = h('button.sh-back', { type: 'button', onclick: () => go(mode) }, `‹ Back to ${period.label}`);
     const head = h('section.card',
       h('div.sh-shifthead',
@@ -1176,7 +1189,7 @@ export async function renderShifts(root, { range }) {
     // Without the amounts, the drawer's story is nothing but blanks: the
     // closing report and what does not agree are what there is to see.
     if (!may('money')) {
-      mount(v, back, head, report,
+      mount(v, back, head, checked, report,
         exceptionsBlock(s));
       return;
     }
@@ -1215,6 +1228,7 @@ export async function renderShifts(root, { range }) {
     mount(v,
       back,
       head,
+      checked,
       report,
       h('div.sh-two',
         h('section.card',

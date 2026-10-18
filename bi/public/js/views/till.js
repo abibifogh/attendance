@@ -34,6 +34,7 @@ const AREA_TEXT = {
   advances: ['Advances', 'In the Inbox: cash given out before a purchase, and POs whose final price differs. Act means give more time or close one with a reason.'],
   proof: ['Ask for proof', 'Act means ask whoever gave an answer for pictures or a PDF (a MoMo screenshot, a slip, a statement). See means see the proof sent.'],
   niceplace: ['Nice Place counters', 'In the Inbox: a picture sent with a counter the reader could not read. Act means read it off the picture and fill it in.'],
+  check: ['Check shifts', 'Act means mark a shift checked once its report, drawer and payments are looked at. Until then its person sees its differences as “not checked yet”: the amounts may change.'],
   unpaid: ['Unpaid stays', 'Guests leaving in the next 24 hours who still owe, and guests who left owing. Act means answer them (an admin approves).'],
 };
 export const KIND_TONE = { drawer: 'bad', unexplained: 'bad', overclaimed: 'warn', rental: 'warn', noreport: 'info' };
@@ -115,6 +116,62 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
         h('tbody', rows.map(([label, hive, assd]) => h('tr', h('td', label), h('td', hive), h('td', assd)))))),
       rep.note ? h('p.tl-small', `“${rep.note}”`) : null,
       access.reopen > 1 ? h('div', act, h('button.btn', { type: 'button', onclick: (e) => reopen(e, rep, after) }, 'Reopen report')) : null);
+  }
+
+  /**
+   * Whether a shift has been checked. Until it is, its people see its
+   * differences as "not checked yet" (the amounts may change); checking it
+   * makes them final and tells them. Changed since checked: check it again.
+   */
+  async function shiftCheck(day, slot, after = () => {}) {
+    const d = await read();
+    const r = (d.reports || []).find((x) => x.day === day && x.slot === slot);
+    if (!r) return null;
+    const may = admin || (access.check || 0) > 1;
+    const people = r.report?.name || 'Its people';
+    const said = h('span.tl-small');
+    const act = (path, words) => async (e) => {
+      e.target.disabled = true;
+      said.textContent = 'Saving…';
+      try {
+        const out = await api(path, { method: 'POST', body: { day, slot } });
+        forget();
+        await after(words(out));
+      } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+    };
+    const check = h('button.btn.primary', { type: 'button', onclick: act('/till/check', (out) => (out.open ? `Checked. ${out.open} thing${out.open === 1 ? '' : 's'} on it to sort out, now final${out.told ? '; they have been told' : ''}.` : 'Checked. Nothing on it to sort out.')) },
+      r.check?.changed ? '✓ Check again' : '✓ Mark this shift checked');
+    const undo = h('button.btn', { type: 'button', onclick: act('/till/check/undo', () => 'No longer checked: its differences show as not checked yet again.') }, 'Undo');
+    const notes = (r.notes || []).map((n) => h('div.tl-small', h('strong', `${n.name || 'Staff'}’s note: `), n.text));
+    const today = new Date().toISOString().slice(0, 10);
+    if (!r.check) {
+      return h('section.card.ck-bar',
+        h('div', h('strong', '⏳ Not checked yet'),
+          h('div.tl-small', r.issues
+            ? `${people} sees ${r.issues === 1 ? 'its difference' : `its ${r.issues} differences`} as “not checked yet”: the amounts may change. Look at the report, the drawer and the payments, then mark it checked.`
+            : 'Nothing on it for anybody to sort out. Look at the report, the drawer and the payments, then mark it checked.'),
+          notes),
+        may && day < today ? h('div.ck-acts', check, said) : null);
+    }
+    const when = new Date(`${String(r.check.at).replace(' ', 'T')}Z`).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+    if (r.check.changed) {
+      return h('section.card.ck-bar.changed',
+        h('div', h('strong', '! Changed since it was checked'),
+          h('div.tl-small', `Checked by ${r.check.by} on ${when}, but something on it has changed since (a file loaded again, a correction). ${people} sees what changed as not checked yet until it is checked again.`),
+          notes),
+        may ? h('div.ck-acts', check, undo, said) : null);
+    }
+    return h('section.card.ck-bar.ok',
+      h('div', h('strong', `✓ Checked by ${r.check.by}, ${when}`),
+        h('div.tl-small', r.issues ? `${people} sees what is on it as checked, to sort out.` : 'Nothing on it for anybody to sort out.'),
+        notes),
+      may ? h('div.ck-acts', undo, said) : null);
+  }
+
+  /** Each shift's check, for the week's tiles: `day|slot` → 'ok', 'changed' or 'wait'. */
+  async function checks() {
+    const d = await read();
+    return new Map((d.reports || []).map((r) => [`${r.day}|${r.slot}`, !r.check ? 'wait' : r.check.changed ? 'changed' : 'ok']));
   }
 
   async function move(event, r, after) {
@@ -489,7 +546,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
   }
 
   return {
-    read, forget, notLinked, shiftReport, issueCard, peopleExtras, settings,
+    read, forget, notLinked, shiftReport, shiftCheck, checks, issueCard, peopleExtras, settings,
     ...(admin ? { answerApprovalCard, correctionCard } : {}),
   };
 }
