@@ -116,6 +116,12 @@ export const PERMISSIONS = [
       + 'list of shifts that did not agree, to answer. Nothing about anybody else\u2019s',
   },
   {
+    key: 'till_reports',
+    label: 'Till reports',
+    detail: 'Every front-desk closing report: who submitted theirs, when, and what was in the '
+      + 'drawer, and who has not. Can chase anybody whose report is still not in',
+  },
+  {
     key: 'lunch',
     label: 'Lunch orders',
     detail: 'Set the week\u2019s meals, hold the link staff order on, and read the count the '
@@ -236,7 +242,7 @@ export function effectivePermissions(user) {
   // not open them would be looking at the one screen that can grant them.
   if (user.role === 'admin') {
     for (const key of ['hr_view', 'hr_manage', 'rec_view', 'rec_manage',
-      'corr_view', 'corr_write', 'corr_sign']) {
+      'corr_view', 'corr_write', 'corr_sign', 'till_reports']) {
       if (!list.includes(key)) list.push(key);
     }
   }

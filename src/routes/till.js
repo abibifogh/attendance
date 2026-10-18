@@ -105,7 +105,7 @@ function withOwed(choices, owed = []) {
 
 // ----------------------------------------------------------- read helpers --
 
-function readReport(row) {
+export function readReport(row) {
   if (!row) return null;
   const parse = (text, fallback) => { try { return JSON.parse(text); } catch { return fallback; } };
   return {

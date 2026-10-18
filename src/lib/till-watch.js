@@ -234,6 +234,84 @@ export async function owedReports(db, { userId, staffId, timezone = 'UTC' }) {
   return out.sort((a, b) => reportKey(a).localeCompare(reportKey(b)));
 }
 
+/**
+ * Every closing report there should have been between two days, and every one
+ * that came in.
+ *
+ * One row per person per reception shift they were rostered on: the report if
+ * it is in, whether they clocked in at all (a shift not worked owes nothing),
+ * and whether it has ended yet. Reports that came in for a shift nobody was
+ * rostered on are listed too, because a report is a fact whatever the rota
+ * said. For the manager's screen, which keeps track and chases.
+ */
+export async function tillLedger(db, { from, to, timezone = 'UTC' }) {
+  const now = nowIn(timezone);
+  const [today, clock] = now.split(' ');
+  const minutesNow = toMinutes(clock) ?? 0;
+
+  const logins = await db.prepare(
+    `SELECT u.id AS user_id, u.name, u.staff_id, u.role, u.permissions
+       FROM users u WHERE u.active = 1 AND u.staff_id IS NOT NULL`,
+  ).all().catch(() => ({ results: [] }));
+  const people = (logins.results ?? []).filter((u) => allows('till', effectivePermissions(u)));
+
+  const ds = await loadDataset(db, { from: addDays(from, -1), to: [to, today].sort()[0] });
+  const reports = await db.prepare(
+    'SELECT * FROM till_report WHERE day BETWEEN ?1 AND ?2 ORDER BY day, signed_at',
+  ).bind(addDays(from, -1), to).all().catch(() => ({ results: [] }));
+  const reportBy = new Map();
+  for (const r of reports.results ?? []) {
+    // The live one wins over one that was reopened and closed again.
+    const key = `${r.user_id}|${reportKey(r)}`;
+    const had = reportBy.get(key);
+    if (!had || (had.reopened_at && !r.reopened_at)) reportBy.set(key, r);
+  }
+
+  const rows = [];
+  const used = new Set();
+  for (const person of people) {
+    const staffId = Number(person.staff_id);
+    const staff = ds.staffById.get(staffId);
+    if (!staff) continue;
+    const worked = new Map(computeRange(ds, staffId, from, [to, today].sort()[0]).map((r) => [r.day, r]));
+    for (let day = from; day <= to && day <= today; day = addDays(day, 1)) {
+      const shift = publishedShift(ds, staffId, day);
+      if (!shift || !isReceptionShift(shift, staff)) continue;
+      const start = toMinutes(shift.starts_at);
+      const end = toMinutes(shift.ends_at);
+      if (start == null || end == null) continue;
+      const slot = reportSlotFor(day, shift.starts_at);
+      if (!slot) continue;
+      const endedAgo = minutesNow + 1440 * daysBetween(day, today) - (end > start ? end : end + 1440);
+      const record = worked.get(day);
+      const key = `${person.user_id}|${reportKey(slot)}`;
+      const report = reportBy.get(key) ?? null;
+      if (report) used.add(key);
+      rows.push({
+        userId: Number(person.user_id),
+        staffId,
+        name: staff.name || person.name,
+        day: slot.day,
+        slot: slot.slot,
+        shiftDay: day,
+        shift: { name: shift.name, starts_at: shift.starts_at, ends_at: shift.ends_at },
+        ended: endedAgo > 0,
+        worked: Boolean(record?.first_in || record?.corrected_in),
+        report,
+      });
+    }
+  }
+  for (const [key, report] of reportBy) {
+    if (used.has(key) || report.day < from) continue;
+    rows.push({
+      userId: Number(report.user_id), staffId: null, name: report.name,
+      day: report.day, slot: report.slot, shiftDay: report.day, shift: null,
+      ended: true, worked: true, report,
+    });
+  }
+  return rows.sort((a, b) => reportKey(b).localeCompare(reportKey(a)) || a.name.localeCompare(b.name));
+}
+
 const daysBetween = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86400000);
 
 /** The daily reminder: every report still owed, oldest first. */

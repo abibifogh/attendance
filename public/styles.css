@@ -7481,3 +7481,16 @@ a.btn, a.btn-sm { text-decoration: none; display: inline-flex; align-items: cent
 .company-facts dt { color: var(--text-dim); }
 .company-facts dd { margin: 0; }
 .pay-company { margin: .35rem 0 .2rem; }
+
+/* Till reports: who has submitted, and who is still owed. */
+.tr-list { display: grid; }
+.tr-row { display: flex; align-items: center; gap: .8rem; padding: .7rem 0; border-top: 1px solid var(--border); }
+.tr-row:first-child { border-top: 0; }
+.tr-main { flex: 1; min-width: 0; display: grid; gap: .15rem; }
+.tr-summary { color: var(--text-dim); }
+.tr-side { display: grid; justify-items: end; gap: .2rem; text-align: right; }
+.tr-chased { white-space: nowrap; }
+@media (max-width: 620px) {
+  .tr-row { flex-wrap: wrap; }
+  .tr-side { justify-items: start; text-align: left; }
+}

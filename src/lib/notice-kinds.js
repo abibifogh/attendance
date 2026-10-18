@@ -516,6 +516,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'till.chase',
+    group: 'money',
+    label: 'A closing report asked for',
+    who: 'Whoever owes it',
+    when: 'A manager presses Chase on Till reports',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'till.expect',
     group: 'money',
     label: 'Expect cash back in the drawer',

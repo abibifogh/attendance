@@ -26,6 +26,7 @@ import { nightlyCopy } from './lib/backup.js';
 import * as birthday from './routes/birthdays.js';
 import * as attSetup from './routes/attendance-setup.js';
 import * as companies from './routes/companies.js';
+import * as tillReports from './routes/till-reports.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
 import * as invite from './routes/invite.js';
@@ -197,6 +198,9 @@ export const ROUTES = [
   // My till: closing a front-desk shift, and answering for the shifts that did
   // not agree. Insight does the checking over the till link; these keep what
   // the person wrote, signed with their own PIN.
+  // Every closing report, and the ones still owed, for whoever keeps track.
+  ['GET', '/api/till/reports', 'till_reports', tillReports.tillReports],
+  ['POST', '/api/till/chase', 'till_reports', tillReports.chaseTill],
   ['GET', '/api/me/till', 'till', till.myTill],
   ['POST', '/api/me/till', 'till', till.closeShift],
   ['POST', '/api/me/till/po', 'till', till.lookUpPo],

@@ -32,6 +32,7 @@ import { renderAttAdvances } from './views/att-advances.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
 import { renderAttLunch } from './views/att-lunch.js';
 import { renderAttMedical } from './views/att-medical.js';
+import { renderTillReports } from './views/till-reports.js';
 import { renderAttPayrollTab } from './views/att-payroll.js';
 import { renderAttLeave } from './views/att-leave.js';
 import { renderAttSignoff } from './views/att-signoff.js';
@@ -192,6 +193,7 @@ const ROUTES = [
   { group: 'money', tab: 'Payroll', path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayrollTab, live: ['pay', 'attendance'] },
   { group: 'money', tab: 'Advances', path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances, live: ['pay'] },
   { group: 'money', tab: 'Medical claims', path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
+  { group: 'money', tab: 'Till reports', path: 'till-reports', label: 'Till reports', permission: 'till_reports', render: renderTillReports },
 
   // Everything set once, as topics down the side of one screen.
   { group: 'setup', tab: 'Settings', path: 'settings', label: 'Settings', permission: ['att_setup', 'users'], render: renderSettings, live: ['admin'] },

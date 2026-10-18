@@ -2507,6 +2507,28 @@ export const GUIDE = [
 
   // =========================================================================
   {
+    key: 'till-reports',
+    title: 'Till reports',
+    permission: 'till_reports',
+    lede: 'Every closing report from the front desk, who has not submitted theirs, and chasing them.',
+    blocks: [
+      { p: 'Money → Till reports shows a week at a time. At the top, what is still not in, oldest '
+        + 'first; under it, every reception shift with its report: who signed it, when, what was in '
+        + 'the drawer, and the one-line summary the owner gets.' },
+      { steps: [
+        'Read the tiles: submitted, still not in, not worked, and shifts still running.',
+        'Under Still not in, press Chase beside somebody to send them a phone alert and an email '
+          + 'asking for that report. Chase all asks everybody owed that week at once.',
+        'The row then says when they were last chased and how many times.',
+      ] },
+      { note: 'Only a report that is actually owed can be chased: the shift has ended, they clocked '
+        + 'in for it, and nothing is in (or it was reopened in Insight). A shift somebody did not '
+        + 'clock in for is shown as Not worked and owes nothing. The same report is not chased twice '
+        + 'within the hour. Whatever you do here, HIVE also reminds them itself every morning until '
+        + 'it is in, and will not let them close a later shift first.' },
+    ],
+  },
+  {
     key: 'till',
     title: 'My till',
     permission: 'till',
