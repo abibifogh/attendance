@@ -21,6 +21,7 @@ const STATE = {
   owed: ['Still not in', 'bad'],
   reopened: ['Reopened, not in again', 'bad'],
   not_worked: ['Not worked', ''],
+  not_asked: ['Not in · before 15 Oct, not asked for', ''],
   running: ['Shift still running', 'warn'],
 };
 

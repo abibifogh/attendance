@@ -1,6 +1,6 @@
 import { badRequest, int, json, notFound, readJson, str } from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
-import { tillLedger } from '../lib/till-watch.js';
+import { OWED_SINCE, tillLedger } from '../lib/till-watch.js';
 import { firstUsableEmail, isEmail } from '../lib/notify.js';
 import { firstName, sayDate, sayHours } from '../lib/email-design.js';
 import { addDays, isDay, nowIn, todayIn } from '../util/dates.js';
@@ -31,6 +31,8 @@ const stateOf = (row) => {
   if (row.report?.reopened_at) return 'reopened';
   if (!row.ended) return 'running';
   if (!row.worked) return 'not_worked';
+  // Missing from before the cut-off: listed, never asked for or chased.
+  if (row.day < OWED_SINCE) return 'not_asked';
   return 'owed';
 };
 

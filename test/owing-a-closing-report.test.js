@@ -79,7 +79,22 @@ test('what is owed: shifts worked and not closed, oldest first, and nothing for 
   worked(raw, '2026-10-18');
 
   const list = await owedReports(db, { userId: 7, staffId: 1, timezone: 'UTC' });
-  assert.deepEqual(list.map((r) => `${r.day} ${r.slot}`), ['2026-10-14 morning', '2026-10-17 morning']);
+  // The 14th is before the 15 October cut-off, so it is not asked for.
+  assert.deepEqual(list.map((r) => `${r.day} ${r.slot}`), ['2026-10-17 morning']);
+});
+
+test('nothing missing from before 15 October is asked for; the 15th itself is', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-18T09:00:00Z') });
+  const { raw, db } = setup();
+  worked(raw, '2026-10-13');
+  worked(raw, '2026-10-14');
+  worked(raw, '2026-10-15');
+  const list = await owedReports(db, { userId: 7, staffId: 1, timezone: 'UTC' });
+  assert.deepEqual(list.map((r) => r.day), ['2026-10-15']);
+
+  // Nor does it hold up a later report: only the 15th stands in the way.
+  closed(raw, '2026-10-15');
+  assert.deepEqual(await owedReports(db, { userId: 7, staffId: 1, timezone: 'UTC' }), []);
 });
 
 test('nothing is owed before the property’s first closing report', async (t) => {

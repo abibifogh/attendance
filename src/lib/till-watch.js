@@ -58,6 +58,13 @@ export const OWED_FROM_MINUTES = 8 * 60;
 /** How far back a missing report is still chased. */
 export const OWED_LOOKBACK_DAYS = 31;
 
+/**
+ * Nothing before this day is asked for. Reports missing from before closing
+ * reports were tracked in HIVE are left alone rather than chased, as asked;
+ * one an administrator opens again to be put right still comes back in.
+ */
+export const OWED_SINCE = '2026-10-15';
+
 const SLOT_START = { morning: 6 * 60, afternoon: 14 * 60, night: 22 * 60 };
 const SLOT_ORDER = ['morning', 'afternoon', 'night'];
 
@@ -205,7 +212,7 @@ export async function owedReports(db, { userId, staffId, timezone = 'UTC' }) {
   const now = nowIn(timezone);
   const [today, clock] = now.split(' ');
   const minutesNow = toMinutes(clock) ?? 0;
-  const from = [addDays(today, -OWED_LOOKBACK_DAYS), first.day].sort().pop();
+  const from = [addDays(today, -OWED_LOOKBACK_DAYS), first.day, OWED_SINCE].sort().pop();
   if (from > today) return [];
 
   const ds = await loadDataset(db, { from: addDays(from, -1), to: today });
@@ -235,6 +242,8 @@ export async function owedReports(db, { userId, staffId, timezone = 'UTC' }) {
     if (!record?.first_in && !record?.corrected_in) continue;
     const report = reportSlotFor(day, shift.starts_at);
     if (!report || closed.has(reportKey(report))) continue;
+    // A night shift begun just after midnight belongs to the evening before.
+    if (report.day < OWED_SINCE) continue;
     out.push({ ...report, shiftDay: day, shift: { name: shift.name, starts_at: shift.starts_at, ends_at: shift.ends_at } });
   }
 
