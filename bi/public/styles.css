@@ -1788,3 +1788,36 @@ label.fm-row input { margin-top: .2rem; }
 .rc-result { text-align: left; border: 1px solid var(--border); border-radius: 8px; padding: .45rem .6rem; background: var(--surface); color: var(--ink); font: inherit; font-size: .9rem; cursor: pointer; }
 .rc-result:hover { background: var(--surface-2); }
 .rc-result.off { cursor: default; color: var(--muted); }
+
+/* ---------------------------------------------------------------- view as -- */
+
+/* The bar while looking as somebody: the header's first row, so it stays on screen. */
+.va-bar {
+  order: -10; flex: 0 0 calc(100% + 2.2rem); margin: -.7rem -1.1rem 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem;
+  padding: .5rem 1.1rem; background: #5b2bd1; color: #fff; font-size: .9rem;
+}
+.va-bar b { font-weight: 700; }
+.va-say { flex: 1 1 18rem; }
+.va-acts { display: flex; gap: .5rem; align-items: center; }
+.va-bar select { border: 0; border-radius: 8px; padding: .3rem .4rem; font: inherit; max-width: 14rem; }
+.va-stop { background: #fff; color: #5b2bd1; border: 0; border-radius: 8px; padding: .35rem .8rem; font: inherit; font-weight: 700; cursor: pointer; }
+.va-err:empty { display: none; }
+.va-err { flex-basis: 100%; font-weight: 600; }
+
+/* Choosing whom. */
+.va-shade { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .4); display: grid; place-items: start center; padding: 8vh 1rem 1rem; overflow-y: auto; }
+.va-card { background: var(--surface); color: var(--ink); border-radius: 14px; width: min(520px, 100%); padding: 1rem 1.15rem; box-shadow: 0 12px 40px rgba(0, 0, 0, .25); }
+.va-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.va-head h2 { margin: 0; font-size: 1.15rem; }
+.va-lede { color: var(--ink-2); font-size: .9rem; margin: .4rem 0 .7rem; }
+.va-card input[type=search] { width: 100%; box-sizing: border-box; padding: .55rem .7rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); margin-bottom: .4rem; }
+.va-list { max-height: 55vh; overflow-y: auto; }
+.va-row { display: flex; align-items: center; gap: .7rem; padding: .55rem .15rem; border-top: 1px solid var(--border); }
+.va-av { width: 2rem; height: 2rem; flex: none; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--series-1) 14%, var(--surface)); color: var(--series-1); font-weight: 700; }
+.va-t { flex: 1; display: grid; min-width: 0; }
+.va-t small { color: var(--ink-2); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .va-bar { background: #6d3df0; } }
+:root[data-theme="dark"] .va-bar { background: #6d3df0; }
+/* On a phone the header scrolls away, so a frame round the screen keeps saying it. */
+html.viewing-as body::after { content: ''; position: fixed; inset: 0; border: 4px solid #5b2bd1; pointer-events: none; z-index: 70; }
