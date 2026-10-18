@@ -156,7 +156,8 @@ const ROUTES = [
     if (stay) await till.requireArea(env, ctx.account, 'unpaid', 2);
     else await mayActOn(env, ctx.account, [String(ctx.body?.key || '')]);
     return waitsForAdmin(env, ctx, shiftRoutes.saveAnswer(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }),
-      `${ctx.account?.name || 'A supervisor'} answered ${stay ? 'an unpaid stay' : 'an exception'}: ${ctx.body?.answer || ''}.`);
+      // Which one, so two emails do not read alike: "The drawer count, Sat 3 Oct night".
+      `${ctx.account?.name || 'A supervisor'} answered “${ctx.body?.answer || ''}” for ${approvals.keyWords(String(ctx.body?.key || '')).replace(/^A /, 'a ').replace(/^An /, 'an ').replace(/^The /, 'the ')}.`);
   }],
   ['POST', '/api/shifts/answer-many', 'shifts', answerMany],
   // Which day an ASSD line is on, so an approval can open its shift.
