@@ -525,6 +525,20 @@ test('the register can be read back, newest first, and narrowed', async () => {
   assert.deepEqual(narrowed.edits.map((e) => e.day), ['2026-06-03']);
 });
 
+test('each waiting correction says the shift it was for, or that there was none', async () => {
+  const { db } = await setup();
+  await ask(db, '2026-06-03', { out: '21:00', reason: 'Kitchen' });
+  // Not on the rota on the 4th.
+  await ask(db, '2026-06-04', { in: '09:00', out: '17:00', reason: 'Came in to help' });
+
+  const { pending } = await read(await timeEdits(ctx(db, { query: '' })));
+  const byDay = Object.fromEntries(pending.map((e) => [e.day, e]));
+  assert.deepEqual(byDay['2026-06-03'].shift, { name: 'Morning', starts_at: '09:00', ends_at: '17:00' });
+  assert.equal(byDay['2026-06-03'].shift_state, 'shift');
+  assert.equal(byDay['2026-06-04'].shift, null);
+  assert.equal(byDay['2026-06-04'].shift_state, 'none');
+});
+
 test('what is waiting is never hidden by the dates on screen', async () => {
   // A change asked for outside the period somebody happens to be looking at is
   // still waiting on them. A queue that hides depending on where you are stood

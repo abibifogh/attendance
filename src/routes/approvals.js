@@ -112,14 +112,19 @@ const KINDS = {
       return (pending ?? []).map((e) => {
         const wasIn = e.was_in ?? e.observed_in;
         const wasOut = e.was_out ?? e.observed_out;
+        const shift = shiftSaid(e);
         return {
           id: e.id,
           title: `Clock-time correction · ${e.staff_name}`,
-          sub: `${shortDay(e.day)} · in ${pair(wasIn, e.now_in)}, out ${pair(wasOut, e.now_out)}`,
+          // The shift in the line; no shift is said once, in red, beside the name.
+          sub: `${shortDay(e.day)}${e.shift ? ` · ${shift}` : ''} · in ${pair(wasIn, e.now_in)}, out ${pair(wasOut, e.now_out)}`,
           who: e.staff_name,
+          // A correction for a day nobody had them on is worth a second look.
+          tag: e.shift ? null : shift,
           askedAt: e.at_utc,
           details: [
             ['Day', shortDay(e.day)],
+            ['Shift', shift],
             ['The terminal saw', `in ${e.observed_in || '—'}, out ${e.observed_out || '—'}`],
             ['Asked for', `in ${e.now_in || '—'}, out ${e.now_out || '—'}`],
             ['Why', e.reason],
@@ -447,6 +452,14 @@ export async function linkDecide(ctx, runAs) {
  * session, so what they see and what they may decide is exactly what the
  * separate screens would allow. A kind they may not decide is left out.
  */
+/** The shift a correction was for, or why there was none. */
+function shiftSaid(e) {
+  if (e.shift) return `${e.shift.name} ${e.shift.starts_at}–${e.shift.ends_at}`;
+  return {
+    leave: 'On leave that day', holiday: 'Public holiday, no shift', off: 'Day off on the rota',
+  }[e.shift_state] ?? 'No shift on the rota';
+}
+
 export async function inboxList(ctx, runAs) {
   const session = ctx.session;
   const run = (method, path, data) => runAs(session, method, path, data);

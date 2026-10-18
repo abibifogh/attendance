@@ -7661,3 +7661,17 @@ button.lp-row:disabled { cursor: default; }
   .lp-busy-row input[type=text] { grid-column: 1 / -1; }
 }
 .lp-unreached { color: var(--warn); font-weight: 600; }
+
+/* Inbox: ticking several to approve together. */
+.decide-item { grid-template-columns: 1.6rem minmax(0, 1fr) auto; }
+.decide-tick { display: flex; align-items: center; justify-content: center; align-self: center; min-height: 44px; cursor: pointer; }
+.decide-tick input { width: 1.15rem; height: 1.15rem; cursor: pointer; }
+.decide-item.ticked { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.decide-bulk { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem 1rem; margin-bottom: .8rem; padding: .6rem 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); position: sticky; top: calc(var(--topbar-h) + .5rem); z-index: 5; }
+.decide-bulk-actions { display: flex; gap: .5rem; align-items: center; }
+@media (max-width: 620px) {
+  .decide-item { grid-template-columns: 1.6rem minmax(0, 1fr); }
+  .decide-actions, .decide-inline { grid-column: 2 / -1; }
+}
+.decide-bulk label.check { display: inline-flex; align-items: center; gap: .5rem; margin: 0; font-weight: 600; }
+.decide-bulk label.check input { width: 1.15rem; height: 1.15rem; margin: 0; }

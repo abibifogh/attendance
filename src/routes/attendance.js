@@ -1804,9 +1804,26 @@ export async function timeEdits(ctx) {
       ORDER BY e.id DESC LIMIT 200`,
   ).bind().all().catch(() => ({ results: [] }));
 
+  // The shift each waiting one was for, so whoever approves can see that
+  // 17:00 is the end of the early, or that nobody had them on at all.
+  const pending = waiting.results ?? [];
+  if (pending.length) {
+    const days = pending.map((e) => e.day).sort();
+    const ds = await loadDataset(ctx.db, { from: days[0], to: days[days.length - 1] }).catch(() => null);
+    for (const e of pending) {
+      const plan = ds ? scheduleFor(ds, e.staff_id, e.day) : null;
+      const shift = plan?.shift ?? null;
+      e.shift = shift ? { name: shift.name, starts_at: shift.starts_at, ends_at: shift.ends_at } : null;
+      e.shift_state = shift ? 'shift'
+        : ds?.leaveBy.get(`${e.staff_id}|${e.day}`) ? 'leave'
+          : ds?.holidayBy?.get(e.day) && !plan?.explicit ? 'holiday'
+            : plan?.explicit ? 'off' : 'none';
+    }
+  }
+
   return json({
     edits: (rows.results ?? []).filter((e) => e.status !== 'pending'),
-    pending: waiting.results ?? [],
+    pending,
     canApprove: allows('att_setup', ctx.session.permissions),
   });
 }
