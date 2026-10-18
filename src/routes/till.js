@@ -6,7 +6,7 @@ import { createNotice } from '../lib/notices.js';
 import { callLink, verifyLink } from '../lib/till-link.js';
 import { addDays, nowIn, todayIn } from '../util/dates.js';
 import { firstMonthFor } from '../lib/advances.js';
-import { nextOnReception } from '../lib/till-watch.js';
+import { nextOnReception, owedReports, reportKey } from '../lib/till-watch.js';
 import { firstUsableEmail, isEmail, sendEmail, senderWithName } from '../lib/notify.js';
 import { firstName, sayDate, sayHours, sayMonth, sayShortDate } from '../lib/email-design.js';
 
@@ -95,6 +95,14 @@ function choicesFrom(current) {
   return out.map((s) => ({ ...s, label: labelOf(s) }));
 }
 
+/** The same, with any report still owed from further back added, newest first. */
+function withOwed(choices, owed = []) {
+  const have = new Set(choices.map((c) => reportKey(c)));
+  const extra = owed.filter((o) => !have.has(reportKey(o)))
+    .map((o) => ({ day: o.day, slot: o.slot, label: labelOf(o) }));
+  return [...choices, ...extra].sort((a, b) => reportKey(b).localeCompare(reportKey(a)));
+}
+
 // ----------------------------------------------------------- read helpers --
 
 function readReport(row) {
@@ -138,8 +146,13 @@ const cedis = (minor) => `GH₵ ${(Math.abs(minor) / 100).toLocaleString('en-GB'
 export async function myTill(ctx) {
   const tz = await timezoneOf(ctx.db);
   const current = shiftAt(nowIn(tz));
-  const choices = choicesFrom(current);
   const userId = Number(ctx.session.user.id);
+  // Reports this person still owes from shifts they worked, oldest first. Any
+  // older than the last four shifts are offered as well, because they have to
+  // be closed before anything after them can be.
+  const owed = await owedReports(ctx.db, { userId, staffId: Number(ctx.session.user.staff_id) || 0, timezone: tz })
+    .catch(() => []);
+  const choices = withOwed(choicesFrom(current), owed);
 
   const setup = await insightOrNull(ctx.env, '/api/link/till/setup', {});
   const mine = await ctx.db.prepare(
@@ -161,7 +174,14 @@ export async function myTill(ctx) {
     linked: Boolean(setup),
     setup: setup || FALLBACK_SETUP,
     shift: { ...current, label: labelOf(current) },
-    choices: choices.map((c) => ({ ...c, done: reports.some((r) => r.day === c.day && r.slot === c.slot) })),
+    choices: choices.map((c) => ({
+      ...c,
+      done: reports.some((r) => r.day === c.day && r.slot === c.slot),
+      // Waiting behind an older report that is still not in.
+      blocked: Boolean(owed[0]) && reportKey(c) > reportKey(owed[0]),
+    })),
+    // What is still owed, oldest first, so the screen can say so and open on it.
+    owed: owed.map((o) => ({ day: o.day, slot: o.slot, label: labelOf(o), shift: o.shift })),
     reports,
     handedOver,
     today: todayIn(tz),
@@ -443,12 +463,20 @@ export async function closeShift(ctx) {
   const body = await readJson(ctx.request);
   const userId = Number(ctx.session.user.id);
   const tz = await timezoneOf(ctx.db);
-  const choices = choicesFrom(shiftAt(nowIn(tz)));
+  const owed = await owedReports(ctx.db, { userId, staffId: Number(ctx.session.user.staff_id) || 0, timezone: tz });
+  const choices = withOwed(choicesFrom(shiftAt(nowIn(tz))), owed);
 
   const day = String(body.day || '');
   const slot = String(body.slot || '');
   if (!choices.some((c) => c.day === day && c.slot === slot)) {
     throw badRequest('That shift cannot be closed from here: only this shift and the three before it.');
+  }
+  // In order. A report still owed from an earlier shift comes first, so a
+  // missing one cannot be left behind by closing the next.
+  const [oldest] = owed;
+  if (oldest && reportKey({ day, slot }) > reportKey(oldest)) {
+    throw new HttpError(409, `First submit your closing report for the ${SLOT_LABEL[oldest.slot].toLowerCase()} shift on `
+      + `${sayDate(oldest.day)}. Closing reports go in order, oldest first.`, { owed: { day: oldest.day, slot: oldest.slot } });
   }
   const already = await ctx.db.prepare('SELECT id FROM till_report WHERE day = ?1 AND slot = ?2 AND user_id = ?3 AND reopened_at IS NULL')
     .bind(day, slot, userId).first();

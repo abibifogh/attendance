@@ -58,12 +58,19 @@ export async function renderAttMyTill() {
   const host = h('div.till');
   const data = await api.myTill();
 
-  const firstOpen = data.choices.find((c) => !c.done) || data.choices[0];
+  // A report still owed from an earlier shift comes first: the screen opens
+  // on it, and nothing after it can be closed until it is in.
+  const owedFirst = () => (data.owed ?? [])[0] ?? null;
+  const usable = (c) => c && !c.blocked;
+  const firstOpen = owedFirst() ?? data.choices.find((c) => !c.done && !c.blocked) ?? data.choices[0];
   let which = store.get('which') || { day: firstOpen.day, slot: firstOpen.slot };
   // Which of the five steps is on screen, kept with the draft so a phone that
   // locks halfway through comes back to the same step.
   let step = Number(store.get('step')) || 0;
-  if (!data.choices.some((c) => c.day === which.day && c.slot === which.slot)) which = { day: firstOpen.day, slot: firstOpen.slot };
+  if (!usable(data.choices.find((c) => c.day === which.day && c.slot === which.slot))) {
+    which = { day: firstOpen.day, slot: firstOpen.slot };
+    step = 0;
+  }
 
   const blank = () => ({
     floatOk: null, floatDiff: '', floatNote: '', cash: '',
@@ -137,6 +144,10 @@ export async function renderAttMyTill() {
         h('div.sub', 'Five short steps, signed with your PIN at the end.'))),
       data.linked ? null : h('div.alert.warn', 'Insight cannot be reached just now, so PO numbers cannot be checked. You can still close the shift; '
         + 'any expense that could not be checked will be on your list under To sort out, to add again later.'),
+      owedFirst() ? h('div.alert.warn.till-owed',
+        h('strong', `Your closing report for the ${SLOT[owedFirst().slot].toLowerCase()} shift on ${dayText(owedFirst().day)} is still not in.`),
+        ' ', (data.owed.length > 1 ? `${data.owed.length} reports are missing. ` : ''),
+        'Submit it first: closing reports go in order, and later shifts open once it is in.') : null,
       done || step === 0 ? card('Which shift', {},
         h('select.till-shift', {
           'aria-label': 'Which shift',
@@ -151,8 +162,11 @@ export async function renderAttMyTill() {
             loadEarlier(true);
             paint();
           },
-        }, data.choices.map((c) => h('option', { value: `${c.day}|${c.slot}`, selected: c.day === which.day && c.slot === which.slot },
-          `${SLOT[c.slot]} · ${dayText(c.day)}${c.done ? ' · closed' : ''}`))),
+        }, data.choices.map((c) => h('option', {
+          value: `${c.day}|${c.slot}`,
+          selected: c.day === which.day && c.slot === which.slot,
+          disabled: Boolean(c.blocked),
+        }, `${SLOT[c.slot]} · ${dayText(c.day)}${c.done ? ' · closed' : c.blocked ? ' · after the one still owed' : ''}`))),
         h('p.till-hint', 'Your name, the day and the shift go in for you from your sign-in.')) : null,
       done ? closedCard(done) : form());
   }
@@ -516,6 +530,19 @@ export async function renderAttMyTill() {
     toast('Signed and sent. Thank you.');
     data.reports.unshift({ ...sent.report, signedAt: new Date().toISOString().replace('T', ' '), floatDiff: sent.report.floatDiff });
     data.choices = data.choices.map((c) => (c.day === which.day && c.slot === which.slot ? { ...c, done: true } : c));
+    // One fewer owed: the next oldest is what everything after waits on now,
+    // and the screen moves on to it.
+    if (data.owed?.length) {
+      data.owed = data.owed.filter((o) => !(o.day === which.day && o.slot === which.slot));
+      const next = data.owed[0];
+      const key = (c) => `${c.day}|${['morning', 'afternoon', 'night'].indexOf(c.slot)}`;
+      data.choices = data.choices.map((c) => ({ ...c, blocked: Boolean(next) && key(c) > key(next) }));
+      if (next) {
+        which = { day: next.day, slot: next.slot };
+        store.set('which', which);
+        f = store.get(draftKey()) || blank();
+      }
+    }
     paint();
   }
 }

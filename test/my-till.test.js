@@ -525,3 +525,41 @@ test('a PO made in Insight: not a shift’s expense until an admin allows it, an
   const out = await (await closeShift(ctx(db, AMA, { env, body: good(shift, { expenses: [{ po: '412' }] }) }))).json();
   assert.deepEqual(out.report.expenses.map((e) => [e.name, e.counted]), [['P00412', true]]);
 });
+
+test('a closing report still owed has to go in before any later one', async (t) => {
+  // Saturday's morning shift was worked and never closed. On Sunday the till
+  // screen opens on it, offers nothing later, and refuses a later report.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-18T09:00:00Z') });
+  const { db, raw } = await setup();
+  const env = { INSIGHT: insight() };
+  raw.prepare(
+    `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes, grace_in_minutes, department)
+     VALUES (90, 'Desk mornings', '06:00', '14:15', 0, 5, 'Reception')`,
+  ).run();
+  // The property's first report, from earlier in the week, by somebody else.
+  raw.prepare("INSERT INTO till_report (day, slot, user_id, name, float_ok, cash, to_safe) VALUES ('2026-10-12', 'morning', 8, 'Kofi Test', 1, 100, 0)").run();
+  raw.prepare("INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, '2026-10-15', 90, 1)").run();
+  for (const [at, direction] of [['2026-10-15 05:55:00', 'in'], ['2026-10-15 14:20:00', 'out']]) {
+    raw.prepare(
+      `INSERT INTO att_punches (device_serial, employee_no, staff_id, at_utc, at_local, day, direction, dedupe_key)
+       VALUES ('D1', '1', 1, ?1, ?1, '2026-10-15', ?2, ?3)`,
+    ).run(at, direction, `${at}-${direction}`);
+  }
+
+  const screen = await (await myTill(ctx(db, AMA, { env }))).json();
+  assert.deepEqual(screen.owed.map((o) => `${o.day} ${o.slot}`), ['2026-10-15 morning']);
+  const owedChoice = screen.choices.find((c) => c.day === '2026-10-15' && c.slot === 'morning');
+  assert.ok(owedChoice, 'offered, though it is further back than the last four shifts');
+  assert.equal(owedChoice.blocked, false);
+  const current = screen.choices.find((c) => c.day === '2026-10-18' && c.slot === 'morning');
+  assert.equal(current.blocked, true, 'today waits behind it');
+
+  await assert.rejects(closeShift(ctx(db, AMA, { env, body: good(current) })),
+    /First submit your closing report for the morning shift on .*15 October/);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM till_report WHERE user_id = 7').get().n, 0);
+
+  const sent = await (await closeShift(ctx(db, AMA, { env, body: good(owedChoice) }))).json();
+  assert.equal(sent.ok, true, 'the owed one goes in');
+  const now = await (await closeShift(ctx(db, AMA, { env, body: good(current, { rentals: { padlock: { start: 5, end: 5 } } }) }))).json();
+  assert.equal(now.ok, true, 'and then today’s');
+});

@@ -508,6 +508,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'till.close_owed',
+    group: 'money',
+    label: 'Closing reports still not in',
+    who: 'Whoever worked a reception shift and has not closed it',
+    when: 'Every morning from 8 o’clock, until every report they owe is in',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'till.expect',
     group: 'money',
     label: 'Expect cash back in the drawer',

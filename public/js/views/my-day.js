@@ -46,7 +46,16 @@ export async function renderMyDay() {
   // the to-do stays for some hours after the shift ends. The till screen
   // itself offers the shift that has just finished as well as the current one.
   const open = (till?.choices ?? []).slice(0, 2).some((c) => !c.done);
-  if (till && open && (week.onShift || week.justFinished)) {
+  const owed = till?.owed ?? [];
+  if (owed.length) {
+    // Owed from a shift already over, whatever the time now: it comes first,
+    // and nothing later can be closed until it is in.
+    const [oldest] = owed;
+    const when = new Date(`${oldest.day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+    const slot = { morning: 'Morning', afternoon: 'Afternoon', night: 'Night' }[oldest.slot] ?? '';
+    todo.push(task('cash', owed.length > 1 ? `${owed.length} closing reports still not in` : 'Closing report still not in',
+      `${slot} shift · ${when}${owed.length > 1 ? ' first' : ''}`, '#/att-my-till', 'bad'));
+  } else if (till && open && (week.onShift || week.justFinished)) {
     const ends = week.onShift?.shift?.ends_at;
     const finished = week.justFinished?.shift?.name;
     todo.push(task('cash', 'Close your till',

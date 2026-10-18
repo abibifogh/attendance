@@ -1,5 +1,5 @@
 import { createNotice } from './notices.js';
-import { loadDataset, scheduleFor, toMinutes } from './attendance.js';
+import { computeRange, loadDataset, scheduleFor, toMinutes } from './attendance.js';
 import { addDays, nowIn } from '../util/dates.js';
 import { allows, effectivePermissions } from './permissions.js';
 import { firstUsableEmail, isEmail } from './notify.js';
@@ -34,6 +34,11 @@ import { sayDate, sayHours, sayTime } from './email-design.js';
  * whichever of those its start is nearest, so a 7 am start is the morning and a
  * night shift belongs to the evening it began.
  *
+ * AND THEN EVERY DAY UNTIL IT IS IN. A report still missing the morning after
+ * is said again each day from eight o'clock, one message listing every report
+ * the person still owes, until the last of them is submitted. A shift they did
+ * not actually work — no clock-in, or on leave — owes nothing.
+ *
  * Each reminder is claimed in `att_nudge` before it is sent, so the five-minute
  * watcher cannot send the same one twice.
  */
@@ -47,7 +52,17 @@ export const AFTER_END_MINUTES = 20;
 /** How long after that the second reminder is still worth sending, for a watcher that missed a beat. */
 const AFTER_WINDOW_MINUTES = 100;
 
+/** When the daily reminder about reports still owed goes out, local time. */
+export const OWED_FROM_MINUTES = 8 * 60;
+
+/** How far back a missing report is still chased. */
+export const OWED_LOOKBACK_DAYS = 31;
+
 const SLOT_START = { morning: 6 * 60, afternoon: 14 * 60, night: 22 * 60 };
+const SLOT_ORDER = ['morning', 'afternoon', 'night'];
+
+/** Earlier reports sort first: by the day Insight files them under, then the slot. */
+export const reportKey = ({ day, slot }) => `${day}|${SLOT_ORDER.indexOf(slot)}`;
 const SLOT_WORD = { morning: 'morning', afternoon: 'afternoon', night: 'night' };
 
 /** A reception shift, by the shift's department first and the person's last. */
@@ -144,7 +159,123 @@ export async function watchTills(db, { timezone = 'UTC', ctx = null } = {}) {
     }
   }
 
-  return { checked, before, after, day: today };
+  // ---- every day, the reports still owed ---------------------------------
+  let owed = 0;
+  if (minutesNow >= OWED_FROM_MINUTES) {
+    for (const person of people) {
+      const staffId = Number(person.staff_id);
+      const said = await db.prepare(
+        "SELECT 1 FROM att_nudge WHERE staff_id = ?1 AND day = ?2 AND kind = 'till:owed'",
+      ).bind(staffId, today).first().catch(() => null);
+      if (said) continue;
+      const list = await owedReports(db, { userId: person.user_id, staffId, timezone });
+      if (!list.length) continue;
+      if (!await claim(db, staffId, today, 'till:owed')) continue;
+      await createNotice(db, owedNotice({
+        list, day: today, userId: person.user_id,
+        emailTo: isEmail(String(person.login_email ?? '').trim()) ? null : firstUsableEmail(person.personal_email),
+      }), ctx);
+      owed += 1;
+    }
+  }
+
+  return { checked, before, after, owed, day: today };
+}
+
+/**
+ * The closing reports somebody still owes, oldest first.
+ *
+ * A published reception shift of theirs that has ended, that they actually
+ * clocked in for, from the last month, whose report is not in (a report
+ * reopened from Insight counts as not in). Nothing before the property's very
+ * first closing report counts, so shifts worked before closing reports existed
+ * are never asked for.
+ */
+export async function owedReports(db, { userId, staffId, timezone = 'UTC' }) {
+  if (!userId || !staffId) return [];
+  const first = await db.prepare('SELECT MIN(day) AS day FROM till_report').first().catch(() => null);
+  if (!first?.day) return [];
+
+  const now = nowIn(timezone);
+  const [today, clock] = now.split(' ');
+  const minutesNow = toMinutes(clock) ?? 0;
+  const from = [addDays(today, -OWED_LOOKBACK_DAYS), first.day].sort().pop();
+  if (from > today) return [];
+
+  const ds = await loadDataset(db, { from: addDays(from, -1), to: today });
+  const staff = ds.staffById.get(Number(staffId));
+  if (!staff?.active) return [];
+
+  const worked = new Map(computeRange(ds, Number(staffId), from, today).map((r) => [r.day, r]));
+  const done = await db.prepare(
+    'SELECT day, slot FROM till_report WHERE user_id = ?1 AND day >= ?2 AND reopened_at IS NULL',
+  ).bind(userId, addDays(from, -1)).all().catch(() => ({ results: [] }));
+  const closed = new Set((done.results ?? []).map((r) => reportKey(r)));
+
+  const out = [];
+  for (let day = from; day <= today; day = addDays(day, 1)) {
+    const shift = publishedShift(ds, Number(staffId), day);
+    if (!shift || !isReceptionShift(shift, staff)) continue;
+    const start = toMinutes(shift.starts_at);
+    const end = toMinutes(shift.ends_at);
+    if (start == null || end == null) continue;
+    // Still running, or not started: nothing is owed for it yet. Minutes are
+    // counted from the start of the shift's own day, so a night shift ends the
+    // next morning.
+    const endedAgo = minutesNow + 1440 * daysBetween(day, today) - (end > start ? end : end + 1440);
+    if (endedAgo <= 0) continue;
+    // A day they never clocked in for is a shift they did not work.
+    const record = worked.get(day);
+    if (!record?.first_in && !record?.corrected_in) continue;
+    const report = reportSlotFor(day, shift.starts_at);
+    if (!report || closed.has(reportKey(report))) continue;
+    out.push({ ...report, shiftDay: day, shift: { name: shift.name, starts_at: shift.starts_at, ends_at: shift.ends_at } });
+  }
+  return out.sort((a, b) => reportKey(a).localeCompare(reportKey(b)));
+}
+
+const daysBetween = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86400000);
+
+/** The daily reminder: every report still owed, oldest first. */
+export function owedNotice({ list, day, userId, emailTo = null }) {
+  const [oldest] = list;
+  const word = (r) => SLOT_WORD[r.slot] ?? 'shift';
+  const many = list.length > 1;
+  const title = many
+    ? `${list.length} closing reports are still not in`
+    : `Your closing report for the ${word(oldest)} shift on ${sayDate(oldest.day)} is still not in`;
+  return {
+    kind: 'till.close_owed',
+    level: 'warn',
+    title,
+    body: `Submit it under Close till. ${many ? 'Start with the oldest: ' : ''}`
+      + `the ${word(oldest)} shift on ${sayDate(oldest.day)}. A later shift cannot be closed until it is in.`,
+    link: '#/att-my-till',
+    day,
+    actor: 'HIVE',
+    userId,
+    emailTo,
+    push: true,
+    email: true,
+    mail: {
+      status: 'Still not in',
+      tone: 'warn',
+      eyebrow: 'Till',
+      subject: title,
+      preheader: `Start with the ${word(oldest)} shift on ${sayDate(oldest.day)}. This reminder comes every day until it is in.`,
+      headline: title,
+      sub: many ? `The oldest is the ${word(oldest)} shift on ${sayDate(oldest.day)}` : `${capital(word(oldest))} shift · ${sayDate(oldest.day)}`,
+      facts: list.slice(0, 8).map((r) => [
+        `${capital(word(r))} · ${sayDate(r.day)}`,
+        `${r.shift.name}, ${sayHours(r.shift.starts_at, r.shift.ends_at)}`,
+      ]),
+      note: 'Submit them under Close till, oldest first. HIVE takes closing reports in order, so a '
+        + 'later shift cannot be closed while an earlier one is missing. This reminder comes every '
+        + 'day until they are all in.',
+      button: 'Close my till',
+      why: 'You get this because a closing report from a reception shift you worked is not in.',
+    },
+  };
 }
 
 /** The notice itself, for either reminder. */
