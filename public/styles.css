@@ -7494,3 +7494,23 @@ a.btn, a.btn-sm { text-decoration: none; display: inline-flex; align-items: cent
   .tr-row { flex-wrap: wrap; }
   .tr-side { justify-items: start; text-align: left; }
 }
+
+/* Viewing HIVE as somebody else: said across the top, in a colour nothing
+   else on the page uses, with the way back beside it. */
+.view-as-bar {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  padding: .55rem clamp(.75rem, 3vw, 1.5rem);
+  background: #3b2a6b; color: #fff; font-size: .9rem;
+}
+.view-as-bar .icon { color: #d9ccff; }
+.view-as-bar span { flex: 1; min-width: 12rem; text-align: left; }
+@media (max-width: 620px) { .view-as-bar > .icon { display: none; } }
+.view-as-bar .btn-sm { background: #fff; color: #23184a; border-color: transparent; }
+.view-as-list { display: grid; gap: .9rem; max-height: 60vh; overflow-y: auto; margin-top: .6rem; }
+.view-as-kind h3 { margin: 0 0 .3rem; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); }
+.view-as-person {
+  display: grid; justify-items: start; gap: .1rem; width: 100%; text-align: left;
+  justify-content: start; padding: .5rem .6rem; border-radius: 8px; background: transparent;
+  border: 1px solid transparent;
+}
+.view-as-person:hover, .view-as-person:focus-visible { background: var(--surface-2); border-color: var(--border); }

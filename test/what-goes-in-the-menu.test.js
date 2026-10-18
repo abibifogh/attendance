@@ -93,8 +93,8 @@ const roleHolds = (role, staffId = null) => effectivePermissions({ role, staff_i
 // The table itself
 // ---------------------------------------------------------------------------
 
-test('two menus: five places for staff, six and two for everybody else', () => {
-  assert.deepEqual(STAFF.map((g) => g.label), ['Home', 'Rota', 'Requests', 'Pay', 'Me']);
+test('two menus: five places for staff (six with the till), six and two for everybody else', () => {
+  assert.deepEqual(STAFF.map((g) => g.label), ['Home', 'Till', 'Rota', 'Requests', 'Pay', 'Me']);
   assert.deepEqual(MANAGER.map((g) => g.label),
     ['Home', 'Inbox', 'Rota', 'Attendance', 'People', 'Money', 'Me', 'Settings']);
   assert.deepEqual(MANAGER.filter((g) => g.foot).map((g) => g.label), ['Me', 'Settings']);
@@ -135,14 +135,17 @@ test('a member of staff gets their five places, and Home first', () => {
   assert.deepEqual(tabsOf(menu[4]).map((t) => t.label), ['Documents', 'Directory', 'Handbook', 'HR FAQ', 'Guide']);
 });
 
-test('the front desk gets the same five, and closing the till is always a tab away', () => {
+test('the front desk has Till in the menu, beside Home', () => {
   // A receptionist who had clocked out before counting up had no way to the
-  // till at all while it lived only as a to-do on Home. It is a tab beside
-  // Home for anybody who closes one, and still the to-do as well.
-  assert.deepEqual(labels(['att_me', 'till']), ['Home', 'Rota', 'Requests', 'Pay', 'Me']);
+  // till at all while it lived only as a to-do on Home, and a small tab above
+  // Home went unnoticed. It is a menu item of its own for anybody who closes
+  // one, holding the report and the list to sort out, and still the to-do.
+  assert.deepEqual(labels(['att_me', 'till']), ['Home', 'Till', 'Rota', 'Requests', 'Pay', 'Me']);
   const desk = menuFor(['att_me', 'till']);
-  assert.deepEqual(tabsOf(desk[0]).map((t) => t.label), ['Home', 'Close till']);
-  assert.deepEqual(tabsOf(menuFor(['att_me'])[0]), [], 'nobody else sees it');
+  assert.deepEqual(tabsOf(desk[1]).map((t) => t.label), ['Close till', 'To sort out']);
+  assert.equal(desk[1].screens[0].path, 'att-my-till', 'the menu item opens on closing the till');
+  assert.deepEqual(tabsOf(desk[0]), [], 'and Home has no tabs of its own');
+  assert.deepEqual(labels(['att_me']), ['Home', 'Rota', 'Requests', 'Pay', 'Me'], 'nobody else sees it');
   const till = ROUTE_LIST.find((r) => r.path === 'att-my-till');
   assert.equal(till.permission, 'till');
   assert.match(readFileSync('public/js/views/my-day.js', 'utf8'), /'#\/att-my-till'/);

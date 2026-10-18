@@ -429,6 +429,9 @@ export const api = {
   payrollClose: (body) => request('/api/payroll/close', { method: 'POST', body: withCompany(body) }),
   payrollReopen: (body) => request('/api/payroll/reopen', { method: 'POST', body: withCompany(body) }),
 
+  viewAsPeople: () => request('/api/view-as/people'),
+  startViewAs: (userId) => request('/api/view-as', { method: 'POST', body: { userId } }),
+  stopViewAs: () => request('/api/view-as/stop', { method: 'POST', body: {} }),
   tillReports: (from, to) => request(`/api/till/reports?from=${from}&to=${to}`),
   chaseTill: (body) => request('/api/till/chase', { method: 'POST', body }),
 

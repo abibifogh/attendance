@@ -3,7 +3,7 @@ import { liveUp, onLive, startLive, stopLive } from './live.js';
 import { guard, justProved, unguard } from './guard.js';
 import { checkVersion, takeTheNewOne, waitingToRefresh } from './fresh.js';
 import { registerWorker, watchForInstall } from './install.js';
-import { h, holdBehindDialogs, keepScroll, mount, watchScreenHeight } from './util.js';
+import { h, holdBehindDialogs, keepScroll, mount, toast, watchScreenHeight } from './util.js';
 import { groupKeyFor, groupOf, mineTabs, openGroups, tabsOf } from './menu.js';
 import { icon } from './icons.js';
 import { renderLogin } from './views/login.js';
@@ -116,6 +116,9 @@ export const state = {
  */
 const STAFF_GROUPS = [
   { key: 'my-home', label: 'Home', icon: 'home' },
+  // Only for whoever closes a till: the front desk's own job, in the menu
+  // beside Home rather than as a small tab nobody noticed.
+  { key: 'till', label: 'Till', icon: 'till' },
   { key: 'my-rota', label: 'Rota', icon: 'calendar' },
   { key: 'requests', label: 'Requests', icon: 'send' },
   { key: 'my-pay', label: 'Pay', icon: 'cash' },
@@ -207,8 +210,8 @@ const ROUTES = [
   // the day's list, not a place somebody goes.
   // In the menu as well as on Home: Home offers it around the end of a shift,
   // and a receptionist must always be able to find it whatever the time.
-  { mine: true, group: 'my-home', tab: 'Close till', mgroup: 'mine', under: 'my-day', path: 'att-my-till', label: 'Close your till', permission: 'till', render: renderAttMyTill },
-  { mine: true, path: 'att-my-till-issues', label: 'Till: to sort out', permission: 'till', render: renderAttMyTillIssues, hidden: true },
+  { mine: true, group: 'till', tab: 'Close till', mgroup: 'mine', under: 'my-day', path: 'att-my-till', label: 'Close your till', permission: 'till', render: renderAttMyTill },
+  { mine: true, group: 'till', tab: 'To sort out', mgroup: 'mine', under: 'my-day', path: 'att-my-till-issues', label: 'Till: to sort out', permission: 'till', render: renderAttMyTillIssues },
 
   // Reached by clicking a name rather than from the menu.
   { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, live: ['attendance', 'rota', 'leave'], hidden: true },
@@ -434,7 +437,8 @@ function bottomBar() {
   if (!groups.length) return null;
   const current = hereGroup(groups);
   const staff = mode() === 'staff';
-  const shown = staff ? groups.slice(0, 5) : groups.filter((g) => !g.foot).slice(0, 4);
+  // Staff see every one of theirs, which is six at most with the till.
+  const shown = staff ? groups.slice(0, 6) : groups.filter((g) => !g.foot).slice(0, 4);
 
   const tab = (group) => h('a.bottom-tab', {
     href: `#/${group.screens[0].path}`,
@@ -445,7 +449,7 @@ function bottomBar() {
 
   return h('nav.bottom-bar', { 'aria-label': 'Main' },
     shown.map(tab),
-    staff && groups.length <= 5 ? null : h('button.bottom-tab', {
+    staff && groups.length <= 6 ? null : h('button.bottom-tab', {
       type: 'button',
       class: shown.some((g) => g.key === current?.key) ? 'bottom-tab' : 'bottom-tab active',
       onclick: () => document.querySelector('.shell')?.classList.add('nav-open'),
@@ -610,6 +614,9 @@ function adoptSession(me) {
   state.permissionLabels = me.permissionLabels || state.permissionLabels || {};
   state.roleLabels = me.roleLabels || state.roleLabels || {};
   state.mustChangePin = Boolean(me.mustChangePin);
+  // An administrator viewing HIVE as somebody else: whose screens these are,
+  // and who is really looking.
+  state.viewAs = me.viewAs ?? null;
 
   // A name remembered from earlier in this tab, but only if it is still one of
   // theirs: an administrator can take a record off a login at any time, and
@@ -677,6 +684,13 @@ function shell(content) {
       ),
       h('div.topbar-spacer'),
       noticeBell(),
+      // See HIVE the way somebody else does. An administrator's own tool, so
+      // only theirs, and not while they are already looking as somebody.
+      state.role === 'admin' && !state.viewAs && !state.isRecovery
+        ? h('button.btn-ghost.btn-sm.topbar-icon', {
+          title: 'View HIVE as somebody else', 'aria-label': 'View HIVE as somebody else', onclick: pickViewAs,
+        }, icon('eye'))
+        : null,
       h('button.btn-ghost.btn-sm.topbar-icon', { title: 'Switch light / dark', 'aria-label': 'Switch light / dark', onclick: toggleTheme }, icon('theme')),
       h('button.btn-ghost.btn-sm.topbar-account', {
         title: state.role === 'admin' ? 'My password and PIN' : 'Change my PIN',
@@ -733,6 +747,13 @@ function shell(content) {
     // opens is a screen somebody believes. "Nobody absent, all settled" is a
     // reasonable-looking morning and a dangerous lie when the truth is that
     // nothing could be fetched.
+    state.viewAs
+      ? h('div.view-as-bar', { role: 'status' },
+        icon('eye', 18),
+        h('span', h('strong', `Viewing as ${state.viewAs.name}`), ` · ${state.viewAs.roleLabel}. `
+          + 'This is what they see. Nothing can be changed.'),
+        h('button.btn-sm', { type: 'button', onclick: stopViewAs }, 'Stop viewing'))
+      : null,
     h('div.offline-bar', { hidden: serverReachable() },
       h('strong', 'No connection.'),
       ' What you are looking at may be out of date, and nothing you change will be saved '
@@ -1117,7 +1138,9 @@ function watchForTheRoom() {
     // What they hold as well as what they last used. The lock asks for the
     // wrong credential otherwise, and used to give no way to correct it.
     who: () => ({
-      name: state.name,
+      // The administrator, while they are viewing as somebody: it is their own
+      // PIN that opens the screen again.
+      name: state.viewAs ? state.viewAs.by : state.name,
       signsInWith: state.signedInWith,
       email: state.email,
       hasPin: state.hasPin,
@@ -1129,6 +1152,66 @@ function watchForTheRoom() {
     // sign-in, so there is nothing behind it to get back to.
     shortPin: () => { state.mustChangePin = true; render(); },
   });
+}
+
+/**
+ * Choose somebody to view HIVE as. Everybody with a login, by what kind of
+ * login it is, with a search box for a property with a long staff list.
+ */
+async function pickViewAs() {
+  let people = [];
+  try {
+    ({ people } = await api.viewAsPeople());
+  } catch (err) {
+    toast(err.message, 'bad');
+    return;
+  }
+  const kindOf = (p) => (p.frontDesk ? 'Front desk' : p.roleLabel);
+  const list = h('div.view-as-list');
+  const search = h('input', { type: 'search', placeholder: 'Search by name, role or department', 'aria-label': 'Search' });
+  const dialog = h('dialog.app-dialog',
+    h('div.dialog-head', h('h2', 'View HIVE as'),
+      h('div.dialog-head-tools', h('button.dialog-close', { type: 'button', 'aria-label': 'Close', onclick: () => dialog.close() }, '✕'))),
+    h('p.muted', 'See exactly what somebody sees: their menu, their Home and their screens. Nothing can be '
+      + 'changed while you look, and it ends by itself after an hour.'),
+    search, list);
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    const shown = people.filter((p) => !q || `${p.name} ${kindOf(p)} ${p.department ?? ''} ${p.jobTitle ?? ''}`.toLowerCase().includes(q));
+    const kinds = [...new Set(shown.map(kindOf))].sort();
+    mount(list, shown.length ? kinds.map((k) => h('section.view-as-kind',
+      h('h3', k),
+      shown.filter((p) => kindOf(p) === k).map((p) => h('button.view-as-person', {
+        type: 'button',
+        onclick: async () => {
+          try {
+            await api.startViewAs(p.id);
+            dialog.close();
+            location.hash = '#/';
+            location.reload();
+          } catch (err) {
+            toast(err.message, 'bad');
+          }
+        },
+      }, h('strong', p.name), h('small.muted', [p.jobTitle, p.department].filter(Boolean).join(' · ') || p.roleLabel)))))
+      : h('p.muted', 'Nobody matches that.'));
+  };
+  search.addEventListener('input', draw);
+  draw();
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  search.focus();
+}
+
+async function stopViewAs() {
+  try {
+    await api.stopViewAs();
+  } catch {
+    // Nothing to undo if it had already run out.
+  }
+  location.hash = '#/';
+  location.reload();
 }
 
 function resetSession() {
@@ -1144,6 +1227,7 @@ function resetSession() {
   state.signedInWith = 'pin';
   state.permissions = [];
   state.staffId = null;
+  state.viewAs = null;
   // And whoever this login was showing. A tablet somebody else signs in on
   // must not open on the last person's payslips.
   state.records = [];

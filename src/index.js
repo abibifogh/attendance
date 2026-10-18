@@ -1,5 +1,5 @@
 import {
-  clearCookie, createToken, getPepper, getSession, hashPin, isReservedPin,
+  clearCookie, clearViewAsCookie, createToken, getPepper, getSession, hashPin, isReservedPin,
   PIN_RULE, markPinOk, pinLooksRight,
   saltForEmail, sessionCookie, storedPassword, throttleCheck, throttleFail,
   throttleReset, tokenTtl, userForCredentials, userForPin, verifyPasswordKey,
@@ -27,6 +27,7 @@ import * as birthday from './routes/birthdays.js';
 import * as attSetup from './routes/attendance-setup.js';
 import * as companies from './routes/companies.js';
 import * as tillReports from './routes/till-reports.js';
+import * as viewAs from './routes/view-as.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
 import * as invite from './routes/invite.js';
@@ -71,6 +72,10 @@ export const ROUTES = [
   ['POST', '/api/auth/login', 'public', login],
   ['POST', '/api/auth/logout', 'public', logout],
   ['POST', '/api/auth/unlock', null, authLock.unlock],
+  // An administrator viewing HIVE as somebody else, read-only, for an hour.
+  ['GET', '/api/view-as/people', 'users', viewAs.viewAsPeople],
+  ['POST', '/api/view-as', 'users', viewAs.startViewAs],
+  ['POST', '/api/view-as/stop', null, viewAs.stopViewAs],
   ['GET', '/api/auth/me', 'public', me],
   ['POST', '/api/auth/change-credentials', null, changeCredentials],
 
@@ -800,6 +805,13 @@ async function servePage(env, url, request, path) {
  * The handful that ask about the lock itself are outside it, because a screen
  * that cannot ask for the PIN is a screen nobody can get into.
  */
+/**
+ * Routes that are about the administrator themselves even while they are
+ * viewing as somebody else: unlocking the screen with their own PIN, and
+ * starting or stopping the view.
+ */
+const AS_THEMSELVES = new Set(['/api/auth/unlock', '/api/view-as/people', '/api/view-as', '/api/view-as/stop']);
+
 const PAYROLL_PREFIX = '/api/payroll';
 const OUTSIDE_THE_LOCK = new Set([
   '/api/payroll/access',
@@ -1112,8 +1124,14 @@ async function route(request, env, url, executionContext) {
     const ctx = { request, env, url, db: env.DB, executionContext, session: null };
 
     if (permission !== 'public') {
-      ctx.session = await getSession(request, env, env.DB);
+      ctx.session = await getSession(request, env, env.DB, { real: AS_THEMSELVES.has(pattern) });
       if (!ctx.session) throw unauthorized();
+      // Viewing as somebody else is for looking. Nothing is saved, sent or
+      // decided on their behalf while it lasts.
+      if (ctx.session.viewAs && method !== 'GET') {
+        throw forbidden(`You are viewing HIVE as ${ctx.session.user.name}, so nothing can be changed. `
+          + 'Stop viewing to make changes.');
+      }
 
       // Which of the records on this login this request is about.
       //
@@ -1281,9 +1299,12 @@ async function login(ctx) {
 }
 
 async function logout(ctx) {
-  return json({ ok: true }, {
-    headers: { 'Set-Cookie': clearCookie(ctx.url.protocol === 'https:') },
-  });
+  const secure = ctx.url.protocol === 'https:';
+  const response = json({ ok: true });
+  response.headers.append('Set-Cookie', clearCookie(secure));
+  // And out of viewing as anybody, so the next sign-in starts as itself.
+  response.headers.append('Set-Cookie', clearViewAsCookie(secure));
+  return response;
 }
 
 async function me(ctx) {
@@ -1332,16 +1353,27 @@ async function me(ctx) {
   // else, which is what keeps the people already on the payroll off it.
   const startingOut = await onboarding.landsOnOnboarding(ctx.db, staffId);
 
+  // Viewing as somebody: the screens are theirs, but the lock screen, My
+  // account and anything about credentials belong to the administrator.
+  const self = session.viewAs ? (await getSession(ctx.request, ctx.env, ctx.db, { real: true })) ?? session : session;
+
   return json({
     authenticated: true,
     role: session.user.role,
     name: session.user.name,
+    viewAs: session.viewAs
+      ? {
+        name: session.user.name,
+        roleLabel: (ROLES.find((r) => r.key === session.user.role) ?? {}).label ?? session.user.role,
+        by: session.viewAs.by.name,
+      }
+      : null,
     // Their own face, for the corner of the header.
     hasPhoto: Boolean(photo),
     photoAt: photo?.uploaded_at ?? null,
     // A new hire lands here rather than on a rota that has nothing on it yet.
     startingOut,
-    email: session.user.email ?? null,
+    email: self.user.email ?? null,
     userId: session.user.id,
     isRecovery: Boolean(session.user.isRecovery),
     // Whether this login belongs to somebody on the rota. The menu uses it to
@@ -1358,8 +1390,8 @@ async function me(ctx) {
     // What actually opens this account, not what the role implies. Anybody
     // invited in picks for themselves, so My account has to ask them to
     // confirm with the credential they really hold.
-    signsInWith: session.user.has_password ? 'password' : 'pin',
-    hasPassword: Boolean(session.user.has_password),
+    signsInWith: self.user.has_password ? 'password' : 'pin',
+    hasPassword: Boolean(self.user.has_password),
     // What they typed to get here, so My account knows which credential it can
     // ask them to confirm with.
     signedInWith: session.via ?? 'pin',
@@ -1367,10 +1399,10 @@ async function me(ctx) {
     // the row is what settles it: a PIN lengthened on somebody's phone must
     // not leave the tablet by the door still asking, and then refusing the
     // PIN they just chose as "the same as the current one".
-    mustChangePin: Boolean(session.shortPin) && !session.user.pin_ok,
+    mustChangePin: Boolean(self.shortPin) && !self.user.pin_ok,
     // Whether they already have a login PIN, so My account offers to change it
     // rather than to set one.
-    hasPin: Boolean(session.user.has_pin),
+    hasPin: Boolean(self.user.has_pin),
     permissions: session.permissions,
     // What each one is called. Thirteen short strings sent with the session,
     // so a screen can name a permission the reader does not hold without

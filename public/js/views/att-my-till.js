@@ -144,10 +144,10 @@ export async function renderAttMyTill() {
         h('div.sub', 'Five short steps, signed with your PIN at the end.'))),
       data.linked ? null : h('div.alert.warn', 'Insight cannot be reached just now, so PO numbers cannot be checked. You can still close the shift; '
         + 'any expense that could not be checked will be on your list under To sort out, to add again later.'),
-      owedFirst() ? h('div.alert.warn.till-owed',
+      owedFirst() ? h('div.alert.warn.till-owed', h('span',
         h('strong', `Your closing report for the ${SLOT[owedFirst().slot].toLowerCase()} shift on ${dayText(owedFirst().day)} is still not in.`),
         ' ', (data.owed.length > 1 ? `${data.owed.length} reports are missing. ` : ''),
-        'Submit it first: closing reports go in order, and later shifts open once it is in.') : null,
+        'Submit it first: closing reports go in order, and later shifts open once it is in.')) : null,
       done || step === 0 ? card('Which shift', {},
         h('select.till-shift', {
           'aria-label': 'Which shift',

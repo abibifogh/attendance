@@ -318,7 +318,7 @@ export async function userForPin(db, pin, env) {
 }
 
 /** Load the signed-in user fresh from the database on every request. */
-export async function getSession(request, env, db) {
+export async function getSession(request, env, db, { real = false } = {}) {
   const secret = env.SESSION_SECRET;
   if (!secret) return null;
 
@@ -373,20 +373,49 @@ export async function getSession(request, env, db) {
     + 'FROM users WHERE id = ?',
   ];
 
-  let user = null;
-  for (const sql of attempts) {
-    try {
-      user = await db.prepare(sql).bind(payload.uid).first();
-      break;
-    } catch (err) {
-      if (!isMissingTable(err)) throw err;
-      // The last one asks for nothing this app has ever added, so if that is
-      // what failed the schema is not applied at all: force a fresh sign-in.
-      if (sql === attempts[attempts.length - 1]) return null;
+  const loadUser = async (id) => {
+    for (const sql of attempts) {
+      try {
+        return { user: await db.prepare(sql).bind(id).first() };
+      } catch (err) {
+        if (!isMissingTable(err)) throw err;
+        // The last one asks for nothing this app has ever added, so if that is
+        // what failed the schema is not applied at all: force a fresh sign-in.
+        if (sql === attempts[attempts.length - 1]) return null;
+      }
     }
-  }
+    return null;
+  };
+
+  const loaded = await loadUser(payload.uid);
+  if (!loaded) return null;
+  const { user } = loaded;
 
   if (!user || !user.active) return null;
+
+  // An administrator viewing HIVE as somebody else. Only ever an
+  // administrator, only the one who started it (the token names them), and
+  // only for an hour. Everything is answered as that person, so the screens
+  // are exactly theirs; the request handler refuses anything that would change
+  // something while it lasts. `real` asks for the administrator themselves,
+  // for the few things that are about them: unlocking the screen, and
+  // stopping.
+  if (!real && user.role === 'admin') {
+    const viewing = await readToken(readCookie(request, VIEW_AS_COOKIE), secret);
+    if (viewing?.viewAs && Number(viewing.by) === Number(user.id) && Number(viewing.as) !== Number(user.id)) {
+      const target = (await loadUser(viewing.as))?.user;
+      if (target?.active) {
+        return {
+          user: target,
+          permissions: effectivePermissions(target),
+          via: payload.via === 'password' ? 'password' : 'pin',
+          shortPin: false,
+          records: recordsOn(target.staff_id, target.also_staff),
+          viewAs: { by: { id: user.id, name: user.name, role: user.role } },
+        };
+      }
+    }
+  }
   // How they signed in. Tokens issued before administrators could hold a PIN
   // carry nothing, and are read as the PIN case, which is the careful way
   // round: the worst it costs is one password sign-in.
@@ -399,6 +428,23 @@ export async function getSession(request, env, db) {
     // everybody, and the list is what the "my" screens choose from.
     records: recordsOn(user.staff_id, user.also_staff),
   };
+}
+
+/** The cookie that says an administrator is viewing HIVE as somebody else. */
+export const VIEW_AS_COOKIE = 'hive_view_as';
+/** How long viewing as somebody lasts before HIVE goes back to the administrator. */
+export const VIEW_AS_SECONDS = 3600;
+
+export function viewAsCookie(token, secure = true) {
+  const attrs = [`${VIEW_AS_COOKIE}=${encodeURIComponent(token)}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${VIEW_AS_SECONDS}`];
+  if (secure) attrs.push('Secure');
+  return attrs.join('; ');
+}
+
+export function clearViewAsCookie(secure = true) {
+  const attrs = [`${VIEW_AS_COOKIE}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0'];
+  if (secure) attrs.push('Secure');
+  return attrs.join('; ');
 }
 
 export function sessionCookie(token, role, secure = true) {
