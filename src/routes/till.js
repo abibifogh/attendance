@@ -951,9 +951,23 @@ export async function linkReopen(ctx) {
   if (!report) throw notFound('That report is not open to reopen.');
   const reason = str(body.reason, 'Reason', { required: true, max: 400 });
   const by = str(body.by, 'By', { max: 120 }) || 'Insight';
+  await reopenReport(ctx, report, { by, reason });
+  return json({ ok: true });
+}
+
+/**
+ * Open a closing report again so its writer can submit it afresh.
+ *
+ * The report stays exactly as it was, marked reopened with who and why; the
+ * corrected one is a new row beside it, so every version is kept and the
+ * history shows what changed. Until it is in again it counts as owed: it is
+ * chased every morning, and nothing after it can be closed. Done by Insight,
+ * or by somebody with Till reports in HIVE.
+ */
+export async function reopenReport(ctx, report, { by, reason }) {
   await ctx.db.prepare('UPDATE till_report SET reopened_at = ?2, reopened_by = ?3, reopen_reason = ?4 WHERE id = ?1')
-    .bind(id, nowUtc(), by, reason).run();
-  await ctx.db.prepare("DELETE FROM till_po WHERE report_id = ?1 AND via = 'report'").bind(id).run();
+    .bind(report.id, nowUtc(), by, reason).run();
+  await ctx.db.prepare("DELETE FROM till_po WHERE report_id = ?1 AND via = 'report'").bind(report.id).run();
   await createNotice(ctx.db, {
     kind: 'till.reopened', level: 'warn', title: `Your closing report for ${labelOf(report)} was reopened`,
     body: `${by}: ${reason}. Close it again under My till.`, link: '#/att-my-till', userId: report.user_id, text: false,
@@ -969,7 +983,91 @@ export async function linkReopen(ctx) {
       why: 'You get this because this is your closing report.',
     })),
   }, ctx);
-  return json({ ok: true });
+}
+
+// --------------------------------------------------------------- history --
+
+/** What changed from one version of a report to the next, in words. */
+export function changesBetween(before, after) {
+  if (!before) return [];
+  const out = [];
+  const envTotal = (r) => (r.toSafe ? r.envelopes.reduce((t, e) => t + (Number(e.amount) || 0), 0) : 0);
+  const expTotal = (r) => r.expenses.reduce((t, e) => t + (Number(e.paid) || 0), 0);
+  if (before.cash !== after.cash) out.push(`Drawer ${cedis(before.cash)} → ${cedis(after.cash)}`);
+  if (before.floatOk !== after.floatOk || before.floatDiff !== after.floatDiff) {
+    const say = (r) => (r.floatOk ? 'float right' : `float out by ${cedis(r.floatDiff || 0)}`);
+    out.push(`${capitalise(say(before))} → ${say(after)}`);
+  }
+  if (envTotal(before) !== envTotal(after) || JSON.stringify(before.envelopes) !== JSON.stringify(after.envelopes)) {
+    const say = (r) => (r.toSafe ? `${cedis(envTotal(r))} in ${r.envelopes.map((e) => e.no).join(', ')}` : 'nothing');
+    out.push(`Safe ${say(before)} → ${say(after)}`);
+  }
+  if (expTotal(before) !== expTotal(after) || before.expenses.length !== after.expenses.length) {
+    out.push(`Expenses ${before.expenses.length} (${cedis(expTotal(before))}) → ${after.expenses.length} (${cedis(expTotal(after))})`);
+  }
+  if (JSON.stringify(before.rentals) !== JSON.stringify(after.rentals)) out.push('Rentals counted differently');
+  if (JSON.stringify(before.checks.map((c) => [c.id, c.ok, c.guest])) !== JSON.stringify(after.checks.map((c) => [c.id, c.ok, c.guest]))) {
+    out.push('Front desk checks answered differently');
+  }
+  if ((before.note || '') !== (after.note || '')) out.push('Note changed');
+  return out;
+}
+
+const capitalise = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+
+/**
+ * Every version of the given reports, a shift at a time, newest shift first.
+ * Each version carries what changed from the one before and, if it was
+ * reopened, who reopened it and why.
+ */
+export function historyOf(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row.user_id}|${row.day}|${row.slot}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  const out = [];
+  for (const list of groups.values()) {
+    list.sort((a, b) => String(a.signed_at).localeCompare(String(b.signed_at)) || a.id - b.id);
+    const versions = list.map(readReport);
+    const live = versions.filter((v) => !v.reopenedAt).pop() ?? null;
+    out.push({
+      userId: list[0].user_id,
+      name: list[0].name,
+      day: list[0].day,
+      slot: list[0].slot,
+      label: labelOf(list[0]),
+      state: live ? 'in' : 'reopened',
+      versions: versions.map((v, i) => {
+        let summary = null;
+        try { summary = closedSummary(v, true); } catch { summary = null; }
+        return {
+          id: v.id,
+          version: i + 1,
+          signedAt: v.signedAt,
+          device: v.device,
+          summary,
+          cash: v.cash,
+          note: v.note,
+          changes: changesBetween(versions[i - 1] ?? null, v),
+          reopenedAt: v.reopenedAt,
+          reopenedBy: v.reopenedBy,
+          reopenReason: v.reopenReason,
+        };
+      }),
+    });
+  }
+  return out.sort((a, b) => `${b.day}|${SLOTS.indexOf(b.slot)}`.localeCompare(`${a.day}|${SLOTS.indexOf(a.slot)}`));
+}
+
+/** Somebody's own closing reports, every version, read-only. */
+export async function myHistory(ctx) {
+  const userId = Number(ctx.session.user.id);
+  const rows = await ctx.db.prepare(
+    'SELECT * FROM till_report WHERE user_id = ?1 ORDER BY day DESC, signed_at DESC LIMIT 400',
+  ).bind(userId).all().catch(() => ({ results: [] }));
+  return json({ shifts: historyOf(rows.results ?? []) });
 }
 
 /**

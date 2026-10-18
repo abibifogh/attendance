@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { chaseTill, tillReports } from '../src/routes/till-reports.js';
+import { chaseTill, reopenTillReport, tillHistory, tillReports } from '../src/routes/till-reports.js';
+import { changesBetween, myHistory } from '../src/routes/till.js';
+import { owedReports } from '../src/lib/till-watch.js';
 import { effectivePermissions } from '../src/lib/permissions.js';
 import { readFileSync as read } from 'node:fs';
 
@@ -67,6 +69,8 @@ const report = (raw, userId, name, day, extra = '') => raw.prepare(
 ).run(day, userId, name, `${day} 14:10:00`, ...(extra ? [extra] : []));
 
 const BOSS = { user: { id: 3, name: 'Yaa Boss', role: 'admin' } };
+const KWAME = { user: { id: 7, name: 'Kwame Mensah', role: 'staff', staff_id: 1 } };
+const ctxAs = (db, session) => ({ db, env: {}, url: new URL('https://x/api/me/till/history'), session, executionContext: null, request: new Request('https://x/') });
 const ctx = (db, { body = null, query = '' } = {}) => ({
   db,
   env: {},
@@ -144,4 +148,53 @@ test('who sees it: administrators, and anybody given Till reports; not the front
   const line = read('public/js/app.js', 'utf8').split('\n').find((l) => l.includes("path: 'till-reports'"));
   assert.match(line, /group: 'money'/, 'under Money');
   assert.match(line, /permission: 'till_reports'/);
+});
+
+test('allowing a resubmission keeps the report, tells them, and the new one sits beside it in the history', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-18T09:00:00Z') });
+  const { raw, db } = setup();
+  worked(raw, 1, '2026-10-16');
+  report(raw, 7, 'Kwame Mensah', '2026-10-16');
+  const first = raw.prepare('SELECT id FROM till_report WHERE user_id = 7').get().id;
+
+  await assert.rejects(reopenTillReport(ctx(db, { body: { reason: '' } }), String(first)), /What needs putting right/);
+  await reopenTillReport(ctx(db, { body: { reason: 'The drawer was counted before the last guest paid' } }), String(first));
+
+  const row = raw.prepare('SELECT * FROM till_report WHERE id = ?').get(first);
+  assert.ok(row.reopened_at, 'kept, marked reopened');
+  assert.equal(row.reopened_by, 'Yaa Boss');
+  const told = raw.prepare("SELECT * FROM app_notices WHERE kind = 'till.reopened'").get();
+  assert.equal(told.user_id, 7);
+  assert.match(told.body, /The drawer was counted before the last guest paid/);
+  assert.deepEqual((await owedReports(db, { userId: 7, staffId: 1, timezone: 'UTC' })).map((o) => o.day), ['2026-10-16'],
+    'owed again until it is in');
+  await assert.rejects(reopenTillReport(ctx(db, { body: { reason: 'again' } }), String(first)), /already open/);
+
+  // The corrected one comes in.
+  raw.prepare(
+    `INSERT INTO till_report (day, slot, user_id, name, float_ok, cash, to_safe, envelopes, expenses, rentals, checks, signed_at)
+     VALUES ('2026-10-16', 'morning', 7, 'Kwame Mensah', 1, 110350, 0, '[]', '[]', '{}', '[]', '2026-10-18 08:30:00')`,
+  ).run();
+  const mine = await (await myHistory(ctxAs(db, KWAME))).json();
+  assert.equal(mine.shifts.length, 1);
+  const [shift] = mine.shifts;
+  assert.equal(shift.state, 'in');
+  assert.equal(shift.versions.length, 2);
+  assert.equal(shift.versions[0].reopenReason, 'The drawer was counted before the last guest paid');
+  assert.deepEqual(shift.versions[1].changes, ['Drawer GH₵ 1,083.50 → GH₵ 1,103.50']);
+
+  const week = await (await tillReports(ctx(db, { query: '?to=2026-10-18' }))).json();
+  const listed = week.rows.find((r) => r.day === '2026-10-16');
+  assert.equal(listed.state, 'in');
+  assert.equal(listed.versions, 2);
+  const history = await (await tillHistory(ctx(db, { query: '?userId=7&day=2026-10-16&slot=morning' }))).json();
+  assert.equal(history.shift.versions.length, 2);
+});
+
+test('what changed between two versions, in words', () => {
+  const base = { cash: 100, floatOk: true, floatDiff: null, toSafe: false, envelopes: [], expenses: [], rentals: {}, checks: [], note: null };
+  assert.deepEqual(changesBetween(null, base), []);
+  assert.deepEqual(changesBetween(base, { ...base }), []);
+  assert.deepEqual(changesBetween(base, { ...base, floatOk: false, floatDiff: 500, toSafe: true, envelopes: [{ no: '417', amount: 150000 }], note: 'x' }),
+    ['Float right → float out by GH₵ 5.00', 'Safe nothing → GH₵ 1,500.00 in 417', 'Note changed']);
 });

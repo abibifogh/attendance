@@ -237,6 +237,21 @@ export async function owedReports(db, { userId, staffId, timezone = 'UTC' }) {
     if (!report || closed.has(reportKey(report))) continue;
     out.push({ ...report, shiftDay: day, shift: { name: shift.name, starts_at: shift.starts_at, ends_at: shift.ends_at } });
   }
+
+  // And a report opened again to be put right, whatever the rota says: it was
+  // submitted, so the shift was worked, and it has to come back in.
+  const reopened = await db.prepare(
+    `SELECT r.day, r.slot FROM till_report r
+      WHERE r.user_id = ?1 AND r.reopened_at IS NOT NULL AND r.day >= ?2
+        AND NOT EXISTS (SELECT 1 FROM till_report x WHERE x.user_id = r.user_id AND x.day = r.day
+                         AND x.slot = r.slot AND x.reopened_at IS NULL)
+      GROUP BY r.day, r.slot`,
+  ).bind(userId, addDays(today, -OWED_LOOKBACK_DAYS)).all().catch(() => ({ results: [] }));
+  const have = new Set(out.map((o) => reportKey(o)));
+  for (const r of reopened.results ?? []) {
+    if (have.has(reportKey(r))) continue;
+    out.push({ day: r.day, slot: r.slot, shiftDay: r.day, shift: { name: `${capital(SLOT_WORD[r.slot] ?? 'the')} shift`, starts_at: null, ends_at: null } });
+  }
   return out.sort((a, b) => reportKey(a).localeCompare(reportKey(b)));
 }
 
@@ -351,7 +366,7 @@ export function owedNotice({ list, day, userId, emailTo = null }) {
       sub: many ? `The oldest is the ${word(oldest)} shift on ${sayDate(oldest.day)}` : `${capital(word(oldest))} shift · ${sayDate(oldest.day)}`,
       facts: list.slice(0, 8).map((r) => [
         `${capital(word(r))} · ${sayDate(r.day)}`,
-        `${r.shift.name}, ${sayHours(r.shift.starts_at, r.shift.ends_at)}`,
+        r.shift.starts_at ? `${r.shift.name}, ${sayHours(r.shift.starts_at, r.shift.ends_at)}` : 'Opened again to be put right',
       ]),
       note: 'Submit them under Close till, oldest first. HIVE takes closing reports in order, so a '
         + 'later shift cannot be closed while an earlier one is missing. This reminder comes every '

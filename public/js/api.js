@@ -432,6 +432,9 @@ export const api = {
   viewAsPeople: () => request('/api/view-as/people'),
   startViewAs: (userId) => request('/api/view-as', { method: 'POST', body: { userId } }),
   stopViewAs: () => request('/api/view-as/stop', { method: 'POST', body: {} }),
+  myTillHistory: () => request('/api/me/till/history'),
+  tillHistory: (userId, day, slot) => request(`/api/till/history?userId=${userId}&day=${day}&slot=${slot}`),
+  reopenTillReport: (id, reason) => request(`/api/till/reports/${id}/reopen`, { method: 'POST', body: { reason } }),
   tillReports: (from, to) => request(`/api/till/reports?from=${from}&to=${to}`),
   chaseTill: (body) => request('/api/till/chase', { method: 'POST', body }),
 

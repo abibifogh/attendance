@@ -1,10 +1,10 @@
-import { badRequest, int, json, readJson, str } from '../lib/http.js';
+import { badRequest, int, json, notFound, readJson, str } from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
 import { tillLedger } from '../lib/till-watch.js';
 import { firstUsableEmail, isEmail } from '../lib/notify.js';
 import { firstName, sayDate, sayHours } from '../lib/email-design.js';
 import { addDays, isDay, nowIn, todayIn } from '../util/dates.js';
-import { closedSummary, readReport } from './till.js';
+import { closedSummary, historyOf, readReport, reopenReport } from './till.js';
 
 /**
  * The front desk's closing reports, for whoever keeps track of them.
@@ -58,6 +58,13 @@ export async function tillReports(ctx) {
   const { from, to } = rangeFrom(ctx.url, timezone);
   const ledger = await tillLedger(ctx.db, { from, to, timezone });
   const chased = await lastChased(ctx.db, from, to);
+  // How many times each report has been submitted, so one that was put right
+  // after the fact says so.
+  const counted = await ctx.db.prepare(
+    `SELECT user_id, day, slot, COUNT(*) AS n FROM till_report
+      WHERE day BETWEEN ?1 AND ?2 GROUP BY user_id, day, slot`,
+  ).bind(addDays(from, -1), to).all().catch(() => ({ results: [] }));
+  const versionsBy = new Map((counted.results ?? []).map((r) => [`${r.user_id}|${r.day}|${r.slot}`, Number(r.n)]));
 
   const rows = ledger.map((row) => {
     const state = stateOf(row);
@@ -73,6 +80,8 @@ export async function tillReports(ctx) {
       shiftDay: row.shiftDay,
       shift: row.shift,
       state,
+      reportId: row.report && !row.report.reopened_at ? row.report.id : null,
+      versions: versionsBy.get(`${row.userId}|${row.day}|${row.slot}`) ?? 0,
       signedAt: row.report?.signed_at ?? null,
       reopenedAt: row.report?.reopened_at ?? null,
       reopenReason: row.report?.reopen_reason ?? null,
@@ -197,4 +206,36 @@ export async function chaseTill(ctx) {
     .run().catch(() => {});
 
   return json({ ok: true, sent, skipped, at: nowIn(timezone) });
+}
+
+/**
+ * Let somebody submit a closing report again, because something in it is
+ * wrong. The report is kept as it was, marked reopened with who and why; they
+ * are told, it counts as owed until it is in again, and the new one is kept
+ * beside it so the history shows what changed.
+ */
+export async function reopenTillReport(ctx, idParam) {
+  const body = await readJson(ctx.request);
+  const id = int(idParam, 'Which report', { required: true, min: 1 });
+  const reason = str(body.reason, 'What needs putting right', { required: true, max: 400 });
+  const report = await ctx.db.prepare('SELECT * FROM till_report WHERE id = ?1 AND reopened_at IS NULL').bind(id).first();
+  if (!report) throw notFound('That report is already open to resubmit, or there is no such report.');
+  await reopenReport(ctx, report, { by: ctx.session.user.name, reason });
+  await ctx.db.prepare('INSERT INTO audit_log (actor, action, entity, detail) VALUES (?1, ?2, ?3, ?4)')
+    .bind(actorOf(ctx), 'till.reopen', String(id), JSON.stringify({ reason, user: report.user_id, day: report.day, slot: report.slot }))
+    .run().catch(() => {});
+  return json({ ok: true });
+}
+
+/** Every version of one person's report for one shift. */
+export async function tillHistory(ctx) {
+  const userId = int(ctx.url.searchParams.get('userId'), 'Who', { required: true, min: 1 });
+  const day = ctx.url.searchParams.get('day');
+  const slot = ctx.url.searchParams.get('slot');
+  if (!isDay(day) || !SLOT_WORD[slot]) throw badRequest('Which shift?');
+  const rows = await ctx.db.prepare(
+    'SELECT * FROM till_report WHERE user_id = ?1 AND day = ?2 AND slot = ?3 ORDER BY signed_at',
+  ).bind(userId, day, slot).all();
+  const [shift] = historyOf(rows.results ?? []);
+  return json({ shift: shift ?? null });
 }

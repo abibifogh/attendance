@@ -2,6 +2,8 @@ import { api } from '../api.js';
 import { replaceParams } from '../app.js';
 import { fmtSince, h, mount, shiftDay, toast, todayISO } from '../util.js';
 import { card, emptyState } from './components.js';
+import { field, formDialog } from './att-shared.js';
+import { historyCard } from './att-my-till.js';
 
 /**
  * Till reports: every closing report from the front desk, and the ones owed.
@@ -58,6 +60,46 @@ export async function renderTillReports(params = {}) {
     }
   };
 
+  // Every version of one report, read-only, in a dialog over the list.
+  const showHistory = async (row) => {
+    try {
+      const { shift } = await api.tillHistory(row.userId, row.day, row.slot);
+      if (!shift) { toast('No report on record for that shift.', 'bad'); return; }
+      await formDialog({
+        title: `${row.name} · ${when(row)}`,
+        submitLabel: 'Close',
+        wide: true,
+        body: historyCard(shift),
+        onSubmit: async () => true,
+      });
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
+  // Let them submit it again: the report is kept, marked reopened with the
+  // reason, and they are told what to put right.
+  const allowAgain = async (row) => {
+    const reason = h('textarea', { rows: 3, maxlength: 400, required: true, placeholder: 'e.g. The drawer was counted before the last guest paid' });
+    const done = await formDialog({
+      title: `Let ${row.name.split(/\s+/)[0]} submit it again`,
+      submitLabel: 'Allow resubmission',
+      body: h('div',
+        h('p.muted', `${when(row)}. The report stays on record as it is, and the corrected one is kept beside it. `
+          + 'They are told straight away, and it counts as owed until it is in again.'),
+        field('What needs putting right', reason, 'They see this, word for word.')),
+      onSubmit: async () => {
+        if (!reason.value.trim()) throw new Error('Say what needs putting right.');
+        await api.reopenTillReport(row.reportId, reason.value.trim());
+        return true;
+      },
+    });
+    if (done) {
+      toast(`${row.name.split(/\s+/)[0]} can submit it again.`, 'good');
+      await reload();
+    }
+  };
+
   const owed = data.rows.filter((r) => r.state === 'owed' || r.state === 'reopened')
     .sort((a, b) => `${a.day}${a.slot}`.localeCompare(`${b.day}${b.slot}`));
 
@@ -90,6 +132,7 @@ export async function renderTillReports(params = {}) {
         h('strong', row.name),
         h('small.muted', [when(row), row.shift ? `${row.shift.name} ${row.shift.starts_at}–${row.shift.ends_at}` : null].filter(Boolean).join(' · ')),
         row.state === 'reopened' ? h('small.muted', `Reopened${row.reopenReason ? `: ${row.reopenReason}` : ''}`) : null),
+      row.versions ? h('button.btn-sm.btn-ghost', { type: 'button', onclick: () => showHistory(row) }, 'History') : null,
       h('small.muted.tr-chased', row.chased ? `Chased ${fmtSince(row.chased.at)}${row.chased.times > 1 ? ` · ${row.chased.times} times` : ''}` : 'Not chased yet'),
       button);
   };
@@ -102,7 +145,15 @@ export async function renderTillReports(params = {}) {
     h('div.tr-side',
       pill(row.state),
       row.signedAt ? h('small.muted', `Signed ${dayText(row.signedAt.slice(0, 10))} ${row.signedAt.slice(11, 16)}`) : null,
-      row.cash != null ? h('small', `Drawer ${cedis(row.cash)}`) : null));
+      row.cash != null ? h('small', `Drawer ${cedis(row.cash)}`) : null,
+      row.versions > 1 ? h('small.muted', `${row.versions} versions`) : null,
+      row.versions
+        ? h('div.btn-row.tr-actions',
+          h('button.btn-sm.btn-ghost', { type: 'button', onclick: () => showHistory(row) }, 'History'),
+          row.state === 'in' && row.reportId
+            ? h('button.btn-sm', { type: 'button', onclick: () => allowAgain(row) }, 'Allow resubmission')
+            : null)
+        : null));
 
   const allButton = owed.length > 1
     ? h('button.btn.btn-primary', { type: 'button', onclick: () => chaseAll(allButton) }, `Chase all ${owed.length}`)

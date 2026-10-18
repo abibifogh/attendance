@@ -188,8 +188,12 @@ export const ROLES = [
   {
     key: 'admin',
     label: 'Administrator',
-    detail: 'Everything, including setting the property up and managing logins.',
-    defaults: PERMISSION_KEYS,
+    detail: 'Everything, including setting the property up and managing logins. Closing a till '
+      + 'is the front desk\u2019s own job, so it is given to an administrator only if they work it.',
+    // Everything but closing a till. Every administrator held it by default,
+    // which put Close till in their menu and the front desk's reminders on
+    // their phone for shifts they never stand at the desk for.
+    defaults: PERMISSION_KEYS.filter((key) => key !== 'till'),
   },
 ];
 

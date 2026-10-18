@@ -27,7 +27,7 @@ import { renderSwapQueue, renderSwaps } from './views/swaps.js';
 import { renderHandbook } from './views/handbook.js';
 import { renderHrFaq } from './views/hr-faq.js';
 import { renderAttMyAdvance } from './views/att-my-advance.js';
-import { renderAttMyTill, renderAttMyTillIssues } from './views/att-my-till.js';
+import { renderAttMyTill, renderAttMyTillIssues, renderMyTillReports } from './views/att-my-till.js';
 import { renderAttAdvances } from './views/att-advances.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
 import { renderAttLunch } from './views/att-lunch.js';
@@ -118,7 +118,7 @@ const STAFF_GROUPS = [
   { key: 'my-home', label: 'Home', icon: 'home' },
   // Only for whoever closes a till: the front desk's own job, in the menu
   // beside Home rather than as a small tab nobody noticed.
-  { key: 'till', label: 'Till', icon: 'till' },
+  { key: 'till', label: 'Close till', short: 'Till', icon: 'till' },
   { key: 'my-rota', label: 'Rota', icon: 'calendar' },
   { key: 'requests', label: 'Requests', icon: 'send' },
   { key: 'my-pay', label: 'Pay', icon: 'cash' },
@@ -132,6 +132,8 @@ const MANAGER_GROUPS = [
   { key: 'day', label: 'Attendance', icon: 'clock' },
   { key: 'people', label: 'People', icon: 'users' },
   { key: 'money', label: 'Money', icon: 'wallet' },
+  // A supervisor or manager who works the front desk closes a till too.
+  { key: 'till', label: 'Close till', short: 'Till', icon: 'till' },
   { key: 'mine', label: 'Me', icon: 'user', foot: true },
   { key: 'setup', label: 'Settings', icon: 'sliders', foot: true },
 ];
@@ -210,8 +212,10 @@ const ROUTES = [
   // the day's list, not a place somebody goes.
   // In the menu as well as on Home: Home offers it around the end of a shift,
   // and a receptionist must always be able to find it whatever the time.
-  { mine: true, group: 'till', tab: 'Close till', mgroup: 'mine', under: 'my-day', path: 'att-my-till', label: 'Close your till', permission: 'till', render: renderAttMyTill },
-  { mine: true, group: 'till', tab: 'To sort out', mgroup: 'mine', under: 'my-day', path: 'att-my-till-issues', label: 'Till: to sort out', permission: 'till', render: renderAttMyTillIssues },
+  { group: 'till', tab: 'Close till', mgroup: 'till', path: 'att-my-till', label: 'Close your till', permission: 'till', render: renderAttMyTill },
+  // Every report they have submitted, read-only, with each version kept.
+  { group: 'till', tab: 'My reports', mgroup: 'till', path: 'att-my-till-reports', label: 'My closing reports', permission: 'till', render: renderMyTillReports },
+  { group: 'till', tab: 'To sort out', mgroup: 'till', path: 'att-my-till-issues', label: 'Till: to sort out', permission: 'till', render: renderAttMyTillIssues },
 
   // Reached by clicking a name rather than from the menu.
   { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, live: ['attendance', 'rota', 'leave'], hidden: true },
@@ -444,7 +448,7 @@ function bottomBar() {
     href: `#/${group.screens[0].path}`,
     class: current?.key === group.key ? 'bottom-tab active' : 'bottom-tab',
     'aria-current': current?.key === group.key ? 'page' : null,
-  }, icon(group.icon, 22), h('span', group.label),
+  }, icon(group.icon, 22), h('span', group.short ?? group.label),
   group.key === 'inbox' ? h('span.bottom-count', { 'data-inbox-count': '', hidden: true }) : null);
 
   return h('nav.bottom-bar', { 'aria-label': 'Main' },

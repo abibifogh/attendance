@@ -206,6 +206,9 @@ export const ROUTES = [
   // Every closing report, and the ones still owed, for whoever keeps track.
   ['GET', '/api/till/reports', 'till_reports', tillReports.tillReports],
   ['POST', '/api/till/chase', 'till_reports', tillReports.chaseTill],
+  ['POST', '/api/till/reports/:id/reopen', 'till_reports', tillReports.reopenTillReport],
+  ['GET', '/api/till/history', 'till_reports', tillReports.tillHistory],
+  ['GET', '/api/me/till/history', 'till', till.myHistory],
   ['GET', '/api/me/till', 'till', till.myTill],
   ['POST', '/api/me/till', 'till', till.closeShift],
   ['POST', '/api/me/till/po', 'till', till.lookUpPo],

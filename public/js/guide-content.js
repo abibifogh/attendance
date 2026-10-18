@@ -2531,7 +2531,7 @@ export const GUIDE = [
   {
     key: 'till',
     title: 'My till',
-    permission: 'till',
+    permission: ['till', 'till_reports'],
     lede: 'Closing a front-desk shift, on the desk PC or on a phone, and answering for the shifts that did not agree.',
     blocks: [
       { p: 'This replaces the Google Form. It asks only what nobody else can say: ASSD\u2019s own '

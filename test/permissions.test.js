@@ -132,12 +132,18 @@ test('reports-only changes nothing', () => {
   assert.equal(reaches('viewer', 'POST', '/api/att/leave'), false);
 });
 
-test('an administrator reaches every route there is', () => {
+test('an administrator reaches every route there is, except closing a till of their own', () => {
+  // Closing a till is the front desk's job, given to an administrator only if
+  // they work it. Everything about other people's tills they reach through
+  // Till reports.
   const admin = held('admin');
   for (const [method, path, required] of ROUTES) {
-    if (required === 'public') continue;
+    if (required === 'public' || required === 'till') continue;
     assert.ok(allows(required, admin), `admin blocked from ${method} ${path}`);
   }
+  assert.ok(!admin.includes('till'), 'not by default');
+  assert.ok(allows('till', effectivePermissions({ role: 'admin', permissions: '["users","till"]' })),
+    'but an administrator who works the desk can be given it');
 });
 
 test('every permission a route asks for is a real one', () => {

@@ -707,3 +707,55 @@ async function asProofFile(file) {
     return { name: file.name.replace(/\.\w+$/, '.jpg'), data: canvas.toDataURL('image/jpeg', 0.82) };
   } finally { URL.revokeObjectURL(url); }
 }
+
+// ============================================================== my reports --
+
+const stampText = (at) => (at ? `${dayText(String(at).slice(0, 10))} ${String(at).slice(11, 16)}` : '');
+
+/**
+ * One shift's report and every version of it, oldest first.
+ *
+ * Read-only. Each version says when it was signed and what changed from the
+ * one before; a version that was reopened says who opened it and why. Shared
+ * with Till reports, so the receptionist and the manager read the same record.
+ */
+export function historyCard(shift, { actions = null, who = null } = {}) {
+  const live = [...shift.versions].reverse().find((v) => !v.reopenedAt) ?? null;
+  const pill = shift.state === 'in'
+    ? h('span.pill.good', shift.versions.length > 1 ? `Submitted · ${shift.versions.length} versions` : 'Submitted')
+    : h('span.pill.bad', 'Reopened · to submit again');
+  return card(`${who ? `${who} · ` : ''}${SLOT[shift.slot]} · ${dayText(shift.day)}`, { note: pill, actions },
+    live ? h('p.till-history-now', live.summary || `Drawer ${cedis(live.cash)}`) : h('p.muted', 'Opened again to be put right. It is under Close till until it is submitted again.'),
+    h('ol.till-history', shift.versions.map((v) => h('li', { class: v.reopenedAt ? 'is-old' : '' },
+      h('div.till-history-head',
+        h('strong', `Version ${v.version}`),
+        h('span.muted', ` · signed ${stampText(v.signedAt)}${v.device ? ` · ${v.device === 'phone' ? 'from a phone' : 'from the desk'}` : ''}`)),
+      v.changes.length ? h('ul.till-history-changes', v.changes.map((c) => h('li', c))) : null,
+      v.version > 1 && !v.changes.length ? h('small.muted', 'Submitted again with the same figures.') : null,
+      v.version === 1 || v.reopenedAt ? h('small.till-history-sum', v.summary || '') : null,
+      v.reopenedAt
+        ? h('div.till-history-reopened',
+          `Reopened ${stampText(v.reopenedAt)} by ${v.reopenedBy || 'a manager'}`,
+          v.reopenReason ? h('q', v.reopenReason) : null)
+        : null))));
+}
+
+export async function renderMyTillReports() {
+  const host = h('div.till');
+  let data;
+  try {
+    data = await api.myTillHistory();
+  } catch (err) {
+    mount(host, h('div.page-head', h('div', h('h1', 'My closing reports'))),
+      emptyState('Your reports cannot be read just now', err.message));
+    return host;
+  }
+  mount(host,
+    h('div.page-head', h('div',
+      h('h1', 'My closing reports'),
+      h('div.sub', 'Every report you have submitted, read-only. If one needs correcting, ask a manager to open it again.'))),
+    data.shifts.length
+      ? h('div.till-history-list', data.shifts.map((s) => historyCard(s)))
+      : emptyState('Nothing submitted yet', 'Your closing reports appear here once you have submitted one.'));
+  return host;
+}
