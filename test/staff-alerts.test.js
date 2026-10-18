@@ -329,7 +329,10 @@ test('it waits out the grace the shift already allows', async () => {
   assert.equal(sent.length, 0);
 });
 
-test('it keeps going every half hour while the shift is still running', async () => {
+test('it keeps going every half hour while the shift is still running', async (t) => {
+  // At midday, so every start below is on the same day. Run just after
+  // midnight, "110 minutes ago" is yesterday's shift, which has three of its own.
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(`${today()}T12:00:00Z`) });
   const { db, raw } = setup();
   const sent = await withPush(raw);
   rosterAgo(raw, 20);
