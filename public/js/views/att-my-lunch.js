@@ -139,6 +139,10 @@ function whenShort(stamp) {
 }
 
 /** One day: what it is, what I said, and the one thing I can do about it. */
+/** "Oct 19": the month and the date, as asked, with the weekday beneath. */
+const monthDay = (day) => new Date(`${day}T12:00:00Z`)
+  .toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
 function dayRow(day, data, reload) {
   const said = day.taking === null ? 'Not said'
     : day.taking ? 'Eating' : 'Not eating';
@@ -146,7 +150,7 @@ function dayRow(day, data, reload) {
 
   return h('div.me-day',
     h('div.me-when',
-      h('strong', fmtDayShort(day.day).split(' ')[1] ?? fmtDayShort(day.day)),
+      h('strong', monthDay(day.day)),
       h('small.muted', day.name)),
     h('div.me-what',
       h('strong', day.meal || 'The menu for this day is not up yet'),
@@ -202,8 +206,8 @@ function answeredRow(row) {
   const ok = row.decision === 'approved';
   return h('div.me-day',
     h('div.me-when',
-      h('strong', fmtDayShort(row.day).split(' ')[1] ?? fmtDayShort(row.day)),
-      h('small.muted', fmtDayShort(row.day).split(' ')[0] ?? '')),
+      h('strong', monthDay(row.day)),
+      h('small.muted', new Date(`${row.day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' }))),
     h('div.me-what',
       h('strong', row.want ? 'Asked to be put down' : 'Asked to be taken off'),
       row.decisionNote ? h('small.muted', `“${row.decisionNote}”`) : null,
