@@ -830,17 +830,46 @@ async function decidedAs(env, table, col, id) {
   return 'That is no longer waiting: it was rejected, or taken back by whoever answered.';
 }
 
-/** Tell the admins that a supervisor's correction is waiting. Never throws. */
-export async function tellApprovers(env, { seq, kind, by, text = null }, { fetchImpl } = {}) {
+/** How long after one approval email the next waits: answers come in runs. */
+const APPROVAL_QUIET_MS = 15 * 60 * 1000;
+
+/**
+ * Tell the admins that a supervisor's answer or correction is waiting.
+ * Never throws.
+ *
+ * Once per quarter of an hour at most. A supervisor going down a list sends
+ * five answers in five minutes, and five emails that each read alike are
+ * noise; the first says what it is and how many are waiting in all, and
+ * Approvals shows every one of them. One that comes in after the quiet
+ * spell is told again, with the count as it then stands.
+ */
+export async function tellApprovers(env, { seq, kind, by, text = null }, { fetchImpl, now = Date.now() } = {}) {
   try {
+    const s = await getSettings(env.DB).catch(() => ({}));
+    const last = Date.parse(String(s.approval_told_at || '').replace(' ', 'T'));
+    if (Number.isFinite(last) && now - last < APPROVAL_QUIET_MS) return false;
     const { to } = await linkRecipients(env, { event: 'approval' });
-    if (!to.length) return;
+    if (!to.length) return false;
     const said = text || `${by} says ASSD ${seq} ${kind === 'duplicate' ? 'is a duplicate' : kind === 'reverses' ? 'puts back another movement' : `was ${kind}`}.`;
+    const [answers, moves, drawer] = await Promise.all([pendingAnswers(env), pendingMovements(env), drawerAsksCount(env)]);
+    const waiting = answers.length + moves.length + drawer;
     await hiveCall({
       binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/till/tell',
-      body: { recipients: to, kind: 'till.approval', title: 'Waiting for your approval', body: `${said} Approve it in Insight → Shifts → Approvals.` },
+      body: {
+        recipients: to, kind: 'till.approval',
+        title: waiting > 1 ? `${waiting} things waiting for your approval` : 'Waiting for your approval',
+        body: `${said}${waiting > 1 ? ` ${waiting} are waiting in all.` : ''} Decide in Insight → ✓ Approvals.`,
+      },
     });
-  } catch { /* the correction is saved either way */ }
+    await setSetting(env.DB, 'approval_told_at', new Date(now).toISOString());
+    return true;
+  } catch { return false; /* the answer or correction is saved either way */ }
+}
+
+/** POs made in Insight that staff want to pay from a drawer, waiting for an admin. */
+async function drawerAsksCount(env) {
+  const row = await first(env.DB, 'SELECT COUNT(*) AS n FROM po_created WHERE drawer_ok IS NULL AND asked_at IS NOT NULL').catch(() => null);
+  return Number(row?.n) || 0;
 }
 
 // ---------------------------------------------------------- the settings --

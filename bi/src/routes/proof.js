@@ -155,7 +155,9 @@ export async function forTargets(env, query, account) {
   const rows = await all(env.DB, `SELECT * FROM proof_request WHERE target IN (${targets.map((_, i) => `?${i + 1}`).join(', ')}) AND status != 'cancelled' ORDER BY id DESC`, ...targets);
   const mine = (r) => r.asked_account != null && Number(r.asked_account) === Number(account?.id);
   const seen = (access.proof || 0) >= 1 ? rows : rows.filter(mine);
-  return { requests: await withFiles(env, seen), canAsk: (access.proof || 0) >= 2 };
+  // `mine`: asked of whoever is looking, so their card offers to send it right there.
+  const requests = (await withFiles(env, seen)).map((r, i) => ({ ...r, mine: mine(seen[i]) }));
+  return { requests, canAsk: (access.proof || 0) >= 2 };
 }
 
 /**
