@@ -119,7 +119,13 @@ export function tokenFrom(request) {
  * happens to expire. For a front door that is the whole point: revoking access
  * has to be immediate or it is not revoking.
  */
-export async function currentAccount(request, env) {
+export async function currentAccount(request, env, { real = false } = {}) {
+  const account = await signedInAccount(request, env);
+  if (real || !account) return account;
+  return (await viewedAccount(request, env, account)) || account;
+}
+
+async function signedInAccount(request, env) {
   if (!env.SESSION_SECRET) {
     throw new HttpError(503, 'This dashboard has no SESSION_SECRET set, so it cannot sign anybody in.');
   }
@@ -148,6 +154,64 @@ export async function currentAccount(request, env) {
     isOwner: row.is_owner === 1,
     bootstrap: false,
     access,
+  };
+}
+
+// ------------------------------------------------------------- view as --
+
+/**
+ * An admin looking at Insight as somebody else sees, to know what they see.
+ *
+ * A second cookie names whom, signed and tied to the admin who set it: while
+ * it is there, every request is answered as that account (its menus, its
+ * areas, its Inbox), with `viewedBy` saying who is really looking. The router
+ * refuses anything that would change something, so it is look only. A non-owner
+ * admin cannot look as an owner. Signing out, or the admin losing admin, ends it.
+ */
+const VIEW_COOKIE = 'insight_view_as';
+const VIEW_TTL_SECONDS = 4 * 60 * 60;
+
+/** May this account look as others: an owner, or an Insight admin (not a supervisor or uploader). */
+export function mayViewAs(account) {
+  if (!account || account.id == null || account.bootstrap) return false;
+  if (account.isOwner) return true;
+  const grant = (account.access || []).find((a) => a.systemId === 'insight');
+  return Boolean(grant) && grant.role !== 'supervisor' && grant.role !== 'uploader';
+}
+
+/** Whether `viewer` may look as the account in `row` (id, is_owner, active). */
+export function mayViewAsRow(viewer, row) {
+  return mayViewAs(viewer) && Boolean(row?.active) && Number(row.id) !== Number(viewer.id) && (viewer.isOwner || row.is_owner !== 1);
+}
+
+export async function viewAsCookie(secret, { by, as }) {
+  const payload = { va: Number(as), by: Number(by), exp: Math.floor(Date.now() / 1000) + VIEW_TTL_SECONDS };
+  const body = b64urlEncode(encoder.encode(JSON.stringify(payload)));
+  return `${VIEW_COOKIE}=${body}.${await sign(secret, body)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${VIEW_TTL_SECONDS}`;
+}
+export const clearViewAsCookie = () => `${VIEW_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+
+function cookieNamed(request, name) {
+  const header = request.headers.get('Cookie') || '';
+  for (const part of header.split(';')) {
+    const [key, ...rest] = part.trim().split('=');
+    if (key === name) return rest.join('=');
+  }
+  return null;
+}
+
+/** The account being looked as, or null when nobody is: the cookie must be this admin's own. */
+async function viewedAccount(request, env, viewer) {
+  const raw = cookieNamed(request, VIEW_COOKIE);
+  if (!raw || !mayViewAs(viewer)) return null;
+  const payload = await readToken(env.SESSION_SECRET, raw);
+  if (!payload?.va || Number(payload.by) !== Number(viewer.id)) return null;
+  const row = await first(env.DB, 'SELECT id, email, name, is_owner, active FROM accounts WHERE id = ?1', payload.va).catch(() => null);
+  if (!mayViewAsRow(viewer, row)) return null;
+  return {
+    id: row.id, email: row.email, name: row.name, isOwner: row.is_owner === 1, bootstrap: false,
+    access: await accessFor(env.DB, row.id),
+    viewedBy: { id: viewer.id, name: viewer.name },
   };
 }
 

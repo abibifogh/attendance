@@ -19,8 +19,8 @@ const when = (sql) => (sql ? new Date(`${String(sql).replace(' ', 'T')}Z`)
  * the till", and that is a column, not five separate pages.
  */
 export async function renderAccounts(root) {
-  const [data, invited, links] = await Promise.all([api('/accounts'), api('/invitations').catch(() => ({ invitations: [] })),
-    api('/odoo/links').catch(() => null)]);
+  const [data, invited, links, viewed] = await Promise.all([api('/accounts'), api('/invitations').catch(() => ({ invitations: [] })),
+    api('/odoo/links').catch(() => null), api('/view-as/log').catch(() => ({ log: [] }))]);
   const view = h('div');
   add(root, view);
   let invitations = invited.invitations;
@@ -123,6 +123,8 @@ export async function renderAccounts(root) {
                 h('button.btn', { onclick: () => setPassword(account) }, 'Set password'),
                 ' ',
                 h('button.btn', { onclick: () => edit(account, systems, accounts) }, 'Edit'),
+                // See Insight as they do, look only.
+                account.active && account.email !== state.me?.account?.email ? [' ', h('button.btn', { title: `See Insight as ${account.name} sees it`, onclick: (e) => viewAs(account, e.target) }, '👁 View as')] : null,
                 // Not yourself: an owner who deletes their own account is locked out mid-sentence.
                 account.email === state.me?.account?.email ? null : [' ', h('button.btn.danger', { onclick: () => removeAccount(account) }, 'Delete')])))))),
         h('button.btn', { style: { marginTop: '.8rem' }, onclick: () => edit(null, systems, accounts) }, 'Add without an invitation')),
@@ -131,6 +133,13 @@ export async function renderAccounts(root) {
         h('h2', 'Where each system lives'),
         h('p.sub', 'The sign-in address is where this app sends somebody who clicks through from the hub. The shared secret is a Worker secret and is never typed here — a secret in a web form is a secret in a browser history and a proxy log.'),
         systems.filter((s) => s.id !== 'insight').map((system) => systemRow(system))),
+
+      viewed.log.length ? h('div.card',
+        h('h2', 'Who viewed as whom'),
+        h('p.sub', 'Each time an admin looked at Insight as somebody else sees it. Look only: nothing can be changed while viewing.'),
+        h('div.table-wrap', h('table',
+          h('thead', h('tr', h('th', 'Who'), h('th', 'As'), h('th', 'From'), h('th', 'Until'))),
+          h('tbody', viewed.log.map((v) => h('tr', h('td', v.by), h('td', v.as), h('td', when(v.startedAt)), h('td', v.endedAt ? when(v.endedAt) : 'Still viewing'))))))) : null,
     );
 
     function systemRow(system) {
@@ -271,6 +280,14 @@ export async function renderAccounts(root) {
       navigator.clipboard?.writeText(message.link).then(() => { copy.textContent = 'Copied'; }).catch(() => {});
     }
     return box;
+  }
+
+  async function viewAs(account, button) {
+    button.disabled = true;
+    try {
+      await api('/view-as', { method: 'POST', body: { accountId: account.id } });
+      window.location.reload();
+    } catch (err) { button.disabled = false; button.after(h('div.small.form-error', err.message)); }
   }
 
   function invitationsCard() {
