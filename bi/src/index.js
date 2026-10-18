@@ -212,6 +212,9 @@ const ROUTES = [
   ['POST', '/api/odoo/links', 'owner', (env, ctx) => odooact.saveLink(env, ctx.body, ctx.account)],
   ['POST', '/api/till/charge', 'shifts', (env, ctx) => till.moveToStaff(env, ctx.body, ctx.account)],
   ['POST', '/api/till/charge/undo', 'shifts', (env, ctx) => till.undoMove(env, ctx.body, ctx.account)],
+  // A shift checked: its differences are confirmed to its people (or taken back).
+  ['POST', '/api/till/check', 'shifts', (env, ctx) => till.checkShift(env, ctx.body, ctx.account)],
+  ['POST', '/api/till/check/undo', 'shifts', (env, ctx) => till.uncheckShift(env, ctx.body, ctx.account)],
   ['POST', '/api/till/settings', 'shifts', (env, ctx) => till.saveSettings(env, ctx.body, ctx.account)],
 
   // The till link: HIVE asking, server to server, signed with the secret the

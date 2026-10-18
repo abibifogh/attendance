@@ -214,9 +214,13 @@ export function withStatus(issues, { answers = [], resolutions = [] } = {}) {
     .filter((x) => x.key === issue.key && Number(x.user_id ?? x.hive_user_id) === Number(issue.userId))
     .sort((a, b) => String(a.at).localeCompare(String(b.at)) || (a.id ?? 0) - (b.id ?? 0))
     .pop() || null;
+  // A note is what somebody said before the shift was checked: it is not an answer.
+  const notes = answers.filter((a) => a.how === 'note');
+  const real = answers.filter((a) => a.how !== 'note');
   return issues.map((issue) => {
     const decision = latest(resolutions, issue);
-    const answer = latest(answers, issue);
+    const answer = latest(real, issue);
+    const note = latest(notes, issue);
     let status = 'open';
     if (decision && FINAL.has(decision.outcome)) status = 'settled';
     else if (answer && (!decision || String(answer.at) > String(decision.at))) status = 'answered';
@@ -224,6 +228,7 @@ export function withStatus(issues, { answers = [], resolutions = [] } = {}) {
       ...issue,
       status,
       answer: answer ? { how: answer.how, text: answer.text, po: answer.po || null, at: answer.at } : null,
+      note: note ? { text: note.text, at: note.at } : null,
       decision: decision ? { outcome: decision.outcome, note: decision.note, by: decision.by_name, at: decision.at, amount: decision.amount } : null,
     };
   });

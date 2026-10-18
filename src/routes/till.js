@@ -792,12 +792,23 @@ export async function answer(ctx) {
   const userId = Number(ctx.session.user.id);
   const key = str(body.key, 'Which one', { required: true, max: 200 });
   const how = String(body.how || '');
-  if (!['explain', 'repay', 'po'].includes(how)) throw badRequest('Explain it, pay it back, or give the PO.');
+  if (!['explain', 'repay', 'po', 'note'].includes(how)) throw badRequest('Explain it, pay it back, or give the PO.');
 
   // Only something actually on their list, so nobody answers for somebody else.
   const list = await insight(ctx.env, '/api/link/till/issues', { userId });
   const issue = (list.issues || []).find((i) => i.key === key);
   if (!issue) throw notFound('That is not on your list any more.');
+
+  // A shift not checked yet: its amounts may change, so only a note for
+  // whoever checks it. Explaining, paying back or a PO come once it is checked.
+  if (issue.checked === false && how !== 'note') throw badRequest('That shift has not been checked yet: add a note instead. Once it is checked you can answer it.');
+  if (how === 'note') {
+    if (issue.checked !== false) throw badRequest('That shift has been checked: answer it instead.');
+    const note = str(body.text, 'Your note', { required: true, max: 1000 });
+    await ctx.db.prepare('INSERT INTO till_answer (key, user_id, how, text, at) VALUES (?1, ?2, ?3, ?4, ?5)')
+      .bind(key, userId, 'note', note, nowUtc()).run();
+    return json({ ok: true, note: true });
+  }
 
   if (how === 'po') {
     if (issue.kind !== 'unexplained') throw badRequest('A PO only answers cash that left the drawer.');
@@ -1117,6 +1128,15 @@ export async function linkMove(ctx) {
 
 /** Insight's own words, in the design, with the label that fits. */
 function tellMail(kind, title, text) {
+  if (kind === 'till.checked') {
+    return {
+      tone: 'warn', status: 'Checked', eyebrow: 'Till',
+      headline: title, intro: text || undefined,
+      button: 'Open To sort out',
+      subject: title, preheader: text || undefined,
+      why: 'You get this because a shift of yours with something to sort out has been checked.',
+    };
+  }
   if (kind === 'till.proof') {
     return {
       tone: 'warn', status: 'Proof asked', eyebrow: 'Till',
@@ -1261,7 +1281,7 @@ export async function linkSummary(ctx) {
 /** Tell people something Insight decided. */
 export async function linkTell(ctx) {
   const body = await fromInsight(ctx);
-  const kind = ['till.settled', 'till.approval', 'till.moved', 'till.given', 'till.proof'].includes(body.kind) ? body.kind : 'till.settled';
+  const kind = ['till.settled', 'till.approval', 'till.moved', 'till.given', 'till.proof', 'till.checked'].includes(body.kind) ? body.kind : 'till.settled';
   const title = str(body.title, 'Title', { required: true, max: 200 });
   const text = str(body.body, 'Body', { max: 800 });
   const people = Array.isArray(body.recipients)

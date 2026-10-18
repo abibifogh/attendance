@@ -565,16 +565,52 @@ export async function renderAttMyTillIssues() {
   return host;
 
   function paint() {
+    // Checked by the office: final, to answer. Not checked yet: may change, a note at most.
+    const checked = data.issues.filter((i) => i.checked !== false);
+    const waiting = data.issues.filter((i) => i.checked === false);
+    const sub = [
+      checked.length ? `${checked.length} checked and need${checked.length === 1 ? 's' : ''} you` : null,
+      waiting.length ? `${waiting.length} not checked yet` : null,
+    ].filter(Boolean).join(' · ') || 'Nothing needs you';
     mount(host,
-      h('div.page-head', h('div',
-        h('h1', 'To sort out'),
-        h('div.sub', data.issues.length
-          ? `${data.issues.length} shift${data.issues.length === 1 ? '' : 's'} need${data.issues.length === 1 ? 's' : ''} you`
-          : 'Nothing needs you'))),
-      data.issues.length
-        ? data.issues.map(issueCard)
-        : emptyState('Nothing to sort out', 'Every one of your shifts agrees. A shift only shows here when it is short, over, missing a PO or missing a rental.'),
+      h('div.page-head', h('div', h('h1', 'To sort out'), h('div.sub', sub))),
+      data.issues.length ? [
+        checked.length && waiting.length ? [h('h2.till-group', '✓ Checked: please sort these out'),
+          h('p.till-group-why', 'The office has checked these shifts. The amounts are final.')] : null,
+        checked.map(issueCard),
+        waiting.length ? [h('h2.till-group', '⏳ Not checked yet'),
+          h('p.till-group-why', 'These are the figures as they stand now. The office has not checked these shifts, so the amounts may change or go away. You will be told when they are checked.'),
+          waiting.map(issueCard)] : null,
+      ] : emptyState('Nothing to sort out', 'Every one of your shifts agrees. A shift only shows here when it is short, over, missing a PO or missing a rental.'),
       h('p.till-hint.till-cleared', `${data.cleared} settled this month. Settled shifts leave this list.`));
+  }
+
+  /** Not checked yet: nothing to do, but a note for whoever checks it, if they know why. */
+  function noteAction(issue) {
+    const state = open.get(issue.key);
+    if (state?.mode === 'note') {
+      return h('form.till-answer', {
+        onsubmit: async (ev) => {
+          ev.preventDefault();
+          const text = ev.target.elements.text.value.trim();
+          if (!text) { toast('Write a few words first.', 'bad'); return; }
+          try {
+            await api.tillAnswer({ key: issue.key, how: 'note', text });
+            toast('Noted. Whoever checks the shift will see it.');
+            data = await api.tillIssues();
+            open.delete(issue.key);
+            paint();
+          } catch (err) { toast(err.message, 'bad'); }
+        },
+      },
+      h('textarea', { name: 'text', rows: 3, placeholder: 'What you know about it' }),
+      h('div.till-actions', h('button.btn.btn-primary', { type: 'submit' }, 'Save the note'),
+        h('button.btn-sm', { type: 'button', onclick: () => { open.delete(issue.key); paint(); } }, 'Cancel')));
+    }
+    const add = h('button.till-link', { type: 'button', onclick: () => { open.set(issue.key, { mode: 'note' }); paint(); } }, issue.note ? 'Change your note' : 'Add a note');
+    return issue.note
+      ? h('div.till-said', h('strong', 'Your note: '), issue.note.text, h('div.till-hint', 'Whoever checks the shift sees it. ', add))
+      : h('p.till-hint', 'Nothing to do yet. ', add, ' if you know why.');
   }
 
   /** Proof an admin asked for: pictures (made smaller here) or a PDF, a note, Send; or why not. */
@@ -622,8 +658,11 @@ export async function renderAttMyTillIssues() {
       : (issue.amount ? signed(issue.amount) : '');
     const tone = issue.amount > 0 ? 'over' : kind === 'noreport' ? 'info' : 'short';
     const state = open.get(issue.key) || null;
+    const soft = issue.checked === false;
     let action;
-    if (issue.status === 'answered' && issue.proof) {
+    if (soft) {
+      action = noteAction(issue);
+    } else if (issue.status === 'answered' && issue.proof) {
       action = [h('div.till-said', h('strong', 'You said: '), issue.answer?.text || ''), proofAsk(issue)];
     } else if (issue.status === 'answered') {
       action = h('div.till-said', h('strong', 'You said: '), issue.answer?.text || '',
@@ -677,15 +716,19 @@ export async function renderAttMyTillIssues() {
           kind === 'unexplained' ? 'Explain instead' : issue.amount < 0 ? 'Explain or pay back' : 'Explain'));
     }
     return card(`${SLOT[issue.slot]} · ${dayText(issue.day)}`, {
-      cls: `till-issue till-${tone}`,
-      note: issue.status === 'answered' ? 'with the supervisor' : 'needs your answer',
+      cls: `till-issue till-${tone}${soft ? ' till-soft' : ''}`,
+      note: soft ? 'not checked yet' : issue.status === 'answered' ? 'with the supervisor' : 'needs your answer',
     },
-    h('div.till-amount', h('strong', amount), h('span.till-kind', issue.label)),
+    // Who checked it, so the amount is known to be final.
+    !soft && issue.checkedBy && issue.kind !== 'moved' ? h('div.till-checked', `✓ Checked by ${issue.checkedBy}${issue.checkedAt ? `, ${dayText(String(issue.checkedAt).slice(0, 10))}` : ''}`) : null,
+    h('div.till-amount', h('strong', soft && amount && kind !== 'rental' ? `About ${amount}` : amount), h('span.till-kind', issue.label)),
     // Put on this person's account by an admin, from somebody's shift: why, and by whom.
     issue.moved ? h('div.till-moved', h('strong', 'Why: '), issue.moved.reason || '',
       h('div.till-hint', `Put on your account by ${issue.moved.by || 'an admin'}${issue.moved.from ? `, from ${issue.moved.from}’s shift` : ''}.`)) : null,
     issue.sentBack ? h('div.alert.warn', `Sent back${issue.sentBack.by ? ` by ${issue.sentBack.by}` : ''}: ${issue.sentBack.note || 'more is needed.'}`) : null,
     h('p', issue.text),
+    // What they noted before the check, to build the answer on.
+    !soft && issue.note && issue.status === 'open' ? h('p.till-hint', `Your note before the check: “${issue.note.text}”`) : null,
     action);
   }
 }
