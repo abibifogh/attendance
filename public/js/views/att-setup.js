@@ -247,7 +247,7 @@ function logoCard(s, reload) {
 }
 
 /** Read a logo, shrink it, and keep its transparency. */
-async function readLogo(file) {
+export async function readLogo(file) {
   const LIMIT = 600_000;
   if (!file.type.startsWith('image/')) throw new Error('A logo has to be a picture.');
 
@@ -580,7 +580,7 @@ async function showStaffImport({ text, read, reload }) {
 }
 
 async function staffTab(reload) {
-  const [{ staff, departments = [], shifts = [] }, { unknown }] = await Promise.all([
+  const [{ staff, departments = [], shifts = [], companies = [] }, { unknown }] = await Promise.all([
     api.attStaff(), api.attUnknown(),
   ]);
 
@@ -809,6 +809,15 @@ async function staffTab(reload) {
         field('Department', departmentPicker(departments, existing?.department ?? '')),
         field('Job title', h('input', { type: 'text', name: 'jobTitle', maxlength: 80, value: existing?.job_title ?? '' })),
       ),
+      // Which company employs them, where there is more than one. It decides
+      // which payroll they are on and whose name heads their payslip.
+      companies.length > 1
+        ? field('Employed by', h('select', { name: 'companyId' },
+          companies.map((c) => h('option', {
+            value: String(c.id),
+            selected: (Number(existing?.company_id) || 1) === c.id,
+          }, c.name))), 'Their payroll, payslips and tax returns go under this company')
+        : null,
       h('div.field-row',
         field('Started', h('input', { type: 'date', name: 'hiredOn', value: existing?.hired_on ?? '' }), 'Leave earns from this date'),
         field('Left', h('input', { type: 'date', name: 'leftOn', value: existing?.left_on ?? '' }),
@@ -884,6 +893,7 @@ async function staffTab(reload) {
             ? (form.get('departmentNew') || '').trim() || null
             : form.get('departmentPick') || null,
           jobTitle: form.get('jobTitle') || null,
+          ...(form.get('companyId') != null ? { companyId: Number(form.get('companyId')) } : {}),
           hiredOn: form.get('hiredOn') || null,
           leftOn: form.get('leftOn') || null,
           leaveDays: form.get('leaveDays') || null,
@@ -991,7 +1001,13 @@ async function staffTab(reload) {
                 ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'payroll only')
                 : r.on_rota === 0
                   ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'not on rota')
-                  : null),
+                  : null,
+              // Only somebody employed by another company is marked; the main
+              // company is everybody else.
+              Number(r.company_id) > 1
+                ? h('span.pill.info', { style: { marginLeft: '.4rem' } },
+                  companies.find((c) => c.id === Number(r.company_id))?.name ?? 'other company')
+                : null),
             h('small.muted', [r.job_title, r.department].filter(Boolean).join(' · ') || '—'),
             readDayList(r.off_days).length
               ? h('small.muted', { style: { display: 'block' } },

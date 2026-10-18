@@ -1,5 +1,5 @@
 import { h, money } from '../util.js';
-import { companyOf } from './payslip.js';
+import { companyFrom } from './payslip.js';
 
 /**
  * The two returns a month has to produce, on paper somebody can file.
@@ -28,7 +28,7 @@ export function returnsSheet(data, niceMonth) {
   const figure = (n) => new Intl.NumberFormat('en-GB', {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(Number(n) || 0);
-  const company = companyOf();
+  const company = companyFrom(data.company);
   const { journal, schedule } = data;
   const columns = data.columns ?? [];
 

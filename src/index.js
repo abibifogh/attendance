@@ -25,6 +25,7 @@ import { watchTerminals } from './lib/terminal-watch.js';
 import { nightlyCopy } from './lib/backup.js';
 import * as birthday from './routes/birthdays.js';
 import * as attSetup from './routes/attendance-setup.js';
+import * as companies from './routes/companies.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
 import * as invite from './routes/invite.js';
@@ -505,6 +506,11 @@ export const ROUTES = [
   ['POST', '/api/att/company/logo', 'att_setup', attSetup.setCompanyLogo],
   ['DELETE', '/api/att/company/logo', 'att_setup', attSetup.removeCompanyLogo],
   ['GET', '/api/company/logo', 'att_me', attSetup.companyLogo],
+  // The companies people are employed by. Each has its own payroll.
+  ['GET', '/api/att/companies', ['att_setup', 'hr_pay'], companies.listCompanies],
+  ['POST', '/api/att/companies', 'att_setup', companies.createCompany],
+  ['PUT', '/api/att/companies/:id', 'att_setup', companies.updateCompany],
+  ['DELETE', '/api/att/companies/:id', 'att_setup', companies.removeCompany],
 
   // -------------------------------------------------------------- records --
   ['GET', '/api/hr/model', 'hr_view', people.peopleModel],

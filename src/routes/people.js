@@ -13,6 +13,7 @@ import {
   REQUIRED_DOCUMENTS, STANDARD_TEMPLATES, fileStatus,
 } from '../lib/ghana-templates.js';
 import { asBytes } from '../lib/files.js';
+import { MAIN } from '../lib/companies.js';
 
 /**
  * Employee records, from the property's side of the desk.
@@ -52,6 +53,18 @@ async function logEvent(ctx, { staffId, inviteId = null, contractId = null, kind
 async function setting(db, key, fallback) {
   const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first().catch(() => null);
   return row?.value ?? fallback;
+}
+
+/** The registered name of the company that employs somebody. */
+async function employerName(db, person) {
+  const company = Number(person?.company_id) || MAIN;
+  if (company !== MAIN) {
+    const row = await db.prepare('SELECT legal_name FROM company WHERE id = ? AND main = 0')
+      .bind(company).first().catch(() => null);
+    if (row?.legal_name) return row.legal_name;
+  }
+  return (await setting(db, 'company_legal_name', ''))
+    || setting(db, 'property_name', 'Somewhere Nice');
 }
 
 /** What the forms are made of. Sent once so the browser draws what the server means. */
@@ -918,10 +931,10 @@ export async function issueContract(ctx, id) {
     id_type: profile?.id_type,
     property: await setting(ctx.db, 'property_name', 'Somewhere Nice'),
     property_address: await setting(ctx.db, 'property_address', ''),
-    // The party to the contract, which is the registered company and not the
-    // trading name. Company tab, under Setup.
-    company_legal_name: (await setting(ctx.db, 'company_legal_name', ''))
-      || await setting(ctx.db, 'property_name', 'Somewhere Nice'),
+    // The party to the contract, which is the registered company that employs
+    // them and not the trading name: the main company's from the Company form,
+    // another company's from its own record.
+    company_legal_name: await employerName(ctx.db, person),
     // Never less than the fifteen working days section 20 of Act 651 requires,
     // whatever the settings happen to say. A contract promising twelve would be
     // void as to that term and an embarrassment to have issued.

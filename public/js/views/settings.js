@@ -3,6 +3,7 @@ import { h, mount } from '../util.js';
 import { renderAttSetup } from './att-setup.js';
 import { renderAdmin } from './admin.js';
 import { renderNotifications } from './notifications.js';
+import { renderCompanies } from './companies.js';
 
 /**
  * Everything that is set once, in one place.
@@ -27,6 +28,7 @@ export const SECTIONS = [
     panels: [
       { key: 'company', label: 'Company', need: 'att_setup', render: setup('company'), words: 'name address tin ssnit employer logo phone email website tax office lto tsc' },
       { key: 'property', label: 'The property', need: 'att_setup', render: rules(['The property itself']), words: 'departments links days' },
+      { key: 'companies', label: 'Companies', need: 'att_setup', render: () => renderCompanies(), words: 'company employer second abibifo payroll payslips tin ssnit' },
     ],
   },
   {

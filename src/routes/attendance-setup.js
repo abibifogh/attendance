@@ -8,6 +8,7 @@ import {
 import { ratesFrom } from '../lib/tax.js';
 import { tiersFrom } from '../lib/statutory.js';
 import { EARLIEST } from '../lib/tax-tables.js';
+import { MAIN, companies } from '../lib/companies.js';
 import { ghanaHolidays, toMinutes } from '../lib/attendance.js';
 import { listeningHostSettings } from '../lib/push-events.js';
 import { claimOrphans, hashDeviceToken, recompute } from '../lib/attendance-ingest.js';
@@ -114,7 +115,14 @@ export async function listStaff(ctx) {
        FROM att_shifts ORDER BY sort_order, starts_at, name`,
   ).all().catch(() => ({ results: [] }));
 
-  return json({ staff: rows.results ?? [], departments, shifts: shifts.results ?? [] });
+  // The companies somebody can be employed by. Only worth a field on the form
+  // where there is more than one.
+  const settings = Object.fromEntries(((await ctx.db.prepare('SELECT key, value FROM settings').all()
+    .catch(() => ({ results: [] }))).results ?? []).map((r) => [r.key, r.value]));
+  const employers = (await companies(ctx.db, settings))
+    .map((c) => ({ id: c.id, name: c.legalName || 'The main company', main: c.main }));
+
+  return json({ staff: rows.results ?? [], departments, shifts: shifts.results ?? [], companies: employers });
 }
 
 /**
@@ -182,6 +190,20 @@ function readWorksShifts(value) {
   return unique.length ? JSON.stringify(unique) : null;
 }
 
+/**
+ * Which company employs somebody. Left alone when the form does not say, and
+ * the main company is stored as empty, which is what everybody has been.
+ */
+async function setEmployer(db, staffId, companyId) {
+  if (companyId === undefined) return;
+  const id = companyId == null || companyId === '' ? MAIN : Number(companyId);
+  const known = await db.prepare('SELECT id FROM company WHERE id = ?').bind(id).first()
+    .catch(() => null);
+  if (!known && id !== MAIN) throw badRequest('There is no such company.');
+  await db.prepare('UPDATE att_staff SET company_id = ?2 WHERE id = ?1')
+    .bind(staffId, id === MAIN ? null : id).run();
+}
+
 export async function createStaff(ctx) {
   const body = await readJson(ctx.request);
   const employeeNo = str(body.employeeNo, 'Employee number', { required: true, max: 40 });
@@ -242,6 +264,7 @@ export async function createStaff(ctx) {
   // up is the one who is missed, and a checklist failing must never be the
   // reason somebody could not be added to the rota.
   await beginFor(ctx.db, row.id, `${ctx.session.user.name} (added to the staff list)`);
+  await setEmployer(ctx.db, row.id, body.companyId);
 
   await audit(ctx, 'attendance.staff_create', row.id, { employeeNo, name, onClock });
 
@@ -297,6 +320,8 @@ export async function updateStaff(ctx, id) {
       foreignKey: 'That login no longer exists.',
     });
   }
+
+  await setEmployer(ctx.db, staffId, body.companyId);
 
   // A changed employee number means the punches under the old one are theirs no
   // longer and the ones under the new one are.
@@ -1531,6 +1556,19 @@ export async function setCompanyLogo(ctx) {
   }
 
   const stamp = new Date().toISOString();
+  // Another company's mark is kept on its own row; the main company's in the
+  // one-row table it has always been in.
+  const company = Number(body.company) || MAIN;
+  if (company !== MAIN) {
+    const done = await ctx.db.prepare(
+      `UPDATE company SET logo_mime = ?2, logo_content = ?3, logo_at = ?4,
+                          updated_by = ?5, updated_at = datetime('now')
+        WHERE id = ?1 AND main = 0`,
+    ).bind(company, mime, bytes, stamp, `${ctx.session.user.name} (${ctx.session.user.role})`).run();
+    if (!Number(done?.meta?.changes)) throw notFound('There is no such company.');
+    await audit(ctx, 'company.logo', company, { bytes: bytes.length, mime });
+    return json({ ok: true, at: stamp, bytes: bytes.length });
+  }
   await ctx.db.batch([
     ctx.db.prepare(
       `INSERT INTO company_logo (id, mime, bytes, content, uploaded_by)
@@ -1552,6 +1590,14 @@ export async function setCompanyLogo(ctx) {
 
 /** Take it off again. Payslips fall back to the name alone. */
 export async function removeCompanyLogo(ctx) {
+  const company = Number(ctx.url.searchParams.get('company')) || MAIN;
+  if (company !== MAIN) {
+    await ctx.db.prepare(
+      'UPDATE company SET logo_mime = NULL, logo_content = NULL, logo_at = NULL WHERE id = ? AND main = 0',
+    ).bind(company).run();
+    await audit(ctx, 'company.logo_remove', company, {});
+    return json({ ok: true });
+  }
   await ctx.db.batch([
     ctx.db.prepare('DELETE FROM company_logo WHERE id = 1'),
     ctx.db.prepare("INSERT INTO settings (key, value) VALUES ('company_logo_at', '') "
@@ -1569,8 +1615,13 @@ export async function removeCompanyLogo(ctx) {
  * on paper that leaves the building.
  */
 export async function companyLogo(ctx) {
-  const row = await ctx.db.prepare('SELECT mime, content FROM company_logo WHERE id = 1')
-    .first().catch(() => null);
+  const company = Number(ctx.url.searchParams.get('company')) || MAIN;
+  const row = company === MAIN
+    ? await ctx.db.prepare('SELECT mime, content FROM company_logo WHERE id = 1')
+      .first().catch(() => null)
+    : await ctx.db.prepare(
+      'SELECT logo_mime AS mime, logo_content AS content FROM company WHERE id = ? AND logo_content IS NOT NULL',
+    ).bind(company).first().catch(() => null);
   if (!row) throw notFound('No logo has been uploaded.');
 
   return new Response(asBytes(row.content), {

@@ -42,6 +42,31 @@ export function companyOf(settings = state.settings ?? {}) {
   };
 }
 
+/**
+ * The heading for a company the server has described.
+ *
+ * The main company is read from the settings, as it always has been. Another
+ * company's particulars come with the payroll, the payslip or the return that
+ * names it, and its logo is asked for by its id.
+ */
+export function companyFrom(identity) {
+  if (!identity || identity.main || Number(identity.id) === 1) return companyOf();
+  const clean = (v) => String(v ?? '').trim();
+  return {
+    name: clean(identity.legalName) || clean(state.settings?.property_name) || 'This company',
+    legalName: clean(identity.legalName),
+    address: clean(identity.address).split(/\r?\n/).map((l) => l.trim()).filter(Boolean),
+    phone: clean(identity.phone),
+    email: clean(identity.email),
+    website: clean(identity.website),
+    tin: clean(identity.tin),
+    ssnit: clean(identity.ssnit),
+    logo: clean(identity.logoAt)
+      ? `/api/company/logo?company=${Number(identity.id)}&v=${encodeURIComponent(clean(identity.logoAt))}`
+      : null,
+  };
+}
+
 const join = (parts, sep = ' · ') => parts.filter(Boolean).join(sep);
 
 /**

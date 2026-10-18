@@ -26,6 +26,9 @@ import { hasTiers, readTiers, tierAmount } from '../lib/pay-tiers.js';
 import { S, colName, workbook } from '../lib/xlsx.js';
 import { BANK_COLUMNS, BY_HAND_COLUMNS, bankFile } from '../lib/bank-file.js';
 import { addMonths, isMonth, monthOf, todayIn } from '../util/dates.js';
+import {
+  MAIN, companies, companyAsked, companyById, companyOf, monthOfRun, runKey,
+} from '../lib/companies.js';
 
 /**
  * The payroll.
@@ -68,6 +71,37 @@ async function settingsOf(db) {
   };
 }
 
+/**
+ * Whose payroll a request is about, worked out once and kept on the request.
+ *
+ * Asked for in the body or the address, and the main company where nothing
+ * is said, so every link written before there were two companies still opens
+ * the payroll it always did.
+ */
+async function useCompany(ctx, asked) {
+  const { settings } = await settingsOf(ctx.db);
+  const said = asked ?? ctx.url?.searchParams?.get('company') ?? null;
+  ctx.company = await companyAsked(ctx.db, said, settings);
+  return ctx.company;
+}
+
+const companyIdOf = (ctx) => ctx.company?.id ?? MAIN;
+
+/** The heading a company's papers carry: its name, numbers and tax office. */
+const employerOf = (ctx, data) => {
+  const c = ctx.company ?? {};
+  return {
+    id: c.id ?? MAIN,
+    name: c.legalName || data?.property || '',
+    tin: c.tin ?? '',
+    ssnit: c.ssnit ?? '',
+    taxOffice: {
+      kind: ['LTO', 'TSC'].includes(c.taxOfficeKind) ? c.taxOfficeKind : '',
+      name: c.taxOffice ?? '',
+    },
+  };
+};
+
 const monthFrom = (url, timezone) => {
   const asked = url.searchParams.get('month');
   return isMonth(asked) ? asked : monthOf(todayIn(timezone));
@@ -80,14 +114,16 @@ const monthFrom = (url, timezone) => {
  * this one must not open last month's payroll, which would put a draft run on
  * the books for a month nobody has been near.
  */
-async function runFor(db, month, actor, { open = true } = {}) {
-  const found = await db.prepare('SELECT * FROM pay_run WHERE month = ?').bind(month).first();
+async function runFor(db, month, actor, { open = true, company = MAIN } = {}) {
+  // Each company has its own run for the month, under its own key.
+  const key = runKey(month, company);
+  const found = await db.prepare('SELECT * FROM pay_run WHERE month = ?').bind(key).first();
   if (found) return found;
-  if (!open) return { id: -1, month, status: 'draft' };
+  if (!open) return { id: -1, month: key, status: 'draft', company_id: company };
 
-  await db.prepare('INSERT OR IGNORE INTO pay_run (month, opened_by) VALUES (?1, ?2)')
-    .bind(month, actor).run();
-  return db.prepare('SELECT * FROM pay_run WHERE month = ?').bind(month).first();
+  await db.prepare('INSERT OR IGNORE INTO pay_run (month, opened_by, company_id) VALUES (?1, ?2, ?3)')
+    .bind(key, actor, company).run();
+  return db.prepare('SELECT * FROM pay_run WHERE month = ?').bind(key).first();
 }
 
 /**
@@ -96,6 +132,8 @@ async function runFor(db, month, actor, { open = true } = {}) {
  */
 async function gather(ctx, month, { open = true } = {}) {
   const { currency, property, settings } = await settingsOf(ctx.db);
+  if (!ctx.company) await useCompany(ctx);
+  const company = companyIdOf(ctx);
 
   // The figures that were in force in that month, not the ones in force today.
   // A budget moves the bands in April; March is still a March payroll, and a
@@ -104,12 +142,14 @@ async function gather(ctx, month, { open = true } = {}) {
     .catch(() => ({ results: [] }));
   const { rates, tiers, from: ratesFrom_ } = ratesOn(month, tables.results ?? [], settings);
 
-  const run = await runFor(ctx.db, month, actorOf(ctx), { open });
+  const run = await runFor(ctx.db, month, actorOf(ctx), { open, company });
 
-  const [staff, profiles, allowances, schemes, members, scores, penalties, severances,
+  const [everybody, profiles, allowances, schemes, members, scores, penalties, severances,
     advances, entries, slips]
     = await Promise.all([
-      ctx.db.prepare('SELECT id, name, department, job_title, employee_no, active, hired_on, left_on FROM att_staff ORDER BY name').all(),
+      ctx.db.prepare('SELECT id, name, department, job_title, employee_no, active, hired_on, left_on, company_id FROM att_staff ORDER BY name').all()
+        // A database from before there were companies has no column to read.
+        .catch(() => ctx.db.prepare('SELECT id, name, department, job_title, employee_no, active, hired_on, left_on FROM att_staff ORDER BY name').all()),
       ctx.db.prepare('SELECT * FROM pay_profile').all(),
       ctx.db.prepare('SELECT * FROM pay_allowance WHERE active = 1').all(),
       ctx.db.prepare(
@@ -136,15 +176,26 @@ async function gather(ctx, month, { open = true } = {}) {
       ctx.db.prepare('SELECT * FROM pay_slip WHERE run_id = ?').bind(run.id).all(),
     ]);
 
+  // This company's people, and anybody already on one of its payslips this
+  // month: a slip is a record of who was paid by whom, and somebody moved to
+  // the other company since stays on the one that paid them.
+  const slipped = new Set((slips.results ?? []).map((s) => s.staff_id));
+  const staff = {
+    results: (everybody.results ?? [])
+      .filter((p) => companyOf(p) === company || slipped.has(p.id)),
+  };
+  const ours = new Set(staff.results.map((p) => p.id));
+
   // What has already gone out as bonus this year, which the 15% ceiling on the
   // five per cent rate is measured against.
   const year = month.slice(0, 4);
   const earlier = await ctx.db.prepare(
     `SELECT s.staff_id, SUM(s.bonus_gross) AS paid
        FROM pay_slip s JOIN pay_run r ON r.id = s.run_id
-      WHERE r.status = 'final' AND r.month LIKE ?1 AND r.month < ?2
+      WHERE r.status = 'final' AND r.month LIKE ?1 AND substr(r.month, 1, 7) < ?2
+        AND r.company_id = ?3
       GROUP BY s.staff_id`,
-  ).bind(`${year}-%`, month).all().catch(() => ({ results: [] }));
+  ).bind(`${year}-%`, month, company).all().catch(() => ({ results: [] }));
 
   // Plus whatever was paid before this app was keeping the ledger. Only
   // counted for the year it was written against, so it stops mattering on its
@@ -177,7 +228,9 @@ async function gather(ctx, month, { open = true } = {}) {
     scores: scores.results ?? [],
     penalties: penalties.results ?? [],
     severances: severances.results ?? [],
-    advances: advances.results ?? [],
+    // Only this company's people's. Another company's advance is not
+    // something this payroll could take anything off.
+    advances: (advances.results ?? []).filter((a) => ours.has(a.staff_id)),
     entriesBy,
     slipBy: new Map((slips.results ?? []).map((s) => [s.staff_id, s])),
     paidBy: new Map((staff.results ?? []).map((person) => {
@@ -439,10 +492,15 @@ export async function payroll(ctx) {
   // Which rung of a tiered scheme somebody was put on. Null everywhere else.
   const tierBy = new Map(data.scores.map((r) => [`${r.scheme_id}|${r.staff_id}`, r.tier]));
 
+  const { settings: all } = await settingsOf(ctx.db);
   return json({
     month,
     currency: data.currency,
     property: data.property,
+    // Whose payroll this is, and the others there are to switch to. One
+    // company is the ordinary case, and the screen shows no switch for it.
+    company: ctx.company,
+    companies: (await companies(ctx.db, all)).map((c) => ({ id: c.id, name: c.legalName || data.property || 'The main company', main: c.main })),
     status: data.run.status,
     closedBy: data.run.closed_by,
     closedAt: data.run.closed_at,
@@ -768,7 +826,7 @@ export async function inputTemplate(ctx) {
     for (const p of c.data.penalties ?? []) {
       deductionBy.set(p.staff_id, round2((deductionBy.get(p.staff_id) ?? 0) + round2(p.amount)));
     }
-    const employer = settings.company_name || property || 'Payroll';
+    const employer = ctx.company?.legalName || settings.company_name || property || 'Payroll';
     const sheet = inputSheet({
       title: `${employer} \u2014 payroll input for ${month}`,
       month,
@@ -861,6 +919,7 @@ export async function readInput(ctx) {
 
   const { timezone } = await settingsOf(ctx.db);
   const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
+  await useCompany(ctx, body.company);
   const c = await sheetContext(ctx, month);
 
   const read = readSheet(text, c);
@@ -880,13 +939,14 @@ export async function applyInput(ctx) {
 
   const { timezone } = await settingsOf(ctx.db);
   const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
+  await useCompany(ctx, body.company);
   const c = await sheetContext(ctx, month);
   if (c.data.run.status === 'final') {
     throw badRequest('That month is closed. Open it again before changing anything in it.');
   }
 
   const read = readSheet(text, c);
-  const run = await runFor(ctx.db, month, actorOf(ctx));
+  const run = await runFor(ctx.db, month, actorOf(ctx), { company: companyIdOf(ctx) });
   const actor = actorOf(ctx);
 
   // An allowance or a bonus scheme the property has not got is made only when
@@ -1144,16 +1204,13 @@ async function monthReturn(ctx) {
 /** The month's journal and PAYE schedule, for the screen. */
 export async function returns(ctx) {
   const { month, data, totals, journal, schedule, ssnit, missing } = await monthReturn(ctx);
-  const map = (await settingsOf(ctx.db)).settings ?? {};
   return json({
     month,
     // What the heading of the GRA's form asks for, so the screen can head the
-    // schedule the way the paper does.
-    employer: {
-      name: map.company_legal_name || data.property || '',
-      tin: map.company_tin || '',
-      taxOffice: taxOfficeOf(map),
-    },
+    // schedule the way the paper does. The company whose return it is.
+    employer: employerOf(ctx, data),
+    // In full, for the heading of the paper.
+    company: ctx.company,
     currency: data.currency,
     property: data.property,
     status: data.run.status,
@@ -1201,10 +1258,10 @@ export function taxOfficeOf(settings = {}) {
  */
 export async function exportBook(ctx) {
   const { month, data, lines, totals, journal, schedule, ssnit } = await monthReturn(ctx);
-  const map = (await settingsOf(ctx.db)).settings ?? {};
-  const employer = map.company_legal_name || data.property || '';
-  const employerTin = map.company_tin || '';
-  const employerSsnit = map.company_ssnit || '';
+  const who = employerOf(ctx, data);
+  const employer = who.name;
+  const employerTin = who.tin;
+  const employerSsnit = who.ssnit;
   // The form wants the month as MM/YYYY, and a form headed the wrong month is
   // the one mistake on it nobody notices until the assessment arrives.
   const [year, mm] = String(month).split('-');
@@ -1286,7 +1343,7 @@ export async function exportBook(ctx) {
   // be filed or pasted into the GRA's sheet as it comes out.
   const cols = PAYE_COLUMNS;
   const width = cols.length; // A to AC
-  const office = taxOfficeOf(map);
+  const office = who.taxOffice;
 
   const TNR = 'Times New Roman';
   const box = { l: 'thin', r: 'thin', t: 'thin', b: 'thin' };
@@ -1544,8 +1601,7 @@ async function bankRunFor(ctx) {
  */
 export async function bankPayments(ctx) {
   const { month, data, file } = await bankRunFor(ctx);
-  const map = (await settingsOf(ctx.db)).settings ?? {};
-  const employer = map.company_legal_name || data.property || '';
+  const employer = employerOf(ctx, data).name;
   const stem = `${(employer || 'Payroll').replace(/[^A-Za-z0-9]+/g, '-')}-net-pay-${month}`;
 
   if (ctx.url.searchParams.get('as') === 'csv') {
@@ -1639,6 +1695,10 @@ export async function payslip(ctx, staffParam) {
   const { timezone } = await settingsOf(ctx.db);
   const month = monthFrom(ctx.url, timezone);
   const staffId = int(staffParam, 'Who', { required: true, min: 1 });
+  // Their own company's payroll, whichever one the screen was on.
+  const person = await ctx.db.prepare('SELECT company_id FROM att_staff WHERE id = ?')
+    .bind(staffId).first().catch(() => null);
+  await useCompany(ctx, companyOf(person));
   const data = await gather(ctx, month);
 
   const slip = data.slipBy.get(staffId);
@@ -1653,6 +1713,8 @@ export async function payslip(ctx, staffParam) {
     property: data.property,
     status: data.run.status,
     closedAt: data.run.closed_at,
+    // The employer the slip is headed with.
+    company: ctx.company,
     line,
   });
 }
@@ -1705,11 +1767,13 @@ export async function myPayslips(ctx) {
   // only one of them is worth telling somebody about.
   if (!staffId) return json({ linked: false, currency, property, months: [], line: null });
 
+  // The month without the company on the end of its key; which company paid
+  // them that month heads the slip.
   const rows = await ctx.db.prepare(
-    `SELECT r.month, r.closed_at, s.detail, s.gross, s.net
+    `SELECT substr(r.month, 1, 7) AS month, r.company_id, r.closed_at, s.detail, s.gross, s.net
        FROM pay_slip s JOIN pay_run r ON r.id = s.run_id
       WHERE s.staff_id = ?1 AND r.status = 'final'
-      ORDER BY r.month DESC`,
+      ORDER BY substr(r.month, 1, 7) DESC`,
   ).bind(staffId).all();
 
   const slips = rows.results ?? [];
@@ -1744,10 +1808,9 @@ export async function myPayslips(ctx) {
     month: wanted?.month ?? null,
     closedAt: wanted?.closed_at ?? null,
     line: wanted ? JSON.parse(wanted.detail) : null,
-    company: {
-      legalName: settings.company_legal_name ?? '',
-      tin: settings.company_tin ?? '',
-    },
+    company: wanted
+      ? await companyById(ctx.db, wanted.company_id ?? MAIN, settings)
+      : { legalName: settings.company_legal_name ?? '', tin: settings.company_tin ?? '' },
   });
 }
 
@@ -2129,13 +2192,15 @@ export async function copyRun(ctx) {
   const body = await readJson(ctx.request);
   const { timezone } = await settingsOf(ctx.db);
   const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
+  await useCompany(ctx, body.company);
   const from = isMonth(body.from) ? body.from : addMonths(month, -1);
   if (from >= month) throw badRequest('A month can only be started from an earlier one.');
 
-  const source = await ctx.db.prepare('SELECT * FROM pay_run WHERE month = ?').bind(from).first();
+  const source = await ctx.db.prepare('SELECT * FROM pay_run WHERE month = ?')
+    .bind(runKey(from, companyIdOf(ctx))).first();
   if (!source) throw notFound(`There is no payroll for ${from} to copy.`);
 
-  const run = await runFor(ctx.db, month, actorOf(ctx));
+  const run = await runFor(ctx.db, month, actorOf(ctx), { company: companyIdOf(ctx) });
   if (run.status === 'final') {
     throw badRequest('That month is closed. Open it again before copying anything into it.');
   }
@@ -2213,7 +2278,8 @@ export async function setScores(ctx) {
   const body = await readJson(ctx.request);
   const { timezone } = await settingsOf(ctx.db);
   const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
-  const run = await runFor(ctx.db, month, actorOf(ctx));
+  await useCompany(ctx, body.company);
+  const run = await runFor(ctx.db, month, actorOf(ctx), { company: companyIdOf(ctx) });
   if (run.status === 'final') throw badRequest('That month is closed. Reopen it first.');
 
   const rows = Array.isArray(body.rows) ? body.rows : [];
@@ -2285,7 +2351,8 @@ export async function addSeverance(ctx) {
   const body = await readJson(ctx.request);
   const { timezone } = await settingsOf(ctx.db);
   const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
-  const run = await runFor(ctx.db, month, actorOf(ctx));
+  await useCompany(ctx, body.company);
+  const run = await runFor(ctx.db, month, actorOf(ctx), { company: companyIdOf(ctx) });
   if (run.status === 'final') throw badRequest('That month is closed. Reopen it first.');
 
   const staffId = int(body.staffId, 'Who', { required: true, min: 1 });
@@ -2383,7 +2450,8 @@ export async function addPenalty(ctx) {
   const body = await readJson(ctx.request);
   const { timezone, currency } = await settingsOf(ctx.db);
   const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
-  const run = await runFor(ctx.db, month, actorOf(ctx));
+  await useCompany(ctx, body.company);
+  const run = await runFor(ctx.db, month, actorOf(ctx), { company: companyIdOf(ctx) });
   if (run.status === 'final') throw badRequest('That month is closed. Reopen it first.');
 
   const staffId = int(body.staffId, 'Who', { required: true, min: 1 });
@@ -2451,8 +2519,9 @@ export async function closeRun(ctx) {
   const body = await readJson(ctx.request);
   const { timezone } = await settingsOf(ctx.db);
   const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
+  await useCompany(ctx, body.company);
 
-  const run = await runFor(ctx.db, month, actorOf(ctx));
+  const run = await runFor(ctx.db, month, actorOf(ctx), { company: companyIdOf(ctx) });
   if (run.status === 'final') throw badRequest('That month is already closed.');
 
   const data = await gather(ctx, month);
@@ -2504,17 +2573,25 @@ export async function closeRun(ctx) {
   await ctx.db.prepare(
     `INSERT INTO hr_advance_month (month, closed_by, note) VALUES (?1, ?2, ?3)
      ON CONFLICT (month) DO NOTHING`,
-  ).bind(month, actorOf(ctx), `Closed with the payroll for ${month}`).run().catch(() => {});
+  ).bind(month, actorOf(ctx), closedWithNote(ctx, month)).run().catch(() => {});
 
   await ctx.db.prepare(
     "UPDATE pay_run SET status = 'final', closed_by = ?2, closed_at = datetime('now'), note = ?3 WHERE id = ?1",
   ).bind(run.id, actorOf(ctx), str(body.note, 'Note', { max: 300 })).run();
 
   const totals = totalsOf(lines);
-  await audit(ctx, 'payroll.close', month, totals);
+  await audit(ctx, 'payroll.close', runKey(month, companyIdOf(ctx)), totals);
 
-  return json({ ok: true, month, people: lines.length, totals });
+  return json({ ok: true, month, company: companyIdOf(ctx), people: lines.length, totals });
 }
+
+/**
+ * What closing a payroll writes against the advances month. Another company's
+ * says which, so reopening one company's payroll only takes back its own.
+ */
+const closedWithNote = (ctx, month) => (companyIdOf(ctx) === MAIN
+  ? `Closed with the payroll for ${month}`
+  : `Closed with the ${ctx.company?.legalName || 'other company'} payroll for ${month}`);
 
 /**
  * Open a closed month again.
@@ -2527,15 +2604,24 @@ export async function reopenRun(ctx) {
   const body = await readJson(ctx.request);
   const { timezone } = await settingsOf(ctx.db);
   const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
+  await useCompany(ctx, body.company);
 
-  const run = await ctx.db.prepare('SELECT * FROM pay_run WHERE month = ?').bind(month).first();
+  const run = await ctx.db.prepare('SELECT * FROM pay_run WHERE month = ?')
+    .bind(runKey(month, companyIdOf(ctx))).first();
   if (!run) throw notFound('No payroll for that month.');
   if (run.status !== 'final') throw badRequest('That month is not closed.');
 
-  await ctx.db.prepare('DELETE FROM pay_slip WHERE run_id = ?').bind(run.id).run();
+  // The repayments this run recorded: the payroll's own, for the people on its
+  // payslips. Taken back before the payslips go, because they are how the
+  // people are found. Another company's payroll the same month keeps its own.
   const undone = await ctx.db.prepare(
-    "DELETE FROM hr_advance_entry WHERE month = ? AND source = 'payroll'",
-  ).bind(month).run().catch(() => null);
+    `DELETE FROM hr_advance_entry
+      WHERE month = ?1 AND source = 'payroll'
+        AND advance_id IN (SELECT a.id FROM hr_advance a
+                             JOIN pay_slip s ON s.staff_id = a.staff_id
+                            WHERE s.run_id = ?2)`,
+  ).bind(month, run.id).run().catch(() => null);
+  await ctx.db.prepare('DELETE FROM pay_slip WHERE run_id = ?').bind(run.id).run();
 
   // And the advances month it closed off, if it was this that closed it. Only
   // its own mark: a month somebody closed off by hand on the Advances page is
@@ -2543,7 +2629,7 @@ export async function reopenRun(ctx) {
   // repayments alone leaves this alone too.
   await ctx.db.prepare(
     'DELETE FROM hr_advance_month WHERE month = ? AND note = ?',
-  ).bind(month, `Closed with the payroll for ${month}`).run().catch(() => {});
+  ).bind(month, closedWithNote(ctx, month)).run().catch(() => {});
 
   // An advance settled by a repayment that has just been taken back is not
   // settled any more.
@@ -2558,8 +2644,8 @@ export async function reopenRun(ctx) {
     "UPDATE pay_run SET status = 'draft', closed_by = NULL, closed_at = NULL WHERE id = ?",
   ).bind(run.id).run();
 
-  await audit(ctx, 'payroll.reopen', month, { repayments: Number(undone?.meta?.changes ?? 0) });
-  return json({ ok: true, month });
+  await audit(ctx, 'payroll.reopen', runKey(month, companyIdOf(ctx)), { repayments: Number(undone?.meta?.changes ?? 0) });
+  return json({ ok: true, month, company: companyIdOf(ctx) });
 }
 
 const money = (amount, currency = 'GHS') => {

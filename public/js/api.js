@@ -153,6 +153,17 @@ async function request(path, { method = 'GET', body, signal } = {}) {
   return data;
 }
 
+/**
+ * The company the payroll screens are on. Null is the main company, and is
+ * left off every request so the server reads it the way it always has.
+ */
+let payCompany = null;
+export function setPayCompany(id) { payCompany = Number(id) > 1 ? Number(id) : null; }
+export const getPayCompany = () => payCompany ?? 1;
+const withCompany = (body = {}) => (payCompany ? { ...body, company: payCompany } : body);
+/** `&company=2`, or nothing for the main company, for a link to a download. */
+export const companyQuery = (joiner = '&') => (payCompany ? `${joiner}company=${payCompany}` : '');
+
 export const api = {
   ApiError,
   login: (pin) => request('/api/auth/login', { method: 'POST', body: { pin } }),
@@ -385,22 +396,25 @@ export const api = {
   medicalReceiptUrl: (id, fileId = null) => `/api/medical/receipt/${id}${fileId ? `?file=${fileId}` : ''}`,
 
   // ------------------------------------------------------------- payroll --
+  // Every payroll call carries the company the screen is on. Nothing set is
+  // the main company, which is what every call meant before there were two.
   payroll: (month, compare) => {
     const q = new URLSearchParams();
     if (month) q.set('month', month);
     if (compare) q.set('compare', compare);
+    if (payCompany) q.set('company', payCompany);
     return request(`/api/payroll${q.toString() ? `?${q}` : ''}`);
   },
   payslip: (staffId, month) => request(`/api/payroll/slip/${staffId}${month ? `?month=${month}` : ''}`),
   payrollProfiles: (body) => request('/api/payroll/profiles', { method: 'POST', body }),
   payrollScheme: (body) => request('/api/payroll/schemes', { method: 'POST', body }),
   payrollRemoveScheme: (id) => request(`/api/payroll/schemes/${id}`, { method: 'DELETE' }),
-  payrollScores: (body) => request('/api/payroll/scores', { method: 'POST', body }),
-  payrollPenalty: (body) => request('/api/payroll/penalties', { method: 'POST', body }),
+  payrollScores: (body) => request('/api/payroll/scores', { method: 'POST', body: withCompany(body) }),
+  payrollPenalty: (body) => request('/api/payroll/penalties', { method: 'POST', body: withCompany(body) }),
   payrollRemovePenalty: (id) => request(`/api/payroll/penalties/${id}`, { method: 'DELETE' }),
-  payrollSeverance: (body) => request('/api/payroll/severance', { method: 'POST', body }),
+  payrollSeverance: (body) => request('/api/payroll/severance', { method: 'POST', body: withCompany(body) }),
   payrollRemoveSeverance: (id) => request(`/api/payroll/severance/${id}`, { method: 'DELETE' }),
-  payrollReturns: (month) => request(`/api/payroll/returns?month=${encodeURIComponent(month)}`),
+  payrollReturns: (month) => request(`/api/payroll/returns?month=${encodeURIComponent(month)}${companyQuery('&')}`),
   payrollAccess: () => request('/api/payroll/access'),
   payrollUnlock: (body) => request('/api/payroll/unlock', { method: 'POST', body }),
   payrollSetPin: (body) => request('/api/payroll/pin', { method: 'POST', body }),
@@ -409,11 +423,16 @@ export const api = {
   payrollGrants: () => request('/api/payroll/grants'),
   payrollGrant: (body) => request('/api/payroll/grants', { method: 'POST', body }),
   payrollRevoke: (id) => request(`/api/payroll/grants/${id}`, { method: 'DELETE' }),
-  payrollCopy: (body) => request('/api/payroll/copy', { method: 'POST', body }),
-  payrollReadInput: (body) => request('/api/payroll/input/read', { method: 'POST', body }),
-  payrollApplyInput: (body) => request('/api/payroll/input/apply', { method: 'POST', body }),
-  payrollClose: (body) => request('/api/payroll/close', { method: 'POST', body }),
-  payrollReopen: (body) => request('/api/payroll/reopen', { method: 'POST', body }),
+  payrollCopy: (body) => request('/api/payroll/copy', { method: 'POST', body: withCompany(body) }),
+  payrollReadInput: (body) => request('/api/payroll/input/read', { method: 'POST', body: withCompany(body) }),
+  payrollApplyInput: (body) => request('/api/payroll/input/apply', { method: 'POST', body: withCompany(body) }),
+  payrollClose: (body) => request('/api/payroll/close', { method: 'POST', body: withCompany(body) }),
+  payrollReopen: (body) => request('/api/payroll/reopen', { method: 'POST', body: withCompany(body) }),
+
+  companies: () => request('/api/att/companies'),
+  createCompany: (body) => request('/api/att/companies', { method: 'POST', body }),
+  updateCompany: (id, body) => request(`/api/att/companies/${id}`, { method: 'PUT', body }),
+  removeCompany: (id) => request(`/api/att/companies/${id}`, { method: 'DELETE' }),
 
   attBirthdays: () => request('/api/att/birthdays'),
   attBirthdayCard: (body) => request('/api/att/birthdays/card', { method: 'POST', body }),
@@ -499,7 +518,7 @@ export const api = {
   lunchSetSchedule: (body) => request('/api/lunch/schedule', { method: 'POST', body }),
   lunchDecideChange: (id, body) => request(`/api/lunch/changes/${id}`, { method: 'POST', body }),
   lunchTell: (week) => request('/api/lunch/tell', { method: 'POST', body: { week } }),
-  attRemoveLogo: () => request('/api/att/company/logo', { method: 'DELETE' }),
+  attRemoveLogo: (company) => request(`/api/att/company/logo${company ? `?company=${company}` : ''}`, { method: 'DELETE' }),
   attRecompute: (body) => request('/api/att/recompute', { method: 'POST', body }),
 
   // ------------------------------------------------------ employee records --

@@ -244,14 +244,15 @@ export async function pull({ db, from, to }) {
   // the 3rd to the 9th of March is still a window in which March's payroll is
   // the relevant payroll. And the two months before it: a pay run is often
   // finalised weeks after its month ends, after the nightly window has moved
-  // on, and it would otherwise never be read.
+  // on, and it would otherwise never be read. A second company's run is keyed
+  // '2026-10@2', so the month is its first seven characters.
   const [slips, slipNote] = await optional(db, `
-    SELECT r.month, s.staff_id, s.gross, s.bonus_gross, s.ssf_employee,
+    SELECT substr(r.month, 1, 7) AS month, s.staff_id, s.gross, s.bonus_gross, s.ssf_employee,
            s.ssf_employer, s.paye, s.loans, s.net, s.cost
       FROM pay_slip s
       JOIN pay_run r ON r.id = s.run_id
      WHERE r.status = 'final'
-       AND r.month BETWEEN ?1 AND ?2`, [shiftMonth(from.slice(0, 7), -2), to.slice(0, 7)], 'pay_slip');
+       AND substr(r.month, 1, 7) BETWEEN ?1 AND ?2`, [shiftMonth(from.slice(0, 7), -2), to.slice(0, 7)], 'pay_slip');
 
   for (const row of slips) {
     const who = byId.get(row.staff_id) || { line: 'admin', department: '' };

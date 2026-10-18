@@ -7473,3 +7473,11 @@ a.btn, a.btn-sm { text-decoration: none; display: inline-flex; align-items: cent
   }
   .toolbar-more-wrap.is-always .toolbar-more.open > * { justify-content: start; width: 100%; }
 }
+
+/* The companies under Settings → Company. */
+.companies-lead { margin: 0 0 .8rem; }
+.companies-grid { display: grid; gap: 1rem; }
+.company-facts { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1.2rem; margin: 0 0 .9rem; }
+.company-facts dt { color: var(--text-dim); }
+.company-facts dd { margin: 0; }
+.pay-company { margin: .35rem 0 .2rem; }

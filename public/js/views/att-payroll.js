@@ -1,4 +1,4 @@
-import { api } from '../api.js';
+import { api, companyQuery, setPayCompany } from '../api.js';
 import {
   confirmAction, deltaBadge, fmtNum, h, keepPlace, money, monthOf, mount, shiftMonth, toast,
   todayISO,
@@ -11,7 +11,7 @@ import {
 import { holdRefresh, replaceParams, warnBeforeLeaving } from '../app.js';
 import { printReport } from '../print.js';
 import { niceMonth } from './att-advances.js';
-import { companyOf, payslipPage, showPayslips } from './payslip.js';
+import { companyFrom, payslipPage, showPayslips } from './payslip.js';
 import { returnsSheet } from './pay-returns.js';
 import { readXlsx } from '../xlsx-read.js';
 
@@ -72,8 +72,13 @@ export async function renderAttPayroll(params) {
     return host;
   }
 
+  // Whose payroll. Each company has its own month, closed on its own; the
+  // main company's is the one that opens when nothing is said.
+  setPayCompany(params.company);
   const data = await api.payroll(month, params.compare || null);
   const cash = (n) => money(n, data.currency);
+  const companies = data.companies ?? [];
+  const companyId = Number(data.company?.id) || 1;
   const closed = data.status === 'final';
 
   const reload = async (next = {}) => {
@@ -278,6 +283,15 @@ export async function renderAttPayroll(params) {
     h('div.page-head',
       h('div',
         h('h1', 'Payroll'),
+        companies.length > 1
+          ? h('div.seg.pay-company', { role: 'group', 'aria-label': 'Company' },
+            companies.map((c) => h('button', {
+              type: 'button',
+              class: c.id === companyId ? 'active' : '',
+              'aria-pressed': String(c.id === companyId),
+              onclick: () => c.id !== companyId && reload({ company: c.id === 1 ? null : c.id, step: null }),
+            }, c.name)))
+          : null,
         // Which table this month is worked out on, and where it started. A
         // payroll run after a budget change is exactly when somebody needs to
         // see that March is still on March's figures.
@@ -789,18 +803,18 @@ function exportButton(data, month, closed) {
       {
         label: 'Excel',
         title: 'The month, the journal and the GRA schedule as one workbook',
-        href: `/api/payroll/book?month=${encodeURIComponent(month)}`,
+        href: `/api/payroll/book?month=${encodeURIComponent(month)}${companyQuery()}`,
       },
       {
         label: 'Bank file (Excel)',
         title: 'Just the net pays and the account numbers, with the people paid by hand '
           + 'listed on their own sheet',
-        href: `/api/payroll/bank?month=${encodeURIComponent(month)}`,
+        href: `/api/payroll/bank?month=${encodeURIComponent(month)}${companyQuery()}`,
       },
       {
         label: 'Bank file (CSV)',
         title: 'The transfers on their own, bare, for uploading to the bank',
-        href: `/api/payroll/bank?month=${encodeURIComponent(month)}&as=csv`,
+        href: `/api/payroll/bank?month=${encodeURIComponent(month)}&as=csv${companyQuery()}`,
       },
     ],
   });
@@ -812,7 +826,7 @@ function importButton(month, reload) {
     title: 'Take the month down as a spreadsheet, or send one back. Nothing is written '
       + 'until you agree to it.',
     template: {
-      href: `/api/payroll/input/template?month=${encodeURIComponent(month)}`,
+      href: `/api/payroll/input/template?month=${encodeURIComponent(month)}${companyQuery()}`,
       download: `payroll-input-${month}.xlsx`,
       label: 'Download this month\u2019s sheet',
     },
@@ -968,7 +982,7 @@ async function openReturns(month) {
           title: 'Take the journal and the schedule away',
           items: [
             { label: 'PDF', onClick: () => window.print(), title: 'Opens the print dialog, where Save as PDF is one of the destinations' },
-            { label: 'Excel', href: `/api/payroll/book?month=${encodeURIComponent(month)}`, title: 'The month, the journal and the GRA schedule as one workbook' },
+            { label: 'Excel', href: `/api/payroll/book?month=${encodeURIComponent(month)}${companyQuery()}`, title: 'The month, the journal and the GRA schedule as one workbook' },
           ],
         }),
         h('button.btn-sm', { onclick: () => shade.remove() }, 'Close'))),
@@ -989,7 +1003,9 @@ async function openReturns(month) {
  * it is opened from here or printed twenty-four at a time.
  */
 function openSlip(line, data, month) {
-  const page = payslipPage({ line, data, month: { key: month, nice: niceMonth(month) } });
+  const page = payslipPage({
+    line, data, month: { key: month, nice: niceMonth(month) }, company: companyFrom(data.company),
+  });
   showPayslips([page], {
     title: line.staff.name,
     subtitle: `${niceMonth(month)} · ${data.status === 'final' ? 'closed' : 'draft'}`,
@@ -998,7 +1014,7 @@ function openSlip(line, data, month) {
 
 /** Everybody's, one page each, ready for the printer. */
 function openAllSlips(data, month) {
-  const company = companyOf();
+  const company = companyFrom(data.company);
   const pages = data.lines.map((line) => payslipPage({
     line, data, month: { key: month, nice: niceMonth(month) }, company,
   }));

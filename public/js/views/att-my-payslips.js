@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { h, money, mount, toast } from '../util.js';
 import { card, emptyState } from './components.js';
 import { niceMonth } from './att-shared.js';
-import { companyOf, payslipPage, showPayslips } from './payslip.js';
+import { companyFrom, companyOf, payslipPage, showPayslips } from './payslip.js';
 
 /**
  * My payslips.
@@ -81,7 +81,7 @@ export async function renderAttMyPayslips(params) {
         line: one.line,
         data: one,
         month: { key: one.month ?? month, nice: niceMonth(one.month ?? month) },
-        company,
+        company: one.company ? companyFrom(one.company) : company,
       })], {
         title: one.line?.staff?.name ?? 'Payslip',
         subtitle: niceMonth(one.month ?? month),
