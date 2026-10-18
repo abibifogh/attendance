@@ -729,3 +729,23 @@ test('any difference with an amount goes on an account as a deficit or a surplus
   // Approving it from a screen not yet refreshed says how it was decided.
   await assert.rejects(till.approve(env, { answer: x.key, ok: true }, OWNER), /already decided: put on Kofi Test's account by Test Owner/);
 });
+
+test('admins are told an answer waits once a quarter of an hour, with what it is and how many wait in all', async () => {
+  const { env } = await setUp();
+  await env.DB.prepare("INSERT INTO till_notify (hive_user_id, name, push, email, amounts, on_closed, on_answer, on_approval) VALUES (3, 'Test Owner', 1, 1, 1, 1, 1, 1)").run();
+  const sent = [];
+  const fetchImpl = async (request) => { sent.push(JSON.parse(await request.text())); return Response.json({ ok: true }); };
+  const t0 = Date.parse('2026-10-17T23:53:00Z');
+  await routes.saveAnswer(env, { key: 'drawer:2026-08-01:afternoon', answer: 'Explained' }, SUPERVISOR, { pending: true });
+  assert.equal(await till.tellApprovers(env, { text: 'Sam answered “Explained” for the drawer count, Sat 1 Aug afternoon.' }, { fetchImpl, now: t0 }), true);
+  assert.equal(sent[0].title, 'Waiting for your approval');
+  assert.match(sent[0].body, /the drawer count, Sat 1 Aug afternoon\. Decide in Insight → ✓ Approvals\./);
+  // Two minutes later, another: not a second email.
+  await routes.saveAnswer(env, { key: 'handover:2026-08-01:night', answer: 'Explained' }, SUPERVISOR, { pending: true });
+  assert.equal(await till.tellApprovers(env, { text: 'again' }, { fetchImpl, now: t0 + 2 * 60_000 }), false);
+  assert.equal(sent.length, 1);
+  // After the quiet spell: told again, with the count as it stands.
+  assert.equal(await till.tellApprovers(env, { text: 'later' }, { fetchImpl, now: t0 + 16 * 60_000 }), true);
+  assert.equal(sent[1].title, '2 things waiting for your approval');
+  assert.match(sent[1].body, /2 are waiting in all\./);
+});
