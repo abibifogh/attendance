@@ -22,6 +22,7 @@ import { renderNicePlace } from './views/niceplace.js';
 import { openNewPo } from './views/newpo.js';
 import { renderApprovals, approvalsCount } from './views/approvals.js';
 import { renderReceipts } from './views/receipts.js';
+import { openViewAs, viewAsBar } from './views/viewas.js';
 
 export const state = {
   boot: null,
@@ -201,6 +202,8 @@ async function renderApp() {
   const account = h('details.navmenu.account',
     h('summary', h('span.navav', (state.me.account?.name || '?').trim().charAt(0).toUpperCase()), h('span.navname', state.me.account?.name || 'Account')),
     h('div.navpanel',
+      // An admin can look at Insight as somebody else sees it (look only).
+      state.me.account?.mayViewAs ? h('button', { type: 'button', onclick: () => { closeMenus(); openViewAs(); } }, '👁 View as somebody else…') : null,
       h('button', { type: 'button', onclick: () => { toggleTheme(); closeMenus(); } }, '◐ Light or dark'),
       h('button', {
         type: 'button', onclick: async () => { await api('/auth/logout', { method: 'POST' }); renderLogin(); },
@@ -230,6 +233,8 @@ async function renderApp() {
 
   mount(root,
     h('header.top',
+      // Looking as somebody else: said on top of every screen, with the way back.
+      state.me.account?.viewedBy ? viewAsBar(state.me.account) : null,
       h('span.brand', markGlyph(), h('span.brand-n', boot.group.name, h('span.brand-x', ' · Insight'))),
       nav,
       quick.childElementCount ? quick : null,

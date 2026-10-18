@@ -1,12 +1,13 @@
 import { json, HttpError, readJson, isMissingTable, csvResponse, str, badRequest } from './lib/http.js';
 import {
-  accountForCredentials, checkBootstrapPassword, clearCookie, createToken, currentAccount,
+  accountForCredentials, checkBootstrapPassword, clearCookie, clearViewAsCookie, createToken, currentAccount, mayViewAs,
   requireInsight, requireOwner, requireSession, saltForEmail, sessionCookie,
 } from './lib/auth.js';
 import { issueCode, redeemCode, systemsFor } from './lib/sso.js';
 import * as panels from './routes/panels.js';
 import * as admin from './routes/admin.js';
 import * as accounts from './routes/accounts.js';
+import * as viewAs from './routes/viewas.js';
 import * as reports from './routes/reports.js';
 import * as shiftRoutes from './routes/shifts.js';
 import * as till from './routes/till.js';
@@ -50,6 +51,13 @@ const ROUTES = [
   ['POST', '/api/auth/login', 'public', login],
   ['POST', '/api/auth/logout', 'public', logout],
   ['GET', '/api/auth/me', 'public', me],
+
+  // View as: an admin sees Insight as somebody else does, look only. These
+  // read who is really signed in themselves; stopping always works.
+  ['GET', '/api/view-as', 'public', viewAs.choices],
+  ['POST', '/api/view-as', 'public', viewAs.start],
+  ['POST', '/api/view-as/stop', 'public', viewAs.stop],
+  ['GET', '/api/view-as/log', 'owner', (env) => viewAs.log(env)],
 
   // The back channel. No session reaches it: the caller is another system's
   // server, and it proves what it is with its own shared secret. This is the
@@ -372,6 +380,10 @@ export default {
         if (role === 'supervisor') throw new HttpError(403, 'Your account opens Shifts and nothing else here.');
         if (role === 'uploader') throw new HttpError(403, 'Your account uploads files and nothing else here.');
       } else if (permission === 'owner') account = await requireOwner(request, env);
+      // Looking as somebody else is look only: nothing may change while it is on.
+      if (account?.viewedBy && request.method !== 'GET' && request.method !== 'HEAD') {
+        throw new HttpError(403, `You are viewing as ${account.name}: nothing can be changed. Stop viewing to do this as yourself.`, { viewing: true });
+      }
       else if (permission === 'link') {
         const text = await request.text();
         const ok = await verifyLink(env.SSO_SECRET_ATTENDANCE, {
@@ -519,7 +531,10 @@ async function login(env, { body }) {
 }
 
 async function logout() {
-  return json({ ok: true }, { headers: { 'Set-Cookie': clearCookie() } });
+  const headers = new Headers({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  headers.append('Set-Cookie', clearCookie());
+  headers.append('Set-Cookie', clearViewAsCookie());
+  return new Response(JSON.stringify({ ok: true }), { headers });
 }
 
 async function me(env, { request }) {
@@ -544,10 +559,14 @@ async function me(env, { request }) {
     configured: Boolean(env.SESSION_SECRET && env.DASHBOARD_PASSWORD),
     hasAccounts,
     account: account && {
+      id: account.id,
       name: account.name,
       email: account.email,
       isOwner: account.isOwner,
       bootstrap: account.bootstrap,
+      // Looking as this account: who really is, and whether they may look as others at all.
+      viewedBy: account.viewedBy || null,
+      mayViewAs: mayViewAs(account.viewedBy ? await currentAccount(request, env, { real: true }) : account),
       canSeeReports: till.roleOf(account) === 'admin',
       till: till.roleOf(account) ? { role: till.roleOf(account), access: await till.accessOf(env, account) } : null,
     },
