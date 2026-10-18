@@ -312,7 +312,7 @@ async function claim(db, staffId, day, kind) {
  * caller asking about yesterday passes today's clock plus a day. Returns how
  * far into the shift we are, which is the number every rule here is about.
  */
-function runningShift(ds, staffId, day, minutesNow) {
+export function runningShift(ds, staffId, day, minutesNow) {
   // On leave is not late, and neither is a rest day.
   if (ds.leaveBy?.get(`${staffId}|${day}`)) return null;
 

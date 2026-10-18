@@ -9,6 +9,7 @@ import {
   clockCell, correctTimesDialog, field, formDialog, hoursCell, minutesCell, needsAttention,
   reasonSelect, statusPill, totalsLine,
 } from './att-shared.js';
+import { questionRows } from './absence.js';
 
 /**
  * The morning screen.
@@ -32,7 +33,10 @@ import {
 export async function renderAttToday(params) {
   const host = h('div');
   const day = params.day || todayISO();
-  const data = await api.attDay(day);
+  const [data, asks] = await Promise.all([
+    api.attDay(day),
+    can('att_rota') && day === todayISO() ? api.absenceQuestions().catch(() => null) : Promise.resolve(null),
+  ]);
 
   const reload = async (nextDay = day) => {
     replaceParams('att-today', { day: nextDay });
@@ -303,6 +307,7 @@ export async function renderAttToday(params) {
     clocks,
     quiet,
     birthdays,
+    questionRows(asks, () => reload()),
 
     h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
       tile('On duty', `${fmtNum(data.totals.scheduled, 0)}`, 'rostered today'),

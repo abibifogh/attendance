@@ -21,12 +21,14 @@ import * as hrFaq from './routes/hr-faq.js';
 import * as authLock from './routes/auth-lock.js';
 import { watchShifts } from './lib/shift-watch.js';
 import { watchTills } from './lib/till-watch.js';
+import { watchAbsences } from './lib/absence-watch.js';
 import { watchTerminals } from './lib/terminal-watch.js';
 import { nightlyCopy } from './lib/backup.js';
 import * as birthday from './routes/birthdays.js';
 import * as attSetup from './routes/attendance-setup.js';
 import * as companies from './routes/companies.js';
 import * as tillReports from './routes/till-reports.js';
+import * as absence from './routes/absence.js';
 import * as viewAs from './routes/view-as.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
@@ -293,6 +295,9 @@ export const ROUTES = [
   ['POST', '/api/me/photo', 'att_me', mine.setMyPhoto],
   ['DELETE', '/api/me/photo', 'att_me', mine.clearMyPhoto],
   ['POST', '/api/me/running-late', 'att_me', mine.tellThemImLate],
+  ['GET', '/api/me/sick', 'att_me', absence.mySick],
+  ['POST', '/api/me/sick', 'att_me', absence.sayOffSick],
+  ['POST', '/api/me/sick-notes/:id', 'att_me', absence.sendSickNote],
   // Their own signed contract, the same document and the same certificate the
   // office sees. The file route is for the ones signed on paper, where the
   // contract is a scan rather than words.
@@ -458,6 +463,8 @@ export const ROUTES = [
   ['POST', '/api/att/rota-import/confirm', 'att_rota', rotaImport.confirmRotaImport],
   ['POST', '/api/att/rota-import/discard', 'att_rota', rotaImport.discardRotaImport],
 
+  ['GET', '/api/att/absence-questions', 'att_rota', absence.listQuestions],
+  ['POST', '/api/att/absence-questions/:id/answer', 'att_rota', absence.answerQuestion],
   ['GET', '/api/att/leave', 'att_view', att.listLeave],
   ['POST', '/api/att/leave', 'att_rota', att.requestLeave],
   ['GET', '/api/att/leave/:id/days', 'att_manage', att.leaveDays],
@@ -1030,6 +1037,17 @@ export default {
       if (tills.before || tills.after) {
         console.log(`Till: ${tills.before} reminded before the end, ${tills.after} after`);
       }
+
+      // And the question to whoever runs the floor when somebody has not come
+      // in: off sick, absent, or here? Asked until somebody answers.
+      const absences = await watchAbsences(env.DB, {
+        timezone,
+        ctx: { env, executionContext },
+      }).catch((err) => {
+        console.error('Absence watch failed', err);
+        return { asked: 0 };
+      });
+      if (absences.asked) console.log(`Attendance: ${absences.asked} off sick or absent question(s) asked`);
 
       // And whether the terminal is still being heard, which is the one fact
       // every other line on the attendance screens quietly depends on.

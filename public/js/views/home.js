@@ -4,6 +4,7 @@ import { fmtSince, h, mount, todayISO } from '../util.js';
 import { face } from './components.js';
 import { lateBy } from './att-shared.js';
 import { byDepartment, sayHowItStands, standing, toDealWith } from '../today-groups.js';
+import { questionCard, settledList } from './absence.js';
 
 /**
  * Home, for everybody who runs the floor.
@@ -17,10 +18,12 @@ export async function renderHome() {
   const day = todayISO();
   const decides = ['att_manage', 'att_setup', 'att_rota', 'hr_pay', 'hr_manage', 'lunch'].some((p) => can(p));
 
-  const [today, inbox] = await Promise.all([
+  const [today, inbox, asks] = await Promise.all([
     api.attDay(day).catch(() => null),
     decides ? api.inbox().catch(() => null) : Promise.resolve(null),
+    can('att_rota') ? api.absenceQuestions().catch(() => null) : Promise.resolve(null),
   ]);
+  const reload = async () => mount(host, ...(await renderHome()).childNodes);
 
   const rows = today?.rows ?? [];
   const count = (s) => rows.filter((r) => standing(r) === s).length;
@@ -44,6 +47,11 @@ export async function renderHome() {
       can('att_rota') || can('att_rota_view')
         ? h('div.btn-row', h('a.btn', { href: '#/att-rota' }, 'Open the rota'))
         : null),
+
+    asks?.open?.length
+      ? h('div.ask-cards', asks.open.map((q) => questionCard(q, reload)))
+      : null,
+    asks?.open?.length ? settledList((asks.settled ?? []).filter((q) => q.day === asks.today)) : null,
 
     h('div.home-tiles',
       tile(count('green') + late.length, 'In today'),

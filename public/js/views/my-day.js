@@ -5,6 +5,8 @@ import { emptyState } from './components.js';
 import { shiftHours } from './att-shared.js';
 import { countdownCard, onShiftCard } from './att-me.js';
 import { icon } from '../icons.js';
+import { mySickCards } from './absence.js';
+import { shrink } from './att-my-medical.js';
 
 /**
  * Home, for somebody's own day.
@@ -17,12 +19,14 @@ import { icon } from '../icons.js';
 export async function renderMyDay() {
   const host = h('div.my-day');
 
-  const [week, till, issues, handbook] = await Promise.all([
+  const [week, till, issues, handbook, sick] = await Promise.all([
     api.myWeek().catch((err) => ({ error: err.message })),
     can('till') ? api.myTill().catch(() => null) : Promise.resolve(null),
     can('till') ? api.tillIssues().catch(() => null) : Promise.resolve(null),
     api.handbook().catch(() => null),
+    api.mySick().catch(() => null),
   ]);
+  const reload = async () => mount(host, ...(await renderMyDay()).childNodes);
 
   const first = String(state.name || '').split(/\s+/)[0];
   const head = h('div.page-head',
@@ -34,6 +38,10 @@ export async function renderMyDay() {
     mount(host, head, emptyState('Nothing to show yet', week.error));
     return host;
   }
+
+  // Off sick today: no countdown to a shift they are not coming in for.
+  const off = sick?.sick;
+  const offToday = Boolean(off && off.status === 'approved' && off.from <= week.today && off.to >= week.today);
 
   const todo = [];
 
@@ -80,7 +88,8 @@ export async function renderMyDay() {
 
   mount(host,
     head,
-    week.onShift ? onShiftCard(week) : countdownCard(week),
+    week.onShift ? onShiftCard(week) : offToday && week.next?.day === week.today ? null : countdownCard(week),
+    mySickCards(sick, { reload, shrink }),
 
     todo.length
       ? h('section.my-todo', { 'aria-labelledby': 'my-todo' },

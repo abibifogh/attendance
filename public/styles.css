@@ -7527,3 +7527,56 @@ a.btn, a.btn-sm { text-decoration: none; display: inline-flex; align-items: cent
 .till-history-reopened q { color: var(--text-dim); font-style: italic; }
 .tr-actions { justify-content: flex-end; margin-top: .2rem; }
 @media (max-width: 620px) { .tr-actions { justify-content: flex-start; } }
+
+/* ---------------------------------------------- off sick, absent, or here -- */
+.ask-cards { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-bottom: 1rem; }
+.ask-card { margin: 0; display: grid; gap: .75rem; box-shadow: var(--shadow); }
+.ask-who { display: flex; align-items: center; gap: .75rem; }
+.ask-who > div { display: grid; gap: .1rem; min-width: 0; }
+.ask-eyebrow, .note-eyebrow { font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--warn); }
+.ask-title { margin: 0; font-size: 1.3rem; line-height: 1.2; text-wrap: balance; }
+.ask-card > p { margin: 0; }
+.ask-note { background: var(--accent-soft); border-radius: var(--radius-sm); padding: .6rem .75rem; font-size: .88rem; line-height: 1.45; }
+.ask-buttons { display: grid; gap: .5rem; }
+.ask-buttons .btn { min-height: 46px; justify-content: center; }
+.ask-buttons .ask-yes { min-height: 52px; font-weight: 800; font-size: 1rem; }
+.ask-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.ask-buttons.is-row { display: flex; flex-wrap: wrap; gap: .5rem; }
+.ask-buttons.is-row .ask-pair { display: flex; gap: .5rem; }
+.ask-buttons.is-row .btn, .ask-buttons.is-row .ask-yes { min-height: 42px; font-size: .9rem; }
+.ask-foot { display: flex; justify-content: space-between; gap: .5rem; flex-wrap: wrap; font-size: .82rem; color: var(--text-dim); border-top: 1px solid var(--border); padding-top: .6rem; }
+.ask-settled { display: grid; gap: .25rem; margin-bottom: 1rem; }
+.ask-settled span { font-size: .88rem; }
+
+.ask-rows { margin-bottom: 1rem; }
+.ask-row { display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(140px, .9fr) minmax(0, 1.4fr) auto; align-items: center; gap: 1rem; padding: .8rem 0; border-top: 1px solid var(--border); }
+.ask-row.is-settled { opacity: .85; }
+.ask-row-who { display: flex; align-items: center; gap: .6rem; min-width: 0; }
+.ask-row-who > div, .ask-row-shift { display: grid; min-width: 0; }
+.ask-late { color: var(--warn); font-weight: 700; }
+.ask-row-note { font-size: .88rem; }
+.ask-rule { margin: .75rem 0 0; font-size: .85rem; }
+@media (max-width: 900px) {
+  .ask-row { grid-template-columns: 1fr auto; }
+  .ask-row-note, .ask-row .ask-buttons { grid-column: 1 / -1; }
+}
+
+.ask-sheet { display: grid; gap: .9rem; }
+.ask-sheet > p { margin: 0; }
+.ask-set { border: 0; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.ask-set legend { font-weight: 700; font-size: .92rem; margin-bottom: .4rem; padding: 0; }
+.ask-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.ask-chip { position: relative; display: inline-flex; }
+.ask-chip input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.ask-chip span, .ask-chip-btn { display: inline-flex; align-items: center; min-height: 40px; padding: 0 .9rem; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font: inherit; font-weight: 600; font-size: .88rem; cursor: pointer; }
+.ask-chip input:checked + span { background: var(--text); color: var(--surface); border-color: var(--text); font-weight: 700; }
+.ask-chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ask-time { font-size: 1.6rem; font-weight: 800; min-height: 56px; }
+.ask-what { display: grid; gap: .35rem; background: var(--warn-soft); border-radius: var(--radius-sm); padding: .7rem .85rem; font-size: .88rem; line-height: 1.45; }
+
+.sick-card, .note-card, .say-sick { display: grid; gap: .5rem; }
+.sick-card p, .note-card p, .say-sick p { margin: 0; }
+.note-card { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.note-card h2 { margin: 0; font-size: 1.15rem; }
+.note-card .btn, .say-sick .btn { min-height: 46px; justify-content: center; }
+.note-card .note-photo { min-height: 50px; font-weight: 800; }

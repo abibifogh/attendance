@@ -354,7 +354,7 @@ export async function makeClaim(data, reload, cash) {
  * and an unreadable receipt is worse than none since it still looks like
  * evidence.
  */
-async function shrink(file) {
+export async function shrink(file) {
   const LIMIT = 1_300_000;
   const raw = new Uint8Array(await file.arrayBuffer());
 
