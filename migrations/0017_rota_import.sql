@@ -71,6 +71,6 @@ CREATE TABLE IF NOT EXISTS att_name_alias (
 -- matched by shared words alone: one shares only a first name, the other only
 -- a first name against a different surname entirely.
 INSERT OR IGNORE INTO att_name_alias (alias, staff_id, created_by)
-  SELECT 'chichi ayim', id, 'Import' FROM att_staff WHERE employee_no = 'BAR001';
+  SELECT 'cecilia ayeh', id, 'Import' FROM att_staff WHERE employee_no = 'BAR001';
 INSERT OR IGNORE INTO att_name_alias (alias, staff_id, created_by)
-  SELECT 'patience naa torshie', id, 'Import' FROM att_staff WHERE employee_no = 'HSK004';
+  SELECT 'priscilla naa teiko', id, 'Import' FROM att_staff WHERE employee_no = 'HSK004';

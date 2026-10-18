@@ -164,8 +164,8 @@ test('a period reads as a sentence rather than a row of numbers', () => {
   const issues = issuesInPeriod([{ issues: ['absent'] }, { issues: ['late'] }, { issues: ['late'] }]);
 
   assert.equal(
-    describePeriod({ name: 'Angela Asare Ayima', unsigned, issues }),
-    'Angela Asare Ayima — 3 days, 1 absent, 2 late',
+    describePeriod({ name: 'Augustina Adjei Abla', unsigned, issues }),
+    'Augustina Adjei Abla — 3 days, 1 absent, 2 late',
   );
 });
 

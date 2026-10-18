@@ -2,7 +2,7 @@
 --
 -- Publishing told everybody at once and then forgot what it had done. The
 -- answer a planner got was three numbers: told 14, no login 3, silent 2. Which
--- three, and which two, it did not say, so "Doreen never got hers" could only
+-- three, and which two, it did not say, so "Dolly never got hers" could only
 -- be answered by publishing the whole fortnight again and buzzing twenty-one
 -- people who had already read it.
 --

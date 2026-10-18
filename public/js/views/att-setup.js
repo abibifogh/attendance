@@ -1105,7 +1105,7 @@ async function shiftsTab(reload) {
     const altGroups = [...new Set(shifts.map((sh) => sh.alt_group).filter(Boolean))].sort();
     const pairGroups = [...new Set(shifts.map((sh) => sh.pair_group).filter(Boolean))].sort();
 
-    // Whose shift it is, in order. "Nii, and Dorcas when Nii is not there" is
+    // Whose shift it is, in order. "Nicholas, and Dinah when Nicholas is not there" is
     // one instruction and the order is what carries it, so the rows are
     // numbered and can be taken away rather than being a set of ticks.
     const owners = readOnlyStaff(existing);

@@ -331,7 +331,7 @@ export function worksShifts(staff) {
 /**
  * The people a shift belongs to, first choice first.
  *
- * "Nii, and Dorcas when Nii is not there" is one instruction, not two facts,
+ * "Nicholas, and Dinah when Nicholas is not there" is one instruction, not two facts,
  * and it is the order that carries it. Empty means the shift belongs to
  * nobody in particular and its department answers instead.
  */

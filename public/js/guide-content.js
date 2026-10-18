@@ -2866,7 +2866,7 @@ export const GUIDE = [
       { p: 'Days a week is both things at once: what their month is measured against, and the '
         + 'ceiling the rota works to. Blank uses the property default, five days here, so the '
         + 'ordinary answer needs nothing typed. Fill it in for the people the property works '
-        + 'differently: Dorcas Sarpei and Henry Aryee are on six.' },
+        + 'differently: Dinah Sowah and Harold Armah are on six.' },
       { warn: 'One figure, so raising somebody to six days to let the rota use them also '
         + 'changes what a day of theirs is worth. It is the divisor behind their day rate on a '
         + 'payslip. Worth a look at the payroll before you move it.' },
@@ -2985,8 +2985,8 @@ export const GUIDE = [
             + 'proposed, and not counted as a gap either'],
           ['One of these runs a day', 'Give the five breakfasts the same group name. Once the '
             + 'day has settled on one, the rest are left alone'],
-          ['Whose shift it is', 'Named people only, first choice first. Nii and then Dorcas '
-            + 'means Nii while Nii can and Dorcas when he cannot, and nobody else ever'],
+          ['Whose shift it is', 'Named people only, first choice first. Nicholas and then Dinah '
+            + 'means Nicholas while Nicholas can and Dinah when he cannot, and nobody else ever'],
           ['Only if somebody is spare', 'Filled last, from whoever is left over, and never at '
             + 'the cost of a shift that has to be covered'],
           ['Days in between', 'Every other day, say. The deep clean is wanted often and not two '
@@ -3034,8 +3034,8 @@ export const GUIDE = [
         + 'for it. Group the alternatives, close the days that are shut, and mark what is only '
         + 'wanted if somebody is spare.' },
       { note: 'A shift that names its people is settled for the whole fortnight before any '
-        + 'shift that does not, which reserves them. Housekeeping main is Linda and then Atsu; '
-        + 'asked a day at a time it takes Linda for her five and by Saturday Atsu has spent his '
+        + 'shift that does not, which reserves them. Housekeeping main is Lydia and then Awuku; '
+        + 'asked a day at a time it takes Lydia for her five and by Saturday Awuku has spent his '
         + 'week on the laundry, so a shift with two people named for it ends up with neither.' },
       { p: 'The draft splits what it could not do into two lists. Shifts that had to be covered '
         + 'and were not are the work; a shut day, a covered alternative, an optional shift '

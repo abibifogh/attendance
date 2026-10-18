@@ -70,7 +70,7 @@ test('things that are not addresses are refused', () => {
 test('what is stored survives a round trip through both halves', () => {
   // The whole failure in one line: store it the way the app stores it, read it
   // the way the app reads it, and what comes out must be sendable.
-  const typed = ['kwame@niceoperation.com', 'jessica@niceoperation.com'];
+  const typed = ['kwame@niceoperation.com', 'janet@niceoperation.com'];
   const stored = JSON.stringify(typed);
   assert.deepEqual(parseRecipients(stored).filter(isEmail), typed);
 });

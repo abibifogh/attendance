@@ -18,4 +18,4 @@ ALTER TABLE att_staff ADD COLUMN max_days_per_week REAL;
 -- afterwards under Setup → Staff, and a name that does not match here simply
 -- does nothing.
 UPDATE att_staff SET max_days_per_week = 7
- WHERE name LIKE '%Sarpei%' OR name LIKE '%Aryee%';
+ WHERE name LIKE '%Sowah%' OR name LIKE '%Armah%';

@@ -96,7 +96,7 @@ async function setup() {
   raw.exec('DELETE FROM att_staff');
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, job_title, hired_on)
-     VALUES (1, '1001', 'Angela Asare Ayima', 'Housekeeping', 'Housekeeper', '2026-09-01'),
+     VALUES (1, '1001', 'Augustina Adjei Abla', 'Housekeeping', 'Housekeeper', '2026-09-01'),
             (2, '1002', 'Kofi Mensah', 'Security', 'Watchman', '2025-02-01')`,
   ).run();
 
@@ -113,10 +113,10 @@ test('a record starts empty and says what it is missing', async () => {
   const { db } = await setup();
   const data = await read(await listPeople(ctx(db)));
 
-  const angela = data.rows.find((r) => r.name === 'Angela Asare Ayima');
-  assert.ok(angela.missing.includes('Emergency contacts'));
-  assert.ok(angela.missing.includes('Mobile'));
-  assert.equal(angela.signedContracts, 0);
+  const augustina = data.rows.find((r) => r.name === 'Augustina Adjei Abla');
+  assert.ok(augustina.missing.includes('Emergency contacts'));
+  assert.ok(augustina.missing.includes('Mobile'));
+  assert.equal(augustina.signedContracts, 0);
 });
 
 test('the office can write a record and read it back', async () => {
@@ -227,7 +227,7 @@ test('a link is shown once and never stored', async () => {
   const link = await makeLink(db);
 
   assert.match(link.url, /\/i\/[0-9a-f]{48}$/);
-  assert.match(link.message, /Angela/);
+  assert.match(link.message, /Augustina/);
 
   // Only a fingerprint is kept, which is what makes a copy of the database
   // useless to whoever takes it.
@@ -244,7 +244,7 @@ test('a link opens for the person it was made for', async () => {
   assert.equal(head.needsPin, false);
 
   const packet = await read(await inviteOpen(phone(db), link.token));
-  assert.equal(packet.name, 'Angela Asare Ayima');
+  assert.equal(packet.name, 'Augustina Adjei Abla');
   assert.equal(packet.wantsDetails, true);
   assert.ok(packet.sections.length, 'and it carries the form the server defines');
 });
@@ -266,7 +266,7 @@ test('a wrong code does not open it, and a right one does', async () => {
   await assert.rejects(() => inviteOpen(phone(db, { pin: '0000' }), link.token), /code is not right/);
 
   const packet = await read(await inviteOpen(phone(db, { pin: '4821' }), link.token));
-  assert.equal(packet.name, 'Angela Asare Ayima');
+  assert.equal(packet.name, 'Augustina Adjei Abla');
 });
 
 test('a made-up link says so plainly', async () => {
@@ -309,7 +309,7 @@ test('what somebody sends lands as a claim, not as the record', async () => {
 
   const waiting = await read(await listSubmissions(ctx(db)));
   assert.equal(waiting.rows.length, 1);
-  assert.equal(waiting.rows[0].name, 'Angela Asare Ayima');
+  assert.equal(waiting.rows[0].name, 'Augustina Adjei Abla');
   assert.deepEqual(
     waiting.rows[0].changes.map((c) => c.key).sort(),
     ['contacts', 'personal_phone', 'town'],
@@ -391,7 +391,7 @@ test('issuing a contract freezes the words against the person', async () => {
   const contract = await issue(db);
 
   const row = raw.prepare('SELECT * FROM hr_contract WHERE id = ?').get(contract.id);
-  assert.equal(row.body, 'Angela Asare Ayima, Housekeeper, starting 2026-09-01. Notice: One month.');
+  assert.equal(row.body, 'Augustina Adjei Abla, Housekeeper, starting 2026-09-01. Notice: One month.');
   assert.equal(row.body_hash, await hashBody(row.body));
 
   // Editing the template afterwards must not reach a contract already issued.
@@ -407,11 +407,11 @@ test('a contract is signed, and everything about the signing is kept', async () 
 
   const packet = await read(await inviteOpen(phone(db), link.token));
   assert.equal(packet.contracts.length, 1);
-  assert.match(packet.contracts[0].body, /Angela Asare Ayima/);
+  assert.match(packet.contracts[0].body, /Augustina Adjei Abla/);
 
   await inviteSign(phone(db, {
     contractId: contract.id,
-    name: 'Angela Asare Ayima',
+    name: 'Augustina Adjei Abla',
     ink: 'data:image/png;base64,iVBORw0KGgo=',
     hash: packet.contracts[0].hash,
     agreed: true,
@@ -419,7 +419,7 @@ test('a contract is signed, and everything about the signing is kept', async () 
 
   const { contract: signed, events } = await read(await getContract(ctx(db), contract.id));
   assert.equal(signed.status, 'signed');
-  assert.equal(signed.signer_name, 'Angela Asare Ayima');
+  assert.equal(signed.signer_name, 'Augustina Adjei Abla');
   assert.equal(signed.signer_ip, '154.160.4.2');
   assert.match(signed.signer_agent, /Android/);
   assert.equal(signed.intact, true, 'the stored words still produce the recorded fingerprint');
@@ -438,7 +438,7 @@ test('signing without agreeing to sign electronically is refused', async () => {
   await inviteOpen(phone(db), link.token);
 
   await assert.rejects(
-    () => inviteSign(phone(db, { contractId: contract.id, name: 'Angela Asare Ayima', agreed: false }), link.token),
+    () => inviteSign(phone(db, { contractId: contract.id, name: 'Augustina Adjei Abla', agreed: false }), link.token),
     /Tick the box/,
   );
 });
@@ -456,7 +456,7 @@ test('a contract altered after it was sent cannot be signed', async () => {
 
   await assert.rejects(
     () => inviteSign(phone(db, {
-      contractId: contract.id, name: 'Angela Asare Ayima', agreed: true,
+      contractId: contract.id, name: 'Augustina Adjei Abla', agreed: true,
     }), link.token),
     /changed since it was sent/,
   );
@@ -465,9 +465,9 @@ test('a contract altered after it was sent cannot be signed', async () => {
 
 test('a link cannot be made to carry somebody else’s contract', async () => {
   const { db } = await setup();
-  const contract = await issue(db); // Angela's
+  const contract = await issue(db); // Augustina's
 
-  // A link for Kofi, naming Angela's contract number.
+  // A link for Kofi, naming Augustina's contract number.
   const made = await read(await createInvite(ctx(db, {
     body: { wantsDetails: false, contractIds: [contract.id] },
   }), 2));
@@ -515,7 +515,7 @@ test('the property countersigns after the employee, not before', async () => {
   );
 
   await inviteSign(phone(db, {
-    contractId: contract.id, name: 'Angela Asare Ayima', agreed: true,
+    contractId: contract.id, name: 'Augustina Adjei Abla', agreed: true,
     hash: packet.contracts[0].hash,
   }), link.token);
   await countersignContract(ctx(db, { body: { name: 'Ama Boateng' } }), contract.id);
@@ -536,7 +536,7 @@ test('a packet with nothing left in it closes itself', async () => {
     'still a contract to sign');
 
   await inviteSign(phone(db, {
-    contractId: contract.id, name: 'Angela Asare Ayima', agreed: true,
+    contractId: contract.id, name: 'Augustina Adjei Abla', agreed: true,
     hash: packet.contracts[0].hash,
   }), link.token);
 
@@ -709,7 +709,7 @@ test('a contract issued from a standard template answers its requirement when si
   const link = await makeLink(db, { wantsDetails: false, contractIds: [issued.id] });
   const packet = await read(await inviteOpen(phone(db), link.token));
   await inviteSign(phone(db, {
-    contractId: issued.id, name: 'Angela Asare Ayima', agreed: true,
+    contractId: issued.id, name: 'Augustina Adjei Abla', agreed: true,
     hash: packet.contracts[0].hash,
   }), link.token);
 

@@ -166,16 +166,16 @@ const words = (s) => (String(s ?? '').toLowerCase().match(/[a-z]+/g) ?? []);
  * than guessing:
  *
  *   The name exactly. Then an alias somebody has already confirmed, which is
- *   how "Chichi Ayim" keeps meaning Chichi every week instead of being asked
+ *   how "Cecilia Ayeh" keeps meaning Cecilia every week instead of being asked
  *   about every week.
  *
  *   Then two or more words in common, which catches a reordered or shortened
- *   name — "Angela Asare Ayima" against "Angela Ayima Asare" — without ever
+ *   name — "Augustina Adjei Abla" against "Augustina Abla Adjei" — without ever
  *   matching two different people, because two shared names is already more
  *   coincidence than a staff list of this size produces.
  *
- *   One shared word is deliberately not enough. "Emmanuel Twum" and "Emmanuel
- *   Ofori Bennie" share exactly one, and quietly rostering the wrong Emmanuel
+ *   One shared word is deliberately not enough. "Ebenezer Tawiah" and "Ebenezer
+ *   Opoku Bonsu" share exactly one, and quietly rostering the wrong Ebenezer
  *   is the sort of mistake that is only noticed at the end of the month.
  */
 export function matchStaff(name, staff, aliases = new Map()) {

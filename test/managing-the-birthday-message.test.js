@@ -96,12 +96,12 @@ test('the wording takes a name and a place and nothing else', () => {
 });
 
 test('what is written on the setup screen is what the wish says', () => {
-  const wish = greeting('Godfred Donkor', {
+  const wish = greeting('Gideon Dadzie', {
     property: 'Somewhere Nice',
     title: 'Many happy returns, {name}',
     line: 'From all of us at {property}.',
   });
-  assert.equal(wish.title, 'Many happy returns, Godfred');
+  assert.equal(wish.title, 'Many happy returns, Gideon');
   assert.equal(wish.line, 'From all of us at Somewhere Nice.');
 });
 
@@ -118,20 +118,20 @@ test('the prompt takes its words but still counts the names itself', () => {
 
 test('the daily run uses the wording that is set', async () => {
   const { db, person, set, raw } = setup();
-  person(1, 'Godfred Donkor', bornToday(), { login: true });
+  person(1, 'Gideon Dadzie', bornToday(), { login: true });
   set('att_bd_title', 'Many happy returns, {name}');
   set('att_bd_line', 'Everybody at {property} is glad you are here.');
 
   await wishThem(db, { timezone: 'UTC' });
 
   const wish = raw.prepare("SELECT title, body FROM app_notices WHERE kind = 'birthday.wish'").get();
-  assert.equal(wish.title, 'Many happy returns, Godfred');
+  assert.equal(wish.title, 'Many happy returns, Gideon');
   assert.equal(wish.body, 'Everybody at Somewhere Nice is glad you are here.');
 });
 
 test('turned off, nothing goes out at all', async () => {
   const { db, person, set, raw } = setup();
-  person(1, 'Godfred Donkor', bornToday(), { login: true });
+  person(1, 'Gideon Dadzie', bornToday(), { login: true });
   set('att_bd_wish', '0');
   set('att_bd_prompt', '0');
 
@@ -145,7 +145,7 @@ test('turned off, nothing goes out at all', async () => {
 
 test('the wish can be off while the floor is still prompted', async () => {
   const { db, person, set, raw } = setup();
-  person(1, 'Godfred Donkor', bornToday(), { login: true });
+  person(1, 'Gideon Dadzie', bornToday(), { login: true });
   set('att_bd_wish', '0');
 
   await wishThem(db, { timezone: 'UTC' });
@@ -160,7 +160,7 @@ test('the wish can be off while the floor is still prompted', async () => {
 
 test('the screen says who has no date on file', async () => {
   const { db, person } = setup();
-  person(1, 'Godfred Donkor', bornToday());
+  person(1, 'Gideon Dadzie', bornToday());
   person(2, 'Nobody Knows', null, { department: 'Housekeeping' });
 
   const data = await body(await birthdayAdmin(ctx(db)));
@@ -191,14 +191,14 @@ test('the year is twelve months, with everybody under the right one', async () =
 
 test('the preview is against a real name off the books', async () => {
   const { db, person, set } = setup();
-  person(1, 'Godfred Donkor', bornToday());
+  person(1, 'Gideon Dadzie', bornToday());
   set('att_bd_line', 'Everybody at {property} hopes you have a lovely day.');
 
   const data = await body(await birthdayAdmin(ctx(db)));
 
   assert.equal(data.preview.real, true);
-  assert.equal(data.preview.name, 'Godfred Donkor');
-  assert.equal(data.preview.wish.title, 'Happy birthday, Godfred');
+  assert.equal(data.preview.name, 'Gideon Dadzie');
+  assert.equal(data.preview.wish.title, 'Happy birthday, Gideon');
   assert.match(data.preview.wish.line, /Somewhere Nice/);
 });
 
@@ -213,7 +213,7 @@ test('with nobody on the books the preview uses a stand-in and says so', async (
 
 test('what has gone out is listed, and says who it went to', async () => {
   const { db, person } = setup();
-  person(1, 'Godfred Donkor', bornToday(), { login: true });
+  person(1, 'Gideon Dadzie', bornToday(), { login: true });
   await wishThem(db, { timezone: 'UTC' });
 
   const data = await body(await birthdayAdmin(ctx(db)));
@@ -242,7 +242,7 @@ test('how far ahead to look is a setting, not a fixed month', async () => {
 
 test('the card on the morning screen offers the wording that is set', async () => {
   const { db, person, set } = setup();
-  person(1, 'Godfred Donkor', bornToday());
+  person(1, 'Gideon Dadzie', bornToday());
   set('att_bd_line', 'All of us at {property} wish you well.');
 
   const data = await body(await birthdays(ctx(db)));

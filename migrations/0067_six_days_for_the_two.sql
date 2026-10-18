@@ -14,4 +14,4 @@
 UPDATE att_staff
    SET days_per_week = 6
  WHERE days_per_week = 7
-   AND (name LIKE '%Sarpei%' OR name LIKE '%Aryee%');
+   AND (name LIKE '%Sowah%' OR name LIKE '%Armah%');

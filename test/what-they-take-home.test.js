@@ -13,8 +13,8 @@ import { addAdvance } from '../src/routes/advances.js';
  *
  * TWO MEANINGS, AND THIS FILE ONCE ASSUMED THERE WAS ONE. It used to say that
  * what is agreed at this property is what lands in the hand, bonus included:
- * "Linda is on 2,480 a month and scores what she scores". That was the mistake.
- * 2,480 was Linda's August — 1,850 fixed and a 630 bonus — and in a month she
+ * "Lydia is on 2,480 a month and scores what she scores". That was the mistake.
+ * 2,480 was Lydia's August — 1,850 fixed and a 630 bonus — and in a month she
  * scores 589 she takes home 2,439. Built on the first reading, the scores
  * could not change anybody's pay, and by August sixteen people were being paid
  * whatever bonus their figure had been typed in with.
@@ -52,15 +52,16 @@ const line = (o) => computeLine({
 // ---------------------------------------------------------------------------
 
 test('the allowance lands the person exactly on what was agreed', () => {
-  // Every one of these is somebody real off the August payroll, with the
-  // take-home the property actually agreed with them.
+  // The shapes the real payroll has, with made-up people and figures: a
+  // small basic with a big allowance, no SSNIT, a manager, and somebody whose
+  // basic alone is nearly the whole of it.
   for (const [name, basic, allow, ssnit, target] of [
-    ['Linda Attipoe', 800, 1437.64, true, 2480],
-    ['Abdul Hamid Iddrisu', 800, 411.58, true, 1610],
-    ['Patience Torto', 800, 261.51, false, 1230],
-    ['Douglas Eshun Sekyi', 800, 2261.58, true, 3260],
-    ['Michael Kesseh', 2000, 2161.34, true, 5000],
-    ['Rebecca Aborehey', 587.80, 0, false, 600],
+    ['Ama Boateng', 820, 1390.00, true, 2450],
+    ['Kofi Mensah', 820, 400.00, true, 1640],
+    ['Efua Owusu', 820, 250.00, false, 1260],
+    ['Yaw Darko', 820, 2200.00, true, 3300],
+    ['Akosua Badu', 2100, 2100.00, true, 5150],
+    ['Kwesi Appiah', 590.50, 0, false, 610],
   ]) {
     const l = line({ name, basic, allow, ssnit, takeHome: target });
     assert.equal(l.net, target, `${name} lands on ${target}`);
@@ -120,7 +121,7 @@ test('the score still sets the bonus, and the allowance moves around it', () => 
 // ---------------------------------------------------------------------------
 
 test('an advance still costs them, rather than being made up by a bigger allowance', () => {
-  // Vivian: agreed 1,530 a month, repaying 1,200. She takes home 330, and the
+  // Veronica: agreed 1,530 a month, repaying 1,200. She takes home 330, and the
   // property does not quietly hand back its own advance.
   const l = line({ basic: 587.80, bonus: 520, takeHome: 1530, loan: 1200 });
   assert.equal(l.net, 330);
@@ -207,7 +208,7 @@ function setup() {
   raw.exec("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'");
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
-     VALUES (1, 'E1', 'Linda Attipoe', 'Housekeeping', '2020-01-01')`,
+     VALUES (1, 'E1', 'Lydia Amegashie', 'Housekeeping', '2020-01-01')`,
   ).run();
   return { raw, db: d1(raw) };
 }
@@ -325,11 +326,11 @@ test('the whole August payroll lands on the sheet, with nothing entered but a ta
   // for each person, no allowances typed anywhere, and every net comes out.
   const { raw, db } = setup();
   const people = [
-    ['Linda Attipoe', 800, true, 2480, 2480],
-    ['Abdul Hamid Iddrisu', 800, true, 1610, 1610],
-    ['Patience Naa Torshie Torto', 800, false, 1230, 1230],
-    ['Michael Kesseh', 2000, true, 5000, 5000],
-    ['Rebecca Aborehey', 587.80, false, 600, 600],
+    ['Lydia Amegashie', 800, true, 2480, 2480],
+    ['Alhassan Hamza Isahaku', 800, true, 1610, 1610],
+    ['Priscilla Naa Teiko Tetteh', 800, false, 1230, 1230],
+    ['Michael Kusi', 2000, true, 5000, 5000],
+    ['Rita Akuffo', 587.80, false, 600, 600],
   ];
   people.forEach(([name], at) => {
     if (at === 0) return;
@@ -363,12 +364,12 @@ test('a fixed take-home plus the month’s bonus reproduces the property’s own
   // what the sheet says they were paid. The sheet carries four decimals and
   // this pays in pesewas, so a pesewa either way is the sheet's rounding.
   for (const [name, basic, ssnit, fixed, bonus, loan, sheetNet] of [
-    ['Linda Attipoe', 800, true, 1850, 630, 500, 1980.0045],
-    ['Abdul Hamid Iddrisu', 800, true, 1000, 610, 0, 1609.996625],
-    ['Patience Torto', 800, false, 1000, 230, 0, 1229.9975],
-    ['Douglas Eshun Sekyi', 800, true, 2500, 760, 0, 3260.00075],
-    ['Robert Dotse', 587.8, true, 800, 260, 0, 1060.004825],
-    ['Vivian Ahiadorme', 587.8, true, 900, 630, 1200, 329.999075],
+    ['Lydia Amegashie', 800, true, 1850, 630, 500, 1980.0045],
+    ['Alhassan Hamza Isahaku', 800, true, 1000, 610, 0, 1609.996625],
+    ['Priscilla Tetteh', 800, false, 1000, 230, 0, 1229.9975],
+    ['Duncan Essien Sackey', 800, true, 2500, 760, 0, 3260.00075],
+    ['Rudolf Dogbe', 587.8, true, 800, 260, 0, 1060.004825],
+    ['Veronica Agbenyega', 587.8, true, 900, 630, 1200, 329.999075],
   ]) {
     const l = line({
       name, basic, ssnit, basis: 'fixed', takeHome: fixed, bonus, bonusIsNet: true, loan,
@@ -415,7 +416,7 @@ test('an advance still comes off after a fixed take-home, not out of it', () => 
 });
 
 test('a gross bonus on a fixed take-home lands in full, as the sheet has it', () => {
-  // Joshua is on a gross bonus. His sheet pays him fixed plus the whole of it:
+  // Josiah is on a gross bonus. His sheet pays him fixed plus the whole of it:
   // 1,500 and 295.83, and 1,795.82 in his hand. The gross setting then says
   // only which column carries the tax.
   const l = line({ basic: 800, ssnit: false, basis: 'fixed', takeHome: 1500, bonus: 295.83, bonusIsNet: false });

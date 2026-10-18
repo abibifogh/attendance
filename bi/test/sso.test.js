@@ -312,7 +312,7 @@ test('two accounts cannot end up sharing an address', async () => {
   const { db, env } = await hub();
   const { save } = await import('../src/routes/accounts.js');
 
-  await save(env, { email: 'kofi@nice.test', name: 'Kofi Asare' }, { email: 'owner' });
+  await save(env, { email: 'kofi@nice.test', name: 'Kofi Adjei' }, { email: 'owner' });
   await assert.rejects(() => save(env, { email: 'kofi@nice.test', name: 'Somebody Else' }, {}),
     /already uses that address/);
 
@@ -339,7 +339,7 @@ test('nobody can switch off their own account', async () => {
   const { env } = await hub({ owner: true });
   const { save } = await import('../src/routes/accounts.js');
   // A second owner, so the last-owner rule is not what refuses this.
-  await save(env, { email: 'kofi@nice.test', name: 'Kofi Asare', isOwner: true }, {});
+  await save(env, { email: 'kofi@nice.test', name: 'Kofi Adjei', isOwner: true }, {});
   await assert.rejects(
     () => save(env, { id: 1, email: 'ama@nice.test', name: 'Ama Boateng', active: false }, { id: 1 }),
     /cannot switch off your own account/);
@@ -370,12 +370,12 @@ test('a system address must be https, and single sign-on needs one before it can
 test('an account is deleted for good, but never your own or the last owner', async () => {
   const { db, env } = await hub({ owner: true });
   const { save, remove } = await import('../src/routes/accounts.js');
-  await save(env, { email: 'kofi@nice.test', name: 'Kofi Asare' }, { email: 'owner' });
+  await save(env, { email: 'kofi@nice.test', name: 'Kofi Adjei' }, { email: 'owner' });
   const kofi = (await all(db, "SELECT id FROM accounts WHERE email = 'kofi@nice.test'"))[0].id;
   await run(db, "INSERT INTO account_access (account_id, system_id, role) VALUES (?1, 'attendance', 'staff')", kofi);
   await run(db, "INSERT INTO till_access (account_id, area, level) VALUES (?1, 'bank', 2)", kofi);
   await run(db, `INSERT INTO money_todo (key, kind, ref, day, amount, state, assignee_id, assignee_name, opened_at)
-    VALUES ('unbilled:P00412', 'unbilled', 'P00412', '2026-10-01', 100, 'open', ?1, 'Kofi Asare', '2026-10-01')`, kofi);
+    VALUES ('unbilled:P00412', 'unbilled', 'P00412', '2026-10-01', 100, 'open', ?1, 'Kofi Adjei', '2026-10-01')`, kofi);
 
   await assert.rejects(() => remove(env, 1, { id: 1 }), /your own account/);
   await assert.rejects(() => remove(env, 1, { id: kofi }), /last active owner/);
@@ -386,5 +386,5 @@ test('an account is deleted for good, but never your own or the last owner', asy
   assert.equal((await all(db, 'SELECT * FROM till_access WHERE account_id = ?1', kofi)).length, 0);
   assert.equal((await all(db, 'SELECT * FROM money_todo WHERE assignee_id = ?1', kofi)).length, 0, 'open to-dos go back to the pool');
   // The address is free again.
-  await save(env, { email: 'kofi@nice.test', name: 'Kofi Asare' }, { email: 'owner' });
+  await save(env, { email: 'kofi@nice.test', name: 'Kofi Adjei' }, { email: 'owner' });
 });

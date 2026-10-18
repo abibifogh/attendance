@@ -91,7 +91,7 @@ test('a link is built on the origin alone, even when the setting carries a path'
   raw.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('site_url', 'https://staff.example.com/i')").run();
   raw.exec('DELETE FROM att_staff');
   raw.prepare(
-    "INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (1, '1001', 'Henry Aryee', '2020-01-01')",
+    "INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (1, '1001', 'Harold Armah', '2020-01-01')",
   ).run();
 
   const { createInvite } = await import('../src/routes/people.js');

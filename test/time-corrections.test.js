@@ -113,7 +113,7 @@ async function setup() {
   raw.exec('DELETE FROM att_staff');
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
-     VALUES (1, '1001', 'Henry Aryee', 'Kitchen', '2020-01-01')`,
+     VALUES (1, '1001', 'Harold Armah', 'Kitchen', '2020-01-01')`,
   ).run();
 
   for (const day of ['2026-06-01', '2026-06-02', '2026-06-03']) {
@@ -266,7 +266,7 @@ test('sending it back changes nothing, and has to say why', async () => {
     /Say why/,
   );
 
-  await answer(db, requestId, { decision: 'reject', note: 'That was Kofi on the late shift, not Henry' });
+  await answer(db, requestId, { decision: 'reject', note: 'That was Kofi on the late shift, not Harold' });
 
   const row = dayOf(raw, '2026-06-03');
   assert.equal(row.corrected_out, null);
@@ -451,7 +451,7 @@ test('the administrators are asked every time, and told when it is theirs to ans
   assert.ok(notices.every((n) => n.level === 'high'),
     'something to do, not something that happened');
   assert.ok(notices.every((n) => n.link === '#/signoff?tab=times'), 'and it points at the queue');
-  assert.match(notices[1].title, /Approve: Henry Aryee/);
+  assert.match(notices[1].title, /Approve: Harold Armah/);
   assert.match(notices[1].body, /17:02 → 21:00/);
   assert.match(notices[1].body, /The kitchen ran until nine/);
   assert.match(notices[1].body, /Nothing has changed on the day/);
@@ -518,7 +518,7 @@ test('the register can be read back, newest first, and narrowed', async () => {
 
   const all = await read(await timeEdits(ctx(db, { query: '' })));
   assert.deepEqual(all.edits.map((e) => e.day), ['2026-06-03', '2026-06-02']);
-  assert.equal(all.edits[0].staff_name, 'Henry Aryee');
+  assert.equal(all.edits[0].staff_name, 'Harold Armah');
   assert.equal(all.canApprove, false, 'a planner reads it, and cannot answer it');
 
   const narrowed = await read(await timeEdits(ctx(db, { query: '?from=2026-06-03&to=2026-06-03' })));

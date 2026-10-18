@@ -136,7 +136,7 @@ const words = (name) => String(name ?? '')
   .normalize('NFD').replace(/[̀-ͯ]/g, '')
   .toLowerCase().replace(/[^a-z\s-]/g, ' ').split(/[\s-]+/).filter(Boolean);
 
-/** One letter apart, for the names spelt two ways: Abdulai and Abdullai, Antim and Antwim. */
+/** One letter apart, for the names spelt two ways: Alidu and Allidu, Antim and Antwim. */
 function nearly(a, b) {
   if (a === b) return true;
   if (Math.min(a.length, b.length) < 4 || Math.abs(a.length - b.length) > 1) return false;
@@ -174,7 +174,7 @@ function shared(sheet, hive) {
  *
  * 'same' is the same words in any order: "Mensah Akosua" is Akosua Mensah.
  * 'close' is every word of the shorter name found in the longer, allowing a
- * letter's difference: "Kwame Nii Boateng" is Kwame Boateng, "Kojo Antwim" is
+ * letter's difference: "Kwame Nicholas Boateng" is Kwame Boateng, "Kojo Antwim" is
  * Kojo Antim. Both are put forward as the answer.
  *
  * 'check' is a first name and nothing else, or two people equally close. A

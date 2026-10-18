@@ -42,8 +42,8 @@ function setup() {
   raw.exec("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'");
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
-     VALUES (1, 'E1', 'Linda Attipoe', 'Housekeeping', '2020-01-01'),
-            (2, 'E2', 'Bernard Owusu', 'Maintenance', '2020-01-01')`,
+     VALUES (1, 'E1', 'Ama Boateng', 'Housekeeping', '2020-01-01'),
+            (2, 'E2', 'Kwabena Owusu', 'Maintenance', '2020-01-01')`,
   ).run();
   return { raw, db: d1(raw) };
 }

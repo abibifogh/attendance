@@ -49,7 +49,7 @@ function setup() {
   raw.exec("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'");
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
-     VALUES (1, '1', 'Destiny', 'Reception', '2020-01-01')`,
+     VALUES (1, '1', 'Deborah', 'Reception', '2020-01-01')`,
   ).run();
   return { raw, db: d1(raw) };
 }

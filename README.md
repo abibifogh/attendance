@@ -732,8 +732,8 @@ that is the same promise written down twice.
 cell is a real row with no shift on it: somebody deciding this person is not
 working, rather than nobody having decided anything. Putting a shift on that
 day used to add a row beside it, so the day held two rows and the grid counted
-them as two shifts. A planner filling an ordinary rest day was told "Betty
-Freeman is down for two shifts this day. Take one off" about a day she was
+them as two shifts. A planner filling an ordinary rest day was told "Bertha
+Forson is down for two shifts this day. Take one off" about a day she was
 working once. One of the two was the day off, and a day off is exactly what
 putting a shift on the day undoes. The row is turned into the shift rather
 than deleted and remade, because `ever_published` lives on it: a day promised
@@ -1106,7 +1106,7 @@ general.
 **Who heard that the rota went out, and sending it again.** Publishing told
 everybody at once and then forgot what it had done. What came back was three
 numbers, and the question that arrives a day later is not a number: it is
-"Doreen says she never got hers". Answering that meant publishing the whole
+"Dolly says she never got hers". Answering that meant publishing the whole
 fortnight again and buzzing twenty-one people who had already read it.
 
 Each person's own outcome is now written down beside the publish it belongs to:
@@ -1426,7 +1426,7 @@ opposite: that whatever it made belonged to the shift above it.
 **Every card on the positions grid is the same height.** A card whose height
 depended on the length of somebody's name made a row that stepped up and down
 across the week, and the eye reads that as meaning something — it does not.
-"Francisca Etornam Gave" is three lines and "Chichi" is one, and the shift is
+"Felicia Enyonam Gbeho" is three lines and "Cecilia" is one, and the shift is
 the same shift. Each line now has a fixed allowance and anything longer is cut
 with an ellipsis, with the whole of it on the card's tooltip and in the dialog
 behind it. The allowance steps with the span like the type does: two lines each
@@ -1915,7 +1915,7 @@ does not scroll.
 
 One bug fell out of looking at it: the name cell on three tables put the
 department straight after the name with no line break, so every row read
-*Abdul Hamid IddrisuSecurity*. That was true at every width, not just on a
+*Alhassan Hamza IddrisuSecurity*. That was true at every width, not just on a
 phone; it was simply easier to see on one.
 
 #### Making the mail arrive
@@ -2286,7 +2286,7 @@ Night shifts belong to the day they *start*, so a porter's 06:04 clock-out is
 not the breakfast cook arriving four minutes late.
 
 > **Hik-Connect only needs the shift definitions**, so its terminal knows how to
-> label a tap. It does not need to know that Henry is on nights this week. Leave
+> label a tap. It does not need to know that Harold is on nights this week. Leave
 > the shifts there if they are already set up, and keep the rota here.
 
 ### Importing a week
@@ -2318,10 +2318,10 @@ absent, so an import that wrote first and reported afterwards would be one
 nobody dared run twice.
 
 Names are matched exactly, then by an alias somebody has confirmed, then by two
-or more words in common — which catches "Angela Asare Ayima" against "Angela
-Ayima Asare" without ever matching two different people. **One shared first name
-is deliberately never enough**: "Emmanuel Twum" and "Emmanuel Ofori Bennie" share
-exactly one, and quietly rostering the wrong Emmanuel is only noticed at payroll.
+or more words in common — which catches "Augustina Adjei Abla" against "Augustina
+Abla Adjei" without ever matching two different people. **One shared first name
+is deliberately never enough**: "Ebenezer Tawiah" and "Ebenezer Opoku Bonsu" share
+exactly one, and quietly rostering the wrong Ebenezer is only noticed at payroll.
 Unmatched names are listed once with a "who is this?" button, and the answer is
 remembered — the same export arrives every week, and being asked the same
 question every Monday is how an import stops being used.
@@ -3524,8 +3524,8 @@ the app ignored them. It did not: the month is closed, and closing is what
 makes a figure stop moving.
 
 So a closed month now says it, and names them: *This month is closed, so the
-advances above are as they were written. One has been changed since: Henry
-Nii-Okai Aryee GHS 1,000 here, GHS 0 on the books now. Reopen the month and
+advances above are as they were written. One has been changed since: Harold
+Kojo Badu GHS 1,000 here, GHS 0 on the books now. Reopen the month and
 close it again to take that up.* A closed month nobody has touched says
 nothing.
 
@@ -3570,8 +3570,8 @@ conclusion is that they did not save.
 Two lines close that. The message after recording one now says when it starts:
 *Recorded, and they have been told. First deduction September 2026.* And the
 month-end card names what is running but not yet due, on a quiet month and a
-busy one alike: *Three advances are running that do not start yet: Divine Atsu
-Adanuvi, Emmanuel Ofori Bennie, Vivian Ahiadorme from September 2026.*
+busy one alike: *Three advances are running that do not start yet: Kofi
+Mensah, Esi Quaye, Yaw Darko from September 2026.*
 
 The start month is a field on the form, so an advance that really should come
 off this month is made to by setting it, or by putting the handover date
@@ -3585,7 +3585,7 @@ for that person at all, because nobody has said what they are paid. Two screens,
 both right, and until now no way to see why they disagreed: the deduction simply
 never appeared and nothing anywhere mentioned it.
 
-The payroll now names them: *Emmanuel Ofori Bennie, not on the payroll, so there
+The payroll now names them: *Kofi Mensah, not on the payroll, so there
 is nothing for it to come off (GHS 500 left). Say what they are paid under Who
 is on the payroll, and the deduction comes off next time this month is worked
 out.*
@@ -3664,9 +3664,9 @@ bonus. This is an addition, not a change of rule.
 
 #### Two kinds of take-home, and the mistake that made it two
 
-This section used to say "Linda is on 2,480 a month and scores what she scores
+This section used to say "Ama is on 2,480 a month and scores what she scores
 on her bonus schemes". That was wrong, and the payroll was built on it. 2,480
-was Linda's August: 1,850 fixed and a 630 bonus. In a month she scores 589 she
+was Ama's August: 1,850 fixed and a 630 bonus. In a month she scores 589 she
 takes home 2,439. Treated as a standing figure with the bonus inside it, the
 allowance absorbed whatever she scored, so the scores changed what the payslip
 called the money and not a pesewa of what anybody was paid. And checked
@@ -3712,7 +3712,7 @@ feel.
 nothing docked off the bonus. An advance is the person's own money going back
 and a penalty is meant to cost them. Read after either, the allowance would
 quietly grow to cancel them out and the property would be paying back its own
-advance. So Vivian on 1,530 repaying 1,200 takes home 330.
+advance. So Esi on 1,530 repaying 1,200 takes home 330.
 
 **Nobody is paid less to hit a number.** Somebody whose basic and bonus already
 carry them past the figure gets no allowance, and does not have money taken off

@@ -137,7 +137,7 @@ export class Register {
     // that case the number is attached to the row that is already there
     // rather than starting a second one — but *only* if that row has no
     // employee number of its own. Two people who really are both called Kofi
-    // Asare have two numbers, and merging them would put one man's till
+    // Adjei have two numbers, and merging them would put one man's till
     // shortages on the other's record. A duplicate row is a tidy-up job; a
     // wrong merge is an accusation.
     if (!person) {

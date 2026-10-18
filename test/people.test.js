@@ -162,9 +162,9 @@ test('a submission is capped so one form cannot fill the database', () => {
 
 test('a template is filled in from what the property knows', () => {
   const out = renderTemplate('{{name}} of {{address}} starts on {{start_date}}.', {
-    name: 'Angela Asare Ayima', address: 'Kokrobite', start_date: '2026-09-01',
+    name: 'Augustina Adjei Abla', address: 'Kokrobite', start_date: '2026-09-01',
   });
-  assert.equal(out, 'Angela Asare Ayima of Kokrobite starts on 2026-09-01.');
+  assert.equal(out, 'Augustina Adjei Abla of Kokrobite starts on 2026-09-01.');
 });
 
 test('a placeholder with nothing behind it is left visibly unfilled', () => {

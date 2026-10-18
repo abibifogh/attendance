@@ -58,10 +58,10 @@ function setup() {
   ).run();
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, hired_on, sees_dept_rota)
-     VALUES (1, '1', 'Destiny', 'Reception', '2020-01-01', 1)`,
+     VALUES (1, '1', 'Deborah', 'Reception', '2020-01-01', 1)`,
   ).run();
   raw.prepare(
-    "INSERT INTO users (id, name, role, staff_id, active) VALUES (7, 'Destiny', 'staff', 1, 1)",
+    "INSERT INTO users (id, name, role, staff_id, active) VALUES (7, 'Deborah', 'staff', 1, 1)",
   ).run();
   raw.prepare(
     "INSERT INTO att_holidays (day, name, active) VALUES (?, 'Farmers'' Day', 1)",
@@ -74,7 +74,7 @@ function setup() {
 
 const PLANNER = { user: { id: 9, name: 'Yaa', role: 'planner' }, permissions: ['att_rota'] };
 const READER = { user: { id: 8, name: 'Efua', role: 'rota_reader' }, permissions: ['att_rota_view'] };
-const DESTINY = { user: { id: 7, name: 'Destiny', role: 'staff', staff_id: 1 }, permissions: ['att_me'] };
+const DESTINY = { user: { id: 7, name: 'Deborah', role: 'staff', staff_id: 1 }, permissions: ['att_me'] };
 
 const ctx = (db, session, query = '') => ({
   db,

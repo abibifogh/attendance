@@ -45,10 +45,10 @@ function setup() {
   raw.exec("UPDATE settings SET value = 'GHS' WHERE key = 'currency'");
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
-     VALUES (1, '1', 'Atsu Mensah', 'Kitchen', '2020-01-01')`,
+     VALUES (1, '1', 'Awuku Mensah', 'Kitchen', '2020-01-01')`,
   ).run();
   raw.prepare(
-    "INSERT INTO users (id, name, role, pin_hash, staff_id, active) VALUES (7, 'Atsu', 'staff', 'x', 1, 1)",
+    "INSERT INTO users (id, name, role, pin_hash, staff_id, active) VALUES (7, 'Awuku', 'staff', 'x', 1, 1)",
   ).run();
   return { raw, db: d1(raw) };
 }
@@ -306,7 +306,7 @@ test('every line of it is in the log', async () => {
 
 test('a whole year of it comes out balancing, and never in credit', async () => {
   const { raw, db } = setup();
-  // Johnson's book: five thousand in December, top-ups most months after, and
+  // Joseph's book: five thousand in December, top-ups most months after, and
   // the deductions that were actually taken.
   await addAdvance(ctx(db, ADMIN, {
     body: {

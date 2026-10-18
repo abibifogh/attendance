@@ -54,8 +54,8 @@ function setup() {
   ).run();
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
-     VALUES (1, '1', 'Destiny', 'Reception', '2020-01-01'),
-            (2, '2', 'Jessica', 'Reception', '2020-01-01'),
+     VALUES (1, '1', 'Deborah', 'Reception', '2020-01-01'),
+            (2, '2', 'Janet', 'Reception', '2020-01-01'),
             (3, '3', 'Kofi', 'Housekeeping', '2020-01-01'),
             (4, '4', 'Ama', 'Housekeeping', '2020-01-01')`,
   ).run();
@@ -116,7 +116,7 @@ test('somebody covering one of the department’s shifts is on its rota', async 
   ]);
 
   const shown = shownFor(await look(db), 'Reception');
-  assert.deepEqual(shown.sort(), ['Destiny', 'Jessica', 'Kofi'],
+  assert.deepEqual(shown.sort(), ['Deborah', 'Janet', 'Kofi'],
     'Kofi is on reception on Wednesday, whatever his record says');
 });
 
@@ -163,7 +163,7 @@ test('a day on approved leave is not a day covering anything', async () => {
 test('the department’s own people are there whether or not they are on anything', async () => {
   const { db } = setup();
   const shown = shownFor(await look(db), 'Reception');
-  assert.deepEqual(shown.sort(), ['Destiny', 'Jessica'], 'an empty fortnight is still their rota');
+  assert.deepEqual(shown.sort(), ['Deborah', 'Janet'], 'an empty fortnight is still their rota');
 });
 
 // ---------------------------------------------------------------------------
@@ -183,7 +183,7 @@ test('the export brings out whoever the grid does', async () => {
   }))).text();
 
   assert.ok(csv.includes('Kofi'), 'the man covering the Wednesday');
-  assert.ok(csv.includes('Destiny'));
+  assert.ok(csv.includes('Deborah'));
   assert.equal(csv.includes('Ama'), false, 'and not the one who never comes near it');
 });
 
@@ -191,7 +191,7 @@ test('unfiltered, the export is still everybody', async () => {
   const { db } = setup();
   await save(db, [{ staffId: 4, day: FROM, shiftId: 3 }]);
   const csv = await (await exportRoster(ctx(db, { query: `?from=${FROM}&to=${TO}` }))).text();
-  for (const name of ['Destiny', 'Jessica', 'Kofi', 'Ama']) assert.ok(csv.includes(name), name);
+  for (const name of ['Deborah', 'Janet', 'Kofi', 'Ama']) assert.ok(csv.includes(name), name);
 });
 
 // ---------------------------------------------------------------------------

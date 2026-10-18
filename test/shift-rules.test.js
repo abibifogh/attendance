@@ -798,8 +798,8 @@ test('the exception is set by the migration for the two named people', async () 
   const { raw } = setup();
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, hired_on)
-     VALUES (90, '90', 'Dorcas Sarpei', '2020-01-01'),
-            (91, '91', 'Henry Nii Aryee', '2020-01-01'),
+     VALUES (90, '90', 'Dinah Sowah', '2020-01-01'),
+            (91, '91', 'Harold Nicholas Armah', '2020-01-01'),
             (92, '92', 'Somebody Else', '2020-01-01')`,
   ).run();
   // Re-running the migration is what a deploy does; it must be safe and exact.
@@ -860,10 +860,10 @@ test('the migration puts the two named on six, and leaves anybody else alone', (
   const { raw } = setup();
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, days_per_week, hired_on)
-     VALUES (90, '90', 'Dorcas Sarpei', 7, '2020-01-01'),
-            (91, '91', 'Henry Nii Aryee', 7, '2020-01-01'),
+     VALUES (90, '90', 'Dinah Sowah', 7, '2020-01-01'),
+            (91, '91', 'Harold Nicholas Armah', 7, '2020-01-01'),
             (92, '92', 'Somebody Else', 7, '2020-01-01'),
-            (93, '93', 'Ama Sarpei', 5, '2020-01-01')`,
+            (93, '93', 'Ama Sowah', 5, '2020-01-01')`,
   ).run();
   raw.exec(readFileSync('migrations/0067_six_days_for_the_two.sql', 'utf8'));
 

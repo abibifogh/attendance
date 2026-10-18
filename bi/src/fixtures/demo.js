@@ -42,7 +42,7 @@ const daySeed = (day) => Number(day.replace(/-/g, '')) % 2147483647;
 
 const STAFF = [
   ['E001', 'Ama Boateng',      'Front Office',  'Receptionist'],
-  ['E002', 'Kofi Asare',       'Front Office',  'Receptionist'],
+  ['E002', 'Kofi Adjei',       'Front Office',  'Receptionist'],
   ['E003', 'Yaw Darko',        'Front Office',  'Night Auditor'],
   ['E004', 'Akosua Frimpong',  'Housekeeping',  'Room Attendant'],
   ['E005', 'Abena Owusu',      'Housekeeping',  'Room Attendant'],
@@ -53,10 +53,10 @@ const STAFF = [
   ['E010', 'Kwame Mensah',     'Restaurant',    'Cashier'],
   ['E011', 'Efua Addo',        'Restaurant',    'Waitress'],
   ['E012', 'Kojo Amponsah',    'Restaurant',    'Waiter'],
-  ['E013', 'Nana Ofori',       'Restaurant',    'Waiter'],
+  ['E013', 'Nana Opoku',       'Restaurant',    'Waiter'],
   ['E014', 'Serwaa Agyapong',  'Restaurant',    'Supervisor'],
   ['E015', 'Kwesi Bediako',    'Kitchen',       'Head Chef'],
-  ['E016', 'Yaa Danso',        'Kitchen',       'Cook'],
+  ['E016', 'Yaa Darkwa',        'Kitchen',       'Cook'],
   ['E017', 'Kwaku Appiah',     'Kitchen',       'Cook'],
   ['E018', 'Mansa Tetteh',     'Kitchen',       'Kitchen Assistant'],
   ['E019', 'Kojo Baffour',     'Bar',           'Bartender'],
@@ -65,7 +65,7 @@ const STAFF = [
   ['E022', 'Kwadwo Larbi',     'Maintenance',   'Handyman'],
   ['E023', 'Adjoa Nkrumah',    'Laundry',       'Laundry Attendant'],
   ['E024', 'Comfort Ansah',    'Laundry',       'Laundry Attendant'],
-  ['E025', 'Emmanuel Tetteh',  'Security',      'Security Officer'],
+  ['E025', 'Ebenezer Tetteh',  'Security',      'Security Officer'],
   ['E026', 'Grace Amoah',      'Admin',         'Accounts Officer'],
 ];
 

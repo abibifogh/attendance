@@ -109,7 +109,7 @@ const SHEET = [
   [],
   [null, 'NAME OF EMPLOYEE', 'BAL. B/F', ...MONTHS, 'CLAIMS', 'BAL. C/F'],
   person('Mensah Akosua Serwaa', 800, [280, null, null, 60, null, null, 620, 760]),
-  person('Kwame Nii Boateng', -5, []),
+  person('Kwame Nicholas Boateng', -5, []),
   person('Abena Pokua Owusu', 30, [null, null, 200, 580, null, null, 75, 140, 600]),
   person('Grace Lamptey', null, []),
   [null, null, null, 280, 0, 200, 640, 0, 0, 695, 900, 600, 0, 0, 0, 3315, 3910],
@@ -168,7 +168,7 @@ const STAFF = [
   { id: 1, name: 'Akosua Serwaa Mensah', active: 1 },
   { id: 2, name: 'Kwame Boateng', active: 1 },
   { id: 3, name: 'Kojo Antim', active: 1 },
-  { id: 4, name: 'Salifu Musah Abdullai', active: 1 },
+  { id: 4, name: 'Seidu Mahama Allidu', active: 1 },
   { id: 5, name: 'Kofi Owusu Darko', active: 1 },
   { id: 6, name: 'Kofi Tetteh', active: 0 },
   { id: 7, name: 'Ama Sarpong', active: 1 },
@@ -183,9 +183,9 @@ test('the same words in any order are the same person', () => {
 });
 
 test('a middle name, or a letter spelt differently, is a close match', () => {
-  assert.deepEqual([who('Kwame Nii Boateng').level, who('Kwame Nii Boateng').staffId], ['close', 2]);
+  assert.deepEqual([who('Kwame Nicholas Boateng').level, who('Kwame Nicholas Boateng').staffId], ['close', 2]);
   assert.deepEqual([who('Kojo Antwim').level, who('Kojo Antwim').staffId], ['close', 3]);
-  assert.deepEqual([who('Salifu Musah Abdulai').level, who('Salifu Musah Abdulai').staffId], ['close', 4]);
+  assert.deepEqual([who('Seidu Mahama Alidu').level, who('Seidu Mahama Alidu').staffId], ['close', 4]);
   assert.deepEqual([who('Efua Adjoa Quaye').level, who('Efua Adjoa Quaye').staffId], ['close', 8]);
 });
 
@@ -194,7 +194,7 @@ test('a first name alone is offered, never chosen', () => {
   assert.equal(kofi.level, 'check');
   assert.equal(kofi.staffId, null);
   assert.deepEqual(kofi.candidates.map((c) => c.id).sort(), [5, 6]);
-  const ama = who('Asantewaa Ama Ofori');
+  const ama = who('Asantewaa Ama Opoku');
   assert.equal(ama.level, 'check');
   assert.equal(ama.staffId, null);
   assert.equal(ama.candidates[0].id, 7);
@@ -262,7 +262,7 @@ test('checking a sheet matches it against everybody in HIVE and writes nothing',
 
   const by = Object.fromEntries(out.people.map((p) => [p.name, p.match]));
   assert.equal(by['Mensah Akosua Serwaa'].staffId, 1);
-  assert.equal(by['Kwame Nii Boateng'].staffId, 2);
+  assert.equal(by['Kwame Nicholas Boateng'].staffId, 2);
   assert.equal(by['Abena Pokua Owusu'].staffId, 3);
   assert.equal(by['Esi Arthur'].staffId, 4, 'somebody who has left is still found');
   assert.equal(by['Grace Lamptey'].level, 'none');

@@ -67,7 +67,7 @@ function setup({ on = true } = {}) {
   ).run('ob_owner_words', 'Welcome. We are glad you are here.');
   raw.prepare(
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = ?2',
-  ).run('ob_owner_name', 'Mathias Schwender');
+  ).run('ob_owner_name', 'Martin Stolberg');
 
   for (const p of TEAM) {
     raw.prepare(
@@ -244,7 +244,7 @@ test('the welcome comes with the checklist, and a blank one is not drawn', async
   const mine = await read(await myOnboarding(ctx(db, asStaff(1))));
   assert.equal(mine.onboarding, true);
   assert.equal(mine.welcomes.length, 1, 'only the one that has words in it');
-  assert.equal(mine.welcomes[0].name, 'Mathias Schwender');
+  assert.equal(mine.welcomes[0].name, 'Martin Stolberg');
   assert.equal(mine.welcomes[0].role, 'Owner');
   assert.ok(mine.steps.length > 0);
   assert.equal(mine.me.firstName, 'Ama');

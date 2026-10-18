@@ -56,9 +56,9 @@ const SUN = soon(11);
 const MON = soon(12);
 
 const TEAM = [
-  { id: 1, name: 'Regina Sampson', department: 'F&B' },
-  { id: 2, name: 'Doreen Aitee', department: 'F&B' },
-  { id: 3, name: 'Henry Aryee', department: 'F&B' },
+  { id: 1, name: 'Rosemary Sackitey', department: 'F&B' },
+  { id: 2, name: 'Dolly Ayitey', department: 'F&B' },
+  { id: 3, name: 'Harold Armah', department: 'F&B' },
   { id: 4, name: 'Kojo Mensah', department: 'Housekeeping' },
 ];
 
@@ -192,7 +192,7 @@ test('somebody in another department cannot take it, and is told why', async () 
 test('somebody already working across those hours cannot take it', async () => {
   const { db, raw } = setup();
   rota(raw, 1, SAT, 1);
-  rota(raw, 2, SAT, 5);                        // Doreen is on lunch, 12 to 8
+  rota(raw, 2, SAT, 5);                        // Dolly is on lunch, 12 to 8
   const ds = await dataset(db);
 
   assert.match(
@@ -206,7 +206,7 @@ test('somebody already working across those hours cannot take it', async () => {
 
 test('a night that runs into the morning is in the way of the morning', async () => {
   const { db, raw } = setup();
-  // Henry is on the night before, finishing at six, and the shift going is a
+  // Harold is on the night before, finishing at six, and the shift going is a
   // breakfast starting at six.
   rota(raw, 3, soon(9), 4);
   const ds = await dataset(db);
@@ -241,7 +241,7 @@ test('who can cover leaves out the person giving it up', async () => {
   const ds = await dataset(db);
 
   const can = whoCanCover(ds, { day: SAT, shift: ds.shiftById.get(1), exceptStaffId: 1 });
-  assert.deepEqual(can.map((p) => p.name), ['Doreen Aitee', 'Henry Aryee']);
+  assert.deepEqual(can.map((p) => p.name), ['Dolly Ayitey', 'Harold Armah']);
 });
 
 // ---------------------------------------------------------------------------
@@ -250,8 +250,8 @@ test('who can cover leaves out the person giving it up', async () => {
 
 test('a swap that leaves eight hours between two shifts says so, loudly', async () => {
   const { db, raw } = setup();
-  // Regina is on the Saturday evening. Doreen is on the Sunday breakfast, so
-  // taking Regina's evening leaves her eight hours to sleep.
+  // Rosemary is on the Saturday evening. Dolly is on the Sunday breakfast, so
+  // taking Rosemary's evening leaves her eight hours to sleep.
   rota(raw, 1, SAT, 2);
   rota(raw, 2, SUN, 1);
   const ds = await dataset(db);
@@ -263,7 +263,7 @@ test('a swap that leaves eight hours between two shifts says so, loudly', async 
     shift: ds.shiftById.get(2),
   });
   assert.equal(findings[0].level, 'high');
-  assert.match(findings[0].text, /Doreen Aitee would finish Evening and start Breakfast 8 hours/);
+  assert.match(findings[0].text, /Dolly Ayitey would finish Evening and start Breakfast 8 hours/);
 });
 
 test('and a swap that changes nothing says nothing', async () => {
@@ -300,7 +300,7 @@ test('a shift goes on the board and the people who can cover it are counted', as
 
   const out = await offer(db, 1, { rosterId: id, reason: 'Funeral in Ho.' });
   assert.equal(out.ok, true);
-  assert.equal(out.told, 2, 'Doreen and Henry, not the housekeeper');
+  assert.equal(out.told, 2, 'Dolly and Harold, not the housekeeper');
 
   const seen = await board(db, 2);
   assert.equal(seen.offers.length, 1);
@@ -347,7 +347,7 @@ test('a shift can be put to named colleagues, with the board behind them', async
   const { db, raw } = setup();
   const id = rota(raw, 1, SAT, 1);
   const out = await offer(db, 1, { rosterId: id, aimedAt: [2], aimedOnly: false });
-  assert.equal(out.aimedAt, 'Doreen Aitee');
+  assert.equal(out.aimedAt, 'Dolly Ayitey');
 
   const hers = await board(db, 2);
   assert.equal(hers.aimed.length, 1, 'put to her by name');
@@ -363,7 +363,7 @@ test('or to named colleagues and nobody else', async () => {
 
   assert.equal((await board(db, 2)).aimed.length, 1);
   const his = await board(db, 3);
-  assert.equal(his.offers.length + his.aimed.length, 0, 'Henry never sees it');
+  assert.equal(his.offers.length + his.aimed.length, 0, 'Harold never sees it');
 });
 
 test('more than one person can be named at once', async () => {
@@ -371,7 +371,7 @@ test('more than one person can be named at once', async () => {
   const out = await offer(db, 1, {
     rosterId: rota(raw, 1, SAT, 1), aimedAt: [2, 3], aimedOnly: true,
   });
-  assert.equal(out.aimedAt, 'Doreen Aitee, Henry Aryee');
+  assert.equal(out.aimedAt, 'Dolly Ayitey, Harold Armah');
   assert.equal(out.told, 2);
   assert.equal((await board(db, 2)).aimed.length, 1);
   assert.equal((await board(db, 3)).aimed.length, 1);
@@ -453,8 +453,8 @@ test('a clean swap goes straight through where the property has said so', async 
 
 test('and one with something flagged never does', async () => {
   const { db, raw } = setup({ approval: 'clean' });
-  rota(raw, 2, SUN, 1);                       // Doreen opens on the Sunday
-  const rosterId = rota(raw, 1, SAT, 2);      // Regina's Saturday evening
+  rota(raw, 2, SUN, 1);                       // Dolly opens on the Sunday
+  const rosterId = rota(raw, 1, SAT, 2);      // Rosemary's Saturday evening
   const out = await offer(db, 1, { rosterId });
 
   const took = await take(db, 2, out.id);
@@ -498,7 +498,7 @@ test('approving moves the roster row and says who did it', async () => {
 
   const row = raw.prepare('SELECT staff_id, set_by FROM att_roster WHERE id = ?').get(rosterId);
   assert.equal(row.staff_id, 2);
-  assert.match(row.set_by, /Yaa \(manager\).*Regina Sampson to Doreen Aitee/);
+  assert.match(row.set_by, /Yaa \(manager\).*Rosemary Sackitey to Dolly Ayitey/);
 });
 
 test('turning it down leaves the rota exactly as it was', async () => {
@@ -565,7 +565,7 @@ test('somebody who has since been put on something else cannot be given it', asy
   const rosterId = rota(raw, 1, SAT, 1);
   const out = await offer(db, 1, { rosterId });
   await take(db, 2, out.id);
-  rota(raw, 2, SAT, 5);                        // Doreen is on lunch now
+  rota(raw, 2, SAT, 5);                        // Dolly is on lunch now
 
   await assert.rejects(() => decide(db, out.id, { approve: true }), /cannot take it any more/);
 });
@@ -621,7 +621,7 @@ test('the offer dialog is told who can cover each shift', async () => {
   const out = await (await whatICanOffer(ctx(db, asStaff(1)))).json();
   assert.equal(out.on, true);
   assert.equal(out.shifts.length, 2);
-  assert.deepEqual(out.shifts[0].canCover.map((p) => p.name), ['Doreen Aitee', 'Henry Aryee']);
+  assert.deepEqual(out.shifts[0].canCover.map((p) => p.name), ['Dolly Ayitey', 'Harold Armah']);
 });
 
 test('a shift already on the board is not offered again', async () => {
@@ -642,8 +642,8 @@ test('the planner sees what is waiting, with the findings on it', async () => {
 
   const seen = await queue(db);
   assert.equal(seen.waiting.length, 1);
-  assert.equal(seen.waiting[0].from.name, 'Regina Sampson');
-  assert.equal(seen.waiting[0].takenBy.name, 'Doreen Aitee');
+  assert.equal(seen.waiting[0].from.name, 'Rosemary Sackitey');
+  assert.equal(seen.waiting[0].takenBy.name, 'Dolly Ayitey');
   assert.ok(seen.waiting[0].findings.some((f) => f.level === 'high'));
 });
 

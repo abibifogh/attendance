@@ -42,7 +42,7 @@ function setup() {
   raw.exec("UPDATE settings SET value = 'GHS' WHERE key = 'currency'");
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
-     VALUES (1, '1', 'Atsu Mensah', 'Kitchen', '2020-01-01')`,
+     VALUES (1, '1', 'Awuku Mensah', 'Kitchen', '2020-01-01')`,
   ).run();
   return { raw, db: d1(raw) };
 }

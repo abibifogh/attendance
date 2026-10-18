@@ -109,7 +109,7 @@ async function setup() {
   // these tests want one cook with a known id.
   raw.exec('DELETE FROM att_staff');
   raw.prepare(
-    "INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (1, '1001', 'Henry Aryee', '2023-02-01')",
+    "INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (1, '1001', 'Harold Armah', '2023-02-01')",
   ).run();
   for (const dow of [0, 1, 2, 3, 4]) {
     raw.prepare('INSERT INTO att_patterns (staff_id, dow, shift_id) VALUES (1, ?, 1)').run(dow);
@@ -123,7 +123,7 @@ const event = (time, status = null, serial = null) => ({
   minor: 75,
   time,
   employeeNoString: '1001',
-  name: 'Henry Aryee',
+  name: 'Harold Armah',
   ...(status ? { attendanceStatus: status } : {}),
   ...(serial ? { serialNo: serial } : {}),
   doorNo: 1,
@@ -223,7 +223,7 @@ test('punches for somebody unknown are kept, then claimed', async () => {
   assert.equal(raw.prepare('SELECT COUNT(*) n FROM att_days').get().n, 0);
 
   const created = await (await createStaff(ctx(db, {
-    body: { employeeNo: '2002', name: 'Vivian Mensah', hiredOn: '2024-06-15' },
+    body: { employeeNo: '2002', name: 'Veronica Mensah', hiredOn: '2024-06-15' },
   }))).json();
 
   assert.equal(created.claimedPunches, 2);
@@ -307,7 +307,7 @@ test('the day report puts what needs a decision at the top', async () => {
 
   // A second person, present and on time, so the ordering has something to sort.
   await (await createStaff(ctx(db, {
-    body: { employeeNo: '1002', name: 'Vivian Mensah' },
+    body: { employeeNo: '1002', name: 'Veronica Mensah' },
   }))).json();
 
   await send(db, token, [
@@ -320,7 +320,7 @@ test('the day report puts what needs a decision at the top', async () => {
 
   assert.equal(data.day, '2026-06-15');
   assert.equal(data.rows.length, 2);
-  assert.equal(data.rows[0].staff.name, 'Henry Aryee');
+  assert.equal(data.rows[0].staff.name, 'Harold Armah');
   assert.equal(data.rows[0].open, true, 'the unsettled day is first');
   assert.equal(data.rows[0].label, 'No clock-out — to check');
   assert.equal(data.totals.openCount, 1);
@@ -343,7 +343,7 @@ test('a leave balance survives the round trip', async () => {
     ctx(db, { query: '?from=2026-06-15&to=2026-06-15' }), '1',
   )).json();
 
-  assert.equal(report.staff.name, 'Henry Aryee');
+  assert.equal(report.staff.name, 'Harold Armah');
   assert.equal(report.days.length, 1);
   assert.equal(report.days[0].status, 'present');
   assert.equal(report.leave.entitlement, 15);
@@ -569,7 +569,7 @@ const notification = (employeeNo, time, status, serial) => ({
     majorEventType: 5,
     subEventType: 75,
     employeeNoString: employeeNo,
-    name: 'Henry Aryee',
+    name: 'Harold Armah',
     attendanceStatus: status,
     serialNo: serial,
   },
@@ -774,7 +774,7 @@ test('the grid reports how many people each shift has each day', async () => {
   const { raw, db } = await setup();
 
   // A second person, on nights Monday to Friday.
-  raw.prepare("INSERT INTO att_staff (id, employee_no, name) VALUES (2, '1002', 'Vivian Mensah')").run();
+  raw.prepare("INSERT INTO att_staff (id, employee_no, name) VALUES (2, '1002', 'Veronica Mensah')").run();
   for (const d of [0, 1, 2, 3, 4]) {
     raw.prepare('INSERT INTO att_patterns (staff_id, dow, shift_id) VALUES (2, ?, 2)').run(d);
   }
@@ -1416,7 +1416,7 @@ test('a day already settled can still be corrected, and the correction undone', 
 
 test('the month review can answer for one person without loading the property', async () => {
   const { raw, db, token } = await setup();
-  raw.prepare("INSERT INTO att_staff (id, employee_no, name) VALUES (2, '1002', 'Vivian Mensah')").run();
+  raw.prepare("INSERT INTO att_staff (id, employee_no, name) VALUES (2, '1002', 'Veronica Mensah')").run();
   raw.prepare('INSERT INTO att_patterns (staff_id, week, dow, shift_id) VALUES (2, 0, 0, 1)').run();
   await marchWorked(db, token, ['2026-03-02']);
 
@@ -1622,10 +1622,10 @@ test('yesterday is still judged the way it always was', async () => {
 // ---------------------------------------------------------------------------
 
 const WEEK = 'Employee Names,Position,Start Date,End Date,Start Time,End Time,Title,Note\n'
-  + '"Henry Aryee","SN Breakfast","Mar 2, 2026","Mar 2, 2026","06:00","14:00","Morning",""\n'
-  + '"Henry Aryee","SN Breakfast","Mar 3, 2026","Mar 3, 2026","06:00","14:00","Morning","Cover"\n'
+  + '"Harold Armah","SN Breakfast","Mar 2, 2026","Mar 2, 2026","06:00","14:00","Morning",""\n'
+  + '"Harold Armah","SN Breakfast","Mar 3, 2026","Mar 3, 2026","06:00","14:00","Morning","Cover"\n'
   + '"Somebody Else","SN Breakfast","Mar 4, 2026","Mar 4, 2026","06:00","14:00","",""\n'
-  + '"Henry Aryee","SN Breakfast","Mar 5, 2026","Mar 5, 2026","05:30","11:30","Early",""\n';
+  + '"Harold Armah","SN Breakfast","Mar 5, 2026","Mar 5, 2026","05:30","11:30","Early",""\n';
 
 /**
  * The same week, printed.
@@ -1641,7 +1641,7 @@ function printedWeek() {
     { x: 200, y: 560, text: 'Mar 2, 2026' },
     { x: 300, y: 560, text: 'Mar 3, 2026' },
     { x: 400, y: 560, text: 'Mar 4, 2026' },
-    { x: 30, y: 520, text: 'Henry Aryee' },
+    { x: 30, y: 520, text: 'Harold Armah' },
   ];
 
   const block = (x, hours) => {

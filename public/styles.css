@@ -2857,8 +2857,8 @@ tr.day-locked label.tickline { cursor: not-allowed; }
 /* ---------------------------------------------------- every card the same --
    A card whose height depends on the length of somebody's name is a row of
    cards that step up and down across the week, and the eye reads that as
-   meaning something. It does not: "Francisca Etornam Gave" is three lines and
-   "Chichi" is one, and the shift is the same shift.
+   meaning something. It does not: "Felicia Enyonam Gbeho" is three lines and
+   "Cecilia" is one, and the shift is the same shift.
 
    So each line gets a fixed allowance and anything longer is cut with an
    ellipsis — the whole of it is on the card's own tooltip and in the dialog

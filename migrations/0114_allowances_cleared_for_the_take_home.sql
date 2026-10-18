@@ -1,7 +1,7 @@
 -- Every standing allowance cleared, now that the take-home works them out.
 --
 -- The allowances typed in by hand were the balancing figures from an earlier
--- month: Linda's 1,437.64 was what got her to that month's pay, and it stayed
+-- month: one person's 1,437.64 was what got her to that month's pay, and it stayed
 -- there after the month it was right for. With a take-home on everybody the
 -- allowance is worked out fresh every month, so the old figures are cleared.
 --

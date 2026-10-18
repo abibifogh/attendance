@@ -142,7 +142,7 @@ function assemble(y, parts) {
 
   for (const part of parts) {
     // A gap wider than a quarter of the type size is a space somebody meant.
-    // Anything narrower is kerning, and inserting a space there is how "Ayima"
+    // Anything narrower is kerning, and inserting a space there is how "Abla"
     // becomes "Ay ima".
     if (end != null && part.x - end > (part.size || 10) * 0.25 && !/\s$/.test(text)) text += ' ';
     text += part.text;
@@ -225,7 +225,7 @@ function columnAt(x, grid) {
 /**
  * The people down the side of the page, and where each one's row starts.
  *
- * A name too long for the column wraps, so "Destiny Hagar" and "Amankwa" are
+ * A name too long for the column wraps, so "Deborah Hilda" and "Ampofo" are
  * one person on two lines. Lines close enough together to be a paragraph are
  * treated as one name; the gap to the next person is the height of a whole row
  * and nothing like it.

@@ -209,7 +209,7 @@ const summary = (data) => {
  *
  * Three answers in one dialog, because they are one decision: which shift, who
  * to ask, and whether the board sees it too. The people who can cover it are
- * listed by name with a tick each, so "ask Doreen and Henry" is one action
+ * listed by name with a tick each, so "ask Dolly and Harold" is one action
  * rather than a message somebody sends outside the app.
  */
 async function offerDialog() {

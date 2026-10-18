@@ -416,7 +416,7 @@ function d1(raw) {
  * A property with two people on it, a week of shifts, and the clock held at a
  * Thursday so the window is open.
  *
- * Henry works Monday to Wednesday and it is published. Ama is down for
+ * Harold works Monday to Wednesday and it is published. Ama is down for
  * Thursday but the planner has not published it, so as far as the kitchen is
  * concerned she is not working that day.
  */
@@ -433,7 +433,7 @@ function property() {
   raw.prepare(
     "INSERT INTO att_shifts (id, name, starts_at, ends_at) VALUES (1, 'Day', '08:00', '17:00')",
   ).run();
-  for (const [id, no, name] of [[1, '1001', 'Henry Aryee'], [2, '1002', 'Ama Serwaa']]) {
+  for (const [id, no, name] of [[1, '1001', 'Harold Armah'], [2, '1002', 'Ama Serwaa']]) {
     raw.prepare(
       'INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (?, ?, ?, \'2020-01-01\')',
     ).run(id, no, name);
@@ -573,7 +573,7 @@ test('a day somebody is not down to work is ignored', async () => {
     const out = await (await lunch.lunchSay(ctxFor(db, '/x', {
       days: [
         { day: MON, taking: true },
-        // Henry is not on the rota for Friday, so this is a plate nobody
+        // Harold is not on the rota for Friday, so this is a plate nobody
         // ordered and the kitchen would have cooked it.
         { day: '2026-08-28', taking: true },
       ],
@@ -596,7 +596,7 @@ test('an unpublished day is not a day to cook for', async () => {
     // Ama's only day that week is pencilled in, so she is not offered anything
     // and does not appear on the list of names to find yourself in.
     const look = await (await lunch.lunchOpen(ctxFor(db, '/x'), token)).json();
-    assert.deepEqual(look.people.map((p) => p.first), ['Henry']);
+    assert.deepEqual(look.people.map((p) => p.first), ['Harold']);
 
     const mine = await (await lunch.lunchMine(ctxFor(db, '/x'), token, '2')).json();
     assert.deepEqual(mine.days, []);
@@ -626,7 +626,7 @@ test('the kitchen counts plates, not the people who said yes', async () => {
     const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
     assert.equal(week.monday, MON);
     assert.equal(week.summary.plates, 2);
-    assert.deepEqual(week.summary.columns[0].names, ['Henry']);
+    assert.deepEqual(week.summary.columns[0].names, ['Harold']);
     assert.equal(week.summary.columns[0].meal, 'Jollof and chicken');
     // Tuesday: he said no, so nobody is down and it is not a guess.
     assert.deepEqual(week.summary.columns[1].names, []);
@@ -765,7 +765,7 @@ test('a save that writes nothing says so rather than thanking them', async () =>
   const token = (await (await lunch.makeLink(ctxFor(db, '/api/lunch/link', {}))).json())
     .url.split('/lunch/')[1];
 
-  // The rota changed under a page somebody already had open: Henry is off the
+  // The rota changed under a page somebody already had open: Harold is off the
   // week entirely by the time he presses the button.
   raw.prepare('DELETE FROM att_roster WHERE staff_id = 1').run();
 
@@ -815,10 +815,10 @@ test('answering no puts somebody on the page rather than off it', async () => {
   const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
 
   assert.equal(week.summary.plates, 0, 'he is not eating');
-  assert.equal(week.waiting.find((p) => p.name === 'Henry Aryee'), undefined,
+  assert.equal(week.waiting.find((p) => p.name === 'Harold Armah'), undefined,
     'and he is not being chased, because he answered');
   // The list that was missing. Without it he is on nothing at all.
-  assert.deepEqual(week.declined.map((p) => p.name), ['Henry Aryee']);
+  assert.deepEqual(week.declined.map((p) => p.name), ['Harold Armah']);
   assert.equal(week.declined[0].days.length, 3);
 });
 
@@ -840,7 +840,7 @@ test('a leaver’s plates are still on the count', async () => {
 
   const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
   assert.equal(week.summary.plates, 2);
-  assert.deepEqual(week.summary.columns[0].names, ['Henry']);
+  assert.deepEqual(week.summary.columns[0].names, ['Harold']);
 });
 
 // ---------------------------------------------------------------------------
@@ -858,16 +858,16 @@ test('a leaver’s plates are still on the count', async () => {
  * and the count has gone, so it is asked for and the kitchen decides.
  */
 
-/** A login pointed at Henry, who works Monday to Wednesday. */
+/** A login pointed at Harold, who works Monday to Wednesday. */
 function withLogin(raw) {
   raw.prepare(
     'INSERT INTO users (id, name, role, active, staff_id) VALUES (50, ?, ?, 1, 1)',
-  ).run('Henry', 'staff');
+  ).run('Harold', 'staff');
   raw.prepare("INSERT INTO settings (key, value) VALUES ('lunch_on', '1') "
     + 'ON CONFLICT (key) DO UPDATE SET value = excluded.value').run();
 }
 
-const HENRY = { user: { id: 50, name: 'Henry', role: 'staff', staff_id: 1 }, permissions: ['att_me'] };
+const HENRY = { user: { id: 50, name: 'Harold', role: 'staff', staff_id: 1 }, permissions: ['att_me'] };
 
 const asHenry = (db, path, body) => ({
   ...ctxFor(db, path, body),
@@ -949,14 +949,14 @@ test('the kitchen is told, and the request is on their screen', async () => {
     const week = await (await lunch.lunchWeek(ctxFor(db, `/api/lunch?week=${MON}`))).json();
 
     assert.equal(week.changes.length, 1);
-    assert.equal(week.changes[0].name, 'Henry Aryee');
+    assert.equal(week.changes[0].name, 'Harold Armah');
     assert.equal(week.changes[0].want, true);
     assert.equal(week.changes[0].day, WED);
   });
 
   const notice = raw.prepare('SELECT kind, title FROM app_notices ORDER BY id DESC LIMIT 1').get();
   assert.equal(notice.kind, 'lunch.change_asked');
-  assert.match(notice.title, /Henry Aryee/);
+  assert.match(notice.title, /Harold Armah/);
 });
 
 test('saying yes changes the plate as well as the answer', async () => {
@@ -1313,8 +1313,8 @@ test('a week of nothing is an answer, and it is still worth sending', () => {
 test('everybody who answered is told, at the address they have', async () => {
   const { db, raw } = property();
   mailing(raw);
-  // Henry has a login with no address on it, which is most logins.
-  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'henry@example.com')")
+  // Harold has a login with no address on it, which is most logins.
+  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'harold@example.com')")
     .run();
   raw.prepare('INSERT INTO lunch_order (staff_id, day, taking) VALUES (1, ?, 1)').run(MON);
 
@@ -1327,7 +1327,7 @@ test('everybody who answered is told, at the address they have', async () => {
   }
 
   assert.equal(out.sent, 1);
-  assert.deepEqual(spy.sent[0].to, ['henry@example.com']);
+  assert.deepEqual(spy.sent[0].to, ['harold@example.com']);
   assert.match(spy.sent[0].subject, /Lunch at Somewhere Nice, week of 24 August/);
 });
 
@@ -1336,7 +1336,7 @@ test('somebody who said nothing is not sent a receipt for nothing', async () => 
   // name, where somebody can do something about it.
   const { db, raw } = property();
   mailing(raw);
-  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'henry@example.com')")
+  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'harold@example.com')")
     .run();
 
   const spy = watchMail();
@@ -1369,7 +1369,7 @@ test('somebody with no address anywhere is counted rather than lost', async () =
 test('it goes on its own when the list shuts, and only once', async () => {
   const { db, raw } = property();
   mailing(raw);
-  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'henry@example.com')")
+  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'harold@example.com')")
     .run();
   raw.prepare('INSERT INTO lunch_order (staff_id, day, taking) VALUES (1, ?, 1)').run(MON);
 
@@ -1413,7 +1413,7 @@ test('nothing goes while the list is still taking answers', async () => {
 test('the button sends the week it is asked for, and records it', async () => {
   const { db, raw } = property();
   mailing(raw);
-  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'henry@example.com')")
+  raw.prepare("INSERT INTO hr_profile (staff_id, personal_email) VALUES (1, 'harold@example.com')")
     .run();
   raw.prepare('INSERT INTO lunch_order (staff_id, day, taking) VALUES (1, ?, 1)').run(MON);
 

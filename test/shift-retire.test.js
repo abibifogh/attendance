@@ -86,7 +86,7 @@ test('a shift with days recorded against it cannot be deleted', async () => {
   const { db, raw } = setup();
   const id = await makeShift(db);
   raw.prepare(
-    "INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (1, '1', 'Henry', '2020-01-01')",
+    "INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (1, '1', 'Harold', '2020-01-01')",
   ).run();
   raw.prepare(
     "INSERT INTO att_days (staff_id, day, shift_id, status) VALUES (1, '2026-06-01', ?, 'present')",
@@ -108,7 +108,7 @@ test('a shift only on a future rota cannot be deleted either', async () => {
   const { db, raw } = setup();
   const id = await makeShift(db);
   raw.prepare(
-    "INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (1, '1', 'Henry', '2020-01-01')",
+    "INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (1, '1', 'Harold', '2020-01-01')",
   ).run();
   raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id) VALUES (1, ?, ?)')
     .run('2026-12-24', id);
@@ -122,7 +122,7 @@ test('retiring takes it off the lists and leaves the history alone', async () =>
   const { db, raw } = setup();
   const id = await makeShift(db);
   raw.prepare(
-    "INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (1, '1', 'Henry', '2020-01-01')",
+    "INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (1, '1', 'Harold', '2020-01-01')",
   ).run();
   raw.prepare(
     "INSERT INTO att_days (staff_id, day, shift_id, status) VALUES (1, '2026-06-01', ?, 'present')",

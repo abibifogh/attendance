@@ -38,8 +38,8 @@ const NIGHT = {
 };
 
 const STAFF = [
-  { id: 1, employee_no: '1001', name: 'Henry Aryee', active: 1, hired_on: '2023-02-01', leave_days: null },
-  { id: 2, employee_no: '1002', name: 'Vivian Mensah', active: 1, hired_on: '2024-06-15', leave_days: null },
+  { id: 1, employee_no: '1001', name: 'Harold Armah', active: 1, hired_on: '2023-02-01', leave_days: null },
+  { id: 2, employee_no: '1002', name: 'Veronica Mensah', active: 1, hired_on: '2024-06-15', leave_days: null },
 ];
 
 const REASONS = [
@@ -662,7 +662,7 @@ test('an ISAPI event becomes a punch', () => {
     minor: 75,
     time: '2026-06-16T06:03:12+00:00',
     employeeNoString: '1001',
-    name: 'Henry Aryee',
+    name: 'Harold Armah',
     attendanceStatus: 'checkIn',
     serialNo: 4821,
     doorNo: 1,
@@ -1132,7 +1132,7 @@ test('a shift still to come counts as neither worked nor missed', () => {
  * counted as having turned up, which is a different question and not one a
  * window should be answering.
  *
- * Doreen is on a craft shift at 09:00 and arrives at six, because that is when
+ * Dolly is on a craft shift at 09:00 and arrives at six, because that is when
  * the first tro-tro gets her there. Three hours is the stretch the property
  * accepts, so at 05:45 her arrival fell outside it, was thrown away, and the
  * day read as though she had never clocked in. She had, and the punch was in

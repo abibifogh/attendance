@@ -75,7 +75,7 @@ async function setup() {
   raw.exec('DELETE FROM att_staff');
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, job_title, hired_on)
-     VALUES (1, '1001', 'Angela Asare Ayima', 'Housekeeping', 'Housekeeper', '2026-09-01'),
+     VALUES (1, '1001', 'Augustina Adjei Abla', 'Housekeeping', 'Housekeeper', '2026-09-01'),
             (2, '1002', 'Yaw Boateng', 'Kitchen', 'Cook', '2025-02-01')`,
   ).run();
   return { raw, db: d1(raw) };
@@ -206,7 +206,7 @@ test('a photograph sent from a phone waits rather than going on the record', asy
   assert.equal(row.kind, 'ghana_card');
   assert.equal(row.title, 'Ghana Card or passport');
   assert.ok(row.invite_id);
-  assert.match(row.uploaded_by, /Angela/);
+  assert.match(row.uploaded_by, /Augustina/);
 
   // And it is not on the file the office reads as complete.
   const person = await read(await getPerson(ctx(db), 1));
@@ -229,7 +229,7 @@ test('the office accepts it onto the record, or sends it back', async () => {
 
   const waiting = await read(await listWaitingDocuments(ctx(db)));
   assert.equal(waiting.documents.length, 2);
-  assert.equal(waiting.documents[0].staff_name, 'Angela Asare Ayima');
+  assert.equal(waiting.documents[0].staff_name, 'Augustina Adjei Abla');
 
   await decideDocument(ctx(db, { body: { decision: 'accept' } }), String(first.id));
   await decideDocument(

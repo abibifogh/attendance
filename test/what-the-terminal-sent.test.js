@@ -50,7 +50,7 @@ function setup() {
   ).run();
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, hired_on, on_rota, on_clock, active)
-     VALUES (1, 'Adm001', 'Godfred Donkor', 'Admin', '2020-01-01', 1, 1, 1)`,
+     VALUES (1, 'Adm001', 'Gideon Dadzie', 'Admin', '2020-01-01', 1, 1, 1)`,
   ).run();
   raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 1, 1)')
     .run(DAY);

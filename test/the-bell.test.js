@@ -97,7 +97,7 @@ test('a notice reaches the phone without being asked to', async () => {
   try {
     await createNotice(db, {
       kind: 'attendance.availability_asked',
-      title: 'Stephanie asked about 2 days',
+      title: 'Sylvia asked about 2 days',
       audience: 'att_rota',
       email: false,
     });
@@ -121,8 +121,8 @@ test('two of the same kind arrive as two notifications, not one on top of the ot
     return new Response('', { status: 201 });
   };
   try {
-    await createNotice(db, { kind: 'attendance.availability_asked', title: 'Stephanie asked', email: false });
-    await createNotice(db, { kind: 'attendance.availability_asked', title: 'Angela asked', email: false });
+    await createNotice(db, { kind: 'attendance.availability_asked', title: 'Sylvia asked', email: false });
+    await createNotice(db, { kind: 'attendance.availability_asked', title: 'Augustina asked', email: false });
   } finally { globalThis.fetch = original; }
 
   assert.equal(seen.length, 2, 'both were sent');

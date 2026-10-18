@@ -345,7 +345,7 @@ test('a month closed before the fix picks the deduction up when it is reopened',
 // ---------------------------------------------------------------------------
 
 test('letting a month go after it was closed says so rather than looking ignored', async () => {
-  // Henry's case. The month was closed with the deduction on it; somebody then
+  // Harold's case. The month was closed with the deduction on it; somebody then
   // went to Advances, took that movement off and let the month go instead. The
   // table still shows what was written, correctly, and until now said nothing
   // about it.
@@ -455,7 +455,7 @@ test('an advance against somebody not on the payroll is named, not silently drop
   await onPayroll(db);
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, hired_on)
-     VALUES (2, 'E2', 'Divine Atsu Adanuvi', 'Kitchen', '2020-01-01')`,
+     VALUES (2, 'E2', 'Esi Quaye', 'Kitchen', '2020-01-01')`,
   ).run();
   await read(await addAdvance(ctx(db, {
     body: {
@@ -467,7 +467,7 @@ test('an advance against somebody not on the payroll is named, not silently drop
   const data = await read(await payroll(ctx(db, { query: `?month=${MONTH}` })));
   assert.ok(!data.lines.some((l) => l.staff.id === 2), 'no pay profile, so no line');
   assert.equal(data.advancesNotDue.length, 1);
-  assert.equal(data.advancesNotDue[0].name, 'Divine Atsu Adanuvi');
+  assert.equal(data.advancesNotDue[0].name, 'Esi Quaye');
   assert.equal(data.advancesNotDue[0].why, 'not_on_payroll');
   assert.equal(data.advancesNotDue[0].left, 500);
 });
@@ -477,7 +477,7 @@ test('putting them on the payroll takes the deduction', async () => {
   await onPayroll(db);
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, hired_on)
-     VALUES (2, 'E2', 'Divine Atsu Adanuvi', '2020-01-01')`,
+     VALUES (2, 'E2', 'Esi Quaye', '2020-01-01')`,
   ).run();
   await read(await addAdvance(ctx(db, {
     body: {
@@ -507,7 +507,7 @@ test('somebody off the payroll whose advance is not due yet is not nagged about'
   await onPayroll(db);
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, hired_on)
-     VALUES (2, 'E2', 'Divine Atsu Adanuvi', '2020-01-01')`,
+     VALUES (2, 'E2', 'Esi Quaye', '2020-01-01')`,
   ).run();
   await read(await addAdvance(ctx(db, {
     body: {

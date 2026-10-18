@@ -279,7 +279,7 @@ async function countThisMonth(db, staffId, today) {
  *
  * Either to anybody who can cover it, or to the people they name, or both:
  * naming somebody and leaving it on the board is one instruction, not two, and
- * it is what people actually mean by "ask Doreen, and if she cannot, anybody".
+ * it is what people actually mean by "ask Dolly, and if she cannot, anybody".
  */
 export async function offerSwap(ctx) {
   const staff = await meOf(ctx);

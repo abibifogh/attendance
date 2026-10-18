@@ -75,7 +75,7 @@ function setup() {
 
 /** Builds the rota and closes months off. Cannot move a balance. */
 const PLANNER = {
-  user: { id: 2, name: 'Jessica', role: 'planner' },
+  user: { id: 2, name: 'Janet', role: 'planner' },
   permissions: ['att_view', 'att_rota', 'att_times', 'att_signoff'],
 };
 /** The one who can. */
@@ -159,7 +159,7 @@ test('the planner signs the days and the balance does not move', async () => {
   assert.equal(asked[0].days, -2);
   assert.equal(asked[0].was, 0);
   assert.equal(asked[0].status, 'pending');
-  assert.match(asked[0].actor, /Jessica/);
+  assert.match(asked[0].actor, /Janet/);
   assert.match(asked[0].reason, /Short two days/);
 });
 

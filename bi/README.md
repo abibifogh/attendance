@@ -308,7 +308,7 @@ There is deliberately **no fuzzy matching**. No edit distance, no nicknames. A
 near-match that merges two real people is far worse than two rows that should
 have been one: the first puts one person's till shortages on another's record,
 the second is a tidy-up job. For the same reason, two people who really are both
-called Kofi Asare, with two employee numbers, stay two people.
+called Kofi Adjei, with two employee numbers, stay two people.
 
 ---
 

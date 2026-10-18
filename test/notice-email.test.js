@@ -103,7 +103,7 @@ test('recording a notice sends it, from the configured address', async () => {
     await createNotice(db, {
       kind: 'attendance.query',
       level: 'warn',
-      title: 'Nelson Kumadey: a period needs your eye',
+      title: 'Nathaniel Kudjoe: a period needs your eye',
       body: '1 July to 31 July — nineteen days nobody can explain',
       link: '#/signoff?tab=queries',
       actor: 'Yaa (planner)',
@@ -121,7 +121,7 @@ test('recording a notice sends it, from the configured address', async () => {
   // place by what is on the certificate.
   assert.equal(body.from, '"HIVE" <hive@niceoperation.com>');
   assert.deepEqual(body.to, ['ama@example.test']);
-  assert.equal(body.subject, 'Nelson Kumadey: a period needs your eye');
+  assert.equal(body.subject, 'Nathaniel Kudjoe: a period needs your eye');
   assert.match(body.html, /nineteen days nobody can explain/);
 
   // Both parts. A message with HTML and no text is one of the things spam
@@ -252,13 +252,13 @@ test('the plain-text part keeps the words and the links, and drops the markup', 
   const { asPlainText } = await import('../src/lib/notify.js');
 
   const text = asPlainText(`
-    <h1>Nelson Kumadey</h1>
+    <h1>Nathaniel Kudjoe</h1>
     <p>Nineteen days &amp; nobody can explain them</p>
     <ul><li>1 July</li><li>2 July</li></ul>
     <a href="https://staff.niceoperation.com/#/signoff">Open it</a>
   `);
 
-  assert.match(text, /Nelson Kumadey/);
+  assert.match(text, /Nathaniel Kudjoe/);
   assert.match(text, /Nineteen days & nobody/, 'entities decoded');
   assert.match(text, /- 1 July/, 'list items survive as a list');
   assert.match(text, /Open it: https:\/\/staff\.niceoperation\.com/, 'the link is readable');

@@ -31,7 +31,7 @@ const JSON_EVENT = {
     subEventType: 75,
     cardNo: '1234567',
     cardType: 1,
-    name: 'Henry Aryee',
+    name: 'Harold Armah',
     employeeNoString: '1001',
     serialNo: 4821,
     userType: 'normal',
@@ -53,7 +53,7 @@ const XML_EVENT = `<?xml version="1.0" encoding="UTF-8"?>
   <AccessControllerEvent>
     <majorEventType>5</majorEventType>
     <subEventType>75</subEventType>
-    <name>Vivian Mensah</name>
+    <name>Veronica Mensah</name>
     <employeeNoString>1002</employeeNoString>
     <serialNo>4822</serialNo>
     <attendanceStatus>checkOut</attendanceStatus>
@@ -171,8 +171,8 @@ test('several events in one post are all read', () => {
 });
 
 test('an escaped name survives the XML', () => {
-  const events = fromXml(XML_EVENT.replace('Vivian Mensah', 'Vivian &amp; Co'));
-  assert.equal(events[0].name, 'Vivian & Co');
+  const events = fromXml(XML_EVENT.replace('Veronica Mensah', 'Veronica &amp; Co'));
+  assert.equal(events[0].name, 'Veronica & Co');
 });
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ import { showSheet } from './att-shared.js';
  *
  * Publishing told everybody at once and then forgot what it had done. What a
  * planner got back was three numbers, and the question that actually arrives a
- * day later is not a number: it is "Doreen says she never got hers". Answering
+ * day later is not a number: it is "Dolly says she never got hers". Answering
  * that meant publishing the whole fortnight again and buzzing twenty-one
  * people who had already read it.
  *

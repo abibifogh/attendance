@@ -3164,7 +3164,7 @@ export async function publishRoster(ctx) {
  * Recent publishes, and how many people each one actually reached.
  *
  * Publishing used to answer with three numbers and forget which people they
- * were. "Doreen never got hers" could then only be answered by publishing the
+ * were. "Dolly never got hers" could then only be answered by publishing the
  * fortnight again and buzzing twenty-one people who had already read it.
  */
 export async function publishHistory(ctx) {
@@ -3978,8 +3978,8 @@ export async function saveRoster(ctx) {
       // "Off" on a cell is a real row with no shift on it: somebody deciding
       // this person is not working, rather than nobody having decided
       // anything. Putting a shift on that day used to add a row beside it, so
-      // the day held two and the grid counted them as two shifts: "Betty
-      // Freeman is down for two shifts this day. Take one off." One of the two
+      // the day held two and the grid counted them as two shifts: "Bertha
+      // Forson is down for two shifts this day. Take one off." One of the two
       // was the day off, and a day off is exactly what putting a shift on the
       // day undoes.
       //

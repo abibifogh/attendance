@@ -388,7 +388,7 @@ test('what the roster sends is what that row needs to draw one', async () => {
  * person is not working, rather than nobody having decided anything. Putting a
  * shift on that day used to add a row beside it, so the day held two rows and
  * the grid counted them as two shifts, and a planner filling an ordinary rest
- * day was told "Betty Freeman is down for two shifts this day. Take one off."
+ * day was told "Bertha Forson is down for two shifts this day. Take one off."
  *
  * One of the two was the day off, and a day off is exactly what putting a
  * shift on the day undoes.

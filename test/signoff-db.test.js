@@ -93,7 +93,7 @@ async function setup() {
   ).run();
   raw.exec('DELETE FROM att_staff');
   raw.prepare(
-    "INSERT INTO att_staff (id, employee_no, name, department, hired_on) VALUES (1, '1001', 'Henry Aryee', 'Kitchen', '2020-01-01')",
+    "INSERT INTO att_staff (id, employee_no, name, department, hired_on) VALUES (1, '1001', 'Harold Armah', 'Kitchen', '2020-01-01')",
   ).run();
 
   // Monday 1 June 2026 to Friday 5 June. Rostered every day.
@@ -141,7 +141,7 @@ test('a week nobody has signed shows every day of it, with what is wrong', async
   assert.equal(row.issues.counts.late, 1);
   assert.equal(row.issues.counts.absent, 1);
   assert.equal(row.issues.blocking, true, 'an unexplained absence is worth stopping for');
-  assert.match(row.summary, /Henry Aryee — 5 days/);
+  assert.match(row.summary, /Harold Armah — 5 days/);
 });
 
 test('a day still running is never offered for sign-off', async () => {
@@ -171,7 +171,7 @@ test('the list can be narrowed to the ones with something wrong', async () => {
   assert.equal(all.rows.length, 2);
 
   const flagged = await read(await outstanding(ctx(db, { query: `${WEEK}&issues=1` })));
-  assert.deepEqual(flagged.rows.map((r) => r.staff.name), ['Henry Aryee']);
+  assert.deepEqual(flagged.rows.map((r) => r.staff.name), ['Harold Armah']);
 });
 
 test('a rest day nobody worked is not something to sign off', async () => {
@@ -319,7 +319,7 @@ test('a period can be raised rather than signed, and it reaches the queue', asyn
   assert.equal(queue.rows.length, 1);
 
   const q = queue.rows[0];
-  assert.equal(q.staff.name, 'Henry Aryee');
+  assert.equal(q.staff.name, 'Harold Armah');
   assert.equal(q.status, 'open');
   assert.match(q.raisedBy, /Yaa/);
   assert.deepEqual(q.days, ['2026-06-04']);
@@ -333,7 +333,7 @@ test('raising it rings the bell for whoever settles days', async () => {
   const notice = raw.prepare("SELECT * FROM app_notices WHERE kind = 'attendance.query'").get();
   assert.ok(notice);
   assert.equal(notice.audience, 'att_manage', 'addressed to the permission, not to a person');
-  assert.match(notice.title, /Henry Aryee/);
+  assert.match(notice.title, /Harold Armah/);
 });
 
 test('the same period cannot be raised twice', async () => {
@@ -806,22 +806,22 @@ test('the list narrows by day, not by person', async () => {
     }
   }
 
-  // Henry's week: Monday and Tuesday clean, Wednesday late, Thursday absent,
+  // Harold's week: Monday and Tuesday clean, Wednesday late, Thursday absent,
   // Friday clean.
   const everybody = await read(await outstanding(ctx(db, { query: WEEK })));
-  assert.deepEqual(everybody.rows.map((r) => r.staff.name).sort(), ['Clean Sheet', 'Henry Aryee']);
+  assert.deepEqual(everybody.rows.map((r) => r.staff.name).sort(), ['Clean Sheet', 'Harold Armah']);
 
   const wrong = await read(await outstanding(ctx(db, { query: `${WEEK}&issues=1` })));
-  assert.deepEqual(wrong.rows.map((r) => r.staff.name), ['Henry Aryee'],
+  assert.deepEqual(wrong.rows.map((r) => r.staff.name), ['Harold Armah'],
     'the clean sheet has nothing wrong anywhere, so drops out entirely');
   assert.deepEqual(wrong.rows[0].days.map((d) => d.day), ['2026-06-03', '2026-06-04'],
     'and only his two bad days are shown, not his whole week');
 
   const clean = await read(await outstanding(ctx(db, { query: `${WEEK}&issues=0` })));
-  assert.deepEqual(clean.rows.map((r) => r.staff.name).sort(), ['Clean Sheet', 'Henry Aryee'],
+  assert.deepEqual(clean.rows.map((r) => r.staff.name).sort(), ['Clean Sheet', 'Harold Armah'],
     'and his three good days are here, where somebody looking to clear things will find them');
   assert.deepEqual(
-    clean.rows.find((r) => r.staff.name === 'Henry Aryee').days.map((d) => d.day),
+    clean.rows.find((r) => r.staff.name === 'Harold Armah').days.map((d) => d.day),
     ['2026-06-01', '2026-06-02', '2026-06-05'],
   );
 });
@@ -843,7 +843,7 @@ test('a day waiting on a clock-time change is not a clean day to the filter eith
 
 test('signing every clean day leaves the awkward ones behind', async () => {
   // What the one-press button does, per person, through the ordinary route.
-  // Henry's week is clean on Monday, Tuesday and Friday; late on Wednesday and
+  // Harold's week is clean on Monday, Tuesday and Friday; late on Wednesday and
   // absent on Thursday.
   const { raw, db } = await setup();
 

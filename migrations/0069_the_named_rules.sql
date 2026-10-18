@@ -9,20 +9,20 @@
 -- migration that hard-codes them is a migration that does the wrong thing to
 -- the next database it meets. Nothing matches, nothing happens.
 --
---   Breakfast main      one a day, Nii first and Dorcas when he is not free
+--   Breakfast main      one a day, Nicholas first and Dinah when he is not free
 --   Breakfast helper    one a day
---   Housekeeping main   one a day, Linda first and Atsu after her
+--   Housekeeping main   one a day, Lydia first and Awuku after her
 --   Reception           one each on AM, PM and Night, every day
 -- ---------------------------------------------------------------------------
 
--- Breakfast main: Nii, then Dorcas.
+-- Breakfast main: Nicholas, then Dinah.
 UPDATE att_shifts
    SET needed = 1,
        only_staff = (
          SELECT '[' || group_concat(id) || ']' FROM (
-           SELECT id, 1 AS rank FROM att_staff WHERE name LIKE '%Aryee%' AND active = 1
+           SELECT id, 1 AS rank FROM att_staff WHERE name LIKE '%Armah%' AND active = 1
            UNION ALL
-           SELECT id, 2 AS rank FROM att_staff WHERE name LIKE '%Sarpei%' AND active = 1
+           SELECT id, 2 AS rank FROM att_staff WHERE name LIKE '%Sowah%' AND active = 1
            ORDER BY rank
          )
        )
@@ -31,14 +31,14 @@ UPDATE att_shifts
 -- Breakfast helper: one a day, whoever is set up for it.
 UPDATE att_shifts SET needed = 1 WHERE name = 'Breakfast helper';
 
--- Housekeeping main: Linda, then Atsu.
+-- Housekeeping main: Lydia, then Awuku.
 UPDATE att_shifts
    SET needed = 1,
        only_staff = (
          SELECT '[' || group_concat(id) || ']' FROM (
-           SELECT id, 1 AS rank FROM att_staff WHERE name LIKE '%Attipoe%' AND active = 1
+           SELECT id, 1 AS rank FROM att_staff WHERE name LIKE '%Amegashie%' AND active = 1
            UNION ALL
-           SELECT id, 2 AS rank FROM att_staff WHERE name LIKE '%Adanuvi%' AND active = 1
+           SELECT id, 2 AS rank FROM att_staff WHERE name LIKE '%Ametewee%' AND active = 1
            ORDER BY rank
          )
        )

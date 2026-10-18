@@ -42,7 +42,7 @@ test('the words come out of a real PDF with their positions', async () => {
   assert.ok(Math.round(text.pages[0].width) === 842, 'A4 landscape');
 
   const all = text.pages[0].items.map((i) => i.text).join(' ');
-  assert.match(all, /Abdul Hamid Iddirisu/, 'a subset font renumbers its glyphs; the map undoes it');
+  assert.match(all, /Alhassan Hamza Issahaku/, 'a subset font renumbers its glyphs; the map undoes it');
   assert.match(all, /17:30 - 06:30/);
 });
 
@@ -52,7 +52,7 @@ test('a printed week reads back as the week it prints', async () => {
   assert.equal(problem, null);
   assert.equal(new Set(rows.map((r) => r.name)).size, 10, 'everybody on the printout');
 
-  const day = find(rows, 'Angela Asare Ayima', '2026-08-18');
+  const day = find(rows, 'Augustina Adjei Abla', '2026-08-18');
   assert.equal(day.startsAt, '09:00');
   assert.equal(day.endsAt, '18:00');
   assert.equal(day.title, 'Housekeeper Helper + laundry', 'a title that wrapped onto two lines');
@@ -62,7 +62,7 @@ test('a printed week reads back as the week it prints', async () => {
 
 test('a night shift keeps the hours it was printed with', async () => {
   const { rows } = await rowsOf(fixture());
-  const night = find(rows, 'Abdul Hamid Iddirisu', '2026-08-19');
+  const night = find(rows, 'Alhassan Hamza Issahaku', '2026-08-19');
 
   // Which date an overnight shift belongs to is settled elsewhere, and settled
   // once. Here it is only read.
@@ -74,8 +74,8 @@ test('a name that wrapped onto two lines is still one person', async () => {
   const { rows } = await rowsOf(fixture());
   const names = [...new Set(rows.map((r) => r.name))];
 
-  assert.ok(names.includes('Destiny Hagar Amankwa'), names.join(' / '));
-  assert.ok(!names.includes('Amankwa'), 'and not a second person called Amankwa');
+  assert.ok(names.includes('Deborah Hilda Ampofo'), names.join(' / '));
+  assert.ok(!names.includes('Ampofo'), 'and not a second person called Ampofo');
 });
 
 test('the second page is read under the first page’s dates', async () => {
@@ -94,7 +94,7 @@ test('the second page is read under the first page’s dates', async () => {
 
 test('two shifts in one cell are two shifts', async () => {
   const { rows } = await rowsOf(fixture());
-  const double = rows.filter((r) => r.name === 'Dorcas Sarpei' && r.day === '2026-08-17');
+  const double = rows.filter((r) => r.name === 'Dinah Sowah' && r.day === '2026-08-17');
 
   assert.equal(double.length, 2);
   assert.deepEqual(double.map((r) => r.startsAt).sort(), ['06:00', '16:00']);
@@ -107,7 +107,7 @@ test('time off printed in the grid is not imported as a shift', async () => {
   // Rostering it would put somebody on an hour of work they had asked to be
   // excused from — so it is held back, and said out loud rather than dropped.
   const { rows } = await rowsOf(fixture());
-  const off = find(rows, 'Betty Freeman', '2026-08-17');
+  const off = find(rows, 'Bertha Forson', '2026-08-17');
 
   assert.equal(off.problem, 'A time-off block, not a shift.');
   assert.match(off.note, /Approved/);
@@ -162,7 +162,7 @@ test('a cell belongs to the column its left edge sits in', async () => {
   // between two columns is the right one.
   const { rows } = await rowsOf(makePdf([
     ...header(),
-    { x: 30, y: 520, text: 'Angela Asare Ayima' },
+    { x: 30, y: 520, text: 'Augustina Adjei Abla' },
     ...block(300, 520, '09:00 - 18:00', 'Housekeeper Helper'),
   ]));
 
@@ -176,26 +176,26 @@ test('a block starting a hair above the name beside it is still that person’s'
   // silently gives the shift to the person above.
   const { rows } = await rowsOf(makePdf([
     ...header(),
-    { x: 30, y: 520, text: 'Abdul Hamid Iddirisu' },
+    { x: 30, y: 520, text: 'Alhassan Hamza Issahaku' },
     ...block(200, 522, '17:30 - 06:30', null),
   ]));
 
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].name, 'Abdul Hamid Iddirisu');
+  assert.equal(rows[0].name, 'Alhassan Hamza Issahaku');
 });
 
 test('a shift is not handed to the person above it', async () => {
   const { rows } = await rowsOf(makePdf([
     ...header(),
-    { x: 30, y: 520, text: 'Angela Asare Ayima' },
+    { x: 30, y: 520, text: 'Augustina Adjei Abla' },
     ...block(200, 520, '07:00 - 16:00', 'Housekeeper Helper'),
-    { x: 30, y: 420, text: 'Betty Freeman' },
+    { x: 30, y: 420, text: 'Bertha Forson' },
     ...block(200, 420, '13:45 - 22:00', 'Bistro - Shift 2'),
   ]));
 
   assert.equal(rows.length, 2);
-  assert.equal(find(rows, 'Angela Asare Ayima', '2026-08-17').startsAt, '07:00');
-  assert.equal(find(rows, 'Betty Freeman', '2026-08-17').startsAt, '13:45');
+  assert.equal(find(rows, 'Augustina Adjei Abla', '2026-08-17').startsAt, '07:00');
+  assert.equal(find(rows, 'Bertha Forson', '2026-08-17').startsAt, '13:45');
 });
 
 test('hours with nothing under them are not taken for a shift', async () => {
@@ -203,7 +203,7 @@ test('hours with nothing under them are not taken for a shift', async () => {
   // apart is that a real block always says how long it is and where.
   const { rows } = await rowsOf(makePdf([
     ...header(),
-    { x: 30, y: 520, text: 'Angela Asare Ayima' },
+    { x: 30, y: 520, text: 'Augustina Adjei Abla' },
     { x: 200, y: 520, text: '09:00 - 18:00' },
   ]));
 

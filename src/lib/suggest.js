@@ -110,8 +110,8 @@ export function suggestRota({
   //
   // A shift that names its people is settled across the whole window before
   // any shift that does not, and that is stronger than it sounds. Housekeeping
-  // main is Linda and then Atsu; asked a day at a time it takes Linda for her
-  // five, and by the Saturday Atsu has spent his week on the laundry, so a
+  // main is Lydia and then Awuku; asked a day at a time it takes Lydia for her
+  // five, and by the Saturday Awuku has spent his week on the laundry, so a
   // shift with two people named for it ends up with neither. Going through all
   // fourteen days of it first reserves them.
   //
@@ -268,8 +268,8 @@ export function suggestRota({
             habit: habit.get(`${c.person.id}|${shift.id}|${weekday}`) ?? 0,
             load: loadOf(ds, proposed, c.person.id, day),
             // Where a shift names its people, the order they are named in is
-            // an instruction and outranks everything else. Nii and then
-            // Dorcas means Nii while Nii can, not whichever of them the last
+            // an instruction and outranks everything else. Nicholas and then
+            // Dinah means Nicholas while Nicholas can, not whichever of them the last
             // six weeks happened to use more.
             standing: standingFor(c.person, shift),
           }))
@@ -936,8 +936,8 @@ function hoursInWeekOf(worked, day) {
  * Why this person and not another, in the words somebody would use out loud.
  *
  * A shift that names its people gets said plainly, because the first choice
- * being absent is the interesting half of it: a planner looking at Dorcas on a
- * Tuesday wants to know she is there because Nii is not.
+ * being absent is the interesting half of it: a planner looking at Dinah on a
+ * Tuesday wants to know she is there because Nicholas is not.
  */
 function whyThem(candidate, shift, people) {
   const named = onlyStaff(shift);

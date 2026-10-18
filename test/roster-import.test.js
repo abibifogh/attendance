@@ -17,11 +17,11 @@ import {
  */
 
 const STAFF = [
-  { id: 1, name: 'Henry Aryee', employee_no: 'BKF001', active: 1 },
-  { id: 2, name: 'Angela Ayima Asare', employee_no: 'HSK005', active: 1 },
-  { id: 3, name: 'Chichi', employee_no: 'BAR001', active: 1 },
-  { id: 4, name: 'Emmanuel Ofori Bennie', employee_no: 'ART004', active: 1 },
-  { id: 5, name: 'Patience Torto', employee_no: 'HSK004', active: 1 },
+  { id: 1, name: 'Harold Armah', employee_no: 'BKF001', active: 1 },
+  { id: 2, name: 'Augustina Abla Adjei', employee_no: 'HSK005', active: 1 },
+  { id: 3, name: 'Cecilia', employee_no: 'BAR001', active: 1 },
+  { id: 4, name: 'Ebenezer Opoku Bonsu', employee_no: 'ART004', active: 1 },
+  { id: 5, name: 'Priscilla Tetteh', employee_no: 'HSK004', active: 1 },
 ];
 
 const SHIFTS = [
@@ -74,20 +74,20 @@ test('a file that is not a rota is refused rather than half-read', () => {
 test('columns are found however they are capitalised', () => {
   const { rows, problem } = parseRotaCsv(
     'employee name,START DATE,Start Time,End Time\n'
-    + '"Henry Aryee","Aug 17, 2026","05:00","11:30"\n',
+    + '"Harold Armah","Aug 17, 2026","05:00","11:30"\n',
   );
   assert.equal(problem, null);
-  assert.equal(rows[0].name, 'Henry Aryee');
+  assert.equal(rows[0].name, 'Harold Armah');
   assert.equal(rows[0].day, '2026-08-17');
 });
 
 test('an unreadable line is reported, never silently dropped', () => {
   const { rows } = parseRotaCsv(
     'Employee Names,Start Date,Start Time,End Time\n'
-    + '"Henry Aryee","Aug 17, 2026","05:00","11:30"\n'
-    + '"Henry Aryee","not a date","05:00","11:30"\n'
+    + '"Harold Armah","Aug 17, 2026","05:00","11:30"\n'
+    + '"Harold Armah","not a date","05:00","11:30"\n'
     + '"","Aug 17, 2026","05:00","11:30"\n'
-    + '"Henry Aryee","Aug 17, 2026","05:00","05:00"\n',
+    + '"Harold Armah","Aug 17, 2026","05:00","05:00"\n',
   );
   assert.equal(rows.length, 4, 'a file that quietly loses rows is worse than one that says which');
   assert.equal(rows[0].problem, null);
@@ -101,29 +101,29 @@ test('an unreadable line is reported, never silently dropped', () => {
 // ---------------------------------------------------------------------------
 
 test('a name is matched exactly, by alias, or by two words', () => {
-  assert.equal(matchStaff('Henry Aryee', STAFF).staff.id, 1);
-  assert.equal(matchStaff('henry aryee', STAFF).how, 'exact');
+  assert.equal(matchStaff('Harold Armah', STAFF).staff.id, 1);
+  assert.equal(matchStaff('harold armah', STAFF).how, 'exact');
 
   // Reordered and lengthened: three words in common.
-  assert.equal(matchStaff('Angela Asare Ayima', STAFF).staff.id, 2);
-  assert.equal(matchStaff('Angela Asare Ayima', STAFF).how, 'words');
+  assert.equal(matchStaff('Augustina Adjei Abla', STAFF).staff.id, 2);
+  assert.equal(matchStaff('Augustina Adjei Abla', STAFF).how, 'words');
 
-  const aliases = new Map([['chichi ayim', 3]]);
-  assert.equal(matchStaff('Chichi Ayim', STAFF, aliases).staff.id, 3);
-  assert.equal(matchStaff('Chichi Ayim', STAFF, aliases).how, 'alias');
+  const aliases = new Map([['cecilia ayeh', 3]]);
+  assert.equal(matchStaff('Cecilia Ayeh', STAFF, aliases).staff.id, 3);
+  assert.equal(matchStaff('Cecilia Ayeh', STAFF, aliases).how, 'alias');
 });
 
 test('one shared first name is never enough', () => {
-  // This is the whole point. Emmanuel Twum is a different person, and quietly
-  // rostering Emmanuel Ofori Bennie for his shifts is only noticed at payroll.
-  const result = matchStaff('Emmanuel Twum', STAFF);
+  // This is the whole point. Ebenezer Tawiah is a different person, and quietly
+  // rostering Ebenezer Opoku Bonsu for his shifts is only noticed at payroll.
+  const result = matchStaff('Ebenezer Tawiah', STAFF);
   assert.equal(result.staff, null);
   assert.equal(result.how, 'none');
 
   // Same reasoning, same answer, even where a human would recognise it.
-  assert.equal(matchStaff('Patience Naa Torshie', STAFF).staff, null);
+  assert.equal(matchStaff('Priscilla Naa Teiko', STAFF).staff, null);
   // Until somebody says so once.
-  assert.equal(matchStaff('Patience Naa Torshie', STAFF, new Map([['patience naa torshie', 5]])).staff.id, 5);
+  assert.equal(matchStaff('Priscilla Naa Teiko', STAFF, new Map([['priscilla naa teiko', 5]])).staff.id, 5);
 });
 
 test('the position breaks a tie between shifts sharing their hours', () => {
@@ -151,10 +151,10 @@ test('a shift the property does not have is named from the line', () => {
 // ---------------------------------------------------------------------------
 
 const FILE = 'Employee Names,Position,Start Date,End Date,Start Time,End Time,Title,Note\n'
-  + '"Henry Aryee","SN Breakfast","Aug 17, 2026","Aug 17, 2026","05:00","11:30","Breakfast Main",""\n'
-  + '"Angela Asare Ayima","SN Housekeeping","Aug 17, 2026","Aug 17, 2026","08:00","17:00","",""\n'
-  + '"Emmanuel Twum","SN CBS Project","Aug 17, 2026","Aug 17, 2026","08:00","17:00","",""\n'
-  + '"Henry Aryee","SN Breakfast","Aug 18, 2026","Aug 18, 2026","05:30","11:30","Breakfast Main",""\n';
+  + '"Harold Armah","SN Breakfast","Aug 17, 2026","Aug 17, 2026","05:00","11:30","Breakfast Main",""\n'
+  + '"Augustina Adjei Abla","SN Housekeeping","Aug 17, 2026","Aug 17, 2026","08:00","17:00","",""\n'
+  + '"Ebenezer Tawiah","SN CBS Project","Aug 17, 2026","Aug 17, 2026","08:00","17:00","",""\n'
+  + '"Harold Armah","SN Breakfast","Aug 18, 2026","Aug 18, 2026","05:30","11:30","Breakfast Main",""\n';
 
 const context = { staff: STAFF, shifts: SHIFTS, aliases: new Map(), rosterBy: new Map() };
 
@@ -165,7 +165,7 @@ test('a file is planned without anything being written', () => {
   assert.equal(plan.to, '2026-08-18');
   assert.equal(plan.counts.ready, 2);
   assert.equal(plan.counts.people, 2);
-  assert.equal(plan.counts.skipped, 1, 'the Emmanuel who is not ours');
+  assert.equal(plan.counts.skipped, 1, 'the Ebenezer who is not ours');
   assert.equal(plan.counts.undecided, 1, '05:30 is not a shift this property has');
   assert.equal(plan.counts.willCreate, 0, 'and a plan never proposes creating one on its own');
 });
@@ -180,8 +180,8 @@ test('an existing rostered day is counted as a replacement, not a surprise', () 
 
 test('two lines for one person on one day keep the later and say so', () => {
   const twice = 'Employee Names,Position,Start Date,Start Time,End Time\n'
-    + '"Henry Aryee","SN Breakfast","Aug 17, 2026","05:00","11:30"\n'
-    + '"Henry Aryee","SN Housekeeping","Aug 17, 2026","08:00","17:00"\n';
+    + '"Harold Armah","SN Breakfast","Aug 17, 2026","05:00","11:30"\n'
+    + '"Harold Armah","SN Housekeeping","Aug 17, 2026","08:00","17:00"\n';
 
   const plan = planImport(parseRotaCsv(twice).rows, context);
   assert.equal(plan.counts.ready, 1);

@@ -42,8 +42,8 @@ export async function createNotice(db, {
 
   // What each way out came back with, for the one caller that has to say. A
   // rota going out is the only notice somebody is later asked to account for
-  // person by person, and "we sent it" is not an answer to "Doreen never got
-  // hers" unless the app wrote down what happened to Doreen's.
+  // person by person, and "we sent it" is not an answer to "Dolly never got
+  // hers" unless the app wrote down what happened to Dolly's.
   const outcome = { buzzed: 0, emailed: 0, texted: 0 };
 
   // Who else the property has asked to be copied on this kind. Read once and
