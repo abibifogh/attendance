@@ -749,3 +749,53 @@ test('admins are told an answer waits once a quarter of an hour, with what it is
   assert.equal(sent[1].title, '2 things waiting for your approval');
   assert.match(sent[1].body, /2 are waiting in all\./);
 });
+
+test('a shift is “not checked yet” on its person’s list until somebody checks it', async () => {
+  const { env, hive } = await setUp();
+  const RealDate = Date;
+  global.Date = class extends RealDate { constructor(...a) { super(...(a.length ? a : [RealDate.parse('2026-08-03T09:00:00Z')])); } static now() { return RealDate.parse('2026-08-03T09:00:00Z'); } };
+  const told = [];
+  const fetchImpl = async (request) => { told.push(JSON.parse(await request.text())); return Response.json({ ok: true }); };
+  const shift = { day: '2026-08-01', slot: 'afternoon' };
+  try {
+    let [kofi] = (await till.linkIssues(env, { userId: 8 })).issues;
+    assert.equal(kofi.checked, false, 'nobody has checked it yet');
+
+    // Before the check, only a note: it is shown, and does not count as an answer.
+    hive.raw.prepare(`INSERT INTO till_answer (key, user_id, how, text, at) VALUES (?, 8, 'note', 'A guest was given change twice', '2026-08-02 08:00:00')`).run(kofi.key);
+    [kofi] = (await till.linkIssues(env, { userId: 8 })).issues;
+    assert.equal(kofi.status, 'open');
+    assert.equal(kofi.note.text, 'A guest was given change twice');
+
+    // Checking needs the "Check shifts" access; an admin has it.
+    await assert.rejects(till.checkShift(env, shift, SUPERVISOR, { fetchImpl }), /not been shared|not change/);
+    await assert.rejects(till.checkShift(env, { day: '2026-08-03', slot: 'morning' }, OWNER, { fetchImpl }), /once its day is over/);
+    const out = await till.checkShift(env, shift, OWNER, { fetchImpl });
+    assert.equal(out.open, 1);
+    assert.deepEqual([told[0].kind, told[0].userIds], ['till.checked', [8]], 'its person is told');
+    [kofi] = (await till.linkIssues(env, { userId: 8 })).issues;
+    assert.deepEqual([kofi.checked, kofi.checkedBy], [true, 'Test Owner']);
+    // The other shift is still not checked.
+    assert.ok((await till.linkIssues(env, { userId: 7 })).issues.every((i) => i.checked === false));
+
+    // The overview says so, with what was noted.
+    let row = (await till.overview(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).reports.find((r) => r.slot === 'afternoon');
+    assert.deepEqual([row.check.by, row.check.changed, row.notes[0].text], ['Test Owner', false, 'A guest was given change twice']);
+
+    // Changed since it was checked (here: the amount it was checked at differs): not checked again.
+    await env.DB.prepare(`UPDATE shift_check SET snapshot = ?1`).bind(JSON.stringify({ [kofi.key]: '-1500|' })).run();
+    [kofi] = (await till.linkIssues(env, { userId: 8 })).issues;
+    assert.equal(kofi.checked, false);
+    row = (await till.overview(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).reports.find((r) => r.slot === 'afternoon');
+    assert.equal(row.check.changed, true);
+
+    // Undone: not checked yet again. A supervisor given "Check shifts" may check.
+    await till.uncheckShift(env, shift, OWNER);
+    assert.equal((await till.linkIssues(env, { userId: 8 })).issues[0].checked, false);
+    await till.saveSettings(env, { access: { accountId: 9, area: 'check', level: 2 } }, OWNER);
+    await till.checkShift(env, shift, SUPERVISOR, { fetchImpl });
+    assert.equal((await till.linkIssues(env, { userId: 8 })).issues[0].checkedBy, 'Sam Supervisor');
+  } finally {
+    global.Date = RealDate;
+  }
+});

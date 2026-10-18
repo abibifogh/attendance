@@ -202,6 +202,25 @@ test('a PO answers cash that left the drawer, once', async () => {
   assert.equal(raw.prepare("SELECT how FROM till_answer ORDER BY id DESC LIMIT 1").get().how, 'repay');
 });
 
+test('a shift not checked yet takes a note, not an answer; once checked, the other way round', async () => {
+  const { db, raw } = await setup();
+  const key = 'drawer:2026-10-07:afternoon';
+  const issue = { key, kind: 'drawer', label: 'The drawer did not agree', day: '2026-10-07', slot: 'afternoon', amount: -3000 };
+  const unchecked = { INSIGHT: insight({ issues: [{ ...issue, checked: false }] }) };
+  await assert.rejects(answer(ctx(db, AMA, { env: unchecked, body: { key, how: 'explain', text: 'A guest' }, path: '/api/me/till/answer' })), /not been checked yet: add a note/);
+  const noted = await (await answer(ctx(db, AMA, { env: unchecked, body: { key, how: 'note', text: 'A guest was given change twice' }, path: '/api/me/till/answer' }))).json();
+  assert.equal(noted.note, true);
+  assert.deepEqual({ ...raw.prepare('SELECT how, text FROM till_answer').get() }, { how: 'note', text: 'A guest was given change twice' });
+  assert.equal(raw.prepare("SELECT COUNT(*) AS n FROM app_notices WHERE kind = 'till.answer'").get().n, 0, 'a note tells nobody');
+
+  const checked = { INSIGHT: insight({ issues: [{ ...issue, checked: true }] }) };
+  await assert.rejects(answer(ctx(db, AMA, { env: checked, body: { key, how: 'note', text: 'x' }, path: '/api/me/till/answer' })), /has been checked: answer it/);
+  await answer(ctx(db, AMA, { env: checked, body: { key, how: 'explain', text: 'A guest was given change twice' }, path: '/api/me/till/answer' }));
+  // An Insight that does not say (older) counts as checked, as before.
+  const older = { INSIGHT: insight({ issues: [issue] }) };
+  await answer(ctx(db, AMA, { env: older, body: { key, how: 'repay', text: 'From my pay' }, path: '/api/me/till/answer' }));
+});
+
 test('Insight can take a shortage from pay, as a one-month advance, only when it signs the request', async () => {
   const { db, raw } = await setup();
   const path = '/api/link/till/recover';

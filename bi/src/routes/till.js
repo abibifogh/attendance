@@ -42,7 +42,7 @@ export const AREAS = [
   { key: 'reports', max: 1 }, { key: 'money', max: 1 }, { key: 'moves', max: 2 },
   { key: 'answers', max: 2 }, { key: 'money_out', max: 2 }, { key: 'reopen', max: 2 }, { key: 'net', max: 1 },
   { key: 'bank', max: 2 }, { key: 'odoo', max: 1 }, { key: 'files', max: 2 }, { key: 'unpaid', max: 2 },
-  { key: 'advances', max: 2 }, { key: 'niceplace', max: 2 }, { key: 'proof', max: 2 },
+  { key: 'advances', max: 2 }, { key: 'niceplace', max: 2 }, { key: 'proof', max: 2 }, { key: 'check', max: 2 },
 ];
 const AREA_MAX = new Map(AREAS.map((a) => [a.key, a.max]));
 
@@ -201,9 +201,9 @@ async function shiftList(env, from, to) {
 
 /** Everything that does not agree between `from` and `to`, with where each stands. */
 export async function issuesBetween(env, from, to) {
-  const [list, reports, pos, active, map, since, small, answers, decided, linked, moved] = await Promise.all([
+  const [list, reports, pos, active, map, since, small, answers, decided, linked, moved, checks] = await Promise.all([
     shiftList(env, from, to), hiveReports(env, from, to), hivePos(env, from, to), rentals(env, { active: true }),
-    people(env), goLive(env), threshold(env), hiveAnswers(env), resolutions(env), reconciled(env), moves(env),
+    people(env), goLive(env), threshold(env), hiveAnswers(env), resolutions(env), reconciled(env), moves(env), shiftChecks(env),
   ]);
   // A drawer difference reconciled with others (and approved) is one story
   // told twice: it nets out, so it leaves its person's list. One an admin put
@@ -215,8 +215,86 @@ export async function issuesBetween(env, from, to) {
       .filter((i) => !(i.kind === 'drawer' && linked.has(i.key)) && !movedKeys.has(i.key)),
     ...moved.filter((m) => m.day >= from && m.day <= to).flatMap(movedIssues),
   ];
-  return { shifts: list, reports, pos, rentals: active, issues: withStatus(issues, { answers, resolutions: decided }) };
+  return {
+    shifts: list, reports, pos, rentals: active, checks,
+    issues: withStatus(issues, { answers, resolutions: decided }).map((i) => withCheck(i, checks)),
+  };
 }
+
+// ------------------------------------------------------------ checked --
+
+/**
+ * A shift is checked when somebody has looked at it (its report, drawer and
+ * payments) and said so. Until then its differences are "not checked yet" on
+ * its person's list: the amounts may change. Each is confirmed only as it was
+ * when checked, so one that changes afterwards (a journal loaded again, a
+ * correction) is not checked again until the shift is checked again. Moved to
+ * somebody's account is an admin's decision, so it counts as checked.
+ */
+const fingerprint = (i) => `${i.amount ?? ''}|${i.qty ?? ''}`;
+
+async function shiftChecks(env) {
+  const rows = await all(env.DB, 'SELECT * FROM shift_check').catch(() => []);
+  return new Map(rows.map((r) => {
+    let snapshot = {};
+    try { snapshot = JSON.parse(r.snapshot || '{}'); } catch { snapshot = {}; }
+    return [`${r.day}|${r.slot}`, { day: r.day, slot: r.slot, by: r.by_name, at: r.at, snapshot }];
+  }));
+}
+
+function withCheck(issue, checks) {
+  if (issue.kind === 'moved') return { ...issue, checked: true, checkedBy: issue.moved?.by || null, checkedAt: issue.moved?.at || null };
+  const c = checks.get(`${issue.day}|${issue.slot}`);
+  const ok = Boolean(c) && c.snapshot[issue.key] === fingerprint(issue);
+  return { ...issue, checked: ok, checkedBy: ok ? c.by : null, checkedAt: ok ? c.at : null };
+}
+
+/** Where one shift stands: checked by whom, and whether anything changed since. */
+function checkOf(checks, issues, day, slot) {
+  const c = checks.get(`${day}|${slot}`);
+  if (!c) return null;
+  const changed = issues.filter((i) => i.day === day && i.slot === slot && i.kind !== 'moved' && !i.checked);
+  return { by: c.by, at: c.at, changed: changed.length > 0 };
+}
+
+/** Mark a shift checked: its differences, as they stand, are confirmed to its people. */
+export async function checkShift(env, body, account, { fetchImpl } = {}) {
+  await requireArea(env, account, 'check', 2);
+  const day = String(body?.day || '');
+  const slot = String(body?.slot || '');
+  if (!/^\d{4}-\d\d-\d\d$/.test(day) || !SLOT_ORDER.includes(slot)) throw badRequest('Which shift?');
+  if (day >= today()) throw badRequest('A shift can be checked once its day is over.');
+  const from = [addDays(today(), -LOOKBACK), day].sort()[0];
+  const { issues } = await issuesBetween(env, from, today());
+  const mine = issues.filter((i) => i.day === day && i.slot === slot && i.kind !== 'moved');
+  const at = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  await run(env.DB, `INSERT INTO shift_check (day, slot, by_name, at, snapshot) VALUES (?1, ?2, ?3, ?4, ?5)
+    ON CONFLICT (day, slot) DO UPDATE SET by_name = ?3, at = ?4, snapshot = ?5`,
+  day, slot, who(account), at, JSON.stringify(Object.fromEntries(mine.map((i) => [i.key, fingerprint(i)]))));
+  // Whoever has something on this shift still to sort out is told it is checked now.
+  const open = mine.filter((i) => i.status !== 'settled' && i.userId != null);
+  const ids = [...new Set(open.map((i) => Number(i.userId)))];
+  let told = false;
+  if (ids.length) {
+    const n = open.length;
+    told = await tell(env, ids, `Your ${slotWord(slot)} shift on ${sayDay(day)} has been checked`,
+      `${n === 1 ? 'One thing' : `${n} things`} on it to sort out. The amounts are final now. See My till › To sort out.`, fetchImpl, 'till.checked');
+  }
+  return { ok: true, check: { by: who(account), at, changed: false }, open: open.length, told };
+}
+
+/** Take a check back: the shift's differences are "not checked yet" again. */
+export async function uncheckShift(env, body, account) {
+  await requireArea(env, account, 'check', 2);
+  const day = String(body?.day || '');
+  const slot = String(body?.slot || '');
+  if (!/^\d{4}-\d\d-\d\d$/.test(day) || !SLOT_ORDER.includes(slot)) throw badRequest('Which shift?');
+  await run(env.DB, 'DELETE FROM shift_check WHERE day = ?1 AND slot = ?2', day, slot);
+  return { ok: true };
+}
+
+const slotWord = (slot) => ({ morning: 'morning', afternoon: 'afternoon', night: 'night' })[slot] || slot;
+const sayDay = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 /** Every exception reconciled together with others, once applied. */
 async function reconciled(env) {
@@ -316,6 +394,8 @@ export async function linkIssues(env, body) {
       moved: i.moved ? { reason: i.moved.reason, by: i.moved.by, at: i.moved.at, from: i.moved.ownerName } : null,
       sentBack: i.decision?.outcome === 'back' ? { note: i.decision.note, by: i.decision.by, at: i.decision.at } : null,
       proof: asked.get(i.key) || null,
+      // Checked: the amount is final. Not checked yet: it may change, and only a note can be added.
+      checked: i.checked, checkedBy: i.checkedBy, checkedAt: i.checkedAt, note: i.note || null,
     })),
     cleared: mine.filter((i) => i.status === 'settled' && String(i.decision?.at || '').startsWith(month)).length,
   };
@@ -344,12 +424,12 @@ export async function linkRecipients(env, body) {
 export async function overview(env, query, account) {
   const role = roleOf(account);
   const access = await accessOf(env, account);
-  if (!access.reports && !access.answers && role !== 'admin') throw forbidden('Closing reports have not been shared with you.');
+  if (!access.reports && !access.answers && !access.check && role !== 'admin') throw forbidden('Closing reports have not been shared with you.');
   const to = /^\d{4}-\d\d-\d\d$/.test(query?.to || '') ? query.to : today();
   const from = /^\d{4}-\d\d-\d\d$/.test(query?.from || '') ? query.from : addDays(to, -6);
   if (daysBetween(from, to).length > 62) throw badRequest('Two months at a time at most.');
 
-  const { shifts, reports, pos, rentals: active, issues } = await issuesBetween(env, addDays(to, -LOOKBACK), to);
+  const { shifts, reports, pos, rentals: active, issues, checks } = await issuesBetween(env, addDays(to, -LOOKBACK), to);
   const users = await hiveUsers(env);
   const nameOf = new Map(users.map((u) => [Number(u.id), u.name]));
   const money = access.money > 0;
@@ -386,6 +466,9 @@ export async function overview(env, query, account) {
         rentals: c.rentals.map((x) => ({ ...x, deposit: null })),
       },
       issues: issues.filter((i) => i.day === day && i.slot === slot).length,
+      // Checked by whom, or not yet; and what its people said before the check.
+      check: checkOf(checks, issues, day, slot),
+      notes: issues.filter((i) => i.day === day && i.slot === slot && i.note).map((i) => ({ name: nameOf.get(Number(i.userId)) || null, text: i.note.text, at: i.note.at })),
     });
   }
   reportRows.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : ['morning', 'afternoon', 'night'].indexOf(a.slot) - ['morning', 'afternoon', 'night'].indexOf(b.slot)));

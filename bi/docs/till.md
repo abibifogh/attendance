@@ -83,6 +83,32 @@ makes a one-month advance in HIVE, so it comes off the next payslip the way
 any advance does; it is offered only once the person has said they will pay
 it back. Settled items leave the person's list, and they are told.
 
+## Checked, or not checked yet
+
+A difference is worked out from the files as they stand, and those can change
+when somebody reviews the shift (a journal loaded again, a correction). So
+until somebody has **checked** the shift, its person sees what is on it under
+**Not checked yet**: shown softer, money amounts as "About GH₵…", with
+"Nothing to do yet". They can **add a note** if they know why (whoever checks
+the shift sees it), but cannot explain, pay back or give a PO yet, and it is
+not counted on their HIVE home screen.
+
+- **Checking a shift:** open it under Shifts, look at the closing report, the
+  drawer and the payments, and press **✓ Mark this shift checked** (on the bar
+  under its heading). Admins can, and so can anybody given **Check shifts**
+  under Settings → Who sees what. Its people are told ("Your afternoon shift
+  on Wed 7 Oct has been checked"), and their items move to **Checked: please
+  sort these out**, with who checked it. **Undo** takes it back.
+- **Changed since it was checked:** each difference is confirmed as it was when
+  checked. If one changes afterwards, it shows as not checked yet again, and
+  the shift says **Changed since it was checked** with **Check again**.
+- **On the week:** each shift says ✓ Checked, Not checked, or Changed since
+  checked.
+- Something an admin **put on somebody's account** counts as checked: it is an
+  admin's decision already.
+
+Every shift starts as not checked, including ones from before this came in.
+
 ## Putting a difference on somebody's account
 
 A drawer short, a drawer over or a hand-over difference belongs to whoever

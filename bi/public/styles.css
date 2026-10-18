@@ -1821,3 +1821,16 @@ label.fm-row input { margin-top: .2rem; }
 :root[data-theme="dark"] .va-bar { background: #6d3df0; }
 /* On a phone the header scrolls away, so a frame round the screen keeps saying it. */
 html.viewing-as body::after { content: ''; position: fixed; inset: 0; border: 4px solid #5b2bd1; pointer-events: none; z-index: 70; }
+
+/* ---------------------------------------------------------- shift checked -- */
+
+/* Whether a shift has been checked: under its heading, and on the week's tiles. */
+.ck-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem 1rem; background: var(--surface-2); }
+.ck-bar.ok { background: color-mix(in srgb, var(--good) 10%, var(--surface)); border-color: color-mix(in srgb, var(--good) 35%, var(--border)); }
+.ck-bar.changed { background: color-mix(in srgb, var(--warning) 12%, var(--surface)); border-color: color-mix(in srgb, var(--warning) 40%, var(--border)); }
+.ck-bar > div:first-child { flex: 1 1 22rem; display: grid; gap: .25rem; }
+.ck-acts { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.sh-ck:empty { display: none; }
+.sh-ck { display: block; width: max-content; max-width: 100%; margin-top: .3rem; font-size: .72rem; font-weight: 700; border-radius: 999px; padding: .05rem .45rem; color: var(--ink-2); background: color-mix(in srgb, var(--ink-2) 12%, transparent); }
+.sh-ck.ok { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.sh-ck.changed { color: var(--warning); background: color-mix(in srgb, var(--warning) 16%, transparent); }
