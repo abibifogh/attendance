@@ -19,12 +19,13 @@ import { shrink } from './att-my-medical.js';
 export async function renderMyDay() {
   const host = h('div.my-day');
 
-  const [week, till, issues, handbook, sick] = await Promise.all([
+  const [week, till, issues, handbook, sick, leavePlan] = await Promise.all([
     api.myWeek().catch((err) => ({ error: err.message })),
     can('till') ? api.myTill().catch(() => null) : Promise.resolve(null),
     can('till') ? api.tillIssues().catch(() => null) : Promise.resolve(null),
     api.handbook().catch(() => null),
     api.mySick().catch(() => null),
+    api.myLeavePlan().catch(() => null),
   ]);
   const reload = async () => mount(host, ...(await renderMyDay()).childNodes);
 
@@ -76,6 +77,17 @@ export async function renderMyDay() {
   if (toSort) {
     todo.push(task('cash', 'Your till: to sort out',
       `${toSort} ${toSort === 1 ? 'thing' : 'things'} to answer`, '#/att-my-till-issues', 'bad'));
+  }
+
+  // The year's leave plan, while it is not sent, or has dates to move.
+  if (leavePlan?.eligible) {
+    const moving = (leavePlan.blocks ?? []).some((b) => b.status === 'move');
+    if (leavePlan.plan?.status === 'draft') {
+      const due = new Date(`${leavePlan.round.dueOn}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+      todo.push(task('calendar', `Send your ${leavePlan.round.year} leave plan`, `By ${due} · ${Math.max(0, leavePlan.left)} days to plan`, '#/my-leave-plan', 'warn'));
+    } else if (moving) {
+      todo.push(task('calendar', 'Your leave plan: dates to move', 'Your manager suggested other dates', '#/my-leave-plan', 'warn'));
+    }
   }
 
   const toRead = (handbook?.chapters ?? []).filter((c) => c.needs && !c.done);

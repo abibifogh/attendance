@@ -22,6 +22,7 @@ import * as authLock from './routes/auth-lock.js';
 import { watchShifts } from './lib/shift-watch.js';
 import { watchTills } from './lib/till-watch.js';
 import { watchAbsences } from './lib/absence-watch.js';
+import { watchLeavePlans } from './lib/leave-plans.js';
 import { watchTerminals } from './lib/terminal-watch.js';
 import { nightlyCopy } from './lib/backup.js';
 import * as birthday from './routes/birthdays.js';
@@ -29,6 +30,7 @@ import * as attSetup from './routes/attendance-setup.js';
 import * as companies from './routes/companies.js';
 import * as tillReports from './routes/till-reports.js';
 import * as absence from './routes/absence.js';
+import * as leavePlans from './routes/leave-plans.js';
 import * as viewAs from './routes/view-as.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
@@ -298,6 +300,11 @@ export const ROUTES = [
   ['GET', '/api/me/sick', 'att_me', absence.mySick],
   ['POST', '/api/me/sick', 'att_me', absence.sayOffSick],
   ['POST', '/api/me/sick-notes/:id', 'att_me', absence.sendSickNote],
+  ['GET', '/api/me/leave-plan', 'att_me', leavePlans.myPlan],
+  ['POST', '/api/me/leave-plan/blocks', 'att_me', leavePlans.addBlock],
+  ['DELETE', '/api/me/leave-plan/blocks/:id', 'att_me', leavePlans.removeBlock],
+  ['POST', '/api/me/leave-plan/blocks/:id/take', 'att_me', leavePlans.takeSuggestion],
+  ['POST', '/api/me/leave-plan/send', 'att_me', leavePlans.sendPlan],
   // Their own signed contract, the same document and the same certificate the
   // office sees. The file route is for the ones signed on paper, where the
   // contract is a scan rather than words.
@@ -463,6 +470,11 @@ export const ROUTES = [
   ['POST', '/api/att/rota-import/confirm', 'att_rota', rotaImport.confirmRotaImport],
   ['POST', '/api/att/rota-import/discard', 'att_rota', rotaImport.discardRotaImport],
 
+  ['GET', '/api/att/leave-plans', 'att_manage', leavePlans.board],
+  ['POST', '/api/att/leave-plans/round', 'att_setup', leavePlans.saveRound],
+  ['POST', '/api/att/leave-plans/blocks/:id/decide', 'att_manage', leavePlans.decideBlock],
+  ['POST', '/api/att/leave-plans/approve-clear', 'att_manage', leavePlans.approveClear],
+  ['POST', '/api/att/leave-plans/chase', 'att_manage', leavePlans.chase],
   ['GET', '/api/att/absence-questions', 'att_rota', absence.listQuestions],
   ['POST', '/api/att/absence-questions/:id/answer', 'att_rota', absence.answerQuestion],
   ['GET', '/api/att/leave', 'att_view', att.listLeave],
@@ -1048,6 +1060,19 @@ export default {
         return { asked: 0 };
       });
       if (absences.asked) console.log(`Attendance: ${absences.asked} off sick or absent question(s) asked`);
+
+      // And the year's leave plans: opened on their day, and reminders until
+      // each person's is in.
+      const plans = await watchLeavePlans(env.DB, {
+        timezone,
+        ctx: { env, executionContext },
+      }).catch((err) => {
+        console.error('Leave plan watch failed', err);
+        return { invited: 0, reminded: 0 };
+      });
+      if (plans.invited || plans.reminded) {
+        console.log(`Leave plans: ${plans.invited} invited, ${plans.reminded} reminded`);
+      }
 
       // And whether the terminal is still being heard, which is the one fact
       // every other line on the attendance screens quietly depends on.

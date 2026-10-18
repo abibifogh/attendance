@@ -289,6 +289,30 @@ export const KINDS = [
 
   // Leave and availability
   {
+    key: 'leave.plan_asked',
+    group: 'day',
+    label: 'Send your leave plan for the year',
+    who: 'Everybody who earns annual leave',
+    when: 'Planning opens, then every Monday and every day of the last week until the plan is in',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'leave.plan_reviewed',
+    group: 'day',
+    label: 'Your leave plan was reviewed',
+    who: 'Whoever sent the plan',
+    when: 'Nothing in the plan is waiting for a decision any more',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'leave.plan_department_in',
+    group: 'day',
+    label: 'All of a department’s leave plans are in',
+    who: 'Whoever approves leave',
+    when: 'The last plan in a department is sent',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'attendance.leave_asked',
     group: 'leave',
     label: 'Somebody has asked for leave',

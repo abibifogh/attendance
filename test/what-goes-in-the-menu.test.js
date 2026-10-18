@@ -131,6 +131,7 @@ test('a member of staff gets their five places, and Home first', () => {
   assert.deepEqual(menu.map((g) => g.label), ['Home', 'Rota', 'Requests', 'Pay', 'Me']);
   assert.equal(menu[0].screens[0].path, 'my-day');
   assert.deepEqual(tabsOf(menu[1]).map((t) => t.label), ['My shifts', 'Swaps', 'Lunch', 'Report']);
+  assert.deepEqual(tabsOf(menu[2]).map((t) => t.label), ['Requests', 'Leave plan']);
   assert.deepEqual(tabsOf(menu[3]).map((t) => t.label), ['Payslips', 'Advance', 'Claims']);
   assert.deepEqual(tabsOf(menu[4]).map((t) => t.label), ['Documents', 'Directory', 'Handbook', 'HR FAQ', 'Guide']);
 });
@@ -169,7 +170,8 @@ test('an administrator who works shifts reads the six, then Me and Settings', ()
   const under = mineTabs(me, 'att-my-medical');
   assert.equal(under.parent, 'att-my-payslips');
   assert.deepEqual(under.siblings.map((t) => t.label), ['Payslips', 'Advance', 'Claims']);
-  assert.deepEqual(mineTabs(me, 'requests').siblings, []);
+  // Requests has the year's leave plan under it.
+  assert.deepEqual(mineTabs(me, 'requests').siblings.map((t) => t.label), ['Requests', 'Leave plan']);
 });
 
 test('a login with no staff record behind it has none of the "my" screens', () => {
@@ -181,7 +183,7 @@ test('a supervisor reads Home, Inbox, Rota and Attendance', () => {
   const menu = menuFor(roleHolds('supervisor'), { staffId: null });
   assert.deepEqual(menu.map((g) => g.label).slice(0, 4), ['Home', 'Inbox', 'Rota', 'Attendance']);
   const day = menu.find((g) => g.key === 'day');
-  assert.deepEqual(tabsOf(day).map((t) => t.label), ['Today', 'Month', 'Leave', 'Sign-off']);
+  assert.deepEqual(tabsOf(day).map((t) => t.label), ['Today', 'Month', 'Leave', 'Leave plans', 'Sign-off']);
 });
 
 test('a manager reads People with its four, and the directory and handbook beside them', () => {

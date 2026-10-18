@@ -19,6 +19,8 @@ import { renderMyDay } from './views/my-day.js';
 import { renderHome } from './views/home.js';
 import { renderInbox, inboxCount } from './views/inbox.js';
 import { renderRequests } from './views/requests.js';
+import { renderMyLeavePlan } from './views/my-leave-plan.js';
+import { renderLeavePlans } from './views/leave-plans.js';
 import { renderSettings } from './views/settings.js';
 import { renderAttMyReport } from './views/att-my-report.js';
 import { renderAttMyPayslips } from './views/att-my-payslips.js';
@@ -162,6 +164,7 @@ const ROUTES = [
   { mine: true, group: 'my-rota', tab: 'Report', mgroup: 'mine', under: 'att-me', path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport, live: ['attendance', 'leave'] },
   // Everything somebody can ask for, and what became of it, in one place.
   { mine: true, group: 'requests', tab: 'Requests', mgroup: 'mine', mtab: 'Requests', path: 'requests', label: 'Requests', permission: 'att_me', render: renderRequests, live: ['leave', 'rota', 'pay', 'lunch'] },
+  { mine: true, group: 'requests', tab: 'Leave plan', mgroup: 'mine', under: 'requests', path: 'my-leave-plan', label: 'Leave plan', permission: 'att_me', render: renderMyLeavePlan, live: ['leave'] },
   { mine: true, group: 'my-pay', tab: 'Payslips', mgroup: 'mine', mtab: 'Pay', path: 'att-my-payslips', label: 'My payslips', permission: 'att_me', render: renderAttMyPayslips, live: ['pay'] },
   { mine: true, group: 'my-pay', tab: 'Advance', mgroup: 'mine', under: 'att-my-payslips', path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
   { mine: true, group: 'my-pay', tab: 'Claims', mgroup: 'mine', under: 'att-my-payslips', path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
@@ -180,6 +183,7 @@ const ROUTES = [
   { group: 'day', tab: 'Week', path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek, live: ['attendance', 'rota', 'leave'] },
   { group: 'day', tab: 'Month', path: 'att-overview', label: 'Month', permission: ['att_reports', 'att_rota'], render: renderAttOverview, live: ['attendance', 'rota', 'leave'] },
   { group: 'day', tab: 'Leave', path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave, live: ['leave', 'rota'] },
+  { group: 'day', tab: 'Leave plans', path: 'leave-plans', label: 'Leave plans', permission: 'att_manage', render: renderLeavePlans, live: ['leave'] },
   // Last, because it is what closes a period rather than what reads one, and
   // it is the only tab here that cannot be undone.
   { group: 'day', tab: 'Sign-off', path: 'signoff', label: 'Sign-off', permission: 'att_signoff', render: renderAttSignoff, live: ['attendance', 'rota', 'leave'] },
