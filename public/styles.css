@@ -512,13 +512,15 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
    between them, because it is four characters typed with a thumb. */
 /* The screen that has to be answered before anything else is shown.
    Over the top of everything rather than in place of it, so a half-written
-   leave request is still there underneath and still there afterwards. */
+   leave request is still there underneath and still there afterwards.
+   Solid rather than see-through: a faded copy of the page behind it read as
+   a broken screen, and what is underneath is nobody's business until the
+   PIN is in. */
 .lock-screen {
   position: fixed; inset: 0; z-index: 9999;
   display: flex; align-items: center; justify-content: center;
   padding: 1rem;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(10px);
+  background: var(--bg);
 }
 .lock-card {
   width: min(22rem, 100%); text-align: center;
