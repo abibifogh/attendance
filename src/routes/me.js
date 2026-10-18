@@ -188,6 +188,36 @@ function onShiftNow(ds, staffId, today) {
 }
 
 /**
+ * The shift somebody clocked out of in the last few hours, if any.
+ *
+ * Closing the till is done at the end of a shift, and often just after
+ * clocking out. The Home screen offered it only while somebody was still on
+ * the shift, so the receptionist who clocked out first and then sat down to
+ * count had no way in at all. This is what lets it stay on their list.
+ */
+const STILL_FRESH_HOURS = 8;
+function justFinished(ds, staffId, today, now) {
+  const records = computeRange(ds, staffId, addDays(today, -1), today).reverse();
+  for (const record of records) {
+    if (record.status === 'working') continue;
+    const into = record.corrected_in ?? record.first_in;
+    const out = record.corrected_out ?? record.last_out;
+    if (!into || !out) continue;
+    // A night shift clocks out the morning after the day it belongs to.
+    const outDay = out < into ? addDays(record.day, 1) : record.day;
+    const ago = secondsBetween(`${outDay} ${out}`, now);
+    if (ago < 0 || ago > STILL_FRESH_HOURS * 3600) continue;
+    const shift = scheduleFor(ds, staffId, record.day).shift;
+    return {
+      day: record.day,
+      out,
+      shift: shift ? { id: shift.id, name: shift.name, starts_at: shift.starts_at, ends_at: shift.ends_at } : null,
+    };
+  }
+  return null;
+}
+
+/**
  * The departments named on a staff record, forgivingly.
  *
  * Stored as a list because a person may be trusted with two and no more, and
@@ -391,6 +421,9 @@ export async function myWeek(ctx) {
     next: countdownTo(days, timezone, onShift),
     // Whether they are at work right now, and on what.
     onShift,
+    // Or the shift they clocked out of a little while ago, for what is still
+    // to be done about it: closing the till, mostly.
+    justFinished: onShift ? null : justFinished(ds, staff.id, today, nowIn(timezone)),
     me: { id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department },
     days,
     showBalance,

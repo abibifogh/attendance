@@ -203,7 +203,9 @@ const ROUTES = [
 
   // Reached from Home rather than from the menu: closing the till is a job on
   // the day's list, not a place somebody goes.
-  { mine: true, path: 'att-my-till', label: 'Close your till', permission: 'till', render: renderAttMyTill, hidden: true },
+  // In the menu as well as on Home: Home offers it around the end of a shift,
+  // and a receptionist must always be able to find it whatever the time.
+  { mine: true, group: 'my-home', tab: 'Close till', mgroup: 'mine', under: 'my-day', path: 'att-my-till', label: 'Close your till', permission: 'till', render: renderAttMyTill },
   { mine: true, path: 'att-my-till-issues', label: 'Till: to sort out', permission: 'till', render: renderAttMyTillIssues, hidden: true },
 
   // Reached by clicking a name rather than from the menu.

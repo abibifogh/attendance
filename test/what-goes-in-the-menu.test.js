@@ -135,10 +135,15 @@ test('a member of staff gets their five places, and Home first', () => {
   assert.deepEqual(tabsOf(menu[4]).map((t) => t.label), ['Documents', 'Directory', 'Handbook', 'HR FAQ', 'Guide']);
 });
 
-test('the front desk gets the same five: closing the till is a job on Home, not a place', () => {
+test('the front desk gets the same five, and closing the till is always a tab away', () => {
+  // A receptionist who had clocked out before counting up had no way to the
+  // till at all while it lived only as a to-do on Home. It is a tab beside
+  // Home for anybody who closes one, and still the to-do as well.
   assert.deepEqual(labels(['att_me', 'till']), ['Home', 'Rota', 'Requests', 'Pay', 'Me']);
+  const desk = menuFor(['att_me', 'till']);
+  assert.deepEqual(tabsOf(desk[0]).map((t) => t.label), ['Home', 'Close till']);
+  assert.deepEqual(tabsOf(menuFor(['att_me'])[0]), [], 'nobody else sees it');
   const till = ROUTE_LIST.find((r) => r.path === 'att-my-till');
-  assert.equal(till.hidden, true);
   assert.equal(till.permission, 'till');
   assert.match(readFileSync('public/js/views/my-day.js', 'utf8'), /'#\/att-my-till'/);
 });

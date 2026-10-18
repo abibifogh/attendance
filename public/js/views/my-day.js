@@ -41,11 +41,17 @@ export async function renderMyDay() {
     todo.push(task('flag', 'Your first week', 'A short list to get you started', '#/onboarding', 'info'));
   }
 
-  // The till, while they are on the shift it belongs to and it is not closed.
-  const current = till?.choices?.[0];
-  if (current && !current.done && week.onShift) {
-    const ends = week.onShift.shift?.ends_at;
-    todo.push(task('cash', 'Close your till', ends ? `Before ${ends} · 5 short steps` : '5 short steps',
+  // The till, while they are on a shift or have just clocked out of one, and
+  // it is not closed yet. Counting up usually happens after clocking out, so
+  // the to-do stays for some hours after the shift ends. The till screen
+  // itself offers the shift that has just finished as well as the current one.
+  const open = (till?.choices ?? []).slice(0, 2).some((c) => !c.done);
+  if (till && open && (week.onShift || week.justFinished)) {
+    const ends = week.onShift?.shift?.ends_at;
+    const finished = week.justFinished?.shift?.name;
+    todo.push(task('cash', 'Close your till',
+      ends ? `Before ${ends} · 5 short steps`
+        : finished ? `Your ${finished} · 5 short steps` : '5 short steps',
       '#/att-my-till', 'warn'));
   }
   const toSort = (issues?.issues ?? []).length;

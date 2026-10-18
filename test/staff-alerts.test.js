@@ -603,3 +603,31 @@ test('turning the clock-out reminder off leaves the late chase alone', async () 
   rosterAgo(raw, 20);
   assert.equal((await watchShifts(db, { timezone: 'UTC' })).nudged, 1);
 });
+
+// ------------------------------------------------------ just clocked out --
+
+test('a shift clocked out of a few hours ago is still there for the till', async (t) => {
+  // A receptionist on nights clocks out at quarter past six and then sits
+  // down to count the till. Home used to offer closing it only while they were
+  // still clocked in, and the menu had no way in at all.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-18T07:30:00Z') });
+  const { db, raw } = setup();
+  raw.prepare(
+    `INSERT INTO att_shifts (id, name, starts_at, ends_at, break_minutes, grace_in_minutes)
+     VALUES (2, 'Night', '22:00', '06:15', 0, 5)`,
+  ).run();
+  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, ?, 2, 1)')
+    .run('2026-10-17');
+  punch(raw, new Date('2026-10-17T21:55:00Z'), 'in');
+  punch(raw, new Date('2026-10-18T06:20:00Z'), 'out');
+
+  const out = await (await myWeek(ctx(db, KOFI, { query: '?from=2026-10-18' }))).json();
+  assert.equal(out.onShift, null, 'they have gone home');
+  assert.equal(out.justFinished?.day, '2026-10-17', 'the night it belongs to');
+  assert.equal(out.justFinished?.shift?.name, 'Night');
+
+  // By the afternoon it is not "just" any more.
+  t.mock.timers.setTime(Date.parse('2026-10-18T16:00:00Z'));
+  const later = await (await myWeek(ctx(db, KOFI, { query: '?from=2026-10-18' }))).json();
+  assert.equal(later.justFinished, null);
+});
