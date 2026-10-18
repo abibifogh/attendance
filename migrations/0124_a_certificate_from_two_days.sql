@@ -9,4 +9,5 @@ UPDATE hb_chapter
          'For an absence of two days or more, bring a medical certificate.'),
        updated_by = 'HIVE (the certificate rule)',
        updated_at = datetime('now')
- WHERE body LIKE '%For an absence of more than three days, bring a medical certificate.%';
+-- instr rather than LIKE: D1 refuses a LIKE pattern this long.
+ WHERE instr(body, 'For an absence of more than three days, bring a medical certificate.') > 0;
