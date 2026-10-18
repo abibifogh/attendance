@@ -136,7 +136,9 @@ const KINDS = {
 
   availability: {
     label: 'Availability',
-    permission: 'att_rota',
+    // Supervisors and up. A rota planner neither sees nor answers what
+    // anybody has asked for.
+    permission: 'att_manage',
     link: '#/att-rota',
     async list(run) {
       const { waiting } = await run('GET', '/api/att/availability/waiting');

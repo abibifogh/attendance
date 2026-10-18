@@ -59,8 +59,14 @@ function setup() {
   return { raw, db: d1(raw) };
 }
 
+// Whoever answers: a supervisor. A rota planner neither sees nor answers what
+// anybody has asked for.
+const SUPERVISOR = {
+  user: { id: 2, name: 'Yaa', role: 'supervisor' },
+  permissions: ['att_view', 'att_manage', 'att_rota'],
+};
 const PLANNER = {
-  user: { id: 2, name: 'Yaa', role: 'planner' },
+  user: { id: 3, name: 'Kobby', role: 'planner' },
   permissions: ['att_rota', 'att_view'],
 };
 const HER = {
@@ -68,7 +74,7 @@ const HER = {
   permissions: ['att_me'],
 };
 
-const ctx = (db, { body = null, query = '', session = PLANNER } = {}) => ({
+const ctx = (db, { body = null, query = '', session = SUPERVISOR } = {}) => ({
   db,
   env: {},
   url: new URL(`https://x/api/att/x${query}`),
@@ -108,7 +114,7 @@ test('asking rings the bell for whoever has to work around it, once', async () =
   const rung = notices(raw).filter((n) => n.kind === 'attendance.availability_asked');
   assert.equal(rung.length, 1, 'a fortnight marked off is one thing to answer');
   assert.match(rung[0].title, /Adjoa asked about 2 days/);
-  assert.equal(rung[0].audience, 'att_rota');
+  assert.equal(rung[0].audience, 'att_manage', 'supervisors and up, not the planners');
 });
 
 test('whoever builds the rota is the approval', async () => {
@@ -118,7 +124,7 @@ test('whoever builds the rota is the approval', async () => {
   }));
 
   assert.deepEqual(rows(raw).map((r) => r.decision), ['approved', 'approved']);
-  assert.equal(rows(raw)[0].decided_by, 'Yaa (planner)');
+  assert.equal(rows(raw)[0].decided_by, 'Yaa (supervisor)');
   assert.deepEqual((await waiting(db)).waiting, [], 'nothing to answer: they answered it');
 });
 
@@ -159,7 +165,7 @@ test('agreeing leaves the mark standing, and says who agreed', async () => {
   const done = await (await decide(db, { staffId: 1, days: DAYS, decision: 'approved' })).json();
   assert.deepEqual(done, { ok: true, decision: 'approved', days: 2 });
   assert.deepEqual(rows(raw).map((r) => r.decision), ['approved', 'approved']);
-  assert.equal(rows(raw)[0].decided_by, 'Yaa (planner)');
+  assert.equal(rows(raw)[0].decided_by, 'Yaa (supervisor)');
   assert.ok(rows(raw)[0].decided_at);
 });
 
@@ -303,6 +309,28 @@ test('the grid says whether a mark has been answered', async () => {
   assert.equal(cell.availability.decision, 'waiting');
   assert.equal(cell.availability.note, 'Graduation');
   assert.equal(data.asked, 1, 'and the toolbar knows there is something to answer');
+});
+
+test('a planner sees agreed days on the rota, and no requests', async () => {
+  const { db } = setup();
+  await ask(db, { days: ['2099-09-14'], status: 'unavailable', note: 'Graduation' });
+  await ask(db, { days: ['2099-09-16'], status: 'unavailable', note: 'Wedding' });
+  await decide(db, { staffId: 1, days: ['2099-09-16'], decision: 'approved' });
+
+  const data = await (await getRoster(ctx(db, { query: '?from=2099-09-14&to=2099-09-20', session: PLANNER }))).json();
+  const days = data.rows.find((r) => r.staff.name === 'Adjoa').days;
+  assert.equal(days.find((d) => d.day === '2099-09-14').availability, null, 'the waiting one is not shown');
+  assert.equal(days.find((d) => d.day === '2099-09-16').availability.decision, 'approved', 'the agreed one is');
+  assert.equal(data.asked, 0, 'and nothing to answer on the toolbar');
+});
+
+test('only supervisors and up can mark, list or answer requests', () => {
+  const index = readFileSync('src/index.js', 'utf8');
+  for (const path of ['/api/att/availability', '/api/att/availability/waiting', '/api/att/availability/decide', '/api/att/leave']) {
+    const line = index.split('\n').find((l) => l.includes(`'${path}',`) && l.includes("'POST'") || (l.includes(`'${path}',`) && path.endsWith('waiting')));
+    assert.ok(line, path);
+    assert.match(line, /'att_manage'/, `${path} is for supervisors and up`);
+  }
 });
 
 test('an answered mark reads as a fact rather than a question', async () => {
@@ -534,7 +562,7 @@ test('the rota screen is where it is written from', () => {
   // Beside the name, which is the one cell that survives the phone layout.
   assert.match(view, /rota-who-more/);
   // And only for somebody who may change the rota.
-  assert.match(view, /mayEdit \? h\('button\.rota-who-more'/);
+  assert.match(view, /mayEdit && can\('att_manage'\) \? h\('button\.rota-who-more'/);
 });
 
 // ---------------------------------------------------------------------------

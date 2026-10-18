@@ -348,7 +348,7 @@ export const KINDS = [
     key: 'attendance.availability_asked',
     group: 'leave',
     label: 'Somebody cannot work a day',
-    who: 'Whoever plans the rota',
+    who: 'Supervisors, managers and administrators',
     when: 'A member of staff creates unavailability',
     ways: ['push', 'email'],
   },

@@ -13,11 +13,9 @@ import { field, formDialog, monthLabel, signOffDialog } from './att-shared.js';
  */
 export async function renderAttLeave(params = {}) {
   const host = h('div');
-  // Two different jobs. A planner puts leave in and it waits for somebody;
-  // a manager is the somebody. Splitting these is the whole point of the
-  // rota-planner role — otherwise "can add leave" quietly means "can grant
-  // themselves leave".
-  const requests = can('att_rota');
+  // Recording leave is for whoever decides it. A rota planner sees leave once
+  // it is approved and has no part in the requests.
+  const requests = can('att_manage');
   const decides = can('att_manage');
   // Closing a period off is its own permission, so a rota planner can be given
   // it without being given the balances alongside.

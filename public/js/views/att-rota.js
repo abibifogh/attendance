@@ -1235,7 +1235,9 @@ export async function renderAttRota(params) {
               // the one cell a phone hides: a planner standing in a corridor
               // being told somebody cannot do Thursday is exactly who needs
               // this, and they are holding the phone.
-              mayEdit ? h('button.rota-who-more', {
+              // Marking days somebody cannot work is agreeing to them, which
+              // is a supervisor's call rather than a planner's.
+              mayEdit && can('att_manage') ? h('button.rota-who-more', {
                 type: 'button',
                 title: `Days ${row.staff.name} cannot work`,
                 'aria-label': `Days ${row.staff.name} cannot work`,
@@ -2384,7 +2386,7 @@ export async function renderAttRota(params) {
           onclick: () => navigate('att-workload', { from, to }),
           title: 'People this plan is overworking. The full picture is on Workload',
         }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`),
-      mayEdit && data.asked
+      mayEdit && can('att_manage') && data.asked
         ? h('button.btn-sm', {
           onclick: () => answerRequests(reload),
           title: 'Days people have asked about that nobody has answered yet',

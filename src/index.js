@@ -323,10 +323,10 @@ export const ROUTES = [
   ['GET', '/api/me/medical', 'att_me', medical.myMedical],
   ['POST', '/api/me/medical', 'att_me', medical.claim],
   ['POST', '/api/me/medical/:id/withdraw', 'att_me', medical.withdrawClaim],
-  ['POST', '/api/att/availability', 'att_rota', att.setAvailability],
+  ['POST', '/api/att/availability', 'att_manage', att.setAvailability],
   // What people have asked for and nobody has answered yet, and the answer.
-  ['GET', '/api/att/availability/waiting', 'att_rota', att.waitingAvailability],
-  ['POST', '/api/att/availability/decide', 'att_rota', att.decideAvailability],
+  ['GET', '/api/att/availability/waiting', 'att_manage', att.waitingAvailability],
+  ['POST', '/api/att/availability/decide', 'att_manage', att.decideAvailability],
   ['GET', '/api/att/workload', ['att_rota', 'att_reports'], workload.workload],
 
   // Pay. Its own permission, held by nobody by default — a manager holds
@@ -478,7 +478,7 @@ export const ROUTES = [
   ['GET', '/api/att/absence-questions', 'att_rota', absence.listQuestions],
   ['POST', '/api/att/absence-questions/:id/answer', 'att_rota', absence.answerQuestion],
   ['GET', '/api/att/leave', 'att_view', att.listLeave],
-  ['POST', '/api/att/leave', 'att_rota', att.requestLeave],
+  ['POST', '/api/att/leave', 'att_manage', att.requestLeave],
   ['GET', '/api/att/leave/:id/days', 'att_manage', att.leaveDays],
   ['POST', '/api/att/leave/:id/decide', 'att_manage', att.decideLeave],
   ['POST', '/api/att/leave/:id/type', 'att_manage', att.setLeaveType],

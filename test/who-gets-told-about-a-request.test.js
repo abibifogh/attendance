@@ -113,7 +113,7 @@ test('a notice addressed to one person goes to them whatever the audiences say',
 // The wiring, driven for real
 // ---------------------------------------------------------------------------
 
-test('asking about a day rings the planner and mails only the people who answer', async () => {
+test('asking about a day reaches only the people who answer, not the planner', async () => {
   const { raw, db } = setup();
   const { setMyAvailability } = await import('../src/routes/me.js');
 
@@ -151,10 +151,11 @@ test('asking about a day rings the planner and mails only the people who answer'
     globalThis.fetch = realFetch;
   }
 
-  // The bell reaches everybody who builds the rota, the planner included.
+  // The bell reaches whoever can answer it, supervisors and up. A rota
+  // planner does not see what anybody has asked for.
   const notice = raw.prepare("SELECT audience, title FROM app_notices WHERE kind = 'attendance.availability_asked'").get();
   assert.ok(notice, 'the notice was written');
-  assert.equal(notice.audience, 'att_rota');
+  assert.equal(notice.audience, 'att_manage');
 
   // The inbox does not. One call to the provider carrying one message per
   // person, so nobody is handed anybody else's address.

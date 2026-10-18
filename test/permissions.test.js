@@ -67,11 +67,17 @@ test('a planner can build the rota', () => {
   assert.ok(reaches('planner', 'GET', '/api/att/staff'), 'and who is on the rota');
 });
 
-test('a planner can put leave in but cannot grant it', () => {
-  assert.ok(reaches('planner', 'POST', '/api/att/leave'));
-  assert.equal(reaches('planner', 'POST', '/api/att/leave/:id/decide'), false,
-    'requesting is not approving, or the planner approves their own');
+test('a planner has no part in leave or availability requests', () => {
+  // Leave and days somebody cannot work are for supervisors and up to see and
+  // settle. A planner sees them on the rota once they are agreed.
+  assert.equal(reaches('planner', 'POST', '/api/att/leave'), false);
+  assert.equal(reaches('planner', 'POST', '/api/att/leave/:id/decide'), false);
   assert.equal(reaches('planner', 'DELETE', '/api/att/leave/:id'), false);
+  assert.equal(reaches('planner', 'GET', '/api/att/availability/waiting'), false);
+  assert.equal(reaches('planner', 'POST', '/api/att/availability/decide'), false);
+  assert.equal(reaches('planner', 'POST', '/api/att/availability'), false);
+  assert.ok(reaches('supervisor', 'POST', '/api/att/availability/decide'));
+  assert.ok(reaches('supervisor', 'POST', '/api/att/leave/:id/decide'));
 });
 
 test('a planner cannot see what anybody has left', () => {

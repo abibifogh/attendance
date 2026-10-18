@@ -56,14 +56,15 @@ const asWho = (db, permissions) => ({
   request: new Request('https://x/'),
 });
 const planner = (db) => asWho(db, ['att_rota', 'att_view']);
+const supervisor = (db) => asWho(db, ['att_manage', 'att_rota', 'att_view']);
 const reader = (db) => asWho(db, ['att_rota_view']);
 const dayOf = (out, name, day) => out.rows.find((r) => r.staff.name === name).days.find((d) => d.day === day);
 
-test('leave waiting on an answer is on the planner’s rota, every day it covers', async () => {
+test('leave waiting on an answer is on a supervisor’s rota, every day it covers', async () => {
   const { raw, db, code } = setup();
   raw.prepare(`INSERT INTO att_leave (id, staff_id, reason_code, from_day, to_day, days, status, reason)
                VALUES (7, 1, ?, '2026-10-07', '2026-10-09', 3, 'pending', 'Sister''s wedding')`).run(code);
-  const out = await (await getRoster(planner(db))).json();
+  const out = await (await getRoster(supervisor(db))).json();
 
   for (const day of ['2026-10-07', '2026-10-08', '2026-10-09']) {
     const asked = dayOf(out, 'Adjoa', day).leaveAsked;
@@ -78,6 +79,15 @@ test('leave waiting on an answer is on the planner’s rota, every day it covers
   assert.equal(dayOf(out, 'Adjoa', '2026-10-10').leaveAsked, null, 'nor the day after');
   assert.equal(dayOf(out, 'Kwesi', '2026-10-08').leaveAsked, null, 'nor anybody else');
   assert.equal(dayOf(out, 'Adjoa', '2026-10-08').leave, null, 'and it is not leave yet');
+});
+
+test('a rota planner does not see leave somebody has asked for', async () => {
+  const { raw, db, code } = setup();
+  raw.prepare(`INSERT INTO att_leave (id, staff_id, reason_code, from_day, to_day, days, status, reason)
+               VALUES (7, 1, ?, '2026-10-07', '2026-10-09', 3, 'pending', 'Sister''s wedding')`).run(code);
+  const out = await (await getRoster(planner(db))).json();
+  assert.equal(dayOf(out, 'Adjoa', '2026-10-08').leaveAsked, null);
+  assert.ok(!JSON.stringify(out).includes('wedding'), 'nor what it was for');
 });
 
 test('once approved it is the leave itself, and a declined one is gone', async () => {

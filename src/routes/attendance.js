@@ -2217,6 +2217,10 @@ export async function getRoster(ctx) {
   // their Sundays, what is still waiting to be published. Stripped here rather
   // than in the screen, because the screen is a courtesy and this is the gate.
   const reader = !allows('att_rota', ctx.session.permissions);
+  // And whoever plans without deciding sees agreed days, not requests: a day
+  // somebody has asked about, or leave nobody has answered yet, is for a
+  // supervisor or above to see and settle.
+  const decides = allows('att_manage', ctx.session.permissions);
 
   const [ds, availability] = await Promise.all([
     loadDataset(ctx.db, { from, to }),
@@ -2227,7 +2231,8 @@ export async function getRoster(ctx) {
     reader
       ? { results: [] }
       : ctx.db.prepare(
-        'SELECT * FROM att_availability WHERE day BETWEEN ?1 AND ?2',
+        `SELECT * FROM att_availability WHERE day BETWEEN ?1 AND ?2
+            ${decides ? '' : "AND decision = 'approved'"}`,
       ).bind(from, to).all().catch(() => ({ results: [] })),
   ]);
 
@@ -2247,7 +2252,7 @@ export async function getRoster(ctx) {
   // How many days people have asked about that nobody has answered. Counted
   // over everything rather than over the window: a request for next month is
   // still waiting on somebody while they look at this week.
-  const asked = reader ? { n: 0 } : await ctx.db.prepare(
+  const asked = reader || !decides ? { n: 0 } : await ctx.db.prepare(
     "SELECT COUNT(*) AS n FROM att_availability WHERE decision = 'waiting'",
   ).first().catch(() => ({ n: 0 }));
 
@@ -2432,7 +2437,7 @@ export async function getRoster(ctx) {
           // is not built over a request that is sitting in the Leave screen.
           // A reader sees leave once it is approved, and not before: what
           // somebody has asked for is between them and whoever decides.
-          leaveAsked: reader ? null : leaveAskedFor(ds, staff.id, day),
+          leaveAsked: reader || !decides ? null : leaveAskedFor(ds, staff.id, day),
           holiday: ds.holidayBy.get(day)?.name ?? null,
         };
       }),
@@ -4437,6 +4442,10 @@ export async function listLeave(ctx) {
 
   const clauses = [];
   const binds = [];
+  // Requests are between the person and whoever decides them. Anybody who
+  // cannot decide, a rota planner included, sees leave once it is approved
+  // and nothing before: not what was asked for, not what was turned down.
+  if (!allows('att_manage', ctx.session.permissions)) clauses.push("l.status = 'approved'");
   if (status && ['pending', 'approved', 'rejected', 'cancelled'].includes(status)) {
     clauses.push('l.status = ?');
     binds.push(status);
@@ -4645,7 +4654,7 @@ export async function decideLeave(ctx, id) {
       : (str(body.note, 'Note', { max: 500 }) || 'See whoever decided it for the reason.'),
     link: '#/att-leave',
     actor: `${ctx.session.user.name} (${ctx.session.user.role})`,
-    audience: 'att_rota',
+    audience: 'att_manage',
     userId: request.requested_by_id ?? null,
     mail: mailOrNothing(() => {
       const approved = decision === 'approved';
@@ -4848,7 +4857,7 @@ export async function setLeaveType(ctx, id) {
       + (reason.deducts_leave ? ' It comes off your annual leave.' : ''),
     link: '#/att-leave',
     actor,
-    audience: 'att_rota',
+    audience: 'att_manage',
     userId: request.requested_by_id ?? null,
     mail: mailOrNothing(() => {
       const wasLabel = was?.label ?? request.reason_code;
