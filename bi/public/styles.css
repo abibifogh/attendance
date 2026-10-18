@@ -1674,7 +1674,8 @@ label.fm-row input { margin-top: .2rem; }
 .pf-got.no { background: color-mix(in srgb, var(--critical, #b3261e) 9%, var(--surface)); }
 .pf-ask { border: 2px solid var(--series-1, #2a6fdb); border-radius: 12px; padding: .7rem .8rem; background: var(--surface); }
 .pf-ask > b { display: block; margin-bottom: .45rem; }
-.pf-ask input, .pf-send input { width: 100%; box-sizing: border-box; padding: .5rem .65rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); margin-top: .4rem; }
+.pf-mine { margin-top: .5rem; padding: .65rem .75rem; border: 2px solid var(--series-1, #2a6fdb); border-radius: 12px; }
+.pf-ask input, .pf-send input, .pf-mine input { width: 100%; box-sizing: border-box; padding: .5rem .65rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); margin-top: .4rem; }
 .pf-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
 .pf-chip { border: 1px solid var(--border); border-radius: 999px; padding: .32rem .7rem; font: inherit; font-size: .85rem; background: var(--surface); color: var(--ink); cursor: pointer; }
 .pf-chip.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }

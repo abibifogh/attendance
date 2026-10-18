@@ -29,7 +29,7 @@ export function proofFiles(files) {
 }
 
 /** What was asked, and what came back, for one request. */
-function requestView(r, { canAsk, again }) {
+function requestView(r, { canAsk, again, sent }) {
   const said = h('span.small');
   const act = (path, words) => async (e) => {
     e.target.disabled = true;
@@ -38,6 +38,10 @@ function requestView(r, { canAsk, again }) {
   };
   const asked = h('div.pf-asked', '📎 ', h('b', 'Proof asked'), ` from ${r.askedOf}${r.toHive ? ' (in HIVE)' : ''} by ${r.askedBy}, ${when(r.askedAt)}: ${r.kinds.map(kindName).join(', ')}`,
     r.note ? ` · “${r.note}”` : '');
+  if (r.status === 'asked' && r.mine) {
+    // Asked of whoever is looking: they send it here, on the card itself.
+    return h('div', asked, h('div.pf-mine', h('b', 'Send it here'), sendForm(r, sent)));
+  }
   if (r.status === 'asked') {
     return h('div', asked,
       h('div.pf-line', h('span.sh-chip.none', `Waiting for ${r.askedOf}`),
@@ -100,7 +104,10 @@ export function proofBox(target, { who = null, after = null } = {}) {
     const open = list.find((r) => r.status === 'asked');
     mount(box,
       message ? h('p.small', message) : null,
-      list.slice(0, 3).reverse().map((r) => requestView(r, { canAsk: data.canAsk, again })),
+      list.slice(0, 3).reverse().map((r) => requestView(r, {
+        canAsk: data.canAsk, again,
+        sent: async (words) => { await again(); paint(words); if (after) after(); },
+      })),
       asking ? askForm(target, who, {
         onDone: async (words) => { asking = false; await again(); paint(words); if (after) after(); },
         onCancel: () => { asking = false; paint(); },
@@ -130,9 +137,9 @@ async function asFile(file) {
 
 /**
  * The person asked: pictures or a PDF, a note, Send; or why not.
- * `r` is one of /proof/mine's requests; `after(words)` runs once it is sent.
+ * `r` is one of their requests; `after(words)` runs once it is sent.
  */
-export function sendCard(r, after) {
+function sendForm(r, after) {
   const files = [];
   const list = h('div.pf-files');
   const said = h('span.small');
@@ -168,9 +175,14 @@ export function sendCard(r, after) {
     h('p.small', cannot ? h('button.sh-link', { type: 'button', onclick: () => { cannot = false; note.placeholder = 'A note (optional)'; paint(); } }, 'I can send it after all')
       : ['Can’t get it? ', h('button.sh-link', { type: 'button', onclick: () => { cannot = true; note.placeholder = 'Why it cannot be had'; paint(); } }, 'Say why instead')]));
   paint();
+  return body;
+}
+
+/** The same, as its own card: the Inbox's Proof asked. */
+export function sendCard(r, after) {
   return h('article.sh-ex.warn.pf-send',
     h('div.hd', h('span.sq', '📎'), h('h3', `${r.askedBy} asks for proof`)),
     h('p', 'Of your answer: ', h('b', `“${r.about || 'your answer'}”`)),
     h('div.pf-asked', `${r.kinds.map(kindName).join(', ')}${r.note ? `: “${r.note}”` : ''}`),
-    body);
+    sendForm(r, after));
 }

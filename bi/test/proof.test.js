@@ -36,6 +36,9 @@ test('a supervisor’s answer: asked by an admin, sent from their Inbox, shown o
   assert.deepEqual([out.request.askedOf, out.request.kinds, out.request.about, out.request.toHive], ['Sup Kofi', ['momo'], 'Explained: The payment declined', false]);
   await assert.rejects(proof.ask(env, { target, kinds: ['momo'] }, OWNER), /already asked/);
 
+  // On his own answer's card too, marked his, so he can send it there; the admin's view is not.
+  assert.equal((await proof.forTargets(env, { targets: target }, SUP)).requests[0].mine, true);
+  assert.equal((await proof.forTargets(env, { targets: target }, OWNER)).requests[0].mine, false);
   // In Kofi's Inbox, and only Kofi's.
   assert.equal((await proof.mine(env, SUP)).requests.length, 1);
   assert.equal((await proof.mine(env, OTHER)).requests.length, 0);
