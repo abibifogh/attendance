@@ -799,3 +799,21 @@ test('a shift is “not checked yet” on its person’s list until somebody che
     global.Date = RealDate;
   }
 });
+
+test('Odoo not answering a PO lookup is said in Odoo’s words, not “something went wrong”', async () => {
+  const { db } = freshDb();
+  await db.prepare("INSERT OR REPLACE INTO sources (id, label, kind, config, enabled) VALUES ('odoo', 'Odoo', 'odoo_json2', '{\"base\":\"https://odoo.example.test\"}', 1)").run();
+  const env = { DB: db, SSO_SECRET_ATTENDANCE: SECRET, ODOO_KEY_ODOO: 'k', ASSETS: { fetch: async () => new Response('x') } };
+  const worker = (await import('../src/index.js')).default;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => { const e = new Error('aborted'); e.name = 'AbortError'; throw e; };
+  try {
+    const text = '{"names":["412"]}';
+    const headers = await signLink(SECRET, '/api/link/till/po', text);
+    const res = await worker.fetch(new Request('https://insight.example.test/api/link/till/po', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: text }), env, { waitUntil: () => {} });
+    assert.equal(res.status, 502);
+    assert.match((await res.json()).error, /^Odoo did not answer in time \(purchase\.order, search_read\)\.$/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
