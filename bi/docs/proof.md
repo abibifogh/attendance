@@ -21,7 +21,8 @@ what ("the MoMo message showing the 9:51pm payment was declined"), and
 The request goes to whoever gave the answer:
 
 - **A supervisor's answer in Insight:** their Shifts › Inbox › **Proof asked**,
-  and an email.
+  and an email. The card of the answer itself also has a **Send it here** box
+  for them, wherever they open it, so they can send from there too.
 - **A staff member's answer from HIVE (My till):** their **To sort out** in
   HIVE, and a HIVE notice (push and email, "Proof was asked for something you
   answered on your till list").
