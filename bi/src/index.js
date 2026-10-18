@@ -480,6 +480,8 @@ function errorResponse(err) {
   if (err instanceof HttpError) {
     return json({ error: err.message, detail: err.detail ?? null }, { status: err.status });
   }
+  // Odoo did not answer, refused, or said no: its own words, not "something went wrong".
+  if (err?.name === 'OdooError') return json({ error: err.message, detail: null }, { status: 502 });
   if (isMissingTable(err)) {
     return json({
       error: 'The warehouse has not been built yet. Run the migrations, then refresh.',

@@ -2,6 +2,19 @@ import { emptyBundle } from './bundle.js';
 import { toMinor } from '../lib/money.js';
 
 /**
+ * Odoo's trouble, in a sentence a person can act on. Marked as Odoo's so the
+ * Worker answers with the sentence (and 502) rather than a bare "something
+ * went wrong": a receptionist adding a PO needs to know Odoo did not answer.
+ */
+export class OdooError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'OdooError';
+    this.status = 502;
+  }
+}
+
+/**
  * Odoo, read over its External JSON-2 API.
  *
  * What this system uniquely knows: what the business was actually *invoiced*.
@@ -83,8 +96,8 @@ export function odooConfig(config, token) {
  * person can act on where "the API key was refused" is.
  */
 async function call(config, model, method, body, { fetchImpl = fetch, timeoutMs = 20_000 } = {}) {
-  if (!config.base) throw new Error('No Odoo address is configured.');
-  if (!config.key) throw new Error('No Odoo API key has been set on this Worker.');
+  if (!config.base) throw new OdooError('No Odoo address is configured.');
+  if (!config.key) throw new OdooError('No Odoo API key has been set on this Worker.');
 
   const headers = {
     Authorization: `bearer ${config.key}`,
@@ -106,8 +119,8 @@ async function call(config, model, method, body, { fetchImpl = fetch, timeoutMs 
       body: JSON.stringify(body),
     });
   } catch (err) {
-    if (err?.name === 'AbortError') throw new Error(`Odoo did not answer in time (${model}, ${method}).`);
-    throw new Error(`Odoo could not be reached: ${String(err?.message ?? err)}`);
+    if (err?.name === 'AbortError') throw new OdooError(`Odoo did not answer in time (${model}, ${method}).`);
+    throw new OdooError(`Odoo could not be reached: ${String(err?.message ?? err)}`);
   } finally {
     clearTimeout(timer);
   }
@@ -122,26 +135,26 @@ async function call(config, model, method, body, { fetchImpl = fetch, timeoutMs 
     } catch { return ''; }
   };
   if (response.status === 401) {
-    throw new Error('Odoo refused the API key. Check it, and that the user it belongs to may read accounting.');
+    throw new OdooError('Odoo refused the API key. Check it, and that the user it belongs to may read accounting.');
   }
   if (response.status === 403) {
     const said = await odooSaid();
-    throw new Error(method === 'search_read' && !said
+    throw new OdooError(method === 'search_read' && !said
       ? 'Odoo refused the API key. Check it, and that the user it belongs to may read accounting.'
       : `Odoo did not allow ${doing} ${model}${said ? `: ${said}` : '.'}`);
   }
   if (response.status === 404) {
-    throw new Error(`Odoo has no ${model} model, or the address is wrong. Check the Odoo address in Setup.`);
+    throw new OdooError(`Odoo has no ${model} model, or the address is wrong. Check the Odoo address in Setup.`);
   }
   if (!response.ok) {
     const said = await odooSaid();
-    throw new Error(`Odoo answered ${response.status} ${doing} ${model}${said ? `: ${said}` : '.'}`);
+    throw new OdooError(`Odoo answered ${response.status} ${doing} ${model}${said ? `: ${said}` : '.'}`);
   }
 
   try {
     return await response.json();
   } catch {
-    throw new Error(`Odoo answered with something unreadable reading ${model}.`);
+    throw new OdooError(`Odoo answered with something unreadable reading ${model}.`);
   }
 }
 
@@ -677,7 +690,7 @@ export async function createDraftPo({ config: settings, token, vendorId, product
     }],
   }, opts);
   const id = Array.isArray(made) ? made[0] : Number(made);
-  if (!Number.isInteger(id)) throw new Error('Odoo did not say which PO it made.');
+  if (!Number.isInteger(id)) throw new OdooError('Odoo did not say which PO it made.');
   const rows = await call(config, 'purchase.order', 'search_read', {
     domain: [['id', '=', id]], fields: ['name', 'amount_total', 'state'], limit: 1,
   }, opts);

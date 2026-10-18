@@ -202,6 +202,17 @@ test('a PO answers cash that left the drawer, once', async () => {
   assert.equal(raw.prepare("SELECT how FROM till_answer ORDER BY id DESC LIMIT 1").get().how, 'repay');
 });
 
+test('when Odoo or Insight cannot answer, adding a PO says so in words, and what to do', async () => {
+  const { db } = await setup();
+  const failing = (status, error) => ({ INSIGHT: { fetch: async () => Response.json({ error }, { status }) } });
+  await assert.rejects(lookUpPo(ctx(db, AMA, { env: failing(502, 'Odoo did not answer in time (purchase.order, search_read).'), body: { pos: ['412'] }, path: '/api/me/till/po' })),
+    /The PO could not be checked just now\. Odoo did not answer in time \(purchase\.order, search_read\)\. Try Add again in a minute/);
+  await assert.rejects(lookUpPo(ctx(db, AMA, { env: failing(500, 'Something went wrong on the server'), body: { po: '412' }, path: '/api/me/till/po' })),
+    /could not be checked just now\. Insight had a problem\. Try Add again/);
+  // Something wrong with what was typed is still said as it was.
+  await assert.rejects(lookUpPo(ctx(db, AMA, { env: failing(502, 'x'), body: { pos: [] }, path: '/api/me/till/po' })), /at least one/);
+});
+
 test('a shift not checked yet takes a note, not an answer; once checked, the other way round', async () => {
   const { db, raw } = await setup();
   const key = 'drawer:2026-10-07:afternoon';

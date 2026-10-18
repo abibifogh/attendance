@@ -416,6 +416,18 @@ export function earlierBlocks(earlier, expenses, notMine = []) {
 
 /** Look a PO up while somebody types it. Read-only all the way to Odoo. */
 export async function lookUpPo(ctx) {
+  try {
+    return await lookUp(ctx);
+  } catch (err) {
+    // Insight or Odoo did not answer: say so, and what to do, not "something went wrong".
+    if (err instanceof HttpError && err.status >= 500) {
+      throw new HttpError(err.status, `The PO could not be checked just now. ${/^Something went wrong/.test(err.message) ? 'Insight had a problem.' : err.message} Try Add again in a minute; if it keeps happening, tell an admin.`);
+    }
+    throw err;
+  }
+}
+
+async function lookUp(ctx) {
   const body = await readJson(ctx.request);
   // Several at once: each looked up the same way, in the order typed.
   if (Array.isArray(body.pos)) {
