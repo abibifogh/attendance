@@ -65,8 +65,14 @@ const SLOT_ORDER = ['morning', 'afternoon', 'night'];
 export const reportKey = ({ day, slot }) => `${day}|${SLOT_ORDER.indexOf(slot)}`;
 const SLOT_WORD = { morning: 'morning', afternoon: 'afternoon', night: 'night' };
 
-/** A reception shift, by the shift's department first and the person's last. */
+/**
+ * A reception shift, by the shift's department first and the person's last.
+ *
+ * An Admin shift is never one, even filed under Reception: it is office work
+ * with no drawer, and the property does not want a closing report for it.
+ */
 export function isReceptionShift(shift, staff) {
+  if (/\badmin\b/i.test(String(shift?.name ?? ''))) return false;
   const reception = (v) => /reception|front\s*(office|desk)/i.test(String(v ?? ''));
   if (shift?.department) return reception(shift.department);
   if (reception(shift?.position) || reception(shift?.name)) return true;

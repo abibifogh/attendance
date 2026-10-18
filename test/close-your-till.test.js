@@ -132,6 +132,14 @@ test('reception is the shift’s department first, then its name, then the perso
   assert.equal(isReceptionShift({ name: 'Morning' }, { department: 'Kitchen' }), false);
 });
 
+test('an Admin shift closes no till, even filed under Reception', () => {
+  assert.equal(isReceptionShift({ name: 'Admin', department: 'Reception' }, {}), false);
+  assert.equal(isReceptionShift({ name: 'Admin 2', department: 'Reception' }, {}), false);
+  assert.equal(isReceptionShift({ name: 'AM Shift', department: 'Reception' }, {}), true);
+  assert.equal(isReceptionShift({ name: 'Administration cover', department: 'Reception' }, {}), true,
+    'only the word Admin itself, not a longer word that starts with it');
+});
+
 test('a rota shift is filed under the closing-report shift its start is nearest', () => {
   assert.deepEqual(reportSlotFor('2026-10-10', '06:00'), { day: '2026-10-10', slot: 'morning' });
   assert.deepEqual(reportSlotFor('2026-10-10', '07:30'), { day: '2026-10-10', slot: 'morning' });
