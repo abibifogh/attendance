@@ -91,6 +91,12 @@ export async function renderLetter(params) {
           footer: 'Signed electronically. The record of signature at the foot of this document '
             + 'shows what was presented, who signed it, and when.',
         }),
+        progress.complete || (!progress.signers && letter.signed_at)
+          ? h('a.btn.btn-primary', {
+            href: `/api/corr/letters/${letter.id}/signed.pdf?download=1`,
+            title: 'The signed copy with every signature and the certificate, as a PDF anybody can check',
+          }, 'Download signed PDF')
+          : null,
         ...actions(data, model, reload),
       ),
     ),

@@ -81,7 +81,7 @@ export async function appendEvent(db, letterId, { kind, actor, detail, ip, agent
 // Files
 // ---------------------------------------------------------------------------
 
-async function storeFile(db, { title, filename, mime, bytes, actor }) {
+export async function storeFile(db, { title, filename, mime, bytes, actor }) {
   const chunks = splitIntoChunks(bytes);
   const created = await db.prepare(
     `INSERT INTO corr_file (title, filename, mime, bytes, sha256, content, parts, uploaded_by)
@@ -96,7 +96,7 @@ async function storeFile(db, { title, filename, mime, bytes, actor }) {
   return created.id;
 }
 
-async function readStoredFile(db, row) {
+export async function readStoredFile(db, row) {
   const chunks = [asBytes(row.content)];
   for (let seq = 1; seq < Number(row.parts ?? 1); seq += 1) {
     const part = await db.prepare('SELECT content FROM corr_file_part WHERE file_id = ? AND seq = ?')

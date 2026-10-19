@@ -456,6 +456,10 @@ export async function signDocument(ctx, token) {
   });
 
   const complete = await maybeComplete(ctx, letter.id);
+  if (complete) {
+    const { signedLetter } = await import('./signed-copies.js');
+    await signedLetter(ctx, letter.id).catch((err) => console.error('Signed copy failed', err));
+  }
   // The office hears, and so does whoever is next, straight away.
   await tellOffice(ctx, letter, { what: complete ? 'complete' : 'signed', who: name }).catch(() => {});
   if (!complete) await tellWhoseTurn(ctx, letter.id).catch(() => {});

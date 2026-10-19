@@ -1159,6 +1159,10 @@ export async function countersignContract(ctx, id) {
     detail: str(body.name, 'Name', { max: 120 }),
   });
   await audit(ctx, 'people.contract_countersign', contract.id, null);
+  // Both sides have signed: the signed copy is made now and its fingerprint
+  // kept, so it can be handed out and checked.
+  const { signedContract } = await import('./signed-copies.js');
+  await signedContract(ctx, contract.id).catch((err) => console.error('Signed copy failed', err));
   return json({ ok: true });
 }
 

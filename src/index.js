@@ -33,6 +33,7 @@ import * as tillReports from './routes/till-reports.js';
 import * as absence from './routes/absence.js';
 import * as leavePlans from './routes/leave-plans.js';
 import * as newStarter from './routes/new-starter.js';
+import * as signedCopies from './routes/signed-copies.js';
 import * as viewAs from './routes/view-as.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
@@ -735,6 +736,10 @@ export const ROUTES = [
   ['POST', '/api/s/:token/code', 'public', sign.signRequestCode],
   ['POST', '/api/s/:token/sign', 'public', sign.signDocument],
   ['POST', '/api/s/:token/decline', 'public', sign.signDecline],
+  ['POST', '/api/verify', 'public', signedCopies.verify],
+  ['GET', '/api/hr/contracts/:id/signed.pdf', 'hr_view', signedCopies.contractCopy],
+  ['GET', '/api/me/contracts/:id/signed.pdf', 'att_me', signedCopies.myContractCopy],
+  ['GET', '/api/corr/letters/:id/signed.pdf', 'corr_view', signedCopies.letterCopy],
 
   // ------------------------------------------------------- people and data --
   ['GET', '/api/users', 'users', admin.listUsers],
@@ -953,6 +958,12 @@ export default {
     // less of the system it can reach the better.
     if (url.pathname.startsWith('/s/')) {
       return servePage(env, url, request, '/sign.html');
+    }
+
+    // Checking a signed copy. Anybody may: a bank, a lawyer, the person who
+    // signed. The file is fingerprinted in their browser and never uploaded.
+    if (url.pathname === '/verify') {
+      return servePage(env, url, request, '/verify.html');
     }
 
     // The lunch list. One address for the whole property rather than one per

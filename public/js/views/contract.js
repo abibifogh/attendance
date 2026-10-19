@@ -99,6 +99,12 @@ export async function renderContract(params) {
           footer: 'Signed electronically. The certificate of signature at the foot of this '
             + 'document records what was presented, when it was signed and from where.',
         }),
+        contract.status === 'signed' && contract.employer_at && contract.origin !== 'paper'
+          ? h('a.btn.btn-primary', {
+            href: mine ? `/api/me/contracts/${id}/signed.pdf?download=1` : `/api/hr/contracts/${id}/signed.pdf?download=1`,
+            title: 'The signed copy with both signatures and the certificate, as a PDF anybody can check',
+          }, 'Download signed PDF')
+          : null,
         canManage && contract.status === 'signed' && !contract.employer_at
           ? h('button.btn.btn-primary', { onclick: countersign }, 'Countersign')
           : null,
@@ -112,11 +118,10 @@ export async function renderContract(params) {
     // copy of their own contract. The print dialog is the download: it is the
     // only route to a PDF that works the same on a phone, on a laptop and in
     // whatever browser somebody actually has.
-    mine
+    contract.status === 'signed' && contract.employer_at && contract.origin !== 'paper'
       ? h('p.muted.no-print', { style: { fontSize: '.85rem', marginTop: '-.4rem' } },
-        'Save as PDF gives you all of it: the words you agreed to, both signatures, and the '
-        + 'certificate of signature underneath them. On a phone the same button opens your '
-        + 'print sheet, where the destination to choose is Save as PDF.')
+        'The signed PDF has the words, both signatures and the certificate of signature. Anybody '
+        + 'can check a copy is genuine at /verify.')
       : null,
 
     // The one thing on this page worth shouting about. Checked on the server
