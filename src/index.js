@@ -33,7 +33,8 @@ import * as tillReports from './routes/till-reports.js';
 import * as absence from './routes/absence.js';
 import * as leavePlans from './routes/leave-plans.js';
 import * as newStarter from './routes/new-starter.js';
-import * as signedCopies from './routes/signed-copies.js';
+
+const signedCopies = () => import('./routes/signed-copies.js');
 import * as viewAs from './routes/view-as.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
@@ -736,10 +737,12 @@ export const ROUTES = [
   ['POST', '/api/s/:token/code', 'public', sign.signRequestCode],
   ['POST', '/api/s/:token/sign', 'public', sign.signDocument],
   ['POST', '/api/s/:token/decline', 'public', sign.signDecline],
-  ['POST', '/api/verify', 'public', signedCopies.verify],
-  ['GET', '/api/hr/contracts/:id/signed.pdf', 'hr_view', signedCopies.contractCopy],
-  ['GET', '/api/me/contracts/:id/signed.pdf', 'att_me', signedCopies.myContractCopy],
-  ['GET', '/api/corr/letters/:id/signed.pdf', 'corr_view', signedCopies.letterCopy],
+  // Signed copies load the PDF library only when one is asked for, so nothing
+  // else that reads this file has to carry it.
+  ['POST', '/api/verify', 'public', (ctx) => signedCopies().then((m) => m.verify(ctx))],
+  ['GET', '/api/hr/contracts/:id/signed.pdf', 'hr_view', (ctx, id) => signedCopies().then((m) => m.contractCopy(ctx, id))],
+  ['GET', '/api/me/contracts/:id/signed.pdf', 'att_me', (ctx, id) => signedCopies().then((m) => m.myContractCopy(ctx, id))],
+  ['GET', '/api/corr/letters/:id/signed.pdf', 'corr_view', (ctx, id) => signedCopies().then((m) => m.letterCopy(ctx, id))],
 
   // ------------------------------------------------------- people and data --
   ['GET', '/api/users', 'users', admin.listUsers],
