@@ -6,6 +6,7 @@ import { renderFinancials } from './views/financials.js';
 import { renderLabour } from './views/labour.js';
 import { renderDemand } from './views/demand.js';
 import { renderCash } from './views/cash.js';
+import { renderSafe } from './views/safe.js';
 import { renderSuppliers } from './views/suppliers.js';
 import { renderBooks } from './views/books.js';
 import { renderFindings } from './views/findings.js';
@@ -49,6 +50,8 @@ const ROUTES = [
   { path: 'labour', label: 'Labour', render: renderLabour },
   { path: 'guests', label: 'Guests', render: renderDemand },
   { path: 'cash', label: 'Cash', render: renderCash },
+  // The safe book: cash in from the shifts, out as written, and the counts. Admins.
+  { path: 'safe', label: 'Safe', render: renderSafe, needs: 'admin' },
   // A month of its own rather than the window: its address names the month.
   { path: 'prepaid', label: 'Prepaid stays', render: renderPrepaid, ownHash: true },
   // The one screen a supervisor gets, with the parts an admin gave them.
@@ -77,7 +80,7 @@ const ROUTES = [
  */
 const NAV_GROUPS = [
   ['Today', ['hub', 'brief', 'findings']],
-  ['Money', ['money', 'yardstick', 'cash', 'prepaid', 'books', 'buying', 'receipts', 'floats']],
+  ['Money', ['money', 'yardstick', 'cash', 'safe', 'prepaid', 'books', 'buying', 'receipts', 'floats']],
   ['Operations', ['shifts', 'upload', 'niceplace', 'labour', 'guests']],
   ['Admin', ['accounts', 'reports', 'setup']],
 ];

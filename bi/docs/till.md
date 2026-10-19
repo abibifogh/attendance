@@ -183,8 +183,10 @@ shift and no report is filed for it.
 
 ## The safe
 
-Shifts → **Safe** (admins only) is the safe book. A page runs from one count of
-the safe to the next, and its balance is what the safe should hold.
+Money › **Safe** (admins only) is the safe book. A page runs from one count of
+the safe to the next, and its balance is what the safe should hold. Its
+"Confirmed in Odoo, not claimed" list follows the days chosen at the top of
+Insight.
 
 - **In** is read from the shifts: what ASSD says each shift moved to the safe,
   with the envelopes from that person's HIVE closing report beside it. Nobody
