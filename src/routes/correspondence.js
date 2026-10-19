@@ -590,7 +590,7 @@ export async function updateLetter(ctx, id) {
  * their own record. A borrowed phone left unlocked on a desk is the threat,
  * and it is a real one in a hotel office.
  */
-async function reauthenticate(ctx, body) {
+export async function reauthenticate(ctx, body) {
   const pepper = await getPepper(ctx.db);
   const user = await ctx.db.prepare('SELECT * FROM users WHERE id = ?')
     .bind(ctx.session.user.id).first();

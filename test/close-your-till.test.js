@@ -156,7 +156,7 @@ test('every notification kind now emails by default', () => {
   // And two more that must not email: the weekly handbook nudge, which is a
   // push, and a signing code, which goes by text precisely so that it never
   // travels with the emailed link.
-  const notEmail = new Set([...pushOnly, 'handbook.reminder', 'corr.sign_code']);
+  const notEmail = new Set([...pushOnly, 'handbook.reminder', 'corr.sign_code', 'people.sign_code']);
   for (const k of KINDS.filter((x) => !notEmail.has(x.key))) assert.ok(goesOut({}, k.key, 'email'), `${k.key} emails`);
   assert.equal(goesOut({}, 'corr.sign_code', 'email'), false);
   assert.equal(goesOut({}, 'corr.sign_code', 'text'), true);

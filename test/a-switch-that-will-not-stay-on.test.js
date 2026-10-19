@@ -88,6 +88,8 @@ test('every field the rules form posts comes back with the bootstrap', async () 
     swap_approval: 'clean',
     swap_monthly_cap: '2',
     hr_link_days: '30',
+    hr_require_otp: '1',
+    corr_require_otp: '1',
     // Two that are only ever written when somebody changes them. Absent means
     // the default and the screen draws the same default, so they are harmless
     // either way; set here so this test is about the filter and not about what

@@ -5,6 +5,9 @@ import { requiredDocumentsFor } from '../lib/ghana-templates.js';
 import { currentPlan, storeFile } from './people.js';
 import { fromBase64 } from '../lib/files.js';
 import { createNotice } from '../lib/notices.js';
+import { firstUsableEmail, sendEmail, senderNameOf, senderWithName } from '../lib/notify.js';
+import { firstUsableNumber, sendTexts, smsSetup } from '../lib/sms.js';
+import { renderMail } from '../lib/email-design.js';
 
 /**
  * The other side of the link: somebody's phone, with no account and no login.
@@ -78,6 +81,105 @@ async function tellHr(ctx, invite, { kind, title, body, onceADay = false, push =
     email,
     text: false,
   }, ctx).catch(() => {});
+}
+
+/**
+ * Where a signing code can go for this person, if anywhere.
+ *
+ * Their own email first, then a text to their own phone. Required by default
+ * wherever one of the two can actually be sent; a property can turn it off,
+ * and somebody with neither on file is not asked for what cannot reach them,
+ * in which case the link's own four-digit code, if it has one, is the check.
+ */
+async function codeRouteFor(ctx, invite) {
+  const settings = Object.fromEntries(((await ctx.db.prepare('SELECT key, value FROM settings').all()
+    .catch(() => ({ results: [] }))).results ?? []).map((r) => [r.key, r.value]));
+  if (settings.hr_require_otp === '0') return { required: false };
+  const profile = await ctx.db.prepare('SELECT personal_email, personal_phone, alt_phone FROM hr_profile WHERE staff_id = ?')
+    .bind(invite.staff_id).first().catch(() => null);
+  const email = firstUsableEmail(profile?.personal_email);
+  if (email && ctx.env?.RESEND_API_KEY && String(settings.email_from ?? '').trim()) {
+    const [user, host] = email.split('@');
+    return { required: true, via: 'email', to: email, hint: `${user.slice(0, 2)}${'•'.repeat(Math.max(1, user.length - 2))}@${host}`, settings };
+  }
+  const phone = firstUsableNumber(profile?.personal_phone, profile?.alt_phone);
+  if (phone && smsSetup(settings, ctx.env).ready) {
+    return { required: true, via: 'text', to: phone, hint: `a phone ending ${String(phone).slice(-3)}`, settings };
+  }
+  return { required: false };
+}
+
+/** Send a six-digit code to sign with. One live at a time; it lasts fifteen minutes. */
+export async function inviteRequestCode(ctx, token) {
+  const invite = await inviteFor(ctx, token);
+  const route = await codeRouteFor(ctx, invite);
+  if (!route.required) throw badRequest('There is no email or phone on file to send a code to.');
+
+  const gate = await throttleCheck(ctx.db, `hrcode:${invite.id}`, { pin: false });
+  if (!gate.allowed) throw forbidden(`Too many codes asked for. Wait ${Math.ceil(gate.retryAfter / 60)} minutes.`);
+  await throttleFail(ctx.db, `hrcode:${invite.id}`, { everybody: false });
+
+  const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0');
+  const pepper = await getPepper(ctx.db);
+  await ctx.db.prepare(
+    `UPDATE hr_invite SET otp_hash = ?2, otp_sent_at = datetime('now'), otp_tries = 0, otp_sent_to = ?3
+      WHERE id = ?1`,
+  ).bind(invite.id, await hashPin(`hr-otp:${code}`, pepper), route.via).run();
+
+  const name = await property(ctx.db);
+  if (route.via === 'email') {
+    const subject = `${code} is your code to sign`;
+    const { html } = renderMail({
+      notice: {
+        title: subject,
+        mail: {
+          subject,
+          preheader: 'It lasts fifteen minutes and can be used once.',
+          tone: 'info',
+          status: 'Your code',
+          eyebrow: 'Signing',
+          headline: 'Your code to sign',
+          code: `${code.slice(0, 3)} ${code.slice(3)}`,
+          facts: [['Lasts', '15 minutes, used once']],
+          note: `Nobody from ${name} will ever ask you for this code. If you were not expecting this, ignore it.`,
+          settingsLink: false,
+          why: `You get this because you asked to sign a document from ${name}.`,
+        },
+      },
+      propertyName: name,
+    });
+    // Never copied to anybody: a copy of a signing code is somebody else's signature.
+    await sendEmail({
+      apiKey: ctx.env.RESEND_API_KEY,
+      from: senderWithName(route.settings.email_from, senderNameOf(route.settings)),
+      to: route.to,
+      subject,
+      html,
+    });
+  } else {
+    const out = await sendTexts(ctx.db, ctx.env, {
+      kind: 'people.sign_code',
+      messages: [{ to: route.to, text: `${code} is your code to sign with ${name}. It lasts 15 minutes. Nobody will ask you for it.` }],
+    });
+    if (!Number(out?.sent ?? 0)) throw badRequest('The code could not be sent. Try again in a minute.');
+  }
+  await logEvent(ctx, invite, 'code_sent', { detail: route.via });
+  return json({ ok: true, sentTo: route.hint, via: route.via });
+}
+
+async function checkCode(ctx, invite, given) {
+  if (!invite.otp_hash) throw badRequest('Ask for a code first.');
+  if (Number(invite.otp_tries) >= 5) throw forbidden('Too many wrong codes. Ask for a new one.');
+  const fresh = await ctx.db.prepare("SELECT datetime('now') < datetime(?, '+15 minutes') AS ok")
+    .bind(invite.otp_sent_at).first();
+  if (!fresh?.ok) throw badRequest('That code has expired. Ask for another.');
+  const pepper = await getPepper(ctx.db);
+  if (await hashPin(`hr-otp:${String(given).trim()}`, pepper) !== invite.otp_hash) {
+    await ctx.db.prepare('UPDATE hr_invite SET otp_tries = otp_tries + 1 WHERE id = ?').bind(invite.id).run();
+    throw forbidden('That code is not right.');
+  }
+  await ctx.db.prepare("UPDATE hr_invite SET otp_verified_at = datetime('now'), otp_hash = NULL WHERE id = ?")
+    .bind(invite.id).run();
 }
 
 async function inviteFor(ctx, token) {
@@ -199,6 +301,13 @@ export async function inviteOpen(ctx, token) {
     otherFiles: attached
       .filter((d) => !form.files.some((f) => f.code === d.kind))
       .map(present),
+    // A code before signing, where one can reach them.
+    signCode: (contracts.results ?? []).length
+      ? await codeRouteFor(ctx, invite).then((r) => ({
+        required: r.required, hint: r.hint ?? null, via: r.via ?? null,
+        verified: Boolean(invite.otp_verified_at),
+      }))
+      : null,
     contracts: (contracts.results ?? []).map((c) => ({
       id: c.id,
       title: c.title,
@@ -495,6 +604,21 @@ export async function inviteSign(ctx, token) {
     throw badRequest('Tick the box to say you agree to sign this electronically.');
   }
 
+  // The code, where one can reach them. Checked before anything else about
+  // the signature, so a wrong code changes nothing.
+  const route = await codeRouteFor(ctx, invite);
+  let check = invite.pin_hash ? 'link code' : null;
+  if (route.required) {
+    if (body.otp) await checkCode(ctx, invite, body.otp);
+    else {
+      const recent = invite.otp_verified_at
+        ? await ctx.db.prepare("SELECT datetime('now') < datetime(?, '+2 hours') AS ok").bind(invite.otp_verified_at).first()
+        : null;
+      if (!recent?.ok) throw badRequest('Enter the six-digit code we sent you first. Press "Send me a code" to get one.');
+    }
+    check = `${route.via} code`;
+  }
+
   const signerName = str(body.name, 'Your name', { required: true, max: 120 });
   const ink = str(body.ink, 'Signature', { max: 200_000 });
   if (!ink && signerName.trim().split(/\s+/).length < 2) {
@@ -512,9 +636,9 @@ export async function inviteSign(ctx, token) {
   await ctx.db.prepare(
     `UPDATE hr_contract
         SET status = 'signed', signed_at = datetime('now'), signer_name = ?2,
-            signature_ink = ?3, signer_ip = ?4, signer_agent = ?5
+            signature_ink = ?3, signer_ip = ?4, signer_agent = ?5, signer_check = ?6
       WHERE id = ?1 AND status <> 'signed'`,
-  ).bind(contract.id, signerName, ink || null, ipOf(ctx), agentOf(ctx)).run();
+  ).bind(contract.id, signerName, ink || null, ipOf(ctx), agentOf(ctx), check).run();
 
   await logEvent(ctx, invite, 'signed', {
     contractId: contract.id,

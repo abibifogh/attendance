@@ -460,9 +460,42 @@ function showContract(contract) {
   const pad = signaturePad();
   let agreed = false;
   let typed = '';
+  let otp = '';
+  let codeSent = false;
+  const needCode = Boolean(packet.signCode?.required && !packet.signCode.verified);
+
+  // A six-digit code to their own email or phone, before signing.
+  const codeBox = h('div.sign-code');
+  const drawCode = () => {
+    if (!needCode) { mount(codeBox, null); return; }
+    mount(codeBox,
+      h('p.muted', `Before you sign, we send a six-digit code to ${packet.signCode.hint} to check it is you.`),
+      codeSent
+        ? h('label.field',
+          h('span', 'The code we sent you'),
+          h('input', {
+            type: 'text', inputmode: 'numeric', maxlength: 6, autocomplete: 'one-time-code',
+            oninput: (e) => { otp = e.target.value; },
+          }))
+        : null,
+      h(codeSent ? 'button.btn-sm' : 'button.btn.btn-primary', {
+        type: 'button',
+        onclick: async (e) => {
+          e.target.disabled = true;
+          try {
+            const out = await call(`/api/i/${encodeURIComponent(token)}/code`, {});
+            codeSent = true;
+            drawCode();
+            toast(`Sent to ${out.sentTo}. It lasts fifteen minutes.`, 'good');
+          } catch (err) { toast(err.message, 'bad'); e.target.disabled = false; }
+        },
+      }, codeSent ? 'Send it again' : 'Send me a code'));
+  };
+  drawCode();
 
   const sign = async (button) => {
     if (!agreed) return toast('Tick the box first.', 'bad');
+    if (needCode && !otp.trim()) return toast(codeSent ? 'Enter the code we sent you.' : 'Press "Send me a code" first.', 'bad');
     if (!pad.isDrawn() && typed.trim().split(/\s+/).length < 2) {
       return toast('Sign with your finger, or type your full name.', 'bad');
     }
@@ -476,7 +509,9 @@ function showContract(contract) {
         ink: pad.read(),
         hash: contract.hash,
         agreed: true,
+        otp: otp.trim() || undefined,
       });
+      if (packet.signCode) packet.signCode.verified = true;
       contract.signed = true;
       contract.signerName = typed.trim() || packet.name;
       thanks('Signed. Thank you.',
@@ -515,6 +550,7 @@ function showContract(contract) {
         h('span', 'I have read this document and I agree to sign it electronically. '
           + 'I understand this has the same effect as signing on paper.'),
       ),
+      codeBox,
       pad.element,
       h('label.field',
         h('span', 'Or type your full name'),

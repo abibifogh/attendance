@@ -574,6 +574,7 @@ export const api = {
   hrLoadStandardTemplates: () => request('/api/hr/templates/standard', { method: 'POST' }),
   hrContract: (id) => request(`/api/hr/contracts/${id}`),
   hrCountersign: (id, body) => request(`/api/hr/contracts/${id}/countersign`, { method: 'POST', body }),
+  hrSignCheck: () => request('/api/hr/sign-check'),
   hrVoidContract: (id, note) => request(`/api/hr/contracts/${id}/void`, { method: 'POST', body: { note } }),
 
   // ------------------------------------------------------------- letters --

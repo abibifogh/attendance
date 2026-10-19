@@ -215,6 +215,10 @@ test('a signed contract ticks its own step, and an unsigned one does not', async
   assert.equal(contractStep(await read(await onboardingFor(ctx(db, asOffice()), 1))).done, false);
 
   raw.prepare("UPDATE hr_contract SET status = 'signed' WHERE staff_id = 1").run();
+  assert.equal(contractStep(await read(await onboardingFor(ctx(db, asOffice()), 1))).done, false,
+    'signed by them is an offer; it is done once the property countersigns');
+
+  raw.prepare("UPDATE hr_contract SET employer_at = datetime('now') WHERE staff_id = 1").run();
   assert.equal(contractStep(await read(await onboardingFor(ctx(db, asOffice()), 1))).done, true);
 });
 

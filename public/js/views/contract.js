@@ -1,4 +1,6 @@
 import { api } from '../api.js';
+import { confirmItIsYou } from './letter-signing.js';
+import { proofFrom } from './letter.js';
 import { fileLink } from '../file-view.js';
 import { fmtDay, h, mount, toast } from '../util.js';
 import { card, emptyState, table } from './components.js';
@@ -47,6 +49,8 @@ export async function renderContract(params) {
 
   const countersign = async () => {
     const pad = signaturePad({ height: 130 });
+    // Your own PIN or password, as for signing a letter.
+    const me = await api.hrSignCheck().catch(() => ({ method: 'pin' }));
     const done = await formDialog({
       title: 'Countersign for the property',
       submitLabel: 'Countersign',
@@ -55,8 +59,11 @@ export async function renderContract(params) {
           + 'agreement, and your name goes on it.'),
         field('Signing as', h('input', { type: 'text', name: 'name', required: true, maxlength: 120 })),
         pad.element,
+        confirmItIsYou(me),
       ),
-      onSubmit: async (form) => api.hrCountersign(id, { name: form.get('name'), ink: pad.read() }),
+      onSubmit: async (form) => api.hrCountersign(id, {
+        ...(await proofFrom(form, me)), name: form.get('name'), ink: pad.read(),
+      }),
     });
     if (done) { toast('Countersigned.', 'good'); await reload(); }
   };

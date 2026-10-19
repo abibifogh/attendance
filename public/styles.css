@@ -7690,3 +7690,5 @@ button.lp-row:disabled { cursor: default; }
 .ob-step-due { margin: .15rem 0 0; font-size: .82rem; color: var(--text-dim); font-weight: 600; }
 .ob-step-due.is-late { color: var(--bad); }
 .ob-person-late { font-size: .82rem; color: var(--bad); font-weight: 600; }
+.sign-code { display: grid; gap: .5rem; margin: .6rem 0; }
+.sign-code p { margin: 0; }

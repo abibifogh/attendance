@@ -518,7 +518,20 @@ test('the property countersigns after the employee, not before', async () => {
     contractId: contract.id, name: 'Augustina Adjei Abla', agreed: true,
     hash: packet.contracts[0].hash,
   }), link.token);
-  await countersignContract(ctx(db, { body: { name: 'Ama Boateng' } }), contract.id);
+  // Ama's own login, whose PIN is what countersigns.
+  const { getPepper, hashPin } = await import('../src/lib/auth.js');
+  await db.prepare("INSERT OR REPLACE INTO users (id, name, role, active, pin_hash) VALUES (1, 'Ama', 'manager', 1, ?)")
+    .bind(await hashPin('482915', await getPepper(db))).run();
+  await assert.rejects(
+    () => countersignContract(ctx(db, { body: { name: 'Ama Boateng' } }), contract.id),
+    /PIN or password/,
+    'not without proving it is them',
+  );
+  await assert.rejects(
+    () => countersignContract(ctx(db, { body: { name: 'Ama Boateng', pin: '111111' } }), contract.id),
+    /PIN is not right/,
+  );
+  await countersignContract(ctx(db, { body: { name: 'Ama Boateng', pin: '482915' } }), contract.id);
 
   const { contract: done } = await read(await getContract(ctx(db), contract.id));
   assert.equal(done.employer_name, 'Ama Boateng');

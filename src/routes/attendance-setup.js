@@ -1244,6 +1244,10 @@ const SETTINGS = new Map([
   }],
   ['gra_tax_office', (v) => str(v, 'Tax office', { max: 60, fallback: '' })],
   ['hr_link_days', (v) => String(int(v, 'How long a link lasts', { min: 1, max: 90 }))],
+  // A six-digit code to the signer's own email or phone before they sign a
+  // contract or a letter. On unless switched off.
+  ['hr_require_otp', (v) => (v === '0' || v === 0 || v === false ? '0' : '1')],
+  ['corr_require_otp', (v) => (v === '0' || v === 0 || v === false ? '0' : '1')],
 
   // Whether a member of staff sees how much leave they have left on their own
   // screen. Their own figure, so there is no confidentiality argument either

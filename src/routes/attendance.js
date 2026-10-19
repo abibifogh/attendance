@@ -2599,7 +2599,7 @@ function sayDay(day) {
  */
 const SCREEN_SWITCHES = new Set([
   'timezone', 'property_name', 'property_address',
-  'hr_link_days', 'hr_directory',
+  'hr_link_days', 'hr_directory', 'hr_require_otp', 'corr_require_otp',
   'handbook_on',
   'swaps_on', 'swap_notice_hours', 'swap_approval', 'swap_monthly_cap',
   'swap_cross_department',

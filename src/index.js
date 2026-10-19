@@ -680,6 +680,7 @@ export const ROUTES = [
   ['POST', '/api/i/:token/files', 'public', invite.inviteFile],
   ['POST', '/api/i/:token/files/:id/remove', 'public', invite.inviteFileRemove],
   ['POST', '/api/i/:token/viewed', 'public', invite.inviteViewed],
+  ['POST', '/api/i/:token/code', 'public', invite.inviteRequestCode],
   ['POST', '/api/i/:token/sign', 'public', invite.inviteSign],
   ['POST', '/api/i/:token/decline', 'public', invite.inviteDecline],
 
@@ -715,6 +716,8 @@ export const ROUTES = [
 
   // Your own signature, and only ever your own — see the note in the handler.
   ['GET', '/api/corr/me', 'corr_sign', corr.signChallenge],
+  // The same check, for countersigning a contract.
+  ['GET', '/api/hr/sign-check', 'hr_manage', corr.signChallenge],
   ['PUT', '/api/corr/me/signature', 'corr_sign', corr.saveMySignature],
   ['DELETE', '/api/corr/me/signature', 'corr_sign', corr.deleteMySignature],
 

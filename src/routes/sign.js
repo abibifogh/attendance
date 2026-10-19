@@ -215,7 +215,21 @@ export async function signOpen(ctx, token) {
     })),
     expiresAt: recipient.expires_at,
     verified: Boolean(recipient.verified_at),
+    otpRequired: await otpRequired(ctx, recipient),
   });
+}
+
+/**
+ * Whether this signer has to enter an emailed code before signing.
+ *
+ * Yes by default wherever HIVE can send one: there is an address on file and
+ * the property has email set up. A property can turn it off under Settings,
+ * and a signer with no address is not asked for what cannot reach them.
+ */
+async function otpRequired(ctx, recipient) {
+  if (!recipient.email) return false;
+  if ((await setting(ctx.db, 'corr_require_otp', '1')) === '0') return false;
+  return Boolean(ctx.env?.RESEND_API_KEY && await setting(ctx.db, 'email_from', null));
 }
 
 function maskEmail(address) {
@@ -401,6 +415,10 @@ export async function signDocument(ctx, token) {
   if (body.agreed !== true) throw badRequest('Tick the box to agree to sign electronically.');
 
   if (body.otp) await checkOtp(ctx, recipient, body.otp);
+  else if (await otpRequired(ctx, recipient) && !recipient.verified_at) {
+    throw badRequest('Enter the six-digit code we emailed you first. Press "Email me a code" to get one.');
+  }
+  const verified = Boolean(body.otp || recipient.verified_at);
 
   const name = str(body.name, 'Your name', { required: true, max: 160 });
   const ink = str(body.ink, 'Signature', { max: 400_000 });
@@ -421,9 +439,12 @@ export async function signDocument(ctx, token) {
   await ctx.db.prepare(
     `UPDATE corr_recipient
         SET status = 'signed', signed_at = datetime('now'), signer_name = ?2,
-            signature_ink = ?3, signer_ip = ?4, signer_agent = ?5
+            signature_ink = ?3, signer_ip = ?4, signer_agent = ?5, signer_check = ?6
       WHERE id = ?1 AND status <> 'signed'`,
-  ).bind(recipient.id, name, ink || null, ipOf(ctx), agentOf(ctx)).run();
+  ).bind(
+    recipient.id, name, ink || null, ipOf(ctx), agentOf(ctx),
+    verified ? 'email code' : (recipient.code_hash ? 'access code' : null),
+  ).run();
 
   await appendEvent(ctx.db, letter.id, {
     kind: 'signed',

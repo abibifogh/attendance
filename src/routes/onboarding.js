@@ -73,7 +73,9 @@ const tickedBy = async (db, staffId) => new Set(
  */
 /** A signed contract of employment, as opposed to a policy or a form. */
 export function isEmploymentContract(c) {
-  if (c.status !== 'signed') return false;
+  // Signed by both sides. A contract signed by one side is an offer, and a
+  // first week is not done with an offer.
+  if (c.status !== 'signed' || !c.employer_at) return false;
   if (c.satisfies) return c.satisfies === 'contract';
   return !c.template_kind || c.template_kind === 'contract';
 }

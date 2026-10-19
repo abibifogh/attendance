@@ -549,6 +549,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'people.sign_code',
+    group: 'people',
+    label: 'A code to sign a contract',
+    who: 'Whoever is signing from their link',
+    when: 'They ask for one before signing, where they have no email address',
+    ways: ['text'],
+  },
+  {
     key: 'corr.sign_link',
     group: 'people',
     label: 'A document to sign',

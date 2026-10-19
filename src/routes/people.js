@@ -16,6 +16,7 @@ import { asBytes } from '../lib/files.js';
 import { MAIN } from '../lib/companies.js';
 import { emailPersonally, firstUsableEmail } from '../lib/notify.js';
 import { firstUsableNumber, sendTexts } from '../lib/sms.js';
+import { reauthenticate } from './correspondence.js';
 
 /**
  * Employee records, from the property's side of the desk.
@@ -1138,6 +1139,11 @@ export async function countersignContract(ctx, id) {
   const contract = await ctx.db.prepare('SELECT * FROM hr_contract WHERE id = ?').bind(Number(id)).first();
   if (!contract) throw notFound('No such contract.');
   if (contract.status !== 'signed') throw badRequest('Countersign it once they have signed it.');
+  if (contract.employer_at) throw badRequest('That is already countersigned.');
+  // Your own PIN or password, as for signing a letter: a countersignature is
+  // the property's signature, and it should not be possible to make one from a
+  // screen somebody walked away from.
+  await reauthenticate(ctx, body);
 
   await ctx.db.prepare(
     `UPDATE hr_contract SET employer_name = ?2, employer_ink = ?3, employer_at = datetime('now')

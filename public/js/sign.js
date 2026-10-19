@@ -185,9 +185,11 @@ function draw() {
         h('button.btn-sm', { type: 'button', onclick: (e) => sendCode(e.target) }, 'Send it again'))
       : h('div',
         h('p.muted', { style: { fontSize: '.9rem' } },
-          `For extra certainty we can email a one-time code to ${packet.emailHint} `
-          + 'before you sign.'),
-        h('button.btn-sm', { type: 'button', onclick: (e) => sendCode(e.target) },
+          packet.otpRequired
+            ? `Before you sign, we email a six-digit code to ${packet.emailHint} to check it is you.`
+            : `For extra certainty we can email a one-time code to ${packet.emailHint} `
+              + 'before you sign.'),
+        h(packet.otpRequired ? 'button.btn.btn-primary' : 'button.btn-sm', { type: 'button', onclick: (e) => sendCode(e.target) },
           'Email me a code')));
   };
 
@@ -209,6 +211,9 @@ function draw() {
 
   const sign = async (button) => {
     if (!agreed) return toast('Tick the box first.', 'bad');
+    if (packet.otpRequired && !packet.verified && !otp.trim()) {
+      return toast(codeSent ? 'Enter the code we emailed you.' : 'Press "Email me a code" first.', 'bad');
+    }
     if (!pad.isDrawn() && typed.trim().split(/\s+/).length < 2) {
       return toast('Sign with your finger, or type your full name.', 'bad');
     }
