@@ -21,6 +21,7 @@ import { renderInbox, inboxCount } from './views/inbox.js';
 import { renderRequests } from './views/requests.js';
 import { renderMyLeavePlan } from './views/my-leave-plan.js';
 import { renderLeavePlans } from './views/leave-plans.js';
+import { renderSigning } from './views/signing.js';
 import { renderSettings } from './views/settings.js';
 import { renderAttMyReport } from './views/att-my-report.js';
 import { renderAttMyPayslips } from './views/att-my-payslips.js';
@@ -192,6 +193,7 @@ const ROUTES = [
   { group: 'people', tab: 'Recruitment', path: 'rec', label: 'Recruitment', permission: 'rec_view', render: renderRec, live: ['recruitment'] },
   { group: 'people', tab: 'First weeks', path: 'onboarding-desk', label: 'First weeks', permission: ['hr_view', 'hr_manage'], render: renderOnboardingDesk, live: ['people'] },
   { group: 'people', tab: 'Letters', path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters, live: ['letters'] },
+  { group: 'people', tab: 'Signatures', path: 'signing', label: 'Signatures', permission: ['hr_view', 'corr_view'], render: renderSigning, live: ['people', 'letters'] },
   // Reachable by everybody signed in. Under Me for staff, under People for
   // everybody who runs something.
   { group: 'me', tab: 'Directory', mgroup: 'people', path: 'directory', label: 'Directory', permission: null, render: renderDirectory, live: ['people'] },

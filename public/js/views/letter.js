@@ -226,14 +226,37 @@ export async function renderLetter(params) {
             key: 'actions',
             label: '',
             format: (v, r) => (data.canWrite && !['signed', 'revoked'].includes(r.status)
-              ? h('button.btn-sm.no-print', {
-                onclick: async () => {
-                  if (!window.confirm(`Cancel ${r.name}'s link? It stops working immediately.`)) return;
-                  await api.corrRevokeRecipient(r.id);
-                  toast('Cancelled.');
-                  await reload();
-                },
-              }, 'Cancel')
+              ? h('span.btn-row.no-print',
+                r.role !== 'copy' && r.status !== 'declined'
+                  ? h('button.btn-sm', {
+                    onclick: async () => {
+                      const done = await formDialog({
+                        title: `Put ${r.name}'s address right`,
+                        submitLabel: 'Save and send a fresh link',
+                        body: h('div',
+                          h('p.muted', 'The link that went to the old address stops working. If it is their turn, '
+                            + 'HIVE emails a fresh one to the new address.'),
+                          field('Email', h('input', { type: 'email', name: 'email', value: r.email || '' })),
+                          field('Phone', h('input', { type: 'tel', name: 'phone', value: r.phone || '' }))),
+                        onSubmit: (form) => api.corrCorrectRecipient(r.id, {
+                          email: form.get('email') || null, phone: form.get('phone') || null,
+                        }),
+                      });
+                      if (done) {
+                        toast(done.emailed ? `Sent to the new address.` : 'Saved. A fresh link goes when it is their turn.', 'good');
+                        await reload();
+                      }
+                    },
+                  }, 'Wrong address?')
+                  : null,
+                h('button.btn-sm', {
+                  onclick: async () => {
+                    if (!window.confirm(`Cancel ${r.name}'s link? It stops working immediately.`)) return;
+                    await api.corrRevokeRecipient(r.id);
+                    toast('Cancelled.');
+                    await reload();
+                  },
+                }, 'Cancel'))
               : ''),
           },
         ], recipients, { empty: 'Nobody.' }))
@@ -535,12 +558,20 @@ async function sendOut(data, model, reload) {
         + 'a text, or read out on a call — so a forwarded link on its own opens nothing. Turn it '
         + 'off for somebody where that is more friction than the letter is worth.'),
     ),
-    onSubmit: async (form) => api.corrSendForSignature(data.letter.id, {
+    onSubmit: async (form) => {
+      // A shared inbox is anybody's: whoever opens it can sign. Said before it
+      // goes, rather than refused, because sometimes it is the only address.
+      const shared = people.filter((p) => /^(info|admin|office|hello|contact|reception|accounts|sales|enquiries|mail)@/i
+        .test(String(p.email ?? '').trim()) && p.role !== 'copy');
+      if (shared.length && !window.confirm(`${shared.map((p) => p.email).join(', ')} looks like a shared inbox, `
+        + 'so whoever opens it could sign. Send anyway?')) throw new Error('Not sent. Change the address, or send anyway.');
+      return api.corrSendForSignature(data.letter.id, {
       recipients: people.filter((p) => String(p.name ?? '').trim()),
       days: Number(form.get('days')),
       routing: form.get('routing'),
       deliver: form.get('deliver') === 'on',
-    }),
+      });
+    },
   });
 
   if (!done) return;

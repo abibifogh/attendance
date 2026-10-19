@@ -575,6 +575,8 @@ export const api = {
   hrContract: (id) => request(`/api/hr/contracts/${id}`),
   hrCountersign: (id, body) => request(`/api/hr/contracts/${id}/countersign`, { method: 'POST', body }),
   hrSignCheck: () => request('/api/hr/sign-check'),
+  signing: () => request('/api/signing'),
+  corrCorrectRecipient: (id, body) => request(`/api/corr/recipients/${id}/correct`, { method: 'POST', body }),
   hrVoidContract: (id, note) => request(`/api/hr/contracts/${id}/void`, { method: 'POST', body: { note } }),
 
   // ------------------------------------------------------------- letters --

@@ -229,6 +229,9 @@ function row(item, { open, onPick, decide, ticked = false, onTick = null }) {
         h('span', item.sub || item.title),
         item.askedAt ? h('small.muted', fmtSince(item.askedAt)) : null)),
     h('div.decide-actions',
+      !(item.decisions ?? []).length && item.link
+        ? h('a.btn-sm.btn-primary', { href: item.link }, 'Open')
+        : null,
       (item.decisions ?? []).map((d) => h('button.btn-sm', {
         type: 'button',
         class: d.primary ? 'btn-sm btn-primary' : 'btn-sm',

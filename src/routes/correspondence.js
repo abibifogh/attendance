@@ -727,6 +727,7 @@ export async function sendForSignature(ctx, id) {
   const body = await readJson(ctx.request);
   const people = Array.isArray(body.recipients) ? body.recipients.slice(0, 10) : [];
   if (!people.length) throw badRequest('Name at least one person to sign it.');
+  checkBeforeSending(letter, people);
 
   const days = int(body.days, 'Days', {
     min: 1, max: 90, fallback: Number(await setting(ctx.db, 'corr_link_days', 14)),
@@ -824,6 +825,96 @@ export async function sendForSignature(ctx, id) {
   });
 
   return json({ ok: true, recipients: made, expiresInDays: days, routing });
+}
+
+/**
+ * What would make a letter go out wrong, refused before anything is sent:
+ * nobody to sign it, two signers sharing one address (whoever opens the inbox
+ * signs for both), or a place left for a signer who is not on the list, or a
+ * signer with no place on a letter that has places for the others.
+ */
+export function checkBeforeSending(letter, people) {
+  const signers = people.filter((p) => String(p.name ?? '').trim() && p.role !== 'copy');
+  if (!signers.length) throw badRequest('Everybody on this is copied in. Make at least one of them a signer.');
+
+  const seen = new Map();
+  for (const p of signers) {
+    const email = String(p.email ?? '').trim().toLowerCase();
+    if (!email) continue;
+    if (seen.has(email)) {
+      throw badRequest(`${seen.get(email)} and ${p.name} have the same email address. Each signer needs `
+        + 'their own, or one of them signs for both.');
+    }
+    seen.set(email, p.name);
+  }
+
+  let layout = null;
+  try { layout = letter.layout ? JSON.parse(letter.layout) : null; } catch { layout = null; }
+  const places = new Set((layout?.blocks ?? [])
+    .filter((b) => b.role === 'field' && Number(b.signer) > 0)
+    .map((b) => Number(b.signer)));
+  if (places.size) {
+    // A place on the page is numbered by the person's position in the list,
+    // as the signing page numbers them.
+    const listed = people.filter((p) => String(p.name ?? '').trim());
+    for (const n of places) {
+      const who = listed[n - 1];
+      if (!who) {
+        throw badRequest(`The letter has a place for person ${n} on the list, and only ${listed.length} `
+          + `${listed.length === 1 ? 'is' : 'are'} listed. Add them, or take the place off the letter.`);
+      }
+      if (who.role === 'copy') {
+        throw badRequest(`${who.name} is copied in, but the letter has a place for them to sign. Make them a signer, `
+          + 'or take the place off the letter.');
+      }
+    }
+    listed.forEach((p, i) => {
+      if (p.role !== 'copy' && !places.has(i + 1)) {
+        throw badRequest(`${p.name} has no place to sign on the letter. Add one for person ${i + 1} in the layout, `
+          + 'or list them as copied in.');
+      }
+    });
+  }
+}
+
+/**
+ * Put a wrong address right after a letter has gone out. The old link stops
+ * working; a fresh one goes to the new address if it is their turn.
+ */
+export async function correctRecipient(ctx, id) {
+  const recipient = await ctx.db.prepare('SELECT * FROM corr_recipient WHERE id = ?').bind(Number(id)).first();
+  if (!recipient) throw notFound('No such recipient.');
+  if (['signed', 'revoked', 'declined'].includes(recipient.status)) {
+    throw badRequest('That one is finished with. Send it again to somebody new instead.');
+  }
+  const letter = await ctx.db.prepare('SELECT * FROM corr_letter WHERE id = ?').bind(recipient.letter_id).first();
+  if (!letter || letter.status === 'void') throw badRequest('That letter has been withdrawn.');
+
+  const body = await readJson(ctx.request);
+  const email = str(body.email, 'Email', { max: 200 });
+  const phone = str(body.phone, 'Phone', { max: 40 });
+  if (!email && !phone) throw badRequest('Give the right email address, or phone number, or both.');
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw badRequest('That email address does not look right.');
+
+  await ctx.db.prepare(
+    `UPDATE corr_recipient SET email = COALESCE(?2, email), phone = COALESCE(?3, phone),
+            turn_told_at = NULL, reminded_at = NULL, reminders = 0
+      WHERE id = ?1`,
+  ).bind(recipient.id, email || null, phone || null).run();
+
+  await appendEvent(ctx.db, letter.id, {
+    kind: 'address_corrected', actor: actorOf(ctx),
+    detail: `${recipient.name}: ${[email ? 'email' : null, phone ? 'phone' : null].filter(Boolean).join(' and ')} put right`,
+    ip: ipOf(ctx), agent: agentOf(ctx),
+  });
+
+  // A fresh link either way, so the one that went to the wrong address opens
+  // nothing; emailed now if it is their turn.
+  const { reissueLink, tellWhoseTurn } = await import('../lib/sign-reach.js');
+  const fresh = await ctx.db.prepare('SELECT * FROM corr_recipient WHERE id = ?').bind(recipient.id).first();
+  const url = await reissueLink(ctx.db, fresh, ctx.url?.origin);
+  const told = await tellWhoseTurn(ctx, letter.id);
+  return json({ ok: true, emailed: told.includes(recipient.name), url: told.includes(recipient.name) ? null : url });
 }
 
 export async function revokeRecipient(ctx, id) {

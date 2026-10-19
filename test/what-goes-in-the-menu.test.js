@@ -186,11 +186,11 @@ test('a supervisor reads Home, Inbox, Rota and Attendance', () => {
   assert.deepEqual(tabsOf(day).map((t) => t.label), ['Today', 'Month', 'Leave', 'Leave plans', 'Sign-off']);
 });
 
-test('a manager reads People with its four, and the directory and handbook beside them', () => {
+test('a manager reads People with its five, and the directory and handbook beside them', () => {
   const menu = menuFor(roleHolds('manager'), { staffId: null });
   const people = menu.find((g) => g.key === 'people');
   assert.deepEqual(tabsOf(people).map((t) => t.label),
-    ['Staff', 'Recruitment', 'First weeks', 'Letters', 'Directory', 'Handbook', 'HR FAQ']);
+    ['Staff', 'Recruitment', 'First weeks', 'Letters', 'Signatures', 'Directory', 'Handbook', 'HR FAQ']);
   assert.equal(menu.some((g) => g.key === 'money'), false, 'no payroll for a manager by default');
 });
 

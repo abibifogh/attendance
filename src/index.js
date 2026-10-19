@@ -33,6 +33,7 @@ import * as tillReports from './routes/till-reports.js';
 import * as absence from './routes/absence.js';
 import * as leavePlans from './routes/leave-plans.js';
 import * as newStarter from './routes/new-starter.js';
+import * as signing from './routes/signing.js';
 
 const signedCopies = () => import('./routes/signed-copies.js');
 import * as viewAs from './routes/view-as.js';
@@ -701,6 +702,7 @@ export const ROUTES = [
   // the signer's own password or PIN on top of the session.
   ['POST', '/api/corr/letters/:id/sign', 'corr_sign', corr.signLetter],
   ['POST', '/api/corr/recipients/:id/revoke', 'corr_write', corr.revokeRecipient],
+  ['POST', '/api/corr/recipients/:id/correct', 'corr_write', corr.correctRecipient],
   ['GET', '/api/corr/files/:id', 'corr_view', corr.getFile],
 
   // ------------------------------------------------------------ letterheads --
@@ -739,6 +741,7 @@ export const ROUTES = [
   ['POST', '/api/s/:token/decline', 'public', sign.signDecline],
   // Signed copies load the PDF library only when one is asked for, so nothing
   // else that reads this file has to carry it.
+  ['GET', '/api/signing', ['hr_view', 'corr_view'], signing.signingBoard],
   ['POST', '/api/verify', 'public', (ctx) => signedCopies().then((m) => m.verify(ctx))],
   ['GET', '/api/hr/contracts/:id/signed.pdf', 'hr_view', (ctx, id) => signedCopies().then((m) => m.contractCopy(ctx, id))],
   ['GET', '/api/me/contracts/:id/signed.pdf', 'att_me', (ctx, id) => signedCopies().then((m) => m.myContractCopy(ctx, id))],

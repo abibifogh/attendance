@@ -258,8 +258,10 @@ export async function letterPdf({
   const signatureOf = (index) => (index === 0
     ? { ink: letter.signature_ink, name: letter.signed_by, at: letter.signed_at }
     : (() => {
-      const r = signers[index - 1];
-      return r ? { ink: r.signature_ink, name: r.signer_name || r.name, at: r.signed_at } : null;
+      // Numbered by position in the whole list, copies included, as the
+      // signing page numbers them.
+      const r = [...recipients].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))[index - 1];
+      return r && r.role !== 'copy' ? { ink: r.signature_ink, name: r.signer_name || r.name, at: r.signed_at } : null;
     })());
 
   if (letter.source === 'uploaded' && original?.length) {
@@ -274,11 +276,16 @@ export async function letterPdf({
     const page = doc.addPage(A4);
     page.drawText(plain(`Signatures · ${letter.subject}`), { x: M, y: A4[1] - 70, size: 14, font: f.bold, color: INK });
     let y = 100;
-    const all = [letter.signed_at ? 0 : null, ...signers.map((_, i) => i + 1)].filter((n) => n != null);
-    for (const n of all) {
-      const s = signatureOf(n);
-      if (!s?.at) continue;
-      await signatureBlock(doc, page, f, M, y, 220, { label: n === 0 ? `For ${property}` : `Signer ${n}`, ...s });
+    if (letter.signed_at) {
+      await signatureBlock(doc, page, f, M, y, 220, { label: `For ${property}`, ...signatureOf(0) });
+      y += 100;
+    }
+    for (const r of signers) {
+      if (!r.signed_at) continue;
+      if (y > A4[1] - 140) break;
+      await signatureBlock(doc, page, f, M, y, 220, {
+        label: r.role === 'approver' ? 'Approved by' : 'Signed by', ink: r.signature_ink, name: r.signer_name || r.name, at: r.signed_at,
+      });
       y += 100;
     }
   } else {

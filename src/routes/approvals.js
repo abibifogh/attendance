@@ -174,6 +174,41 @@ const KINDS = {
     },
   },
 
+  // Contracts the employee has signed and the property has not. Answered on
+  // the contract itself, because a countersignature needs a signature and the
+  // countersigner's own PIN or password; the Inbox says it is waiting.
+  countersign: {
+    label: 'Countersign',
+    permission: 'hr_manage',
+    link: '#/people',
+    async list(run, db) {
+      const rows = await db.prepare(
+        `SELECT c.id, c.title, c.signed_at, c.signer_name, c.signer_check, p.name
+           FROM hr_contract c JOIN att_staff p ON p.id = c.staff_id
+          WHERE c.status = 'signed' AND c.employer_at IS NULL AND COALESCE(c.origin, 'electronic') <> 'paper'
+          ORDER BY c.signed_at`,
+      ).all().catch(() => ({ results: [] }));
+      return (rows.results ?? []).map((c) => ({
+        id: c.id,
+        title: `Countersign · ${c.name}`,
+        sub: `${c.title}, signed ${shortDay(String(c.signed_at ?? '').slice(0, 10))}`,
+        who: c.name,
+        askedAt: c.signed_at,
+        details: [
+          ['Document', c.title],
+          ['Signed by', c.signer_name],
+          ['Checked by', c.signer_check],
+          ['What to do', 'Open it and countersign with your own PIN or password'],
+        ],
+        decisions: [],
+        link: `#/contract?id=${c.id}`,
+      }));
+    },
+    decide() {
+      throw badRequest('Open the contract to countersign it: it needs your signature and your PIN.');
+    },
+  },
+
   swap: {
     label: 'Shift swap',
     permission: ['att_rota', 'att_manage'],
@@ -474,7 +509,7 @@ export async function inboxList(ctx, runAs) {
           askedAt: when(item.askedAt), amount: item.amount ?? null,
           details: (item.details ?? []).filter(([, v]) => v != null && v !== ''),
           warnings: item.warnings ?? [],
-          link: kind.link,
+          link: item.link ?? kind.link,
         });
       }
     } catch (err) {
