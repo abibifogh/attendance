@@ -2,7 +2,9 @@ import { createNotice } from './notices.js';
 import { outstandingFor } from './handbook.js';
 import { addDays, dow, nowIn } from '../util/dates.js';
 import { deliverInvite, makeInvite } from '../routes/people.js';
-import { emailSignLink, reissueLink } from './sign-reach.js';
+import {
+  canReach, deliverLink, reachOf, reissueLink, waysOut,
+} from './sign-reach.js';
 import { whoCanSign } from './correspondence.js';
 import { lateFirstWeeks } from '../routes/onboarding.js';
 
@@ -182,10 +184,16 @@ async function chaseLetters(sys) {
 
   let reminded = 0;
   let warned = 0;
+  const ways = await waysOut(db, sys.env);
   for (const letter of letters) {
     const all = (await db.prepare('SELECT * FROM corr_recipient WHERE letter_id = ? ORDER BY seq, id')
       .bind(letter.id).all()).results ?? [];
-    for (const r of whoCanSign(all, letter.routing ?? 'order')) {
+    // A document made in three steps carries its own reminder interval; none
+    // means none. Everything else keeps the house rhythm.
+    const every = letter.remind_days == null ? null : Number(letter.remind_days);
+    const firstAfter = every ?? FIRST_AFTER_DAYS;
+    const thenEvery = every ?? THEN_EVERY_DAYS;
+    for (const r of whoCanSign(all, letter.routing ?? 'order', letter)) {
       if (!['pending', 'opened'].includes(r.status)) continue;
 
       const timing = (await db.prepare(
@@ -193,7 +201,7 @@ async function chaseLetters(sys) {
                 expires_at <= datetime('now', '+2 days') AS soon,
                 COALESCE(reminded_at, turn_told_at) <= datetime('now', CASE WHEN reminders = 0 THEN ?2 ELSE ?3 END) AS due
            FROM corr_recipient WHERE id = ?1`,
-      ).bind(r.id, `-${FIRST_AFTER_DAYS} days`, `-${THEN_EVERY_DAYS} days`).first()) ?? {};
+      ).bind(r.id, `-${firstAfter} days`, `-${thenEvery} days`).first()) ?? {};
       if (!Number(timing.live)) continue;
 
       if (Number(timing.soon) && !r.expiry_warned_at) {
@@ -206,7 +214,7 @@ async function chaseLetters(sys) {
             level: 'warn',
             title: `“${letter.subject}” runs out in two days unsigned`,
             body: `Still waiting on ${r.name}. Send it again from the letter if it needs longer.`,
-            link: `#/letter?id=${letter.id}`,
+            link: letter.flow === 'v2' ? `#/sign-doc?id=${letter.id}` : `#/letter?id=${letter.id}`,
             actor: 'HIVE',
             audience: 'corr_write',
             push: true,
@@ -219,16 +227,15 @@ async function chaseLetters(sys) {
 
       // Only those HIVE has emailed before, so it never writes to somebody
       // the office chose to deal with by hand.
-      if (!r.email || !r.turn_told_at || !Number(timing.due) || Number(r.reminders) >= MOST_REMINDERS) continue;
+      if (every === 0 || reachOf(r) === 'staff' || !canReach(ways, r)) continue;
+      if (!r.turn_told_at || !Number(timing.due) || Number(r.reminders) >= MOST_REMINDERS) continue;
       const claim = await db.prepare(
         `UPDATE corr_recipient SET reminded_at = datetime('now'), reminders = reminders + 1
           WHERE id = ?1 AND reminders = ?2`,
       ).bind(r.id, Number(r.reminders)).run();
       if (!Number(claim?.meta?.changes ?? 0)) continue;
       const url = await reissueLink(db, r);
-      const sent = await emailSignLink(db, sys.env, {
-        letter, recipient: r, url, why: 'reminder', hasCode: Boolean(r.code_hash),
-      });
+      const sent = await deliverLink(db, sys.env, { letter, recipient: r, url, why: 'reminder' });
       if (sent.sent) reminded += 1;
     }
   }

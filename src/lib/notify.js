@@ -971,7 +971,7 @@ export async function emailNotice(db, env, notice) {
  * and the email channel for this kind. Never throws.
  */
 export async function emailPersonally(db, env, {
-  kind, title, body, link, day, to, wanted, mail = null, level = 'info',
+  kind, title, body, link, day, to, wanted, mail = null, level = 'info', attachments = null,
 }) {
   const clean = [...new Set((Array.isArray(to) ? to : [to]).filter((a) => isEmail(a)))];
   if (!clean.length) return { sent: 0, tried: 0, reason: 'no address' };
@@ -1003,6 +1003,7 @@ export async function emailPersonally(db, env, {
       subject,
       html,
       replyTo: (settings.email_reply_to || '').trim() || null,
+      attachments,
     });
 
     await db.prepare(

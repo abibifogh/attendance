@@ -2,11 +2,15 @@ import { badRequest, forbidden, json, notFound, readJson, str } from '../lib/htt
 import { getPepper, hashPin, throttleCheck, throttleFail } from '../lib/auth.js';
 import { sendEmail, senderNameOf, senderWithName } from '../lib/notify.js';
 import { asBytes, sha256Hex } from '../lib/files.js';
-import { whoCanSign } from '../lib/correspondence.js';
+import { liveTurn, whoCanSign } from '../lib/correspondence.js';
 import { normaliseLayout } from '../lib/paper.js';
 import { renderMail } from '../lib/email-design.js';
+import { firstUsableNumber, sendTexts, smsSetup } from '../lib/sms.js';
 import { appendEvent, hashAccessCode, hashSignToken } from './correspondence.js';
-import { tellOffice, tellWhoseTurn } from '../lib/sign-reach.js';
+import {
+  reachOf, tellOffice, tellStopped, tellWhoseTurn,
+} from '../lib/sign-reach.js';
+import { afterSignature, applyRecipientSignature, packetFor } from './sign-prep.js';
 
 /**
  * Somebody outside the property, opening a link to sign a letter.
@@ -75,15 +79,17 @@ async function assertTurn(ctx, recipient) {
   const [others, letter] = await Promise.all([
     ctx.db.prepare('SELECT * FROM corr_recipient WHERE letter_id = ? ORDER BY seq, id')
       .bind(recipient.letter_id).all(),
-    ctx.db.prepare('SELECT routing FROM corr_letter WHERE id = ?').bind(recipient.letter_id).first(),
+    ctx.db.prepare('SELECT * FROM corr_letter WHERE id = ?').bind(recipient.letter_id).first(),
   ]);
 
   // An envelope sent to everybody at once has no queue to wait in.
-  const open = whoCanSign(others.results ?? [], letter?.routing ?? 'order');
-  if (open.length && !open.some((r) => r.id === recipient.id)) {
-    const turn = open[0];
-    throw forbidden(`It is not your turn yet — this is with ${turn.name} first. `
-      + 'Your link will work once they have dealt with it.');
+  const turn = liveTurn(others.results ?? [], letter?.routing ?? 'order', letter);
+  const open = turn.signers;
+  if ((open.length || turn.property) && !open.some((r) => r.id === recipient.id)) {
+    throw forbidden(letter?.flow === 'v2'
+      ? 'It is not your turn to sign yet. You will be sent a message when it is.'
+      : `It is not your turn yet — this is with ${open[0]?.name ?? 'somebody else'} first. `
+        + 'Your link will work once they have dealt with it.');
   }
   return open[0] ?? null;
 }
@@ -95,6 +101,7 @@ async function property(db) {
 /** Almost nothing, before anybody proves anything. */
 export async function signHead(ctx, token) {
   const { recipient, letter } = await recipientFor(ctx, token);
+  if (letter.flow === 'v2') return json(await headV2(ctx, recipient, letter));
   return json({
     property: await property(ctx.db),
     needsCode: Boolean(recipient.code_hash),
@@ -106,6 +113,7 @@ export async function signHead(ctx, token) {
 /** Open it. */
 export async function signOpen(ctx, token) {
   const { recipient, letter } = await recipientFor(ctx, token);
+  if (letter.flow === 'v2') return openV2(ctx, token, recipient, letter);
   const body = await readJson(ctx.request).catch(() => ({}));
 
   if (recipient.code_hash) {
@@ -227,9 +235,131 @@ export async function signOpen(ctx, token) {
  * and a signer with no address is not asked for what cannot reach them.
  */
 async function otpRequired(ctx, recipient) {
-  if (!recipient.email) return false;
   if ((await setting(ctx.db, 'corr_require_otp', '1')) === '0') return false;
+  if (reachOf(recipient) === 'text') {
+    if (!firstUsableNumber(recipient.phone)) return false;
+    const rows = await ctx.db.prepare('SELECT key, value FROM settings').all().catch(() => ({ results: [] }));
+    const sms = smsSetup(Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value])), ctx.env);
+    return Boolean(sms.on && sms.ready);
+  }
+  if (!recipient.email) return false;
   return Boolean(ctx.env?.RESEND_API_KEY && await setting(ctx.db, 'email_from', null));
+}
+
+function maskPhone(phone) {
+  const digits = String(phone ?? '').replace(/\D/g, '');
+  return digits ? `+${digits.slice(0, 3)} •• ••• ${digits.slice(-4)}` : '•••';
+}
+
+const hintFor = (recipient) => (reachOf(recipient) === 'text' ? maskPhone(recipient.phone) : maskEmail(recipient.email));
+
+/**
+ * A document made in three steps, before the code: who sent it, to whom, by
+ * when, and where the code will go. Nothing of the document itself.
+ */
+async function headV2(ctx, recipient, letter) {
+  const all = (await ctx.db.prepare('SELECT * FROM corr_recipient WHERE letter_id = ? ORDER BY seq, id')
+    .bind(letter.id).all()).results ?? [];
+  const turn = liveTurn(all, letter.routing ?? 'order', letter);
+  const needsCode = await otpRequired(ctx, recipient);
+  return {
+    flow: 'v2',
+    property: await property(ctx.db),
+    title: letter.subject,
+    reference: letter.reference,
+    sender: String(letter.created_by ?? '').replace(/\s*\([^)]*\)$/, ''),
+    name: recipient.name,
+    capacity: recipient.capacity,
+    dueBy: recipient.expires_at,
+    status: recipient.status,
+    done: recipient.status === 'signed' || recipient.status === 'declined',
+    copyOnly: recipient.role === 'copy',
+    notYet: !['signed', 'declined'].includes(recipient.status) && !turn.signers.some((r) => r.id === recipient.id),
+    complete: letter.status === 'signed',
+    needsCode,
+    codeTo: needsCode ? { how: reachOf(recipient) === 'text' ? 'text' : 'email', hint: hintFor(recipient) } : null,
+  };
+}
+
+const hashGrant = (grant, pepper) => hashPin(`corr-grant:${grant}`, pepper);
+
+/**
+ * The pass a browser holds once its code was right. Twelve hours, then the
+ * code again: long enough to read a contract, short enough that a phone left
+ * on a table tomorrow does not still open it.
+ */
+async function assertGrant(ctx, recipient) {
+  const grant = ctx.request.headers.get('X-Sign-Grant') || '';
+  if (!grant || !recipient.grant_hash) throw forbidden('Enter your code first.');
+  if (await hashGrant(grant, await getPepper(ctx.db)) !== recipient.grant_hash) throw forbidden('Enter your code first.');
+  const fresh = await ctx.db.prepare("SELECT datetime('now') < datetime(?, '+12 hours') AS ok")
+    .bind(recipient.agreed_at).first();
+  if (!fresh?.ok) throw forbidden('That was a while ago. Enter a new code to carry on.');
+}
+
+/**
+ * The code is right and they agreed to sign electronically: a pass for this
+ * browser. Where HIVE cannot send a code, agreeing is enough and the link
+ * itself is the check.
+ */
+export async function signVerify(ctx, token) {
+  const { recipient, letter } = await recipientFor(ctx, token);
+  if (letter.flow !== 'v2') throw badRequest('Open this link again.');
+  if (['signed', 'declined'].includes(recipient.status)) throw badRequest('You have already dealt with this.');
+  const body = await readJson(ctx.request);
+  if (body.agreed !== true) throw badRequest('Tick the box to agree to sign electronically.');
+  const needsCode = await otpRequired(ctx, recipient);
+  if (needsCode) await checkOtp(ctx, recipient, body.code ?? '');
+
+  const grant = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  await ctx.db.prepare(
+    `UPDATE corr_recipient SET grant_hash = ?2, agreed_at = datetime('now'),
+            verified_at = CASE WHEN ?3 THEN datetime('now') ELSE verified_at END WHERE id = ?1`,
+  ).bind(recipient.id, await hashGrant(grant, await getPepper(ctx.db)), needsCode ? 1 : 0).run();
+  await appendEvent(ctx.db, letter.id, {
+    kind: needsCode ? 'code_verified' : 'agreed', actor: recipient.name,
+    detail: needsCode ? hintFor(recipient) : null, ip: ipOf(ctx), agent: agentOf(ctx),
+  });
+  return json({ ok: true, grant });
+}
+
+/** A document made in three steps, opened once the code is in. */
+async function openV2(ctx, token, recipient, letter) {
+  await assertGrant(ctx, recipient);
+  if (recipient.role !== 'copy') await assertTurn(ctx, recipient);
+  if (!recipient.opened_at) {
+    await ctx.db.prepare("UPDATE corr_recipient SET opened_at = datetime('now'), status = CASE WHEN status = 'pending' THEN 'opened' ELSE status END WHERE id = ?")
+      .bind(recipient.id).run();
+    await appendEvent(ctx.db, letter.id, {
+      kind: 'opened_by_recipient', actor: recipient.name, detail: null, ip: ipOf(ctx), agent: agentOf(ctx),
+    });
+  }
+  const recipients = (await ctx.db.prepare('SELECT * FROM corr_recipient WHERE letter_id = ? ORDER BY seq, id')
+    .bind(letter.id).all()).results ?? [];
+  const sorted = [...recipients].sort((a, b) => a.seq - b.seq || a.id - b.id);
+  const signer = sorted.findIndex((r) => r.id === recipient.id) + 1;
+  const name = await property(ctx.db);
+  const letterhead = letter.letterhead_id
+    ? await ctx.db.prepare('SELECT * FROM corr_letterhead WHERE id = ?').bind(letter.letterhead_id).first().catch(() => null)
+    : null;
+  const packet = packetFor({ letter, recipients, layout: normaliseLayout(letter.layout), signer, property: name });
+  return json({
+    ...packet,
+    doc: {
+      ...packet.doc,
+      letterhead: letterhead
+        ? {
+          image: `/api/s/${encodeURIComponent(token)}/letterhead`,
+          margins: { top: letterhead.margin_top, right: letterhead.margin_right, bottom: letterhead.margin_bottom, left: letterhead.margin_left },
+          laterPages: Boolean(letterhead.later_pages),
+        }
+        : null,
+    },
+    property: name,
+    you: { as: 'link', signer, name: recipient.name, capacity: recipient.capacity || '', status: recipient.status, copyOnly: recipient.role === 'copy' },
+    fileUrl: letter.source === 'uploaded' ? `/api/s/${encodeURIComponent(token)}/file` : null,
+    expiresAt: recipient.expires_at,
+  });
 }
 
 function maskEmail(address) {
@@ -266,7 +396,8 @@ export async function signLetterhead(ctx, token) {
 
 /** The letter itself, for a recipient who was sent one as a file. */
 export async function signFile(ctx, token) {
-  const { letter } = await recipientFor(ctx, token);
+  const { letter, recipient } = await recipientFor(ctx, token);
+  if (letter.flow === 'v2') await assertGrant(ctx, recipient);
   const missing = 'There is no file on this letter.';
   if (!letter.file_id) throw notFound(missing);
 
@@ -312,6 +443,7 @@ export async function signRequestCode(ctx, token) {
   const { recipient, letter } = await recipientFor(ctx, token);
   await assertTurn(ctx, recipient);
 
+  if (reachOf(recipient) === 'text' && letter.flow === 'v2') return textCode(ctx, recipient, letter);
   if (!recipient.email) throw badRequest('There is no email address on file for you.');
 
   const apiKey = ctx.env?.RESEND_API_KEY;
@@ -373,6 +505,26 @@ export async function signRequestCode(ctx, token) {
   return json({ ok: true, sentTo: maskEmail(recipient.email) });
 }
 
+/** The same six digits, by text, for somebody reached on their phone. */
+async function textCode(ctx, recipient, letter) {
+  const phone = firstUsableNumber(recipient.phone);
+  if (!phone) throw badRequest('There is no mobile number on file for you.');
+  const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0');
+  const pepper = await getPepper(ctx.db);
+  await ctx.db.prepare(
+    "UPDATE corr_recipient SET otp_hash = ?2, otp_sent_at = datetime('now'), otp_tries = 0 WHERE id = ?1",
+  ).bind(recipient.id, await hashPin(`corr-otp:${code}`, pepper)).run();
+  const out = await sendTexts(ctx.db, ctx.env, {
+    kind: 'corr.sign_code',
+    messages: [{ to: phone, text: `${code} is your code to sign "${letter.subject}" from ${await property(ctx.db)}. It works for 15 minutes. Nobody will ask you for it.` }],
+  }).catch((err) => ({ sent: 0, reason: err.message }));
+  if (!Number(out?.sent ?? 0)) throw badRequest('The code could not be texted just now. Try again in a minute.');
+  await appendEvent(ctx.db, letter.id, {
+    kind: 'code_emailed', actor: recipient.name, detail: maskPhone(recipient.phone), ip: ipOf(ctx), agent: agentOf(ctx),
+  });
+  return json({ ok: true, sentTo: maskPhone(recipient.phone) });
+}
+
 async function checkOtp(ctx, recipient, given) {
   if (!recipient.otp_hash) throw badRequest('Ask for a code first.');
   if (Number(recipient.otp_tries) >= 5) {
@@ -407,6 +559,7 @@ async function checkOtp(ctx, recipient, given) {
 export async function signDocument(ctx, token) {
   const { recipient, letter } = await recipientFor(ctx, token);
   await assertTurn(ctx, recipient);
+  if (letter.flow === 'v2') return signV2(ctx, recipient, letter);
 
   if (recipient.status === 'signed') throw badRequest('You have already signed this.');
   if (recipient.role === 'copy') throw badRequest('You were sent this for information, not to sign.');
@@ -466,8 +619,38 @@ export async function signDocument(ctx, token) {
   return json({ ok: true });
 }
 
+/** Fill the boxes and sign, for a document made in three steps. */
+async function signV2(ctx, recipient, letter) {
+  await assertGrant(ctx, recipient);
+  if (recipient.status === 'signed') throw badRequest('You have already signed this.');
+  if (recipient.role === 'copy') throw badRequest('You were sent this for information, not to sign.');
+  const body = await readJson(ctx.request);
+  const how = reachOf(recipient) === 'text' ? 'a code texted to them' : 'a code emailed to them';
+  const filled = await applyRecipientSignature(ctx, {
+    letter,
+    recipient,
+    layout: normaliseLayout(letter.layout),
+    body,
+    check: recipient.verified_at ? how : 'their own link',
+    ip: ipOf(ctx),
+    agent: agentOf(ctx),
+  });
+  await appendEvent(ctx.db, letter.id, {
+    kind: 'signed', actor: recipient.name,
+    detail: `${filled.boxes} ${filled.boxes === 1 ? 'box' : 'boxes'}`, ip: ipOf(ctx), agent: agentOf(ctx),
+  });
+  const complete = await afterSignature(ctx, letter.id, recipient.name);
+  const all = (await ctx.db.prepare('SELECT * FROM corr_recipient WHERE letter_id = ? ORDER BY seq, id')
+    .bind(letter.id).all()).results ?? [];
+  const fresh = await ctx.db.prepare('SELECT * FROM corr_letter WHERE id = ?').bind(letter.id).first();
+  const turn = liveTurn(all, fresh.routing ?? 'order', fresh);
+  const next = [...turn.signers.map((r) => r.name), ...(turn.property ? [await property(ctx.db)] : [])];
+  return json({ ok: true, complete, next });
+}
+
 export async function signDecline(ctx, token) {
   const { recipient, letter } = await recipientFor(ctx, token);
+  if (letter.flow === 'v2') await assertGrant(ctx, recipient);
   if (recipient.status === 'signed') throw badRequest('You have already signed this.');
 
   const body = await readJson(ctx.request);
@@ -480,6 +663,9 @@ export async function signDecline(ctx, token) {
     kind: 'declined', actor: recipient.name, detail: note, ip: ipOf(ctx), agent: agentOf(ctx),
   });
   await tellOffice(ctx, letter, { what: 'declined', who: recipient.name, note }).catch(() => {});
+  if (letter.flow === 'v2') {
+    await tellStopped(ctx, letter, { reason: `${recipient.name} declined to sign: ${note || 'no reason given'}`, except: recipient.id }).catch(() => {});
+  }
   return json({ ok: true });
 }
 

@@ -255,14 +255,53 @@ export async function letterPdf({
   const f = await fonts(doc);
   const signers = recipients.filter((r) => r.role !== 'copy');
 
+  const valuesOf = (text) => { try { return text ? JSON.parse(text) : {}; } catch { return {}; } };
   const signatureOf = (index) => (index === 0
-    ? { ink: letter.signature_ink, name: letter.signed_by, at: letter.signed_at }
+    ? {
+      ink: letter.signature_ink, initials: letter.property_initials, name: letter.signed_by,
+      capacity: letter.signed_title, at: letter.signed_at, values: valuesOf(letter.property_values),
+      stamp: letter.stamped_at ? stampInk : null,
+    }
     : (() => {
       // Numbered by position in the whole list, copies included, as the
       // signing page numbers them.
-      const r = [...recipients].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))[index - 1];
-      return r && r.role !== 'copy' ? { ink: r.signature_ink, name: r.signer_name || r.name, at: r.signed_at } : null;
+      const r = [...recipients].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || (a.id ?? 0) - (b.id ?? 0))[index - 1];
+      return r && r.role !== 'copy'
+        ? {
+          ink: r.signature_ink, initials: r.initials_ink, name: r.signer_name || r.name, capacity: r.capacity,
+          at: r.signed_at, values: valuesOf(r.field_values), stamp: null,
+        }
+        : null;
     })());
+
+  /** One box, filled with whatever its owner put in it. */
+  const drawBox = async (page, b, s, { x, yBottom, w, h }) => {
+    const value = s.values?.[b.id];
+    const text = (words, size = Math.min(11, h * 0.7)) => page.drawText(plain(String(words ?? '')).slice(0, 120), {
+      x: x + 1, y: yBottom + Math.max(1, (h - size) / 2), size, font: f.regular, color: INK, maxWidth: w,
+    });
+    if (b.field === 'date') return text(String(s.at).slice(0, 10), Math.min(10, h * 0.7));
+    if (b.field === 'name') return text(value || s.name);
+    if (b.field === 'title') return text(value || s.capacity || '');
+    if (b.field === 'text') return text(value || '');
+    if (b.field === 'checkbox') {
+      const side = Math.min(w, h);
+      page.drawRectangle({ x, y: yBottom, width: side, height: side, borderColor: INK, borderWidth: 0.8 });
+      if (value === true) page.drawText('X', { x: x + side * 0.2, y: yBottom + side * 0.15, size: side * 0.8, font: f.bold, color: INK });
+      return null;
+    }
+    const ink = b.field === 'stamp' ? (value || s.stamp) : b.field === 'initials' ? (s.initials || s.ink) : s.ink;
+    const img = ink ? await embedInk(doc, ink) : null;
+    if (img) {
+      const scale = Math.min(w / img.width, h / img.height);
+      page.drawImage(img, { x, y: yBottom, width: img.width * scale, height: img.height * scale });
+      return null;
+    }
+    if (b.field === 'stamp') return null;
+    return page.drawText(b.field === 'initials' ? initialsOf(s.name) : plain(s.name || ''), {
+      x, y: yBottom + 2, size: Math.min(18, h * 0.7), font: f.italic, color: INK,
+    });
+  };
 
   if (letter.source === 'uploaded' && original?.length) {
     const src = await PDFDocument.load(original, { ignoreEncryption: true }).catch(() => null);
@@ -282,18 +321,7 @@ export async function letterPdf({
         const h = ((b.h ?? 7) / 100) * height;
         const yBottom = height - (b.y / 100) * height - h;
         page.drawRectangle({ x, y: yBottom, width: w, height: h, color: rgb(1, 1, 1) });
-        if (b.field === 'date') {
-          page.drawText(plain(String(s.at).slice(0, 10)), { x, y: yBottom + 2, size: 10, font: f.regular, color: INK });
-          continue;
-        }
-        const img = s.ink ? await embedInk(doc, s.ink) : null;
-        if (img) {
-          const scale = Math.min(w / img.width, h / img.height);
-          page.drawImage(img, { x, y: yBottom, width: img.width * scale, height: img.height * scale });
-        } else {
-          const text = b.field === 'initials' ? initialsOf(s.name) : plain(s.name || '');
-          page.drawText(text, { x, y: yBottom + 2, size: Math.min(18, h * 0.7), font: f.italic, color: INK });
-        }
+        await drawBox(page, b, s, { x, y: yBottom, yBottom, w, h });
       }
     } else {
       const img = await embedImage(doc, original, letter.mime);
@@ -333,13 +361,7 @@ export async function letterPdf({
           const h = ((b.h ?? 7) / 100) * A4[1];
           const s = signatureOf(b.signer ?? 0);
           if (!s?.at) continue;
-          if (b.field === 'date') {
-            page.drawText(plain(String(s.at).slice(0, 10)), { x, y: A4[1] - yTop - Math.min(h, 14), size: 10, font: f.regular, color: INK });
-          } else {
-            const img = s.ink ? await embedInk(doc, s.ink) : null;
-            if (img) drawFitted(page, img, x, yTop, w, h);
-            else page.drawText(plain(b.field === 'initials' ? initialsOf(s.name) : s.name || ''), { x, y: A4[1] - yTop - h * 0.7, size: Math.min(20, h * 0.6), font: f.italic, color: INK });
-          }
+          await drawBox(page, b, s, { x, yBottom: A4[1] - yTop - h, w, h });
           continue;
         }
         const face = faceOf(b.face).key;
@@ -364,7 +386,7 @@ export async function letterPdf({
         y += 14.5;
       }
     }
-    if (stampInk && letter.stamped_at) {
+    if (stampInk && letter.stamped_at && !blocks.some((b) => b.field === 'stamp')) {
       const img = await embedInk(doc, stampInk);
       if (img) drawFitted(doc.getPages()[0], img, A4[0] - M - 110, A4[1] - 240, 100, 100);
     }
@@ -378,14 +400,15 @@ export async function letterPdf({
     fingerprintLabel: letter.source === 'uploaded' ? 'Fingerprint of the file sent (SHA-256)' : 'Fingerprint of the words sent (SHA-256)',
     verifyUrl,
     signers: [
-      letter.signed_at ? { role: `For ${property}`, name: letter.signed_by, at: letter.signed_at, how: 'confirmed with their own PIN or password', ink: letter.signature_ink } : null,
+      letter.signed_at ? { role: `For ${property}`, name: letter.signed_by, at: letter.signed_at, how: 'signed in HIVE, confirmed with their own PIN or password', ink: letter.signature_ink } : null,
       ...signers.filter((r) => r.signed_at).map((r) => ({
         role: r.role === 'approver' ? 'Approved by' : 'Signed by',
         name: r.signer_name || r.name,
         at: r.signed_at,
         ip: r.signer_ip,
         agent: r.signer_agent,
-        how: r.signer_check ? `identity checked by ${r.signer_check}` : 'signed from their own link',
+        how: r.signer_check === 'paper' ? 'signed on paper; the scan is kept with the document'
+          : r.signer_check ? `identity checked by ${r.signer_check}` : 'signed from their own link',
         ink: r.signature_ink,
       })),
     ].filter(Boolean),

@@ -55,6 +55,7 @@ import * as payroll from './routes/payroll.js';
 import * as payAccess from './routes/payroll-access.js';
 import * as lunch from './routes/lunch.js';
 import * as sign from './routes/sign.js';
+import * as prep from './routes/sign-prep.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import * as till from './routes/till.js';
@@ -704,6 +705,22 @@ export const ROUTES = [
   ['POST', '/api/corr/letters/:id/sign', 'corr_sign', corr.signLetter],
   ['POST', '/api/corr/recipients/:id/revoke', 'corr_write', corr.revokeRecipient],
   ['POST', '/api/corr/recipients/:id/correct', 'corr_write', corr.correctRecipient],
+  // Documents to sign, prepared in three steps and followed until done.
+  ['POST', '/api/corr/docs', 'corr_write', prep.createDoc],
+  ['GET', '/api/corr/docs-people', 'corr_write', prep.docPeople],
+  ['GET', '/api/corr/docs/:id', 'corr_view', prep.getDoc],
+  ['PUT', '/api/corr/docs/:id', 'corr_write', prep.saveDoc],
+  ['DELETE', '/api/corr/docs/:id', 'corr_write', prep.deleteDoc],
+  ['POST', '/api/corr/docs/:id/file', 'corr_write', prep.replaceFile],
+  ['POST', '/api/corr/docs/:id/send', 'corr_write', prep.sendDoc],
+  ['POST', '/api/corr/recipients/:id/remind', 'corr_write', prep.remindNow],
+  ['POST', '/api/corr/recipients/:id/paper', 'corr_write', prep.paperSignature],
+  // Signing from a HIVE login: a member of staff on the list, or for the
+  // property. Whether it is theirs to sign is checked inside, not by a
+  // permission, because the member of staff may hold none of the letter ones.
+  ['GET', '/api/corr/docs/:id/to-sign', null, prep.toSign],
+  ['GET', '/api/corr/docs/:id/my-file', null, prep.myFile],
+  ['POST', '/api/corr/docs/:id/sign', null, prep.signInHive],
   ['GET', '/api/corr/files/:id', 'corr_view', corr.getFile],
 
   // ------------------------------------------------------------ letterheads --
@@ -738,6 +755,7 @@ export const ROUTES = [
   ['GET', '/api/s/:token/file', 'public', sign.signFile],
   ['GET', '/api/s/:token/letterhead', 'public', sign.signLetterhead],
   ['POST', '/api/s/:token/code', 'public', sign.signRequestCode],
+  ['POST', '/api/s/:token/verify', 'public', sign.signVerify],
   ['POST', '/api/s/:token/sign', 'public', sign.signDocument],
   ['POST', '/api/s/:token/decline', 'public', sign.signDecline],
   // Signed copies load the PDF library only when one is asked for, so nothing

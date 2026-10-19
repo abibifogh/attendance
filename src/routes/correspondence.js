@@ -107,7 +107,7 @@ export async function readStoredFile(db, row) {
   return joinChunks(chunks);
 }
 
-function bytesFrom(body, what = 'file') {
+export function bytesFrom(body, what = 'file') {
   let bytes;
   try {
     bytes = fromBase64(body.content);
@@ -327,7 +327,7 @@ export async function listLetters(ctx) {
  * cannot both be given 0041. The year is checked as part of it, so the first
  * letter of January restarts the sequence without anybody remembering to.
  */
-async function allocateReference(db, code) {
+export async function allocateReference(db, code) {
   const year = Number(new Date().toISOString().slice(0, 4));
   const series = await db.prepare('SELECT * FROM corr_series WHERE code = ?').bind(code).first();
   if (!series) throw badRequest('That reference series does not exist.');
@@ -658,6 +658,9 @@ export async function signLetter(ctx, id) {
   if (!letter) throw notFound('No such letter.');
   if (letter.status === 'void') throw badRequest('That letter has been withdrawn.');
   if (letter.signed_at) throw badRequest('That letter has already been signed for the property.');
+  if (letter.flow === 'v2') {
+    throw badRequest('Sign this from Signatures when it is the property’s turn, so its boxes are filled in order.');
+  }
 
   await reauthenticate(ctx, body);
 
@@ -997,7 +1000,9 @@ export async function voidLetter(ctx, id) {
   const signed = await ctx.db.prepare(
     "SELECT COUNT(*) n FROM corr_recipient WHERE letter_id = ? AND status = 'signed'",
   ).bind(letterId).first();
-  if (Number(signed?.n ?? 0)) {
+  // A document made in three steps can be stopped until the last signature is
+  // in, the way every signing product allows; everybody who had it is told.
+  if (letter.flow === 'v2' ? ['signed', 'sent', 'closed'].includes(letter.status) : Number(signed?.n ?? 0)) {
     throw badRequest('Somebody has already signed this. Draft a replacement and say what it supersedes.');
   }
 
@@ -1011,6 +1016,10 @@ export async function voidLetter(ctx, id) {
     kind: 'withdrawn', actor: actorOf(ctx), detail: str(body.note, 'Reason', { max: 300 }),
     ip: ipOf(ctx), agent: agentOf(ctx),
   });
+  if (letter.flow === 'v2' && letter.status === 'awaiting_signature') {
+    const { tellStopped } = await import('../lib/sign-reach.js');
+    await tellStopped(ctx, letter, { reason: str(body.note, 'Reason', { max: 300 }) }).catch(() => {});
+  }
   return json({ ok: true });
 }
 

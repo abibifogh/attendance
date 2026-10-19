@@ -127,13 +127,37 @@ export function currentSigner(recipients) {
  * where waiting for the other side to go first is a week nobody has, and
  * wrong for an approval chain, which is why it is a choice and not a change.
  */
-export function whoCanSign(recipients, routing = 'order') {
+export function whoCanSign(recipients, routing = 'order', letter = null) {
+  return liveTurn(recipients, routing, letter).signers;
+}
+
+/**
+ * Whose turn it is, as a group.
+ *
+ * Each person has an order number (`step`, or their place in the list for a
+ * letter sent before order numbers existed). Everybody sharing the lowest
+ * number still waiting signs at the same time; the next number opens when
+ * they have all signed. The property can hold a number too, when it signs as
+ * part of the order, and then it takes its turn like anybody else.
+ */
+export function liveTurn(recipients, routing = 'order', letter = null) {
+  const stepOf = (r) => Number(r.step ?? r.seq ?? 0);
   const waiting = [...(recipients ?? [])]
     .filter((r) => r.role !== 'copy')
-    .sort((a, b) => a.seq - b.seq || a.id - b.id)
+    .sort((a, b) => stepOf(a) - stepOf(b) || a.seq - b.seq || a.id - b.id)
     .filter((r) => r.status !== 'signed' && r.status !== 'declined' && r.status !== 'revoked');
+  const propertyWaits = letter?.property_step != null && !letter?.signed_at;
 
-  return routing === 'all' ? waiting : waiting.slice(0, 1);
+  if (routing === 'all') return { signers: waiting, property: propertyWaits };
+
+  const steps = waiting.map(stepOf);
+  if (propertyWaits) steps.push(Number(letter.property_step));
+  if (!steps.length) return { signers: [], property: false };
+  const lowest = Math.min(...steps);
+  return {
+    signers: waiting.filter((r) => stepOf(r) === lowest),
+    property: propertyWaits && Number(letter.property_step) === lowest,
+  };
 }
 
 /** Where a letter has got to, worked out rather than stored twice. */
