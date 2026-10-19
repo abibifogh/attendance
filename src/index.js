@@ -23,6 +23,7 @@ import { watchShifts } from './lib/shift-watch.js';
 import { watchTills } from './lib/till-watch.js';
 import { watchAbsences } from './lib/absence-watch.js';
 import { watchLeavePlans } from './lib/leave-plans.js';
+import { watchReminders } from './lib/reminders.js';
 import { watchTerminals } from './lib/terminal-watch.js';
 import { nightlyCopy } from './lib/backup.js';
 import * as birthday from './routes/birthdays.js';
@@ -1074,6 +1075,19 @@ export default {
       });
       if (plans.invited || plans.reminded) {
         console.log(`Leave plans: ${plans.invited} invited, ${plans.reminded} reminded`);
+      }
+
+      // And whatever is still waiting on somebody: details and contract links,
+      // letters to sign, handbook sections. Once a day from nine.
+      const chased = await watchReminders(env.DB, {
+        timezone,
+        ctx: { env, executionContext },
+      }).catch((err) => {
+        console.error('Reminders failed', err);
+        return {};
+      });
+      if (chased.links || chased.letters || chased.handbook) {
+        console.log(`Reminders: ${chased.links} links, ${chased.letters} letters, ${chased.handbook} handbook`);
       }
 
       // And whether the terminal is still being heard, which is the one fact

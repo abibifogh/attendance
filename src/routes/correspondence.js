@@ -1,4 +1,5 @@
 import { siteOrigin } from '../lib/site.js';
+import { emailSignLink, textAccessCode } from '../lib/sign-reach.js';
 import {
   badRequest, forbidden, int, json, notFound, readJson, str,
 } from '../lib/http.js';
@@ -11,7 +12,7 @@ import {
 } from '../lib/files.js';
 import {
   CHAIN_ROOT, LETTER_PLACEHOLDERS, STATUSES, currentSigner, linkEvent,
-  progressOf, referenceFor, salutationFor, verifyChain,
+  progressOf, referenceFor, salutationFor, verifyChain, whoCanSign,
 } from '../lib/correspondence.js';
 import { renderTemplate } from '../lib/people.js';
 import { normaliseLayout, starterLayout, textOf } from '../lib/paper.js';
@@ -779,6 +780,7 @@ export async function sendForSignature(ctx, id) {
       url: token ? `${origin}/s/${token}` : null,
       code,
       email: person.email || null,
+      phone: person.phone || null,
     });
   }
 
@@ -786,6 +788,28 @@ export async function sendForSignature(ctx, id) {
     "UPDATE corr_letter SET status = 'awaiting_signature', routing = ?2, "
     + "updated_at = datetime('now') WHERE id = ?1",
   ).bind(letterId, routing).run();
+
+  // Sent by HIVE, unless asked not to: the link by email to whoever can sign
+  // now, and the access code by text so the two never travel together. The
+  // rest are emailed a fresh link when their turn comes.
+  if (body.deliver !== false) {
+    const fresh = { ...letter, routing };
+    const live = whoCanSign(
+      made.map((m) => ({ id: m.id, seq: m.seq, role: m.role, status: 'pending' })), routing,
+    ).map((r) => r.id);
+    for (const m of made) {
+      if (!m.url || !live.includes(m.id)) continue;
+      const row = { id: m.id, name: m.name, role: m.role, email: m.email, phone: m.phone };
+      const emailed = await emailSignLink(ctx.db, ctx.env, {
+        letter: fresh, recipient: row, url: m.url, why: 'first', hasCode: Boolean(m.code),
+      });
+      m.emailed = emailed.sent;
+      if (emailed.sent) {
+        await ctx.db.prepare("UPDATE corr_recipient SET turn_told_at = datetime('now') WHERE id = ?").bind(m.id).run();
+        m.texted = (await textAccessCode(ctx.db, ctx.env, { letter: fresh, recipient: row, code: m.code })).sent;
+      }
+    }
+  }
 
   await appendEvent(ctx.db, letterId, {
     kind: 'sent_for_signature',

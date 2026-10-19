@@ -519,15 +519,21 @@ async function sendOut(data, model, reload) {
           }, `${n} days`)))),
       ),
 
+      h('label.tickline',
+        h('input', { type: 'checkbox', name: 'deliver', checked: true }),
+        h('span', 'HIVE emails each link when it is that person\'s turn, texts their access code to '
+          + 'their phone, and reminds them until they sign')),
+
       h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
-        'An access code is a six-character secret told to the person by another route — read '
-        + 'out on a call — so a forwarded link on its own opens nothing. Turn it off for '
-        + 'somebody where that is more friction than the letter is worth.'),
+        'An access code is a six-character secret that reaches the person by another route — '
+        + 'a text, or read out on a call — so a forwarded link on its own opens nothing. Turn it '
+        + 'off for somebody where that is more friction than the letter is worth.'),
     ),
     onSubmit: async (form) => api.corrSendForSignature(data.letter.id, {
       recipients: people.filter((p) => String(p.name ?? '').trim()),
       days: Number(form.get('days')),
       routing: form.get('routing'),
+      deliver: form.get('deliver') === 'on',
     }),
   });
 
@@ -559,6 +565,12 @@ async function showLinks(result) {
       result.recipients.map((r) => (r.url
         ? h('div', { style: { marginBottom: '1rem' } },
           h('h4', { style: { marginBottom: '.2rem' } }, `${r.seq}. ${r.name}`),
+          r.emailed
+            ? h('p.welcome-line.is-good', h('span', '✓'),
+              `Emailed to ${r.email}${r.texted ? ', code texted' : ''}. HIVE reminds them until they sign.`)
+            : r.email && result.routing !== 'all' && r.seq > 1
+              ? h('p.muted', { style: { fontSize: '.82rem' } }, 'HIVE emails them a fresh link when it is their turn.')
+              : null,
           h('textarea.link-box', { rows: r.code ? 3 : 2, readonly: true, onclick: (e) => e.target.select() },
             r.code ? `${r.url}\n\nAccess code: ${r.code}` : r.url),
           h('div.btn-row',

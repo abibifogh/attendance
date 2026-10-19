@@ -4,6 +4,7 @@ import { cleanSubmission, formPlan, hashBody, unanswered } from '../lib/people.j
 import { requiredDocumentsFor } from '../lib/ghana-templates.js';
 import { currentPlan, storeFile } from './people.js';
 import { fromBase64 } from '../lib/files.js';
+import { createNotice } from '../lib/notices.js';
 
 /**
  * The other side of the link: somebody's phone, with no account and no login.
@@ -48,6 +49,37 @@ async function logEvent(ctx, invite, kind, { contractId = null, detail = null } 
  * "this link is not valid" would send somebody to the wrong one. A link that
  * has expired needs a new link; a link that is finished needs nothing at all.
  */
+/**
+ * Tell whoever keeps the records that something has come in to look at.
+ *
+ * Nothing used to: a new starter could send their details, five photographs
+ * and a signed contract, and the office found out the next time somebody
+ * happened to open their record. Files say so once a day per person, because
+ * six photographs are one thing to look at, not six.
+ */
+async function tellHr(ctx, invite, { kind, title, body, onceADay = false, push = true, email = true }) {
+  const person = await ctx.db.prepare('SELECT name FROM att_staff WHERE id = ?').bind(invite.staff_id).first().catch(() => null);
+  const name = person?.name ?? 'A new starter';
+  if (onceADay) {
+    const claim = await ctx.db.prepare(
+      "INSERT OR IGNORE INTO att_nudge (staff_id, day, kind) VALUES (?1, date('now'), ?2)",
+    ).bind(invite.staff_id, `hr:${kind}`).run().catch(() => null);
+    if (!Number(claim?.meta?.changes ?? 0)) return;
+  }
+  await createNotice(ctx.db, {
+    kind: `people.${kind}`,
+    level: kind === 'declined' ? 'warn' : 'info',
+    title: title(name),
+    body,
+    link: `#/person?id=${invite.staff_id}`,
+    actor: name,
+    audience: 'hr_manage',
+    push,
+    email,
+    text: false,
+  }, ctx).catch(() => {});
+}
+
 async function inviteFor(ctx, token) {
   const pepper = await getPepper(ctx.db);
   const invite = await ctx.db.prepare('SELECT * FROM hr_invite WHERE token_hash = ?')
@@ -318,6 +350,13 @@ export async function inviteFile(ctx, token) {
   });
 
   await logEvent(ctx, invite, 'file_sent', { detail: `${wanted.label} — ${bytes.length} bytes` });
+  await tellHr(ctx, invite, {
+    kind: 'files_sent',
+    title: (name) => `${name} sent documents`,
+    body: `Starting with ${wanted.label}. Waiting for you to file or turn down.`,
+    onceADay: true,
+    email: false,
+  });
   // The last required photograph can be what finishes a link, now that the
   // details no longer wait for it.
   await maybeFinish(ctx, invite);
@@ -405,6 +444,11 @@ export async function inviteDetails(ctx, token) {
   await logEvent(ctx, invite, 'details_sent', {
     detail: `${Object.values(payload.profile).filter((v) => v !== '').length} answers`,
   });
+  await tellHr(ctx, invite, {
+    kind: 'details_sent',
+    title: (name) => `${name} sent their details`,
+    body: 'Waiting for you to look over and accept.',
+  });
   await maybeFinish(ctx, invite);
 
   return json({ ok: true });
@@ -476,6 +520,11 @@ export async function inviteSign(ctx, token) {
     contractId: contract.id,
     detail: `${signerName} · ${ink ? 'drawn' : 'typed'} · ${contract.body_hash.slice(0, 16)}`,
   });
+  await tellHr(ctx, invite, {
+    kind: 'contract_signed',
+    title: (name) => `${name} signed ${contract.title}`,
+    body: 'Countersign it on their record to complete it.',
+  });
   await maybeFinish(ctx, invite);
 
   return json({ ok: true, signedAt: new Date().toISOString() });
@@ -494,6 +543,11 @@ export async function inviteDecline(ctx, token) {
     .bind(contract.id, note).run();
 
   await logEvent(ctx, invite, 'declined', { contractId: contract.id, detail: note });
+  await tellHr(ctx, invite, {
+    kind: 'declined',
+    title: (name) => `${name} declined to sign ${contract.title}`,
+    body: note ? `"${note}"` : 'No reason given.',
+  });
   return json({ ok: true });
 }
 

@@ -6,6 +6,7 @@ import { whoCanSign } from '../lib/correspondence.js';
 import { normaliseLayout } from '../lib/paper.js';
 import { renderMail } from '../lib/email-design.js';
 import { appendEvent, hashAccessCode, hashSignToken } from './correspondence.js';
+import { tellOffice, tellWhoseTurn } from '../lib/sign-reach.js';
 
 /**
  * Somebody outside the property, opening a link to sign a letter.
@@ -433,7 +434,10 @@ export async function signDocument(ctx, token) {
     agent: agentOf(ctx),
   });
 
-  await maybeComplete(ctx, letter.id);
+  const complete = await maybeComplete(ctx, letter.id);
+  // The office hears, and so does whoever is next, straight away.
+  await tellOffice(ctx, letter, { what: complete ? 'complete' : 'signed', who: name }).catch(() => {});
+  if (!complete) await tellWhoseTurn(ctx, letter.id).catch(() => {});
   return json({ ok: true });
 }
 
@@ -450,6 +454,7 @@ export async function signDecline(ctx, token) {
   await appendEvent(ctx.db, letter.id, {
     kind: 'declined', actor: recipient.name, detail: note, ip: ipOf(ctx), agent: agentOf(ctx),
   });
+  await tellOffice(ctx, letter, { what: 'declined', who: recipient.name, note }).catch(() => {});
   return json({ ok: true });
 }
 
@@ -460,7 +465,7 @@ async function maybeComplete(ctx, letterId) {
       WHERE letter_id = ? AND role <> 'copy' AND status NOT IN ('signed', 'revoked')`,
   ).bind(letterId).first();
 
-  if (Number(outstanding?.n ?? 0)) return;
+  if (Number(outstanding?.n ?? 0)) return false;
 
   await ctx.db.prepare(
     `UPDATE corr_letter SET status = 'signed', updated_at = datetime('now')
@@ -471,4 +476,5 @@ async function maybeComplete(ctx, letterId) {
     kind: 'fully_signed', actor: 'system', detail: 'Every signer has signed',
     ip: null, agent: null,
   });
+  return true;
 }

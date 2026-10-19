@@ -153,7 +153,13 @@ test('every notification kind now emails by default', () => {
   // Except the office's copies of the shift reminders, which are a push and
   // nothing else: asked for that way, because they go out every shift.
   const pushOnly = new Set(['attendance.not_clocked_in_office', 'attendance.clock_out_due_office']);
-  for (const k of KINDS.filter((x) => !pushOnly.has(x.key))) assert.ok(goesOut({}, k.key, 'email'), `${k.key} emails`);
+  // And two more that must not email: the weekly handbook nudge, which is a
+  // push, and a signing code, which goes by text precisely so that it never
+  // travels with the emailed link.
+  const notEmail = new Set([...pushOnly, 'handbook.reminder', 'corr.sign_code']);
+  for (const k of KINDS.filter((x) => !notEmail.has(x.key))) assert.ok(goesOut({}, k.key, 'email'), `${k.key} emails`);
+  assert.equal(goesOut({}, 'corr.sign_code', 'email'), false);
+  assert.equal(goesOut({}, 'corr.sign_code', 'text'), true);
   for (const key of pushOnly) {
     assert.equal(goesOut({}, key, 'email'), false, `${key} does not email`);
     assert.equal(goesOut({}, key, 'push'), true, `${key} pushes`);
