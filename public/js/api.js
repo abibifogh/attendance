@@ -565,6 +565,7 @@ export const api = {
   hrRejectSubmission: (id, note) => request(`/api/hr/submissions/${id}/reject`, { method: 'POST', body: { note } }),
 
   hrTemplates: () => request('/api/hr/templates'),
+  hrIssueToMany: (body) => request('/api/hr/contracts/to-many', { method: 'POST', body }),
   hrCreateTemplate: (body) => request('/api/hr/templates', { method: 'POST', body }),
   hrUpdateTemplate: (id, body) => request(`/api/hr/templates/${id}`, { method: 'PUT', body }),
   hrDeleteTemplate: (id) => request(`/api/hr/templates/${id}`, { method: 'DELETE' }),

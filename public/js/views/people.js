@@ -48,6 +48,7 @@ export async function renderPeople() {
         ? h('div.btn-row',
           h('button.btn-sm', { onclick: () => navigate('people-form') }, 'What to ask for'),
           h('button.btn-sm', { onclick: () => navigate('people-templates') }, 'Templates'),
+          h('button.btn.btn-primary', { onclick: () => sendToMany(data.rows, reload) }, 'Send a document to several'),
         )
         : null,
     ),
@@ -350,4 +351,104 @@ function inbox(rows, canManage, reload) {
         : null,
     )),
   );
+}
+
+
+/**
+ * One document to several people at once: each gets their own copy, filled in
+ * with their own particulars, on their own link, sent by email and text and
+ * reminded until signed.
+ */
+async function sendToMany(rows, reload) {
+  const { rows: templates, placeholders } = await api.hrTemplates();
+  const usable = (templates ?? []).filter((t) => t.active !== 0);
+  if (!usable.length) { toast('Write a template first, under Templates.', 'bad'); return; }
+  const people = rows.filter((r) => r.active).sort((a, b) => String(a.department ?? '').localeCompare(String(b.department ?? '')) || a.name.localeCompare(b.name));
+  const departments = [...new Set(people.map((p) => p.department).filter(Boolean))].sort();
+  const chosen = new Set();
+  const asked = (placeholders ?? []).filter((p) => p.ask);
+
+  const template = h('select', { name: 'templateId', required: true },
+    usable.map((t) => h('option', { value: t.id }, t.name)));
+  const valuesBox = h('div');
+  const drawValues = () => {
+    const t = usable.find((x) => String(x.id) === template.value);
+    const needs = asked.filter((p) => (t?.uses ?? []).includes(p.key));
+    mount(valuesBox, needs.length
+      ? h('div',
+        h('p.muted', { style: { fontSize: '.82rem' } }, 'The same for everybody. Anything that differs per person, like a salary, '
+          + 'is better issued one at a time from their record.'),
+        needs.map((p) => field(p.label, h('input', { type: 'text', name: `v_${p.key}`, value: p.fallback ?? '' }))))
+      : null);
+  };
+  template.addEventListener('change', drawValues);
+  drawValues();
+
+  const count = h('strong', '0 chosen');
+  const boxes = people.map((p) => {
+    const box = h('input', {
+      type: 'checkbox', value: p.id,
+      onchange: (e) => { if (e.target.checked) chosen.add(p.id); else chosen.delete(p.id); count.textContent = `${chosen.size} chosen`; },
+    });
+    return { p, box, row: h('label.tickline.many-row', box, h('span', p.name, h('small.muted', ` ${p.department ?? ''}`))) };
+  });
+  const pickDept = (dept) => {
+    for (const b of boxes) {
+      const on = dept === '*' || b.p.department === dept;
+      if (on) { b.box.checked = true; chosen.add(b.p.id); }
+    }
+    count.textContent = `${chosen.size} chosen`;
+  };
+
+  const done = await formDialog({
+    title: 'Send a document to several people',
+    wide: true,
+    submitLabel: 'Send to everybody chosen',
+    body: h('div',
+      field('Document', template),
+      valuesBox,
+      h('div.field',
+        h('span', 'Who it goes to'),
+        h('div.chips',
+          h('button.chip', { type: 'button', onclick: () => pickDept('*') }, 'Everybody'),
+          departments.map((d) => h('button.chip', { type: 'button', onclick: () => pickDept(d) }, d))),
+        h('div.many-list', boxes.map((b) => b.row)),
+        count),
+      h('label.tickline', h('input', { type: 'checkbox', name: 'sendEmail', checked: true }), h('span', 'Email each their own link')),
+      h('label.tickline', h('input', { type: 'checkbox', name: 'sendText', checked: true }), h('span', 'And text it to their phone')),
+      field('A line to them', h('input', { type: 'text', name: 'message', maxlength: 400, placeholder: 'Please read and sign by Friday' }))),
+    onSubmit: async (form) => {
+      if (!chosen.size) throw new Error('Choose who it goes to.');
+      const values = {};
+      for (const p of asked) if (form.get(`v_${p.key}`) != null) values[p.key] = form.get(`v_${p.key}`);
+      return api.hrIssueToMany({
+        templateId: Number(form.get('templateId')),
+        staffIds: [...chosen],
+        values,
+        sendEmail: form.get('sendEmail') === 'on',
+        sendText: form.get('sendText') === 'on',
+        message: form.get('message') || null,
+      });
+    },
+  });
+  if (!done) return;
+
+  const unsent = done.results.filter((r) => r.ok && !r.sent);
+  const failed = done.results.filter((r) => !r.ok);
+  await formDialog({
+    title: `Sent to ${done.sent} of ${done.results.length}`,
+    submitLabel: 'Done',
+    body: h('div.welcome-sum',
+      h('p.welcome-line.is-good', h('span', '✓'), `${done.issued} issued, ${done.sent} sent by HIVE. HIVE reminds them until they sign.`),
+      unsent.length
+        ? h('div',
+          h('p.welcome-line.is-warn', h('span', '!'), `${unsent.length} could not be sent: copy their links below.`),
+          unsent.map((r) => h('div.welcome-copy',
+            h('strong', r.name),
+            h('textarea', { readonly: true, rows: 3 }, r.message))))
+        : null,
+      failed.map((r) => h('p.welcome-line.is-warn', h('span', '!'), `${r.name ?? r.staffId}: ${r.error}`))),
+    onSubmit: async () => true,
+  });
+  await reload();
 }

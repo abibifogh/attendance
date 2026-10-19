@@ -409,7 +409,19 @@ export async function createLetter(ctx) {
       "SELECT value FROM settings WHERE key = 'corr_default_letterhead'",
     ).first().catch(() => null))?.value) || null;
 
-  const layout = source === 'composed'
+  // An uploaded letter has no layout of its own, except the places to sign
+  // its writer marked in it with [sign:1], [initials:2] or [date:1], which the
+  // browser found when the file was chosen.
+  const marked = source === 'uploaded' && Array.isArray(body.fields) && body.fields.length
+    ? normaliseLayout({
+      blocks: body.fields.slice(0, 30).map((f, i) => ({
+        id: `m${i + 1}`, role: 'field', page: f.page, x: f.x, y: f.y, w: f.w, h: f.h,
+        signer: f.signer, field: f.field,
+      })),
+    })
+    : null;
+
+  const layout = marked ?? (source === 'composed'
     ? starterLayout({
       reference,
       date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
@@ -420,7 +432,7 @@ export async function createLetter(ctx) {
       signer: str(body.signatory, 'Signatory', { max: 120 }) ?? '',
       title: str(body.signatoryTitle, 'Job title', { max: 120 }) ?? '',
     })
-    : null;
+    : null);
 
   const created = await ctx.db.prepare(
     `INSERT INTO corr_letter

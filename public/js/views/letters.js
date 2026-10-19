@@ -173,17 +173,34 @@ function tile(label, value, sub, accent, onclick) {
 async function compose(data, reload) {
   const model = await api.corrModel();
   let file = null;
+  let marks = [];
 
   const picker = h('input', {
     type: 'file',
     accept: 'application/pdf,image/*,.doc,.docx',
     onchange: async (e) => {
       file = e.target.files?.[0] ?? null;
+      marks = [];
       const note = e.target.parentElement.querySelector('[data-file-note]');
       if (note) {
         note.textContent = file
           ? `${file.name} — the words below are then only a note to yourself`
           : '';
+      }
+      // Places to sign typed into the document as [sign:1], [initials:2],
+      // [date:1]: found now, so they become the places on the page.
+      if (file && /pdf/i.test(file.type || file.name)) {
+        try {
+          const { findMarkers } = await import('../pdf-markers.js');
+          marks = await findMarkers(file);
+          if (note && marks.length) {
+            const who = [...new Set(marks.map((m) => m.signer))].sort((a, b) => a - b)
+              .map((n) => (n === 0 ? 'the property' : `person ${n}`));
+            note.textContent += `. Found ${marks.length} place${marks.length === 1 ? '' : 's'} to sign, for ${who.join(', ')}.`;
+          }
+        } catch {
+          marks = [];
+        }
       }
     },
   });
@@ -221,6 +238,10 @@ async function compose(data, reload) {
 
       field('Attach a letter written elsewhere', picker,
         h('span', { 'data-file-note': '' }, '')),
+      h('p.muted', { style: { fontSize: '.8rem', marginTop: '-.4rem' } },
+        'To say where people sign, type [sign:1] in the document where the first person on the list '
+        + 'signs, [sign:2] for the second, [sign:0] for the property, and [date:1] or [initials:1] '
+        + 'the same way, then save it as a PDF.'),
 
       field('How it opens', h('textarea', {
         name: 'body', rows: 5, maxlength: 40000,
@@ -251,6 +272,7 @@ async function compose(data, reload) {
         payload.filename = file.name;
         payload.mime = file.type || 'application/pdf';
         payload.content = await asBase64(file);
+        if (marks.length) payload.fields = marks;
       }
       return api.corrCreateLetter(payload);
     },

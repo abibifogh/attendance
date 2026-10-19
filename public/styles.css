@@ -7711,3 +7711,5 @@ button.lp-row:disabled { cursor: default; }
   .sign-row { grid-template-columns: minmax(0, 1fr); }
   .sign-state { justify-items: start; text-align: left; }
 }
+.many-list { max-height: 16rem; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .3rem .6rem; margin: .4rem 0; }
+.many-row { padding: .2rem 0; }

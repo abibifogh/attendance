@@ -1030,6 +1030,62 @@ export async function issueContract(ctx, id) {
 }
 
 /**
+ * One document to several people at once: a revised contract, a new policy
+ * to acknowledge, a confidentiality agreement for a whole department.
+ *
+ * Each person gets their own copy, filled in with their own particulars, on a
+ * link of their own, sent by email and text where HIVE can and reminded until
+ * signed. Values asked of the template, like a probation period, are the same
+ * for everybody here; anything that differs per person, like a salary, is
+ * issued one at a time from their record.
+ */
+export async function issueToMany(ctx) {
+  const body = await readJson(ctx.request);
+  const templateId = int(body.templateId, 'Template', { required: true, min: 1 });
+  const ids = [...new Set((Array.isArray(body.staffIds) ? body.staffIds : []).map(Number))]
+    .filter((n) => Number.isInteger(n) && n > 0);
+  if (!ids.length) throw badRequest('Choose who it goes to.');
+  if (ids.length > 200) throw badRequest('Two hundred at most in one go.');
+  const template = await ctx.db.prepare('SELECT * FROM hr_template WHERE id = ? AND active = 1').bind(templateId).first();
+  if (!template) throw notFound('No such template.');
+
+  const results = [];
+  for (const id of ids) {
+    const person = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ? AND active = 1').bind(id).first();
+    if (!person) { results.push({ staffId: id, ok: false, error: 'Not on the staff list' }); continue; }
+    try {
+      const issued = await issueContractFor(ctx, person, { templateId, values: body.values ?? {} });
+      const invite = await makeInvite(ctx, person, {
+        wantsDetails: false, contractIds: [issued.id], days: body.days,
+        message: str(body.message, 'Message', { max: 400 }),
+      });
+      const delivered = await deliverInvite(ctx, person, invite, {
+        email: bool(body.sendEmail, true), text: bool(body.sendText, true),
+      });
+      results.push({
+        staffId: person.id, name: person.name, ok: true, contractId: issued.id,
+        sent: delivered.emailed || delivered.texted,
+        // Only for the ones HIVE could not send, to pass on by hand.
+        url: delivered.emailed || delivered.texted ? null : invite.url,
+        message: delivered.emailed || delivered.texted ? null : invite.message,
+        whyNot: delivered.whyNot,
+      });
+    } catch (err) {
+      results.push({ staffId: person.id, name: person.name, ok: false, error: err.message });
+    }
+  }
+  await audit(ctx, 'people.contract_issue_many', templateId, {
+    people: ids.length, issued: results.filter((r) => r.ok).length, sent: results.filter((r) => r.sent).length,
+  });
+  return json({
+    ok: true,
+    issued: results.filter((r) => r.ok).length,
+    sent: results.filter((r) => r.sent).length,
+    results,
+  });
+}
+
+/**
  * The issuing itself, for one person: the contract screen, a new starter's
  * welcome and a contract sent to many people at once all come through here.
  */

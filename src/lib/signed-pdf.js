@@ -266,27 +266,56 @@ export async function letterPdf({
 
   if (letter.source === 'uploaded' && original?.length) {
     const src = await PDFDocument.load(original, { ignoreEncryption: true }).catch(() => null);
+    const marks = (layout?.blocks ?? []).filter((b) => b.role === 'field');
     if (src) {
       for (const p of await doc.copyPages(src, src.getPageIndices())) doc.addPage(p);
+      // Each signature in the place its writer marked with [sign:1] and the
+      // like, over the marker itself.
+      const pages = doc.getPages();
+      for (const b of marks) {
+        const page = pages[(b.page ?? 1) - 1];
+        const s = signatureOf(b.signer ?? 0);
+        if (!page || !s?.at) continue;
+        const { width, height } = page.getSize();
+        const x = (b.x / 100) * width;
+        const w = (b.w / 100) * width;
+        const h = ((b.h ?? 7) / 100) * height;
+        const yBottom = height - (b.y / 100) * height - h;
+        page.drawRectangle({ x, y: yBottom, width: w, height: h, color: rgb(1, 1, 1) });
+        if (b.field === 'date') {
+          page.drawText(plain(String(s.at).slice(0, 10)), { x, y: yBottom + 2, size: 10, font: f.regular, color: INK });
+          continue;
+        }
+        const img = s.ink ? await embedInk(doc, s.ink) : null;
+        if (img) {
+          const scale = Math.min(w / img.width, h / img.height);
+          page.drawImage(img, { x, y: yBottom, width: img.width * scale, height: img.height * scale });
+        } else {
+          const text = b.field === 'initials' ? initialsOf(s.name) : plain(s.name || '');
+          page.drawText(text, { x, y: yBottom + 2, size: Math.min(18, h * 0.7), font: f.italic, color: INK });
+        }
+      }
     } else {
       const img = await embedImage(doc, original, letter.mime);
       if (img) { const p = doc.addPage(A4); drawFitted(p, img, M, 50, A4[0] - 2 * M, A4[1] - 120); }
     }
-    // The signatures, on a page of their own.
-    const page = doc.addPage(A4);
-    page.drawText(plain(`Signatures · ${letter.subject}`), { x: M, y: A4[1] - 70, size: 14, font: f.bold, color: INK });
-    let y = 100;
-    if (letter.signed_at) {
-      await signatureBlock(doc, page, f, M, y, 220, { label: `For ${property}`, ...signatureOf(0) });
-      y += 100;
-    }
-    for (const r of signers) {
-      if (!r.signed_at) continue;
-      if (y > A4[1] - 140) break;
-      await signatureBlock(doc, page, f, M, y, 220, {
-        label: r.role === 'approver' ? 'Approved by' : 'Signed by', ink: r.signature_ink, name: r.signer_name || r.name, at: r.signed_at,
-      });
-      y += 100;
+    // The signatures, on a page of their own, where nobody marked a place.
+    if (!(marks.length && src)) {
+      const page = doc.addPage(A4);
+      page.drawText(plain(`Signatures · ${letter.subject}`), { x: M, y: A4[1] - 70, size: 14, font: f.bold, color: INK });
+      let y = 100;
+      if (letter.signed_at) {
+        await signatureBlock(doc, page, f, M, y, 220, { label: `For ${property}`, ...signatureOf(0) });
+        y += 100;
+      }
+      for (const r of signers) {
+        if (!r.signed_at) continue;
+        if (y > A4[1] - 140) break;
+        await signatureBlock(doc, page, f, M, y, 220, {
+          label: r.role === 'approver' ? 'Approved by' : 'Signed by', ink: r.signature_ink, name: r.signer_name || r.name, at: r.signed_at,
+        });
+        y += 100;
+      }
     }
   } else {
     const blocks = layout?.blocks ?? [];
