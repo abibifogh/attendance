@@ -678,7 +678,7 @@ export async function posOnDay({ config: settings, token, vendorId, day, fetchIm
  * and what was paid. Approving it stays in Odoo. `origin` says who made it
  * from Insight. Returns the new PO as Odoo has it, its total after any tax.
  */
-export async function createDraftPo({ config: settings, token, vendorId, productId, description, amount, day, origin, fetchImpl = fetch }) {
+export async function createDraftPo({ config: settings, token, vendorId, productId, description, amount, day, origin, partnerRef = null, fetchImpl = fetch }) {
   const config = odooConfig(settings, token);
   const opts = { fetchImpl };
   const made = await call(config, 'purchase.order', 'create', {
@@ -686,6 +686,8 @@ export async function createDraftPo({ config: settings, token, vendorId, product
       partner_id: Number(vendorId),
       date_order: `${day} 12:00:00`,
       origin,
+      // Vendor Reference: a float's reference (FLT/KOFI/005), when the PO is one.
+      ...(partnerRef ? { partner_ref: partnerRef } : {}),
       order_line: [[0, 0, { product_id: Number(productId), name: description, product_qty: 1, price_unit: amount / 100 }]],
     }],
   }, opts);

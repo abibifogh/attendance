@@ -44,7 +44,7 @@ function productFor(description, products) {
 }
 
 /** A photo made at most 1600 pixels across, as a JPEG: small text stays readable. */
-async function shrink(file) {
+export async function shrink(file) {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url; });
@@ -64,7 +64,7 @@ const asDataUrl = (file) => new Promise((resolve, reject) => {
 });
 
 /** A small picture for the list of receipts. */
-async function thumbOf(dataUrl) {
+export async function thumbOf(dataUrl) {
   const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = dataUrl; });
   const scale = Math.min(1, 160 / Math.max(img.naturalWidth, img.naturalHeight));
   const canvas = document.createElement('canvas');

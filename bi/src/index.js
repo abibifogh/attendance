@@ -8,6 +8,7 @@ import * as panels from './routes/panels.js';
 import * as admin from './routes/admin.js';
 import * as accounts from './routes/accounts.js';
 import * as viewAs from './routes/viewas.js';
+import * as floats from './routes/floats.js';
 import * as reports from './routes/reports.js';
 import * as shiftRoutes from './routes/shifts.js';
 import * as till from './routes/till.js';
@@ -251,11 +252,26 @@ const ROUTES = [
   ['POST', '/api/po/read', 'insight', adminOnly((env, ctx) => newpo.readPo(env, ctx.body))],
   ['POST', '/api/po/check', 'insight', adminOnly((env, ctx) => newpo.checkPo(env, ctx.body))],
   ['POST', '/api/po/create', 'insight', adminOnly(async (env, ctx) => {
-    const out = await newpo.createPo(env, ctx.body, ctx.account);
+    // A float's receipt filled in by hand carries its reference, as one read would.
+    const mark = ctx.body?.receiptId ? await receipts.floatMark(env, ctx.body.receiptId) : null;
+    const out = await newpo.createPo(env, ctx.body, ctx.account, { mark });
     // A receipt that could not be read, filled in by hand: it is this PO now.
     if (out.ok && ctx.body?.receiptId) await receipts.filled(env, ctx.body.receiptId, out.po, ctx.account);
     return out;
   })],
+  // Floats: money given to people to spend; their receipts become POs with their reference.
+  ['GET', '/api/floats', 'insight', adminOnly((env) => floats.list(env))],
+  ['GET', '/api/floats/:id', 'insight', adminOnly((env, ctx) => floats.detail(env, ctx.params.id))],
+  ['GET', '/api/floats/:id/statement', 'insight', adminOnly((env, ctx) => floats.statement(env, ctx.params.id, ctx.query))],
+  ['POST', '/api/floats/give', 'insight', adminOnly((env, ctx) => floats.give(env, ctx.body, ctx.account))],
+  ['POST', '/api/floats/back', 'insight', adminOnly((env, ctx) => floats.giveBack(env, ctx.body, ctx.account))],
+  ['POST', '/api/floats/undo', 'insight', adminOnly((env, ctx) => floats.undoMove(env, ctx.body))],
+  ['POST', '/api/floats/decide', 'insight', adminOnly((env, ctx) => floats.decide(env, ctx.body, ctx.account))],
+  ['POST', '/api/floats/link', 'insight', adminOnly((env, ctx) => floats.setLink(env, ctx.body))],
+  ['POST', '/api/floats/add', 'insight', adminOnly((env, ctx) => floats.adminAdd(env, ctx.body, ctx.account))],
+  // Their own link: no sign-in, the token in it is the only key, and it opens one person's float.
+  ['GET', '/api/float/me', 'public', (env, ctx) => floats.linkView(env, ctx.query)],
+  ['POST', '/api/float/send', 'public', (env, ctx) => floats.linkSend(env, ctx.body)],
   // Receipts made into draft POs: several chosen at once, or emailed in (the email handler below).
   ['GET', '/api/receipts', 'insight', adminOnly((env) => receipts.list(env))],
   ['GET', '/api/receipts/choices', 'insight', adminOnly((env) => receipts.settingsChoices(env))],

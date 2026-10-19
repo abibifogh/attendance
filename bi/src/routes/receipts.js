@@ -118,7 +118,7 @@ function needsSaying({ vendorOk, itemOk, vendorText, description, unsure = null 
  * One receipt in: read, matched, made into a draft PO, kept here with what
  * became of it. Returns the row as the list shows it.
  */
-export async function addReceipt(env, { mime, data, name = '', thumb = null, came, byName, fromEmail = null, subject = null, hint = '' }, { fetchImpl } = {}) {
+export async function addReceipt(env, { mime, data, name = '', thumb = null, came, byName, fromEmail = null, subject = null, hint = '' }, { fetchImpl, mark = null } = {}) {
   const at = now();
   const today = todayIn('UTC');
   const hash = await sha256(data);
@@ -133,7 +133,7 @@ export async function addReceipt(env, { mime, data, name = '', thumb = null, cam
     Object.assign(r, { status: 'duplicate', same_as: twin.id, po_name: twin.po_name, problem: `The same file came in on ${twin.at.slice(0, 16)}${twin.po_name ? ` and is ${twin.po_name}` : ''}. No second PO.` });
     keep = false;
   } else {
-    await makePo(env, r, { data, today, fetchImpl }).catch((err) => { Object.assign(r, { status: 'failed', problem: String(err?.message || err).slice(0, 400) }); });
+    await makePo(env, r, { data, today, fetchImpl, mark }).catch((err) => { Object.assign(r, { status: 'failed', problem: String(err?.message || err).slice(0, 400) }); });
     keep = ['unread', 'failed'].includes(r.status) || r.attachFailed;
   }
   const row = await first(env.DB, `INSERT INTO receipt (hash, name, mime, thumb, came, by_name, from_email, subject, hint, at, status, vendor_text, amount, day, description,
@@ -145,8 +145,12 @@ export async function addReceipt(env, { mime, data, name = '', thumb = null, cam
   return shape({ ...r, id: row.id, has_file: keep && data.length <= FILE_MAX ? 1 : 0 });
 }
 
-/** Read it and make the PO, filling `r` in as it goes. */
-async function makePo(env, r, { data, today, fetchImpl }) {
+/**
+ * Read it and make the PO, filling `r` in as it goes. `mark` is a float's:
+ * its reference on the PO (Vendor Reference and Source Document) and whose
+ * float it is, on the line.
+ */
+async function makePo(env, r, { data, today, fetchImpl, mark = null }) {
   if (/heic|heif/.test(r.mime)) { r.problem = 'An iPhone HEIC picture cannot be read: send it as a JPEG, or take a screenshot of it.'; return; }
   if (data.length > ATTACH_MAX) { r.problem = 'Too large to read: send a smaller photo, or a PDF under 7 MB.'; return; }
   if (!env.AI) { r.problem = 'The reader (Workers AI) is not available just now.'; return; }
@@ -196,8 +200,9 @@ async function makePo(env, r, { data, today, fetchImpl }) {
     ...opts, vendorId: useVendor.id, productId: useProduct.id, amount: read.amount, day: r.day,
     // The line's label is what the receipt says was bought; with a stand-in
     // vendor, who sold it too, so the PO reads right before anybody opens it.
-    description: vendor || !read.vendor ? r.description : `${r.description} (from ${read.vendor})`.slice(0, 200),
-    origin: `Insight · receipt by ${r.came === 'email' ? 'email' : 'upload'} · ${r.by_name || 'Insight'}`,
+    description: `${vendor || !read.vendor ? r.description : `${r.description} (from ${read.vendor})`}${mark ? ` (${mark.label})` : ''}`.slice(0, 200),
+    origin: mark ? mark.origin : `Insight · receipt by ${r.came === 'email' ? 'email' : 'upload'} · ${r.by_name || 'Insight'}`,
+    partnerRef: mark?.ref || null,
   }).catch((err) => { throw new Error(`Odoo did not create the PO: ${String(err?.message || err)}`); });
   Object.assign(r, { po_id: po.id, po_name: po.name, po_url: po.url, status: missing.length ? 'check' : 'complete' });
   const ext = r.mime === 'application/pdf' ? 'pdf' : r.mime.split('/')[1].replace('jpeg', 'jpg');
@@ -211,7 +216,8 @@ async function makePo(env, r, { data, today, fetchImpl }) {
   const read_ = `Read off the receipt by Insight: vendor “${read.vendor || 'none written'}”, total ${ghs(read.amount)}, `
     + `date ${read.date || `none (today, ${today}, used)`}, “${read.description || 'nothing said'}”.`
     + (match?.by === 'reader' ? ` The item was picked by the reader as the nearest in Odoo: ${product.name}.` : '')
-    + (missing.length ? ` To check: ${missing.join('; ')}.` : '') + (r.hint ? ` Sent with: “${r.hint}”.` : '');
+    + (missing.length ? ` To check: ${missing.join('; ')}.` : '') + (r.hint ? ` Sent with: “${r.hint}”.` : '')
+    + (mark ? ` ${mark.note}` : '');
   await noteOnPo({ ...opts, poId: po.id, text: read_ }).catch(() => null);
   if (missing.length) {
     if (!r.problem) r.problem = `To check: ${missing.join(', and ')}.`;
@@ -227,6 +233,28 @@ async function makePo(env, r, { data, today, fetchImpl }) {
   await run(env.DB, `INSERT INTO po_created (odoo_id, name, vendor, product, description, amount, total, day, receipt, by_name, at)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
   po.id, po.name, useVendor.name, useProduct.name, r.description, read.amount, po.total, r.day, r.attachFailed ? 0 : 1, r.by_name || 'Insight', now()).catch(() => null);
+}
+
+/**
+ * A float's mark for a receipt that is one of theirs: its reference for the
+ * PO, and the words on it. Null for any other receipt.
+ */
+export async function floatMark(env, receiptId) {
+  const row = await first(env.DB, `SELECT f.ref, p.name, p.id AS person_id FROM float_receipt f JOIN float_person p ON p.id = f.person_id
+    WHERE f.receipt_id = ?1`, Number(receiptId)).catch(() => null);
+  if (!row) return null;
+  const given = await first(env.DB, "SELECT day, amount FROM float_move WHERE person_id = ?1 AND kind = 'given' ORDER BY day DESC, id DESC LIMIT 1", row.person_id).catch(() => null);
+  return markFor({ ref: row.ref, name: row.name, given });
+}
+
+/** The words a float's PO carries, from its reference and whose it is. */
+export function markFor({ ref, name, given = null }) {
+  return {
+    ref,
+    origin: `${ref} · Float · ${name}`,
+    label: `${name}'s float`,
+    note: `Paid from ${name}'s float${given ? `, last given ${given.day} (${ghs(given.amount)})` : ''}. Reference ${ref}.`,
+  };
 }
 
 function shape(r) {
@@ -276,7 +304,7 @@ export async function retry(env, body, account, { fetchImpl } = {}) {
     ...row, status: 'unread', vendor_text: null, amount: null, day: null, description: null, vendor_name: null, product_name: null,
     vendor_ok: null, item_ok: null, item_by: null, problem: null, po_id: null, po_name: null, po_url: null, todo: 0, by_name: row.by_name || account?.name || 'Insight',
   };
-  await makePo(env, r, { data, today: todayIn('UTC'), fetchImpl }).catch((err) => { Object.assign(r, { status: 'failed', problem: String(err?.message || err).slice(0, 400) }); });
+  await makePo(env, r, { data, today: todayIn('UTC'), fetchImpl, mark: await floatMark(env, row.id) }).catch((err) => { Object.assign(r, { status: 'failed', problem: String(err?.message || err).slice(0, 400) }); });
   await run(env.DB, `UPDATE receipt SET status = ?2, vendor_text = ?3, amount = ?4, day = ?5, description = ?6, vendor_name = ?7, product_name = ?8,
       vendor_ok = ?9, item_ok = ?10, problem = ?11, po_id = ?12, po_name = ?13, po_url = ?14, todo = ?15, item_by = ?16 WHERE id = ?1`,
   row.id, r.status, r.vendor_text, r.amount, r.day, r.description, r.vendor_name, r.product_name, r.vendor_ok, r.item_ok, r.problem, r.po_id, r.po_name, r.po_url, r.todo, r.item_by);
