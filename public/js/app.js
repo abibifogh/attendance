@@ -22,6 +22,8 @@ import { renderRequests } from './views/requests.js';
 import { renderMyLeavePlan } from './views/my-leave-plan.js';
 import { renderLeavePlans } from './views/leave-plans.js';
 import { renderSigning } from './views/signing.js';
+import { renderSignDoc } from './views/sign-doc.js';
+import { renderSignIn } from './views/sign-in.js';
 import { renderSettings } from './views/settings.js';
 import { renderAttMyReport } from './views/att-my-report.js';
 import { renderAttMyPayslips } from './views/att-my-payslips.js';
@@ -236,6 +238,9 @@ const ROUTES = [
   { path: 'my-contract', label: 'My contract', permission: 'att_me', render: (params) => renderContract({ ...params, mine: true }), live: ['people'], hidden: true },
   { path: 'letter', label: 'Letter', permission: 'corr_view', render: renderLetter, live: ['letters'], hidden: true },
   { path: 'letter-compose', label: 'Write', permission: 'corr_write', render: renderLetterCompose, hidden: true },
+  { path: 'sign-doc', label: 'Document to sign', permission: 'corr_view', render: renderSignDoc, live: ['letters'], hidden: true },
+  // Anybody signed in: whether it is theirs to sign is the server's to say.
+  { path: 'sign-in', label: 'Sign', permission: null, render: renderSignIn, hidden: true },
   { path: 'letter-parties', label: 'Address book', permission: 'corr_view', render: renderLetterParties, live: ['letters'], hidden: true },
   { path: 'letter-signing', label: 'Signature & stamp', permission: 'corr_view', render: renderLetterSigning, live: ['letters'], hidden: true },
 ];

@@ -83,8 +83,10 @@ test('one board: waiting on us, with others, done and stopped', async () => {
   await sendForSignature(ctx(db, { deliver: false, recipients: [{ name: 'Signer', email: 's@example.com' }] }), 1);
 
   const board = await read(await signingBoard(ctx(db)));
-  assert.deepEqual(board.waitingOnUs.map((r) => r.status), ['To countersign']);
-  assert.deepEqual(board.withOthers.map((r) => `${r.kind}:${r.status}`).sort(), ['contract:Sent', 'letter:Sent']);
+  assert.deepEqual(board.waitingOnUs.map((r) => r.status), ['Your turn to countersign']);
+  assert.deepEqual(board.withOthers.map((r) => `${r.kind}:${r.status}`).sort(), ['contract:Out for signature', 'letter:Out for signature']);
+  // One segment per signer, so progress reads at a glance.
+  assert.deepEqual(board.waitingOnUs[0].segments, [true, false]);
 });
 
 test('a contract to countersign is in the Inbox, with a way to open it', async () => {

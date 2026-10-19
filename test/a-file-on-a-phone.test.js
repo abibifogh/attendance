@@ -41,7 +41,7 @@ test('a PDF is known the same way', () => {
 test('no file link is left opening in a window with no way out of it', () => {
   // The point of the module is that it is used. A file link that kept
   // target="_blank" would be the same trap, on a screen nobody thought about.
-  const skip = new Set(['file-view.js', 'sign.js', 'invite.js', 'hiring.js']);
+  const skip = new Set(['file-view.js', 'sign.js', 'sign-classic.js', 'invite.js', 'hiring.js']);
   const offSite = /wa\.me|google\.com\/maps|slot\.directions|siteUrl|https?:\/\//;
 
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => (

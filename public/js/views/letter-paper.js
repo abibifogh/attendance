@@ -52,7 +52,7 @@ export const faceCss = (key) => FACES[key] ?? FACES.serif;
  * can select and drag. Everywhere else they are just words on paper.
  */
 export function paperPage(letter, page = 1, {
-  scale = 1, interactive = false, onBlock = null, selected = null, mine = null,
+  scale = 1, interactive = false, onBlock = null, selected = null, mine = null, bare = false,
 } = {}) {
   const layout = letter.layout ?? { blocks: [] };
   const head = letter.letterhead ?? null;
@@ -67,7 +67,8 @@ export function paperPage(letter, page = 1, {
       ...(showHead ? { backgroundImage: `url(${head.image})` } : {}),
     },
   },
-  blocks.map((block) => {
+  // Bare: the words only, for a screen that draws the boxes over it itself.
+  blocks.filter((block) => !(bare && block.role === 'field')).map((block) => {
     const el = block.role === 'field'
       ? fieldBlock(block, letter, { interactive, selected, mine })
       : h(interactive ? 'div.paper-block.paper-live' : 'div.paper-block', {
@@ -92,7 +93,7 @@ export function paperPage(letter, page = 1, {
   // Where the signatures go when the page does not say. A letter with places
   // marked on it puts them there instead; stacking them at the foot as well
   // would print every signature twice.
-  page === lastPage(layout) && !hasFields(layout) ? signatures(letter) : null);
+  !bare && page === lastPage(layout) && !hasFields(layout) ? signatures(letter) : null);
 
   if (scale === 1) return sheet;
 

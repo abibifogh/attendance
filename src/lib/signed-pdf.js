@@ -149,9 +149,10 @@ async function certificate(doc, f, { title, reference, property, fingerprint, fi
     await signatureBlock(doc, page, f, M, y, 200, {
       label: s.role, ink: s.ink, name: s.name, at: s.at, how: s.how,
     });
+    // The browser's own description, wrapped to the column so it stays on the page.
     const facts = [
       s.ip ? `From ${s.ip}` : null,
-      s.agent ? String(s.agent).slice(0, 90) : null,
+      ...(s.agent ? wrap(plain(String(s.agent).slice(0, 200)), f.regular, 8, A4[0] - M * 2 - 230).slice(0, 4) : []),
     ].filter(Boolean);
     let fy = y + 10;
     for (const fact of facts) {

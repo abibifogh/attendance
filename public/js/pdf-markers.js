@@ -16,7 +16,7 @@ const WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worke
 export const MARKER = /\[(sign|initials|date):(\d{1,2})\]/gi;
 
 let loading = null;
-function pdfjs() {
+export function pdfjs() {
   if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
   loading ??= new Promise((resolve, reject) => {
     const tag = document.createElement('script');
@@ -60,7 +60,7 @@ export async function findMarkers(file) {
     const text = await page.getTextContent();
     for (const item of text.items) {
       for (const m of String(item.str ?? '').matchAll(MARKER)) {
-        const [, , , , , e, f] = item.transform;
+        const [, , , , e, f] = item.transform;
         // Roughly where in the run of text the marker starts.
         const share = item.str.length ? m.index / item.str.length : 0;
         out.push({ page: n, ...placeFor({
