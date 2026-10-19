@@ -325,7 +325,7 @@ export async function checkPo(env, body, { fetchImpl } = {}) {
 }
 
 /** Create it: a draft in Odoo, the receipt attached, and a line kept here of who made it. */
-export async function createPo(env, body, account, { fetchImpl } = {}) {
+export async function createPo(env, body, account, { fetchImpl, mark = null } = {}) {
   const s = await source(env);
   const opts = { ...s, ...(fetchImpl ? { fetchImpl } : {}) };
   const d = await details(body, await poChoices(opts), opts);
@@ -338,14 +338,19 @@ export async function createPo(env, body, account, { fetchImpl } = {}) {
   const urlOf = (id) => (base ? `${base}/web#model=purchase.order&id=${id}&view_type=form` : null);
   const seen = new Set((Array.isArray(body?.seen) ? body.seen : []).map(String));
   const fromHere = async () => (await posOnDay({ ...opts, vendorId: d.vendor.id, day: d.day }).catch(() => []))
-    .find((p) => /^Insight/.test(p.origin) && Math.abs(p.total - d.amount) <= 100 && !seen.has(p.name));
+    .find((p) => /^(Insight|FLT\/)/.test(p.origin) && Math.abs(p.total - d.amount) <= 100 && !seen.has(p.name));
   if (!body?.again) {
     const made = await fromHere();
     if (made) return { ok: false, already: { ...made, url: urlOf(made.id) } };
   }
   let po;
   try {
-    po = await createDraftPo({ ...opts, vendorId: d.vendor.id, productId: d.product.id, description: d.description, amount: d.amount, day: d.day, origin: `Insight · ${who(account)}` });
+    po = await createDraftPo({
+      ...opts, vendorId: d.vendor.id, productId: d.product.id, amount: d.amount, day: d.day,
+      // A float's receipt filled in by hand: its reference, as one read would carry.
+      description: mark ? `${d.description} (${mark.label})`.slice(0, 200) : d.description,
+      origin: mark ? mark.origin : `Insight · ${who(account)}`, partnerRef: mark?.ref || null,
+    });
   } catch (err) {
     console.error('Create PO', err);
     // Odoo may have made it and then failed to answer: looked for once before saying it failed.

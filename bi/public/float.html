@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Your float · receipts</title>
+  <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <style>
+    :root { --plane: #f9f9f7; --surface: #fcfcfb; --surface-2: #f2f1ed; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781; --line: rgba(11,11,11,.18); --blue: #2a78d6; --good: #0b6b35; --good-bg: #e5f3ea; --bad: #a12626; --bad-bg: #fbe6e6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--plane); color: var(--ink); font: 16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    header { background: #16232e; color: #fff; padding: 16px; }
+    header b { display: block; font-size: 18px; }
+    header small { opacity: .8; }
+    main { max-width: 520px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+    .big { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .bar { height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: 8px 0 4px; }
+    .bar i { display: block; height: 100%; background: var(--blue); }
+    .note { font-size: 14px; color: var(--ink-2); margin: 0; }
+    .add { border: 2px dashed var(--line); border-radius: 14px; padding: 22px 12px; background: var(--surface); text-align: center; font-weight: 700; font-size: 18px; width: 100%; cursor: pointer; color: var(--ink); }
+    input { font: inherit; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); width: 100%; }
+    label { font-size: 14px; color: var(--ink-2); font-weight: 600; display: grid; gap: 6px; }
+    .row { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+    .row:first-of-type { border-top: 0; }
+    .row .t { flex: 1; min-width: 0; }
+    .row small { display: block; color: var(--ink-2); }
+    .chip { font-size: 13px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; background: var(--surface-2); color: var(--ink-2); }
+    .chip.ok { background: var(--good-bg); color: var(--good); }
+    .chip.no { background: var(--bad-bg); color: var(--bad); }
+    .err { background: var(--bad-bg); color: var(--bad); border-radius: 10px; padding: 10px 12px; font-size: 15px; }
+    .ok-note { background: var(--good-bg); color: var(--good); border-radius: 10px; padding: 10px 12px; font-size: 15px; }
+    h2 { font-size: 17px; margin: 0 0 4px; }
+  </style>
+</head>
+<body>
+  <header><b>Your float</b><small id="who">Loading…</small></header>
+  <main id="page"><p class="note">Loading…</p></main>
+  <script type="module" src="/js/float.js"></script>
+</body>
+</html>

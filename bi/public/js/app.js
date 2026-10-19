@@ -22,6 +22,7 @@ import { renderNicePlace } from './views/niceplace.js';
 import { openNewPo } from './views/newpo.js';
 import { renderApprovals, approvalsCount } from './views/approvals.js';
 import { renderReceipts } from './views/receipts.js';
+import { renderFloats } from './views/floats.js';
 import { openViewAs, viewAsBar } from './views/viewas.js';
 
 export const state = {
@@ -59,6 +60,8 @@ const ROUTES = [
   { path: 'buying', label: 'Buying', render: renderSuppliers },
   // Receipts made into draft POs, uploaded or emailed in. Admins.
   { path: 'receipts', label: 'Receipts', render: renderReceipts, needs: 'admin' },
+  // Money given to people to spend; their receipts become POs with their reference. Admins.
+  { path: 'floats', label: 'Floats', render: renderFloats, needs: 'admin' },
   { path: 'books', label: 'Books', render: renderBooks },
   { path: 'findings', label: 'Findings', render: renderFindings, needs: 'insight' },
   { path: 'accounts', label: 'Accounts', render: renderAccounts, needs: 'owner' },
@@ -74,7 +77,7 @@ const ROUTES = [
  */
 const NAV_GROUPS = [
   ['Today', ['hub', 'brief', 'findings']],
-  ['Money', ['money', 'yardstick', 'cash', 'prepaid', 'books', 'buying', 'receipts']],
+  ['Money', ['money', 'yardstick', 'cash', 'prepaid', 'books', 'buying', 'receipts', 'floats']],
   ['Operations', ['shifts', 'upload', 'niceplace', 'labour', 'guests']],
   ['Admin', ['accounts', 'reports', 'setup']],
 ];

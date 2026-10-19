@@ -1,0 +1,66 @@
+# Floats
+
+Money given to people to spend: a driver for market runs, a housekeeper for
+supplies. They send a picture of each receipt from their own link; each
+becomes a draft PO in Odoo marked with **their reference**, and comes off what
+they hold.
+
+## Giving money (Money › Floats)
+
+- **＋ Give money**: choose the person, or somebody new (their name and their
+  reference, e.g. `KOFI`), how much, the day, and where it came from (the
+  safe, the bank, a drawer). Somebody new gets a reference and a link.
+- **🔗 Their link**: copy it and send it to them by SMS or WhatsApp. No
+  login: whoever has the link can send receipts as them, so send it to them
+  only. **New link** stops the old one; **Switch it off** stops receipts.
+- **Given back…**: money they hand back, off what they hold.
+- **📷 Add a receipt for them**: paper receipts handed in, photographed here.
+- **Take out**: a "given" or "given back" typed wrong.
+
+## Their receipts
+
+On their link they see what they still hold, add receipts (one or several
+pictures, or a PDF), and see each one's state: Being checked, ✓ Accepted,
+✕ Refused (with why), or Could not be read (the office fills it in).
+
+Each receipt is read like Money › Receipts (vendor, total, date, what was
+bought) and becomes a **draft PO** in Odoo with:
+
+| In Odoo | What goes there |
+| --- | --- |
+| Vendor Reference | `FLT/KOFI/005`: their reference and the receipt's number |
+| Source Document | `FLT/KOFI/005 · Float · Kofi Test` |
+| The line | what was bought, with "(Kofi Test's float)" |
+| A note | whose float, when it was last given, the reference |
+| Attachment | the receipt |
+
+In Odoo's list of POs, search `FLT/KOFI` to see every PO from Kofi's float.
+
+## What they hold
+
+**Given − given back − receipts.** A receipt counts as soon as it is sent
+("Being checked"). It is **accepted** once its PO is confirmed in Odoo. It is
+**refused**, and no longer counts, when its PO is cancelled in Odoo or an
+admin presses **Refuse…** with a reason (they see the reason). A receipt that
+could not be read counts nothing until it is filled in (**Fill it in** opens
+the usual ＋ PO form; its PO still gets the reference). The same picture sent
+twice counts once.
+
+## Statements
+
+On a person, **⬇ Statement**: choose the dates, then
+
+- **Open to print or save as PDF**: what they held at the start, every amount
+  given, spent and given back with references and POs, what they hold at the
+  end, and lines to sign; or
+- **Spreadsheet (CSV)**: the same, for Excel.
+
+## For whoever runs it
+
+- `src/routes/floats.js`: people, money given and back, receipts, their link,
+  statements. `src/routes/receipts.js` reads the receipt and makes the PO
+  (`mark` carries the reference); `src/connectors/odoo.js` `createDraftPo`
+  sets `partner_ref`.
+- `public/js/views/floats.js` (Money › Floats), `public/float.html` and
+  `public/js/float.js` (their link).
+- Tables `float_person`, `float_move`, `float_receipt` (migration 0040).

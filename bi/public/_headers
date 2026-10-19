@@ -21,3 +21,5 @@
   Cache-Control: public, max-age=604800
 /np.html
   Cache-Control: no-cache
+/float.html
+  Cache-Control: no-cache

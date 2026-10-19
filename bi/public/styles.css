@@ -1834,3 +1834,32 @@ html.viewing-as body::after { content: ''; position: fixed; inset: 0; border: 4p
 .sh-ck { display: block; width: max-content; max-width: 100%; margin-top: .3rem; font-size: .72rem; font-weight: 700; border-radius: 999px; padding: .05rem .45rem; color: var(--ink-2); background: color-mix(in srgb, var(--ink-2) 12%, transparent); }
 .sh-ck.ok { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
 .sh-ck.changed { color: var(--warning); background: color-mix(in srgb, var(--warning) 16%, transparent); }
+
+/* ---------------------------------------------------------------- floats -- */
+
+.fl-head { display: flex; align-items: center; gap: .6rem 1rem; flex-wrap: wrap; }
+.fl-head h1 { margin: .2rem 0 0; }
+.fl-head .sp { flex: 1; }
+.fl-acts { display: flex; flex-wrap: wrap; gap: .4rem; }
+.fl-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .8rem; margin: 0 0 1rem; }
+.fl-tile { border: 1px solid var(--border); border-radius: 12px; padding: .7rem .9rem; background: var(--surface); }
+.fl-tile small { display: block; color: var(--ink-2); font-size: .8rem; }
+.fl-tile b { font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.fl-tile b.bad { color: var(--sh-bad-ink); }
+.fl-ref { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .82rem; background: var(--surface-2); border-radius: 6px; padding: .05rem .35rem; white-space: nowrap; }
+.fl-bar { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; display: flex; margin: .35rem 0 .1rem; max-width: 16rem; }
+.fl-bar i { display: block; height: 100%; }
+.fl-note { color: var(--ink-2); font-size: .84rem; }
+.fl-row { cursor: pointer; }
+.fl-row:hover td { background: var(--surface-2); }
+.fl-row-acts { display: flex; gap: .35rem; flex-wrap: wrap; }
+.fl-thumb { width: 34px; height: 34px; object-fit: cover; border-radius: 6px; vertical-align: middle; margin-right: .4rem; border: 1px solid var(--border); }
+.fl-dlg { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .4); display: grid; place-items: start center; padding: 8vh 1rem 1rem; overflow-y: auto; }
+.fl-card { background: var(--surface); color: var(--ink); border-radius: 14px; width: min(520px, 100%); padding: 1rem 1.15rem; box-shadow: 0 12px 40px rgba(0, 0, 0, .25); display: grid; gap: .5rem; }
+.fl-dlg-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.fl-dlg-head h2 { margin: 0; font-size: 1.15rem; }
+.fl-field { display: grid; gap: .25rem; font-size: .88rem; font-weight: 600; }
+.fl-card input, .fl-card select { width: 100%; box-sizing: border-box; padding: .5rem .65rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-weight: 400; background: var(--surface); color: var(--ink); }
+.fl-two { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.fl-dlg-acts { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .3rem; }
+@media (max-width: 760px) { .fl-tiles { grid-template-columns: 1fr 1fr; } .fl-two { grid-template-columns: 1fr; } }
