@@ -82,30 +82,8 @@ export async function inviteToJoin(ctx, id) {
     if (taken) throw badRequest('Another login already uses that email address.');
   }
 
-  const days = Number(body.days) > 0
-    ? Math.min(MOST_DAYS, Math.round(Number(body.days)))
-    : DAYS_TO_JOIN;
-
-  const pepper = await getPepper(ctx.db);
-  const token = newToken();
-
-  await ctx.db.prepare(
-    "UPDATE user_invite SET revoked_at = datetime('now') "
-    + 'WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL',
-  ).bind(userId).run().catch(() => {});
-
-  const made = await ctx.db.prepare(
-    `INSERT INTO user_invite (user_id, email, token_hash, expires_at, created_by)
-     VALUES (?1, ?2, ?3, datetime('now', ?4), ?5) RETURNING id`,
-  ).bind(userId, email, await hashJoinToken(token, pepper), `+${days} days`, actorOf(ctx)).first();
-
-  const url = `${await siteOrigin(ctx.db, ctx.url.origin)}/j/${token}`;
-  const sent = await postIt(ctx, { user, email, url, days }).catch((err) => String(err.message ?? err));
-
-  if (sent === true) {
-    await ctx.db.prepare("UPDATE user_invite SET sent_at = datetime('now') WHERE id = ?")
-      .bind(made.id).run().catch(() => {});
-  }
+  const made = await inviteLoginFor(ctx, user, { email, days: body.days });
+  const { url, days, sent } = made;
 
   await audit(ctx, 'user.invite', userId, { days, emailed: sent === true });
 
@@ -120,6 +98,38 @@ export async function inviteToJoin(ctx, id) {
     sent: sent === true,
     whyNot: sent === true ? null : sent,
   });
+}
+
+/**
+ * Make and send a login invitation for one login. Any earlier one still open
+ * is withdrawn. Used by the Users screen and by a new starter's welcome.
+ */
+export async function inviteLoginFor(ctx, user, { email, days: asked } = {}) {
+  const days = Number(asked) > 0
+    ? Math.min(MOST_DAYS, Math.round(Number(asked)))
+    : DAYS_TO_JOIN;
+
+  const pepper = await getPepper(ctx.db);
+  const token = newToken();
+
+  await ctx.db.prepare(
+    "UPDATE user_invite SET revoked_at = datetime('now') "
+    + 'WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL',
+  ).bind(user.id).run().catch(() => {});
+
+  const made = await ctx.db.prepare(
+    `INSERT INTO user_invite (user_id, email, token_hash, expires_at, created_by)
+     VALUES (?1, ?2, ?3, datetime('now', ?4), ?5) RETURNING id`,
+  ).bind(user.id, email, await hashJoinToken(token, pepper), `+${days} days`, actorOf(ctx)).first();
+
+  const url = `${await siteOrigin(ctx.db, ctx.url?.origin)}/j/${token}`;
+  const sent = await postIt(ctx, { user, email, url, days }).catch((err) => String(err.message ?? err));
+
+  if (sent === true) {
+    await ctx.db.prepare("UPDATE user_invite SET sent_at = datetime('now') WHERE id = ?")
+      .bind(made.id).run().catch(() => {});
+  }
+  return { id: made.id, url, days, sent };
 }
 
 /** Send it, in the same clothes as everything else the property sends. */
@@ -139,7 +149,7 @@ async function postIt(ctx, { user, email, url, days }) {
     url,
     days,
     ways: waysFor(user.role),
-    siteUrl: await siteOrigin(ctx.db, ctx.url.origin),
+    siteUrl: await siteOrigin(ctx.db, ctx.url?.origin),
   });
 
   await sendEmail({

@@ -14,6 +14,8 @@ import {
 } from '../lib/ghana-templates.js';
 import { asBytes } from '../lib/files.js';
 import { MAIN } from '../lib/companies.js';
+import { emailPersonally, firstUsableEmail } from '../lib/notify.js';
+import { firstUsableNumber, sendTexts } from '../lib/sms.js';
 
 /**
  * Employee records, from the property's side of the desk.
@@ -45,8 +47,8 @@ async function logEvent(ctx, { staffId, inviteId = null, contractId = null, kind
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
   ).bind(
     staffId ?? null, inviteId, contractId, kind, detail,
-    ctx.request.headers.get('CF-Connecting-IP') || null,
-    (ctx.request.headers.get('User-Agent') || '').slice(0, 300) || null,
+    ctx.request?.headers?.get('CF-Connecting-IP') || null,
+    (ctx.request?.headers?.get('User-Agent') || '').slice(0, 300) || null,
   ).run().catch(() => {});
 }
 
@@ -663,6 +665,33 @@ export async function createInvite(ctx, id) {
   if (!person) throw notFound('No such member of staff.');
 
   const body = await readJson(ctx.request);
+  const invite = await makeInvite(ctx, person, body);
+
+  // Sent by HIVE where it can be: an email to their own address and a text
+  // to their phone. The link is on screen either way, to pass on by hand.
+  const delivered = await deliverInvite(ctx, person, invite, {
+    email: bool(body.sendEmail, false),
+    text: bool(body.sendText, false),
+  });
+
+  return json({
+    ok: true,
+    id: invite.id,
+    url: invite.url,
+    pin: invite.pin,
+    expiresInDays: invite.days,
+    // Written out so it can be pasted straight into a message.
+    message: invite.message,
+    delivered,
+  });
+}
+
+/**
+ * Make a link for one person: their details, contracts, or both. Returns the
+ * address once; only its hash is kept.
+ */
+export async function makeInvite(ctx, person, body = {}) {
+  const staffId = Number(person.id);
   const wantsDetails = bool(body.wantsDetails, true);
   const contractIds = (Array.isArray(body.contractIds) ? body.contractIds : [])
     .map(Number).filter((n) => Number.isInteger(n) && n > 0);
@@ -684,44 +713,129 @@ export async function createInvite(ctx, id) {
   ).bind(
     staffId,
     await hashInviteToken(token, pepper),
-    pin ? await hashInvitePin(pin, pepper) : null,
+    body.pinHash ?? (pin ? await hashInvitePin(pin, pepper) : null),
     wantsDetails ? 1 : 0,
     str(body.message, 'Message', { max: 400 }),
     `+${days} days`,
-    actorOf(ctx),
+    body.by ?? actorOf(ctx),
   ).first();
 
   // Only contracts belonging to this person, and only ones still open. A link
   // cannot be made to carry somebody else's contract by passing its number.
+  let carried = 0;
   for (const contractId of contractIds) {
     const contract = await ctx.db.prepare(
       "SELECT id FROM hr_contract WHERE id = ? AND staff_id = ? AND status IN ('draft','sent','opened')",
     ).bind(contractId, staffId).first();
     if (!contract) continue;
+    carried += 1;
 
     await ctx.db.prepare(
       'INSERT OR IGNORE INTO hr_invite_contract (invite_id, contract_id) VALUES (?, ?)',
     ).bind(created.id, contractId).run();
     await ctx.db.prepare(
-      "UPDATE hr_contract SET status = 'sent', issued_at = COALESCE(issued_at, datetime('now')) WHERE id = ?",
+      "UPDATE hr_contract SET status = CASE WHEN status = 'draft' THEN 'sent' ELSE status END, issued_at = COALESCE(issued_at, datetime('now')) WHERE id = ?",
     ).bind(contractId).run();
   }
 
   await logEvent(ctx, {
     staffId, inviteId: created.id, kind: 'link_created',
-    detail: `${wantsDetails ? 'details' : ''}${wantsDetails && contractIds.length ? ' + ' : ''}${contractIds.length ? `${contractIds.length} contract(s)` : ''}`,
+    detail: `${wantsDetails ? 'details' : ''}${wantsDetails && carried ? ' + ' : ''}${carried ? `${carried} contract(s)` : ''}`,
   });
-  await audit(ctx, 'people.invite', staffId, { days, contracts: contractIds.length, pin: Boolean(pin) });
+  await audit(ctx, 'people.invite', staffId, { days, contracts: carried, pin: Boolean(pin || body.pinHash) });
 
-  return json({
-    ok: true,
+  const url = `${await siteOrigin(ctx.db, ctx.url?.origin)}/i/${token}`;
+  return {
     id: created.id,
-    url: `${await siteOrigin(ctx.db, ctx.url.origin)}/i/${token}`,
+    url,
     pin,
-    expiresInDays: days,
-    // Written out so it can be pasted straight into a message.
-    message: linkMessage(person.name, `${await siteOrigin(ctx.db, ctx.url.origin)}/i/${token}`, wantsDetails, contractIds.length),
-  });
+    days,
+    wantsDetails,
+    contracts: carried,
+    hasPin: Boolean(pin || body.pinHash),
+    message: linkMessage(person.name, url, wantsDetails, carried),
+  };
+}
+
+/**
+ * Send a link to the person by email and by text, where asked and where the
+ * property can. The code, if there is one, never goes with it: it is given
+ * separately, which is the whole of its point.
+ */
+export async function deliverInvite(ctx, person, invite, { email = false, text = false, reminder = false } = {}) {
+  const out = { emailed: false, texted: false, email: null, phone: null, whyNot: [] };
+  if (!email && !text) return out;
+
+  const profile = await ctx.db.prepare('SELECT personal_email, personal_phone, alt_phone FROM hr_profile WHERE staff_id = ?')
+    .bind(person.id).first().catch(() => null);
+  const login = await ctx.db.prepare('SELECT email FROM users WHERE staff_id = ? AND active = 1 LIMIT 1')
+    .bind(person.id).first().catch(() => null);
+  const first = String(person.name ?? '').trim().split(/\s+/)[0];
+  const asks = [];
+  if (invite.wantsDetails) asks.push('fill in your details');
+  if (invite.contracts) asks.push(invite.contracts === 1 ? 'read and sign your contract' : `read and sign ${invite.contracts} documents`);
+  const what = asks.join(' and ') || 'finish what we need from you';
+
+  if (email) {
+    const to = firstUsableEmail(profile?.personal_email, login?.email);
+    out.email = to;
+    if (!to) out.whyNot.push('no email address on their record');
+    else {
+      const sent = await emailPersonally(ctx.db, ctx.env, {
+        kind: 'people.link',
+        level: 'info',
+        title: reminder ? `Reminder: please ${what}` : `Please ${what}`,
+        body: `Open the link to ${what}. It is private to you and stops working in ${invite.days} days.`,
+        link: invite.url,
+        to,
+        wanted: true,
+        mail: {
+          status: reminder ? 'Reminder' : 'Welcome',
+          tone: 'info',
+          eyebrow: 'Your details',
+          subject: reminder ? `Reminder: please ${what}` : `${first}, please ${what}`,
+          preheader: `It takes a few minutes on your phone.`,
+          headline: reminder ? `${first}, this is still waiting for you` : `Welcome, ${first}`,
+          note: `Please open the link to ${what}. It works on your phone and is private to you.`
+            + (invite.hasPin ? ' You will be asked for a four-digit code, which we give you separately.' : ''),
+          button: invite.contracts ? 'Open and sign' : 'Fill in my details',
+          why: 'You get this because you are joining the team.',
+        },
+      }).catch((err) => ({ sent: 0, reason: err.message }));
+      out.emailed = Number(sent?.sent ?? 0) > 0;
+      if (!out.emailed) out.whyNot.push(`email not sent: ${sent?.reason ?? 'unknown'}`);
+    }
+  }
+
+  if (text) {
+    const phone = firstUsableNumber(profile?.personal_phone, profile?.alt_phone);
+    out.phone = phone;
+    if (!phone) out.whyNot.push('no phone number on their record');
+    else {
+      const message = `${reminder ? 'Reminder: ' : ''}Hello ${first}, please open this link to ${what}: ${invite.url}`
+        + (invite.hasPin ? ' You will need the code we give you.' : '');
+      const sent = await sendTexts(ctx.db, ctx.env, { messages: [{ to: phone, text: message }], kind: 'people.link' })
+        .catch((err) => ({ sent: 0, reason: err.message }));
+      out.texted = Number(sent?.sent ?? 0) > 0;
+      if (!out.texted) out.whyNot.push(`text not sent: ${sent?.reason ?? 'unknown'}`);
+    }
+  }
+
+  if (out.emailed || out.texted) {
+    await ctx.db.prepare(
+      `UPDATE hr_invite SET sent_at = COALESCE(sent_at, datetime('now')), sent_to = ?2,
+              by_email = ?3, by_text = ?4
+        WHERE id = ?1`,
+    ).bind(
+      invite.id, [out.emailed ? out.email : null, out.texted ? out.phone : null].filter(Boolean).join(', '),
+      out.emailed ? 1 : 0, out.texted ? 1 : 0,
+    ).run().catch(() => {});
+    await logEvent(ctx, {
+      staffId: person.id, inviteId: invite.id, kind: reminder ? 'link_reminded' : 'link_sent',
+      detail: [out.emailed ? 'email' : null, out.texted ? 'text' : null].filter(Boolean).join(' + '),
+    });
+  }
+  return out;
 }
 
 function linkMessage(name, url, wantsDetails, contracts) {
@@ -909,11 +1023,21 @@ export async function issueContract(ctx, id) {
   const staffId = Number(id);
   const person = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(staffId).first();
   if (!person) throw notFound('No such member of staff.');
-
   const body = await readJson(ctx.request);
+  const out = await issueContractFor(ctx, person, body);
+  return json({ ok: true, ...out });
+}
+
+/**
+ * The issuing itself, for one person: the contract screen, a new starter's
+ * welcome and a contract sent to many people at once all come through here.
+ */
+export async function issueContractFor(ctx, person, body = {}) {
+  const staffId = Number(person.id);
   const template = body.templateId
     ? await ctx.db.prepare('SELECT * FROM hr_template WHERE id = ?').bind(Number(body.templateId)).first()
     : null;
+  if (body.templateId && !template) throw notFound('No such template.');
 
   const source = template?.body ?? str(body.body, 'The words', { required: true, max: 60_000 });
   const profile = await ctx.db.prepare('SELECT * FROM hr_profile WHERE staff_id = ?').bind(staffId).first();
@@ -962,7 +1086,7 @@ export async function issueContract(ctx, id) {
   await logEvent(ctx, { staffId, contractId: created.id, kind: 'contract_issued', detail: hash.slice(0, 16) });
   await audit(ctx, 'people.contract_issue', created.id, { staffId, hash });
 
-  return json({ ok: true, id: created.id, hash });
+  return { id: created.id, hash };
 }
 
 export async function contractWithTrail(db, id) {

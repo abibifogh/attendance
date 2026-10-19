@@ -526,6 +526,37 @@ test('taking somebody on makes the record and carries their things across', asyn
   assert.equal(raw.prepare('SELECT status FROM rec_role WHERE id = ?').get(roleId).status, 'filled');
 });
 
+test('taking somebody on welcomes them: first week, a details link and a login', async () => {
+  const { raw, db } = setup();
+  raw.prepare(
+    "INSERT INTO settings (key, value) VALUES ('onboarding_on', '1') ON CONFLICT (key) DO UPDATE SET value = '1'",
+  ).run();
+  const id = await aCandidate(db, await aRole(db), 'Ama Mensah', { email: 'ama@example.com' });
+
+  const done = await body(await hire(ctx(db, { employeeNo: 'HSK006' }, [...ADMIN, 'users', 'hr_manage']), id));
+  assert.ok(raw.prepare('SELECT 1 FROM ob_state WHERE staff_id = ?').get(done.staffId), 'the first week started');
+
+  const link = raw.prepare('SELECT * FROM hr_invite WHERE staff_id = ?').get(done.staffId);
+  assert.ok(link, 'a details link was made');
+  assert.equal(link.wants_details, 1);
+  assert.match(done.welcome.link.url, /\/i\//);
+
+  const login = raw.prepare('SELECT * FROM users WHERE staff_id = ?').get(done.staffId);
+  assert.equal(login.role, 'staff');
+  assert.ok(raw.prepare('SELECT 1 FROM user_invite WHERE user_id = ?').get(login.id), 'and invited to it');
+
+  // Email is not set up in a test, so it says so rather than claiming it went.
+  assert.ok(done.welcome.notDone.some((n) => /Details link not sent/.test(n)));
+});
+
+test('without the Users permission no login is made, and it says why', async () => {
+  const { raw, db } = setup();
+  const id = await aCandidate(db, await aRole(db), 'Ama Mensah', { email: 'ama@example.com' });
+  const done = await body(await hire(ctx(db, { employeeNo: 'HSK007' }), id));
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM users WHERE staff_id = ?').get(done.staffId).n, 0);
+  assert.ok(done.welcome.notDone.some((n) => /Users permission/.test(n)));
+});
+
 test('an employee number already in use is refused in the words that help', async () => {
   const { raw, db } = setup();
   raw.prepare(

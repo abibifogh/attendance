@@ -31,6 +31,7 @@ import * as companies from './routes/companies.js';
 import * as tillReports from './routes/till-reports.js';
 import * as absence from './routes/absence.js';
 import * as leavePlans from './routes/leave-plans.js';
+import * as newStarter from './routes/new-starter.js';
 import * as viewAs from './routes/view-as.js';
 import * as rotaImport from './routes/rota-import.js';
 import * as people from './routes/people.js';
@@ -565,6 +566,7 @@ export const ROUTES = [
   ['DELETE', '/api/hr/documents/:id', 'hr_manage', people.deleteDocument],
 
   ['POST', '/api/hr/people/:id/invites', 'hr_manage', people.createInvite],
+  ['POST', '/api/hr/people/:id/welcome', 'hr_manage', newStarter.welcome],
   ['POST', '/api/hr/invites/:id/revoke', 'hr_manage', people.revokeInvite],
 
   ['GET', '/api/hr/submissions', 'hr_view', people.listSubmissions],

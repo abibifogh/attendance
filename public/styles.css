@@ -7675,3 +7675,13 @@ button.lp-row:disabled { cursor: default; }
 }
 .decide-bulk label.check { display: inline-flex; align-items: center; gap: .5rem; margin: 0; font-weight: 600; }
 .decide-bulk label.check input { width: 1.15rem; height: 1.15rem; margin: 0; }
+
+/* A new starter's welcome, after Hire. */
+.hire-welcome-head { margin: 1rem 0 .2rem; font-size: 1rem; }
+.welcome-sum { display: grid; gap: .5rem; }
+.welcome-line { display: flex; gap: .5rem; align-items: flex-start; margin: 0; }
+.welcome-line span { flex: none; width: 1.3rem; height: 1.3rem; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: .8rem; }
+.welcome-line.is-good span { background: var(--good-soft); color: var(--good); }
+.welcome-line.is-warn span { background: var(--warn-soft); color: var(--warn); }
+.welcome-copy { display: grid; gap: .4rem; }
+.welcome-copy textarea { width: 100%; font: inherit; font-size: .85rem; }

@@ -592,11 +592,23 @@ async function hire(data, reload) {
       h('label.tickline',
         h('input', { type: 'checkbox', name: 'onRota', checked: true }),
         h('span', 'They go on the rota')),
-      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+      h('p.muted', { style: { fontSize: '.82rem' } },
         'Untick both for somebody who is only ever paid: a director, a consultant on a '
         + 'retainer. Everything about attendance then stops applying to them.'),
+
+      h('h3.hire-welcome-head', 'Welcome them'),
+      h('p.muted', { style: { fontSize: '.82rem', marginTop: 0 } },
+        'Their first week starts as soon as they are on the books.'),
+      h('label.tickline',
+        h('input', { type: 'checkbox', name: 'sendLink', checked: true }),
+        h('span', `Send a link for their details${person.email || person.phone ? ` to ${[person.email, person.phone].filter(Boolean).join(' and ')}` : ''}`)),
+      h('label.tickline',
+        h('input', { type: 'checkbox', name: 'login', checked: Boolean(person.email) }),
+        h('span', person.email ? `Give them a login, invited at ${person.email}` : 'Give them a login (needs an email address)')),
     ),
     onSubmit: async (form) => api.recHire(person.id, {
+      sendLink: form.get('sendLink') === 'on',
+      login: form.get('login') === 'on',
       employeeNo: form.get('employeeNo'),
       name: form.get('name'),
       department: form.get('department'),
@@ -609,11 +621,45 @@ async function hire(data, reload) {
   if (!done) return;
 
   toast(`${person.name} is on the books.`, 'good');
-  if (confirmAction('Open their record now to send the contract and the details form?')) {
+  await welcomeSummary(person.name, done.welcome ?? {});
+  if (confirmAction('Open their record now to issue their contract?')) {
     navigate('person', { id: done.staffId });
     return;
   }
   await reload();
+}
+
+/** What the welcome did, and anything it could not, with the link to copy. */
+export function welcomeSummary(name, w) {
+  const first = name.split(' ')[0];
+  const sentTo = [w.link?.delivered?.emailed ? w.link.delivered.email : null,
+    w.link?.delivered?.texted ? w.link.delivered.phone : null].filter(Boolean);
+  const lines = [
+    w.started ? ['good', `${first}'s first week has started`] : null,
+    w.link ? (sentTo.length
+      ? ['good', `Details link sent to ${sentTo.join(' and ')}`]
+      : ['warn', 'Details link made but not sent. Copy it below and send it yourself.']) : null,
+    w.login ? (w.login.sent
+      ? ['good', `Login invitation sent to ${w.login.email}`]
+      : ['warn', `No login invitation: ${w.login.whyNot}`]) : null,
+  ].filter(Boolean);
+  const others = (w.notDone ?? []).filter((n) => !/^Details link not sent|^Login:/.test(n));
+  return formDialog({
+    title: `${first} is welcomed`,
+    submitLabel: 'Done',
+    body: h('div.welcome-sum',
+      lines.map(([tone, text]) => h(`p.welcome-line.is-${tone}`, h('span', tone === 'good' ? '✓' : '!'), text)),
+      others.map((n) => h('p.welcome-line.is-warn', h('span', '!'), n)),
+      w.link && !sentTo.length
+        ? h('div.welcome-copy',
+          h('textarea', { readonly: true, rows: 4 }, w.link.message),
+          h('button.btn-sm', {
+            type: 'button',
+            onclick: async () => { await navigator.clipboard?.writeText(w.link.message).catch(() => {}); toast('Copied.', 'good'); },
+          }, 'Copy the message'))
+        : null),
+    onSubmit: async () => true,
+  });
 }
 
 // ---------------------------------------------------------------------------

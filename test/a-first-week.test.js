@@ -7,6 +7,7 @@ import {
   isDone, isFor, nextForThem, ownerOf, progressOf, sourceOf, stepsFor, whoFor,
 } from '../src/lib/onboarding.js';
 import { DEFAULT_STEPS, STEP_CODES } from '../src/lib/onboarding-content.js';
+import { requiredDocumentsFor } from '../src/lib/ghana-templates.js';
 import {
   beginFor, finishOnboarding, installStandard, landsOnOnboarding, myOnboarding,
   onboardingFor, onboardings, saveStep, startOnboarding, tickStep,
@@ -214,6 +215,41 @@ test('a signed contract ticks its own step, and an unsigned one does not', async
 
   raw.prepare("UPDATE hr_contract SET status = 'signed' WHERE staff_id = 1").run();
   assert.equal(contractStep(await read(await onboardingFor(ctx(db, asOffice()), 1))).done, true);
+});
+
+test('a signed data-consent form is not a signed contract', async () => {
+  const { raw, db } = setup();
+  await installStandard(ctx(db, asOffice(), {}));
+  await startOnboarding(ctx(db, asOffice(), {}), 1);
+  const contractStep = (out) => out.steps.find((s) => s.title.includes('sign your contract'));
+
+  raw.prepare(
+    `INSERT INTO hr_contract (staff_id, title, body, body_hash, status, satisfies)
+     VALUES (1, 'Data consent', 'words', 'h', 'signed', 'data_consent')`,
+  ).run();
+  assert.equal(contractStep(await read(await onboardingFor(ctx(db, asOffice()), 1))).done, false);
+});
+
+test('a file nobody has looked at, or one turned down, is not a document held', async () => {
+  const { raw, db } = setup();
+  await installStandard(ctx(db, asOffice(), {}));
+  await startOnboarding(ctx(db, asOffice(), {}), 1);
+  const docsStep = (out) => out.steps.find((s) => s.title === 'Get your documents on file');
+  const person = raw.prepare('SELECT * FROM att_staff WHERE id = 1').get();
+
+  for (const doc of requiredDocumentsFor(person, null)) {
+    raw.prepare(
+      `INSERT INTO hr_document (staff_id, kind, title, filename, mime, bytes, content, status)
+       VALUES (1, ?, ?, 'f.jpg', 'image/jpeg', 1, x'00', 'pending')`,
+    ).run(doc.code, doc.label ?? doc.code);
+  }
+  assert.equal(docsStep(await read(await onboardingFor(ctx(db, asOffice()), 1))).done, false, 'sent in, not looked at');
+
+  raw.prepare("UPDATE hr_document SET status = 'rejected' WHERE staff_id = 1").run();
+  assert.equal(docsStep(await read(await onboardingFor(ctx(db, asOffice()), 1))).done, false, 'turned down');
+
+  raw.prepare("UPDATE hr_document SET status = 'filed' WHERE staff_id = 1").run();
+  assert.equal(docsStep(await read(await onboardingFor(ctx(db, asOffice()), 1))).done, true, 'filed');
 });
 
 test('a step aimed at the kitchen is not on a receptionist’s list', async () => {

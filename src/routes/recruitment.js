@@ -1,3 +1,4 @@
+import { welcomeNewStarter } from './new-starter.js';
 import { siteOrigin } from '../lib/site.js';
 import {
   badRequest, bool, forbidden, int, json, notFound, readJson, str,
@@ -2540,6 +2541,19 @@ export async function hire(ctx, id) {
   // Their time in the diary is finished with, and somebody else may want it.
   await releaseSlots(ctx.db, row.id, actorOf(ctx));
 
+  // And their welcome, in one go: the first week started, a link for their
+  // details (and contract, if one was chosen) sent to their phone and email,
+  // and a login. Each is optional, and anything that could not be done is
+  // said rather than skipped. The first week used to start only from the
+  // setup screen, so everybody hired through recruitment arrived with none.
+  const welcome = await welcomeNewStarter(ctx, staff.id, {
+    start: true,
+    sendLink: bool(body.sendLink, true),
+    contractTemplateId: body.contractTemplateId ? Number(body.contractTemplateId) : null,
+    values: body.values && typeof body.values === 'object' ? body.values : {},
+    login: bool(body.login, true),
+  }).catch((err) => ({ notDone: [`Welcome not finished: ${err.message}`] }));
+
   // And whoever keeps the records is told, because the next three things that
   // have to happen — the contract, the details form, the terminal — are all
   // theirs.
@@ -2600,6 +2614,7 @@ export async function hire(ctx, id) {
     hiredOn,
     filesMoved: moved,
     claimedPunches: claimed.claimed,
+    welcome,
   });
 }
 

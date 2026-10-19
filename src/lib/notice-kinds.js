@@ -517,6 +517,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'people.link',
+    group: 'people',
+    label: 'A link to fill in details or sign',
+    who: 'A new starter, or whoever a link is for',
+    when: 'The office sends a details or contract link, and as a reminder until it is done',
+    ways: ['email', 'text'],
+  },
+  {
     key: 'recruitment.hired',
     group: 'people',
     label: 'Somebody has been taken on',

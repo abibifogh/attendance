@@ -7,6 +7,7 @@ import { field, formDialog } from './att-shared.js';
 import { control, listEditor } from '../fields.js';
 import { EVENTS, STATUS } from './contract.js';
 import { renderAttStaff } from './att-staff.js';
+import { welcomeSummary } from './rec-candidate.js';
 
 /**
  * One person's file.
@@ -86,6 +87,20 @@ export async function renderPerson(params) {
               } catch (err) { toast(err.message || 'That did not work.', 'bad'); }
             },
           }, 'Start a first week')
+          : null,
+        data.canManage
+          ? h('button.btn', {
+            title: 'Start their first week, send a details link by email and text, and invite them to a login',
+            onclick: async () => {
+              if (!window.confirm(`Welcome ${data.person.name}? HIVE starts their first week, sends a link `
+                + 'for their details by email and text, and invites them to a login.')) return;
+              try {
+                const out = await api.hrWelcome(data.person.id, {});
+                await welcomeSummary(data.person.name, out);
+                await reload();
+              } catch (err) { toast(err.message || 'That did not work.', 'bad'); }
+            },
+          }, 'Welcome them')
           : null,
         data.canManage
           ? h('button.btn.btn-primary', { onclick: () => sendLink(data, reload) }, 'Send them a link')
@@ -1088,6 +1103,16 @@ async function sendLink(data, reload) {
         type: 'text', name: 'message', maxlength: 400,
         placeholder: 'Please do this before Friday',
       })),
+
+      // HIVE sends it itself where it can, and reminds them until it is done.
+      h('div.field',
+        h('span', 'Send it'),
+        h('label.tickline',
+          h('input', { type: 'checkbox', name: 'sendEmail', checked: Boolean(data.profile?.personal_email) }),
+          h('span', data.profile?.personal_email ? `By email to ${data.profile.personal_email}` : 'By email (no address on their record)')),
+        h('label.tickline',
+          h('input', { type: 'checkbox', name: 'sendText', checked: Boolean(data.profile?.personal_phone) }),
+          h('span', data.profile?.personal_phone ? `By text to ${data.profile.personal_phone}` : 'By text (no phone on their record)'))),
     ),
     onSubmit: async (form) => api.hrCreateInvite(data.person.id, {
       wantsDetails: form.get('wantsDetails') === 'yes',
@@ -1095,6 +1120,8 @@ async function sendLink(data, reload) {
       days: Number(form.get('days')),
       pin: form.get('pin'),
       message: form.get('message'),
+      sendEmail: form.get('sendEmail') === 'on',
+      sendText: form.get('sendText') === 'on',
     }),
   });
 
@@ -1110,10 +1137,20 @@ async function sendLink(data, reload) {
  * a stolen copy of the database useless. Losing one costs ten seconds.
  */
 async function showLink(result) {
+  const d = result.delivered ?? {};
+  const sentTo = [d.emailed ? d.email : null, d.texted ? d.phone : null].filter(Boolean);
   await formDialog({
-    title: 'The link — copy it now',
+    title: sentTo.length ? 'Sent' : 'The link — copy it now',
     submitLabel: 'Done',
     body: h('div',
+      sentTo.length
+        ? h('div.alert.good', h('span.alert-icon', '✓'), h('div',
+          h('div.alert-title', `Sent to ${sentTo.join(' and ')}`),
+          h('div.alert-detail', 'HIVE reminds them until it is done. You can still copy it below.')))
+        : null,
+      (d.whyNot ?? []).length
+        ? h('div.alert.warn', h('span.alert-icon', '!'), h('div', h('div.alert-detail', d.whyNot.join('. '))))
+        : null,
       h('div.alert.warn',
         h('span.alert-icon', '⚠️'),
         h('div',

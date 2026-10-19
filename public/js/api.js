@@ -557,6 +557,7 @@ export const api = {
   hrDeleteDocument: (id) => request(`/api/hr/documents/${id}`, { method: 'DELETE' }),
 
   hrCreateInvite: (id, body) => request(`/api/hr/people/${id}/invites`, { method: 'POST', body }),
+  hrWelcome: (id, body) => request(`/api/hr/people/${id}/welcome`, { method: 'POST', body }),
   hrRevokeInvite: (id) => request(`/api/hr/invites/${id}/revoke`, { method: 'POST' }),
 
   hrSubmissions: () => request('/api/hr/submissions'),

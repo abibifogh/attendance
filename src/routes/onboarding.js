@@ -69,6 +69,13 @@ const tickedBy = async (db, staffId) => new Set(
  * checklist of sixteen steps that asked the contracts table four times would
  * be four times slower for no reason.
  */
+/** A signed contract of employment, as opposed to a policy or a form. */
+export function isEmploymentContract(c) {
+  if (c.status !== 'signed') return false;
+  if (c.satisfies) return c.satisfies === 'contract';
+  return !c.template_kind || c.template_kind === 'contract';
+}
+
 async function settledFor(db, staff) {
   const id = staff.id;
 
@@ -76,9 +83,14 @@ async function settledFor(db, staff) {
     db.prepare('SELECT * FROM hr_profile WHERE staff_id = ?').bind(id).first().catch(() => null),
     db.prepare("SELECT COUNT(*) n FROM hr_submission WHERE staff_id = ? AND status = 'accepted'")
       .bind(id).first().catch(() => null),
-    db.prepare('SELECT status, satisfies FROM hr_contract WHERE staff_id = ?')
-      .bind(id).all().catch(() => ({ results: [] })),
-    db.prepare('SELECT kind, expires_on FROM hr_document WHERE staff_id = ?')
+    db.prepare(
+      `SELECT c.status, c.satisfies, c.employer_at, t.kind AS template_kind
+         FROM hr_contract c LEFT JOIN hr_template t ON t.id = c.template_id
+        WHERE c.staff_id = ?`,
+    ).bind(id).all().catch(() => ({ results: [] })),
+    // Filed only. A file sent in and not yet looked at, or one the office
+    // turned down, is not a document held.
+    db.prepare("SELECT kind, expires_on FROM hr_document WHERE staff_id = ? AND status = 'filed'")
       .bind(id).all().catch(() => ({ results: [] })),
   ]);
 
@@ -89,9 +101,11 @@ async function settledFor(db, staff) {
   // them, or somebody in the office typed them straight onto the record, which
   // is the same thing as far as a checklist is concerned.
   const details = Number(submission?.n ?? 0) > 0
-    || Boolean(profile?.address_line && profile?.phone);
+    || Boolean(profile?.address_line && profile?.personal_phone);
 
-  const signed = contractRows.some((c) => c.status === 'signed');
+  // The contract of employment, not any paper with a signature on it. A
+  // signed data-consent form or handbook acknowledgement is not a contract.
+  const signed = contractRows.some(isEmploymentContract);
 
   const file = fileStatus(staff, profile, {
     documents: documentRows,
