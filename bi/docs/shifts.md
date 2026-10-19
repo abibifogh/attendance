@@ -5,7 +5,7 @@ from them. It lives on the **Shifts** tab.
 
 ## The screen
 
-Six tabs in a row: **Shifts, Inbox, People, Safe, Files, Settings**. The
+Five tabs in a row: **Shifts, Inbox, People, Files, Settings**. The
 Inbox tab shows how many things wait in it. The period sits beside the tabs:
 the arrows step a day, a week (Monday to Sunday) or a month at a time, and
 **Latest** jumps to the newest shifts loaded. When the journal stops inside a
@@ -58,7 +58,7 @@ shift, a small note at the end of the line says which; open it for what to do.
 - **People**: each person's shifts, cash and cards, and net drawer variance;
   then what is still with staff under To sort out in HIVE, each person's month,
   and what was settled lately.
-- **Safe**: the safe book. **Files**: the three uploads.
+- **Files**: the three uploads. The safe book is under Money › **Safe**.
 - **Settings** (admins): who sees what, who is told, the front desk (checks,
   rentals, whose ASSD login is whose), and the limits. See `docs/till.md`.
 
