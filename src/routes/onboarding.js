@@ -5,8 +5,10 @@ import { parseList } from '../lib/attendance.js';
 import { fileStatus } from '../lib/ghana-templates.js';
 import { DEFAULT_STEPS } from '../lib/onboarding-content.js';
 import {
-  SOURCES, isDone, nextForThem, ownerOf, progressOf, sourceOf, stepsFor, whoFor,
+  SOURCES, dueOn, isDone, lateSteps, nextForThem, ownerOf, progressOf, sourceOf, stepsFor, whenSaid,
+  whoFor,
 } from '../lib/onboarding.js';
+import { todayIn } from '../util/dates.js';
 
 /**
  * The first week.
@@ -155,8 +157,17 @@ async function welcomesFrom(db) {
 }
 
 /** One step, as somebody reads it. */
-const asStep = (step, state, ticks) => ({
+async function todayOf(db) {
+  const row = await db.prepare("SELECT value FROM settings WHERE key = 'timezone'").first().catch(() => null);
+  return todayIn(row?.value || 'UTC');
+}
+
+const asStep = (step, state, ticks, startDay = null, today = null) => ({
   id: step.id,
+  dueDays: step.due_days ?? null,
+  when: whenSaid(step.due_days),
+  due: dueOn(step, startDay),
+  late: Boolean(today && !isDone(step, state) && dueOn(step, startDay) && dueOn(step, startDay) < today),
   code: step.code,
   title: step.title,
   detail: step.detail ?? null,
@@ -213,6 +224,7 @@ export async function myOnboarding(ctx) {
 
   const progress = progressOf(steps, staff, at);
   const next = nextForThem(steps, staff, at);
+  const today = await todayOf(ctx.db);
 
   // Stamped the moment the last thing is done, so the app stops landing them
   // here and the office stops counting them as new. Written once: the guard on
@@ -232,9 +244,9 @@ export async function myOnboarding(ctx) {
     finishedAt: state.finished_at ?? (progress.complete ? 'just now' : null),
     welcomes: await welcomesFrom(ctx.db),
     property: await settingOf(ctx.db, 'property_name'),
-    steps: stepsFor(steps, staff).map((s) => asStep(s, at, ticks)),
+    steps: stepsFor(steps, staff).map((s) => asStep(s, at, ticks, staff.hired_on, today)),
     progress: { of: progress.of, done: progress.done, percent: progress.percent },
-    next: next ? { id: next.id, title: next.title, source: sourceOf(next) } : null,
+    next: next ? { id: next.id, title: next.title, source: sourceOf(next), due: dueOn(next, staff.hired_on) } : null,
   });
 }
 
@@ -254,6 +266,7 @@ export async function onboardings(ctx) {
   ).all().catch(() => ({ results: [] }))).results ?? [];
 
   const steps = await allSteps(ctx.db);
+  const today = await todayOf(ctx.db);
 
   const out = [];
   for (const row of rows) {
@@ -263,6 +276,13 @@ export async function onboardings(ctx) {
     const ticked = await tickedBy(ctx.db, row.staff_id);
     const settled = await settledFor(ctx.db, staff);
     const progress = progressOf(steps, staff, { ticked, settled });
+    // What is late, against their start date. Somebody whose first week has
+    // closed is late for nothing.
+    const late = row.finished_at ? [] : lateSteps(progress.waiting, row.hired_on, today);
+    const upcoming = row.finished_at ? null : progress.waiting
+      .map((s) => ({ title: s.title, due: dueOn(s, row.hired_on) }))
+      .filter((x) => x.due && x.due >= today)
+      .sort((a, b) => a.due.localeCompare(b.due))[0] ?? null;
 
     out.push({
       staffId: row.staff_id,
@@ -278,8 +298,13 @@ export async function onboardings(ctx) {
       done: progress.done,
       percent: progress.percent,
       waiting: progress.waiting.map((s) => s.title),
+      late: late.map((x) => ({ title: x.step.title, due: x.due, days: x.days, owner: ownerOf(x.step) })),
+      lateDays: late.length ? Math.max(...late.map((x) => x.days)) : 0,
+      next: upcoming,
     });
   }
+  // Whoever is furthest behind first, then the rest as before.
+  out.sort((a, b) => Number(Boolean(a.finishedAt)) - Number(Boolean(b.finishedAt)) || b.lateDays - a.lateDays);
 
   return json({
     on: await isOn(ctx.db),
@@ -296,6 +321,8 @@ export async function onboardings(ctx) {
       departments: parseList(s.departments),
       tags: parseList(s.tags),
       order: s.sort_order,
+      dueDays: s.due_days ?? null,
+      when: whenSaid(s.due_days),
       active: Boolean(s.active),
     })),
     sources: SOURCES,
@@ -323,15 +350,16 @@ export async function onboardingFor(ctx, id) {
   const settled = await settledFor(ctx.db, staff);
   const at = { ticked: new Set(ticks.keys()), settled };
   const progress = progressOf(steps, staff, at);
+  const today = await todayOf(ctx.db);
 
   return json({
     on: await isOn(ctx.db),
     mayManage: can(ctx, 'hr_manage'),
-    staff: { id: staff.id, name: staff.name, department: staff.department, jobTitle: staff.job_title },
+    staff: { id: staff.id, name: staff.name, department: staff.department, jobTitle: staff.job_title, hiredOn: staff.hired_on },
     started: Boolean(state),
     startedAt: state?.started_at ?? null,
     finishedAt: state?.finished_at ?? null,
-    steps: stepsFor(steps, staff).map((s) => asStep(s, at, ticks)),
+    steps: stepsFor(steps, staff).map((s) => asStep(s, at, ticks, staff.hired_on, today)),
     progress: { of: progress.of, done: progress.done, percent: progress.percent },
   });
 }
@@ -440,16 +468,19 @@ export async function saveStep(ctx) {
   const active = bool(body.active, true) ? 1 : 0;
   const departments = JSON.stringify(parseList(body.departments));
   const tags = JSON.stringify(parseList(body.tags));
+  // When it is due, in days from the start date. Blank is no date.
+  const dueDays = body.dueDays === '' || body.dueDays == null
+    ? null : int(body.dueDays, 'When it is due', { min: -30, max: 365 });
 
   if (body.id) {
     const stepId = int(body.id, 'Step', { min: 1 });
     await ctx.db.prepare(
       `UPDATE ob_step SET title = ?2, detail = ?3, source = ?4, owner = ?5, sort_order = ?6,
               active = ?7, departments = ?8, tags = ?9,
-              updated_at = datetime('now'), updated_by = ?10
+              updated_at = datetime('now'), updated_by = ?10, due_days = ?11
          WHERE id = ?1`,
     ).bind(stepId, title, detail || null, source, owner, order, active, departments, tags,
-      actorOf(ctx)).run();
+      actorOf(ctx), dueDays).run();
     await audit(ctx, 'onboarding.step_save', stepId, { title });
     return json({ ok: true, id: stepId });
   }
@@ -459,10 +490,10 @@ export async function saveStep(ctx) {
   const code = `own_${Date.now().toString(36)}`;
   const made = await ctx.db.prepare(
     `INSERT INTO ob_step (code, title, detail, source, owner, sort_order, active,
-                          departments, tags, updated_by)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) RETURNING id`,
+                          departments, tags, updated_by, due_days)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) RETURNING id`,
   ).bind(code, title, detail || null, source, owner, order, active, departments, tags,
-    actorOf(ctx)).first();
+    actorOf(ctx), dueDays).first();
 
   await audit(ctx, 'onboarding.step_new', made.id, { title });
   return json({ ok: true, id: made.id });
@@ -487,12 +518,12 @@ export async function installStandard(ctx) {
     if (held.has(step.code)) continue;
     await ctx.db.prepare(
       `INSERT INTO ob_step (code, title, detail, source, owner, departments, tags,
-                            sort_order, updated_by)
-       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)`,
+                            sort_order, updated_by, due_days)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)`,
     ).bind(
       step.code, step.title, step.detail, step.source ?? 'manual', step.owner ?? 'office',
       JSON.stringify(step.departments ?? []), JSON.stringify(step.tags ?? []),
-      step.sort_order ?? 100, actorOf(ctx),
+      step.sort_order ?? 100, actorOf(ctx), step.due_days ?? null,
     ).run();
     added += 1;
   }
@@ -516,6 +547,35 @@ async function audit(ctx, action, entity, detail) {
  * onboarding is switched off, and silent on failure, because failing to add a
  * checklist must never be the reason somebody could not be added to the rota.
  */
+/**
+ * Everybody whose first week has steps past their day, for the daily chaser:
+ * each person, and which late steps are theirs and which are the office's.
+ */
+export async function lateFirstWeeks(db, today) {
+  if (!await isOn(db)) return [];
+  const rows = (await db.prepare(
+    `SELECT s.*, p.id AS staff_id, p.name, p.department, p.tags, p.hired_on, p.active
+       FROM ob_state s JOIN att_staff p ON p.id = s.staff_id
+      WHERE s.finished_at IS NULL AND p.active = 1`,
+  ).all().catch(() => ({ results: [] }))).results ?? [];
+  const steps = await allSteps(db);
+  const out = [];
+  for (const row of rows) {
+    const staff = { id: row.staff_id, name: row.name, department: row.department, tags: row.tags };
+    const progress = progressOf(steps, staff, { ticked: await tickedBy(db, row.staff_id), settled: await settledFor(db, staff) });
+    const late = lateSteps(progress.waiting, row.hired_on, today);
+    if (!late.length) continue;
+    out.push({
+      staffId: row.staff_id,
+      name: row.name,
+      chasedOn: row.chased_on,
+      theirs: late.filter((x) => ownerOf(x.step) === 'staff' || sourceOf(x.step) !== 'manual'),
+      office: late.filter((x) => ownerOf(x.step) !== 'staff' && sourceOf(x.step) === 'manual'),
+    });
+  }
+  return out;
+}
+
 export async function beginFor(db, staffId, by) {
   if (!staffId) return;
   if (!await isOn(db)) return;

@@ -10,10 +10,16 @@
  * Edit one, and loading the set again never touches it: only what is missing
  * is added, matched on the code it came in under.
  */
+/**
+ * When each step is due, as days from the start date: -1 the day before they
+ * start, 0 their first day, 5 the end of their first week, 30 the end of their
+ * first month. Read as `due_days` on each step below.
+ */
 export const DEFAULT_STEPS = [
   // ------------------------------------------------------------ before day one
   {
     code: 'details',
+    due_days: -1,
     title: 'Send us your details',
     detail: 'Your full name as it appears on your ID, your address, your phone number, '
       + 'your next of kin, and the bank or mobile money account your pay goes to. '
@@ -24,6 +30,7 @@ export const DEFAULT_STEPS = [
   },
   {
     code: 'documents',
+    due_days: 0,
     title: 'Get your documents on file',
     detail: 'Your Ghana Card or passport, your SSNIT number, a passport photograph, and '
       + 'anything else your job needs. Photographs of them taken on a phone are fine, '
@@ -34,6 +41,7 @@ export const DEFAULT_STEPS = [
   },
   {
     code: 'contract',
+    due_days: -1,
     title: 'Read and sign your contract',
     detail: 'The office issues it and you sign it on your phone. Read it before you do, '
       + 'and ask about anything in it you are not sure of. Nobody here would rather '
@@ -46,6 +54,7 @@ export const DEFAULT_STEPS = [
   // -------------------------------------------------------------- the first day
   {
     code: 'welcome_meeting',
+    due_days: 0,
     title: 'Sit down with your manager',
     detail: 'What the job is, who you report to, what a good shift looks like, and what '
       + 'the property expects of you in your first month.',
@@ -55,6 +64,7 @@ export const DEFAULT_STEPS = [
   },
   {
     code: 'tour',
+    due_days: 0,
     title: 'Walk the property',
     detail: 'Front and back of house, the staff entrance, where to change, the lockers, '
       + 'where breaks are taken, and the departments you will be working alongside.',
@@ -64,6 +74,7 @@ export const DEFAULT_STEPS = [
   },
   {
     code: 'fire_safety',
+    due_days: 1,
     title: 'Fire exits, extinguishers and the assembly point',
     detail: 'Where the exits are from every floor you will work on, where the '
       + 'extinguishers and the alarm points are, what the alarm sounds like, and where '
@@ -74,6 +85,7 @@ export const DEFAULT_STEPS = [
   },
   {
     code: 'team',
+    due_days: 0,
     title: 'Meet the department',
     detail: 'Introduced by name to the people on shift, and to whoever runs the '
       + 'department on the floor rather than only to whoever hired you.',
@@ -85,6 +97,7 @@ export const DEFAULT_STEPS = [
   // ------------------------------------------------------------- the equipment
   {
     code: 'terminal',
+    due_days: 0,
     title: 'Get your face on the clocking terminal',
     detail: 'Enrolled on the terminal at the staff entrance, and shown how to clock in '
       + 'and out. Until this is done nothing records your hours, so it is done on the '
@@ -95,6 +108,7 @@ export const DEFAULT_STEPS = [
   },
   {
     code: 'app',
+    due_days: 0,
     title: 'Put HIVE on your phone',
     detail: 'Your rota, your hours, your payslips and your leave, on the phone in your '
       + 'pocket. Add it to your home screen and turn notifications on, so a change to '
@@ -105,6 +119,7 @@ export const DEFAULT_STEPS = [
   },
   {
     code: 'uniform',
+    due_days: 0,
     title: 'Collect your uniform and name badge',
     detail: 'Issued, fitted and signed for. What you are given, and what condition it is '
       + 'to come back in when you leave, is written on your record.',
@@ -114,6 +129,7 @@ export const DEFAULT_STEPS = [
   },
   {
     code: 'keys',
+    due_days: 0,
     title: 'Keys, locker and access',
     detail: 'Whatever your job needs you to be able to open, and the rule that goes with '
       + 'it: keys stay on the property and are handed back at the end of every shift.',
@@ -125,6 +141,7 @@ export const DEFAULT_STEPS = [
   // -------------------------------------------------------------- the first week
   {
     code: 'handbook',
+    due_days: 5,
     title: 'Read the handbook and sign what it asks',
     detail: 'How we look after guests, what we expect of each other, what happens when '
       + 'something goes wrong, and how to raise a problem. Some chapters ask you to tick '
@@ -135,6 +152,7 @@ export const DEFAULT_STEPS = [
   },
   {
     code: 'food_hygiene',
+    due_days: 5,
     title: 'Food hygiene and your health certificate',
     detail: 'The Public Health Act, 2012 (Act 851) requires a valid health certificate '
       + 'from anybody who handles food, renewed every year. The property arranges the '
@@ -146,6 +164,7 @@ export const DEFAULT_STEPS = [
   },
   {
     code: 'shadow',
+    due_days: 5,
     title: 'Work a shift alongside somebody who knows it',
     detail: 'A whole shift with an experienced colleague before you are rostered on your '
       + 'own. What the job is really like at half past seven on a Saturday is not '
@@ -156,6 +175,7 @@ export const DEFAULT_STEPS = [
   },
   {
     code: 'pay_explained',
+    due_days: 30,
     title: 'How your pay works',
     detail: 'When it is paid, what comes off it and why: income tax under the '
       + 'pay-as-you-earn system and your SSNIT contribution. Where to find your payslip '
@@ -168,6 +188,7 @@ export const DEFAULT_STEPS = [
   // -------------------------------------------------------------- and afterwards
   {
     code: 'first_month',
+    due_days: 30,
     title: 'Sit down again after a month',
     detail: 'How it is going, from both sides. What is working, what is not, and what '
       + 'either of you would change. Held before the probation review rather than '

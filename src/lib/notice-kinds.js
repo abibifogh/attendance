@@ -605,6 +605,22 @@ export const KINDS = [
     ways: ['push'],
   },
   {
+    key: 'onboarding.overdue_mine',
+    group: 'people',
+    label: 'Something from your first week is overdue',
+    who: 'A new starter',
+    when: 'Every other day while a step of theirs is past its day',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'onboarding.overdue',
+    group: 'people',
+    label: 'A new starter is behind',
+    who: 'Whoever manages records',
+    when: 'Every other day while somebody\u2019s first-week steps are past their day',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'people.link',
     group: 'people',
     label: 'A link to fill in details or sign',

@@ -4,8 +4,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  isDone, isFor, nextForThem, ownerOf, progressOf, sourceOf, stepsFor, whoFor,
+  dueOn, isDone, isFor, lateSteps, nextForThem, ownerOf, progressOf, sourceOf, stepsFor, whenSaid, whoFor,
 } from '../src/lib/onboarding.js';
+import { watchReminders } from '../src/lib/reminders.js';
 import { DEFAULT_STEPS, STEP_CODES } from '../src/lib/onboarding-content.js';
 import { requiredDocumentsFor } from '../src/lib/ghana-templates.js';
 import {
@@ -415,4 +416,57 @@ test('the screen and the setup switch are wired up', () => {
 
   const sql = readFileSync('migrations/0110_the_first_week.sql', 'utf8');
   assert.match(sql, /'onboarding_on', '0'/, 'it has to arrive switched off');
+});
+
+
+// ---------------------------------------------------------------------------
+// When each step is due
+// ---------------------------------------------------------------------------
+
+test('a step is due a number of days from the start date', () => {
+  assert.equal(dueOn({ due_days: -1 }, '2026-10-05'), '2026-10-04');
+  assert.equal(dueOn({ due_days: 5 }, '2026-10-05'), '2026-10-10');
+  assert.equal(dueOn({ due_days: null }, '2026-10-05'), null);
+  assert.equal(whenSaid(-1), 'The day before they start');
+  assert.equal(whenSaid(0), 'Their first day');
+  assert.equal(whenSaid(5), 'End of the first week');
+  assert.equal(whenSaid(30), 'End of the first month');
+});
+
+test('what is late is what is waiting and past its day, oldest first', () => {
+  const waiting = [{ title: 'Tour', due_days: 0 }, { title: 'Pay', due_days: 30 }, { title: 'Contract', due_days: -1 }];
+  const late = lateSteps(waiting, '2026-10-05', '2026-10-08');
+  assert.deepEqual(late.map((x) => [x.step.title, x.days]), [['Contract', 4], ['Tour', 3]]);
+});
+
+test('the standard steps carry dates, and the desk says who is behind', async () => {
+  const { raw, db } = setup();
+  await installStandard(ctx(db, asOffice(), {}));
+  raw.prepare("UPDATE att_staff SET hired_on = date('now', '-10 days') WHERE id = 1").run();
+  await startOnboarding(ctx(db, asOffice(), {}), 1);
+
+  const out = await read(await onboardings(ctx(db, asOffice())));
+  const ama = out.people.find((p) => p.staffId === 1);
+  assert.ok(ama.late.length > 0, 'ten days in, the first-day steps are late');
+  assert.ok(ama.lateDays >= 10);
+  assert.ok(out.steps.every((s) => s.dueDays != null), 'every standard step has a day');
+
+  const mine = await read(await onboardingFor(ctx(db, asOffice()), 1));
+  assert.ok(mine.steps.some((s) => s.late));
+});
+
+test('late steps are chased every other day: the starter and the office', async (t) => {
+  const { raw, db } = setup();
+  await installStandard(ctx(db, asOffice(), {}));
+  raw.prepare("UPDATE att_staff SET hired_on = date('now', '-10 days') WHERE id = 1").run();
+  await startOnboarding(ctx(db, asOffice(), {}), 1);
+  const today = new Date().toISOString().slice(0, 10);
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse(`${today}T10:00:00Z`) });
+
+  const first = await watchReminders(db, { timezone: 'UTC' });
+  assert.equal(first.firstWeeks, 1);
+  assert.ok(raw.prepare("SELECT 1 FROM app_notices WHERE kind = 'onboarding.overdue_mine' AND user_id = 101").get());
+  assert.ok(raw.prepare("SELECT 1 FROM app_notices WHERE kind = 'onboarding.overdue' AND audience = 'hr_manage'").get());
+
+  assert.equal((await watchReminders(db, { timezone: 'UTC' })).firstWeeks, 0, 'not again today');
 });

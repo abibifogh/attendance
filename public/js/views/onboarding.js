@@ -33,6 +33,12 @@ const GO = {
 };
 
 /** Where a step sends them, which is not the same place before and after. */
+/** "Tue 6 Oct". */
+function shortDate(day) {
+  if (!day) return '';
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
 function goFor(step) {
   const go = GO[step.source];
   if (!go) return null;
@@ -96,7 +102,10 @@ export async function renderOnboarding() {
             ? h('p.muted.ob-step-how', readableDate(step.doneAt)
               ? `Done, ${readableDate(step.doneAt)}`
               : 'Done')
-            : h('p.muted.ob-step-how', howItIsAnswered(step))),
+            : h('p.muted.ob-step-how', howItIsAnswered(step)),
+          !step.done && step.due
+            ? h(`p.ob-step-due${step.late ? '.is-late' : ''}`, step.late ? `Overdue: was due ${shortDate(step.due)}` : `Due ${shortDate(step.due)}`)
+            : null),
         go
           ? h('button.btn-sm', { type: 'button', onclick: () => navigate(go.to) }, go.label)
           : null);
@@ -166,7 +175,11 @@ export async function renderOnboardingDesk() {
     h('div.ob-person-text',
       h('div.ob-person-name', p.name,
         p.finishedAt ? h('span.pill.good', 'Settled in') : null,
+        p.late?.length ? h('span.pill.bad', `${p.late.length} overdue · ${p.lateDays} day${p.lateDays === 1 ? '' : 's'}`) : null,
         !p.active ? h('span.pill', 'Left') : null),
+      p.late?.length
+        ? h('div.ob-person-late', `Overdue: ${p.late.slice(0, 3).map((x) => x.title).join(', ')}${p.late.length > 3 ? ` and ${p.late.length - 3} more` : ''}`)
+        : p.next && !p.finishedAt ? h('div.muted.ob-person-sub', `Next: ${p.next.title}, due ${shortDate(p.next.due)}`) : null,
       h('div.muted.ob-person-sub', [
         p.jobTitle, p.department, p.hiredOn ? `started ${p.hiredOn}` : null,
       ].filter(Boolean).join(' · ')),
@@ -178,7 +191,7 @@ export async function renderOnboardingDesk() {
         h('div',
           h('h1', 'First weeks'),
           h('div.sub', openOnes.length
-            ? `${openOnes.length} in progress`
+            ? `${openOnes.length} in progress${openOnes.filter((p) => p.late?.length).length ? ` · ${openOnes.filter((p) => p.late?.length).length} behind` : ''}`
             : 'Nobody is being onboarded')),
         data.mayManage
           ? h('div.btn-row',
@@ -234,6 +247,7 @@ export async function renderOnboardingDesk() {
                   ? (s.owner === 'staff' ? 'Waiting on them' : 'Done by the office')
                   : data.sources.find((x) => x.key === s.source)?.label,
                 s.who,
+                s.when,
               ].filter(Boolean).join(' · '))),
             data.mayManage
               ? h('div.btn-row',
@@ -300,7 +314,10 @@ async function openPerson(staffId, reload) {
           ? [readableDate(s.doneAt), s.doneBy].filter(Boolean).join(' · ')
           : (s.source === 'manual'
             ? (s.owner === 'staff' ? 'Waiting on them' : 'Waiting on the office')
-            : howItIsAnswered(s)))),
+            : howItIsAnswered(s))),
+        !s.done && s.due
+          ? h(`p.ob-step-due${s.late ? '.is-late' : ''}`, s.late ? `Overdue: was due ${shortDate(s.due)}` : `Due ${shortDate(s.due)}`)
+          : null),
     ))),
   );
   draw();
@@ -339,6 +356,15 @@ async function stepDialog(step, model) {
   const tags = h('input', {
     type: 'text', value: (step?.tags ?? []).join(', '), placeholder: 'A tag on the staff record',
   });
+  const DUE = [['', 'No date'], ['-1', 'The day before they start'], ['0', 'Their first day'],
+    ['1', 'Their second day'], ['5', 'End of the first week'], ['14', 'Within two weeks'],
+    ['30', 'End of the first month'], ['90', 'End of three months']];
+  const due = h('select', DUE.map(([v, label]) => h('option', {
+    value: v, selected: String(step?.dueDays ?? '') === v,
+  }, label)));
+  if (step?.dueDays != null && !DUE.some(([v]) => v === String(step.dueDays))) {
+    due.append(h('option', { value: String(step.dueDays), selected: true }, step.when || `${step.dueDays} days`));
+  }
 
   const split = (input) => input.value.split(',').map((s) => s.trim()).filter(Boolean);
   const said = h('p.muted', { style: { fontSize: '.85rem' } });
@@ -362,6 +388,7 @@ async function stepDialog(step, model) {
       h('div.form-row',
         field('Whose job it is', owner, 'Only the office may tick, either way'),
         field('On or off', active)),
+      field('When it is due', due, 'Counted from their start date. Late steps are flagged and chased'),
       h('div.form-row',
         field('Only these departments', departments),
         field('Only these tags', tags))),
@@ -375,6 +402,7 @@ async function stepDialog(step, model) {
       active: active.value === 'yes',
       departments: split(departments),
       tags: split(tags),
+      dueDays: due.value === '' ? null : Number(due.value),
     }),
   });
 }

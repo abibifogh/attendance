@@ -7685,3 +7685,8 @@ button.lp-row:disabled { cursor: default; }
 .welcome-line.is-warn span { background: var(--warn-soft); color: var(--warn); }
 .welcome-copy { display: grid; gap: .4rem; }
 .welcome-copy textarea { width: 100%; font: inherit; font-size: .85rem; }
+
+/* First weeks: when steps are due, and who is behind. */
+.ob-step-due { margin: .15rem 0 0; font-size: .82rem; color: var(--text-dim); font-weight: 600; }
+.ob-step-due.is-late { color: var(--bad); }
+.ob-person-late { font-size: .82rem; color: var(--bad); font-weight: 600; }

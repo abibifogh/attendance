@@ -1,9 +1,10 @@
 import { createNotice } from './notices.js';
 import { outstandingFor } from './handbook.js';
-import { dow, nowIn } from '../util/dates.js';
+import { addDays, dow, nowIn } from '../util/dates.js';
 import { deliverInvite, makeInvite } from '../routes/people.js';
 import { emailSignLink, reissueLink } from './sign-reach.js';
 import { whoCanSign } from './correspondence.js';
+import { lateFirstWeeks } from '../routes/onboarding.js';
 
 /**
  * Chasing what is still waiting on somebody.
@@ -54,10 +55,66 @@ export async function watchReminders(db, { timezone = 'UTC', ctx = null } = {}) 
   const links = await chaseLinks(sys).catch((err) => { console.error('Link reminders failed', err); return 0; });
   const { reminded: letters, warned } = await chaseLetters(sys)
     .catch((err) => { console.error('Letter reminders failed', err); return { reminded: 0, warned: 0 }; });
+  const firstWeeks = await chaseFirstWeeks(sys, today)
+    .catch((err) => { console.error('First-week reminders failed', err); return 0; });
   const handbook = dow(today) === 0
     ? await chaseHandbook(sys, today).catch((err) => { console.error('Handbook reminders failed', err); return 0; })
     : 0;
-  return { links, letters, warned, handbook };
+  return { links, letters, warned, handbook, firstWeeks };
+}
+
+/**
+ * First-week steps past their day, every other day: the new starter about
+ * their own, and the office about theirs.
+ */
+async function chaseFirstWeeks(sys, today) {
+  const { db } = sys;
+  let n = 0;
+  for (const p of await lateFirstWeeks(db, today)) {
+    if (p.chasedOn && p.chasedOn > addDays(today, -2)) continue;
+    const claim = await db.prepare(
+      "UPDATE ob_state SET chased_on = ?2 WHERE staff_id = ?1 AND COALESCE(chased_on, '') = COALESCE(?3, '')",
+    ).bind(p.staffId, today, p.chasedOn ?? null).run();
+    if (!Number(claim?.meta?.changes ?? 0)) continue;
+
+    const list = (xs) => xs.slice(0, 3).map((x) => x.step.title).join(', ') + (xs.length > 3 ? ` and ${xs.length - 3} more` : '');
+    if (p.theirs.length) {
+      const login = await db.prepare('SELECT id FROM users WHERE staff_id = ? AND active = 1 LIMIT 1')
+        .bind(p.staffId).first().catch(() => null);
+      if (login) {
+        await createNotice(db, {
+          kind: 'onboarding.overdue_mine',
+          level: 'warn',
+          title: p.theirs.length === 1 ? 'Something from your first week is overdue' : `${p.theirs.length} things from your first week are overdue`,
+          body: list(p.theirs),
+          link: '#/onboarding',
+          actor: 'HIVE',
+          userId: login.id,
+          push: true,
+          email: true,
+          cc: false,
+          text: false,
+        }, sys).catch(() => {});
+      }
+    }
+    if (p.office.length || p.theirs.length) {
+      const all = [...p.office, ...p.theirs];
+      await createNotice(db, {
+        kind: 'onboarding.overdue',
+        level: 'warn',
+        title: `${p.name}: ${all.length} first-week step${all.length === 1 ? '' : 's'} overdue`,
+        body: (p.office.length ? `Yours: ${list(p.office)}. ` : '') + (p.theirs.length ? `Theirs: ${list(p.theirs)}.` : ''),
+        link: '#/onboarding-desk',
+        actor: 'HIVE',
+        audience: 'hr_manage',
+        push: true,
+        email: false,
+        text: false,
+      }, sys).catch(() => {});
+    }
+    n += 1;
+  }
+  return n;
 }
 
 /** Details and contract links HIVE sent and that are not finished. */

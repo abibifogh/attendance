@@ -144,3 +144,38 @@ export function nextForThem(steps, staff, state = {}) {
  * the printer is a first week that follows somebody into their second year.
  */
 export const isFinished = (state, progress) => Boolean(state?.finished_at) || Boolean(progress?.complete);
+
+/** "the day before", "first day", "end of first week", for a step's timing. */
+export function whenSaid(dueDays) {
+  if (dueDays == null || dueDays === '') return null;
+  const n = Number(dueDays);
+  if (n < 0) return n === -1 ? 'The day before they start' : `${-n} days before they start`;
+  if (n === 0) return 'Their first day';
+  if (n <= 6) return n === 5 ? 'End of the first week' : `Day ${n + 1}`;
+  if (n <= 31) return n >= 28 ? 'End of the first month' : `Within ${n} days`;
+  return `Within ${n} days`;
+}
+
+/** The day a step is due, from the start date, or null where it has none. */
+export function dueOn(step, startDay) {
+  if (step?.due_days == null || step.due_days === '' || !startDay) return null;
+  const d = new Date(`${String(startDay).slice(0, 10)}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() + Number(step.due_days));
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * What is late: steps still waiting whose day has passed, oldest first, with
+ * how many days late each is.
+ */
+export function lateSteps(waiting, startDay, today) {
+  return (waiting ?? [])
+    .map((s) => ({ step: s, due: dueOn(s, startDay) }))
+    .filter((x) => x.due && x.due < today)
+    .map((x) => ({
+      ...x,
+      days: Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${x.due}T12:00:00Z`)) / 86400000),
+    }))
+    .sort((a, b) => a.due.localeCompare(b.due));
+}
