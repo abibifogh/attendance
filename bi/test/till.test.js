@@ -863,7 +863,15 @@ test('envelopes moved to the safe: one line each, marked received with a count, 
     [['afternoon', '418', 3000, true], ['afternoon', '419', 2000, false], ['morning', '417', 25000, true]]);
   const ama = mine.find((l) => l.no === '417');
   assert.deepEqual([ama.by, ama.assd, ama.shiftDiff], ['Ama Test', 20000, 5000], 'her envelope says 250 where ASSD moved 200');
-  await assert.rejects(envelopes.envelopesView(env, range, SUPERVISOR), /admin/i);
+  // A supervisor: nothing until an admin gives "Envelopes received"; See to
+  // look, See and act to mark them received.
+  await assert.rejects(envelopes.envelopesView(env, range, SUPERVISOR), /not been shared/);
+  await env.DB.prepare("INSERT INTO till_access (account_id, area, level) VALUES (9, 'envelopes', 1)").run();
+  assert.equal((await envelopes.envelopesView(env, range, SUPERVISOR)).lines.length, view.lines.length);
+  await assert.rejects(envelopes.receive(env, { receivedOn: '2026-08-03', items: [{ day: '2026-08-01', slot: 'afternoon', no: '419' }] }, SUPERVISOR), /look at this, not change it/);
+  await env.DB.prepare("UPDATE till_access SET level = 2 WHERE account_id = 9 AND area = 'envelopes'").run();
+  await envelopes.receive(env, { receivedOn: '2026-08-03', items: [{ day: '2026-08-01', slot: 'afternoon', no: '419' }] }, SUPERVISOR);
+  await envelopes.undo(env, { day: '2026-08-01', slot: 'afternoon', no: '419' }, SUPERVISOR);
 
   // Received: counted short needs a reason; the rest are counted at what they say.
   const item = (no, slot, extra = {}) => ({ day: '2026-08-01', slot, no, ...extra });

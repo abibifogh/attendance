@@ -250,7 +250,9 @@ count.
 
 ### Envelopes received
 
-Money › Safe › **Envelopes received** (admins only) is the check that the
+Money › Safe › **Envelopes received** (admins, and supervisors given
+"Envelopes received" under Settings → Who sees what: See to look, See and act
+to mark them received) is the check that the
 envelopes receptionists moved to the safe actually arrived. It is separate
 from the safe book, which goes on taking every envelope as in the safe.
 

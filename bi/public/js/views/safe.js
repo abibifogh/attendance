@@ -1,6 +1,7 @@
 import { add, h, mount, money } from '../util.js';
 import { api } from '../api.js';
 import { banner } from './components.js';
+import { state } from '../app.js';
 
 /**
  * Money › Safe, two tabs. The safe book: a page runs from one count of the
@@ -19,16 +20,22 @@ const TABS = [['book', 'Safe book'], ['envelopes', 'Envelopes received']];
 const remembered = () => { try { return localStorage.getItem('insight-safe-tab') || 'book'; } catch { return 'book'; } };
 
 export async function renderSafe(root, { range }) {
+  // The safe book is the admins'. A supervisor an admin gave "Envelopes
+  // received" sees that tab alone, and marks envelopes only with Act.
+  const me = state.me?.account || {};
+  const admin = Boolean(me.isOwner || me.bootstrap || me.till?.role === 'admin');
+  const act = admin || (me.till?.access?.envelopes || 0) >= 2;
+  const tabsFor = admin ? TABS : TABS.filter(([k]) => k === 'envelopes');
   const v = h('div.sh-view');
   const tabs = h('div.sv-tabs', { role: 'tablist', 'aria-label': 'Parts of the safe' });
   add(root, h('div.sh', tabs, v));
   const show = (id) => {
     try { localStorage.setItem('insight-safe-tab', id); } catch { /* private mode */ }
-    mount(tabs, TABS.map(([k, label]) => h(`button.sv-tab${k === id ? '.on' : ''}`, { type: 'button', role: 'tab', 'aria-selected': String(k === id), onclick: () => show(k) }, label)));
-    const view = id === 'envelopes' ? envelopesView(v, range) : safeView(v, range);
+    mount(tabs, tabsFor.map(([k, label]) => h(`button.sv-tab${k === id ? '.on' : ''}`, { type: 'button', role: 'tab', 'aria-selected': String(k === id), onclick: () => show(k) }, label)));
+    const view = id === 'envelopes' ? envelopesView(v, range, null, { act }) : safeView(v, range);
     return view.catch((err) => mount(v, banner('problem', err.message)));
   };
-  await show(TABS.some(([k]) => k === remembered()) ? remembered() : 'book');
+  await show(tabsFor.some(([k]) => k === remembered()) ? remembered() : tabsFor[0][0]);
 }
 
 // ------------------------------------------------- envelopes received --
@@ -58,7 +65,7 @@ function picks() {
  * and whether it has been received and counted. Tick the ones in the safe,
  * check the count, and mark them received.
  */
-async function envelopesView(v, range, notice = null) {
+async function envelopesView(v, range, notice = null, { act = true } = {}) {
   let want = { from: range.from, to: range.to, open: false };
   try { want = { ...want, ...JSON.parse(sessionStorage.getItem('insight-safe-envelopes') || '{}') }; } catch { /* none */ }
   let filter = 'all';
@@ -158,7 +165,7 @@ async function envelopesView(v, range, notice = null) {
     const k = keyOf(l);
     const p = picked.get(k);
     const r = l.received;
-    const tick = r ? pill('ok', '✓') : h('input', {
+    const tick = r ? pill('ok', '✓') : !act ? '' : h('input', {
       type: 'checkbox', checked: Boolean(p), 'aria-label': `Received ${l.no ? `envelope ${l.no}` : 'the cash'} from the ${l.slot} of ${l.day}`,
       onchange: (e) => { if (e.target.checked) picked.set(k, { line: l, counted: l.expected, why: '' }); else picked.delete(k); paint(); },
     });
@@ -166,7 +173,8 @@ async function envelopesView(v, range, notice = null) {
       : l.shiftDiff === 0 ? pill('ok', '✓') : pill('short', `${l.shiftDiff > 0 ? '+' : ''}${amt(l.shiftDiff)}`);
     let counted = amt(r?.counted);
     const short = h('td.n', r ? (r.diff === 0 ? pill('ok', '✓') : h('span', pill(r.diff < 0 ? 'short' : 'over', `${r.diff > 0 ? '+' : ''}${amt(r.diff)}`), r.why ? h('small', `“${r.why}”`) : null)) : '—');
-    if (!r) {
+    if (!r && !act) counted = '—';
+    if (!r && act) {
       const box = h('input.sv-amt', { type: 'text', inputmode: 'decimal', value: plain(p?.counted ?? l.expected), disabled: !p, 'aria-label': 'Counted in the safe' });
       const why = h('input.sv-why', { type: 'text', placeholder: 'Why it differs', value: p?.why || '', maxlength: 300, hidden: !p || (p.counted ?? l.expected) === l.expected });
       // Only this row and the bar's total change as a count is typed: the
@@ -190,12 +198,12 @@ async function envelopesView(v, range, notice = null) {
       h('td.n', amt(l.amount)),
       h('td.n', l.first ? amt(l.assd) : ''),
       h('td.n', vsAssd),
-      h('td', r ? [dayText(r.on), h('small', `${r.by}${r.with ? ` with ${r.with}` : ''} · `, h('button.sh-link', {
+      h('td', r ? [dayText(r.on), h('small', `${r.by}${r.with ? ` with ${r.with}` : ''}`, act ? [' · ', h('button.sh-link', {
         type: 'button',
         onclick: async () => {
           try { await api('/safe/envelopes/undo', { method: 'POST', body: { day: l.day, slot: l.slot, no: l.no || '' } }); await load('No longer marked received.'); } catch (err) { alert(err.message); }
         },
-      }, 'Undo'))] : pill('none', 'Not yet')),
+      }, 'Undo')] : null)] : pill('none', 'Not yet')),
       h('td.n', counted),
       short);
   };
