@@ -199,6 +199,19 @@ ${mail.quote.by ? `<div class="m-faint" style="font:700 11px/1 ${FONT};color:${C
 <a href="${esc(href)}" style="display:block;padding:14px 18px;font:700 15px/1 ${FONT};color:${C.goldText};text-decoration:none">${esc(mail.button)}</a>
 </td></tr></table>`);
   }
+  // Further ways on, as quieter buttons side by side under the main one.
+  const more = (mail.more ?? []).filter(([text, link]) => text && /^https:\/\//.test(String(link ?? '')));
+  if (more.length) {
+    body.push(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:8px"><tr>${more.map(([text, link], i) => `
+<td style="${i ? 'padding-left:8px;' : ''}width:${Math.floor(100 / more.length)}%"><a href="${esc(link)}" class="m-ink m-rule" style="display:block;border:1px solid #c9ced6;border-radius:10px;padding:11px 8px;text-align:center;font:600 14px/1.2 ${FONT};color:${C.ink};text-decoration:none">${esc(text)}</a></td>`).join('')}
+</tr></table>`);
+  }
+  if (mail.panel?.text) {
+    body.push(`<div class="m-soft" style="margin-top:16px;background:${C.soft};border-radius:10px;padding:12px 14px">
+${mail.panel.label ? `<div class="m-faint" style="font:700 11px/1 ${FONT};color:${C.faint};letter-spacing:.08em;text-transform:uppercase">${esc(mail.panel.label)}</div>` : ''}
+<div class="m-ink" style="margin-top:${mail.panel.label ? 6 : 0}px;font:14px/1.55 ${FONT};color:${C.ink}">${lines(mail.panel.text)}</div></div>`);
+  }
+  if (mail.after) body.push(`<p class="m-dim" style="margin:16px 0 0;font:14px/1.6 ${FONT};color:${C.dim}">${lines(mail.after)}</p>`);
 
   out.push(`<div class="m-card m-pad" style="background:${C.card};padding:22px 22px 24px">${body.join('\n')}</div>`);
 

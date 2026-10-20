@@ -202,6 +202,11 @@ function chosenCard() {
       : null,
     h('p.muted', `It should take about ${minutesBetween(slot.at, slot.ends)} minutes. `
       + 'Please come a few minutes early.'),
+    packet.told
+      ? h('p.muted', packet.told === 'email'
+        ? 'We have emailed you these details, with a calendar entry. You will get a reminder the day before.'
+        : 'We have texted you these details. You will get a reminder the day before.')
+      : null,
 
     h('div.btn-row',
       h('button.btn-sm', { onclick: (e) => change(e.currentTarget) }, 'Choose a different time'),
@@ -214,6 +219,7 @@ async function take(slot, button) {
   try {
     const done = await call(`/api/c/${encodeURIComponent(token)}/choose`, { slotId: slot.id });
     packet.chosen = done.chosen;
+    packet.told = done.told ?? null;
     toast(done.changed ? 'Changed. See you then.' : 'Booked. See you then.', 'good');
     draw();
   } catch (err) {

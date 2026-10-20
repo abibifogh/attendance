@@ -1,4 +1,5 @@
 import { welcomeNewStarter } from './new-starter.js';
+import { sealToken, tellCandidate } from '../lib/interview-mail.js';
 import { siteOrigin } from '../lib/site.js';
 import {
   badRequest, bool, forbidden, int, json, notFound, readJson, str,
@@ -204,6 +205,7 @@ const shapeRole = (role) => ({
   hiringFor: role.hiring_for,
   employment: role.employment,
   detail: role.detail,
+  bring: role.bring ?? null,
   openedOn: role.opened_on,
   neededBy: role.needed_by,
   closedOn: role.closed_on,
@@ -276,8 +278,8 @@ export async function createRole(ctx) {
   const body = await readJson(ctx.request);
   const row = await ctx.db.prepare(
     `INSERT INTO rec_role (title, department, headcount, hiring_for, employment, detail,
-                           needed_by, created_by, pack_id)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) RETURNING id`,
+                           needed_by, created_by, pack_id, bring)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) RETURNING id`,
   ).bind(
     str(body.title, 'What the job is', { required: true, max: 120 }),
     str(body.department, 'Department', { max: 80 }),
@@ -288,6 +290,7 @@ export async function createRole(ctx) {
     readDayOrNull(body.neededBy, 'Needed by'),
     actorOf(ctx),
     readPackId(body.packId),
+    str(body.bring, 'Please bring', { max: 300 }) || null,
   ).first();
 
   await audit(ctx, 'recruitment.role_open', row.id, { title: body.title });
@@ -305,7 +308,7 @@ export async function updateRole(ctx, id) {
   await ctx.db.prepare(
     `UPDATE rec_role
         SET title = ?2, department = ?3, headcount = ?4, hiring_for = ?5, employment = ?6,
-            detail = ?7, needed_by = ?8, status = ?9, pack_id = ?10,
+            detail = ?7, needed_by = ?8, status = ?9, pack_id = ?10, bring = ?11,
             closed_on = CASE WHEN ?9 IN ('filled','closed') THEN COALESCE(closed_on, date('now'))
                              ELSE NULL END,
             updated_at = datetime('now')
@@ -321,6 +324,7 @@ export async function updateRole(ctx, id) {
     body.neededBy === undefined ? role.needed_by : readDayOrNull(body.neededBy, 'Needed by'),
     status,
     body.packId === undefined ? role.pack_id : readPackId(body.packId),
+    body.bring === undefined ? role.bring : (str(body.bring, 'Please bring', { max: 300 }) || null),
   ).run();
 
   await audit(ctx, 'recruitment.role_update', roleId, { status });
@@ -1830,6 +1834,16 @@ export async function updateSlot(ctx, id) {
     }, added);
   }
 
+  // The candidate hears when their time or place changes; a new reminder is
+  // due if the day moved.
+  let candidateTold = null;
+  if (slot.candidate_id && (moved || (place ?? '') !== (slot.place ?? ''))) {
+    if (moved) await ctx.db.prepare('UPDATE rec_slot SET reminded_at = NULL WHERE id = ?').bind(slot.id).run();
+    candidateTold = body.tell === false ? null : await tellCandidate(ctx, {
+      candidateId: slot.candidate_id, kind: 'changed', slot: after, was: moved ? slot : null, by: 'office', actor: actorOf(ctx),
+    }).catch(() => ({ sent: false }));
+  }
+
   if (slot.candidate_id) {
     await trail(ctx.db, {
       candidateId: slot.candidate_id,
@@ -1842,7 +1856,7 @@ export async function updateSlot(ctx, id) {
   }
 
   await audit(ctx, 'recruitment.slot_update', slot.id, { day, startsAt, moved });
-  return json({ ok: true, moved, booked: slot.candidate_id != null });
+  return json({ ok: true, moved, booked: slot.candidate_id != null, candidateTold });
 }
 
 /**
@@ -1916,6 +1930,16 @@ export async function updateDay(ctx) {
     if (who) await setPanel(ctx, slot.id, who.staffIds);
   }
 
+  // Anybody booked whose place changed is told where to go now.
+  if (place) {
+    for (const slot of touching.filter((t) => t.candidate_id != null && (t.place ?? '') !== (place.place ?? ''))) {
+      const after = await ctx.db.prepare('SELECT * FROM rec_slot WHERE id = ?').bind(slot.id).first();
+      await tellCandidate(ctx, {
+        candidateId: slot.candidate_id, kind: 'changed', slot: after, by: 'office', actor: actorOf(ctx),
+      }).catch(() => {});
+    }
+  }
+
   // One notice for the day rather than eleven. A phone that buzzes eleven
   // times for one edit is a phone whose owner turns notifications off.
   if (who?.staffIds.length) {
@@ -1976,9 +2000,16 @@ export async function removeSlot(ctx, id) {
   await ctx.db.prepare("UPDATE rec_slot SET cancelled_at = datetime('now') WHERE id = ?")
     .bind(slot.id).run();
 
+  let candidateTold = null;
   if (slot.candidate_id) {
     const person = await ctx.db.prepare('SELECT name FROM rec_candidate WHERE id = ?')
       .bind(slot.candidate_id).first().catch(() => null);
+    candidateTold = await tellCandidate(ctx, {
+      candidateId: slot.candidate_id, kind: 'cancelled', slot, by: 'office', actor: actorOf(ctx),
+    }).catch(() => ({ sent: false }));
+    const toldThem = candidateTold?.sent
+      ? `They have been told by ${candidateTold.how}.`
+      : 'They have not been told, so somebody has to ring them.';
 
     await trail(ctx.db, {
       candidateId: slot.candidate_id,
@@ -1990,29 +2021,31 @@ export async function removeSlot(ctx, id) {
       kind: 'recruitment.cancelled',
       level: 'warn',
       title: `${person?.name ?? 'An'} interview is off`,
-      body: `${sayWhen(slot)} has been taken out of the diary. `
-        + 'They have not been told, so somebody has to ring them.',
+      body: `${sayWhen(slot)} has been taken out of the diary. ${toldThem}`,
       mail: {
         status: 'Cancelled',
         tone: 'bad',
         eyebrow: 'Hiring',
         headline: person?.name ? `${person.name}\u2019s interview is off` : 'An interview is off',
         facts: [['Was', [mailWhen(slot), slot.place].filter(Boolean).join(', ')]],
-        callout: {
-          tone: 'warn',
-          text: `${person?.name ? firstName(person.name) : 'The candidate'} has not been told. `
-            + 'Somebody has to ring them.',
-        },
+        callout: candidateTold?.sent
+          ? { tone: 'info', text: `${person?.name ? firstName(person.name) : 'The candidate'} has been told by ${candidateTold.how}.` }
+          : {
+            tone: 'warn',
+            text: `${person?.name ? firstName(person.name) : 'The candidate'} has not been told. `
+              + 'Somebody has to ring them.',
+          },
         button: mailFileButton(slot, person?.name),
         why: WAS_ON_WHY,
         subject: person?.name ? `${person.name}\u2019s interview is off` : 'An interview is off',
-        preheader: `${mailAt(slot)}. Somebody has to ring `
-          + `${person?.name ? firstName(person.name) : 'them'}.`,
+        preheader: candidateTold?.sent
+          ? `${mailAt(slot)}. ${person?.name ? firstName(person.name) : 'They'} has been told.`
+          : `${mailAt(slot)}. Somebody has to ring ${person?.name ? firstName(person.name) : 'them'}.`,
       },
     });
   }
   await audit(ctx, 'recruitment.slot_remove', slot.id, { day: slot.day, at: slot.starts_at });
-  return json({ ok: true, had: slot.candidate_id != null });
+  return json({ ok: true, had: slot.candidate_id != null, candidateTold });
 }
 
 /**
@@ -2030,6 +2063,9 @@ export async function bookSlot(ctx, id) {
 
   const body = await readJson(ctx.request);
   const row = await candidateOr404(ctx, body.candidateId);
+  const before = await ctx.db.prepare(
+    'SELECT * FROM rec_slot WHERE candidate_id = ? AND cancelled_at IS NULL AND id <> ? ORDER BY day, starts_at LIMIT 1',
+  ).bind(row.id, slot.id).first().catch(() => null);
 
   const result = await claimSlot(ctx.db, {
     slotId: slot.id, candidateId: row.id, by: actorOf(ctx) ?? 'the office',
@@ -2066,9 +2102,37 @@ export async function bookSlot(ctx, id) {
     },
   });
 
+  // And the candidate, unless the office said not to.
+  const fresh = await ctx.db.prepare('SELECT * FROM rec_slot WHERE id = ?').bind(slot.id).first();
+  const candidateTold = body.tell === false ? null : await tellCandidate(ctx, {
+    candidateId: row.id, kind: result.released ? 'changed' : 'booked', slot: fresh, was: before, by: 'office', actor: actorOf(ctx),
+  }).catch(() => ({ sent: false }));
+
   // Whether the panel actually heard, so the screen can say "tell them
   // yourself" rather than letting somebody assume it was handled.
-  return json({ ok: true, interviewerTold: told });
+  return json({ ok: true, interviewerTold: told, candidateTold });
+}
+
+/**
+ * Send the candidate their interview details, or a reminder, now. For the
+ * office: somebody who says the email never came, a time booked before these
+ * messages existed, a reminder on the morning itself.
+ */
+export async function tellAbout(ctx, id) {
+  const row = await candidateOr404(ctx, id);
+  const body = await readJson(ctx.request);
+  const kind = body.kind === 'reminder' ? 'reminder' : 'booked';
+  const slot = await ctx.db.prepare(
+    'SELECT * FROM rec_slot WHERE candidate_id = ? AND cancelled_at IS NULL ORDER BY day, starts_at LIMIT 1',
+  ).bind(row.id).first();
+  if (!slot) throw badRequest(`${firstName(row.name)} has no interview time booked.`);
+  const out = await tellCandidate(ctx, { candidateId: row.id, kind, slot, by: 'office', actor: actorOf(ctx) });
+  if (!out.sent) throw badRequest(out.reason || 'Nothing was sent.');
+  // A reminder sent by hand counts: the afternoon one does not go as well.
+  if (kind === 'reminder') {
+    await ctx.db.prepare("UPDATE rec_slot SET reminded_at = datetime('now') WHERE id = ?").bind(slot.id).run();
+  }
+  return json({ ok: true, how: out.how, to: out.to });
 }
 
 /**
@@ -2092,7 +2156,7 @@ export async function claimSlot(db, { slotId, candidateId, by }) {
 
   const claimed = await db.prepare(
     `UPDATE rec_slot
-        SET candidate_id = ?2, taken_at = datetime('now'), taken_by = ?3
+        SET candidate_id = ?2, taken_at = datetime('now'), taken_by = ?3, reminded_at = NULL
       WHERE id = ?1 AND candidate_id IS NULL AND cancelled_at IS NULL`,
   ).bind(slotId, candidateId, by).run().catch(() => null);
 
@@ -2102,7 +2166,7 @@ export async function claimSlot(db, { slotId, candidateId, by }) {
 
   for (const old of held.results ?? []) {
     await db.prepare(
-      'UPDATE rec_slot SET candidate_id = NULL, taken_at = NULL, taken_by = NULL WHERE id = ?',
+      'UPDATE rec_slot SET candidate_id = NULL, taken_at = NULL, taken_by = NULL, reminded_at = NULL WHERE id = ?',
     ).bind(old.id).run();
   }
 
@@ -2362,6 +2426,9 @@ async function makeInvite(ctx, row, { wantsSlot, wantsDetails, wantsCv, days, pi
     wantsSlot ? 1 : 0, wantsDetails ? 1 : 0, wantsCv ? 1 : 0,
     `+${days} days`, actorOf(ctx),
   ).first();
+  // Kept sealed too, so a reminder or a change sent later carries this link.
+  const box = await sealToken(token, ctx.env).catch(() => null);
+  if (box) await ctx.db.prepare('UPDATE rec_invite SET token_box = ?2 WHERE id = ?1').bind(created.id, box).run();
 
   await trail(ctx.db, {
     candidateId: row.id, inviteId: created.id, kind: 'link_created',

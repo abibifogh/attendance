@@ -234,9 +234,12 @@ function interviewCard(data, reload) {
         h('span', ` at ${slot.at} – ${slot.ends}`)),
       slot.place ? h('p.muted', `Where: ${slot.place}`) : null,
       slot.interviewer ? h('p.muted', `Interviewing: ${slot.interviewer}`) : null,
+      toldLine(data),
       data.canManage
         ? h('div.btn-row',
-          h('button.btn-sm', { onclick: () => book(data, reload) }, 'Move it'))
+          h('button.btn-sm', { onclick: () => book(data, reload) }, 'Move it'),
+          h('button.btn-sm', { onclick: (e) => tell(data, 'booked', e.currentTarget, reload) }, 'Send the details again'),
+          h('button.btn-sm', { onclick: (e) => tell(data, 'reminder', e.currentTarget, reload) }, 'Send a reminder now'))
         : null);
   }
 
@@ -254,6 +257,33 @@ function interviewCard(data, reload) {
       ? h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
         'No times are published for this vacancy. Publish some under Interviews first.')
       : null);
+}
+
+/** What was last sent to them about the interview, from the trail. */
+function toldLine(data) {
+  const last = (data.events ?? []).find((e) => String(e.kind).startsWith('told_'));
+  const first = String(data.candidate.name ?? '').split(' ')[0];
+  if (!last) {
+    return h('p.muted', { style: { fontSize: '.85rem' } },
+      data.candidate.email || data.candidate.phone
+        ? `Nothing has been sent to ${first} about it yet.`
+        : `${first} has no email or mobile number on file, so HIVE cannot send the details.`);
+  }
+  const failed = /^could not/.test(String(last.detail ?? ''));
+  return h(`p.${failed ? 'rec-told-bad' : 'muted'}`, { style: { fontSize: '.85rem' } },
+    `${SAYS[last.kind] ?? 'Sent'} ${last.detail ?? ''} · ${stamp(last.at)}`);
+}
+
+async function tell(data, kind, button, reload) {
+  button.disabled = true;
+  try {
+    const out = await api.recTell(data.candidate.id, kind);
+    toast(`${kind === 'reminder' ? 'Reminder' : 'Details'} sent by ${out.how} to ${out.to}.`, 'good');
+    await reload();
+  } catch (err) {
+    toast(err.message, 'bad');
+    button.disabled = false;
+  }
 }
 
 async function book(data, reload) {
@@ -278,7 +308,9 @@ async function book(data, reload) {
     onSubmit: async (form) => api.recBookSlot(form.get('slotId'), person.id),
   });
   if (!done) return;
-  toast('Booked.', 'good');
+  const told = done.candidateTold;
+  toast(told?.sent ? `Booked. ${person.name.split(' ')[0]} was sent the details by ${told.how}.`
+    : `Booked. ${told?.reason ?? ''} Let them know yourself.`.replace('  ', ' '), told?.sent ? 'good' : 'warn');
   await reload();
 }
 
@@ -901,6 +933,10 @@ const SAYS = {
   slot_given_back: 'They gave the time back',
   slot_released: 'Their time went back into the diary',
   slot_cancelled: 'The interview was cancelled here',
+  told_booked: 'Interview details sent',
+  told_reminder: 'Reminder sent',
+  told_changed: 'New time sent',
+  told_cancelled: 'Cancellation sent',
   hired: 'Taken on',
 };
 

@@ -213,6 +213,7 @@ export const api = {
   recUpdateDay: (body) => request('/api/rec/slots/day', { method: 'POST', body }),
   recRemoveSlot: (id) => request(`/api/rec/slots/${id}/remove`, { method: 'POST' }),
   recBookSlot: (id, candidateId) => request(`/api/rec/slots/${id}/book`, { method: 'POST', body: { candidateId } }),
+  recTell: (id, kind) => request(`/api/rec/candidates/${id}/tell`, { method: 'POST', body: { kind } }),
 
   // ------------------------------------------------------------ attendance --
   attBootstrap: () => request('/api/att/bootstrap'),

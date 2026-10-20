@@ -420,6 +420,10 @@ async function openRole(role, data, reload) {
       field('What the job is, in a line or two', h('textarea', {
         name: 'detail', rows: 3, maxlength: 4000,
       }, role?.detail ?? '')),
+      field('Please bring', h('input', {
+        type: 'text', name: 'bring', maxlength: 300, value: role?.bring ?? '',
+        placeholder: 'Your Ghana Card, and any certificates you mentioned',
+      }), 'Goes in the interview email and reminder. Leave it empty and the line is left out.'),
       field('Questions to ask at the interview', h('select', { name: 'packId' },
         h('option', { value: '' }, 'None — a mark out of five and a note'),
         (data.questions?.packs ?? []).filter((p) => p.active).map((p) => h('option', {
@@ -1558,9 +1562,10 @@ async function editSlot(slot, data, reload) {
     }),
   });
   if (!done) return;
-  toast(done.moved && done.booked
-    ? 'Moved. Ring them, because their link will not.'
-    : 'Saved.', done.moved && done.booked ? 'warn' : 'good');
+  const told = done.candidateTold;
+  toast(done.booked && told
+    ? (told.sent ? `Saved. They were told by ${told.how}.` : `Saved. They could not be told: ${told.reason} Ring them.`)
+    : 'Saved.', done.booked && told && !told.sent ? 'warn' : 'good');
   await reload();
 }
 
@@ -1630,14 +1635,17 @@ async function editDay(day, data, reload) {
 
 async function dropSlot(slot, reload) {
   const warning = slot.candidateId
-    ? `${slot.candidateName} has taken this time. Cancelling it does not tell them, so `
-      + 'ring them. Take it out anyway?'
+    ? `${slot.candidateName} has taken this time. They will be sent a message saying it is cancelled, `
+      + 'by email or text where HIVE can. Take it out anyway?'
     : 'Take this time out of the diary?';
   if (!confirmAction(warning)) return;
 
   try {
-    await api.recRemoveSlot(slot.id);
-    toast('Taken out.', 'good');
+    const done = await api.recRemoveSlot(slot.id);
+    const told = done?.candidateTold;
+    toast(told
+      ? (told.sent ? `Taken out. They were told by ${told.how}.` : `Taken out. They could not be told: ${told.reason} Ring them.`)
+      : 'Taken out.', told && !told.sent ? 'warn' : 'good');
     await reload();
   } catch (err) {
     toast(err.message, 'bad');

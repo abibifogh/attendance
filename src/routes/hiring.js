@@ -12,6 +12,8 @@ import {
 } from './recruitment.js';
 import { firstName, sayShortDate, sayTime } from '../lib/email-design.js';
 import { todayIn } from '../util/dates.js';
+import { calendarFor, tellCandidate } from '../lib/interview-mail.js';
+import { siteOrigin } from '../lib/site.js';
 
 /**
  * The candidate's side of the link: a phone, no account, and a list of times.
@@ -266,6 +268,9 @@ export async function choose(ctx, token) {
     return json({ ok: true, already: true, chosen: await chosenBy(ctx.db, candidate.id) });
   }
 
+  const before = await ctx.db.prepare(
+    'SELECT * FROM rec_slot WHERE candidate_id = ? AND cancelled_at IS NULL AND id <> ? ORDER BY day, starts_at LIMIT 1',
+  ).bind(candidate.id, slotId).first().catch(() => null);
   const claimed = await claimSlot(ctx.db, {
     slotId, candidateId: candidate.id, by: 'them',
   });
@@ -323,10 +328,18 @@ export async function choose(ctx, token) {
     },
   }, ctx).catch(() => {});
 
+  // And the person themselves: the details to keep, by email or by text.
+  const link = `${await siteOrigin(ctx.db, ctx.url?.origin)}/c/${token}`;
+  const fresh = await ctx.db.prepare('SELECT * FROM rec_slot WHERE id = ?').bind(slotId).first();
+  const told = await tellCandidate(ctx, {
+    candidateId: candidate.id, kind: claimed.released ? 'changed' : 'booked', slot: fresh, was: before, by: 'them', link,
+  }).catch(() => ({ sent: false }));
+
   return json({
     ok: true,
     changed: Boolean(claimed.released),
     chosen: await chosenBy(ctx.db, candidate.id),
+    told: told.sent ? told.how : null,
   });
 }
 
@@ -358,6 +371,10 @@ export async function release(ctx, token) {
   });
 
   await tellPanelAboutRelease(ctx, held, candidate.name).catch(() => {});
+  await tellCandidate(ctx, {
+    candidateId: candidate.id, kind: 'cancelled', slot: held, by: 'them',
+    link: `${await siteOrigin(ctx.db, ctx.url?.origin)}/c/${token}`,
+  }).catch(() => {});
 
   await createNotice(ctx.db, {
     kind: 'recruitment.released',
@@ -484,4 +501,44 @@ export async function file(ctx, token) {
   });
 
   return json({ ok: true, id: created.id });
+}
+
+/**
+ * Their interview as a calendar entry, from the "Add to calendar" button in
+ * the email. Only for the link it belongs to, and only while the time is live.
+ */
+export async function calendar(ctx, token) {
+  const invite = await inviteFor(ctx, token);
+  const slot = await ctx.db.prepare(
+    'SELECT * FROM rec_slot WHERE candidate_id = ? AND cancelled_at IS NULL ORDER BY day, starts_at LIMIT 1',
+  ).bind(invite.candidate_id).first();
+  if (!slot) throw notFound('There is no interview time booked on this link.');
+  const rows = (await ctx.db.prepare(
+    "SELECT key, value FROM settings WHERE key IN ('property_name', 'property_address', 'timezone')",
+  ).all()).results ?? [];
+  const set = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const role = await ctx.db.prepare('SELECT title, bring FROM rec_role WHERE id = ?')
+    .bind(slot.role_id ?? -1).first().catch(() => null);
+  const property = set.property_name || 'Somewhere Nice';
+  const origin = await siteOrigin(ctx.db, ctx.url?.origin);
+  const ics = calendarFor({
+    slot,
+    candidateId: invite.candidate_id,
+    title: `Interview${role?.title ? `: ${role.title}` : ''} at ${property}`,
+    place: [slot.place, set.property_address].filter(Boolean).join(', '),
+    timezone: set.timezone || 'UTC',
+    host: new URL(origin).host,
+    notes: [
+      'Please come about 10 minutes early.',
+      role?.bring ? `Please bring ${String(role.bring).replace(/\.$/, '')}.` : null,
+      `Directions, or to change or cancel: ${origin}/c/${token}`,
+    ].filter(Boolean).join('\n'),
+  });
+  return new Response(ics, {
+    headers: {
+      'Content-Type': 'text/calendar; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="interview.ics"',
+      'Cache-Control': 'private, no-store',
+    },
+  });
 }

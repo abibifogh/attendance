@@ -7918,3 +7918,4 @@ button.lp-row:disabled { cursor: default; }
 .sd-field > span { display: block; font-size: .78rem; font-weight: 620; color: var(--text-dim); margin-bottom: .25rem; }
 .sd-event > span:last-child { overflow-wrap: anywhere; }
 .box-other { background: #f6f7f9; }
+.rec-told-bad { color: var(--warn); }

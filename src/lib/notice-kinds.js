@@ -477,6 +477,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'recruitment.interview',
+    group: 'people',
+    label: 'Interview details, to the candidate',
+    who: 'The person being interviewed',
+    when: 'Their time is booked, the day before, and when it moves or is cancelled',
+    ways: ['email', 'text'],
+  },
+  {
     key: 'recruitment.booked',
     group: 'people',
     label: 'An interview is booked',

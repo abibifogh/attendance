@@ -24,6 +24,7 @@ import { watchTills } from './lib/till-watch.js';
 import { watchAbsences } from './lib/absence-watch.js';
 import { watchLeavePlans } from './lib/leave-plans.js';
 import { watchReminders } from './lib/reminders.js';
+import { watchInterviews } from './lib/interview-mail.js';
 import { watchTerminals } from './lib/terminal-watch.js';
 import { nightlyCopy } from './lib/backup.js';
 import * as birthday from './routes/birthdays.js';
@@ -643,6 +644,8 @@ export const ROUTES = [
   ['GET', '/api/rec/candidates/:id/files/:fileId', 'rec_view', rec.readFile],
   ['POST', '/api/rec/candidates/:id/files/:fileId/remove', 'rec_manage', rec.removeFile],
   ['POST', '/api/rec/candidates/:id/invite', 'rec_manage', rec.inviteCandidate],
+  // Send the interview details, or a reminder, to the candidate now.
+  ['POST', '/api/rec/candidates/:id/tell', 'rec_manage', rec.tellAbout],
   ['POST', '/api/rec/invites/:id/revoke', 'rec_manage', rec.revokeInvite],
   ['POST', '/api/rec/candidates/:id/hire', 'rec_manage', rec.hire],
   ['POST', '/api/rec/slots', 'rec_manage', rec.addSlots],
@@ -668,6 +671,7 @@ export const ROUTES = [
   ['POST', '/api/c/:token/open', 'public', hiring.open],
   ['POST', '/api/c/:token/choose', 'public', hiring.choose],
   ['POST', '/api/c/:token/release', 'public', hiring.release],
+  ['GET', '/api/c/:token/interview.ics', 'public', hiring.calendar],
   ['POST', '/api/c/:token/details', 'public', hiring.details],
   ['POST', '/api/c/:token/cv', 'public', hiring.file],
 
@@ -1128,6 +1132,16 @@ export default {
       if (chased.links || chased.letters || chased.handbook) {
         console.log(`Reminders: ${chased.links} links, ${chased.letters} letters, ${chased.handbook} handbook`);
       }
+
+      // And whoever has an interview tomorrow, reminded in the afternoon.
+      const interviews = await watchInterviews(env.DB, {
+        timezone,
+        ctx: { env, executionContext },
+      }).catch((err) => {
+        console.error('Interview reminders failed', err);
+        return { reminded: 0 };
+      });
+      if (interviews.reminded) console.log(`Interviews: ${interviews.reminded} reminded`);
 
       // And whether the terminal is still being heard, which is the one fact
       // every other line on the attendance screens quietly depends on.
