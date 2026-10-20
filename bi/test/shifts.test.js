@@ -1080,3 +1080,26 @@ test('“Open the shift” for money with no ASSD line: placed by its time, or i
   assert.deepEqual(await routes.whereIs(env, { key: 'not-recorded:b:m-1' }), { key: 'not-recorded:b:m-1', day: '2026-10-14', slot: null });
   assert.deepEqual(await routes.whereIs(env, { key: 'not-recorded:t:999' }), { key: 'not-recorded:t:999', day: null, slot: null });
 });
+
+test('a payment ASSD does not show sits on the shift its time falls in, unless an admin moved it', () => {
+  // Taken at 22:25, just after the hand-over: the night's by the clock.
+  const shifts = [shift('A', '2026-08-01', []), shift('B', '2026-08-01', []), shift('C', '2026-08-02', []), shift('D', '2026-08-02', [])];
+  const pay = ev('t:x', '2026-08-01 22:25:00', 233600);
+  const where = (opts = {}) => reconcile(shifts, [pay], [], opts).exceptions.find((x) => x.kind === 'not-recorded');
+  assert.deepEqual([where().day, where().slot], ['2026-08-01', 'night']);
+  const moved = where({ homes: new Map([['t:x', { day: '2026-08-01', slot: 'afternoon' }]]) });
+  assert.deepEqual([moved.day, moved.slot, moved.key], ['2026-08-01', 'afternoon', where().key], 'the same difference, on the afternoon');
+});
+
+test('moving a payment needs a payment, a shift and a reason; it can be put back', async () => {
+  const { db } = freshDb();
+  const env = { DB: db };
+  const who = { name: 'Test Owner', isOwner: true };
+  await assert.rejects(routes.movePayment(env, { eventId: 'nope', day: '2026-08-01', slot: 'afternoon', why: 'late' }, who), /Which payment/);
+  await assert.rejects(routes.movePayment(env, { eventId: 't:x', day: '2026-08-01', slot: 'evening', why: 'late' }, who), /Which shift/);
+  await assert.rejects(routes.movePayment(env, { eventId: 't:x', day: '2026-08-01', slot: 'afternoon' }, who), /Say why/);
+  await routes.movePayment(env, { eventId: 't:x', day: '2026-08-01', slot: 'afternoon', why: 'Taken after the hand-over', fromDay: '2026-08-01', fromSlot: 'night' }, who);
+  assert.equal((await db.prepare('SELECT slot FROM payment_home WHERE event_id = ?').bind('t:x').first()).slot, 'afternoon');
+  await routes.movePayment(env, { eventId: 't:x', back: true }, who);
+  assert.equal(await db.prepare('SELECT slot FROM payment_home WHERE event_id = ?').bind('t:x').first(), null);
+});

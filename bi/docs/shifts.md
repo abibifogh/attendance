@@ -138,6 +138,12 @@ Everything typed is signed with the name of whoever typed it.
   that does not fit; every other session stays where the journal alone puts
   it, so a report filed on the wrong shift never moves a journal that fits on
   its own.
+- **A payment ASSD does not show** goes on the shift whose hours its time
+  falls in. One taken just after a hand-over (an afternoon guest paying at
+  22:25) belongs to the shift before: an admin presses **Wrong shift? Move
+  it**, picks the shift before or after, and says why. Its person answers it
+  from then on; the card says where it came from, and **Put it back** undoes
+  it.
 - **How it was paid.** Every payment line, by ASSD's own method: cash, card
   and MoMo (staff record MoMo as card), prepaid by bank transfer, prepaid by
   card online. Only cash goes into the drawer. Laundry paid in cash is part of

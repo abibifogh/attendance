@@ -531,9 +531,15 @@ export function reconcile(shifts, events, declines = [], options = {}) {
   // What is left on the money side, inside the hours the loaded shifts cover.
   const first = out[0];
   const lastShift = out[out.length - 1];
+  // A payment an admin moved to another shift goes there (`options.homes`:
+  // event id → { day, slot }), whatever its time says.
+  const movedTo = (e) => {
+    const m = options.homes?.get(e.id);
+    return m ? out.find((s) => s.day === m.day && s.slotName === m.slot) || null : null;
+  };
   for (const e of timed.filter(free)) {
     if (!first || e.minute < first.window.start || e.minute >= lastShift.window.end) continue;
-    const home = out.find((s) => e.minute >= s.window.start && e.minute < s.window.end)
+    const home = movedTo(e) || out.find((s) => e.minute >= s.window.start && e.minute < s.window.end)
       || out.find((s) => inside(e, s, false)) || null;
     // The journal stops somewhere inside its last shift, so money that shift
     // took after the export ran is not missing from ASSD.
@@ -544,7 +550,7 @@ export function reconcile(shifts, events, declines = [], options = {}) {
     else raise('not-recorded', home, null, e);
   }
   for (const e of dated.filter(free)) {
-    const home = out.find((s) => s.day === e.day) || null;
+    const home = movedTo(e) || out.find((s) => s.day === e.day) || null;
     if (!home || home.open) continue;
     raise('not-recorded', home, null, e);
   }
