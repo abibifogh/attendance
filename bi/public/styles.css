@@ -1941,3 +1941,19 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .sh-payhome { margin: .2rem 0; }
 .sh-payform { display: grid; gap: .45rem; padding: .6rem .7rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
 .sh-payform input { padding: .4rem .5rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; }
+
+/* Notes and history on a difference. */
+.sh-notesbox { border-top: 1px dashed var(--border); margin-top: .5rem; padding-top: .45rem; display: grid; gap: .5rem; }
+.sh-notes-tog { font-weight: 700; text-decoration: none; font-size: .86rem; justify-self: start; }
+.sh-notes { display: grid; gap: .6rem; }
+.sh-tl { list-style: none; margin: 0 0 0 .4rem; padding: 0; display: grid; gap: .55rem; border-left: 2px solid var(--border); }
+.sh-tl li { position: relative; padding-left: .9rem; font-size: .84rem; }
+.sh-tl li::before { content: ""; position: absolute; left: -6px; top: .35rem; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--ink-2); }
+.sh-tl li.note::before { border-color: var(--series-1); background: var(--series-1); }
+.sh-tl small { display: block; color: var(--ink-2); font-size: .74rem; }
+.sh-tl .txt { background: var(--surface-2); border-radius: 8px; padding: .35rem .55rem; margin-top: .2rem; white-space: pre-wrap; }
+.sh-noteform { display: grid; gap: .4rem; }
+.sh-noteform textarea { padding: .45rem .55rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; resize: vertical; }
+.sh-tags { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+.sh-tag { border: 1px solid var(--border); border-radius: 999px; padding: .15rem .55rem; font: inherit; font-size: .78rem; background: var(--surface); color: var(--ink); cursor: pointer; }
+.sh-tag[aria-pressed="true"] { background: var(--series-1); border-color: var(--series-1); color: #fff; }

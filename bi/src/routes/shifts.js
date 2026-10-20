@@ -9,6 +9,7 @@ import { parseTerminalCsv } from '../shifts/terminal.js';
 import { reconcile, settlement, placeShifts, sameLogin, slotIndex, GROUPS, SLOTS, minuteOf, slotAt, slotDay, slotName } from '../shifts/reconcile.js';
 import { listSources, secretNameFor } from '../connectors/index.js';
 import { purchaseOrders } from '../connectors/odoo.js';
+import { logEvent } from './notes.js';
 
 /**
  * The Shifts screen's server side.
@@ -675,12 +676,14 @@ export async function saveAnswer(env, body, account, { pending = false } = {}) {
   }
   if (!answer) {
     await run(env.DB, 'DELETE FROM shift_answer WHERE key = ?1', key);
+    if (existing) await logEvent(env, key, `Answer “${existing.answer}” taken back`, who(account));
     return { ok: true };
   }
   const status = pending ? 'pending' : 'applied';
   await run(env.DB, `INSERT INTO shift_answer (key, answer, note, by_name, at, status, decided_by, decided_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL)
     ON CONFLICT (key) DO UPDATE SET answer = ?2, note = ?3, by_name = ?4, at = ?5, status = ?6, decided_by = NULL, decided_at = NULL`,
   key, answer, note, who(account), now(), status);
+  await logEvent(env, key, `${existing ? 'Answer changed to' : 'Answered'} “${answer}”${note ? `: “${note}”` : ''}${pending ? ' (waiting for an admin)' : ''}`, who(account));
   // A refund owed is kept with what was paid, so the list of them does not
   // depend on the days on screen.
   if (key.startsWith('paid-more:') && answer === REFUND_DUE) await keepRefund(env, key);
@@ -1635,6 +1638,7 @@ export async function movePayment(env, body, account) {
   if (!/^[tb]:[A-Za-z0-9_.-]{1,80}$/.test(id)) throw badRequest('Which payment?');
   if (body?.back) {
     await run(env.DB, 'DELETE FROM payment_home WHERE event_id = ?1', id);
+    if (body?.key) await logEvent(env, String(body.key), 'Put back on the shift its time falls in', account?.name || account?.email || 'Owner');
     return { ok: true, back: true };
   }
   const day = String(body?.day || '');
@@ -1647,5 +1651,6 @@ export async function movePayment(env, body, account) {
   await run(env.DB, `INSERT INTO payment_home (event_id, day, slot, from_day, from_slot, why, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
       ON CONFLICT (event_id) DO UPDATE SET day = ?2, slot = ?3, why = ?6, by_name = ?7, at = ?8`,
   id, day, slot, fromDay, fromSlot, why, account?.name || account?.email || 'Owner', new Date().toISOString().slice(0, 19).replace('T', ' '));
+  if (body?.key) await logEvent(env, String(body.key), `Moved to the ${slot} shift of ${day}: “${why}”`, account?.name || account?.email || 'Owner');
   return { ok: true };
 }

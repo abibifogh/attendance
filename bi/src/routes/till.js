@@ -9,6 +9,7 @@ import { shifts as shiftsFor } from './shifts.js';
 import { formLive, poExtras } from './advances.js';
 import { openForHive } from './proof.js';
 import { madeHere } from './newpo.js';
+import { logEvent } from './notes.js';
 
 /**
  * Closing a shift in HIVE, as this app sees it.
@@ -797,6 +798,7 @@ export async function moveToStaff(env, body, account, { fetchImpl } = {}) {
   const id = (await first(env.DB, 'SELECT id FROM till_move WHERE key = ?1 AND undone_at IS NULL ORDER BY id DESC LIMIT 1', key))?.id ?? null;
   // A supervisor's answer waiting for approval: this decides it instead.
   if (x.proposed) await run(env.DB, "DELETE FROM shift_answer WHERE key = ?1 AND status = 'pending'", key).catch(() => null);
+  await logEvent(env, key, `Put on staff accounts: ${shares.map((y) => `${y.name} ${ghs(y.amount)}`).join(', ')}: “${reason}”`, who(account));
 
   const what = moveWord(x.kind, amount);
   const whose = ownerName ? ` (${ownerName}'s shift)` : '';
@@ -826,6 +828,7 @@ export async function undoMove(env, body, account, { fetchImpl } = {}) {
     if (settled) throw badRequest(`${y.name}'s share was ${SETTLED_WORDS[settled.outcome]} already, so it cannot be undone.`);
   }
   await run(env.DB, 'UPDATE till_move SET undone_by = ?1, undone_at = ?2 WHERE id = ?3', who(account), now(), id);
+  await logEvent(env, m.key, 'Taken off staff accounts: back on its shift', who(account));
   const what = moveWord(m.kind, m.amount);
   for (const y of m.shares) {
     // eslint-disable-next-line no-await-in-loop
@@ -988,6 +991,7 @@ export async function approve(env, body, account) {
     if (!row) throw badRequest(await decidedAs(env, table, col, id));
     if (body.ok) await run(env.DB, `UPDATE ${table} SET status = 'applied', decided_by = ?2, decided_at = ?3 WHERE ${col} = ?1`, id, who(account), now());
     else await run(env.DB, `DELETE FROM ${table} WHERE ${col} = ?1`, id);
+    if (!isLink) await logEvent(env, id, body.ok ? `Answer “${row.answer}” approved` : `Answer “${row.answer}” rejected: back on the list`, who(account));
     return { ok: true };
   }
   const seq = Number(body?.seq);
