@@ -1,6 +1,6 @@
 # Money, from what the shifts know
 
-The Money page adds up revenue, purchases and wages by part of the business.
+Reports › **Overview** (it was the Money page) adds up revenue, purchases and wages by part of the business.
 Two of its figures now come from records Insight already holds for the shifts.
 
 ## The rooms' revenue, from the ASSD journal
@@ -11,7 +11,7 @@ which no other system reports.
 
 - **Nights** (articles 100 to 289) are always the rooms. Room-nights are counted
   too.
-- **Every other article** is decided once, on the Money page under **Revenue
+- **Every other article** is decided once, on Reports › Overview under **Revenue
   from the ASSD journal**:
   - revenue of a part of the business (a minibar under Bar, say);
   - **counted by another system** (laundry has its own, so it is not counted
@@ -41,8 +41,8 @@ it buy, by part of the business.
 - **How the spending was paid:** Odoo's bills by their date and unbilled cash
   by the day it left, split into *from the drawer*, *from the safe*, and *by
   bank or on credit* (the rest), by supplier and by part of the business.
-- **To chase:** cash POs with no bill, payments that are not what the PO says,
-  bills with no PO, and any cash PO Odoo does not know at all.
+  A cash PO Odoo does not know at all is named under it.
+- **What to chase** is not repeated here: it is in Shifts → **Inbox → POs**.
 
 ## The to-do list
 
@@ -63,8 +63,6 @@ a longer one brings them back. POs paid in cash are chased whatever the
 look-back.
 
 Bills with no PO are no longer raised; the items they had raised were closed.
-The Money page's **To chase** card lists the POs not paid in cash with no
-posted bill beside the cash ones.
 
 - Each new item goes to the supervisor with the fewest open, so the list shares
   itself out. A supervisor sees only their own; the tab shows how many.
@@ -78,7 +76,7 @@ posted bill beside the cash ones.
   alone.
 - **Refresh now**, at the top of the Inbox, asks Odoo again for everybody who
   has a list, supervisors included, so a bill posted a minute ago clears its
-  item straight away (the same as the button on the Money page), and reads the
+  item straight away (the same as the button on Reports › Overview), and reads the
   laundry system for the last three days up to today (an admin sets how many,
   1 to 60, under Settings → Limits), so a finished shift's laundry is compared
   without waiting for the nightly run. Only the laundry system's own figures
@@ -123,7 +121,7 @@ HIVE's payroll are not in a paid month's wages.
 
 ## Prepaid stays
 
-Money → **Prepaid stays** shows a month of reservations, by the month the
+Reports → **Prepaid stays** shows a month of reservations, by the month the
 guest arrived (the first night charged; a reservation with no night belongs to
 the day it was keyed). For each: its ASSD reservation number and rooms, the
 stay and nights, what it was charged, what was prepaid and how (bank transfer

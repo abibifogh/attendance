@@ -15,7 +15,7 @@ import { isNight } from './stays.js';
  * is decided once, by an admin, because only they know what it is: revenue of
  * a part of the business, revenue another system already reports (laundry has
  * its own), or not revenue at all (a deposit, a tax). Until it is decided it is
- * left out, and the Money page says how much is waiting.
+ * left out, and Reports › Overview says how much is waiting.
  *
  * Written to fact_revenue under the source `assd`, so every screen that reads
  * revenue reads it. The nightly load clears its window and this writes it back.

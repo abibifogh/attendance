@@ -5,7 +5,6 @@ import { resolveRange, addDays, todayIn, daysBetween } from '../lib/dates.js';
 import { pct, ratio, change } from '../lib/money.js';
 import { bare, dayName } from '../insight/labels.js';
 import { median, sum, groupBy, halves } from '../insight/stats.js';
-import { buyingAnalysis } from '../insight/buying.js';
 import { financialAnalysis } from '../insight/financials.js';
 
 /**
@@ -403,83 +402,13 @@ export async function suppliers(env, query) {
 
 /** Work due against work done: housekeeping rounds and maintenance. */
 /**
- * The books.
- *
- * Its own screen rather than a section of Buying, because the two answer
- * different questions from different evidence. Buying reads what the
- * operational systems recorded receiving; this reads what the business was
- * invoiced and what the accounts did with it. Where they disagree is itself
- * the finding, and that is only visible if both exist separately.
- *
- * Ninety days by default. A price trend needs more than a month to be a trend,
- * and a payment pattern needs more than one cycle.
- */
-export async function books(env, query) {
-  const { db, config, from, to } = await context(env, query, 90);
-
-  const bills = await all(db, `
-    SELECT b.*, s.name AS supplier
-      FROM fact_bill b
-      LEFT JOIN dim_supplier s ON s.id = b.supplier_id
-     WHERE b.day BETWEEN ?1 AND ?2`, from, to);
-
-  // Only lines that came from an accounting source. The other systems' lines
-  // are in the same table on purpose — that is how a price gets compared
-  // across the group — but this screen is about the books, and mixing a
-  // kitchen's own record of a delivery into "what we were invoiced" would make
-  // the totals disagree with Odoo for a reason nobody could find.
-  const lines = await all(db, `
-    SELECT p.*, s.name AS supplier, i.name AS item
-      FROM fact_purchase_line p
-      LEFT JOIN dim_supplier s ON s.id = p.supplier_id
-      LEFT JOIN dim_item i ON i.id = p.item_id
-     WHERE p.day BETWEEN ?1 AND ?2
-       AND p.bill_id IS NOT NULL`, from, to);
-
-  // As of the end of the window, not today. Re-reading last quarter should
-  // report what was overdue then, not what is overdue now.
-  const analysis = buyingAnalysis({ bills, lines, asOf: to });
-  // Only the accounting sources. A screen that says "nothing here" has to be
-  // able to tell "Odoo is not connected" from "Odoo is connected and this
-  // window is genuinely empty", and those are different sentences.
-  const health = (await sourceHealth(db)).filter((h) => h.id === 'odoo');
-  // What the last load actually covered. "No bills in this window" and "this
-  // window was never loaded" look identical on screen and need opposite
-  // actions, and until this was passed through the screen guessed — it told
-  // somebody to go and check for draft bills when the real answer was that the
-  // days he was looking at had never been fetched.
-  const lastRun = await first(db, "SELECT from_day, to_day, finished_at FROM etl_run WHERE trigger IS NOT 'laundry' ORDER BY id DESC LIMIT 1");
-  const loaded = lastRun ? { from: lastRun.from_day, to: lastRun.to_day, at: lastRun.finished_at } : null;
-  const coversWindow = Boolean(loaded && loaded.from <= from && loaded.to >= to);
-
-  return {
-    range: { from, to },
-    demoMode: config.demoMode,
-    connected: health.filter((h) => h.status !== 'never run'),
-    odoo: health[0] || null,
-    loaded,
-    coversWindow,
-    ...analysis,
-    caveats: [
-      'A bill is what a supplier invoiced, which is not always what arrived. Where the kitchen '
-        + 'recorded a different quantity, the difference is on the Buying screen.',
-      'Draft bills are left out of every total here. They are somebody mid-entry, not a commitment.',
-      'A credit note counts as a negative purchase, so a supplier total is what was billed less '
-        + 'what was returned.',
-      'Prices are compared before tax, which is the only basis on which two suppliers can be '
-        + 'compared at all.',
-    ],
-  };
-}
-
-/**
  * The yardstick: everything a decision needs, against something to judge it by.
  *
  * The rest of the app reports. This compares — every figure against the period
  * before it, against what the day has to take to pay for itself, and against a
  * shock it might have to survive.
  *
- * Two things make it different from the Money screen, and both are about the
+ * Two things make it different from Overview, and both are about the
  * comparison rather than the numbers:
  *
  * The prior window is **exactly as long** as the current one, taken from the
@@ -627,10 +556,12 @@ export async function financials(env, query) {
 export async function findings(env, query) {
   const db = env.DB;
   const state = String(query?.state || 'live');
+  // Live is what the Brief lists; down is what somebody put down, shown under it.
   const where = state === 'all' ? '1 = 1'
     : state === 'live' ? "state IN ('open','acknowledged')"
-      : 'state = ?1';
-  const rows = state === 'all' || state === 'live'
+      : state === 'down' ? "state IN ('actioned','dismissed','resolved')"
+        : 'state = ?1';
+  const rows = ['all', 'live', 'down'].includes(state)
     ? await all(db, `SELECT * FROM findings WHERE ${where} ORDER BY impact_monthly DESC, severity`)
     : await all(db, `SELECT * FROM findings WHERE ${where} ORDER BY impact_monthly DESC, severity`, state);
   return { findings: rows.map(shapeFinding), state };

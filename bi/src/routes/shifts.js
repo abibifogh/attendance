@@ -64,7 +64,7 @@ export async function uploadJournal(env, body, account) {
       return [e.seq, e.kind, e.user, e.date, e.register, data, at];
     }));
 
-  // The rooms' revenue on the Money page is read from the journal; write the days this file covers again.
+  // The rooms' revenue on Reports › Overview is read from the journal; write the days this file covers again.
   const dated = entries.map((e) => e.date).filter(Boolean).sort();
   await rebuildAssdRevenue(env, { from: window?.from ?? dated[0], to: window?.to ?? dated[dated.length - 1] }).catch(() => {});
 

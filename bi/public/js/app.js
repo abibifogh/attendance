@@ -8,8 +8,6 @@ import { renderDemand } from './views/demand.js';
 import { renderCash } from './views/cash.js';
 import { renderSafe } from './views/safe.js';
 import { renderSuppliers } from './views/suppliers.js';
-import { renderBooks } from './views/books.js';
-import { renderFindings } from './views/findings.js';
 import { renderSetup } from './views/setup.js';
 import { renderHub } from './views/hub.js';
 import { renderAccounts } from './views/accounts.js';
@@ -45,11 +43,11 @@ const ROUTES = [
   // into the four systems they actually work in.
   { path: 'hub', label: 'Hub', render: renderHub, needs: 'session' },
   { path: 'brief', label: 'Brief', render: renderBrief, needs: 'insight' },
-  { path: 'money', label: 'Money', render: renderPnl },
+  { path: 'money', label: 'Overview', render: renderPnl },
   { path: 'yardstick', label: 'Yardstick', render: renderFinancials },
   { path: 'labour', label: 'Labour', render: renderLabour },
   { path: 'guests', label: 'Guests', render: renderDemand },
-  { path: 'cash', label: 'Cash', render: renderCash },
+  { path: 'cash', label: 'Tills & collections', render: renderCash },
   // The safe book: cash in from the shifts, out as written, and the counts. Admins.
   { path: 'safe', label: 'Safe', render: renderSafe, needs: 'admin' },
   // A month of its own rather than the window: its address names the month.
@@ -65,24 +63,24 @@ const ROUTES = [
   { path: 'receipts', label: 'Receipts', render: renderReceipts, needs: 'admin' },
   // Money given to people to spend; their receipts become POs with their reference. Admins.
   { path: 'floats', label: 'Floats', render: renderFloats, needs: 'admin' },
-  { path: 'books', label: 'Books', render: renderBooks },
-  { path: 'findings', label: 'Findings', render: renderFindings, needs: 'insight' },
   { path: 'accounts', label: 'Accounts', render: renderAccounts, needs: 'owner' },
-  { path: 'reports', label: 'Reports', render: renderReports, needs: 'owner' },
+  { path: 'reports', label: 'Shared reports', render: renderReports, needs: 'owner' },
   { path: 'setup', label: 'Setup', render: renderSetup, needs: 'owner' },
   // Every system's approvals, decided here. Its own button on the menu bar, with the count.
   { path: 'approvals', label: 'Approvals', render: renderApprovals, needs: 'admin', button: true },
 ];
 
 /**
- * The screens in four groups, each a menu in the header. Fifteen links in a
- * row was a second bar of its own; four words fit beside the name.
+ * The screens in five groups, each a menu in the header. What somebody works
+ * in (the front desk, the money they hold and spend) apart from what they
+ * only read (Reports). Old addresses (#/findings, #/books) open the Brief.
  */
 const NAV_GROUPS = [
-  ['Today', ['hub', 'brief', 'findings']],
-  ['Money', ['money', 'yardstick', 'cash', 'safe', 'prepaid', 'books', 'buying', 'receipts', 'floats']],
-  ['Operations', ['shifts', 'upload', 'niceplace', 'labour', 'guests']],
-  ['Admin', ['accounts', 'reports', 'setup']],
+  ['Today', ['hub', 'brief']],
+  ['Front desk', ['shifts', 'niceplace', 'upload']],
+  ['Money', ['safe', 'floats', 'receipts']],
+  ['Reports', ['money', 'yardstick', 'prepaid', 'cash', 'labour', 'guests', 'buying', 'reports']],
+  ['Admin', ['accounts', 'setup']],
 ];
 
 /** Everything on the reports side needs the reports grant. */
@@ -171,7 +169,8 @@ async function renderApp() {
     links.set(route.path, b);
     return b;
   };
-  const grouped = NAV_GROUPS.map(([name, paths]) => [name, visible.filter((r) => paths.includes(r.path))]).filter(([, rs]) => rs.length);
+  // In each menu, in the order NAV_GROUPS gives.
+  const grouped = NAV_GROUPS.map(([name, paths]) => [name, paths.map((p) => visible.find((r) => r.path === p)).filter(Boolean)]).filter(([, rs]) => rs.length);
   const loose = visible.filter((r) => !r.button && !NAV_GROUPS.some(([, paths]) => paths.includes(r.path)));
   const flat = visible.filter((r) => !r.button).length <= 5;
   const nav = h('nav.navgroups', { 'aria-label': 'Screens' },

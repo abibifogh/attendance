@@ -15,7 +15,7 @@ decoded, reformatted or rewritten on the way through.
 
 ## Publishing
 
-**Reports** tab (owners only) → *Publish a report*.
+Reports › **Shared reports** (owners only) → *Publish a report*.
 
 | Field | What to put |
 |---|---|

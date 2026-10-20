@@ -18,7 +18,7 @@ Two things decide whether this works at all.
 **The plan.** External API access on Odoo Online is a **Custom plan** feature.
 It is not available on One App Free or Standard. You are on Custom, so this is
 settled — but if the subscription is ever downgraded, this connector stops
-working and the Books tab goes quiet.
+working and Yardstick, the safe book, Receipts, Floats and ＋ PO stop reading it.
 
 **The version.** Odoo 19 uses the **External JSON-2 API** at `/json/2/`. The
 older `/jsonrpc` and `/xmlrpc/2` endpoints — which nearly every example on the
@@ -110,7 +110,7 @@ works, and with what is wrong if it does not.
 
 ## 7. Load
 
-**Setup → Load and re-read now.** Then open **Books**.
+**Setup → Load and re-read now.** Then open Reports › **Yardstick**.
 
 ---
 
@@ -136,21 +136,9 @@ invent a supplier called "Accounts Payable".
 
 ## What it does with it
 
-The **Books** tab, ordered by what is worth acting on:
-
-- **The same thing, two prices** — items bought from more than one supplier,
-  ranked by what the gap is *worth* at the quantities actually bought, not by
-  the percentage
-- **Bills that may be the same bill** — the same supplier reference twice
-  (invisible in Odoo's own lists, because its internal numbers always differ),
-  and the weaker same-amount-days-apart signal
-- **Lines that do not look like the others** — a price far from that supplier's
-  usual, which is nearly always a quantity keyed wrongly
-- **Spend nobody agreed to first** — the share of billing with no purchase order
-- **Where the money goes** — supplier concentration and the long tail
-- **What is still owed** — ageing as at the end of the window, not today
-- **Suspiciously round bills**
-- **Every price, item by item**
+Vendor bills feed Reports › **Yardstick** (what was bought, and what is owed)
+and Reports › **Overview** (*How the spending was paid*). The Books screen that
+went through the bills one by one was taken off; the bills are still read.
 
 ## Three things worth knowing
 
@@ -179,5 +167,4 @@ whatever the line said.
 | "Odoo refused the API key" | Wrong key, or the user cannot read accounting. |
 | "the address is wrong" | Check the address has no path on the end. |
 | "did not answer in time" | Odoo was slow; the next run picks it up. |
-| Books says "Odoo is connected but has no vendor bills" | Bills may be sitting as drafts, or dated outside the window. |
 | Everything lands in `admin` | Step 4's mapping is empty or does not match. |

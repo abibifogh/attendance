@@ -55,6 +55,9 @@ export async function renderBrief(root, { range }) {
         : 'Nothing is far enough out of line to raise. That is a real answer, not an empty screen.'),
       data.findings.map((finding) => findingCard(finding, { onDecide: decide }))),
 
+    // What somebody put down: kept out of the list above, a tap away.
+    putDown(),
+
     data.ruleErrors?.length ? h('div.card',
       h('h3', 'Some checks could not run'),
       h('ul.caveats', data.ruleErrors.map((e) => h('li', `${e.ruleId}: ${e.error}`)))) : null,
@@ -73,4 +76,33 @@ export async function renderBrief(root, { range }) {
     await api(`/findings/${finding.id}`, { method: 'POST', body: { state: next } });
     state.reload();
   }
+
+  /** Dealt with, not a problem, or no longer true: read when opened, each can be brought back. */
+  function putDown() {
+    const list = h('div');
+    const box = h('details.card.bf-down',
+      h('summary', h('strong', 'Show put-down findings')),
+      h('p.sub', 'Dealt with, not a problem, or no longer true. Putting one down keeps it off the list above; bring it back if it was put down by mistake.'),
+      list);
+    let read = false;
+    box.addEventListener('toggle', async () => {
+      if (!box.open || read) return;
+      read = true;
+      list.replaceChildren(h('p.muted', 'Reading…'));
+      try {
+        const down = await api('/findings?state=down');
+        list.replaceChildren(...(down.findings.length ? down.findings.map((f) => h('div',
+          findingCard(f),
+          h('p.small.muted', `${WORDS[f.state] || f.state}${f.firstSeenAt ? ` · first seen ${f.firstSeenAt.slice(0, 10)}` : ''} `,
+            h('button.btn', { type: 'button', onclick: () => decide(f, 'open') }, 'Bring it back'))))
+          : [h('p.muted', 'Nothing has been put down.')]));
+      } catch (err) {
+        read = false;
+        list.replaceChildren(banner('problem', err.message));
+      }
+    });
+    return box;
+  }
 }
+
+const WORDS = { actioned: 'Dealt with', dismissed: 'Not a problem', resolved: 'No longer true' };
