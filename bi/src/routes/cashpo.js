@@ -12,7 +12,7 @@ import { syncTodos, todoCounts, lookbackDays } from './todo.js';
  * Insight already knows every PO paid in cash: a closing report's expenses
  * (HIVE), the drawer expenses typed against a shift, and the safe book. Odoo
  * knows whether each has been billed. Together they answer three things the
- * Money page could not:
+ * Overview could not:
  *
  * - what was spent in cash and has no bill yet, so is in no cost figure at
  *   all. Until the bill arrives it is counted here, on the day the cash left,
@@ -82,7 +82,7 @@ export async function gatherCashPos(env) {
 
 /**
  * Ask Odoo about every cash PO, keep what it says, and put the cost of those
- * not billed yet where the Money page reads cost. Then bring the to-do list up
+ * not billed yet where Reports › Overview reads cost. Then bring the to-do list up
  * to date.
  */
 export async function refreshCashPos(env, { fetchImpl, today } = {}) {
@@ -188,7 +188,7 @@ const parse = (text, fallback) => { try { return JSON.parse(text || ''); } catch
 const key = (name) => String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
 /**
- * The Money page's view of how things were paid, for a window: bills by their
+ * Reports › Overview's view of how things were paid, for a window: bills by their
  * date, cash by the day it left.
  */
 export async function cashView(env, { from, to }) {
@@ -269,7 +269,7 @@ export async function cashView(env, { from, to }) {
 }
 
 /**
- * "Check Odoo now", from the Money page (admins) or the to-do list (admins
+ * "Check Odoo now", from Reports › Overview (admins) or the to-do list (admins
  * and supervisors: a supervisor chasing a bill wants to see it clear).
  */
 export async function refreshNow(env, account, opts = {}) {

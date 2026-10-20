@@ -3,8 +3,8 @@ import { api } from '../api.js';
 import { table, banner } from './components.js';
 
 /**
- * The Money page's three cards from what the shifts know: how the spending
- * was paid, what to chase, and the revenue read from the ASSD journal.
+ * Reports → Overview's two cards from what the shifts know: how the spending
+ * was paid, and the revenue read from the ASSD journal.
  */
 
 const dayText = (day) => (day ? new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '');
@@ -14,12 +14,6 @@ const PAID = [
   ['safe', 'From the safe', 'var(--series-3)'],
   ['other', 'By bank or on credit', 'var(--series-2)'],
 ];
-
-/** Shifts → Inbox, from anywhere. */
-function openTodo() {
-  try { sessionStorage.setItem('insight-shifts-section', 'inbox'); } catch { /* private mode */ }
-  window.location.hash = '#/shifts';
-}
 
 function paidBar(split) {
   const whole = PAID.reduce((t, [k]) => t + Math.max(0, split[k] || 0), 0);
@@ -34,7 +28,7 @@ function paidBar(split) {
       h('small', whole ? `${Math.round(((split[k] || 0) / whole) * 100)}%` : '')))));
 }
 
-async function paidCard(range, onData) {
+async function paidCard(range) {
   const card = h('div.card.mc-card', h('h2', 'How the spending was paid'), h('p.muted', 'Reading…'));
   const draw = async (notice = null) => {
     let d;
@@ -59,6 +53,9 @@ async function paidCard(range, onData) {
         h('div.mc-check', check, h('small.muted', d.checkedAt ? `Last checked ${dayText(d.checkedAt.slice(0, 10))} ${d.checkedAt.slice(11, 16)}` : 'Not checked with Odoo yet'), said)),
       paidBar(s),
       s.unbilled ? h('p.small', `${money(s.unbilled)} of it was paid in cash against a PO Odoo has no bill for yet. It is counted in Purchases above, on the day the cash left, until the bill is posted.`) : null,
+      // Not an Inbox item (nothing in Odoo to chase), so said here.
+      d.notInOdoo.length ? banner('warning', `${d.notInOdoo.length} PO${d.notInOdoo.length === 1 ? '' : 's'} paid in cash ${d.notInOdoo.length === 1 ? 'is' : 'are'} not in Odoo at all: `,
+        d.notInOdoo.map((r) => `${r.po} (${FROM[r.paidFrom] || r.paidFrom}, ${dayText(r.paidDay)})`).join(', '), '. A typing mistake, or a PO deleted in Odoo.') : null,
       h('h3.mc-sub', 'By supplier'),
       table([
         { label: 'Supplier', get: (r) => r.supplier },
@@ -75,36 +72,9 @@ async function paidCard(range, onData) {
           { label: 'Cash, no bill yet', num: true, get: (r) => (r.unbilled ? money(r.unbilled) : '–') },
           { label: 'Total', num: true, get: (r) => money(r.total) },
         ], d.lines)] : null);
-    // The chase card is drawn from the same reading.
-    onData(d);
   };
   await draw();
   return card;
-}
-
-function chaseCard(d) {
-  const t = d.todo;
-  const list = (rows, line) => (rows.length ? h('ul.mc-list', rows.slice(0, 8).map((r) => h('li', line(r))),
-    rows.length > 8 ? h('li.muted', `and ${rows.length - 8} more`) : null) : h('p.small.muted', 'None.'));
-  return h('div.card.mc-card',
-    h('div.mc-head',
-      h('div', h('h2', 'To chase'),
-        h('p.sub', 'From these days. Each is in the Inbox under Shifts, given to a supervisor; their answers come to you.')),
-      h('div.mc-check',
-        h('button.btn.primary', { type: 'button', onclick: openTodo }, 'Open the Inbox'),
-        h('small.muted', `${t.open} open · ${t.answered} waiting for you${t.unassigned ? ` · ${t.unassigned} with nobody` : ''}`))),
-    h('div.mc-chase',
-      h('section',
-        h('h3', 'Paid in cash, no posted bill', h('b.num', money(d.unbilled.reduce((a, r) => a + r.paid, 0)))),
-        list(d.unbilled, (r) => [h('b', r.po), ` ${r.vendor || ''} · ${money(r.paid)} from the ${r.paidFrom} on ${dayText(r.paidDay)}${r.draft ? ' · draft bill' : ''}`])),
-      h('section',
-        h('h3', 'Paid is not what the PO says', h('b.num', String(d.differs.length))),
-        list(d.differs, (r) => [h('b', r.po), ` paid ${money(r.paid)}, PO ${money(r.poTotal)} · ${FROM[r.paidFrom] || r.paidFrom}, ${dayText(r.paidDay)}`])),
-      h('section',
-        h('h3', 'Other POs with no posted bill', h('b.num', money(d.noBill.reduce((a, r) => a + r.total, 0)))),
-        list(d.noBill, (r) => [h('b', r.po), ` ${r.vendor || ''} · ${money(r.total)} · ordered ${dayText(r.orderedOn)}${r.draft ? ' · draft bill' : ''}`]))),
-    d.notInOdoo.length ? banner('warning', `${d.notInOdoo.length} PO${d.notInOdoo.length === 1 ? '' : 's'} paid in cash ${d.notInOdoo.length === 1 ? 'is' : 'are'} not in Odoo at all: `,
-      d.notInOdoo.map((r) => `${r.po} (${FROM[r.paidFrom] || r.paidFrom}, ${dayText(r.paidDay)})`).join(', '), '. A typing mistake, or a PO deleted in Odoo.') : null);
 }
 
 async function revenueCard(range) {
@@ -149,12 +119,14 @@ async function revenueCard(range) {
   return card;
 }
 
-/** The three cards, filled in as each reading comes back. */
+/**
+ * The two cards, filled in as each reading comes back. What to chase is in
+ * Shifts → Inbox, not repeated on a report.
+ */
 export function moneyFromShifts(range) {
   const paid = h('div');
-  const chase = h('div');
   const takings = h('div');
-  paidCard(range, (d) => mount(chase, chaseCard(d))).then((card) => mount(paid, card)).catch((err) => mount(paid, banner('problem', err.message)));
+  paidCard(range).then((card) => mount(paid, card)).catch((err) => mount(paid, banner('problem', err.message)));
   revenueCard(range).then((card) => mount(takings, card)).catch((err) => mount(takings, banner('problem', err.message)));
-  return h('div.mc', paid, chase, takings);
+  return h('div.mc', paid, takings);
 }

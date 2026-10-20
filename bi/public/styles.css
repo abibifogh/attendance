@@ -1183,10 +1183,6 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .mc-legend b { color: var(--ink); font-variant-numeric: tabular-nums; }
 .mc-legend small { color: var(--muted); }
 .mc-warn { color: var(--sh-warn-ink); font-weight: 600; }
-.mc-chase { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .8rem; margin-top: .8rem; }
-.mc-chase section { background: var(--surface-2); border-radius: 10px; padding: .7rem .85rem; }
-.mc-chase h3 { display: flex; justify-content: space-between; gap: .5rem; margin: 0 0 .4rem; font-size: .88rem; }
-.mc-list { margin: 0; padding-left: 1rem; font-size: .82rem; color: var(--ink-2); display: grid; gap: .2rem; }
 .mc-nights { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .5rem; background: var(--surface-2); border-radius: 10px; padding: .7rem .9rem; margin: .7rem 0; }
 .mc-nights small { display: block; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
 .mc-nights b { font-size: 1.15rem; }
@@ -1863,3 +1859,7 @@ html.viewing-as body::after { content: ''; position: fixed; inset: 0; border: 4p
 .fl-two { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
 .fl-dlg-acts { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .3rem; }
 @media (max-width: 760px) { .fl-tiles { grid-template-columns: 1fr 1fr; } .fl-two { grid-template-columns: 1fr; } }
+
+/* Brief: findings somebody put down, folded under the list. */
+details.bf-down > summary { cursor: pointer; list-style: revert; }
+details.bf-down[open] > summary { margin-bottom: .4rem; }
