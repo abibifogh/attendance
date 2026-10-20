@@ -1174,6 +1174,15 @@ function tellMail(kind, title, text) {
       why: 'You get this because an advance was given to you to report on the expense form, or taken back.',
     };
   }
+  if (kind === 'till.owner') {
+    return {
+      tone: 'info', status: 'Whose shift', eyebrow: 'Till',
+      headline: title, intro: text || undefined,
+      button: 'See my till list',
+      subject: title, preheader: text || undefined,
+      why: 'You get this because an admin or a supervisor said whose shift it was, and it was, or is now, yours.',
+    };
+  }
   if (kind === 'till.moved') {
     return {
       tone: 'warn', status: 'On your account', eyebrow: 'Till',
@@ -1300,7 +1309,7 @@ export async function linkSummary(ctx) {
 /** Tell people something Insight decided. */
 export async function linkTell(ctx) {
   const body = await fromInsight(ctx);
-  const kind = ['till.settled', 'till.approval', 'till.moved', 'till.given', 'till.proof', 'till.checked'].includes(body.kind) ? body.kind : 'till.settled';
+  const kind = ['till.settled', 'till.approval', 'till.moved', 'till.given', 'till.proof', 'till.checked', 'till.owner'].includes(body.kind) ? body.kind : 'till.settled';
   const title = str(body.title, 'Title', { required: true, max: 200 });
   const text = str(body.body, 'Body', { max: 800 });
   const people = Array.isArray(body.recipients)

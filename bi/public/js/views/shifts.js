@@ -762,7 +762,7 @@ export async function renderShifts(root, { range }) {
         add(grid, h(`button.sh-tile.${t}${s.id === currentId ? '.sel' : ''}`, {
           type: 'button', title: `${nameOf(s.user)} · ${SLOT[sl].label} · ${dayText(s.day)}`, onclick: () => go('shift', s.id),
         },
-        h('span.sh-who', avatar(s.user), h('b', nameOf(s.user))),
+        h('span.sh-who', avatar(s.user), h('b', { dataset: { k: `${s.day}|${s.slot}` } }, nameOf(s.user))),
         h('span.sh-fig', h('span.num', `Cash ${whole(s.cash)}`), chip(s.register?.variance ?? s.register?.varianceSign, s.open, Boolean(drawerSettled(s)))),
         mixBar(s),
         h('span.sh-fig',
@@ -778,6 +778,14 @@ export async function renderShifts(root, { range }) {
         if (!st) continue;
         el.className = `sh-ck ${st}`;
         el.textContent = { ok: '✓ Checked', changed: '! Changed since checked', wait: 'Not checked' }[st];
+      }
+    }).catch(() => {});
+    // The name that holds: chosen, or a question where ASSD and HIVE differ.
+    till.names().then((map) => {
+      for (const el of grid.querySelectorAll('.sh-who b[data-k]')) {
+        const n = map.get(el.dataset.k);
+        if (n?.chosen) el.textContent = n.name;
+        else if (n?.differs) { el.textContent = `${el.textContent} / ${n.closedBy}`; el.title = 'ASSD login / closed in HIVE by: not the same person'; }
       }
     }).catch(() => {});
     const wrap = h('div.sh-weekwrap', grid);
@@ -981,12 +989,16 @@ export async function renderShifts(root, { range }) {
     // Checked or not yet: what its people see depends on it.
     const checked = h('div');
     till.shiftCheck(s.day, s.slot, (words) => load(banner('good', words))).then((card) => mount(checked, card)).catch(() => {});
+    // Both names when ASSD and HIVE differ, and whose shift it was.
+    const whose = h('div');
+    const title = h('h2', nameOf(s.user));
+    till.whoseShift(s.day, s.slot, { title, after: (words) => load(words ? banner('good', words) : null) }).then((card) => mount(whose, card)).catch(() => {});
     const back = h('button.sh-back', { type: 'button', onclick: () => go(mode) }, `‹ Back to ${period.label}`);
     const head = h('section.card',
       h('div.sh-shifthead',
         h('button.sh-arrow', { type: 'button', disabled: i <= 0, 'aria-label': 'Previous shift', onclick: () => go('shift', shifts[i - 1].id) }, '‹'),
         h('div.t', avatar(s.user, true),
-          h('div', h('h2', nameOf(s.user)),
+          h('div', title,
             h('div.m', glyph(s.slot), `${SLOT[s.slot].label} · ${SLOT[s.slot].hours} · ${dayText(s.day, { weekday: 'long', day: 'numeric', month: 'long' })}`,
               s.double ? h('span.sh-chip.none', 'covered two slots') : null))),
         h(`span.sh-status.${tone(s)}`, { good: '✓ All agrees', warn: '! Have a look', bad: '! Needs an answer', open: 'Journal ends here' }[tone(s)]),
@@ -994,7 +1006,7 @@ export async function renderShifts(root, { range }) {
     // Without the amounts, the drawer's story is nothing but blanks: the
     // closing report and what does not agree are what there is to see.
     if (!may('money')) {
-      mount(v, back, head, checked, report,
+      mount(v, back, head, whose, checked, report,
         exceptionsBlock(s));
       return;
     }
@@ -1033,6 +1045,7 @@ export async function renderShifts(root, { range }) {
     mount(v,
       back,
       head,
+      whose,
       checked,
       report,
       h('div.sh-two',

@@ -893,3 +893,30 @@ test('envelopes moved to the safe: one line each, marked received with a count, 
   view = await envelopes.envelopesView(env, range, OWNER);
   assert.equal(view.lines.find((l) => l.no === '417').received, null);
 });
+
+test('whose shift it was: chosen with a reason, its differences follow, both are told, and it can go back', async () => {
+  const { env } = await setUp();
+  const told = [];
+  const fetchImpl = async (req) => { told.push(await req.json()); return Response.json({ ok: true }); };
+  const day = '2026-08-01';
+  const c = await till.ownerChoices(env, { day, slot: 'afternoon' }, OWNER);
+  assert.deepEqual([c.assdUser, c.closedBy.name, c.chosen], ['BRAVO', 'Kofi Test', null]);
+  assert.ok(c.people.some((p) => p.name === 'Ama Test'));
+  await assert.rejects(till.setOwner(env, { day, slot: 'afternoon', userId: 7 }, OWNER, { fetchImpl }), /Say why/);
+  await assert.rejects(till.setOwner(env, { day, slot: 'afternoon', userId: 99, why: 'x y z' }, OWNER, { fetchImpl }), /Choose whose/);
+  await assert.rejects(till.setOwner(env, { day, slot: 'afternoon', userId: 7, why: 'Ama covered' }, SUPERVISOR, { fetchImpl }), /not been shared|look at this/);
+
+  const before = (await till.issuesBetween(env, day, day)).issues.filter((i) => i.slot === 'afternoon');
+  assert.ok(before.length && before.every((i) => i.userId === 8), 'Kofi closed it, so it is his');
+  const out = await till.setOwner(env, { day, slot: 'afternoon', userId: 7, why: 'Ama covered; Kofi signed for her' }, OWNER, { fetchImpl });
+  assert.equal(out.changed, true);
+  assert.deepEqual(told.map((t) => [t.kind, t.userIds[0], /now yours|no longer yours/.exec(t.title)[0]]), [['till.owner', 7, 'now yours'], ['till.owner', 8, 'no longer yours']]);
+  const after = (await till.issuesBetween(env, day, day)).issues.filter((i) => i.slot === 'afternoon');
+  assert.ok(after.every((i) => i.userId === 7), 'its differences follow the person chosen');
+  const view = await till.overview(env, { from: day, to: day }, OWNER);
+  const row = view.reports.find((r) => r.slot === 'afternoon');
+  assert.deepEqual([row.owner.name, row.owner.why, row.owner.by], ['Ama Test', 'Ama covered; Kofi signed for her', 'Test Owner']);
+
+  await till.setOwner(env, { day, slot: 'afternoon', userId: null }, OWNER, { fetchImpl });
+  assert.ok((await till.issuesBetween(env, day, day)).issues.filter((i) => i.slot === 'afternoon').every((i) => i.userId === 8), 'back to who closed it');
+});

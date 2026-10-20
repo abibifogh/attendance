@@ -278,7 +278,8 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
         shift,
         h('td', rep.name),
         h('td', when(rep.signedAt), signedNote(r), rep.moved ? h('small', `moved here from ${slotWord(rep.moved.from)}${rep.moved.by ? ` by ${rep.moved.by}` : ''}${rep.moved.reason ? `: “${rep.moved.reason}”` : ''}`) : null),
-        h('td', !r.assdUser ? pill('none', 'not in the journal') : r.assdMatches === false ? pill('short', `✗ ${r.assdUser}`) : r.assdMatches ? pill('ok', `✓ ${r.assdUser}`) : r.assdUser),
+        h('td', !r.assdUser ? pill('none', 'not in the journal') : r.assdMatches === false ? pill('short', `✗ ${r.assdUser}`) : r.assdMatches ? pill('ok', `✓ ${r.assdUser}`) : r.assdUser,
+          r.owner ? h('small', `${r.owner.name}’s shift, chosen by ${r.owner.by}`) : null),
         h('td', drawer),
         h('td', checked),
         h('td',
@@ -297,6 +298,102 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
             h('p.sh-sub', 'Every report signed in HIVE, the shift it is on, and whether that looks right. A row stands out when ASSD has somebody else on its shift. Open goes to the shift; Move… puts the report on another one.')),
           chips),
         list));
+  }
+
+  // ------------------------------------------------- whose shift it was --
+
+  const login = (u) => (u ? u.charAt(0) + u.slice(1).toLowerCase() : '');
+  /** ASSD and HIVE name different people: ASSD's login is not known to be whoever closed it. */
+  const differs = (r) => Boolean(r?.report && r.assdUser && r.assdMatches !== true);
+
+  /** Each shift's name for the tiles: chosen, or a question when ASSD and HIVE differ. */
+  async function names() {
+    const d = await read();
+    return new Map((d.reports || []).map((r) => [`${r.day}|${r.slot}`, {
+      name: r.owner?.name || null, chosen: Boolean(r.owner), differs: !r.owner && differs(r), closedBy: r.report?.name || null,
+    }]));
+  }
+
+  /**
+   * Under a shift's heading: both names when ASSD and HIVE differ, and the
+   * chooser for whose shift it was; or who was chosen, by whom and why. Sets
+   * the heading (`title`) to the name that holds.
+   */
+  async function whoseShift(day, slot, { title = null, after = () => {} } = {}) {
+    const d = await read();
+    const r = (d.reports || []).find((x) => x.day === day && x.slot === slot);
+    if (!r || (!r.owner && !differs(r))) return null;
+    const box = h('div.ws-box');
+    const tags = h('div.ws-tags',
+      r.owner ? h('span.ws-tag.ok', `${r.owner.name}’s shift: chosen by ${r.owner.by}, ${when(r.owner.at)}`) : null,
+      r.assdUser ? h('span.ws-tag', `ASSD login: ${login(r.assdUser)} (did the hand-over)`) : null,
+      r.report ? h('span.ws-tag', `Closed in HIVE by ${r.report.name}, ${when(r.report.signedAt)}`) : null,
+      !r.owner ? h('span.ws-tag.warn', r.assdMatches === false ? 'Not the same person' : 'Not the same name') : null);
+    if (title) title.textContent = r.owner ? r.owner.name : `${r.report.name} or ${login(r.assdUser)}?`;
+    const choose = () => mount(box, ownerChooser(day, slot, r, { after, close: () => mount(box, actions()) }));
+    const actions = () => (canMove ? h('div.tl-act',
+      h(`button.btn${r.owner ? '' : '.primary'}`, { type: 'button', onclick: choose }, r.owner ? 'Change' : 'Choose whose shift it was')) : null);
+    mount(box, actions());
+    return h('section.card.ws',
+      tags,
+      r.owner ? h('div.tl-moved', `“${r.owner.why}”`) : h('p.tl-small', `Until somebody chooses, it is ${r.report.name}’s shift (who closed it in HIVE): ${r.report.name} sees what is on it to sort out.`),
+      box);
+  }
+
+  /** Choose whose shift it was: who closed it, the ASSD login's person, or somebody else; and why. */
+  function ownerChooser(day, slot, r, { after, close }) {
+    const wrap = h('div.tl-move', h('p.tl-small', 'Reading who could have held it…'));
+    (async () => {
+      let c;
+      try { c = await api(`/till/owner?day=${day}&slot=${slot}`); } catch (err) { mount(wrap, h('p.tl-small.form-error', err.message)); return; }
+      let chosen = c.chosen?.userId ?? c.closedBy?.userId ?? null;
+      const others = h('select', { 'aria-label': 'Somebody else' },
+        h('option', { value: '' }, 'Somebody else…'),
+        c.people.map((p) => h('option', { value: String(p.userId) }, p.name)));
+      const reason = h('input', { type: 'text', maxlength: 300, value: c.chosen?.why || '', placeholder: 'Who was on duty, and whose login was used', 'aria-label': 'Why' });
+      const said = h('span.tl-small');
+      const go = h('button.btn.primary', { type: 'button' });
+      const opts = h('div.tl-slots');
+      const nameOf = (id) => c.people.find((p) => p.userId === id)?.name || (c.closedBy?.userId === id ? c.closedBy.name : '');
+      const paint = () => {
+        const list = [];
+        if (c.closedBy) list.push([c.closedBy.userId, c.closedBy.name, `Closed it in HIVE, ${when(c.closedBy.signedAt)}`]);
+        if (c.assdPerson && c.assdPerson.userId !== c.closedBy?.userId) list.push([c.assdPerson.userId, c.assdPerson.name, `Their ASSD login (${login(c.assdUser)}) did the hand-over`]);
+        mount(opts, list.map(([id, name, why]) => h(`button.tl-slot${chosen === id ? '.on' : ''}`, {
+          type: 'button', 'aria-pressed': String(chosen === id), onclick: () => { chosen = id; others.value = ''; paint(); },
+        }, h('b', name), h('small', why))), h('label.ws-else', others));
+        go.textContent = chosen != null ? `Make it ${nameOf(chosen)}’s shift` : 'Choose a person';
+        go.disabled = chosen == null;
+      };
+      others.addEventListener('change', () => { if (others.value) { chosen = Number(others.value); paint(); } });
+      go.addEventListener('click', async () => {
+        if (!reason.value.trim()) { said.textContent = 'Say why: it is kept with the shift.'; reason.focus(); return; }
+        go.disabled = true; said.textContent = 'Saving…';
+        try {
+          const out = await api('/till/owner', { method: 'POST', body: { day, slot, userId: chosen, why: reason.value } });
+          forget(); onChange();
+          await after(out.changed ? `It is ${nameOf(chosen)}’s shift now. Both people have been told in HIVE.` : `It is ${nameOf(chosen)}’s shift.`);
+        } catch (err) { said.textContent = err.message; go.disabled = false; }
+      });
+      const back = c.chosen ? h('button.btn', {
+        type: 'button',
+        onclick: async () => {
+          try {
+            await api('/till/owner', { method: 'POST', body: { day, slot, userId: null } });
+            forget(); onChange();
+            await after('Back to whoever closed it in HIVE.');
+          } catch (err) { said.textContent = err.message; }
+        },
+      }, 'Back to who closed it in HIVE') : null;
+      paint();
+      mount(wrap,
+        h('b', `Whose shift was ${SLOT[slot]} · ${dayText(day)}?`),
+        opts,
+        h('label.tl-why', 'Why (kept with the shift)', reason),
+        h('div.tl-act', go, back, h('button.btn', { type: 'button', onclick: close }, 'Cancel'), said),
+        h('p.tl-small', 'Its differences and its list in HIVE follow the person chosen; both people are told. Answers already given stay with whoever gave them.'));
+    })();
+    return wrap;
   }
 
   /**
@@ -712,7 +809,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
   }
 
   return {
-    read, forget, notLinked, shiftReport, shiftCheck, checks, issueCard, peopleExtras, settings, reportList,
+    read, forget, notLinked, shiftReport, shiftCheck, checks, issueCard, peopleExtras, settings, reportList, whoseShift, names,
     ...(admin ? { answerApprovalCard, correctionCard } : {}),
   };
 }

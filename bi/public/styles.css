@@ -1928,3 +1928,11 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
   header.top, .sv-tabs, .sv-bar, .sv-sticky, .sv-sheet input[type=checkbox] { display: none !important; }
   .sv-sheet { font-size: 10pt; }
 }
+
+/* Whose shift it was: both names, and the chooser. */
+.ws { display: grid; gap: .6rem; }
+.ws-tags { display: flex; flex-wrap: wrap; gap: .4rem; }
+.ws-tag { border-radius: 999px; padding: .15rem .6rem; font-size: .8rem; font-weight: 700; background: var(--surface-2); color: var(--ink-2); }
+.ws-tag.warn { background: color-mix(in srgb, var(--sh-warn) 20%, transparent); color: var(--sh-warn-ink); }
+.ws-tag.ok { background: color-mix(in srgb, var(--sh-good) 16%, transparent); color: var(--sh-good-ink); }
+.ws-else select { padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 10px; font: inherit; background: var(--surface); color: var(--ink); width: 100%; height: 100%; }
