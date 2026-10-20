@@ -876,7 +876,14 @@ export async function shifts(env, query, account) {
   const signer = await signers(env, entries);
   const placed0 = placeShifts(sessions, events.map((e) => ({ ...e, minute: minuteOf(e.at) })), { signed: signer.signed });
   const { shifts: raw, places } = joinShared(parts, placed0, corrections, signer.pick);
-  const result = reconcile(raw, events, declines, { open, notSame: notSame.map((a) => a.key), places });
+  // Payments an admin moved to another shift.
+  const homeRows = await optional(all(env.DB, 'SELECT * FROM payment_home'));
+  const homes = new Map(homeRows.map((r) => [r.event_id, { day: r.day, slot: r.slot }]));
+  const result = reconcile(raw, events, declines, { open, notSame: notSame.map((a) => a.key), places, homes });
+  for (const x of result.exceptions) {
+    const m = x.event?.id && homeRows.find((r) => r.event_id === x.event.id);
+    if (m) x.moved = { fromDay: m.from_day, fromSlot: m.from_slot, why: m.why, by: m.by_name, at: m.at };
+  }
   const inRange = (day) => day >= from && day <= to;
   const placed = result.shifts.filter((s) => inRange(s.day));
 
@@ -1616,4 +1623,29 @@ export function forSupervisor(payload, access) {
   if (!access.files) out = { ...out, canUpload: false };
   if (!access.money) out = withoutMoney(out);
   return { ...out, redacted: !access.money };
+}
+
+/**
+ * An admin moves a payment ASSD does not show to another shift (one taken
+ * just after a hand-over belongs to the shift before), saying why; or puts it
+ * back where its time says (`back: true`).
+ */
+export async function movePayment(env, body, account) {
+  const id = String(body?.eventId || '');
+  if (!/^[tb]:[A-Za-z0-9_.-]{1,80}$/.test(id)) throw badRequest('Which payment?');
+  if (body?.back) {
+    await run(env.DB, 'DELETE FROM payment_home WHERE event_id = ?1', id);
+    return { ok: true, back: true };
+  }
+  const day = String(body?.day || '');
+  const slot = String(body?.slot || '');
+  if (!isDay(day) || !SLOTS.includes(slot)) throw badRequest('Which shift?');
+  const why = str(body?.why, 'Why', { max: 300 });
+  if (!why || why.length < 3) throw badRequest('Say why it belongs to that shift.');
+  const fromDay = isDay(String(body?.fromDay || '')) ? body.fromDay : null;
+  const fromSlot = SLOTS.includes(body?.fromSlot) ? body.fromSlot : null;
+  await run(env.DB, `INSERT INTO payment_home (event_id, day, slot, from_day, from_slot, why, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      ON CONFLICT (event_id) DO UPDATE SET day = ?2, slot = ?3, why = ?6, by_name = ?7, at = ?8`,
+  id, day, slot, fromDay, fromSlot, why, account?.name || account?.email || 'Owner', new Date().toISOString().slice(0, 19).replace('T', ' '));
+  return { ok: true };
 }

@@ -125,17 +125,31 @@ const SHARE = -1.5;
  * they counted is what this session closed on.
  */
 export function placeShifts(shifts, events, { signed = null } = {}) {
-  // The journal alone first. Only when it cannot be placed one session to a
+  // The journal alone first. Only where it cannot be placed one session to a
   // slot (a session has to share one, or a marker is days out) are the HIVE
-  // reports asked: a report filed on the wrong shift must not drag a journal
-  // that fits on its own, or "filed on the wrong shift" could never be seen.
+  // reports asked, and their answer is taken only for each run of sessions
+  // that moves together with that place: everywhere else, every session stays
+  // where the journal alone puts it. A report filed on the wrong shift must
+  // not drag a journal that fits on its own, or "filed on the wrong shift"
+  // could never be seen.
   const alone = place(shifts, events, null);
-  return signed && alone.trouble ? place(shifts, events, signed).places : alone.places;
+  if (!signed || !alone.trouble.length) return alone.places;
+  const asked = place(shifts, events, signed).places;
+  const out = alone.places.map((p) => p.slot);
+  for (let i = 0; i < out.length;) {
+    if (asked[i].slot === alone.places[i].slot) { i += 1; continue; }
+    let j = i;
+    while (j + 1 < out.length && asked[j + 1].slot !== alone.places[j + 1].slot) j += 1;
+    // Both agree either side of the run, so it slots in between.
+    if (alone.trouble.some((k) => k >= i - 1 && k <= j + 1)) for (let k = i; k <= j; k += 1) out[k] = asked[k].slot;
+    i = j + 1;
+  }
+  return out.map((t, i) => ({ slot: t, last: out[i + 1] === t + 2 ? t + 1 : t }));
 }
 
 function place(shifts, events, signed) {
-  if (!shifts.length) return { places: [], trouble: false };
-  let trouble = false;
+  if (!shifts.length) return { places: [], trouble: [] };
+  const trouble = [];
   const timed = events.filter((e) => e.minute != null);
   const byAmount = new Map();
   for (const e of timed) {
@@ -191,7 +205,7 @@ function place(shifts, events, signed) {
     // A shift whose every candidate is behind the previous one (a marker
     // dated days early) is placed straight after the previous shift.
     if (next.every((n) => n.total === -Infinity)) {
-      trouble = true;
+      trouble.push(i);
       const prev = best.reduce((a, b) => (b.total > a.total ? b : a));
       next.push({ t: prev.t + 1, total: prev.total - 4, back: prev });
     }
@@ -202,7 +216,7 @@ function place(shifts, events, signed) {
   const placed = [];
   while (node) { placed.unshift(node.t); node = node.back; }
 
-  if (placed.some((t, i) => i && t === placed[i - 1])) trouble = true;
+  placed.forEach((t, i) => { if (i && t === placed[i - 1]) trouble.push(i - 1, i); });
   return {
     trouble,
     places: placed.map((t, i) => {
@@ -517,9 +531,15 @@ export function reconcile(shifts, events, declines = [], options = {}) {
   // What is left on the money side, inside the hours the loaded shifts cover.
   const first = out[0];
   const lastShift = out[out.length - 1];
+  // A payment an admin moved to another shift goes there (`options.homes`:
+  // event id → { day, slot }), whatever its time says.
+  const movedTo = (e) => {
+    const m = options.homes?.get(e.id);
+    return m ? out.find((s) => s.day === m.day && s.slotName === m.slot) || null : null;
+  };
   for (const e of timed.filter(free)) {
     if (!first || e.minute < first.window.start || e.minute >= lastShift.window.end) continue;
-    const home = out.find((s) => e.minute >= s.window.start && e.minute < s.window.end)
+    const home = movedTo(e) || out.find((s) => e.minute >= s.window.start && e.minute < s.window.end)
       || out.find((s) => inside(e, s, false)) || null;
     // The journal stops somewhere inside its last shift, so money that shift
     // took after the export ran is not missing from ASSD.
@@ -530,7 +550,7 @@ export function reconcile(shifts, events, declines = [], options = {}) {
     else raise('not-recorded', home, null, e);
   }
   for (const e of dated.filter(free)) {
-    const home = out.find((s) => s.day === e.day) || null;
+    const home = movedTo(e) || out.find((s) => s.day === e.day) || null;
     if (!home || home.open) continue;
     raise('not-recorded', home, null, e);
   }

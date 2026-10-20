@@ -256,9 +256,9 @@ function readBlock(b) {
  * Entries → shifts.
  *
  * A shift is everything from one hand-over marker to the next. Two markers in
- * a row by the same person are one shift (it happens: somebody opens the day,
- * is interrupted, opens it again), and so is a person's marker directly after
- * their own shift.
+ * a row by the same person are one shift when nothing was closed between them
+ * (it happens: somebody opens the day, is interrupted, opens it again). One
+ * who closed their shift and began again worked two: a double shift.
  *
  * Whatever comes before the first marker in the file belongs to a shift that
  * started before the file did. It is returned separately, not dropped and not
@@ -271,7 +271,9 @@ export function segment(entries, corrections = new Map()) {
 
   for (const e of entries) {
     if (e.kind === 'Beginn of Day Processing') {
-      if (current && current.user === e.user) continue;
+      // The same person again with no close in between: interrupted, one
+      // shift. Closed and began again: a shift of its own (a double).
+      if (current && current.user === e.user && !current.entries.some((x) => x.kind === 'End cash deficit/surplus')) continue;
       current = { user: e.user, startSeq: e.seq, markerDate: e.date, entries: [] };
       shifts.push(current);
       continue;

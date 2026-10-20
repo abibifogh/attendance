@@ -169,6 +169,8 @@ const ROUTES = [
       `${ctx.account?.name || 'A supervisor'} answered “${ctx.body?.answer || ''}” for ${approvals.keyWords(String(ctx.body?.key || '')).replace(/^A /, 'a ').replace(/^An /, 'an ').replace(/^The /, 'the ')}.`);
   }],
   ['POST', '/api/shifts/answer-many', 'shifts', answerMany],
+  // A payment ASSD does not show, moved to the shift it belongs to. Admins.
+  ['POST', '/api/shifts/payment-home', 'shifts', adminOnly((env, ctx) => shiftRoutes.movePayment(env, ctx.body, ctx.account))],
   // Which day an ASSD line is on, so an approval can open its shift.
   ['GET', '/api/shifts/where', 'shifts', adminOnly((env, ctx) => shiftRoutes.whereIs(env, ctx.query))],
   // Refunds owed to guests who paid more by card or MoMo than ASSD shows.

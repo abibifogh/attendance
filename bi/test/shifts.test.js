@@ -268,10 +268,10 @@ test('shifts are placed by the terminal’s clock and the marker, one slot after
   assert.deepEqual(placed.map((p) => p.slot), [0, 1, 2].map((s) => slotIndex('2026-08-01', s)));
 });
 
-test('a quick log-in and a hand-over in the night share a shift, placed by who signed in HIVE and the drawer they counted', () => {
+test('a quick log-in inside a night that ran on into the morning shares its shift, placed by who signed in HIVE and the drawer they counted', () => {
   // The night of the 1st ran on into the 2nd's morning; the morning's person
-  // logged in for a minute in the middle of it; the night of the 2nd changed
-  // hands. Made-up logins. Nights carry the next day's date on their marker.
+  // logged in for a minute in the middle of it. Made-up logins. Nights carry
+  // the next day's date on their marker.
   const s = (user, markerDate, notes) => ({ ...shift(user, markerDate, []), closing: notes == null ? null : { notes } });
   const sessions = [
     s('NADIA', '2026-08-01', 50000), // the 1st's afternoon
@@ -280,8 +280,7 @@ test('a quick log-in and a hand-over in the night share a shift, placed by who s
     s('KWEKU', '2026-08-02', 64000), // …and on into the morning: hands over at 640
     s('ABENA', '2026-08-02', 30000), // the 2nd's morning
     s('YAW', '2026-08-02', 80000), // the 2nd's afternoon
-    s('EFUA', '2026-08-03', 81000), // the 2nd's night, from Yaw's count
-    s('KOJO', '2026-08-03', 81500), // …taken over by Kojo, who closed it
+    s('KOJO', '2026-08-03', 81500), // the 2nd's night
     s('ABENA', '2026-08-03', null), // the 3rd's morning, still open
   ];
   const t = (day, slot) => slotIndex(day, ['morning', 'afternoon', 'night'].indexOf(slot));
@@ -297,21 +296,28 @@ test('a quick log-in and a hand-over in the night share a shift, placed by who s
   const placed = placeShifts(sessions, [], { signed }).map((p) => p.slot);
   assert.deepEqual(placed, [
     t('2026-08-01', 'afternoon'), t('2026-08-01', 'night'), t('2026-08-01', 'night'), t('2026-08-01', 'night'),
-    t('2026-08-02', 'morning'), t('2026-08-02', 'afternoon'), t('2026-08-02', 'night'), t('2026-08-02', 'night'),
-    t('2026-08-03', 'morning'),
+    t('2026-08-02', 'morning'), t('2026-08-02', 'afternoon'), t('2026-08-02', 'night'), t('2026-08-03', 'morning'),
   ]);
-  // Without HIVE, one session to a slot can no longer be had: they still fit,
-  // sharing where they must, and nothing runs days out.
+  // Without HIVE they still fit, sharing where they must, in order.
   const alone = placeShifts(sessions, []).map((p) => p.slot);
-  assert.equal(alone.length, 9);
+  assert.equal(alone.length, 8);
   assert.ok(alone.every((x, i) => !i || x >= alone[i - 1]));
 
   // Made one: the night's entries run together under whoever signed it.
   const groups = sessions.map((x, i) => ({ user: x.user, startSeq: i * 10, markerDate: x.markerDate, entries: [] }));
   const joined = joinShared(groups, placeShifts(sessions, [], { signed }), new Map(), (logins, slot) => logins.find((l) => signedBy.get(slot)?.[0] === l) || null);
-  assert.equal(joined.shifts.length, 6);
   assert.deepEqual(joined.shifts.map((x) => x.user), ['NADIA', 'KWEKU', 'ABENA', 'YAW', 'KOJO', 'ABENA']);
   assert.deepEqual(joined.shifts[1].sessions.map((x) => x.user), ['KWEKU', 'ABENA', 'KWEKU']);
+});
+
+test('somebody who closed their shift and began again worked two shifts; begun again without closing, one', () => {
+  const e = (seq, kind, user, date = '2026-08-02') => ({ seq, kind, user, date, register: '001', payments: [], laundry: [], items: [] });
+  const night = [e(1, 'Beginn of Day Processing', 'KWEKU'), e(2, 'Open Cash Register', 'KWEKU'), e(3, 'End cash deficit/surplus', 'KWEKU')];
+  // Closed, then began the morning: a double shift, two sessions.
+  assert.equal(segment([...night, e(4, 'Beginn of Day Processing', 'KWEKU'), e(5, 'Open Cash Register', 'KWEKU')]).shifts.length, 2);
+  // Began, interrupted, began again with nothing closed: one.
+  assert.equal(segment([e(1, 'Beginn of Day Processing', 'KWEKU'), e(2, 'Open Cash Register', 'KWEKU'),
+    e(3, 'Beginn of Day Processing', 'KWEKU'), e(4, 'Open Cash Register', 'KWEKU')]).shifts.length, 1);
 });
 
 test('a closing report filed on the wrong shift does not drag a journal that fits on its own', () => {
@@ -1073,4 +1079,27 @@ test('“Open the shift” for money with no ASSD line: placed by its time, or i
   assert.equal((await routes.whereIs(env, { key: 'not-recorded:t:610031901240' })).day, '2026-10-15');
   assert.deepEqual(await routes.whereIs(env, { key: 'not-recorded:b:m-1' }), { key: 'not-recorded:b:m-1', day: '2026-10-14', slot: null });
   assert.deepEqual(await routes.whereIs(env, { key: 'not-recorded:t:999' }), { key: 'not-recorded:t:999', day: null, slot: null });
+});
+
+test('a payment ASSD does not show sits on the shift its time falls in, unless an admin moved it', () => {
+  // Taken at 22:25, just after the hand-over: the night's by the clock.
+  const shifts = [shift('A', '2026-08-01', []), shift('B', '2026-08-01', []), shift('C', '2026-08-02', []), shift('D', '2026-08-02', [])];
+  const pay = ev('t:x', '2026-08-01 22:25:00', 233600);
+  const where = (opts = {}) => reconcile(shifts, [pay], [], opts).exceptions.find((x) => x.kind === 'not-recorded');
+  assert.deepEqual([where().day, where().slot], ['2026-08-01', 'night']);
+  const moved = where({ homes: new Map([['t:x', { day: '2026-08-01', slot: 'afternoon' }]]) });
+  assert.deepEqual([moved.day, moved.slot, moved.key], ['2026-08-01', 'afternoon', where().key], 'the same difference, on the afternoon');
+});
+
+test('moving a payment needs a payment, a shift and a reason; it can be put back', async () => {
+  const { db } = freshDb();
+  const env = { DB: db };
+  const who = { name: 'Test Owner', isOwner: true };
+  await assert.rejects(routes.movePayment(env, { eventId: 'nope', day: '2026-08-01', slot: 'afternoon', why: 'late' }, who), /Which payment/);
+  await assert.rejects(routes.movePayment(env, { eventId: 't:x', day: '2026-08-01', slot: 'evening', why: 'late' }, who), /Which shift/);
+  await assert.rejects(routes.movePayment(env, { eventId: 't:x', day: '2026-08-01', slot: 'afternoon' }, who), /Say why/);
+  await routes.movePayment(env, { eventId: 't:x', day: '2026-08-01', slot: 'afternoon', why: 'Taken after the hand-over', fromDay: '2026-08-01', fromSlot: 'night' }, who);
+  assert.equal((await db.prepare('SELECT slot FROM payment_home WHERE event_id = ?').bind('t:x').first()).slot, 'afternoon');
+  await routes.movePayment(env, { eventId: 't:x', back: true }, who);
+  assert.equal(await db.prepare('SELECT slot FROM payment_home WHERE event_id = ?').bind('t:x').first(), null);
 });

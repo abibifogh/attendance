@@ -2101,6 +2101,53 @@ export async function renderShifts(root, { range }) {
     ];
   }
 
+  /**
+   * A payment ASSD does not show is on the shift its time falls in. One taken
+   * just after a hand-over belongs to the shift before: an admin moves it,
+   * saying why, and can put it back.
+   */
+  function paymentHome(x) {
+    if (!x.event?.id || !['not-recorded', 'double-charge'].includes(x.kind) || !x.day || !x.slot) return null;
+    const box = h('div.sh-payhome');
+    const back = async () => {
+      try {
+        await api('/shifts/payment-home', { method: 'POST', body: { eventId: x.event.id, back: true } });
+        await load(banner('good', 'Put back on the shift its time falls in.'));
+      } catch (err) { alert(err.message); }
+    };
+    if (x.moved) {
+      return h('p.small.sh-payhome', `Moved here from the ${SLOT[x.moved.fromSlot]?.label.toLowerCase() || 'other shift'}${x.moved.fromDay ? ` of ${dayText(x.moved.fromDay)}` : ''} by ${x.moved.by}: “${x.moved.why}”. `,
+        admin ? h('button.sh-link', { type: 'button', onclick: back }, 'Put it back') : null);
+    }
+    if (!admin) return null;
+    const i = SLOTS.indexOf(x.slot);
+    const before = i > 0 ? { day: x.day, slot: SLOTS[i - 1] } : { day: plusDays(x.day, -1), slot: 'night' };
+    const after = i < 2 ? { day: x.day, slot: SLOTS[i + 1] } : { day: plusDays(x.day, 1), slot: 'morning' };
+    const open = () => {
+      const why = h('input', { type: 'text', maxlength: '300', placeholder: 'Taken just after the hand-over, for an afternoon guest' });
+      const said = h('span.small');
+      const move = (to) => async () => {
+        if (!why.value.trim()) { said.textContent = 'Say why it belongs to that shift.'; why.focus(); return; }
+        said.textContent = 'Moving…';
+        try {
+          await api('/shifts/payment-home', { method: 'POST', body: { eventId: x.event.id, day: to.day, slot: to.slot, why: why.value, fromDay: x.day, fromSlot: x.slot } });
+          await load(banner('good', `Moved to the ${SLOT[to.slot].label.toLowerCase()} of ${dayText(to.day)}. Its person answers it now.`));
+        } catch (err) { said.textContent = err.message; }
+      };
+      mount(box, h('div.sh-payform',
+        h('b', 'Which shift took it?'),
+        h('label.field', 'Why', why),
+        h('div.sh-safeinline',
+          h('button.btn', { type: 'button', onclick: move(before) }, `‹ The ${SLOT[before.slot].label.toLowerCase()}, ${dayText(before.day)}`),
+          h('button.btn', { type: 'button', onclick: move(after) }, `The ${SLOT[after.slot].label.toLowerCase()}, ${dayText(after.day)} ›`),
+          h('button.sh-link', { type: 'button', onclick: () => mount(box, link()) }, 'Cancel')),
+        said));
+    };
+    const link = () => h('button.sh-link', { type: 'button', onclick: open }, 'Wrong shift? Move it');
+    mount(box, link());
+    return box;
+  }
+
   function exceptionCard(x) {
     const sev = settled(x) ? 'ok' : x.severity === 'critical' ? 'bad' : x.severity === 'warning' ? 'warn' : 'info';
     const [title, kindMark] = KIND[x.kind] || [x.kind, '!'];
@@ -2139,6 +2186,7 @@ export async function renderShifts(root, { range }) {
         x.seqs ? h('span', `ASSD ${x.seqs.join(', ')}`) : x.seq ? h('span', `ASSD ${x.seq}`) : null),
       evidence(x),
       h('p', describe(x)),
+      paymentHome(x),
       x.split ? h('p.small', x.split.what === 'paid-more' || x.split.what === 'paid-less'
         ? `Said not to be the same payment as the ${x.split.what === 'paid-more' ? 'larger' : 'smaller'} one that arrived on this shift (${x.split.by || 'somebody'}). `
         : `Said not to be the laundry’s card payment of the same amount (${x.split.by || 'somebody'}). `,
