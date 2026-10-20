@@ -201,9 +201,9 @@ async function shiftList(env, from, to) {
 
 /** Everything that does not agree between `from` and `to`, with where each stands. */
 export async function issuesBetween(env, from, to) {
-  const [list, reports, pos, active, map, since, small, answers, decided, linked, moved, checks] = await Promise.all([
+  const [list, reports, pos, active, map, since, small, answers, decided, linked, moved, checks, chosen] = await Promise.all([
     shiftList(env, from, to), hiveReports(env, from, to), hivePos(env, from, to), rentals(env, { active: true }),
-    people(env), goLive(env), threshold(env), hiveAnswers(env), resolutions(env), reconciled(env), moves(env), shiftChecks(env),
+    people(env), goLive(env), threshold(env), hiveAnswers(env), resolutions(env), reconciled(env), moves(env), shiftChecks(env), owners(env),
   ]);
   // A drawer difference reconciled with others (and approved) is one story
   // told twice: it nets out, so it leaves its person's list. One an admin put
@@ -211,12 +211,12 @@ export async function issuesBetween(env, from, to) {
   // share, on the people it was put on.
   const movedKeys = new Set(moved.map((m) => m.key));
   const issues = [
-    ...issuesFor({ shifts: list, reports, pos, rentals: active, people: map, since, threshold: small })
+    ...issuesFor({ shifts: list, reports, pos, rentals: active, people: map, owners: chosen, since, threshold: small })
       .filter((i) => !(i.kind === 'drawer' && linked.has(i.key)) && !movedKeys.has(i.key)),
     ...moved.filter((m) => m.day >= from && m.day <= to).flatMap(movedIssues),
   ];
   return {
-    shifts: list, reports, pos, rentals: active, checks,
+    shifts: list, reports, pos, rentals: active, checks, owners: chosen, people: map,
     issues: withStatus(issues, { answers, resolutions: decided }).map((i) => withCheck(i, checks)),
   };
 }
@@ -429,7 +429,7 @@ export async function overview(env, query, account) {
   const from = /^\d{4}-\d\d-\d\d$/.test(query?.from || '') ? query.from : addDays(to, -6);
   if (daysBetween(from, to).length > 62) throw badRequest('Two months at a time at most.');
 
-  const { shifts, reports, pos, rentals: active, issues, checks } = await issuesBetween(env, addDays(to, -LOOKBACK), to);
+  const { shifts, reports, pos, rentals: active, issues, checks, owners: chosen } = await issuesBetween(env, addDays(to, -LOOKBACK), to);
   const users = await hiveUsers(env);
   const nameOf = new Map(users.map((u) => [Number(u.id), u.name]));
   const money = access.money > 0;
@@ -466,6 +466,8 @@ export async function overview(env, query, account) {
         rentals: c.rentals.map((x) => ({ ...x, deposit: null })),
       },
       issues: issues.filter((i) => i.day === day && i.slot === slot).length,
+      // Chosen as its person, when ASSD and HIVE named different people.
+      owner: chosen.get(key) || null,
       // Checked by whom, or not yet; and what its people said before the check.
       check: checkOf(checks, issues, day, slot),
       notes: issues.filter((i) => i.day === day && i.slot === slot && i.note).map((i) => ({ name: nameOf.get(Number(i.userId)) || null, text: i.note.text, at: i.note.at })),
@@ -879,6 +881,74 @@ export async function moveReport(env, body, account, { fetchImpl } = {}) {
     binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/till/move',
     body: { reportId: id, day, slot, by: who(account), reason },
   });
+}
+
+// --------------------------------------------------- whose shift it was --
+
+/** Shifts somebody chose a person for: `day|slot` → { userId, name, why, by, at }. */
+async function owners(env) {
+  const rows = await all(env.DB, 'SELECT * FROM shift_owner').catch(() => []);
+  return new Map(rows.map((r) => [`${r.day}|${r.slot}`, { userId: Number(r.hive_user_id), name: r.name || null, why: r.why, by: r.by_name, at: r.at }]));
+}
+
+/**
+ * Who could have held a shift: whoever closed it in HIVE, the person the ASSD
+ * login belongs to, and everybody else in HIVE, for "Somebody else".
+ */
+export async function ownerChoices(env, query, account) {
+  await requireArea(env, account, 'reopen', 2);
+  const day = String(query?.day || '');
+  const slot = String(query?.slot || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !SLOT_ORDER.includes(slot)) throw badRequest('Which shift?');
+  const [list, reports, map, chosen, users] = await Promise.all([
+    shiftList(env, day, day).catch(() => []), hiveReports(env, day, day), people(env), owners(env), hiveUsers(env),
+  ]);
+  const shift = list.find((x) => x.day === day && x.slot === slot) || null;
+  const report = reports.find((r) => r.slot === slot) || null;
+  const assdPerson = shift?.user ? map.get(shift.user) ?? null : null;
+  const nameOf = new Map(users.map((u) => [Number(u.id), u.name]));
+  return {
+    day, slot, assdUser: shift?.user || null,
+    assdPerson: assdPerson != null ? { userId: assdPerson, name: nameOf.get(assdPerson) || null } : null,
+    closedBy: report ? { userId: report.userId, name: report.name, signedAt: report.signedAt } : null,
+    chosen: chosen.get(`${day}|${slot}`) || null,
+    people: users.filter((u) => u.role !== 'admin').map((u) => ({ userId: Number(u.id), name: u.name })),
+  };
+}
+
+/**
+ * Say whose shift it was. Its differences, and its list in HIVE, follow the
+ * person chosen; both the person it leaves and the person it goes to are
+ * told. `userId: null` goes back to whoever closed it in HIVE.
+ */
+export async function setOwner(env, body, account, { fetchImpl } = {}) {
+  await requireArea(env, account, 'reopen', 2);
+  const day = String(body?.day || '');
+  const slot = String(body?.slot || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !SLOT_ORDER.includes(slot)) throw badRequest('Which shift?');
+  const c = await ownerChoices(env, { day, slot }, account);
+  const before = c.chosen?.userId ?? c.closedBy?.userId ?? c.assdPerson?.userId ?? null;
+  const label = `the ${slot} shift of ${day}`;
+  if (body?.userId == null || body.userId === '') {
+    await run(env.DB, 'DELETE FROM shift_owner WHERE day = ?1 AND slot = ?2', day, slot);
+  } else {
+    const userId = Number(body.userId);
+    const person = c.people.find((p) => p.userId === userId);
+    if (!person) throw badRequest('Choose whose shift it was.');
+    const why = str(body?.why, 'Why', { max: 300 });
+    if (!why || why.length < 3) throw badRequest('Say why: it is kept with the shift.');
+    await run(env.DB, `INSERT INTO shift_owner (day, slot, hive_user_id, name, why, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        ON CONFLICT (day, slot) DO UPDATE SET hive_user_id = ?3, name = ?4, why = ?5, by_name = ?6, at = ?7`,
+    day, slot, userId, person.name, why, who(account), new Date().toISOString().slice(0, 19).replace('T', ' '));
+  }
+  const after = body?.userId == null || body.userId === '' ? (c.closedBy?.userId ?? c.assdPerson?.userId ?? null) : Number(body.userId);
+  let told = false;
+  if (before !== after) {
+    const words = (body?.why ? ` “${String(body.why).trim()}”` : '');
+    if (after != null) told = await tell(env, [after], `${label[0].toUpperCase()}${label.slice(1)} is now yours`, `${who(account)} said it was your shift.${words} What is on it to sort out is on your till list.`, fetchImpl, 'till.owner');
+    if (before != null) await tell(env, [before], `${label[0].toUpperCase()}${label.slice(1)} is no longer yours`, `${who(account)} said it was somebody else's shift.${words} It has left your till list.`, fetchImpl, 'till.owner');
+  }
+  return { ok: true, changed: before !== after, told };
 }
 
 /** How far a report may be moved, in days either side of when it was signed. */

@@ -196,6 +196,22 @@ minute at most), so a report sent from HIVE while Insight is open shows without
 a reload. "still open" on a row means the journal loaded stops inside that
 shift and no report is filed for it.
 
+## Whose shift it was
+
+A shift is ASSD's from one "Beginning of Day Processing" to the next, and its
+name in ASSD is the login that ran that hand-over. When somebody works on
+another person's login, the name ASSD gives and the person who closed the
+shift in HIVE differ. The shift's page then shows both ("ASSD login: … (did
+the hand-over)" and "Closed in HIVE by …", flagged), and the week tiles show
+both names. Until somebody chooses, the shift is whoever closed it in HIVE's.
+
+**Choose whose shift it was** (admins, and supervisors allowed to reopen a
+report) offers whoever closed it in HIVE, the person the ASSD login belongs to
+(under Settings → Whose ASSD login is whose), or anybody else in HIVE, and asks
+why. Its differences and its list in HIVE follow the person chosen, and both
+people are told in HIVE; answers already given stay with whoever gave them.
+**Change** chooses again; **Back to who closed it in HIVE** undoes it.
+
 ## The safe
 
 Money › **Safe** (admins only) is the safe book. A page runs from one count of

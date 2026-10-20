@@ -148,7 +148,7 @@ export function compare(shift, report, { pos = [], rentals = [] } = {}) {
  *   anybody's missing report.
  * - `threshold`: a difference this small or smaller is left alone.
  */
-export function issuesFor({ shifts, reports, pos = [], rentals = [], people = new Map(), since = null, threshold = 0 }) {
+export function issuesFor({ shifts, reports, pos = [], rentals = [], people = new Map(), owners = new Map(), since = null, threshold = 0 }) {
   const out = [];
   const reportOf = new Map();
   for (const r of [...reports].sort((a, b) => String(a.signedAt).localeCompare(String(b.signedAt)))) {
@@ -160,7 +160,8 @@ export function issuesFor({ shifts, reports, pos = [], rentals = [], people = ne
   for (const s of shifts) {
     if (s.open) continue;
     const report = reportOf.get(`${s.day}|${s.slot}`) || null;
-    const owner = report ? report.userId : (people.get(s.user) ?? null);
+    // Whoever was chosen as its person, else whoever closed it in HIVE, else the ASSD login's person.
+    const owner = owners.get(`${s.day}|${s.slot}`)?.userId ?? (report ? report.userId : (people.get(s.user) ?? null));
     const base = { day: s.day, slot: s.slot, assdUser: s.user, userId: owner, reportId: report?.id ?? null };
     const c = compare(s, report, { pos, rentals });
 

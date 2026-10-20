@@ -796,6 +796,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'till.owner',
+    group: 'money',
+    label: 'A shift was said to be yours, or not yours',
+    who: 'The person it now belongs to, and the person it no longer does',
+    when: 'An admin or a supervisor says whose shift it was, when ASSD and HIVE name different people',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'till.proof',
     group: 'money',
     label: 'Proof was asked for something you answered on your till list',
